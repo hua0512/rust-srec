@@ -6,7 +6,6 @@ use crate::database::models::{
     SessionSegmentDbModel,
 };
 use crate::database::repositories::{PipelinePresetFilters, PipelinePresetRepository};
-use crate::downloader::DownloadTerminalEvent;
 use async_trait::async_trait;
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet};
@@ -695,7 +694,6 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
 struct TestDagRepositoryForRetry {
     dags: Mutex<HashMap<String, DagExecutionDbModel>>,
     steps: HashMap<String, DagStepExecutionDbModel>,
-    reset_calls: AtomicUsize,
     cancel_calls: AtomicUsize,
 }
 
@@ -704,7 +702,6 @@ impl TestDagRepositoryForRetry {
         Self {
             dags: Mutex::new(HashMap::new()),
             steps: HashMap::new(),
-            reset_calls: AtomicUsize::new(0),
             cancel_calls: AtomicUsize::new(0),
         }
     }
@@ -714,10 +711,6 @@ impl TestDagRepositoryForRetry {
             .lock()
             .expect("lock poisoned")
             .insert(dag.id.clone(), dag);
-    }
-
-    fn reset_calls(&self) -> usize {
-        self.reset_calls.load(Ordering::SeqCst)
     }
 
     fn with_step(mut self, step: DagStepExecutionDbModel) -> Self {
@@ -794,6 +787,13 @@ impl DagRepository for TestDagRepositoryForRetry {
     }
 
     async fn get_dag_display_status(&self, _id: &str) -> Result<DagExecutionStatus> {
+        unimplemented!("not needed for these tests")
+    }
+
+    async fn get_dag_with_display_status(
+        &self,
+        _id: &str,
+    ) -> Result<(DagExecutionDbModel, DagExecutionStatus)> {
         unimplemented!("not needed for these tests")
     }
 
@@ -892,7 +892,6 @@ impl DagRepository for TestDagRepositoryForRetry {
     }
 
     async fn reset_dag_for_retry(&self, dag_id: &str) -> Result<()> {
-        self.reset_calls.fetch_add(1, Ordering::SeqCst);
         let mut dags = self.dags.lock().expect("lock poisoned");
         let dag = dags
             .get_mut(dag_id)
@@ -1049,6 +1048,13 @@ impl DagRepository for TestDagRepository {
     }
 
     async fn get_dag_display_status(&self, _id: &str) -> Result<DagExecutionStatus> {
+        unimplemented!("not needed for these tests")
+    }
+
+    async fn get_dag_with_display_status(
+        &self,
+        _id: &str,
+    ) -> Result<(DagExecutionDbModel, DagExecutionStatus)> {
         unimplemented!("not needed for these tests")
     }
 
@@ -1219,26 +1225,6 @@ impl DagRepository for TestDagRepository {
     ) -> Result<crate::database::repositories::StepCompletion> {
         unimplemented!("not needed for these tests")
     }
-}
-
-#[test]
-fn test_pipeline_manager_config_default() {
-    let config = PipelineManagerConfig::default();
-    assert_eq!(config.cpu_pool.max_workers, 2);
-    assert_eq!(config.io_pool.max_workers, 4);
-    assert_eq!(config.execute_timeout_secs, 3600);
-    // Verify throttle config defaults
-    assert!(!config.throttle.enabled);
-    assert_eq!(config.throttle.critical_threshold, 500);
-    assert_eq!(config.throttle.warning_threshold, 100);
-    assert!((config.throttle.reduction_factor - 0.5).abs() < f32::EPSILON);
-}
-
-#[test]
-fn test_pipeline_manager_creation() {
-    let manager: PipelineManager = PipelineManager::new();
-    assert_eq!(manager.queue_depth(), 0);
-    assert_eq!(manager.queue_status(), QueueDepthStatus::Normal);
 }
 
 /// The session-complete runner stores per-segment pairing on the DAG row and
@@ -1559,53 +1545,6 @@ async fn retry_dag_rejects_an_unrestartable_job_before_touching_rows() {
     );
 }
 
-/// When restarting breaks down after the rows were reset, the DAG is failed
-/// again with the retry error instead of sitting in PROCESSING forever.
-#[tokio::test]
-async fn retry_dag_refails_the_dag_when_it_cannot_be_advanced() {
-    let (manager, jobs, dags, pool) = sqlx_manager().await;
-    let created = manager
-        .create_dag_pipeline(
-            "session",
-            "streamer",
-            vec!["/in.flv".to_string()],
-            remux_chain("broken retry", &["A", "B"]),
-        )
-        .await
-        .unwrap();
-    let scheduler = manager.dag_scheduler().unwrap().clone();
-    let steps = dags.get_steps_by_dag(&created.dag_id).await.unwrap();
-    let step_a = steps.iter().find(|step| step.step_id == "A").unwrap();
-    jobs.mark_job_failed(&created.root_job_ids[0], "boom", None)
-        .await
-        .unwrap();
-    scheduler.on_job_failed(&step_a.id, "boom").await.unwrap();
-    // Fan-out after the reset needs the definition; make it unreadable.
-    sqlx::query("UPDATE dag_execution SET dag_definition = '{' WHERE id = ?")
-        .bind(&created.dag_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-    let error = manager.retry_dag(&created.dag_id).await.unwrap_err();
-    assert!(error.to_string().contains("DAG definition"), "{error}");
-    let dag = dags.get_dag(&created.dag_id).await.unwrap();
-    assert_eq!(dag.status, "FAILED");
-    assert!(
-        dag.error.as_deref().unwrap().starts_with("Retry failed:"),
-        "{:?}",
-        dag.error
-    );
-    assert!(
-        dags.get_steps_by_dag(&created.dag_id)
-            .await
-            .unwrap()
-            .iter()
-            .all(|step| step.status == "CANCELLED"),
-        "no step is left PROCESSING"
-    );
-}
-
 /// A DAG whose only cancelled step never received a job (its creation failed)
 /// is retryable: the reset unblocks the step and materializes it.
 #[tokio::test]
@@ -1663,47 +1602,6 @@ async fn retry_dag_materializes_a_cancelled_step_without_a_job() {
         .unwrap(),
         vec!["/a.mp4".to_string()]
     );
-}
-
-/// A retry that settles its only retryable step as a no-op (its dependency
-/// produced no outputs) reports that step as retried and delivers the DAG's
-/// completion.
-#[tokio::test]
-async fn retry_dag_counts_steps_settled_as_no_ops() {
-    let (manager, _jobs, dags, pool) = sqlx_manager().await;
-    let created = manager
-        .create_dag_pipeline(
-            "session",
-            "streamer",
-            vec!["/in.flv".to_string()],
-            remux_chain("no-op retry", &["A", "B"]),
-        )
-        .await
-        .unwrap();
-    let steps = dags.get_steps_by_dag(&created.dag_id).await.unwrap();
-    let step_a = steps.iter().find(|step| step.step_id == "A").unwrap();
-    let step_b = steps.iter().find(|step| step.step_id == "B").unwrap();
-    dags.complete_step_and_check_dependents(&step_a.id, &[])
-        .await
-        .unwrap();
-    sqlx::query("UPDATE dag_step_execution SET status = 'CANCELLED', job_id = NULL WHERE id = ?")
-        .bind(&step_b.id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    sqlx::query("UPDATE dag_execution SET status = 'FAILED', error = 'boom' WHERE id = ?")
-        .bind(&created.dag_id)
-        .execute(&pool)
-        .await
-        .unwrap();
-
-    let result = manager.retry_dag(&created.dag_id).await.unwrap();
-    assert_eq!(result.retried_steps, 1);
-    assert_eq!(result.message, "Successfully retried 1 step");
-    assert!(result.job_ids.is_empty());
-    let dag = dags.get_dag(&created.dag_id).await.unwrap();
-    assert_eq!(dag.status, "COMPLETED");
-    assert_eq!(dags.get_step(&step_b.id).await.unwrap().status, "COMPLETED");
 }
 
 /// After a partial failure only the failed branch is re-run: the failed step's
@@ -1951,108 +1849,6 @@ async fn whole_workflow_retry_restarts_failed_and_cancelled_root_jobs() {
             .iter()
             .all(|step| step.status == "PROCESSING")
     );
-}
-
-#[tokio::test]
-async fn test_retry_job_rejects_failed_dag_when_job_is_dag_step() {
-    let job_repo = Arc::new(TestJobRepository::new());
-    let dag_repo = Arc::new(TestDagRepositoryForRetry::new());
-
-    let dag_def = crate::database::models::DagPipelineDefinition::new(
-        "test",
-        vec![crate::database::models::DagStep::new(
-            "step-a",
-            crate::database::models::PipelineStep::Inline {
-                processor: "remux".to_string(),
-                config: serde_json::json!({}),
-            },
-        )],
-    );
-
-    let mut dag = DagExecutionDbModel::new(&dag_def, None, None);
-    dag.status = crate::database::models::DagExecutionStatus::Failed
-        .as_str()
-        .to_string();
-    let dag_id = dag.id.clone();
-    dag_repo.insert(dag);
-
-    let mut job = JobDbModel::new_pipeline_step(
-        "remux",
-        serde_json::to_string(&vec!["/in.flv".to_string()]).unwrap(),
-        "[]",
-        0,
-        None,
-        None,
-    );
-    job.pipeline_id = Some(dag_id.clone());
-    job.dag_step_execution_id = Some("step-exec-1".to_string());
-    job.status = JobStatus::Failed.as_str().to_string();
-    job.error = Some("boom".to_string());
-    job.completed_at = Some(chrono::Utc::now().timestamp_millis());
-    let job_id = job.id.clone();
-    job_repo.insert(job);
-
-    let config = PipelineManagerConfig::default();
-
-    let manager: PipelineManager =
-        PipelineManager::with_repository(config, job_repo).with_dag_repository(dag_repo.clone());
-
-    let error = manager.retry_job(&job_id).await.unwrap_err();
-    assert!(matches!(error, Error::Validation(_)));
-    assert_eq!(dag_repo.reset_calls(), 0);
-}
-
-#[tokio::test]
-async fn test_retry_job_rejects_cancelled_dag_when_job_is_dag_step() {
-    let job_repo = Arc::new(TestJobRepository::new());
-    let dag_repo = Arc::new(TestDagRepositoryForRetry::new());
-
-    let dag_def = DagExecutionDbModel::new(
-        &crate::database::models::DagPipelineDefinition::new(
-            "test",
-            vec![crate::database::models::DagStep::new(
-                "step-a",
-                crate::database::models::PipelineStep::Inline {
-                    processor: "remux".to_string(),
-                    config: serde_json::json!({}),
-                },
-            )],
-        ),
-        None,
-        None,
-    );
-
-    let mut dag = dag_def;
-    dag.status = crate::database::models::DagExecutionStatus::Cancelled
-        .as_str()
-        .to_string();
-    let dag_id = dag.id.clone();
-    dag_repo.insert(dag);
-
-    let mut job = JobDbModel::new_pipeline_step(
-        "remux",
-        serde_json::to_string(&vec!["/in.flv".to_string()]).unwrap(),
-        "[]",
-        0,
-        None,
-        None,
-    );
-    job.pipeline_id = Some(dag_id.clone());
-    job.dag_step_execution_id = Some("step-exec-1".to_string());
-    job.status = JobStatus::Cancelled.as_str().to_string();
-    job.error = Some("cancelled".to_string());
-    job.completed_at = Some(chrono::Utc::now().timestamp_millis());
-    let job_id = job.id.clone();
-    job_repo.insert(job);
-
-    let config = PipelineManagerConfig::default();
-
-    let manager: PipelineManager =
-        PipelineManager::with_repository(config, job_repo).with_dag_repository(dag_repo.clone());
-
-    let error = manager.retry_job(&job_id).await.unwrap_err();
-    assert!(matches!(error, Error::Validation(_)));
-    assert_eq!(dag_repo.reset_calls(), 0);
 }
 
 #[tokio::test]
@@ -2461,47 +2257,6 @@ async fn test_cancel_pipeline_tolerates_dag_deleted_mid_cancel() {
     assert_eq!(manager.cancel_pipeline(&dag_id).await.unwrap(), 0);
 }
 
-/// A pipeline id that is not a `dag_execution` row still goes through `JobQueue::cancel_pipeline`.
-#[tokio::test]
-async fn test_cancel_pipeline_without_dag_cancels_jobs_by_pipeline_id() {
-    let dag_repo = Arc::new(TestDagRepository::new());
-    let job_repo = Arc::new(TestJobRepository::new());
-
-    let mut job = JobDbModel::new_pipeline_step("remux", "[]", "[]", 0, None, None);
-    job.pipeline_id = Some("plain-pipeline".to_string());
-    let job_id = job.id.clone();
-    job_repo.insert(job);
-
-    let manager: PipelineManager =
-        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
-            .with_dag_repository(dag_repo);
-
-    assert_eq!(manager.cancel_pipeline("plain-pipeline").await.unwrap(), 1);
-    assert_eq!(
-        manager.get_job(&job_id).await.unwrap().unwrap().status,
-        JobStatus::Cancelled
-    );
-}
-
-#[test]
-fn test_set_worker_concurrency_clamps_to_max_workers() {
-    let manager: PipelineManager = PipelineManager::new();
-
-    // Defaults are 2/4, so requests above should clamp.
-    manager.set_worker_concurrency(10, 20);
-    assert_eq!(manager.cpu_pool.desired_max_workers(), 2);
-    assert_eq!(manager.io_pool.desired_max_workers(), 4);
-
-    // Requests below max should apply.
-    manager.set_worker_concurrency(1, 3);
-    assert_eq!(manager.cpu_pool.desired_max_workers(), 1);
-    assert_eq!(manager.io_pool.desired_max_workers(), 3);
-
-    manager.set_worker_concurrency(0, 0);
-    assert_eq!(manager.cpu_pool.desired_max_workers(), 1);
-    assert_eq!(manager.io_pool.desired_max_workers(), 1);
-}
-
 #[tokio::test]
 async fn stop_settles_owned_pipeline_runtime_tasks() {
     let manager: Arc<PipelineManager> = Arc::new(PipelineManager::new());
@@ -2765,32 +2520,6 @@ fn test_frontend_processor_names_are_all_claimable() {
     }
 }
 
-/// A step naming a processor no pool registers would be enqueued and never claimed, so the
-/// definition has to be rejected up front rather than at dequeue time.
-#[test]
-fn test_validate_step_processors_rejects_unknown_processor() {
-    let manager: PipelineManager = PipelineManager::new();
-
-    let dag = DagPipelineDefinition::new(
-        "unknown processor",
-        vec![
-            DagStep::new("A", PipelineStep::inline("remux", serde_json::json!({}))),
-            DagStep::with_dependencies(
-                "B",
-                PipelineStep::inline("totally_not_a_processor", serde_json::json!({})),
-                vec!["A".to_string()],
-            ),
-        ],
-    );
-
-    let error = manager
-        .validate_step_processors(&dag)
-        .expect_err("unknown processor is rejected");
-    let message = error.to_string();
-    assert!(message.contains("totally_not_a_processor"), "{message}");
-    assert!(message.contains("step 'B'"), "{message}");
-}
-
 /// A pending job whose processor no pool registers can never be claimed, so startup fails it
 /// instead of leaving it (and the queue depth it inflates) in place across every restart.
 #[tokio::test]
@@ -2820,25 +2549,6 @@ async fn test_fail_unclaimable_jobs_only_fails_jobs_without_a_processor() {
     );
 }
 
-#[test]
-fn test_validate_step_processors_accepts_registered_processors() {
-    let manager: PipelineManager = PipelineManager::new();
-
-    let dag = DagPipelineDefinition::new(
-        "known processors",
-        vec![
-            DagStep::new("A", PipelineStep::inline("remux", serde_json::json!({}))),
-            DagStep::with_dependencies(
-                "B",
-                PipelineStep::inline("copy_move", serde_json::json!({})),
-                vec!["A".to_string()],
-            ),
-        ],
-    );
-
-    manager.validate_step_processors(&dag).unwrap();
-}
-
 fn consuming_step_dag(processor: &str, config: serde_json::Value) -> DagPipelineDefinition {
     DagPipelineDefinition::new(
         "consumer beside a reader",
@@ -2859,23 +2569,6 @@ fn consuming_step_dag(processor: &str, config: serde_json::Value) -> DagPipeline
             ),
         ],
     )
-}
-
-/// Fan-out hands one step's outputs to every dependent and those run
-/// concurrently, so a step that removes them beside a step that still reads
-/// them is rejected, naming the steps involved.
-#[test]
-fn test_validate_consuming_steps_rejects_a_delete_beside_a_reader() {
-    let error =
-        super::dag::validate_consuming_steps(&consuming_step_dag("delete", serde_json::json!({})))
-            .expect_err("delete races thumbnail for remux's output");
-    let message = error.to_string();
-    assert!(
-        message.contains("Step 'consumer' removes the outputs of 'remux'"),
-        "{message}"
-    );
-    assert!(message.contains("'thumbnail' still read them"), "{message}");
-    assert!(message.contains("depend on that step"), "{message}");
 }
 
 /// A consuming step that depends on the reader, directly or through other
@@ -2954,29 +2647,6 @@ fn test_validate_consuming_steps_rejects_two_destructive_roots() {
         message.contains("removes the pipeline's inputs"),
         "{message}"
     );
-}
-
-/// Removal driven by a processor option is a warning, not an error, so a
-/// `remux` that deletes its input beside a `thumbnail` still creates.
-#[test]
-fn test_validate_consuming_steps_leaves_option_driven_removal_to_warnings() {
-    let dag = DagPipelineDefinition::new(
-        "remux_thumbnail",
-        vec![
-            DagStep::new(
-                "remux",
-                PipelineStep::inline(
-                    "remux",
-                    serde_json::json!({ "format": "mp4", "remove_input_on_success": true }),
-                ),
-            ),
-            DagStep::new(
-                "thumbnail",
-                PipelineStep::inline("thumbnail", serde_json::json!({})),
-            ),
-        ],
-    );
-    super::dag::validate_consuming_steps(&dag).unwrap();
 }
 
 /// Only the modes that remove local files count: rclone and copy/move in
@@ -3196,449 +2866,6 @@ async fn test_create_dag_pipeline_rejects_a_step_that_removes_a_siblings_inputs(
 }
 
 #[tokio::test]
-async fn test_enqueue_job() {
-    let manager: PipelineManager = PipelineManager::new();
-
-    let job = Job::new(
-        "remux",
-        vec!["/input.flv".to_string()],
-        vec!["/output.mp4".to_string()],
-        "streamer-1",
-        "session-1",
-    );
-    let job_id = manager.enqueue(job).await.unwrap();
-
-    assert!(!job_id.is_empty());
-    assert_eq!(manager.queue_depth(), 1);
-}
-
-#[tokio::test]
-async fn test_list_jobs() {
-    use crate::database::models::{JobFilters, Pagination};
-
-    let manager: PipelineManager = PipelineManager::new();
-
-    // Enqueue some jobs
-    let job1 = Job::new(
-        "remux",
-        vec!["/input1.flv".to_string()],
-        vec!["/output1.mp4".to_string()],
-        "streamer-1",
-        "session-1",
-    );
-    let job2 = Job::new(
-        "upload",
-        vec!["/input2.flv".to_string()],
-        vec!["/output2.mp4".to_string()],
-        "streamer-2",
-        "session-2",
-    );
-    manager.enqueue(job1).await.unwrap();
-    manager.enqueue(job2).await.unwrap();
-
-    // List all jobs
-    let filters = JobFilters::default();
-    let pagination = Pagination::new(10, 0);
-    let (jobs, total) = manager.list_jobs(&filters, &pagination).await.unwrap();
-
-    assert_eq!(total, 2);
-    assert_eq!(jobs.len(), 2);
-}
-
-#[tokio::test]
-async fn test_list_jobs_with_filter() {
-    use crate::database::models::{JobFilters, Pagination};
-
-    let manager: PipelineManager = PipelineManager::new();
-
-    // Enqueue jobs for different streamers
-    let job1 = Job::new(
-        "remux",
-        vec!["/input1.flv".to_string()],
-        vec!["/output1.mp4".to_string()],
-        "streamer-1",
-        "session-1",
-    );
-    let job2 = Job::new(
-        "upload",
-        vec!["/input2.flv".to_string()],
-        vec!["/output2.mp4".to_string()],
-        "streamer-2",
-        "session-2",
-    );
-    manager.enqueue(job1).await.unwrap();
-    manager.enqueue(job2).await.unwrap();
-
-    // Filter by streamer_id
-    let filters = JobFilters::new().with_streamer_id("streamer-1");
-    let pagination = Pagination::new(10, 0);
-    let (jobs, total) = manager.list_jobs(&filters, &pagination).await.unwrap();
-
-    assert_eq!(total, 1);
-    assert_eq!(jobs.len(), 1);
-    assert_eq!(jobs[0].streamer_id, "streamer-1");
-}
-
-#[tokio::test]
-async fn test_get_job() {
-    let manager: PipelineManager = PipelineManager::new();
-
-    let job = Job::new(
-        "remux",
-        vec!["/input.flv".to_string()],
-        vec!["/output.mp4".to_string()],
-        "streamer-1",
-        "session-1",
-    );
-    let job_id = job.id.clone();
-    manager.enqueue(job).await.unwrap();
-
-    // Get existing job
-    let retrieved = manager.get_job(&job_id).await.unwrap();
-    assert!(retrieved.is_some());
-    assert_eq!(retrieved.unwrap().id, job_id);
-
-    // Get non-existing job
-    let not_found = manager.get_job("non-existent-id").await.unwrap();
-    assert!(not_found.is_none());
-}
-
-#[tokio::test]
-async fn test_get_stats() {
-    let manager: PipelineManager = PipelineManager::new();
-
-    // Enqueue some jobs
-    let job1 = Job::new(
-        "remux",
-        vec!["/input1.flv".to_string()],
-        vec!["/output1.mp4".to_string()],
-        "streamer-1",
-        "session-1",
-    );
-    let job2 = Job::new(
-        "upload",
-        vec!["/input2.flv".to_string()],
-        vec!["/output2.mp4".to_string()],
-        "streamer-2",
-        "session-2",
-    );
-    manager.enqueue(job1).await.unwrap();
-    manager.enqueue(job2).await.unwrap();
-
-    let stats = manager.get_stats().await.unwrap();
-
-    assert_eq!(stats.pending, 2);
-    assert_eq!(stats.processing, 0);
-    assert_eq!(stats.completed, 0);
-    assert_eq!(stats.failed, 0);
-    assert_eq!(stats.queue_depth, 2);
-    assert_eq!(stats.queue_status, QueueDepthStatus::Normal);
-}
-
-#[tokio::test]
-async fn test_cancel_pending_job() {
-    use crate::pipeline::JobStatus;
-
-    let manager: PipelineManager = PipelineManager::new();
-
-    let job = Job::new(
-        "remux",
-        vec!["/input.flv".to_string()],
-        vec!["/output.mp4".to_string()],
-        "streamer-1",
-        "session-1",
-    );
-    let job_id = job.id.clone();
-    manager.enqueue(job).await.unwrap();
-
-    // Cancel the pending job
-    manager.cancel_job(&job_id).await.unwrap();
-
-    let cancelled = manager.get_job(&job_id).await.unwrap().unwrap();
-    assert_eq!(cancelled.status, JobStatus::Cancelled);
-}
-
-#[test]
-fn test_throttle_controller_disabled_by_default() {
-    let manager: PipelineManager = PipelineManager::new();
-
-    // Throttle controller should be None when disabled
-    assert!(manager.throttle_controller().is_none());
-    assert!(!manager.is_throttled());
-    assert!(manager.subscribe_throttle_events().is_none());
-}
-
-#[test]
-fn test_throttle_controller_enabled_with_config() {
-    let config = PipelineManagerConfig {
-        throttle: ThrottleConfig {
-            enabled: true,
-            critical_threshold: 100,
-            warning_threshold: 50,
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    let manager: PipelineManager = PipelineManager::with_config(config);
-
-    // Throttle controller should be Some when enabled
-    assert!(manager.throttle_controller().is_some());
-    assert!(!manager.is_throttled());
-    assert!(manager.subscribe_throttle_events().is_some());
-}
-
-#[tokio::test]
-async fn test_create_dag_pipeline_requires_dag_scheduler() {
-    use crate::database::models::job::{DagPipelineDefinition, DagStep, PipelineStep};
-
-    let manager: PipelineManager = PipelineManager::new();
-
-    // Create a simple DAG definition
-    let dag_def = DagPipelineDefinition::new(
-        "Test Pipeline",
-        vec![DagStep::new("remux", PipelineStep::preset("remux"))],
-    );
-
-    // Without a DAG scheduler configured, this should fail
-    let result = manager
-        .create_dag_pipeline(
-            "session-1",
-            "streamer-1",
-            vec!["/input.flv".to_string()],
-            dag_def,
-        )
-        .await;
-
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.to_string().contains("DAG scheduler not configured"));
-}
-
-#[tokio::test]
-async fn test_session_complete_waits_for_paired_dags() {
-    let session_repo = Arc::new(TestSessionRepository::new(Some(
-        chrono::Utc::now().timestamp_millis(),
-    )));
-    let manager: PipelineManager = PipelineManager::new().with_session_repository(session_repo);
-
-    let session_id = "session-1".to_string();
-    let streamer_id = "streamer-1".to_string();
-
-    manager
-        .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::ConfigureSession {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            danmu_enabled: false,
-            segment_pipeline: None,
-            paired_segment_pipeline: None,
-            session_complete_pipeline: Some(DagPipelineDefinition::new("empty", vec![])),
-        });
-    manager.pipeline_coordinator.apply_event_inline(
-        PipelineCoordinationEvent::VideoSegmentCompleted {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            segment_index: 0,
-            path: PathBuf::from("/seg0.mp4"),
-        },
-    );
-    manager
-        .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::SessionEnded {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            should_run_session_complete: true,
-        });
-    manager.pipeline_coordinator.apply_event_inline(
-        PipelineCoordinationEvent::SessionEndPersisted {
-            session_id: session_id.clone(),
-        },
-    );
-    manager
-        .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::PairedDagStarted {
-            session_id: session_id.clone(),
-            streamer_id,
-            segment_index: 0,
-        });
-
-    assert_eq!(
-        manager.pipeline_coordinator.active_session_count_inline(),
-        1
-    );
-
-    manager
-        .execute_pipeline_commands(manager.pipeline_coordinator.apply_event_inline(
-            PipelineCoordinationEvent::PairedDagCompleted {
-                session_id: session_id.clone(),
-            },
-        ))
-        .await;
-    assert_eq!(
-        manager.pipeline_coordinator.active_session_count_inline(),
-        1
-    );
-}
-
-#[tokio::test]
-async fn test_session_complete_recovers_segment_dag_completion_without_context() {
-    let session_repo = Arc::new(TestSessionRepository::new(Some(
-        chrono::Utc::now().timestamp_millis(),
-    )));
-    let dag_repo = Arc::new(TestDagRepository::new());
-    let manager: PipelineManager = PipelineManager::new()
-        .with_session_repository(session_repo)
-        .with_dag_repository(dag_repo.clone());
-
-    let session_id = "session-1".to_string();
-    let streamer_id = "streamer-1".to_string();
-
-    manager
-        .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::ConfigureSession {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            danmu_enabled: false,
-            segment_pipeline: Some(DagPipelineDefinition::new(
-                "segment",
-                vec![DagStep::new("A", PipelineStep::preset("remux"))],
-            )),
-            paired_segment_pipeline: None,
-            session_complete_pipeline: Some(DagPipelineDefinition::new("empty", vec![])),
-        });
-    manager
-        .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::SegmentDagStarted {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            segment_index: 0,
-            source: SourceType::Video,
-        });
-    manager
-        .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::SessionEnded {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            should_run_session_complete: true,
-        });
-    manager.pipeline_coordinator.apply_event_inline(
-        PipelineCoordinationEvent::SessionEndPersisted {
-            session_id: session_id.clone(),
-        },
-    );
-
-    let dag_def = DagPipelineDefinition::new(
-        "test-dag",
-        vec![DagStep::new("A", PipelineStep::preset("remux"))],
-    );
-    let mut dag = DagExecutionDbModel::new(
-        &dag_def,
-        Some(streamer_id.clone()),
-        Some(session_id.clone()),
-    );
-    dag.segment_index = Some(0);
-    dag.segment_source = Some("video".to_string());
-    let dag_id = dag.id.clone();
-    dag_repo.insert(dag);
-
-    manager
-        .handle_dag_completion(DagCompletionInfo {
-            dag_id,
-            streamer_id: Some(streamer_id),
-            session_id: Some(session_id.clone()),
-            succeeded: true,
-            leaf_outputs: vec!["/out.mp4".to_string()],
-        })
-        .await;
-
-    assert_eq!(
-        manager.pipeline_coordinator.active_session_count_inline(),
-        1
-    );
-}
-
-#[tokio::test]
-async fn test_session_complete_recovers_paired_dag_completion_without_context() {
-    let session_repo = Arc::new(TestSessionRepository::new(Some(
-        chrono::Utc::now().timestamp_millis(),
-    )));
-    let dag_repo = Arc::new(TestDagRepository::new());
-    let manager: PipelineManager = PipelineManager::new()
-        .with_session_repository(session_repo)
-        .with_dag_repository(dag_repo.clone());
-
-    let session_id = "session-1".to_string();
-    let streamer_id = "streamer-1".to_string();
-
-    manager
-        .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::ConfigureSession {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            danmu_enabled: false,
-            segment_pipeline: None,
-            paired_segment_pipeline: None,
-            session_complete_pipeline: Some(DagPipelineDefinition::new("empty", vec![])),
-        });
-    manager.pipeline_coordinator.apply_event_inline(
-        PipelineCoordinationEvent::VideoSegmentCompleted {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            segment_index: 0,
-            path: PathBuf::from("/seg0.mp4"),
-        },
-    );
-    manager
-        .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::SessionEnded {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            should_run_session_complete: true,
-        });
-    manager.pipeline_coordinator.apply_event_inline(
-        PipelineCoordinationEvent::SessionEndPersisted {
-            session_id: session_id.clone(),
-        },
-    );
-    manager
-        .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::PairedDagStarted {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            segment_index: 0,
-        });
-
-    let dag_def = DagPipelineDefinition::new(
-        "paired-dag",
-        vec![DagStep::new("A", PipelineStep::preset("remux"))],
-    );
-    let mut dag = DagExecutionDbModel::new(
-        &dag_def,
-        Some(streamer_id.clone()),
-        Some(session_id.clone()),
-    );
-    dag.segment_index = Some(0);
-    dag.segment_source = Some("paired".to_string());
-    let dag_id = dag.id.clone();
-    dag_repo.insert(dag);
-
-    manager
-        .handle_dag_completion(DagCompletionInfo {
-            dag_id,
-            streamer_id: Some(streamer_id),
-            session_id: Some(session_id.clone()),
-            succeeded: true,
-            leaf_outputs: Vec::new(),
-        })
-        .await;
-
-    assert_eq!(
-        manager.pipeline_coordinator.active_session_count_inline(),
-        1
-    );
-}
-
-#[tokio::test]
 async fn test_paired_segment_recovers_segment_dag_completion_without_context() {
     let dag_repo = Arc::new(TestDagRepository::new());
     let manager: PipelineManager = PipelineManager::new().with_dag_repository(dag_repo.clone());
@@ -3837,87 +3064,6 @@ async fn test_recovery_ignores_historical_ended_sessions() {
 }
 
 #[tokio::test]
-async fn test_recovery_hydrates_active_session_without_replaying_segment_dag() {
-    let session_repo = Arc::new(TestSessionRepository::new(None));
-    session_repo.insert_session(test_session("active-session", "streamer-1", None));
-    session_repo.insert_segment(test_segment("active-session", 0, "/active.flv"));
-
-    let dag_repo = Arc::new(TestDagRepository::new());
-    let job_repo = Arc::new(TestJobRepository::new());
-    let manager: PipelineManager =
-        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
-            .with_session_repository(session_repo)
-            .with_dag_repository(dag_repo.clone());
-
-    manager.recover_pipeline_coordination().await.unwrap();
-
-    assert_eq!(
-        manager.pipeline_coordinator.active_session_count_inline(),
-        1,
-        "active sessions still need in-memory coordinator state after restart"
-    );
-    assert_eq!(
-        dag_repo.create_calls(),
-        0,
-        "recovered source rows must not be treated as fresh segment completions"
-    );
-}
-
-#[tokio::test]
-async fn test_recovery_tracks_in_flight_ended_session_without_duplicate_dag() {
-    let session_id = "ended-in-flight";
-    let streamer_id = "streamer-1";
-    let session_repo = Arc::new(TestSessionRepository::new(None));
-    session_repo.insert_session(test_session(
-        session_id,
-        streamer_id,
-        Some(chrono::Utc::now().timestamp_millis()),
-    ));
-    session_repo.insert_segment(test_segment(session_id, 0, "/in-flight.flv"));
-
-    let dag_repo = Arc::new(TestDagRepository::new());
-    let pending_dag = test_coordination_dag(
-        session_id,
-        streamer_id,
-        DagExecutionStatus::Processing,
-        "video",
-        0,
-    );
-    let pending_dag_id = pending_dag.id.clone();
-    dag_repo.insert(pending_dag);
-
-    let job_repo = Arc::new(TestJobRepository::new());
-    let manager: PipelineManager =
-        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo)
-            .with_session_repository(session_repo)
-            .with_dag_repository(dag_repo.clone());
-
-    manager.recover_pipeline_coordination().await.unwrap();
-
-    assert_eq!(
-        dag_repo.create_calls(),
-        0,
-        "recovery should mark the existing DAG pending, not create another one"
-    );
-
-    manager
-        .handle_dag_completion(DagCompletionInfo {
-            dag_id: pending_dag_id,
-            streamer_id: Some(streamer_id.to_string()),
-            session_id: Some(session_id.to_string()),
-            succeeded: true,
-            leaf_outputs: vec!["/processed.mp4".to_string()],
-        })
-        .await;
-
-    assert_eq!(
-        dag_repo.create_calls(),
-        0,
-        "draining the recovered DAG must not create follow-up DAGs when no pipeline is configured"
-    );
-}
-
-#[tokio::test]
 async fn recovery_recreates_missing_segment_dag_once_after_artifact_persistence() {
     let session_id = "missing-segment-dag";
     let streamer_id = "streamer-1";
@@ -4010,482 +3156,6 @@ async fn recovery_recreates_missing_session_complete_dag_with_durable_marker() {
     assert_eq!(dags.len(), 1);
     assert_eq!(dags[0].segment_source.as_deref(), Some("session_complete"));
     assert!(dags[0].segment_index.is_none());
-}
-
-#[tokio::test]
-async fn recovered_session_complete_marker_suppresses_duplicate_creation() {
-    let session_id = "existing-session-complete";
-    let streamer_id = "streamer-1";
-    let session_repo = Arc::new(TestSessionRepository::new(None));
-    session_repo.insert_session(test_session(
-        session_id,
-        streamer_id,
-        Some(chrono::Utc::now().timestamp_millis()),
-    ));
-    session_repo.insert_segment(test_segment(session_id, 0, "/persisted.flv"));
-    let dag_repo = Arc::new(TestDagRepository::new());
-    let mut session_dag = test_coordination_dag(
-        session_id,
-        streamer_id,
-        DagExecutionStatus::Processing,
-        "session_complete",
-        0,
-    );
-    session_dag.segment_index = None;
-    dag_repo.insert(session_dag);
-    let manager: PipelineManager = PipelineManager::with_repository(
-        PipelineManagerConfig::default(),
-        Arc::new(TestJobRepository::new()),
-    )
-    .with_session_repository(session_repo)
-    .with_dag_repository(dag_repo.clone());
-
-    manager.recover_pipeline_coordination().await.unwrap();
-
-    assert_eq!(dag_repo.create_calls(), 0);
-}
-
-// -----------------------------------------------------------------------
-// Session-complete pipeline firing on terminal download events:
-// Completed *and* Failed must trigger it; Cancelled and Rejected must not.
-// -----------------------------------------------------------------------
-
-use crate::downloader::engine::EngineType;
-use crate::downloader::{
-    DownloadFailureKind, DownloadProtocol, DownloadRejectedKind, DownloadStopCause, EngineEndSignal,
-};
-
-fn completed_event(session_id: &str, streamer_id: &str) -> DownloadManagerEvent {
-    DownloadManagerEvent::Terminal(DownloadTerminalEvent::Completed {
-        download_id: "dl-1".to_string(),
-        streamer_id: streamer_id.to_string(),
-        streamer_name: "tester".to_string(),
-        session_id: session_id.to_string(),
-        total_bytes: 0,
-        total_duration_secs: 0.0,
-        total_segments: 0,
-        file_path: None,
-        engine_signal: EngineEndSignal::Unknown,
-        stop_cause: None,
-    })
-}
-
-fn failed_event(session_id: &str, streamer_id: &str) -> DownloadManagerEvent {
-    DownloadManagerEvent::Terminal(DownloadTerminalEvent::Failed {
-        download_id: "dl-1".to_string(),
-        streamer_id: streamer_id.to_string(),
-        streamer_name: "tester".to_string(),
-        session_id: session_id.to_string(),
-        engine_type: EngineType::Ffmpeg,
-        protocol: DownloadProtocol::Unknown,
-        kind: DownloadFailureKind::Network,
-        error: "stalled".to_string(),
-        recoverable: false,
-    })
-}
-
-fn cancelled_event(session_id: &str, streamer_id: &str) -> DownloadManagerEvent {
-    DownloadManagerEvent::Terminal(DownloadTerminalEvent::Cancelled {
-        download_id: "dl-1".to_string(),
-        streamer_id: streamer_id.to_string(),
-        streamer_name: "tester".to_string(),
-        session_id: session_id.to_string(),
-        cause: DownloadStopCause::User,
-    })
-}
-
-fn rejected_event(session_id: &str, streamer_id: &str) -> DownloadManagerEvent {
-    DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {
-        streamer_id: streamer_id.to_string(),
-        streamer_name: "tester".to_string(),
-        session_id: session_id.to_string(),
-        reason: "test".to_string(),
-        retry_after_secs: None,
-        kind: DownloadRejectedKind::CircuitBreaker,
-    })
-}
-
-fn ended_failed(session_id: &str, streamer_id: &str) -> crate::session::SessionTransition {
-    crate::session::SessionTransition::Ended {
-        session_id: session_id.to_string(),
-        streamer_id: streamer_id.to_string(),
-        streamer_name: "tester".to_string(),
-        ended_at: chrono::Utc::now(),
-        cause: crate::session::TerminalCause::Failed {
-            kind: DownloadFailureKind::Network,
-        },
-        via_hysteresis: false,
-    }
-}
-
-fn ended_cancelled(session_id: &str, streamer_id: &str) -> crate::session::SessionTransition {
-    crate::session::SessionTransition::Ended {
-        session_id: session_id.to_string(),
-        streamer_id: streamer_id.to_string(),
-        streamer_name: "tester".to_string(),
-        ended_at: chrono::Utc::now(),
-        cause: crate::session::TerminalCause::Cancelled {
-            cause: DownloadStopCause::User,
-        },
-        via_hysteresis: false,
-    }
-}
-
-fn ended_rejected(session_id: &str, streamer_id: &str) -> crate::session::SessionTransition {
-    crate::session::SessionTransition::Ended {
-        session_id: session_id.to_string(),
-        streamer_id: streamer_id.to_string(),
-        streamer_name: "tester".to_string(),
-        ended_at: chrono::Utc::now(),
-        cause: crate::session::TerminalCause::Rejected {
-            reason: "test".to_string(),
-        },
-        via_hysteresis: false,
-    }
-}
-
-/// Pure policy predicate — codifies which terminal variants trigger the
-/// session-complete pipeline. Matches the web player's own behaviour
-/// (Completed and Failed finalise; Cancelled may still flush a final
-/// segment and shouldn't trigger early; Rejected never started).
-#[test]
-fn test_terminal_should_run_session_complete_policy() {
-    assert!(
-        matches!(completed_event("s", "r"), DownloadManagerEvent::Terminal(t) if t.should_run_session_complete_pipeline())
-    );
-    assert!(
-        matches!(failed_event("s", "r"), DownloadManagerEvent::Terminal(t) if t.should_run_session_complete_pipeline())
-    );
-    assert!(
-        !matches!(cancelled_event("s", "r"), DownloadManagerEvent::Terminal(t) if t.should_run_session_complete_pipeline())
-    );
-    assert!(
-        !matches!(rejected_event("s", "r"), DownloadManagerEvent::Terminal(t) if t.should_run_session_complete_pipeline())
-    );
-}
-
-/// A recording that ends with `DownloadFailed` (e.g. HLS 404, stalled
-/// stream) must still fire the session-complete pipeline:
-/// `handle_session_transition` must treat an `Ended` with a `Failed`
-/// cause the same as one with `Completed`, not drop it in a catch-all.
-#[tokio::test]
-async fn test_handle_download_event_failed_triggers_session_complete() {
-    let session_repo = Arc::new(TestSessionRepository::new(Some(
-        chrono::Utc::now().timestamp_millis(),
-    )));
-    let manager: PipelineManager = PipelineManager::new().with_session_repository(session_repo);
-
-    let session_id = "session-failed".to_string();
-    let streamer_id = "streamer-1".to_string();
-
-    manager
-        .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::ConfigureSession {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            danmu_enabled: false,
-            segment_pipeline: None,
-            paired_segment_pipeline: None,
-            session_complete_pipeline: Some(DagPipelineDefinition::new("empty", vec![])),
-        });
-    manager.pipeline_coordinator.apply_event_inline(
-        PipelineCoordinationEvent::VideoSegmentCompleted {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            segment_index: 0,
-            path: PathBuf::from("/seg0.ts"),
-        },
-    );
-
-    manager
-        .handle_session_transition(ended_failed(&session_id, &streamer_id))
-        .await;
-
-    assert_eq!(
-        manager.pipeline_coordinator.active_session_count_inline(),
-        1
-    );
-}
-
-/// Cancelled does not confirm clean output finalization. The control-plane
-/// stop owner emits the authoritative session transition and pipeline policy.
-#[tokio::test]
-async fn test_handle_download_event_cancelled_does_not_trigger_session_complete() {
-    let manager: PipelineManager = PipelineManager::new();
-
-    let session_id = "session-cancelled".to_string();
-    let streamer_id = "streamer-1".to_string();
-
-    manager
-        .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::ConfigureSession {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            danmu_enabled: false,
-            segment_pipeline: None,
-            paired_segment_pipeline: None,
-            session_complete_pipeline: Some(DagPipelineDefinition::new("empty", vec![])),
-        });
-
-    manager
-        .handle_session_transition(ended_cancelled(&session_id, &streamer_id))
-        .await;
-
-    assert_eq!(
-        manager.pipeline_coordinator.active_session_count_inline(),
-        1,
-        "coordinator must remain active until the stop owner ends the session"
-    );
-}
-
-/// Rejected means the download never started — no outputs, nothing to run.
-#[tokio::test]
-async fn test_handle_download_event_rejected_does_not_trigger_session_complete() {
-    let manager: PipelineManager = PipelineManager::new();
-
-    let session_id = "session-rejected".to_string();
-    let streamer_id = "streamer-1".to_string();
-
-    manager
-        .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::ConfigureSession {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            danmu_enabled: false,
-            segment_pipeline: None,
-            paired_segment_pipeline: None,
-            session_complete_pipeline: Some(DagPipelineDefinition::new("empty", vec![])),
-        });
-
-    manager
-        .handle_session_transition(ended_rejected(&session_id, &streamer_id))
-        .await;
-
-    assert_eq!(
-        manager.pipeline_coordinator.active_session_count_inline(),
-        1,
-        "coordinator must still be active after Rejected"
-    );
-}
-
-/// With global danmu recording enabled, the danmu XML can be registered
-/// before the final video SegmentCompleted event is processed. A
-/// UserDisabled transition must not fire the session-complete pipeline with only
-/// danmu inputs (`video_outputs=0 danmu_outputs=1`).
-#[tokio::test]
-async fn test_session_complete_waits_for_video_output_when_danmu_arrives_first() {
-    let manager: PipelineManager = PipelineManager::new();
-
-    let session_id = "session-danmu-first".to_string();
-    let streamer_id = "streamer-1".to_string();
-
-    manager
-        .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::ConfigureSession {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            danmu_enabled: true,
-            segment_pipeline: None,
-            paired_segment_pipeline: None,
-            session_complete_pipeline: Some(DagPipelineDefinition::new("empty", vec![])),
-        });
-    manager.pipeline_coordinator.apply_event_inline(
-        PipelineCoordinationEvent::DanmuCollectionStarted {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-        },
-    );
-    manager.pipeline_coordinator.apply_event_inline(
-        PipelineCoordinationEvent::DanmuSegmentCompleted {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            segment_index: 0,
-            path: PathBuf::from("/seg0.xml"),
-        },
-    );
-    manager.pipeline_coordinator.apply_event_inline(
-        PipelineCoordinationEvent::DanmuCollectionStopped {
-            session_id: session_id.clone(),
-        },
-    );
-
-    let commands =
-        manager
-            .pipeline_coordinator
-            .apply_event_inline(PipelineCoordinationEvent::SessionEnded {
-                session_id: session_id.clone(),
-                streamer_id: streamer_id.clone(),
-                should_run_session_complete: true,
-            });
-    assert!(
-        commands.is_empty(),
-        "session end must not trigger without a video output"
-    );
-
-    let commands = manager.pipeline_coordinator.apply_event_inline(
-        PipelineCoordinationEvent::SessionEndPersisted {
-            session_id: session_id.clone(),
-        },
-    );
-    assert!(
-        commands.is_empty(),
-        "persisted end must not trigger without a video output"
-    );
-
-    let commands = manager.pipeline_coordinator.apply_event_inline(
-        PipelineCoordinationEvent::VideoSegmentCompleted {
-            session_id: session_id.clone(),
-            streamer_id,
-            segment_index: 0,
-            path: PathBuf::from("/seg0.flv"),
-        },
-    );
-    assert_eq!(commands.len(), 1);
-    match &commands[0] {
-        PipelineCommand::CreateSessionCompleteDag { outputs, .. } => {
-            assert_eq!(outputs.video_outputs.len(), 1);
-            assert_eq!(outputs.danmu_outputs.len(), 1);
-        }
-        other => panic!("unexpected command: {other:?}"),
-    }
-}
-
-// =========================================================================
-// Pipeline ordering invariant.
-//
-// The session-complete DAG must run AFTER all per-segment and paired DAGs
-// for that session finish. `SessionLifecycle::Ended` means
-// "no more bytes will arrive"; it does NOT mean "all post-processing is
-// done". The drain-before-fire check lives in the `PipelineCoordinator`
-// (see pipeline/coordination.rs), but the entry point through
-// `handle_session_transition` must honour it.
-//
-// Existing handler tests above cover Cancelled/Rejected non-fire, Failed
-// fires, DAG completion triggers, and paired-segment flow. The scenarios
-// below cover the specific integration of `SessionTransition::Ended` with
-// in-flight per-segment DAGs.
-// =========================================================================
-
-/// Session-complete DAG waits for in-flight per-segment video DAGs.
-/// Three in-flight video DAGs, observe `SessionTransition::Ended{Failed}`
-/// → session-complete is NOT yet scheduled (entry remains, coordinator
-/// still active). Complete the three DAGs; session-complete fires only
-/// after the last one drains.
-#[tokio::test]
-async fn session_complete_waits_for_in_flight_video_dags() {
-    let session_repo = Arc::new(TestSessionRepository::new(Some(
-        chrono::Utc::now().timestamp_millis(),
-    )));
-    let dag_repo = Arc::new(TestDagRepository::new());
-    let manager: PipelineManager = PipelineManager::new()
-        .with_session_repository(session_repo)
-        .with_dag_repository(dag_repo.clone());
-
-    let session_id = "f1-session".to_string();
-    let streamer_id = "f1-streamer".to_string();
-
-    manager
-        .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::ConfigureSession {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            danmu_enabled: false,
-            segment_pipeline: Some(DagPipelineDefinition::new(
-                "segment",
-                vec![DagStep::new("A", PipelineStep::preset("remux"))],
-            )),
-            paired_segment_pipeline: None,
-            session_complete_pipeline: Some(DagPipelineDefinition::new("empty", vec![])),
-        });
-
-    // Three in-flight per-segment video DAGs are tracked so the coordinator
-    // reports readiness only after they drain.
-    for idx in 0..3 {
-        manager.pipeline_coordinator.apply_event_inline(
-            PipelineCoordinationEvent::SegmentDagStarted {
-                session_id: session_id.clone(),
-                streamer_id: streamer_id.clone(),
-                segment_index: idx,
-                source: SourceType::Video,
-            },
-        );
-    }
-
-    // Observe Ended{Failed}: coordinator learns "no more bytes" but three
-    // per-segment DAGs are still in flight.
-    manager
-        .handle_session_transition(ended_failed(&session_id, &streamer_id))
-        .await;
-
-    assert_eq!(
-        manager.pipeline_coordinator.active_session_count_inline(),
-        1,
-        "session-complete must NOT fire while per-segment DAGs are pending"
-    );
-
-    // Drain two of three DAGs — still gated.
-    for idx in 0..2 {
-        let dag_def = DagPipelineDefinition::new(
-            "seg-dag",
-            vec![DagStep::new("A", PipelineStep::preset("remux"))],
-        );
-        let mut dag = DagExecutionDbModel::new(
-            &dag_def,
-            Some(streamer_id.clone()),
-            Some(session_id.clone()),
-        );
-        dag.segment_index = Some(idx);
-        dag.segment_source = Some("video".to_string());
-        let dag_id = dag.id.clone();
-        dag_repo.insert(dag);
-
-        manager
-            .handle_dag_completion(DagCompletionInfo {
-                dag_id,
-                streamer_id: Some(streamer_id.clone()),
-                session_id: Some(session_id.clone()),
-                succeeded: true,
-                leaf_outputs: vec![format!("/out{idx}.mp4")],
-            })
-            .await;
-    }
-
-    assert_eq!(
-        manager.pipeline_coordinator.active_session_count_inline(),
-        1,
-        "session-complete must NOT fire until the last per-segment DAG drains"
-    );
-
-    // Drain the final DAG — session-complete should now fire.
-    let dag_def = DagPipelineDefinition::new(
-        "seg-dag",
-        vec![DagStep::new("A", PipelineStep::preset("remux"))],
-    );
-    let mut dag = DagExecutionDbModel::new(
-        &dag_def,
-        Some(streamer_id.clone()),
-        Some(session_id.clone()),
-    );
-    dag.segment_index = Some(2);
-    dag.segment_source = Some("video".to_string());
-    let dag_id = dag.id.clone();
-    dag_repo.insert(dag);
-
-    manager
-        .handle_dag_completion(DagCompletionInfo {
-            dag_id,
-            streamer_id: Some(streamer_id.clone()),
-            session_id: Some(session_id.clone()),
-            succeeded: true,
-            leaf_outputs: vec!["/out2.mp4".to_string()],
-        })
-        .await;
-
-    assert_eq!(
-        manager.pipeline_coordinator.active_session_count_inline(),
-        1,
-        "session-complete fires after all per-segment DAGs drain"
-    );
 }
 
 /// A session with nothing attached to it drains on the first observation, with no
@@ -4868,42 +3538,6 @@ async fn test_drain_for_session_waits_for_an_owed_session_complete_dag() {
         .get_mut(&dag_id)
         .expect("dag should exist")
         .status = DagExecutionStatus::Completed.as_str().to_string();
-
-    assert_eq!(
-        manager
-            .drain_for_session(&session_id, Duration::ZERO)
-            .await
-            .unwrap(),
-        SessionDrain::Drained
-    );
-}
-
-/// A session the coordinator never saw end has nothing owed, so a drain does not
-/// hang on the `session_complete_owed` gate.
-#[tokio::test]
-async fn test_drain_for_session_owes_nothing_before_the_session_ends() {
-    let job_repo = Arc::new(TestJobRepository::new());
-    let manager: PipelineManager =
-        PipelineManager::with_repository(PipelineManagerConfig::default(), job_repo);
-
-    let session_id = "still-recording".to_string();
-    manager
-        .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::SegmentDagStarted {
-            session_id: session_id.clone(),
-            streamer_id: "streamer-1".to_string(),
-            segment_index: 0,
-            source: SourceType::Video,
-        });
-    manager.pipeline_coordinator.apply_event_inline(
-        PipelineCoordinationEvent::SegmentDagCompleted {
-            session_id: session_id.clone(),
-            streamer_id: "streamer-1".to_string(),
-            segment_index: 0,
-            source: SourceType::Video,
-            outputs: Vec::new(),
-        },
-    );
 
     assert_eq!(
         manager

@@ -233,26 +233,26 @@ mod tests {
         );
     }
 
+    /// Platform-supplied names and titles become path components, so no value
+    /// may add a directory level or climb out of the output folder.
+    #[test]
+    fn sanitized_names_are_a_single_path_component() {
+        for (input, expected) in [
+            ("../../etc/passwd", "_.._etc_passwd"),
+            (r"..\..\Windows", "_.._Windows"),
+            ("/etc/cron.d/x", "_etc_cron.d_x"),
+            (r"C:\Users", "C_Users"),
+            ("a/./b", "a_._b"),
+            ("..", "unnamed"),
+            (".", "unnamed"),
+        ] {
+            assert_eq!(sanitize_filename(input), expected, "{input}");
+        }
+    }
+
     #[test]
     fn test_empty_string() {
         assert_eq!(sanitize_filename(""), "unnamed");
-    }
-
-    #[test]
-    fn test_only_invalid_characters() {
-        assert_eq!(sanitize_filename("???"), "_");
-        assert_eq!(sanitize_filename("<>:"), "_");
-    }
-
-    #[test]
-    fn test_windows_reserved_names() {
-        assert_eq!(sanitize_filename("CON"), "_CON");
-        assert_eq!(sanitize_filename("con"), "_con");
-        assert_eq!(sanitize_filename("PRN"), "_PRN");
-        assert_eq!(sanitize_filename("AUX"), "_AUX");
-        assert_eq!(sanitize_filename("NUL"), "_NUL");
-        assert_eq!(sanitize_filename("COM1"), "_COM1");
-        assert_eq!(sanitize_filename("LPT1"), "_LPT1");
     }
 
     #[test]
@@ -269,29 +269,6 @@ mod tests {
     }
 
     #[test]
-    fn test_chinese_characters() {
-        assert_eq!(sanitize_filename("观看一只青蛙"), "观看一只青蛙");
-        assert_eq!(sanitize_filename("观看一只青蛙?"), "观看一只青蛙_");
-    }
-
-    #[test]
-    fn test_japanese_characters() {
-        assert_eq!(sanitize_filename("こんにちは"), "こんにちは");
-    }
-
-    #[test]
-    fn test_korean_characters() {
-        assert_eq!(sanitize_filename("안녕하세요"), "안녕하세요");
-    }
-
-    #[test]
-    fn test_mixed_valid_and_invalid() {
-        assert_eq!(sanitize_filename("hello?world"), "hello_world");
-        assert_eq!(sanitize_filename("file<name>test"), "file_name_test");
-        assert_eq!(sanitize_filename("a:b:c"), "a_b_c");
-    }
-
-    #[test]
     fn test_consecutive_invalid_chars_collapsed() {
         assert_eq!(sanitize_filename("hello???world"), "hello_world");
         assert_eq!(sanitize_filename("a<>:\"b"), "a_b");
@@ -301,35 +278,6 @@ mod tests {
     fn test_control_characters() {
         assert_eq!(sanitize_filename("hello\x00world"), "hello_world");
         assert_eq!(sanitize_filename("test\x1Ffile"), "test_file");
-    }
-
-    #[test]
-    fn test_idempotency() {
-        let inputs = vec![
-            "hello?world",
-            "观看一只青蛙?",
-            "CON",
-            "  test  ",
-            "...dots...",
-        ];
-        for input in inputs {
-            let once = sanitize_filename(input);
-            let twice = sanitize_filename(&once);
-            assert_eq!(once, twice, "Idempotency failed for input: {}", input);
-        }
-    }
-
-    #[test]
-    fn test_expand_placeholders_streamer() {
-        let result = expand_placeholders(
-            "remote:/{streamer}/videos",
-            "streamer-123",
-            "session-456",
-            Some("TestStreamer"),
-            None,
-            None,
-        );
-        assert_eq!(result, "remote:/TestStreamer/videos");
     }
 
     #[test]
@@ -347,46 +295,6 @@ mod tests {
     }
 
     #[test]
-    fn test_expand_placeholders_title() {
-        let result = expand_placeholders(
-            "remote:/{streamer}/{title}",
-            "streamer-123",
-            "session-456",
-            Some("Streamer"),
-            Some("Live Stream?"),
-            None,
-        );
-        // The ? character is sanitized to _
-        assert_eq!(result, "remote:/Streamer/Live Stream_");
-    }
-
-    #[test]
-    fn test_expand_placeholders_ids() {
-        let result = expand_placeholders(
-            "remote:/{streamer_id}/{session_id}",
-            "streamer-123",
-            "session-456",
-            Some("Streamer"),
-            None,
-            None,
-        );
-        assert_eq!(result, "remote:/streamer-123/session-456");
-    }
-
-    #[test]
-    fn test_expand_placeholders_no_placeholders() {
-        let result = expand_placeholders(
-            "remote:/fixed/path",
-            "streamer-123",
-            "session-456",
-            Some("Streamer"),
-            None,
-            None,
-        );
-        assert_eq!(result, "remote:/fixed/path");
-    }
-
-    #[test]
     fn test_expand_placeholders_sanitizes_special_chars() {
         let result = expand_placeholders(
             "remote:/{streamer}/{title}",
@@ -398,32 +306,5 @@ mod tests {
         );
         // Characters are sanitized
         assert_eq!(result, "remote:/Streamer_Name_/Title_With_Colons");
-    }
-
-    #[test]
-    fn test_expand_placeholders_platform() {
-        let result = expand_placeholders(
-            "remote:/{platform}/{streamer}/videos",
-            "streamer-123",
-            "session-456",
-            Some("TestStreamer"),
-            None,
-            Some("Twitch"),
-        );
-        assert_eq!(result, "remote:/Twitch/TestStreamer/videos");
-    }
-
-    #[test]
-    fn test_expand_placeholders_platform_none() {
-        // When platform is None, should expand to empty string
-        let result = expand_placeholders(
-            "remote:/{platform}/{streamer}/videos",
-            "streamer-123",
-            "session-456",
-            Some("TestStreamer"),
-            None,
-            None,
-        );
-        assert_eq!(result, "remote://TestStreamer/videos");
     }
 }

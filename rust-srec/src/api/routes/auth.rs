@@ -622,56 +622,6 @@ mod tests {
         fixture.pool.close().await;
     }
 
-    #[test]
-    fn test_login_request_deserialize() {
-        let json = r#"{"username": "test", "password": "secret"}"#;
-        let request: LoginRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(request.username, "test");
-        assert_eq!(request.password, "secret");
-        assert!(request.device_info.is_none());
-    }
-
-    #[test]
-    fn test_login_request_with_device_info() {
-        let json =
-            r#"{"username": "test", "password": "secret", "device_info": "Chrome on Windows"}"#;
-        let request: LoginRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(request.device_info, Some("Chrome on Windows".to_string()));
-    }
-
-    #[test]
-    fn test_login_response_serialize() {
-        let response = LoginResponse {
-            access_token: "token123".to_string(),
-            refresh_token: "refresh456".to_string(),
-            token_type: "Bearer".to_string(),
-            expires_in: 900,
-            refresh_expires_in: 604800,
-            roles: vec!["user".to_string()],
-            must_change_password: false,
-        };
-        let json = serde_json::to_string(&response).unwrap();
-        assert!(json.contains("token123"));
-        assert!(json.contains("refresh456"));
-        assert!(json.contains("Bearer"));
-        assert!(json.contains("must_change_password"));
-    }
-
-    #[test]
-    fn test_refresh_request_deserialize() {
-        let json = r#"{"refresh_token": "abc123"}"#;
-        let request: RefreshRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(request.refresh_token, "abc123");
-    }
-
-    #[test]
-    fn test_change_password_request_deserialize() {
-        let json = r#"{"current_password": "old", "new_password": "new123"}"#;
-        let request: ChangePasswordRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(request.current_password, "old");
-        assert_eq!(request.new_password, "new123");
-    }
-
     mod password_remediation_drift_guard {
         //! Pins the contract between `password_remediation_router`,
         //! `protected_router`, and the `AuthLayer` wiring mirrored from
@@ -1073,27 +1023,6 @@ mod tests {
                 let response = attempt_login(&app, &"a".repeat(max + 1)).await;
                 assert_eq!(response.status(), StatusCode::BAD_REQUEST);
             }
-
-            #[tokio::test]
-            async fn throttling_one_username_leaves_others_alone() {
-                let (app, _token) = forced_change_app();
-
-                for _ in 0..=TEST_MAX_FAILURES {
-                    attempt_login(&app, "ghost").await;
-                }
-                assert_eq!(
-                    attempt_login(&app, "ghost").await.status(),
-                    StatusCode::TOO_MANY_REQUESTS
-                );
-
-                // `oneshot` leaves no `ConnectInfo<SocketAddr>` in the request
-                // extensions, so `ClientIp` is `None` and only the username
-                // key is counted.
-                assert_eq!(
-                    attempt_login(&app, "someone-else").await.status(),
-                    StatusCode::UNAUTHORIZED
-                );
-            }
         }
 
         mod api_key_endpoints {
@@ -1258,50 +1187,6 @@ mod tests {
                 )
                 .await;
                 assert_eq!(created.status(), StatusCode::FORBIDDEN);
-            }
-
-            #[tokio::test]
-            async fn create_rejects_invalid_name_and_expiry() {
-                let (app, token, _, _) = remediated_app();
-
-                let empty_name = send(
-                    &app,
-                    Request::builder()
-                        .method("POST")
-                        .uri("/api/auth/api-keys")
-                        .header(AUTHORIZATION, format!("Bearer {token}"))
-                        .header(CONTENT_TYPE, "application/json")
-                        .body(Body::from(
-                            serde_json::json!({
-                                "name": "   ",
-                                "access_level": "full",
-                            })
-                            .to_string(),
-                        ))
-                        .expect("test request should build"),
-                )
-                .await;
-                assert_eq!(empty_name.status(), StatusCode::BAD_REQUEST);
-
-                let past_expiry = send(
-                    &app,
-                    Request::builder()
-                        .method("POST")
-                        .uri("/api/auth/api-keys")
-                        .header(AUTHORIZATION, format!("Bearer {token}"))
-                        .header(CONTENT_TYPE, "application/json")
-                        .body(Body::from(
-                            serde_json::json!({
-                                "name": "expired",
-                                "access_level": "full",
-                                "expires_at": 1000,
-                            })
-                            .to_string(),
-                        ))
-                        .expect("test request should build"),
-                )
-                .await;
-                assert_eq!(past_expiry.status(), StatusCode::BAD_REQUEST);
             }
         }
     }

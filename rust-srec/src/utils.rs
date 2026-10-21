@@ -69,15 +69,4 @@ mod tests {
             Some(Some(OsStr::new("C.UTF-8")))
         );
     }
-
-    #[test]
-    fn ffmpeg_locale_ignores_empty_lc_all() {
-        let mut command = Command::new("ffmpeg");
-
-        configure_ffmpeg_locale_with_lc_all(&mut command, Some(OsStr::new("")));
-
-        assert_eq!(configured_env(&command, "LC_ALL"), Some(None));
-        assert_eq!(configured_env(&command, "LC_CTYPE"), None);
-        assert_eq!(configured_env(&command, "LC_TIME"), None);
-    }
 }

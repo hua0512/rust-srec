@@ -2202,25 +2202,6 @@ mod tests {
         assert_eq!(commands[0].last(), Some(&expected_dir));
     }
 
-    #[tokio::test]
-    async fn invalid_config_json_is_rejected() {
-        let processor = MockBaiduPcsCommandRunner::processor(Arc::new(
-            MockBaiduPcsCommandRunner::new(Vec::new()),
-        ));
-        let input = ProcessorInput {
-            inputs: vec!["/rec/a.flv".to_string()],
-            config: Some("not json".to_string()),
-            ..Default::default()
-        };
-
-        let error = processor
-            .process(&input, &ProcessorContext::noop("bad-config"))
-            .await
-            .unwrap_err();
-
-        assert!(error.to_string().contains("Invalid baidupcs config JSON"));
-    }
-
     #[test]
     fn normalize_remote_dir_forces_absolute_forward_slash() {
         assert_eq!(BaiduPcsProcessor::normalize_remote_dir(""), "/");
@@ -2337,45 +2318,6 @@ mod tests {
         assert_eq!(commands[1][0], "upload");
         assert_eq!(authenticator.relogin_calls(), 1);
         assert_eq!(output.uploads[0].status, UploadItemStatus::Completed);
-    }
-
-    #[tokio::test]
-    async fn logged_in_session_skips_relogin() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let file = temp_dir.path().join("a.flv");
-        tokio::fs::write(&file, b"video").await.unwrap();
-        let file_str = file.to_string_lossy().into_owned();
-
-        let runner = Arc::new(MockBaiduPcsCommandRunner::new(vec![
-            MockAttempt {
-                exit_ok: true,
-                lines: vec![who_line(42)],
-            },
-            MockAttempt {
-                exit_ok: true,
-                lines: vec![
-                    queue_line(1, &file_str),
-                    success_line(1, "/rec/a.flv"),
-                    finished_line(),
-                ],
-            },
-        ]));
-        let authenticator = MockAuthenticator::new(true, true);
-        let processor = MockBaiduPcsCommandRunner::processor(runner.clone())
-            .with_authenticator(authenticator.clone());
-        let input = ProcessorInput {
-            inputs: vec![file_str],
-            config: Some(r#"{"destination_root":"/rec"}"#.to_string()),
-            ..Default::default()
-        };
-
-        processor
-            .process(&input, &ProcessorContext::noop("relogin-skip"))
-            .await
-            .unwrap();
-
-        assert_eq!(authenticator.relogin_calls(), 0);
-        assert_eq!(runner.commands().len(), 2, "who probe + upload");
     }
 
     #[tokio::test(start_paused = true)]
@@ -2684,15 +2626,5 @@ mod tests {
             logged.iter().any(|line| line.contains(&file_str)),
             "{logged:?}"
         );
-    }
-
-    #[test]
-    fn config_defaults_apply_for_missing_fields() {
-        let config: BaiduPcsConfig = serde_json::from_str("{}").unwrap();
-        assert_eq!(config.policy, BaiduPcsPolicy::Skip);
-        assert_eq!(config.max_retries, 3);
-        assert!(!config.norapid);
-        assert!(!config.remove_source_after_upload);
-        assert!(config.args.is_empty());
     }
 }

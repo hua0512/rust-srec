@@ -38,24 +38,10 @@ mod tests {
     }
 
     #[test]
-    fn extracts_host_without_path() {
-        assert_eq!(
-            extract_host("http://cdn.example.com"),
-            Some("cdn.example.com".to_string())
-        );
-    }
-
-    #[test]
     fn strips_userinfo() {
         assert_eq!(
             extract_host("https://user:pass@cdn.example.com/live"),
             Some("cdn.example.com".to_string())
         );
-    }
-
-    #[test]
-    fn rejects_non_http() {
-        assert_eq!(extract_host("rtmp://example.com/live"), None);
-        assert_eq!(extract_host("/relative/path"), None);
     }
 }

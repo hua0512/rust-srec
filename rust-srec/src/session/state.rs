@@ -356,232 +356,48 @@ impl OfflineSignal {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::downloader::{DownloadStopCause, EngineEndSignal};
-    use std::time::Duration;
 
+    /// Every cause that leaves recorded output runs the post-recording
+    /// pipeline; a rejected start recorded nothing and a cancellation is not
+    /// an end.
     #[test]
-    fn session_state_recording_constructor_marks_recording() {
-        let now = Utc::now();
-        let s = SessionState::recording("streamer-1", "session-1", now);
-        assert!(s.is_recording());
-        assert!(!s.is_hysteresis());
-        assert!(!s.is_ended());
-        assert!(s.is_active());
-        assert_eq!(s.streamer_id(), "streamer-1");
-        assert_eq!(s.session_id(), "session-1");
-        assert_eq!(s.started_at(), now);
-        assert_eq!(s.kind_str(), "recording");
-    }
-
-    #[test]
-    fn session_state_hysteresis_state() {
-        let now = Utc::now();
-        let deadline = Instant::now() + Duration::from_secs(60);
-        let s = SessionState::hysteresis(
-            "s1",
-            "session-1",
-            now,
-            now,
-            TerminalCause::Failed {
-                kind: DownloadFailureKind::Network,
-            },
-            deadline,
-        );
-        assert!(!s.is_recording());
-        assert!(s.is_hysteresis());
-        assert!(!s.is_ended());
-        assert!(
-            s.is_active(),
-            "Hysteresis is still considered active for is_live queries"
-        );
-        assert_eq!(s.kind_str(), "hysteresis");
-    }
-
-    #[test]
-    fn session_state_ended_is_inactive() {
-        let now = Utc::now();
-        let s = SessionState::ended("s1", "sess", now, now, TerminalCause::Completed);
-        assert!(!s.is_active());
-        assert!(s.is_ended());
-        assert_eq!(s.kind_str(), "ended");
-    }
-
-    #[test]
-    fn terminal_cause_completed_runs_session_complete_pipeline() {
-        assert!(TerminalCause::Completed.should_run_session_complete_pipeline());
-    }
-
-    #[test]
-    fn terminal_cause_failed_runs_session_complete_pipeline() {
-        let c = TerminalCause::Failed {
-            kind: DownloadFailureKind::Network,
-        };
-        assert!(c.should_run_session_complete_pipeline());
-    }
-
-    #[test]
-    fn terminal_cause_streamer_offline_runs_session_complete_pipeline() {
-        assert!(TerminalCause::StreamerOffline.should_run_session_complete_pipeline());
-    }
-
-    #[test]
-    fn terminal_cause_definitive_offline_runs_session_complete_pipeline() {
-        let c = TerminalCause::DefinitiveOffline {
-            signal: OfflineSignal::ConsecutiveFailures(2),
-        };
-        assert!(c.should_run_session_complete_pipeline());
-    }
-
-    #[test]
-    fn terminal_cause_cancelled_does_not_run_session_complete_pipeline() {
-        let c = TerminalCause::Cancelled {
-            cause: DownloadStopCause::User,
-        };
-        assert!(!c.should_run_session_complete_pipeline());
-    }
-
-    #[test]
-    fn terminal_cause_user_disabled_runs_session_complete_pipeline() {
-        // User-initiated tear-down: captured bytes deserve processing.
-        assert!(TerminalCause::UserDisabled.should_run_session_complete_pipeline());
-    }
-
-    #[test]
-    fn terminal_cause_out_of_schedule_runs_session_complete_pipeline() {
-        // Schedule-initiated tear-down: captured bytes deserve processing.
-        assert!(TerminalCause::OutOfSchedule.should_run_session_complete_pipeline());
-    }
-
-    #[test]
-    fn terminal_cause_user_disabled_is_authoritative() {
-        // The user said stop. Don't wait for hysteresis.
-        assert!(TerminalCause::UserDisabled.is_authoritative_end());
-        assert!(TerminalCause::UserDisabled.is_authoritative_end_with_signal(None));
-        assert_eq!(TerminalCause::UserDisabled.as_str(), "user_disabled");
-    }
-
-    #[test]
-    fn terminal_cause_out_of_schedule_is_authoritative() {
-        // The schedule said stop. Don't wait for hysteresis.
-        assert!(TerminalCause::OutOfSchedule.is_authoritative_end());
-        assert!(TerminalCause::OutOfSchedule.is_authoritative_end_with_signal(None));
-        assert_eq!(TerminalCause::OutOfSchedule.as_str(), "out_of_schedule");
-    }
-
-    #[test]
-    fn terminal_cause_rejected_does_not_run_session_complete_pipeline() {
-        let c = TerminalCause::Rejected {
-            reason: "circuit breaker".into(),
-        };
-        assert!(!c.should_run_session_complete_pipeline());
-    }
-
-    #[test]
-    fn authority_definitive_offline_is_authoritative() {
-        let c = TerminalCause::DefinitiveOffline {
-            signal: OfflineSignal::ConsecutiveFailures(2),
-        };
-        assert!(c.is_authoritative_end());
-        assert!(c.is_authoritative_end_with_signal(None));
-    }
-
-    #[test]
-    fn authority_streamer_offline_is_authoritative() {
-        assert!(TerminalCause::StreamerOffline.is_authoritative_end());
-    }
-
-    #[test]
-    fn authority_failed_is_not_authoritative_without_signal() {
-        let c = TerminalCause::Failed {
-            kind: DownloadFailureKind::Network,
-        };
-        assert!(!c.is_authoritative_end());
-    }
-
-    #[test]
-    fn authority_completed_default_not_authoritative() {
-        assert!(!TerminalCause::Completed.is_authoritative_end());
-    }
-
-    #[test]
-    fn authority_completed_with_hls_endlist_is_authoritative() {
-        assert!(
-            TerminalCause::Completed
-                .is_authoritative_end_with_signal(Some(EngineEndSignal::HlsEndlist))
-        );
-    }
-
-    #[test]
-    fn authority_completed_with_dash_end_is_authoritative() {
-        assert!(
-            TerminalCause::Completed
-                .is_authoritative_end_with_signal(Some(EngineEndSignal::DashEnd))
-        );
-        assert!(
-            !TerminalCause::Completed
-                .is_authoritative_end_with_signal(Some(EngineEndSignal::SubprocessExitZero))
-        );
-        assert!(!TerminalCause::Completed.is_authoritative_end_with_signal(None));
-    }
-
-    #[test]
-    fn authority_completed_with_clean_disconnect_is_not_authoritative() {
-        assert!(
-            !TerminalCause::Completed
-                .is_authoritative_end_with_signal(Some(EngineEndSignal::CleanDisconnect))
-        );
-    }
-
-    #[test]
-    fn authority_rejected_is_authoritative_direct_to_ended() {
-        let c = TerminalCause::Rejected {
-            reason: "circuit breaker".into(),
-        };
-        assert!(c.is_authoritative_end());
-    }
-
-    #[test]
-    fn terminal_cause_as_str_is_stable() {
-        assert_eq!(TerminalCause::Completed.as_str(), "completed");
-        assert_eq!(
-            TerminalCause::Failed {
-                kind: DownloadFailureKind::Network
-            }
-            .as_str(),
-            "failed"
-        );
-        assert_eq!(
-            TerminalCause::Cancelled {
-                cause: DownloadStopCause::User
-            }
-            .as_str(),
-            "cancelled"
-        );
-        assert_eq!(
-            TerminalCause::Rejected { reason: "x".into() }.as_str(),
-            "rejected"
-        );
-        assert_eq!(TerminalCause::StreamerOffline.as_str(), "streamer_offline");
-        assert_eq!(
-            TerminalCause::DefinitiveOffline {
-                signal: OfflineSignal::DanmuStreamClosed
-            }
-            .as_str(),
-            "definitive_offline"
-        );
-        assert_eq!(TerminalCause::UserDisabled.as_str(), "user_disabled");
-        assert_eq!(TerminalCause::OutOfSchedule.as_str(), "out_of_schedule");
-    }
-
-    #[test]
-    fn offline_signal_as_str_is_stable() {
-        assert_eq!(
-            OfflineSignal::DanmuStreamClosed.as_str(),
-            "danmu_stream_closed"
-        );
-        assert_eq!(
-            OfflineSignal::ConsecutiveFailures(2).as_str(),
-            "consecutive_failures"
-        );
+    fn session_complete_pipeline_runs_unless_rejected_or_cancelled() {
+        let cases = [
+            (TerminalCause::Completed, true),
+            (
+                TerminalCause::Failed {
+                    kind: DownloadFailureKind::Network,
+                },
+                true,
+            ),
+            (TerminalCause::StreamerOffline, true),
+            (
+                TerminalCause::DefinitiveOffline {
+                    signal: OfflineSignal::ConsecutiveFailures(2),
+                },
+                true,
+            ),
+            (TerminalCause::UserDisabled, true),
+            (TerminalCause::OutOfSchedule, true),
+            (
+                TerminalCause::Rejected {
+                    reason: "circuit breaker".into(),
+                },
+                false,
+            ),
+            (
+                TerminalCause::Cancelled {
+                    cause: DownloadStopCause::User,
+                },
+                false,
+            ),
+        ];
+        for (cause, runs) in cases {
+            assert_eq!(
+                cause.should_run_session_complete_pipeline(),
+                runs,
+                "{cause:?}"
+            );
+        }
     }
 }

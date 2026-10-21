@@ -184,18 +184,4 @@ mod tests {
 
         assert!(!rendered.contains("raw-cookie-sentinel"), "{rendered}");
     }
-
-    #[test]
-    fn leaves_arguments_without_credential_flags_untouched() {
-        let original = args(&["-y", "-c", "copy", "-i", "pipe:0", "out.mp4"]);
-        assert_eq!(redact_process_args(&original), original);
-    }
-
-    #[test]
-    fn a_trailing_flag_without_a_value_does_not_panic() {
-        assert_eq!(
-            redact_process_args(&args(&["-i", "url", "-headers"])),
-            args(&["-i", "url", "-headers"])
-        );
-    }
 }

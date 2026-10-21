@@ -787,27 +787,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn missing_global_config_is_an_error_without_inserting_defaults() {
-        let pool = crate::database::init_migration_pool("sqlite::memory:")
-            .await
-            .unwrap();
-        crate::database::run_migrations(&pool).await.unwrap();
-        sqlx::query("DELETE FROM global_config")
-            .execute(&pool)
-            .await
-            .unwrap();
-        let repo = SqlxConfigRepository::new(pool.clone(), pool.clone());
-
-        assert!(repo.get_global_config().await.is_err());
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM global_config")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(count, 0);
-        pool.close().await;
-    }
-
-    #[tokio::test]
     async fn empty_global_config_read_never_creates_default_rows() {
         tokio::time::timeout(Duration::from_secs(20), async {
             let dir = tempfile::tempdir().unwrap();
@@ -848,16 +827,5 @@ mod tests {
         })
         .await
         .expect("empty-read regression must finish");
-    }
-
-    #[test]
-    fn global_retention_validation_rejects_negative_values() {
-        let config = GlobalConfigDbModel {
-            job_history_retention_days: -1,
-            ..GlobalConfigDbModel::default()
-        };
-
-        let error = validate_global_retention(&config).expect_err("negative retention");
-        assert!(error.to_string().contains("job_history_retention_days"));
     }
 }

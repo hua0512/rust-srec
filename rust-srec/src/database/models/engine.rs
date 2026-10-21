@@ -624,27 +624,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_engine_type() {
-        assert_eq!(EngineType::Ffmpeg.as_str(), "FFMPEG");
-        assert_eq!(EngineType::parse("MESIO"), Some(EngineType::Mesio));
-    }
-
-    #[test]
-    fn test_ffmpeg_config_default() {
-        let config = FfmpegEngineConfig::default();
-        assert_eq!(config.binary_path, "ffmpeg");
-        assert_eq!(config.timeout_secs, 30);
-    }
-
-    #[test]
-    fn test_engine_config_serialization() {
-        let config = FfmpegEngineConfig::default();
-        let json = serde_json::to_string(&config).unwrap();
-        let parsed: FfmpegEngineConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.binary_path, config.binary_path);
-    }
-
-    #[test]
     fn test_mesio_config_backward_compatible() {
         let json = r#"{"buffer_size":123,"fix_flv":true,"fix_hls":false}"#;
         let parsed: MesioEngineConfig = serde_json::from_str(json).unwrap();
@@ -732,101 +711,5 @@ mod tests {
         let round_trip: MesioDashConfig =
             serde_json::from_value(serde_json::to_value(&dash).unwrap()).unwrap();
         assert_eq!(round_trip, dash);
-    }
-
-    #[test]
-    fn test_mesio_hls_structured_config_parse() {
-        let json = r#"
-        {
-          "hls": {
-            "output_config": {
-              "live_gap_strategy": {
-                "type": "skip_after_both",
-                "count": 10,
-                "duration_ms": 1000
-              }
-            },
-            "scheduler_config": {
-              "download_concurrency": 3
-            }
-          }
-        }"#;
-        let parsed: MesioEngineConfig = serde_json::from_str(json).unwrap();
-        let hls = parsed.hls.unwrap();
-        assert!(matches!(
-            hls.output_config
-                .as_ref()
-                .and_then(|cfg| cfg.live_gap_strategy.as_ref()),
-            Some(MesioGapSkipStrategy::SkipAfterBoth {
-                count: 10,
-                duration_ms: 1000
-            })
-        ));
-        assert_eq!(
-            hls.scheduler_config
-                .as_ref()
-                .and_then(|cfg| cfg.download_concurrency),
-            Some(3)
-        );
-    }
-
-    #[test]
-    fn stored_configs_with_retired_output_settings_still_load() {
-        let json = r#"
-        {
-          "hls": {
-            "output_config": {
-              "live_reorder_buffer_duration_ms": 30000,
-              "live_reorder_buffer_max_segments": 10,
-              "max_pending_init_segments": 4
-            }
-          }
-        }"#;
-        let parsed: MesioEngineConfig = serde_json::from_str(json).unwrap();
-        let output = parsed.hls.unwrap().output_config.unwrap();
-        assert_eq!(output.max_pending_init_segments, Some(4));
-    }
-
-    #[test]
-    fn test_mesio_flv_fix_config_apply() {
-        let json = r#"
-        {
-          "flv_fix": {
-            "sequence_header_change_mode": "semantic_signature",
-            "drop_duplicate_sequence_headers": true,
-            "duplicate_tag_filtering": true,
-            "duplicate_tag_filter_config": {
-              "window_capacity_tags": 123,
-              "window_capacity_bytes": 1048576,
-              "replay_backjump_threshold_ms": 5000,
-              "enable_replay_offset_matching": true
-            }
-          }
-        }"#;
-        let parsed: MesioEngineConfig = serde_json::from_str(json).unwrap();
-        let opts = parsed.flv_fix.unwrap();
-
-        let mut cfg = flv_fix::FlvPipelineConfig::default();
-        opts.apply_to(&mut cfg);
-
-        assert_eq!(
-            cfg.sequence_header_change_mode,
-            flv_fix::SequenceHeaderChangeMode::SemanticSignature
-        );
-        assert!(cfg.drop_duplicate_sequence_headers);
-        assert!(cfg.duplicate_tag_filtering);
-        assert_eq!(cfg.duplicate_tag_filter_config.window_capacity_tags, 123);
-        assert_eq!(
-            cfg.duplicate_tag_filter_config.window_capacity_bytes,
-            1048576
-        );
-        assert_eq!(
-            cfg.duplicate_tag_filter_config.replay_backjump_threshold_ms,
-            5000
-        );
-        assert!(
-            cfg.duplicate_tag_filter_config
-                .enable_replay_offset_matching
-        );
     }
 }

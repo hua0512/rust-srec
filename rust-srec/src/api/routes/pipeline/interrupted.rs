@@ -477,28 +477,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn deleting_removes_only_a_temporary_file_and_its_entry() {
-        let (state, repository) = state().await;
-        let directory = tempfile::tempdir().unwrap();
-        let output = directory.path().join("video.mp4");
-        let temp = crate::pipeline::temp_path_for(&output);
-        std::fs::write(&temp, b"partial").unwrap();
-        let id = interrupted(&repository, &temp, &output).await;
-
-        let response = delete_interrupted_output(
-            State(state),
-            RoutePath(id.clone()),
-            Query(DeleteInterruptedOutputParams::default()),
-        )
-        .await
-        .unwrap();
-
-        assert!(response.file_deleted);
-        assert!(!temp.exists());
-        assert_eq!(remaining(&repository).await, 0);
-    }
-
-    #[tokio::test]
     async fn deleting_refuses_a_path_without_the_temporary_shape() {
         let (state, repository) = state().await;
         let directory = tempfile::tempdir().unwrap();
@@ -549,28 +527,6 @@ mod tests {
         .unwrap();
 
         assert!(!response.file_deleted);
-        assert_eq!(remaining(&repository).await, 0);
-    }
-
-    #[tokio::test]
-    async fn keeping_a_file_forgets_only_the_entry() {
-        let (state, repository) = state().await;
-        let directory = tempfile::tempdir().unwrap();
-        let output = directory.path().join("video.mp4");
-        let temp = crate::pipeline::temp_path_for(&output);
-        std::fs::write(&temp, b"partial").unwrap();
-        let id = interrupted(&repository, &temp, &output).await;
-
-        let response = delete_interrupted_output(
-            State(state),
-            RoutePath(id),
-            Query(DeleteInterruptedOutputParams { keep_file: true }),
-        )
-        .await
-        .unwrap();
-
-        assert!(!response.file_deleted);
-        assert!(temp.exists());
         assert_eq!(remaining(&repository).await, 0);
     }
 

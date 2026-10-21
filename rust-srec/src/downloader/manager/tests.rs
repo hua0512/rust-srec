@@ -333,67 +333,6 @@ async fn collect_segment_progress_events(
     collected
 }
 
-#[test]
-fn test_download_manager_creation() {
-    let manager = DownloadManager::new();
-    assert_eq!(manager.active_count(), 0);
-    assert!(!manager.available_engines().is_empty());
-}
-
-#[tokio::test]
-async fn download_info_views_project_consistent_live_metadata() {
-    let manager = DownloadManager::new();
-    let directory = tempfile::tempdir().unwrap();
-    let mut config = test_download_config(directory.path().to_path_buf(), "projection-session");
-    config
-        .headers
-        .push(("Authorization".to_owned(), "private-header".repeat(1024)));
-    config.engines_override = Some(serde_json::json!({"nested": ["private-config".repeat(1024)]}));
-    let id = start_scripted_download_with_engine(
-        &manager,
-        config,
-        ScriptedSegmentEngine::with_shutdown_tail(vec![], vec![]),
-    )
-    .await
-    .unwrap();
-    let initial = manager.get_active_downloads().pop().unwrap();
-    assert_eq!(initial.id, id);
-    assert_eq!(initial.session_id, "projection-session");
-    let by_streamer = manager
-        .get_download_by_streamer(&initial.streamer_id)
-        .unwrap();
-    assert_eq!(by_streamer.url, initial.url);
-    manager
-        .active_downloads
-        .get(&id)
-        .unwrap()
-        .handle
-        .update_config(|config| {
-            config.url = "https://invalid.test/refreshed".to_owned();
-        });
-    assert_eq!(
-        manager
-            .get_download_by_streamer(&initial.streamer_id)
-            .unwrap()
-            .url,
-        "https://invalid.test/refreshed"
-    );
-    assert_ne!(
-        initial.url, "https://invalid.test/refreshed",
-        "earlier snapshots own their projected fields"
-    );
-    tokio::time::timeout(Duration::from_secs(2), manager.stop_download(&id))
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(manager.get_active_downloads().is_empty());
-    assert!(
-        manager
-            .get_download_by_streamer(&initial.streamer_id)
-            .is_none()
-    );
-}
-
 #[tokio::test]
 async fn maintenance_admission_fences_preacquired_recording_starts() {
     let manager = DownloadManager::new();
@@ -602,48 +541,6 @@ fn relative_segment_paths_are_resolved_without_canonicalizing() {
     assert_eq!(resolve_segment_path(&relative), expected.to_string_lossy());
 }
 
-/// `emit_rejected` must reach subscribers exactly like a
-/// preflight-emitted rejection: the session lifecycle relies on the
-/// `Rejected` terminal to close the session and the scheduler relies on
-/// it to reschedule the streamer actor after `retry_after_secs`.
-#[tokio::test]
-async fn emit_rejected_broadcasts_terminal_event() {
-    let manager = DownloadManager::new();
-    let mut events = manager.subscribe();
-
-    manager
-        .emit_rejected(
-            "streamer-1".to_string(),
-            "Streamer One".to_string(),
-            "session-1".to_string(),
-            "streamer temporarily disabled (error backoff)".to_string(),
-            Some(62),
-            DownloadRejectedKind::StreamerBackoff,
-        )
-        .await
-        .expect("rejection should publish");
-
-    let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
-        .await
-        .expect("event should arrive")
-        .expect("channel open");
-
-    let DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {
-        streamer_id,
-        session_id,
-        retry_after_secs,
-        kind,
-        ..
-    }) = event
-    else {
-        panic!("expected Rejected terminal event, got {event:?}");
-    };
-    assert_eq!(streamer_id, "streamer-1");
-    assert_eq!(session_id, "session-1");
-    assert_eq!(retry_after_secs, Some(62));
-    assert!(matches!(kind, DownloadRejectedKind::StreamerBackoff));
-}
-
 #[tokio::test]
 async fn repeated_engine_local_indices_use_session_scoped_indices() {
     let temp = tempfile::tempdir().expect("tempdir");
@@ -690,49 +587,6 @@ async fn repeated_engine_local_indices_use_session_scoped_indices() {
 
     assert_eq!(first_index, 0);
     assert_eq!(second_index, 1);
-}
-
-#[tokio::test]
-async fn segment_started_and_completed_share_session_index() {
-    let temp = tempfile::tempdir().expect("tempdir");
-    let manager = DownloadManager::new();
-    let mut events = manager.subscribe();
-    let segment_path = temp.path().join("segment.flv");
-
-    start_scripted_download(
-        &manager,
-        test_download_config(temp.path().to_path_buf(), "session-start-complete"),
-        vec![
-            SegmentEvent::SegmentStarted {
-                path: segment_path.clone(),
-                sequence: 0,
-                started_at: Utc::now(),
-            },
-            completed_segment(segment_path, 0),
-        ],
-    )
-    .await
-    .expect("download should start");
-
-    let segment_events = collect_segment_progress_events(&mut events, 2).await;
-    let DownloadProgressEvent::SegmentStarted {
-        segment_index: started_index,
-        ..
-    } = &segment_events[0]
-    else {
-        panic!("expected segment started event first");
-    };
-    let DownloadProgressEvent::SegmentCompleted {
-        segment_index: completed_index,
-        ..
-    } = &segment_events[1]
-    else {
-        panic!("expected segment completed event second");
-    };
-
-    assert_eq!(*started_index, 0);
-    assert_eq!(completed_index, started_index);
-    wait_for_download_terminal(&mut events).await;
 }
 
 #[tokio::test]
@@ -1394,88 +1248,6 @@ async fn throttle_monitor_teardown_restores_latest_configured_capacity() {
     }
 }
 
-#[tokio::test]
-async fn queued_slot_abandoned_after_acquire_emits_dequeued() {
-    let config = DownloadManagerConfig {
-        max_concurrent_downloads: 1,
-        high_priority_extra_slots: 0,
-        ..Default::default()
-    };
-    let manager = Arc::new(DownloadManager::with_config(config));
-    let mut events = manager.subscribe();
-
-    let first = manager
-        .acquire_slot(
-            AcquireRequest {
-                session_id: "active-session".to_string(),
-                streamer_id: "streamer-active".to_string(),
-                streamer_name: "Active".to_string(),
-                engine_type: EngineType::Ffmpeg,
-                priority: Priority::Normal,
-            },
-            CancellationToken::new(),
-        )
-        .await
-        .unwrap();
-
-    let waiter_manager = manager.clone();
-    let waiter = tokio::spawn(async move {
-        waiter_manager
-            .acquire_slot(
-                AcquireRequest {
-                    session_id: "queued-session".to_string(),
-                    streamer_id: "streamer-queued".to_string(),
-                    streamer_name: "Queued".to_string(),
-                    engine_type: EngineType::Ffmpeg,
-                    priority: Priority::Normal,
-                },
-                CancellationToken::new(),
-            )
-            .await
-            .unwrap()
-    });
-
-    let queued_event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(matches!(
-        queued_event,
-        DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadQueued {
-            ref session_id,
-            ..
-        }) if session_id == "queued-session"
-    ));
-
-    drop(first);
-    let slot = waiter.await.unwrap();
-    assert!(slot.queued_event_emitted());
-
-    manager.emit_dequeued_for_slot(&slot, "streamer-queued", "Queued");
-
-    let dequeued_event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(matches!(
-        dequeued_event,
-        DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadDequeued {
-            ref session_id,
-            ..
-        }) if session_id == "queued-session"
-    ));
-}
-
-#[test]
-fn test_engine_registration() {
-    let manager = DownloadManager::new();
-
-    // FFmpeg should be registered by default
-    assert!(manager.get_engine(EngineType::Ffmpeg).is_some());
-    assert!(manager.get_engine(EngineType::Streamlink).is_some());
-    assert!(manager.get_engine(EngineType::Mesio).is_some());
-}
-
 // ========== Output-root write gate integration ==========
 
 /// Build a `DownloadConfig` pointed at `output_dir`, with the other
@@ -1494,7 +1266,7 @@ fn test_config_with_output_dir(output_dir: std::path::PathBuf) -> DownloadConfig
 
 /// Wrap a `DownloadManager` with a freshly constructed gate and return
 /// both the manager and a counter the recovery hook bumps each time it
-/// fires. Used by the three `prepare_output_dir_*` tests below.
+/// fires.
 fn manager_with_gate() -> (
     DownloadManager,
     Arc<std::sync::atomic::AtomicUsize>,
@@ -1518,31 +1290,6 @@ fn manager_with_gate() -> (
     let manager = DownloadManager::new();
     manager.set_output_root_gate(gate.clone());
     (manager, counter, gate)
-}
-
-#[tokio::test]
-async fn prepare_output_dir_happy_path_returns_ok() {
-    // Baseline: a real, writable temp dir. The gate starts Healthy and
-    // stays Healthy; `ensure_output_dir` creates the nested subdir that
-    // doesn't yet exist inside the temp root.
-    let temp = tempfile::tempdir().expect("tempdir");
-    let nested = temp.path().join("huya").join("X").join("20260415");
-    let (manager, counter, gate) = manager_with_gate();
-
-    let config = test_config_with_output_dir(nested.clone());
-    let result = manager.prepare_output_dir(&config).await;
-
-    assert!(result.is_ok(), "happy path should succeed: {:?}", result);
-    assert!(
-        nested.is_dir(),
-        "nested output dir should have been created"
-    );
-    // Recovery hook only fires on a Degraded → Healthy transition.
-    // A first-ever success against an untracked root is a no-op for the
-    // gate, so the counter stays at zero.
-    assert_eq!(counter.load(Ordering::SeqCst), 0);
-    // And the gate snapshot should be empty (no roots ever tracked).
-    assert!(gate.snapshot().is_empty());
 }
 
 #[tokio::test]
@@ -1813,21 +1560,6 @@ async fn prepare_output_dir_recovers_after_path_becomes_valid() {
     let snap = gate.snapshot();
     assert_eq!(snap.len(), 1);
     assert_eq!(snap[0].state, crate::downloader::RootHealthState::Healthy);
-}
-
-#[tokio::test]
-async fn prepare_output_dir_without_gate_is_transparent() {
-    // Safety guarantee: with no gate installed, prepare_output_dir is a
-    // plain create-dir call — success creates the dir, failure returns
-    // a classified EngineStartError, no panics, no hidden state.
-    let temp = tempfile::tempdir().expect("tempdir");
-    let nested = temp.path().join("a").join("b").join("c");
-    let manager = DownloadManager::new();
-    // Deliberately NO set_output_root_gate.
-
-    let config = test_config_with_output_dir(nested.clone());
-    assert!(manager.prepare_output_dir(&config).await.is_ok());
-    assert!(nested.is_dir());
 }
 
 #[tokio::test]

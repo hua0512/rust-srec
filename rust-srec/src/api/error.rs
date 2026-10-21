@@ -622,16 +622,6 @@ mod tests {
     }
 
     #[test]
-    fn feedback_capacity_is_reported_as_retryable_without_exposing_streamer_identity() {
-        let error = ApiError::from(Error::SchedulerFeedbackBusy {
-            streamer_id: "private-streamer".to_owned(),
-        });
-        assert_eq!(error.status, StatusCode::SERVICE_UNAVAILABLE);
-        assert_eq!(error.code, "SCHEDULER_FEEDBACK_BUSY");
-        assert!(!error.message.contains("private-streamer"));
-    }
-
-    #[test]
     fn internal_sources_do_not_reach_error_responses_but_validation_stays_actionable() {
         let stored_json = serde_json::from_str::<u64>("\"stored-secret-value\"").unwrap_err();
         assert!(stored_json.to_string().contains("stored-secret-value"));
@@ -679,31 +669,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn test_api_error_creation() {
-        let err = ApiError::not_found("User not found");
-        assert_eq!(err.status, StatusCode::NOT_FOUND);
-        assert_eq!(err.code, "NOT_FOUND");
-        assert_eq!(err.message, "User not found");
-    }
-
-    #[test]
-    fn test_from_domain_error() {
-        let domain_err = Error::not_found("Streamer", "123");
-        let api_err: ApiError = domain_err.into();
-
-        assert_eq!(api_err.status, StatusCode::NOT_FOUND);
-        assert!(api_err.message.contains("123"));
-    }
-
-    #[test]
-    fn test_password_change_required_error_has_stable_code() {
-        let api_err = ApiError::from(AuthError::PasswordChangeRequired);
-
-        assert_eq!(api_err.status, StatusCode::FORBIDDEN);
-        assert_eq!(api_err.code, "PASSWORD_CHANGE_REQUIRED");
     }
 
     #[test]

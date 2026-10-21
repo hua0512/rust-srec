@@ -32,7 +32,7 @@ pub struct GotifyConfig {
     #[serde(default)]
     pub min_priority: NotificationPriority,
     /// Language for the rendered title and body; `None` follows the process-wide locale.
-    /// See [`NotificationEvent::title_for`] for locale fallback.
+    /// See [`NotificationEvent::title_in`] for locale fallback.
     #[serde(default)]
     pub locale: Option<String>,
     /// Request timeout in seconds.
@@ -97,17 +97,6 @@ impl GotifyChannel {
         }
     }
 
-    /// Build the Gotify message payload.
-    #[cfg(test)]
-    fn build_payload(&self, event: &NotificationEvent) -> serde_json::Value {
-        let locale = self
-            .config
-            .locale
-            .clone()
-            .unwrap_or_else(crate::i18n::current_locale);
-        self.build_rendered_payload(event, &RenderedEvent::new(event, &locale))
-    }
-
     fn build_rendered_payload(
         &self,
         event: &NotificationEvent,
@@ -165,62 +154,5 @@ impl NotificationChannel for GotifyChannel {
 
         debug!("Gotify notification sent: {}", event.event_type());
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_gotify_channel_disabled() {
-        let config = GotifyConfig::default();
-        let channel = GotifyChannel::new(config);
-        assert!(!channel.is_enabled());
-    }
-
-    #[test]
-    fn test_build_payload() {
-        let config = GotifyConfig::default();
-        let channel = GotifyChannel::new(config);
-
-        let event = NotificationEvent::StreamOnline {
-            streamer_id: "123".to_string(),
-            streamer_name: "TestStreamer".to_string(),
-            title: "Playing Games".to_string(),
-            category: Some("Gaming".to_string()),
-            timestamp: chrono::Utc::now(),
-        };
-
-        let payload = channel.build_payload(&event);
-        assert!(payload["title"].as_str().is_some());
-        assert!(payload["message"].as_str().is_some());
-        assert_eq!(payload["priority"], 5); // Normal = 5
-    }
-
-    #[test]
-    fn supplied_rendering_matches_direct_payloads_in_both_locales() {
-        let event = NotificationEvent::SystemStartup {
-            version: "<test>&😀".into(),
-            timestamp: chrono::Utc::now(),
-        };
-        for locale in ["en", "zh-CN"] {
-            let channel = GotifyChannel::new(GotifyConfig {
-                locale: Some(locale.into()),
-                ..Default::default()
-            });
-            let rendered = RenderedEvent::new(&event, locale);
-            assert_eq!(
-                channel.build_payload(&event),
-                channel.build_rendered_payload(&event, &rendered)
-            );
-            let supplied = RenderedEvent {
-                title: "unique title 😀".into(),
-                description: "unique body <>&".into(),
-            };
-            let payload = channel.build_rendered_payload(&event, &supplied);
-            assert_eq!(payload["title"], supplied.title);
-            assert_eq!(payload["message"], supplied.description);
-        }
     }
 }

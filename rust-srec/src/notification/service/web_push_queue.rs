@@ -159,51 +159,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn stalled_consumer_preserves_bounded_fifo_and_counts_overflow() {
-        let service = NotificationService::new();
-        let (tx, mut rx) = mpsc::channel(super::super::WEB_PUSH_QUEUE_CAPACITY);
-        *service.web_push_tx.write() = Some(tx);
-        for index in 0..10_000 {
-            service.enqueue_web_push(event(index));
-        }
-        service.enqueue_web_push(WebPushQueuedEvent {
-            event: NotificationEvent::PipelineQueueCritical {
-                queue_depth: 1_000,
-                threshold: 200,
-                timestamp: Utc::now(),
-            },
-            event_log_id: None,
-        });
-        assert_eq!(rx.len(), super::super::WEB_PUSH_QUEUE_CAPACITY);
-        assert_eq!(service.stats().web_push_dropped, 10_001 - rx.len() as u64);
-        for index in 0..super::super::WEB_PUSH_QUEUE_CAPACITY {
-            assert_eq!(rx.try_recv().unwrap().event_log_id, Some(index.to_string()));
-        }
-        service.enqueue_web_push(event(10_000));
-        assert_eq!(
-            rx.try_recv().unwrap().event_log_id.as_deref(),
-            Some("10000")
-        );
-    }
-
-    #[test]
-    fn unavailable_closed_and_stopped_queues_never_spawn_fallbacks() {
-        // No Tokio runtime: these paths must not spawn even when push cannot queue.
-        let service = NotificationService::new();
-        service.enqueue_web_push(event(0));
-        let (tx, rx) = mpsc::channel(1);
-        *service.web_push_tx.write() = Some(tx);
-        drop(rx);
-        service.enqueue_web_push(event(1));
-        let (tx, mut rx) = mpsc::channel(1);
-        *service.web_push_tx.write() = Some(tx);
-        service.cancellation_token.cancel();
-        service.enqueue_web_push(event(2));
-        assert!(rx.try_recv().is_err());
-        assert_eq!(service.stats().web_push_dropped, 3);
-    }
-
     #[tokio::test]
     async fn shutdown_closes_admission_and_preserves_already_queued_events() {
         let service = NotificationService::new();

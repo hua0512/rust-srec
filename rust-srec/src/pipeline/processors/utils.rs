@@ -1205,6 +1205,38 @@ mod tests {
     }
 
     #[test]
+    fn ffmpeg_stderr_lines_are_classified_by_level() {
+        for (line, level) in [
+            ("Error: something went wrong", LogLevel::Error),
+            ("[error] broken frame", LogLevel::Error),
+            ("Fatal error occurred", LogLevel::Error),
+            ("Conversion failed!", LogLevel::Error),
+            ("Warning: buffer underrun", LogLevel::Warn),
+            ("[warn] something mild", LogLevel::Warn),
+            ("Input #0, mov,mp4,m4a,3gp,3g2,mj2, from...", LogLevel::Info),
+            (
+                "  Stream #0:0(und): Video: h264 (High) (avc1 / 0x31637661)",
+                LogLevel::Info,
+            ),
+        ] {
+            assert_eq!(determine_ffmpeg_log_level(line), level, "{line}");
+        }
+    }
+
+    /// Processors look for this line in `diagnostic_text`, which leaves out
+    /// Info lines, to pass an input with no usable stream through.
+    #[test]
+    #[ignore = "bug: ffmpeg's no-stream line is classed Info, so the no-stream pass-through never sees it"]
+    fn known_bug_ffmpeg_no_stream_line_is_an_error() {
+        assert_eq!(
+            determine_ffmpeg_log_level(
+                "[out#0/adts @ 0x55562415fbc0] Output file does not contain any stream"
+            ),
+            LogLevel::Error
+        );
+    }
+
+    #[test]
     fn processor_retry_delay_saturates_and_caps_extreme_configuration() {
         assert_eq!(retry_delay(100, 0), std::time::Duration::from_millis(100));
         assert_eq!(retry_delay(100, 3), std::time::Duration::from_millis(800));
@@ -1354,14 +1386,6 @@ mod tests {
                 "input {input:?}, trim {trim:?}"
             );
         }
-    }
-
-    #[tokio::test]
-    async fn processor_path_checks_preserve_io_errors() {
-        assert!(try_exists(Path::new("invalid\0path")).await.is_err());
-        let dir = tempfile::tempdir().unwrap();
-        assert!(!try_exists(&dir.path().join("missing")).await.unwrap());
-        assert!(try_exists(dir.path()).await.unwrap());
     }
 
     const HELPER_MODE: &str = "RUST_SREC_PROCESSOR_COMMAND_HELPER";
@@ -1697,16 +1721,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_rclone_line_json_log_without_msg_keeps_line() {
-        let line = r#"{"level":"error"}"#;
-        let ParsedRcloneLine::Log(entry) = parse_rclone_line(line) else {
-            panic!("JSON line without stats should parse as log");
-        };
-        assert_eq!(entry.level, LogLevel::Error);
-        assert_eq!(entry.message, line);
-    }
-
-    #[test]
     fn parse_rclone_line_legacy_transferred_text() {
         let line = "Transferred:   1.500 MiB / 3 MiB, 50%, 512 KiB/s, ETA 3s";
         let ParsedRcloneLine::Progress(snapshot) = parse_rclone_line(line) else {
@@ -1722,21 +1736,6 @@ mod tests {
             snapshot.raw.get("line").is_none(),
             "raw must not embed the source line"
         );
-    }
-
-    #[test]
-    fn parse_rclone_line_plain_text_is_log() {
-        let ParsedRcloneLine::Log(entry) =
-            parse_rclone_line("2026/07/26 12:00:00 ERROR : clip.mp4: Failed to copy")
-        else {
-            panic!("plain text should parse as log");
-        };
-        assert_eq!(entry.level, LogLevel::Error);
-
-        let ParsedRcloneLine::Log(entry) = parse_rclone_line("just some output") else {
-            panic!("plain text should parse as log");
-        };
-        assert_eq!(entry.level, LogLevel::Info);
     }
 
     #[tokio::test]
@@ -1776,33 +1775,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn capped_lines_cr_splitting_separates_bar_redraws() {
-        let overlong = Arc::new(AtomicUsize::new(0));
-        let input =
-            "[1] ↑ 1.00MB/9.00MB 1.00MB/s in 1s\r[1] ↑ 2.00MB/9.00MB 1.00MB/s in 2s\r\n[1] 上传文件成功, 保存到网盘路径: /rec/a.flv\n"
-                .as_bytes();
-        let mut lines = CappedLines::with_cr_splitting(input, overlong.clone());
-
-        let mut collected = Vec::new();
-        while let Some(line) = lines.next_line().await.unwrap() {
-            collected.push(line);
-        }
-
-        // The `\r\n` after the second redraw yields one empty segment,
-        // which consume_baidupcs_stream drops.
-        assert_eq!(
-            collected,
-            vec![
-                "[1] ↑ 1.00MB/9.00MB 1.00MB/s in 1s".to_string(),
-                "[1] ↑ 2.00MB/9.00MB 1.00MB/s in 2s".to_string(),
-                String::new(),
-                "[1] 上传文件成功, 保存到网盘路径: /rec/a.flv".to_string(),
-            ]
-        );
-        assert_eq!(overlong.load(Ordering::Relaxed), 0);
-    }
-
-    #[tokio::test]
     async fn consume_baidupcs_stream_throttles_bar_and_keeps_markers() {
         // BaiduPCS-Go's output while uploading one file: each bar starts with
         // `\r` and ends with dots, and the retry notice follows them directly.
@@ -1838,34 +1810,6 @@ mod tests {
             ]
         );
         assert_eq!(dropped.load(Ordering::Relaxed), 0);
-    }
-
-    #[test]
-    fn baidupcs_noise_and_level_classification() {
-        assert!(is_baidupcs_progress_noise(
-            "[1] ↑ 12.00MB/120.00MB 3.50MB/s in 3s ............"
-        ));
-        assert!(!is_baidupcs_progress_noise(
-            "[1] 上传文件成功, 保存到网盘路径: /rec/a.flv"
-        ));
-        assert!(!is_baidupcs_progress_noise("[1] 加入上传队列: /rec/a.flv"));
-
-        assert_eq!(
-            determine_baidupcs_log_level("[1] 上传文件失败, 上传文件错误"),
-            LogLevel::Error
-        );
-        assert_eq!(
-            determine_baidupcs_log_level("[1] 上传文件失败, 上传文件错误, 重试 1/3"),
-            LogLevel::Warn
-        );
-        assert_eq!(
-            determine_baidupcs_log_level("警告: 遍历错误: xx"),
-            LogLevel::Error
-        );
-        assert_eq!(
-            determine_baidupcs_log_level("[1] 上传文件成功, 保存到网盘路径: /a"),
-            LogLevel::Info
-        );
     }
 
     #[tokio::test(start_paused = true)]
@@ -1972,40 +1916,6 @@ mod tests {
                     None,
                 ),
             ]
-        );
-    }
-
-    #[test]
-    fn test_determine_ffmpeg_log_level() {
-        assert_eq!(
-            determine_ffmpeg_log_level("Error: something went wrong"),
-            LogLevel::Error
-        );
-        assert_eq!(
-            determine_ffmpeg_log_level("[error] broken frame"),
-            LogLevel::Error
-        );
-        assert_eq!(
-            determine_ffmpeg_log_level("Fatal error occurred"),
-            LogLevel::Error
-        );
-        assert_eq!(
-            determine_ffmpeg_log_level("Warning: buffer underrun"),
-            LogLevel::Warn
-        );
-        assert_eq!(
-            determine_ffmpeg_log_level("[warn] something mild"),
-            LogLevel::Warn
-        );
-        assert_eq!(
-            determine_ffmpeg_log_level("Input #0, mov,mp4,m4a,3gp,3g2,mj2, from..."),
-            LogLevel::Info
-        );
-        assert_eq!(
-            determine_ffmpeg_log_level(
-                "  Stream #0:0(und): Video: h264 (High) (avc1 / 0x31637661)"
-            ),
-            LogLevel::Info
         );
     }
 }

@@ -3,7 +3,6 @@
 //! The Scheduler is responsible for:
 //! - Spawning monitoring actors for all active streamers
 //! - Reacting to configuration update events dynamically
-//! - Coordinating batch detection for batch-capable platforms
 //! - Managing actor lifecycle with crash recovery
 //! - Implementing graceful shutdown
 //!
@@ -11,7 +10,7 @@
 //!
 //! The scheduler uses an actor-based architecture where:
 //! - Each streamer is managed by a `StreamerActor` that handles its own timing
-//! - Batch-capable platforms have a `PlatformActor` for coordinating batch detection
+//!   and checks its streamer's status individually
 //! - The `Scheduler` acts as a supervisor, spawning and monitoring actors
 //! - Actors manage their own scheduling internally, eliminating periodic re-scheduling
 
@@ -20,12 +19,11 @@ mod service;
 
 // Actor model exports (primary API)
 pub use actor::{
-    ActorError, ActorHandle, ActorMetadata, ActorMetrics, ActorOutcome, ActorRegistry, ActorResult,
-    ActorTaskResult, BatchDetectionResult, CheckResult, ConfigRouter, ConfigScope,
-    PlatformActorState, PlatformConfig, PlatformMapping, PlatformMessage, RegistryError,
-    RestartTracker, RestartTrackerConfig, RestartTrackerStats, RoutingResult, SendError,
-    ShutdownReport, SpawnError, StreamerActor, StreamerActorState, StreamerConfig, StreamerMessage,
-    Supervisor, SupervisorConfig, SupervisorStats, TaskCompletionAction,
+    ActorError, ActorHandle, ActorMetadata, ActorOutcome, ActorRegistry, ActorResult,
+    ActorTaskResult, CheckResult, RegistryError, RestartTracker, RestartTrackerConfig,
+    RestartTrackerStats, SendError, ShutdownReport, SpawnError, StreamerActor, StreamerActorState,
+    StreamerConfig, StreamerMessage, Supervisor, SupervisorConfig, SupervisorStats,
+    TaskCompletionAction,
 };
 
 // Scheduler service

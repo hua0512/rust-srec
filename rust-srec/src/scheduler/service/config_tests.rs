@@ -18,7 +18,6 @@ fn assert_config(
     assert_eq!(config.offline_check_count, count);
     assert_eq!(config.offline_check_interval_ms, delay);
     assert_eq!(config.check_interval_ms, normal);
-    assert!(!config.batch_capable);
 }
 
 async fn schedule_restart(scheduler: &mut Scheduler<SqlxStreamerRepository>) {

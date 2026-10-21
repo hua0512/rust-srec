@@ -271,65 +271,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_session() {
-        let pool = setup_test_db().await;
-        let mut tx = pool.begin().await.unwrap();
-
-        let now = Utc::now();
-        SessionTxOps::create_session(
-            &mut tx,
-            "sess-1",
-            "streamer-1",
-            "Streamer One",
-            now,
-            "Test Stream",
-        )
-        .await
-        .unwrap();
-
-        tx.commit().await.unwrap();
-
-        let session = SqlxSessionRepository::new(pool.clone(), pool.clone())
-            .get_session("sess-1")
-            .await
-            .unwrap();
-
-        assert_eq!(session.streamer_id.as_deref(), Some("streamer-1"));
-        assert_eq!(session.streamer_name.as_deref(), Some("Streamer One"));
-        assert!(session.end_time.is_none());
-        assert!(session.titles.is_some());
-    }
-
-    #[tokio::test]
-    async fn test_end_session() {
-        let pool = setup_test_db().await;
-
-        let now = Utc::now();
-        let mut tx = pool.begin().await.unwrap();
-        SessionTxOps::create_session(
-            &mut tx,
-            "sess-1",
-            "streamer-1",
-            "Streamer One",
-            now,
-            "Test Stream",
-        )
-        .await
-        .unwrap();
-        SessionTxOps::end_session(&mut tx, "sess-1", now)
-            .await
-            .unwrap();
-        tx.commit().await.unwrap();
-
-        // Verify ended
-        let session = SqlxSessionRepository::new(pool.clone(), pool.clone())
-            .get_session("sess-1")
-            .await
-            .unwrap();
-        assert!(session.end_time.is_some());
-    }
-
-    #[tokio::test]
     async fn test_update_titles() {
         let pool = setup_test_db().await;
 

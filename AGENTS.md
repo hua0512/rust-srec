@@ -58,13 +58,13 @@ Choose checks from the changed behavior and its consumers. These are local valid
 | --- | --- |
 | Agent rules, prose, spelling | Review the diff; verify affected paths, commands, links, and factual claims. No Rust/frontend build or new tests solely for prose changes. |
 | Docs navigation, configuration, or complex Markdown | Build the docs site and check affected links; preview pages when layout or rendering needs inspection. |
-| Local Rust behavior | Formatting, affected-package Clippy, and focused tests covering the behavior. Add or adjust regression tests where they protect an observable contract. |
+| Local Rust behavior | Formatting, affected-package Clippy, and focused tests covering the behavior. Add or adjust regression tests where they protect an observable contract; for the backend, follow its [testing rules](rust-srec/AGENTS.md#testing) on which layer a test belongs in. |
 | Frontend behavior | Formatting check, lint, and relevant tests. Add type checking for type/interface changes, web build for routing/bundling/SSR changes, and desktop build for affected CSR integration. |
 | Shared interfaces, dependencies, features, cross-component changes | Expand checks to affected consumers and build/platform combinations; use the wider workspace suite when the impact crosses package boundaries. |
 | SQLite migrations | Migration upgrade/integrity checks; for table rebuilds use the conditional procedure in [CONTRIBUTING.md](CONTRIBUTING.md#sqlite-table-rebuilds). |
 | Release preparation | Version/lockfile consistency, release-note provenance and locale parity, links, and docs build as described in the release skill. |
 
-Prefer deterministic tests without real network calls unless testing an integration explicitly. Put unit tests beside the module and integration tests under the crate's `tests/`. Use Tokio's test harness for async tests; bound waits that could otherwise hang. Nextest does not run doctests, so run Cargo doctests when documentation examples or the APIs they exercise change.
+Write a test only when a realistic bug would make it fail. Tests that restate literals, defaults, constructors or derives, exercise std/third-party behavior, or repeat another test at a different layer add maintenance without catching bugs. Prefer deterministic tests without real network calls unless testing an integration explicitly. Put unit tests beside the module and integration tests under the crate's `tests/`. Use Tokio's test harness for async tests; bound waits that could otherwise hang. Nextest does not run doctests, so run Cargo doctests when documentation examples or the APIs they exercise change.
 
 After relevant checks pass, repeat or broaden them only for new changes, failures, or unresolved risks. If a tool or platform is unavailable, complete independent work and applicable alternative checks, then report the exact unverified portion and its impact. Do not describe blocked validation as passed or a release as ready when required evidence is missing. CI remains the integration gate; see its workflow for the full matrix.
 

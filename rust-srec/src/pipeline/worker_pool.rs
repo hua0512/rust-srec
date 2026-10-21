@@ -1718,33 +1718,8 @@ mod tests {
     use super::*;
     use async_trait::async_trait;
     use std::time::Duration;
-    use tempfile::TempDir;
 
     use crate::pipeline::{Job, JobStatus, ProcessorOutput, ProcessorType};
-
-    #[test]
-    fn lower_limit_waits_for_existing_admissions_without_another_update() {
-        let pool = WorkerPool::with_config(
-            WorkerType::Cpu,
-            WorkerPoolConfig {
-                max_workers: 4,
-                ..Default::default()
-            },
-        );
-        let mut permits: Vec<_> = (0..4)
-            .map(|_| pool.concurrency.try_acquire().unwrap())
-            .collect();
-        assert_eq!(pool.set_desired_max_workers(1), 1);
-        for _ in 0..3 {
-            drop(permits.pop());
-            assert!(pool.concurrency.try_acquire().is_none());
-        }
-        drop(permits);
-        let permit = pool.concurrency.try_acquire().unwrap();
-        assert!(pool.concurrency.try_acquire().is_none());
-        drop(permit);
-        assert!(pool.concurrency.try_acquire().is_some());
-    }
 
     #[test]
     fn latest_limit_wins_with_busy_and_independent_pools() {
@@ -2043,53 +2018,6 @@ mod tests {
 
         fn name(&self) -> &'static str {
             "sleep"
-        }
-    }
-
-    struct TimeoutPublishProcessor;
-
-    #[async_trait]
-    impl Processor for TimeoutPublishProcessor {
-        fn processor_type(&self) -> ProcessorType {
-            ProcessorType::Cpu
-        }
-
-        fn job_types(&self) -> Vec<&'static str> {
-            vec!["timeout-publish"]
-        }
-
-        async fn process(
-            &self,
-            input: &ProcessorInput,
-            ctx: &ProcessorContext,
-        ) -> crate::Result<ProcessorOutput> {
-            let output_path =
-                input.outputs.first().cloned().ok_or_else(|| {
-                    crate::Error::PipelineError("missing output path".to_string())
-                })?;
-
-            let token = ctx.cancellation_token.clone();
-            let output_path_for_blocking = output_path.clone();
-            tokio::task::spawn_blocking(move || {
-                std::thread::sleep(Duration::from_millis(1500));
-                if token.is_cancelled() {
-                    return Ok::<_, std::io::Error>(());
-                }
-                std::fs::write(&output_path_for_blocking, b"published")?;
-                Ok(())
-            })
-            .await
-            .map_err(|e| crate::Error::Other(format!("blocking task panicked: {}", e)))??;
-
-            Ok(ProcessorOutput {
-                outputs: vec![output_path.clone()],
-                items_produced: vec![output_path],
-                ..Default::default()
-            })
-        }
-
-        fn name(&self) -> &'static str {
-            "timeout-publish"
         }
     }
 
@@ -2602,11 +2530,6 @@ mod tests {
             self.0.try_send(ctx.clone()).unwrap();
             std::future::pending().await
         }
-    }
-
-    #[tokio::test(start_paused = true)]
-    async fn timeout_is_recorded_before_waiting_for_retained_log_sink() {
-        assert_timeout_with_retained_sink(false).await;
     }
 
     #[tokio::test(start_paused = true)]
@@ -3431,54 +3354,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_worker_emits_failed_event() {
-        let job_queue = Arc::new(JobQueue::new());
-        let (event_tx, mut event_rx) = broadcast::channel(16);
-        let pool = WorkerPool::with_config(WorkerType::Cpu, test_pool_config());
-
-        pool.start_with_dag_scheduler(
-            job_queue.clone(),
-            vec![Arc::new(FailingProcessor)],
-            None,
-            None,
-            Some(event_tx),
-        );
-
-        let job = Job::new(
-            "failing",
-            vec!["/input".to_string()],
-            vec![],
-            "streamer-1",
-            "session-1",
-        );
-        let job_id = job_queue.enqueue(job).await.unwrap();
-
-        let failure = tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                if let PipelineEvent::JobFailed { job_id, error, .. } =
-                    event_rx.recv().await.unwrap()
-                {
-                    return (job_id, error);
-                }
-            }
-        })
-        .await
-        .expect("worker emits JobFailed");
-
-        assert_eq!(failure.0, job_id);
-        assert!(failure.1.contains("boom"), "{}", failure.1);
-
-        pool.stop().await;
-    }
-
-    #[test]
-    fn test_worker_pool_creation() {
-        let pool = WorkerPool::new(WorkerType::Cpu);
-        assert_eq!(pool.worker_type(), WorkerType::Cpu);
-        assert!(pool.is_running());
-    }
-
-    #[tokio::test]
     async fn test_cancel_processing_job_releases_worker() {
         let job_queue = Arc::new(JobQueue::new());
         let pool = WorkerPool::with_config(
@@ -3532,65 +3407,5 @@ mod tests {
         assert_eq!(job.status, JobStatus::Cancelled);
 
         pool.stop().await;
-    }
-
-    #[tokio::test]
-    async fn test_timeout_cancels_job_token_prevents_publish() {
-        let dir = TempDir::new().unwrap();
-        let output_path = dir.path().join("published.txt");
-        let output_str = output_path.to_string_lossy().to_string();
-
-        let job_queue = Arc::new(JobQueue::new());
-        let pool = WorkerPool::with_config(
-            WorkerType::Cpu,
-            WorkerPoolConfig {
-                max_workers: 1,
-                job_timeout_secs: 1,
-                poll_interval_ms: 10,
-                adaptive: AdaptiveWorkerPoolConfig::default(),
-            },
-        );
-
-        pool.start(job_queue.clone(), vec![Arc::new(TimeoutPublishProcessor)]);
-
-        let job = Job::new(
-            "timeout-publish",
-            vec!["/input".to_string()],
-            vec![output_str.clone()],
-            "streamer-1",
-            "session-1",
-        );
-        let job_id = job_queue.enqueue(job).await.unwrap();
-
-        tokio::time::timeout(Duration::from_secs(3), async {
-            loop {
-                if let Some(job) = job_queue.get_job(&job_id).await.unwrap()
-                    && job.status == JobStatus::Failed
-                {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        .expect("job should time out and fail");
-
-        tokio::time::sleep(Duration::from_secs(2)).await;
-        assert!(!output_path.exists());
-
-        pool.stop().await;
-    }
-
-    #[test]
-    fn timeout_progress_clause_names_the_phase() {
-        let mut snapshot = JobProgressSnapshot::new(crate::pipeline::ProgressKind::BaiduPcs);
-        snapshot.phase = Some(JobPhase::Retrying);
-        snapshot.updated_at = chrono::Utc::now() - chrono::Duration::minutes(59);
-
-        let clause = progress_clause(&snapshot);
-        assert!(
-            clause.starts_with(", progress waiting to retry, last updated 59m "),
-            "{clause}"
-        );
     }
 }

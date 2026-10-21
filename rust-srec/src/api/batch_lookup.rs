@@ -52,10 +52,6 @@ where
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::database::repositories::{
-        FilterRepository, NotificationRepository, SqlxFilterRepository, SqlxNotificationRepository,
-        SqlxStreamerRepository, StreamerRepository,
-    };
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -104,63 +100,6 @@ pub(crate) mod tests {
         .unwrap();
         queries.store(0, Ordering::SeqCst);
         (pool, queries)
-    }
-
-    #[tokio::test]
-    async fn sqlite_related_lookups_bound_queries_deduplicate_and_preserve_owner_order() {
-        let (pool, queries) = fixture().await;
-        let names = SqlxStreamerRepository::new(pool.clone(), pool.clone());
-        let filters = SqlxFilterRepository::new(pool.clone(), pool.clone());
-        let notifications = SqlxNotificationRepository::new(pool.clone(), pool.clone());
-        let mut ids: Vec<_> = (0..=1000).map(|i| format!("owner-{i:04}")).collect();
-        ids.push("missing".to_owned());
-        ids.extend(std::iter::repeat_n("owner-0000".to_owned(), 500));
-        let streamers = names.get_streamers_by_ids(&ids).await.unwrap();
-        assert_eq!(queries.swap(0, Ordering::SeqCst), 3);
-        assert_eq!(streamers.len(), 1001);
-        let batched_filters = filters.get_filters_for_streamers(&ids).await.unwrap();
-        assert_eq!(queries.swap(0, Ordering::SeqCst), 3);
-        let batched_subscriptions = notifications
-            .get_subscriptions_for_channels(&ids)
-            .await
-            .unwrap();
-        assert_eq!(queries.swap(0, Ordering::SeqCst), 3);
-        assert!(!batched_filters.contains_key("missing"));
-        assert!(!batched_filters.contains_key("owner-1000"));
-        assert!(!batched_subscriptions.contains_key("missing"));
-        assert!(!batched_subscriptions.contains_key("owner-1000"));
-        for id in ["owner-0000", "owner-0499", "owner-0500", "owner-0999"] {
-            let individual = filters.get_filters_for_streamer(id).await.unwrap();
-            assert_eq!(
-                serde_json::to_value(&batched_filters[id]).unwrap(),
-                serde_json::to_value(individual).unwrap()
-            );
-            assert_eq!(
-                batched_subscriptions[id],
-                notifications
-                    .get_subscriptions_for_channel(id)
-                    .await
-                    .unwrap()
-            );
-        }
-        queries.store(0, Ordering::SeqCst);
-        assert!(names.get_streamers_by_ids(&[]).await.unwrap().is_empty());
-        assert!(
-            filters
-                .get_filters_for_streamers(&[])
-                .await
-                .unwrap()
-                .is_empty()
-        );
-        assert!(
-            notifications
-                .get_subscriptions_for_channels(&[])
-                .await
-                .unwrap()
-                .is_empty()
-        );
-        assert_eq!(queries.load(Ordering::SeqCst), 0);
-        pool.close().await;
     }
 
     #[tokio::test]

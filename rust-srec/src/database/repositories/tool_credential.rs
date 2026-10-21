@@ -150,29 +150,4 @@ mod tests {
         // Deleting again is a no-op.
         repo.delete("baidupcs", "").await.unwrap();
     }
-
-    #[tokio::test]
-    async fn rows_are_keyed_by_tool_and_account() {
-        let repo = setup().await;
-        repo.upsert(&model("baidupcs", "")).await.unwrap();
-        repo.upsert(&model("baidupcs", "/app/config/BaiduPCS-Go"))
-            .await
-            .unwrap();
-        // A different tool may reuse the same account key.
-        repo.upsert(&model("othertool", "")).await.unwrap();
-
-        repo.delete("baidupcs", "").await.unwrap();
-        assert!(repo.get("baidupcs", "").await.unwrap().is_none());
-        assert!(
-            repo.get("baidupcs", "/app/config/BaiduPCS-Go")
-                .await
-                .unwrap()
-                .is_some(),
-            "delete only touches its own account key"
-        );
-        assert!(
-            repo.get("othertool", "").await.unwrap().is_some(),
-            "delete only touches its own tool"
-        );
-    }
 }

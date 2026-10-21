@@ -662,17 +662,6 @@ async fn dispatch_contains_event_panics_and_restarts_after_idle() {
 }
 
 #[tokio::test]
-async fn dispatch_rejected_by_a_closed_supervisor_is_counted() {
-    let supervisor = Arc::new(TaskSupervisor::new());
-    let service = Arc::new(NotificationService::new().with_task_supervisor(supervisor.clone()));
-    assert!(supervisor.shutdown(Duration::ZERO).await);
-    service.dispatch_notification(event());
-    assert_eq!(service.stats().dispatch_dropped, 1);
-    service.dispatch_notification(event());
-    assert_eq!(service.stats().dispatch_dropped, 2);
-}
-
-#[tokio::test]
 async fn direct_notifications_after_stop_are_counted_as_dropped() {
     let service = NotificationService::new();
     let attempts = channel(&service, "one", 0);

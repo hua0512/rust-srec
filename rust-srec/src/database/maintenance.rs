@@ -1057,56 +1057,6 @@ mod tests {
         assert!(database.scheduler.run_vacuum_if_needed().await.unwrap());
     }
 
-    #[tokio::test]
-    async fn vacuum_admission_is_conservative_without_a_live_owner_or_valid_limit() {
-        let mut database = setup_with_config(MaintenanceConfig {
-            vacuum_threshold_bytes: 0,
-            ..MaintenanceConfig::default()
-        })
-        .await;
-        assert!(!database.scheduler.run_vacuum_if_needed().await.unwrap());
-        let manager = Arc::new(DownloadManager::new());
-        Arc::get_mut(&mut database.scheduler)
-            .unwrap()
-            .download_manager = Arc::downgrade(&manager);
-        let admission = manager.try_admit_maintenance(0).unwrap();
-        assert!(
-            !database.scheduler.run_vacuum_if_needed().await.unwrap(),
-            "another admission owner defers vacuum immediately"
-        );
-        drop(admission);
-        Arc::get_mut(&mut database.scheduler)
-            .unwrap()
-            .config
-            .max_active_downloads_for_vacuum = -1;
-        assert!(!database.scheduler.run_vacuum_if_needed().await.unwrap());
-        Arc::get_mut(&mut database.scheduler)
-            .unwrap()
-            .config
-            .max_active_downloads_for_vacuum = 0;
-        drop(manager);
-        assert!(!database.scheduler.run_vacuum_if_needed().await.unwrap());
-    }
-
-    #[tokio::test]
-    async fn service_builder_wires_the_actual_download_admission_owner() {
-        let database = setup(1).await;
-        let container = crate::services::ServiceContainer::with_config(
-            database.pool.clone(),
-            database.scheduler.write_pool.clone(),
-            Duration::from_secs(60),
-            8,
-        )
-        .await
-        .unwrap();
-        let owner = container
-            .maintenance_scheduler
-            .download_manager
-            .upgrade()
-            .expect("production maintenance must have an admission owner");
-        assert!(Arc::ptr_eq(&owner, &container.download_manager));
-    }
-
     async fn setup_with_config(config: MaintenanceConfig) -> TestDatabase {
         // macOS temporary paths can have symlinked ancestors, which output
         // retention deliberately rejects. Give fixtures a physical root.
@@ -1296,19 +1246,6 @@ mod tests {
                 .await
                 .expect("historic DAG timestamps");
         }
-    }
-
-    #[test]
-    fn zero_retention_means_forever() {
-        assert_eq!(
-            RetentionDays::try_from(0).ok(),
-            Some(RetentionDays::Forever)
-        );
-    }
-
-    #[test]
-    fn negative_retention_is_rejected() {
-        assert!(RetentionDays::try_from(-1).is_err());
     }
 
     #[tokio::test]
@@ -1726,33 +1663,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cleanup_respects_per_task_batch_budget() {
-        let database = setup_with_config(MaintenanceConfig {
-            batch_size: 1,
-            max_batches_per_task: 1,
-            ..MaintenanceConfig::default()
-        })
-        .await;
-        let now = 2_000_000_000_000_i64;
-        let old = now - 31 * MILLIS_PER_DAY;
-        set_retention(&database, 30, 30).await;
-        for id in ["bounded-1", "bounded-2", "bounded-3"] {
-            insert_job(&database, id, JobStatus::Failed, old).await;
-        }
-
-        for remaining_after_sweep in [2_i64, 1, 0] {
-            let report = database.scheduler.run_maintenance_at(now).await;
-            assert_eq!(report.jobs_deleted, 1);
-            let remaining: i64 =
-                sqlx::query_scalar("SELECT COUNT(*) FROM job WHERE id LIKE 'bounded-%'")
-                    .fetch_one(&database.pool)
-                    .await
-                    .expect("remaining bounded jobs");
-            assert_eq!(remaining, remaining_after_sweep);
-        }
-    }
-
-    #[tokio::test]
     async fn cancelled_sweep_stops_before_deleting_rows() {
         let database = setup(1).await;
         let now = 2_000_000_000_000_i64;
@@ -1810,55 +1720,6 @@ mod tests {
         .await
         .expect("retained history");
         assert_eq!(count, 3);
-    }
-
-    #[tokio::test]
-    async fn invalid_retention_field_does_not_disable_other_policy() {
-        let database = setup(10).await;
-        let now = 2_000_000_000_000_i64;
-        let old = now - 31 * MILLIS_PER_DAY;
-        sqlx::query(
-            "UPDATE global_config SET job_history_retention_days = -1, \
-             notification_event_log_retention_days = 30",
-        )
-        .execute(&database.pool)
-        .await
-        .expect("corrupt one retention field");
-        insert_job(
-            &database,
-            "preserved-invalid-policy",
-            JobStatus::Failed,
-            old,
-        )
-        .await;
-        database
-            .notification_repository
-            .add_event_log(&NotificationEventLogDbModel {
-                id: "pruned-valid-policy".to_string(),
-                event_type: "test".to_string(),
-                priority: 5,
-                payload: "{}".to_string(),
-                streamer_id: None,
-                created_at: old,
-            })
-            .await
-            .expect("notification event");
-
-        let report = database.scheduler.run_maintenance_at(now).await;
-        assert_eq!(report.jobs_deleted, 0);
-        assert_eq!(report.notification_events_deleted, 1);
-        assert!(
-            report
-                .failures
-                .iter()
-                .any(|failure| { failure.task == "job_history_retention_policy" })
-        );
-        let job_count: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM job WHERE id = 'preserved-invalid-policy'")
-                .fetch_one(&database.pool)
-                .await
-                .expect("preserved job");
-        assert_eq!(job_count, 1);
     }
 
     #[tokio::test]

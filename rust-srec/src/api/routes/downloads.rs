@@ -980,8 +980,6 @@ pub fn map_upload_event_to_protobuf(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::downloader::ConfigUpdateType;
-    use crate::downloader::engine::EngineType;
 
     #[tokio::test]
     async fn manual_cut_endpoint_requires_full_access() {
@@ -1049,29 +1047,200 @@ mod tests {
         fixture.pool.close().await;
     }
 
+    /// The frontend dispatches on `event_type`, then reads the payload's
+    /// string codes and proto3 defaults.
     #[test]
-    fn manual_cut_events_preserve_request_identity_and_revision() {
+    fn download_events_map_to_the_frames_the_frontend_decodes() {
+        use crate::downloader::engine::{DownloadProgress, DownloadStatus, EngineType};
+
+        let decode = |event: DownloadManagerEvent, event_type: EventType| {
+            let message = map_event_to_protobuf(&event).expect("event is broadcast");
+            assert_eq!(message.event_type, event_type as i32, "{event:?}");
+            message.payload.expect("payload")
+        };
+        let Payload::DownloadMeta(meta) = decode(
+            DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
+                download_id: "dl-1".into(),
+                streamer_id: "streamer-1".into(),
+                streamer_name: "Streamer".into(),
+                session_id: "session-1".into(),
+                engine_type: EngineType::Ffmpeg,
+                cdn_host: "cdn.example.com".to_string(),
+                download_url: "https://cdn.example.com/live.flv".to_string(),
+            }),
+            EventType::DownloadMeta,
+        ) else {
+            panic!("expected meta");
+        };
+        assert_eq!(
+            (
+                meta.download_id.as_str(),
+                meta.session_id.as_str(),
+                meta.engine_type.as_str()
+            ),
+            ("dl-1", "session-1", "ffmpeg")
+        );
+
+        let Payload::DownloadMetrics(metrics) = decode(
+            DownloadManagerEvent::Progress(DownloadProgressEvent::Progress {
+                download_id: "dl-1".into(),
+                streamer_id: "streamer-1".into(),
+                streamer_name: "Streamer".into(),
+                session_id: "session-1".into(),
+                status: DownloadStatus::Downloading,
+                progress: DownloadProgress {
+                    bytes_downloaded: 1_024,
+                    segments_completed: 5,
+                    ..Default::default()
+                },
+            }),
+            EventType::DownloadMetrics,
+        ) else {
+            panic!("expected metrics");
+        };
+        assert_eq!(
+            (
+                metrics.status.as_str(),
+                metrics.bytes_downloaded,
+                metrics.segments_completed
+            ),
+            ("downloading", 1_024, 5)
+        );
+
+        let Payload::SegmentCompleted(segment) = decode(
+            DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
+                download_id: "dl-1".into(),
+                streamer_id: "streamer-1".into(),
+                streamer_name: "Streamer".into(),
+                session_id: "session-1".into(),
+                segment_path: "/rec/segment.ts".to_string(),
+                segment_index: 5,
+                started_at: None,
+                completed_at: chrono::Utc::now(),
+                duration_secs: 10.5,
+                size_bytes: 1_024_000,
+                split_reason_code: None,
+                split_reason_details_json: None,
+            }),
+            EventType::SegmentCompleted,
+        ) else {
+            panic!("expected segment");
+        };
+        assert_eq!(
+            (
+                segment.segment_index,
+                segment.size_bytes,
+                segment.split_reason.as_str(),
+                segment.started_at_ms
+            ),
+            (5, 1_024_000, "", 0)
+        );
+        assert!(segment.completed_at_ms > 0);
+
+        let Payload::DownloadCompleted(completed) = decode(
+            DownloadManagerEvent::Terminal(DownloadTerminalEvent::Completed {
+                download_id: "dl-1".into(),
+                streamer_id: "streamer-1".into(),
+                streamer_name: "Streamer".into(),
+                session_id: "session-1".into(),
+                total_bytes: 10_240_000,
+                total_duration_secs: 3_600.0,
+                total_segments: 360,
+                file_path: None,
+                engine_signal: crate::downloader::EngineEndSignal::Unknown,
+                stop_cause: None,
+            }),
+            EventType::DownloadCompleted,
+        ) else {
+            panic!("expected completed");
+        };
+        assert_eq!(
+            (completed.total_bytes, completed.total_segments),
+            (10_240_000, 360)
+        );
+
+        let Payload::DownloadFailed(failed) = decode(
+            DownloadManagerEvent::Terminal(DownloadTerminalEvent::Failed {
+                download_id: "dl-1".into(),
+                streamer_id: "streamer-1".into(),
+                streamer_name: "Streamer".into(),
+                session_id: "session-1".into(),
+                engine_type: EngineType::Mesio,
+                protocol: crate::downloader::DownloadProtocol::Hls,
+                kind: crate::downloader::DownloadFailureKind::Network,
+                error: "Connection timeout".to_string(),
+                recoverable: true,
+            }),
+            EventType::DownloadFailed,
+        ) else {
+            panic!("expected failed");
+        };
+        assert_eq!(
+            (failed.error.as_str(), failed.recoverable),
+            ("Connection timeout", true)
+        );
+
+        let Payload::DownloadCancelled(cancelled) = decode(
+            DownloadManagerEvent::Terminal(DownloadTerminalEvent::Cancelled {
+                download_id: "dl-1".into(),
+                streamer_id: "streamer-1".into(),
+                streamer_name: "Streamer".into(),
+                session_id: "session-1".into(),
+                cause: crate::downloader::DownloadStopCause::User,
+            }),
+            EventType::DownloadCancelled,
+        ) else {
+            panic!("expected cancelled");
+        };
+        assert_eq!(cancelled.cause, "user");
+
+        let Payload::DownloadRejected(rejected) = decode(
+            DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {
+                streamer_id: "streamer-1".into(),
+                streamer_name: "Streamer".into(),
+                session_id: "session-1".into(),
+                reason: "Circuit breaker open".to_string(),
+                retry_after_secs: Some(60),
+                kind: crate::downloader::DownloadRejectedKind::CircuitBreaker,
+            }),
+            EventType::DownloadRejected,
+        ) else {
+            panic!("expected rejected");
+        };
+        assert_eq!(
+            (
+                rejected.session_id.as_str(),
+                rejected.retry_after_secs,
+                rejected.recoverable
+            ),
+            ("session-1", 60, true)
+        );
+
         let control = pipeline_common::ManualSplitControl::default();
         control.enable();
         let state = control.request(Duration::from_secs(30)).unwrap();
-        let message = map_event_to_protobuf(&DownloadManagerEvent::Progress(
-            DownloadProgressEvent::ManualSplitChanged {
-                download_id: "attempt".into(),
-                streamer_id: "streamer".into(),
+        let Payload::DownloadSplit(split) = decode(
+            DownloadManagerEvent::Progress(DownloadProgressEvent::ManualSplitChanged {
+                download_id: "dl-1".into(),
+                streamer_id: "streamer-1".into(),
                 streamer_name: "Streamer".into(),
-                session_id: "session".into(),
+                session_id: "session-1".into(),
                 state: state.clone(),
-            },
-        ))
-        .unwrap();
-        let Some(Payload::DownloadSplit(split)) = message.payload else {
+            }),
+            EventType::DownloadSplit,
+        ) else {
             panic!("expected cut state");
         };
         let split_state = split.state.unwrap();
-        assert_eq!(split.download_id, "attempt");
-        assert_eq!(split_state.request_id, state.request_id);
-        assert_eq!(split_state.revision, state.revision);
-        assert_eq!(split_state.status, "pending");
+        assert_eq!(
+            (
+                split.download_id.as_str(),
+                split_state.request_id,
+                split_state.revision,
+                split_state.status.as_str()
+            ),
+            ("dl-1", state.request_id, state.revision, "pending")
+        );
     }
 
     #[tokio::test]
@@ -1174,250 +1343,6 @@ mod tests {
                 .encode_to_vec()
         );
         assert!(shared_event_bytes(&envelope, &Some("other".to_string())).is_none());
-    }
-
-    #[test]
-    fn test_ws_auth_params_deserialize() {
-        let json = r#"{"token": "test-jwt-token"}"#;
-        let params: WsAuthParams = serde_json::from_str(json).unwrap();
-        assert_eq!(params.token.as_deref(), Some("test-jwt-token"));
-    }
-
-    #[test]
-    fn test_config_events_not_broadcast() {
-        let event = DownloadManagerEvent::Progress(DownloadProgressEvent::ConfigUpdated {
-            download_id: "dl-1".to_string(),
-            streamer_id: "streamer-123".to_string(),
-            streamer_name: "streamer-123".to_string(),
-            update_type: ConfigUpdateType::Cookies,
-        });
-
-        let result = map_event_to_protobuf(&event);
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_download_meta_event_mapping() {
-        let event = DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
-            download_id: "dl-1".to_string(),
-            streamer_id: "streamer-123".to_string(),
-            streamer_name: "streamer-123".to_string(),
-            session_id: "session-1".to_string(),
-            engine_type: EngineType::Ffmpeg,
-            cdn_host: "cdn.example.com".to_string(),
-            download_url: "https://cdn.example.com/stream".to_string(),
-        });
-
-        let msg = map_event_to_protobuf(&event).unwrap();
-        assert_eq!(msg.event_type, EventType::DownloadMeta as i32);
-
-        if let Some(Payload::DownloadMeta(payload)) = msg.payload {
-            assert_eq!(payload.download_id, "dl-1");
-            assert_eq!(payload.streamer_id, "streamer-123");
-            assert_eq!(payload.session_id, "session-1");
-            assert_eq!(payload.engine_type, "ffmpeg");
-        } else {
-            panic!("Expected DownloadMeta payload");
-        }
-    }
-
-    #[test]
-    fn test_segment_completed_event_mapping() {
-        let event = DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
-            download_id: "dl-1".to_string(),
-            streamer_id: "streamer-123".to_string(),
-            streamer_name: "streamer-123".to_string(),
-            session_id: "session-1".to_string(),
-            segment_path: "/path/to/segment.ts".to_string(),
-            segment_index: 5,
-            started_at: Some(chrono::Utc::now()),
-            completed_at: chrono::Utc::now(),
-            duration_secs: 10.5,
-            size_bytes: 1024000,
-            split_reason_code: None,
-            split_reason_details_json: None,
-        });
-
-        let msg = map_event_to_protobuf(&event).unwrap();
-        assert_eq!(msg.event_type, EventType::SegmentCompleted as i32);
-
-        if let Some(Payload::SegmentCompleted(payload)) = msg.payload {
-            assert_eq!(payload.download_id, "dl-1");
-            assert_eq!(payload.segment_index, 5);
-            assert_eq!(payload.duration_secs, 10.5);
-            assert_eq!(payload.size_bytes, 1024000);
-            assert_eq!(payload.session_id, "session-1");
-            assert_eq!(payload.split_reason, "");
-            assert!(payload.completed_at_ms > 0);
-        } else {
-            panic!("Expected SegmentCompleted payload");
-        }
-    }
-
-    #[test]
-    fn test_download_completed_event_mapping() {
-        let event = DownloadManagerEvent::Terminal(DownloadTerminalEvent::Completed {
-            download_id: "dl-1".to_string(),
-            streamer_id: "streamer-123".to_string(),
-            streamer_name: "streamer-123".to_string(),
-            session_id: "session-1".to_string(),
-            total_bytes: 10240000,
-            total_duration_secs: 3600.0,
-            total_segments: 360,
-            file_path: Some("/path/to/video.mp4".to_string()),
-            engine_signal: crate::downloader::EngineEndSignal::Unknown,
-            stop_cause: None,
-        });
-
-        let msg = map_event_to_protobuf(&event).unwrap();
-        assert_eq!(msg.event_type, EventType::DownloadCompleted as i32);
-
-        if let Some(Payload::DownloadCompleted(payload)) = msg.payload {
-            assert_eq!(payload.download_id, "dl-1");
-            assert_eq!(payload.total_bytes, 10240000);
-            assert_eq!(payload.total_segments, 360);
-        } else {
-            panic!("Expected DownloadCompleted payload");
-        }
-    }
-
-    #[test]
-    fn test_download_failed_event_mapping() {
-        use crate::downloader::DownloadFailureKind;
-
-        let event = DownloadManagerEvent::Terminal(DownloadTerminalEvent::Failed {
-            download_id: "dl-1".to_string(),
-            streamer_id: "streamer-123".to_string(),
-            streamer_name: "streamer-123".to_string(),
-            session_id: "session-1".to_string(),
-            engine_type: EngineType::Ffmpeg,
-            protocol: crate::downloader::DownloadProtocol::Unknown,
-            kind: DownloadFailureKind::Network,
-            error: "Connection timeout".to_string(),
-            recoverable: true,
-        });
-
-        let msg = map_event_to_protobuf(&event).unwrap();
-        assert_eq!(msg.event_type, EventType::DownloadFailed as i32);
-
-        if let Some(Payload::DownloadFailed(payload)) = msg.payload {
-            assert_eq!(payload.download_id, "dl-1");
-            assert_eq!(payload.error, "Connection timeout");
-            assert!(payload.recoverable);
-        } else {
-            panic!("Expected DownloadFailed payload");
-        }
-    }
-
-    #[test]
-    fn test_download_cancelled_event_mapping() {
-        let event = DownloadManagerEvent::Terminal(DownloadTerminalEvent::Cancelled {
-            download_id: "dl-1".to_string(),
-            streamer_id: "streamer-123".to_string(),
-            streamer_name: "streamer-123".to_string(),
-            session_id: "session-1".to_string(),
-            cause: crate::downloader::DownloadStopCause::User,
-        });
-
-        let msg = map_event_to_protobuf(&event).unwrap();
-        assert_eq!(msg.event_type, EventType::DownloadCancelled as i32);
-
-        if let Some(Payload::DownloadCancelled(payload)) = msg.payload {
-            assert_eq!(payload.download_id, "dl-1");
-            assert_eq!(payload.streamer_id, "streamer-123");
-            assert_eq!(payload.cause, "user");
-        } else {
-            panic!("Expected DownloadCancelled payload");
-        }
-    }
-
-    #[test]
-    fn test_download_rejected_event_mapping() {
-        let event = DownloadManagerEvent::Terminal(DownloadTerminalEvent::Rejected {
-            streamer_id: "streamer-123".to_string(),
-            streamer_name: "streamer-123".to_string(),
-            session_id: "session-1".to_string(),
-            reason: "Circuit breaker open".to_string(),
-            retry_after_secs: Some(60),
-            kind: crate::downloader::DownloadRejectedKind::CircuitBreaker,
-        });
-
-        let msg = map_event_to_protobuf(&event).unwrap();
-        assert_eq!(msg.event_type, EventType::DownloadRejected as i32);
-
-        if let Some(Payload::DownloadRejected(payload)) = msg.payload {
-            assert_eq!(payload.streamer_id, "streamer-123");
-            assert_eq!(payload.session_id, "session-1");
-            assert_eq!(payload.reason, "Circuit breaker open");
-            assert_eq!(payload.retry_after_secs, 60);
-            assert!(payload.recoverable);
-        } else {
-            panic!("Expected DownloadRejected payload");
-        }
-    }
-
-    #[test]
-    fn test_protobuf_round_trip_encoding() {
-        let event = DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
-            download_id: "dl-1".to_string(),
-            streamer_id: "streamer-123".to_string(),
-            streamer_name: "streamer-123".to_string(),
-            session_id: "session-1".to_string(),
-            engine_type: EngineType::Ffmpeg,
-            cdn_host: "cdn.example.com".to_string(),
-            download_url: "https://cdn.example.com/stream".to_string(),
-        });
-
-        let msg = map_event_to_protobuf(&event).unwrap();
-
-        // Encode to bytes
-        let bytes = msg.encode_to_vec();
-
-        // Decode back
-        let decoded = WsMessage::decode(bytes.as_slice()).unwrap();
-
-        assert_eq!(decoded.event_type, msg.event_type);
-        assert!(decoded.payload.is_some());
-    }
-
-    #[test]
-    fn test_client_message_subscribe_decode() {
-        use crate::api::proto::download_progress::{SubscribeRequest, client_message::Action};
-
-        let client_msg = ClientMessage {
-            action: Some(Action::Subscribe(SubscribeRequest {
-                streamer_id: "streamer-123".to_string(),
-            })),
-        };
-
-        // Encode
-        let bytes = client_msg.encode_to_vec();
-
-        // Decode
-        let decoded = ClientMessage::decode(bytes.as_slice()).unwrap();
-
-        if let Some(Action::Subscribe(req)) = decoded.action {
-            assert_eq!(req.streamer_id, "streamer-123");
-        } else {
-            panic!("Expected Subscribe action");
-        }
-    }
-
-    #[test]
-    fn test_client_message_unsubscribe_decode() {
-        use crate::api::proto::download_progress::{UnsubscribeRequest, client_message::Action};
-
-        let client_msg = ClientMessage {
-            action: Some(Action::Unsubscribe(UnsubscribeRequest {})),
-        };
-
-        // Encode
-        let bytes = client_msg.encode_to_vec();
-
-        // Decode
-        let decoded = ClientMessage::decode(bytes.as_slice()).unwrap();
-
-        assert!(matches!(decoded.action, Some(Action::Unsubscribe(_))));
     }
 
     /// The header's upload status keeps one global uploads list, so a socket

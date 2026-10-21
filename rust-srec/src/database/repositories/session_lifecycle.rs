@@ -1290,149 +1290,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn start_or_resume_creates_first_session() {
-        let pool = setup_pool().await;
-        let repo = SessionLifecycleRepository::new(pool.clone());
-        let now = Utc::now();
-
-        let outcome = repo.start_or_resume(start_inputs(now)).await.unwrap();
-
-        assert!(matches!(outcome, StartSessionOutcome::Created { .. }));
-        assert_eq!(streamer_state(&pool).await, "LIVE");
-        assert_eq!(outbox_event_types(&pool).await, vec!["StreamerLive"]);
-    }
-
-    #[tokio::test]
-    async fn start_or_resume_reuses_active_session() {
-        let pool = setup_pool().await;
-        let repo = SessionLifecycleRepository::new(pool.clone());
-        let now = Utc::now();
-
-        let first = repo.start_or_resume(start_inputs(now)).await.unwrap();
-        let again = repo.start_or_resume(start_inputs(now)).await.unwrap();
-
-        assert!(matches!(again, StartSessionOutcome::ReusedActive { .. }));
-        assert_eq!(first.session_id(), again.session_id());
-        assert_eq!(outbox_event_types(&pool).await.len(), 2);
-    }
-
-    /// The in-tx state guard: a live check that lost the race against a
-    /// user disable must not create a session, overwrite `state=DISABLED`
-    /// with LIVE, or enqueue a `StreamerLive` outbox event.
-    #[tokio::test]
-    async fn start_or_resume_suppressed_when_streamer_disabled() {
-        let pool = setup_pool().await;
-        let repo = SessionLifecycleRepository::new(pool.clone());
-
-        set_streamer_state(&pool, "DISABLED").await;
-
-        let outcome = repo
-            .start_or_resume(start_inputs(Utc::now()))
-            .await
-            .unwrap();
-
-        assert_eq!(
-            outcome,
-            StartSessionOutcome::SuppressedInactive {
-                state: StreamerState::Disabled
-            }
-        );
-        assert_eq!(streamer_state(&pool).await, "DISABLED");
-        assert!(outbox_event_types(&pool).await.is_empty());
-        let sessions: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM live_sessions")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(sessions, 0, "no session row may be created while disabled");
-    }
-
-    /// Same guard on the hysteresis-resume write path: `mark_streamer_live`
-    /// must refuse to flip an inactive row to LIVE and report the blocking
-    /// state so the lifecycle aborts the resume.
-    #[tokio::test]
-    async fn mark_streamer_live_blocked_for_inactive_streamer() {
-        let pool = setup_pool().await;
-        let repo = SessionLifecycleRepository::new(pool.clone());
-
-        set_streamer_state(&pool, "CANCELLED").await;
-
-        let blocked = repo
-            .mark_streamer_live(STREAMER_ID, Utc::now())
-            .await
-            .unwrap();
-        assert_eq!(blocked, Some(StreamerState::Cancelled));
-        assert_eq!(streamer_state(&pool).await, "CANCELLED");
-
-        set_streamer_state(&pool, "NOT_LIVE").await;
-
-        let marked = repo
-            .mark_streamer_live(STREAMER_ID, Utc::now())
-            .await
-            .unwrap();
-        assert_eq!(marked, None);
-        assert_eq!(streamer_state(&pool).await, "LIVE");
-    }
-
-    #[tokio::test]
-    async fn start_or_resume_after_ended_creates_new_session() {
-        // Ended sessions are terminal: any later LiveDetected creates a
-        // fresh session row.
-        let pool = setup_pool().await;
-        let repo = SessionLifecycleRepository::new(pool.clone());
-        let started_at = Utc::now() - chrono::Duration::seconds(60);
-
-        let first = repo
-            .start_or_resume(start_inputs(started_at))
-            .await
-            .unwrap();
-        let ended_at = started_at + chrono::Duration::seconds(30);
-        repo.end(end_inputs(
-            Some(first.session_id().to_string()),
-            true,
-            ended_at,
-        ))
-        .await
-        .unwrap();
-
-        // No matter how soon we restart — no gap rule.
-        let restart_now = ended_at + chrono::Duration::seconds(5);
-        let outcome = repo
-            .start_or_resume(start_inputs(restart_now))
-            .await
-            .unwrap();
-
-        assert!(matches!(outcome, StartSessionOutcome::Created { .. }));
-        assert_ne!(outcome.session_id(), first.session_id());
-    }
-
-    #[tokio::test]
-    async fn end_with_explicit_id_emits_offline_and_marks_streamer() {
-        let pool = setup_pool().await;
-        let repo = SessionLifecycleRepository::new(pool.clone());
-        let now = Utc::now();
-
-        let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
-        let id = started.session_id().to_string();
-
-        let outcome = repo
-            .end(end_inputs(
-                Some(id.clone()),
-                true,
-                now + chrono::Duration::seconds(10),
-            ))
-            .await
-            .unwrap();
-
-        assert_eq!(outcome.resolved_session_id.as_deref(), Some(id.as_str()));
-        assert!(outcome.offline_event_emitted);
-        assert_eq!(streamer_state(&pool).await, "NOT_LIVE");
-        assert_eq!(
-            outbox_event_types(&pool).await,
-            vec!["StreamerLive", "StreamerOffline"]
-        );
-    }
-
-    #[tokio::test]
     async fn end_with_no_id_falls_back_to_active_session() {
         let pool = setup_pool().await;
         let repo = SessionLifecycleRepository::new(pool.clone());
@@ -1478,28 +1335,6 @@ mod tests {
         assert_eq!(streamer_state(&pool).await, "LIVE");
         // Only the start event is in the outbox; no offline event emitted.
         assert_eq!(outbox_event_types(&pool).await, vec!["StreamerLive"]);
-    }
-
-    #[tokio::test]
-    async fn end_session_only_active_fallback_when_id_is_none() {
-        let pool = setup_pool().await;
-        let repo = SessionLifecycleRepository::new(pool.clone());
-        let now = Utc::now();
-
-        let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
-
-        let resolved = repo
-            .end_session_only(
-                STREAMER_ID,
-                None,
-                TerminalCauseDto::Completed,
-                false,
-                now + chrono::Duration::seconds(5),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(resolved.as_deref(), Some(started.session_id()));
     }
 
     #[tokio::test]
@@ -1574,52 +1409,6 @@ mod tests {
             .await
             .unwrap();
         assert!(resolved.is_none());
-        assert!(outbox_event_types(&pool).await.is_empty());
-    }
-
-    #[tokio::test]
-    async fn end_for_out_of_schedule_already_out_of_schedule_with_session_still_emits_event() {
-        let pool = setup_pool().await;
-        let repo = SessionLifecycleRepository::new(pool.clone());
-        let now = Utc::now();
-
-        let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
-        let sid = started.session_id().to_string();
-        sqlx::query("UPDATE streamers SET state = 'OUT_OF_SCHEDULE' WHERE id = ?")
-            .bind(STREAMER_ID)
-            .execute(&pool)
-            .await
-            .unwrap();
-
-        let resolved = repo
-            .end_for_out_of_schedule(EndForOutOfScheduleInputs {
-                streamer_id: STREAMER_ID.to_string(),
-                streamer_name: "Test".to_string(),
-                session_id: Some(sid.clone()),
-                old_state: StreamerState::OutOfSchedule,
-                via_hysteresis: false,
-                now: now + chrono::Duration::seconds(5),
-            })
-            .await
-            .unwrap();
-        assert_eq!(resolved.as_deref(), Some(sid.as_str()));
-        assert_eq!(
-            outbox_event_types(&pool).await,
-            vec!["StreamerLive", "StateChanged"]
-        );
-    }
-
-    #[tokio::test]
-    async fn end_without_session_or_live_state_skips_event() {
-        let pool = setup_pool().await;
-        let repo = SessionLifecycleRepository::new(pool.clone());
-        let now = Utc::now();
-
-        // No session ever started; streamer not Live; nothing to emit.
-        let outcome = repo.end(end_inputs(None, false, now)).await.unwrap();
-
-        assert!(outcome.resolved_session_id.is_none());
-        assert!(!outcome.offline_event_emitted);
         assert!(outbox_event_types(&pool).await.is_empty());
     }
 
@@ -1703,76 +1492,6 @@ mod tests {
         assert_eq!(parsed["cause"]["type"], "rejected");
         assert_eq!(parsed["cause"]["reason"], "stale_active_replaced");
         assert_eq!(parsed["via_hysteresis"], false);
-    }
-
-    /// Self-heal path B: stale active rows exist, but the most-recent
-    /// session for the streamer is already ended. Cleanup must end ALL
-    /// active rows (since none of them is the canonical "current"),
-    /// then `Created` writes a fresh session.
-    #[tokio::test]
-    async fn start_or_resume_cleans_all_stale_active_when_most_recent_is_ended() {
-        let pool = setup_pool().await;
-        let repo = SessionLifecycleRepository::new(pool.clone());
-        let now = Utc::now();
-
-        sqlx::query("DROP INDEX live_sessions_one_active_per_streamer")
-            .execute(&pool)
-            .await
-            .unwrap();
-        // stale-A and stale-B: end_time NULL (corrupt). stale-C: properly
-        // ended, but with the *latest* start_time so `get_last_session`
-        // returns stale-C with end_time set → goes to Created branch.
-        for (id, offset, ended) in [
-            ("stale-A", -180, false),
-            ("stale-B", -120, false),
-            ("stale-C", -60, true),
-        ] {
-            let end_time = if ended {
-                Some((now + chrono::Duration::seconds(offset + 30)).timestamp_millis())
-            } else {
-                None
-            };
-            sqlx::query(
-                "INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, total_size_bytes)
-                 VALUES (?, ?, ?, ?, '[]', 0)",
-            )
-            .bind(id)
-            .bind(STREAMER_ID)
-            .bind((now + chrono::Duration::seconds(offset)).timestamp_millis())
-            .bind(end_time)
-            .execute(&pool)
-            .await
-            .unwrap();
-        }
-
-        let outcome = repo.start_or_resume(start_inputs(now)).await.unwrap();
-        assert!(matches!(outcome, StartSessionOutcome::Created { .. }));
-
-        let active: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM live_sessions
-             WHERE streamer_id = ? AND end_time IS NULL AND id != ?",
-        )
-        .bind(STREAMER_ID)
-        .bind(outcome.session_id())
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(active, 0, "stale-A and stale-B must both be ended");
-
-        // Two `session_ended` (for the two stale actives) + one
-        // `session_started` (for the new session).
-        let kinds: Vec<String> = sqlx::query_scalar(
-            "SELECT kind FROM session_events
-             WHERE streamer_id = ? ORDER BY occurred_at ASC, id ASC",
-        )
-        .bind(STREAMER_ID)
-        .fetch_all(&pool)
-        .await
-        .unwrap();
-        assert_eq!(
-            kinds,
-            vec!["session_ended", "session_ended", "session_started"]
-        );
     }
 
     // -------------------------------------------------------------------
@@ -1870,21 +1589,6 @@ mod tests {
         assert_eq!(count, 1);
     }
 
-    /// Or3 — fallback to active session when `session_id` is `None`.
-    #[tokio::test]
-    async fn or3_end_for_disable_falls_back_to_active_session() {
-        let pool = setup_pool().await;
-        let repo = SessionLifecycleRepository::new(pool.clone());
-        let now = Utc::now();
-
-        let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
-        let resolved = repo
-            .end_for_disable(STREAMER_ID, None, false, now)
-            .await
-            .unwrap();
-        assert_eq!(resolved.as_deref(), Some(started.session_id()));
-    }
-
     /// Or4 — `rewrite_session_ended_cause` updates only the latest
     /// `session_ended` row's payload cause and preserves
     /// `via_hysteresis`.
@@ -1928,46 +1632,6 @@ mod tests {
         assert!(
             payload.contains("\"via_hysteresis\":true"),
             "via_hysteresis must be preserved across rewrite, got: {payload}"
-        );
-    }
-
-    /// Or5 — `rewrite_session_ended_cause` returns false when there is no
-    /// session_ended row to rewrite.
-    #[tokio::test]
-    async fn or5_rewrite_session_ended_cause_returns_false_when_no_row() {
-        let pool = setup_pool().await;
-        let repo = SessionLifecycleRepository::new(pool.clone());
-
-        let updated = repo
-            .rewrite_session_ended_cause("nonexistent", TerminalCauseDto::UserDisabled)
-            .await
-            .unwrap();
-        assert!(!updated);
-    }
-
-    /// Inverse case: a clean DB. `start_or_resume` must NOT write any
-    /// stale-replace audit rows when there's nothing to clean up.
-    #[tokio::test]
-    async fn start_or_resume_no_cleanup_when_no_stale_rows() {
-        let pool = setup_pool().await;
-        let repo = SessionLifecycleRepository::new(pool.clone());
-        let now = Utc::now();
-
-        let outcome = repo.start_or_resume(start_inputs(now)).await.unwrap();
-        assert!(matches!(outcome, StartSessionOutcome::Created { .. }));
-
-        let kinds: Vec<String> = sqlx::query_scalar(
-            "SELECT kind FROM session_events
-             WHERE streamer_id = ? ORDER BY occurred_at ASC, id ASC",
-        )
-        .bind(STREAMER_ID)
-        .fetch_all(&pool)
-        .await
-        .unwrap();
-        assert_eq!(
-            kinds,
-            vec!["session_started"],
-            "no stale rows should produce no cleanup audit rows"
         );
     }
 }

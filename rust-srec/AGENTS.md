@@ -30,6 +30,22 @@ Production-ready recorder backend (REST API + scheduler + pipeline + SQLite).
 - **Migrations**: New schema changes go in new files in `migrations/`; never edit a shipped one — sqlx checksums applied migrations and any change breaks startup on existing installs, so correct it with another new file.
 - **Table rebuilds**: Preserve data, triggers, indexes, and foreign-key integrity, and account for interrupted migration replay. Read the [table rebuild procedure](../CONTRIBUTING.md#sqlite-table-rebuilds) when changing a migration that rebuilds a table; it specifies fixture checks and when a real-data rehearsal is needed. Rebuilding `streamers`, `template_config`, `platform_config` or `credential_profiles` inside SQLx's default migration transaction, where foreign keys stay on, deletes account selections (`credential_selections`, `credential_selection_members`) or fails on them; use that procedure's `-- no-transaction` / `PRAGMA foreign_keys=OFF` form.
 
+## TESTING
+Pin each behavior at the highest layer that can reach it without the public network:
+1. **End-to-end, `tests/e2e/`**: the default for anything observable through the REST API or WebSockets: status codes, API error `code`s, JSON the frontend reads, persisted effects read back through the API, and auth/security outcomes. `support::TestApp` starts the real backend in-process (fresh SQLite, `ServiceContainer`, JWT-authenticated server on an ephemeral loopback port); tests talk to it only over HTTP. Write one scenario per test, asserting the precise contract.
+2. **Database integration, other `tests/*.rs`**: repository and migration contracts on real SQLite.
+3. **Unit tests beside the module**: only for logic the E2E suite cannot reach offline: engine and extractor behavior, external-tool argument building and output parsing, state machines, time math, concurrency, cancellation and fault injection. Keep one focused test per behavior.
+
+Rules:
+- Remove a test only when its behavior stays pinned by an E2E test or by a kept unit test. Never weaken or delete E2E tests to make a change pass.
+- E2E reliability:
+  - Never reach the public network: create streamers with `enabled: false`; use `LocalHttpServer` or `ClosedPort` for outbound targets; use IP literals, not DNS names.
+  - Never sleep for a fixed time: use `eventually` with `WAIT`.
+  - Each test starts its own `TestApp` and ends with `shutdown()`.
+  - Don't mutate the process environment. The suite relies on nextest's process-per-test model.
+- A confirmed bug found while writing a test becomes a `known_bug_*` test with `#[ignore = "bug: …"]` that asserts the correct behavior. CI's tool-gated job excludes `known_bug_` tests. The fix removes the ignore and renames the test.
+- Commands: `cargo nextest run --locked -p rust-srec --test e2e`; one area: `-E 'test(/^auth::/)'`.
+
 ## ANTI-PATTERNS
 - **Isolation**: Wire production services through `ServiceContainer`; focused tests may construct the service under test directly.
 - **Blocking**: Avoid long-running synchronous work in async handlers; use `spawn_blocking`.

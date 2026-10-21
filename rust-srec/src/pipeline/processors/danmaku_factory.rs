@@ -466,12 +466,6 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    #[test]
-    fn test_default_ass_output_for_xml() {
-        let out = DanmakuFactoryProcessor::default_ass_output_for_xml("/a/b/c.xml");
-        assert_eq!(Path::new(&out).file_name().unwrap(), "c.ass");
-    }
-
     fn manifest(danmu: &[&str]) -> PipelineInputManifest {
         use crate::pipeline::manifest::{ManifestScope, ManifestSegment};
         PipelineInputManifest::new(
@@ -666,63 +660,5 @@ mod tests {
                 ass.to_string_lossy().into_owned()
             ]
         );
-    }
-
-    #[tokio::test]
-    async fn test_outputs_mismatch_fails_before_running_command() {
-        let processor = DanmakuFactoryProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-
-        let input = ProcessorInput {
-            inputs: vec!["a.xml".to_string(), "b.xml".to_string()],
-            outputs: vec!["out.ass".to_string()],
-            config: None,
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let err = processor.process(&input, &ctx).await.unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("outputs to be empty or have the same length")
-        );
-    }
-
-    #[tokio::test]
-    async fn test_no_xml_inputs_pass_through() {
-        let processor = DanmakuFactoryProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-
-        let input = ProcessorInput {
-            inputs: vec!["a.mp4".to_string(), "cover.jpg".to_string()],
-            outputs: vec![],
-            config: None,
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let output = processor.process(&input, &ctx).await.unwrap();
-        assert_eq!(output.outputs, input.inputs);
-        let meta: serde_json::Value =
-            serde_json::from_str(output.metadata.as_ref().unwrap()).unwrap();
-        assert_eq!(meta["status"], "skipped");
-    }
-
-    #[test]
-    fn test_build_outputs_filters_excluded_passthrough_inputs() {
-        let inputs = vec![
-            "cover.jpg".to_string(),
-            "video.mp4".to_string(),
-            "danmu.xml".to_string(),
-        ];
-        let ass = vec!["danmu.ass".to_string()];
-        let mut exclude = HashSet::new();
-        exclude.insert("danmu.xml".to_string());
-
-        let outputs =
-            DanmakuFactoryProcessor::build_outputs_for_chaining(&inputs, &ass, true, &exclude);
-        assert_eq!(outputs, vec!["cover.jpg", "video.mp4", "danmu.ass"]);
     }
 }

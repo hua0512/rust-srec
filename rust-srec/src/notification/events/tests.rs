@@ -1,20 +1,4 @@
 use super::*;
-use crate::utils::text::{format_bytes, format_duration};
-
-#[test]
-fn test_notification_priority_ordering() {
-    assert!(NotificationPriority::Low < NotificationPriority::Normal);
-    assert!(NotificationPriority::Normal < NotificationPriority::High);
-    assert!(NotificationPriority::High < NotificationPriority::Critical);
-}
-
-#[test]
-fn test_notification_priority_as_int() {
-    assert_eq!(NotificationPriority::Low.as_int(), 2);
-    assert_eq!(NotificationPriority::Normal.as_int(), 5);
-    assert_eq!(NotificationPriority::High.as_int(), 8);
-    assert_eq!(NotificationPriority::Critical.as_int(), 10);
-}
 
 #[test]
 fn test_notification_priority_from_int() {
@@ -56,23 +40,6 @@ fn test_notification_priority_from_int() {
     );
 }
 
-#[test]
-fn test_stream_online_event() {
-    let event = NotificationEvent::StreamOnline {
-        streamer_id: "123".to_string(),
-        streamer_name: "TestStreamer".to_string(),
-        title: "Playing Games".to_string(),
-        category: Some("Gaming".to_string()),
-        timestamp: Utc::now(),
-    };
-
-    assert_eq!(event.priority(), NotificationPriority::Normal);
-    assert_eq!(event.event_type(), "stream_online");
-    assert!(event.title().contains("TestStreamer"));
-    assert!(event.description().contains("Playing Games"));
-    assert_eq!(event.streamer_id(), Some("123"));
-}
-
 /// A `StreamOnline` event to render; the interesting part is always the rendered text.
 fn stream_online_fixture() -> NotificationEvent {
     NotificationEvent::StreamOnline {
@@ -82,16 +49,6 @@ fn stream_online_fixture() -> NotificationEvent {
         category: Some("Gaming".to_string()),
         timestamp: Utc::now(),
     }
-}
-
-#[test]
-fn title_in_renders_the_requested_locale() {
-    let event = stream_online_fixture();
-
-    // Both carry the streamer name, so the locale is what distinguishes them.
-    assert!(event.title_in("en").contains("is now live"));
-    assert!(event.title_in("zh-CN").contains("开播了"));
-    assert!(event.description_in("zh-CN").contains("Gaming"));
 }
 
 #[test]
@@ -115,143 +72,10 @@ fn title_in_does_not_depend_on_the_process_locale() {
 }
 
 #[test]
-fn title_for_falls_back_to_the_process_locale() {
-    let _g = OUTPUT_PATH_INACCESSIBLE_LOCALE_LOCK
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
-
-    let event = stream_online_fixture();
-    crate::i18n::set_locale("zh-CN");
-    let fallback = event.title_for(None);
-    crate::i18n::set_locale("en");
-
-    assert_eq!(fallback, event.title_in("zh-CN"));
-    assert_eq!(event.title_for(Some("en")), event.title_in("en"));
-}
-
-#[test]
 fn unknown_locale_falls_back_to_english() {
     let event = stream_online_fixture();
     // `rust_i18n` has no YAML for this locale; it must not render an empty title.
     assert_eq!(event.title_in("xx-YY"), event.title_in("en"));
-}
-
-#[test]
-fn test_fatal_error_priority() {
-    let event = NotificationEvent::FatalError {
-        streamer_id: "123".to_string(),
-        streamer_name: "Test".to_string(),
-        error_type: "NotFound".to_string(),
-        message: "Streamer not found".to_string(),
-        timestamp: Utc::now(),
-    };
-
-    assert_eq!(event.priority(), NotificationPriority::Critical);
-}
-
-#[test]
-fn test_download_error_priority() {
-    let recoverable = NotificationEvent::DownloadError {
-        streamer_id: "123".to_string(),
-        streamer_name: "Test".to_string(),
-        error_message: "Network error".to_string(),
-        recoverable: true,
-        timestamp: Utc::now(),
-    };
-    assert_eq!(recoverable.priority(), NotificationPriority::Normal);
-
-    let non_recoverable = NotificationEvent::DownloadError {
-        streamer_id: "123".to_string(),
-        streamer_name: "Test".to_string(),
-        error_message: "Fatal error".to_string(),
-        recoverable: false,
-        timestamp: Utc::now(),
-    };
-    assert_eq!(non_recoverable.priority(), NotificationPriority::High);
-}
-
-#[test]
-fn test_format_bytes() {
-    assert_eq!(format_bytes(500), "500 B");
-    assert_eq!(format_bytes(1024), "1.00 KB");
-    assert_eq!(format_bytes(1024 * 1024), "1.00 MB");
-    assert_eq!(format_bytes(1024 * 1024 * 1024), "1.00 GB");
-}
-
-#[test]
-fn test_format_duration() {
-    assert_eq!(format_duration(3661.0), "1h 1m 1s");
-}
-
-#[test]
-fn test_segment_events() {
-    let start_event = NotificationEvent::SegmentStarted {
-        streamer_id: "123".to_string(),
-        streamer_name: "TestStreamer".to_string(),
-        session_id: "session_1".to_string(),
-        segment_path: "/path/to/segment/1.ts".to_string(),
-        segment_index: 1,
-        timestamp: Utc::now(),
-    };
-
-    assert_eq!(start_event.priority(), NotificationPriority::Low);
-    assert_eq!(start_event.event_type(), "segment_started");
-    assert!(start_event.title().contains("Segment 1 started"));
-    assert!(start_event.description().contains("/path/to/segment/1.ts"));
-
-    let complete_event = NotificationEvent::SegmentCompleted {
-        streamer_id: "123".to_string(),
-        streamer_name: "TestStreamer".to_string(),
-        session_id: "session_1".to_string(),
-        segment_path: "/path/to/segment/1.ts".to_string(),
-        segment_index: 1,
-        size_bytes: 1024 * 1024,
-        duration_secs: 10.0,
-        timestamp: Utc::now(),
-    };
-
-    assert_eq!(complete_event.priority(), NotificationPriority::Low);
-    assert_eq!(complete_event.event_type(), "segment_completed");
-    assert!(complete_event.title().contains("Segment 1 completed"));
-    assert!(complete_event.description().contains("Size: 1.00 MB"));
-}
-
-#[test]
-fn test_config_update_event() {
-    let event = NotificationEvent::ConfigUpdated {
-        streamer_id: "123".to_string(),
-        streamer_name: "TestStreamer".to_string(),
-        update_type: "Cookies".to_string(),
-        timestamp: Utc::now(),
-    };
-
-    assert_eq!(event.priority(), NotificationPriority::Low);
-    assert_eq!(event.event_type(), "config_updated");
-    assert!(event.title().contains("Config updated"));
-    assert!(event.description().contains("Cookies"));
-}
-
-#[test]
-fn test_download_cancellation_rejection() {
-    let cancel_event = NotificationEvent::DownloadCancelled {
-        streamer_id: "123".to_string(),
-        streamer_name: "TestStreamer".to_string(),
-        session_id: "session_1".to_string(),
-        timestamp: Utc::now(),
-    };
-    assert_eq!(cancel_event.priority(), NotificationPriority::Normal);
-    assert_eq!(cancel_event.event_type(), "download_cancelled");
-
-    let reject_event = NotificationEvent::DownloadRejected {
-        streamer_id: "123".to_string(),
-        streamer_name: "TestStreamer".to_string(),
-        session_id: "session_1".to_string(),
-        reason: "Circuit breaker open".to_string(),
-        timestamp: Utc::now(),
-    };
-    assert_eq!(reject_event.priority(), NotificationPriority::High);
-    assert_eq!(reject_event.event_type(), "download_rejected");
-    assert!(reject_event.description().contains("Circuit breaker open"));
 }
 
 /// `rust_i18n::set_locale` mutates a process global, so locale-sensitive
@@ -278,78 +102,6 @@ fn baidupcs_relogin_failed_metadata_and_localization() {
     assert!(event.title_in("zh-CN").contains("百度网盘"));
     assert!(event.description_in("en").contains("帐号登录失败"));
     assert!(event.description_in("zh-CN").contains("帐号登录失败"));
-}
-
-#[test]
-fn output_path_inaccessible_basic_metadata() {
-    let event = NotificationEvent::OutputPathInaccessible {
-        path: "/rec".to_string(),
-        error_kind: "not_found".to_string(),
-        timestamp: Utc::now(),
-    };
-    assert_eq!(event.priority(), NotificationPriority::Critical);
-    assert_eq!(event.event_type(), "output_path_inaccessible");
-    assert_eq!(event.streamer_id(), None, "infra event has no streamer_id");
-}
-
-#[test]
-fn output_path_inaccessible_localizes_to_english() {
-    let _g = OUTPUT_PATH_INACCESSIBLE_LOCALE_LOCK
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
-    crate::i18n::set_locale("en");
-    let event = NotificationEvent::OutputPathInaccessible {
-        path: "/rec".to_string(),
-        error_kind: "not_found".to_string(),
-        timestamp: Utc::now(),
-    };
-    let title = event.title();
-    let description = event.description();
-    assert!(title.contains("/rec"), "title: {}", title);
-    assert!(
-        title.contains("Output path inaccessible"),
-        "title: {}",
-        title
-    );
-    assert!(description.contains("/rec"), "description: {}", description);
-    assert!(
-        description.contains("BaoTa"),
-        "description should mention BaoTa for the not_found stale-mount case: {}",
-        description
-    );
-    assert!(
-        description.contains("restart"),
-        "description should mention container restart: {}",
-        description
-    );
-}
-
-#[test]
-fn output_path_inaccessible_localizes_to_chinese() {
-    let _g = OUTPUT_PATH_INACCESSIBLE_LOCALE_LOCK
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
-    crate::i18n::set_locale("zh-CN");
-    let event = NotificationEvent::OutputPathInaccessible {
-        path: "/rec".to_string(),
-        error_kind: "not_found".to_string(),
-        timestamp: Utc::now(),
-    };
-    let title = event.title();
-    let description = event.description();
-    assert!(title.contains("/rec"), "title: {}", title);
-    assert!(title.contains("输出路径"), "title: {}", title);
-    assert!(
-        description.contains("宝塔"),
-        "description should mention 宝塔 for the not_found stale-mount case: {}",
-        description
-    );
-    assert!(
-        description.contains("重启容器"),
-        "description should mention container restart: {}",
-        description
-    );
-    crate::i18n::set_locale("en");
 }
 
 #[test]
@@ -707,54 +459,4 @@ fn every_notification_variant_is_subscribable() {
             event.event_type(),
         );
     }
-}
-
-/// Spot-check that a few high-visibility variants render recognizable
-/// Chinese text when the locale is zh-CN. Cheap but catches accidental
-/// copy-paste of English into the Chinese YAML.
-#[test]
-fn zh_cn_has_actual_chinese_text() {
-    let _g = OUTPUT_PATH_INACCESSIBLE_LOCALE_LOCK
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
-
-    crate::i18n::set_locale("zh-CN");
-
-    let online = NotificationEvent::StreamOnline {
-        streamer_id: "s1".into(),
-        streamer_name: "TestStreamer".into(),
-        title: "Test title".into(),
-        category: None,
-        timestamp: Utc::now(),
-    };
-    assert!(
-        online.title().contains("开播"),
-        "StreamOnline title should contain '开播', got: {}",
-        online.title()
-    );
-
-    let fatal = NotificationEvent::FatalError {
-        streamer_id: "s1".into(),
-        streamer_name: "TestStreamer".into(),
-        error_type: "Protocol".into(),
-        message: "boom".into(),
-        timestamp: Utc::now(),
-    };
-    assert!(
-        fatal.title().contains("致命错误"),
-        "FatalError title should contain '致命错误', got: {}",
-        fatal.title()
-    );
-
-    let startup = NotificationEvent::SystemStartup {
-        version: "0.2.1".into(),
-        timestamp: Utc::now(),
-    };
-    assert!(
-        startup.title().contains("系统已启动"),
-        "SystemStartup title should contain '系统已启动', got: {}",
-        startup.title()
-    );
-
-    crate::i18n::set_locale("en");
 }

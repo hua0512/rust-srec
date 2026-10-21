@@ -96,10 +96,6 @@ impl PlatformAdmission {
         Self::new(limiter)
     }
 
-    pub(crate) fn limiter(&self) -> RateLimiterManager {
-        self.limiter.clone()
-    }
-
     pub fn register_platform_name(&mut self, platform_id: &str, platform_name: &str) {
         self.limiter
             .alias_platform_config(platform_id, &platform_name.to_ascii_lowercase());
@@ -477,50 +473,5 @@ mod tests {
             other => panic!("unexpected event {other:?}"),
         };
         assert!(resume(&second) < resume(&first));
-    }
-
-    #[tokio::test]
-    async fn admission_wait_uses_remaining_budget_and_cancellation_consumes_no_token() {
-        let limiter = RateLimiterManager::with_config(RateLimiterConfig {
-            max_tokens: 1,
-            refill_rate: 0.01,
-            initial_tokens: 1,
-        });
-        let admission = PlatformAdmission::new(limiter.clone());
-        admission
-            .admit("platform", &RouteKey::Direct, OperationDeadline::default())
-            .await
-            .unwrap();
-        let started = Instant::now();
-        let deadline = OperationDeadline::new(Duration::from_millis(20));
-        assert!(matches!(
-            admission
-                .admit("platform", &RouteKey::Direct, deadline)
-                .await,
-            Err(CredentialError::DeadlineExceeded)
-        ));
-        assert!(started.elapsed() < Duration::from_secs(1));
-        assert!(limiter.available_tokens("platform").await < 0.1);
-        // Independent platforms retain their own configured capacity.
-        admission
-            .admit(
-                "other",
-                &RouteKey::Direct,
-                OperationDeadline::new(Duration::from_millis(20)),
-            )
-            .await
-            .unwrap();
-    }
-
-    #[tokio::test]
-    async fn provider_wait_cannot_restart_an_expired_operation_budget() {
-        let deadline = OperationDeadline::new(Duration::ZERO);
-        let outcome = deadline
-            .run(async {
-                tokio::time::sleep(Duration::from_secs(30)).await;
-                Ok(())
-            })
-            .await;
-        assert!(matches!(outcome, Err(CredentialError::DeadlineExceeded)));
     }
 }

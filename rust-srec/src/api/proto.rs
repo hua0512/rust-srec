@@ -245,61 +245,11 @@ pub fn create_snapshot_message(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::downloader::engine::{
-        DownloadProgress as InternalProgress, DownloadStatus, EngineType,
-    };
-    use chrono::Utc;
-
-    fn create_test_download_info() -> DownloadInfo {
-        DownloadInfo {
-            manual_split: Default::default(),
-            id: "download-123".to_string(),
-            url: "https://example.com/stream".to_string(),
-            streamer_id: "streamer-456".to_string(),
-            session_id: "session-789".to_string(),
-            engine_type: EngineType::Ffmpeg,
-            status: DownloadStatus::Downloading,
-            progress: InternalProgress {
-                bytes_downloaded: 1024000,
-                duration_secs: 60.0,
-                speed_bytes_per_sec: 17066,
-                segments_completed: 5,
-                current_segment: Some("segment_005.ts".to_string()),
-                media_duration_secs: 65.0,
-                playback_ratio: 1.083,
-            },
-            started_at: Utc::now(),
-        }
-    }
-
-    #[test]
-    fn test_download_info_to_meta_metrics_conversion() {
-        let info = create_test_download_info();
-        let meta = DownloadMeta::from(&info);
-        let metrics = DownloadMetrics::from(&info);
-
-        assert_eq!(meta.download_id, "download-123");
-        assert_eq!(meta.streamer_id, "streamer-456");
-        assert_eq!(meta.session_id, "session-789");
-        assert_eq!(meta.engine_type, "ffmpeg");
-        assert!(!meta.download_url.is_empty());
-
-        assert_eq!(metrics.download_id, "download-123");
-        assert_eq!(metrics.status, "downloading");
-        assert_eq!(metrics.bytes_downloaded, 1024000);
-        assert_eq!(metrics.segments_completed, 5);
-    }
 
     #[test]
     fn test_safe_speed_zero_duration() {
         assert_eq!(safe_speed(1000, 0.0), 0);
         assert_eq!(safe_speed(1000, -1.0), 0);
-    }
-
-    #[test]
-    fn test_safe_playback_ratio_zero_duration() {
-        assert_eq!(safe_playback_ratio(60.0, 0.0), 0.0);
-        assert_eq!(safe_playback_ratio(60.0, -1.0), 0.0);
     }
 
     #[test]
@@ -321,42 +271,5 @@ mod tests {
             (wire.phase(), wire.attempt, wire.max_attempts),
             (download_progress::JobPhase::Retrying, Some(2), Some(3))
         );
-    }
-
-    #[test]
-    fn test_create_snapshot_message() {
-        let downloads = vec![create_test_download_info()];
-        let msg = create_snapshot_message(downloads, Vec::new(), SnapshotJobs::default());
-
-        assert_eq!(msg.event_type, EventType::Snapshot as i32);
-        assert!(msg.payload.is_some());
-    }
-
-    #[test]
-    fn test_create_snapshot_message_with_queued() {
-        use crate::downloader::engine::EngineType;
-        use crate::downloader::{Priority, queue::PendingEntry};
-        let downloads = vec![create_test_download_info()];
-        let queued = vec![PendingEntry {
-            session_id: "queued-session".to_string(),
-            streamer_id: "streamer-q".to_string(),
-            streamer_name: "Queued Streamer".to_string(),
-            engine_type: EngineType::Ffmpeg,
-            priority: Priority::High,
-            queued_at_ms: 1234567890,
-        }];
-        let msg = create_snapshot_message(downloads, queued, SnapshotJobs::default());
-
-        assert_eq!(msg.event_type, EventType::Snapshot as i32);
-        if let Some(download_progress::ws_message::Payload::Snapshot(s)) = msg.payload {
-            assert_eq!(s.downloads.len(), 1);
-            assert_eq!(s.queued.len(), 1);
-            assert_eq!(s.queued[0].streamer_id, "streamer-q");
-            assert_eq!(s.queued[0].session_id, "queued-session");
-            assert!(s.queued[0].is_high_priority);
-            assert_eq!(s.queued[0].engine_type, "ffmpeg");
-        } else {
-            panic!("expected snapshot payload");
-        }
     }
 }

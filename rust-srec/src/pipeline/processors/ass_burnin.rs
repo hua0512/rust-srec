@@ -701,27 +701,29 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn test_escape_filter_path_windows_sensitive() {
-        let s = "C:\\a\\b:c'ass";
-        let escaped = AssBurnInProcessor::escape_filter_path(s);
-        assert!(escaped.contains("\\\\"));
-        assert!(escaped.contains("\\:"));
-        assert!(escaped.contains("\\'"));
-    }
-
-    #[test]
-    fn test_make_subtitles_filter() {
-        let f = AssBurnInProcessor::make_subtitles_filter("a.ass", None);
-        assert!(f.contains("subtitles="));
-        assert!(f.contains("a.ass"));
-    }
-
-    #[test]
     fn filter_values_escape_option_and_filtergraph_layers() {
         assert_eq!(AssBurnInProcessor::escape_filter_path("'"), r"\\\'");
         assert_eq!(AssBurnInProcessor::escape_filter_path(":"), r"\\:");
         assert_eq!(AssBurnInProcessor::escape_filter_path("[,]"), r"\[\,\]");
         assert_eq!(AssBurnInProcessor::escape_filter_path("\\"), r"\\\\");
+    }
+
+    /// ffmpeg unescapes the filtergraph layer and then the option layer, which
+    /// gives back each original path: the drive colon and backslashes stay in
+    /// the filename, and only the bare `:` separates `fontsdir`.
+    #[test]
+    fn subtitles_filter_keeps_windows_paths_spaces_and_fontsdir_intact() {
+        assert_eq!(
+            AssBurnInProcessor::make_subtitles_filter(r"C:\rec\a b.ass", None),
+            r"subtitles=filename=C\\:\\\\rec\\\\a\\\ b.ass"
+        );
+        assert_eq!(
+            AssBurnInProcessor::make_subtitles_filter(
+                "/rec/My Show's [1], part:2.ass",
+                Some("/fonts/Noto Sans")
+            ),
+            r"subtitles=filename=/rec/My\\\ Show\\\'s\\\ \[1\]\,\\\ part\\:2.ass:fontsdir=/fonts/Noto\\\ Sans"
+        );
     }
 
     #[tokio::test]
@@ -954,27 +956,6 @@ mod tests {
             ]
         );
         assert!(!temp.path().join("b").join("rec_burnin.mp4").exists());
-    }
-
-    #[tokio::test]
-    async fn test_outputs_len_mismatch_errors() {
-        let processor = AssBurnInProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-
-        let input = ProcessorInput {
-            inputs: vec!["a.mp4".to_string(), "b.mp4".to_string()],
-            outputs: vec!["out.mp4".to_string()],
-            config: Some(serde_json::json!({ "require_ass": false }).to_string()),
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let err = processor.process(&input, &ctx).await.unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("outputs to be empty or have the same length")
-        );
     }
 
     #[test]

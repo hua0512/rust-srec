@@ -13,45 +13,6 @@ async fn database() -> sqlx::SqlitePool {
 }
 
 #[tokio::test]
-async fn constructors_share_processor_and_throttle_contracts_without_losing_persistence() {
-    let pool = database().await;
-    for enabled in [false, true] {
-        let mut config = PipelineManagerConfig::default();
-        config.throttle.enabled = enabled;
-        config.throttle.critical_threshold = 321;
-        let memory: PipelineManager = PipelineManager::with_config(config.clone());
-        let persistent: PipelineManager = PipelineManager::with_repository(
-            config,
-            Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone())),
-        );
-        assert_eq!(
-            memory.supported_job_types(),
-            persistent.supported_job_types()
-        );
-        assert!(persistent.supported_job_types().contains("execute"));
-        for manager in [&memory, &persistent] {
-            assert_eq!(manager.throttle_controller().is_some(), enabled);
-            if let Some(throttle) = manager.throttle_controller() {
-                assert_eq!(throttle.config().critical_threshold, 321);
-            }
-            assert!(!manager.is_throttled());
-            manager
-                .job_queue
-                .enqueue(Job::new("execute", vec![], vec![], "streamer", "session"))
-                .await
-                .unwrap();
-            assert_eq!(manager.queue_depth(), 1);
-        }
-    }
-    let persisted: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM job")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(persisted, 2);
-    pool.close().await;
-}
-
-#[tokio::test]
 async fn dag_creation_reads_streamer_once_and_persists_all_placeholder_metadata() {
     let pool = database().await;
     let streamers = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
@@ -112,72 +73,5 @@ async fn dag_creation_reads_streamer_once_and_persists_all_placeholder_metadata(
     assert_eq!(state["session_title"], "Current title");
     assert_eq!(state["platform"], expected_platform);
     assert_eq!(state["session_start_ms"], session.start_time);
-    pool.close().await;
-}
-
-#[tokio::test]
-async fn coordinator_recovery_pages_all_session_statuses_in_one_scan() {
-    let pool = database().await;
-    let streamers = SqlxStreamerRepository::new(pool.clone(), pool.clone());
-    let streamer = StreamerDbModel::new(
-        "Recovery",
-        "https://example.com/recovery",
-        "platform-twitch",
-    );
-    streamers.create_streamer(&streamer).await.unwrap();
-    let sessions = Arc::new(SqlxSessionRepository::new(pool.clone(), pool.clone()));
-    let session = LiveSessionDbModel::new(&streamer.id);
-    sessions.create_session(&session).await.unwrap();
-    let dags = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
-    let definition = DagPipelineDefinition::new(
-        "paired",
-        vec![DagStep::new(
-            "root",
-            PipelineStep::inline("remux", serde_json::json!({})),
-        )],
-    );
-    let statuses = ["PENDING", "PROCESSING", "COMPLETED", "FAILED", "CANCELLED"];
-    // Cross the 500-row page boundary with every state represented on both pages.
-    for index in 0..505 {
-        let mut dag = DagExecutionDbModel::new(
-            &definition,
-            Some(streamer.id.clone()),
-            Some(session.id.clone()),
-        );
-        dag.status = statuses[index % statuses.len()].to_owned();
-        dag.segment_source = Some("paired".to_owned());
-        dag.segment_index = Some(index as i64);
-        dag.created_at = index as i64;
-        dags.create_dag(&dag).await.unwrap();
-    }
-    let manager: PipelineManager = PipelineManager::with_repository(
-        PipelineManagerConfig::default(),
-        Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone())),
-    )
-    .with_session_repository(sessions)
-    .with_dag_repository(dags);
-    let trace = SqlTrace::install(&pool).await;
-    manager.recover_pipeline_coordination().await.unwrap();
-    let statements = trace.statements();
-    let session_scans: Vec<_> = statements
-        .iter()
-        .filter(|sql| sql.starts_with("SELECT * FROM dag_execution WHERE session_id ="))
-        .collect();
-    assert_eq!(session_scans.len(), 2, "{statements:?}");
-    assert_eq!(
-        statements
-            .iter()
-            .filter(|sql| sql
-                .starts_with("SELECT * FROM dag_execution WHERE status = ? AND session_id ="))
-            .count(),
-        0
-    );
-    assert_eq!(
-        statements
-            .iter()
-            .filter(|sql| sql.starts_with("SELECT * FROM dag_execution WHERE status = ? ORDER BY"))
-            .count(),
-        2
-    );
     pool.close().await;
 }

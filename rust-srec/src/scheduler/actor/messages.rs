@@ -1,8 +1,7 @@
 //! Actor message types for the scheduler actor system.
 //!
-//! This module defines the message enums for communication between actors:
-//! - `StreamerMessage`: Messages sent to StreamerActors
-//! - `PlatformMessage`: Messages sent to PlatformActors
+//! `StreamerMessage` is the mailbox type of a `StreamerActor`; the remaining
+//! types carry its configuration, check results and runtime scheduling state.
 
 use std::time::Instant;
 
@@ -31,8 +30,6 @@ pub enum StreamerMessage {
     CheckStatus,
     /// Update configuration.
     ConfigUpdate(StreamerConfig),
-    /// Receive batch detection result from PlatformActor.
-    BatchResult(Box<BatchDetectionResult>),
     /// Notify that a download has started for this streamer.
     ///
     /// This allows external download orchestration to pause status checks
@@ -258,24 +255,6 @@ impl From<DownloadTerminalEvent> for DownloadEndPolicy {
     }
 }
 
-/// Messages that can be sent to a PlatformActor.
-#[derive(Debug)]
-pub enum PlatformMessage {
-    /// Request batch detection for a streamer.
-    RequestCheck {
-        /// Streamer ID requesting the check.
-        streamer_id: String,
-        /// Channel to acknowledge the request was queued.
-        reply: oneshot::Sender<()>,
-    },
-    /// Update platform configuration.
-    ConfigUpdate(PlatformConfig),
-    /// Request graceful shutdown.
-    Stop,
-    /// Query current state (response sent via oneshot channel).
-    GetState(oneshot::Sender<PlatformActorState>),
-}
-
 /// Configuration for a StreamerActor.
 #[derive(Debug, Clone)]
 pub struct StreamerConfig {
@@ -287,8 +266,6 @@ pub struct StreamerConfig {
     pub offline_check_count: u32,
     /// Priority level for this streamer.
     pub priority: Priority,
-    /// Whether this streamer is on a batch-capable platform.
-    pub batch_capable: bool,
 }
 
 impl Default for StreamerConfig {
@@ -298,31 +275,6 @@ impl Default for StreamerConfig {
             offline_check_interval_ms: 20_000,
             offline_check_count: 3,
             priority: Priority::Normal,
-            batch_capable: false,
-        }
-    }
-}
-
-/// Configuration for a PlatformActor.
-#[derive(Debug, Clone)]
-pub struct PlatformConfig {
-    /// Platform identifier.
-    pub platform_id: String,
-    /// Batch window duration in milliseconds.
-    pub batch_window_ms: u64,
-    /// Maximum batch size.
-    pub max_batch_size: usize,
-    /// Rate limit (requests per second).
-    pub rate_limit: Option<f64>,
-}
-
-impl Default for PlatformConfig {
-    fn default() -> Self {
-        Self {
-            platform_id: String::new(),
-            batch_window_ms: 500,
-            max_batch_size: 100,
-            rate_limit: None,
         }
     }
 }
@@ -373,18 +325,6 @@ impl CheckResult {
     pub fn is_error(&self) -> bool {
         self.error.is_some() || self.state.is_error()
     }
-}
-
-/// Result of a batch detection from PlatformActor.
-#[derive(Debug, Clone)]
-pub struct BatchDetectionResult {
-    /// Streamer ID this result is for.
-    pub streamer_id: String,
-    /// The check result.
-    pub result: CheckResult,
-    /// The raw LiveStatus for process_status() calls.
-    /// This allows StreamerActor to apply hysteresis before calling process_status().
-    pub status: crate::monitor::LiveStatus,
 }
 
 /// Encapsulates offline grace period (hysteresis) logic.
@@ -859,48 +799,6 @@ impl StreamerActorState {
     }
 }
 
-/// State of a PlatformActor for monitoring.
-#[derive(Debug, Clone)]
-pub struct PlatformActorState {
-    /// Number of registered streamers.
-    pub streamer_count: usize,
-    /// Pending batch requests.
-    pub pending_count: usize,
-    /// Last batch execution time.
-    pub last_batch: Option<Instant>,
-    /// Batch success rate (0.0 to 1.0).
-    pub success_rate: f64,
-    /// Total batches executed.
-    pub total_batches: u64,
-    /// Total successful batches.
-    pub successful_batches: u64,
-}
-
-impl Default for PlatformActorState {
-    fn default() -> Self {
-        Self {
-            streamer_count: 0,
-            pending_count: 0,
-            last_batch: None,
-            success_rate: 1.0,
-            total_batches: 0,
-            successful_batches: 0,
-        }
-    }
-}
-
-impl PlatformActorState {
-    /// Record a batch execution result.
-    pub fn record_batch(&mut self, success: bool) {
-        self.total_batches += 1;
-        if success {
-            self.successful_batches += 1;
-        }
-        self.success_rate = self.successful_batches as f64 / self.total_batches as f64;
-        self.last_batch = Some(Instant::now());
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1031,87 +929,6 @@ mod tests {
     }
 
     #[test]
-    fn test_streamer_config_default() {
-        let config = StreamerConfig::default();
-        assert_eq!(config.check_interval_ms, 60_000);
-        assert_eq!(config.offline_check_interval_ms, 20_000);
-        assert_eq!(config.offline_check_count, 3);
-        assert_eq!(config.priority, Priority::Normal);
-        assert!(!config.batch_capable);
-    }
-
-    #[test]
-    fn test_platform_config_default() {
-        let config = PlatformConfig::default();
-        assert_eq!(config.batch_window_ms, 500);
-        assert_eq!(config.max_batch_size, 100);
-        assert!(config.rate_limit.is_none());
-    }
-
-    #[test]
-    fn test_check_result_success() {
-        let result = CheckResult::success(StreamerState::Live);
-        assert_eq!(result.state, StreamerState::Live);
-        assert!(!result.is_error());
-        assert!(result.error.is_none());
-    }
-
-    #[test]
-    fn test_check_result_failure() {
-        let result = CheckResult::failure("Network error");
-        assert!(result.is_error());
-        assert_eq!(result.error, Some("Network error".to_string()));
-    }
-
-    #[test]
-    fn test_streamer_actor_state_default() {
-        let state = StreamerActorState::default();
-        assert_eq!(state.streamer_state, StreamerState::NotLive);
-        assert_eq!(state.hysteresis.offline_count(), 0);
-        assert!(!state.hysteresis.was_live());
-        assert!(state.last_check.is_none());
-    }
-
-    #[test]
-    fn test_streamer_actor_state_record_check() {
-        let mut state = StreamerActorState::default();
-        let config = StreamerConfig::default();
-
-        // Record a live check - this sets was_live to true via hysteresis
-        state.record_check(CheckResult::success(StreamerState::Live), &config, 0);
-        assert_eq!(state.streamer_state, StreamerState::Live);
-        assert_eq!(state.hysteresis.offline_count(), 0);
-        assert!(state.hysteresis.was_live());
-
-        // Record offline checks - offline_count increments because was_live is true
-        state.record_check(CheckResult::success(StreamerState::NotLive), &config, 0);
-        assert_eq!(state.hysteresis.offline_count(), 1);
-        assert!(state.hysteresis.was_live());
-
-        state.record_check(CheckResult::success(StreamerState::NotLive), &config, 0);
-        assert_eq!(state.hysteresis.offline_count(), 2);
-        assert!(state.hysteresis.was_live());
-
-        // After 3 offline checks (>= offline_check_count), hysteresis resets
-        state.record_check(CheckResult::success(StreamerState::NotLive), &config, 0);
-        assert_eq!(state.hysteresis.offline_count(), 0);
-        assert!(!state.hysteresis.was_live());
-    }
-
-    #[test]
-    fn test_hysteresis_suppresses_redundant_offline_when_never_live() {
-        let mut state = StreamerActorState::default();
-        let config = StreamerConfig::default();
-
-        // NotLive → NotLive while never live: suppress monitor emission.
-        let should_emit =
-            state.record_check(CheckResult::success(StreamerState::NotLive), &config, 0);
-        assert!(!should_emit);
-        assert_eq!(state.hysteresis.offline_count(), 0);
-        assert!(!state.hysteresis.was_live());
-    }
-
-    #[test]
     fn test_hysteresis_allows_offline_emit_to_clear_errors_when_never_live() {
         let mut state = StreamerActorState::default();
         let config = StreamerConfig::default();
@@ -1122,65 +939,5 @@ mod tests {
         assert!(should_emit);
         assert_eq!(state.hysteresis.offline_count(), 0);
         assert!(!state.hysteresis.was_live());
-    }
-
-    #[test]
-    fn test_streamer_actor_state_schedule_next_check() {
-        let mut state = StreamerActorState::default();
-        let config = StreamerConfig::default();
-
-        // Normal interval for offline streamer
-        state.schedule_next_check(&config, 0);
-        assert!(state.next_check.is_some());
-
-        // When hysteresis indicates not in grace period, should use normal interval
-        state.streamer_state = StreamerState::NotLive;
-        state.schedule_next_check(&config, 0);
-        // The next check should be scheduled
-        assert!(state.next_check.is_some());
-    }
-
-    #[test]
-    fn test_streamer_actor_state_no_check_when_live() {
-        let mut state = StreamerActorState {
-            streamer_state: StreamerState::Live,
-            ..Default::default()
-        };
-        let config = StreamerConfig::default();
-
-        // When streamer is live, no check should be scheduled
-        // (we're downloading and know they're online)
-        state.schedule_next_check(&config, 0);
-        assert!(state.next_check.is_none());
-    }
-
-    #[test]
-    fn test_streamer_actor_state_schedule_immediate_check() {
-        let mut state = StreamerActorState {
-            streamer_state: StreamerState::Live,
-            ..Default::default()
-        };
-
-        // Even when live, schedule_immediate_check should work
-        state.schedule_immediate_check();
-        assert!(state.next_check.is_some());
-
-        // Check should be due immediately
-        assert!(state.is_check_due());
-    }
-
-    #[test]
-    fn test_platform_actor_state_record_batch() {
-        let mut state = PlatformActorState::default();
-
-        state.record_batch(true);
-        assert_eq!(state.total_batches, 1);
-        assert_eq!(state.successful_batches, 1);
-        assert_eq!(state.success_rate, 1.0);
-
-        state.record_batch(false);
-        assert_eq!(state.total_batches, 2);
-        assert_eq!(state.successful_batches, 1);
-        assert_eq!(state.success_rate, 0.5);
     }
 }

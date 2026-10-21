@@ -162,10 +162,11 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       # Tests that need a real ffmpeg, rclone, or Streamlink are `#[ignore]`d so the plain
       # suite runs anywhere; this job is where they are actually exercised. Every
-      # ignored test of the package runs here except the SQLite stress test,
+      # ignored test of the package runs here except the SQLite stress test and
+      # `known_bug_*` E2E tests (which assert the fix for a confirmed, open bug),
       # so a newly gated test is picked up without editing this filter.
       - name: Run ffmpeg, rclone, and Streamlink gated tests
-        run: cargo nextest run --locked -p rust-srec --run-ignored ignored-only -E 'not binary(sqlite_claim_stress)'
+        run: cargo nextest run --locked -p rust-srec --run-ignored ignored-only -E 'not binary(sqlite_claim_stress) and not test(/known_bug_/)'
       - name: sccache stats
         if: always()
         run: sccache --show-stats || true

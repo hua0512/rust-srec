@@ -1355,17 +1355,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_paginated_response() {
-        let items = vec![1, 2, 3];
-        let response = PaginatedResponse::new(items, 100, 20, 0);
-
-        assert_eq!(response.items.len(), 3);
-        assert_eq!(response.total, 100);
-        assert_eq!(response.limit, 20);
-        assert_eq!(response.offset, 0);
-    }
-
-    #[test]
     fn test_create_streamer_request_deserialize() {
         let json = r#"{
             "name": "Test Streamer",

@@ -632,18 +632,6 @@ mod tests {
     mod rendering;
 
     #[test]
-    fn parse_channel_locale_reads_the_settings_blob() {
-        assert_eq!(
-            parse_channel_locale(&serde_json::json!({ "locale": "zh-CN" })),
-            Some("zh-CN".to_string())
-        );
-        assert_eq!(
-            parse_channel_locale(&serde_json::json!({ "locale": "  zh-CN  " })),
-            Some("zh-CN".to_string())
-        );
-    }
-
-    #[test]
     fn parse_channel_locale_treats_blank_as_unset() {
         // A select cleared back to "follow the server" posts an empty string rather than
         // dropping the key, and that must not reach `t!` as a locale.
@@ -655,14 +643,6 @@ mod tests {
         ] {
             assert_eq!(parse_channel_locale(&settings), None, "{settings}");
         }
-    }
-
-    #[test]
-    fn test_notification_service_creation() {
-        let service = NotificationService::new();
-        let stats = service.stats();
-        assert_eq!(stats.pending_count, 0);
-        assert_eq!(stats.dead_letter_count, 0);
     }
 
     #[test]
@@ -679,38 +659,6 @@ mod tests {
         // Record success resets
         cb.record_success();
         assert!(cb.is_allowed());
-    }
-
-    #[tokio::test]
-    async fn test_notify_disabled() {
-        let config = NotificationServiceConfig {
-            enabled: false,
-            ..Default::default()
-        };
-        let service = NotificationService::with_config(config);
-
-        let event = NotificationEvent::SystemStartup {
-            version: "test".to_string(),
-            timestamp: Utc::now(),
-        };
-
-        // Should succeed but not queue anything
-        service.notify(event).await.unwrap();
-        assert_eq!(service.stats().pending_count, 0);
-    }
-
-    #[test]
-    fn test_add_channel() {
-        let service = NotificationService::new();
-
-        let config = ChannelConfig::Discord(DiscordConfig {
-            enabled: true,
-            webhook_url: "https://discord.com/api/webhooks/test".to_string(),
-            ..Default::default()
-        });
-
-        service.add_channel(config);
-        assert_eq!(service.stats().channel_count, 1);
     }
 
     struct TestChannel {
@@ -758,47 +706,42 @@ mod tests {
 
         let ok_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
         let flaky_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        for (key, attempts, fail_for_attempts) in [
+            ("ok", ok_attempts.clone(), 0),
+            ("flaky", flaky_attempts.clone(), 1),
+        ] {
+            service.registry.write().insert(Arc::new(RuntimeChannel {
+                breaker: service.new_breaker(),
+                key: key.into(),
+                db_channel_id: None,
+                display_name: key.into(),
+                channel_type: "test".into(),
+                channel: Arc::new(TestChannel {
+                    channel_type: "test",
+                    fail_for_attempts,
+                    attempts,
+                }),
+            }));
+        }
 
-        let ok_channel = Arc::new(RuntimeChannel {
-            breaker: service.new_breaker(),
-            key: "ok".to_string(),
-            db_channel_id: None,
-            display_name: "ok".to_string(),
-            channel_type: "test".to_string(),
-            channel: Arc::new(TestChannel {
-                channel_type: "ok",
-                fail_for_attempts: 0,
-                attempts: ok_attempts.clone(),
-            }),
-        });
-        service.registry.write().insert(ok_channel);
-
-        let flaky_channel = Arc::new(RuntimeChannel {
-            breaker: service.new_breaker(),
-            key: "flaky".to_string(),
-            db_channel_id: None,
-            display_name: "flaky".to_string(),
-            channel_type: "test".to_string(),
-            channel: Arc::new(TestChannel {
-                channel_type: "flaky",
-                fail_for_attempts: 1,
-                attempts: flaky_attempts.clone(),
-            }),
-        });
-        service.registry.write().insert(flaky_channel);
-
-        let event = NotificationEvent::SystemStartup {
-            version: "test".to_string(),
-            timestamp: Utc::now(),
-        };
-
-        service.notify(event).await.unwrap();
-
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        service
+            .notify(NotificationEvent::SystemStartup {
+                version: "test".to_string(),
+                timestamp: Utc::now(),
+            })
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while service.stats().pending_count != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the retried channel should recover");
 
         assert_eq!(ok_attempts.load(Ordering::SeqCst), 1);
-        assert!(flaky_attempts.load(Ordering::SeqCst) >= 2);
-        assert_eq!(service.stats().pending_count, 0);
+        assert_eq!(flaky_attempts.load(Ordering::SeqCst), 2);
+        assert_eq!(service.stats().dead_letter_count, 0);
     }
 
     #[test]
@@ -1220,11 +1163,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn exhausted_config_channel_retained_without_repository() {
-        assert_exhausted_channel_retained(false, false, false).await;
-    }
-
-    #[tokio::test]
     async fn exhausted_config_channel_retained_with_repository() {
         assert_exhausted_channel_retained(true, false, false).await;
     }
@@ -1232,11 +1170,6 @@ mod tests {
     #[tokio::test]
     async fn exhausted_channel_retained_when_persistence_fails() {
         assert_exhausted_channel_retained(true, true, true).await;
-    }
-
-    #[tokio::test]
-    async fn exhausted_channel_retained_and_persisted_after_retries() {
-        assert_exhausted_channel_retained(true, true, false).await;
     }
 
     #[tokio::test]

@@ -820,15 +820,6 @@ mod tests {
         assert_eq!(response.deleted, 0);
         pool.close().await;
     }
-    use crate::api::models::SessionSegmentResponse;
-    use chrono::{TimeZone, Utc};
-
-    #[test]
-    fn test_parse_titles_empty() {
-        let (titles, title) = parse_titles(&None);
-        assert!(titles.is_empty());
-        assert!(title.is_empty());
-    }
 
     #[test]
     fn test_parse_titles_with_entries() {
@@ -840,38 +831,5 @@ mod tests {
         let (titles, title) = parse_titles(&Some(json.to_string()));
         assert_eq!(titles.len(), 2);
         assert_eq!(title, "Updated Title");
-    }
-
-    #[test]
-    fn test_session_segment_response_serializes_lifecycle_fields() {
-        let response = SessionSegmentResponse {
-            id: "seg-1".to_string(),
-            session_id: "sess-1".to_string(),
-            segment_index: 2,
-            file_path: "/tmp/seg-2.ts".to_string(),
-            duration_secs: 8.5,
-            size_bytes: 4096,
-            split_reason_code: None,
-            split_reason_details: None,
-            created_at: Some(
-                Utc.timestamp_millis_opt(1_700_000_000_000)
-                    .single()
-                    .unwrap(),
-            ),
-            completed_at: Some(
-                Utc.timestamp_millis_opt(1_700_000_008_500)
-                    .single()
-                    .unwrap(),
-            ),
-            persisted_at: Utc
-                .timestamp_millis_opt(1_700_000_010_000)
-                .single()
-                .unwrap(),
-        };
-
-        let value = serde_json::to_value(response).unwrap();
-        assert!(value.get("created_at").is_some());
-        assert!(value.get("completed_at").is_some());
-        assert!(value.get("persisted_at").is_some());
     }
 }

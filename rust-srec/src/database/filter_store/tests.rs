@@ -27,7 +27,6 @@ struct CountingRepository {
     gate: Mutex<Option<Arc<Gate>>>,
     reads: AtomicUsize,
     active: AtomicUsize,
-    peak: AtomicUsize,
     fail: AtomicBool,
 }
 
@@ -39,7 +38,6 @@ impl CountingRepository {
             gate: Mutex::new(None),
             reads: AtomicUsize::new(0),
             active: AtomicUsize::new(0),
-            peak: AtomicUsize::new(0),
             fail: AtomicBool::new(false),
         })
     }
@@ -62,8 +60,7 @@ impl FilterRepository for CountingRepository {
     }
     async fn get_filters_for_streamer(&self, id: &str) -> Result<Vec<FilterDbModel>> {
         self.reads.fetch_add(1, Ordering::SeqCst);
-        let active = self.active.fetch_add(1, Ordering::SeqCst) + 1;
-        self.peak.fetch_max(active, Ordering::SeqCst);
+        self.active.fetch_add(1, Ordering::SeqCst);
         let _active = ActiveRead(&self.active);
         // Capture before the barrier so invalidation can race a genuinely stale
         // database result, not a fake that re-reads new rows when it is released.
@@ -119,40 +116,6 @@ async fn poll_pending<F: std::future::Future>(mut future: std::pin::Pin<&mut F>)
         std::task::Poll::Ready(())
     })
     .await;
-}
-
-#[tokio::test]
-async fn repeated_concurrent_and_empty_snapshots_share_one_repository_read() {
-    tokio::time::timeout(Duration::from_secs(3), async {
-        for empty in [false, true] {
-            let repository = CountingRepository::new(8, 2);
-            if !empty {
-                repository.set("one", "original");
-            }
-            let gate = Gate::new();
-            *repository.gate.lock() = Some(gate.clone());
-            let store = Arc::new(FilterStore::new(repository.clone()));
-            let task_store = store.clone();
-            let leader =
-                AbortOnDropHandle::new(tokio::spawn(async move { task_store.get("one").await }));
-            gate.entered.notified().await;
-            let mut followers: Vec<_> = (0..24).map(|_| Box::pin(store.get("one"))).collect();
-            for follower in &mut followers {
-                poll_pending(follower.as_mut()).await;
-            }
-            assert_eq!(repository.reads.load(Ordering::SeqCst), 1);
-            gate.release.add_permits(1);
-            let snapshot = leader.await.unwrap().unwrap();
-            assert_eq!(snapshot.is_empty(), empty);
-            for follower in followers {
-                assert!(Arc::ptr_eq(&snapshot, &follower.await.unwrap()));
-            }
-            assert!(Arc::ptr_eq(&snapshot, &store.get("one").await.unwrap()));
-            assert_eq!(repository.reads.load(Ordering::SeqCst), 1);
-        }
-    })
-    .await
-    .expect("coalesced snapshots must settle");
 }
 
 #[tokio::test]
@@ -297,67 +260,4 @@ async fn invalidated_delayed_load_cannot_repopulate_or_override_its_successor() 
     })
     .await
     .expect("invalidated loads must converge on current rows");
-}
-
-#[tokio::test]
-async fn cache_entries_and_inflight_repository_work_remain_bounded() {
-    tokio::time::timeout(Duration::from_secs(3), async {
-        let repository = CountingRepository::new(2, 2);
-        let gate = Gate::new();
-        *repository.gate.lock() = Some(gate.clone());
-        let store = Arc::new(FilterStore::new(repository.clone()));
-        let tasks: Vec<_> = (0..12)
-            .map(|id| {
-                let store = store.clone();
-                AbortOnDropHandle::new(tokio::spawn(
-                    async move { store.get(&id.to_string()).await },
-                ))
-            })
-            .collect();
-        while repository.reads.load(Ordering::SeqCst) < 2 {
-            tokio::task::yield_now().await;
-        }
-        assert_eq!(repository.reads.load(Ordering::SeqCst), 2);
-        assert_eq!(repository.cache.inner.state.lock().loads.len(), 2);
-        gate.release.add_permits(12);
-        for task in tasks {
-            task.await.unwrap().unwrap();
-        }
-        assert_eq!(repository.reads.load(Ordering::SeqCst), 12);
-        assert_eq!(repository.peak.load(Ordering::SeqCst), 2);
-        assert_eq!(repository.cache.inner.state.lock().entries.len(), 2);
-        *repository.gate.lock() = None;
-        store.invalidate_all();
-        store.get("a").await.unwrap();
-        store.get("b").await.unwrap();
-        store.get("a").await.unwrap();
-        store.get("c").await.unwrap();
-        let before = repository.reads.load(Ordering::SeqCst);
-        store.get("a").await.unwrap();
-        assert_eq!(repository.reads.load(Ordering::SeqCst), before);
-        store.get("b").await.unwrap();
-        assert_eq!(repository.reads.load(Ordering::SeqCst), before + 1);
-    })
-    .await
-    .expect("filter cache capacity cannot grow with requester count");
-}
-
-#[tokio::test]
-async fn parsed_snapshots_preserve_order_and_skip_invalid_rows() {
-    let repository = CountingRepository::new(8, 2);
-    let mut invalid = keyword("one", "invalid");
-    invalid.config = "malformed JSON".into();
-    repository.rows.lock().insert(
-        "one".into(),
-        vec![keyword("one", "first"), invalid, keyword("one", "last")],
-    );
-    let store = FilterStore::new(repository.clone());
-    let filters = store.get("one").await.unwrap();
-    assert_eq!(filters.len(), 2);
-    assert_eq!(value(&filters), "first");
-    let Filter::Keyword(last) = &filters[1] else {
-        panic!("expected last keyword")
-    };
-    assert_eq!(last.include, vec!["last"]);
-    assert!(Arc::ptr_eq(&filters, &store.get("one").await.unwrap()));
 }

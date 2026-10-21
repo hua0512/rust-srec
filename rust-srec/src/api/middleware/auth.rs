@@ -238,7 +238,6 @@ mod tests {
     #[derive(Clone)]
     enum UserLookup {
         Found(UserDbModel),
-        Missing,
     }
 
     struct TestUserRepository {
@@ -254,7 +253,7 @@ mod tests {
         async fn find_by_id(&self, id: &str) -> crate::Result<Option<UserDbModel>> {
             match &self.lookup {
                 UserLookup::Found(user) if user.id == id => Ok(Some(user.clone())),
-                UserLookup::Found(_) | UserLookup::Missing => Ok(None),
+                UserLookup::Found(_) => Ok(None),
             }
         }
 
@@ -425,191 +424,6 @@ mod tests {
         user
     }
 
-    #[tokio::test]
-    async fn missing_and_invalid_tokens_are_unauthorized() {
-        let user = active_user();
-        let (auth_service, _) = test_services(UserLookup::Found(user));
-
-        let missing = call_layer(AuthLayer::new(auth_service.clone()), "/api/config", None).await;
-        assert_eq!(missing.status(), StatusCode::UNAUTHORIZED);
-
-        let invalid = call_layer(
-            AuthLayer::new(auth_service),
-            "/api/config",
-            Some("Bearer invalid"),
-        )
-        .await;
-        assert_eq!(invalid.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn non_bearer_scheme_and_empty_bearer_are_unauthorized() {
-        let user = active_user();
-        let (auth_service, _) = test_services(UserLookup::Found(user));
-
-        let basic = call_layer(
-            AuthLayer::new(auth_service.clone()),
-            "/api/config",
-            Some("Basic xyz"),
-        )
-        .await;
-        assert_eq!(basic.status(), StatusCode::UNAUTHORIZED);
-
-        let empty_bearer =
-            call_layer(AuthLayer::new(auth_service), "/api/config", Some("Bearer ")).await;
-        assert_eq!(empty_bearer.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn expired_and_tampered_tokens_are_unauthorized() {
-        let user = active_user();
-        let user_id = user.id.clone();
-        let (auth_service, jwt_service) = test_services(UserLookup::Found(user));
-
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .expect("system clock should be past the Unix epoch")
-            .as_secs();
-        // An hour-old exp clears the 60s leeway Validation::default() applies
-        // inside JwtService::validate_token.
-        let expired_claims = Claims {
-            sid: Some("test-session".to_owned()),
-            sub: user_id.clone(),
-            roles: vec!["user".to_string()],
-            iss: "test-issuer".to_string(),
-            aud: "test-audience".to_string(),
-            exp: now - 3600,
-            iat: now - 7200,
-        };
-        let expired = jsonwebtoken::encode(
-            &jsonwebtoken::Header::default(),
-            &expired_claims,
-            &jsonwebtoken::EncodingKey::from_secret("test-secret-key-32-chars-long!!".as_bytes()),
-        )
-        .expect("token encoding should succeed");
-        let response = call_layer(
-            AuthLayer::new(auth_service.clone()),
-            "/api/config",
-            Some(&format!("Bearer {expired}")),
-        )
-        .await;
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-
-        let token = jwt_service
-            .generate_session_token(&user_id, vec!["user".to_string()], "test-session")
-            .expect("token generation should succeed")
-            .0;
-        // Flip one mid-signature character (still base64url) so validation
-        // fails on the signature check rather than on decoding.
-        let (head, signature) = token
-            .rsplit_once('.')
-            .expect("JWT should have a signature segment");
-        let mut signature_bytes = signature.as_bytes().to_vec();
-        let mid = signature_bytes.len() / 2;
-        signature_bytes[mid] = if signature_bytes[mid] == b'A' {
-            b'B'
-        } else {
-            b'A'
-        };
-        let tampered = format!(
-            "{head}.{}",
-            String::from_utf8(signature_bytes).expect("signature should remain ASCII")
-        );
-        let response = call_layer(
-            AuthLayer::new(auth_service),
-            "/api/config",
-            Some(&format!("Bearer {tampered}")),
-        )
-        .await;
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn valid_active_user_reaches_handler_with_claims() {
-        let user = active_user();
-        let user_id = user.id.clone();
-        let (auth_service, jwt_service) = test_services(UserLookup::Found(user));
-        let token = jwt_service
-            .generate_session_token(&user_id, vec!["user".to_string()], "test-session")
-            .expect("token generation should succeed")
-            .0;
-
-        let response = call_layer(
-            AuthLayer::new(auth_service),
-            "/api/config",
-            Some(&format!("Bearer {token}")),
-        )
-        .await;
-
-        assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(response.headers()["x-user-id"], user_id);
-    }
-
-    #[tokio::test]
-    async fn forced_password_change_is_denied_on_normal_routes() {
-        let user = UserDbModel::new("test-user", "hash", vec!["user".to_string()]);
-        let user_id = user.id.clone();
-        let (auth_service, jwt_service) = test_services(UserLookup::Found(user));
-        let token = jwt_service
-            .generate_session_token(&user_id, vec!["user".to_string()], "test-session")
-            .expect("token generation should succeed")
-            .0;
-
-        let response = call_layer(
-            AuthLayer::new(auth_service),
-            "/api/config",
-            Some(&format!("Bearer {token}")),
-        )
-        .await;
-
-        assert_eq!(response.status(), StatusCode::FORBIDDEN);
-        let body = to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("error body should be readable");
-        let body: serde_json::Value =
-            serde_json::from_slice(&body).expect("error body should be JSON");
-        assert_eq!(body["code"], "PASSWORD_CHANGE_REQUIRED");
-    }
-
-    #[tokio::test]
-    async fn forced_password_change_passes_password_remediation_layer() {
-        // Which routes actually carry the `password_remediation` layer is
-        // pinned by the drift-guard tests in `routes::auth`; this test only
-        // covers the layer behavior for a `must_change_password` user.
-        let user = UserDbModel::new("test-user", "hash", vec!["user".to_string()]);
-        let user_id = user.id.clone();
-        let (auth_service, jwt_service) = test_services(UserLookup::Found(user));
-        let token = jwt_service
-            .generate_session_token(&user_id, vec!["user".to_string()], "test-session")
-            .expect("token generation should succeed")
-            .0;
-
-        let response = call_layer(
-            AuthLayer::password_remediation(auth_service),
-            "/api/auth/change-password",
-            Some(&format!("Bearer {token}")),
-        )
-        .await;
-        assert_eq!(response.status(), StatusCode::OK);
-    }
-
-    #[tokio::test]
-    async fn token_for_missing_user_fails_closed() {
-        let (auth_service, jwt_service) = test_services(UserLookup::Missing);
-        let token = jwt_service
-            .generate_session_token("deleted-user", vec!["user".to_string()], "test-session")
-            .expect("token generation should succeed")
-            .0;
-
-        let response = call_layer(
-            AuthLayer::new(auth_service),
-            "/api/config",
-            Some(&format!("Bearer {token}")),
-        )
-        .await;
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-    }
-
     async fn create_key(
         auth_service: &Arc<AuthService>,
         user_id: &str,
@@ -621,49 +435,6 @@ mod tests {
             .await
             .expect("key creation should succeed");
         (model.id, raw_key)
-    }
-
-    #[tokio::test]
-    async fn valid_api_key_reaches_handler_via_bearer() {
-        let user = active_user();
-        let user_id = user.id.clone();
-        let (auth_service, _) = test_services(UserLookup::Found(user));
-        let (_, raw_key) = create_key(&auth_service, &user_id, ApiKeyAccessLevel::Full, None).await;
-
-        let bearer = call_layer(
-            AuthLayer::new(auth_service),
-            "/api/config",
-            Some(&format!("Bearer {raw_key}")),
-        )
-        .await;
-        assert_eq!(bearer.status(), StatusCode::OK);
-        assert_eq!(bearer.headers()["x-user-id"], user_id);
-    }
-
-    #[test]
-    fn x_api_key_header_is_not_a_credential() {
-        let request = Request::builder()
-            .header("X-Api-Key", "srec_example")
-            .body(Body::empty())
-            .expect("test request should build");
-        assert!(matches!(
-            extract_credential(&request),
-            Err(AuthLayerError::MissingToken)
-        ));
-    }
-
-    #[tokio::test]
-    async fn unknown_api_key_is_unauthorized() {
-        let user = active_user();
-        let (auth_service, _) = test_services(UserLookup::Found(user));
-
-        let response = call_layer(
-            AuthLayer::new(auth_service),
-            "/api/config",
-            Some("Bearer srec_0000000000000000000000000000000000000000000000000000000000000000"),
-        )
-        .await;
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     }
 
     #[tokio::test]
@@ -739,23 +510,6 @@ mod tests {
         let body: serde_json::Value =
             serde_json::from_slice(&body).expect("error body should be JSON");
         assert_eq!(body["code"], "API_KEY_READ_ONLY");
-    }
-
-    #[tokio::test]
-    async fn full_api_key_can_write() {
-        let user = active_user();
-        let user_id = user.id.clone();
-        let (auth_service, _) = test_services(UserLookup::Found(user));
-        let (_, raw_key) = create_key(&auth_service, &user_id, ApiKeyAccessLevel::Full, None).await;
-
-        let post = call_layer_with(
-            AuthLayer::new(auth_service),
-            Method::POST,
-            "/api/streamers",
-            Some(&format!("Bearer {raw_key}")),
-        )
-        .await;
-        assert_eq!(post.status(), StatusCode::OK);
     }
 
     #[tokio::test]

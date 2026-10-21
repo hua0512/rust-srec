@@ -34,10 +34,7 @@ impl StreamerActor {
             .set_next_check(Instant::now().checked_add(retry_after));
     }
 
-    /// Initiate a status check.
-    ///
-    /// If on a batch-capable platform, delegates to the PlatformActor.
-    /// Otherwise, performs the check directly.
+    /// Initiate a status check, unless the streamer is inside its error backoff.
     pub(super) async fn initiate_check(&mut self) -> Result<(), ActorError> {
         // Respect temporary backoff (disabled_until) without removing the actor.
         // This prevents "dead stop" monitoring where the scheduler removes actors
@@ -63,19 +60,10 @@ impl StreamerActor {
             streamer_id = %self.id,
             streamer_name = %metadata.name,
             streamer_url = %metadata.url,
-            batch = self.uses_batch_detection(),
             "status check start"
         );
 
-        if self.uses_batch_detection() {
-            // Delegate to platform actor for batch detection
-            self.delegate_to_platform().await?;
-        } else {
-            // Perform individual check
-            self.perform_check().await?;
-        }
-
-        Ok(())
+        self.perform_check().await
     }
 
     /// Perform an individual status check using the configured status checker.
@@ -109,7 +97,7 @@ impl StreamerActor {
                 let settles_initial_status =
                     matches!(status, LiveStatus::Live { .. } | LiveStatus::Offline);
 
-                self.force_live_reemit_if_stalled(next_state, "check");
+                self.force_live_reemit_if_stalled(next_state);
 
                 if next_state == StreamerState::Live {
                     self.state.last_download_activity_at = Some(Instant::now());

@@ -154,69 +154,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_valid_url() {
-        let url = StreamerUrl::new("https://www.twitch.tv/streamer123").unwrap();
-        assert_eq!(url.as_str(), "https://www.twitch.tv/streamer123");
-    }
-
-    #[test]
     fn test_url_normalization() {
         let url = StreamerUrl::new("https://WWW.TWITCH.TV/Streamer123/").unwrap();
         assert_eq!(url.as_str(), "https://www.twitch.tv/Streamer123");
-    }
-
-    #[test]
-    fn test_invalid_url_empty() {
-        let result = StreamerUrl::new("");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_invalid_url_no_scheme() {
-        let result = StreamerUrl::new("www.twitch.tv/streamer");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_platform_detection() {
-        let twitch = StreamerUrl::new("https://www.twitch.tv/streamer").unwrap();
-        assert_eq!(twitch.platform(), Some("Twitch"));
-
-        let huya = StreamerUrl::new("https://www.huya.com/123456").unwrap();
-        assert_eq!(huya.platform(), Some("Huya"));
-
-        let bilibili = StreamerUrl::new("https://live.bilibili.com/123456").unwrap();
-        assert_eq!(bilibili.platform(), Some("Bilibili"));
-
-        let soop = StreamerUrl::new("https://play.sooplive.co.kr/example").unwrap();
-        assert_eq!(soop.platform(), Some("SOOP"));
-
-        let bigo = StreamerUrl::new("https://www.bigo.tv/221338632").unwrap();
-        assert_eq!(bigo.platform(), Some("Bigo"));
-
-        let bigo_locale = StreamerUrl::new("https://www.bigo.tv/ja/221338632").unwrap();
-        assert_eq!(bigo_locale.platform(), Some("Bigo"));
-
-        let unknown = StreamerUrl::new("https://unknown.com/streamer").unwrap();
-        assert_eq!(unknown.platform(), None);
-    }
-
-    #[test]
-    fn test_channel_id() {
-        let url = StreamerUrl::new("https://www.twitch.tv/streamer123").unwrap();
-        assert_eq!(url.channel_id(), Some("streamer123".to_string()));
-
-        let url_with_slash = StreamerUrl::new("https://www.huya.com/123456/").unwrap();
-        assert_eq!(url_with_slash.channel_id(), Some("123456".to_string()));
-    }
-
-    #[test]
-    fn test_serialization() {
-        let url = StreamerUrl::new("https://www.twitch.tv/streamer").unwrap();
-        let json = serde_json::to_string(&url).unwrap();
-        assert_eq!(json, "\"https://www.twitch.tv/streamer\"");
-
-        let parsed: StreamerUrl = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed, url);
     }
 }

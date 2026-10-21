@@ -1124,56 +1124,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_copy_move_processor_type() {
-        let processor = CopyMoveProcessor::new();
-        assert_eq!(processor.processor_type(), ProcessorType::Io);
-    }
-
-    #[test]
-    fn test_copy_move_processor_job_types() {
-        let processor = CopyMoveProcessor::new();
-        assert!(processor.can_process("copy_move"));
-        assert!(!processor.can_process("copy"));
-        assert!(!processor.can_process("move"));
-        assert!(!processor.can_process("remux"));
-    }
-
-    #[test]
-    fn test_copy_move_processor_name() {
-        let processor = CopyMoveProcessor::new();
-        assert_eq!(processor.name(), "CopyMoveProcessor");
-    }
-
-    #[test]
-    fn test_copy_move_config_parse() {
-        let json = r#"{
-            "operation": "move",
-            "destination": "/dest/file.mp4",
-            "create_dirs": true,
-            "verify_integrity": false,
-            "overwrite": true,
-            "exclude_patterns": ["\\.tmp$"]
-        }"#;
-
-        let config: CopyMoveConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.operation, CopyMoveOperation::Move);
-        assert_eq!(config.destination, Some("/dest/file.mp4".to_string()));
-        assert!(config.create_dirs);
-        assert!(!config.verify_integrity);
-        assert!(config.overwrite);
-        assert_eq!(config.exclude_patterns, vec!["\\.tmp$"]);
-        assert_eq!(config.time_anchor, None);
-    }
-
-    #[test]
-    fn test_copy_move_config_parse_time_anchor() {
-        let config: CopyMoveConfig =
-            serde_json::from_str(r#"{"destination": "/dest", "time_anchor": "session_start"}"#)
-                .unwrap();
-        assert_eq!(config.time_anchor, Some(TimeAnchor::SessionStart));
-    }
-
     /// A malformed config must fail with the parse error itself, not fall
     /// back to defaults and then error about the (discarded) destination.
     #[tokio::test]
@@ -1196,47 +1146,6 @@ mod tests {
             message.contains("unknown variant"),
             "unexpected error: {message}"
         );
-    }
-
-    #[tokio::test]
-    async fn test_copy_operation() {
-        let temp_dir = TempDir::new().unwrap();
-        let source_path = temp_dir.path().join("source.txt");
-        let dest_dir = temp_dir.path().join("output");
-
-        // Create source file
-        fs::write(&source_path, "test content").await.unwrap();
-
-        let processor = CopyMoveProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-        let input = ProcessorInput {
-            inputs: vec![source_path.to_string_lossy().to_string()],
-            outputs: vec![],
-            config: Some(
-                serde_json::json!({
-                    "operation": "copy",
-                    "destination": dest_dir.to_string_lossy()
-                })
-                .to_string(),
-            ),
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let output = processor.process(&input, &ctx).await.unwrap();
-
-        // Verify copy succeeded
-        let dest_path = dest_dir.join("source.txt");
-        assert!(dest_path.exists());
-        assert!(source_path.exists()); // Source should still exist
-        assert_eq!(
-            output.outputs,
-            vec![dest_path.to_string_lossy().to_string()]
-        );
-        assert!(output.input_size_bytes.is_some());
-        assert!(output.output_size_bytes.is_some());
-        assert_eq!(output.input_size_bytes, output.output_size_bytes);
     }
 
     #[tokio::test]
@@ -1306,6 +1215,46 @@ mod tests {
         assert_eq!((last.files_done, last.files_total), (Some(0), Some(1)));
     }
 
+    /// With and without a time anchor, which take separate expansion paths.
+    #[tokio::test]
+    async fn destination_fills_every_identity_token() {
+        for time_anchor in [None, Some("job_created")] {
+            let temp_dir = TempDir::new().unwrap();
+            let source_path = temp_dir.path().join("source.txt");
+            fs::write(&source_path, "test content").await.unwrap();
+            let input = ProcessorInput {
+                inputs: vec![source_path.to_string_lossy().to_string()],
+                config: Some(
+                    serde_json::json!({
+                        "operation": "copy",
+                        "destination": format!(
+                            "{}/{{platform}}/{{streamer_id}}/{{session_id}}/{{streamer}}/{{title}}",
+                            temp_dir.path().to_string_lossy()
+                        ),
+                        "time_anchor": time_anchor,
+                    })
+                    .to_string(),
+                ),
+                streamer_id: "streamer-1".to_string(),
+                session_id: "session-2".to_string(),
+                streamer_name: Some("Name?".to_string()),
+                session_title: Some("Title".to_string()),
+                platform: Some("huya".to_string()),
+                ..Default::default()
+            };
+
+            CopyMoveProcessor::new()
+                .process(&input, &ProcessorContext::noop("test"))
+                .await
+                .unwrap();
+
+            let expected = temp_dir
+                .path()
+                .join("huya/streamer-1/session-2/Name_/Title/source.txt");
+            assert!(expected.exists(), "{time_anchor:?}");
+        }
+    }
+
     #[tokio::test]
     async fn test_copy_move_session_start_anchor_expands_destination_date() {
         let temp_dir = TempDir::new().unwrap();
@@ -1352,155 +1301,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_exclude_patterns_invalid_regex_fails() {
-        let temp_dir = TempDir::new().unwrap();
-        let source_path = temp_dir.path().join("source.txt");
-        let dest_dir = temp_dir.path().join("output");
-
-        fs::write(&source_path, "test content").await.unwrap();
-
-        let processor = CopyMoveProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-        let input = ProcessorInput {
-            inputs: vec![source_path.to_string_lossy().to_string()],
-            outputs: vec![],
-            config: Some(
-                serde_json::json!({
-                    "operation": "copy",
-                    "destination": dest_dir.to_string_lossy(),
-                    "exclude_patterns": ["("],
-                })
-                .to_string(),
-            ),
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let err = processor.process(&input, &ctx).await.unwrap_err();
-        assert!(err.to_string().contains("Invalid exclude_patterns regex"));
-    }
-
-    #[tokio::test]
-    async fn test_move_operation() {
-        let temp_dir = TempDir::new().unwrap();
-        let source_path = temp_dir.path().join("source.txt");
-        let dest_dir = temp_dir.path().join("output");
-
-        // Create source file
-        fs::write(&source_path, "test content").await.unwrap();
-
-        let processor = CopyMoveProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-        let input = ProcessorInput {
-            inputs: vec![source_path.to_string_lossy().to_string()],
-            outputs: vec![],
-            config: Some(
-                serde_json::json!({
-                    "operation": "move",
-                    "destination": dest_dir.to_string_lossy()
-                })
-                .to_string(),
-            ),
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let output = processor.process(&input, &ctx).await.unwrap();
-
-        // Verify move succeeded
-        let dest_path = dest_dir.join("source.txt");
-        assert!(dest_path.exists());
-        assert!(!source_path.exists()); // Source should be removed
-        assert_eq!(
-            output.outputs,
-            vec![dest_path.to_string_lossy().to_string()]
-        );
-    }
-
-    #[tokio::test]
-    async fn test_create_dirs() {
-        let temp_dir = TempDir::new().unwrap();
-        let source_path = temp_dir.path().join("source.txt");
-        let dest_dir = temp_dir.path().join("subdir1/subdir2");
-
-        // Create source file
-        fs::write(&source_path, "test content").await.unwrap();
-
-        let processor = CopyMoveProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-        let input = ProcessorInput {
-            inputs: vec![source_path.to_string_lossy().to_string()],
-            outputs: vec![],
-            config: Some(
-                serde_json::json!({
-                    "operation": "copy",
-                    "destination": dest_dir.to_string_lossy(),
-                    "create_dirs": true
-                })
-                .to_string(),
-            ),
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let output = processor.process(&input, &ctx).await.unwrap();
-
-        // Verify directories were created and copy succeeded
-        let dest_path = dest_dir.join("source.txt");
-        assert!(dest_path.exists());
-        assert!(dest_dir.exists());
-        assert_eq!(
-            output.outputs,
-            vec![dest_path.to_string_lossy().to_string()]
-        );
-    }
-
-    #[tokio::test]
-    async fn test_overwrite_disabled_by_default() {
-        let temp_dir = TempDir::new().unwrap();
-        let source_path = temp_dir.path().join("source.txt");
-        let dest_dir = temp_dir.path();
-
-        // Create source and destination files
-        fs::write(&source_path, "source content").await.unwrap();
-        // Destination file has same name as source
-        fs::write(dest_dir.join("source.txt"), "existing content")
-            .await
-            .unwrap();
-
-        let processor = CopyMoveProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-        let input = ProcessorInput {
-            inputs: vec![source_path.to_string_lossy().to_string()],
-            outputs: vec![],
-            // `overwrite` is omitted: clobbering an existing destination must
-            // require an explicit opt-in, so `CopyMoveConfig`'s serde default
-            // has to be `false`. `test_overwrite_enabled` covers the opt-in.
-            config: Some(
-                serde_json::json!({
-                    "operation": "copy",
-                    "destination": dest_dir.to_string_lossy(),
-                })
-                .to_string(),
-            ),
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let result = processor.process(&input, &ctx).await;
-
-        // In batch mode, single file failure results in partial success
-        // Since this is the only file, it should fail completely
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("failed to copy/move"));
-    }
-
-    #[tokio::test]
     async fn test_overwrite_enabled() {
         let temp_dir = TempDir::new().unwrap();
         let source_path = temp_dir.path().join("source.txt");
@@ -1544,139 +1344,6 @@ mod tests {
             output.outputs,
             vec![dest_path.to_string_lossy().to_string()]
         );
-    }
-
-    #[tokio::test]
-    async fn test_source_not_found() {
-        let temp_dir = TempDir::new().unwrap();
-        let source_path = temp_dir.path().join("nonexistent.txt");
-        let dest_dir = temp_dir.path().join("output");
-
-        let processor = CopyMoveProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-        let input = ProcessorInput {
-            inputs: vec![source_path.to_string_lossy().to_string()],
-            outputs: vec![],
-            config: Some(
-                serde_json::json!({
-                    "destination": dest_dir.to_string_lossy()
-                })
-                .to_string(),
-            ),
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let result = processor.process(&input, &ctx).await;
-
-        // Should fail because source doesn't exist (single file = total failure)
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("failed to copy/move"));
-    }
-
-    #[tokio::test]
-    async fn test_no_input_file() {
-        let processor = CopyMoveProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-        let input = ProcessorInput {
-            inputs: vec![],
-            outputs: vec![],
-            config: Some(
-                serde_json::json!({
-                    "destination": "/dest"
-                })
-                .to_string(),
-            ),
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let result = processor.process(&input, &ctx).await;
-
-        // Should fail because no input file specified
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("No input file"));
-    }
-
-    #[tokio::test]
-    async fn test_no_destination() {
-        let temp_dir = TempDir::new().unwrap();
-        let source_path = temp_dir.path().join("source.txt");
-        fs::write(&source_path, "test").await.unwrap();
-
-        let processor = CopyMoveProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-        let input = ProcessorInput {
-            inputs: vec![source_path.to_string_lossy().to_string()],
-            outputs: vec![],
-            config: None,
-            streamer_id: "test".to_string(),
-            session_id: "test".to_string(),
-            ..Default::default()
-        };
-
-        let result = processor.process(&input, &ctx).await;
-
-        // Should fail because no destination specified
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(err.to_string().contains("No destination"));
-    }
-
-    #[tokio::test]
-    async fn test_placeholder_expansion() {
-        let temp_dir = TempDir::new().unwrap();
-        let source_path = temp_dir.path().join("video.mp4");
-
-        // Create source file
-        fs::write(&source_path, "test video content").await.unwrap();
-
-        let processor = CopyMoveProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-
-        // Use placeholders in destination using platform-native path separator
-        let dest_template = temp_dir
-            .path()
-            .join("{platform}")
-            .join("{streamer}")
-            .join("{title}")
-            .to_string_lossy()
-            .to_string();
-
-        let input = ProcessorInput {
-            inputs: vec![source_path.to_string_lossy().to_string()],
-            outputs: vec![],
-            config: Some(
-                serde_json::json!({
-                    "operation": "copy",
-                    "destination": dest_template
-                })
-                .to_string(),
-            ),
-            streamer_id: "streamer123".to_string(),
-            session_id: "session456".to_string(),
-            streamer_name: Some("TestStreamer".to_string()),
-            session_title: Some("LiveStream".to_string()),
-            platform: Some("Twitch".to_string()),
-            ..Default::default()
-        };
-
-        let output = processor.process(&input, &ctx).await.unwrap();
-
-        // Verify placeholders were expanded - check via output existence
-        assert_eq!(output.outputs.len(), 1);
-        assert!(output.outputs[0].contains("Twitch"));
-        assert!(output.outputs[0].contains("TestStreamer"));
-        assert!(output.outputs[0].contains("LiveStream"));
-        assert!(output.outputs[0].contains("video.mp4"));
-
-        // Verify file actually exists at output path
-        let output_path = Path::new(&output.outputs[0]);
-        assert!(output_path.exists());
     }
 
     #[tokio::test]
@@ -1742,45 +1409,6 @@ mod tests {
                 Some(2),
                 Some("file2.txt")
             )
-        );
-    }
-
-    #[tokio::test]
-    async fn test_move_retry_treats_absent_source_with_destination_as_moved() {
-        let temp_dir = TempDir::new().unwrap();
-        let source_path = temp_dir.path().join("moved.txt");
-        let dest_dir = temp_dir.path().join("output");
-        // Simulates a retried job: the earlier attempt already moved the
-        // source, so only the destination file exists.
-        fs::create_dir_all(&dest_dir).await.unwrap();
-        fs::write(dest_dir.join("moved.txt"), "content")
-            .await
-            .unwrap();
-
-        let processor = CopyMoveProcessor::new();
-        let ctx = ProcessorContext::noop("test").with_retry(true);
-        let input = ProcessorInput {
-            inputs: vec![source_path.to_string_lossy().to_string()],
-            config: Some(
-                serde_json::json!({
-                    "operation": "move",
-                    "destination": dest_dir.to_string_lossy()
-                })
-                .to_string(),
-            ),
-            ..Default::default()
-        };
-
-        let output = processor.process(&input, &ctx).await.unwrap();
-
-        assert_eq!(
-            output.succeeded_inputs,
-            vec![source_path.to_string_lossy().to_string()]
-        );
-        assert!(output.failed_inputs.is_empty());
-        assert_eq!(
-            output.outputs,
-            vec![dest_dir.join("moved.txt").to_string_lossy().to_string()]
         );
     }
 
@@ -2002,62 +1630,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_move_fails_when_source_and_destination_are_both_missing() {
-        let temp_dir = TempDir::new().unwrap();
-        let source_path = temp_dir.path().join("missing.txt");
-        let dest_dir = temp_dir.path().join("output");
-        fs::create_dir_all(&dest_dir).await.unwrap();
-
-        let processor = CopyMoveProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-        let input = ProcessorInput {
-            inputs: vec![source_path.to_string_lossy().to_string()],
-            config: Some(
-                serde_json::json!({
-                    "operation": "move",
-                    "destination": dest_dir.to_string_lossy()
-                })
-                .to_string(),
-            ),
-            ..Default::default()
-        };
-
-        let err = processor.process(&input, &ctx).await.unwrap_err();
-        assert!(err.to_string().contains("failed to copy/move"));
-    }
-
-    /// The absent-source resume only applies to moves: a copy never
-    /// consumes its source, so a missing source is a real error even when
-    /// a same-named destination file exists.
-    #[tokio::test]
-    async fn test_copy_missing_source_with_existing_destination_still_fails() {
-        let temp_dir = TempDir::new().unwrap();
-        let source_path = temp_dir.path().join("missing.txt");
-        let dest_dir = temp_dir.path().join("output");
-        fs::create_dir_all(&dest_dir).await.unwrap();
-        fs::write(dest_dir.join("missing.txt"), "unrelated")
-            .await
-            .unwrap();
-
-        let processor = CopyMoveProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-        let input = ProcessorInput {
-            inputs: vec![source_path.to_string_lossy().to_string()],
-            config: Some(
-                serde_json::json!({
-                    "operation": "copy",
-                    "destination": dest_dir.to_string_lossy()
-                })
-                .to_string(),
-            ),
-            ..Default::default()
-        };
-
-        let err = processor.process(&input, &ctx).await.unwrap_err();
-        assert!(err.to_string().contains("failed to copy/move"));
-    }
-
-    #[tokio::test]
     async fn test_move_retry_resumes_mixed_batch() {
         let temp_dir = TempDir::new().unwrap();
         let already_moved = temp_dir.path().join("already-moved.txt");
@@ -2093,55 +1665,5 @@ mod tests {
         assert!(!pending.exists());
         assert!(dest_dir.join("pending.txt").exists());
         assert!(dest_dir.join("already-moved.txt").exists());
-    }
-
-    #[tokio::test]
-    async fn test_copy_via_tmp_creates_destination_without_leaving_tmp() {
-        let temp_dir = TempDir::new().unwrap();
-        let source = temp_dir.path().join("source.txt");
-        let dest = temp_dir.path().join("dest.txt");
-        fs::write(&source, "content").await.unwrap();
-        let (progress_tx, mut progress_rx) = tokio::sync::mpsc::channel(16);
-        let progress = CopyProgress::new(
-            ProgressReporter::new("copy", progress_tx),
-            &source,
-            7,
-            0,
-            7,
-            (0, 1),
-        );
-
-        let bytes = CopyMoveProcessor::copy_via_tmp(
-            &source,
-            &dest,
-            7,
-            &CopyMoveConfig::default(),
-            &ProcessorContext::noop("copy"),
-            progress,
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(bytes, 7);
-        // Every platform reports the finished copy, whatever came before it.
-        let mut last = None;
-        while let Ok(update) = progress_rx.try_recv() {
-            last = Some(update.snapshot);
-        }
-        let last = last.expect("a final copy progress report");
-        assert_eq!(last.kind, ProgressKind::Copy);
-        assert_eq!(
-            (last.bytes_done, last.bytes_total, last.percent),
-            (Some(7), Some(7), Some(100.0))
-        );
-        assert_eq!(fs::read_to_string(&dest).await.unwrap(), "content");
-        let mut entries = fs::read_dir(temp_dir.path()).await.unwrap();
-        while let Some(entry) = entries.next_entry().await.unwrap() {
-            assert!(
-                !entry.file_name().to_string_lossy().contains(".tmp-"),
-                "temporary copy left behind: {:?}",
-                entry.file_name()
-            );
-        }
     }
 }

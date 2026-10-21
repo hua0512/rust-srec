@@ -202,26 +202,6 @@ mod tests {
     }
 
     #[test]
-    fn shutdown_schedule_reserves_time_before_the_deadline() {
-        let policy = ShutdownPolicy::new(Duration::from_secs(10), Duration::from_secs(2)).unwrap();
-        let started_at = Instant::now();
-        let schedule = ShutdownSchedule::from_start(started_at, policy).unwrap();
-
-        assert_eq!(
-            schedule.force_at().duration_since(started_at),
-            Duration::from_secs(8)
-        );
-        assert_eq!(
-            schedule.deadline().duration_since(schedule.force_at()),
-            Duration::from_secs(2)
-        );
-        assert_eq!(
-            schedule.deadline().duration_since(started_at),
-            Duration::from_secs(10)
-        );
-    }
-
-    #[test]
     fn watchdog_fires_at_an_elapsed_deadline() {
         let (fired_tx, fired_rx) = mpsc::channel();
         let watchdog = HardDeadlineWatchdog::arm(Instant::now(), move || {

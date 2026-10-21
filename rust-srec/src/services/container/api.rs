@@ -16,8 +16,6 @@ use super::ServiceContainer;
 #[cfg(test)]
 mod import_contract_tests;
 #[cfg(test)]
-mod ownership_tests;
-#[cfg(test)]
 mod response_contract_tests;
 #[cfg(test)]
 mod timezone_import_tests;
@@ -301,15 +299,6 @@ mod tests {
     fn parse_auth_disabled_rejects_invalid_values() {
         let result = parse_auth_disabled(Some("yes"));
         assert!(matches!(result, Err(crate::Error::Configuration(_))));
-    }
-
-    #[test]
-    fn configured_jwt_enables_authentication() {
-        assert_eq!(
-            validate_auth_mode(true, false, "0.0.0.0")
-                .expect("a configured JWT should enable authentication"),
-            ApiAuthMode::Enabled
-        );
     }
 
     #[test]

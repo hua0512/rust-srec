@@ -14,7 +14,7 @@ use crate::domain::streamer::{
 use crate::monitor::{CheckHistoryWriter, FilterReason, LiveStatus, ProcessStatusResult};
 use crate::streamer::StreamerMetadata;
 
-use super::messages::{BatchDetectionResult, CheckResult};
+use super::messages::CheckResult;
 
 /// Trait for individual streamer status checking.
 ///
@@ -69,23 +69,6 @@ pub trait StatusChecker: Send + Sync + 'static {
         streamer: &StreamerMetadata,
         reason: crate::monitor::InfraBlockReason,
     ) -> Result<(), CheckError>;
-}
-
-/// Trait for batch status checking.
-///
-/// This trait abstracts batch detection operations, allowing
-/// PlatformActors to perform batch checks without direct coupling
-/// to the BatchDetector implementation.
-#[async_trait]
-pub trait BatchChecker: Send + Sync + 'static {
-    /// Perform a batch status check for multiple streamers.
-    ///
-    /// Returns results for each streamer in the batch.
-    async fn batch_check(
-        &self,
-        platform_id: &str,
-        streamers: Vec<StreamerMetadata>,
-    ) -> Result<Vec<BatchDetectionResult>, CheckError>;
 }
 
 /// Error type for check operations.
@@ -325,76 +308,6 @@ fn selected_stream_summary(stream: &platforms_parser::media::StreamInfo) -> Sele
     }
 }
 
-/// Real implementation of BatchChecker using StreamMonitor.
-///
-/// This adapter connects PlatformActors to the actual batch detection infrastructure.
-pub struct MonitorBatchChecker<SR, FR, SSR, CR>
-where
-    SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
-    FR: crate::database::repositories::FilterRepository + Send + Sync + 'static,
-    SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
-    CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
-{
-    monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR, CR>>,
-}
-
-impl<SR, FR, SSR, CR> MonitorBatchChecker<SR, FR, SSR, CR>
-where
-    SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
-    FR: crate::database::repositories::FilterRepository + Send + Sync + 'static,
-    SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
-    CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
-{
-    /// Create a new MonitorBatchChecker.
-    pub fn new(monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR, CR>>) -> Self {
-        Self { monitor }
-    }
-}
-
-#[async_trait]
-impl<SR, FR, SSR, CR> BatchChecker for MonitorBatchChecker<SR, FR, SSR, CR>
-where
-    SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
-    FR: crate::database::repositories::FilterRepository + Send + Sync + 'static,
-    SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
-    CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
-{
-    async fn batch_check(
-        &self,
-        platform_id: &str,
-        streamers: Vec<StreamerMetadata>,
-    ) -> Result<Vec<BatchDetectionResult>, CheckError> {
-        let batch_result = self.monitor.batch_check(platform_id, streamers).await?;
-
-        // Convert BatchResult to Vec<BatchDetectionResult>
-        let mut results =
-            Vec::with_capacity(batch_result.results.len() + batch_result.failures.len());
-
-        for (streamer_id, status) in batch_result.results {
-            let check_result = convert_live_status_to_check_result(&status);
-
-            results.push(BatchDetectionResult {
-                streamer_id,
-                result: check_result,
-                status,
-            });
-        }
-
-        // Handle failures
-        for failure in batch_result.failures {
-            results.push(BatchDetectionResult {
-                streamer_id: failure.streamer_id,
-                result: CheckResult::failure(failure.error),
-                // NOTE: This status is ignored by StreamerActor for error results; it will call
-                // StatusChecker::handle_error() instead of process_status().
-                status: crate::monitor::LiveStatus::Offline,
-            });
-        }
-
-        Ok(results)
-    }
-}
-
 /// Convert a LiveStatus to a CheckResult.
 fn convert_live_status_to_check_result(status: &LiveStatus) -> CheckResult {
     use crate::domain::StreamerState;
@@ -523,36 +436,6 @@ impl StatusChecker for NoOpStatusChecker {
     }
 }
 
-/// No-op implementation of BatchChecker for testing.
-///
-/// This implementation simulates batch checks without actually performing them.
-#[derive(Clone)]
-pub struct NoOpBatchChecker;
-
-#[async_trait]
-impl BatchChecker for NoOpBatchChecker {
-    async fn batch_check(
-        &self,
-        _platform_id: &str,
-        streamers: Vec<StreamerMetadata>,
-    ) -> Result<Vec<BatchDetectionResult>, CheckError> {
-        // Simulate a small delay
-        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-
-        // Return offline status for all streamers
-        let results = streamers
-            .into_iter()
-            .map(|s| BatchDetectionResult {
-                streamer_id: s.id,
-                result: CheckResult::success(crate::domain::StreamerState::NotLive),
-                status: LiveStatus::Offline,
-            })
-            .collect();
-
-        Ok(results)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use chrono::{Duration, Utc};
@@ -599,26 +482,5 @@ mod tests {
 
         assert!(!json.contains("signed=secret"));
         assert!(matches!(record.outcome, CheckOutcome::Live { .. }));
-    }
-
-    #[test]
-    fn history_projection_maps_all_fatal_statuses() {
-        for (status, expected) in [
-            (LiveStatus::NotFound, FatalErrorType::NotFound),
-            (LiveStatus::Banned, FatalErrorType::Banned),
-            (LiveStatus::AgeRestricted, FatalErrorType::AgeRestricted),
-            (LiveStatus::RegionLocked, FatalErrorType::RegionLocked),
-            (LiveStatus::Private, FatalErrorType::Private),
-            (
-                LiveStatus::UnsupportedPlatform,
-                FatalErrorType::UnsupportedPlatform,
-            ),
-        ] {
-            let record = check_record_from_live_status("s1", Utc::now(), Duration::zero(), &status);
-            assert!(matches!(
-                record.outcome,
-                CheckOutcome::FatalError { kind } if kind == expected
-            ));
-        }
     }
 }

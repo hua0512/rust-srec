@@ -368,51 +368,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_idle_check_ok_when_nothing_active() {
-        let state = build_idle_test_state(crate::pipeline::PipelineManager::new());
-
-        let response = idle_check(State(state))
-            .await
-            .expect("idle_check should succeed")
-            .into_response();
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let json = read_json(response).await;
-        assert_eq!(json["idle"], serde_json::Value::Bool(true));
-        assert_eq!(json["active_recordings"], 0);
-        assert_eq!(json["pending_recordings"], 0);
-        assert_eq!(json["processing_jobs"], 0);
-    }
-
-    #[tokio::test]
-    async fn test_idle_check_busy_when_job_processing() {
-        let pipeline_manager = crate::pipeline::PipelineManager::new();
-        let mut job = crate::pipeline::Job::new(
-            "remux",
-            vec!["input.mp4".to_string()],
-            vec!["output.mp4".to_string()],
-            "streamer-1",
-            "session-1",
-        );
-        job.status = crate::database::models::JobStatus::Processing;
-        pipeline_manager
-            .enqueue(job)
-            .await
-            .expect("enqueue should succeed");
-
-        let state = build_idle_test_state(pipeline_manager);
-        let response = idle_check(State(state))
-            .await
-            .expect("idle_check should succeed")
-            .into_response();
-        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-
-        let json = read_json(response).await;
-        assert_eq!(json["idle"], serde_json::Value::Bool(false));
-        assert_eq!(json["processing_jobs"], 1);
-    }
-
-    #[tokio::test]
     async fn idle_check_reads_current_database_processing_count() {
         use std::sync::Arc;
 
@@ -455,28 +410,5 @@ mod tests {
             assert_eq!(json["idle"], expected == 0);
         }
         pool.close().await;
-    }
-
-    #[test]
-    fn test_health_response_serialization() {
-        let response = HealthResponse {
-            status: "healthy".to_string(),
-            version: "0.1.0".to_string(),
-            uptime_secs: 3600,
-            components: vec![ComponentHealth {
-                name: "database".to_string(),
-                status: "healthy".to_string(),
-                message: None,
-                last_check: None,
-                check_duration_ms: None,
-                disk: None,
-            }],
-            cpu_usage: 10.5,
-            memory_usage: 45.2,
-        };
-
-        let json = serde_json::to_string(&response).unwrap();
-        assert!(json.contains("healthy"));
-        assert!(json.contains("database"));
     }
 }

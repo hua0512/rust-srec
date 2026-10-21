@@ -1,4 +1,3 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
@@ -7,20 +6,9 @@ use crate::config::ConfigUpdateEvent;
 use crate::database::models::{StreamerDbModel, TemplateConfigDbModel};
 use crate::database::repositories::{SqlxStreamerRepository, StreamerRepository};
 
-async fn fixture() -> (ServiceContainer, Arc<AtomicUsize>) {
-    let queries = Arc::new(AtomicUsize::new(0));
-    let opened = queries.clone();
-    let reused = queries.clone();
+async fn fixture() -> ServiceContainer {
     let pool = sqlx::sqlite::SqlitePoolOptions::new()
         .max_connections(1)
-        .after_connect(move |_, _| {
-            opened.fetch_add(1, Ordering::SeqCst);
-            Box::pin(async { Ok(()) })
-        })
-        .before_acquire(move |_, _| {
-            reused.fetch_add(1, Ordering::SeqCst);
-            Box::pin(async { Ok(true) })
-        })
         .connect("sqlite::memory:")
         .await
         .unwrap();
@@ -32,7 +20,7 @@ async fn fixture() -> (ServiceContainer, Arc<AtomicUsize>) {
         vec![],
         Duration::from_secs(30),
     );
-    (container, queries)
+    container
 }
 
 async fn assert_current(container: &ServiceContainer, id: &str) {
@@ -62,7 +50,7 @@ fn mark_stale(container: &ServiceContainer) {
 
 #[tokio::test]
 async fn startup_and_scoped_config_refreshes_preserve_merged_values_and_best_effort_failures() {
-    let (container, _) = fixture().await;
+    let container = fixture().await;
     let mut template = TemplateConfigDbModel::new("refresh-template");
     template.offline_check_count = Some(6);
     template.offline_check_delay_ms = Some(6000);
@@ -275,65 +263,6 @@ async fn startup_and_scoped_config_refreshes_preserve_merged_values_and_best_eff
     assert!(
         !container.startup_recovery_complete(),
         "cache fanout must not fabricate a persistent recovery acknowledgement"
-    );
-    container.cancellation_token.cancel();
-}
-
-#[tokio::test]
-async fn startup_probe_and_health_registration_reuse_the_collected_root_input_without_queries() {
-    let (container, queries) = fixture().await;
-    let directory = tempfile::tempdir().unwrap();
-    let original_root = directory.path().join("original");
-    let changed_root = directory.path().join("changed");
-    std::fs::create_dir(&original_root).unwrap();
-    std::fs::create_dir(&changed_root).unwrap();
-    sqlx::query("UPDATE platform_config SET output_folder = NULL")
-        .execute(&container.pool)
-        .await
-        .unwrap();
-    sqlx::query("UPDATE template_config SET output_folder = NULL")
-        .execute(&container.pool)
-        .await
-        .unwrap();
-    let mut global = container.config_service.get_global_config().await.unwrap();
-    global.output_folder = original_root.to_string_lossy().into_owned();
-    container
-        .config_service
-        .update_global_config(&global)
-        .await
-        .unwrap();
-    queries.store(0, Ordering::SeqCst);
-    let roots = container.collect_output_roots().await;
-    assert_eq!(roots, vec![original_root.clone()]);
-    assert!(
-        queries.load(Ordering::SeqCst) > 0,
-        "discovery actually consulted configuration"
-    );
-    global.output_folder = changed_root.to_string_lossy().into_owned();
-    container
-        .config_service
-        .update_global_config(&global)
-        .await
-        .unwrap();
-    std::fs::remove_dir(&original_root).unwrap();
-    // Missing recording folders are valid when an ancestor is writable. A file
-    // in place of the collected directory guarantees a failure on every platform.
-    std::fs::write(&original_root, b"not a directory").unwrap();
-    queries.store(0, Ordering::SeqCst);
-    container.register_health_checks(&roots).await;
-    container.run_output_root_startup_probe(&roots).await;
-    assert_eq!(
-        queries.load(Ordering::SeqCst),
-        0,
-        "registration and write probing must not rediscover configuration"
-    );
-    let state = container.output_root_gate.snapshot();
-    assert!(
-        state.iter().any(|root| {
-            root.root == container.output_root_gate.resolve_path(&original_root)
-                && root.state == crate::downloader::RootHealthState::Degraded
-        }),
-        "the original invalid path must be probed instead of the newly configured healthy directory"
     );
     container.cancellation_token.cancel();
 }

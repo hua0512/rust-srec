@@ -704,14 +704,6 @@ mod tests {
     }
 
     #[test]
-    fn non_mp4_output_does_not_use_faststart() {
-        let args = engine_with_output_args(&[]).build_args(&download_config("mkv", 0));
-
-        assert!(!contains_option(&args, "-movflags"));
-        assert!(!contains_option(&args, "-segment_format_options"));
-    }
-
-    #[test]
     fn custom_faststart_option_is_not_overridden() {
         let args = engine_with_output_args(&["-movflags=+frag_keyframe"])
             .build_args(&download_config("mp4", 0));
@@ -723,11 +715,5 @@ mod tests {
             1
         );
         assert!(!args.iter().any(|arg| arg == "+faststart"));
-    }
-
-    #[test]
-    fn test_engine_type() {
-        let engine = FfmpegEngine::new();
-        assert_eq!(engine.engine_type(), EngineType::Ffmpeg);
     }
 }

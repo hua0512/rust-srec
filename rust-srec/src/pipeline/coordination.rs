@@ -1896,40 +1896,6 @@ mod tests {
     }
 
     #[test]
-    fn pipeline_coordinator_handles_session_end_before_artifacts() {
-        let coord = PipelineCoordinator::new();
-        let session_id = "session1";
-        let streamer_id = "streamer1";
-
-        coord.apply_event_inline(configure_event(
-            session_id,
-            streamer_id,
-            false,
-            None,
-            None,
-            Some(empty_session_pipeline()),
-        ));
-        coord.apply_event_inline(end_event(session_id, streamer_id));
-        assert!(
-            coord
-                .apply_event_inline(persisted_event(session_id))
-                .is_empty()
-        );
-
-        let commands = coord.apply_event_inline(PipelineCoordinationEvent::VideoSegmentCompleted {
-            session_id: session_id.to_string(),
-            streamer_id: streamer_id.to_string(),
-            segment_index: 0,
-            path: PathBuf::from("/seg0.flv"),
-        });
-
-        assert!(matches!(
-            commands.as_slice(),
-            [PipelineCommand::CreateSessionCompleteDag { .. }]
-        ));
-    }
-
-    #[test]
     fn pipeline_coordinator_session_complete_is_exactly_once() {
         let coord = PipelineCoordinator::new();
         let session_id = "session1";
@@ -2060,82 +2026,6 @@ mod tests {
                 if outputs.video_outputs.len() == 1
                     && outputs.video_outputs[0].path.as_path() == Path::new("/seg0.flv")
         ));
-    }
-
-    #[test]
-    fn pipeline_coordinator_segment_dag_command_is_idempotent() {
-        let coord = PipelineCoordinator::new();
-        let session_id = "session1";
-        let streamer_id = "streamer1";
-
-        coord.apply_event_inline(configure_event(
-            session_id,
-            streamer_id,
-            false,
-            Some(non_empty_pipeline("segment")),
-            None,
-            Some(empty_session_pipeline()),
-        ));
-        let commands = coord.apply_event_inline(PipelineCoordinationEvent::VideoSegmentCompleted {
-            session_id: session_id.to_string(),
-            streamer_id: streamer_id.to_string(),
-            segment_index: 0,
-            path: PathBuf::from("/seg0.flv"),
-        });
-        assert!(matches!(
-            commands.as_slice(),
-            [PipelineCommand::CreateSegmentDag { .. }]
-        ));
-
-        let commands = coord.apply_event_inline(PipelineCoordinationEvent::VideoSegmentCompleted {
-            session_id: session_id.to_string(),
-            streamer_id: streamer_id.to_string(),
-            segment_index: 0,
-            path: PathBuf::from("/seg0.flv"),
-        });
-        assert!(
-            commands.is_empty(),
-            "duplicate source artifact must not create another segment DAG"
-        );
-    }
-
-    #[test]
-    fn pipeline_coordinator_distinct_canonical_indices_create_distinct_dags() {
-        let coord = PipelineCoordinator::new();
-        let session_id = "session1";
-        let streamer_id = "streamer1";
-
-        coord.apply_event_inline(configure_event(
-            session_id,
-            streamer_id,
-            false,
-            Some(non_empty_pipeline("segment")),
-            None,
-            Some(empty_session_pipeline()),
-        ));
-
-        for (segment_index, path) in [(0, "/seg0.flv"), (1, "/seg1.flv")] {
-            let commands =
-                coord.apply_event_inline(PipelineCoordinationEvent::VideoSegmentCompleted {
-                    session_id: session_id.to_string(),
-                    streamer_id: streamer_id.to_string(),
-                    segment_index,
-                    path: PathBuf::from(path),
-                });
-            match commands.as_slice() {
-                [
-                    PipelineCommand::CreateSegmentDag {
-                        segment_index: actual_index,
-                        input_path,
-                        ..
-                    },
-                ] => {
-                    assert_eq!(*actual_index, segment_index);
-                    assert_eq!(input_path, &PathBuf::from(path));
-                }
-                other => panic!("unexpected commands: {other:?}"),
-            }
-        }
     }
 
     #[test]

@@ -203,23 +203,6 @@ async fn assert_arguments(path: &Path, expected: &[String]) {
     );
 }
 
-#[tokio::test]
-async fn ordinary_media_program_arguments_round_trip() {
-    let fixture = Fixture::new().await;
-    let helper = fixture.helper("media_capture_helper").await;
-    let capture = fixture.root().join("program-arguments.bin");
-    let mut input = fixture.input(&capture);
-    let mut args = vec![path_text(fixture.root()), "{output}".into()];
-    args.extend(
-        ARGUMENT_TEMPLATES
-            .iter()
-            .map(|argument| (*argument).to_owned()),
-    );
-    input.config = Some(serde_json::json!({"program":path_text(&helper),"args":args}).to_string());
-    fixture.run(&input).await;
-    assert_arguments(&capture, &expected_arguments(&input)).await;
-}
-
 #[derive(Clone, Copy)]
 enum WordStyle {
     Bare,
@@ -286,22 +269,4 @@ async fn ordinary_media_file_redirection_preserves_bytes() {
         assert_eq!(tokio::fs::read(&output).await.unwrap(), *expected);
         assert_eq!(tokio::fs::read(source).await.unwrap(), *expected);
     }
-}
-
-#[cfg(unix)]
-#[tokio::test]
-async fn ordinary_media_posix_pipe_preserves_bytes() {
-    let fixture = Fixture::new().await;
-    let helper = fixture.helper("media_copy_helper").await;
-    let (source, expected) = &fixture.media[2];
-    let output = source.parent().unwrap().join("Piped 演奏 (copy) 50%.wav");
-    let helper = trusted_path_word(&helper);
-    let input = ProcessorInput {
-        inputs: vec![path_text(source)], outputs: vec![path_text(&output)],
-        config: Some(serde_json::json!({"command":format!("{helper} < \"{{input}}\" | {helper} > \"{{output}}\"")}).to_string()),
-        ..Default::default()
-    };
-    fixture.run(&input).await;
-    assert_eq!(tokio::fs::read(&output).await.unwrap(), *expected);
-    assert_eq!(tokio::fs::read(source).await.unwrap(), *expected);
 }

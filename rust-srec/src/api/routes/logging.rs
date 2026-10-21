@@ -265,7 +265,13 @@ fn scan_log_files_matching(
             continue;
         }
 
-        let meta = std::fs::metadata(&path).map_err(ApiError::from)?;
+        // Rotation and retention delete files while the directory is being
+        // listed; a file that is already gone is simply not part of the list.
+        let meta = match std::fs::metadata(&path) {
+            Ok(meta) => meta,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(ApiError::from(error)),
+        };
         let size_bytes = meta.len();
 
         let date = crate::logging::store::managed_log_date(&filename)
@@ -853,28 +859,3 @@ mod archive_tests;
 
 #[cfg(test)]
 mod auth_tests;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_update_request_deserialize() {
-        let json = r#"{"filter": "rust_srec=debug"}"#;
-        let request: UpdateLogFilterRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(request.filter, "rust_srec=debug");
-    }
-
-    #[test]
-    fn test_logging_config_response_serialize() {
-        let response = LoggingConfigResponse {
-            filter: "rust_srec=info".to_string(),
-            available_modules: vec![ModuleInfo {
-                name: "rust_srec".to_string(),
-                description: "Main app".to_string(),
-            }],
-        };
-        let json = serde_json::to_string(&response).unwrap();
-        assert!(json.contains("rust_srec=info"));
-    }
-}

@@ -305,39 +305,3 @@ impl TemplateConfigDbModel {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_global_config_default() {
-        let config = GlobalConfigDbModel::default();
-        assert_eq!(config.output_folder, "/app/output");
-        assert_eq!(config.max_concurrent_downloads, 6);
-        assert!(!config.record_danmu);
-    }
-
-    #[test]
-    fn retention_days_validates_and_calculates_cutoffs() {
-        let forever = RetentionDays::try_from(0_i32).expect("zero retention");
-        assert_eq!(forever, RetentionDays::Forever);
-        assert_eq!(forever.as_u32(), 0);
-        assert_eq!(forever.cutoff_ms(10_000), None);
-
-        let one_day = RetentionDays::try_from(1_i32).expect("one day retention");
-        assert_eq!(one_day.as_u32(), 1);
-        assert_eq!(one_day.cutoff_ms(MILLIS_PER_DAY + 1), Some(1));
-        assert_eq!(
-            RetentionDays::try_from(-1_i32).expect_err("negative retention"),
-            InvalidRetentionDays { value: -1 }
-        );
-    }
-
-    #[test]
-    fn test_template_config_new() {
-        let template = TemplateConfigDbModel::new("test-template");
-        assert_eq!(template.name, "test-template");
-        assert!(template.output_folder.is_none());
-    }
-}

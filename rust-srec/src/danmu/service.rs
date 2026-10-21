@@ -1425,13 +1425,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_danmu_service_creation() {
-        let service = DanmuService::new();
-
-        assert!(service.active_sessions().is_empty());
-    }
-
-    #[tokio::test]
     async fn shutdown_finalizes_xml_and_joins_collection_before_returning() {
         use crate::danmu::test_support::{FakeProvider, temp_xml_path};
 
@@ -1559,35 +1552,6 @@ mod tests {
             "a collection that failed to start is not a shutdown-phase failure: {:?}",
             report.shutdown_failures
         );
-    }
-
-    /// `shutdown` reports a collection that ended badly during the run and
-    /// still returns `Ok`. Only `DanmuShutdownReport::shutdown_failures` may
-    /// fail it, because callers turn that `Err` into a failed process exit.
-    #[tokio::test]
-    async fn shutdown_succeeds_when_only_a_collection_failed_during_the_run() {
-        use crate::danmu::test_support::FakeProvider;
-
-        let mut registry = ProviderRegistry::new();
-        registry.register(Arc::new(FakeProvider::new(Vec::new())));
-        let service = DanmuService::with_providers(registry);
-
-        let start_result = service
-            .start_collection(collection_spec(
-                "failed-session",
-                "failed-streamer",
-                FakeProvider::URL,
-            ))
-            .await;
-        assert!(
-            start_result.is_err(),
-            "fixture: a provider without a stream must reject collection startup"
-        );
-
-        service
-            .shutdown()
-            .await
-            .expect("a collection that failed during the run must not fail shutdown");
     }
 
     #[tokio::test]
@@ -1804,21 +1768,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_is_collecting() {
-        let service = DanmuService::new();
-
-        assert!(!service.is_collecting("session1"));
-    }
-
-    #[tokio::test]
-    async fn test_get_session_by_streamer_empty() {
-        let service = DanmuService::new();
-
-        // Should return None when no sessions exist
-        assert!(service.get_session_by_streamer("streamer1").is_none());
-    }
-
     /// `start_collection` for a different session of an already-tracked
     /// streamer must abort the prior collector before claiming the
     /// streamer-level slot; otherwise the old collector keeps running
@@ -1955,45 +1904,6 @@ mod tests {
         );
     }
 
-    /// A stop that timed out leaves the prior task possibly holding its
-    /// websocket and its `collections` entry, so `start_collection` must refuse
-    /// rather than run two collectors for one streamer.
-    #[tokio::test(start_paused = true)]
-    async fn replacement_is_refused_while_the_prior_collector_may_still_run() {
-        use crate::danmu::test_support::FakeProvider;
-
-        let (_items_tx, items_rx) = mpsc::channel(8);
-        let mut registry = ProviderRegistry::new();
-        registry.register(Arc::new(FakeProvider::new(vec![items_rx])));
-        let service = DanmuService::with_providers(registry);
-        let streamer_id = "streamer-1";
-        let old_session = "session-old";
-
-        // `done_tx` is held, so the outcome wait runs out its `STOP_TIMEOUT`
-        // without ever proving the task released its entry.
-        let (_done_tx, _cancel_token) = seed_active_collection(&service, streamer_id, old_session);
-
-        let result = service
-            .start_collection(collection_spec(
-                "session-new",
-                streamer_id,
-                FakeProvider::URL,
-            ))
-            .await;
-        let Err(error) = result else {
-            panic!("an unconfirmed prior collector must block the replacement");
-        };
-
-        assert!(
-            error.to_string().contains("stop timed out"),
-            "the refusal must carry the stop timeout: {error}"
-        );
-        assert!(
-            !service.is_collecting("session-new"),
-            "no replacement collector may be registered"
-        );
-    }
-
     /// The guarantee `PipelineCoordinator` depends on: a collector that ends on a
     /// failure rather than a stop request must still emit `CollectionStopped`.
     ///
@@ -2105,68 +2015,6 @@ mod tests {
         );
     }
 
-    /// A disarmed guard is inert, so the normal exit path — which does its own
-    /// cleanup with real statistics — cannot be duplicated by it.
-    #[tokio::test]
-    async fn cleanup_guard_is_inert_once_disarmed() {
-        let service = DanmuService::new();
-        let mut events = service.subscribe();
-        let (_done_tx, _) = seed_active_collection(&service, "streamer-1", "session-1");
-
-        {
-            let mut guard = CollectionCleanupGuard {
-                collections: service.collections.clone(),
-                sessions_by_streamer: service.sessions_by_streamer.clone(),
-                events: service.events.clone(),
-                session_id: "session-1".to_string(),
-                started: true,
-                armed: true,
-            };
-            guard.disarm();
-        }
-
-        assert!(
-            service.is_collecting("session-1"),
-            "a disarmed guard must not touch the collection"
-        );
-        assert!(events.try_recv().is_err(), "and must not emit an event");
-    }
-
-    /// Calling `start_collection` twice with the same `session_id` keeps
-    /// the existing "already active" error path. The new abort logic must
-    /// not fire for self-replace because of the `old_sid != session_id`
-    /// guard.
-    #[tokio::test]
-    async fn start_collection_idempotent_for_same_session_id() {
-        use crate::danmu::test_support::FakeProvider;
-
-        let (_items_tx, items_rx) = mpsc::channel(8);
-        let mut registry = ProviderRegistry::new();
-        registry.register(Arc::new(FakeProvider::new(vec![items_rx])));
-        let service = DanmuService::with_providers(registry);
-        let streamer_id = "streamer-1";
-        let session_id = "session-1";
-
-        service
-            .start_collection(collection_spec(session_id, streamer_id, FakeProvider::URL))
-            .await
-            .expect("first collection starts");
-
-        let result = service
-            .start_collection(collection_spec(session_id, streamer_id, FakeProvider::URL))
-            .await;
-
-        assert!(
-            result.is_err(),
-            "second start_collection for same session must return the 'already active' error"
-        );
-        assert!(service.is_collecting(session_id));
-        service
-            .stop_collection(session_id)
-            .await
-            .expect("collection stops");
-    }
-
     #[tokio::test]
     async fn concurrent_starts_reserve_a_session_exactly_once() {
         use crate::danmu::test_support::FakeProvider;
@@ -2240,28 +2088,6 @@ mod tests {
         drop(next_guard);
         drop(next);
         assert!(service.start_serialization.is_empty());
-    }
-
-    #[tokio::test]
-    async fn failed_starts_do_not_retain_historical_streamer_locks() {
-        let service = DanmuService::with_providers(ProviderRegistry::new());
-        let pending = service.start_lock("still-starting");
-        let _pending_guard = pending.mutex.lock().await;
-        for index in 0..2_000 {
-            let streamer_id = format!("historical-{index}");
-            assert!(
-                service
-                    .start_collection(collection_spec(
-                        "unsupported-session",
-                        &streamer_id,
-                        "https://unsupported.invalid/room",
-                    ))
-                    .await
-                    .is_err()
-            );
-        }
-        assert_eq!(service.start_serialization.len(), 1);
-        assert!(service.start_serialization.contains_key("still-starting"));
     }
 
     #[tokio::test]

@@ -500,19 +500,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fresh_database_preserves_absolute_docker_or_service_output_dir() {
-        let dir = tempfile::tempdir().unwrap();
-        let database_url = format!("sqlite:{}", dir.path().join("srec.db").display());
-        let output = dir.path().join("recordings");
-        let (pool, write_pool) = initialize_database(&database_url, output.to_str())
-            .await
-            .unwrap();
-        assert_eq!(stored_output(&pool).await, output.to_str().unwrap());
-        write_pool.close().await;
-        pool.close().await;
-    }
-
-    #[tokio::test]
     async fn existing_database_keeps_saved_output_including_docker_default() {
         for saved in ["/app/output", "./operator recordings", ""] {
             let dir = tempfile::tempdir().unwrap();

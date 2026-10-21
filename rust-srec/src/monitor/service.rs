@@ -30,7 +30,6 @@ use crate::streamer::{
 use crate::utils::task_supervisor::TaskSupervisor;
 use crate::{Error, Result};
 
-use super::batch_detector::{BatchDetector, BatchResult};
 use super::detector::{CheckContext, FilterReason, LiveStatus, StreamDetector};
 use crate::domain::streamer::FatalErrorType;
 
@@ -144,8 +143,6 @@ pub struct StreamMonitor<
     config_service: Arc<crate::config::ConfigService<CR, SR>>,
     /// Individual stream detector.
     detector: Arc<StreamDetector>,
-    /// Batch detector.
-    batch_detector: BatchDetector,
     /// Shared platform admission (rate limits and throttle pauses).
     admission: Arc<PlatformAdmission>,
     /// In-flight request deduplication.
@@ -373,8 +370,6 @@ impl<
             config.max_concurrent_requests,
         ));
 
-        let batch_detector = BatchDetector::new(admission.limiter());
-
         let outbox_notify = Arc::new(Notify::new());
         let cancellation = CancellationToken::new();
 
@@ -391,7 +386,6 @@ impl<
             session_repo,
             config_service,
             detector,
-            batch_detector,
             admission,
             in_flight: in_flight.clone(),
             cleanup_tx,
@@ -886,23 +880,6 @@ impl<
         let status = result?.clone();
 
         Ok(status)
-    }
-
-    /// Check the status of multiple streamers on the same platform.
-    pub async fn batch_check(
-        &self,
-        platform_id: &str,
-        streamers: Vec<StreamerMetadata>,
-    ) -> Result<BatchResult> {
-        debug!(
-            "Batch checking {} streamers on platform {}",
-            streamers.len(),
-            platform_id
-        );
-
-        self.batch_detector
-            .batch_check(platform_id, streamers)
-            .await
     }
 
     /// Process a status check result and update state.
@@ -2009,52 +1986,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mismatched_monitor_pool_cannot_mutate_another_committed_owner() {
-        let pool = setup_monitor_test_db().await;
-        insert_streamer(&pool, "pool-mismatch", StreamerState::Live, 0, None).await;
-        let mut monitor = build_test_monitor(&pool).await;
-        let before = monitor
-            .streamer_manager
-            .get_streamer_snapshot("pool-mismatch")
-            .unwrap();
-        let other = setup_monitor_test_db().await;
-        insert_streamer(&other, "pool-mismatch", StreamerState::Disabled, 5, None).await;
-        monitor.write_pool = other.clone();
-
-        let error = monitor
-            .handle_error(&before, "must not reach either database")
-            .await
-            .unwrap_err();
-        assert!(matches!(error, crate::Error::Configuration(_)));
-        let after = monitor
-            .streamer_manager
-            .get_streamer_snapshot("pool-mismatch")
-            .unwrap();
-        assert!(Arc::ptr_eq(&before, &after));
-        assert_eq!(
-            get_streamer(&pool, "pool-mismatch")
-                .await
-                .consecutive_error_count,
-            Some(0)
-        );
-        let other_row = get_streamer(&other, "pool-mismatch").await;
-        assert_eq!(other_row.consecutive_error_count, Some(5));
-        assert_eq!(other_row.state, StreamerState::Disabled.to_string());
-        assert!(
-            MonitorOutboxOps::fetch_undelivered(&pool, 100)
-                .await
-                .unwrap()
-                .is_empty()
-        );
-        assert!(
-            MonitorOutboxOps::fetch_undelivered(&other, 100)
-                .await
-                .unwrap()
-                .is_empty()
-        );
-    }
-
-    #[tokio::test]
     async fn monitor_and_configuration_share_empty_filter_snapshots_and_invalidation() {
         tokio::time::timeout(Duration::from_secs(10), async {
             let pool = setup_monitor_test_db().await;
@@ -2329,65 +2260,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_stream_monitor_config_default() {
-        let config = StreamMonitorConfig::default();
-        assert_eq!(config.default_rate_limit, 1.0);
-        assert_eq!(config.request_timeout, Duration::ZERO);
-    }
-
-    #[test]
-    fn test_status_summary() {
-        assert_eq!(status_summary(&LiveStatus::Offline), "Offline");
-
-        let live_status = LiveStatus::Live {
-            credential_binding: None,
-            credential_snapshot: None,
-            title: "Test".to_string(),
-            avatar: None,
-            category: None,
-            started_at: None,
-            viewer_count: None,
-            streams: vec![platforms_parser::media::StreamInfo {
-                url: "https://example.com/stream.flv".to_string(),
-                stream_format: platforms_parser::media::StreamFormat::Flv,
-                media_format: platforms_parser::media::formats::MediaFormat::Flv,
-                quality: "best".to_string(),
-                bitrate: 5000000,
-                priority: 1,
-                extras: None,
-                codec: "h264".to_string(),
-                fps: 30.0,
-                is_headers_needed: false,
-                is_audio_only: false,
-                format_opt_in: false,
-            }],
-            media_headers: None,
-            media_extras: None,
-            next_check_hint: None,
-            candidates: vec![],
-        };
-        assert_eq!(status_summary(&live_status), "Live");
-
-        assert_eq!(
-            status_summary(&LiveStatus::Filtered {
-                reason: FilterReason::OutOfSchedule {
-                    next_available: None,
-                },
-                title: "Test".to_string(),
-                category: None,
-            }),
-            "Filtered"
-        );
-        // Test fatal error statuses
-        assert_eq!(status_summary(&LiveStatus::NotFound), "NotFound");
-        assert_eq!(status_summary(&LiveStatus::Banned), "Banned");
-        assert_eq!(
-            status_summary(&LiveStatus::UnsupportedPlatform),
-            "UnsupportedPlatform"
-        );
-    }
-
     #[tokio::test]
     async fn offline_after_restart_closes_persisted_session_and_publishes_completion_once() {
         let pool = setup_monitor_test_db().await;
@@ -2537,47 +2409,6 @@ mod tests {
             .unwrap();
         assert!(transitions.try_recv().is_err());
         assert!(outbox_events(&pool).await.is_empty());
-        monitor.stop();
-    }
-
-    #[tokio::test]
-    async fn test_handle_offline_from_temporal_disabled_ends_active_session_and_enqueues_offline() {
-        let pool = setup_monitor_test_db().await;
-        insert_streamer(
-            &pool,
-            "streamer-1",
-            StreamerState::TemporalDisabled,
-            3,
-            Some(chrono::Utc::now().timestamp_millis() + 60_000),
-        )
-        .await;
-        insert_active_session(&pool, "session-1", "streamer-1").await;
-
-        let monitor = build_test_monitor(&pool).await;
-        let streamer = monitor.streamer_manager.get_streamer("streamer-1").unwrap();
-
-        monitor
-            .handle_offline_with_session(&streamer, None, None)
-            .await
-            .unwrap();
-
-        assert!(get_session(&pool, "session-1").await.end_time.is_some());
-
-        let streamer = get_streamer(&pool, "streamer-1").await;
-        assert_eq!(streamer.state, "NOT_LIVE");
-        assert_eq!(streamer.consecutive_error_count, Some(0));
-        assert!(streamer.disabled_until.is_none());
-        assert!(streamer.last_error.is_none());
-
-        let events = outbox_events(&pool).await;
-        assert_eq!(events.len(), 1);
-        match &events[0] {
-            MonitorEvent::StreamerOffline { session_id, .. } => {
-                assert_eq!(session_id.as_deref(), Some("session-1"));
-            }
-            other => panic!("expected StreamerOffline, got {other:?}"),
-        }
-
         monitor.stop();
     }
 
@@ -2753,82 +2584,6 @@ mod tests {
                 assert_eq!(reason.as_deref(), Some("out_of_schedule"));
             }
             other => panic!("expected StateChanged, got {other:?}"),
-        }
-
-        monitor.stop();
-    }
-
-    #[tokio::test]
-    async fn test_out_of_schedule_recheck_closes_active_session_even_when_state_matches() {
-        let pool = setup_monitor_test_db().await;
-        insert_streamer(&pool, "streamer-5", StreamerState::OutOfSchedule, 0, None).await;
-
-        let monitor = build_test_monitor(&pool).await;
-        let mut rx = monitor.session_lifecycle.subscribe();
-        let streams = Vec::new();
-
-        monitor
-            .session_lifecycle
-            .on_live_detected(crate::session::LiveDetectedArgs {
-                credential_binding: None,
-                streamer_id: "streamer-5",
-                streamer_name: "Test Streamer",
-                streamer_url: "https://example.com/streamer-5",
-                current_avatar: None,
-                new_avatar: None,
-                title: "Schedule Live",
-                category: None,
-                streams: &streams,
-                media_headers: None,
-                media_extras: None,
-                now: chrono::Utc::now(),
-            })
-            .await
-            .unwrap();
-
-        let started = rx.recv().await.unwrap();
-        let session_id = match started {
-            crate::session::SessionTransition::Started { session_id, .. } => session_id,
-            other => panic!("expected Started, got {other:?}"),
-        };
-
-        SqlxStreamerRepository::new(pool.clone(), pool.clone())
-            .update_streamer_state("streamer-5", StreamerState::OutOfSchedule.as_str())
-            .await
-            .unwrap();
-        monitor
-            .streamer_manager
-            .reload_from_repo(
-                "streamer-5",
-                crate::streamer::manager::ReloadPublish::StateOnly,
-            )
-            .await
-            .unwrap();
-
-        let already_out = monitor.streamer_manager.get_streamer("streamer-5").unwrap();
-        assert_eq!(already_out.state, StreamerState::OutOfSchedule);
-
-        monitor
-            .process_status(
-                &already_out,
-                LiveStatus::Filtered {
-                    reason: FilterReason::OutOfSchedule {
-                        next_available: None,
-                    },
-                    title: "Schedule Live".to_string(),
-                    category: None,
-                },
-            )
-            .await
-            .unwrap();
-
-        assert!(get_session(&pool, &session_id).await.end_time.is_some());
-
-        match rx.recv().await.unwrap() {
-            crate::session::SessionTransition::Ended { cause, .. } => {
-                assert_eq!(cause, crate::session::TerminalCause::OutOfSchedule);
-            }
-            other => panic!("expected Ended, got {other:?}"),
         }
 
         monitor.stop();

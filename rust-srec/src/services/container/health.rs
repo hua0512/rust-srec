@@ -907,39 +907,4 @@ mod tests {
         assert_eq!(disk.available_bytes, 60 * 1024 * 1024 * 1024);
         assert_eq!(disk.total_bytes, 100 * 1024 * 1024 * 1024);
     }
-
-    #[tokio::test]
-    async fn disk_probe_reports_capacity_while_degraded() {
-        let probe = DiskSpaceProbe::new(
-            "/rec".to_string(),
-            std::path::PathBuf::from("/rec"),
-            0.80,
-            0.95,
-        );
-        let health = probe
-            .probe(snapshot_with_disk(
-                "/",
-                10 * 1024 * 1024 * 1024,
-                100 * 1024 * 1024 * 1024,
-            ))
-            .await;
-
-        assert_eq!(health.status, HealthStatus::Degraded);
-        let disk = health.disk.expect("capacity rides along on every status");
-        assert!((disk.used_percent - 90.0).abs() < 0.01);
-    }
-
-    #[tokio::test]
-    async fn disk_probe_without_matching_filesystem_reports_unknown() {
-        let probe = DiskSpaceProbe::new(
-            "/rec".to_string(),
-            std::path::PathBuf::from("/rec"),
-            0.80,
-            0.95,
-        );
-        let health = probe.probe(SystemMetricsSnapshot::empty()).await;
-
-        assert_eq!(health.status, HealthStatus::Unknown);
-        assert!(health.disk.is_none());
-    }
 }

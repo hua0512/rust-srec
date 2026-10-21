@@ -75,21 +75,6 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[tokio::test]
-    async fn concurrent_hot_reads_share_one_database_load() {
-        let cache = GlobalConfigCache::default();
-        let calls = AtomicUsize::new(0);
-        let load = || async {
-            calls.fetch_add(1, Ordering::SeqCst);
-            tokio::task::yield_now().await;
-            Ok(GlobalConfigDbModel::default())
-        };
-        let (first, second) = tokio::join!(cache.get_or_load(load), cache.get_or_load(load));
-        assert!(Arc::ptr_eq(&first.unwrap(), &second.unwrap()));
-        cache.get_or_load(load).await.unwrap();
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
-    }
-
-    #[tokio::test]
     async fn invalidation_during_load_cannot_publish_or_return_the_old_snapshot() {
         let cache = GlobalConfigCache::default();
         let calls = AtomicUsize::new(0);

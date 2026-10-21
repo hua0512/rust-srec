@@ -65,6 +65,8 @@ If you have `cargo-nextest` installed, use it for the test suite:
 cargo nextest run --locked --workspace --exclude rust-srec-desktop
 ```
 
+The backend's end-to-end suite starts the real server in-process and drives it over HTTP, without network access: `cargo nextest run --locked -p rust-srec --test e2e`. See the [backend testing rules](rust-srec/AGENTS.md#testing) for which layer a new test belongs in.
+
 Nextest does not run doctests. When examples or the APIs they exercise change, run `cargo test --locked -p <package> --doc`. Exact CI features and platform prerequisites are maintained in [.github/workflows/pr.yml](.github/workflows/pr.yml); Linux CI enables selected TLS fallback features. Follow the Windows feature restriction in [AGENTS.md](AGENTS.md#toolchain-and-command-reference).
 
 ## Frontend (optional)

@@ -23,9 +23,7 @@ impl StreamerActor {
             // First, drain all priority messages before processing normal messages
             // This ensures high-priority operations (like Stop) are handled promptly
             if let Some(msg) = self.try_recv_priority() {
-                let start = Instant::now();
                 let should_stop = self.handle_run_message(msg).await?;
-                self.metrics.record_message(start.elapsed());
 
                 if should_stop {
                     debug!(
@@ -47,9 +45,7 @@ impl StreamerActor {
 
                 // Check priority mailbox first (if configured)
                 Some(msg) = Self::recv_priority_opt(&mut self.priority_mailbox) => {
-                    let start = Instant::now();
                     let should_stop = self.handle_run_message(msg).await?;
-                    self.metrics.record_message(start.elapsed());
 
                     if should_stop {
                         debug!("StreamerActor {} received stop signal from priority channel", self.id);
@@ -59,9 +55,7 @@ impl StreamerActor {
 
                 // Handle normal-priority messages
                 Some(msg) = self.mailbox.recv() => {
-                    let start = Instant::now();
                     let should_stop = self.handle_run_message(msg).await?;
-                    self.metrics.record_message(start.elapsed());
 
                     if should_stop {
                         debug!("StreamerActor {} received stop signal", self.id);
@@ -74,7 +68,6 @@ impl StreamerActor {
                     trace!(streamer_id = %self.id, "check timer fired");
                     if let Err(e) = self.initiate_check().await {
                         warn!("StreamerActor {} check failed: {}", self.id, e);
-                        self.metrics.record_error();
 
                         // Fatal (non-recoverable) errors should stop the actor - the scheduler
                         // will receive a StreamerStateSyncedFromDb event and clean up.
@@ -108,7 +101,6 @@ impl StreamerActor {
     ) -> Result<bool, ActorError> {
         match self.handle_message(message).await {
             Err(error) if !error.recoverable => {
-                self.metrics.record_error();
                 info!(streamer_id = %self.id, error = %error, "Stopping actor after terminal message error");
                 Ok(true)
             }

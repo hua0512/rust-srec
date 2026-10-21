@@ -7,19 +7,6 @@ use crate::downloader::engine::{
     IoErrorKindSer,
 };
 
-/// Type of configuration that was updated.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ConfigUpdateType {
-    /// Only cookies were updated.
-    Cookies,
-    /// Only headers were updated.
-    Headers,
-    /// Only retry configuration was updated.
-    RetryConfig,
-    /// Multiple configuration types were updated.
-    Multiple,
-}
-
 /// How the engine observed the end of a stream when emitting
 /// [`DownloadTerminalEvent::Completed`].
 ///
@@ -141,18 +128,20 @@ impl DownloadStopCause {
 /// Events are grouped into two categories:
 ///
 /// - [`DownloadProgressEvent`]: in-flight notifications about an ongoing
-///   download (start, progress, segment lifecycle, config changes). These do
+///   download (queueing, start, progress, segment lifecycle). These do
 ///   not mark a session as finished.
 /// - [`DownloadTerminalEvent`]: the download has stopped and no further events
-///   for the same `(download_id, session_id)` pair will be emitted. Consumers
-///   that need to react to "session ended" should match on this variant and
-///   use [`DownloadTerminalEvent::should_run_session_complete_pipeline`] to
-///   decide whether to fire the post-recording pipeline.
+///   for the same `(download_id, session_id)` pair will be emitted.
+///   `SessionLifecycle` maps it to a [`TerminalCause`], whose
+///   `should_run_session_complete_pipeline` decides whether to fire the
+///   post-recording pipeline.
 ///
 /// The split exists to make session-termination a first-class, non-droppable
 /// signal: Rust's exhaustive pattern matching forces every consumer to make
 /// an explicit decision for every terminal variant, where a flat enum would
 /// let a `_ => {}` catch-all silently drop one.
+///
+/// [`TerminalCause`]: crate::session::TerminalCause
 #[derive(Debug, Clone)]
 pub enum DownloadManagerEvent {
     Progress(DownloadProgressEvent),
@@ -239,29 +228,18 @@ pub enum DownloadProgressEvent {
         split_reason_code: Option<String>,
         split_reason_details_json: Option<String>,
     },
-    /// Configuration was updated for a download.
-    ConfigUpdated {
-        download_id: String,
-        streamer_id: String,
-        streamer_name: String,
-        update_type: ConfigUpdateType,
-    },
-    /// Configuration update failed to apply.
-    ConfigUpdateFailed {
-        download_id: String,
-        streamer_id: String,
-        streamer_name: String,
-        error: String,
-    },
 }
 
 /// Terminal download notifications: the download has stopped, no further
 /// events for the same `(download_id, session_id)` pair will be emitted.
 ///
 /// Consumers that need to react to "session ended" (notifications, pipeline
-/// scheduling, DB status updates, …) should centralise on this enum and call
-/// [`Self::should_run_session_complete_pipeline`] rather than re-deriving
-/// the policy per site.
+/// scheduling, DB status updates, …) should centralise on this enum and the
+/// [`TerminalCause`] `SessionLifecycle` derives from it, whose
+/// `should_run_session_complete_pipeline` holds the post-processing policy,
+/// rather than re-deriving it per site.
+///
+/// [`TerminalCause`]: crate::session::TerminalCause
 #[derive(Debug, Clone)]
 pub enum DownloadTerminalEvent {
     /// Download completed normally — all segments flushed, outputs finalised.
@@ -384,9 +362,7 @@ impl DownloadProgressEvent {
             | Self::DownloadStarted { streamer_id, .. }
             | Self::Progress { streamer_id, .. }
             | Self::SegmentStarted { streamer_id, .. }
-            | Self::SegmentCompleted { streamer_id, .. }
-            | Self::ConfigUpdated { streamer_id, .. }
-            | Self::ConfigUpdateFailed { streamer_id, .. } => streamer_id,
+            | Self::SegmentCompleted { streamer_id, .. } => streamer_id,
         }
     }
 
@@ -398,17 +374,10 @@ impl DownloadProgressEvent {
             | Self::DownloadStarted { streamer_name, .. }
             | Self::Progress { streamer_name, .. }
             | Self::SegmentStarted { streamer_name, .. }
-            | Self::SegmentCompleted { streamer_name, .. }
-            | Self::ConfigUpdated { streamer_name, .. }
-            | Self::ConfigUpdateFailed { streamer_name, .. } => streamer_name,
+            | Self::SegmentCompleted { streamer_name, .. } => streamer_name,
         }
     }
 
-    /// `session_id` is always present on live download events, but `ConfigUpdated`
-    /// and `ConfigUpdateFailed` carry none today (they're scoped to a
-    /// `download_id`). Returns an empty string for those variants — callers
-    /// that need a real session id should only call this on variants that
-    /// have one.
     pub fn session_id(&self) -> &str {
         match self {
             Self::ManualSplitChanged { session_id, .. }
@@ -418,7 +387,6 @@ impl DownloadProgressEvent {
             | Self::Progress { session_id, .. }
             | Self::SegmentStarted { session_id, .. }
             | Self::SegmentCompleted { session_id, .. } => session_id,
-            Self::ConfigUpdated { .. } | Self::ConfigUpdateFailed { .. } => "",
         }
     }
 }
@@ -461,21 +429,6 @@ impl DownloadTerminalEvent {
             Self::Rejected { .. } => None,
         }
     }
-
-    /// Whether this termination represents the recording session reaching a
-    /// final state with outputs on disk that are ready for post-processing.
-    ///
-    /// - [`Self::Completed`]: `true` — normal end, outputs finalised.
-    /// - [`Self::Failed`]: `true` — the engine gave up; whatever's on disk
-    ///   is final and eligible for the session-complete pipeline.
-    /// - [`Self::Cancelled`]: `false` — the engine did not report a clean
-    ///   completion. The control-plane stop owner decides whether to end or
-    ///   preserve the session (shutdown preserves it for restart).
-    /// - [`Self::Rejected`]: `false` — the download never started, no
-    ///   outputs exist.
-    pub fn should_run_session_complete_pipeline(&self) -> bool {
-        matches!(self, Self::Completed { .. } | Self::Failed { .. })
-    }
 }
 
 /// Reason a [`DownloadTerminalEvent::Rejected`] event was emitted.
@@ -501,28 +454,4 @@ pub enum DownloadRejectedKind {
     /// already persisted, so the scheduler only reschedules the actor after
     /// `retry_after_secs`; no `InfraBlockReason` write is needed.
     StreamerBackoff,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn only_platform_asserted_ends_are_authoritative() {
-        let signals = [
-            (EngineEndSignal::HlsEndlist, "hls_endlist", true),
-            (EngineEndSignal::DashEnd, "dash_end", true),
-            (EngineEndSignal::CleanDisconnect, "clean_disconnect", false),
-            (
-                EngineEndSignal::SubprocessExitZero,
-                "subprocess_exit_zero",
-                false,
-            ),
-            (EngineEndSignal::Unknown, "unknown", false),
-        ];
-        for (signal, label, authoritative) in signals {
-            assert_eq!(signal.as_str(), label);
-            assert_eq!(signal.is_authoritative(), authoritative, "{label}");
-        }
-    }
 }

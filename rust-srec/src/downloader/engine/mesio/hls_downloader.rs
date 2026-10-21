@@ -976,26 +976,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn end_of_stream_with_an_authoritative_session_end_is_authoritative() {
-        for (protocol, signal) in [
-            (SegmentedProtocol::Dash, EngineEndSignal::DashEnd),
-            (SegmentedProtocol::Hls, EngineEndSignal::HlsEndlist),
-        ] {
-            let (lifecycle, _) = scripted_lifecycle(Some(Ok(DownloadTerminal::AuthoritativeEnd)));
-            let (result, terminal) =
-                record_raw(protocol, ended_items(), lifecycle, CancellationToken::new()).await;
-            assert!(result.is_ok(), "{protocol:?}");
-            assert!(
-                matches!(
-                    terminal,
-                    SegmentEvent::DownloadCompleted { engine_signal, .. } if engine_signal == signal
-                ),
-                "{protocol:?}: {terminal:?}"
-            );
-        }
-    }
-
-    #[tokio::test]
     async fn cancellation_keeps_its_outcome_whatever_the_session_reports() {
         let parent = CancellationToken::new();
         let (lifecycle, cancelled) = scripted_lifecycle(Some(Ok(DownloadTerminal::PipelineError(
@@ -1149,6 +1129,7 @@ mod tests {
             .await;
 
             assert_eq!(concluded, (None, signal), "{protocol:?}");
+            assert!(signal.is_authoritative(), "{protocol:?}");
             assert_eq!(started.elapsed(), Duration::from_millis(1500));
             assert!(cancelled_at.lock().is_none(), "not cancelled");
         }

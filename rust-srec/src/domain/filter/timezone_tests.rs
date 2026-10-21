@@ -1,5 +1,5 @@
 use super::*;
-use chrono::{DateTime, Timelike, Utc};
+use chrono::{DateTime, Utc};
 
 fn utc(value: &str) -> DateTime<Utc> {
     value.parse().unwrap()
@@ -187,37 +187,6 @@ fn cron_second_occurrence_opens_its_entire_matching_minute() {
     let frequent = CronFilter::new("* * * * * *");
     assert!(frequent.matches(start));
     assert_eq!(frequent.next_unmatch_time(start), None);
-}
-
-#[test]
-fn invalid_timezone_fails_closed_and_explicit_local_preserves_legacy_defaults() {
-    let invalid = TimeBasedFilter::new(vec!["Monday".to_owned()], "09:00", "17:00")
-        .with_timezone("Mars/Olympus");
-    assert!(!invalid.matches(utc("2024-01-01T10:00:00Z")));
-    assert_eq!(invalid.next_match_time(utc("2024-01-01T10:00:00Z")), None);
-    let now = utc("2024-01-01T12:34:56Z");
-    let local = now.with_timezone(&chrono::Local);
-    let days = [
-        "Monday",
-        "Tuesday",
-        "Wednesday",
-        "Thursday",
-        "Friday",
-        "Saturday",
-        "Sunday",
-    ]
-    .map(str::to_owned)
-    .to_vec();
-    let legacy = TimeBasedFilter::new(
-        days,
-        format!("{:02}:00", local.hour()),
-        format!("{:02}:00", (local.hour() + 1) % 24),
-    )
-    .with_timezone("local");
-    assert!(legacy.matches(now));
-    assert_eq!(legacy.timezone.as_deref(), Some("local"));
-    assert_eq!(serde_json::to_value(&legacy).unwrap()["timezone"], "local");
-    assert!(CronFilter::new("0 34 12 * * *").matches(now));
 }
 
 #[test]

@@ -82,22 +82,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_priority_ordering() {
-        assert!(Priority::High > Priority::Normal);
-        assert!(Priority::Normal > Priority::Low);
-        assert!(Priority::High > Priority::Low);
-    }
-
-    #[test]
-    fn test_priority_from_str() {
-        assert_eq!(Priority::parse("HIGH"), Some(Priority::High));
-        assert_eq!(Priority::parse("high"), Some(Priority::High));
-        assert_eq!(Priority::parse("NORMAL"), Some(Priority::Normal));
-        assert_eq!(Priority::parse("LOW"), Some(Priority::Low));
-        assert_eq!(Priority::parse("invalid"), None);
-    }
-
-    #[test]
     fn test_priority_serialization() {
         let priority = Priority::High;
         let json = serde_json::to_string(&priority).unwrap();

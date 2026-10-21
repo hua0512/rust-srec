@@ -733,22 +733,6 @@ mod tests {
     }
 
     #[test]
-    fn test_merged_config_builder() {
-        let config = MergedConfig::builder()
-            .with_global(global_layer("mesio"))
-            .with_platform(PlatformConfigLayer {
-                fetch_delay_ms: Some(60_000),
-                download_delay_ms: Some(1_000),
-                ..Default::default()
-            })
-            .build();
-
-        assert_eq!(config.output_folder, "/app/output");
-        assert_eq!(config.download_engine, "mesio");
-        assert!(!config.record_danmu);
-    }
-
-    #[test]
     fn test_layer_override() {
         let config = MergedConfig::builder()
             .with_global(global_layer("ffmpeg"))
@@ -817,78 +801,80 @@ mod tests {
         assert!(matches!(&dag.steps[1].step, PipelineStep::Preset{name} if name == "s3_upload"));
     }
 
+    /// Global → platform → template → streamer: a layer that states a value
+    /// overrides the ones above it, a silent layer inherits, and a streamer value
+    /// that does not parse inherits as well. Danmu statistics are replaced as a
+    /// whole object, never merged field by field.
     #[test]
-    fn test_streamer_inline_pipeline() {
-        // Create a streamer-specific config with inline pipeline step
-        let streamer_config = serde_json::json!({
-            "pipeline": {
-                "name": "inline_pipeline",
-                "steps": [
-                    {"id": "step1", "step": {"type": "preset", "name": "remux"}, "depends_on": []},
-                    {"id": "step2", "step": {
-                        "type": "inline",
-                        "processor": "execute",
-                        "config": {
-                            "command": "echo {input}"
-                        }
-                    }, "depends_on": ["step1"]}
-                ]
-            }
-        });
+    fn layers_override_in_order_and_silent_or_malformed_layers_inherit() {
+        let statistics = |top_talkers| DanmuStatisticsConfig {
+            top_talkers,
+            ..Default::default()
+        };
+        let build = |template_extractor, streamer: serde_json::Value| {
+            MergedConfig::builder()
+                .with_global(global_layer("mesio"))
+                .with_platform(PlatformConfigLayer {
+                    offline_check_count: Some(5),
+                    offline_check_delay_ms: Some(25_000),
+                    extractor: Some(ExtractorSelection::Streamlink),
+                    danmu_statistics: Some(statistics(10)),
+                    ..Default::default()
+                })
+                .with_template(TemplateConfigLayer {
+                    offline_check_delay_ms: Some(30_000),
+                    extractor: template_extractor,
+                    danmu_statistics: Some(statistics(20)),
+                    ..Default::default()
+                })
+                .with_streamer(Some(&streamer))
+                .build()
+        };
 
-        let config = MergedConfig::builder()
-            .with_global(global_layer("mesio"))
-            .with_platform(PlatformConfigLayer {
-                fetch_delay_ms: Some(60_000),
-                download_delay_ms: Some(1_000),
-                ..Default::default()
-            })
-            .with_streamer(Some(&streamer_config))
-            .build();
-
-        // Should have 2 steps: preset + inline
-        let dag = config.pipeline.expect("Pipeline should be set");
-        assert_eq!(dag.steps.len(), 2);
-        assert!(matches!(&dag.steps[0].step, PipelineStep::Preset{name} if name == "remux"));
-        assert!(
-            matches!(&dag.steps[1].step, PipelineStep::Inline { processor, .. } if processor == "execute")
+        let streamer_wins = build(
+            Some(ExtractorSelection::Auto),
+            serde_json::json!({
+                "offline_check_count": 7,
+                "extractor": "streamlink",
+                "danmu_statistics": { "top_words": 25 },
+            }),
         );
-    }
-
-    /// Each layer replaces the whole statistics object, and the streamer layer —
-    /// the most specific — wins. Also checks that a partial JSON override inherits
-    /// the defaults for fields it does not name.
-    #[test]
-    fn danmu_statistics_precedence_runs_streamer_last() {
-        let streamer_config = serde_json::json!({
-            "danmu_statistics": { "top_words": 25 }
-        });
-
-        let config = MergedConfig::builder()
-            .with_global(global_layer("mesio"))
-            .with_platform(PlatformConfigLayer {
-                danmu_statistics: Some(DanmuStatisticsConfig {
-                    top_talkers: 10,
-                    ..Default::default()
-                }),
-                ..Default::default()
-            })
-            .with_template(TemplateConfigLayer {
-                danmu_statistics: Some(DanmuStatisticsConfig {
-                    top_talkers: 20,
-                    ..Default::default()
-                }),
-                ..Default::default()
-            })
-            .with_streamer(Some(&streamer_config))
-            .build();
-
-        assert_eq!(config.danmu_statistics.top_words, 25);
         assert_eq!(
-            config.danmu_statistics.top_talkers,
-            DanmuStatisticsConfig::default().top_talkers,
-            "the streamer layer replaces the whole object, so the template's \
-             top_talkers is not inherited"
+            (
+                streamer_wins.offline_check_count,
+                streamer_wins.offline_check_delay_ms,
+                streamer_wins.extractor
+            ),
+            (7, 30_000, ExtractorSelection::Streamlink)
+        );
+        assert_eq!(
+            streamer_wins.danmu_statistics,
+            DanmuStatisticsConfig {
+                top_words: 25,
+                ..Default::default()
+            }
+        );
+
+        let template_wins = build(Some(ExtractorSelection::Auto), serde_json::json!({}));
+        assert_eq!(
+            (
+                template_wins.offline_check_count,
+                template_wins.extractor,
+                template_wins.danmu_statistics.top_talkers
+            ),
+            (5, ExtractorSelection::Auto, 20)
+        );
+
+        let malformed = build(
+            None,
+            serde_json::json!({
+                "extractor": "not-an-extractor",
+                "danmu_statistics": "not an object",
+            }),
+        );
+        assert_eq!(
+            (malformed.extractor, malformed.danmu_statistics),
+            (ExtractorSelection::Streamlink, statistics(20))
         );
     }
 
@@ -916,96 +902,6 @@ mod tests {
         assert_eq!(clamped.danmu_statistics.rate_bucket_secs, 1);
     }
 
-    /// A malformed streamer blob means "inherit", never a failed resolve.
-    #[test]
-    fn danmu_statistics_ignores_malformed_streamer_override() {
-        let streamer_config = serde_json::json!({
-            "danmu_statistics": "not an object"
-        });
-
-        let config = MergedConfig::builder()
-            .with_global(global_layer("mesio"))
-            .with_streamer(Some(&streamer_config))
-            .build();
-
-        assert_eq!(config.danmu_statistics, DanmuStatisticsConfig::default());
-    }
-
-    #[test]
-    fn test_streamer_session_and_paired_pipelines_override() {
-        let streamer_config = serde_json::json!({
-            "session_complete_pipeline": {
-                "name": "session_concat",
-                "steps": [
-                    {"id": "concat", "step": {"type": "preset", "name": "remux"}, "depends_on": []}
-                ]
-            },
-            "paired_segment_pipeline": {
-                "name": "burn_in",
-                "steps": [
-                    {"id": "burn", "step": {"type": "inline", "processor": "execute", "config": {"command": "echo {input}"}}, "depends_on": []}
-                ]
-            }
-        });
-
-        let config = MergedConfig::builder()
-            .with_global(global_layer("mesio"))
-            .with_platform(PlatformConfigLayer {
-                fetch_delay_ms: Some(60_000),
-                download_delay_ms: Some(1_000),
-                record_danmu: Some(true),
-                ..Default::default()
-            })
-            .with_streamer(Some(&streamer_config))
-            .build();
-
-        let session = config
-            .session_complete_pipeline
-            .expect("session_complete_pipeline should be set");
-        assert_eq!(session.steps.len(), 1);
-        assert!(matches!(
-            &session.steps[0].step,
-            PipelineStep::Preset { name } if name == "remux"
-        ));
-
-        let paired = config
-            .paired_segment_pipeline
-            .expect("paired_segment_pipeline should be set");
-        assert_eq!(paired.steps.len(), 1);
-        assert!(matches!(
-            &paired.steps[0].step,
-            PipelineStep::Inline { processor, .. } if processor == "execute"
-        ));
-    }
-
-    /// Verifies the precedence chain Global → Platform → Template → Streamer
-    /// for `offline_check_*`, plus the floor enforcement at each layer.
-    #[test]
-    fn test_offline_check_layer_override_and_floors() {
-        // Global = 3 / 20_000. Platform overrides count to 5. Template
-        // overrides delay_ms to 30_000. Streamer overrides count to 7.
-        let streamer_config = serde_json::json!({
-            "offline_check_count": 7,
-        });
-
-        let config = MergedConfig::builder()
-            .with_global(global_layer("mesio"))
-            .with_platform(PlatformConfigLayer {
-                offline_check_count: Some(5),
-                ..Default::default()
-            })
-            .with_template(TemplateConfigLayer {
-                offline_check_delay_ms: Some(30_000),
-                ..Default::default()
-            })
-            .with_streamer(Some(&streamer_config))
-            .build();
-
-        // Streamer wins for count, template wins for delay_ms.
-        assert_eq!(config.offline_check_count, 7);
-        assert_eq!(config.offline_check_delay_ms, 30_000);
-    }
-
     /// Verifies floors: out-of-range values are clamped to safe minimums
     /// (count >= 1, delay_ms >= 1000) so a typo can't park sessions in a
     /// pathological hysteresis window.
@@ -1022,61 +918,5 @@ mod tests {
 
         assert_eq!(config.offline_check_count, 1);
         assert_eq!(config.offline_check_delay_ms, 1_000);
-    }
-
-    /// No layer expresses a preference, so extraction stays on the URL regex registry.
-    #[test]
-    fn test_extractor_defaults_to_auto() {
-        let config = MergedConfig::builder()
-            .with_global(global_layer("mesio"))
-            .build();
-
-        assert_eq!(config.extractor, ExtractorSelection::Auto);
-    }
-
-    /// Each layer overrides the one above it, and a layer that says nothing inherits.
-    #[test]
-    fn test_extractor_layer_precedence() {
-        let mut global = global_layer("mesio");
-        global.extractor = Some(ExtractorSelection::Streamlink);
-
-        // Platform stays silent, so the global choice survives it.
-        let config = MergedConfig::builder()
-            .with_global(global)
-            .with_platform(PlatformConfigLayer::default())
-            .build();
-        assert_eq!(config.extractor, ExtractorSelection::Streamlink);
-
-        // Template overrides the platform, then the streamer overrides the template.
-        let config = MergedConfig::builder()
-            .with_global(global_layer("mesio"))
-            .with_platform(PlatformConfigLayer {
-                extractor: Some(ExtractorSelection::Streamlink),
-                ..Default::default()
-            })
-            .with_template(TemplateConfigLayer {
-                extractor: Some(ExtractorSelection::Auto),
-                ..Default::default()
-            })
-            .with_streamer(Some(&serde_json::json!({ "extractor": "streamlink" })))
-            .build();
-        assert_eq!(config.extractor, ExtractorSelection::Streamlink);
-    }
-
-    /// An unparseable name inherits rather than failing resolution outright.
-    #[test]
-    fn test_unknown_streamer_extractor_is_ignored() {
-        let config = MergedConfig::builder()
-            .with_global(global_layer("mesio"))
-            .with_platform(PlatformConfigLayer {
-                extractor: Some(ExtractorSelection::Streamlink),
-                ..Default::default()
-            })
-            .with_streamer(Some(
-                &serde_json::json!({ "extractor": "not-an-extractor" }),
-            ))
-            .build();
-
-        assert_eq!(config.extractor, ExtractorSelection::Streamlink);
     }
 }

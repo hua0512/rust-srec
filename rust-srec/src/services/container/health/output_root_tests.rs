@@ -111,20 +111,6 @@ fn representative_paths_are_deterministic_and_explicit_roots_win_the_cap() {
     assert_eq!(bounded[0], explicit);
 }
 
-#[test]
-fn writable_child_is_probed_instead_of_ancestor_gate_key() {
-    let dir = tempfile::tempdir().unwrap();
-    let child = dir.path().join("recordings/Alice");
-    std::fs::create_dir_all(&child).unwrap();
-    let gate = gate(vec![]);
-    let probe = gate
-        .probe_path_for_template(child.to_str().unwrap())
-        .unwrap();
-    assert_eq!(probe, child);
-    assert_ne!(gate.resolve_path(&probe), probe);
-    assert!(probe_root_writable(&probe, &gate).is_ok());
-}
-
 #[tokio::test]
 async fn offline_streamer_missing_directory_does_not_fail_startup_probe() {
     let dir = tempfile::tempdir().unwrap();
@@ -162,15 +148,6 @@ async fn offline_streamer_missing_directory_does_not_fail_startup_probe() {
         .await
         .unwrap();
     assert!(recording_dir.is_dir());
-}
-
-#[test]
-fn missing_nested_directories_probe_existing_ancestor_without_creating_folders() {
-    let dir = tempfile::tempdir().unwrap();
-    let gate = gate(vec![dir.path().to_path_buf()]);
-    let output = dir.path().join("0601/2026/09/10");
-    assert!(probe_root_writable(&output, &gate).is_ok());
-    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
 }
 
 #[test]

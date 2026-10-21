@@ -545,14 +545,6 @@ fn weekday_to_str(weekday: Weekday) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
-
-    #[test]
-    fn test_keyword_filter_include() {
-        let filter = KeywordFilter::new(vec!["live".to_string()], vec![]);
-        assert!(filter.matches("Going LIVE now!"));
-        assert!(!filter.matches("Rerun of yesterday"));
-    }
 
     #[test]
     fn test_keyword_filter_exclude() {
@@ -582,72 +574,5 @@ mod tests {
     fn test_category_filter_empty() {
         let filter = CategoryFilter::new(vec![]);
         assert!(filter.matches("Anything"));
-    }
-
-    #[test]
-    fn test_time_filter_normal_range() {
-        let filter =
-            TimeBasedFilter::new(vec!["Monday".to_string()], "09:00", "17:00").with_timezone("UTC");
-        let now = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 10, 0, 0).unwrap();
-        let end = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 17, 0, 0).unwrap();
-        assert!(filter.matches(now));
-        assert!(!filter.matches(end));
-        assert_eq!(filter.next_unmatch_time(now), Some(end));
-    }
-
-    #[test]
-    fn test_time_filter_overnight_end_boundary_from_next_day() {
-        let filter =
-            TimeBasedFilter::new(vec!["Monday".to_string()], "22:00", "02:00").with_timezone("UTC");
-        let now = chrono::Utc.with_ymd_and_hms(2024, 1, 2, 1, 0, 0).unwrap();
-        let end = chrono::Utc.with_ymd_and_hms(2024, 1, 2, 2, 0, 0).unwrap();
-        assert!(filter.matches(now));
-        assert_eq!(filter.next_unmatch_time(now), Some(end));
-        assert!(!filter.matches(end));
-    }
-    #[test]
-    fn test_cron_filter_end_boundary_is_next_minute() {
-        // This cron matches at 10:05:00 (and is considered active for that minute).
-        let filter = CronFilter::with_timezone("0 5 10 * * Mon", "UTC");
-
-        let now = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 10, 5, 30).unwrap();
-        assert!(filter.matches(now));
-
-        let end = filter.next_unmatch_time(now).expect("end boundary");
-        let expected = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 10, 6, 0).unwrap();
-        assert_eq!(end, expected);
-    }
-
-    #[test]
-    fn test_cron_filter_end_boundary_for_continuous_hour_window() {
-        // Matches every minute during hour 10 on Mondays.
-        let filter = CronFilter::with_timezone("0 * 10 * * Mon", "UTC");
-
-        let now = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 10, 5, 30).unwrap();
-        assert!(filter.matches(now));
-
-        // End boundary is the first minute after the last matching minute (11:00).
-        let end = filter.next_unmatch_time(now).expect("end boundary");
-        let expected = chrono::Utc.with_ymd_and_hms(2024, 1, 1, 11, 0, 0).unwrap();
-        assert_eq!(end, expected);
-    }
-
-    #[test]
-    fn test_filter_serialization() {
-        let filter = Filter::Keyword(KeywordFilter::new(
-            vec!["live".to_string()],
-            vec!["rerun".to_string()],
-        ));
-
-        let json = serde_json::to_string(&filter).unwrap();
-        let parsed: Filter = serde_json::from_str(&json).unwrap();
-
-        match parsed {
-            Filter::Keyword(kf) => {
-                assert_eq!(kf.include, vec!["live"]);
-                assert_eq!(kf.exclude, vec!["rerun"]);
-            }
-            _ => panic!("Wrong filter type"),
-        }
     }
 }

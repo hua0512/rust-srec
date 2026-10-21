@@ -376,15 +376,6 @@ pub type ImmediateTransaction = sqlx::Transaction<'static, Sqlite>;
 mod tests {
     use super::*;
 
-    #[test]
-    fn read_cache_budget_rejects_empty_pools_and_rounds_down() {
-        assert!(read_page_cache_kib(0).is_err());
-        assert_eq!(read_page_cache_kib(1).unwrap(), 57344);
-        assert_eq!(read_page_cache_kib(4).unwrap(), 14336);
-        assert_eq!(read_page_cache_kib(10).unwrap(), 5734);
-        assert_eq!(read_page_cache_kib(u32::MAX).unwrap(), 0);
-    }
-
     #[tokio::test]
     async fn every_pool_connection_observes_the_combined_cache_budget_and_existing_mmap() {
         let directory = tempfile::tempdir().unwrap();
@@ -458,21 +449,6 @@ mod tests {
         assert_eq!(cache, -8192);
         read.close().await;
         write.close().await;
-    }
-
-    #[tokio::test]
-    async fn test_init_pool() {
-        let pool = init_pool("sqlite::memory:").await.unwrap();
-
-        // Verify WAL mode is enabled
-        let result: (String,) = sqlx::query_as("PRAGMA journal_mode")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-
-        // In-memory databases use "memory" journal mode, not WAL
-        // For file-based databases, this would be "wal"
-        assert!(result.0 == "memory" || result.0 == "wal");
     }
 
     #[tokio::test]

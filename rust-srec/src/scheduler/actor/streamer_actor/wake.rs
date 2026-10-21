@@ -75,13 +75,9 @@ impl StreamerActor {
 
     /// Run before refreshing the activity timestamp from a Live result, so a
     /// stalled download is re-emitted through the normal deduplicated startup.
-    pub(super) fn force_live_reemit_if_stalled(
-        &mut self,
-        next_state: StreamerState,
-        context: &'static str,
-    ) {
+    pub(super) fn force_live_reemit_if_stalled(&mut self, next_state: StreamerState) {
         if should_reemit_live(&self.state, next_state, Instant::now()) {
-            info!(streamer_id = %self.id, context, "Live watchdog forcing a stalled download recheck");
+            info!(streamer_id = %self.id, "Live watchdog forcing a stalled download recheck");
             self.state.streamer_state = StreamerState::NotLive;
         }
     }

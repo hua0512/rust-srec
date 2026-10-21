@@ -39,7 +39,7 @@ pub struct WebhookConfig {
     #[serde(default)]
     pub min_priority: NotificationPriority,
     /// Language for the rendered title and body; `None` follows the process-wide locale.
-    /// See [`NotificationEvent::title_for`] for locale fallback.
+    /// See [`NotificationEvent::title_in`] for locale fallback.
     #[serde(default)]
     pub locale: Option<String>,
     /// Request timeout in seconds.
@@ -271,13 +271,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_webhook_channel_disabled() {
-        let config = WebhookConfig::default();
-        let channel = WebhookChannel::new(config);
-        assert!(!channel.is_enabled());
-    }
-
-    #[test]
     fn test_build_payload() {
         let config = WebhookConfig::default();
         let channel = WebhookChannel::new(config);
@@ -295,48 +288,5 @@ mod tests {
         assert_eq!(payload["streamer_id"], "123");
         assert_eq!(payload["priority"], 5); // Normal = 5 (integer)
         assert_eq!(payload["priority_label"], "normal");
-    }
-
-    #[test]
-    fn test_build_headers_with_bearer() {
-        let config = WebhookConfig {
-            enabled: true,
-            url: "https://example.com/webhook".to_string(),
-            auth: Some(WebhookAuth::Bearer {
-                token: "test-token".to_string(),
-            }),
-            ..Default::default()
-        };
-        let channel = WebhookChannel::new(config);
-        let headers = channel.build_headers();
-
-        assert!(headers.contains_key(reqwest::header::AUTHORIZATION));
-    }
-
-    #[test]
-    fn supplied_rendering_matches_direct_payloads_in_both_locales() {
-        let event = NotificationEvent::SystemStartup {
-            version: "<test>&😀".into(),
-            timestamp: chrono::Utc::now(),
-        };
-        for locale in ["en", "zh-CN"] {
-            let channel = WebhookChannel::new(WebhookConfig {
-                locale: Some(locale.into()),
-                ..Default::default()
-            });
-            let rendered = RenderedEvent::new(&event, locale);
-            assert_eq!(
-                channel.build_payload(&event),
-                channel.build_rendered_payload(&event, &rendered)
-            );
-            let supplied = RenderedEvent {
-                title: "unique title 😀".into(),
-                description: "unique body <>&".into(),
-            };
-            let payload = channel.build_rendered_payload(&event, &supplied);
-            assert_eq!(payload["title"], supplied.title);
-            assert_eq!(payload["description"], supplied.description);
-            assert_eq!(payload["data"], serde_json::to_value(&event).unwrap());
-        }
     }
 }

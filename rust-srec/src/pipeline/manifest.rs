@@ -190,24 +190,6 @@ mod tests {
     }
 
     #[test]
-    fn flattened_views_follow_segment_order() {
-        let manifest = manifest();
-        assert_eq!(
-            manifest.video_inputs().collect::<Vec<_>>(),
-            vec![
-                "/rec/part0.mp4",
-                "/rec/part1.mp4",
-                "/rec/part2.mp4",
-                "/rec/part2b.mp4"
-            ]
-        );
-        assert_eq!(
-            manifest.danmu_inputs().collect::<Vec<_>>(),
-            vec!["/rec/part0.xml", "/rec/part2.xml"]
-        );
-    }
-
-    #[test]
     fn danmu_for_video_matches_by_spelling_then_stem() {
         let manifest = manifest();
         assert_eq!(

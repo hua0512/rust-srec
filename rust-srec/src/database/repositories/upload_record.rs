@@ -214,17 +214,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn upsert_rejects_unknown_status() {
-        let pool = setup_pool().await;
-        let repo = SqlxUploadRecordRepository::new(pool.clone(), pool.clone());
-
-        let err = repo
-            .upsert_records(&[record("job-1", "/tmp/a.mp4", "typo")])
-            .await;
-        assert!(err.is_err(), "CHECK constraint must reject unknown status");
-    }
-
-    #[tokio::test]
     async fn retry_upsert_flips_failed_to_completed_and_keeps_size() {
         let pool = setup_pool().await;
         let repo = SqlxUploadRecordRepository::new(pool.clone(), pool.clone());

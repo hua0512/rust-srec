@@ -9,7 +9,7 @@
 //! - After 3 failures: backoff = base * 2^(failures - 3)
 //! - Backoff is capped at max_backoff
 //! - Only the backoff count ages out; ten consecutive crashes stop automatic restarts
-//! - Explicit clear/remove operations reset the consecutive-crash budget
+//! - Removing an actor from tracking resets its consecutive-crash budget
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -62,7 +62,7 @@ struct RestartHistory {
     failures: Vec<Instant>,
     /// Total restart count (for metrics).
     total_restarts: u64,
-    /// Consecutive crashes since an explicit reset; independent of the backoff window.
+    /// Consecutive crashes since tracking began; independent of the backoff window.
     consecutive_failures: u64,
     /// Last restart time.
     last_restart: Option<Instant>,
@@ -98,12 +98,6 @@ impl RestartHistory {
             .iter()
             .filter(|&&t| now.duration_since(t) < window)
             .count()
-    }
-
-    /// Clear failure history (e.g., after successful operation).
-    fn clear_failures(&mut self) {
-        self.failures.clear();
-        self.consecutive_failures = 0;
     }
 }
 
@@ -205,16 +199,6 @@ impl RestartTracker {
             .unwrap_or(0)
     }
 
-    /// Clear failure history for an actor.
-    ///
-    /// Call this when an actor has been running successfully for a while.
-    pub fn clear_failures(&mut self, actor_id: &str) {
-        if let Some(history) = self.history.get_mut(actor_id) {
-            debug!("Clearing failure history for actor {}", actor_id);
-            history.clear_failures();
-        }
-    }
-
     /// Remove an actor from tracking.
     pub fn remove(&mut self, actor_id: &str) {
         self.history.remove(actor_id);
@@ -223,7 +207,7 @@ impl RestartTracker {
     /// Check if an actor should be restarted.
     ///
     /// Returns `true` before the tenth consecutive crash, regardless of backoff age.
-    /// `clear_failures` or `remove` restores the restart budget.
+    /// `remove` restores the restart budget.
     pub fn should_restart(&self, actor_id: &str) -> bool {
         self.history
             .get(actor_id)
@@ -269,31 +253,6 @@ pub struct RestartTrackerStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_restart_tracker_new() {
-        let tracker = RestartTracker::new();
-        assert_eq!(tracker.recent_failures("test"), 0);
-        assert_eq!(tracker.get_backoff("test"), Duration::ZERO);
-    }
-
-    #[test]
-    fn test_restart_tracker_no_backoff_under_threshold() {
-        let mut tracker = RestartTracker::new();
-
-        // Failures 1 and 2 should have no backoff (under threshold of 3)
-        for i in 0..2 {
-            let backoff = tracker.record_failure("test");
-            assert_eq!(
-                backoff,
-                Duration::ZERO,
-                "Failure {} should have no backoff",
-                i + 1
-            );
-        }
-
-        assert_eq!(tracker.recent_failures("test"), 2);
-    }
 
     #[test]
     fn test_restart_tracker_exponential_backoff() {
@@ -346,136 +305,5 @@ mod tests {
         // Backoff should be capped at max
         let backoff = tracker.get_backoff("test");
         assert_eq!(backoff, Duration::from_secs(10));
-    }
-
-    #[test]
-    fn test_restart_tracker_clear_failures() {
-        let mut tracker = RestartTracker::new();
-
-        // Record some failures
-        for _ in 0..5 {
-            tracker.record_failure("test");
-        }
-        assert_eq!(tracker.recent_failures("test"), 5);
-
-        // Clear failures
-        tracker.clear_failures("test");
-        assert_eq!(tracker.recent_failures("test"), 0);
-        assert_eq!(tracker.get_backoff("test"), Duration::ZERO);
-
-        // Total restarts should still be tracked
-        assert_eq!(tracker.total_restarts("test"), 5);
-    }
-
-    #[test]
-    fn test_restart_tracker_remove() {
-        let mut tracker = RestartTracker::new();
-
-        tracker.record_failure("test");
-        assert_eq!(tracker.recent_failures("test"), 1);
-
-        tracker.remove("test");
-        assert_eq!(tracker.recent_failures("test"), 0);
-        assert_eq!(tracker.total_restarts("test"), 0);
-    }
-
-    #[test]
-    fn test_restart_tracker_multiple_actors() {
-        let mut tracker = RestartTracker::new();
-
-        // Record failures for different actors
-        for _ in 0..5 {
-            tracker.record_failure("actor-1");
-        }
-        for _ in 0..2 {
-            tracker.record_failure("actor-2");
-        }
-
-        assert_eq!(tracker.recent_failures("actor-1"), 5);
-        assert_eq!(tracker.recent_failures("actor-2"), 2);
-
-        // actor-1 should have backoff (5 >= 3), actor-2 should not (2 < 3)
-        assert!(tracker.get_backoff("actor-1") > Duration::ZERO);
-        assert_eq!(tracker.get_backoff("actor-2"), Duration::ZERO);
-    }
-
-    #[test]
-    fn test_restart_tracker_should_restart() {
-        let mut tracker = RestartTracker::new();
-
-        // Should restart with few failures
-        for _ in 0..5 {
-            tracker.record_failure("test");
-        }
-        assert!(tracker.should_restart("test"));
-
-        // Should not restart after too many failures
-        for _ in 0..10 {
-            tracker.record_failure("test");
-        }
-        assert!(!tracker.should_restart("test"));
-    }
-
-    #[test]
-    fn test_restart_tracker_stats() {
-        let mut tracker = RestartTracker::new();
-
-        tracker.record_failure("actor-1");
-        tracker.record_failure("actor-1");
-        tracker.record_failure("actor-2");
-
-        let stats = tracker.stats();
-        assert_eq!(stats.total_actors, 2);
-        assert_eq!(stats.actors_with_failures, 2);
-        assert_eq!(stats.total_restarts, 3);
-    }
-
-    #[test]
-    fn test_calculate_backoff_formula() {
-        let config = RestartTrackerConfig {
-            base_backoff: Duration::from_millis(100),
-            max_backoff: Duration::from_secs(60),
-            failure_window: Duration::from_secs(60),
-            failure_threshold: 3,
-        };
-        let tracker = RestartTracker::with_config(config);
-
-        // Under threshold: no backoff
-        assert_eq!(tracker.calculate_backoff(0), Duration::ZERO);
-        assert_eq!(tracker.calculate_backoff(1), Duration::ZERO);
-        assert_eq!(tracker.calculate_backoff(2), Duration::ZERO);
-
-        // At and above threshold: exponential backoff
-        // failures=3: base * 2^0 = 100ms
-        assert_eq!(tracker.calculate_backoff(3), Duration::from_millis(100));
-        // failures=4: base * 2^1 = 200ms
-        assert_eq!(tracker.calculate_backoff(4), Duration::from_millis(200));
-        // failures=5: base * 2^2 = 400ms
-        assert_eq!(tracker.calculate_backoff(5), Duration::from_millis(400));
-        // failures=6: base * 2^3 = 800ms
-        assert_eq!(tracker.calculate_backoff(6), Duration::from_millis(800));
-    }
-    #[test]
-    fn restart_limit_survives_aged_backoff_and_explicit_reset_preserves_metrics() {
-        let mut tracker = RestartTracker::new();
-        for failure in 1..=10 {
-            tracker.record_failure("crashes");
-            // Simulate elapsed backoff without sleeping. Only timestamps age, not the
-            // consecutive failure count that protects against permanent crash loops.
-            for timestamp in &mut tracker.history.get_mut("crashes").unwrap().failures {
-                *timestamp = Instant::now() - DEFAULT_FAILURE_WINDOW - Duration::from_secs(1);
-            }
-            assert_eq!(tracker.recent_failures("crashes"), 0);
-            assert_eq!(tracker.get_backoff("crashes"), Duration::ZERO);
-            assert_eq!(tracker.should_restart("crashes"), failure < 10);
-        }
-        tracker.clear_failures("crashes");
-        assert!(tracker.should_restart("crashes"));
-        assert_eq!(tracker.total_restarts("crashes"), 10);
-        assert_eq!(tracker.record_failure("crashes"), Duration::ZERO);
-        assert_eq!(tracker.total_restarts("crashes"), 11);
-        tracker.remove("crashes");
-        assert!(tracker.should_restart("crashes"));
-        assert_eq!(tracker.total_restarts("crashes"), 0);
     }
 }

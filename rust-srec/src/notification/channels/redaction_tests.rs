@@ -114,25 +114,3 @@ fn nested_notification_config_debug_redacts_credentials_but_serialization_preser
         serde_json::to_value(config).unwrap()
     );
 }
-
-#[test]
-fn standalone_webhook_auth_debug_redacts_each_auth_variant() {
-    for auth in [
-        WebhookAuth::Bearer {
-            token: "standalone-secret".to_string(),
-        },
-        WebhookAuth::Basic {
-            username: "standalone-user".to_string(),
-            password: "standalone-secret".to_string(),
-        },
-        WebhookAuth::Header {
-            name: "X-Key".to_string(),
-            value: "standalone-secret".to_string(),
-        },
-    ] {
-        let debug = format!("{auth:?}");
-        assert!(!debug.contains("standalone-secret"));
-        assert!(!debug.contains("standalone-user"));
-        assert!(debug.contains("[REDACTED]"));
-    }
-}

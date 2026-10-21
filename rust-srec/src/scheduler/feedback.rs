@@ -18,9 +18,7 @@ use tokio_util::sync::CancellationToken;
 use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent};
 use crate::utils::task_supervisor::TaskSupervisor;
 
-use super::actor::{
-    ActorHandle, ActorRegistry, PlatformConfig, PlatformMessage, StreamerConfig, StreamerMessage,
-};
+use super::actor::{ActorHandle, ActorRegistry, StreamerConfig, StreamerMessage};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FeedbackDisposition {
@@ -78,8 +76,6 @@ struct StreamQueue {
     retired: CancellationToken,
 }
 
-type PlatformConfigUpdate = (ActorHandle<PlatformMessage>, PlatformConfig);
-
 #[derive(Default)]
 struct FeedbackState {
     stopped: bool,
@@ -93,7 +89,6 @@ struct FeedbackState {
     latest_attempts: HashMap<String, (String, String)>,
     epochs: HashMap<String, Arc<AtomicU64>>,
     capacity: HashMap<String, Arc<Semaphore>>,
-    platforms: HashMap<String, watch::Sender<Option<PlatformConfigUpdate>>>,
 }
 
 pub(crate) struct SchedulerFeedback {
@@ -539,47 +534,6 @@ impl SchedulerFeedback {
                 .check
                 .send_modify(|revision| *revision = revision.wrapping_add(1));
         }
-    }
-
-    pub(crate) fn configure_platform(
-        &self,
-        id: &str,
-        handle: ActorHandle<PlatformMessage>,
-        config: PlatformConfig,
-    ) {
-        let mut state = self.state.lock();
-        if state.stopped {
-            return;
-        }
-        let sender = state.platforms.entry(id.to_owned()).or_insert_with(|| {
-            let (sender, mut receiver) =
-                watch::channel::<Option<(ActorHandle<PlatformMessage>, PlatformConfig)>>(None);
-            let stop = self.stop.clone();
-            self.tasks.spawn("platform configuration delivery", async move {
-                loop {
-                    let desired = receiver.borrow_and_update().clone();
-                    if let Some((handle, config)) = desired {
-                        tokio::select! {
-                            biased;
-                            _ = stop.cancelled() => return,
-                            changed = receiver.changed() => { if changed.is_err() { return; } continue; },
-                            result = handle.send_reliable(PlatformMessage::ConfigUpdate(config)) => {
-                                if let Err(error) = result {
-                                    tracing::debug!(%error, "Platform generation stopped before configuration delivery; restart uses the retained configuration");
-                                }
-                            }
-                        }
-                    }
-                    tokio::select! {
-                        biased;
-                        _ = stop.cancelled() => return,
-                        changed = receiver.changed() => if changed.is_err() { return; }
-                    }
-                }
-            });
-            sender
-        });
-        sender.send_replace(Some((handle, config)));
     }
 
     pub(crate) fn monitoring_stopped(&self) -> bool {

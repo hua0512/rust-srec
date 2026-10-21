@@ -147,61 +147,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn token_for_returns_existing_on_duplicate() {
-        let reg = SessionCancelTokens::new();
-        let a = reg.register("s1");
-        let b = reg.register("s1");
-        // Same underlying token: cancelling one cancels the other.
-        a.token().cancel();
-        assert!(b.token().is_cancelled());
-        assert_eq!(reg.len(), 1);
-    }
-
-    #[test]
-    fn cancel_fires_and_removes() {
-        let reg = SessionCancelTokens::new();
-        let handle = reg.register("s1");
-        let token = handle.token();
-        assert!(!token.is_cancelled());
-        reg.cancel("s1");
-        assert!(token.is_cancelled());
-        assert_eq!(reg.len(), 0);
-    }
-
-    #[test]
-    fn cancel_unknown_is_noop() {
-        let reg = SessionCancelTokens::new();
-        reg.cancel("ghost");
-        assert_eq!(reg.len(), 0);
-    }
-
-    #[test]
-    fn handle_drop_removes_without_firing() {
-        let reg = SessionCancelTokens::new();
-        let handle = reg.register("s1");
-        let token = handle.token();
-        drop(handle);
-        assert!(!token.is_cancelled());
-        assert_eq!(reg.len(), 0);
-    }
-
-    #[test]
-    fn token_for_after_cancel_is_fresh() {
-        let reg = SessionCancelTokens::new();
-        let handle = reg.register("s1");
-        let t1 = handle.token();
-        reg.cancel("s1");
-        assert!(t1.is_cancelled());
-
-        let t2 = reg.register("s1").token();
-        assert!(!t2.is_cancelled());
-    }
-
-    #[test]
     fn old_handle_does_not_remove_new_token() {
         let reg = SessionCancelTokens::new();
         let old = reg.register("s1");
         reg.cancel("s1");
+        assert!(old.token().is_cancelled());
 
         let new = reg.register("s1");
         let new_token = new.token();

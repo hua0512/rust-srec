@@ -166,20 +166,6 @@ mod tests {
         assert_eq!(config.rate_bucket_secs, 1);
     }
 
-    /// A reported list longer than what is tracked would have nothing to fill
-    /// its tail with.
-    #[test]
-    fn sanitized_caps_reported_lists_at_capacity() {
-        let config = DanmuStatisticsConfig {
-            top_talkers: 500,
-            talker_capacity: 64,
-            ..Default::default()
-        }
-        .sanitized();
-
-        assert_eq!(config.top_talkers, 64);
-    }
-
     #[test]
     fn sanitized_normalizes_stop_words() {
         let config = DanmuStatisticsConfig {

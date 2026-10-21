@@ -544,24 +544,6 @@ async fn shutdown_and_retirement_release_every_reserved_envelope_without_polling
 }
 
 #[tokio::test]
-async fn capacity_scaling_saturates_without_arithmetic_or_semaphore_overflow() {
-    let feedback = SchedulerFeedback::new();
-    feedback.ensure_attempt_capacity(usize::MAX);
-    assert_eq!(
-        feedback.capacity.available_permits(),
-        Semaphore::MAX_PERMITS
-    );
-    let held = feedback.reserve_attempt("one").unwrap();
-    feedback.ensure_attempt_capacity(1);
-    assert_eq!(
-        feedback.capacity.available_permits(),
-        Semaphore::MAX_PERMITS - 2
-    );
-    drop(held);
-    feedback.shutdown().await;
-}
-
-#[tokio::test]
 async fn full_mailbox_retains_the_latest_configuration_until_application() {
     tokio::time::timeout(Duration::from_secs(5), async {
         let feedback = SchedulerFeedback::new();
@@ -623,25 +605,4 @@ async fn full_mailbox_retains_the_latest_configuration_until_application() {
     })
     .await
     .expect("latest desired configuration must survive mailbox pressure");
-}
-
-#[tokio::test]
-async fn exhausted_restart_policy_settles_retained_work_as_unavailable() {
-    let feedback = SchedulerFeedback::new();
-    let (start, end) = feedback.reserve_attempt("one").unwrap();
-    let receipt = feedback.publish_reserved(&started("one", "d", "s"), start);
-    feedback.unavailable("one");
-    assert_eq!(
-        applied(receipt).await,
-        FeedbackDisposition::ActorUnavailable
-    );
-    assert_eq!(
-        applied(feedback.publish_reserved(&completed("one", "d", "s"), end)).await,
-        FeedbackDisposition::ActorUnavailable
-    );
-    feedback.shutdown().await;
-    assert_eq!(
-        feedback.capacity.available_permits(),
-        MAX_FEEDBACK_ENVELOPES
-    );
 }

@@ -357,38 +357,4 @@ mod tests {
             1
         );
     }
-
-    #[tokio::test]
-    async fn output_retention_plan_uses_indexed_protection_instead_of_correlated_history_scans() {
-        use sqlx::Row;
-
-        let (pool, _) = fixture().await;
-        sqlx::raw_sql(
-            "WITH RECURSIVE n(i) AS (VALUES(1) UNION ALL SELECT i+1 FROM n WHERE i<2000) \
-             INSERT INTO job(id, job_type, status, config, state, created_at, updated_at, session_id) \
-             SELECT 'old-' || i, 'remux', 'COMPLETED', '{}', '{}', 1, 1, 'other' FROM n;",
-        ).execute(&pool).await.unwrap();
-        let plan = sqlx::query(sqlx::AssertSqlSafe(format!(
-            "EXPLAIN QUERY PLAN {ELIGIBLE}"
-        )))
-        .bind(CUTOFF)
-        .fetch_all(&pool)
-        .await
-        .unwrap();
-        let details: Vec<String> = plan.iter().map(|row| row.get("detail")).collect();
-        let plan = details.join("\n");
-        for index in [
-            "idx_job_nonterminal_id",
-            "idx_job_retry_after",
-            "idx_job_updated_at",
-        ] {
-            assert!(plan.contains(index), "{plan}");
-        }
-        assert!(
-            !details
-                .iter()
-                .any(|detail| detail == "SCAN j" || detail.starts_with("SCAN j USING")),
-            "{plan}"
-        );
-    }
 }

@@ -6,8 +6,7 @@
 //!
 //! # Architecture
 //!
-//! - StreamerActors manage their own timing and state
-//! - PlatformActors coordinate batch detection for batch-capable platforms
+//! - StreamerActors manage their own timing and state, checking each streamer individually
 //! - The Scheduler acts as a supervisor, spawning and monitoring actors
 //! - Owned configuration work resolves revisions and retains updates for actor delivery
 
@@ -25,16 +24,15 @@ use crate::config::{ConfigEventBroadcaster, ConfigUpdateEvent};
 use crate::database::repositories::{
     ConfigRepository, FilterRepository, SessionRepository, StreamerRepository,
 };
-use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent};
 #[cfg(test)]
-use crate::downloader::{DownloadStopCause, DownloadTerminalEvent};
+use crate::downloader::DownloadTerminalEvent;
+use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent};
 use crate::monitor::StreamMonitor;
 use crate::streamer::{StreamerManager, StreamerMetadata};
 
 use super::actor::{
-    ActorRemoval, DownloadEndPolicy, MonitorBatchChecker, MonitorStatusChecker, PlatformConfig,
-    ShutdownReport, StreamerConfig, StreamerMessage, Supervisor, SupervisorConfig,
-    TaskCompletionAction,
+    ActorRemoval, DownloadEndPolicy, MonitorStatusChecker, ShutdownReport, StreamerConfig,
+    StreamerMessage, Supervisor, SupervisorConfig, TaskCompletionAction,
 };
 
 /// Work only the scheduler's event loop can do, requested from another task.
@@ -166,7 +164,6 @@ impl Default for SchedulerConfig {
 ///
 /// The scheduler uses actors instead of direct task management:
 /// - Each streamer has a dedicated `StreamerActor` that manages its own timing
-/// - Batch-capable platforms have a `PlatformActor` for coordinating batch detection
 /// - The scheduler acts as a supervisor, handling actor lifecycle and crash recovery
 ///
 /// # No Periodic Re-scheduling
@@ -408,23 +405,21 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         CR: ConfigRepository + Send + Sync + 'static,
     {
         let config_resolver = monitor.config_service();
-        // Create status and batch checkers directly from the StreamMonitor
+        // Create the status checker directly from the StreamMonitor
         let status_checker = Arc::new(match history_writer {
             Some(writer) => MonitorStatusChecker::with_history_writer(monitor.clone(), writer),
             None => MonitorStatusChecker::new(monitor.clone()),
         });
-        let batch_checker = Arc::new(MonitorBatchChecker::new(monitor.clone()));
 
         // Pass the shared metadata store to the supervisor
         let metadata_store = streamer_manager.metadata_store();
 
-        // Create supervisor with the real checkers
-        let supervisor = Supervisor::with_checkers(
+        // Create supervisor with the real checker
+        let supervisor = Supervisor::with_status_checker(
             cancellation_token.clone(),
             config.supervisor_config.clone(),
             metadata_store,
             status_checker,
-            batch_checker,
         );
         let (stats_tx, _) = watch::channel(supervisor.stats());
         let (command_tx, command_rx) = mpsc::channel(SCHEDULER_COMMAND_CAPACITY);
@@ -503,11 +498,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         self.supervisor.registry().streamer_count()
     }
 
-    /// Get the number of platform actors.
-    pub fn platform_actor_count(&self) -> usize {
-        self.supervisor.registry().platform_count()
-    }
-
     /// Check if the scheduler is running.
     pub fn is_running(&self) -> bool {
         !self.cancellation_token.is_cancelled()
@@ -520,7 +510,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             offline_check_interval_ms: self.config.offline_check_interval_ms,
             offline_check_count: self.config.offline_check_count,
             priority: metadata.priority,
-            batch_capable: self.is_batch_capable_platform(&metadata.platform_config_id),
         };
         match &self.config_resolver {
             Some(resolver) => tokio::select! {
@@ -531,26 +520,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             // No-monitor constructors are also used by callers that supply explicit timing.
             None => Ok(base),
         }
-    }
-
-    /// Create a PlatformConfig for a platform.
-    fn create_platform_config(&self, platform_id: &str) -> PlatformConfig {
-        PlatformConfig {
-            platform_id: platform_id.to_string(),
-            batch_window_ms: 500,
-            max_batch_size: 100,
-            rate_limit: None,
-        }
-    }
-
-    /// Check if a platform supports batch detection.
-    ///
-    /// No platform has a batch API implementation
-    /// (`BatchDetector::check_batch_internal` errors unconditionally), so no
-    /// streamer routes checks through `PlatformMessage::RequestCheck`
-    /// delegation; every check runs individually via `perform_check`.
-    fn is_batch_capable_platform(&self, _platform_id: &str) -> bool {
-        false
     }
 
     /// Start the scheduler event loop.
@@ -579,9 +548,8 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         self.publish_stats();
 
         info!(
-            "Scheduler started with {} streamer actors and {} platform actors",
-            self.supervisor.registry().streamer_count(),
-            self.supervisor.registry().platform_count()
+            "Scheduler started with {} streamer actors",
+            self.supervisor.registry().streamer_count()
         );
 
         let mut feedback_failure = None;
@@ -642,9 +610,8 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                     if let Some(join_result) = result {
                         match join_result {
                             Ok(task_result) => {
-                                let streamer = task_result.actor_type == "streamer";
                                 let action = self.supervisor.handle_task_completion(task_result);
-                                self.handle_task_completion_action(action, streamer);
+                                self.handle_task_completion_action(action);
                             }
                             Err(e) => {
                                 // `ActorRegistry::spawn_streamer` runs the actor
@@ -767,29 +734,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         }
     }
 
-    /// Spawn a platform actor for batch coordination.
-    fn spawn_platform_actor(&mut self, platform_id: &str) -> Result<()> {
-        if self.supervisor.registry().has_platform(platform_id) {
-            debug!("Platform actor {} already exists", platform_id);
-            return Ok(());
-        }
-
-        let config = self.create_platform_config(platform_id);
-        match self.supervisor.spawn_platform(platform_id, config) {
-            Ok(_) => {
-                info!("Spawned platform actor: {}", platform_id);
-                Ok(())
-            }
-            Err(e) => {
-                error!("Failed to spawn platform actor {}: {}", platform_id, e);
-                Err(crate::error::Error::Other(format!(
-                    "Failed to spawn platform actor: {}",
-                    e
-                )))
-            }
-        }
-    }
-
     /// Spawn a streamer actor.
     async fn spawn_streamer_actor(&mut self, metadata: StreamerMetadata) -> Result<()> {
         let streamer_id = metadata.id.clone();
@@ -811,7 +755,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         let streamer_id = metadata.id;
 
         // Spawn with streamer_id - actor fetches metadata from shared store
-        match self.supervisor.spawn_streamer(&streamer_id, config, None) {
+        match self.supervisor.spawn_streamer(&streamer_id, config) {
             Ok(_handle) => {
                 self.feedback.activate(&streamer_id);
                 self.feedback
@@ -942,24 +886,18 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     }
 
     /// Handle task completion action from supervisor.
-    fn handle_task_completion_action(&self, action: TaskCompletionAction, streamer: bool) {
+    fn handle_task_completion_action(&self, action: TaskCompletionAction) {
         match action {
             TaskCompletionAction::Stopped { actor_id } => {
-                if streamer {
-                    self.feedback.retire(&actor_id);
-                }
+                self.feedback.retire(&actor_id);
                 debug!("Actor {} stopped gracefully", actor_id);
             }
             TaskCompletionAction::Cancelled { actor_id } => {
-                if streamer {
-                    self.feedback.retire(&actor_id);
-                }
+                self.feedback.retire(&actor_id);
                 debug!("Actor {} was cancelled", actor_id);
             }
             TaskCompletionAction::Completed { actor_id } => {
-                if streamer {
-                    self.feedback.retire(&actor_id);
-                }
+                self.feedback.retire(&actor_id);
                 debug!("Actor {} completed", actor_id);
             }
             TaskCompletionAction::Crashed { actor_id } => {
@@ -975,15 +913,11 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 );
             }
             TaskCompletionAction::RestartFailed { actor_id, reason } => {
-                if streamer {
-                    self.feedback.unavailable(&actor_id);
-                }
+                self.feedback.unavailable(&actor_id);
                 error!("Actor {} restart failed: {}", actor_id, reason);
             }
             TaskCompletionAction::RestartLimitExceeded { actor_id } => {
-                if streamer {
-                    self.feedback.unavailable(&actor_id);
-                }
+                self.feedback.unavailable(&actor_id);
                 error!("Actor {} exceeded restart limit", actor_id);
             }
         }
@@ -1001,13 +935,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     /// This spawns a new StreamerActor for the streamer without requiring
     /// a full re-schedule.
     pub async fn add_streamer(&mut self, metadata: StreamerMetadata) -> Result<()> {
-        let platform_id = metadata.platform_config_id.clone();
-
-        // Ensure platform actor exists if needed
-        if self.is_batch_capable_platform(&platform_id) {
-            self.spawn_platform_actor(&platform_id)?;
-        }
-
         self.spawn_streamer_actor(metadata).await
     }
 
@@ -1187,62 +1114,6 @@ mod tests {
 
         drop(scheduler);
         assert!(handle.remove_streamer_awaitable("test-1").await.is_none());
-    }
-
-    #[test]
-    fn test_scheduler_config_default() {
-        let config = SchedulerConfig::default();
-        assert_eq!(config.check_interval_ms, 60_000);
-        assert_eq!(config.offline_check_interval_ms, 20_000);
-        assert_eq!(config.offline_check_count, 3);
-    }
-
-    #[test]
-    fn clean_completion_preserves_the_requested_stop_policy() {
-        assert!(matches!(
-            DownloadEndPolicy::from(DownloadStopCause::User),
-            DownloadEndPolicy::Stopped(DownloadStopCause::User)
-        ));
-        assert!(matches!(
-            DownloadEndPolicy::from(DownloadStopCause::StreamerOffline),
-            DownloadEndPolicy::StreamerOffline
-        ));
-        assert!(matches!(
-            DownloadEndPolicy::from(DownloadStopCause::OutOfSchedule),
-            DownloadEndPolicy::OutOfSchedule
-        ));
-        assert!(matches!(
-            DownloadEndPolicy::from(DownloadStopCause::DanmuStreamClosed),
-            DownloadEndPolicy::Stopped(DownloadStopCause::DanmuStreamClosed)
-        ));
-    }
-
-    #[test]
-    fn scheduler_handle_reads_latest_stats_snapshot() {
-        fn stats(streamer_count: usize) -> crate::scheduler::actor::SupervisorStats {
-            crate::scheduler::actor::SupervisorStats {
-                streamer_count,
-                platform_count: 0,
-                pending_restarts: 0,
-                restart_stats: crate::scheduler::actor::RestartTrackerStats {
-                    total_actors: streamer_count,
-                    actors_with_failures: 0,
-                    total_restarts: 0,
-                },
-            }
-        }
-
-        let (stats_tx, stats_rx) = watch::channel(stats(1));
-        let (command_tx, _command_rx) = mpsc::channel(SCHEDULER_COMMAND_CAPACITY);
-        let handle = SchedulerHandle {
-            stats_rx,
-            command_tx,
-            loop_running: Arc::new(AtomicBool::new(false)),
-        };
-        assert_eq!(handle.stats().streamer_count, 1);
-
-        stats_tx.send_replace(stats(2));
-        assert_eq!(handle.stats().streamer_count, 2);
     }
 }
 

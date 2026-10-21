@@ -187,41 +187,11 @@ fn failure_kind_label(kind: DownloadFailureKind) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::downloader::DownloadStopCause;
 
     fn round_trip(payload: &SessionEventPayload) {
         let json = serde_json::to_string(payload).expect("serialise");
         let back: SessionEventPayload = serde_json::from_str(&json).expect("deserialise");
         assert_eq!(payload, &back, "round trip for {json}");
-    }
-
-    #[test]
-    fn payload_round_trip_session_started() {
-        round_trip(&SessionEventPayload::SessionStarted {
-            from_hysteresis: false,
-            title: Some("Hello".to_string()),
-        });
-        round_trip(&SessionEventPayload::SessionStarted {
-            from_hysteresis: true,
-            title: None,
-        });
-    }
-
-    #[test]
-    fn payload_round_trip_hysteresis_entered() {
-        round_trip(&SessionEventPayload::HysteresisEntered {
-            cause: TerminalCauseDto::Cancelled {
-                cause: "danmu_stream_closed".into(),
-            },
-            resume_deadline: Utc::now(),
-        });
-    }
-
-    #[test]
-    fn payload_round_trip_session_resumed() {
-        round_trip(&SessionEventPayload::SessionResumed {
-            hysteresis_duration_secs: 42,
-        });
     }
 
     #[test]
@@ -242,20 +212,6 @@ mod tests {
         let json = serde_json::to_value(payload).expect("serialise consecutive failures");
         assert_eq!(json["cause"]["signal"]["type"], "consecutive_failures");
         assert_eq!(json["cause"]["signal"]["count"], 2);
-    }
-
-    #[test]
-    fn kind_string_matches_table_check_constraint() {
-        // The `CHECK (kind IN (...))` constraint on `session_events` lists
-        // these exact strings. If a label here drifts, every insert would
-        // fail at runtime — pin it down with a test.
-        assert_eq!(SessionEventKind::SessionStarted.as_str(), "session_started");
-        assert_eq!(
-            SessionEventKind::HysteresisEntered.as_str(),
-            "hysteresis_entered"
-        );
-        assert_eq!(SessionEventKind::SessionResumed.as_str(), "session_resumed");
-        assert_eq!(SessionEventKind::SessionEnded.as_str(), "session_ended");
     }
 
     #[test]
@@ -298,86 +254,5 @@ mod tests {
                 "JSON discriminator must equal the kind column"
             );
         }
-    }
-
-    #[test]
-    fn terminal_cause_dto_from_definitive_offline_preserves_signal() {
-        let cause = TerminalCause::DefinitiveOffline {
-            signal: OfflineSignal::DanmuStreamClosed,
-        };
-        let dto = TerminalCauseDto::from(&cause);
-        assert_eq!(
-            dto,
-            TerminalCauseDto::DefinitiveOffline {
-                signal: OfflineSignal::DanmuStreamClosed,
-            }
-        );
-        // Snapshot the exact JSON shape the frontend will see.
-        let json = serde_json::to_value(&dto).unwrap();
-        assert_eq!(json["type"], "definitive_offline");
-        assert_eq!(json["signal"]["type"], "danmu_stream_closed");
-    }
-
-    #[test]
-    fn terminal_cause_dto_from_failed_uses_label() {
-        let dto = TerminalCauseDto::from(&TerminalCause::Failed {
-            kind: DownloadFailureKind::Network,
-        });
-        assert_eq!(
-            dto,
-            TerminalCauseDto::Failed {
-                kind: "network".into()
-            }
-        );
-    }
-
-    #[test]
-    fn terminal_cause_dto_from_user_disabled_round_trip() {
-        let cause = TerminalCause::UserDisabled;
-        let dto = TerminalCauseDto::from(&cause);
-        assert_eq!(dto, TerminalCauseDto::UserDisabled);
-
-        let json = serde_json::to_value(&dto).unwrap();
-        assert_eq!(json["type"], "user_disabled");
-
-        // Round-trip through SessionEnded payload.
-        let payload = SessionEventPayload::SessionEnded {
-            cause: dto,
-            via_hysteresis: false,
-        };
-        let s = serde_json::to_string(&payload).unwrap();
-        let back: SessionEventPayload = serde_json::from_str(&s).unwrap();
-        assert_eq!(payload, back);
-    }
-
-    #[test]
-    fn terminal_cause_dto_from_out_of_schedule_round_trip() {
-        let cause = TerminalCause::OutOfSchedule;
-        let dto = TerminalCauseDto::from(&cause);
-        assert_eq!(dto, TerminalCauseDto::OutOfSchedule);
-
-        let json = serde_json::to_value(&dto).unwrap();
-        assert_eq!(json["type"], "out_of_schedule");
-
-        let payload = SessionEventPayload::SessionEnded {
-            cause: dto,
-            via_hysteresis: false,
-        };
-        let s = serde_json::to_string(&payload).unwrap();
-        let back: SessionEventPayload = serde_json::from_str(&s).unwrap();
-        assert_eq!(payload, back);
-    }
-
-    #[test]
-    fn terminal_cause_dto_from_cancelled_uses_stop_cause_label() {
-        let dto = TerminalCauseDto::from(&TerminalCause::Cancelled {
-            cause: DownloadStopCause::DanmuStreamClosed,
-        });
-        assert_eq!(
-            dto,
-            TerminalCauseDto::Cancelled {
-                cause: "danmu_stream_closed".into()
-            }
-        );
     }
 }

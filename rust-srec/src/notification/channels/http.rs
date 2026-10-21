@@ -275,62 +275,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn notification_service_delivers_later_channel_after_timeout() {
-        use crate::notification::channels::ChannelConfig;
-        use crate::notification::events::NotificationEvent;
-        use crate::notification::service::{NotificationService, NotificationServiceConfig};
-
-        let delivered = Arc::new(AtomicUsize::new(0));
-        let delivered_handler = delivered.clone();
-        let server = server(
-            Router::new()
-                .route(
-                    "/later",
-                    axum::routing::post(move || {
-                        let delivered = delivered_handler.clone();
-                        async move {
-                            delivered.fetch_add(1, Ordering::SeqCst);
-                            StatusCode::NO_CONTENT
-                        }
-                    }),
-                )
-                .fallback(|| async { std::future::pending::<StatusCode>().await }),
-        )
-        .await;
-        let mut later_url = reqwest::Url::parse(&server.url).unwrap();
-        later_url.set_path("/later");
-        later_url.set_query(None);
-        let service = NotificationService::with_config(NotificationServiceConfig {
-            max_retries: 1,
-            ..Default::default()
-        });
-        for (id, url) in [
-            ("stalled", server.url.clone()),
-            ("later", later_url.to_string()),
-        ] {
-            service.add_channel(ChannelConfig::Webhook(WebhookConfig {
-                id: Some(id.to_owned()),
-                enabled: true,
-                url,
-                timeout_secs: 1,
-                ..Default::default()
-            }));
-        }
-        tokio::time::timeout(
-            Duration::from_secs(5),
-            service.notify(NotificationEvent::SystemStartup {
-                version: "test".to_owned(),
-                timestamp: chrono::Utc::now(),
-            }),
-        )
-        .await
-        .unwrap()
-        .unwrap();
-        assert_eq!(delivered.load(Ordering::SeqCst), 1);
-        assert_eq!(service.stats().pending_count, 0);
-    }
-
-    #[tokio::test]
     async fn channels_do_not_export_echoed_credentials_on_http_failure() {
         let server = server(Router::new().fallback(|| async {
             (

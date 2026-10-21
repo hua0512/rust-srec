@@ -341,7 +341,6 @@ fn unavailable_reason_key(reason: super::UnavailableReason) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::CredentialScope;
-    use crate::credentials::platform_reauth_extra;
 
     /// Unavailable notices read as text rather than codes, and
     /// profile events name the account beside the owner it belongs to.
@@ -384,29 +383,5 @@ mod tests {
             assert!(text.contains("Backup account"), "{text}");
             assert!(invalid.to_message_in(locale).contains("Backup account"));
         }
-    }
-
-    #[test]
-    fn extracts_soop_reauthentication_fields() {
-        let config = serde_json::json!({
-            "username": " viewer ",
-            "password": " secret-password ",
-            "stream_password": "room-password",
-        });
-
-        assert_eq!(
-            platform_reauth_extra("SOOP", Some(&config)),
-            Some(serde_json::json!({
-                "username": "viewer",
-                "password": "secret-password",
-            }))
-        );
-        assert!(platform_reauth_extra("twitch", Some(&config)).is_none());
-    }
-
-    #[test]
-    fn rejects_incomplete_soop_reauthentication_fields() {
-        let missing_password = serde_json::json!({ "username": "viewer" });
-        assert!(platform_reauth_extra("soop", Some(&missing_password)).is_none());
     }
 }

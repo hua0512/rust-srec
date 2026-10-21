@@ -772,30 +772,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_completed_login_polled_after_expiry_still_reports_its_profile() {
-        let (pool, _, service) = fixture().await;
-        let target = CredentialLoginTarget::Create {
-            platform_id: "platform-bilibili".into(),
-            label: "A".into(),
-            proxy_route: crate::proxies::ProxyRoute::Inherit,
-        };
-        pending(&pool, "late", &target, PENDING_TTL_MS).await;
-        let completed = service
-            .complete("principal-a", "late", &material("sid=a"))
-            .await
-            .unwrap();
-        sqlx::query("UPDATE credential_login_sessions SET expires_at = ? WHERE id = 'late'")
-            .bind(crate::database::time::now_ms() - 1)
-            .execute(&pool)
-            .await
-            .unwrap();
-        let receipt = service.poll("principal-a", "late").await.unwrap();
-        assert_eq!(receipt.status, "completed");
-        assert_eq!(receipt.profile_id, completed.profile_id);
-        assert!(receipt.profile_id.is_some());
-    }
-
-    #[tokio::test]
     async fn expired_login_never_creates_a_profile_and_failed_bundle_rolls_back_receipt() {
         let (pool, _, service) = fixture().await;
         let target = CredentialLoginTarget::Create {

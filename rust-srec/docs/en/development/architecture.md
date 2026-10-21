@@ -168,11 +168,10 @@ session, preserving recording continuity across a restart.
 The scheduler is a supervisor that manages self-scheduling actors:
 
 - `StreamerActor`: owns the timing and state loop for one streamer
-- `PlatformActor`: coordinates batch detection for batch-capable platforms
 - `Supervisor`: handles actor lifecycle, restart tracking, and shutdown reporting
 
-Actors call into `StreamMonitor` for real status checks; the scheduler also reacts to configuration
-events to spawn/stop actors dynamically.
+Each actor checks its own streamer individually through `StreamMonitor`; the scheduler also
+reacts to configuration events to spawn/stop actors dynamically.
 
 Before spawning an actor or delivering updated timing, the scheduler resolves the
 Global → Platform → Template → Streamer hierarchy through the shared configuration
@@ -198,8 +197,7 @@ streamer. Both timer and mailbox paths stop gracefully and run configured state
 persistence; the supervisor does not restart them. Recoverable task failures and
 panics remain eligible for restart. Ten consecutive crashes exhaust automatic
 restarts even when older crashes have left the 60-second backoff window. The
-window still determines restart delay; explicit failure reset or actor removal
-restores the crash budget.
+window still determines restart delay; actor removal restores the crash budget.
 
 Download terminal feedback preserves lifecycle authority. Shutdown and
 streamer-disable stops park the actor's local polling without publishing an
@@ -519,12 +517,11 @@ Workflow transitions are decided in `pipeline::DagScheduler`: a worker reports a
 ### Actor terminal and wake policies {#actor-terminal-and-wake-policies}
 
 The actor keeps mailbox execution, individual checks, reliable feedback, terminal
-decisions and live wake decisions in separate modules. Batch delegation remains
-available under its existing controls; this decomposition does not enable it.
-Only an explicit streamer-offline terminal policy submits Offline to the monitor.
-Clean completions and user/unknown stops resume verification; shutdown and disable
-park polling. Infrastructure blocks retain their existing persistence and retry
-policy, and feedback acknowledgement still follows effect application.
+decisions and live wake decisions in separate modules. Only an explicit
+streamer-offline terminal policy submits Offline to the monitor. Clean completions
+and user/unknown stops resume verification; shutdown and disable park polling.
+Infrastructure blocks retain their existing persistence and retry policy, and
+feedback acknowledgement still follows effect application.
 
 Explicit check deadlines take precedence over the Live watchdog. For a parked Live
 actor, the earliest watchdog, stale-heartbeat or schedule-boundary wake is then
@@ -535,8 +532,9 @@ Rust callers should use `DownloadEndPolicy::Stopped(DownloadStopCause::User)`:
 The wire-level `DownloadStopCause::User` remains.
 `StreamerActor` and `Supervisor` metadata-store constructor parameters now contain
 `Arc<StreamerMetadata>` values. Obtain the shared store from `StreamerManager`;
-actor checks clone an immutable Arc snapshot instead of configuration JSON. Existing
-actor public re-exports and `StatusChecker` borrowed metadata inputs remain intact.
+actor checks clone an immutable Arc snapshot instead of configuration JSON.
+`StatusChecker`, which takes borrowed metadata inputs, is the scheduler's only
+status-check interface.
 
 ## Standalone shutdown deadline
 

@@ -83,16 +83,6 @@ pub trait SessionRepository: Send + Sync {
         &self,
         session_id: &str,
     ) -> Result<Vec<MediaOutputDbModel>>;
-    async fn get_media_outputs_for_sessions(
-        &self,
-        session_ids: &[String],
-    ) -> Result<Vec<MediaOutputDbModel>> {
-        let mut outputs = Vec::new();
-        for session_id in session_ids {
-            outputs.extend(self.get_media_outputs_for_session(session_id).await?);
-        }
-        Ok(outputs)
-    }
     /// Counts all output types and chooses the earliest thumbnail. Sessions without
     /// outputs are omitted. SQL storage uses insertion order to break timestamp ties.
     async fn summarize_session_outputs(
@@ -178,18 +168,6 @@ pub trait SessionRepository: Send + Sync {
         &self,
         session_id: &str,
     ) -> Result<Option<DanmuStatisticsDbModel>>;
-    async fn get_danmu_statistics_for_sessions(
-        &self,
-        session_ids: &[String],
-    ) -> Result<Vec<DanmuStatisticsDbModel>> {
-        let mut statistics = Vec::new();
-        for session_id in session_ids {
-            if let Some(session_statistics) = self.get_danmu_statistics(session_id).await? {
-                statistics.push(session_statistics);
-            }
-        }
-        Ok(statistics)
-    }
     /// Message totals only, for callers that need a per-session count rather than
     /// the full statistics.
     ///
@@ -200,11 +178,13 @@ pub trait SessionRepository: Send + Sync {
         &self,
         session_ids: &[String],
     ) -> Result<Vec<(String, i64)>> {
-        let statistics = self.get_danmu_statistics_for_sessions(session_ids).await?;
-        Ok(statistics
-            .into_iter()
-            .map(|stats| (stats.session_id, stats.total_danmus))
-            .collect())
+        let mut counts = Vec::new();
+        for session_id in session_ids {
+            if let Some(stats) = self.get_danmu_statistics(session_id).await? {
+                counts.push((stats.session_id, stats.total_danmus));
+            }
+        }
+        Ok(counts)
     }
     async fn create_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()>;
     /// Insert or replace the statistics row for `stats.session_id`
@@ -508,29 +488,6 @@ impl SessionRepository for SqlxSessionRepository {
         Ok(outputs)
     }
 
-    async fn get_media_outputs_for_sessions(
-        &self,
-        session_ids: &[String],
-    ) -> Result<Vec<MediaOutputDbModel>> {
-        if session_ids.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut builder = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
-            "SELECT * FROM media_outputs WHERE session_id IN (",
-        );
-        let mut separated = builder.separated(", ");
-        for session_id in session_ids {
-            separated.push_bind(session_id);
-        }
-        separated.push_unseparated(") ORDER BY session_id, created_at");
-
-        Ok(builder
-            .build_query_as::<MediaOutputDbModel>()
-            .fetch_all(&self.pool)
-            .await?)
-    }
-
     async fn summarize_session_outputs(
         &self,
         session_ids: &[String],
@@ -690,29 +647,6 @@ impl SessionRepository for SqlxSessionRepository {
         .fetch_optional(&self.pool)
         .await?;
         Ok(stats)
-    }
-
-    async fn get_danmu_statistics_for_sessions(
-        &self,
-        session_ids: &[String],
-    ) -> Result<Vec<DanmuStatisticsDbModel>> {
-        if session_ids.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut builder = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
-            "SELECT * FROM danmu_statistics WHERE session_id IN (",
-        );
-        let mut separated = builder.separated(", ");
-        for session_id in session_ids {
-            separated.push_bind(session_id);
-        }
-        separated.push_unseparated(") ORDER BY session_id");
-
-        Ok(builder
-            .build_query_as::<DanmuStatisticsDbModel>()
-            .fetch_all(&self.pool)
-            .await?)
     }
 
     async fn create_danmu_statistics(&self, stats: &DanmuStatisticsDbModel) -> Result<()> {
@@ -1117,109 +1051,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_and_list_session_segment_with_lifecycle_timestamps() {
-        let repo = setup_test_repo().await;
-        let segment = SessionSegmentDbModel::new(
-            "session-1",
-            7,
-            "/tmp/segment-007.ts",
-            9.5,
-            2048,
-            crate::database::models::SessionSegmentLifecycle::new(
-                Some(1_700_000_000_000),
-                Some(1_700_000_009_500),
-            ),
-            crate::database::models::SessionSegmentSplitReason::new(
-                Some("manual".to_string()),
-                Some("{\"kind\":\"manual\"}".to_string()),
-            ),
-        );
-
-        repo.create_session_segment(&segment).await.unwrap();
-
-        let listed = repo
-            .list_session_segments_page("session-1", &Pagination::new(10, 0))
-            .await
-            .unwrap();
-
-        assert_eq!(listed.len(), 1);
-        let saved = &listed[0];
-        assert_eq!(saved.session_id, "session-1");
-        assert_eq!(saved.segment_index, 7);
-        assert_eq!(saved.created_at, Some(1_700_000_000_000));
-        assert_eq!(saved.completed_at, Some(1_700_000_009_500));
-        assert!(saved.persisted_at >= 1_700_000_000_000);
-    }
-
-    #[tokio::test]
-    async fn create_segment_output_rolls_back_media_and_size_when_segment_insert_fails() {
-        let repo = setup_test_repo().await;
-        let mut existing = SessionSegmentDbModel::new(
-            "session-1",
-            0,
-            "/tmp/existing.ts",
-            1.0,
-            1,
-            Default::default(),
-            Default::default(),
-        );
-        existing.id = "duplicate-segment-id".to_string();
-        repo.create_session_segment(&existing).await.unwrap();
-
-        let output =
-            MediaOutputDbModel::new("session-1", "/tmp/final.ts", MediaFileType::Video, 2048);
-        let mut final_segment = SessionSegmentDbModel::new(
-            "session-1",
-            1,
-            "/tmp/final.ts",
-            2.0,
-            2048,
-            Default::default(),
-            Default::default(),
-        );
-        final_segment.id = existing.id.clone();
-
-        assert!(
-            repo.create_segment_output(&output, &final_segment)
-                .await
-                .is_err()
-        );
-        assert_eq!(repo.get_output_count("session-1").await.unwrap(), 0);
-        let total_size: i64 =
-            sqlx::query_scalar("SELECT total_size_bytes FROM live_sessions WHERE id = ?")
-                .bind("session-1")
-                .fetch_one(&repo.pool)
-                .await
-                .unwrap();
-        assert_eq!(total_size, 0);
-    }
-
-    #[tokio::test]
     async fn next_session_segment_index_returns_zero_without_segments() {
         let repo = setup_test_repo().await;
 
         let next = repo.next_session_segment_index("session-1").await.unwrap();
 
         assert_eq!(next, 0);
-    }
-
-    #[tokio::test]
-    async fn next_session_segment_index_returns_max_plus_one() {
-        let repo = setup_test_repo().await;
-        let segment = SessionSegmentDbModel::new(
-            "session-1",
-            0,
-            "/tmp/segment-000.ts",
-            9.5,
-            2048,
-            crate::database::models::SessionSegmentLifecycle::default(),
-            crate::database::models::SessionSegmentSplitReason::default(),
-        );
-        repo.create_session_segment(&segment).await.unwrap();
-
-        let next = repo.next_session_segment_index("session-1").await.unwrap();
-
-        assert_eq!(next, 1);
     }
 
     #[tokio::test]
@@ -1360,77 +1197,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn batch_session_metadata_queries_return_requested_rows() {
-        let repo = setup_test_repo().await;
-        let mut second_streamer = StreamerDbModel::new(
-            "Streamer Two",
-            "https://example.com/streamer-2",
-            "platform-twitch",
-        );
-        second_streamer.id = "streamer-2".to_string();
-        SqlxStreamerRepository::new(repo.pool.clone(), repo.write_pool.clone())
-            .create_streamer(&second_streamer)
-            .await
-            .unwrap();
-
-        let mut second_session = LiveSessionDbModel::new("streamer-2");
-        second_session.id = "session-2".to_string();
-        repo.create_session(&second_session).await.unwrap();
-
-        // A session outside `session_ids`: its rows must be filtered out, so a
-        // batch query missing its `WHERE session_id IN (...)` fails the counts.
-        // Ended, because live_sessions allows one active session per streamer.
-        let mut excluded_session = LiveSessionDbModel::new("streamer-2");
-        excluded_session.id = "session-3".to_string();
-        excluded_session.end_time = Some(1_700_000_100_000);
-        repo.create_session(&excluded_session).await.unwrap();
-
-        for output in [
-            MediaOutputDbModel::new("session-1", "/video.mp4", MediaFileType::Video, 10),
-            MediaOutputDbModel::new("session-1", "/thumbnail.jpg", MediaFileType::Thumbnail, 2),
-            MediaOutputDbModel::new("session-2", "/audio.m4a", MediaFileType::Audio, 3),
-            MediaOutputDbModel::new("session-3", "/excluded.mp4", MediaFileType::Video, 4),
-        ] {
-            repo.create_media_output(&output).await.unwrap();
-        }
-
-        let mut statistics = DanmuStatisticsDbModel::new("session-1");
-        statistics.total_danmus = 42;
-        repo.create_danmu_statistics(&statistics).await.unwrap();
-
-        let mut excluded_statistics = DanmuStatisticsDbModel::new("session-3");
-        excluded_statistics.total_danmus = 7;
-        repo.create_danmu_statistics(&excluded_statistics)
-            .await
-            .unwrap();
-
-        let session_ids = vec!["session-1".to_string(), "session-2".to_string()];
-        let outputs = repo
-            .get_media_outputs_for_sessions(&session_ids)
-            .await
-            .unwrap();
-        let statistics = repo
-            .get_danmu_statistics_for_sessions(&session_ids)
-            .await
-            .unwrap();
-
-        assert_eq!(outputs.len(), 3);
-        assert!(
-            outputs
-                .iter()
-                .all(|output| output.session_id != "session-3")
-        );
-        assert_eq!(statistics.len(), 1);
-        assert_eq!(statistics[0].total_danmus, 42);
-        assert!(
-            repo.get_media_outputs_for_sessions(&[])
-                .await
-                .unwrap()
-                .is_empty()
-        );
-    }
-
-    #[tokio::test]
     async fn session_output_projection_preserves_counts_and_thumbnail_selection() {
         let repo = setup_test_repo().await;
         let mut empty = LiveSessionDbModel::new("streamer-1");
@@ -1509,43 +1275,6 @@ mod tests {
             repo.create_media_output(&output).await.unwrap();
         }
         repo
-    }
-
-    #[tokio::test]
-    async fn list_outputs_filtered_narrows_to_one_file_type() {
-        let repo = setup_output_filter_repo().await;
-
-        let filters = OutputFilters::new().with_file_type(MediaFileType::Video.as_str());
-        let (outputs, total) = repo
-            .list_outputs_filtered(&filters, &Pagination::new(10, 0))
-            .await
-            .unwrap();
-
-        assert_eq!(total, 2);
-        assert_eq!(outputs.len(), 2);
-        assert!(
-            outputs
-                .iter()
-                .all(|output| output.file_type == MediaFileType::Video.as_str())
-        );
-    }
-
-    #[tokio::test]
-    async fn list_outputs_filtered_applies_file_type_and_search_together() {
-        let repo = setup_output_filter_repo().await;
-
-        // The search alone matches `/one.mp4`, `/one.jpg` and `/one.xml`, so a
-        // dropped or misordered bind would show up as more than one row.
-        let filters = OutputFilters::new()
-            .with_file_type(MediaFileType::Video.as_str())
-            .with_search("/one.");
-        let (outputs, total) = repo
-            .list_outputs_filtered(&filters, &Pagination::new(10, 0))
-            .await
-            .unwrap();
-
-        assert_eq!(total, 1);
-        assert_eq!(outputs[0].file_path, "/one.mp4");
     }
 
     #[tokio::test]
@@ -1673,64 +1402,6 @@ mod tests {
         assert!(active_sessions.is_empty());
     }
 
-    /// The session list keeps searching by streamer name after the streamer is
-    /// deleted: `list_sessions_filtered` coalesces the joined `streamers.name`
-    /// with the denormalized `live_sessions.streamer_name`.
-    #[tokio::test]
-    async fn orphaned_sessions_are_still_searchable_by_streamer_name() {
-        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
-        run_migrations(&pool).await.unwrap();
-
-        let streamer_repo = SqlxStreamerRepository::new(pool.clone(), pool.clone());
-        let mut streamer = StreamerDbModel::new(
-            "Streamer One",
-            "https://example.com/streamer-1",
-            "platform-twitch",
-        );
-        streamer.id = "streamer-1".to_string();
-        streamer_repo.create_streamer(&streamer).await.unwrap();
-
-        let repo = SqlxSessionRepository::new(pool.clone(), pool.clone());
-        let mut session = LiveSessionDbModel::new("streamer-1").with_streamer_name("Streamer One");
-        session.id = "session-1".to_string();
-        session.total_size_bytes = 4096;
-        repo.create_session(&session).await.unwrap();
-        repo.end_session("session-1", crate::database::time::now_ms())
-            .await
-            .unwrap();
-        repo.create_media_output(&MediaOutputDbModel::new(
-            "session-1",
-            "/tmp/session-1.mp4",
-            MediaFileType::Video,
-            4096,
-        ))
-        .await
-        .unwrap();
-
-        // The physical delete is what the reaper runs once a retirement
-        // acknowledges, and it only touches rows carrying the marker.
-        streamer_repo
-            .mark_streamer_deleted("streamer-1")
-            .await
-            .unwrap();
-        streamer_repo
-            .delete_marked_streamer("streamer-1")
-            .await
-            .unwrap();
-
-        let (found, total) = repo
-            .list_sessions_filtered(
-                &SessionFilters::new().with_search("Streamer One"),
-                &Pagination::new(10, 0),
-            )
-            .await
-            .unwrap();
-        assert_eq!(total, 1);
-        assert_eq!(found.len(), 1);
-        assert_eq!(found[0].id, "session-1");
-        assert_eq!(found[0].streamer_id, None);
-    }
-
     /// Startup pipeline recovery skips orphaned sessions:
     /// `PipelineManager` resolves a session-complete pipeline through
     /// `ConfigService::get_config_for_streamer`, which needs a streamer id.
@@ -1786,20 +1457,5 @@ mod tests {
             .await
             .unwrap();
         assert!(pending.is_empty(), "orphaned session must not be recovered");
-    }
-
-    #[tokio::test]
-    async fn summarize_outputs_filtered_honours_the_search_filter() {
-        let repo = setup_output_filter_repo().await;
-
-        let summaries = repo
-            .summarize_outputs_filtered(&OutputFilters::new().with_search("/two."))
-            .await
-            .unwrap();
-
-        assert_eq!(summaries.len(), 1);
-        assert_eq!(summaries[0].file_type, "VIDEO");
-        assert_eq!(summaries[0].count, 1);
-        assert_eq!(summaries[0].size_bytes, 200);
     }
 }

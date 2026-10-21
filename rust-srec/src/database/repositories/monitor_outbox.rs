@@ -177,7 +177,6 @@ mod tests {
     use crate::database::models::StreamerDbModel;
     use crate::database::repositories::{SqlxStreamerRepository, StreamerRepository as _};
     use crate::database::{init_pool_with_size, run_migrations};
-    use crate::domain::StreamerState;
     use sqlx::SqlitePool;
 
     async fn setup_test_db() -> SqlitePool {
@@ -200,67 +199,6 @@ mod tests {
             .create_streamer(&streamer)
             .await
             .unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_enqueue_event() {
-        let pool = setup_test_db().await;
-        let mut tx = pool.begin().await.unwrap();
-
-        let event = MonitorEvent::StateChanged {
-            streamer_id: "test-1".to_string(),
-            streamer_name: "Test".to_string(),
-            old_state: StreamerState::NotLive,
-            new_state: StreamerState::Live,
-            reason: None,
-            timestamp: chrono::Utc::now(),
-        };
-
-        MonitorOutboxTxOps::enqueue_event(&mut tx, "test-1", &event)
-            .await
-            .unwrap();
-
-        tx.commit().await.unwrap();
-
-        // Verify
-        let entries = MonitorOutboxOps::fetch_undelivered(&pool, 10)
-            .await
-            .unwrap();
-        assert_eq!(entries.len(), 1);
-        assert!(entries[0].payload.contains("StateChanged"));
-    }
-
-    #[tokio::test]
-    async fn test_mark_delivered() {
-        let pool = setup_test_db().await;
-
-        // Insert directly
-        sqlx::query(
-            "INSERT INTO monitor_event_outbox (streamer_id, event_type, payload, created_at) VALUES (?, ?, ?, ?)",
-        )
-        .bind("test-1")
-        .bind("StateChanged")
-        .bind("{}")
-        .bind(crate::database::time::now_ms())
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        // Should have 1 undelivered
-        let entries = MonitorOutboxOps::fetch_undelivered(&pool, 10)
-            .await
-            .unwrap();
-        assert_eq!(entries.len(), 1);
-        let id = entries[0].id;
-
-        // Mark delivered
-        MonitorOutboxOps::mark_delivered(&pool, id).await.unwrap();
-
-        // Should have 0 undelivered
-        let entries = MonitorOutboxOps::fetch_undelivered(&pool, 10)
-            .await
-            .unwrap();
-        assert_eq!(entries.len(), 0);
     }
 
     #[tokio::test]

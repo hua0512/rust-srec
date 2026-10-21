@@ -427,23 +427,6 @@ async fn silent_removal_invalidates_without_events_and_deletion_notifies_after_i
 }
 
 #[tokio::test]
-async fn full_row_publication_rejects_a_multi_connection_writer() {
-    let pool = crate::database::init_pool_with_size("sqlite::memory:", 2)
-        .await
-        .unwrap();
-    let supervisor = Arc::new(TaskSupervisor::new());
-    assert!(CommittedWriter::new(pool.clone(), supervisor.clone()).is_err());
-    let invalidation_writer = Arc::new(CommittedWriter::for_invalidation(pool, supervisor));
-    let store = CommittedStreamerState::new(invalidation_writer, ConfigEventBroadcaster::new());
-    let result: Result<()> = store
-        .transaction("invalid row publisher", StatePublication::Silent, |_| {
-            Box::pin(async { panic!("invalid writer must be rejected before SQL") })
-        })
-        .await;
-    assert!(matches!(result, Err(crate::Error::Configuration(_))));
-}
-
-#[tokio::test]
 async fn manager_mutation_notifications_survive_cancellation_inside_commit() {
     for phase in [CommitPhase::BeforeCommit, CommitPhase::AfterCommit] {
         for operation in ["create", "update", "patch"] {

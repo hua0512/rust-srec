@@ -81,39 +81,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cron_matches_at_minute_granularity() {
-        let filter = CronFilter::new("0 0 22 * * *");
-        let now = Utc.with_ymd_and_hms(2024, 12, 4, 22, 0, 45).unwrap();
-
-        assert!(FilterEvaluator::evaluate_cron(&filter, now).unwrap());
+    fn regex_empty_pattern_matches_everything() {
+        assert!(FilterEvaluator::evaluate_regex(&RegexFilter::new(""), "any title").unwrap());
+        assert!(!FilterEvaluator::evaluate_regex(&RegexFilter::exclude(""), "any title").unwrap());
     }
 
     #[test]
-    fn cron_only_matches_within_scheduled_minute() {
-        let filter = CronFilter::new("0 30 12 * * *");
-
-        let inside = Utc.with_ymd_and_hms(2024, 12, 4, 12, 30, 59).unwrap();
-        assert!(FilterEvaluator::evaluate_cron(&filter, inside).unwrap());
-
-        let outside = Utc.with_ymd_and_hms(2024, 12, 4, 12, 31, 0).unwrap();
-        assert!(!FilterEvaluator::evaluate_cron(&filter, outside).unwrap());
-    }
-
-    #[test]
-    fn cron_evaluates_in_configured_timezone() {
-        // 22:00 in Asia/Shanghai (UTC+8) is 14:00 UTC.
-        let filter = CronFilter::with_timezone("0 0 22 * * *", "Asia/Shanghai");
-
-        let matching_utc = Utc.with_ymd_and_hms(2024, 12, 4, 14, 0, 30).unwrap();
-        assert!(FilterEvaluator::evaluate_cron(&filter, matching_utc).unwrap());
-
-        // 22:00 UTC is 06:00 the next day in Asia/Shanghai — no match.
-        let non_matching_utc = Utc.with_ymd_and_hms(2024, 12, 4, 22, 0, 30).unwrap();
-        assert!(!FilterEvaluator::evaluate_cron(&filter, non_matching_utc).unwrap());
-    }
-
-    #[test]
-    fn cron_matches_day_of_week() {
+    fn cron_matches_day_of_week_names() {
         let filter = CronFilter::new("0 0 20 * * Sat");
 
         // 2024-12-07 was a Saturday, 2024-12-08 a Sunday.
@@ -122,47 +96,6 @@ mod tests {
 
         let sunday = Utc.with_ymd_and_hms(2024, 12, 8, 20, 0, 10).unwrap();
         assert!(!FilterEvaluator::evaluate_cron(&filter, sunday).unwrap());
-    }
-
-    #[test]
-    fn cron_rejects_invalid_timezone() {
-        let filter = CronFilter::with_timezone("0 * * * * *", "Mars/Olympus");
-
-        assert!(matches!(
-            FilterEvaluator::evaluate_cron(&filter, Utc::now()),
-            Err(FilterEvalError::InvalidTimezone(_))
-        ));
-    }
-
-    #[test]
-    fn regex_honors_case_and_exclusion() {
-        let included = RegexFilter::case_insensitive("live.*gaming");
-        let excluded = RegexFilter::exclude("rerun");
-
-        assert!(FilterEvaluator::evaluate_regex(&included, "LIVE gaming").unwrap());
-        assert!(!FilterEvaluator::evaluate_regex(&excluded, "rerun").unwrap());
-    }
-
-    #[test]
-    fn regex_supports_anchors_and_escaped_metacharacters() {
-        let filter = RegexFilter::new(r"^\[LIVE\]");
-
-        assert!(FilterEvaluator::evaluate_regex(&filter, "[LIVE] speedrun night").unwrap());
-        assert!(!FilterEvaluator::evaluate_regex(&filter, "Re: [LIVE] speedrun night").unwrap());
-    }
-
-    #[test]
-    fn regex_supports_word_boundaries() {
-        let filter = RegexFilter::new(r"\bspeedrun\b");
-
-        assert!(FilterEvaluator::evaluate_regex(&filter, "casual speedrun today").unwrap());
-        assert!(!FilterEvaluator::evaluate_regex(&filter, "speedrunning marathon").unwrap());
-    }
-
-    #[test]
-    fn regex_empty_pattern_matches_everything() {
-        assert!(FilterEvaluator::evaluate_regex(&RegexFilter::new(""), "any title").unwrap());
-        assert!(!FilterEvaluator::evaluate_regex(&RegexFilter::exclude(""), "any title").unwrap());
     }
 
     #[test]

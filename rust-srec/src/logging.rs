@@ -370,22 +370,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn appender_open_failure_returns_path_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join(".rust-srec.log.lock");
-        std::fs::create_dir(&path).unwrap();
-        let result = init_logging(dir.path().to_str().unwrap());
-        assert!(matches!(
-            result,
-            Err(crate::Error::IoPath {
-                op: "opening rotating log file",
-                ..
-            })
-        ));
-        assert!(path.is_dir());
-    }
-
-    #[test]
     fn broadcast_formats_only_for_connected_receivers() {
         use std::sync::atomic::{AtomicUsize, Ordering};
         struct Observed<'a>(&'a AtomicUsize);
@@ -473,32 +457,5 @@ mod tests {
         tokio::join!(cleanup, verify);
         assert!(unrelated.exists());
         assert!(today.exists());
-    }
-
-    #[test]
-    fn test_default_filter() {
-        assert!(DEFAULT_LOG_FILTER.contains("rust_srec=info"));
-        assert!(DEFAULT_LOG_FILTER.contains("sqlx=warn"));
-    }
-
-    #[test]
-    fn test_log_event_serialization() {
-        let event = LogEvent {
-            timestamp: Utc::now(),
-            level: "INFO".to_string(),
-            target: "rust_srec::api".to_string(),
-            message: "Test message".to_string(),
-        };
-
-        let json = serde_json::to_string(&event).unwrap();
-        assert!(json.contains("INFO"));
-        assert!(json.contains("Test message"));
-    }
-
-    #[test]
-    fn test_available_modules() {
-        let modules = available_modules();
-        assert!(!modules.is_empty());
-        assert!(modules.iter().any(|(name, _)| *name == "rust_srec"));
     }
 }

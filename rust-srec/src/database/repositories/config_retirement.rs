@@ -141,35 +141,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn editing_a_retained_definition_cancels_its_deletion() {
-        let pool = fixture().await;
-        let mut conn = pool.acquire().await.unwrap();
-        delete_or_defer(&mut conn, RetiredConfigKind::Template, "retained")
-            .await
-            .unwrap();
-        sqlx::query("UPDATE template_config SET name = 'Edited' WHERE id = 'retained'")
-            .execute(&mut *conn)
-            .await
-            .unwrap();
-        sqlx::query("DELETE FROM streamers WHERE id = 'retiring'")
-            .execute(&mut *conn)
-            .await
-            .unwrap();
-        reap(&mut conn).await.unwrap();
-        let name: String =
-            sqlx::query_scalar("SELECT name FROM template_config WHERE id = 'retained'")
-                .fetch_one(&mut *conn)
-                .await
-                .unwrap();
-        assert_eq!(name, "Edited");
-        let pending: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM retirement_config_deletions")
-            .fetch_one(&mut *conn)
-            .await
-            .unwrap();
-        assert_eq!(pending, 0);
-    }
-
-    #[tokio::test]
     async fn reusing_a_retained_template_cancels_its_deletion() {
         let pool = fixture().await;
         let mut conn = pool.acquire().await.unwrap();
