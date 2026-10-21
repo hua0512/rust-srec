@@ -22,6 +22,7 @@ import {
   CONFIG_INPUT,
 } from '@/components/config/shared/config-field';
 import { cn } from '@/lib/utils';
+import { truncateChars } from '@/lib/char-count';
 import { createProxy, updateProxy } from '@/server/functions/proxies';
 import { invalidateProxyQueries } from '@/api/proxies';
 import type { SavedProxy } from '@/api/schemas/proxies';
@@ -235,9 +236,10 @@ export function ProxyEditorDialog({
               ref={nameInput}
               className={CONFIG_INPUT}
               value={name}
-              maxLength={128}
               placeholder={i18n._(msg`Office proxy`)}
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) =>
+                setName(truncateChars(event.target.value, 128))
+              }
             />
           </Field>
           <Field

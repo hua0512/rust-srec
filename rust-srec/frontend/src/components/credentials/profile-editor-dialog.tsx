@@ -36,6 +36,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
+import { truncateChars } from '@/lib/char-count';
 import { formatPlatformName } from '@/lib/format';
 import {
   createCredentialProfile,
@@ -213,8 +214,9 @@ export function ProfileEditorDialog({
                 ref={labelInput}
                 className={CONFIG_INPUT}
                 value={label}
-                maxLength={128}
-                onChange={(event) => setLabel(event.target.value)}
+                onChange={(event) =>
+                  setLabel(truncateChars(event.target.value, 128))
+                }
               />
             </FormControl>
           </FormItem>
