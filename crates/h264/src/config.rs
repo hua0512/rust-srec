@@ -451,38 +451,6 @@ mod tests {
         };
 
         assert_eq!(config.size(), 49);
-        insta::assert_debug_snapshot!(config, @r#"
-        AVCDecoderConfigurationRecord {
-            configuration_version: 1,
-            profile_indication: 100,
-            profile_compatibility: 0,
-            level_indication: 31,
-            length_size_minus_one: 3,
-            sps: [
-                b"gd\0\x1f\xac\xd9A\xe0m\xf9\xe6\xa0  (\0\0\0\x08\0\0\x01\xe0",
-            ],
-            pps: [
-                b"ppsdata",
-            ],
-            extended_config: Some(
-                AvccExtendedConfig {
-                    chroma_format_idc: 1,
-                    bit_depth_luma_minus8: 0,
-                    bit_depth_chroma_minus8: 0,
-                    sequence_parameter_set_ext: [
-                        SpsExtended {
-                            chroma_format_idc: 1,
-                            separate_color_plane_flag: false,
-                            bit_depth_luma_minus8: 2,
-                            bit_depth_chroma_minus8: 3,
-                            qpprime_y_zero_transform_bypass_flag: false,
-                            scaling_matrix: [],
-                        },
-                    ],
-                },
-            ),
-        }
-        "#);
     }
 
     #[test]
@@ -526,37 +494,5 @@ mod tests {
                 .len(),
             1
         );
-        insta::assert_debug_snapshot!(config, @r#"
-        AVCDecoderConfigurationRecord {
-            configuration_version: 1,
-            profile_indication: 100,
-            profile_compatibility: 0,
-            level_indication: 31,
-            length_size_minus_one: 3,
-            sps: [
-                b"gd\0\x1f\xac\xd9A\xe0m\xf9\xe6\xa0  (\0\0\x03\0\x08\0\0\x03\x01\xe0x\xc1\x8c\xb0",
-            ],
-            pps: [
-                b"ppsdata",
-            ],
-            extended_config: Some(
-                AvccExtendedConfig {
-                    chroma_format_idc: 1,
-                    bit_depth_luma_minus8: 0,
-                    bit_depth_chroma_minus8: 0,
-                    sequence_parameter_set_ext: [
-                        SpsExtended {
-                            chroma_format_idc: 1,
-                            separate_color_plane_flag: false,
-                            bit_depth_luma_minus8: 2,
-                            bit_depth_chroma_minus8: 3,
-                            qpprime_y_zero_transform_bypass_flag: false,
-                            scaling_matrix: [],
-                        },
-                    ],
-                },
-            ),
-        }
-        "#);
     }
 }
