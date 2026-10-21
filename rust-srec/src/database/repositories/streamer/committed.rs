@@ -30,7 +30,9 @@ pub(super) async fn write(
     mutation: Mutation,
 ) -> Result<Option<StreamerDbModel>> {
     let publication = match mutation {
-        Mutation::MarkDeleted(_) => StatePublication::StateOnly,
+        // Clearing errors can make a fatally stopped streamer active again,
+        // which only a state publication tells the scheduler.
+        Mutation::MarkDeleted(_) | Mutation::ClearErrors => StatePublication::StateOnly,
         Mutation::DeleteMarked => StatePublication::Deleted,
         _ => StatePublication::Silent,
     };
@@ -89,7 +91,9 @@ async fn write_with_publication(
                 crate::database::repositories::config_retirement::reap(connection).await?;
                 row
             }
-            Mutation::ClearErrors => row!("UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL, last_error = NULL, state = 'NOT_LIVE' WHERE id = ? RETURNING *"),
+            // Only an error state is lifted (`StreamerState::is_error`); a disabled,
+            // cancelled or live streamer keeps its state.
+            Mutation::ClearErrors => row!("UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL, last_error = NULL, state = CASE WHEN state IN ('FATAL_ERROR', 'OUT_OF_SPACE', 'NOT_FOUND', 'TEMPORAL_DISABLED', 'ERROR') THEN 'NOT_LIVE' ELSE state END WHERE id = ? RETURNING *"),
             Mutation::ClearLastError => row!("UPDATE streamers SET last_error = NULL WHERE id = ? RETURNING *"),
             Mutation::Success(Some(time)) => row!("UPDATE streamers SET state = 'LIVE', consecutive_error_count = 0, disabled_until = NULL, last_error = NULL, last_live_time = ? WHERE id = ? RETURNING *", time),
             Mutation::Success(None) => row!("UPDATE streamers SET state = 'NOT_LIVE', consecutive_error_count = 0, disabled_until = NULL, last_error = NULL WHERE id = ? RETURNING *"),

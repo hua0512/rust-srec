@@ -589,7 +589,7 @@ impl StreamerRepository for SqlxStreamerRepository {
         }
 
         sqlx::query(
-            "UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL, last_error = NULL, state = 'NOT_LIVE' WHERE id = ?",
+            "UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL, last_error = NULL, state = CASE WHEN state IN ('FATAL_ERROR', 'OUT_OF_SPACE', 'NOT_FOUND', 'TEMPORAL_DISABLED', 'ERROR') THEN 'NOT_LIVE' ELSE state END WHERE id = ?",
         )
         .bind(id)
         .execute(&self.write_pool)

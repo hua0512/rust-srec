@@ -273,8 +273,9 @@ where
 
     /// Clear error state for a streamer.
     ///
-    /// Resets consecutive_error_count to 0, clears disabled_until,
-    /// and sets state to NotLive.
+    /// Resets consecutive_error_count to 0 and clears disabled_until and
+    /// last_error. An error state becomes NotLive; any other state, such as
+    /// Disabled or Live, is kept.
     ///
     /// # Events
     /// Emits `ConfigUpdateEvent::StreamerErrorCleared` once the cache holds the
@@ -293,7 +294,9 @@ where
             entry.consecutive_error_count = 0;
             entry.disabled_until = None;
             entry.last_error = None;
-            entry.state = StreamerState::NotLive;
+            if entry.state.is_error() {
+                entry.state = StreamerState::NotLive;
+            }
         }
 
         self.broadcaster
