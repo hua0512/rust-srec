@@ -195,9 +195,10 @@ pub async fn update_engine(
     if request.engine_type.is_some() || request.config.is_some() {
         let engine_type = match request.engine_type {
             Some(engine_type) => engine_type,
-            None => engine.engine_type.parse::<EngineType>().map_err(|_| {
-                ApiError::validation("The stored engine type is unknown; set engine_type")
-            })?,
+            None => engine
+                .engine_type
+                .parse::<EngineType>()
+                .map_err(|_| ApiError::internal("Stored engine type is invalid"))?,
         };
         if let Some(config) = request.config {
             engine.config = serde_json::to_string(&config)
