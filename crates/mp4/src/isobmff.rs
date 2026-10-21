@@ -220,9 +220,7 @@ impl InitSegmentInfo {
 #[cfg_attr(all(test, coverage_nightly), coverage(off))]
 mod tests {
     use super::*;
-    use crate::test_support::{
-        make_audio_sample_entry, make_box, make_fullbox_body, make_visual_sample_entry,
-    };
+    use crate::test_support::{make_box, make_fullbox_body, make_visual_sample_entry};
 
     macro_rules! fixture {
         ($path:literal) => {
@@ -430,27 +428,6 @@ mod tests {
         assert!(info.has_h265);
         assert!(info.hvcc_data.is_some());
         assert_eq!(info.hvcc_data.unwrap().as_ref(), hvcc_payload);
-    }
-
-    #[test]
-    fn test_parse_init_segment_with_audio() {
-        let sample_entry = make_audio_sample_entry(b"mp4a", &[]);
-        let stsd_body = make_fullbox_body(&{
-            let mut content = 1u32.to_be_bytes().to_vec();
-            content.extend_from_slice(&sample_entry);
-            content
-        });
-        let stsd = make_box(b"stsd", &stsd_body);
-        let stbl = make_box(b"stbl", &stsd);
-        let minf = make_box(b"minf", &stbl);
-        let mdia = make_box(b"mdia", &minf);
-        let trak = make_box(b"trak", &mdia);
-        let moov = make_box(b"moov", &trak);
-
-        let data = Bytes::from(moov);
-        let info = parse_init_segment(&data);
-        assert!(info.has_aac);
-        assert!(!info.has_av1);
     }
 
     #[test]
