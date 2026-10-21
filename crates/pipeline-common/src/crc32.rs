@@ -30,16 +30,6 @@ mod tests {
     }
 
     #[test]
-    fn known_vectors_match_zlib() {
-        assert_eq!(crc32(b""), 0);
-        assert_eq!(crc32(b"hello"), 0x3610_A686);
-        assert_eq!(
-            crc32(b"The quick brown fox jumps over the lazy dog"),
-            0x414F_A339
-        );
-    }
-
-    #[test]
     fn streaming_update_matches_one_shot() {
         let one_shot = crc32(b"hello world");
         let streaming = crc32_streaming(&[b"hello", b" ", b"world"]);

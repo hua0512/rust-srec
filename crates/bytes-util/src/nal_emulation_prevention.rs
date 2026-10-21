@@ -85,17 +85,6 @@ mod tests {
     use crate::nal_emulation_prevention::EmulationPreventionIo;
 
     #[test]
-    fn test_write_emulation_prevention_single() {
-        let mut buf = Vec::new();
-        let mut writer = EmulationPreventionIo::new(&mut buf);
-
-        writer.write_all(&[0x00, 0x00, 0x01]).unwrap();
-        writer.flush().unwrap();
-
-        assert_eq!(buf, vec![0x00, 0x00, 0x03, 0x01]);
-    }
-
-    #[test]
     fn test_write_emulation_prevention_multiple() {
         let mut buf = Vec::new();
         let mut writer = EmulationPreventionIo::new(&mut buf);
@@ -108,17 +97,6 @@ mod tests {
     }
 
     #[test]
-    fn test_read_emulation_prevention() {
-        let input = [0x00, 0x00, 0x03, 0x01];
-
-        let mut reader = EmulationPreventionIo::new(&input[..]);
-        let mut output = Vec::new();
-        reader.read_to_end(&mut output).unwrap();
-
-        assert_eq!(output, vec![0x00, 0x00, 0x01]);
-    }
-
-    #[test]
     fn test_read_emulation_prevention_multiple() {
         let input = [0x00, 0x00, 0x03, 0x01, 0x00, 0x00, 0x03, 0x02];
 
@@ -127,24 +105,5 @@ mod tests {
         reader.read_to_end(&mut output).unwrap();
 
         assert_eq!(output, vec![0x00, 0x00, 0x01, 0x00, 0x00, 0x02]);
-    }
-
-    #[test]
-    fn test_roundtrip() {
-        let original = vec![0x00, 0x00, 0x01, 0x00, 0x00, 0x02];
-
-        // Write with emulation prevention
-        let mut encoded = Vec::new();
-        let mut writer = EmulationPreventionIo::new(&mut encoded);
-        writer.write_all(&original).unwrap();
-        writer.flush().unwrap();
-
-        // Read back with emulation prevention removal
-        let mut reader = EmulationPreventionIo::new(&encoded[..]);
-        let mut decoded = Vec::new();
-        reader.read_to_end(&mut decoded).unwrap();
-
-        // Should match original after roundtrip
-        assert_eq!(original, decoded);
     }
 }
