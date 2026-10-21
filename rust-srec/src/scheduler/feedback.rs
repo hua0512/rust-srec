@@ -87,6 +87,9 @@ struct FeedbackState {
     retired: HashMap<String, FeedbackDisposition>,
     active_downloads: HashMap<String, (String, String)>,
     latest_attempts: HashMap<String, (String, String)>,
+    /// Attempts still running when their streamer was retired and then
+    /// activated again. They belong to the retired activation.
+    retired_attempts: HashMap<String, (String, String)>,
     epochs: HashMap<String, Arc<AtomicU64>>,
     capacity: HashMap<String, Arc<Semaphore>>,
 }
@@ -210,6 +213,18 @@ impl SchedulerFeedback {
                     Ordering::Release,
                 );
                 false
+            }
+            DownloadManagerEvent::Terminal(terminal)
+                if state
+                    .retired_attempts
+                    .get(&id)
+                    .is_some_and(|(download, session)| {
+                        terminal.download_id() == Some(download.as_str())
+                            && terminal.session_id() == session
+                    }) =>
+            {
+                state.retired_attempts.remove(&id);
+                true
             }
             DownloadManagerEvent::Terminal(terminal) => {
                 let superseded = if let Some(download_id) = terminal.download_id() {
@@ -419,8 +434,18 @@ impl SchedulerFeedback {
         self.target_scans.load(Ordering::Relaxed)
     }
 
+    /// Clear a retirement so feedback reaches the streamer's actor again.
+    ///
+    /// A download still running from before the retirement is being stopped on
+    /// behalf of the retired activation: a new actor must neither adopt it nor
+    /// apply its ending, which would otherwise park the new actor.
     pub(crate) fn activate(&self, id: &str) {
-        self.state.lock().retired.remove(id);
+        let mut state = self.state.lock();
+        if state.retired.remove(id).is_some()
+            && let Some(attempt) = state.active_downloads.remove(id)
+        {
+            state.retired_attempts.insert(id.to_owned(), attempt);
+        }
     }
 
     pub(crate) fn retire(&self, id: &str) {
