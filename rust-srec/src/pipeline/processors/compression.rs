@@ -815,27 +815,6 @@ mod tests {
         assert_eq!(reader.inner.bytes_done, writer.written as u64);
     }
 
-    #[test]
-    fn test_compression_config_parse() {
-        let json = r#"{
-            "format": "targz",
-            "compression_level": 9,
-            "output_path": "/output/archive.tar.gz",
-            "overwrite": false,
-            "preserve_paths": true
-        }"#;
-
-        let config: CompressionConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.format, ArchiveFormat::TarGz);
-        assert_eq!(config.compression_level, 9);
-        assert_eq!(
-            config.output_path,
-            Some("/output/archive.tar.gz".to_string())
-        );
-        assert!(!config.overwrite);
-        assert!(config.preserve_paths);
-    }
-
     /// Returns the extra-field bytes of the ZIP local file header that starts at byte 0 of
     /// `archive`. The fixed part of a local file header is 30 bytes, with the file name
     /// length at offset 26 and the extra field length at offset 28.

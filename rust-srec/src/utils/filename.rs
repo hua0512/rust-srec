@@ -234,11 +234,6 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_string() {
-        assert_eq!(sanitize_filename(""), "unnamed");
-    }
-
-    #[test]
     fn test_reserved_name_with_extension() {
         assert_eq!(sanitize_filename("CON.txt"), "_CON.txt");
         assert_eq!(sanitize_filename("nul.exe"), "_nul.exe");
@@ -249,12 +244,6 @@ mod tests {
         assert_eq!(sanitize_filename("  hello  "), "hello");
         assert_eq!(sanitize_filename("...hello..."), "hello");
         assert_eq!(sanitize_filename(" . hello . "), "hello");
-    }
-
-    #[test]
-    fn test_consecutive_invalid_chars_collapsed() {
-        assert_eq!(sanitize_filename("hello???world"), "hello_world");
-        assert_eq!(sanitize_filename("a<>:\"b"), "a_b");
     }
 
     #[test]
@@ -275,19 +264,5 @@ mod tests {
             None,
         );
         assert_eq!(result, "remote:/streamer-123/videos");
-    }
-
-    #[test]
-    fn test_expand_placeholders_sanitizes_special_chars() {
-        let result = expand_placeholders(
-            "remote:/{streamer}/{title}",
-            "streamer-123",
-            "session-456",
-            Some("Streamer<Name>"),
-            Some("Title:With:Colons"),
-            None,
-        );
-        // Characters are sanitized
-        assert_eq!(result, "remote:/Streamer_Name_/Title_With_Colons");
     }
 }

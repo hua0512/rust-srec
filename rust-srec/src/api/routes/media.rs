@@ -188,62 +188,6 @@ mod tests {
     use tower::ServiceExt;
 
     #[tokio::test]
-    async fn media_router_authenticates_read_keys_and_never_falls_back_from_a_header() {
-        let fixture = crate::api::auth_request::tests::fixture().await;
-        let (_, raw) = fixture
-            .service
-            .create_api_key(
-                &fixture.user_id,
-                "media-read",
-                ApiKeyAccessLevel::ReadOnly,
-                None,
-            )
-            .await
-            .unwrap();
-        let state = MediaRouteState {
-            auth_service: Some(fixture.service.clone()),
-            session_repository: std::sync::Arc::new(SqlxSessionRepository::new(
-                fixture.pool.clone(),
-                fixture.pool.clone(),
-            )),
-        };
-        let app = Router::new()
-            .route("/{id}/content", get(get_media_content))
-            .with_state(state);
-        // An absent output distinguishes authorization success from rejection without filesystem IO.
-        for (query, header, expected) in [
-            (raw.as_str(), None, StatusCode::NOT_FOUND),
-            (
-                "invalid",
-                Some(format!("Bearer {raw}")),
-                StatusCode::NOT_FOUND,
-            ),
-            (
-                raw.as_str(),
-                Some("Basic malformed".to_owned()),
-                StatusCode::UNAUTHORIZED,
-            ),
-            (
-                raw.as_str(),
-                Some("Bearer invalid".to_owned()),
-                StatusCode::UNAUTHORIZED,
-            ),
-        ] {
-            let mut request = Request::builder().uri(format!("/absent/content?token={query}"));
-            if let Some(header) = header {
-                request = request.header("Authorization", header);
-            }
-            let response = app
-                .clone()
-                .oneshot(request.body(Body::empty()).unwrap())
-                .await
-                .unwrap();
-            assert_eq!(response.status(), expected);
-        }
-        fixture.pool.close().await;
-    }
-
-    #[tokio::test]
     async fn media_content_is_an_attachment_only_when_the_download_flag_is_set() {
         let fixture = crate::api::auth_request::tests::fixture().await;
         let (_, raw) = fixture

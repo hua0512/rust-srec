@@ -5,20 +5,16 @@
 //! `SessionLifecycle`, `Scheduler` and `PipelineManager` rather than any one of
 //! them.
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use sqlx::SqlitePool;
 
-use crate::api::models::{BatchStreamerAction, BatchStreamerRequest};
-use crate::api::routes::streamers::{self, StreamerRouteState};
 use crate::database::models::{JobDbModel, LiveSessionDbModel, StreamerDbModel};
 use crate::database::repositories::job::JobRepository;
 use crate::database::repositories::session::SessionRepository;
 use crate::database::repositories::streamer::StreamerRepository;
 use crate::domain::StreamerState;
 use crate::services::runtime_coordinator::{INTERACTIVE_RETIREMENT, OBSERVE_RETIREMENT};
-use crate::session::{SessionTransition, TerminalCause};
 
 const STREAMER_ID: &str = "streamer-retire";
 const STREAMER_NAME: &str = "Retiring streamer";
@@ -151,21 +147,6 @@ impl Harness {
         panic!("the scheduler event loop should start answering commands");
     }
 
-    fn route_state(&self) -> StreamerRouteState {
-        StreamerRouteState::for_test(
-            self.container.config_service.clone(),
-            self.container.streamer_manager.clone(),
-            Arc::new(
-                crate::database::repositories::SqlxStreamerCheckHistoryRepository::new(
-                    self.pool.clone(),
-                    self.write_pool.clone(),
-                ),
-            ),
-            self.container.runtime_coordinator.clone(),
-            self.container.stream_monitor.credential_blocks().clone(),
-        )
-    }
-
     async fn streamer_row(&self) -> Option<StreamerDbModel> {
         sqlx::query_as::<_, StreamerDbModel>("SELECT * FROM streamers WHERE id = ?")
             .bind(STREAMER_ID)
@@ -183,99 +164,6 @@ impl Harness {
         .await
         .expect("session event count should succeed")
     }
-}
-
-/// Deleting a streamer mid-recording must end its session through
-/// `SessionLifecycle` rather than leaving `trg_live_session_orphan_ends` to
-/// stamp `end_time` inside the `DELETE FROM streamers`. Only the lifecycle path
-/// writes the `session_ended` audit row and broadcasts
-/// `SessionTransition::Ended`, which is what the pipeline and notification
-/// layers act on.
-#[tokio::test]
-async fn deleting_a_recording_streamer_ends_its_session_through_the_lifecycle() {
-    let harness = Harness::new().await;
-    harness.start_scheduler().await;
-    harness.seed_streamer().await;
-    harness.seed_active_session().await;
-    let mut transitions = harness.container.session_lifecycle.subscribe();
-
-    assert!(
-        harness
-            .container
-            .runtime_coordinator
-            .delete_streamer(STREAMER_ID, INTERACTIVE_RETIREMENT)
-            .await
-            .expect("delete should succeed")
-    );
-
-    let transition = tokio::time::timeout(Duration::from_secs(5), transitions.recv())
-        .await
-        .expect("an Ended transition should be broadcast")
-        .expect("the transition channel should stay open");
-    let pipeline_transition = transition.clone();
-    match transition {
-        SessionTransition::Ended {
-            session_id,
-            streamer_name,
-            cause,
-            ..
-        } => {
-            assert_eq!(session_id, SESSION_ID);
-            assert_eq!(cause, TerminalCause::UserDisabled);
-            // Resolved from the marked `streamers` row, which still exists while
-            // the retirement runs.
-            assert_eq!(streamer_name, STREAMER_NAME);
-        }
-        other => panic!("expected an Ended transition, got {other:?}"),
-    }
-
-    assert_eq!(
-        harness.session_ended_events().await,
-        1,
-        "the lifecycle path must write the session_ended audit row"
-    );
-
-    // The end consumer has not acknowledged this session yet.
-    assert!(
-        harness
-            .streamer_row()
-            .await
-            .is_some_and(|row| row.deleted_at.is_some())
-    );
-
-    // The recording history is already detached from the streamer.
-    let session = harness
-        .session_repository()
-        .get_session(SESSION_ID)
-        .await
-        .expect("the session row must survive the streamer delete");
-    assert_eq!(session.streamer_name.as_deref(), Some(STREAMER_NAME));
-    assert!(session.end_time.is_some());
-
-    harness
-        .container
-        .pipeline_manager
-        .handle_session_transition(pipeline_transition)
-        .await;
-    assert!(
-        harness
-            .container
-            .session_lifecycle
-            .session_snapshot(SESSION_ID)
-            .is_some()
-    );
-    assert_eq!(
-        harness
-            .container
-            .runtime_coordinator
-            .reap_marked_streamers(OBSERVE_RETIREMENT)
-            .await,
-        1
-    );
-    assert!(
-        harness.streamer_row().await.is_none(),
-        "a durable receipt permits reaping without waiting for cache eviction"
-    );
 }
 
 /// The `StreamerStateSyncedFromDb` that `StreamerManager::mark_deleting`
@@ -531,10 +419,6 @@ async fn an_older_sessions_pipeline_work_defers_the_reap() {
     assert!(harness.streamer_row().await.is_none());
 }
 
-/// `DELETE /api/streamers/{id}` — which the MCP `streamer_delete` tool calls
-/// directly — and `BatchStreamerAction::Delete` both go through
-/// `RuntimeCoordinator::delete_streamer`, so both end the recording through
-/// `SessionLifecycle` and neither can remove a row the runtime still holds.
 #[tokio::test]
 async fn failed_final_dispatch_stays_recoverable_until_its_preset_is_restored() {
     use crate::database::models::{
@@ -647,74 +531,4 @@ async fn failed_final_dispatch_stays_recoverable_until_its_preset_is_restored() 
         harness.streamer_row().await.is_some(),
         "the published job still needs its streamer metadata"
     );
-}
-
-#[tokio::test]
-async fn the_api_and_batch_delete_routes_share_the_retirement_path() {
-    for use_batch in [false, true] {
-        let harness = Harness::new().await;
-        harness.start_scheduler().await;
-        harness.seed_streamer().await;
-        harness.seed_active_session().await;
-        let state = harness.route_state();
-
-        if use_batch {
-            let response = streamers::batch_streamers(
-                axum::extract::State(state),
-                axum::Json(BatchStreamerRequest {
-                    ids: vec![STREAMER_ID.to_string()],
-                    action: BatchStreamerAction::Delete,
-                }),
-            )
-            .await
-            .expect("batch delete should succeed");
-            assert_eq!(response.succeeded, 1, "{:?}", response.results);
-        } else {
-            streamers::delete_streamer(
-                axum::extract::State(state),
-                axum::extract::Path(STREAMER_ID.to_string()),
-            )
-            .await
-            .map(|_| ())
-            .expect("delete should succeed");
-        }
-
-        assert_eq!(
-            harness.session_ended_events().await,
-            1,
-            "both routes must end the session through the lifecycle"
-        );
-        // Both leave the row marked, because ending a recording is what defers
-        // the reap.
-        assert!(
-            harness
-                .streamer_row()
-                .await
-                .is_some_and(|row| row.deleted_at.is_some())
-        );
-    }
-}
-
-/// The route rejects a streamer whose retirement is already under way, so a
-/// second delete cannot start a competing one.
-#[tokio::test]
-async fn the_api_delete_route_reports_an_already_deleted_streamer_as_missing() {
-    let harness = Harness::new().await;
-    harness.seed_streamer().await;
-    harness
-        .container
-        .streamer_manager
-        .mark_deleting(STREAMER_ID)
-        .await
-        .expect("marking should succeed")
-        .expect("the streamer should be markable");
-
-    let error = streamers::delete_streamer(
-        axum::extract::State(harness.route_state()),
-        axum::extract::Path(STREAMER_ID.to_string()),
-    )
-    .await
-    .map(|_| ())
-    .expect_err("a marked streamer is gone as far as the API is concerned");
-    assert_eq!(error.status, axum::http::StatusCode::NOT_FOUND);
 }

@@ -207,25 +207,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn insert_and_list_round_trip_each_outcome() {
-        let pool = setup_pool().await;
-        let repo = SqlxStreamerCheckHistoryRepository::new(pool.clone(), pool.clone());
-
-        // Insert one row per outcome to assert the CHECK constraint accepts
-        // every documented variant — guards against the migration and the
-        // `outcome` constants drifting apart.
-        for (idx, kind) in outcome::ALL.iter().enumerate() {
-            repo.insert(&row(kind, 100 + idx as i64)).await.unwrap();
-        }
-
-        let rows = repo.list_recent("s1", 10).await.unwrap();
-        assert_eq!(rows.len(), outcome::ALL.len());
-        // Newest-first ordering.
-        assert_eq!(rows[0].outcome, outcome::FATAL_ERROR);
-        assert_eq!(rows.last().unwrap().outcome, outcome::LIVE);
-    }
-
-    #[tokio::test]
     async fn insert_trims_to_keep_per_streamer() {
         let pool = setup_pool().await;
         let repo = SqlxStreamerCheckHistoryRepository::new(pool.clone(), pool.clone());

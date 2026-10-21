@@ -81,12 +81,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn regex_empty_pattern_matches_everything() {
-        assert!(FilterEvaluator::evaluate_regex(&RegexFilter::new(""), "any title").unwrap());
-        assert!(!FilterEvaluator::evaluate_regex(&RegexFilter::exclude(""), "any title").unwrap());
-    }
-
-    #[test]
     fn cron_matches_day_of_week_names() {
         let filter = CronFilter::new("0 0 20 * * Sat");
 

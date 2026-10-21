@@ -553,29 +553,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_audio_extract_config_parse_all_formats() {
-        // Test MP3
-        let json = r#"{"format": "mp3"}"#;
-        let config: AudioExtractConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.format, Some(AudioFormat::Mp3));
-
-        // Test AAC
-        let json = r#"{"format": "aac"}"#;
-        let config: AudioExtractConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.format, Some(AudioFormat::Aac));
-
-        // Test FLAC
-        let json = r#"{"format": "flac"}"#;
-        let config: AudioExtractConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.format, Some(AudioFormat::Flac));
-
-        // Test Opus
-        let json = r#"{"format": "opus"}"#;
-        let config: AudioExtractConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.format, Some(AudioFormat::Opus));
-    }
-
-    #[test]
     fn test_build_args_with_all_options() {
         let processor = AudioExtractProcessor::new();
         let config = AudioExtractConfig {

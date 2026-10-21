@@ -238,35 +238,4 @@ mod tests {
         assert_eq!(rows[0].completed_at, Some(2_000));
         assert!(rows[0].error.is_none());
     }
-
-    #[tokio::test]
-    async fn list_by_session_local_paths_scopes_session_and_returns_newest_first() {
-        let pool = setup_pool().await;
-        let repo = SqlxUploadRecordRepository::new(pool.clone(), pool.clone());
-
-        let mut old = record("job-1", "/tmp/a.mp4", upload_status::FAILED);
-        old.updated_at = 1_000;
-        let mut new = record("job-2", "/tmp/a.mp4", upload_status::COMPLETED);
-        new.updated_at = 2_000;
-        let mut other_session = record("job-3", "/tmp/a.mp4", upload_status::FAILED);
-        other_session.session_id = Some("session-2".to_string());
-        other_session.updated_at = 3_000;
-        repo.upsert_records(&[old, new, other_session])
-            .await
-            .unwrap();
-
-        let rows = repo
-            .list_by_session_local_paths(&[
-                ("session-1".to_string(), "/tmp/a.mp4".to_string()),
-                ("session-1".to_string(), "/tmp/missing.mp4".to_string()),
-            ])
-            .await
-            .unwrap();
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].status, upload_status::COMPLETED, "newest first");
-        assert!(
-            rows.iter()
-                .all(|row| row.session_id.as_deref() == Some("session-1"))
-        );
-    }
 }

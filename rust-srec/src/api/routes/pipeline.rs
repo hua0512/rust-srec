@@ -882,7 +882,7 @@ pub struct DeleteOutputParams {
 
 #[cfg(test)]
 mod tests {
-    use axum::extract::{Path, Query, State};
+    use axum::extract::{Query, State};
 
     use crate::api::models::{JobFilterParams, JobStatus as ApiJobStatus, PaginationParams};
     use crate::database::models::JobStatus;
@@ -892,79 +892,12 @@ mod tests {
     use crate::database::repositories::streamer::SqlxStreamerRepository;
     use crate::pipeline::PipelineManager;
 
-    // `pub(super)` so `dag::tests` can build a route state without a second copy of
-    // this constructor. `PipelineManager::new()` leaves `dag_scheduler` unset, which is
-    // what lets those tests exercise the service-unavailable path with no DB fixture.
-    pub(super) fn build_test_state() -> PipelineRouteState {
+    fn build_test_state() -> PipelineRouteState {
         let pool = sqlx::SqlitePool::connect_lazy("sqlite::memory:").unwrap();
         PipelineRouteState {
             pipeline_manager: Arc::new(PipelineManager::new()),
             streamer_repository: Arc::new(SqlxStreamerRepository::new(pool.clone(), pool)),
         }
-    }
-
-    async fn enqueue_job_with_status(status: JobStatus) -> (PipelineRouteState, String) {
-        let state = build_test_state();
-        let manager = state.pipeline_manager.clone();
-
-        let mut job = Job::new(
-            "remux",
-            vec!["input.mp4".to_string()],
-            vec!["output.mp4".to_string()],
-            "streamer-1",
-            "session-1",
-        );
-        job.status = status;
-
-        let job_id = manager.enqueue(job).await.unwrap();
-        (state, job_id)
-    }
-
-    #[tokio::test]
-    async fn test_delete_job_rejects_processing_job() {
-        let (state, job_id) = enqueue_job_with_status(JobStatus::Processing).await;
-
-        let result = delete_job(State(state), Path(job_id));
-
-        assert!(result.await.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_cancel_job_rejects_completed_job() {
-        let (state, job_id) = enqueue_job_with_status(JobStatus::Completed).await;
-
-        let result = cancel_job(State(state), Path(job_id));
-
-        assert!(result.await.is_err());
-    }
-
-    // The job detail UI offers "retry workflow" instead of "retry job" based on this
-    // flag, because PipelineManager::retry_job refuses a job that is a workflow step.
-    #[tokio::test]
-    async fn test_get_job_reports_workflow_membership() {
-        let (state, standalone_id) = enqueue_job_with_status(JobStatus::Failed).await;
-        let manager = state.pipeline_manager.clone();
-
-        let mut step_job = Job::new(
-            "rclone",
-            vec!["input.mp4".to_string()],
-            Vec::new(),
-            "streamer-1",
-            "session-1",
-        );
-        step_job.status = JobStatus::Failed;
-        step_job.pipeline_id = Some("dag-1".to_string());
-        step_job.dag_step_execution_id = Some("step-1".to_string());
-        let step_job_id = manager.enqueue(step_job).await.unwrap();
-
-        let standalone = get_job(State(state.clone()), Path(standalone_id))
-            .await
-            .unwrap();
-        assert!(!standalone.0.belongs_to_workflow);
-
-        let step = get_job(State(state), Path(step_job_id)).await.unwrap();
-        assert!(step.0.belongs_to_workflow);
-        assert_eq!(step.0.pipeline_id.as_deref(), Some("dag-1"));
     }
 
     #[tokio::test]

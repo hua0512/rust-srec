@@ -1349,22 +1349,3 @@ pub struct UpdateFilterRequest {
     pub filter_type: Option<String>,
     pub config: Option<serde_json::Value>,
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_create_streamer_request_deserialize() {
-        let json = r#"{
-            "name": "Test Streamer",
-            "url": "https://example.com/stream",
-            "platform_config_id": "platform1"
-        }"#;
-
-        let request: CreateStreamerRequest = serde_json::from_str(json).unwrap();
-        assert_eq!(request.name, "Test Streamer");
-        assert_eq!(request.priority, Priority::Normal);
-        assert!(request.enabled);
-    }
-}

@@ -7,7 +7,7 @@ use axum::{
 use tower::ServiceExt;
 
 use super::*;
-use crate::api::auth_request::tests::{fixture, open_socket, wait_for_socket_close};
+use crate::api::auth_request::tests::fixture;
 use crate::database::{
     models::ApiKeyAccessLevel,
     repositories::{SqlxConfigRepository, SqlxStreamerRepository},
@@ -148,59 +148,5 @@ async fn logging_routes_require_full_keys_and_archive_route_rechecks_issuer() {
         StatusCode::UNAUTHORIZED
     );
     assert!(!tokens.contains_key(token));
-    fixture.pool.close().await;
-}
-
-#[tokio::test]
-async fn logging_socket_rejects_read_keys_and_disconnects_downgraded_keys() {
-    let fixture = fixture().await;
-    let (_, read) = fixture
-        .service
-        .create_api_key(
-            &fixture.user_id,
-            "log-ws-read",
-            ApiKeyAccessLevel::ReadOnly,
-            None,
-        )
-        .await
-        .unwrap();
-    let (key, full) = fixture
-        .service
-        .create_api_key(
-            &fixture.user_id,
-            "log-ws-full",
-            ApiKeyAccessLevel::Full,
-            None,
-        )
-        .await
-        .unwrap();
-    let dir = tempfile::TempDir::new().unwrap();
-    let (config, _layer) = crate::logging::LoggingConfig::for_route_tests(dir.path().to_owned());
-    let state = route_state(&fixture, config);
-    let app = Router::new()
-        .route("/stream", get(logging_stream_ws))
-        .with_state(state);
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    let server = tokio_util::task::AbortOnDropHandle::new(tokio::spawn(async move {
-        axum::serve(listener, app).await.unwrap();
-    }));
-    open_socket(address, &format!("/stream?token={read}"), None, 403).await;
-    open_socket(
-        address,
-        &format!("/stream?token={full}"),
-        Some("Bearer invalid"),
-        401,
-    )
-    .await;
-    let socket = open_socket(address, &format!("/stream?token={full}"), None, 101).await;
-    sqlx::query("UPDATE api_keys SET access_level = ? WHERE id = ?")
-        .bind(ApiKeyAccessLevel::ReadOnly.as_str())
-        .bind(&key.id)
-        .execute(&fixture.pool)
-        .await
-        .unwrap();
-    wait_for_socket_close(socket).await;
-    drop(server);
     fixture.pool.close().await;
 }

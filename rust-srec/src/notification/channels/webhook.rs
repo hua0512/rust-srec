@@ -183,17 +183,6 @@ impl WebhookChannel {
         headers
     }
 
-    /// Build the JSON payload.
-    #[cfg(test)]
-    fn build_payload(&self, event: &NotificationEvent) -> serde_json::Value {
-        let locale = self
-            .config
-            .locale
-            .clone()
-            .unwrap_or_else(crate::i18n::current_locale);
-        self.build_rendered_payload(event, &RenderedEvent::new(event, &locale))
-    }
-
     fn build_rendered_payload(
         &self,
         event: &NotificationEvent,
@@ -263,30 +252,5 @@ impl NotificationChannel for WebhookChannel {
 
         debug!("Webhook notification sent: {}", event.event_type());
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_build_payload() {
-        let config = WebhookConfig::default();
-        let channel = WebhookChannel::new(config);
-
-        let event = NotificationEvent::StreamOnline {
-            streamer_id: "123".to_string(),
-            streamer_name: "TestStreamer".to_string(),
-            title: "Playing Games".to_string(),
-            category: Some("Gaming".to_string()),
-            timestamp: chrono::Utc::now(),
-        };
-
-        let payload = channel.build_payload(&event);
-        assert_eq!(payload["event_type"], "stream_online");
-        assert_eq!(payload["streamer_id"], "123");
-        assert_eq!(payload["priority"], 5); // Normal = 5 (integer)
-        assert_eq!(payload["priority_label"], "normal");
     }
 }

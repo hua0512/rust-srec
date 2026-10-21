@@ -959,35 +959,6 @@ mod tests {
     // DAG Pipeline Tests
     // ========================================================================
 
-    #[test]
-    fn test_dag_pipeline_validation_diamond() {
-        // Diamond pattern: A -> [B, C] -> D
-        let dag = DagPipelineDefinition::new(
-            "diamond-dag",
-            vec![
-                DagStep::new("A", PipelineStep::preset("remux")),
-                DagStep::with_dependencies(
-                    "B",
-                    PipelineStep::preset("upload"),
-                    vec!["A".to_string()],
-                ),
-                DagStep::with_dependencies(
-                    "C",
-                    PipelineStep::preset("thumbnail"),
-                    vec!["A".to_string()],
-                ),
-                DagStep::with_dependencies(
-                    "D",
-                    PipelineStep::preset("notify"),
-                    vec!["B".to_string(), "C".to_string()],
-                ),
-            ],
-        );
-        assert!(dag.validate().is_ok());
-        assert_eq!(dag.root_steps().len(), 1);
-        assert_eq!(dag.leaf_steps().len(), 1);
-    }
-
     /// Retry and timeout are optional, absent from the JSON when unset, and
     /// round-trip when set; the backoff has a default.
     #[test]

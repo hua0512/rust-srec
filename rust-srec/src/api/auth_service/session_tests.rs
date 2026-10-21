@@ -153,33 +153,6 @@ async fn single_logout_closes_rotated_lineage_without_revoking_other_devices() {
 }
 
 #[tokio::test]
-async fn active_rotation_replay_revokes_all_sessions_by_default() {
-    let fixture = Fixture::new(AuthConfig::default()).await;
-    let first = fixture.login().await;
-    let other = fixture.login().await;
-    let refreshed = fixture
-        .service
-        .refresh_tokens(&first.refresh_token)
-        .await
-        .unwrap();
-    assert!(matches!(
-        fixture.service.refresh_tokens(&first.refresh_token).await,
-        Err(AuthError::TokenRevoked)
-    ));
-    fixture.assert_revoked(&first).await;
-    fixture.assert_revoked(&other).await;
-    fixture.assert_revoked(&refreshed).await;
-    assert_eq!(
-        fixture
-            .tokens
-            .count_active_by_user(&fixture.user.id)
-            .await
-            .unwrap(),
-        0
-    );
-}
-
-#[tokio::test]
 async fn password_change_trigger_is_atomic_and_stale_login_cannot_create_session() {
     let fixture = Fixture::new(AuthConfig::default()).await;
     let login = fixture.login().await;

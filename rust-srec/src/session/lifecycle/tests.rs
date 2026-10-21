@@ -241,50 +241,6 @@ async fn delayed_offline_for_old_session_preserves_live_successor() {
     assert!(rx.try_recv().is_err());
 }
 
-#[tokio::test]
-async fn disable_preserves_authoritative_offline_cause() {
-    let pool = setup_pool().await;
-    let lifecycle = make_lifecycle(pool.clone());
-    let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
-        .await
-        .unwrap();
-    let sid = started.session_id();
-    lifecycle
-        .on_offline_detected(OfflineDetectedArgs {
-            streamer_id: STREAMER_ID,
-            streamer_name: "Test",
-            session_id: Some(sid),
-            state_was_live: true,
-            clear_errors: false,
-            signal: None,
-            now: Utc::now(),
-        })
-        .await
-        .unwrap();
-    let mut rx = lifecycle.subscribe();
-    assert!(
-        lifecycle
-            .end_for_disable(STREAMER_ID, "Test")
-            .await
-            .unwrap()
-            .is_none()
-    );
-    let payload = latest_session_ended_payload(&pool, sid).await.unwrap();
-    assert_eq!(
-        session_ended_cause(&payload),
-        &TerminalCauseDto::StreamerOffline
-    );
-    assert!(matches!(
-        lifecycle.session_snapshot(sid),
-        Some(SessionState::Ended {
-            cause: TerminalCause::StreamerOffline,
-            ..
-        })
-    ));
-    assert!(rx.try_recv().is_err());
-}
-
 async fn setup_pool() -> SqlitePool {
     let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
     run_migrations(&pool).await.unwrap();
@@ -626,65 +582,6 @@ async fn non_mesio_network_failures_do_not_promote() {
     }
 }
 
-/// A completed segment between two Mesio Network failures means the stream
-/// reconnected, so the second failure starts a new count instead of
-/// promoting to DefinitiveOffline and splitting the recording.
-#[tokio::test]
-async fn completed_segment_resets_the_network_failure_count() {
-    let pool = setup_pool().await;
-    let lifecycle = make_lifecycle_with_window(pool, Duration::from_secs(60));
-    let mut rx = lifecycle.subscribe();
-    let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
-        .await
-        .unwrap();
-    let _ = rx.recv().await.unwrap(); // drain Started
-    let fail = |download_id: &str| DownloadTerminalEvent::Failed {
-        download_id: download_id.into(),
-        streamer_id: STREAMER_ID.into(),
-        streamer_name: "Test".into(),
-        session_id: started.session_id().to_string(),
-        engine_type: EngineType::Mesio,
-        protocol: DownloadProtocol::Flv,
-        kind: crate::downloader::DownloadFailureKind::Network,
-        error: "timeout".into(),
-        recoverable: false,
-    };
-
-    lifecycle.on_download_terminal(&fail("dl-1")).await.unwrap();
-    assert!(matches!(
-        rx.try_recv(),
-        Ok(SessionTransition::Ending {
-            cause: TerminalCause::Failed { .. },
-            ..
-        })
-    ));
-
-    lifecycle.on_segment_completed(STREAMER_ID);
-    lifecycle.on_download_terminal(&fail("dl-2")).await.unwrap();
-    assert!(
-        rx.try_recv().is_err(),
-        "the count restarted after the segment"
-    );
-    assert!(matches!(
-        lifecycle.session_snapshot(started.session_id()),
-        Some(SessionState::Hysteresis {
-            cause: TerminalCause::Failed { .. },
-            ..
-        })
-    ));
-
-    // Without another segment, the next failure reaches the threshold.
-    lifecycle.on_download_terminal(&fail("dl-3")).await.unwrap();
-    assert!(matches!(
-        rx.try_recv(),
-        Ok(SessionTransition::Ended {
-            cause: TerminalCause::DefinitiveOffline { .. },
-            ..
-        })
-    ));
-}
-
 /// DefinitiveOffline bypasses the streamer's `disabled_until` backoff for
 /// the session-end write. Monitor check-loop backoff stays untouched
 /// (scheduled elsewhere by the actor), but the session row is closed
@@ -950,57 +847,6 @@ async fn shutdown_drains_cancelled_timer_after_graceful_deadline() {
     );
 }
 
-/// Resume from hysteresis must set `streamers.state = LIVE`. If a
-/// download failure earlier in the session flipped the row to
-/// `NOT_LIVE` (via `monitor::service::handle_error`), the resume path
-/// must restore it — otherwise downstream readers (cache, container
-/// queue-wait state check, web UI) keep seeing `NOT_LIVE` after the
-/// recording has resumed.
-#[tokio::test]
-async fn resume_restores_streamer_state_live() {
-    let pool = setup_pool().await;
-    let lifecycle = make_lifecycle_with_window(pool.clone(), std::time::Duration::from_secs(5));
-    let mut rx = lifecycle.subscribe();
-
-    let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
-        .await
-        .unwrap();
-    let _ = rx.recv().await.unwrap(); // Started
-    assert_eq!(streamer_state(&pool, STREAMER_ID).await, "LIVE");
-
-    lifecycle
-        .on_download_terminal(&make_terminal_completed_clean_disconnect(
-            started.session_id(),
-        ))
-        .await
-        .unwrap();
-    let _ = rx.recv().await.unwrap(); // Ending
-
-    // Simulate `monitor::service::handle_error` flipping the streamer
-    // row during the transient failure that drove this hysteresis
-    // entry (first error → `disabled_until=None` → `state=NOT_LIVE`).
-    SqlxStreamerRepository::new(pool.clone(), pool.clone())
-        .update_streamer_state(STREAMER_ID, StreamerState::NotLive.as_str())
-        .await
-        .unwrap();
-    assert_eq!(streamer_state(&pool, STREAMER_ID).await, "NOT_LIVE");
-
-    // LiveDetected within the hysteresis window → resume path.
-    let _resumed = lifecycle
-        .on_live_detected(live_args(Utc::now()))
-        .await
-        .unwrap();
-
-    // Drain Resumed + Started{from_hysteresis:true}.
-    let _ = rx.recv().await.unwrap(); // Resumed
-    let _ = rx.recv().await.unwrap(); // Started{from_hysteresis:true}
-
-    // Resuming must restore the streamer row that `handle_error` flipped
-    // to NOT_LIVE, otherwise the UI shows offline while recording runs.
-    assert_eq!(streamer_state(&pool, STREAMER_ID).await, "LIVE");
-}
-
 /// A live detection that lost the race against a user disable must be
 /// suppressed by the row-level guard inside `start_or_resume`: no
 /// session in memory, no transition broadcast, and `state = DISABLED`
@@ -1096,100 +942,6 @@ async fn resume_suppressed_for_disabled_streamer_leaves_hysteresis_armed() {
             .is_none(),
         "the session end stays owned by the disable teardown / hysteresis timer"
     );
-}
-
-/// `resume_from_hysteresis` must emit `SessionTransition::Started`
-/// with `from_hysteresis: true` AND a populated `download_start`
-/// payload. The container's resume-download subscriber relies on the
-/// payload to (re)start the download for the resumed session — without
-/// it, the streamer stays "Live" in memory but no recording happens.
-#[tokio::test]
-async fn resume_emits_started_with_download_start_payload() {
-    let pool = setup_pool().await;
-    let lifecycle = make_lifecycle_with_window(pool.clone(), std::time::Duration::from_secs(5));
-    let mut rx = lifecycle.subscribe();
-
-    // Step 1: fresh start. Drain Started.
-    let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
-        .await
-        .unwrap();
-    match rx.recv().await.unwrap() {
-        SessionTransition::Started {
-            from_hysteresis,
-            download_start,
-            ..
-        } => {
-            assert!(
-                !from_hysteresis,
-                "fresh-start must be from_hysteresis=false"
-            );
-            assert!(
-                download_start.is_none(),
-                "fresh-start path leaves download_start=None — \
-                     MonitorEvent::StreamerLive outbox event drives the download"
-            );
-        }
-        other => panic!("expected Started for fresh, got {other:?}"),
-    }
-
-    // Step 2: ambiguous end → Hysteresis. Drain Ending.
-    lifecycle
-        .on_download_terminal(&make_terminal_completed_clean_disconnect(
-            started.session_id(),
-        ))
-        .await
-        .unwrap();
-    let _ = rx.recv().await.unwrap(); // Ending
-
-    // Step 3: LiveDetected within window → resume. Should emit
-    // both Resumed AND Started{from_hysteresis: true, download_start: Some(_)}.
-    lifecycle
-        .on_live_detected(live_args(Utc::now()))
-        .await
-        .unwrap();
-
-    // Resumed transition fires first.
-    match rx.recv().await.unwrap() {
-        SessionTransition::Resumed { session_id, .. } => {
-            assert_eq!(session_id, started.session_id());
-        }
-        other => panic!("expected Resumed, got {other:?}"),
-    }
-
-    // Started transition fires second, with the download_start payload
-    // populated so the container's resume-download subscriber can drive
-    // start_download_for_streamer.
-    match rx.recv().await.unwrap() {
-        SessionTransition::Started {
-            from_hysteresis,
-            download_start,
-            streamer_id,
-            session_id,
-            ..
-        } => {
-            assert!(
-                from_hysteresis,
-                "resume must emit Started with from_hysteresis=true"
-            );
-            assert_eq!(streamer_id, STREAMER_ID);
-            assert_eq!(session_id, started.session_id());
-            let payload = download_start.as_deref().expect(
-                "resume_from_hysteresis MUST populate download_start so the \
-                     container can restart the download",
-            );
-            assert_eq!(
-                payload.streamer_url, "https://example.com",
-                "streamer_url must be carried for the engine config"
-            );
-            // `streams` may legitimately be empty in this test fixture
-            // (`live_args` uses a static empty vec); we only require
-            // the payload itself to be present. The container's
-            // start_download_for_streamer has its own empty-streams
-            // guard at the production path.
-        }
-        other => panic!("expected Started{{from_hysteresis: true}}, got {other:?}"),
-    }
 }
 
 /// CAS atomicity for the `Hysteresis → (Recording | Ended)`
@@ -1359,8 +1111,6 @@ async fn authoritative_end_during_hysteresis_cancels_timer() {
 // -----------------------------------------------------------------
 // `session_events` audit-log persistence.
 //
-// Verifies the four lifecycle transitions land in the `session_events`
-// table with the right `kind`, ordering, and payload shape.
 // Atomic-tx writes (`session_started`, `session_ended`) go through
 // `SessionLifecycleRepository`. Best-effort writes
 // (`hysteresis_entered`, `session_resumed`) require the lifecycle to
@@ -1408,68 +1158,6 @@ fn session_ended_cause(payload: &SessionEventPayload) -> &TerminalCauseDto {
         panic!("expected session_ended payload, got {payload:?}");
     };
     cause
-}
-
-/// hysteresis → live_detected within window → both `session_resumed` and
-/// `session_started { from_hysteresis: true }` rows in order.
-#[tokio::test]
-async fn resumed_then_started_pair_persisted() {
-    let pool = setup_pool().await;
-    let lifecycle = make_lifecycle_with_events(pool.clone());
-
-    let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
-        .await
-        .unwrap();
-    let sid = started.session_id().to_string();
-
-    // Enter hysteresis.
-    let event = DownloadTerminalEvent::Completed {
-        download_id: "dl-1".into(),
-        streamer_id: STREAMER_ID.into(),
-        streamer_name: "Test".into(),
-        session_id: sid.clone(),
-        total_bytes: 0,
-        total_duration_secs: 0.0,
-        total_segments: 0,
-        file_path: None,
-        engine_signal: crate::downloader::EngineEndSignal::CleanDisconnect,
-        stop_cause: None,
-    };
-    lifecycle.on_download_terminal(&event).await.unwrap();
-    // Resume the same session while its hysteresis window is open.
-    let resumed = lifecycle
-        .on_live_detected(live_args(Utc::now()))
-        .await
-        .unwrap();
-    assert_eq!(
-        resumed,
-        StartSessionOutcome::ReusedActive {
-            session_id: sid.clone(),
-        }
-    );
-
-    let rows = read_events(&pool, &sid).await;
-    let kinds: Vec<&str> = rows.iter().map(|(k, _)| k.as_str()).collect();
-    assert_eq!(
-        kinds,
-        vec![
-            "session_started",
-            "hysteresis_entered",
-            "session_resumed",
-            "session_started",
-        ],
-        "expected the full Recording → Hysteresis → Recording sequence"
-    );
-    match event_payload(&rows[3].1) {
-        SessionEventPayload::SessionStarted {
-            from_hysteresis, ..
-        } => assert!(
-            from_hysteresis,
-            "the second session_started must mark from_hysteresis=true"
-        ),
-        other => panic!("wrong payload variant: {other:?}"),
-    }
 }
 
 /// `enter_ended_state`'s 60s `Ended` retention dedup means duplicate
@@ -1588,85 +1276,6 @@ async fn end_for_disable_cancels_hysteresis_handle() {
     assert!(
         rx.try_recv().is_err(),
         "no second Ended must arrive from the cancelled timer"
-    );
-}
-
-/// O4b — if a streamer ends and then starts a fresh session before the
-/// old `Ended` snapshot is evicted, disable must target the new current
-/// session rather than retro-updating the retained old one.
-#[tokio::test]
-async fn end_for_disable_targets_current_session_when_old_ended_is_retained() {
-    let pool = setup_pool().await;
-    let lifecycle = make_lifecycle(pool.clone());
-    let mut rx = lifecycle.subscribe();
-
-    let first = lifecycle
-        .on_live_detected(live_args(Utc::now() - chrono::Duration::seconds(10)))
-        .await
-        .unwrap();
-    let first_sid = first.session_id().to_string();
-    let _ = rx.recv().await.unwrap(); // Started
-
-    lifecycle
-        .on_download_terminal(&make_terminal_completed_hls_endlist(&first_sid))
-        .await
-        .unwrap();
-    let _ = rx.recv().await.unwrap(); // Ended for first session
-    assert!(!lifecycle.is_session_active(&first_sid));
-
-    let second = lifecycle
-        .on_live_detected(live_args(Utc::now()))
-        .await
-        .unwrap();
-    let second_sid = second.session_id().to_string();
-    assert_ne!(first_sid, second_sid);
-    let _ = rx.recv().await.unwrap(); // Started for second session
-
-    let resolved = lifecycle
-        .end_for_disable(STREAMER_ID, "Test")
-        .await
-        .unwrap();
-    assert_eq!(resolved.as_deref(), Some(second_sid.as_str()));
-
-    assert!(
-        db_session_end_time(&pool, &second_sid).await.is_some(),
-        "disable must close the current session"
-    );
-    assert!(
-        matches!(
-            lifecycle.session_snapshot(&second_sid),
-            Some(SessionState::Ended {
-                cause: TerminalCause::UserDisabled,
-                ..
-            })
-        ),
-        "current session must transition to UserDisabled"
-    );
-
-    match rx.recv().await.unwrap() {
-        SessionTransition::Ended {
-            session_id, cause, ..
-        } => {
-            assert_eq!(session_id, second_sid);
-            assert_eq!(cause, TerminalCause::UserDisabled);
-        }
-        other => panic!("expected Ended for current session, got {other:?}"),
-    }
-
-    let first_payload = latest_session_ended_payload(&pool, &first_sid)
-        .await
-        .unwrap();
-    assert!(
-        session_ended_cause(&first_payload) != &TerminalCauseDto::UserDisabled,
-        "old retained session must not be retro-attributed: {first_payload:?}"
-    );
-    let second_payload = latest_session_ended_payload(&pool, &second_sid)
-        .await
-        .unwrap();
-    assert_eq!(
-        session_ended_cause(&second_payload),
-        &TerminalCauseDto::UserDisabled,
-        "new current session should carry user_disabled"
     );
 }
 

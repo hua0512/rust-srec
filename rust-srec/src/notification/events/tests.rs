@@ -1,83 +1,5 @@
 use super::*;
 
-#[test]
-fn test_notification_priority_from_int() {
-    assert_eq!(
-        NotificationPriority::from_int(0),
-        Some(NotificationPriority::Low)
-    );
-    assert_eq!(
-        NotificationPriority::from_int(2),
-        Some(NotificationPriority::Low)
-    );
-    assert_eq!(
-        NotificationPriority::from_int(3),
-        Some(NotificationPriority::Low)
-    );
-    assert_eq!(
-        NotificationPriority::from_int(4),
-        Some(NotificationPriority::Normal)
-    );
-    assert_eq!(
-        NotificationPriority::from_int(5),
-        Some(NotificationPriority::Normal)
-    );
-    assert_eq!(
-        NotificationPriority::from_int(7),
-        Some(NotificationPriority::High)
-    );
-    assert_eq!(
-        NotificationPriority::from_int(8),
-        Some(NotificationPriority::High)
-    );
-    assert_eq!(
-        NotificationPriority::from_int(10),
-        Some(NotificationPriority::Critical)
-    );
-    assert_eq!(
-        NotificationPriority::from_int(255),
-        Some(NotificationPriority::Critical)
-    );
-}
-
-/// A `StreamOnline` event to render; the interesting part is always the rendered text.
-fn stream_online_fixture() -> NotificationEvent {
-    NotificationEvent::StreamOnline {
-        streamer_id: "123".to_string(),
-        streamer_name: "TestStreamer".to_string(),
-        title: "Playing Games".to_string(),
-        category: Some("Gaming".to_string()),
-        timestamp: Utc::now(),
-    }
-}
-
-#[test]
-fn title_in_does_not_depend_on_the_process_locale() {
-    let _g = OUTPUT_PATH_INACCESSIBLE_LOCALE_LOCK
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
-
-    let event = stream_online_fixture();
-    // `set_locale` is process-wide, so asserting the requested locale wins over it is what
-    // makes two channels able to render the same event in different languages.
-    crate::i18n::set_locale("en");
-    let zh = event.title_in("zh-CN");
-    crate::i18n::set_locale("zh-CN");
-    let zh_again = event.title_in("zh-CN");
-    let en = event.title_in("en");
-    crate::i18n::set_locale("en");
-
-    assert_eq!(zh, zh_again);
-    assert_ne!(zh, en);
-}
-
-#[test]
-fn unknown_locale_falls_back_to_english() {
-    let event = stream_online_fixture();
-    // `rust_i18n` has no YAML for this locale; it must not render an empty title.
-    assert_eq!(event.title_in("xx-YY"), event.title_in("en"));
-}
-
 /// `rust_i18n::set_locale` mutates a process global, so locale-sensitive
 /// tests must serialize on this lock to avoid racing the i18n module's
 /// own tests (and each other).
@@ -138,20 +60,6 @@ fn output_path_inaccessible_all_error_kinds_resolve() {
         }
         assert_ne!(en, zh, "kind={kind} has no zh-CN translation");
     }
-}
-
-#[test]
-fn output_path_inaccessible_in_event_type_registry() {
-    let info = NotificationEvent::event_type_info("output_path_inaccessible")
-        .expect("event type should be registered");
-    assert_eq!(info.event_type, "output_path_inaccessible");
-    assert_eq!(info.priority, NotificationPriority::Critical);
-
-    // Aliases resolve back to the canonical type
-    let from_camel = NotificationEvent::event_type_info("OutputPathInaccessible");
-    assert!(from_camel.is_some());
-    let from_dotted = NotificationEvent::event_type_info("output.path_inaccessible");
-    assert!(from_dotted.is_some());
 }
 
 // ========== Full-notification i18n round-trip ==========

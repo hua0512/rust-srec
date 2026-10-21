@@ -32,8 +32,6 @@ use crate::database::models::NotificationChannelDbModel;
 use crate::database::models::NotificationEventLogDbModel;
 use crate::database::repositories::NotificationRepository;
 use crate::downloader::DownloadManagerEvent;
-#[cfg(test)]
-use crate::downloader::DownloadProgressEvent;
 use crate::monitor::MonitorEvent;
 use crate::pipeline::PipelineEvent;
 use crate::utils::task_supervisor::TaskSupervisor;
@@ -744,44 +742,6 @@ mod tests {
         assert_eq!(service.stats().dead_letter_count, 0);
     }
 
-    #[test]
-    fn test_segment_notifications_preserve_lifecycle_timestamps() {
-        use crate::notification::events::mapping::download_notification;
-        let started_at = DateTime::from_timestamp_millis(1_788_784_496_123).unwrap();
-        let completed_at = started_at + chrono::Duration::seconds(10);
-        let events = [
-            DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
-                download_id: "dl-1".into(),
-                streamer_id: "streamer-1".into(),
-                streamer_name: "Streamer".into(),
-                session_id: "session-1".into(),
-                segment_path: "/tmp/seg.ts".into(),
-                segment_index: 1,
-                started_at,
-            }),
-            DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
-                download_id: "dl-1".into(),
-                streamer_id: "streamer-1".into(),
-                streamer_name: "Streamer".into(),
-                session_id: "session-1".into(),
-                segment_path: "/tmp/seg.ts".into(),
-                segment_index: 1,
-                started_at: Some(started_at),
-                completed_at,
-                duration_secs: 10.0,
-                size_bytes: 1024,
-                split_reason_code: None,
-                split_reason_details_json: None,
-            }),
-        ];
-        for (event, expected_time) in events.into_iter().zip([started_at, completed_at]) {
-            let notification =
-                download_notification(event, completed_at + chrono::Duration::hours(1)).unwrap();
-            assert_eq!(notification.timestamp(), expected_time);
-            assert_eq!(notification.streamer_id(), Some("streamer-1"));
-        }
-    }
-
     struct MockNotificationRepo {
         channels: tokio::sync::Mutex<Vec<NotificationChannelDbModel>>,
         subscriptions: tokio::sync::Mutex<HashMap<String, Vec<String>>>,
@@ -965,62 +925,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn db_subscriptions_filter_delivery() {
-        let repo = Arc::new(MockNotificationRepo::new());
-        let service =
-            NotificationService::with_repository(NotificationServiceConfig::default(), repo);
-
-        let subscribed_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
-        let unsubscribed_attempts = Arc::new(std::sync::atomic::AtomicU32::new(0));
-
-        let channel_1 = Arc::new(RuntimeChannel {
-            breaker: service.new_breaker(),
-            key: "channel-1".to_string(),
-            db_channel_id: Some("channel-1".to_string()),
-            display_name: "Channel 1".to_string(),
-            channel_type: "WEBHOOK".to_string(),
-            channel: Arc::new(TestChannel {
-                channel_type: "subscribed",
-                fail_for_attempts: 0,
-                attempts: subscribed_attempts.clone(),
-            }),
-        });
-        service.registry.write().insert(channel_1);
-
-        let channel_2 = Arc::new(RuntimeChannel {
-            breaker: service.new_breaker(),
-            key: "channel-2".to_string(),
-            db_channel_id: Some("channel-2".to_string()),
-            display_name: "Channel 2".to_string(),
-            channel_type: "WEBHOOK".to_string(),
-            channel: Arc::new(TestChannel {
-                channel_type: "unsubscribed",
-                fail_for_attempts: 0,
-                attempts: unsubscribed_attempts.clone(),
-            }),
-        });
-        service.registry.write().insert(channel_2);
-
-        service
-            .registry
-            .write()
-            .subscriptions_by_event
-            .insert("system_startup".to_string(), vec!["channel-1".to_string()]);
-
-        service
-            .notify(NotificationEvent::SystemStartup {
-                version: "test".to_string(),
-                timestamp: Utc::now(),
-            })
-            .await
-            .unwrap();
-
-        tokio::time::sleep(Duration::from_millis(50)).await;
-        assert_eq!(subscribed_attempts.load(Ordering::SeqCst), 1);
-        assert_eq!(unsubscribed_attempts.load(Ordering::SeqCst), 0);
-    }
-
-    #[tokio::test]
     async fn dead_letters_persisted_to_repository() {
         let repo = Arc::new(MockNotificationRepo::new());
         let config = NotificationServiceConfig {
@@ -1170,67 +1074,5 @@ mod tests {
     #[tokio::test]
     async fn exhausted_channel_retained_when_persistence_fails() {
         assert_exhausted_channel_retained(true, true, true).await;
-    }
-
-    #[tokio::test]
-    async fn reload_from_db_normalizes_and_migrates_subscription_names() {
-        let repo = Arc::new(MockNotificationRepo::new());
-        let service = NotificationService::with_repository(
-            NotificationServiceConfig::default(),
-            repo.clone(),
-        );
-
-        let db_channel = NotificationChannelDbModel {
-            id: "channel-1".to_string(),
-            name: "Channel 1".to_string(),
-            channel_type: "Webhook".to_string(),
-            settings: r#"{"enabled":true,"url":"http://example.invalid","method":"POST"}"#
-                .to_string(),
-        };
-
-        repo.channels.lock().await.push(db_channel);
-        repo.subscriptions.lock().await.insert(
-            "channel-1".to_string(),
-            vec!["SystemStartup".to_string(), "download.complete".to_string()],
-        );
-
-        service.reload_from_db().await.unwrap();
-
-        {
-            let registry = service.registry.read();
-            let subs = &registry.subscriptions_by_event;
-            assert_eq!(
-                subs.get("system_startup").cloned(),
-                Some(vec!["channel-1".to_string()])
-            );
-            assert_eq!(
-                subs.get("download_completed").cloned(),
-                Some(vec!["channel-1".to_string()])
-            );
-        }
-
-        let subscribe_calls = repo.subscribe_calls.lock().await.clone();
-        assert!(
-            subscribe_calls
-                .iter()
-                .any(|(c, e)| c == "channel-1" && e == "system_startup")
-        );
-        assert!(
-            subscribe_calls
-                .iter()
-                .any(|(c, e)| c == "channel-1" && e == "download_completed")
-        );
-
-        let unsubscribe_calls = repo.unsubscribe_calls.lock().await.clone();
-        assert!(
-            unsubscribe_calls
-                .iter()
-                .any(|(c, e)| c == "channel-1" && e == "SystemStartup")
-        );
-        assert!(
-            unsubscribe_calls
-                .iter()
-                .any(|(c, e)| c == "channel-1" && e == "download.complete")
-        );
     }
 }

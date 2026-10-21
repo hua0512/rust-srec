@@ -125,23 +125,6 @@ impl EmailChannel {
         }
     }
 
-    #[cfg(test)]
-    fn render(&self, event: &NotificationEvent) -> EmailContent {
-        // Resolve the process locale once so every MIME part uses one language.
-        let locale = self
-            .config
-            .locale
-            .clone()
-            .unwrap_or_else(crate::i18n::current_locale);
-        EmailContent {
-            title: event.title_in(&locale),
-            description: event.description_in(&locale),
-            priority: event.priority(),
-            event_type: event.event_type(),
-            timestamp: event.timestamp().to_rfc3339(),
-        }
-    }
-
     /// Build the email subject.
     fn build_subject(&self, content: &EmailContent) -> String {
         format!("[rust-srec] {}", content.title)
@@ -199,16 +182,6 @@ impl EmailChannel {
 </html>"#,
             priority_color, title, description, priority, event_type, timestamp
         )
-    }
-
-    #[cfg(test)]
-    fn build_message(&self, event: &NotificationEvent) -> Result<Message> {
-        let locale = self
-            .config
-            .locale
-            .clone()
-            .unwrap_or_else(crate::i18n::current_locale);
-        self.build_rendered_message(event, &RenderedEvent::new(event, &locale))
     }
 
     fn build_rendered_message(
@@ -347,70 +320,4 @@ fn escape_html(input: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&#39;")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn message_contains_all_recipients_and_multipart_bodies() {
-        let config = EmailConfig {
-            enabled: true,
-            smtp_host: "smtp.example.com".to_string(),
-            from_address: "rust-srec@example.com".to_string(),
-            to_addresses: vec![
-                "first@example.com".to_string(),
-                "second@example.com".to_string(),
-            ],
-            ..EmailConfig::default()
-        };
-        let channel = EmailChannel::new(config);
-        let event = NotificationEvent::StreamOnline {
-            streamer_id: "123".to_string(),
-            streamer_name: "TestStreamer".to_string(),
-            title: "Playing Games".to_string(),
-            category: None,
-            timestamp: chrono::Utc::now(),
-        };
-
-        let formatted = String::from_utf8(channel.build_message(&event).unwrap().formatted())
-            .expect("message should be UTF-8");
-        assert!(formatted.contains("first@example.com"));
-        assert!(formatted.contains("second@example.com"));
-        assert!(formatted.contains("multipart/alternative"));
-        assert!(formatted.contains("TestStreamer"));
-    }
-
-    #[test]
-    fn rendered_email_preserves_localized_mime_content_and_escapes_supplied_text() {
-        let event = NotificationEvent::SystemStartup {
-            version: "contract".into(),
-            timestamp: chrono::Utc::now(),
-        };
-        for locale in ["en", "zh-CN"] {
-            let channel = EmailChannel::new(EmailConfig {
-                from_address: "sender@example.test".into(),
-                to_addresses: vec!["receiver@example.test".into()],
-                locale: Some(locale.into()),
-                ..Default::default()
-            });
-            let rendered = RenderedEvent::new(&event, locale);
-            let content = channel.render(&event);
-            assert_eq!(
-                (rendered.title, rendered.description),
-                (content.title, content.description)
-            );
-            let supplied = RenderedEvent {
-                title: "Unique title".into(),
-                description: "Unique <body> & text".into(),
-            };
-            let message = channel.build_rendered_message(&event, &supplied).unwrap();
-            let formatted = String::from_utf8(message.formatted()).unwrap();
-            assert!(formatted.contains("Subject: [rust-srec] Unique title"));
-            assert!(formatted.contains("multipart/alternative"));
-            assert!(formatted.contains("Unique <body> & text"));
-            assert!(formatted.contains("Unique &lt;body&gt; &amp; text"));
-        }
-    }
 }

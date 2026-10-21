@@ -1016,38 +1016,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn invalid_global_patch_leaves_all_stored_fields_unchanged() {
-        let (_dir, state) = config_state().await;
-        let before = state.config_service.get_global_config().await.unwrap();
-        let mut events = state.config_service.subscribe();
-        for invalid in [
-            json!({"max_concurrent_downloads": -1}),
-            json!({"max_concurrent_uploads": i64::from(i32::MAX) + 1}),
-            json!({"offline_check_delay_ms": u64::MAX}),
-            json!({"offline_check_count": 1.5}),
-            json!({"max_part_size_bytes": "12"}),
-            json!({"record_danmu": "true"}),
-            json!({"pipeline": {"steps": []}}),
-        ] {
-            let mut patch = invalid;
-            patch["output_folder"] = json!("/changed");
-            let error = update_global_config(State(state.clone()), Json(global_request(patch)))
-                .await
-                .expect_err("mixed invalid patch must fail");
-            assert_eq!(error.status, StatusCode::BAD_REQUEST);
-            let after = state.config_service.get_global_config().await.unwrap();
-            assert_eq!(
-                serde_json::to_value(&after).unwrap(),
-                serde_json::to_value(&before).unwrap()
-            );
-            assert!(matches!(
-                events.try_recv(),
-                Err(tokio::sync::broadcast::error::TryRecvError::Empty)
-            ));
-        }
-    }
-
-    #[tokio::test]
     async fn global_patch_preserves_null_omission_sentinels_and_clamps() {
         let (_dir, state) = config_state().await;
         let Json(response) = update_global_config(

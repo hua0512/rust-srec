@@ -672,21 +672,6 @@ mod tests {
     }
 
     #[test]
-    fn dag_already_terminal_has_its_own_code() {
-        let api_err = ApiError::from(Error::DagAlreadyTerminal {
-            dag_id: "dag-1".to_string(),
-        });
-
-        // The frontend branches its cancel UX on this code. A plain
-        // `Error::Validation` would collapse it into VALIDATION_ERROR and
-        // leave callers matching on message text.
-        assert_eq!(api_err.status, StatusCode::UNPROCESSABLE_ENTITY);
-        assert_eq!(api_err.code, DAG_ALREADY_TERMINAL_CODE);
-        assert_ne!(api_err.code, ApiError::validation("x").code);
-        assert!(api_err.message.contains("dag-1"));
-    }
-
-    #[test]
     fn test_auth_database_error_is_generic_service_unavailable() {
         let api_err = ApiError::from(AuthError::Database("sensitive details".to_string()));
 

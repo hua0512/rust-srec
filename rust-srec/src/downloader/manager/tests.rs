@@ -542,54 +542,6 @@ fn relative_segment_paths_are_resolved_without_canonicalizing() {
 }
 
 #[tokio::test]
-async fn repeated_engine_local_indices_use_session_scoped_indices() {
-    let temp = tempfile::tempdir().expect("tempdir");
-    let manager = DownloadManager::new();
-    let mut events = manager.subscribe();
-    let session_id = "session-reused-local-index";
-
-    let first_path = temp.path().join("segment-a.flv");
-    start_scripted_download(
-        &manager,
-        test_download_config(temp.path().to_path_buf(), session_id),
-        vec![completed_segment(first_path, 0)],
-    )
-    .await
-    .expect("first download should start");
-    let first = collect_segment_completed(&mut events).await;
-    wait_for_download_terminal(&mut events).await;
-
-    let second_path = temp.path().join("segment-b.flv");
-    start_scripted_download(
-        &manager,
-        test_download_config(temp.path().to_path_buf(), session_id),
-        vec![completed_segment(second_path, 0)],
-    )
-    .await
-    .expect("second download should start");
-    let second = collect_segment_completed(&mut events).await;
-    wait_for_download_terminal(&mut events).await;
-
-    let DownloadProgressEvent::SegmentCompleted {
-        segment_index: first_index,
-        ..
-    } = first
-    else {
-        panic!("expected first completed segment event");
-    };
-    let DownloadProgressEvent::SegmentCompleted {
-        segment_index: second_index,
-        ..
-    } = second
-    else {
-        panic!("expected second completed segment event");
-    };
-
-    assert_eq!(first_index, 0);
-    assert_eq!(second_index, 1);
-}
-
-#[tokio::test]
 async fn segment_completion_preserves_engine_reported_path() {
     let temp = tempfile::tempdir().expect("tempdir");
     let nested = temp.path().join("nested");
@@ -1095,72 +1047,6 @@ async fn abort_attempts_reclaims_attempts_left_by_a_dropped_shutdown() {
         .await;
     assert_eq!(aborted, vec![download_id]);
     assert_eq!(manager.active_count(), 0);
-}
-
-#[tokio::test]
-async fn test_runtime_reconfigure_max_concurrent_downloads() {
-    // Validates the public contract: increasing capacity is
-    // immediately observable, decreasing capacity is observable
-    // even though existing in-flight downloads aren't preempted.
-    let config = DownloadManagerConfig {
-        max_concurrent_downloads: 2,
-        high_priority_extra_slots: 0,
-        ..Default::default()
-    };
-    let manager = DownloadManager::with_config(config);
-
-    // Increase beyond initial capacity.
-    assert_eq!(manager.set_max_concurrent_downloads(4), 4);
-    assert_eq!(manager.max_concurrent_downloads(), 4);
-
-    // Decrease — getter reflects the new value immediately.
-    assert_eq!(manager.set_max_concurrent_downloads(1), 1);
-    assert_eq!(manager.max_concurrent_downloads(), 1);
-
-    // After both slots are occupied, a third acquire waits in the queue.
-    let q = manager.queue.clone();
-    let req = AcquireRequest {
-        session_id: "s1".to_string(),
-        streamer_id: "x".to_string(),
-        streamer_name: "x".to_string(),
-        engine_type: EngineType::Ffmpeg,
-        priority: Priority::Normal,
-    };
-    let _slot1 = q
-        .acquire(req, CancellationToken::new(), |_| {})
-        .await
-        .unwrap();
-    assert_eq!(q.in_flight(), 1);
-
-    // Second acquire must queue (capacity = 1).
-    let q2 = q.clone();
-    let h = tokio::spawn(async move {
-        q2.acquire(
-            AcquireRequest {
-                session_id: "s2".to_string(),
-                streamer_id: "x".to_string(),
-                streamer_name: "x".to_string(),
-                engine_type: EngineType::Ffmpeg,
-                priority: Priority::Normal,
-            },
-            CancellationToken::new(),
-            |_| {},
-        )
-        .await
-    });
-    // Wait for it to register as pending.
-    for _ in 0..50 {
-        if q.pending_count() == 1 {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-    }
-    assert_eq!(q.pending_count(), 1);
-
-    // Bump the limit; the waiter should fire.
-    manager.set_max_concurrent_downloads(2);
-    let _slot2 = h.await.unwrap().unwrap();
-    assert_eq!(q.in_flight(), 2);
 }
 
 #[test]

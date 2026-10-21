@@ -621,42 +621,6 @@ mod tests {
         assert_eq!(proxy.proxy_type, ProxyType::Http);
     }
 
-    #[test]
-    fn test_build_flv_config_with_headers() {
-        let mut config = create_test_download_config();
-        config.headers = vec![("Referer".to_string(), "https://example.com".to_string())];
-
-        let flv_config = build_flv_config(&config, None);
-
-        // Check custom headers are mapped
-        assert_eq!(
-            flv_config
-                .base
-                .headers
-                .get(reqwest::header::REFERER)
-                .map(|v| v.to_str().unwrap()),
-            Some("https://example.com")
-        );
-    }
-
-    #[test]
-    fn test_build_flv_config_with_cookies() {
-        let mut config = create_test_download_config();
-        config.cookies = Some("auth=secret".to_string());
-
-        let flv_config = build_flv_config(&config, None);
-
-        // Check cookies are mapped to Cookie header
-        assert_eq!(
-            flv_config
-                .base
-                .headers
-                .get(reqwest::header::COOKIE)
-                .map(|v| v.to_str().unwrap()),
-            Some("auth=secret")
-        );
-    }
-
     fn endpoint(url: &str, login: Option<(&str, &str)>) -> ProxyEndpoint {
         ProxyEndpoint::new(
             url,

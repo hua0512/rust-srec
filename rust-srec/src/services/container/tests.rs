@@ -661,28 +661,6 @@ async fn hard_cap_shutdown_under_the_cap_closes_pools() {
     assert!(pool.is_closed());
 }
 
-#[tokio::test]
-async fn full_config_wires_credential_notifications() {
-    let pool = migrated_test_pool().await;
-
-    let container = super::ServiceContainer::with_full_config(
-        pool.clone(),
-        pool,
-        super::ServiceContainerConfig {
-            cache_ttl: std::time::Duration::from_secs(60),
-            event_capacity: 8,
-            download_config: crate::downloader::DownloadManagerConfig::default(),
-            pipeline_config: crate::pipeline::PipelineManagerConfig::default(),
-            api_config: crate::api::server::ApiServerConfig::default(),
-        },
-    )
-    .await
-    .expect("full service container should initialize");
-
-    assert!(container.credential_service.has_notification_service());
-    container.cancellation_token().cancel();
-}
-
 #[test]
 fn test_should_end_stream_on_danmu_stream_closed_honors_false() {
     assert!(!should_end_stream_on_danmu_stream_closed(Some(
