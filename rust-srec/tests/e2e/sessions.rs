@@ -3,7 +3,7 @@
 //!
 //! No offline API creates sessions or outputs, so each test seeds them through
 //! [`TestApp::run_sql`] after boot; the handlers read them from the database
-//! on every request. Streamers that own sessions are created disabled.
+//! on every request. Streamers that own sessions are disabled.
 
 use std::path::Path;
 
@@ -117,7 +117,14 @@ fn item<'a>(page: &'a Value, id: &str) -> &'a Value {
 
 #[tokio::test]
 async fn session_list_and_detail_describe_each_recording_even_after_its_streamer_is_deleted() {
-    let app = TestApp::start().await;
+    // Bob owns a session that is still live, so his row is seeded before
+    // boot: a streamer created disabled over HTTP has its active session ended
+    // by an asynchronous cleanup, which may run after the session is inserted.
+    let app = TestApp::start_seeded(
+        "INSERT INTO streamers (id, name, url, platform_config_id, state, priority) \
+         VALUES ('bob', 'Bob', 'https://live.bilibili.com/12', 'platform-bilibili', 'DISABLED', 'NORMAL');",
+    )
+    .await;
     let token = app.admin_token().await;
     let alice = id_of(
         &app.create_disabled_streamer(
@@ -126,13 +133,7 @@ async fn session_list_and_detail_describe_each_recording_even_after_its_streamer
         )
         .await,
     );
-    let bob = id_of(
-        &app.create_disabled_streamer(
-            &token,
-            json!({ "name": "Bob", "url": "https://live.bilibili.com/12" }),
-        )
-        .await,
-    );
+    let bob = "bob".to_string();
 
     let now = now_ms();
     let t0 = now - 3 * 3_600_000;
