@@ -1597,8 +1597,7 @@ async fn job_logs_are_paged_and_an_unknown_job_has_none() {
 }
 
 #[tokio::test]
-#[ignore = "bug: job log levels are serialized as \"Info\"/\"Error\", but the job page highlights 'ERROR' and 'WARN'"]
-async fn known_bug_job_log_levels_use_the_uppercase_names_the_job_page_highlights() {
+async fn job_log_levels_use_the_uppercase_names_the_job_page_highlights() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
     let job_id = failed_execute_job(&app, &token).await;

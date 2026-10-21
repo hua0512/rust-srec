@@ -282,15 +282,6 @@ fn excess_log_rows(already: usize, incoming: usize, cap: usize) -> usize {
     already.saturating_add(incoming).saturating_sub(cap)
 }
 
-fn log_level_to_db(level: LogLevel) -> &'static str {
-    match level {
-        LogLevel::Debug => "DEBUG",
-        LogLevel::Info => "INFO",
-        LogLevel::Warn => "WARN",
-        LogLevel::Error => "ERROR",
-    }
-}
-
 fn extend_logs_capped(exec_info: &mut JobExecutionInfo, new_logs: &[JobLogEntry]) {
     if new_logs.is_empty() {
         return;
@@ -379,6 +370,18 @@ pub enum LogLevel {
     Warn,
     /// Error level log.
     Error,
+}
+
+impl LogLevel {
+    /// Uppercase name stored in the `job_execution_logs.level` column and returned by the API.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Debug => "DEBUG",
+            Self::Info => "INFO",
+            Self::Warn => "WARN",
+            Self::Error => "ERROR",
+        }
+    }
 }
 
 /// A single log entry for job execution.
@@ -1352,7 +1355,7 @@ impl JobQueue {
                         "Failed to serialize execution log entry; using fallback",
                     ),
                     created_at: entry.timestamp.timestamp_millis(),
-                    level: Some(log_level_to_db(entry.level).to_string()),
+                    level: Some(entry.level.as_str().to_string()),
                     message: Some(entry.message.clone()),
                 })
                 .collect();
