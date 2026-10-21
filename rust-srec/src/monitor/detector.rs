@@ -505,18 +505,18 @@ impl StreamDetector {
                 None => StreamSelector::new(),
             };
 
+            // The selector drops only hard exclusions, so an empty list means no
+            // stream may be recorded; other preferences fall back inside it.
             let candidates = selector.sort_candidates(&media_info.streams);
-            let selected_stream = if let Some(stream) = candidates.first() {
+            if let Some(stream) = candidates.first() {
                 debug!(quality = %stream.quality, "selected stream candidate");
-                (*stream).clone()
-            } else if let Some(stream) = media_info.streams.iter().find(|s| selector.admits(s)) {
-                // Fallback: if no candidates match selection criteria, take the
-                // first stream the selector may choose at all.
-                debug!(
+            } else if media_info.streams.iter().any(|s| selector.admits(s)) {
+                warn!(
+                    streamer = %streamer.name,
                     streams = media_info.streams.len(),
-                    "stream selection fallback (no candidates matched criteria)"
+                    "Streamer is live but every stream is on a blacklisted CDN. Treating as OFFLINE."
                 );
-                stream.clone()
+                return Ok(LiveStatus::Offline);
             } else if !media_info.streams.is_empty() {
                 let mut formats: Vec<&str> = media_info
                     .streams
@@ -538,21 +538,12 @@ impl StreamDetector {
                     streamer.name
                 );
                 return Ok(LiveStatus::Offline);
-            };
+            }
 
             // Resolve final URL for the selected stream
             // Some platforms (Huya, Douyu, Bilibili) require get_url() to get the real stream URL
             // We iterate through candidates until we successfully resolve one
-            // Build a slice of references to iterate over
-            let fallback_candidates;
-            let resolution_slice: &[&StreamInfo] = if candidates.is_empty() {
-                fallback_candidates = [&selected_stream];
-                &fallback_candidates
-            } else {
-                &candidates
-            };
-
-            let selected_stream = match resolve_candidates(extractor, resolution_slice).await {
+            let selected_stream = match resolve_candidates(extractor, &candidates).await {
                 Ok(stream) => stream,
                 Err(error) => return terminal_status(&error).map_or_else(|| Err(error.into()), Ok),
             };
@@ -916,7 +907,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn opt_in_streams_are_skipped_by_the_selection_fallback() {
+    async fn a_room_offering_only_unpreferred_opt_in_streams_is_offline() {
         let streamer =
             StreamerMetadata::from_db_model(&crate::database::models::StreamerDbModel::new(
                 "fixture",
@@ -931,47 +922,22 @@ mod tests {
         .quality("Original")
         .format_opt_in(true)
         .build();
-        let flv = StreamInfo::builder(
-            "https://cdn-b.example.com/hd.flv",
-            StreamFormat::Flv,
-            MediaFormat::Flv,
-        )
-        .quality("720p")
-        .build();
-        let live = |streams: Vec<StreamInfo>| {
-            FakeExtractor::new(
-                Ok(platforms_parser::media::MediaInfo::builder(
-                    "https://example.com/channel",
-                    "fixture",
-                    "fixture",
-                )
-                .is_live(true)
-                .streams(streams)
-                .build()),
-                vec![Ok(())],
+        let extractor = FakeExtractor::new(
+            Ok(platforms_parser::media::MediaInfo::builder(
+                "https://example.com/channel",
+                "fixture",
+                "fixture",
             )
-        };
-        // Every stream blacklisted: the fallback takes the first stream the
-        // selector may choose, never the opt-in DASH listed before it.
-        let config = StreamSelectionConfig {
-            blacklisted_cdns: vec!["example.com".to_string()],
-            ..Default::default()
-        };
+            .is_live(true)
+            .streams(vec![dash])
+            .build()),
+            vec![Ok(())],
+        );
         let status = StreamDetector::new()
-            .check_status_with_extractor(&streamer, Some(&config), &live(vec![dash.clone(), flv]))
+            .check_status_with_extractor(&streamer, None, &extractor)
             .await
             .unwrap();
-        let LiveStatus::Live { streams, .. } = status else {
-            panic!("expected live, got {status:?}");
-        };
-        assert_eq!(streams[0].stream_format, StreamFormat::Flv);
-
-        // Only opt-in streams and no preference for them: nothing to record.
-        let status = StreamDetector::new()
-            .check_status_with_extractor(&streamer, None, &live(vec![dash]))
-            .await
-            .unwrap();
-        assert!(matches!(status, LiveStatus::Offline));
+        assert!(matches!(status, LiveStatus::Offline), "{status:?}");
     }
 
     fn create_test_stream() -> StreamInfo {
