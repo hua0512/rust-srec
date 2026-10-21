@@ -88,6 +88,25 @@ pub fn truncate_bytes(s: &str, max_bytes: usize) -> String {
 mod tests {
     use super::*;
 
+    // ---- notification formatting ----
+
+    #[test]
+    fn format_bytes_switches_unit_at_each_power_of_1024() {
+        assert_eq!(format_bytes(500), "500 B");
+        assert_eq!(format_bytes(1023), "1023 B");
+        assert_eq!(format_bytes(1024), "1.00 KB");
+        assert_eq!(format_bytes(1536), "1.50 KB");
+        assert_eq!(format_bytes(1024 * 1024), "1.00 MB");
+        assert_eq!(format_bytes(1024 * 1024 * 1024), "1.00 GB");
+    }
+
+    #[test]
+    fn format_duration_splits_hours_minutes_and_seconds() {
+        assert_eq!(format_duration(3661.0), "1h 1m 1s");
+        assert_eq!(format_duration(125.9), "2m 5s");
+        assert_eq!(format_duration(59.0), "59s");
+    }
+
     // ---- truncate_chars ----
 
     #[test]

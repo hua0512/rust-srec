@@ -883,3 +883,77 @@ async fn downloads_socket_streams_meta_progress_and_segment_frames_for_a_live_re
 
     app.shutdown().await;
 }
+
+/// With every slot taken (one normal, plus two only high-priority downloads
+/// may use), live streamers wait on the queue. A connecting client's
+/// snapshot lists each with its session, engine and priority tier, so the
+/// queued badge survives a reconnect.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn downloads_snapshot_lists_queued_recordings_with_their_session_and_priority() {
+    let fake = FakePlatform::start().await;
+    let app = TestApp::start_with(Seed::live().global("max_concurrent_downloads", 1)).await;
+    let token = app.admin_token().await;
+    let watch = async |name: &str, priority: &str| {
+        let room = fake.room(name);
+        room.set_live(room.live(name));
+        let created = app
+            .create_enabled_streamer(
+                &token,
+                json!({ "name": name, "url": room.url(), "priority": priority }),
+            )
+            .await;
+        (
+            room,
+            created["id"].as_str().expect("streamer id").to_owned(),
+        )
+    };
+    for name in ["first", "second", "third"] {
+        let (room, _) = watch(name, "HIGH").await;
+        room.wait_for_media_connection(1).await;
+    }
+    let (_, high) = watch("waiting-high", "HIGH").await;
+    let (_, normal) = watch("waiting-normal", "NORMAL").await;
+
+    let mut socket = app
+        .connect_socket(&with_query("/api/downloads/ws", &[("token", &token)]), None)
+        .await;
+    let mut snapshot = next_snapshot(&mut socket).await;
+    // Each subscription change sends a fresh snapshot.
+    let deadline = tokio::time::Instant::now() + WAIT;
+    while snapshot.queued.len() < 2 {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "both streamers queued: {snapshot:?}"
+        );
+        send_client_message(
+            &mut socket,
+            download_progress::client_message::Action::Unsubscribe(
+                download_progress::UnsubscribeRequest {},
+            ),
+        )
+        .await;
+        snapshot = next_snapshot(&mut socket).await;
+    }
+    assert_eq!(snapshot.downloads.len(), 3, "{snapshot:?}");
+    for (id, is_high_priority) in [(&high, true), (&normal, false)] {
+        let queued = snapshot
+            .queued
+            .iter()
+            .find(|queued| &queued.streamer_id == id)
+            .unwrap_or_else(|| panic!("{id} is not queued: {snapshot:?}"));
+        let sessions = app
+            .get(&format!("/api/sessions?streamer_id={id}"), &token)
+            .await
+            .expect_status(StatusCode::OK)
+            .body;
+        assert_eq!(queued.session_id, sessions["items"][0]["id"], "{id}");
+        assert_eq!(queued.engine_type, "mesio");
+        assert_eq!(queued.is_high_priority, is_high_priority, "{id}");
+        assert!(
+            (now_ms() - queued.queued_at_ms).abs() < 60_000,
+            "{queued:?}"
+        );
+    }
+
+    app.shutdown().await;
+}

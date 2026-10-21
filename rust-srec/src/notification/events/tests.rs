@@ -106,13 +106,11 @@ fn baidupcs_relogin_failed_metadata_and_localization() {
 
 #[test]
 fn output_path_inaccessible_all_error_kinds_resolve() {
-    // Every IoErrorKindSer::as_str() value must map to a real i18n key,
-    // not the literal key string. Defends against silent misalignment
-    // between the YAML files and the description() match arms.
-    let _g = OUTPUT_PATH_INACCESSIBLE_LOCALE_LOCK
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
-    crate::i18n::set_locale("en");
+    // Every IoErrorKindSer::as_str() value must map to a real i18n key in
+    // both locales, not the literal key string. Defends against silent
+    // misalignment between the YAML files and the description() match arms.
+    // A key missing from zh-CN falls back to the English text, so the two
+    // must differ.
     for kind in [
         "not_found",
         "storage_full",
@@ -126,19 +124,19 @@ fn output_path_inaccessible_all_error_kinds_resolve() {
             error_kind: kind.to_string(),
             timestamp: Utc::now(),
         };
-        let description = event.description();
-        assert!(
-            description.contains("/rec"),
-            "kind={} description={:?}",
-            kind,
-            description
-        );
-        assert!(
-            !description.starts_with("notification."),
-            "kind={} returned untranslated key: {:?}",
-            kind,
-            description
-        );
+        let en = event.description_in("en");
+        let zh = event.description_in("zh-CN");
+        for description in [&en, &zh] {
+            assert!(
+                description.contains("/rec"),
+                "kind={kind} description={description:?}"
+            );
+            assert!(
+                !description.starts_with("notification."),
+                "kind={kind} returned untranslated key: {description:?}"
+            );
+        }
+        assert_ne!(en, zh, "kind={kind} has no zh-CN translation");
     }
 }
 

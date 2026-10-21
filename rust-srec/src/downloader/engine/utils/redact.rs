@@ -184,4 +184,16 @@ mod tests {
 
         assert!(!rendered.contains("raw-cookie-sentinel"), "{rendered}");
     }
+
+    /// A value-taking flag at the end of the command line has no value to
+    /// redact; logging it must not panic the engine task.
+    #[test]
+    fn a_trailing_flag_without_a_value_does_not_panic() {
+        for flag in ["-headers", "--http-cookie"] {
+            assert_eq!(
+                redact_process_args(&args(&["-i", "url", flag])),
+                args(&["-i", "url", flag])
+            );
+        }
+    }
 }

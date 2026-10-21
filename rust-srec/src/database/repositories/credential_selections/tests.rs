@@ -711,3 +711,68 @@ async fn only_streamlink_accounts_name_sites() {
             .is_none()
     );
 }
+
+/// Deleting a template, or marking a streamer deleted, releases the account
+/// it selected at once; a retiring streamer's selection must not keep the
+/// account undeletable until its row is reaped.
+#[tokio::test]
+async fn removed_and_retired_owners_release_their_selections() {
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let f = fixture().await;
+        let account = f.profile("platform-bilibili", "sid=a").await;
+        let selection = serde_json::json!({"mode": "fixed", "credential_id": account});
+        let mut template = TemplateConfigDbModel::new("Removed template");
+        template.platform_overrides =
+            Some(serde_json::json!({"bilibili": {"credential_selection": selection}}).to_string());
+        f.config.create_template_config(&template).await.unwrap();
+        let kept = f
+            .streamer(
+                "https://live.bilibili.com/1",
+                "platform-bilibili",
+                serde_json::json!({"credential_selection": selection}),
+            )
+            .await;
+        let retired = f
+            .streamer(
+                "https://live.bilibili.com/2",
+                "platform-bilibili",
+                serde_json::json!({"credential_selection": selection}),
+            )
+            .await;
+        assert_eq!(f.rows().await, 3);
+
+        f.config.delete_template_config(&template.id).await.unwrap();
+        assert_eq!(f.rows().await, 2);
+        assert!(
+            f.streamers
+                .mark_streamer_deleted(&retired.id)
+                .await
+                .unwrap()
+        );
+        assert_eq!(f.rows().await, 1);
+        let owners: Vec<CredentialOwner> = f
+            .profiles
+            .references(&account)
+            .await
+            .unwrap()
+            .selections
+            .into_iter()
+            .map(|selection| selection.owner)
+            .collect();
+        assert_eq!(
+            owners,
+            vec![CredentialOwner::Streamer {
+                streamer_id: kept.id.clone()
+            }]
+        );
+        sqlx::query("DELETE FROM streamers WHERE id = ?")
+            .bind(&kept.id)
+            .execute(&f.pool)
+            .await
+            .unwrap();
+        assert_eq!(f.rows().await, 0);
+        f.profiles.delete(&account, 1).await.unwrap();
+    })
+    .await
+    .unwrap();
+}

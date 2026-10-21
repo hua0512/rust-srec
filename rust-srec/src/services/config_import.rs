@@ -2452,6 +2452,54 @@ mod tests {
         assert_eq!(stats.streamers_deleted, 1);
     }
 
+    /// Merge never removes what the bundle omits, so on a legacy database
+    /// with case-duplicate URLs it updates one row and leaves the shadow as
+    /// it was, where replace retires it.
+    #[tokio::test]
+    async fn merge_import_updates_one_case_duplicate_and_keeps_the_shadow() {
+        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
+        run_migrations(&pool).await.unwrap();
+        let global: GlobalConfigDbModel =
+            sqlx::query_as("SELECT * FROM global_config ORDER BY rowid LIMIT 1")
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let platform = seed_case_duplicate_streamers(&pool).await;
+
+        let mut config = import_config(&global);
+        config.streamers.push(imported_streamer(
+            "https://example.com/live/ALPHA",
+            &platform.platform_name,
+        ));
+        validate_import(&config, ImportMode::Merge).unwrap();
+
+        let mut tx = begin_immediate(&pool).await.unwrap();
+        let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
+        snapshot
+            .validate_references(&config, ImportMode::Merge)
+            .unwrap();
+        let AppliedImport { stats, .. } =
+            apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
+                .await
+                .unwrap();
+        tx.commit().await.unwrap();
+
+        let rows: Vec<StreamerDbModel> = sqlx::query_as("SELECT * FROM streamers ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].id, "streamer-a");
+        assert_eq!(rows[0].url, "https://example.com/live/ALPHA");
+        assert_eq!(rows[1].id, "streamer-b");
+        assert_eq!(rows[1].url, "https://example.com/live/Alpha");
+        assert_eq!(rows[1].name, "mixed");
+        assert!(rows.iter().all(|row| row.deleted_at.is_none()));
+        assert_eq!(stats.streamers_updated, 1);
+        assert_eq!(stats.streamers_created, 0);
+        assert_eq!(stats.streamers_deleted, 0);
+    }
+
     #[test]
     fn imported_state_carries_disable_intent_but_not_runtime_state() {
         let mut live = StreamerDbModel::new("live", "https://example.com/live", "platform-huya");

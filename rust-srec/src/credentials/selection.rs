@@ -246,4 +246,36 @@ mod tests {
         }
         assert!(CredentialSelection::from_value(serde_json::json!({"mode":"pool", "credential_ids":["a"], "strategy":"round_robin", "failover":false, "max_attempts":1})).is_ok());
     }
+
+    /// Omitted pool settings take the recommended defaults, and the policy
+    /// generation hashes the parsed policy, so saving the same policy with
+    /// or without the defaults spelt out is not a policy change.
+    #[test]
+    fn omitted_pool_settings_take_the_recommended_defaults() {
+        let selection = CredentialSelection::from_value(
+            serde_json::json!({"mode":"pool", "credential_ids":["a", "b"]}),
+        )
+        .unwrap();
+        assert_eq!(
+            selection,
+            CredentialSelection::Pool {
+                credential_ids: vec!["a".into(), "b".into()],
+                strategy: PoolStrategy::Priority,
+                failover: true,
+                max_attempts: 3,
+            }
+        );
+        let owner = CredentialOwner::Platform {
+            platform_id: "p".into(),
+        };
+        let explicit = CredentialSelection::from_value(serde_json::json!({"mode":"pool", "credential_ids":["a", "b"], "strategy":"priority", "failover":true, "max_attempts":3})).unwrap();
+        assert_eq!(
+            ResolvedCredentialPolicy::new("p".into(), owner.clone(), selection)
+                .unwrap()
+                .generation,
+            ResolvedCredentialPolicy::new("p".into(), owner, explicit)
+                .unwrap()
+                .generation
+        );
+    }
 }

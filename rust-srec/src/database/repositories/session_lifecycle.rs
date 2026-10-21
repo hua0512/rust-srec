@@ -1412,6 +1412,100 @@ mod tests {
         assert!(outbox_event_types(&pool).await.is_empty());
     }
 
+    /// A streamer already marked OUT_OF_SCHEDULE can still own a session
+    /// (the schedule closed while it recorded); ending that session must
+    /// still announce the state change.
+    #[tokio::test]
+    async fn end_for_out_of_schedule_already_out_of_schedule_with_session_still_emits_event() {
+        let pool = setup_pool().await;
+        let repo = SessionLifecycleRepository::new(pool.clone());
+        let now = Utc::now();
+
+        let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
+        let sid = started.session_id().to_string();
+        set_streamer_state(&pool, "OUT_OF_SCHEDULE").await;
+
+        let resolved = repo
+            .end_for_out_of_schedule(EndForOutOfScheduleInputs {
+                streamer_id: STREAMER_ID.to_string(),
+                streamer_name: "Test".to_string(),
+                session_id: Some(sid.clone()),
+                old_state: StreamerState::OutOfSchedule,
+                via_hysteresis: false,
+                now: now + chrono::Duration::seconds(5),
+            })
+            .await
+            .unwrap();
+        assert_eq!(resolved.as_deref(), Some(sid.as_str()));
+        assert_eq!(
+            outbox_event_types(&pool).await,
+            vec!["StreamerLive", "StateChanged"]
+        );
+    }
+
+    /// Self-heal path B: stale active rows exist, but the most recent
+    /// session for the streamer is already ended. None of the active rows is
+    /// the current one, so all of them end before `Created` writes a fresh
+    /// session; otherwise the insert trips
+    /// `live_sessions_one_active_per_streamer` and the recording never starts.
+    #[tokio::test]
+    async fn start_or_resume_cleans_all_stale_active_when_most_recent_is_ended() {
+        let pool = setup_pool().await;
+        let repo = SessionLifecycleRepository::new(pool.clone());
+        let now = Utc::now();
+
+        sqlx::query("DROP INDEX live_sessions_one_active_per_streamer")
+            .execute(&pool)
+            .await
+            .unwrap();
+        // stale-C ended properly but started last, so `get_last_session`
+        // returns an ended row and the start takes the `Created` branch.
+        for (id, offset, ended) in [
+            ("stale-A", -180, false),
+            ("stale-B", -120, false),
+            ("stale-C", -60, true),
+        ] {
+            let end_time =
+                ended.then(|| (now + chrono::Duration::seconds(offset + 30)).timestamp_millis());
+            sqlx::query(
+                "INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, total_size_bytes)
+                 VALUES (?, ?, ?, ?, '[]', 0)",
+            )
+            .bind(id)
+            .bind(STREAMER_ID)
+            .bind((now + chrono::Duration::seconds(offset)).timestamp_millis())
+            .bind(end_time)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+
+        let outcome = repo.start_or_resume(start_inputs(now)).await.unwrap();
+        assert!(matches!(outcome, StartSessionOutcome::Created { .. }));
+
+        let active: Vec<String> = sqlx::query_scalar(
+            "SELECT id FROM live_sessions WHERE streamer_id = ? AND end_time IS NULL",
+        )
+        .bind(STREAMER_ID)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(active, vec![outcome.session_id().to_string()]);
+
+        let kinds: Vec<String> = sqlx::query_scalar(
+            "SELECT kind FROM session_events
+             WHERE streamer_id = ? ORDER BY occurred_at ASC, id ASC",
+        )
+        .bind(STREAMER_ID)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            kinds,
+            vec!["session_ended", "session_ended", "session_started"]
+        );
+    }
+
     /// Self-heal path A: a previous buggy build left two stale active
     /// rows for the same streamer (multiple `end_time IS NULL`). The next
     /// `start_or_resume` reuses the most-recent active row (`stale-B`)

@@ -1847,6 +1847,100 @@ async fn end_for_out_of_schedule_updates_lifecycle_and_outbox() {
     );
 }
 
+/// A schedule stop during hysteresis claims the hysteresis handle (so its
+/// timer cannot end the session a second time) and reports the end as
+/// reached through hysteresis. `end_for_out_of_schedule_inner` duplicates
+/// rather than shares the disable path's claim.
+#[tokio::test]
+async fn end_for_out_of_schedule_cancels_hysteresis() {
+    let pool = setup_pool().await;
+    // Long window so the timer cannot fire during the test.
+    let lifecycle = make_lifecycle_with_window(pool.clone(), Duration::from_secs(60));
+    let mut rx = lifecycle.subscribe();
+
+    let started = lifecycle
+        .on_live_detected(live_args(Utc::now()))
+        .await
+        .unwrap();
+    let _ = rx.recv().await.unwrap(); // Started
+    lifecycle
+        .on_download_terminal(&make_terminal_completed_clean_disconnect(
+            started.session_id(),
+        ))
+        .await
+        .unwrap();
+    let _ = rx.recv().await.unwrap(); // Ending
+
+    let sid = started.session_id().to_string();
+    lifecycle
+        .end_for_out_of_schedule(STREAMER_ID, "Test", StreamerState::Live)
+        .await
+        .unwrap();
+
+    assert!(
+        !lifecycle.hysteresis.contains_key(&sid),
+        "out-of-schedule must claim and remove the hysteresis handle"
+    );
+    match rx.recv().await.unwrap() {
+        SessionTransition::Ended {
+            cause,
+            via_hysteresis,
+            ..
+        } => {
+            assert_eq!(cause, TerminalCause::OutOfSchedule);
+            assert!(via_hysteresis);
+        }
+        other => panic!("expected Ended {{cause:OutOfSchedule}}, got {other:?}"),
+    }
+}
+
+/// An explicit offline signal (the danmu stream closing) is recorded as a
+/// definitive offline carrying that signal, not as a plain status-check
+/// offline.
+#[tokio::test]
+async fn session_ended_persisted_with_definitive_offline_signal() {
+    let pool = setup_pool().await;
+    let lifecycle = make_lifecycle_with_events(pool.clone());
+
+    let started = lifecycle
+        .on_live_detected(live_args(Utc::now()))
+        .await
+        .unwrap();
+    let sid = started.session_id().to_string();
+
+    lifecycle
+        .on_offline_detected(OfflineDetectedArgs {
+            streamer_id: STREAMER_ID,
+            streamer_name: "Test",
+            session_id: Some(&sid),
+            state_was_live: true,
+            clear_errors: false,
+            signal: Some(crate::session::OfflineSignal::DanmuStreamClosed),
+            now: Utc::now(),
+        })
+        .await
+        .unwrap();
+
+    let rows = read_events(&pool, &sid).await;
+    let last = rows.last().expect("at least one event");
+    assert_eq!(last.0, "session_ended");
+    match event_payload(&last.1) {
+        SessionEventPayload::SessionEnded {
+            cause,
+            via_hysteresis,
+        } => {
+            assert!(!via_hysteresis, "direct authoritative end, not via timer");
+            assert_eq!(
+                cause,
+                TerminalCauseDto::DefinitiveOffline {
+                    signal: crate::session::OfflineSignal::DanmuStreamClosed,
+                }
+            );
+        }
+        other => panic!("wrong payload variant: {other:?}"),
+    }
+}
+
 /// concurrent `end_for_disable` calls collapse to a single
 /// effective tear-down. Exactly one returns `Some(session_id)` after
 /// writing the row; others return either `Ok(None)` (no active row by

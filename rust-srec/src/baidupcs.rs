@@ -780,6 +780,20 @@ mod tests {
         assert_eq!(repo.gets(), 0, "cooldown short-circuits before the store");
     }
 
+    /// With no stored login there is nothing to retry, so the attempt
+    /// neither enters the cooldown nor counts as a failed re-login.
+    #[tokio::test]
+    async fn relogin_without_stored_material_records_no_failure() {
+        let repo = MockCredentialRepo::new(None);
+        let authenticator = StoredLoginAuthenticator::new(repo.clone());
+
+        let result = authenticator.relogin("BaiduPCS-Go", None).await.unwrap();
+
+        assert!(!result);
+        assert_eq!(repo.gets(), 1);
+        assert!(authenticator.cooldown.should_attempt(""));
+    }
+
     #[tokio::test]
     async fn saving_credentials_clears_the_cooldown() {
         let repo = MockCredentialRepo::new(None);

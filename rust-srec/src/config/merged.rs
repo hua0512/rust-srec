@@ -801,6 +801,41 @@ mod tests {
         assert!(matches!(&dag.steps[1].step, PipelineStep::Preset{name} if name == "s3_upload"));
     }
 
+    /// A paired-segment workflow needs danmu, which the offline end-to-end
+    /// platform cannot record, so the hand-parsed streamer key is pinned
+    /// here; `tests/e2e/recording.rs` covers `session_complete_pipeline`.
+    #[test]
+    fn test_streamer_paired_segment_pipeline_override() {
+        let streamer_config = serde_json::json!({
+            "paired_segment_pipeline": {
+                "name": "burn_in",
+                "steps": [
+                    {"id": "burn", "step": {"type": "inline", "processor": "execute", "config": {"command": "echo {input}"}}, "depends_on": []}
+                ]
+            }
+        });
+
+        let config = MergedConfig::builder()
+            .with_global(global_layer("mesio"))
+            .with_platform(PlatformConfigLayer {
+                fetch_delay_ms: Some(60_000),
+                download_delay_ms: Some(1_000),
+                record_danmu: Some(true),
+                ..Default::default()
+            })
+            .with_streamer(Some(&streamer_config))
+            .build();
+
+        let paired = config
+            .paired_segment_pipeline
+            .expect("paired_segment_pipeline should be set");
+        assert_eq!(paired.name, "burn_in");
+        assert!(matches!(
+            &paired.steps[..],
+            [step] if matches!(&step.step, PipelineStep::Inline { processor, .. } if processor == "execute")
+        ));
+    }
+
     /// Global → platform → template → streamer: a layer that states a value
     /// overrides the ones above it, a silent layer inherits, and a streamer value
     /// that does not parse inherits as well. Danmu statistics are replaced as a

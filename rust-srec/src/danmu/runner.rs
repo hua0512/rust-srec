@@ -1293,4 +1293,21 @@ mod tests {
             );
         }
     }
+
+    /// Shutdown cancels collectors; that is an interruption, not a runtime
+    /// failure carrying an error for the shutdown report.
+    #[tokio::test]
+    async fn cancellation_has_an_explicit_interrupted_outcome() {
+        let (_items_tx, items_rx) = mpsc::channel(8);
+        let provider = Arc::new(FakeProvider::new(vec![items_rx]));
+        let (runner, items) = runner_for(provider, DanmuEventPublisher::new(8)).await;
+        let (_command_tx, command_rx) = mpsc::channel(8);
+        let cancel_token = CancellationToken::new();
+        cancel_token.cancel();
+
+        let outcome = runner.run(command_rx, items, cancel_token).await;
+
+        assert_eq!(outcome.reason, CollectionExitReason::Cancelled);
+        assert!(outcome.error.is_none());
+    }
 }

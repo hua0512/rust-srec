@@ -243,6 +243,32 @@ async fn discord_and_gotify_test_sends_reach_their_documented_endpoints() {
         json!({ "title": EN_TITLE, "message": EN_DESCRIPTION, "priority": 5 })
     );
 
+    // A configured username and avatar override the webhook's own.
+    app.put(
+        &format!("/api/notifications/channels/{discord}"),
+        &token,
+        &json!({
+            "name": "Discord",
+            "settings": {
+                "webhook_url": receiver.url("/discord/hook"),
+                "locale": "en",
+                "username": "Recorder",
+                "avatar_url": "https://example.invalid/avatar.png",
+            },
+        }),
+    )
+    .await
+    .expect_status(StatusCode::OK);
+    test_send(&app, &token, &discord)
+        .await
+        .expect_status(StatusCode::OK);
+    let received = receiver.received();
+    assert_eq!(received.len(), 3);
+    let body = json_body(&received[2]);
+    assert_eq!(sorted_keys(&body), ["avatar_url", "embeds", "username"]);
+    assert_eq!(body["username"], "Recorder");
+    assert_eq!(body["avatar_url"], "https://example.invalid/avatar.png");
+
     app.shutdown().await;
 }
 

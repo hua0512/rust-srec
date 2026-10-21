@@ -169,6 +169,16 @@ pub fn parse_opened_path(line: &str) -> Option<PathBuf> {
 mod tests {
     use super::*;
 
+    /// Shared by the ffmpeg and streamlink engines; the hours term is what
+    /// recordings longer than an hour depend on.
+    #[test]
+    fn test_parse_time_valid() {
+        assert_eq!(parse_time("00:00:10.50"), Some(10.5));
+        assert_eq!(parse_time("00:01:30.50"), Some(90.5));
+        assert_eq!(parse_time("01:30:00.00"), Some(5400.0));
+        assert_eq!(parse_time("10:00:00.00"), Some(36000.0));
+    }
+
     #[test]
     fn test_parse_time_invalid() {
         assert_eq!(parse_time("invalid"), None);

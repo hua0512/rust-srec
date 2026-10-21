@@ -3408,4 +3408,19 @@ mod tests {
 
         pool.stop().await;
     }
+
+    /// A timed-out job's error names the phase it was stuck in and how long
+    /// ago its progress last moved.
+    #[test]
+    fn timeout_progress_clause_names_the_phase() {
+        let mut snapshot = JobProgressSnapshot::new(crate::pipeline::ProgressKind::BaiduPcs);
+        snapshot.phase = Some(JobPhase::Retrying);
+        snapshot.updated_at = chrono::Utc::now() - chrono::Duration::minutes(59);
+
+        let clause = progress_clause(&snapshot);
+        assert!(
+            clause.starts_with(", progress waiting to retry, last updated 59m "),
+            "{clause}"
+        );
+    }
 }

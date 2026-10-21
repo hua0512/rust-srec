@@ -311,4 +311,44 @@ mod tests {
         assert_eq!(c.threshold, 2);
         assert_eq!(c.window(), Duration::from_secs(30));
     }
+
+    /// The operator's `offline_check_count` governs both the threshold and
+    /// the window: with 5 checks 10 s apart, four network failures are not
+    /// yet an offline signal.
+    #[test]
+    fn from_scheduler_higher_count_widens_window() {
+        let c = OfflineClassifier::from_scheduler(5, 10_000);
+        assert_eq!(c.threshold, 5);
+        assert_eq!(c.window(), Duration::from_secs(50));
+
+        for _ in 0..4 {
+            assert_eq!(
+                c.classify_failure("s", &EngineKind::MesioFlv, &DownloadFailureKind::Network),
+                None
+            );
+        }
+        assert_eq!(
+            c.classify_failure("s", &EngineKind::MesioFlv, &DownloadFailureKind::Network),
+            Some(OfflineSignal::ConsecutiveFailures(5))
+        );
+    }
+
+    /// One streamer reaching the threshold neither resets nor feeds another
+    /// streamer's count.
+    #[test]
+    fn streamer_isolation_in_consecutive_counter() {
+        let c = classic_classifier();
+        let network = |streamer| {
+            c.classify_failure(
+                streamer,
+                &EngineKind::MesioFlv,
+                &DownloadFailureKind::Network,
+            )
+        };
+
+        assert_eq!(network("a"), None);
+        assert_eq!(network("b"), None);
+        assert_eq!(network("a"), Some(OfflineSignal::ConsecutiveFailures(2)));
+        assert_eq!(network("b"), Some(OfflineSignal::ConsecutiveFailures(2)));
+    }
 }

@@ -388,3 +388,44 @@ async fn auth_session_migration_preserves_legacy_refresh_and_integrity() {
         0
     );
 }
+
+/// A session outlives every access token issued for it, at login and after
+/// each refresh, even when refresh tokens are configured to expire first;
+/// otherwise the access token would be rejected before its own `exp`.
+#[tokio::test]
+async fn session_expiry_covers_access_tokens_that_outlive_the_refresh_token() {
+    let fixture = Fixture::new(AuthConfig {
+        access_token_expiration_secs: 86400,
+        refresh_token_expiration_secs: 60,
+        ..AuthConfig::default()
+    })
+    .await;
+    let session_expiry = async |fixture: &Fixture, session_id: &str| {
+        fixture
+            .tokens
+            .find_session(&fixture.user.id, session_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .expires_at
+    };
+    let access_expiry = |fixture: &Fixture, response: &AuthResponse| {
+        let claims = fixture
+            .service
+            .jwt_service
+            .validate_token(&response.access_token)
+            .unwrap();
+        i64::try_from(claims.exp * 1000).unwrap()
+    };
+
+    let login = fixture.login().await;
+    let session_id = fixture.session_id(&login);
+    assert!(session_expiry(&fixture, &session_id).await >= access_expiry(&fixture, &login));
+
+    let refreshed = fixture
+        .service
+        .refresh_tokens(&login.refresh_token)
+        .await
+        .unwrap();
+    assert!(session_expiry(&fixture, &session_id).await >= access_expiry(&fixture, &refreshed));
+}

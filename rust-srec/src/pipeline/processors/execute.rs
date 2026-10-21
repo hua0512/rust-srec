@@ -1100,4 +1100,31 @@ mod tests {
             ]
         );
     }
+
+    /// A command that writes nothing new to `scan_output_dir` passes its
+    /// inputs on, so the next step still has something to work on.
+    #[tokio::test]
+    async fn test_scan_output_directory_integration() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let output_dir = temp_dir.path().join("output");
+        tokio::fs::create_dir_all(&output_dir).await.unwrap();
+
+        let processor = ExecuteCommandProcessor::new();
+        let ctx = ProcessorContext::noop("test");
+        let config = serde_json::json!({
+            "command": "echo scanning test",
+            "scan_output_dir": output_dir.to_string_lossy(),
+        });
+        let input = ProcessorInput {
+            inputs: vec!["/input.mp4".to_string()],
+            outputs: vec![],
+            config: Some(config.to_string()),
+            streamer_id: "test".to_string(),
+            session_id: "test".to_string(),
+            ..Default::default()
+        };
+
+        let result = processor.process(&input, &ctx).await.unwrap();
+        assert_eq!(result.outputs, vec!["/input.mp4".to_string()]);
+    }
 }

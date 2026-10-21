@@ -75,3 +75,72 @@ async fn dag_creation_reads_streamer_once_and_persists_all_placeholder_metadata(
     assert_eq!(state["session_start_ms"], session.start_time);
     pool.close().await;
 }
+
+/// Coordination recovery pages through every DAG of a session, across the
+/// 500-row page boundary, in one scan per page rather than one per status;
+/// stopping after the first page would leave later segments' DAGs untracked.
+#[tokio::test]
+async fn coordinator_recovery_pages_all_session_statuses_in_one_scan() {
+    let pool = database().await;
+    let streamers = SqlxStreamerRepository::new(pool.clone(), pool.clone());
+    let streamer = StreamerDbModel::new(
+        "Recovery",
+        "https://example.com/recovery",
+        "platform-twitch",
+    );
+    streamers.create_streamer(&streamer).await.unwrap();
+    let sessions = Arc::new(SqlxSessionRepository::new(pool.clone(), pool.clone()));
+    let session = LiveSessionDbModel::new(&streamer.id);
+    sessions.create_session(&session).await.unwrap();
+    let dags = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
+    let definition = DagPipelineDefinition::new(
+        "paired",
+        vec![DagStep::new(
+            "root",
+            PipelineStep::inline("remux", serde_json::json!({})),
+        )],
+    );
+    let statuses = ["PENDING", "PROCESSING", "COMPLETED", "FAILED", "CANCELLED"];
+    // Cross the 500-row page boundary with every state represented on both pages.
+    for index in 0..505 {
+        let mut dag = DagExecutionDbModel::new(
+            &definition,
+            Some(streamer.id.clone()),
+            Some(session.id.clone()),
+        );
+        dag.status = statuses[index % statuses.len()].to_owned();
+        dag.segment_source = Some("paired".to_owned());
+        dag.segment_index = Some(index as i64);
+        dag.created_at = index as i64;
+        dags.create_dag(&dag).await.unwrap();
+    }
+    let manager: PipelineManager = PipelineManager::with_repository(
+        PipelineManagerConfig::default(),
+        Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone())),
+    )
+    .with_session_repository(sessions)
+    .with_dag_repository(dags);
+    let trace = SqlTrace::install(&pool).await;
+    manager.recover_pipeline_coordination().await.unwrap();
+    let statements = trace.statements();
+    let count = |prefix: &str| {
+        statements
+            .iter()
+            .filter(|sql| sql.starts_with(prefix))
+            .count()
+    };
+    assert_eq!(
+        count("SELECT * FROM dag_execution WHERE session_id ="),
+        2,
+        "{statements:?}"
+    );
+    assert_eq!(
+        count("SELECT * FROM dag_execution WHERE status = ? AND session_id ="),
+        0
+    );
+    assert_eq!(
+        count("SELECT * FROM dag_execution WHERE status = ? ORDER BY"),
+        2
+    );
+    pool.close().await;
+}

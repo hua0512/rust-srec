@@ -915,4 +915,41 @@ mod tests {
         assert_eq!(IoErrorKindSer::TimedOut.as_str(), "timed_out");
         assert_eq!(IoErrorKindSer::Other.as_str(), "other");
     }
+
+    /// Only failures that can be the account's fault ask for a credential
+    /// check: mesio's 401/403, and a failed ffmpeg/streamlink process whose
+    /// cause is opaque. Generic HTTP, local and cancellation failures never
+    /// mark an account.
+    #[test]
+    fn engine_diagnostic_gate_does_not_promote_generic_http_or_local_failures() {
+        use DownloadFailureKind as Kind;
+
+        for status in [401, 403] {
+            assert!(
+                Kind::HttpClientError { status }.requests_credential_diagnostic(EngineType::Mesio)
+            );
+        }
+        assert!(
+            Kind::ProcessExit { code: Some(1) }.requests_credential_diagnostic(EngineType::Ffmpeg)
+        );
+        for kind in [
+            Kind::Io,
+            Kind::Processing,
+            Kind::Configuration,
+            Kind::Cancelled,
+            Kind::HttpClientError { status: 404 },
+            Kind::SourceUnavailable,
+        ] {
+            for engine in [
+                EngineType::Mesio,
+                EngineType::Ffmpeg,
+                EngineType::Streamlink,
+            ] {
+                assert!(
+                    !kind.requests_credential_diagnostic(engine),
+                    "{kind:?} {engine:?}"
+                );
+            }
+        }
+    }
 }

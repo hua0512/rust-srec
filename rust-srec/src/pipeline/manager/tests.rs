@@ -3158,6 +3158,78 @@ async fn recovery_recreates_missing_session_complete_dag_with_durable_marker() {
     assert!(dags[0].segment_index.is_none());
 }
 
+/// An ended session that startup recovery reaches only through one of its
+/// in-flight coordination DAGs (nothing else marks it as owing work) is
+/// recovered as ended: the in-flight DAG is tracked rather than recreated,
+/// and once it drains the session-complete workflow runs, exactly once.
+#[tokio::test]
+async fn recovery_finishes_an_ended_session_reached_only_through_an_in_flight_dag() {
+    let session_id = "ended-in-flight";
+    let streamer_id = "streamer-1";
+    let session_pipeline = DagPipelineDefinition::new(
+        "session",
+        vec![DagStep::new(
+            "session-step",
+            PipelineStep::inline("remux", serde_json::json!({})),
+        )],
+    );
+    let (_config_repo, streamer_repo, config_service) =
+        configured_recovery_services(streamer_id, None, &session_pipeline).await;
+    // No stored segment or output, so the session is not among the ended
+    // sessions pending recovery; only its DAG pulls it in.
+    let session_repo = Arc::new(TestSessionRepository::new(None));
+    session_repo.insert_session(test_session(
+        session_id,
+        streamer_id,
+        Some(chrono::Utc::now().timestamp_millis()),
+    ));
+    let dag_repo = Arc::new(TestDagRepository::new());
+    let in_flight = test_coordination_dag(
+        session_id,
+        streamer_id,
+        DagExecutionStatus::Processing,
+        "video",
+        0,
+    );
+    let in_flight_id = in_flight.id.clone();
+    dag_repo.insert(in_flight);
+    let manager = PipelineManager::<SqlxConfigRepository, SqlxStreamerRepository>::with_repository(
+        PipelineManagerConfig::default(),
+        Arc::new(TestJobRepository::new()),
+    )
+    .with_session_repository(session_repo)
+    .with_streamer_repository(streamer_repo)
+    .with_config_service(config_service)
+    .with_dag_repository(dag_repo.clone());
+
+    manager.recover_pipeline_coordination().await.unwrap();
+    assert_eq!(
+        dag_repo.create_calls(),
+        0,
+        "the in-flight DAG is tracked, not recreated"
+    );
+
+    manager
+        .handle_dag_completion(DagCompletionInfo {
+            dag_id: in_flight_id,
+            streamer_id: Some(streamer_id.to_string()),
+            session_id: Some(session_id.to_string()),
+            succeeded: true,
+            leaf_outputs: vec!["/processed.mp4".to_string()],
+        })
+        .await;
+
+    assert_eq!(dag_repo.create_calls(), 1);
+    let session_complete: Vec<_> = dag_repo
+        .list_dags(None, Some(session_id), 10, 0)
+        .await
+        .unwrap()
+        .into_iter()
+        .filter(|dag| dag.segment_source.as_deref() == Some("session_complete"))
+        .collect();
+    assert_eq!(session_complete.len(), 1, "{session_complete:?}");
+}
+
 /// A session with nothing attached to it drains on the first observation, with no
 /// wait at all. A session id that was never seen behaves the same, because
 /// `drain_for_session` reads `job`, `dag_execution` and the coordinator only -

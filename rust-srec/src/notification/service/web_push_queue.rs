@@ -229,4 +229,55 @@ mod tests {
             .unwrap()
             .unwrap();
     }
+
+    /// A stalled consumer bounds the queue at its capacity: admitted events
+    /// keep their order, every rejected one is counted, and space freed by
+    /// the consumer admits new events again.
+    #[test]
+    fn stalled_consumer_preserves_bounded_fifo_and_counts_overflow() {
+        let capacity = WEB_PUSH_QUEUE_CAPACITY;
+        let service = NotificationService::new();
+        let (tx, mut rx) = mpsc::channel(capacity);
+        *service.web_push_tx.write() = Some(tx);
+        for index in 0..10_000 {
+            service.enqueue_web_push(event(index));
+        }
+        service.enqueue_web_push(WebPushQueuedEvent {
+            event: NotificationEvent::PipelineQueueCritical {
+                queue_depth: 1_000,
+                threshold: 200,
+                timestamp: Utc::now(),
+            },
+            event_log_id: None,
+        });
+        assert_eq!(rx.len(), capacity);
+        assert_eq!(service.stats().web_push_dropped, 10_001 - capacity as u64);
+        for index in 0..capacity {
+            assert_eq!(rx.try_recv().unwrap().event_log_id, Some(index.to_string()));
+        }
+        service.enqueue_web_push(event(10_000));
+        assert_eq!(
+            rx.try_recv().unwrap().event_log_id.as_deref(),
+            Some("10000")
+        );
+    }
+
+    /// Without a Tokio runtime nothing may be spawned: an absent, closed or
+    /// stopped queue drops the event and counts it instead of starting a
+    /// fallback task.
+    #[test]
+    fn unavailable_closed_and_stopped_queues_never_spawn_fallbacks() {
+        let service = NotificationService::new();
+        service.enqueue_web_push(event(0));
+        let (tx, rx) = mpsc::channel(1);
+        *service.web_push_tx.write() = Some(tx);
+        drop(rx);
+        service.enqueue_web_push(event(1));
+        let (tx, mut rx) = mpsc::channel(1);
+        *service.web_push_tx.write() = Some(tx);
+        service.cancellation_token.cancel();
+        service.enqueue_web_push(event(2));
+        assert!(rx.try_recv().is_err());
+        assert_eq!(service.stats().web_push_dropped, 3);
+    }
 }

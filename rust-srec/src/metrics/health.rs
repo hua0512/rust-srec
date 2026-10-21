@@ -913,10 +913,15 @@ mod tests {
         );
         let err = std::io::Error::new(std::io::ErrorKind::StorageFull, "full");
         gate.record_failure(std::path::Path::new("/rec/X"), &err);
-        assert_eq!(
-            HealthChecker::check_output_root_gate(&gate).status,
-            HealthStatus::Degraded
-        );
+        let degraded = HealthChecker::check_output_root_gate(&gate);
+        assert_eq!(degraded.status, HealthStatus::Degraded);
+        // The message names the failing root and the kind of failure.
+        let message = degraded
+            .message
+            .expect("a degraded component explains why")
+            .replace('\\', "/");
+        assert!(message.contains("storage_full"), "{message}");
+        assert!(message.contains("/rec"), "{message}");
 
         gate.mark_healthy(std::path::Path::new("/rec/X"));
         // mark_healthy spawns a tokio task for the recovery hook; the state

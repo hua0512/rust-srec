@@ -12,7 +12,7 @@ use reqwest::StatusCode;
 use serde_json::{Value, json};
 
 use crate::support::{
-    FakePlatform, FakeRoom, FlvLoop, Seed, TestApp, WAIT, eventually, id_of, millis,
+    FakePlatform, FakeRoom, FlvLoop, Seed, TestApp, WAIT, eventually, id_of, millis, now_ms,
 };
 
 async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
@@ -685,6 +685,245 @@ async fn segments_smaller_than_the_minimum_are_discarded_and_not_pipelined() {
         files_under(app.output_dir()),
         [PathBuf::from(segment_path(&kept_segments[0]))]
     );
+
+    app.shutdown().await;
+}
+
+/// A streamer row inserted before boot on `room`, for states the services
+/// load at startup.
+fn seeded_streamer(id: &str, room: &FakeRoom, columns: &[(&str, &str)]) -> String {
+    let (names, values): (Vec<&str>, Vec<&str>) = columns.iter().copied().unzip();
+    format!(
+        "INSERT INTO streamers (id, name, url, platform_config_id, priority{names}) \
+         VALUES ('{id}', '{id}', '{url}', 'platform-fake', 'NORMAL'{values});\n",
+        names = names
+            .iter()
+            .map(|name| format!(", {name}"))
+            .collect::<String>(),
+        values = values
+            .iter()
+            .map(|value| format!(", {value}"))
+            .collect::<String>(),
+        url = room.url(),
+    )
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_mesio_config_saved_with_since_retired_settings_still_records() {
+    let fake = FakePlatform::start().await;
+    let room = fake.room("legacy");
+    room.set_live(room.live("Legacy config"));
+    // Output settings an older version stored on the default engine, which
+    // this version no longer has.
+    let stored = json!({
+        "fix_flv": true,
+        "fix_hls": true,
+        "hls": { "output_config": {
+            "live_reorder_buffer_duration_ms": 30_000,
+            "live_reorder_buffer_max_segments": 10,
+            "max_pending_init_segments": 4,
+        } },
+    });
+    let app = TestApp::start_with(Seed::live().rows(&format!(
+        "UPDATE engine_configuration SET config = '{stored}' WHERE id = 'default-mesio';"
+    )))
+    .await;
+    let token = app.admin_token().await;
+    let id = watch(&app, &token, "Legacy", &room, Value::Null).await;
+
+    room.wait_for_media_connection(1).await;
+    room.push(FlvLoop::tiny().stream(1));
+    room.set_offline();
+    room.end();
+
+    let session = ended_session(&app, &token, &id).await;
+    let segments = segments(&app, &token, session_id(&session)).await;
+    assert_eq!(segments.len(), 1, "{segments:?}");
+    assert_recorded(&segments[0]);
+
+    app.shutdown().await;
+}
+
+/// After a restart the session a recording left open is in the database
+/// only, not in memory. Disabling the streamer still ends it, as a user
+/// stop; otherwise it would stay live forever and the next live check would
+/// reuse it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn disabling_a_streamer_ends_the_session_a_restart_left_open() {
+    let fake = FakePlatform::start().await;
+    let room = fake.room("restarted");
+    // Backing off for a day, so the scheduler does not check the room; were
+    // it checked, an error keeps the check from ending the session itself.
+    room.set_error("http", "unavailable");
+    let backoff_until = now_ms() + 86_400_000;
+    let started = now_ms() - 60_000;
+    let app = TestApp::start_with(Seed::live().rows(&format!(
+        "{}INSERT INTO live_sessions (id, streamer_id, streamer_name, start_time, end_time, \
+             total_size_bytes, session_complete_dispatched) \
+         VALUES ('open-session', 'restarted', 'restarted', {started}, NULL, 0, 0);\n",
+        seeded_streamer(
+            "restarted",
+            &room,
+            &[
+                ("state", "'TEMPORAL_DISABLED'"),
+                ("disabled_until", &backoff_until.to_string()),
+            ],
+        ),
+    )))
+    .await;
+    let token = app.admin_token().await;
+    assert_eq!(
+        sessions(&app, &token, "restarted").await[0]["is_live"],
+        true
+    );
+
+    let disabled = app
+        .put(
+            "/api/streamers/restarted",
+            &token,
+            &json!({ "enabled": false }),
+        )
+        .await
+        .expect_status(StatusCode::OK)
+        .body;
+    assert_eq!(disabled["state"], "DISABLED");
+
+    let session = ended_session(&app, &token, "restarted").await;
+    assert_eq!(session_id(&session), "open-session");
+    assert_eq!(
+        end_payload(&session),
+        &json!({ "kind": "session_ended", "cause": { "type": "user_disabled" }, "via_hysteresis": false })
+    );
+
+    app.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_streamer_session_complete_pipeline_replaces_the_platform_one() {
+    let fake = FakePlatform::start().await;
+    let room = fake.room("frank");
+    room.set_live(room.live("Own workflow"));
+    let app =
+        TestApp::start_with(Seed::live().session_complete_pipeline(&succeed("platform-level")))
+            .await;
+    let token = app.admin_token().await;
+    let id = watch(
+        &app,
+        &token,
+        "Frank",
+        &room,
+        json!({ "session_complete_pipeline": succeed("streamer-level") }),
+    )
+    .await;
+
+    room.wait_for_media_connection(1).await;
+    room.push(FlvLoop::tiny().stream(1));
+    room.set_offline();
+    room.end();
+
+    let session = ended_session(&app, &token, &id).await;
+    let dags = finished_dags(&app, &token, session_id(&session), 1).await;
+    assert_eq!(dags[0]["name"], "streamer-level", "{dags:?}");
+    assert_eq!(dags[0]["status"], "COMPLETED", "{dags:?}");
+
+    app.shutdown().await;
+}
+
+/// Platforms that name no CDN in a stream's extras are matched against
+/// preferred CDNs by URL; the preferred stream wins over one the platform
+/// ranks higher.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn preferred_cdns_match_the_stream_url_when_the_platform_names_no_cdn() {
+    let fake = FakePlatform::start().await;
+    let room = fake.room("grace");
+    let preferred = format!("{}?edge=cloudfront", room.flv_url());
+    room.set_live(room.live("Two edges").stream(json!({
+        "url": preferred,
+        "format": "flv",
+        "media": "flv",
+        "quality": "origin",
+        "bitrate": 8_000,
+        "priority": 1,
+    })));
+    let app = TestApp::start_with(Seed::live()).await;
+    let token = app.admin_token().await;
+    let id = watch(
+        &app,
+        &token,
+        "Grace",
+        &room,
+        json!({ "stream_selection_config": { "preferred_cdns": ["cloudfront"] } }),
+    )
+    .await;
+
+    room.wait_for_media_connection(1).await;
+    let media = fake.requests_to(&room, "live.flv");
+    assert_eq!(media.len(), 1, "{media:?}");
+    assert!(
+        media[0].path.ends_with("/live.flv?edge=cloudfront"),
+        "{media:?}"
+    );
+    room.push(FlvLoop::tiny().stream(1));
+    room.set_offline();
+    room.end();
+    ended_session(&app, &token, &id).await;
+
+    app.shutdown().await;
+}
+
+/// Going live does not by itself clear a streamer's earlier failures; the
+/// recording does. Its first part clears the last error, and the first
+/// completed part clears the failure count too, through the committed
+/// streamer row the API serves.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_recording_clears_the_error_state_an_earlier_failure_left() {
+    let fake = FakePlatform::start().await;
+    let room = fake.room("henry");
+    room.set_live(room.live("Recovered"));
+    let app = TestApp::start_with(Seed::live().rows(&seeded_streamer(
+        "henry",
+        &room,
+        &[
+            ("state", "'NOT_LIVE'"),
+            ("consecutive_error_count", "1"),
+            ("last_error", "'Extraction failed (http)'"),
+            (
+                "streamer_specific_config",
+                r#"'{"max_part_size_bytes":20000}'"#,
+            ),
+        ],
+    )))
+    .await;
+    let token = app.admin_token().await;
+
+    let mut flv = FlvLoop::tiny();
+    room.wait_for_media_connection(1).await;
+    room.push(flv.stream(1));
+    let recording = eventually(WAIT, "the last error to clear", || async {
+        let streamer = streamer(&app, &token, "henry").await;
+        streamer["last_error"].is_null().then_some(streamer)
+    })
+    .await;
+    assert_eq!(recording["state"], "LIVE", "{recording}");
+    assert_eq!(recording["consecutive_error_count"], 1, "{recording}");
+
+    // About 38 KB of media: the first part closes at the 20 KB limit.
+    for _ in 0..5 {
+        room.push(flv.next_loop());
+    }
+    let recovered = eventually(WAIT, "the failure count to clear", || async {
+        let streamer = streamer(&app, &token, "henry").await;
+        (streamer["consecutive_error_count"] == 0).then_some(streamer)
+    })
+    .await;
+    assert_eq!(recovered["state"], "LIVE", "{recovered}");
+    assert!(recovered["last_error"].is_null(), "{recovered}");
+    assert!(recovered["disabled_until"].is_null(), "{recovered}");
+    assert!(recovered["last_live_time"].is_string(), "{recovered}");
+
+    room.set_offline();
+    room.end();
+    ended_session(&app, &token, "henry").await;
 
     app.shutdown().await;
 }

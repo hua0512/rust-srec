@@ -221,3 +221,47 @@ async fn later_user_failure_rolls_back_email_slot_clearing_and_all_prior_writes(
         assert_unchanged(&pool, &before, &output).await;
     }
 }
+
+/// Email updates clear every slot before writing, so swapping two users'
+/// emails or moving one to a new user succeeds in either bundle order and
+/// keeps each existing user's identity.
+#[tokio::test]
+async fn swaps_and_reassignment_are_order_independent_and_preserve_identity() {
+    for reverse in [false, true] {
+        for reassignment in [false, true] {
+            let (pool, mut config) = fixture(&[("alice", Some("a")), ("bob", Some("b"))]).await;
+            let before = users(&pool).await;
+            config.users = if reassignment {
+                vec![user("alice", None), user("new", Some("a"))]
+            } else {
+                vec![user("alice", Some("b")), user("bob", Some("a"))]
+            };
+            if reverse {
+                config.users.reverse();
+            }
+            checked_import(&pool, &config, ImportMode::Merge)
+                .await
+                .unwrap();
+            let after = users(&pool).await;
+            for original in before {
+                let actual = after
+                    .iter()
+                    .find(|u| u.username == original.username)
+                    .unwrap();
+                assert_eq!(actual.id, original.id);
+                assert_eq!(actual.created_at, original.created_at);
+            }
+            for imported in &config.users {
+                assert_eq!(
+                    after
+                        .iter()
+                        .find(|u| u.username == imported.username)
+                        .unwrap()
+                        .email,
+                    imported.email,
+                    "reverse={reverse} reassignment={reassignment}"
+                );
+            }
+        }
+    }
+}

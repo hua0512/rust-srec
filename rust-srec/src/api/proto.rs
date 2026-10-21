@@ -246,10 +246,14 @@ pub fn create_snapshot_message(
 mod tests {
     use super::*;
 
+    /// The first metrics frames of a recording have no elapsed time yet;
+    /// their rates must be 0, not inf or NaN.
     #[test]
-    fn test_safe_speed_zero_duration() {
-        assert_eq!(safe_speed(1000, 0.0), 0);
-        assert_eq!(safe_speed(1000, -1.0), 0);
+    fn rates_are_zero_before_any_time_has_elapsed() {
+        for elapsed in [0.0, -1.0] {
+            assert_eq!(safe_speed(1000, elapsed), 0);
+            assert_eq!(safe_playback_ratio(60.0, elapsed), 0.0);
+        }
     }
 
     #[test]
