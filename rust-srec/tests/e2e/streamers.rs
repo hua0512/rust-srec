@@ -987,19 +987,11 @@ async fn put_is_a_partial_update_and_disabling_clears_the_error_backoff() {
     app.shutdown().await;
 }
 
-/// Create and update should refuse an unknown template as the batch route
-/// does (404); both hit the foreign key instead and answer 500.
+/// Create and update refuse an unknown template as the batch route does.
 #[tokio::test]
-#[ignore = "bug: create/PUT with an unknown template_id returns 500 INTERNAL_ERROR (unmapped FK failure) instead of 404/422"]
-async fn known_bug_unknown_template_id_is_rejected_on_create_and_update() {
+async fn unknown_template_id_is_rejected_on_create_and_update() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
-    let rejected = |status: StatusCode| {
-        matches!(
-            status,
-            StatusCode::NOT_FOUND | StatusCode::UNPROCESSABLE_ENTITY
-        )
-    };
 
     let created = app
         .post(
@@ -1013,6 +1005,7 @@ async fn known_bug_unknown_template_id_is_rejected_on_create_and_update() {
             }),
         )
         .await;
+    created.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
     let id = id_of(
         &app.create_disabled_streamer(
             &token,
@@ -1027,14 +1020,7 @@ async fn known_bug_unknown_template_id_is_rejected_on_create_and_update() {
             &json!({ "template_id": "no-such-template" }),
         )
         .await;
-    assert!(
-        rejected(created.status) && rejected(updated.status),
-        "create answered {} {}; update answered {} {}",
-        created.status,
-        created.text,
-        updated.status,
-        updated.text
-    );
+    updated.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
     assert_eq!(list_page(&app, &token, "").await["total"], 1);
     assert!(get_streamer(&app, &token, &id).await["template_id"].is_null());
 
@@ -1440,8 +1426,7 @@ async fn filter_configs_are_validated_and_normalized_when_saved() {
 }
 
 #[tokio::test]
-#[ignore = "bug: creating a filter for an unknown streamer returns 500 INTERNAL_ERROR (unmapped FK failure) instead of 404"]
-async fn known_bug_creating_a_filter_for_an_unknown_streamer_is_a_404() {
+async fn creating_a_filter_for_an_unknown_streamer_is_a_404() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 

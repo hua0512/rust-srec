@@ -193,6 +193,7 @@ pub async fn list_filters(
     request_body = CreateFilterRequest,
     responses(
         (status = 201, description = "Filter created", body = FilterResponse),
+        (status = 404, description = "Streamer not found", body = crate::api::error::ApiErrorResponse),
         (status = 422, description = "Validation error", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
