@@ -1396,8 +1396,6 @@ impl<
                         .await?
                         .consecutive_error_count
                         .unwrap_or(0);
-                let backoff_threshold = download_failure_threshold(streamer.offline_check_count);
-
                 let disabled_until = manager
                     .disabled_until_for_error_count(new_error_count, streamer.offline_check_count);
 
@@ -1411,7 +1409,8 @@ impl<
                         streamer_name = %streamer.name,
                         until = %until,
                         consecutive_errors = new_error_count,
-                        backoff_threshold,
+                        backoff_threshold =
+                            download_failure_threshold(streamer.offline_check_count),
                         "temporarily disabled (error backoff)"
                     );
                 }
@@ -1422,7 +1421,6 @@ impl<
                     streamer_name: streamer.name.clone(),
                     error_message: error.clone(),
                     consecutive_errors: new_error_count,
-                    backoff_threshold,
                     timestamp: now,
                 };
                 MonitorOutboxTxOps::enqueue_event(&mut *tx, &streamer.id, &event).await?;

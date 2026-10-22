@@ -53,10 +53,8 @@ before anything reads it.
 
 ::: warning Deprecated compatibility formats
 The serialized `StreamerMetadata` aliases `effective_offline_check_count` and
-`effective_offline_check_delay_ms` are deprecated. Persisted `TransientError` events that omit
-`backoff_threshold` are also deprecated. These compatibility formats will be removed in a future
-version. New integrations must use `offline_check_count` and `offline_check_delay_ms`, and include
-`backoff_threshold` in every serialized transient-error event.
+`effective_offline_check_delay_ms` are deprecated and will be removed in a future version. New
+integrations must use `offline_check_count` and `offline_check_delay_ms`.
 
 The `cookies` and `proxy_config` fields that platforms, templates and global settings carried
 before [account profiles](#credential-selection-json) and [proxy routes](#proxy-route-json) are
