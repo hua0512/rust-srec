@@ -128,9 +128,11 @@ export const NetworkSystemCard = memo(() => {
                       theme="slate"
                     >
                       <Trans>
-                        Number of consecutive failed checks required to
-                        definitively confirm a streamer has gone offline. Higher
-                        values prevent "fake" offline detection.
+                        Number of consecutive offline signals required to
+                        confirm a streamer has gone offline. A recording that
+                        ends cleanly counts as the first, and each later offline
+                        check adds one. Higher values prevent "fake" offline
+                        detection.
                       </Trans>
                     </FieldInfo>
                   </ConfigFieldLabel>

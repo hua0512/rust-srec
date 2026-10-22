@@ -2270,10 +2270,6 @@ msgstr "连接状态：{statusLabel}"
 msgid "Connection/activity timeout"
 msgstr "连接/活动超时"
 
-#: src/components/config/shared/offline-check-card.tsx:110
-msgid "Consecutive failed checks needed to confirm offline."
-msgstr "确认离线所需的连续失败检查次数。"
-
 #: src/components/streamers/card/stream-avatar-info.tsx:133
 msgid "Consecutive Failures"
 msgstr "连续失败"
@@ -6992,8 +6988,8 @@ msgid "Number of attempts before failing the upload."
 msgstr "上传失败前的重试次数。"
 
 #: src/components/config/global/network-system-card.tsx:130
-msgid "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
-msgstr "确认主播离线所需的连续失败检查次数。较高的值可以防止\"假\"离线检测。"
+msgid "Number of consecutive offline signals required to confirm a streamer has gone offline. A recording that ends cleanly counts as the first, and each later offline check adds one. Higher values prevent \"fake\" offline detection."
+msgstr "确认主播离线所需的连续离线信号次数。正常结束的录制计为第一次，之后每次离线检查再计一次。较高的值可以防止\"假\"离线检测。"
 
 #: src/components/config/global/retention-card.tsx:39
 msgid "Number of days to keep completed, failed, or cancelled jobs and workflow executions. Set to 0 to retain them indefinitely."
@@ -7082,6 +7078,10 @@ msgstr "离线检测"
 #: src/components/config/shared/offline-check-card.tsx:94
 msgid "Offline Detection Count"
 msgstr "离线检测次数"
+
+#: src/components/config/shared/offline-check-card.tsx:110
+msgid "Offline signals needed to confirm offline. A recording that ends cleanly counts as the first."
+msgstr "确认离线所需的离线信号次数。正常结束的录制计为第一次。"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:144
 msgid "Offset Consistency Check"

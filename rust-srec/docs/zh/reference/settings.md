@@ -61,7 +61,7 @@
 |------|------|--------|
 | `streamer_check_interval` | 检查主播状态的间隔 | `60 Secs` |
 | `offline_check_interval` | 检查离线状态的间隔 | `20 Secs` |
-| `offline_detection_count` | 确认主播离线所需的连续检查次数。同一个最终配置值也决定连续下载失败多少次后进入临时冷却；下载失败阈值最低为 `2`。 | `3` |
+| `offline_detection_count` | 确认主播离线所需的连续离线信号次数。正常结束的录制计为第一次，因此按默认值会话在第二次离线检查时结束，详见[离线判定](configuration-overrides.md#离线判定和下载失败恢复共用同一个次数)。同一个最终配置值也决定连续下载失败多少次后进入临时冷却；下载失败阈值最低为 `2`。 | `3` |
 | `proxy_route` | **默认代理**：平台、模板、主播或账号未自行选择时的连接方式。可选 **直连**、**系统代理** 或[已保存的代理](#代理-proxies)。详见[代理](../concepts/configuration.md#proxies)。 | **直连**；首次启动或升级时设置了代理环境变量则为 **系统代理** |
 | `stream_proxy_allow_private_targets` | 允许播放器的 **服务器代理** 和代理测试访问私有或本地网络上的地址 | `false` |
 

@@ -108,7 +108,8 @@ function OfflineCheckCardImpl<TFieldValues extends FieldValues>({
               </FormControl>
               <FormDescription className={CONFIG_DESCRIPTION}>
                 <Trans>
-                  Consecutive failed checks needed to confirm offline.
+                  Offline signals needed to confirm offline. A recording that
+                  ends cleanly counts as the first.
                 </Trans>
               </FormDescription>
               <FormMessage />

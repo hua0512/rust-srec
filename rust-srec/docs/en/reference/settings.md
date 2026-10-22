@@ -63,7 +63,7 @@ Which extractor resolves the stream URL is a separate setting from `download_eng
 |---------|-------------|---------|
 | `streamer_check_interval` | Interval between checking streamer status | `60 Secs` |
 | `offline_check_interval` | Interval between checking offline status | `20 Secs` |
-| `offline_detection_count` | Consecutive offline checks before confirming the streamer is offline. The same resolved count controls when consecutive download failures enter temporary cooldown. Download failures use a minimum threshold of `2`. | `3` |
+| `offline_detection_count` | Consecutive offline signals before confirming the streamer is offline. A recording that ends cleanly counts as the first, so the default ends a session at the second offline check; see [Offline detection](configuration-overrides.md#offline-detection-and-download-failure-recovery-share-one-count). The same resolved count controls when consecutive download failures enter temporary cooldown. Download failures use a minimum threshold of `2`. | `3` |
 | `proxy_route` | **Default proxy**: how requests connect unless a platform, template, streamer or account chooses otherwise. **Direct**, **System proxy**, or a [saved proxy](#proxies). See [Proxies](../concepts/configuration.md#proxies). | **Direct**, or **System proxy** when proxy environment variables were set at the first start or the upgrade |
 | `stream_proxy_allow_private_targets` | Let the player's **Server proxy** and proxy tests reach addresses on private or local networks | `false` |
 
