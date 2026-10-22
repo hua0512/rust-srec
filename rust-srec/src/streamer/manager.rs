@@ -499,55 +499,6 @@ where
         Ok(())
     }
 
-    /// Update a streamer with new metadata.
-    ///
-    /// Persists to database first, then updates in-memory cache.
-    /// This method allows updating all mutable fields of a streamer.
-    ///
-    /// A `state` of [`StreamerState::Disabled`] carries no error bookkeeping: the
-    /// supplied `consecutive_error_count`, `disabled_until` and `last_error` are
-    /// dropped via [`StreamerMetadata::clear_error_tracking`], matching
-    /// [`Self::partial_update_streamer`].
-    pub async fn update_streamer(&self, mut metadata: StreamerMetadata) -> Result<()> {
-        debug!("Updating streamer: {}", metadata.id);
-
-        // Check if streamer exists
-        if !self.metadata.contains_key(&metadata.id) {
-            return Err(crate::Error::not_found("Streamer", &metadata.id));
-        }
-
-        if metadata.state == StreamerState::Disabled {
-            metadata.clear_error_tracking();
-        }
-
-        // Convert to DB model and persist
-        let db_model = self.metadata_to_db_model(&metadata);
-        self.repo.update_streamer_for_manager(&db_model).await?;
-        if self.committed.is_some() {
-            return Ok(());
-        }
-
-        // Update in-memory cache
-        if let Some(old) = self.metadata.get(&metadata.id) {
-            let old_url = old.url.to_lowercase();
-            let new_url = metadata.url.to_lowercase();
-            if old_url != new_url {
-                self.url_index.remove(&old_url);
-            }
-            self.url_index.insert(new_url, metadata.id.clone());
-        }
-        self.metadata
-            .insert(metadata.id.clone(), Arc::new(metadata.clone()));
-
-        // Broadcast event
-        self.broadcaster
-            .publish(ConfigUpdateEvent::StreamerMetadataUpdated {
-                streamer_id: metadata.id,
-            });
-
-        Ok(())
-    }
-
     /// Partially update a streamer.
     ///
     /// Only updates the fields that are provided (Some values).

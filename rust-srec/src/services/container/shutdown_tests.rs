@@ -10,6 +10,7 @@ use crate::config::ConfigUpdateEvent;
 use crate::config::backup::{ConfigExport, CredentialProfileExport, ImportMode};
 use crate::database::committed_writer::{CommitPhase, CommitTestGate};
 use crate::database::models::StreamerDbModel;
+use crate::streamer::manager::StreamerUpdateParams;
 use crate::utils::task_supervisor::TaskSupervisor;
 
 async fn fixture() -> (
@@ -162,15 +163,20 @@ async fn hard_cap_retains_manager_and_import_commit_publication() {
                     .task_supervisor
                     .spawn("mutation request", async move {
                         let result: crate::Result<()> = match mutation {
-                            Mutation::Manager => {
-                                let mut metadata =
-                                    caller_state.streamer_manager.get_streamer(&id).unwrap();
-                                metadata.name = "After shutdown".into();
-                                caller_state
-                                    .streamer_manager
-                                    .update_streamer(metadata)
-                                    .await
-                            }
+                            Mutation::Manager => caller_state
+                                .streamer_manager
+                                .partial_update_streamer(StreamerUpdateParams {
+                                    id,
+                                    name: Some("After shutdown".into()),
+                                    url: None,
+                                    platform_config_id: None,
+                                    template_config_id: None,
+                                    priority: None,
+                                    state: None,
+                                    streamer_specific_config: None,
+                                })
+                                .await
+                                .map(|_| ()),
                             Mutation::Import => caller_state
                                 .configuration_import_service
                                 .import(config, ImportMode::Merge)
