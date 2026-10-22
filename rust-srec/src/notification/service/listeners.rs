@@ -38,10 +38,6 @@ impl NotificationService {
                                     continue;
                                 }
 
-                                if !event.should_notify() {
-                                    continue;
-                                }
-
                                 // StreamOnline/StreamOffline come from
                                 // `SessionTransition` via
                                 // `listen_for_session_transitions`; the monitor

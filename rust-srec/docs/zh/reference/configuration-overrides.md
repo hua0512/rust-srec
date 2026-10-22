@@ -47,10 +47,8 @@
 
 ::: warning 已弃用的兼容格式
 序列化 `StreamerMetadata` 中的别名 `effective_offline_check_count` 和
-`effective_offline_check_delay_ms` 已弃用。未包含 `backoff_threshold` 的持久化
-`TransientError` 事件也已弃用。这些兼容格式将在未来版本中移除。新的集成必须使用
-`offline_check_count` 和 `offline_check_delay_ms`，并在每个序列化的瞬时错误事件中包含
-`backoff_threshold`。
+`effective_offline_check_delay_ms` 已弃用，将在未来版本中移除。新的集成必须使用
+`offline_check_count` 和 `offline_check_delay_ms`。
 
 在[账号凭据配置](#凭据选择-json)和[代理连接](#proxy-route-json)出现之前，平台、模板和全局设置中的
 `cookies` 与 `proxy_config` 字段同样已弃用。此版本首次启动时会转换数据库中这些字段的内容并将其清空，

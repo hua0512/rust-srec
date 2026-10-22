@@ -1639,13 +1639,11 @@ mod end_to_end_tests {
                 streamer_name,
                 error_message,
                 consecutive_errors,
-                backoff_threshold,
                 ..
             } => {
                 assert_eq!(streamer_name, "ErrorStreamer");
                 assert_eq!(error_message, "Network timeout");
                 assert_eq!(consecutive_errors, 1);
-                assert_eq!(backoff_threshold, 3);
             }
             _ => panic!("Expected TransientError event"),
         }
