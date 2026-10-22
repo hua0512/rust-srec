@@ -147,9 +147,22 @@ fn is_public_ipv4(address: Ipv4Addr) -> bool {
     )
 }
 
+/// Global unicast (`2000::/3`) outside the documentation range. A 6to4 or
+/// Teredo address embeds the IPv4 addresses a host with such a tunnel sends
+/// its packets to, so it is only as public as those addresses. The other
+/// forms that embed an IPv4 address (IPv4-mapped, IPv4-compatible and NAT64)
+/// lie outside `2000::/3` and are refused outright.
 fn is_public_ipv6(address: Ipv6Addr) -> bool {
-    let segments = address.segments();
-    (segments[0] & 0xe000) == 0x2000 && !(segments[0] == 0x2001 && segments[1] == 0x0db8)
+    let [s0, s1, s2, s3, _, _, s6, s7] = address.segments();
+    let ipv4 = |high: u16, low: u16| Ipv4Addr::from((u32::from(high) << 16) | u32::from(low));
+    match (s0, s1) {
+        (0x2001, 0x0db8) => false,
+        // Teredo: the server's address, then the client's, inverted.
+        (0x2001, 0x0000) => is_public_ipv4(ipv4(s2, s3)) && is_public_ipv4(ipv4(!s6, !s7)),
+        // 6to4: the tunnel endpoint's address follows the prefix.
+        (0x2002, _) => is_public_ipv4(ipv4(s1, s2)),
+        _ => (s0 & 0xe000) == 0x2000,
+    }
 }
 
 fn is_public_ip(address: IpAddr) -> bool {
@@ -1453,6 +1466,37 @@ mod tests {
         assert!(rewritten.contains("token=desktop-token"));
         assert_eq!(rewritten.matches("\r\n").count(), 7);
         assert!(!rewritten.ends_with('\n'));
+    }
+
+    #[test]
+    fn ipv6_addresses_embedding_ipv4_are_only_as_public_as_the_ipv4_address() {
+        for (address, public) in [
+            ("2606:4700:4700::1111", true),
+            ("2001:db8::1", false),
+            ("::1", false),
+            ("fd00::1", false),
+            // 6to4 around 8.8.8.8, 127.0.0.1, 10.0.0.1 and 169.254.169.254.
+            ("2002:808:808::1", true),
+            ("2002:7f00:1::1", false),
+            ("2002:a00:1::", false),
+            ("2002:a9fe:a9fe::1", false),
+            // Teredo: server 65.54.227.120, client 8.8.8.8 stored inverted.
+            ("2001:0:4136:e378:8000:63bf:f7f7:f7f7", true),
+            // Client 127.0.0.1, then 192.168.1.1.
+            ("2001:0:4136:e378:8000:63bf:80ff:fffe", false),
+            ("2001:0:4136:e378:8000:63bf:3f57:fefe", false),
+            // Server 10.0.0.1 with the public client 8.8.8.8.
+            ("2001:0:a00:1:8000:63bf:f7f7:f7f7", false),
+            // Teredo is only 2001::/32, not the rest of 2001::/16.
+            ("2001:4860::8888", true),
+            // IPv4-mapped, IPv4-compatible and NAT64 forms of public 8.8.8.8.
+            ("::ffff:8.8.8.8", false),
+            ("::8.8.8.8", false),
+            ("64:ff9b::808:808", false),
+        ] {
+            let parsed: Ipv6Addr = address.parse().unwrap();
+            assert_eq!(is_public_ipv6(parsed), public, "{address}");
+        }
     }
 
     #[tokio::test]
