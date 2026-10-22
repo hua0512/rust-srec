@@ -259,6 +259,20 @@ pub fn notification_event_types() -> &'static [NotificationEventTypeInfo] {
     NOTIFICATION_EVENT_TYPES
 }
 
+/// Event types that older versions offered but nothing emits any more. A
+/// migration removed the subscriptions databases held to them; backups made
+/// before then still carry them, so a restore drops them too.
+const RETIRED_EVENT_TYPES: &[&str] = &["config_updated"];
+
+/// Whether `input` names a retired event type under any spelling the catalog
+/// accepted for it (`config_updated`, `config.updated`, `ConfigUpdated`, ...).
+pub fn is_retired_subscription_event_name(input: &str) -> bool {
+    let normalized = normalize_subscription_key(input);
+    RETIRED_EVENT_TYPES
+        .iter()
+        .any(|retired| normalize_subscription_key(retired) == normalized)
+}
+
 pub fn canonicalize_subscription_event_name(input: &str) -> Option<&'static str> {
     let trimmed = input.trim();
     if trimmed.is_empty() {

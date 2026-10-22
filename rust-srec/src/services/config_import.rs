@@ -41,6 +41,7 @@ use crate::database::repositories::{
 };
 use crate::domain::StreamerState;
 use crate::notification::NotificationService;
+use crate::notification::events::is_retired_subscription_event_name;
 use crate::services::runtime_coordinator::{OBSERVE_RETIREMENT, RuntimeCoordinator};
 use crate::streamer::StreamerManager;
 use crate::streamer::state_store::{StateChange, StatePublication};
@@ -1684,7 +1685,11 @@ async fn apply_notification_channels(
         };
         persist_channel(tx, &model).await?;
         crate::database::repositories::notification::delete_subscriptions(tx, &model.id).await?;
-        for event in &item.subscriptions {
+        for event in item
+            .subscriptions
+            .iter()
+            .filter(|event| !is_retired_subscription_event_name(event))
+        {
             crate::database::repositories::notification::insert_subscription(
                 tx,
                 &model.id,

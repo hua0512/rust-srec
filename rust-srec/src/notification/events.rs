@@ -12,7 +12,8 @@ pub(crate) mod mapping;
 mod render;
 
 pub use catalog::{
-    NotificationEventTypeInfo, canonicalize_subscription_event_name, notification_event_types,
+    NotificationEventTypeInfo, canonicalize_subscription_event_name,
+    is_retired_subscription_event_name, notification_event_types,
 };
 pub(crate) use render::RenderCache;
 pub use render::RenderedEvent;
