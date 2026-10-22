@@ -9,31 +9,9 @@ use std::path::{Path, PathBuf};
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 
-use crate::support::{FakePlatform, FakeRoom, FlvLoop, Seed, TestApp, WAIT, eventually, id_of};
-
-async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
-    app.get(path, token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body
-}
-
-/// A workflow of one `execute` step that succeeds on every OS.
-fn succeed(name: &str) -> Value {
-    json!({
-        "name": name,
-        "steps": [{
-            "id": "succeed",
-            "step": { "type": "inline", "processor": "execute", "config": { "command": "exit 0" } },
-            "depends_on": [],
-        }],
-    })
-}
-
-/// `value` as an SQL string literal.
-fn sql_text(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "''"))
-}
+use crate::support::{
+    FakePlatform, FakeRoom, Seed, TestApp, WAIT, eventually, file_name, id_of, sql_text, succeed,
+};
 
 /// Create an enabled streamer watching `room` and return its id.
 async fn watch(app: &TestApp, token: &str, room: &FakeRoom, body: Value) -> String {
@@ -46,35 +24,14 @@ async fn watch(app: &TestApp, token: &str, room: &FakeRoom, body: Value) -> Stri
 /// offline.
 async fn broadcast_once(room: &FakeRoom) {
     room.wait_for_media_connection(1).await;
-    room.push(FlvLoop::tiny().stream(1));
-    room.set_offline();
-    room.end();
-}
-
-/// Wait for the streamer's only session to end and return its id.
-async fn ended_session(app: &TestApp, token: &str, streamer_id: &str) -> String {
-    eventually(WAIT, "the session to end", || async {
-        let sessions = get_ok(
-            app,
-            token,
-            &format!("/api/sessions?streamer_id={streamer_id}&include_empty=true"),
-        )
-        .await["items"]
-            .as_array()
-            .expect("session items")
-            .clone();
-        assert!(sessions.len() <= 1, "more than one session: {sessions:?}");
-        sessions
-            .first()
-            .filter(|session| session["is_live"] == false)
-            .map(id_of)
-    })
-    .await
+    room.broadcast_ends(1);
 }
 
 /// The session's only segment file.
 async fn segment_file(app: &TestApp, token: &str, session_id: &str) -> PathBuf {
-    let segments = get_ok(app, token, &format!("/api/sessions/{session_id}/segments")).await;
+    let segments = app
+        .get_ok(&format!("/api/sessions/{session_id}/segments"), token)
+        .await;
     let items = segments["items"].as_array().expect("segment items");
     assert_eq!(items.len(), 1, "{segments}");
     PathBuf::from(items[0]["file_path"].as_str().expect("segment file path"))
@@ -89,15 +46,7 @@ async fn finished_workflows(
     count: usize,
 ) -> Vec<String> {
     let mut names: Vec<String> = eventually(WAIT, "the session's workflows to finish", || async {
-        let dags = get_ok(
-            app,
-            token,
-            &format!("/api/pipeline/dags?session_id={session_id}"),
-        )
-        .await["dags"]
-            .as_array()
-            .expect("dags")
-            .clone();
+        let dags = app.dags(token, session_id).await;
         assert!(dags.len() <= count, "unexpected workflows: {dags:?}");
         (dags.len() == count && dags.iter().all(|dag| dag["status"] == "COMPLETED")).then_some(dags)
     })
@@ -107,12 +56,6 @@ async fn finished_workflows(
     .collect();
     names.sort_unstable();
     names
-}
-
-fn file_name(path: &Path) -> &str {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .expect("a UTF-8 file name")
 }
 
 /// Panics unless `name` is `{prefix}-YYYYMMDD-HHMMSS-{suffix}`, the default
@@ -183,7 +126,7 @@ async fn hostile_titles_and_names_become_literal_safe_path_components() {
     .await;
 
     broadcast_once(&room).await;
-    let session_id = ended_session(&app, &token, &id).await;
+    let session_id = app.ended_session_id(&token, &id).await;
     let file = segment_file(&app, &token, &session_id).await;
     let (name, title) = ("Streamer_Name_", "Top_ 5%d_end");
     assert_eq!(
@@ -198,12 +141,12 @@ async fn hostile_titles_and_names_become_literal_safe_path_components() {
         finished_workflows(&app, &token, &session_id, 1).await,
         ["copy-out"]
     );
-    let jobs = get_ok(
-        &app,
-        &token,
-        &format!("/api/pipeline/jobs?session_id={session_id}"),
-    )
-    .await["items"]
+    let jobs = app
+        .get_ok(
+            &format!("/api/pipeline/jobs?session_id={session_id}"),
+            &token,
+        )
+        .await["items"]
         .as_array()
         .expect("job items")
         .clone();
@@ -266,8 +209,7 @@ async fn a_template_folder_and_engine_and_a_streamer_workflow_override_the_globa
             }),
         )
         .await
-        .expect_status(StatusCode::CREATED)
-        .body;
+        .created();
     let template_id = id_of(&template);
 
     let own_id = watch(
@@ -296,7 +238,7 @@ async fn a_template_folder_and_engine_and_a_streamer_workflow_override_the_globa
         (&own_id, "streamer-segment"),
         (&inherited_id, "global-segment"),
     ] {
-        let session_id = ended_session(&app, &token, id).await;
+        let session_id = app.ended_session_id(&token, id).await;
         let file = segment_file(&app, &token, &session_id).await;
         assert_eq!(file.parent(), Some(folder.as_path()), "{workflow}");
         assert_eq!(
@@ -364,10 +306,9 @@ async fn every_selection_layer_and_the_selected_accounts_cookies_reach_the_media
             }),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     let path = "/api/config/platforms/platform-fake";
-    let mut platform = get_ok(&app, &token, path).await;
+    let mut platform = app.get_ok(path, &token).await;
     // The platform route carries the selection as a JSON document in a string.
     platform["credential_selection"] =
         json!(json!({ "mode": "fixed", "credential_id": id_of(&profile) }).to_string());
@@ -384,8 +325,7 @@ async fn every_selection_layer_and_the_selected_accounts_cookies_reach_the_media
             }),
         )
         .await
-        .expect_status(StatusCode::CREATED)
-        .body;
+        .created();
     watch(
         &app,
         &token,
@@ -436,8 +376,9 @@ async fn a_room_offering_only_blacklisted_streams_is_not_recorded() {
         let id = &id;
         async move {
             eventually(WAIT, &format!("{count} checks"), || async {
-                let history =
-                    get_ok(app, token, &format!("/api/streamers/{id}/check-history")).await;
+                let history = app
+                    .get_ok(&format!("/api/streamers/{id}/check-history"), token)
+                    .await;
                 let items = history["items"].as_array().expect("check history").clone();
                 (items.len() >= count).then_some(items)
             })
@@ -450,12 +391,12 @@ async fn a_room_offering_only_blacklisted_streams_is_not_recorded() {
     // The streamer is checked again rather than recorded.
     checks(2).await;
     assert_eq!(fake.requests_to(&room, "live.flv").len(), 0);
-    let sessions = get_ok(
-        &app,
-        &token,
-        &format!("/api/sessions?streamer_id={id}&include_empty=true"),
-    )
-    .await;
+    let sessions = app
+        .get_ok(
+            &format!("/api/sessions?streamer_id={id}&include_empty=true"),
+            &token,
+        )
+        .await;
     assert_eq!(sessions["items"], json!([]), "{sessions}");
 
     app.shutdown().await;

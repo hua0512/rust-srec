@@ -4,6 +4,7 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 /// A loopback address nothing listens on, so connections to it are refused.
@@ -53,6 +54,12 @@ impl ReceivedRequest {
             .iter()
             .find(|(key, _)| key.eq_ignore_ascii_case(name))
             .map(|(_, value)| value.as_str())
+    }
+
+    /// The body parsed as JSON.
+    #[track_caller]
+    pub fn json(&self) -> Value {
+        serde_json::from_slice(&self.body).expect("JSON request body")
     }
 
     pub(super) async fn from_axum(request: axum::extract::Request) -> Self {

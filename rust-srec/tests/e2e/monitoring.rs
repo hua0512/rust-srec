@@ -4,17 +4,9 @@
 //! about one per second per platform after a burst of two, and a global route
 //! that ends at a recorder answering 502.
 
-use reqwest::StatusCode;
 use serde_json::{Value, json};
 
 use crate::support::{FakePlatform, Seed, TestApp, WAIT, eventually, id_of, millis};
-
-async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
-    app.get(path, token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body
-}
 
 async fn watch(app: &TestApp, token: &str, name: &str, url: &str) -> String {
     id_of(
@@ -23,34 +15,9 @@ async fn watch(app: &TestApp, token: &str, name: &str, url: &str) -> String {
     )
 }
 
-async fn streamer(app: &TestApp, token: &str, id: &str) -> Value {
-    get_ok(app, token, &format!("/api/streamers/{id}")).await
-}
-
 async fn clear_error(app: &TestApp, token: &str, id: &str) -> Value {
     let path = format!("/api/streamers/{id}/clear-error");
-    app.post(&path, token, &json!({}))
-        .await
-        .expect_status(StatusCode::OK)
-        .body
-}
-
-/// The streamer's check history, oldest first.
-async fn checks(app: &TestApp, token: &str, id: &str) -> Vec<Value> {
-    get_ok(app, token, &format!("/api/streamers/{id}/check-history")).await["items"]
-        .as_array()
-        .expect("check history")
-        .clone()
-}
-
-/// Wait until the streamer has `count` more checks recorded than it has now,
-/// as proof that the scheduler kept running meanwhile.
-async fn wait_for_more_checks(app: &TestApp, token: &str, id: &str, count: usize) {
-    let target = checks(app, token, id).await.len() + count;
-    eventually(WAIT, "more checks of the control streamer", || async {
-        (checks(app, token, id).await.len() >= target).then_some(())
-    })
-    .await;
+    app.post(&path, token, &json!({})).await.ok()
 }
 
 /// Fatal answers stop monitoring and are recorded in the check history;
@@ -98,7 +65,7 @@ async fn fatal_platform_answers_stop_monitoring_until_the_error_is_cleared() {
 
     for ((kind, state, _, last_error), (_, id)) in cases.iter().zip(&watched) {
         let stopped = eventually(WAIT, &format!("{kind} to stop monitoring"), || async {
-            let streamer = streamer(&app, &token, id).await;
+            let streamer = app.streamer(&token, id).await;
             (streamer["state"] != "NOT_LIVE").then_some(streamer)
         })
         .await;
@@ -111,10 +78,10 @@ async fn fatal_platform_answers_stop_monitoring_until_the_error_is_cleared() {
     // The scheduler keeps checking the control streamer, but never again the
     // fatal ones. History rows are written in check order, so the control's
     // later rows mean the fatal checks' rows are in too.
-    wait_for_more_checks(&app, &token, &control_id, 2).await;
+    app.wait_for_more_checks(&token, &control_id, 2).await;
     for ((kind, _, fatal_kind, _), (room, id)) in cases.iter().zip(&watched) {
         assert_eq!(fake.requests_to(room, "status").len(), 1, "{kind}");
-        let history = checks(&app, &token, id).await;
+        let history = app.checks(&token, id).await;
         assert_eq!(history.len(), 1, "{kind}: {history:?}");
         assert_eq!(history[0]["outcome"], "fatal_error", "{kind}");
         assert_eq!(history[0]["fatal_kind"], *fatal_kind, "{kind}");
@@ -129,14 +96,14 @@ async fn fatal_platform_answers_stop_monitoring_until_the_error_is_cleared() {
     gone.set_offline();
     clear_error(&app, &token, gone_id).await;
     eventually(WAIT, "a check after clear-error", || async {
-        let history = checks(&app, &token, gone_id).await;
+        let history = app.checks(&token, gone_id).await;
         history
             .iter()
             .any(|check| check["outcome"] == "offline")
             .then_some(())
     })
     .await;
-    assert_eq!(streamer(&app, &token, gone_id).await["state"], "NOT_LIVE");
+    assert_eq!(app.streamer(&token, gone_id).await["state"], "NOT_LIVE");
 
     app.shutdown().await;
 }
@@ -153,12 +120,12 @@ async fn backing_off(fake: &FakePlatform) -> (TestApp, String, String, String) {
     let id = watch(&app, &token, "Flaky", flaky.url()).await;
     let control_id = watch(&app, &token, "Control", fake.room("control").url()).await;
     eventually(WAIT, "the backoff", || async {
-        (!streamer(&app, &token, &id).await["disabled_until"].is_null()).then_some(())
+        (!app.streamer(&token, &id).await["disabled_until"].is_null()).then_some(())
     })
     .await;
-    wait_for_more_checks(&app, &token, &control_id, 2).await;
+    app.wait_for_more_checks(&token, &control_id, 2).await;
     assert_eq!(fake.requests_to(&flaky, "status").len(), 2);
-    assert_eq!(checks(&app, &token, &id).await.len(), 2);
+    assert_eq!(app.checks(&token, &id).await.len(), 2);
     (app, token, id, control_id)
 }
 
@@ -172,11 +139,11 @@ async fn consecutive_check_failures_back_off_and_clear_error_resets_and_resumes_
 
     // With offline_check_count 1 the threshold is its floor of two failures,
     // and the first backoff lasts 60 s.
-    let backing_off = streamer(&app, &token, &id).await;
+    let backing_off = app.streamer(&token, &id).await;
     assert_eq!(backing_off["state"], "TEMPORAL_DISABLED", "{backing_off}");
     assert_eq!(backing_off["consecutive_error_count"], 2);
     assert_eq!(backing_off["last_error"], "Extraction failed (http)");
-    let history = checks(&app, &token, &id).await;
+    let history = app.checks(&token, &id).await;
     for check in &history {
         assert_eq!(check["outcome"], "transient_error", "{check}");
         assert_eq!(check["error_message"], "Extraction failed (http)");
@@ -187,7 +154,7 @@ async fn consecutive_check_failures_back_off_and_clear_error_resets_and_resumes_
     // Only a check made after clear-error can see the room offline.
     fake.room("flaky").set_offline();
     let cleared = clear_error(&app, &token, &id).await;
-    let stored = streamer(&app, &token, &id).await;
+    let stored = app.streamer(&token, &id).await;
     for streamer in [&cleared, &stored] {
         assert_eq!(streamer["state"], "NOT_LIVE", "{streamer}");
         assert_eq!(streamer["consecutive_error_count"], 0);
@@ -195,12 +162,12 @@ async fn consecutive_check_failures_back_off_and_clear_error_resets_and_resumes_
         assert!(streamer["last_error"].is_null(), "{streamer}");
     }
     let history = eventually(WAIT, "a check after clear-error", || async {
-        let history = checks(&app, &token, &id).await;
+        let history = app.checks(&token, &id).await;
         (history.len() > 2).then_some(history)
     })
     .await;
     assert_eq!(history[2]["outcome"], "offline", "{history:?}");
-    assert_eq!(streamer(&app, &token, &id).await["state"], "NOT_LIVE");
+    assert_eq!(app.streamer(&token, &id).await["state"], "NOT_LIVE");
 
     app.shutdown().await;
 }
@@ -220,12 +187,11 @@ async fn clear_error_leaves_a_disabled_streamer_disabled() {
             &json!({ "enabled": false }),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(disabled["state"], "DISABLED", "{disabled}");
 
     let cleared = clear_error(&app, &token, &id).await;
-    let stored = streamer(&app, &token, &id).await;
+    let stored = app.streamer(&token, &id).await;
     for streamer in [&cleared, &stored] {
         assert_eq!(streamer["state"], "DISABLED", "{streamer}");
         assert_eq!(streamer["enabled"], false, "{streamer}");
@@ -233,7 +199,7 @@ async fn clear_error_leaves_a_disabled_streamer_disabled() {
         assert!(streamer["disabled_until"].is_null(), "{streamer}");
         assert!(streamer["last_error"].is_null(), "{streamer}");
     }
-    wait_for_more_checks(&app, &token, &control_id, 2).await;
+    app.wait_for_more_checks(&token, &control_id, 2).await;
     assert_eq!(fake.requests_to(&flaky, "status").len(), 2);
 
     app.shutdown().await;
@@ -280,7 +246,7 @@ async fn enabled_streamers_on_every_built_in_platform_fail_through_a_dead_end_ro
 
     for ((url, _), id) in platforms.iter().zip(&ids) {
         let failed = eventually(WAIT, &format!("{url} to back off"), || async {
-            let streamer = streamer(&app, &token, id).await;
+            let streamer = app.streamer(&token, id).await;
             (!streamer["disabled_until"].is_null()).then_some(streamer)
         })
         .await;

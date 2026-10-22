@@ -8,31 +8,9 @@ use crate::support::{
     ClosedPort, LocalHttpServer, Response, TestApp, assert_recent, id_of, millis, now_ms,
 };
 
-/// The body of a response the test expects to succeed.
-trait Succeeded {
-    fn ok(self) -> Value;
-    fn created(self) -> Value;
-}
-
-impl Succeeded for Response {
-    #[track_caller]
-    fn ok(self) -> Value {
-        self.expect_status(StatusCode::OK).body
-    }
-
-    #[track_caller]
-    fn created(self) -> Value {
-        self.expect_status(StatusCode::CREATED).body
-    }
-}
-
-async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
-    app.get(path, token).await.ok()
-}
-
 /// The `total` of a list route.
 async fn total(app: &TestApp, token: &str, path: &str) -> u64 {
-    get_ok(app, token, path).await["total"]
+    app.get_ok(path, token).await["total"]
         .as_u64()
         .expect("list total")
 }
@@ -65,7 +43,7 @@ async fn put_platform(
     edit: impl FnOnce(&mut serde_json::Map<String, Value>),
 ) -> Response {
     let path = format!("/api/config/platforms/{platform_id}");
-    let mut body = get_ok(app, token, &path).await;
+    let mut body = app.get_ok(&path, token).await;
     edit(body.as_object_mut().expect("platform body is an object"));
     app.put(&path, token, &body).await
 }
@@ -87,7 +65,8 @@ async fn set_platform_field(
 
 /// The proxy route that applies to a scope.
 async fn effective_route(app: &TestApp, token: &str, query: &str) -> Value {
-    get_ok(app, token, &format!("/api/proxies/effective?{query}")).await
+    app.get_ok(&format!("/api/proxies/effective?{query}"), token)
+        .await
 }
 
 #[tokio::test]
@@ -95,7 +74,7 @@ async fn global_config_matches_the_settings_schema_and_applies_a_patch_whole_or_
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 
-    let global = get_ok(&app, &token, "/api/config/global").await;
+    let global = app.get_ok("/api/config/global", &token).await;
     // The settings form refuses to submit negative or fractional retention
     // days, a negative freshness threshold, or a probe interval under 1 s.
     for field in [
@@ -152,7 +131,7 @@ async fn global_config_matches_the_settings_schema_and_applies_a_patch_whole_or_
         json!({"proxy_id": "missing-proxy"})
     );
     assert_eq!(
-        get_ok(&app, &token, "/api/config/global").await,
+        app.get_ok("/api/config/global", &token).await,
         global,
         "refused patches must not apply anything"
     );
@@ -185,7 +164,7 @@ async fn global_config_matches_the_settings_schema_and_applies_a_patch_whole_or_
             refused.text
         );
         assert_eq!(
-            get_ok(&app, &token, "/api/config/global").await,
+            app.get_ok("/api/config/global", &token).await,
             global,
             "{field}: nothing may change"
         );
@@ -227,7 +206,7 @@ async fn global_config_matches_the_settings_schema_and_applies_a_patch_whole_or_
     ] {
         assert_eq!(applied[field], value, "{field}: {applied}");
     }
-    assert_eq!(get_ok(&app, &token, "/api/config/global").await, applied);
+    assert_eq!(app.get_ok("/api/config/global", &token).await, applied);
 
     // A null legacy field is what older clients send for "unset".
     let system = app
@@ -246,7 +225,7 @@ async fn global_config_matches_the_settings_schema_and_applies_a_patch_whole_or_
         .ok();
     assert_eq!(kept["proxy_route"], json!({"kind": "system"}));
     assert_eq!(kept["record_danmu"], true);
-    assert_eq!(get_ok(&app, &token, "/api/config/global").await, kept);
+    assert_eq!(app.get_ok("/api/config/global", &token).await, kept);
 
     app.shutdown().await;
 }
@@ -256,7 +235,7 @@ async fn platform_configs_are_replaced_whole_but_keep_their_identity() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 
-    let platforms = get_ok(&app, &token, "/api/config/platforms").await;
+    let platforms = app.get_ok("/api/config/platforms", &token).await;
     let platforms = platforms.as_array().expect("platform list");
     for name in ["bilibili", "huya", "douyu", "twitch", "streamlink"] {
         let platform = platforms
@@ -273,7 +252,7 @@ async fn platform_configs_are_replaced_whole_but_keep_their_identity() {
     missing.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
 
     const HUYA: &str = "/api/config/platforms/platform-huya";
-    let original = get_ok(&app, &token, HUYA).await;
+    let original = app.get_ok(HUYA, &token).await;
     let mismatched = app
         .put("/api/config/platforms/platform-douyu", &token, &original)
         .await;
@@ -305,7 +284,7 @@ async fn platform_configs_are_replaced_whole_but_keep_their_identity() {
         })
         .await;
         refused.assert_error(status, code);
-        let stored = get_ok(&app, &token, HUYA).await;
+        let stored = app.get_ok(HUYA, &token).await;
         assert_eq!(stored, original, "{field}: nothing may change");
     }
     // A blank cookie value asks for none and is accepted.
@@ -326,7 +305,7 @@ async fn platform_configs_are_replaced_whole_but_keep_their_identity() {
     assert_eq!(replaced["offline_check_delay_ms"], 1000);
     assert_eq!(replaced["output_folder"], "/recordings/huya");
     assert_eq!(replaced["proxy_route"], json!({"kind": "direct"}));
-    assert_eq!(get_ok(&app, &token, HUYA).await, replaced);
+    assert_eq!(app.get_ok(HUYA, &token).await, replaced);
 
     // PUT replaces every override, but an omitted route keeps the stored one.
     let cleared = put_platform(&app, &token, "platform-huya", |body| {
@@ -434,7 +413,7 @@ async fn templates_are_replaced_whole_counted_by_their_streamers_and_cloned() {
         assert_eq!(replaced[field], Value::Null, "{field}: {replaced}");
     }
     assert_eq!(replaced["proxy_route"], json!({"kind": "direct"}));
-    assert_eq!(get_ok(&app, &token, &path).await, replaced);
+    assert_eq!(app.get_ok(&path, &token).await, replaced);
     let refused = app
         .put(&path, &token, &json!({"offline_check_delay_ms": 999}))
         .await;
@@ -456,8 +435,8 @@ async fn templates_are_replaced_whole_counted_by_their_streamers_and_cloned() {
         .await;
     assert_eq!(streamer["state"], "DISABLED");
     assert_eq!(streamer["template_id"], template_id.as_str());
-    assert_eq!(get_ok(&app, &token, &path).await["usage_count"], 1);
-    let listed = get_ok(&app, &token, "/api/templates").await;
+    assert_eq!(app.get_ok(&path, &token).await["usage_count"], 1);
+    let listed = app.get_ok("/api/templates", &token).await;
     assert_eq!(listed["items"][0]["id"], template_id.as_str());
     assert_eq!(listed["items"][0]["usage_count"], 1);
     let in_use = app.delete(&path, &token).await;
@@ -560,11 +539,11 @@ async fn a_template_stays_until_its_deleted_streamer_is_reaped() {
         .await;
     assert_eq!(marked, 1, "the row stays marked while work is owed");
 
-    let stored = get_ok(&app, &token, &path).await;
+    let stored = app.get_ok(&path, &token).await;
     assert_eq!(stored["usage_count"], 0, "a deleted streamer is not a user");
     let refused = app.delete(&path, &token).await;
     refused.assert_error(StatusCode::CONFLICT, "CONFLICT");
-    get_ok(&app, &token, &path).await;
+    app.get_ok(&path, &token).await;
 
     app.shutdown().await;
 }
@@ -574,7 +553,7 @@ async fn engines_are_validated_against_their_type_edited_partially_and_tested() 
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 
-    let listed = get_ok(&app, &token, "/api/engines").await;
+    let listed = app.get_ok("/api/engines", &token).await;
     let mut defaults: Vec<&str> = listed
         .as_array()
         .expect("engine list")
@@ -603,8 +582,8 @@ async fn engines_are_validated_against_their_type_edited_partially_and_tested() 
             .expect("config parses")
     };
     assert_eq!(config_of(&mesio), json!({"fix_flv": false}));
-    assert_eq!(get_ok(&app, &token, &mesio_path).await, mesio);
-    let tested = get_ok(&app, &token, &format!("{mesio_path}/test")).await;
+    assert_eq!(app.get_ok(&mesio_path, &token).await, mesio);
+    let tested = app.get_ok(&format!("{mesio_path}/test"), &token).await;
     assert_eq!(tested["available"], true);
     assert!(
         tested["version"]
@@ -629,7 +608,7 @@ async fn engines_are_validated_against_their_type_edited_partially_and_tested() 
         .await
         .ok();
     assert_eq!(reconfigured["name"], "Renamed mesio");
-    let stored = get_ok(&app, &token, &mesio_path).await;
+    let stored = app.get_ok(&mesio_path, &token).await;
     assert_eq!(stored, reconfigured);
     assert_eq!(
         config_of(&stored),
@@ -644,7 +623,7 @@ async fn engines_are_validated_against_their_type_edited_partially_and_tested() 
     .await
     .created();
     let ffmpeg_test = format!("/api/engines/{}/test", id_of(&ffmpeg));
-    let tested = get_ok(&app, &token, &ffmpeg_test).await;
+    let tested = app.get_ok(&ffmpeg_test, &token).await;
     assert_eq!(tested, json!({"available": false, "version": null}));
 
     // A type or config that does not fit is refused, on create and on edit.
@@ -667,7 +646,7 @@ async fn engines_are_validated_against_their_type_edited_partially_and_tested() 
         .await;
     refused.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
     assert_eq!(
-        get_ok(&app, &token, &fits_path).await["config"],
+        app.get_ok(&fits_path, &token).await["config"],
         fits["config"]
     );
 
@@ -686,7 +665,7 @@ async fn engines_are_validated_against_their_type_edited_partially_and_tested() 
     missing.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
     // The defaults, the missing ffmpeg and the one that fits: nothing
     // refused was stored.
-    let listed = get_ok(&app, &token, "/api/engines").await;
+    let listed = app.get_ok("/api/engines", &token).await;
     assert_eq!(listed.as_array().map(Vec::len), Some(5), "{listed}");
 
     app.shutdown().await;
@@ -703,7 +682,7 @@ async fn a_stored_engine_config_that_does_not_fit_its_type_still_loads() {
     .await;
     let token = app.admin_token().await;
 
-    let listed = get_ok(&app, &token, "/api/engines").await;
+    let listed = app.get_ok("/api/engines", &token).await;
     assert!(
         listed
             .as_array()
@@ -864,7 +843,7 @@ async fn saved_proxies_never_return_their_password_and_report_conflicts_by_code(
     assert_eq!(deleted.status, StatusCode::NO_CONTENT, "{}", deleted.text);
     let gone = app.get(&path, &token).await;
     gone.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
-    assert_eq!(get_ok(&app, &token, "/api/proxies").await, json!([]));
+    assert_eq!(app.get_ok("/api/proxies", &token).await, json!([]));
 
     app.shutdown().await;
 }
@@ -956,10 +935,10 @@ async fn a_proxy_in_use_cannot_be_deleted_and_the_refusal_lists_every_user() {
         json!({"references": expected_references})
     );
     assert_eq!(
-        get_ok(&app, &token, "/api/proxies").await[0]["usage_count"],
+        app.get_ok("/api/proxies", &token).await[0]["usage_count"],
         5
     );
-    let detail = get_ok(&app, &token, &proxy_path).await;
+    let detail = app.get_ok(&proxy_path, &token).await;
     assert_eq!(detail["references"], expected_references);
     assert_eq!(detail["proxy"]["usage_count"], 5);
 
@@ -1257,7 +1236,7 @@ async fn account_selections_round_trip_on_streamers_and_templates() {
         json!({"credential_selection": pool, "record_danmu": false})
     );
     assert_eq!(
-        get_ok(&app, &token, &path).await["streamer_specific_config"],
+        app.get_ok(&path, &token).await["streamer_specific_config"],
         kept["streamer_specific_config"]
     );
     let removed = app
@@ -1343,7 +1322,7 @@ async fn account_selections_round_trip_on_streamers_and_templates() {
         json!({"bilibili": {"credential_selection": fixed, "quality": 2}})
     );
     assert_eq!(
-        get_ok(&app, &token, &template_path).await["platform_overrides"],
+        app.get_ok(&template_path, &token).await["platform_overrides"],
         replaced["platform_overrides"]
     );
 
@@ -1431,7 +1410,7 @@ async fn profile_writes_return_the_conflict_codes_the_editor_reads() {
             "recordings": [],
         })
     );
-    let detail = get_ok(&app, &token, &path).await;
+    let detail = app.get_ok(&path, &token).await;
     assert_eq!(
         detail["references"],
         referenced.body["details"]["references"]
@@ -1549,7 +1528,7 @@ async fn the_effective_account_selection_follows_streamer_then_template_then_pla
             .collect()
     };
 
-    let effective = get_ok(&app, &token, &selection_path(&streamer_scope)).await;
+    let effective = app.get_ok(&selection_path(&streamer_scope), &token).await;
     assert_eq!(effective["configured"], fixed(&ids[2]));
     assert_eq!(
         effective["resolved"]["owner"],
@@ -1567,7 +1546,7 @@ async fn the_effective_account_selection_follows_streamer_then_template_then_pla
     )
     .await
     .ok();
-    let effective = get_ok(&app, &token, &selection_path(&streamer_scope)).await;
+    let effective = app.get_ok(&selection_path(&streamer_scope), &token).await;
     assert_eq!(effective["configured"], Value::Null);
     assert_eq!(
         effective["resolved"]["owner"],
@@ -1576,7 +1555,7 @@ async fn the_effective_account_selection_follows_streamer_then_template_then_pla
     assert_eq!(candidate_ids(&effective), [ids[1].clone()]);
     let template_scope = selection_path(&format!("scope_type=template&scope_id={template_id}"));
     assert_eq!(
-        get_ok(&app, &token, &template_scope).await["configured"],
+        app.get_ok(&template_scope, &token).await["configured"],
         fixed(&ids[1])
     );
 
@@ -1587,7 +1566,7 @@ async fn the_effective_account_selection_follows_streamer_then_template_then_pla
     )
     .await
     .ok();
-    let effective = get_ok(&app, &token, &selection_path(&streamer_scope)).await;
+    let effective = app.get_ok(&selection_path(&streamer_scope), &token).await;
     assert_eq!(
         effective["resolved"]["owner"],
         json!({"type": "platform", "platform_id": "platform-bilibili"})
@@ -1595,7 +1574,7 @@ async fn the_effective_account_selection_follows_streamer_then_template_then_pla
     assert_eq!(candidate_ids(&effective), [ids[0].clone()]);
     let platform_scope = selection_path("scope_type=platform&scope_id=platform-bilibili");
     assert_eq!(
-        get_ok(&app, &token, &platform_scope).await["configured"],
+        app.get_ok(&platform_scope, &token).await["configured"],
         fixed(&ids[0])
     );
 
@@ -1658,7 +1637,7 @@ async fn account_capabilities_and_checks_answer_without_a_provider_request() {
         .await;
     refused.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
     assert_eq!(
-        get_ok(&app, &token, &path).await["health"],
+        app.get_ok(&path, &token).await["health"],
         Value::Null,
         "an unverifiable check records nothing"
     );

@@ -4,7 +4,7 @@ use std::fmt::Display;
 
 use serde_json::Value;
 
-use super::fake_platform::{FAKE_PLATFORM_ID, FAKE_PLATFORM_NAME};
+use super::fake_platform::{FAKE_PLATFORM_ID, FAKE_PLATFORM_NAME, FakeRoom};
 use super::http::ConnectRecorder;
 
 const DEAD_END_PROXY_ID: &str = "proxy-dead-end";
@@ -27,8 +27,26 @@ pub struct Seed {
 }
 
 /// `value` as an SQL string literal.
-fn sql_text(value: &str) -> String {
+pub fn sql_text(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
+}
+
+/// A streamer row on `room` in `state`, with `columns` set to SQL literals,
+/// for [`Seed::rows`].
+pub fn seeded_streamer(id: &str, room: &FakeRoom, state: &str, columns: &[(&str, &str)]) -> String {
+    let names: String = columns
+        .iter()
+        .map(|(name, _)| format!(", {name}"))
+        .collect();
+    let values: String = columns
+        .iter()
+        .map(|(_, value)| format!(", {value}"))
+        .collect();
+    format!(
+        "INSERT INTO streamers (id, name, url, platform_config_id, priority, state{names}) \
+         VALUES ('{id}', '{id}', '{url}', '{FAKE_PLATFORM_ID}', 'NORMAL', '{state}'{values});\n",
+        url = room.url(),
+    )
 }
 
 fn set(columns: &mut Vec<(String, String)>, column: &str, literal: String) {

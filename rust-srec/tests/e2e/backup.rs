@@ -5,25 +5,12 @@ use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 
 use crate::support::{
-    ADMIN_PASSWORD, ADMIN_USERNAME, Response, TestApp, WAIT, eventually, id_of, now_ms,
-    sorted_keys, tokens_from,
+    ADMIN_PASSWORD, ADMIN_USERNAME, Response, TestApp, WAIT, assert_fields, eventually, id_of,
+    now_ms, sorted_keys, tokens_from,
 };
 
-async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
-    app.get(path, token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body
-}
-
-/// Create a disabled streamer and return its id.
-async fn disabled_streamer(app: &TestApp, token: &str, name: &str, url: &str) -> String {
-    let streamer = json!({ "name": name, "url": url });
-    id_of(&app.create_disabled_streamer(token, streamer).await)
-}
-
 async fn export(app: &TestApp, token: &str) -> Value {
-    get_ok(app, token, "/api/config/backup/export").await
+    app.get_ok("/api/config/backup/export", token).await
 }
 
 async fn import(app: &TestApp, token: &str, config: &Value, mode: &str) -> Response {
@@ -41,7 +28,7 @@ async fn sign_in_again(app: &TestApp, password: &str) -> String {
 }
 
 async fn listed_streamers(app: &TestApp, token: &str) -> Vec<Value> {
-    get_ok(app, token, "/api/streamers?limit=100").await["items"]
+    app.get_ok("/api/streamers?limit=100", token).await["items"]
         .as_array()
         .expect("streamer items")
         .clone()
@@ -54,14 +41,6 @@ fn streamer_named<'a>(bundle: &'a mut Value, name: &str) -> &'a mut Value {
         .iter_mut()
         .find(|streamer| streamer["name"] == name)
         .unwrap_or_else(|| panic!("the bundle has streamer {name}"))
-}
-
-/// Panics unless each field of `expected` has that value in `actual`.
-#[track_caller]
-fn assert_fields(actual: &Value, expected: Value) {
-    for (key, value) in expected.as_object().expect("expected fields") {
-        assert_eq!(&actual[key], value, "{key} in {actual}");
-    }
 }
 
 /// A bundle without the fields that change on every export or sign-in.
@@ -173,7 +152,9 @@ async fn create_backup_content(app: &TestApp, token: &str) -> String {
         )
         .await
         .expect_status(StatusCode::OK);
-    let mut huya = get_ok(app, token, "/api/config/platforms/platform-huya").await;
+    let mut huya = app
+        .get_ok("/api/config/platforms/platform-huya", token)
+        .await;
     huya["credential_selection"] =
         json!(json!({ "mode": "fixed", "credential_id": id_of(&profile.body) }).to_string());
     app.put("/api/config/platforms/platform-huya", token, &huya)
@@ -364,7 +345,7 @@ async fn the_export_carries_what_a_restore_needs_and_leaves_out_sessions_and_api
     );
 
     let global = &bundle["global_config"];
-    let stored = get_ok(&app, &token, "/api/config/global").await;
+    let stored = app.get_ok("/api/config/global", &token).await;
     let log_filter = global["log_filter_directive"].as_str().expect("log filter");
     assert_eq!(log_filter, stored["log_filter_directive"]);
     assert!(!log_filter.is_empty());
@@ -513,9 +494,11 @@ async fn a_backup_restores_into_a_fresh_install_and_exports_the_same_bundle() {
         }),
     );
     let template_id = restored["template_id"].as_str().expect("template assigned");
-    let template = get_ok(&target, &token, &format!("/api/templates/{template_id}")).await;
+    let template = target
+        .get_ok(&format!("/api/templates/{template_id}"), &token)
+        .await;
     assert_eq!(template["name"], "Backup template");
-    let instances = get_ok(&target, &token, "/api/notifications/instances").await;
+    let instances = target.get_ok("/api/notifications/instances", &token).await;
     assert!(
         instances
             .as_array()
@@ -524,7 +507,7 @@ async fn a_backup_restores_into_a_fresh_install_and_exports_the_same_bundle() {
             .any(|instance| instance["display_name"] == "Backup webhook"),
         "the restored channel is loaded: {instances}"
     );
-    let global = get_ok(&target, &token, "/api/config/global").await;
+    let global = target.get_ok("/api/config/global", &token).await;
     assert_eq!(global["max_concurrent_downloads"], 3);
     assert_eq!(global["stream_proxy_allow_private_targets"], true);
 
@@ -547,7 +530,7 @@ async fn an_import_resets_omitted_flags_keeps_the_log_filter_and_clears_omitted_
     ))
     .await;
     let token = app.admin_token().await;
-    let streamer = async |token: &str| get_ok(&app, token, "/api/streamers/seeded-streamer").await;
+    let streamer = async |token: &str| app.get_ok("/api/streamers/seeded-streamer", token).await;
     assert_eq!(streamer(&token).await["avatar_url"], SEEDED_AVATAR);
 
     let mut bundle = export(&app, &token).await;
@@ -574,7 +557,7 @@ async fn an_import_resets_omitted_flags_keeps_the_log_filter_and_clears_omitted_
         .expect_status(StatusCode::OK);
     let token = sign_in_again(&app, ADMIN_PASSWORD).await;
 
-    let global = get_ok(&app, &token, "/api/config/global").await;
+    let global = app.get_ok("/api/config/global", &token).await;
     assert_eq!(
         global["stream_proxy_allow_private_targets"], false,
         "an omitted private-target flag fails closed"
@@ -591,7 +574,8 @@ async fn an_import_resets_omitted_flags_keeps_the_log_filter_and_clears_omitted_
 async fn omitted_time_filter_zones_mean_local_before_schema_0_1_8_and_utc_from_it() {
     let app = TestApp::start().await;
     let mut token = app.admin_token().await;
-    disabled_streamer(&app, &token, "Zoned", "https://www.huya.com/440001").await;
+    app.disabled_streamer(&token, "Zoned", "https://www.huya.com/440001")
+        .await;
     let unzoned = json!([{
         "filter_type": "TIME_BASED",
         "config": { "days_of_week": ["Monday"], "start_time": "09:00", "end_time": "17:00" },
@@ -623,8 +607,12 @@ async fn omitted_time_filter_zones_mean_local_before_schema_0_1_8_and_utc_from_i
 async fn merge_keeps_and_replace_removes_omitted_streamers_and_a_case_only_url_updates_in_place() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
-    let kept = disabled_streamer(&app, &token, "Case Room", "https://www.huya.com/caseroom").await;
-    let omitted = disabled_streamer(&app, &token, "Omitted", "https://www.huya.com/330002").await;
+    let kept = app
+        .disabled_streamer(&token, "Case Room", "https://www.huya.com/caseroom")
+        .await;
+    let omitted = app
+        .disabled_streamer(&token, "Omitted", "https://www.huya.com/330002")
+        .await;
 
     let mut bundle = export(&app, &token).await;
     bundle["streamers"]
@@ -690,7 +678,8 @@ async fn a_rejected_import_changes_nothing_and_a_successful_one_ends_every_sessi
     let app = TestApp::start().await;
     let first = app.admin().await.clone();
     let token = first.access.clone();
-    disabled_streamer(&app, &token, "Stable", "https://www.huya.com/220001").await;
+    app.disabled_streamer(&token, "Stable", "https://www.huya.com/220001")
+        .await;
     // A row still being removed keeps its URL; no API leaves one behind.
     // Inserted after start, the streamer manager never loads it, so the
     // reaper leaves it in place.
@@ -857,8 +846,11 @@ async fn a_rejected_import_changes_nothing_and_a_successful_one_ends_every_sessi
 async fn a_late_database_failure_rolls_back_a_replace_import() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
-    disabled_streamer(&app, &token, "Kept", "https://www.huya.com/110001").await;
-    let dropped = disabled_streamer(&app, &token, "Dropped", "https://www.huya.com/110002").await;
+    app.disabled_streamer(&token, "Kept", "https://www.huya.com/110001")
+        .await;
+    let dropped = app
+        .disabled_streamer(&token, "Dropped", "https://www.huya.com/110002")
+        .await;
     let baseline = export(&app, &token).await;
 
     // Fail the channel write, but only once the import has marked the dropped

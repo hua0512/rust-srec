@@ -10,49 +10,10 @@ use std::path::Path;
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 
-use crate::support::{TestApp, WAIT, eventually, id_of};
-
-fn inline(id: &str, processor: &str, config: Value, depends_on: &[&str]) -> Value {
-    json!({
-        "id": id,
-        "step": { "type": "inline", "processor": processor, "config": config },
-        "depends_on": depends_on,
-    })
-}
+use crate::support::{TestApp, id_of, inline, read_file, step};
 
 fn exists(path: &str) -> bool {
     Path::new(path).exists()
-}
-
-fn read(path: &str) -> String {
-    std::fs::read_to_string(path).unwrap_or_else(|error| panic!("read {path}: {error}"))
-}
-
-async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
-    app.get(path, token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body
-}
-
-/// Wait until the workflow reaches a terminal status and return its detail.
-async fn settled(app: &TestApp, token: &str, dag_id: &str) -> Value {
-    eventually(WAIT, &format!("workflow {dag_id} to settle"), || async {
-        let body = get_ok(app, token, &format!("/api/pipeline/dag/{dag_id}")).await;
-        ["COMPLETED", "FAILED", "CANCELLED"]
-            .contains(&body["status"].as_str().unwrap_or_default())
-            .then_some(body)
-    })
-    .await
-}
-
-fn step<'a>(dag: &'a Value, step_id: &str) -> &'a Value {
-    dag["steps"]
-        .as_array()
-        .expect("steps")
-        .iter()
-        .find(|step| step["step_id"] == step_id)
-        .unwrap_or_else(|| panic!("step {step_id} in {dag}"))
 }
 
 /// A failed copy or move is retried from where it stopped: a destination
@@ -102,7 +63,7 @@ async fn retrying_a_copy_or_move_resumes_past_what_the_failed_attempt_transferre
             .await
             .expect_status(StatusCode::CREATED);
         let dag_id = created.body["pipeline_id"].as_str().expect("pipeline_id");
-        let failed = settled(&app, &token, dag_id).await;
+        let failed = app.settled_dag(&token, dag_id).await;
         assert_eq!(failed["status"], "FAILED", "{operation}: {failed}");
         let workflow_error = failed["error"].as_str().unwrap_or_default();
         assert!(
@@ -115,7 +76,9 @@ async fn retrying_a_copy_or_move_resumes_past_what_the_failed_attempt_transferre
         let transfer_id = step(&failed, "transfer")["job_id"]
             .as_str()
             .expect("transfer job");
-        let transfer = get_ok(&app, &token, &format!("/api/pipeline/jobs/{transfer_id}")).await;
+        let transfer = app
+            .get_ok(&format!("/api/pipeline/jobs/{transfer_id}"), &token)
+            .await;
         assert_eq!(transfer["status"], "FAILED", "{operation}");
         let collision =
             format!("Destination file already exists and overwrite is disabled: {dest_done}");
@@ -131,7 +94,7 @@ async fn retrying_a_copy_or_move_resumes_past_what_the_failed_attempt_transferre
         );
         // The processor's log of the input it could not transfer is kept, once.
         let logs = format!("/api/pipeline/jobs/{}/logs?limit=1000", id_of(&transfer));
-        let logs = get_ok(&app, &token, &logs).await;
+        let logs = app.get_ok(&logs, &token).await;
         let logged = logs["items"]
             .as_array()
             .expect("items")
@@ -139,7 +102,7 @@ async fn retrying_a_copy_or_move_resumes_past_what_the_failed_attempt_transferre
             .filter(|item| item["message"] == collision.as_str())
             .count();
         assert_eq!(logged, 1, "{operation}: {logs}");
-        assert_eq!(read(&dest_pending), "later", "{operation}");
+        assert_eq!(read_file(&dest_pending), "later", "{operation}");
         assert_eq!(exists(&pending), operation == "copy", "{operation}");
 
         app.post(
@@ -149,7 +112,7 @@ async fn retrying_a_copy_or_move_resumes_past_what_the_failed_attempt_transferre
         )
         .await
         .expect_status(StatusCode::OK);
-        let resumed = settled(&app, &token, dag_id).await;
+        let resumed = app.settled_dag(&token, dag_id).await;
         assert_eq!(resumed["status"], "COMPLETED", "{operation}: {resumed}");
         assert_eq!(
             step(&resumed, "transfer")["outputs"],
@@ -157,8 +120,8 @@ async fn retrying_a_copy_or_move_resumes_past_what_the_failed_attempt_transferre
             "{operation}"
         );
         assert_eq!(step(&resumed, "announce")["status"], "COMPLETED");
-        assert_eq!(read(&dest_done), "recorded", "{operation}");
-        assert_eq!(read(&dest_pending), "later", "{operation}");
+        assert_eq!(read_file(&dest_done), "recorded", "{operation}");
+        assert_eq!(read_file(&dest_pending), "later", "{operation}");
         assert_eq!(exists(&done), operation == "copy", "{operation}");
         assert_eq!(exists(&pending), operation == "copy", "{operation}");
     }

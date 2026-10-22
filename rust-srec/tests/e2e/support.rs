@@ -45,6 +45,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::{self, Message};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
+mod api;
 pub mod cdn;
 pub mod fake_danmu;
 mod fake_platform;
@@ -56,10 +57,11 @@ mod seed;
 mod smtp;
 pub mod tools;
 
+pub use api::{TERMINAL_DAG_STATUSES, inline, step, succeed};
 pub use fake_platform::{FakePlatform, FakeRoom};
 pub use http::{ClosedPort, ConnectRecorder, LocalHttpServer, ReceivedRequest};
 pub use media::FlvLoop;
-pub use seed::Seed;
+pub use seed::{Seed, seeded_streamer, sql_text};
 pub use smtp::SmtpFixture;
 
 pub const ADMIN_USERNAME: &str = "admin";
@@ -288,6 +290,18 @@ impl Response {
             self.text
         );
         self
+    }
+
+    /// The body of a 200 response; panics with the body on any other status.
+    #[track_caller]
+    pub fn ok(self) -> Value {
+        self.expect_status(StatusCode::OK).body
+    }
+
+    /// The body of a 201 response; panics with the body on any other status.
+    #[track_caller]
+    pub fn created(self) -> Value {
+        self.expect_status(StatusCode::CREATED).body
     }
 
     /// Panics with the response body unless this is an API error with
@@ -601,11 +615,7 @@ impl TestApp {
     /// return it.
     pub async fn create_disabled_streamer(&self, token: &str, mut body: Value) -> Value {
         body["enabled"] = json!(false);
-        let created = self
-            .post("/api/streamers", token, &body)
-            .await
-            .expect_status(StatusCode::CREATED)
-            .body;
+        let created = self.post("/api/streamers", token, &body).await.created();
         assert_eq!(created["state"], "DISABLED", "{created}");
         created
     }
@@ -620,11 +630,7 @@ impl TestApp {
             "monitor streamers only in an app started with a Seed"
         );
         body["enabled"] = json!(true);
-        let created = self
-            .post("/api/streamers", token, &body)
-            .await
-            .expect_status(StatusCode::CREATED)
-            .body;
+        let created = self.post("/api/streamers", token, &body).await.created();
         assert_eq!(created["state"], "NOT_LIVE", "{created}");
         created
     }
@@ -655,11 +661,7 @@ impl TestApp {
         let profile_id = id_of(&profile.body);
 
         let path = format!("/api/config/platforms/{platform_id}");
-        let mut platform = self
-            .get(&path, token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body;
+        let mut platform = self.get(&path, token).await.ok();
         // The platform route carries the selection as a JSON document in a string.
         platform["credential_selection"] =
             json!(json!({ "mode": "fixed", "credential_id": profile_id }).to_string());
@@ -774,6 +776,15 @@ pub fn sorted_keys(value: &Value) -> Vec<&str> {
     keys
 }
 
+/// Panics unless each field of `expected` has that value in `actual`; an
+/// expected `null` also matches an absent field.
+#[track_caller]
+pub fn assert_fields(actual: &Value, expected: Value) {
+    for (key, value) in expected.as_object().expect("expected fields") {
+        assert_eq!(&actual[key], value, "{key} in {actual}");
+    }
+}
+
 /// `path` with `pairs` appended as a URL-encoded query string.
 pub fn with_query(path: &str, pairs: &[(&str, &str)]) -> String {
     let mut query = url::form_urlencoded::Serializer::new(String::new());
@@ -781,6 +792,33 @@ pub fn with_query(path: &str, pairs: &[(&str, &str)]) -> String {
         query.append_pair(name, value);
     }
     format!("{path}?{}", query.finish())
+}
+
+/// Every file under `dir`, recursively, sorted.
+pub fn files_under(dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(dir).expect("read a directory") {
+        let path = entry.expect("a directory entry").path();
+        if path.is_dir() {
+            files.extend(files_under(&path));
+        } else {
+            files.push(path);
+        }
+    }
+    files.sort();
+    files
+}
+
+#[track_caller]
+pub fn read_file(path: &str) -> String {
+    std::fs::read_to_string(path).unwrap_or_else(|error| panic!("read {path}: {error}"))
+}
+
+#[track_caller]
+pub fn file_name(path: &Path) -> &str {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .expect("a UTF-8 file name")
 }
 
 pub fn now_ms() -> i64 {

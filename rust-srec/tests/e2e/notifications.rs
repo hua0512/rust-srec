@@ -6,9 +6,9 @@ use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 
 use crate::support::{
-    ADMIN_PASSWORD, ADMIN_USERNAME, FakePlatform, FlvLoop, LocalHttpServer, ReceivedRequest,
-    Response, Seed, SmtpFixture, TestApp, WAIT, assert_recent, eventually, id_of, millis, now_ms,
-    sorted_keys,
+    ADMIN_PASSWORD, ADMIN_USERNAME, FakePlatform, FlvLoop, LocalHttpServer, ReceivedRequest, Seed,
+    SmtpFixture, TestApp, WAIT, assert_recent, eventually, id_of, millis, now_ms, sorted_keys,
+    succeed,
 };
 
 /// `SystemStartup` rendered for the test button, whose event carries version `test`.
@@ -57,43 +57,15 @@ async fn subscribe(app: &TestApp, token: &str, id: &str, events: &[&str]) -> Val
         &json!({ "events": events }),
     )
     .await
-    .expect_status(StatusCode::OK)
-    .body
-}
-
-async fn test_send(app: &TestApp, token: &str, id: &str) -> Response {
-    app.send(
-        Method::POST,
-        &format!("/api/notifications/channels/{id}/test"),
-        Some(token),
-        None,
-    )
-    .await
+    .ok()
 }
 
 async fn test_send_ok(app: &TestApp, token: &str, id: &str) {
-    test_send(app, token, id)
-        .await
-        .expect_status(StatusCode::OK);
-}
-
-async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
-    app.get(path, token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body
-}
-
-/// The `items` of a paged list.
-async fn items(app: &TestApp, token: &str, path: &str) -> Vec<Value> {
-    get_ok(app, token, path).await["items"]
-        .as_array()
-        .expect("list items")
-        .clone()
+    app.test_send(token, id).await.expect_status(StatusCode::OK);
 }
 
 async fn loaded_channel_ids(app: &TestApp, token: &str) -> Vec<String> {
-    get_ok(app, token, "/api/notifications/instances")
+    app.get_ok("/api/notifications/instances", token)
         .await
         .as_array()
         .expect("instances array")
@@ -123,10 +95,6 @@ fn email_settings(host: &str, port: u16, username: &str) -> Value {
         "min_priority": 5,
         "locale": "en",
     })
-}
-
-fn json_body(request: &ReceivedRequest) -> Value {
-    serde_json::from_slice(&request.body).expect("JSON request body")
 }
 
 fn event_ids(body: &Value) -> Vec<&str> {
@@ -171,7 +139,7 @@ async fn webhook_test_send_delivers_the_documented_payload_headers_auth_kinds_an
         Some("Bearer bearer-secret")
     );
     assert_eq!(request.header("x-a"), Some("1"));
-    let body = json_body(request);
+    let body = request.json();
     assert_eq!(
         sorted_keys(&body),
         [
@@ -211,7 +179,7 @@ async fn webhook_test_send_delivers_the_documented_payload_headers_auth_kinds_an
     assert_eq!(request.method, "PUT");
     assert_eq!(request.header("authorization"), Some("Basic dXNlcjpwYXNz"));
     assert_eq!(request.header("x-a"), None);
-    assert_eq!(json_body(request)["event_type"], "system_startup");
+    assert_eq!(request.json()["event_type"], "system_startup");
 
     // A custom auth header, with the method left to its POST default.
     let header = json!({
@@ -250,7 +218,7 @@ async fn webhook_test_send_delivers_the_documented_payload_headers_auth_kinds_an
             .iter()
             .find(|request| request.path == path)
             .unwrap_or_else(|| panic!("{path} received the test send"));
-        json_body(request)
+        request.json()
     };
     assert_eq!(payload("/zh")["title"], ZH_TITLE);
     assert_eq!(payload("/zh")["description"], ZH_DESCRIPTION);
@@ -295,7 +263,7 @@ async fn discord_and_gotify_test_sends_reach_their_documented_endpoints() {
     assert_eq!(received.len(), 1);
     assert_eq!(received[0].method, "POST");
     assert_eq!(received[0].path, "/discord/hook");
-    let body = json_body(&received[0]);
+    let body = received[0].json();
     assert_eq!(sorted_keys(&body), ["embeds"], "no username or avatar set");
     let embeds = body["embeds"].as_array().expect("embeds array");
     assert_eq!(embeds.len(), 1);
@@ -322,7 +290,7 @@ async fn discord_and_gotify_test_sends_reach_their_documented_endpoints() {
     assert_eq!(received[1].method, "POST");
     assert_eq!(received[1].path, "/gotify/message?token=gotify-token");
     assert_eq!(
-        json_body(&received[1]),
+        received[1].json(),
         json!({ "title": EN_TITLE, "message": EN_DESCRIPTION, "priority": 5 })
     );
 
@@ -338,7 +306,7 @@ async fn discord_and_gotify_test_sends_reach_their_documented_endpoints() {
     test_send_ok(&app, &token, &discord).await;
     let received = receiver.received();
     assert_eq!(received.len(), 3);
-    let body = json_body(&received[2]);
+    let body = received[2].json();
     assert_eq!(sorted_keys(&body), ["avatar_url", "embeds", "username"]);
     assert_eq!(body["username"], "Recorder");
     assert_eq!(body["avatar_url"], "https://example.invalid/avatar.png");
@@ -435,7 +403,7 @@ async fn form_shaped_channels_load_send_and_survive_a_backup_that_drops_retired_
         ids.push(create_channel(&app, &token, name, channel_type, settings.clone()).await);
     }
 
-    let instances = get_ok(&app, &token, "/api/notifications/instances").await;
+    let instances = app.get_ok("/api/notifications/instances", &token).await;
     let instances = instances.as_array().expect("instances array");
     for ((name, channel_type, _), id) in channels.iter().zip(&ids) {
         let instance = instances
@@ -483,7 +451,7 @@ async fn form_shaped_channels_load_send_and_survive_a_backup_that_drops_retired_
 
     // A backup holding them all imports again; the import reloads the
     // channels, subscriptions included.
-    let bundle = get_ok(&app, &token, "/api/config/backup/export").await;
+    let bundle = app.get_ok("/api/config/backup/export", &token).await;
     let exported = bundle["notification_channels"]
         .as_array()
         .expect("exported channels")
@@ -510,12 +478,12 @@ async fn form_shaped_channels_load_send_and_survive_a_backup_that_drops_retired_
     for id in &ids {
         assert!(loaded.contains(id), "{id} is loaded after the import");
     }
-    let listed = get_ok(
-        &app,
-        &token,
-        &format!("/api/notifications/channels/{retired}/subscriptions"),
-    )
-    .await;
+    let listed = app
+        .get_ok(
+            &format!("/api/notifications/channels/{retired}/subscriptions"),
+            &token,
+        )
+        .await;
     assert_eq!(listed, json!(["future_event", "stream_online"]));
 
     app.shutdown().await;
@@ -562,7 +530,7 @@ async fn channel_and_subscription_crud_read_back_what_the_edit_form_needs_and_de
 
     let path = format!("/api/notifications/channels/{id}");
     assert_eq!(
-        get_ok(&app, &token, "/api/notifications/channels").await,
+        app.get_ok("/api/notifications/channels", &token).await,
         json!([created.body]),
         "the rejected type wrote nothing"
     );
@@ -594,7 +562,7 @@ async fn channel_and_subscription_crud_read_back_what_the_edit_form_needs_and_de
         .expect_status(StatusCode::OK);
     assert_eq!(updated.body["id"], id.as_str());
     assert_eq!(updated.body["channel_type"], "Webhook");
-    let fetched = get_ok(&app, &token, &path).await;
+    let fetched = app.get_ok(&path, &token).await;
     assert_eq!(fetched["name"], "Renamed webhook");
     assert_eq!(stored_settings(&fetched), renamed_settings);
 
@@ -608,13 +576,13 @@ async fn channel_and_subscription_crud_read_back_what_the_edit_form_needs_and_de
         "the response echoes the request"
     );
     assert_eq!(
-        get_ok(&app, &token, &subscriptions).await,
+        app.get_ok(&subscriptions, &token).await,
         json!(["download_error", "stream_offline", "stream_online"]),
         "legacy aliases are rewritten to canonical names on reload"
     );
     subscribe(&app, &token, &id, &["stream_online", "fatal_error"]).await;
     assert_eq!(
-        get_ok(&app, &token, &subscriptions).await,
+        app.get_ok(&subscriptions, &token).await,
         json!(["fatal_error", "stream_online"])
     );
     let unknown_subscriptions = format!("{unknown}/subscriptions");
@@ -625,10 +593,7 @@ async fn channel_and_subscription_crud_read_back_what_the_edit_form_needs_and_de
     )
     .await
     .assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
-    assert_eq!(
-        get_ok(&app, &token, &unknown_subscriptions).await,
-        json!([])
-    );
+    assert_eq!(app.get_ok(&unknown_subscriptions, &token).await, json!([]));
     assert!(loaded_channel_ids(&app, &token).await.contains(&id));
 
     let deleted = app.delete(&path, &token).await;
@@ -637,11 +602,11 @@ async fn channel_and_subscription_crud_read_back_what_the_edit_form_needs_and_de
         .await
         .assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
     assert_eq!(
-        get_ok(&app, &token, "/api/notifications/channels").await,
+        app.get_ok("/api/notifications/channels", &token).await,
         json!([])
     );
     assert!(!loaded_channel_ids(&app, &token).await.contains(&id));
-    assert_eq!(get_ok(&app, &token, &subscriptions).await, json!([]));
+    assert_eq!(app.get_ok(&subscriptions, &token).await, json!([]));
     let rows = app
         .query_i64(&format!(
             "SELECT COUNT(*) FROM notification_subscription WHERE channel_id = '{id}'"
@@ -667,7 +632,7 @@ async fn test_send_reports_disabled_and_failing_channels_without_leaking_the_rec
     )
     .await;
     assert!(!loaded_channel_ids(&app, &token).await.contains(&disabled));
-    test_send(&app, &token, &disabled)
+    app.test_send(&token, &disabled)
         .await
         .assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
     assert!(receiver.received().is_empty());
@@ -682,7 +647,7 @@ async fn test_send_reports_disabled_and_failing_channels_without_leaking_the_rec
         json!({ "url": failing_url }),
     )
     .await;
-    let response = test_send(&app, &token, &failing).await;
+    let response = app.test_send(&token, &failing).await;
     response.assert_error(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR");
     let authority = failing_url
         .trim_start_matches("http://")
@@ -735,7 +700,7 @@ async fn email_test_send_checks_its_smtp_settings_before_connecting_and_delivers
             email_settings(host, unused_port, username),
         )
         .await;
-        test_send(&app, &token, &id)
+        app.test_send(&token, &id)
             .await
             .assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
     }
@@ -791,7 +756,7 @@ async fn the_event_type_catalog_lists_canonical_types_with_integer_priorities() 
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 
-    let catalog = get_ok(&app, &token, "/api/notifications/event-types").await;
+    let catalog = app.get_ok("/api/notifications/event-types", &token).await;
     let entries = catalog.as_array().expect("catalog array");
     let mut seen = std::collections::HashSet::new();
     for entry in entries {
@@ -848,20 +813,12 @@ async fn the_event_type_catalog_lists_canonical_types_with_integer_priorities() 
 async fn the_event_log_lists_newest_first_and_filters_and_pages() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
-    let alpha = id_of(
-        &app.create_disabled_streamer(
-            &token,
-            json!({ "name": "Alpha Caster", "url": "https://www.huya.com/880001" }),
-        )
-        .await,
-    );
-    let beta = id_of(
-        &app.create_disabled_streamer(
-            &token,
-            json!({ "name": "Beta Caster", "url": "https://www.huya.com/880002" }),
-        )
-        .await,
-    );
+    let alpha = app
+        .disabled_streamer(&token, "Alpha Caster", "https://www.huya.com/880001")
+        .await;
+    let beta = app
+        .disabled_streamer(&token, "Beta Caster", "https://www.huya.com/880002")
+        .await;
 
     // Nothing offline emits these, so seed the log the handler reads, one
     // second apart.
@@ -924,7 +881,7 @@ async fn the_event_log_lists_newest_first_and_filters_and_pages() {
     database.close().await;
     let [e1, e2, e3, e4] = ids.each_ref().map(String::as_str);
 
-    let all = get_ok(&app, &token, "/api/notifications/events").await;
+    let all = app.get_ok("/api/notifications/events", &token).await;
     let ids = event_ids(&all);
     assert_eq!(ids.len(), 200, "the default page holds 200 events");
     assert_eq!(ids[..4], [e4, e3, e2, e1], "newest first");
@@ -953,7 +910,9 @@ async fn the_event_log_lists_newest_first_and_filters_and_pages() {
         "no streamer, no key"
     );
 
-    let largest = get_ok(&app, &token, "/api/notifications/events?limit=5000").await;
+    let largest = app
+        .get_ok("/api/notifications/events?limit=5000", &token)
+        .await;
     assert_eq!(
         largest.as_array().map(Vec::len),
         Some(1000),
@@ -979,7 +938,9 @@ async fn the_event_log_lists_newest_first_and_filters_and_pages() {
         ("offset=-5&limit=1", vec![e4]),
     ];
     for (query, expected) in queries {
-        let response = get_ok(&app, &token, &format!("/api/notifications/events?{query}")).await;
+        let response = app
+            .get_ok(&format!("/api/notifications/events?{query}"), &token)
+            .await;
         assert_eq!(event_ids(&response), expected, "?{query}");
     }
 
@@ -987,10 +948,9 @@ async fn the_event_log_lists_newest_first_and_filters_and_pages() {
 }
 
 async fn credential_unavailable_log(app: &TestApp, token: &str) -> Vec<Value> {
-    get_ok(
-        app,
-        token,
+    app.get_ok(
         "/api/notifications/events?event_type=credential_unavailable",
+        token,
     )
     .await
     .as_array()
@@ -1051,7 +1011,7 @@ async fn a_credential_unavailable_event_reaches_only_subscribed_channels_and_is_
         },
     )
     .await;
-    let body = json_body(&delivered[0]);
+    let body = delivered[0].json();
     assert_eq!(body["event_type"], "credential_unavailable");
     assert_eq!(body["priority"], 8);
     assert_eq!(body["priority_label"], "high");
@@ -1079,7 +1039,7 @@ async fn a_credential_unavailable_event_reaches_only_subscribed_channels_and_is_
         2,
         "the repeated Huya failure was not re-sent"
     );
-    assert!(json_body(&received[1]).to_string().contains("douyin"));
+    assert!(received[1].json().to_string().contains("douyin"));
     let logged = credential_unavailable_log(&app, &token).await;
     assert_eq!(logged.len(), 2, "{logged:?}");
     assert!(
@@ -1133,18 +1093,6 @@ async fn web_push_routes_report_service_unavailable_without_vapid_keys() {
 // session, its segments and its workflow, while the monitor itself notifies
 // only fatal platform answers.
 
-/// A workflow of one `execute` step that succeeds on every OS.
-fn succeed(name: &str) -> Value {
-    json!({
-        "name": name,
-        "steps": [{
-            "id": "succeed",
-            "step": { "type": "inline", "processor": "execute", "config": { "command": "exit 0" } },
-            "depends_on": [],
-        }],
-    })
-}
-
 /// A webhook channel, at the lowest priority, subscribed to `events`.
 async fn subscribed_webhook(
     app: &TestApp,
@@ -1168,7 +1116,7 @@ fn webhooks_of(receiver: &LocalHttpServer, event_type: &str) -> Vec<Value> {
     receiver
         .received()
         .iter()
-        .map(json_body)
+        .map(ReceivedRequest::json)
         .filter(|body| body["event_type"] == event_type)
         .collect()
 }
@@ -1181,20 +1129,14 @@ async fn wait_for_webhooks(receiver: &LocalHttpServer, event_type: &str, count: 
     .await;
 }
 
-/// The streamer's sessions, newest first.
-async fn sessions_of(app: &TestApp, token: &str, streamer_id: &str) -> Vec<Value> {
-    let path = format!("/api/sessions?streamer_id={streamer_id}&include_empty=true");
-    items(app, token, &path).await
-}
-
 /// Wait for the streamer's newest session to end and return its detail.
 async fn ended_session(app: &TestApp, token: &str, streamer_id: &str, count: usize) -> Value {
     let id = eventually(WAIT, "the session to end", || async {
-        let sessions = sessions_of(app, token, streamer_id).await;
+        let sessions = app.sessions(token, streamer_id).await;
         (sessions.len() == count && sessions[0]["is_live"] == false).then(|| id_of(&sessions[0]))
     })
     .await;
-    get_ok(app, token, &format!("/api/sessions/{id}")).await
+    app.session(token, &id).await
 }
 
 /// Wait until the room's first recording part has been opened.
@@ -1211,12 +1153,12 @@ async fn wait_for_a_part(app: &TestApp) {
 
 /// The event types of the streamer's notification log, sorted.
 async fn logged_event_types(app: &TestApp, token: &str, streamer_id: &str) -> Vec<String> {
-    let log = get_ok(
-        app,
-        token,
-        &format!("/api/notifications/events?streamer_id={streamer_id}"),
-    )
-    .await;
+    let log = app
+        .get_ok(
+            &format!("/api/notifications/events?streamer_id={streamer_id}"),
+            token,
+        )
+        .await;
     let mut types: Vec<String> = log
         .as_array()
         .expect("event log")
@@ -1340,12 +1282,9 @@ async fn a_recording_notifies_each_start_its_parts_and_workflow_and_one_offline_
 
     // Each part's webhooks carry the times its segment row records.
     let session_id = id_of(&session);
-    let mut segments = items(
-        &app,
-        &token,
-        &format!("/api/sessions/{session_id}/segments"),
-    )
-    .await;
+    let mut segments = app
+        .get_items(&format!("/api/sessions/{session_id}/segments"), &token)
+        .await;
     segments.sort_by_key(|segment| segment["segment_index"].as_i64());
     assert_eq!(segments.len(), 2, "{segments:?}");
     for (event_type, variant, time) in [
@@ -1367,12 +1306,12 @@ async fn a_recording_notifies_each_start_its_parts_and_workflow_and_one_offline_
     }
 
     // The session-complete step's job starts and completes.
-    let jobs = items(
-        &app,
-        &token,
-        &format!("/api/pipeline/jobs?session_id={session_id}"),
-    )
-    .await;
+    let jobs = app
+        .get_items(
+            &format!("/api/pipeline/jobs?session_id={session_id}"),
+            &token,
+        )
+        .await;
     assert_eq!(jobs.len(), 1, "{jobs:?}");
     let started = webhooks_of(&receiver, "pipeline_started");
     assert_eq!(started.len(), 1, "{started:?}");
@@ -1439,9 +1378,7 @@ async fn disabling_a_recording_streamer_notifies_no_offline() {
         .await
         .expect_status(StatusCode::OK);
     room.wait_for_media_connection(2).await;
-    room.push(FlvLoop::tiny().stream(1));
-    room.set_offline();
-    room.end();
+    room.broadcast_ends(1);
     let finished = ended_session(&app, &token, &id, 2).await;
     wait_for_webhooks(&receiver, "stream_online", 2).await;
     wait_for_webhooks(&receiver, "stream_offline", 1).await;
@@ -1473,10 +1410,7 @@ async fn the_monitor_notifies_only_a_fatal_platform_answer_at_the_time_it_was_se
     // The streamer is held back by a filter first (a state change), then
     // goes live, records and goes offline, and finally the platform says it
     // does not exist.
-    let id = id_of(
-        &app.create_disabled_streamer(&token, json!({ "name": "Monitored", "url": room.url() }))
-            .await,
-    );
+    let id = app.disabled_streamer(&token, "Monitored", room.url()).await;
     app.post(
         &format!("/api/streamers/{id}/filters"),
         &token,
@@ -1496,15 +1430,13 @@ async fn the_monitor_notifies_only_a_fatal_platform_answer_at_the_time_it_was_se
     .await
     .expect_status(StatusCode::OK);
     eventually(WAIT, "the streamer to be held back", || async {
-        let streamer = get_ok(&app, &token, &format!("/api/streamers/{id}")).await;
+        let streamer = app.streamer(&token, &id).await;
         (streamer["state"] == "OUT_OF_SCHEDULE").then_some(())
     })
     .await;
     room.set_live(room.live("Live tonight"));
     room.wait_for_media_connection(1).await;
-    room.push(FlvLoop::tiny().stream(1));
-    room.set_offline();
-    room.end();
+    room.broadcast_ends(1);
     ended_session(&app, &token, &id, 1).await;
     room.set_error("not_found", "gone");
     wait_for_webhooks(&receiver, "fatal_error", 1).await;

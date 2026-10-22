@@ -5,7 +5,7 @@
 
 use std::collections::HashSet;
 
-use reqwest::{StatusCode, header};
+use reqwest::header;
 use serde_json::{Value, json};
 
 use crate::support::TestApp;
@@ -21,10 +21,7 @@ async fn mcp(app: &TestApp, key: &str, method: &str, params: Value) -> Value {
         .send()
         .await
         .expect("send the MCP request");
-    TestApp::read(response)
-        .await
-        .expect_status(StatusCode::OK)
-        .body
+    TestApp::read(response).await.ok()
 }
 
 /// Resolve a local `#/$defs/...` reference against the schema `root`.
@@ -115,11 +112,7 @@ async fn tools_are_listed_for_any_key_but_write_tools_need_a_full_key() {
         "arguments": { "updates": { "max_concurrent_downloads": 4 } },
     });
     let downloads = || async {
-        app.get("/api/config/global", &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body["max_concurrent_downloads"]
-            .clone()
+        app.get("/api/config/global", &token).await.ok()["max_concurrent_downloads"].clone()
     };
     let before = downloads().await;
     assert_ne!(before, 4);
@@ -169,8 +162,7 @@ async fn tools_are_listed_for_any_key_but_write_tools_need_a_full_key() {
             &json!({"name": "Switched", "engine_type": "FFMPEG", "config": {}}),
         )
         .await
-        .expect_status(StatusCode::CREATED)
-        .body;
+        .created();
     let id = engine["id"].as_str().expect("engine id");
     for engine_type in &advertised {
         let updated = mcp(
@@ -190,11 +182,7 @@ async fn tools_are_listed_for_any_key_but_write_tools_need_a_full_key() {
             updated["result"]["isError"], false,
             "{engine_type}: {updated}"
         );
-        let stored = app
-            .get(&format!("/api/engines/{id}"), &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body;
+        let stored = app.get(&format!("/api/engines/{id}"), &token).await.ok();
         assert_eq!(stored["engine_type"], *engine_type, "{stored}");
     }
 

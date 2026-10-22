@@ -14,22 +14,10 @@ use reqwest::StatusCode;
 use serde_json::{Value, json};
 
 use crate::support::tools::{codecs, duration_secs, ffmpeg, probe};
-use crate::support::{FakePlatform, FlvLoop, Seed, TestApp, WAIT, eventually, id_of};
-
-async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
-    app.get(path, token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body
-}
-
-fn inline(id: &str, processor: &str, config: Value, depends_on: &[&str]) -> Value {
-    json!({
-        "id": id,
-        "step": { "type": "inline", "processor": processor, "config": config },
-        "depends_on": depends_on,
-    })
-}
+use crate::support::{
+    FakePlatform, FlvLoop, Seed, TERMINAL_DAG_STATUSES, TestApp, WAIT, eventually, id_of, inline,
+    step,
+};
 
 /// A four-second FLV recording of H.264 and AAC, written to `relative`
 /// under the app's output directory.
@@ -65,22 +53,7 @@ async fn run_workflow(app: &TestApp, token: &str, inputs: &[&str], steps: Vec<Va
         .as_str()
         .expect("pipeline_id")
         .to_owned();
-    eventually(WAIT, &format!("workflow {dag_id} to settle"), || async {
-        let dag = get_ok(app, token, &format!("/api/pipeline/dag/{dag_id}")).await;
-        ["COMPLETED", "FAILED", "CANCELLED"]
-            .contains(&dag["status"].as_str().unwrap_or_default())
-            .then_some(dag)
-    })
-    .await
-}
-
-fn step<'a>(dag: &'a Value, step_id: &str) -> &'a Value {
-    dag["steps"]
-        .as_array()
-        .expect("steps")
-        .iter()
-        .find(|step| step["step_id"] == step_id)
-        .unwrap_or_else(|| panic!("step {step_id} in {dag}"))
+    app.settled_dag(token, &dag_id).await
 }
 
 /// Panics unless a [`probe`] result has H.264 and AAC streams lasting about
@@ -92,21 +65,6 @@ fn assert_media(probed: &Value, secs: f64) {
     assert_eq!(found, ["aac", "h264"], "{probed}");
     let duration = duration_secs(probed);
     assert!((duration - secs).abs() <= 1.0, "{duration} s: {probed}");
-}
-
-/// Wait for the streamer's only session to end and return its id.
-async fn ended_session(app: &TestApp, token: &str, streamer_id: &str) -> String {
-    let path = format!("/api/sessions?streamer_id={streamer_id}&include_empty=true");
-    eventually(WAIT, "the session to end", || async {
-        let page = get_ok(app, token, &path).await;
-        let sessions = page["items"].as_array().expect("session items");
-        assert!(sessions.len() <= 1, "more than one session: {sessions:?}");
-        sessions
-            .first()
-            .filter(|session| session["is_live"] == false)
-            .map(|session| session["id"].as_str().expect("session id").to_owned())
-    })
-    .await
 }
 
 /// Record six seconds of the fixture from a fake room until the room
@@ -131,20 +89,17 @@ async fn record(
     room.push(FlvLoop::tiny().stream(3));
     room.set_offline();
     room.end();
-    let session = ended_session(app, token, &streamer).await;
+    let session = app.ended_session_id(token, &streamer).await;
     (streamer, session)
 }
 
 /// The session's workflows once they have all finished.
 async fn finished_dags(app: &TestApp, token: &str, session_id: &str) -> Vec<Value> {
-    let path = format!("/api/pipeline/dags?session_id={session_id}");
     eventually(WAIT, "the session's workflows to finish", || async {
-        let page = get_ok(app, token, &path).await;
-        let dags = page["dags"].as_array().expect("dags").clone();
+        let dags = app.dags(token, session_id).await;
         (!dags.is_empty()
             && dags.iter().all(|dag| {
-                ["COMPLETED", "FAILED", "CANCELLED"]
-                    .contains(&dag["status"].as_str().unwrap_or_default())
+                TERMINAL_DAG_STATUSES.contains(&dag["status"].as_str().unwrap_or_default())
             }))
         .then_some(dags)
     })
@@ -277,7 +232,9 @@ async fn audio_extract_with_overwrite_off_keeps_the_audio_an_earlier_run_extract
     let job_id = step(&second, "audio")["job_id"]
         .as_str()
         .expect("audio job");
-    let job = get_ok(&app, &token, &format!("/api/pipeline/jobs/{job_id}")).await;
+    let job = app
+        .get_ok(&format!("/api/pipeline/jobs/{job_id}"), &token)
+        .await;
     assert!(
         job["error_message"]
             .as_str()
@@ -349,12 +306,12 @@ async fn automatic_thumbnails_give_a_recorded_session_a_jpeg_cover() {
     let dags = finished_dags(&app, &token, &session_id).await;
     assert_eq!(dags.len(), 1, "{dags:?}");
     assert_eq!(dags[0]["status"], "COMPLETED", "{dags:?}");
-    let outputs = get_ok(
-        &app,
-        &token,
-        &format!("/api/pipeline/outputs?session_id={session_id}&file_type=THUMBNAIL"),
-    )
-    .await;
+    let outputs = app
+        .get_ok(
+            &format!("/api/pipeline/outputs?session_id={session_id}&file_type=THUMBNAIL"),
+            &token,
+        )
+        .await;
     let thumbnails = outputs["items"].as_array().expect("output items");
     assert_eq!(thumbnails.len(), 1, "{outputs}");
     let path = thumbnails[0]["file_path"].as_str().expect("thumbnail path");
@@ -363,7 +320,9 @@ async fn automatic_thumbnails_give_a_recorded_session_a_jpeg_cover() {
     assert_eq!(codecs(&probed), ["mjpeg"], "{probed}");
     assert_eq!(probed["streams"][0]["width"], 32, "{probed}");
 
-    let session = get_ok(&app, &token, &format!("/api/sessions/{session_id}")).await;
+    let session = app
+        .get_ok(&format!("/api/sessions/{session_id}"), &token)
+        .await;
     let cover = session["thumbnail_url"]
         .as_str()
         .unwrap_or_else(|| panic!("no thumbnail_url: {session}"));
@@ -411,12 +370,12 @@ async fn an_rclone_step_copies_a_session_to_a_local_destination_and_records_the_
     let dags = finished_dags(&app, &token, &session_id).await;
     assert_eq!(dags.len(), 1, "{dags:?}");
     assert_eq!(dags[0]["status"], "COMPLETED", "{dags:?}");
-    let outputs = get_ok(
-        &app,
-        &token,
-        &format!("/api/pipeline/outputs?session_id={session_id}"),
-    )
-    .await;
+    let outputs = app
+        .get_ok(
+            &format!("/api/pipeline/outputs?session_id={session_id}"),
+            &token,
+        )
+        .await;
     let items = outputs["items"].as_array().expect("output items");
     assert_eq!(items.len(), 1, "{outputs}");
     let local = items[0]["file_path"].as_str().expect("recording path");

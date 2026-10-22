@@ -97,10 +97,7 @@ async fn query_socket(app: &TestApp, route: &str, token: &str) -> Socket {
 }
 
 async fn current_filter(app: &TestApp, token: &str) -> String {
-    app.get("/api/logging", token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body["filter"]
+    app.get("/api/logging", token).await.ok()["filter"]
         .as_str()
         .expect("filter string")
         .to_string()
@@ -715,11 +712,7 @@ async fn downloads_socket_streams_meta_progress_and_segment_frames_for_a_live_re
     let session_id = meta.session_id.clone();
     let segments_path = format!("/api/sessions/{session_id}/segments");
     let recorded = eventually(WAIT, "the segment to be stored", || async {
-        let segments = app
-            .get(&segments_path, &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body;
+        let segments = app.get(&segments_path, &token).await.ok();
         let first = &segments["items"][0];
         (!first.is_null()).then(|| first.clone())
     })
@@ -823,8 +816,7 @@ async fn downloads_snapshot_lists_queued_recordings_with_their_session_and_prior
         let sessions = app
             .get(&format!("/api/sessions?streamer_id={id}"), &token)
             .await
-            .expect_status(StatusCode::OK)
-            .body;
+            .ok();
         assert_eq!(queued.session_id, sessions["items"][0]["id"], "{id}");
         assert_eq!(queued.engine_type, "mesio");
         assert_eq!(queued.is_high_priority, is_high_priority, "{id}");
