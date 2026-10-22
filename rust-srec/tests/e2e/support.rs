@@ -28,7 +28,6 @@
 //! [`LocalHttpServer`] would go through the proxy).
 
 use std::future::Future;
-use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, UNIX_EPOCH};
@@ -36,7 +35,7 @@ use std::time::{Duration, UNIX_EPOCH};
 use futures::StreamExt;
 use reqwest::header::{AsHeaderName, HeaderMap};
 use reqwest::{Method, StatusCode};
-use rust_srec::backend::{self, ApiServerConfig, ServiceContainer, ServiceContainerConfig};
+use rust_srec::backend::{self, DownloadManagerConfig, ServiceContainer};
 use rust_srec::logging::LoggingConfig;
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -51,6 +50,7 @@ pub mod fake_danmu;
 mod fake_platform;
 pub mod fake_provider;
 mod http;
+mod launch;
 mod media;
 mod seed;
 mod smtp;
@@ -327,7 +327,7 @@ impl TestApp {
     /// migration seeds: [`SEEDED_ADMIN_PASSWORD`], with a forced password
     /// change pending. [`Self::admin`] does not work in this app.
     pub async fn start_with_seeded_admin() -> Self {
-        Self::boot("", None, false).await
+        Self::boot("", None, false, DownloadManagerConfig::default()).await
     }
 
     /// Start a backend after running `seed_sql` on the migrated database.
@@ -338,7 +338,7 @@ impl TestApp {
     /// database on each request can be inserted after start with
     /// [`Self::run_sql`] or [`Self::database`] instead.
     pub async fn start_seeded(seed_sql: &str) -> Self {
-        Self::boot(seed_sql, None, true).await
+        Self::boot(seed_sql, None, true, DownloadManagerConfig::default()).await
     }
 
     /// Start a backend that monitors streamers, seeded with `seed` (see
@@ -346,13 +346,14 @@ impl TestApp {
     pub async fn start_with(seed: Seed) -> Self {
         let dead_end = ConnectRecorder::start().await;
         let sql = seed.sql(&dead_end);
-        Self::boot(&sql, Some(dead_end), true).await
+        Self::boot(&sql, Some(dead_end), true, DownloadManagerConfig::default()).await
     }
 
     async fn boot(
         seed_sql: &str,
         dead_end: Option<ConnectRecorder>,
         change_admin_password: bool,
+        downloads: DownloadManagerConfig,
     ) -> Self {
         assert_default_environment();
         backend::install_rustls_provider();
@@ -383,49 +384,7 @@ impl TestApp {
                 .expect("run the seed SQL");
         }
         migration_pool.close().await;
-        let (pool, write_pool) = backend::init_database_pools(&database_url)
-            .await
-            .expect("open the runtime pools");
-
-        let container = ServiceContainer::with_full_config(
-            pool,
-            write_pool,
-            ServiceContainerConfig {
-                cache_ttl: Duration::from_secs(3600),
-                event_capacity: 256,
-                download_config: backend::DownloadManagerConfig::default(),
-                pipeline_config: backend::PipelineManagerConfig::default(),
-                api_config: ApiServerConfig {
-                    bind_address: "127.0.0.1".to_string(),
-                    port: 0,
-                    enable_cors: true,
-                    body_limit: 10 * 1024 * 1024,
-                },
-            },
-        )
-        .await
-        .expect("build the service container");
-        let container = Arc::new(container);
-
-        let config = container.config_service();
-        let mut global = config
-            .get_global_config()
-            .await
-            .expect("read the global config");
-        global.output_folder = output_dir.to_string_lossy().into_owned();
-        config
-            .update_global_config(&global)
-            .await
-            .expect("point recordings at the test output directory");
-
-        let logging = logging();
-        logging.apply_persisted_filter(config).await;
-        container.set_logging_config(logging);
-        container.initialize().await.expect("initialize services");
-        let address: SocketAddr = container
-            .start_api_server_bound_with_jwt_secret(JWT_SECRET.to_string())
-            .await
-            .expect("start the API server");
+        let (container, address) = launch::serve(&database_url, &output_dir, downloads).await;
 
         let client = reqwest::Client::builder()
             .no_proxy()
