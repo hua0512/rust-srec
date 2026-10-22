@@ -276,8 +276,9 @@ impl TerminalCause {
     /// access to the engine-side signal should prefer
     /// [`Self::is_authoritative_end_with_signal`].
     ///
-    /// `Rejected` is treated as authoritative for the *direct* path because
-    /// no recording happened — there's nothing to absorb a resume for.
+    /// `Rejected`, and `Failed` with [`DownloadFailureKind::UnsupportedStream`],
+    /// are treated as authoritative for the *direct* path because no
+    /// recording happened — there's nothing to absorb a resume for.
     pub fn is_authoritative_end(&self) -> bool {
         match self {
             Self::DefinitiveOffline { .. } => true,
@@ -289,6 +290,10 @@ impl TerminalCause {
             // Policy-initiated tear-down. The schedule window closed, so the
             // recording must stop even if the upstream stream is still live.
             Self::OutOfSchedule => true,
+            // The scheduler does not start this broadcast again.
+            Self::Failed {
+                kind: DownloadFailureKind::UnsupportedStream,
+            } => true,
             // Default: not authoritative without an engine signal.
             Self::Completed => false,
             Self::Failed { .. } => false,

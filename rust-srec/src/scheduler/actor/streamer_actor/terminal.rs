@@ -8,6 +8,8 @@ enum HysteresisAction {
     Reset,
     EnsureLive,
     ObserveOffline,
+    /// Forget the live state and wait for the refused broadcast to end.
+    RefuseBroadcast,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,6 +64,12 @@ fn decide_terminal(reason: DownloadEndPolicy) -> TerminalDecision {
             ObserveOffline,
             Normal,
             TerminalEffect::Offline,
+        ),
+        DownloadEndPolicy::UnsupportedStream(_) => (
+            StreamerState::NotLive,
+            RefuseBroadcast,
+            Normal,
+            TerminalEffect::None,
         ),
         DownloadEndPolicy::NetworkError(_) | DownloadEndPolicy::SegmentFailed(_) => (
             StreamerState::NotLive,
@@ -160,6 +168,10 @@ impl StreamerActor {
         match decision.hysteresis {
             HysteresisAction::Preserve => {}
             HysteresisAction::Reset => self.state.hysteresis.reset(),
+            HysteresisAction::RefuseBroadcast => {
+                self.state.hysteresis.reset();
+                self.state.refused_broadcast = true;
+            }
             HysteresisAction::EnsureLive | HysteresisAction::ObserveOffline => {
                 if !self.state.hysteresis.was_live() {
                     self.state.hysteresis.mark_live();
