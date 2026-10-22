@@ -38,6 +38,29 @@ async fn create_channel(
         .to_owned()
 }
 
+/// Replace a channel's name and settings.
+async fn update_channel(app: &TestApp, token: &str, id: &str, name: &str, settings: Value) {
+    app.put(
+        &format!("/api/notifications/channels/{id}"),
+        token,
+        &json!({ "name": name, "settings": settings }),
+    )
+    .await
+    .expect_status(StatusCode::OK);
+}
+
+/// Replace a channel's subscriptions and return the response body.
+async fn subscribe(app: &TestApp, token: &str, id: &str, events: &[&str]) -> Value {
+    app.put(
+        &format!("/api/notifications/channels/{id}/subscriptions"),
+        token,
+        &json!({ "events": events }),
+    )
+    .await
+    .expect_status(StatusCode::OK)
+    .body
+}
+
 async fn test_send(app: &TestApp, token: &str, id: &str) -> Response {
     app.send(
         Method::POST,
@@ -48,18 +71,58 @@ async fn test_send(app: &TestApp, token: &str, id: &str) -> Response {
     .await
 }
 
-async fn loaded_channel_ids(app: &TestApp, token: &str) -> Vec<String> {
-    let response = app
-        .get("/api/notifications/instances", token)
+async fn test_send_ok(app: &TestApp, token: &str, id: &str) {
+    test_send(app, token, id)
         .await
         .expect_status(StatusCode::OK);
-    response
+}
+
+async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
+    app.get(path, token)
+        .await
+        .expect_status(StatusCode::OK)
         .body
+}
+
+/// The `items` of a paged list.
+async fn items(app: &TestApp, token: &str, path: &str) -> Vec<Value> {
+    get_ok(app, token, path).await["items"]
+        .as_array()
+        .expect("list items")
+        .clone()
+}
+
+async fn loaded_channel_ids(app: &TestApp, token: &str) -> Vec<String> {
+    get_ok(app, token, "/api/notifications/instances")
+        .await
         .as_array()
         .expect("instances array")
         .iter()
         .filter_map(|instance| instance["channel_id"].as_str().map(str::to_owned))
         .collect()
+}
+
+/// The stored settings, which the API returns as a JSON string.
+fn stored_settings(channel: &Value) -> Value {
+    let stored = channel["settings"]
+        .as_str()
+        .expect("settings come back as a JSON string");
+    serde_json::from_str(stored).expect("settings JSON")
+}
+
+/// Email settings for a plaintext SMTP server without login, as English.
+fn email_settings(host: &str, port: u16, username: &str) -> Value {
+    json!({
+        "smtp_host": host,
+        "smtp_port": port,
+        "username": username,
+        "password": "",
+        "from_address": "srec@example.com",
+        "to_addresses": ["ops@example.com", "dev@example.com"],
+        "use_tls": false,
+        "min_priority": 5,
+        "locale": "en",
+    })
 }
 
 fn json_body(request: &ReceivedRequest) -> Value {
@@ -75,7 +138,7 @@ fn event_ids(body: &Value) -> Vec<&str> {
 }
 
 #[tokio::test]
-async fn webhook_test_send_delivers_the_documented_payload_headers_and_each_auth_kind() {
+async fn webhook_test_send_delivers_the_documented_payload_headers_auth_kinds_and_locale() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
     let receiver = LocalHttpServer::start(200, "ok").await;
@@ -95,9 +158,7 @@ async fn webhook_test_send_delivers_the_documented_payload_headers_and_each_auth
         }),
     )
     .await;
-    test_send(&app, &token, &id)
-        .await
-        .expect_status(StatusCode::OK);
+    test_send_ok(&app, &token, &id).await;
 
     let received = receiver.received();
     assert_eq!(received.len(), 1, "the test send is delivered exactly once");
@@ -136,24 +197,14 @@ async fn webhook_test_send_delivers_the_documented_payload_headers_and_each_auth
 
     // Basic auth over PUT; the edit replaces the settings, so the custom
     // header is gone too.
-    app.put(
-        &format!("/api/notifications/channels/{id}"),
-        &token,
-        &json!({
-            "name": "Ops webhook",
-            "settings": {
-                "url": url,
-                "method": "PUT",
-                "auth": { "type": "Basic", "username": "user", "password": "pass" },
-                "locale": "en",
-            },
-        }),
-    )
-    .await
-    .expect_status(StatusCode::OK);
-    test_send(&app, &token, &id)
-        .await
-        .expect_status(StatusCode::OK);
+    let basic = json!({
+        "url": url,
+        "method": "PUT",
+        "auth": { "type": "Basic", "username": "user", "password": "pass" },
+        "locale": "en",
+    });
+    update_channel(&app, &token, &id, "Ops webhook", basic).await;
+    test_send_ok(&app, &token, &id).await;
     let received = receiver.received();
     assert_eq!(received.len(), 2);
     let request = &received[1];
@@ -163,22 +214,12 @@ async fn webhook_test_send_delivers_the_documented_payload_headers_and_each_auth
     assert_eq!(json_body(request)["event_type"], "system_startup");
 
     // A custom auth header, with the method left to its POST default.
-    app.put(
-        &format!("/api/notifications/channels/{id}"),
-        &token,
-        &json!({
-            "name": "Ops webhook",
-            "settings": {
-                "url": url,
-                "auth": { "type": "Header", "name": "X-Token", "value": "header-secret" },
-            },
-        }),
-    )
-    .await
-    .expect_status(StatusCode::OK);
-    test_send(&app, &token, &id)
-        .await
-        .expect_status(StatusCode::OK);
+    let header = json!({
+        "url": url,
+        "auth": { "type": "Header", "name": "X-Token", "value": "header-secret" },
+    });
+    update_channel(&app, &token, &id, "Ops webhook", header).await;
+    test_send_ok(&app, &token, &id).await;
     let received = receiver.received();
     assert_eq!(received.len(), 3);
     let request = &received[2];
@@ -186,26 +227,70 @@ async fn webhook_test_send_delivers_the_documented_payload_headers_and_each_auth
     assert_eq!(request.header("x-token"), Some("header-secret"));
     assert_eq!(request.header("authorization"), None);
 
+    // The channel locale decides the language of the test payload.
+    let cases = [
+        ("/zh", json!("zh-CN")),
+        ("/padded", json!("  zh-CN  ")),
+        ("/unknown", json!("xx-YY")),
+        ("/blank", json!("")),
+        ("/absent", Value::Null),
+    ];
+    for (path, locale) in &cases {
+        let mut settings = json!({ "url": receiver.url(path) });
+        if !locale.is_null() {
+            settings["locale"] = locale.clone();
+        }
+        let id = create_channel(&app, &token, path, "Webhook", settings).await;
+        test_send_ok(&app, &token, &id).await;
+    }
+
+    let received = receiver.received();
+    let payload = |path: &str| {
+        let request = received
+            .iter()
+            .find(|request| request.path == path)
+            .unwrap_or_else(|| panic!("{path} received the test send"));
+        json_body(request)
+    };
+    assert_eq!(payload("/zh")["title"], ZH_TITLE);
+    assert_eq!(payload("/zh")["description"], ZH_DESCRIPTION);
+    assert_eq!(
+        payload("/padded")["title"],
+        ZH_TITLE,
+        "the locale is trimmed"
+    );
+    assert_eq!(
+        payload("/unknown")["title"],
+        EN_TITLE,
+        "unknown falls back to English"
+    );
+    // Blank and absent both follow the process locale, whatever it is.
+    let process = payload("/absent")["title"].clone();
+    assert!(process == EN_TITLE || process == ZH_TITLE, "{process}");
+    assert_eq!(payload("/blank")["title"], process);
+
     app.shutdown().await;
 }
 
+/// The Discord channel only takes high priorities (the email form's default
+/// threshold, a rule every channel shares), yet receives the Normal-priority
+/// test event: the test button is an explicit request.
 #[tokio::test]
 async fn discord_and_gotify_test_sends_reach_their_documented_endpoints() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
     let receiver = LocalHttpServer::start(200, "{}").await;
+    let webhook_url = receiver.url("/discord/hook");
 
     let discord = create_channel(
         &app,
         &token,
         "Discord",
         "Discord",
-        json!({ "webhook_url": receiver.url("/discord/hook"), "locale": "en" }),
+        json!({ "webhook_url": webhook_url, "locale": "en", "min_priority": 8 }),
     )
     .await;
-    test_send(&app, &token, &discord)
-        .await
-        .expect_status(StatusCode::OK);
+    test_send_ok(&app, &token, &discord).await;
     let received = receiver.received();
     assert_eq!(received.len(), 1);
     assert_eq!(received[0].method, "POST");
@@ -231,9 +316,7 @@ async fn discord_and_gotify_test_sends_reach_their_documented_endpoints() {
         }),
     )
     .await;
-    test_send(&app, &token, &gotify)
-        .await
-        .expect_status(StatusCode::OK);
+    test_send_ok(&app, &token, &gotify).await;
     let received = receiver.received();
     assert_eq!(received.len(), 2);
     assert_eq!(received[1].method, "POST");
@@ -244,24 +327,15 @@ async fn discord_and_gotify_test_sends_reach_their_documented_endpoints() {
     );
 
     // A configured username and avatar override the webhook's own.
-    app.put(
-        &format!("/api/notifications/channels/{discord}"),
-        &token,
-        &json!({
-            "name": "Discord",
-            "settings": {
-                "webhook_url": receiver.url("/discord/hook"),
-                "locale": "en",
-                "username": "Recorder",
-                "avatar_url": "https://example.invalid/avatar.png",
-            },
-        }),
-    )
-    .await
-    .expect_status(StatusCode::OK);
-    test_send(&app, &token, &discord)
-        .await
-        .expect_status(StatusCode::OK);
+    let settings = json!({
+        "webhook_url": webhook_url,
+        "locale": "en",
+        "min_priority": 8,
+        "username": "Recorder",
+        "avatar_url": "https://example.invalid/avatar.png",
+    });
+    update_channel(&app, &token, &discord, "Discord", settings).await;
+    test_send_ok(&app, &token, &discord).await;
     let received = receiver.received();
     assert_eq!(received.len(), 3);
     let body = json_body(&received[2]);
@@ -275,134 +349,110 @@ async fn discord_and_gotify_test_sends_reach_their_documented_endpoints() {
 /// The bodies `channel-form.tsx` submits for each type, with its defaults:
 /// integer `min_priority`, blank `locale`, explicit `enabled`. A webhook
 /// stored with a string `min_priority` label loads too.
+///
+/// Older versions offered `config_updated`, so databases and backups still
+/// hold subscriptions to it. Like any name the catalog doesn't know, they are
+/// kept and listed as stored but route nothing.
 #[tokio::test]
-async fn channels_saved_in_the_form_shape_load_send_and_survive_a_backup() {
+async fn form_shaped_channels_load_send_and_survive_a_backup_with_retired_subscriptions() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
     let receiver = LocalHttpServer::start(200, "{}").await;
 
-    let discord = create_channel(
-        &app,
-        &token,
-        "Form Discord",
-        "Discord",
-        json!({
-            "webhook_url": receiver.url("/discord"),
-            "min_priority": 5,
-            "locale": "",
-            "enabled": true,
-        }),
-    )
-    .await;
-    let gotify = create_channel(
-        &app,
-        &token,
-        "Form Gotify",
-        "Gotify",
-        json!({
-            "server_url": receiver.url(""),
-            "app_token": "form-token",
-            "min_priority": 5,
-            "locale": "",
-            "enabled": true,
-            "timeout_secs": 30,
-        }),
-    )
-    .await;
-    let telegram = create_channel(
-        &app,
-        &token,
-        "Form Telegram",
-        "Telegram",
-        json!({
-            "bot_token": "123:form-bot-token",
-            "chat_id": "42",
-            "parse_mode": "HTML",
-            "min_priority": 5,
-            "locale": "",
-            "enabled": true,
-        }),
-    )
-    .await;
-    let email = create_channel(
-        &app,
-        &token,
-        "Form Email",
-        "Email",
-        json!({
-            "smtp_host": "127.0.0.1",
-            "smtp_port": 587,
-            "username": "",
-            "password": "",
-            "from_address": "srec@example.com",
-            "to_addresses": ["ops@example.com"],
-            "use_tls": true,
-            "min_priority": 8,
-            "locale": "",
-            "enabled": true,
-        }),
-    )
-    .await;
-    // `channel-form.tsx` turns auth `None` into null, and `removeEmpty` drops it.
-    let webhook = create_channel(
-        &app,
-        &token,
-        "Form webhook",
-        "Webhook",
-        json!({
-            "url": receiver.url("/form"),
-            "method": "POST",
-            "min_priority": 2,
-            "locale": "",
-            "enabled": true,
-            "timeout_secs": 30,
-            "headers": {},
-        }),
-    )
-    .await;
-    let labelled = create_channel(
-        &app,
-        &token,
-        "Labelled webhook",
-        "Webhook",
-        json!({ "url": receiver.url("/labelled"), "min_priority": "low" }),
-    )
-    .await;
+    let channels = [
+        (
+            "Form Discord",
+            "Discord",
+            json!({
+                "webhook_url": receiver.url("/discord"),
+                "min_priority": 5,
+                "locale": "",
+                "enabled": true,
+            }),
+        ),
+        (
+            "Form Gotify",
+            "Gotify",
+            json!({
+                "server_url": receiver.url(""),
+                "app_token": "form-token",
+                "min_priority": 5,
+                "locale": "",
+                "enabled": true,
+                "timeout_secs": 30,
+            }),
+        ),
+        (
+            "Form Telegram",
+            "Telegram",
+            json!({
+                "bot_token": "123:form-bot-token",
+                "chat_id": "42",
+                "parse_mode": "HTML",
+                "min_priority": 5,
+                "locale": "",
+                "enabled": true,
+            }),
+        ),
+        (
+            "Form Email",
+            "Email",
+            json!({
+                "smtp_host": "127.0.0.1",
+                "smtp_port": 587,
+                "username": "",
+                "password": "",
+                "from_address": "srec@example.com",
+                "to_addresses": ["ops@example.com"],
+                "use_tls": true,
+                "min_priority": 8,
+                "locale": "",
+                "enabled": true,
+            }),
+        ),
+        // `channel-form.tsx` turns auth `None` into null, and `removeEmpty` drops it.
+        (
+            "Form webhook",
+            "Webhook",
+            json!({
+                "url": receiver.url("/form"),
+                "method": "POST",
+                "min_priority": 2,
+                "locale": "",
+                "enabled": true,
+                "timeout_secs": 30,
+                "headers": {},
+            }),
+        ),
+        (
+            "Labelled webhook",
+            "Webhook",
+            json!({ "url": receiver.url("/labelled"), "min_priority": "low" }),
+        ),
+    ];
+    let mut ids = Vec::new();
+    for (name, channel_type, settings) in &channels {
+        ids.push(create_channel(&app, &token, name, channel_type, settings.clone()).await);
+    }
 
-    let instances = app
-        .get("/api/notifications/instances", &token)
-        .await
-        .expect_status(StatusCode::OK);
-    let instances = instances.body.as_array().expect("instances array");
-    for (id, name, channel_type) in [
-        (&discord, "Form Discord", "Discord"),
-        (&gotify, "Form Gotify", "Gotify"),
-        (&telegram, "Form Telegram", "Telegram"),
-        (&email, "Form Email", "Email"),
-        (&webhook, "Form webhook", "Webhook"),
-        (&labelled, "Labelled webhook", "Webhook"),
-    ] {
+    let instances = get_ok(&app, &token, "/api/notifications/instances").await;
+    let instances = instances.as_array().expect("instances array");
+    for ((name, channel_type, _), id) in channels.iter().zip(&ids) {
         let instance = instances
             .iter()
             .find(|instance| instance["channel_id"] == id.as_str())
             .unwrap_or_else(|| panic!("{channel_type} channel is loaded: {instances:?}"));
         assert_eq!(instance["key"], id.as_str());
-        assert_eq!(instance["display_name"], name);
-        assert_eq!(instance["channel_type"], channel_type);
+        assert_eq!(instance["display_name"], *name);
+        assert_eq!(instance["channel_type"], *channel_type);
         assert_eq!(instance["source"], "database");
     }
 
     // Telegram and Email would leave the machine, so they don't send.
-    for id in [&discord, &gotify, &webhook, &labelled] {
-        test_send(&app, &token, id)
-            .await
-            .expect_status(StatusCode::OK);
+    for index in [0, 1, 4, 5] {
+        test_send_ok(&app, &token, &ids[index]).await;
     }
-    let paths: Vec<String> = receiver
-        .received()
-        .into_iter()
-        .map(|request| request.path)
-        .collect();
+    let paths: Vec<String> = receiver.received().into_iter().map(|r| r.path).collect();
     assert_eq!(
         paths,
         [
@@ -413,12 +463,28 @@ async fn channels_saved_in_the_form_shape_load_send_and_survive_a_backup() {
         ]
     );
 
-    // A backup holding them imports again.
-    let bundle = app
-        .get("/api/config/backup/export", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let retired = &ids[4];
+    let stored = ["config.updated", "config_updated", "stream_online"];
+    let rows: Vec<String> = stored
+        .iter()
+        .map(|event| format!("('{retired}', '{event}')"))
+        .collect();
+    app.run_sql(&format!(
+        "INSERT INTO notification_subscription (channel_id, event_name) VALUES {}",
+        rows.join(", ")
+    ))
+    .await;
+
+    // A backup holding them all imports again; the import reloads the
+    // channels, subscriptions included.
+    let bundle = get_ok(&app, &token, "/api/config/backup/export").await;
+    let exported = bundle["notification_channels"]
+        .as_array()
+        .expect("exported channels")
+        .iter()
+        .find(|channel| channel["name"] == "Form webhook")
+        .expect("the channel is exported");
+    assert_eq!(exported["subscriptions"], json!(stored));
     let imported = app
         .post(
             "/api/config/backup/import",
@@ -429,13 +495,30 @@ async fn channels_saved_in_the_form_shape_load_send_and_survive_a_backup() {
         .expect_status(StatusCode::OK);
     assert_eq!(imported.body["stats"]["channels_updated"], 6);
 
+    // A successful import ends every session.
+    let token = app
+        .login_tokens(ADMIN_USERNAME, ADMIN_PASSWORD)
+        .await
+        .access;
+    let loaded = loaded_channel_ids(&app, &token).await;
+    for id in &ids {
+        assert!(loaded.contains(id), "{id} is loaded after the import");
+    }
+    let listed = get_ok(
+        &app,
+        &token,
+        &format!("/api/notifications/channels/{retired}/subscriptions"),
+    )
+    .await;
+    assert_eq!(listed, json!(stored));
+
     app.shutdown().await;
 }
 
 /// `GET` returns the stored settings verbatim, secrets included, on purpose:
 /// the edit form re-fills every field from it.
 #[tokio::test]
-async fn channel_crud_returns_stored_settings_for_the_edit_form_and_delete_removes_subscriptions() {
+async fn channel_and_subscription_crud_read_back_what_the_edit_form_needs_and_delete_cascades() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 
@@ -460,13 +543,7 @@ async fn channel_crud_returns_stored_settings_for_the_edit_form_and_delete_remov
     assert_eq!(id.len(), 36, "the id is a UUID: {id}");
     assert_eq!(created.body["name"], "CRUD webhook");
     assert_eq!(created.body["channel_type"], "Webhook");
-    let stored = created.body["settings"]
-        .as_str()
-        .expect("settings come back as a JSON string");
-    assert_eq!(
-        serde_json::from_str::<Value>(stored).expect("settings JSON"),
-        settings
-    );
+    assert_eq!(stored_settings(&created.body), settings);
 
     let rejected = app
         .post(
@@ -477,32 +554,25 @@ async fn channel_crud_returns_stored_settings_for_the_edit_form_and_delete_remov
         .await;
     assert_eq!(rejected.status, StatusCode::UNPROCESSABLE_ENTITY);
 
-    let listed = app
-        .get("/api/notifications/channels", &token)
-        .await
-        .expect_status(StatusCode::OK);
+    let path = format!("/api/notifications/channels/{id}");
     assert_eq!(
-        listed.body,
+        get_ok(&app, &token, "/api/notifications/channels").await,
         json!([created.body]),
         "the rejected type wrote nothing"
     );
-    let fetched = app
-        .get(&format!("/api/notifications/channels/{id}"), &token)
-        .await
-        .expect_status(StatusCode::OK);
+    let fetched = app.get(&path, &token).await.expect_status(StatusCode::OK);
     assert_eq!(fetched.body, created.body);
     assert!(fetched.text.contains("crud-secret-token"));
     assert!(fetched.text.contains("header-secret"));
 
-    let missing = app
-        .put(
-            "/api/notifications/channels/00000000-0000-0000-0000-000000000000",
-            &token,
-            &json!({ "name": "Ghost", "settings": settings }),
-        )
-        .await
-        .expect_status(StatusCode::NOT_FOUND);
-    assert_eq!(missing.error_code(), Some("NOT_FOUND"));
+    let unknown = "/api/notifications/channels/00000000-0000-0000-0000-000000000000";
+    app.put(
+        unknown,
+        &token,
+        &json!({ "name": "Ghost", "settings": settings }),
+    )
+    .await
+    .assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
 
     let renamed_settings = json!({
         "url": "http://127.0.0.1:9/renamed",
@@ -510,7 +580,7 @@ async fn channel_crud_returns_stored_settings_for_the_edit_form_and_delete_remov
     });
     let updated = app
         .put(
-            &format!("/api/notifications/channels/{id}"),
+            &path,
             &token,
             &json!({ "name": "Renamed webhook", "settings": renamed_settings }),
         )
@@ -518,103 +588,60 @@ async fn channel_crud_returns_stored_settings_for_the_edit_form_and_delete_remov
         .expect_status(StatusCode::OK);
     assert_eq!(updated.body["id"], id.as_str());
     assert_eq!(updated.body["channel_type"], "Webhook");
-    let fetched = app
-        .get(&format!("/api/notifications/channels/{id}"), &token)
-        .await
-        .expect_status(StatusCode::OK);
-    assert_eq!(fetched.body["name"], "Renamed webhook");
-    assert_eq!(
-        serde_json::from_str::<Value>(fetched.body["settings"].as_str().expect("settings"))
-            .expect("settings JSON"),
-        renamed_settings
-    );
+    let fetched = get_ok(&app, &token, &path).await;
+    assert_eq!(fetched["name"], "Renamed webhook");
+    assert_eq!(stored_settings(&fetched), renamed_settings);
 
+    // Subscriptions echo the request and read back sorted, under canonical
+    // names; a save replaces the whole set.
+    let subscriptions = format!("{path}/subscriptions");
+    let requested = ["stream_online", "StreamOffline", "download.error"];
+    assert_eq!(
+        subscribe(&app, &token, &id, &requested).await,
+        json!(requested),
+        "the response echoes the request"
+    );
+    assert_eq!(
+        get_ok(&app, &token, &subscriptions).await,
+        json!(["download_error", "stream_offline", "stream_online"]),
+        "legacy aliases are rewritten to canonical names on reload"
+    );
+    subscribe(&app, &token, &id, &["stream_online", "fatal_error"]).await;
+    assert_eq!(
+        get_ok(&app, &token, &subscriptions).await,
+        json!(["fatal_error", "stream_online"])
+    );
+    let unknown_subscriptions = format!("{unknown}/subscriptions");
     app.put(
-        &format!("/api/notifications/channels/{id}/subscriptions"),
+        &unknown_subscriptions,
         &token,
-        &json!({ "events": ["stream_online", "fatal_error"] }),
+        &json!({ "events": ["stream_online"] }),
     )
     .await
-    .expect_status(StatusCode::OK);
+    .assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
+    assert_eq!(
+        get_ok(&app, &token, &unknown_subscriptions).await,
+        json!([])
+    );
     assert!(loaded_channel_ids(&app, &token).await.contains(&id));
 
-    let deleted = app
-        .delete(&format!("/api/notifications/channels/{id}"), &token)
-        .await;
+    let deleted = app.delete(&path, &token).await;
     assert_eq!(deleted.status, StatusCode::NO_CONTENT);
-    let gone = app
-        .get(&format!("/api/notifications/channels/{id}"), &token)
+    app.get(&path, &token)
         .await
-        .expect_status(StatusCode::NOT_FOUND);
-    assert_eq!(gone.error_code(), Some("NOT_FOUND"));
-    let listed = app
-        .get("/api/notifications/channels", &token)
-        .await
-        .expect_status(StatusCode::OK);
-    assert_eq!(listed.body, json!([]));
+        .assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
+    assert_eq!(
+        get_ok(&app, &token, "/api/notifications/channels").await,
+        json!([])
+    );
     assert!(!loaded_channel_ids(&app, &token).await.contains(&id));
-    let subscriptions = app
-        .get(
-            &format!("/api/notifications/channels/{id}/subscriptions"),
-            &token,
-        )
-        .await
-        .expect_status(StatusCode::OK);
-    assert_eq!(subscriptions.body, json!([]));
-    let database = app.database().await;
-    let rows: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM notification_subscription WHERE channel_id = ?")
-            .bind(&id)
-            .fetch_one(&database)
-            .await
-            .expect("count subscriptions");
+    assert_eq!(get_ok(&app, &token, &subscriptions).await, json!([]));
+    let rows = app
+        .query_i64(&format!(
+            "SELECT COUNT(*) FROM notification_subscription WHERE channel_id = '{id}'"
+        ))
+        .await;
     assert_eq!(rows, 0, "deleting a channel removes its subscriptions");
-    database.close().await;
-
-    app.shutdown().await;
-}
-
-/// The read-only allowlist names the event catalog and log exactly; the
-/// channel routes beside them stay refused.
-#[tokio::test]
-async fn a_read_only_api_key_reads_the_event_catalog_and_log_but_not_channels() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-    let id = create_channel(
-        &app,
-        &token,
-        "Guarded",
-        "Webhook",
-        json!({ "url": "http://127.0.0.1:9/guarded" }),
-    )
-    .await;
-    let key = app.create_api_key(&token, "reader", "read_only").await.raw;
-
-    for path in [
-        "/api/notifications/channels".to_owned(),
-        format!("/api/notifications/channels/{id}"),
-        "/api/notifications/instances".to_owned(),
-    ] {
-        let response = app.get(&path, &key).await;
-        assert_eq!(
-            response.status,
-            StatusCode::FORBIDDEN,
-            "{path}: {}",
-            response.text
-        );
-        assert_eq!(response.error_code(), Some("API_KEY_READ_ONLY"));
-    }
-
-    let catalog = app
-        .get("/api/notifications/event-types", &key)
-        .await
-        .expect_status(StatusCode::OK);
-    assert!(!catalog.body.as_array().expect("catalog array").is_empty());
-    let events = app
-        .get("/api/notifications/events", &key)
-        .await
-        .expect_status(StatusCode::OK);
-    assert!(events.body.is_array());
 
     app.shutdown().await;
 }
@@ -634,10 +661,9 @@ async fn test_send_reports_disabled_and_failing_channels_without_leaking_the_rec
     )
     .await;
     assert!(!loaded_channel_ids(&app, &token).await.contains(&disabled));
-    let response = test_send(&app, &token, &disabled)
+    test_send(&app, &token, &disabled)
         .await
-        .expect_status(StatusCode::NOT_FOUND);
-    assert_eq!(response.error_code(), Some("NOT_FOUND"));
+        .assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
     assert!(receiver.received().is_empty());
 
     let failing_receiver = LocalHttpServer::start(500, "receiver-private-body").await;
@@ -650,10 +676,8 @@ async fn test_send_reports_disabled_and_failing_channels_without_leaking_the_rec
         json!({ "url": failing_url }),
     )
     .await;
-    let response = test_send(&app, &token, &failing)
-        .await
-        .expect_status(StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(response.error_code(), Some("INTERNAL_ERROR"));
+    let response = test_send(&app, &token, &failing).await;
+    response.assert_error(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR");
     let authority = failing_url
         .trim_start_matches("http://")
         .split('/')
@@ -680,193 +704,89 @@ async fn test_send_reports_disabled_and_failing_channels_without_leaking_the_rec
     app.shutdown().await;
 }
 
+/// A half-configured SMTP login and a blank host are refused before any
+/// connection; a complete channel delivers through a local SMTP server.
 #[tokio::test]
-async fn email_test_rejects_a_half_configured_smtp_login_or_a_blank_host_before_connecting() {
+async fn email_test_send_checks_its_smtp_settings_before_connecting_and_delivers_locally() {
+    let smtp = SmtpFixture::start().await;
     let app = TestApp::start().await;
     let token = app.admin_token().await;
     // A plain listener: any SMTP connection attempt would sit in its backlog.
-    let smtp = std::net::TcpListener::bind("127.0.0.1:0").expect("bind the SMTP listener");
-    smtp.set_nonblocking(true)
+    let unused = std::net::TcpListener::bind("127.0.0.1:0").expect("bind the SMTP listener");
+    unused
+        .set_nonblocking(true)
         .expect("make the SMTP listener non-blocking");
-    let port = smtp.local_addr().expect("SMTP listener address").port();
-    let email = |host: &str, username: &str| {
-        json!({
-            "smtp_host": host,
-            "smtp_port": port,
-            "username": username,
-            "password": "",
-            "from_address": "srec@example.com",
-            "to_addresses": ["ops@example.com"],
-            "use_tls": false,
-            "min_priority": 5,
-        })
-    };
-
-    let half = create_channel(
-        &app,
-        &token,
-        "Half login",
-        "Email",
-        email("127.0.0.1", "mailer"),
-    )
-    .await;
-    test_send(&app, &token, &half)
-        .await
-        .assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
-
-    let blank = create_channel(&app, &token, "Blank host", "Email", email("   ", "")).await;
-    test_send(&app, &token, &blank)
-        .await
-        .assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
-
-    match smtp.accept() {
+    let unused_port = unused.local_addr().expect("SMTP listener address").port();
+    for (name, host, username) in [
+        ("Half login", "127.0.0.1", "mailer"),
+        ("Blank host", "   ", ""),
+    ] {
+        let id = create_channel(
+            &app,
+            &token,
+            name,
+            "Email",
+            email_settings(host, unused_port, username),
+        )
+        .await;
+        test_send(&app, &token, &id)
+            .await
+            .assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
+    }
+    match unused.accept() {
         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
         other => panic!("the SMTP server was contacted: {other:?}"),
     }
 
-    app.shutdown().await;
-}
-
-/// The test button is an explicit request, so the Normal-priority test event is
-/// sent even to a channel that only takes higher priorities.
-#[tokio::test]
-async fn test_send_is_delivered_below_the_channel_min_priority() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-    let receiver = LocalHttpServer::start(200, "{}").await;
-    // The email form's default threshold; Discord shares the same rule.
     let id = create_channel(
         &app,
         &token,
-        "High only",
-        "Discord",
-        json!({ "webhook_url": receiver.url("/high"), "min_priority": 8 }),
+        "Mail",
+        "Email",
+        email_settings("127.0.0.1", smtp.port(), ""),
     )
     .await;
-
-    test_send(&app, &token, &id)
-        .await
-        .expect_status(StatusCode::OK);
-    let paths: Vec<String> = receiver
-        .received()
-        .into_iter()
-        .map(|request| request.path)
-        .collect();
-    assert_eq!(paths, ["/high"]);
-
-    app.shutdown().await;
-}
-
-#[tokio::test]
-async fn the_channel_locale_decides_the_language_of_the_test_payload() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-    let receiver = LocalHttpServer::start(200, "ok").await;
-
-    let cases = [
-        ("/zh", json!("zh-CN")),
-        ("/en", json!("en")),
-        ("/padded", json!("  zh-CN  ")),
-        ("/unknown", json!("xx-YY")),
-        ("/blank", json!("")),
-        ("/absent", Value::Null),
-    ];
-    for (path, locale) in &cases {
-        let mut settings = json!({ "url": receiver.url(path) });
-        if !locale.is_null() {
-            settings["locale"] = locale.clone();
-        }
-        let id = create_channel(&app, &token, path, "Webhook", settings).await;
-        test_send(&app, &token, &id)
-            .await
-            .expect_status(StatusCode::OK);
+    test_send_ok(&app, &token, &id).await;
+    let messages = smtp.messages();
+    assert_eq!(messages.len(), 1, "{messages:?}");
+    let message = &messages[0];
+    assert_eq!(message.from, "<srec@example.com>");
+    assert_eq!(message.to, ["<ops@example.com>", "<dev@example.com>"]);
+    let headers = message.data.split("\r\n\r\n").next().unwrap_or_default();
+    for header in [
+        "From: srec@example.com",
+        "To: ops@example.com, dev@example.com",
+        "Content-Type: multipart/alternative;",
+    ] {
+        assert!(headers.contains(header), "{header} missing in {headers}");
     }
-
-    let received = receiver.received();
-    let payload = |path: &str| {
-        let request = received
-            .iter()
-            .find(|request| request.path == path)
-            .unwrap_or_else(|| panic!("{path} received the test send"));
-        json_body(request)
-    };
-    assert_eq!(payload("/zh")["title"], ZH_TITLE);
-    assert_eq!(payload("/zh")["description"], ZH_DESCRIPTION);
-    assert_eq!(payload("/en")["title"], EN_TITLE);
-    assert_eq!(payload("/en")["description"], EN_DESCRIPTION);
-    assert_eq!(
-        payload("/padded")["title"],
-        ZH_TITLE,
-        "the locale is trimmed"
+    // The subject's emoji is an encoded word; the rest stays readable.
+    assert!(
+        headers
+            .lines()
+            .any(|line| line.starts_with("Subject: [rust-srec] ")
+                && line.ends_with(" System started (vtest)")),
+        "{headers}"
     );
-    assert_eq!(
-        payload("/unknown")["title"],
-        EN_TITLE,
-        "unknown falls back to English"
+    assert!(
+        message
+            .data
+            .contains("System initialized successfully (vtest)"),
+        "{}",
+        message.data
     );
-    // Blank and absent both follow the process locale, whatever it is.
-    let process = payload("/absent")["title"].clone();
-    assert!(process == EN_TITLE || process == ZH_TITLE, "{process}");
-    assert_eq!(payload("/blank")["title"], process);
 
     app.shutdown().await;
 }
 
-#[tokio::test]
-async fn subscriptions_echo_the_request_and_read_back_sorted_under_canonical_names() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-    let id = create_channel(
-        &app,
-        &token,
-        "Subscribed",
-        "Webhook",
-        json!({ "url": "http://127.0.0.1:9/subscribed" }),
-    )
-    .await;
-    let path = format!("/api/notifications/channels/{id}/subscriptions");
-
-    let requested = json!(["stream_online", "StreamOffline", "download.error"]);
-    let saved = app
-        .put(&path, &token, &json!({ "events": requested }))
-        .await
-        .expect_status(StatusCode::OK);
-    assert_eq!(saved.body, requested, "the response echoes the request");
-    let stored = app.get(&path, &token).await.expect_status(StatusCode::OK);
-    assert_eq!(
-        stored.body,
-        json!(["download_error", "stream_offline", "stream_online"]),
-        "legacy aliases are rewritten to canonical names on reload"
-    );
-
-    app.put(&path, &token, &json!({ "events": ["stream_online"] }))
-        .await
-        .expect_status(StatusCode::OK);
-    let stored = app.get(&path, &token).await.expect_status(StatusCode::OK);
-    assert_eq!(stored.body, json!(["stream_online"]));
-
-    let unknown = "/api/notifications/channels/00000000-0000-0000-0000-000000000000/subscriptions";
-    let response = app
-        .put(unknown, &token, &json!({ "events": ["stream_online"] }))
-        .await
-        .expect_status(StatusCode::NOT_FOUND);
-    assert_eq!(response.error_code(), Some("NOT_FOUND"));
-    let response = app.get(unknown, &token).await.expect_status(StatusCode::OK);
-    assert_eq!(response.body, json!([]));
-
-    app.shutdown().await;
-}
-
+/// `config_updated` is not offered: nothing emits it.
 #[tokio::test]
 async fn the_event_type_catalog_lists_canonical_types_with_integer_priorities() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 
-    let catalog = app
-        .get("/api/notifications/event-types", &token)
-        .await
-        .expect_status(StatusCode::OK);
-    let entries = catalog.body.as_array().expect("catalog array");
+    let catalog = get_ok(&app, &token, "/api/notifications/event-types").await;
+    let entries = catalog.as_array().expect("catalog array");
     let mut seen = std::collections::HashSet::new();
     for entry in entries {
         assert_eq!(
@@ -895,6 +815,7 @@ async fn the_event_type_catalog_lists_canonical_types_with_integer_priorities() 
             .collect();
         assert!(aliases.contains(&event_type));
     }
+    assert!(!seen.contains("config_updated"), "{seen:?}");
     let entry = |event_type: &str| {
         entries
             .iter()
@@ -918,92 +839,6 @@ async fn the_event_type_catalog_lists_canonical_types_with_integer_priorities() 
 }
 
 #[tokio::test]
-async fn the_event_type_catalog_does_not_offer_config_updated_which_nothing_emits() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-
-    let catalog = app
-        .get("/api/notifications/event-types", &token)
-        .await
-        .expect_status(StatusCode::OK);
-    let offered: Vec<&str> = catalog
-        .body
-        .as_array()
-        .expect("catalog array")
-        .iter()
-        .filter_map(|entry| entry["event_type"].as_str())
-        .collect();
-    assert!(!offered.contains(&"config_updated"), "{offered:?}");
-
-    app.shutdown().await;
-}
-
-/// Older versions offered `config_updated`, so databases and backups still hold
-/// subscriptions to it. Like any name the catalog doesn't know, they are kept
-/// and listed as stored but route nothing.
-#[tokio::test]
-async fn subscriptions_to_a_retired_event_type_are_kept_without_breaking_the_channel() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-    let id = create_channel(
-        &app,
-        &token,
-        "Retired",
-        "Webhook",
-        json!({ "url": "http://127.0.0.1:9/retired" }),
-    )
-    .await;
-    let stored = ["config.updated", "config_updated", "stream_online"];
-    let rows: Vec<String> = stored
-        .iter()
-        .map(|event| format!("('{id}', '{event}')"))
-        .collect();
-    app.run_sql(&format!(
-        "INSERT INTO notification_subscription (channel_id, event_name) VALUES {}",
-        rows.join(", ")
-    ))
-    .await;
-
-    let bundle = app
-        .get("/api/config/backup/export", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    let exported = bundle["notification_channels"]
-        .as_array()
-        .expect("exported channels")
-        .iter()
-        .find(|channel| channel["name"] == "Retired")
-        .expect("the channel is exported");
-    assert_eq!(exported["subscriptions"], json!(stored));
-    // The import reloads the channels, subscriptions included.
-    app.post(
-        "/api/config/backup/import",
-        &token,
-        &json!({ "config": bundle, "mode": "merge" }),
-    )
-    .await
-    .expect_status(StatusCode::OK);
-
-    // A successful import ends every session.
-    let token = app
-        .login_tokens(ADMIN_USERNAME, ADMIN_PASSWORD)
-        .await
-        .access;
-    assert!(loaded_channel_ids(&app, &token).await.contains(&id));
-    let listed = app
-        .get(
-            &format!("/api/notifications/channels/{id}/subscriptions"),
-            &token,
-        )
-        .await
-        .expect_status(StatusCode::OK);
-    assert_eq!(listed.body, json!(stored));
-
-    app.shutdown().await;
-}
-
-#[tokio::test]
 async fn the_event_log_lists_newest_first_and_filters_and_pages() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
@@ -1022,44 +857,41 @@ async fn the_event_log_lists_newest_first_and_filters_and_pages() {
         .await,
     );
 
-    // Nothing offline emits these, so seed the log the handler reads.
+    // Nothing offline emits these, so seed the log the handler reads, one
+    // second apart.
     let now = now_ms();
+    let (a, b) = (Some(alpha.as_str()), Some(beta.as_str()));
     let rows = [
         (
-            "00000000-0000-4000-8000-000000000001",
             "stream_online",
             5,
             r#"{"StreamOnline":{"title":"Morning show"}}"#,
-            Some(alpha.as_str()),
-            now - 4000,
+            a,
         ),
         (
-            "00000000-0000-4000-8000-000000000002",
             "download_error",
             8,
             r#"{"DownloadError":{"error_message":"Disk Quota exceeded"}}"#,
-            Some(beta.as_str()),
-            now - 3000,
+            b,
         ),
         (
-            "00000000-0000-4000-8000-000000000003",
             "fatal_error",
             10,
             r#"{"FatalError":{"error_type":"auth"}}"#,
-            Some(alpha.as_str()),
-            now - 2000,
+            a,
         ),
         (
-            "00000000-0000-4000-8000-000000000004",
             "system_startup",
             5,
             r#"{"SystemStartup":{"version":"1.0.0"}}"#,
             None,
-            now - 1000,
         ),
     ];
+    let ids = [1, 2, 3, 4].map(|n| format!("00000000-0000-4000-8000-00000000000{n}"));
     let database = app.database().await;
-    for (id, event_type, priority, payload, streamer_id, created_at) in rows {
+    for (age, (id, (event_type, priority, payload, streamer_id))) in
+        (1..=4).rev().zip(ids.iter().zip(rows))
+    {
         sqlx::query(
             "INSERT INTO notification_event_log (id, event_type, priority, payload, streamer_id, created_at) VALUES (?, ?, ?, ?, ?, ?)",
         )
@@ -1068,7 +900,7 @@ async fn the_event_log_lists_newest_first_and_filters_and_pages() {
         .bind(priority)
         .bind(payload)
         .bind(streamer_id)
-        .bind(created_at)
+        .bind(now - age * 1000)
         .execute(&database)
         .await
         .expect("seed the event log");
@@ -1084,16 +916,13 @@ async fn the_event_log_lists_newest_first_and_filters_and_pages() {
     .await
     .expect("seed older events");
     database.close().await;
-    let [e1, e2, e3, e4] = rows.map(|row| row.0);
+    let [e1, e2, e3, e4] = ids.each_ref().map(String::as_str);
 
-    let all = app
-        .get("/api/notifications/events", &token)
-        .await
-        .expect_status(StatusCode::OK);
-    let ids = event_ids(&all.body);
+    let all = get_ok(&app, &token, "/api/notifications/events").await;
+    let ids = event_ids(&all);
     assert_eq!(ids.len(), 200, "the default page holds 200 events");
     assert_eq!(ids[..4], [e4, e3, e2, e1], "newest first");
-    let entries = all.body.as_array().expect("events");
+    let entries = all.as_array().expect("events");
     assert_eq!(
         sorted_keys(&entries[1]),
         [
@@ -1110,7 +939,7 @@ async fn the_event_log_lists_newest_first_and_filters_and_pages() {
     assert_eq!(entries[1]["streamer_id"], alpha.as_str());
     assert_eq!(entries[1]["created_at"], now - 2000);
     assert_eq!(
-        entries[1]["payload"], rows[2].3,
+        entries[1]["payload"], rows[2].2,
         "the payload stays a string"
     );
     assert!(
@@ -1118,6 +947,12 @@ async fn the_event_log_lists_newest_first_and_filters_and_pages() {
         "no streamer, no key"
     );
 
+    let largest = get_ok(&app, &token, "/api/notifications/events?limit=5000").await;
+    assert_eq!(
+        largest.as_array().map(Vec::len),
+        Some(1000),
+        "the limit is capped at 1000"
+    );
     let by_alpha = format!("streamer_id={alpha}");
     let fatal_for_beta = format!("event_type=fatal_error&streamer_id={beta}");
     let queries: [(&str, Vec<&str>); 13] = [
@@ -1137,34 +972,21 @@ async fn the_event_log_lists_newest_first_and_filters_and_pages() {
         ("limit=0", vec![e4]),
         ("offset=-5&limit=1", vec![e4]),
     ];
-    let largest = app
-        .get("/api/notifications/events?limit=5000", &token)
-        .await
-        .expect_status(StatusCode::OK);
-    assert_eq!(
-        largest.body.as_array().map(Vec::len),
-        Some(1000),
-        "the limit is capped at 1000"
-    );
     for (query, expected) in queries {
-        let response = app
-            .get(&format!("/api/notifications/events?{query}"), &token)
-            .await
-            .expect_status(StatusCode::OK);
-        assert_eq!(event_ids(&response.body), expected, "?{query}");
+        let response = get_ok(&app, &token, &format!("/api/notifications/events?{query}")).await;
+        assert_eq!(event_ids(&response), expected, "?{query}");
     }
 
     app.shutdown().await;
 }
 
 async fn credential_unavailable_log(app: &TestApp, token: &str) -> Vec<Value> {
-    app.get(
-        "/api/notifications/events?event_type=credential_unavailable",
+    get_ok(
+        app,
         token,
+        "/api/notifications/events?event_type=credential_unavailable",
     )
     .await
-    .expect_status(StatusCode::OK)
-    .body
     .as_array()
     .expect("events")
     .clone()
@@ -1177,18 +999,13 @@ async fn a_credential_unavailable_event_reaches_only_subscribed_channels_and_is_
     let subscribed = LocalHttpServer::start(200, "ok").await;
     let unsubscribed = LocalHttpServer::start(200, "ok").await;
     let critical_only = LocalHttpServer::start(200, "ok").await;
-    for (name, receiver, events, min_priority) in [
-        (
-            "Subscribed",
-            &subscribed,
-            json!(["credential_unavailable"]),
-            8,
-        ),
-        ("Unsubscribed", &unsubscribed, json!(["stream_online"]), 5),
+    for (name, receiver, event, min_priority) in [
+        ("Subscribed", &subscribed, "credential_unavailable", 8),
+        ("Unsubscribed", &unsubscribed, "stream_online", 5),
         (
             "Critical only",
             &critical_only,
-            json!(["credential_unavailable"]),
+            "credential_unavailable",
             10,
         ),
     ] {
@@ -1200,13 +1017,7 @@ async fn a_credential_unavailable_event_reaches_only_subscribed_channels_and_is_
             json!({ "url": receiver.url("/event"), "locale": "en", "min_priority": min_priority }),
         )
         .await;
-        app.put(
-            &format!("/api/notifications/channels/{id}/subscriptions"),
-            &token,
-            &json!({ "events": events }),
-        )
-        .await
-        .expect_status(StatusCode::OK);
+        subscribe(&app, &token, &id, &[event]).await;
     }
     app.select_disabled_account(&token, "platform-huya").await;
     app.select_disabled_account(&token, "platform-douyin").await;
@@ -1292,25 +1103,14 @@ async fn web_push_routes_report_service_unavailable_without_vapid_keys() {
     });
     let unsubscribe = json!({ "endpoint": "https://push.example.com/endpoint" });
 
-    for (method, path, body) in [
-        (Method::GET, "/api/notifications/web-push/public-key", None),
-        (
-            Method::GET,
-            "/api/notifications/web-push/subscriptions",
-            None,
-        ),
-        (
-            Method::POST,
-            "/api/notifications/web-push/subscribe",
-            Some(&subscribe),
-        ),
-        (
-            Method::POST,
-            "/api/notifications/web-push/unsubscribe",
-            Some(&unsubscribe),
-        ),
+    for (method, route, body) in [
+        (Method::GET, "public-key", None),
+        (Method::GET, "subscriptions", None),
+        (Method::POST, "subscribe", Some(&subscribe)),
+        (Method::POST, "unsubscribe", Some(&unsubscribe)),
     ] {
-        let response = app.send(method, path, Some(&token), body).await;
+        let path = format!("/api/notifications/web-push/{route}");
+        let response = app.send(method, &path, Some(&token), body).await;
         assert_eq!(
             response.status,
             StatusCode::SERVICE_UNAVAILABLE,
@@ -1319,134 +1119,6 @@ async fn web_push_routes_report_service_unavailable_without_vapid_keys() {
         );
         assert_eq!(response.error_code(), Some("SERVICE_UNAVAILABLE"), "{path}");
     }
-
-    app.shutdown().await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn stream_online_and_offline_notifications_reach_a_webhook() {
-    let fake = FakePlatform::start().await;
-    let room = fake.room("notify");
-    room.set_live(room.live("Notify me").category("Games"));
-    let receiver = LocalHttpServer::start(200, "ok").await;
-    let app = TestApp::start_with(Seed::live()).await;
-    let token = app.admin_token().await;
-    // StreamOffline is a low-priority event, below the default minimum.
-    let channel = create_channel(
-        &app,
-        &token,
-        "Live alerts",
-        "Webhook",
-        json!({ "url": receiver.url("/hook"), "locale": "en", "min_priority": 2 }),
-    )
-    .await;
-    app.put(
-        &format!("/api/notifications/channels/{channel}/subscriptions"),
-        &token,
-        &json!({ "events": ["stream_online", "stream_offline"] }),
-    )
-    .await
-    .expect_status(StatusCode::OK);
-    let id = id_of(
-        &app.create_enabled_streamer(&token, json!({ "name": "Notified", "url": room.url() }))
-            .await,
-    );
-
-    room.wait_for_media_connection(1).await;
-    room.push(FlvLoop::tiny().stream(1));
-    room.set_offline();
-    room.end();
-    let received = eventually(WAIT, "the online and offline webhooks", || async {
-        let received = receiver.received();
-        (received.len() >= 2).then_some(received)
-    })
-    .await;
-    let bodies: Vec<Value> = received.iter().map(json_body).collect();
-    assert_eq!(bodies.len(), 2, "{bodies:?}");
-
-    let online = &bodies[0];
-    assert_eq!(online["event_type"], "stream_online", "{online}");
-    assert_eq!(online["streamer_id"], id.as_str());
-    assert_eq!(online["title"], "🔴 Notified is now live!");
-    assert_eq!(online["priority_label"], "normal");
-    assert_eq!(online["data"]["StreamOnline"]["streamer_name"], "Notified");
-    assert_eq!(online["data"]["StreamOnline"]["title"], "Notify me");
-    assert_eq!(online["data"]["StreamOnline"]["category"], "Games");
-    assert_recent(millis(&online["timestamp"]));
-
-    let offline = &bodies[1];
-    assert_eq!(offline["event_type"], "stream_offline", "{offline}");
-    assert_eq!(offline["streamer_id"], id.as_str());
-    assert_eq!(offline["priority_label"], "low");
-    assert_eq!(
-        offline["data"]["StreamOffline"]["streamer_name"],
-        "Notified"
-    );
-    assert!(millis(&offline["timestamp"]) >= millis(&online["timestamp"]));
-    for request in &received {
-        assert_eq!(request.method, "POST");
-        assert_eq!(request.path, "/hook");
-    }
-    assert_eq!(app.dead_end().attempts(), []);
-
-    app.shutdown().await;
-}
-
-#[tokio::test]
-async fn email_test_send_delivers_through_a_local_smtp_server() {
-    let smtp = SmtpFixture::start().await;
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-    let id = create_channel(
-        &app,
-        &token,
-        "Mail",
-        "Email",
-        json!({
-            "smtp_host": "127.0.0.1",
-            "smtp_port": smtp.port(),
-            "username": "",
-            "password": "",
-            "from_address": "srec@example.com",
-            "to_addresses": ["ops@example.com", "dev@example.com"],
-            "use_tls": false,
-            "min_priority": 5,
-            "locale": "en",
-        }),
-    )
-    .await;
-    test_send(&app, &token, &id)
-        .await
-        .expect_status(StatusCode::OK);
-
-    let messages = smtp.messages();
-    assert_eq!(messages.len(), 1, "{messages:?}");
-    let message = &messages[0];
-    assert_eq!(message.from, "<srec@example.com>");
-    assert_eq!(message.to, ["<ops@example.com>", "<dev@example.com>"]);
-    let headers = message.data.split("\r\n\r\n").next().unwrap_or_default();
-    for header in [
-        "From: srec@example.com",
-        "To: ops@example.com, dev@example.com",
-        "Content-Type: multipart/alternative;",
-    ] {
-        assert!(headers.contains(header), "{header} missing in {headers}");
-    }
-    // The subject's emoji is an encoded word; the rest stays readable.
-    assert!(
-        headers
-            .lines()
-            .any(|line| line.starts_with("Subject: [rust-srec] ")
-                && line.ends_with(" System started (vtest)")),
-        "{headers}"
-    );
-    assert!(
-        message
-            .data
-            .contains("System initialized successfully (vtest)"),
-        "{}",
-        message.data
-    );
 
     app.shutdown().await;
 }
@@ -1482,13 +1154,7 @@ async fn subscribed_webhook(
         json!({ "url": receiver.url("/hook"), "locale": "en", "min_priority": 2 }),
     )
     .await;
-    app.put(
-        &format!("/api/notifications/channels/{channel}/subscriptions"),
-        token,
-        &json!({ "events": events }),
-    )
-    .await
-    .expect_status(StatusCode::OK);
+    subscribe(app, token, &channel, events).await;
 }
 
 /// The webhook bodies `receiver` got for `event_type`, in arrival order.
@@ -1509,24 +1175,10 @@ async fn wait_for_webhooks(receiver: &LocalHttpServer, event_type: &str, count: 
     .await;
 }
 
-async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
-    app.get(path, token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body
-}
-
 /// The streamer's sessions, newest first.
 async fn sessions_of(app: &TestApp, token: &str, streamer_id: &str) -> Vec<Value> {
-    get_ok(
-        app,
-        token,
-        &format!("/api/sessions?streamer_id={streamer_id}&include_empty=true"),
-    )
-    .await["items"]
-        .as_array()
-        .expect("session items")
-        .clone()
+    let path = format!("/api/sessions?streamer_id={streamer_id}&include_empty=true");
+    items(app, token, &path).await
 }
 
 /// Wait for the streamer's newest session to end and return its detail.
@@ -1578,12 +1230,13 @@ fn timestamp(value: &Value) -> chrono::DateTime<chrono::FixedOffset> {
 async fn a_recording_notifies_each_start_its_parts_and_workflow_and_one_offline_at_its_end() {
     let fake = FakePlatform::start().await;
     let room = fake.room("notified");
-    room.set_live(room.live("Notified show"));
+    room.set_live(room.live("Notified show").category("Games"));
     let receiver = LocalHttpServer::start(200, "ok").await;
     let app =
         TestApp::start_with(Seed::live().session_complete_pipeline(&succeed("after-session")))
             .await;
     let token = app.admin_token().await;
+    // StreamOffline is a low-priority event, below the default minimum.
     subscribed_webhook(
         &app,
         &token,
@@ -1626,6 +1279,10 @@ async fn a_recording_notifies_each_start_its_parts_and_workflow_and_one_offline_
     ] {
         wait_for_webhooks(&receiver, event_type, count).await;
     }
+    for request in receiver.received() {
+        assert_eq!(request.method, "POST");
+        assert_eq!(request.path, "/hook");
+    }
 
     // Online for the start and again for the resumed start, offline once
     // when the session ended; each at the time the session recorded.
@@ -1651,12 +1308,17 @@ async fn a_recording_notifies_each_start_its_parts_and_workflow_and_one_offline_
         millis(&offline[0]["timestamp"]),
         millis(&session["end_time"])
     );
-    assert!(offline[0]["data"]["StreamOffline"]["duration_secs"].is_null());
+    let stream_offline = &offline[0]["data"]["StreamOffline"];
+    assert_eq!(stream_offline["streamer_name"], "Notified");
+    assert!(stream_offline["duration_secs"].is_null());
+    assert_eq!(offline[0]["priority_label"], "low");
     for body in &online {
-        assert_eq!(
-            body["data"]["StreamOnline"]["title"], "Notified show",
-            "{body}"
-        );
+        assert_eq!(body["title"], "🔴 Notified is now live!", "{body}");
+        assert_eq!(body["priority_label"], "normal");
+        let stream_online = &body["data"]["StreamOnline"];
+        assert_eq!(stream_online["streamer_name"], "Notified", "{body}");
+        assert_eq!(stream_online["title"], "Notified show", "{body}");
+        assert_eq!(stream_online["category"], "Games", "{body}");
     }
     for body in online.iter().chain(&offline) {
         assert_eq!(body["streamer_id"], id.as_str(), "{body}");
@@ -1664,15 +1326,12 @@ async fn a_recording_notifies_each_start_its_parts_and_workflow_and_one_offline_
 
     // Each part's webhooks carry the times its segment row records.
     let session_id = id_of(&session);
-    let mut segments = get_ok(
+    let mut segments = items(
         &app,
         &token,
         &format!("/api/sessions/{session_id}/segments"),
     )
-    .await["items"]
-        .as_array()
-        .expect("segment items")
-        .clone();
+    .await;
     segments.sort_by_key(|segment| segment["segment_index"].as_i64());
     assert_eq!(segments.len(), 2, "{segments:?}");
     for (event_type, variant, time) in [
@@ -1694,15 +1353,12 @@ async fn a_recording_notifies_each_start_its_parts_and_workflow_and_one_offline_
     }
 
     // The session-complete step's job starts and completes.
-    let jobs = get_ok(
+    let jobs = items(
         &app,
         &token,
         &format!("/api/pipeline/jobs?session_id={session_id}"),
     )
-    .await["items"]
-        .as_array()
-        .expect("job items")
-        .clone();
+    .await;
     assert_eq!(jobs.len(), 1, "{jobs:?}");
     let started = webhooks_of(&receiver, "pipeline_started");
     assert_eq!(started.len(), 1, "{started:?}");
@@ -1718,6 +1374,7 @@ async fn a_recording_notifies_each_start_its_parts_and_workflow_and_one_offline_
         completed[0]["data"]["PipelineCompleted"]["job_id"],
         jobs[0]["id"]
     );
+    assert_eq!(app.dead_end().attempts(), []);
 
     app.shutdown().await;
 }
@@ -1926,33 +1583,12 @@ async fn a_stream_online_email_escapes_the_live_title_in_its_html_part() {
     room.set_live(room.live(r#"<b>Tom & "Jerry"</b>"#).category("Talk"));
     let app = TestApp::start_with(Seed::live()).await;
     let token = app.admin_token().await;
-    // Saved with a setting older versions had, which this one ignores.
-    let channel = create_channel(
-        &app,
-        &token,
-        "Mail",
-        "Email",
-        json!({
-            "smtp_host": "127.0.0.1",
-            "smtp_port": smtp.port(),
-            "username": "",
-            "password": "",
-            "from_address": "srec@example.com",
-            "to_addresses": ["ops@example.com"],
-            "use_tls": false,
-            "min_priority": 5,
-            "locale": "zh-CN",
-            "batch_window_secs": 60,
-        }),
-    )
-    .await;
-    app.put(
-        &format!("/api/notifications/channels/{channel}/subscriptions"),
-        &token,
-        &json!({ "events": ["stream_online"] }),
-    )
-    .await
-    .expect_status(StatusCode::OK);
+    let mut settings = email_settings("127.0.0.1", smtp.port(), "");
+    settings["locale"] = json!("zh-CN");
+    // A setting older versions had, which this one ignores.
+    settings["batch_window_secs"] = json!(60);
+    let channel = create_channel(&app, &token, "Mail", "Email", settings).await;
+    subscribe(&app, &token, &channel, &["stream_online"]).await;
     app.create_enabled_streamer(&token, json!({ "name": "Mailed", "url": room.url() }))
         .await;
 

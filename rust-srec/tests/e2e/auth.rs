@@ -58,6 +58,30 @@ async fn streamers_status(app: &TestApp, token: &str) -> StatusCode {
     app.get("/api/streamers", token).await.status
 }
 
+/// An `Authorization` header carrying a JWT for `claims` signed with `secret`.
+fn bearer_jwt(claims: &Value, secret: &str) -> HeaderMap {
+    authorization(&format!("Bearer {}", mint(claims, secret)))
+}
+
+/// The raw key of an API key create response.
+fn raw_key(created: &Response) -> String {
+    created.body["api_key"]
+        .as_str()
+        .expect("raw key")
+        .to_owned()
+}
+
+/// The caller's browser sessions, newest first.
+async fn list_sessions(app: &TestApp, token: &str) -> Vec<Value> {
+    app.get("/api/auth/sessions", token)
+        .await
+        .expect_status(StatusCode::OK)
+        .body
+        .as_array()
+        .expect("session list")
+        .clone()
+}
+
 fn decode_claims(token: &str) -> Value {
     let mut validation = Validation::default();
     validation.set_issuer(&["rust-srec"]);
@@ -149,13 +173,7 @@ async fn anonymous_callers_get_401_on_every_route_except_the_public_ones() {
         response.assert_error(StatusCode::UNAUTHORIZED, "UNAUTHORIZED");
     }
 
-    // The public routes.
-    app.send(Method::GET, "/api/health/live", None, None)
-        .await
-        .expect_status(StatusCode::OK);
-    app.send(Method::GET, "/api/health/idle", None, None)
-        .await
-        .expect_status(StatusCode::OK);
+    // The public routes; `health.rs` covers liveness and idle.
     for path in ["/api/logging/archive", "/api/logging/download"] {
         let response = app
             .send(Method::GET, &format!("{path}?token=e2e-bogus"), None, None)
@@ -176,7 +194,6 @@ async fn malformed_expired_and_forged_credentials_are_rejected() {
     let claims = decode_claims(&token);
     let now = chrono::Utc::now().timestamp();
 
-    let reminted = mint(&claims, JWT_SECRET);
     let mut expired = claims.clone();
     expired["iat"] = json!(now - 7200);
     expired["exp"] = json!(now - 120);
@@ -202,34 +219,19 @@ async fn malformed_expired_and_forged_credentials_are_rejected() {
         ("two Authorization headers", duplicated),
         (
             "expired more than a minute ago",
-            authorization(&format!("Bearer {}", mint(&expired, JWT_SECRET))),
+            bearer_jwt(&expired, JWT_SECRET),
         ),
         (
             "wrong signing secret",
-            authorization(&format!(
-                "Bearer {}",
-                mint(&claims, "e2e-some-other-secret-with-enough-entropy-000")
-            )),
+            bearer_jwt(&claims, "e2e-some-other-secret-with-enough-entropy-000"),
         ),
-        (
-            "no session id",
-            authorization(&format!("Bearer {}", mint(&without_sid, JWT_SECRET))),
-        ),
-        (
-            "unknown user",
-            authorization(&format!("Bearer {}", mint(&unknown_user, JWT_SECRET))),
-        ),
+        ("no session id", bearer_jwt(&without_sid, JWT_SECRET)),
+        ("unknown user", bearer_jwt(&unknown_user, JWT_SECRET)),
     ];
     // A middleware-protected route and a handler that authenticates itself.
     for path in ["/api/streamers", "/api/health"] {
-        let control = send_with_headers(
-            &app,
-            Method::GET,
-            path,
-            authorization(&format!("Bearer {reminted}")),
-            None,
-        )
-        .await;
+        let reminted = bearer_jwt(&claims, JWT_SECRET);
+        let control = send_with_headers(&app, Method::GET, path, reminted, None).await;
         assert_eq!(
             control.status,
             StatusCode::OK,
@@ -348,42 +350,32 @@ async fn change_password_validates_with_400_and_revokes_every_session() {
         .raw;
 
     let change = |current: &str, new: &str| json!({ "current_password": current, "new_password": new, "confirm_password": new });
-    for (current, new, message) in [
-        (
-            "e2e-not-the-password-1",
-            "e2e-fresh-Password-2",
-            "Current password is incorrect",
-        ),
-        (
-            ADMIN_PASSWORD,
-            ADMIN_PASSWORD,
-            "Weak password: New password must be different from current password",
-        ),
+    let mut rejected = vec![(
+        change("e2e-not-the-password-1", "e2e-fresh-Password-2"),
+        "Current password is incorrect".to_owned(),
+    )];
+    for (new, reason) in [
         (
             ADMIN_PASSWORD,
-            "abc123",
-            "Weak password: Password must be at least 8 characters",
+            "New password must be different from current password",
         ),
-        (
-            ADMIN_PASSWORD,
-            "12345678",
-            "Weak password: Password must contain at least one letter",
-        ),
-        (
-            ADMIN_PASSWORD,
-            "abcdefgh",
-            "Weak password: Password must contain at least one number",
-        ),
+        ("abc123", "Password must be at least 8 characters"),
+        // The minimum counts characters: this is 13 bytes.
+        ("密码密码1", "Password must be at least 8 characters"),
+        ("12345678", "Password must contain at least one letter"),
+        ("abcdefgh", "Password must contain at least one number"),
     ] {
+        rejected.push((
+            change(ADMIN_PASSWORD, new),
+            format!("Weak password: {reason}"),
+        ));
+    }
+    for (body, message) in rejected {
         let response = app
-            .post(
-                "/api/auth/change-password",
-                &old.access,
-                &change(current, new),
-            )
+            .post("/api/auth/change-password", &old.access, &body)
             .await;
         response.assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
-        assert_eq!(response.body["message"], message);
+        assert_eq!(response.body["message"], message, "{body}");
     }
     // Rejected attempts leave the session usable.
     assert_eq!(streamers_status(&app, &old.access).await, StatusCode::OK);
@@ -413,15 +405,11 @@ async fn change_password_validates_with_400_and_revokes_every_session() {
         .await
         .expect_status(StatusCode::OK);
     assert_eq!(fresh.body["must_change_password"], false);
-    let sessions = app
-        .get("/api/auth/sessions", &tokens_from(&fresh.body).access)
-        .await
-        .expect_status(StatusCode::OK);
+    let sessions = list_sessions(&app, &tokens_from(&fresh.body).access).await;
     assert_eq!(
-        sessions.body.as_array().map(Vec::len),
-        Some(1),
-        "only the new login remains: {}",
-        sessions.text
+        sessions.len(),
+        1,
+        "only the new login remains: {sessions:?}"
     );
 
     // API keys are separate credentials, revoked only through DELETE.
@@ -503,13 +491,10 @@ async fn disabling_an_account_cuts_off_sessions_keys_and_sockets() {
         .connect_socket("/api/downloads/ws", Some(&admin.access))
         .await;
 
-    let db = app.database().await;
-    sqlx::query("UPDATE users SET is_active = 0 WHERE username = ?")
-        .bind(ADMIN_USERNAME)
-        .execute(&db)
-        .await
-        .expect("disable the admin account");
-    db.close().await;
+    app.run_sql(&format!(
+        "UPDATE users SET is_active = 0 WHERE username = '{ADMIN_USERNAME}'"
+    ))
+    .await;
 
     app.get("/api/streamers", &admin.access)
         .await
@@ -542,61 +527,9 @@ async fn disabling_an_account_cuts_off_sessions_keys_and_sockets() {
     app.shutdown().await;
 }
 
-/// A session row written before device info was bounded can hold any
-/// length. The session list shows it capped, and a refresh copies the capped
-/// value, not the stored one, into the successor.
-#[tokio::test]
-async fn device_info_stored_before_it_was_bounded_is_capped_when_listed_and_refreshed() {
-    let app = TestApp::start().await;
-    let tokens = app.admin().await.clone();
-    let legacy = format!("{}LEGACY_SUFFIX", "界".repeat(300));
-    let capped = "界".repeat(256);
-    let pool = app.database().await;
-    sqlx::query("UPDATE refresh_tokens SET device_info = ?")
-        .bind(&legacy)
-        .execute(&pool)
-        .await
-        .expect("store an unbounded device description");
-
-    let listed = app
-        .get("/api/auth/sessions", &tokens.access)
-        .await
-        .expect_status(StatusCode::OK);
-    assert_eq!(
-        listed.body[0]["device_info"],
-        capped.as_str(),
-        "{}",
-        listed.text
-    );
-
-    let refreshed = tokens_from(
-        &app.refresh(&tokens.refresh)
-            .await
-            .expect_status(StatusCode::OK)
-            .body,
-    );
-    let successor: Vec<Option<String>> =
-        sqlx::query_scalar("SELECT device_info FROM refresh_tokens WHERE revoked_at IS NULL")
-            .fetch_all(&pool)
-            .await
-            .expect("read the successor token");
-    assert_eq!(successor, [Some(capped.clone())]);
-    let listed = app
-        .get("/api/auth/sessions", &refreshed.access)
-        .await
-        .expect_status(StatusCode::OK);
-    assert_eq!(
-        listed.body.as_array().map(Vec::len),
-        Some(1),
-        "{}",
-        listed.text
-    );
-    assert_eq!(listed.body[0]["device_info"], capped.as_str());
-    pool.close().await;
-
-    app.shutdown().await;
-}
-
+/// Device info is capped at 256 characters on write. A session row written
+/// before it was bounded can hold any length: the list shows it capped, and a
+/// refresh copies the capped value, not the stored one, into the successor.
 #[tokio::test]
 async fn refresh_rotates_tokens_and_replaying_a_rotated_token_revokes_every_session() {
     let app = TestApp::start().await;
@@ -617,11 +550,7 @@ async fn refresh_rotates_tokens_and_replaying_a_rotated_token_revokes_every_sess
         .expect_status(StatusCode::OK);
     let b = tokens_from(&b.body);
 
-    let sessions = app
-        .get("/api/auth/sessions", &a.access)
-        .await
-        .expect_status(StatusCode::OK);
-    let sessions = sessions.body.as_array().expect("session list").clone();
+    let sessions = list_sessions(&app, &a.access).await;
     assert_eq!(sessions.len(), 2, "one entry per login: {sessions:?}");
     let week_ms = 7 * 24 * 3600 * 1000;
     for session in &sessions {
@@ -634,7 +563,7 @@ async fn refresh_rotates_tokens_and_replaying_a_rotated_token_revokes_every_sess
             "expires in 7 days"
         );
     }
-    // Newest first: B's device info is capped at 256 characters.
+    // Newest first: B's device info is capped.
     assert_eq!(sessions[0]["device_info"], "设".repeat(256));
     assert_eq!(sessions[1]["device_info"], Value::Null);
     // The list caps again on read, so only the row shows the cap on write.
@@ -644,8 +573,18 @@ async fn refresh_rotates_tokens_and_replaying_a_rotated_token_revokes_every_sess
             .fetch_all(&pool)
             .await
             .expect("read the stored device info");
-    pool.close().await;
     assert_eq!(stored, [Some("设".repeat(256))]);
+
+    // Give A's session an unbounded legacy value.
+    sqlx::query(
+        "UPDATE refresh_tokens SET device_info = ? WHERE device_info IS NULL AND revoked_at IS NULL",
+    )
+    .bind(format!("{}LEGACY_SUFFIX", "界".repeat(300)))
+    .execute(&pool)
+    .await
+    .expect("store an unbounded device description");
+    let sessions = list_sessions(&app, &a.access).await;
+    assert_eq!(sessions[1]["device_info"], "界".repeat(256), "{sessions:?}");
 
     // `tokenRefresh.ts` treats 400, 401 and 422 as terminal.
     let missing = app
@@ -669,16 +608,20 @@ async fn refresh_rotates_tokens_and_replaying_a_rotated_token_revokes_every_sess
     // the same session is byte-identical.
     assert_ne!(a2.refresh, a.refresh);
     assert_eq!(streamers_status(&app, &a2.access).await, StatusCode::OK);
-    let sessions = app
-        .get("/api/auth/sessions", &a2.access)
-        .await
-        .expect_status(StatusCode::OK);
+    let sessions = list_sessions(&app, &a2.access).await;
     assert_eq!(
-        sessions.body.as_array().map(Vec::len),
-        Some(2),
-        "rotation replaces the session's token: {}",
-        sessions.text
+        sessions.len(),
+        2,
+        "rotation replaces the session's token: {sessions:?}"
     );
+    let mut live: Vec<Option<String>> =
+        sqlx::query_scalar("SELECT device_info FROM refresh_tokens WHERE revoked_at IS NULL")
+            .fetch_all(&pool)
+            .await
+            .expect("read the live tokens");
+    pool.close().await;
+    live.sort();
+    assert_eq!(live, [Some("界".repeat(256)), Some("设".repeat(256))]);
 
     // Replaying the rotated token is treated as theft: every session ends.
     app.refresh(&a.refresh)
@@ -782,29 +725,46 @@ async fn logout_ends_one_lineage_and_logout_all_ends_every_browser_session() {
     app.shutdown().await;
 }
 
+/// Create an API key from `body`, expecting success.
+async fn create_key(app: &TestApp, token: &str, body: &Value) -> Response {
+    app.post("/api/auth/api-keys", token, body)
+        .await
+        .expect_status(StatusCode::OK)
+}
+
+async fn list_keys(app: &TestApp, token: &str) -> Response {
+    app.get("/api/auth/api-keys", token)
+        .await
+        .expect_status(StatusCode::OK)
+}
+
 #[tokio::test]
-async fn api_keys_are_created_listed_used_and_revoked() {
+async fn api_keys_are_validated_created_listed_used_revoked_and_expire() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 
-    let empty = app
-        .get("/api/auth/api-keys", &token)
-        .await
-        .expect_status(StatusCode::OK);
-    assert_eq!(empty.body, json!([]));
+    for body in [
+        json!({ "name": "   ", "access_level": "full" }),
+        json!({ "name": "a".repeat(101), "access_level": "full" }),
+        json!({ "name": "past", "access_level": "full", "expires_at": now_ms() - 1000 }),
+    ] {
+        app.post("/api/auth/api-keys", &token, &body)
+            .await
+            .assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
+    }
+    assert_eq!(
+        list_keys(&app, &token).await.body,
+        json!([]),
+        "rejected input creates nothing"
+    );
 
-    let created = app
-        .post(
-            "/api/auth/api-keys",
-            &token,
-            &json!({ "name": "  Read key  ", "access_level": "read_only" }),
-        )
-        .await
-        .expect_status(StatusCode::OK);
-    let read_key = created.body["api_key"]
-        .as_str()
-        .expect("raw key")
-        .to_string();
+    let created = create_key(
+        &app,
+        &token,
+        &json!({ "name": "  Read key  ", "access_level": "read_only" }),
+    )
+    .await;
+    let read_key = raw_key(&created);
     assert!(
         read_key.len() == 69
             && read_key.starts_with("srec_")
@@ -829,19 +789,17 @@ async fn api_keys_are_created_listed_used_and_revoked() {
         (now_ms() > read_created_at).then_some(())
     })
     .await;
+    // 100 characters is the longest accepted name, however many bytes.
+    let full_name = "名".repeat(100);
     let expires_at = now_ms() + 3_600_000;
-    let created = app
-        .post(
-            "/api/auth/api-keys",
-            &token,
-            &json!({ "name": "Full key", "access_level": "full", "expires_at": expires_at }),
-        )
-        .await
-        .expect_status(StatusCode::OK);
-    let full_key = created.body["api_key"]
-        .as_str()
-        .expect("raw key")
-        .to_string();
+    let created = create_key(
+        &app,
+        &token,
+        &json!({ "name": full_name, "access_level": "full", "expires_at": expires_at }),
+    )
+    .await;
+    let full_key = raw_key(&created);
+    assert_eq!(created.body["key"]["name"], full_name);
     assert_eq!(created.body["key"]["expires_at"], expires_at);
     assert_eq!(created.body["key"]["access_level"], "full");
 
@@ -849,10 +807,7 @@ async fn api_keys_are_created_listed_used_and_revoked() {
         .await
         .expect_status(StatusCode::OK);
 
-    let listed = app
-        .get("/api/auth/api-keys", &token)
-        .await
-        .expect_status(StatusCode::OK);
+    let listed = list_keys(&app, &token).await;
     assert!(
         !listed.text.contains(&read_key[13..]) && !listed.text.contains(&full_key[13..]),
         "the list must never contain a raw key"
@@ -861,7 +816,7 @@ async fn api_keys_are_created_listed_used_and_revoked() {
     let names: Vec<_> = keys.iter().map(|key| key["name"].clone()).collect();
     assert_eq!(
         names,
-        vec![json!("Full key"), json!("Read key")],
+        vec![json!(full_name), json!("Read key")],
         "newest first"
     );
     let used_at = keys[1]["last_used_at"]
@@ -879,10 +834,7 @@ async fn api_keys_are_created_listed_used_and_revoked() {
         .assert_error(StatusCode::UNAUTHORIZED, "UNAUTHORIZED");
     assert_eq!(streamers_status(&app, &full_key).await, StatusCode::OK);
 
-    let listed = app
-        .get("/api/auth/api-keys", &token)
-        .await
-        .expect_status(StatusCode::OK);
+    let listed = list_keys(&app, &token).await;
     let keys = listed.body.as_array().expect("key list");
     assert_eq!(keys.len(), 2, "a revoked key stays listed");
     let revoked_at = keys[1]["revoked_at"].as_i64().expect("revoked_at set");
@@ -895,54 +847,17 @@ async fn api_keys_are_created_listed_used_and_revoked() {
             .assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
     }
 
-    app.shutdown().await;
-}
-
-#[tokio::test]
-async fn api_key_input_is_validated_and_expired_or_unknown_keys_fail() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-
-    for body in [
-        json!({ "name": "   ", "access_level": "full" }),
-        json!({ "name": "a".repeat(101), "access_level": "full" }),
-        json!({ "name": "past", "access_level": "full", "expires_at": now_ms() - 1000 }),
-    ] {
-        app.post("/api/auth/api-keys", &token, &body)
-            .await
-            .assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
-    }
-    let listed = app
-        .get("/api/auth/api-keys", &token)
-        .await
-        .expect_status(StatusCode::OK);
-    assert_eq!(listed.body, json!([]), "rejected input creates nothing");
-
-    // 100 characters is the longest accepted name.
-    app.post(
-        "/api/auth/api-keys",
-        &token,
-        &json!({ "name": "a".repeat(100), "access_level": "read_only" }),
-    )
-    .await
-    .expect_status(StatusCode::OK);
-
     app.get("/api/sessions", &format!("srec_{}", "0".repeat(64)))
         .await
         .assert_error(StatusCode::UNAUTHORIZED, "UNAUTHORIZED");
 
-    let created = app
-        .post(
-            "/api/auth/api-keys",
-            &token,
-            &json!({ "name": "short-lived", "access_level": "read_only", "expires_at": now_ms() + 5000 }),
-        )
-        .await
-        .expect_status(StatusCode::OK);
-    let short_lived = created.body["api_key"]
-        .as_str()
-        .expect("raw key")
-        .to_string();
+    let created = create_key(
+        &app,
+        &token,
+        &json!({ "name": "short-lived", "access_level": "read_only", "expires_at": now_ms() + 5000 }),
+    )
+    .await;
+    let short_lived = raw_key(&created);
     app.get("/api/sessions", &short_lived)
         .await
         .expect_status(StatusCode::OK);
@@ -956,47 +871,6 @@ async fn api_key_input_is_validated_and_expired_or_unknown_keys_fail() {
     })
     .await;
     expired.assert_error(StatusCode::UNAUTHORIZED, "UNAUTHORIZED");
-
-    app.shutdown().await;
-}
-
-#[tokio::test]
-async fn api_key_name_limit_counts_characters() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-
-    let name = "名".repeat(100);
-    let created = app
-        .post(
-            "/api/auth/api-keys",
-            &token,
-            &json!({ "name": name, "access_level": "read_only" }),
-        )
-        .await
-        .expect_status(StatusCode::OK);
-    assert_eq!(created.body["key"]["name"], name);
-
-    app.shutdown().await;
-}
-
-#[tokio::test]
-async fn password_minimum_length_counts_characters() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-
-    let short = "密码密码1";
-    let response = app
-        .post(
-            "/api/auth/change-password",
-            &token,
-            &json!({ "current_password": ADMIN_PASSWORD, "new_password": short }),
-        )
-        .await;
-    response.assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
-    assert_eq!(
-        response.body["message"],
-        "Weak password: Password must be at least 8 characters"
-    );
 
     app.shutdown().await;
 }
@@ -1021,19 +895,13 @@ async fn read_only_keys_reach_only_the_allowlisted_routes() {
         assert_eq!(response.status, StatusCode::OK, "{path}: {}", response.text);
     }
     // Allowed through to the handler, which finds nothing.
-    let segments = app
-        .get("/api/sessions/e2e-unknown-session/segments", &read_key)
-        .await;
-    segments.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
-    let media = app
-        .send(
-            Method::GET,
-            &format!("/api/media/e2e-unknown-media/content?token={read_key}"),
-            None,
-            None,
-        )
-        .await;
-    media.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
+    app.get("/api/sessions/e2e-unknown-session/segments", &read_key)
+        .await
+        .assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
+    let media = format!("/api/media/e2e-unknown-media/content?token={read_key}");
+    app.send(Method::GET, &media, None, None)
+        .await
+        .assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
 
     for (method, path) in [
         (Method::GET, "/api/streamers"),
@@ -1044,6 +912,11 @@ async fn read_only_keys_reach_only_the_allowlisted_routes() {
         (Method::POST, "/api/auth/api-keys"),
         (Method::POST, "/api/downloads/e2e-unknown-download/split"),
         (Method::GET, "/api/notifications/channels"),
+        (
+            Method::GET,
+            "/api/notifications/channels/e2e-unknown-channel",
+        ),
+        (Method::GET, "/api/notifications/instances"),
     ] {
         let body = (method == Method::POST).then(|| json!({ "ids": ["e2e-unknown-session"] }));
         let response = app
@@ -1056,27 +929,6 @@ async fn read_only_keys_reach_only_the_allowlisted_routes() {
             response.text
         );
     }
-    // MCP checks scope per tool, so the transport itself accepts the key.
-    let mcp = app
-        .client()
-        .post(app.url("/api/mcp"))
-        .bearer_auth(&read_key)
-        .header(header::ACCEPT, "application/json, text/event-stream")
-        .json(&json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2025-03-26",
-                "capabilities": {},
-                "clientInfo": { "name": "e2e", "version": "0" }
-            }
-        }))
-        .send()
-        .await
-        .expect("send the MCP initialize");
-    let mcp = TestApp::read(mcp).await.expect_status(StatusCode::OK);
-    assert!(mcp.body["result"]["serverInfo"].is_object(), "{}", mcp.text);
 
     app.shutdown().await;
 }
@@ -1126,20 +978,13 @@ async fn full_keys_can_write_but_cannot_manage_keys_or_remediate() {
         );
     }
     // None of the refused calls had an effect.
-    let keys = app
-        .get("/api/auth/api-keys", &token)
-        .await
-        .expect_status(StatusCode::OK);
+    let keys = list_keys(&app, &token).await;
     assert_eq!(keys.body.as_array().map(Vec::len), Some(1));
     assert_eq!(keys.body[0]["revoked_at"], Value::Null);
     assert_eq!(streamers_status(&app, &token).await, StatusCode::OK);
 
     // A full key may list the owner's browser sessions.
-    let sessions = app
-        .get("/api/auth/sessions", &full_key)
-        .await
-        .expect_status(StatusCode::OK);
-    assert_eq!(sessions.body.as_array().map(Vec::len), Some(1));
+    assert_eq!(list_sessions(&app, &full_key).await.len(), 1);
 
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -1195,19 +1040,17 @@ async fn cors_answers_any_origin_and_keeps_errors_readable() {
         .await
         .expect("send the preflight");
     assert_eq!(preflight.status(), StatusCode::OK);
-    let headers = preflight.headers();
-    assert_eq!(
-        headers.get(header::ACCESS_CONTROL_ALLOW_ORIGIN),
-        Some(&HeaderValue::from_static("*"))
-    );
-    assert_eq!(
-        headers.get(header::ACCESS_CONTROL_ALLOW_METHODS),
-        Some(&HeaderValue::from_static("*"))
-    );
-    assert_eq!(
-        headers.get(header::ACCESS_CONTROL_ALLOW_HEADERS),
-        Some(&HeaderValue::from_static("*"))
-    );
+    for name in [
+        header::ACCESS_CONTROL_ALLOW_ORIGIN,
+        header::ACCESS_CONTROL_ALLOW_METHODS,
+        header::ACCESS_CONTROL_ALLOW_HEADERS,
+    ] {
+        assert_eq!(
+            preflight.headers().get(&name).map(|v| v.as_bytes()),
+            Some(&b"*"[..]),
+            "{name}"
+        );
+    }
 
     app.shutdown().await;
 }

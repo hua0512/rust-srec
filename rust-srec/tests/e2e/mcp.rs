@@ -27,6 +27,42 @@ async fn mcp(app: &TestApp, key: &str, method: &str, params: Value) -> Value {
         .body
 }
 
+/// Resolve a local `#/$defs/...` reference against the schema `root`.
+fn resolve<'a>(root: &'a Value, schema: &'a Value) -> &'a Value {
+    match schema["$ref"].as_str() {
+        Some(reference) => {
+            let pointer = reference
+                .strip_prefix('#')
+                .unwrap_or_else(|| panic!("non-local $ref {reference}"));
+            let target = root
+                .pointer(pointer)
+                .unwrap_or_else(|| panic!("dangling $ref {reference}: {root}"));
+            resolve(root, target)
+        }
+        None => schema,
+    }
+}
+
+/// Every string `enum` value reachable from `schema` through `$ref`,
+/// `anyOf` and `oneOf`.
+fn enum_values(root: &Value, schema: &Value) -> Vec<String> {
+    let schema = resolve(root, schema);
+    let mut values: Vec<String> = schema["enum"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|value| value.as_str().map(str::to_owned))
+        .collect();
+    for key in ["anyOf", "oneOf"] {
+        for branch in schema[key].as_array().into_iter().flatten() {
+            values.extend(enum_values(root, branch));
+        }
+    }
+    values
+}
+
+/// Also pins that `engine_update` accepts every engine type its generated
+/// schema advertises.
 #[tokio::test]
 async fn tools_are_listed_for_any_key_but_write_tools_need_a_full_key() {
     let app = TestApp::start().await;
@@ -114,53 +150,10 @@ async fn tools_are_listed_for_any_key_but_write_tools_need_a_full_key() {
     assert_eq!(updated["result"]["isError"], false, "{updated}");
     assert_eq!(downloads().await, 4);
 
-    app.shutdown().await;
-}
-
-/// Resolve a local `#/$defs/...` reference against the schema `root`.
-fn resolve<'a>(root: &'a Value, schema: &'a Value) -> &'a Value {
-    match schema["$ref"].as_str() {
-        Some(reference) => {
-            let pointer = reference
-                .strip_prefix('#')
-                .unwrap_or_else(|| panic!("non-local $ref {reference}"));
-            let target = root
-                .pointer(pointer)
-                .unwrap_or_else(|| panic!("dangling $ref {reference}: {root}"));
-            resolve(root, target)
-        }
-        None => schema,
-    }
-}
-
-/// Every string `enum` value reachable from `schema` through `$ref`,
-/// `anyOf` and `oneOf`.
-fn enum_values(root: &Value, schema: &Value) -> Vec<String> {
-    let schema = resolve(root, schema);
-    let mut values: Vec<String> = schema["enum"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .filter_map(|value| value.as_str().map(str::to_owned))
-        .collect();
-    for key in ["anyOf", "oneOf"] {
-        for branch in schema[key].as_array().into_iter().flatten() {
-            values.extend(enum_values(root, branch));
-        }
-    }
-    values
-}
-
-#[tokio::test]
-async fn engine_update_accepts_every_engine_type_its_schema_advertises() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-    let writer = app.create_api_key(&token, "mcp writer", "full").await;
-
-    let listed = mcp(&app, &writer.raw, "tools/list", json!({})).await;
-    let tool = listed["result"]["tools"]
-        .as_array()
-        .and_then(|tools| tools.iter().find(|tool| tool["name"] == "engine_update"))
+    // `engine_update` accepts every engine type its schema advertises.
+    let tool = tools
+        .iter()
+        .find(|tool| tool["name"] == "engine_update")
         .unwrap_or_else(|| panic!("no engine_update tool: {listed}"));
     let root = &tool["inputSchema"];
     let updates = resolve(root, &root["properties"]["updates"]);
@@ -169,7 +162,6 @@ async fn engine_update_accepts_every_engine_type_its_schema_advertises() {
         !advertised.is_empty(),
         "engine_update advertises no engine types: {tool}"
     );
-
     let engine = app
         .post(
             "/api/engines",
