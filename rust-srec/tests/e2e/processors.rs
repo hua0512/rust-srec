@@ -28,14 +28,17 @@ fn read(path: &str) -> String {
     std::fs::read_to_string(path).unwrap_or_else(|error| panic!("read {path}: {error}"))
 }
 
+async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
+    app.get(path, token)
+        .await
+        .expect_status(StatusCode::OK)
+        .body
+}
+
 /// Wait until the workflow reaches a terminal status and return its detail.
 async fn settled(app: &TestApp, token: &str, dag_id: &str) -> Value {
     eventually(WAIT, &format!("workflow {dag_id} to settle"), || async {
-        let body = app
-            .get(&format!("/api/pipeline/dag/{dag_id}"), token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body;
+        let body = get_ok(app, token, &format!("/api/pipeline/dag/{dag_id}")).await;
         ["COMPLETED", "FAILED", "CANCELLED"]
             .contains(&body["status"].as_str().unwrap_or_default())
             .then_some(body)
@@ -112,11 +115,7 @@ async fn retrying_a_copy_or_move_resumes_past_what_the_failed_attempt_transferre
         let transfer_id = step(&failed, "transfer")["job_id"]
             .as_str()
             .expect("transfer job");
-        let transfer = app
-            .get(&format!("/api/pipeline/jobs/{transfer_id}"), &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body;
+        let transfer = get_ok(&app, &token, &format!("/api/pipeline/jobs/{transfer_id}")).await;
         assert_eq!(transfer["status"], "FAILED", "{operation}");
         let collision =
             format!("Destination file already exists and overwrite is disabled: {dest_done}");
@@ -131,14 +130,8 @@ async fn retrying_a_copy_or_move_resumes_past_what_the_failed_attempt_transferre
             "{operation}"
         );
         // The processor's log of the input it could not transfer is kept, once.
-        let logs = app
-            .get(
-                &format!("/api/pipeline/jobs/{}/logs?limit=1000", id_of(&transfer)),
-                &token,
-            )
-            .await
-            .expect_status(StatusCode::OK)
-            .body;
+        let logs = format!("/api/pipeline/jobs/{}/logs?limit=1000", id_of(&transfer));
+        let logs = get_ok(&app, &token, &logs).await;
         let logged = logs["items"]
             .as_array()
             .expect("items")

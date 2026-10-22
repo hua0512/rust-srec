@@ -323,9 +323,10 @@ fn edge_stream(room: &FakeRoom, edge: &str, bitrate: u64) -> Value {
 
 /// How the layers merge each selection field is pinned by the unit tests of
 /// `downloader::stream_selector`; this pins that every layer reaches the
-/// selection.
+/// selection, and that the request for the selected stream carries the
+/// cookies of the account the platform selects.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn the_platform_template_and_streamer_blacklists_all_reach_stream_selection() {
+async fn every_selection_layer_and_the_selected_accounts_cookies_reach_the_media_request() {
     let fake = FakePlatform::start().await;
     let room = fake.room("layered");
     // Equal but for bitrate: one stream per layer's blacklist ranks first,
@@ -346,6 +347,33 @@ async fn the_platform_template_and_streamer_blacklists_all_reach_stream_selectio
     )
     .await;
     let token = app.admin_token().await;
+    let profile = app
+        .post(
+            "/api/credentials/profiles",
+            &token,
+            &json!({
+                "platform_id": "platform-fake",
+                "label": "Fake account",
+                "enabled": true,
+                "material": {
+                    "cookies": "session=e2e; uid=42",
+                    "refresh_token": null,
+                    "access_token": null,
+                    "reauth_config": null,
+                },
+            }),
+        )
+        .await
+        .expect_status(StatusCode::OK)
+        .body;
+    let path = "/api/config/platforms/platform-fake";
+    let mut platform = get_ok(&app, &token, path).await;
+    // The platform route carries the selection as a JSON document in a string.
+    platform["credential_selection"] =
+        json!(json!({ "mode": "fixed", "credential_id": id_of(&profile) }).to_string());
+    app.put(path, &token, &platform)
+        .await
+        .expect_status(StatusCode::OK);
     let template = app
         .post(
             "/api/templates",
@@ -376,6 +404,7 @@ async fn the_platform_template_and_streamer_blacklists_all_reach_stream_selectio
     let media = fake.requests_to(&room, "live.flv");
     assert_eq!(media.len(), 1, "{media:?}");
     assert!(media[0].path.ends_with("/live.flv?edge=delta"), "{media:?}");
+    assert_eq!(media[0].header("cookie"), Some("session=e2e; uid=42"));
 
     app.shutdown().await;
 }
@@ -428,50 +457,6 @@ async fn a_room_offering_only_blacklisted_streams_is_not_recorded() {
     )
     .await;
     assert_eq!(sessions["items"], json!([]), "{sessions}");
-
-    app.shutdown().await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn the_selected_accounts_cookies_reach_the_flv_media_request() {
-    let fake = FakePlatform::start().await;
-    let room = fake.room("signed-in");
-    room.set_live(room.live("Members only"));
-    let app = TestApp::start_with(Seed::live()).await;
-    let token = app.admin_token().await;
-    let profile = app
-        .post(
-            "/api/credentials/profiles",
-            &token,
-            &json!({
-                "platform_id": "platform-fake",
-                "label": "Fake account",
-                "enabled": true,
-                "material": {
-                    "cookies": "session=e2e; uid=42",
-                    "refresh_token": null,
-                    "access_token": null,
-                    "reauth_config": null,
-                },
-            }),
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    let path = "/api/config/platforms/platform-fake";
-    let mut platform = get_ok(&app, &token, path).await;
-    // The platform route carries the selection as a JSON document in a string.
-    platform["credential_selection"] =
-        json!(json!({ "mode": "fixed", "credential_id": id_of(&profile) }).to_string());
-    app.put(path, &token, &platform)
-        .await
-        .expect_status(StatusCode::OK);
-    watch(&app, &token, &room, json!({ "name": "Signed in" })).await;
-
-    room.wait_for_media_connection(1).await;
-    let media = fake.requests_to(&room, "live.flv");
-    assert_eq!(media.len(), 1, "{media:?}");
-    assert_eq!(media[0].header("cookie"), Some("session=e2e; uid=42"));
 
     app.shutdown().await;
 }
