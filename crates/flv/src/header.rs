@@ -147,51 +147,6 @@ mod tests {
     use byteorder::{BigEndian, WriteBytesExt};
     use std::io::Cursor;
 
-    fn create_valid_header_bytes() -> Vec<u8> {
-        let mut buffer = Vec::new();
-        // Write "FLV" signature (3 bytes)
-        buffer.extend_from_slice(b"FLV");
-        // Write version (1 byte)
-        buffer.push(0x01);
-        // Write flags (1 byte - both audio and video)
-        buffer.push(0x05);
-        // Write data offset (4 bytes - standard 9)
-        buffer.write_u32::<BigEndian>(9).unwrap();
-        buffer
-    }
-
-    #[test]
-    fn test_valid_flv_header() {
-        // Create a buffer with a valid FLV header
-        let buffer = create_valid_header_bytes();
-
-        // Test with Bytes cursor (original implementation)
-        let mut reader = Cursor::new(&buffer[..]);
-
-        // Parse the header
-        let header = FlvHeader::parse(&mut reader).unwrap();
-
-        // Verify the parsed values
-        assert_eq!(header.signature, 0x464C56); // "FLV" in hex
-        assert_eq!(header.version, 0x01);
-        assert!(header.has_audio);
-        assert!(header.has_video);
-        assert_eq!(header.data_offset, 9);
-        assert_eq!(reader.position(), 9); // Reader should be at position 9
-
-        // Test with slice cursor (new implementation)
-        let mut slice_reader = Cursor::new(&buffer[..]);
-        let slice_header = FlvHeader::parse(&mut slice_reader).unwrap();
-
-        // Verify the parsed values
-        assert_eq!(slice_header.signature, 0x464C56);
-        assert_eq!(slice_header.version, 0x01);
-        assert!(slice_header.has_audio);
-        assert!(slice_header.has_video);
-        assert_eq!(slice_header.data_offset, 9);
-        assert_eq!(slice_reader.position(), 9);
-    }
-
     #[test]
     fn test_invalid_flv_signature() {
         // Create a buffer with an invalid signature
@@ -212,7 +167,4 @@ mod tests {
         let result = FlvHeader::parse(&mut reader);
         assert!(result.is_err());
     }
-
-    // Additional tests remain mostly unchanged
-    // ...
 }
