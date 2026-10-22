@@ -88,6 +88,7 @@
 - Fixed error and warning lines not being highlighted in a job's log on the job page.
 - Fixed the web player's stream proxy refusing streams whose address is written as an IPv6 address.
 - Fixed the name fields for API keys, saved proxies and accounts accepting fewer characters than their limit when the name contains emoji, which counted as two characters each.
+- The web player's stream proxy now refuses IPv6 addresses that tunnel to a private or local IPv4 address (6to4 and Teredo addresses), which it treated as public internet addresses.
 
 ## Deployment and desktop
 

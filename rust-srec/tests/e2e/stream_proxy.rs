@@ -199,6 +199,15 @@ async fn proxy_refuses_dangerous_targets_and_relays_public_ones_by_default() {
             not_allowed,
         ),
         ("http://[2001:db8::1]/", not_allowed),
+        // 6to4 around 127.0.0.1 and 169.254.169.254; Teredo whose client
+        // is 192.168.1.1, and whose server is 10.0.0.1.
+        ("http://[2002:7f00:1::1]/", not_allowed),
+        ("http://[2002:a9fe:a9fe::]/latest/meta-data/", not_allowed),
+        (
+            "http://[2001:0:4136:e378:8000:63bf:3f57:fefe]/",
+            not_allowed,
+        ),
+        ("http://[2001:0:a00:1:8000:63bf:f7f7:f7f7]/", not_allowed),
         ("http://user:pass@1.2.3.4/", CREDENTIALS_REFUSED),
         ("not a url", "Invalid url parameter"),
     ] {
