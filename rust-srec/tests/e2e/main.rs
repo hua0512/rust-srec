@@ -15,6 +15,7 @@ mod support;
 mod auth;
 mod backup;
 mod config;
+mod credential_providers;
 mod danmu;
 mod filters;
 mod health;

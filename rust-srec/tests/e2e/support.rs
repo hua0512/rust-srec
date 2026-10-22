@@ -48,6 +48,7 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 pub mod fake_danmu;
 mod fake_platform;
+pub mod fake_provider;
 mod http;
 mod media;
 mod seed;

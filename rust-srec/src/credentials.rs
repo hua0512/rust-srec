@@ -52,6 +52,8 @@ pub use provider::{
     AccountStatus, CookieProvider, CredentialProvider, ProviderCapabilities, QrLoginPoll,
     QrLoginStart, RefreshedCredentials, login_fields, provider,
 };
+#[doc(hidden)]
+pub use provider::{DuplicateProvider, register_provider_for_process};
 pub use resolution::{
     AUTHENTICATION_FIELDS, isolate_platform_authentication_extras, managed_authentication_extras,
     merge_cookie_updates,
