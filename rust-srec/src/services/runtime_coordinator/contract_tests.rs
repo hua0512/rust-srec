@@ -223,7 +223,12 @@ impl Fixture {
             DanmuService::with_providers(providers)
                 .with_session_repository(session_repository.clone()),
         );
-        let scheduler = crate::scheduler::Scheduler::new(streamer_manager.clone(), broadcaster);
+        let scheduler = crate::scheduler::Scheduler::with_full_config(
+            streamer_manager.clone(),
+            broadcaster,
+            crate::scheduler::SchedulerConfig::default(),
+            CancellationToken::new(),
+        );
         let coordinator = Arc::new(RuntimeCoordinator::new(RuntimeCoordinatorDependencies {
             download_manager,
             streamer_manager,

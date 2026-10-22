@@ -207,63 +207,6 @@ pub struct Scheduler<R: StreamerRepository + Send + Sync + 'static> {
 }
 
 impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
-    /// Create a new scheduler with actor-based infrastructure.
-    ///
-    /// This initializes the actor registry and supervisor without spawning any actors.
-    /// Actors are spawned when `run()` is called or when streamers are added dynamically.
-    ///
-    /// Note: This creates a scheduler with its own cancellation token and uses
-    /// `NoOpCheckerFactory` for status checking. For real status checking, use
-    /// `with_monitor_and_config()` instead.
-    pub fn new(
-        streamer_manager: Arc<StreamerManager<R>>,
-        event_broadcaster: ConfigEventBroadcaster,
-    ) -> Self {
-        Self::with_config(
-            streamer_manager,
-            event_broadcaster,
-            SchedulerConfig::default(),
-        )
-    }
-
-    /// Create a new scheduler with a shared cancellation token.
-    ///
-    /// This allows the parent (e.g., ServiceContainer) to directly cancel the scheduler
-    /// without needing a forwarding task.
-    ///
-    /// Note: Uses `NoOpCheckerFactory` for status checking. For real status checking,
-    /// use `with_monitor_and_config()` instead.
-    pub fn with_cancellation(
-        streamer_manager: Arc<StreamerManager<R>>,
-        event_broadcaster: ConfigEventBroadcaster,
-        cancellation_token: CancellationToken,
-    ) -> Self {
-        Self::with_full_config(
-            streamer_manager,
-            event_broadcaster,
-            SchedulerConfig::default(),
-            cancellation_token,
-        )
-    }
-
-    /// Create a new scheduler with custom configuration.
-    ///
-    /// Note: This creates a scheduler with its own cancellation token and uses
-    /// `NoOpCheckerFactory` for status checking. For real status checking, use
-    /// `with_monitor_and_config()` instead.
-    pub fn with_config(
-        streamer_manager: Arc<StreamerManager<R>>,
-        event_broadcaster: ConfigEventBroadcaster,
-        config: SchedulerConfig,
-    ) -> Self {
-        Self::with_full_config(
-            streamer_manager,
-            event_broadcaster,
-            config,
-            CancellationToken::new(),
-        )
-    }
-
     /// Create a new scheduler with custom configuration and shared cancellation token.
     ///
     /// This is the most flexible constructor, allowing full control over configuration

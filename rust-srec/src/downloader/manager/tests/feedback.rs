@@ -118,9 +118,11 @@ async fn feedback_terminal_application_observes_the_slot_already_released() {
         let feedback = SchedulerFeedback::new();
         manager.set_scheduler_feedback(feedback.clone()).unwrap();
         let (sender, mut mailbox) = tokio::sync::mpsc::channel(1);
+        let (priority_sender, _priority_mailbox) = tokio::sync::mpsc::channel(1);
         let token = CancellationToken::new();
-        let mut actor = crate::scheduler::actor::ActorHandle::new(
+        let mut actor = crate::scheduler::actor::ActorHandle::with_priority(
             sender,
+            priority_sender,
             token.clone(),
             crate::scheduler::actor::ActorMetadata::streamer("test-streamer-id", false),
         );
