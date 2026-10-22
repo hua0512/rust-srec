@@ -6,6 +6,7 @@ fn ended(cause: TerminalCause) -> SessionTransition {
         session_id: "session".into(),
         streamer_id: "streamer".into(),
         streamer_name: "Name".into(),
+        started_at: None,
         ended_at: DateTime::from_timestamp_millis(1_788_784_496_123).unwrap(),
         cause,
         via_hysteresis: false,

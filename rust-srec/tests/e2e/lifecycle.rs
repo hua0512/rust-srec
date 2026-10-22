@@ -992,3 +992,58 @@ async fn max_concurrent_downloads_changes_apply_to_waiting_recordings_at_once() 
 
     app.shutdown().await;
 }
+
+/// The offline notification of a session a restart left open reports how
+/// long it lasted from its start before the restart, whether the first check
+/// ends it or reuses it until the room goes offline.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_offline_notification_of_a_session_a_restart_left_open_counts_from_its_start() {
+    let fake = FakePlatform::start().await;
+    let gone = fake.room("gone");
+    let back = fake.room("back");
+    back.set_live(back.live("Before the restart"));
+    let receiver = LocalHttpServer::start(200, "ok").await;
+    let app = TestApp::start_with(Seed::live().rows(&format!(
+        "{}{}{}{}{}",
+        seeded_streamer("gone", &gone, "LIVE", &[]),
+        open_session("gone-session", "gone", "Before the restart"),
+        seeded_streamer("back", &back, "LIVE", &[]),
+        open_session("back-session", "back", "Before the restart"),
+        webhook_channel(&receiver, &["stream_offline"]),
+    )))
+    .await;
+    let token = app.admin_token().await;
+
+    back.wait_for_media_connection(1).await;
+    back.push(FlvLoop::tiny().stream(1));
+    back.set_offline();
+    back.end();
+    let mut ended_sessions = Vec::new();
+    for id in ["gone", "back"] {
+        ended_sessions.push((id, ended(&app, &token, &format!("{id}-session")).await));
+    }
+    let received = eventually(WAIT, "both offline notifications", || async {
+        let received = receiver.received();
+        (received.len() >= 2).then_some(received)
+    })
+    .await;
+
+    for (id, session) in ended_sessions {
+        let body = received
+            .iter()
+            .map(|request| serde_json::from_slice::<Value>(&request.body).expect("JSON webhook"))
+            .find(|body| body["streamer_id"] == id)
+            .unwrap_or_else(|| panic!("no offline notification for {id}"));
+        let duration = body["data"]["StreamOffline"]["duration_secs"]
+            .as_f64()
+            .unwrap_or_else(|| panic!("no duration: {body}"));
+        let lasted = millis(&session["end_time"]) - millis(&session["start_time"]);
+        assert!(lasted >= 600_000, "{id}: {session}");
+        assert!(
+            ((duration * 1000.0).round() as i64 - lasted).abs() <= 1,
+            "{id}: {duration} s for a session of {lasted} ms"
+        );
+    }
+
+    app.shutdown().await;
+}

@@ -1671,6 +1671,7 @@ async fn required_transition_survives_lagged_observer() {
         session_id: expected_session_id.to_string(),
         streamer_id: STREAMER_ID.to_string(),
         streamer_name: "Test".to_string(),
+        started_at: None,
         ended_at: Utc::now(),
         cause: TerminalCause::Completed,
         via_hysteresis: false,

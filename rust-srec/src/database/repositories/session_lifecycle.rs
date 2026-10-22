@@ -157,6 +157,17 @@ impl SessionLifecycleRepository {
         .await?;
         Ok(started.and_then(DateTime::from_timestamp_millis))
     }
+    pub(crate) async fn session_started_at(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<DateTime<Utc>>> {
+        let started: Option<i64> =
+            sqlx::query_scalar("SELECT start_time FROM live_sessions WHERE id = ?")
+                .bind(session_id)
+                .fetch_optional(&self.write_pool)
+                .await?;
+        Ok(started.and_then(DateTime::from_timestamp_millis))
+    }
     pub(crate) async fn credential_binding_is_retiring(
         &self,
         session_id: &str,

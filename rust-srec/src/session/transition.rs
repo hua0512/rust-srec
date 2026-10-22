@@ -107,6 +107,9 @@ pub enum SessionTransition {
         streamer_id: String,
         /// Streamer display name for `StreamOffline` notification payloads.
         streamer_name: String,
+        /// When the session started, if known; `None` when neither the
+        /// in-memory session nor its row could provide it.
+        started_at: Option<DateTime<Utc>>,
         ended_at: DateTime<Utc>,
         cause: TerminalCause,
         /// `true` when the end was reached via `Hysteresis` timer expiry;
@@ -264,6 +267,7 @@ mod tests {
             session_id: "s1".into(),
             streamer_id: "r1".into(),
             streamer_name: "test".into(),
+            started_at: None,
             ended_at: Utc::now(),
             cause: TerminalCause::DefinitiveOffline {
                 signal: OfflineSignal::ConsecutiveFailures(2),
