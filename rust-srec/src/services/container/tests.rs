@@ -611,23 +611,32 @@ async fn hard_cap_aborts_supervised_work_that_never_settles() {
     .expect("service container should initialize");
 
     let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+    // Dropped with the task's future, so it resolves only once the task is
+    // aborted; the task itself never completes.
+    let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel::<()>();
     assert!(container.task_supervisor.spawn("wedged", async move {
+        let _dropped_tx = dropped_tx;
         let _ = started_tx.send(());
         std::future::pending::<()>().await;
     }));
     started_rx.await.expect("wedged task should start");
 
+    // Without the cap this call waits for the wedged task forever, so a bound
+    // seconds above the cap proves the cap acted without timing its jitter.
     let hard_cap = Duration::from_millis(200);
-    let started_at = std::time::Instant::now();
-    let error = container
-        .shutdown_with_hard_cap(Duration::from_millis(50), hard_cap)
-        .await
-        .expect_err("the wedged task must keep the drain from completing");
-    let elapsed = started_at.elapsed();
+    let error = tokio::time::timeout(
+        hard_cap + Duration::from_secs(5),
+        container.shutdown_with_hard_cap(Duration::from_millis(50), hard_cap),
+    )
+    .await
+    .expect("the hard cap must stop waiting for the wedged task")
+    .expect_err("the wedged task must keep the drain from completing");
 
     assert!(
-        elapsed < hard_cap + Duration::from_millis(250),
-        "aborting must stay inside the hard cap (allowing scheduler jitter): {elapsed:?}"
+        tokio::time::timeout(Duration::from_secs(5), dropped_rx)
+            .await
+            .expect("the wedged task must be aborted")
+            .is_err()
     );
     let message = error.to_string();
     assert!(

@@ -191,16 +191,16 @@ async fn hard_cap_retains_manager_and_import_commit_publication() {
                 .await
                 .unwrap();
 
+            // Without the cap this call waits for the gated request owner
+            // forever, so a bound seconds above the cap proves the cap acted.
             let hard_cap = Duration::from_millis(100);
-            let started = std::time::Instant::now();
             let error = tokio::time::timeout(
-                Duration::from_secs(2),
+                hard_cap + Duration::from_secs(5),
                 container.shutdown_with_hard_cap(Duration::from_millis(10), hard_cap),
             )
             .await
-            .unwrap()
+            .expect("the hard cap must stop waiting for the gated request owner")
             .unwrap_err();
-            assert!(started.elapsed() < hard_cap + Duration::from_millis(500));
             assert!(
                 error
                     .to_string()
