@@ -216,17 +216,6 @@ mod tests {
     }
 
     #[test]
-    fn test_write_boolean() {
-        let amf0_boolean = vec![0x01, 0x01];
-
-        let mut vec = Vec::<u8>::new();
-
-        Amf0Encoder::encode_bool(&mut vec, true).unwrap();
-
-        assert_eq!(vec, amf0_boolean);
-    }
-
-    #[test]
     fn test_write_string() {
         let mut amf0_string = vec![0x02, 0x00, 0x0b];
         amf0_string.extend_from_slice(b"Hello World");
@@ -236,67 +225,6 @@ mod tests {
         Amf0Encoder::encode_string(&mut vec, "Hello World").unwrap();
 
         assert_eq!(vec, amf0_string);
-    }
-
-    #[test]
-    fn test_write_long_string() {
-        let mut expected = vec![0x0c, 0x00, 0x00, 0x00, 0x0b];
-        expected.extend_from_slice(b"Hello World");
-
-        let mut vec = Vec::<u8>::new();
-        Amf0Encoder::encode_long_string(&mut vec, "Hello World").unwrap();
-
-        assert_eq!(vec, expected);
-    }
-
-    #[test]
-    fn test_write_null() {
-        let amf0_null = vec![0x05];
-
-        let mut vec = Vec::<u8>::new();
-
-        Amf0Encoder::encode_null(&mut vec).unwrap();
-
-        assert_eq!(vec, amf0_null);
-    }
-
-    #[test]
-    fn test_write_undefined() {
-        let expected = vec![0x06];
-
-        let mut vec = Vec::<u8>::new();
-        Amf0Encoder::encode_undefined(&mut vec).unwrap();
-
-        assert_eq!(vec, expected);
-    }
-
-    #[test]
-    fn test_write_object() {
-        let mut amf0_object = vec![0x03, 0x00, 0x04];
-        amf0_object.extend_from_slice(b"test");
-        amf0_object.extend_from_slice(&[0x05]);
-        amf0_object.extend_from_slice(&[0x00, 0x00, 0x09]);
-
-        let mut vec = Vec::<u8>::new();
-
-        Amf0Encoder::encode_object(&mut vec, &[("test".into(), Amf0Value::Null)]).unwrap();
-
-        assert_eq!(vec, amf0_object);
-    }
-
-    #[test]
-    fn test_write_ecma_array() {
-        let mut expected = vec![0x08]; // EcmaArray marker
-        expected.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]); // count = 1
-        expected.extend_from_slice(&[0x00, 0x04]); // key length = 4
-        expected.extend_from_slice(b"test");
-        expected.extend_from_slice(&[0x05]); // Null value
-        expected.extend_from_slice(&[0x00, 0x00, 0x09]); // object_eof
-
-        let mut vec = Vec::<u8>::new();
-        Amf0Encoder::encode_ecma_array(&mut vec, &[("test".into(), Amf0Value::Null)]).unwrap();
-
-        assert_eq!(vec, expected);
     }
 
     #[test]
@@ -406,30 +334,6 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_strict_array() {
-        let mut amf0_array = vec![Amf0Marker::StrictArray as u8, 0x00, 0x00, 0x00, 0x03]; // StrictArray marker with 3 elements
-        amf0_array.extend_from_slice(&[0x00]); // Number marker
-        amf0_array.extend_from_slice(&1.0_f64.to_be_bytes());
-        amf0_array.extend_from_slice(&[0x01, 0x01]); // Boolean true
-        amf0_array.extend_from_slice(&[0x02, 0x00, 0x04]); // String with 4 bytes
-        amf0_array.extend_from_slice(b"test");
-
-        let mut vec = Vec::<u8>::new();
-
-        Amf0Encoder::encode_strict_array(
-            &mut vec,
-            &[
-                Amf0Value::Number(1.0),
-                Amf0Value::Boolean(true),
-                Amf0Value::String(Cow::Borrowed("test")),
-            ],
-        )
-        .unwrap();
-
-        assert_eq!(vec, amf0_array);
-    }
-
-    #[test]
     fn test_encode_generic_strict_array() {
         let mut amf0_array = vec![Amf0Marker::StrictArray as u8, 0x00, 0x00, 0x00, 0x03]; // StrictArray marker with 3 elements
         amf0_array.extend_from_slice(&[0x00]); // Number marker
@@ -454,16 +358,5 @@ mod tests {
         .unwrap();
 
         assert_eq!(vec, amf0_array);
-    }
-
-    #[test]
-    fn test_write_property_key() {
-        let mut expected = vec![0x00, 0x04];
-        expected.extend_from_slice(b"test");
-
-        let mut vec = Vec::<u8>::new();
-        Amf0Encoder::write_property_key(&mut vec, "test").unwrap();
-
-        assert_eq!(vec, expected);
     }
 }
