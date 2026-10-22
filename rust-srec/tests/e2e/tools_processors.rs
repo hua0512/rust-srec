@@ -33,6 +33,19 @@ fn read(path: &str) -> Vec<u8> {
     std::fs::read(path).unwrap_or_else(|error| panic!("read {path}: {error}"))
 }
 
+/// Panics unless the MP4 at `path` has its index (`moov`) ahead of its
+/// media (`mdat`), so playback can start before the download ends.
+#[track_caller]
+fn assert_faststart(path: &str) {
+    let bytes = read(path);
+    let position = |atom: &[u8]| bytes.windows(4).position(|window| window == atom);
+    let (moov, mdat) = (position(b"moov"), position(b"mdat"));
+    assert!(
+        moov.is_some() && mdat.is_some() && moov < mdat,
+        "{path}: moov at {moov:?}, mdat at {mdat:?}"
+    );
+}
+
 /// Run a workflow of `steps` on `inputs` and return its detail once it has
 /// settled.
 async fn run_workflow(app: &TestApp, token: &str, inputs: &[&str], steps: Vec<Value>) -> Value {
@@ -141,20 +154,14 @@ async fn remux_turns_a_flv_recording_into_a_faststart_mp4_and_removes_the_source
         "{probed}"
     );
     assert_media(&probed, 4.0);
-    let bytes = read(&remuxed);
-    let position = |atom: &[u8]| bytes.windows(4).position(|window| window == atom);
-    let (moov, mdat) = (position(b"moov"), position(b"mdat"));
-    assert!(
-        moov.is_some() && mdat.is_some() && moov < mdat,
-        "moov at {moov:?}, mdat at {mdat:?}"
-    );
+    assert_faststart(&remuxed);
 
     app.shutdown().await;
 }
 
 /// Tags reach the file as given, including characters ffmpeg's option
-/// syntax gives meaning to, while the streams are copied unchanged and the
-/// input is kept by default.
+/// syntax gives meaning to, while the streams are copied unchanged, a
+/// faststart MP4 stays faststart and the input is kept by default.
 #[tokio::test]
 #[ignore = "requires ffmpeg and ffprobe"]
 async fn metadata_writes_tags_into_a_copy_of_the_recording() {
@@ -162,7 +169,18 @@ async fn metadata_writes_tags_into_a_copy_of_the_recording() {
     let token = app.admin_token().await;
     let flv = recording(&app, "rec/tagged.flv");
     let source = app.output_path("rec/tagged.mp4");
-    ffmpeg(&["-v", "error", "-i", &flv, "-c", "copy", &source]).await;
+    ffmpeg(&[
+        "-v",
+        "error",
+        "-i",
+        &flv,
+        "-c",
+        "copy",
+        "-movflags",
+        "+faststart",
+        &source,
+    ])
+    .await;
     let title = "Night: [live] 'special', a=b";
 
     let dag = run_workflow(
@@ -188,6 +206,7 @@ async fn metadata_writes_tags_into_a_copy_of_the_recording() {
     assert_eq!(tags["artist"], "主播 Alice", "{probed}");
     assert_eq!(tags["title"], title, "{probed}");
     assert_eq!(tags["comment"], "100% live", "{probed}");
+    assert_faststart(&tagged);
 
     app.shutdown().await;
 }

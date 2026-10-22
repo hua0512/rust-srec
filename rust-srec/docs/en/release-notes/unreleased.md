@@ -50,6 +50,7 @@
 - Fixed Baidu Netdisk uploads that wait for another upload to finish using up their timeout and holding up other file jobs such as copies, deletions and rclone uploads. Waiting uploads now stay in the queue, shown as queued uploads in the top bar, and their timeout starts only when they start running. Baidu Netdisk uploads also no longer count toward **Max IO Jobs**.
 - Fixed **Audio Extract** steps replacing an existing audio file even with **Overwrite** turned off. Such a step now fails instead, like remuxing.
 - Fixed **Audio Extract** steps on a recording without audio, and **Thumbnail** steps on a recording without usable video, sometimes failing instead of passing the recording on unchanged.
+- Fixed MP4 files from **Metadata** steps, including the one in **Full Processing**, having to download completely before they could start playing.
 
 ## Notifications
 
