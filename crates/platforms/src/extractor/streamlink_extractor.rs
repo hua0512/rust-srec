@@ -12,6 +12,7 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
+use tracing::debug;
 
 static DEFAULT_STREAMLINK_PATH: &str = "streamlink";
 static DEFAULT_STREAMLINK_QUALITY: &str = "best";
@@ -236,6 +237,31 @@ impl StreamlinkExtractor {
         }
     }
 
+    /// Whether the HLS playlist at `url` carries `#EXT-X-ENDLIST`, which a
+    /// live playlist never does. A playlist that cannot be fetched counts as
+    /// not ended, so a failed request leaves the check as Streamlink saw it.
+    async fn playlist_has_ended(
+        &self,
+        url: &str,
+        headers: Option<&FxHashMap<String, String>>,
+    ) -> bool {
+        let mut request = self.extractor.client.get(url);
+        for (name, value) in headers.into_iter().flatten() {
+            request = request.header(name, value);
+        }
+        let body = match request.send().await.and_then(|r| r.error_for_status()) {
+            Ok(response) => response.text().await,
+            Err(error) => Err(error),
+        };
+        match body {
+            Ok(body) => body.lines().any(|line| line.trim() == "#EXT-X-ENDLIST"),
+            Err(error) => {
+                debug!(%error, "could not fetch the playlist to check for its end");
+                false
+            }
+        }
+    }
+
     async fn resolve_stream_url(&self, quality: &str) -> Result<String, ExtractorError> {
         let binary_path = self.config.binary_path();
         let mut cmd = process_utils::tokio_command(binary_path);
@@ -283,6 +309,7 @@ impl PlatformExtractor for StreamlinkExtractor {
         }
 
         let plugin = json.plugin.unwrap_or_else(|| "unknown".to_string());
+        let generic_hls = plugin == "hls";
         let metadata = json.metadata.unwrap_or_default();
         let streams = json.streams.ok_or_else(|| ExtractorError::NoStreamsFound)?;
 
@@ -357,10 +384,26 @@ impl PlatformExtractor for StreamlinkExtractor {
             .or(first_headers)
             .map(|h| h.into_iter().collect::<FxHashMap<String, String>>());
 
+        // Streamlink's generic HLS plugin offers any reachable playlist as a
+        // stream, including one that has ended. Every variant ends together,
+        // so the best one tells whether the broadcast is over.
+        let is_live = if generic_hls {
+            let playlist = stream_infos
+                .iter()
+                .min_by_key(|s| s.priority)
+                .map(|s| s.url.as_str())
+                .unwrap_or_default();
+            !self
+                .playlist_has_ended(playlist, media_headers.as_ref())
+                .await
+        } else {
+            true
+        };
+
         Ok(
             MediaInfo::builder(self.extractor.url.clone(), title, artist)
                 .category_one_opt(category)
-                .is_live(true)
+                .is_live(is_live)
                 .streams(stream_infos)
                 .headers_opt(media_headers)
                 .extras_opt(Some(media_extras).filter(|m| !m.is_empty()))
