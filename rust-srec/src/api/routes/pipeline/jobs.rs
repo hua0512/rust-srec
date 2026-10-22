@@ -1180,7 +1180,10 @@ mod batch_tests {
             .unwrap();
         queries.store(0, Ordering::SeqCst);
         let state = PipelineRouteState {
-            pipeline_manager: Arc::new(crate::pipeline::PipelineManager::new()),
+            pipeline_manager: Arc::new(crate::pipeline::PipelineManager::with_repository(
+                Default::default(),
+                crate::database::test_support::job_repository().await,
+            )),
             streamer_repository: Arc::new(
                 crate::database::repositories::SqlxStreamerRepository::new(
                     pool.clone(),

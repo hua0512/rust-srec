@@ -892,17 +892,20 @@ mod tests {
     use crate::database::repositories::streamer::SqlxStreamerRepository;
     use crate::pipeline::PipelineManager;
 
-    fn build_test_state() -> PipelineRouteState {
+    async fn build_test_state() -> PipelineRouteState {
         let pool = sqlx::SqlitePool::connect_lazy("sqlite::memory:").unwrap();
         PipelineRouteState {
-            pipeline_manager: Arc::new(PipelineManager::new()),
+            pipeline_manager: Arc::new(PipelineManager::with_repository(
+                Default::default(),
+                crate::database::test_support::job_repository().await,
+            )),
             streamer_repository: Arc::new(SqlxStreamerRepository::new(pool.clone(), pool)),
         }
     }
 
     #[tokio::test]
     async fn test_job_list_endpoints_filter_cancelled_status_and_cap_limits() {
-        let state = build_test_state();
+        let state = build_test_state().await;
         let manager = state.pipeline_manager.clone();
 
         let pending_job = Job::new(

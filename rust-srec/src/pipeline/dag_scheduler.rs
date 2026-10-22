@@ -2132,7 +2132,14 @@ mod tests {
             pool.clone(),
             pool,
         ));
-        let scheduler = DagScheduler::new(Arc::new(JobQueue::new()), dag_repo, job_repo.clone());
+        let scheduler = DagScheduler::new(
+            Arc::new(JobQueue::with_repository(
+                Default::default(),
+                job_repo.clone(),
+            )),
+            dag_repo,
+            job_repo.clone(),
+        );
         let session_start = chrono::DateTime::parse_from_rfc3339("2024-01-01T23:30:00Z")
             .unwrap()
             .with_timezone(&chrono::Utc);
@@ -2219,7 +2226,10 @@ mod tests {
             pool.clone(),
             pool.clone(),
         ));
-        let job_queue = Arc::new(JobQueue::new());
+        let job_queue = Arc::new(JobQueue::with_repository(
+            Default::default(),
+            job_repo.clone(),
+        ));
         let scheduler = DagScheduler::new(job_queue.clone(), dag_repo, job_repo.clone());
         let dag_def = DagPipelineDefinition::new(
             "delete stands down jobs",
@@ -2290,7 +2300,14 @@ mod tests {
             pool.clone(),
             pool.clone(),
         ));
-        let scheduler = DagScheduler::new(Arc::new(JobQueue::new()), dag_repo, job_repo.clone());
+        let scheduler = DagScheduler::new(
+            Arc::new(JobQueue::with_repository(
+                Default::default(),
+                job_repo.clone(),
+            )),
+            dag_repo,
+            job_repo.clone(),
+        );
         let session_start = chrono::DateTime::parse_from_rfc3339("2024-01-01T23:30:00Z")
             .unwrap()
             .with_timezone(&chrono::Utc);
@@ -2379,7 +2396,10 @@ mod tests {
             pool.clone(),
         ));
         let scheduler = DagScheduler::new(
-            Arc::new(JobQueue::new()),
+            Arc::new(JobQueue::with_repository(
+                Default::default(),
+                job_repo.clone(),
+            )),
             dag_repo.clone(),
             job_repo.clone(),
         );
@@ -2518,7 +2538,14 @@ mod tests {
             pool.clone(),
             pool.clone(),
         ));
-        let scheduler = DagScheduler::new(Arc::new(JobQueue::new()), dag_repo.clone(), job_repo);
+        let scheduler = DagScheduler::new(
+            Arc::new(JobQueue::with_repository(
+                Default::default(),
+                job_repo.clone(),
+            )),
+            dag_repo.clone(),
+            job_repo,
+        );
         let created = scheduler
             .create_dag_pipeline(
                 two_step_pipeline("terminal fail"),
@@ -2557,7 +2584,10 @@ mod tests {
             pool.clone(),
         ));
         let scheduler = DagScheduler::new(
-            Arc::new(JobQueue::new()),
+            Arc::new(JobQueue::with_repository(
+                Default::default(),
+                job_repo.clone(),
+            )),
             dag_repo.clone(),
             job_repo.clone(),
         );
@@ -2604,7 +2634,10 @@ mod tests {
             pool.clone(),
         ));
         let scheduler = DagScheduler::new(
-            Arc::new(JobQueue::new()),
+            Arc::new(JobQueue::with_repository(
+                Default::default(),
+                job_repo.clone(),
+            )),
             dag_repo.clone(),
             job_repo.clone(),
         );
@@ -2661,7 +2694,10 @@ mod tests {
             pool.clone(),
         ));
         let scheduler = DagScheduler::new(
-            Arc::new(JobQueue::new()),
+            Arc::new(JobQueue::with_repository(
+                Default::default(),
+                job_repo.clone(),
+            )),
             dag_repo.clone(),
             job_repo.clone(),
         );
@@ -2784,7 +2820,10 @@ mod tests {
             pool,
         ));
         let scheduler = DagScheduler::new(
-            Arc::new(JobQueue::new()),
+            Arc::new(JobQueue::with_repository(
+                Default::default(),
+                job_repo.clone(),
+            )),
             dag_repo.clone(),
             job_repo.clone(),
         );
@@ -2856,7 +2895,10 @@ mod tests {
             pool,
         ));
         let scheduler = DagScheduler::new(
-            Arc::new(JobQueue::new()),
+            Arc::new(JobQueue::with_repository(
+                Default::default(),
+                job_repo.clone(),
+            )),
             dag_repo.clone(),
             job_repo.clone(),
         );
@@ -2918,7 +2960,10 @@ mod tests {
             pool.clone(),
         ));
         let scheduler = DagScheduler::new(
-            Arc::new(JobQueue::new()),
+            Arc::new(JobQueue::with_repository(
+                Default::default(),
+                job_repo.clone(),
+            )),
             dag_repo.clone(),
             job_repo.clone(),
         );
@@ -2975,7 +3020,14 @@ mod tests {
             pool.clone(),
             pool,
         ));
-        let scheduler = DagScheduler::new(Arc::new(JobQueue::new()), dag_repo.clone(), job_repo);
+        let scheduler = DagScheduler::new(
+            Arc::new(JobQueue::with_repository(
+                Default::default(),
+                job_repo.clone(),
+            )),
+            dag_repo.clone(),
+            job_repo,
+        );
         let created = scheduler
             .create_dag_pipeline(
                 DagPipelineDefinition::new(
@@ -3035,7 +3087,10 @@ mod tests {
             pool,
         ));
         let scheduler = DagScheduler::new(
-            Arc::new(JobQueue::new()),
+            Arc::new(JobQueue::with_repository(
+                Default::default(),
+                job_repo.clone(),
+            )),
             dag_repo.clone(),
             job_repo.clone(),
         );
@@ -3152,7 +3207,10 @@ mod tests {
             pool,
         ));
         let scheduler = DagScheduler::new(
-            Arc::new(JobQueue::new()),
+            Arc::new(JobQueue::with_repository(
+                Default::default(),
+                job_repo.clone(),
+            )),
             dag_repo.clone(),
             job_repo.clone(),
         );
@@ -3222,7 +3280,10 @@ mod tests {
             pool,
         ));
         let scheduler = DagScheduler::new(
-            Arc::new(JobQueue::new()),
+            Arc::new(JobQueue::with_repository(
+                Default::default(),
+                job_repo.clone(),
+            )),
             dag_repo.clone(),
             job_repo.clone(),
         );
@@ -3925,7 +3986,10 @@ mod tests {
             pool.clone(),
         ));
         let scheduler = DagScheduler::new(
-            Arc::new(JobQueue::new()),
+            Arc::new(JobQueue::with_repository(
+                Default::default(),
+                job_repo.clone(),
+            )),
             dag_repo.clone(),
             job_repo.clone(),
         );
@@ -4196,7 +4260,14 @@ mod tests {
             pool.clone(),
             pool,
         ));
-        let scheduler = DagScheduler::new(Arc::new(JobQueue::new()), dag_repo.clone(), job_repo);
+        let scheduler = DagScheduler::new(
+            Arc::new(JobQueue::with_repository(
+                Default::default(),
+                job_repo.clone(),
+            )),
+            dag_repo.clone(),
+            job_repo,
+        );
         let created = scheduler
             .create_dag_pipeline(
                 DagPipelineDefinition::new(

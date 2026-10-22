@@ -481,7 +481,10 @@ mod tests {
             check_interval_ms: 10,
             ..Default::default()
         }));
-        let queue = Arc::new(JobQueue::new());
+        let queue = Arc::new(JobQueue::with_repository(
+            Default::default(),
+            crate::database::test_support::job_repository().await,
+        ));
         for _ in 0..2 {
             queue
                 .enqueue(crate::pipeline::Job::new("held", vec![], vec![], "", ""))

@@ -302,7 +302,7 @@ pub struct PipelineManager<
     /// DAG repository for DAG pipeline persistence.
     dag_repository: Option<Arc<dyn DagRepository>>,
     /// Job repository reference (needed for DAG scheduler).
-    job_repository: Option<Arc<dyn JobRepository>>,
+    job_repository: Arc<dyn JobRepository>,
     /// DAG scheduler for orchestrating DAG pipeline execution.
     dag_scheduler: Option<Arc<DagScheduler>>,
 }
@@ -375,26 +375,13 @@ where
         );
     }
 
-    /// Create an in-memory Pipeline Manager without persistence repositories.
-    #[cfg(test)]
-    pub(crate) fn new() -> Self {
-        Self::build(PipelineManagerConfig::default(), None)
-    }
-
     /// Create a persistent pipeline manager with startup job recovery.
     pub fn with_repository(
         config: PipelineManagerConfig,
         job_repository: Arc<dyn JobRepository>,
     ) -> Self {
-        Self::build(config, Some(job_repository))
-    }
-
-    fn build(
-        config: PipelineManagerConfig,
-        job_repository: Option<Arc<dyn JobRepository>>,
-    ) -> Self {
         let (event_tx, _) = broadcast::channel(256);
-        let job_queue = Arc::new(JobQueue::build(
+        let job_queue = Arc::new(JobQueue::with_repository(
             config.job_queue.clone(),
             job_repository.clone(),
         ));
@@ -568,18 +555,14 @@ where
     }
 
     /// Set the DAG repository for DAG pipeline persistence.
-    /// This also creates the DAG scheduler if job_repository is already set.
+    /// This also creates the DAG scheduler.
     pub fn with_dag_repository(mut self, dag_repository: Arc<dyn DagRepository>) -> Self {
         self.dag_repository = Some(dag_repository.clone());
-
-        // Create DAG scheduler if we have both repositories
-        if let Some(job_repo) = &self.job_repository {
-            let scheduler =
-                DagScheduler::new(self.job_queue.clone(), dag_repository, job_repo.clone());
-
-            self.dag_scheduler = Some(Arc::new(scheduler));
-        }
-
+        self.dag_scheduler = Some(Arc::new(DagScheduler::new(
+            self.job_queue.clone(),
+            dag_repository,
+            self.job_repository.clone(),
+        )));
         self
     }
 

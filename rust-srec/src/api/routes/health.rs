@@ -270,7 +270,10 @@ mod tests {
 
         let state = HealthRouteState {
             health_checker,
-            ..build_idle_test_state(crate::pipeline::PipelineManager::new())
+            ..build_idle_test_state(crate::pipeline::PipelineManager::with_repository(
+                Default::default(),
+                crate::database::test_support::job_repository().await,
+            ))
         };
         let response = health_check(State(state), HeaderMap::new())
             .await

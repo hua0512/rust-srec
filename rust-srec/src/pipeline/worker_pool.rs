@@ -1818,8 +1818,11 @@ mod tests {
         }
     }
 
+    /// Bound for waits on work that normally takes milliseconds, generous for a loaded machine.
+    const WAIT: Duration = Duration::from_secs(30);
+
     async fn wait_for_admissions(pool: &WorkerPool, expected: usize) {
-        tokio::time::timeout(Duration::from_secs(1), async {
+        tokio::time::timeout(WAIT, async {
             while pool.concurrency.state.lock().admitted != expected {
                 tokio::time::sleep(Duration::from_millis(1)).await;
             }
@@ -1828,9 +1831,12 @@ mod tests {
         .unwrap();
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn busy_workers_apply_reduction_to_queued_jobs() {
-        let queue = Arc::new(JobQueue::new());
+        let queue = Arc::new(JobQueue::with_repository(
+            Default::default(),
+            crate::database::test_support::job_repository().await,
+        ));
         let pool = WorkerPool::with_config(
             WorkerType::Cpu,
             WorkerPoolConfig {
@@ -1850,7 +1856,7 @@ mod tests {
         let mut releases = Vec::new();
         for _ in 0..3 {
             releases.push(
-                tokio::time::timeout(Duration::from_secs(1), started_rx.recv())
+                tokio::time::timeout(WAIT, started_rx.recv())
                     .await
                     .unwrap()
                     .unwrap(),
@@ -1865,11 +1871,13 @@ mod tests {
         }
         releases.pop().unwrap().send(()).unwrap();
         for _ in 0..3 {
-            let release = tokio::time::timeout(Duration::from_secs(1), started_rx.recv())
+            let release = tokio::time::timeout(WAIT, started_rx.recv())
                 .await
                 .unwrap()
                 .unwrap();
-            tokio::time::advance(Duration::from_millis(20)).await;
+            // Idle workers poll every millisecond, so at the old limit a second queued job
+            // would start well within this window.
+            tokio::time::sleep(Duration::from_millis(50)).await;
             assert!(
                 started_rx.try_recv().is_err(),
                 "only one queued job may run at the reduced limit"
@@ -1877,15 +1885,16 @@ mod tests {
             release.send(()).unwrap();
         }
         wait_for_admissions(&pool, 0).await;
-        tokio::time::timeout(Duration::from_secs(1), pool.stop())
-            .await
-            .unwrap();
+        tokio::time::timeout(WAIT, pool.stop()).await.unwrap();
         assert_eq!(pool.concurrency.state.lock().admitted, 0);
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn adaptive_pool_can_resume_from_zero_and_stop() {
-        let queue = Arc::new(JobQueue::new());
+        let queue = Arc::new(JobQueue::with_repository(
+            Default::default(),
+            crate::database::test_support::job_repository().await,
+        ));
         let pool = WorkerPool::with_config(
             WorkerType::Cpu,
             WorkerPoolConfig {
@@ -1914,7 +1923,7 @@ mod tests {
             .enqueue(Job::new("noop", vec![], vec![], "streamer", "session"))
             .await
             .unwrap();
-        tokio::time::timeout(Duration::from_secs(2), async {
+        tokio::time::timeout(WAIT, async {
             while !matches!(
                 event_rx.recv().await.unwrap(),
                 PipelineEvent::JobCompleted { .. }
@@ -1922,27 +1931,31 @@ mod tests {
         })
         .await
         .unwrap();
-        tokio::time::timeout(Duration::from_secs(1), async {
+        tokio::time::timeout(WAIT, async {
             while pool.desired_max_workers() != 0 {
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                tokio::time::sleep(Duration::from_millis(10)).await;
             }
         })
         .await
         .unwrap();
-        tokio::time::timeout(Duration::from_secs(1), pool.stop())
-            .await
-            .unwrap();
+        tokio::time::timeout(WAIT, pool.stop()).await.unwrap();
         assert_eq!(pool.concurrency.state.lock().admitted, 0);
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn worker_drains_a_burst_without_poll_delays_and_wakes_after_idle() {
-        let queue = Arc::new(JobQueue::new());
+        // Far longer than `WAIT`: a worker that waited for its polling timer, between jobs or
+        // to notice new work, could not finish within it.
+        const POLL_INTERVAL: Duration = Duration::from_secs(60);
+        let queue = Arc::new(JobQueue::with_repository(
+            Default::default(),
+            crate::database::test_support::job_repository().await,
+        ));
         let pool = WorkerPool::with_config(
             WorkerType::Cpu,
             WorkerPoolConfig {
                 max_workers: 1,
-                poll_interval_ms: 100,
+                poll_interval_ms: POLL_INTERVAL.as_millis() as u64,
                 ..Default::default()
             },
         );
@@ -1960,7 +1973,7 @@ mod tests {
             None,
             Some(event_tx),
         );
-        tokio::time::timeout(Duration::from_millis(99), async {
+        tokio::time::timeout(WAIT, async {
             let mut completed = 0;
             while completed < 32 {
                 if matches!(
@@ -1974,13 +1987,14 @@ mod tests {
         .await
         .expect("a queued burst must not wait for a polling timer between jobs");
         wait_for_admissions(&pool, 0).await;
-        tokio::time::advance(Duration::from_secs(20)).await;
-        tokio::task::yield_now().await;
+        // Let the worker find the queue empty and park in its backoff, so that only the
+        // enqueue below can wake it in time.
+        tokio::time::sleep(Duration::from_millis(100)).await;
         queue
             .enqueue(Job::new("noop", vec![], vec![], "streamer", "session"))
             .await
             .unwrap();
-        tokio::time::timeout(Duration::from_millis(99), async {
+        tokio::time::timeout(WAIT, async {
             while !matches!(
                 event_rx.recv().await.unwrap(),
                 PipelineEvent::JobCompleted { .. }
@@ -1988,9 +2002,7 @@ mod tests {
         })
         .await
         .expect("enqueue must wake an idle worker without waiting for backoff");
-        tokio::time::timeout(Duration::from_secs(1), pool.stop())
-            .await
-            .unwrap();
+        tokio::time::timeout(WAIT, pool.stop()).await.unwrap();
         assert_eq!(pool.concurrency.state.lock().admitted, 0);
         assert_eq!(pool.active_count(), 0);
     }
@@ -2134,34 +2146,85 @@ mod tests {
         }
     }
 
-    #[tokio::test(start_paused = true)]
+    /// Short enough that a timed-out job ends promptly, long enough that the processor has
+    /// started by then even on a loaded machine.
+    const SHORT_JOB_TIMEOUT: Duration = Duration::from_millis(200);
+
+    /// Poll `execution` together with `until` and return what `until` yields, failing if the
+    /// execution ends first or `until` takes longer than `WAIT`. A test must not touch the
+    /// database while it holds an execution unpolled in the middle of a query: the fixture
+    /// has a single connection.
+    async fn drive_until<T>(
+        execution: std::pin::Pin<&mut impl Future<Output = ()>>,
+        until: impl Future<Output = T>,
+    ) -> T {
+        tokio::time::timeout(WAIT, async {
+            tokio::select! {
+                biased;
+                value = until => value,
+                () = execution => panic!("the execution ended while its work was retained"),
+            }
+        })
+        .await
+        .expect("the awaited state was not reached")
+    }
+
+    async fn wait_for_lingering(
+        lingering: &LingeringAttempts,
+        min_age: Duration,
+    ) -> Vec<StalledOperation> {
+        loop {
+            let operations = lingering.older_than(min_age);
+            if !operations.is_empty() {
+                return operations;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    }
+
+    #[tokio::test]
     async fn user_cancellation_during_timeout_log_drain_keeps_the_recorded_timeout() {
         assert_timeout_with_retained_sink(true).await;
     }
 
     async fn assert_timeout_with_retained_sink(cancel_during_drain: bool) {
-        let queue = Arc::new(JobQueue::new());
+        let queue = Arc::new(JobQueue::with_repository(
+            Default::default(),
+            crate::database::test_support::job_repository().await,
+        ));
         let id = queue
             .enqueue(Job::new("handoff", vec![], vec![], "streamer", "session"))
             .await
             .unwrap();
         let job = queue.dequeue(None).await.unwrap().unwrap();
         let (events, mut event_rx) = broadcast::channel(8);
-        let runner = observed_runner(queue.clone(), events);
+        let mut runner = observed_runner(queue.clone(), events);
+        runner.job_timeout = SHORT_JOB_TIMEOUT;
         let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
         let processor: Arc<dyn Processor> = Arc::new(ContextHandoffProcessor(sender));
         let execution = runner.execute_job(job, &processor);
         tokio::pin!(execution);
-        assert!(futures::poll!(execution.as_mut()).is_pending());
-        let retained = receiver.try_recv().unwrap();
+        let retained = drive_until(execution.as_mut(), receiver.recv())
+            .await
+            .unwrap();
+        assert!(matches!(
+            event_rx.try_recv(),
+            Ok(PipelineEvent::JobStarted { .. })
+        ));
 
-        tokio::time::advance(Duration::from_secs(31)).await;
-        assert!(futures::poll!(execution.as_mut()).is_pending());
+        // The deadline is recorded and reported while the retained sender still holds the
+        // worker, which then waits for it without a query in flight.
+        let failed = drive_until(execution.as_mut(), event_rx.recv())
+            .await
+            .unwrap();
+        assert!(
+            matches!(&failed, PipelineEvent::JobFailed { error, .. } if error.starts_with(TIMED_OUT_ERROR)),
+            "unexpected event: {failed:?}"
+        );
         assert!(
             retained.cancellation_token.is_cancelled(),
             "processor helpers must see timeout before the worker waits for their log sender"
         );
-        // The deadline is durable while the retained sender still holds the worker.
         let stored = queue.get_job(&id).await.unwrap().unwrap();
         assert_eq!(stored.status, JobStatus::Failed);
         assert!(
@@ -2177,19 +2240,10 @@ mod tests {
             assert!(queue.cancel_job(&id).await.is_err());
         }
         drop(retained);
-        tokio::time::timeout(Duration::from_secs(1), execution)
-            .await
-            .unwrap();
+        tokio::time::timeout(WAIT, execution).await.unwrap();
         assert_eq!(
             queue.get_job(&id).await.unwrap().unwrap().status,
             JobStatus::Failed
-        );
-        assert!(matches!(
-            event_rx.try_recv(),
-            Ok(PipelineEvent::JobStarted { .. })
-        ));
-        assert!(
-            matches!(event_rx.try_recv(), Ok(PipelineEvent::JobFailed { error, .. }) if error.starts_with(TIMED_OUT_ERROR))
         );
         assert!(event_rx.try_recv().is_err());
         assert_eq!(runner.active_workers.load(Ordering::SeqCst), 0);
@@ -2220,9 +2274,12 @@ mod tests {
         }
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn ended_job_is_reported_stalled_until_its_retained_work_returns() {
-        let queue = Arc::new(JobQueue::new());
+        let queue = Arc::new(JobQueue::with_repository(
+            Default::default(),
+            crate::database::test_support::job_repository().await,
+        ));
         let id = queue
             .enqueue(Job::new(
                 "handoff",
@@ -2234,28 +2291,47 @@ mod tests {
             .await
             .unwrap();
         let job = queue.dequeue(None).await.unwrap().unwrap();
-        let (events, _event_rx) = broadcast::channel(8);
-        let runner = observed_runner(queue.clone(), events);
+        let (events, mut event_rx) = broadcast::channel(8);
+        let mut runner = observed_runner(queue.clone(), events);
+        runner.job_timeout = SHORT_JOB_TIMEOUT;
         let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
         let processor: Arc<dyn Processor> = Arc::new(ContextHandoffProcessor(sender));
+        let started = tokio::time::Instant::now();
         let execution = runner.execute_job(job, &processor);
         tokio::pin!(execution);
-        assert!(futures::poll!(execution.as_mut()).is_pending());
-        let retained = receiver.try_recv().unwrap();
+        let retained = drive_until(execution.as_mut(), receiver.recv())
+            .await
+            .unwrap();
 
-        tokio::time::advance(Duration::from_secs(31)).await;
-        assert!(futures::poll!(execution.as_mut()).is_pending());
-        // Listed only once the work has outlived its job by the threshold.
+        // Listed from the timeout on, which the worker records before it waits for the
+        // retained sender.
+        while !matches!(
+            drive_until(execution.as_mut(), event_rx.recv())
+                .await
+                .unwrap(),
+            PipelineEvent::JobFailed { .. }
+        ) {}
+        let ended = runner.lingering.older_than(Duration::ZERO);
+        assert_eq!(ended.len(), 1);
+        // Measured from the end of the job, not from its start, and reported only once the
+        // work has outlived its job by the threshold.
+        let age = ended[0].stalled_for();
+        assert!(
+            age + SHORT_JOB_TIMEOUT <= started.elapsed(),
+            "age {age:?} counts from before the job timed out"
+        );
         assert!(
             runner
                 .lingering
                 .older_than(STALLED_OPERATION_THRESHOLD)
                 .is_empty()
         );
-
-        tokio::time::advance(STALLED_OPERATION_THRESHOLD).await;
-        assert!(futures::poll!(execution.as_mut()).is_pending());
-        let stalled = runner.lingering.older_than(STALLED_OPERATION_THRESHOLD);
+        let threshold = Duration::from_millis(100);
+        let stalled = drive_until(
+            execution.as_mut(),
+            wait_for_lingering(&runner.lingering, threshold),
+        )
+        .await;
         assert_eq!(stalled.len(), 1);
         assert_eq!(
             (
@@ -2282,15 +2358,16 @@ mod tests {
         assert_eq!(runner.lingering.older_than(Duration::ZERO).len(), 1);
 
         drop(retained);
-        tokio::time::timeout(Duration::from_secs(1), execution)
-            .await
-            .unwrap();
+        tokio::time::timeout(WAIT, execution).await.unwrap();
         assert!(runner.lingering.older_than(Duration::ZERO).is_empty());
     }
 
     #[tokio::test]
     async fn forced_worker_abort_cancels_processor_and_releases_active_count() {
-        let queue = Arc::new(JobQueue::new());
+        let queue = Arc::new(JobQueue::with_repository(
+            Default::default(),
+            crate::database::test_support::job_repository().await,
+        ));
         let id = queue
             .enqueue(Job::new("handoff", vec![], vec![], "streamer", "session"))
             .await
@@ -2326,7 +2403,10 @@ mod tests {
 
     #[tokio::test]
     async fn forced_worker_abort_does_not_detach_log_collector() {
-        let queue = Arc::new(JobQueue::new());
+        let queue = Arc::new(JobQueue::with_repository(
+            Default::default(),
+            crate::database::test_support::job_repository().await,
+        ));
         queue
             .enqueue(Job::new("handoff", vec![], vec![], "streamer", "session"))
             .await
@@ -2551,91 +2631,79 @@ mod tests {
 
     #[tokio::test]
     async fn late_failures_preserve_terminal_jobs_and_do_not_emit_events() {
-        use crate::database::repositories::SqlxJobRepository;
-
-        for persisted in [false, true] {
-            let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
-                .await
-                .unwrap();
-            crate::database::run_migrations(&pool).await.unwrap();
-            let queue = Arc::new(if persisted {
-                JobQueue::with_repository(
-                    Default::default(),
-                    Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone())),
-                )
-            } else {
-                JobQueue::new()
-            });
-            let (events, mut receiver) = broadcast::channel(8);
-            let runner = observed_runner(queue.clone(), events);
-            for terminal in [
-                JobStatus::Cancelled,
-                JobStatus::Completed,
-                JobStatus::Failed,
-            ] {
-                let job = Job::new("noop", vec!["input.flv".into()], vec![], "", "");
-                queue.enqueue(job.clone()).await.unwrap();
-                queue.dequeue(None).await.unwrap().unwrap();
-                match terminal {
-                    JobStatus::Cancelled => {
-                        queue.cancel_job(&job.id).await.unwrap();
-                    }
-                    JobStatus::Completed => {
-                        queue
-                            .complete(
-                                &job.id,
-                                JobResult {
-                                    outputs: vec!["output.mp4".into()],
-                                    duration_secs: 1.0,
-                                    metadata: None,
-                                    uploads: vec![],
-                                    logs: vec![],
-                                },
-                            )
-                            .await
-                            .unwrap();
-                    }
-                    JobStatus::Failed => {
-                        assert_eq!(
-                            queue.fail(&job.id, "first failure").await.unwrap(),
-                            JobFailureOutcome::Transitioned
-                        );
-                    }
-                    _ => unreachable!(),
+        let queue = Arc::new(JobQueue::with_repository(
+            Default::default(),
+            crate::database::test_support::job_repository().await,
+        ));
+        let (events, mut receiver) = broadcast::channel(8);
+        let runner = observed_runner(queue.clone(), events);
+        for terminal in [
+            JobStatus::Cancelled,
+            JobStatus::Completed,
+            JobStatus::Failed,
+        ] {
+            let job = Job::new("noop", vec!["input.flv".into()], vec![], "", "");
+            queue.enqueue(job.clone()).await.unwrap();
+            queue.dequeue(None).await.unwrap().unwrap();
+            match terminal {
+                JobStatus::Cancelled => {
+                    queue.cancel_job(&job.id).await.unwrap();
                 }
-                let facts = JobFacts {
-                    id: job.id.clone(),
-                    job_type: job.job_type,
-                    processor_name: "noop",
-                    dag_step_execution_id: None,
-                    current_step: None,
-                    total_steps: None,
-                    retry_count: 0,
-                };
-                runner
-                    .finish_failed(&facts, "late failure", StepFailureKind::ProcessorError, &[])
-                    .await;
-                assert!(receiver.try_recv().is_err());
-                assert_eq!(
+                JobStatus::Completed => {
                     queue
-                        .fail_execution_start(&job.id, "late startup failure")
+                        .complete(
+                            &job.id,
+                            JobResult {
+                                outputs: vec!["output.mp4".into()],
+                                duration_secs: 1.0,
+                                metadata: None,
+                                uploads: vec![],
+                                logs: vec![],
+                            },
+                        )
                         .await
-                        .unwrap(),
-                    JobFailureOutcome::Unchanged
-                );
-                let stored = queue.get_job(&job.id).await.unwrap().unwrap();
-                assert_eq!(stored.status, terminal);
-                if terminal == JobStatus::Failed {
-                    assert_eq!(stored.error.as_deref(), Some("first failure"));
+                        .unwrap();
                 }
-                if terminal == JobStatus::Completed {
-                    assert_eq!(stored.outputs, ["output.mp4"]);
+                JobStatus::Failed => {
+                    assert_eq!(
+                        queue.fail(&job.id, "first failure").await.unwrap(),
+                        JobFailureOutcome::Transitioned
+                    );
                 }
-                assert_eq!(queue.depth(), 0);
-                assert!(queue.get_cancellation_token(&job.id).await.is_none());
+                _ => unreachable!(),
             }
-            queue.stop_progress_aggregator().await;
+            let facts = JobFacts {
+                id: job.id.clone(),
+                job_type: job.job_type,
+                processor_name: "noop",
+                dag_step_execution_id: None,
+                current_step: None,
+                total_steps: None,
+                retry_count: 0,
+            };
+            runner
+                .finish_failed(&facts, "late failure", StepFailureKind::ProcessorError, &[])
+                .await;
+            assert!(receiver.try_recv().is_err());
+            assert_eq!(
+                queue
+                    .fail_execution_start(&job.id, "late startup failure")
+                    .await
+                    .unwrap(),
+                JobFailureOutcome::Unchanged
+            );
+            let stored = queue.get_job(&job.id).await.unwrap().unwrap();
+            assert_eq!(stored.status, terminal);
+            if terminal == JobStatus::Failed {
+                assert_eq!(stored.error.as_deref(), Some("first failure"));
+            }
+            if terminal == JobStatus::Completed {
+                assert_eq!(stored.outputs, ["output.mp4"]);
+            }
+            assert_eq!(queue.depth(), 0);
+            assert!(queue.get_cancellation_token(&job.id).await.is_none());
         }
+        queue.stop_progress_aggregator().await;
     }
 
     #[tokio::test]
@@ -2830,12 +2898,16 @@ mod tests {
 
     #[tokio::test]
     async fn withdrawn_job_never_starts_execution() {
-        let queue = Arc::new(JobQueue::new());
+        use crate::database::repositories::JobRepository;
+
+        let repo = crate::database::test_support::job_repository().await;
+        let queue = Arc::new(JobQueue::with_repository(Default::default(), repo.clone()));
         let job_id = queue
             .enqueue(Job::new("observed", vec![], vec![], "streamer", "session"))
             .await
             .unwrap();
         let job = queue.dequeue(None).await.unwrap().unwrap();
+        repo.delete_job(&job_id).await.unwrap();
         queue.forget_jobs(std::slice::from_ref(&job_id));
 
         let (event_tx, mut event_rx) = broadcast::channel(8);
@@ -2862,7 +2934,10 @@ mod tests {
 
     #[tokio::test]
     async fn forgetting_started_job_cancels_retained_processor_token() {
-        let queue = Arc::new(JobQueue::new());
+        use crate::database::repositories::JobRepository;
+
+        let repo = crate::database::test_support::job_repository().await;
+        let queue = Arc::new(JobQueue::with_repository(Default::default(), repo.clone()));
         let job_id = queue
             .enqueue(Job::new("observed", vec![], vec![], "streamer", "session"))
             .await
@@ -2882,6 +2957,7 @@ mod tests {
             .await
             .expect("processor should start");
         assert_eq!(active.load(Ordering::SeqCst), 1);
+        repo.delete_job(&job_id).await.unwrap();
         queue.forget_jobs(std::slice::from_ref(&job_id));
         assert!(observed.token.lock().as_ref().unwrap().is_cancelled());
         tokio::time::timeout(Duration::from_secs(1), execution)
@@ -2904,7 +2980,10 @@ mod tests {
     /// feeds the `pipeline_started` / `pipeline_completed` notification subscriptions.
     #[tokio::test]
     async fn test_worker_emits_started_and_completed_events() {
-        let job_queue = Arc::new(JobQueue::new());
+        let job_queue = Arc::new(JobQueue::with_repository(
+            Default::default(),
+            crate::database::test_support::job_repository().await,
+        ));
         let (event_tx, mut event_rx) = broadcast::channel(16);
         let pool = WorkerPool::with_config(WorkerType::Cpu, test_pool_config());
 
