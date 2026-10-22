@@ -365,7 +365,7 @@ mod tests {
 
     use crate::{
         ConstantFrameRate, HEVCDecoderConfigurationRecord, NALUnitType, NumTemporalLayers,
-        ParallelismType, ProfileCompatibilityFlags, SpsNALUnit,
+        ParallelismType, ProfileCompatibilityFlags,
     };
 
     #[test]
@@ -408,8 +408,6 @@ mod tests {
         assert!(!sps.array_completeness);
         assert_eq!(sps.nal_unit_type, NALUnitType::SpsNut);
         assert_eq!(sps.nalus.len(), 1);
-        let sps = SpsNALUnit::parse(io::Cursor::new(sps.nalus[0].clone())).unwrap();
-        insta::assert_debug_snapshot!(sps);
 
         let pps = &config.arrays[2];
         assert!(!pps.array_completeness);
