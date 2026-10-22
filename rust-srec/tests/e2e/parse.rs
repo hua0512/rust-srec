@@ -39,6 +39,15 @@ async fn streamlink_available() -> bool {
     }
 }
 
+/// Posts to a parse route, which answers 200 with the outcome in the body
+/// and the private headers.
+async fn parse(app: &TestApp, token: &str, path: &str, body: Value) -> Value {
+    let response = app.post(path, token, &body).await;
+    let response = response.expect_status(StatusCode::OK);
+    assert_private(&response);
+    response.body
+}
+
 #[tokio::test]
 async fn parse_validates_its_input_and_answers_privately() {
     let app = TestApp::start().await;
@@ -57,38 +66,21 @@ async fn parse_validates_its_input_and_answers_privately() {
         refused.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
     }
 
-    let empty = app
-        .post("/api/parse", &token, &json!({"url": ""}))
-        .await
-        .expect_status(StatusCode::OK);
     assert_eq!(
-        empty.body,
+        parse(&app, &token, "/api/parse", json!({"url": ""})).await,
         json!({"success": false, "is_live": false, "media_info": null, "error": "URL cannot be empty"})
     );
-    assert_private(&empty);
 
     if streamlink_available().await {
         eprintln!("Streamlink is installed; skipping the unsupported-URL parse");
     } else {
-        let unsupported = app
-            .post(
-                "/api/parse",
-                &token,
-                &json!({"url": "http://203.0.113.7/live"}),
-            )
-            .await
-            .expect_status(StatusCode::OK);
-        // Only managed parses carry a playback handle.
-        assert!(
-            unsupported.body.get("playback").is_none(),
-            "{}",
-            unsupported.text
-        );
+        let unsupported = json!({"url": "http://203.0.113.7/live"});
+        // Only managed parses carry a playback handle, so the exact body
+        // also pins that none is returned.
         assert_eq!(
-            unsupported.body,
+            parse(&app, &token, "/api/parse", unsupported).await,
             json!({"success": false, "is_live": false, "media_info": null, "error": "Unsupported platform"})
         );
-        assert_private(&unsupported);
     }
 
     // A batch over the limit is refused before any entry is parsed.
@@ -100,19 +92,13 @@ async fn parse_validates_its_input_and_answers_privately() {
         .await;
     refused.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
     // Entries fail one by one, in order, without failing the batch.
-    let batch = app
-        .post(
-            "/api/parse/batch",
-            &token,
-            &json!([
-                {"url": ""},
-                {"url": BILIBILI, "cookies": "SESSDATA=1", "credential_id": "any"},
-            ]),
-        )
-        .await
-        .expect_status(StatusCode::OK);
-    let entries = batch.body.as_array().expect("one response per entry");
-    assert_eq!(entries.len(), 2, "{}", batch.text);
+    let batch = json!([
+        {"url": ""},
+        {"url": BILIBILI, "cookies": "SESSDATA=1", "credential_id": "any"},
+    ]);
+    let entries = parse(&app, &token, "/api/parse/batch", batch).await;
+    let entries = entries.as_array().expect("one response per entry");
+    assert_eq!(entries.len(), 2, "{entries:?}");
     assert_eq!(entries[0]["success"], false);
     assert_eq!(entries[0]["error"], "URL cannot be empty");
     assert_eq!(entries[1]["success"], false);
@@ -120,7 +106,6 @@ async fn parse_validates_its_input_and_answers_privately() {
         entries[1]["error"],
         "credential_id and cookies are mutually exclusive"
     );
-    assert_private(&batch);
 
     // Resolve accepts only client-owned media, never a playback handle.
     let handle = app
@@ -136,28 +121,13 @@ async fn parse_validates_its_input_and_answers_privately() {
         "{}",
         handle.text
     );
-    let resolved = app
-        .post(
-            "/api/parse/resolve",
-            &token,
-            &json!({"url": "", "stream_info": {}}),
-        )
-        .await
-        .expect_status(StatusCode::OK);
+    let empty = json!({"url": "", "stream_info": {}});
     assert_eq!(
-        resolved.body,
+        parse(&app, &token, "/api/parse/resolve", empty).await,
         json!({"success": false, "stream_info": null, "error": "URL cannot be empty"})
     );
-    assert_private(&resolved);
-    let invalid = app
-        .post(
-            "/api/parse/resolve",
-            &token,
-            &json!({"url": BILIBILI, "stream_info": {"url": 5}}),
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let malformed = json!({"url": BILIBILI, "stream_info": {"url": 5}});
+    let invalid = parse(&app, &token, "/api/parse/resolve", malformed).await;
     assert_eq!(invalid["success"], false);
     assert!(
         invalid["error"]
@@ -166,23 +136,12 @@ async fn parse_validates_its_input_and_answers_privately() {
         "{invalid}"
     );
 
-    app.shutdown().await;
-}
-
-#[tokio::test]
-async fn parse_fails_fast_when_every_selected_account_is_disabled() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
+    // With every selected account disabled, the managed parse finds no
+    // usable account and stops before extracting.
     app.select_disabled_account(&token, "platform-bilibili")
         .await;
-
-    // The managed parse finds no usable account and stops before extracting.
     let refused = app
-        .post(
-            "/api/parse",
-            &token,
-            &json!({"url": "https://live.bilibili.com/9101"}),
-        )
+        .post("/api/parse", &token, &json!({"url": BILIBILI}))
         .await;
     refused.assert_error(StatusCode::SERVICE_UNAVAILABLE, "CREDENTIAL_UNAVAILABLE");
     assert_eq!(
@@ -267,13 +226,7 @@ async fn parse_returns_streams_for_a_live_room() {
     let app = TestApp::start_with(Seed::live()).await;
     let token = app.admin_token().await;
 
-    let parsed = app
-        .post("/api/parse", &token, &json!({ "url": room.url() }))
-        .await
-        .expect_status(StatusCode::OK);
-    assert_private(&parsed);
-    // An unmanaged parse returns the media itself, not a playback handle.
-    assert!(parsed.body.get("playback").is_none(), "{}", parsed.text);
+    let parsed = parse(&app, &token, "/api/parse", json!({ "url": room.url() })).await;
     let stream = |url: &str, quality: &str, bitrate: u64, priority: u32, extras: Value| {
         json!({
             "url": url, "stream_format": "flv", "media_format": "flv", "quality": quality,
@@ -281,8 +234,9 @@ async fn parse_returns_streams_for_a_live_room() {
             "is_audio_only": false, "is_headers_needed": false,
         })
     };
+    // An unmanaged parse returns the media itself, not a playback handle.
     assert_eq!(
-        parsed.body,
+        parsed,
         json!({
             "success": true,
             "is_live": true,

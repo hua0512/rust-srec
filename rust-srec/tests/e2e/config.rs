@@ -8,38 +8,53 @@ use crate::support::{
     ClosedPort, LocalHttpServer, Response, TestApp, assert_recent, id_of, millis, now_ms,
 };
 
+/// The body of a response the test expects to succeed.
+trait Succeeded {
+    fn ok(self) -> Value;
+    fn created(self) -> Value;
+}
+
+impl Succeeded for Response {
+    #[track_caller]
+    fn ok(self) -> Value {
+        self.expect_status(StatusCode::OK).body
+    }
+
+    #[track_caller]
+    fn created(self) -> Value {
+        self.expect_status(StatusCode::CREATED).body
+    }
+}
+
+async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
+    app.get(path, token).await.ok()
+}
+
+/// The `total` of a list route.
+async fn total(app: &TestApp, token: &str, path: &str) -> u64 {
+    get_ok(app, token, path).await["total"]
+        .as_u64()
+        .expect("list total")
+}
+
 async fn create_profile(app: &TestApp, token: &str, body: Value) -> Value {
     app.post("/api/credentials/profiles", token, &body)
         .await
-        .expect_status(StatusCode::OK)
-        .body
+        .ok()
 }
 
-fn bilibili_profile(label: &str) -> Value {
+/// An enabled cookie account.
+fn profile(platform_id: &str, label: &str, cookies: &str) -> Value {
     json!({
-        "platform_id": "platform-bilibili",
+        "platform_id": platform_id,
         "label": label,
         "enabled": true,
-        "material": {"cookies": format!("SESSDATA={label}")},
+        "material": {"cookies": cookies},
     })
 }
 
-async fn streamer_total(app: &TestApp, token: &str) -> u64 {
-    app.get("/api/streamers", token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body["total"]
-        .as_u64()
-        .expect("streamer list total")
-}
-
-async fn template_total(app: &TestApp, token: &str) -> u64 {
-    app.get("/api/templates", token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body["total"]
-        .as_u64()
-        .expect("template list total")
+fn bilibili_profile(label: &str) -> Value {
+    profile("platform-bilibili", label, &format!("SESSDATA={label}"))
 }
 
 /// Replaces a platform configuration with `edit` applied to its current body.
@@ -49,35 +64,38 @@ async fn put_platform(
     platform_id: &str,
     edit: impl FnOnce(&mut serde_json::Map<String, Value>),
 ) -> Response {
-    let mut body = app
-        .get(&format!("/api/config/platforms/{platform_id}"), token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let path = format!("/api/config/platforms/{platform_id}");
+    let mut body = get_ok(app, token, &path).await;
     edit(body.as_object_mut().expect("platform body is an object"));
-    app.put(
-        &format!("/api/config/platforms/{platform_id}"),
-        token,
-        &body,
-    )
-    .await
+    app.put(&path, token, &body).await
 }
 
-async fn effective_route(app: &TestApp, token: &str, query: &str) -> Response {
-    app.get(&format!("/api/proxies/effective?{query}"), token)
-        .await
+/// Replaces a platform configuration with one field changed.
+async fn set_platform_field(
+    app: &TestApp,
+    token: &str,
+    platform_id: &str,
+    field: &str,
+    value: Value,
+) -> Value {
+    put_platform(app, token, platform_id, |body| {
+        body.insert(field.into(), value);
+    })
+    .await
+    .ok()
+}
+
+/// The proxy route that applies to a scope.
+async fn effective_route(app: &TestApp, token: &str, query: &str) -> Value {
+    get_ok(app, token, &format!("/api/proxies/effective?{query}")).await
 }
 
 #[tokio::test]
-async fn global_config_matches_the_settings_schema_and_keeps_its_proxy_route() {
+async fn global_config_matches_the_settings_schema_and_applies_a_patch_whole_or_not_at_all() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 
-    let global = app
-        .get("/api/config/global", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let global = get_ok(&app, &token, "/api/config/global").await;
     // The settings form refuses to submit negative or fractional retention
     // days, a negative freshness threshold, or a probe interval under 1 s.
     for field in [
@@ -103,7 +121,7 @@ async fn global_config_matches_the_settings_schema_and_keeps_its_proxy_route() {
     assert_eq!(global["proxy_route"], json!({"kind": "direct"}));
     assert!(global.get("proxy_config").is_none(), "{global}");
 
-    for (body, code) in [
+    for (mut body, code) in [
         (
             json!({"proxy_route": {"kind": "inherit"}}),
             "PROXY_ROUTE_INVALID",
@@ -117,7 +135,6 @@ async fn global_config_matches_the_settings_schema_and_keeps_its_proxy_route() {
             "PROXY_CONFIG_REPLACED",
         ),
     ] {
-        let mut body = body;
         body["record_danmu"] = json!(!global["record_danmu"].as_bool().unwrap_or(false));
         let refused = app.patch("/api/config/global", &token, &body).await;
         refused.assert_error(StatusCode::UNPROCESSABLE_ENTITY, code);
@@ -134,53 +151,14 @@ async fn global_config_matches_the_settings_schema_and_keeps_its_proxy_route() {
         missing.body["details"],
         json!({"proxy_id": "missing-proxy"})
     );
-    let unchanged = app
-        .get("/api/config/global", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(unchanged, global, "refused patches must not apply anything");
+    assert_eq!(
+        get_ok(&app, &token, "/api/config/global").await,
+        global,
+        "refused patches must not apply anything"
+    );
 
-    // A null legacy field is what older clients send for "unset".
-    let system = app
-        .patch(
-            "/api/config/global",
-            &token,
-            &json!({"proxy_config": null, "proxy_route": {"kind": "system"}}),
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(system["proxy_route"], json!({"kind": "system"}));
-
-    // A patch that omits the route keeps the stored one.
-    let kept = app
-        .patch("/api/config/global", &token, &json!({"record_danmu": true}))
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(kept["proxy_route"], json!({"kind": "system"}));
-    assert_eq!(kept["record_danmu"], true);
-    let read_back = app
-        .get("/api/config/global", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(read_back, kept);
-
-    app.shutdown().await;
-}
-
-#[tokio::test]
-async fn an_invalid_global_patch_names_the_field_and_applies_nothing() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-    let before = app
-        .get("/api/config/global", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-
+    // An invalid field is named, and valid fields in the same body are not
+    // applied either.
     for (field, value) in [
         ("job_history_retention_days", json!(-1)),
         ("output_retention_days", json!(1.5)),
@@ -192,10 +170,9 @@ async fn an_invalid_global_patch_names_the_field_and_applies_nothing() {
         ("record_danmu", json!("true")),
         ("output_folder", json!({"path": "/x"})),
     ] {
-        // Valid fields in the same body must not be applied either.
         let mut body = json!({
             "max_part_size_bytes": 12345,
-            "auto_thumbnail": !before["auto_thumbnail"].as_bool().unwrap_or(true),
+            "auto_thumbnail": !global["auto_thumbnail"].as_bool().unwrap_or(true),
         });
         body[field] = value;
         let refused = app.patch("/api/config/global", &token, &body).await;
@@ -207,12 +184,11 @@ async fn an_invalid_global_patch_names_the_field_and_applies_nothing() {
             "{field}: {}",
             refused.text
         );
-        let after = app
-            .get("/api/config/global", &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body;
-        assert_eq!(after, before, "{field}: nothing may change");
+        assert_eq!(
+            get_ok(&app, &token, "/api/config/global").await,
+            global,
+            "{field}: nothing may change"
+        );
     }
 
     let applied = app
@@ -236,27 +212,41 @@ async fn an_invalid_global_patch_names_the_field_and_applies_nothing() {
             }),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
-    let expected = |field: &str, value: Value| {
+        .ok();
+    for (field, value) in [
+        ("job_history_retention_days", json!(0)),
+        ("output_retention_days", json!(30)),
+        ("max_concurrent_cpu_jobs", json!(0)),
+        ("pipeline_cpu_job_timeout_secs", json!(1)),
+        ("pipeline_io_job_timeout_secs", json!(1)),
+        ("gpu_health_probe_interval_secs", json!(1)),
+        ("queue_freshness_threshold_ms", json!(0)),
+        ("max_part_size_bytes", json!(12345)),
+        ("output_folder", global["output_folder"].clone()),
+        ("default_extractor", global["default_extractor"].clone()),
+    ] {
         assert_eq!(applied[field], value, "{field}: {applied}");
-    };
-    expected("job_history_retention_days", json!(0));
-    expected("output_retention_days", json!(30));
-    expected("max_concurrent_cpu_jobs", json!(0));
-    expected("pipeline_cpu_job_timeout_secs", json!(1));
-    expected("pipeline_io_job_timeout_secs", json!(1));
-    expected("gpu_health_probe_interval_secs", json!(1));
-    expected("queue_freshness_threshold_ms", json!(0));
-    expected("max_part_size_bytes", json!(12345));
-    expected("output_folder", before["output_folder"].clone());
-    expected("default_extractor", before["default_extractor"].clone());
-    let read_back = app
-        .get("/api/config/global", &token)
+    }
+    assert_eq!(get_ok(&app, &token, "/api/config/global").await, applied);
+
+    // A null legacy field is what older clients send for "unset".
+    let system = app
+        .patch(
+            "/api/config/global",
+            &token,
+            &json!({"proxy_config": null, "proxy_route": {"kind": "system"}}),
+        )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(read_back, applied);
+        .ok();
+    assert_eq!(system["proxy_route"], json!({"kind": "system"}));
+    // A patch that omits the route keeps the stored one.
+    let kept = app
+        .patch("/api/config/global", &token, &json!({"record_danmu": true}))
+        .await
+        .ok();
+    assert_eq!(kept["proxy_route"], json!({"kind": "system"}));
+    assert_eq!(kept["record_danmu"], true);
+    assert_eq!(get_ok(&app, &token, "/api/config/global").await, kept);
 
     app.shutdown().await;
 }
@@ -266,11 +256,7 @@ async fn platform_configs_are_replaced_whole_but_keep_their_identity() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 
-    let platforms = app
-        .get("/api/config/platforms", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let platforms = get_ok(&app, &token, "/api/config/platforms").await;
     let platforms = platforms.as_array().expect("platform list");
     for name in ["bilibili", "huya", "douyu", "twitch", "streamlink"] {
         let platform = platforms
@@ -286,48 +272,29 @@ async fn platform_configs_are_replaced_whole_but_keep_their_identity() {
         .await;
     missing.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
 
-    let original = app
-        .get("/api/config/platforms/platform-huya", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    const HUYA: &str = "/api/config/platforms/platform-huya";
+    let original = get_ok(&app, &token, HUYA).await;
     let mismatched = app
         .put("/api/config/platforms/platform-douyu", &token, &original)
         .await;
     mismatched.assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
-    let bad_request = StatusCode::BAD_REQUEST;
-    let unprocessable = StatusCode::UNPROCESSABLE_ENTITY;
+    let (bad, invalid) = (StatusCode::BAD_REQUEST, StatusCode::UNPROCESSABLE_ENTITY);
     for (field, value, status, code) in [
-        ("name", json!("renamed"), bad_request, "BAD_REQUEST"),
-        (
-            "fetch_delay_ms",
-            json!(u64::MAX),
-            bad_request,
-            "BAD_REQUEST",
-        ),
-        ("offline_check_count", json!(0), bad_request, "BAD_REQUEST"),
-        (
-            "offline_check_delay_ms",
-            json!(999),
-            bad_request,
-            "BAD_REQUEST",
-        ),
-        (
-            "cookies",
-            json!("sid=abc"),
-            unprocessable,
-            "COOKIES_REPLACED",
-        ),
+        ("name", json!("renamed"), bad, "BAD_REQUEST"),
+        ("fetch_delay_ms", json!(u64::MAX), bad, "BAD_REQUEST"),
+        ("offline_check_count", json!(0), bad, "BAD_REQUEST"),
+        ("offline_check_delay_ms", json!(999), bad, "BAD_REQUEST"),
+        ("cookies", json!("sid=abc"), invalid, "COOKIES_REPLACED"),
         (
             "proxy_config",
             json!({"enabled": true}),
-            unprocessable,
+            invalid,
             "PROXY_CONFIG_REPLACED",
         ),
         (
             "proxy_route",
             json!({"kind": "proxy", "id": "gone"}),
-            unprocessable,
+            invalid,
             "PROXY_NOT_FOUND",
         ),
     ] {
@@ -338,19 +305,11 @@ async fn platform_configs_are_replaced_whole_but_keep_their_identity() {
         })
         .await;
         refused.assert_error(status, code);
-        let stored = app
-            .get("/api/config/platforms/platform-huya", &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body;
+        let stored = get_ok(&app, &token, HUYA).await;
         assert_eq!(stored, original, "{field}: nothing may change");
     }
     // A blank cookie value asks for none and is accepted.
-    put_platform(&app, &token, "platform-huya", |body| {
-        body.insert("cookies".into(), json!("  "));
-    })
-    .await
-    .expect_status(StatusCode::OK);
+    set_platform_field(&app, &token, "platform-huya", "cookies", json!("  ")).await;
 
     let replaced = put_platform(&app, &token, "platform-huya", |body| {
         body.insert("fetch_delay_ms".into(), json!(1234));
@@ -360,20 +319,14 @@ async fn platform_configs_are_replaced_whole_but_keep_their_identity() {
         body.insert("proxy_route".into(), json!({"kind": "direct"}));
     })
     .await
-    .expect_status(StatusCode::OK)
-    .body;
+    .ok();
     assert_eq!(replaced["name"], "huya");
     assert_eq!(replaced["fetch_delay_ms"], 1234);
     assert_eq!(replaced["offline_check_count"], 2);
     assert_eq!(replaced["offline_check_delay_ms"], 1000);
     assert_eq!(replaced["output_folder"], "/recordings/huya");
     assert_eq!(replaced["proxy_route"], json!({"kind": "direct"}));
-    let stored = app
-        .get("/api/config/platforms/platform-huya", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(stored, replaced);
+    assert_eq!(get_ok(&app, &token, HUYA).await, replaced);
 
     // PUT replaces every override, but an omitted route keeps the stored one.
     let cleared = put_platform(&app, &token, "platform-huya", |body| {
@@ -382,8 +335,7 @@ async fn platform_configs_are_replaced_whole_but_keep_their_identity() {
         body.insert("fetch_delay_ms".into(), Value::Null);
     })
     .await
-    .expect_status(StatusCode::OK)
-    .body;
+    .ok();
     assert_eq!(cleared["proxy_route"], json!({"kind": "direct"}));
     assert_eq!(cleared["output_folder"], Value::Null);
     assert_eq!(cleared["fetch_delay_ms"], Value::Null);
@@ -423,7 +375,7 @@ async fn templates_are_replaced_whole_counted_by_their_streamers_and_cloned() {
         let refused = app.post("/api/templates", &token, &body).await;
         refused.assert_error(StatusCode::UNPROCESSABLE_ENTITY, code);
     }
-    assert_eq!(template_total(&app, &token).await, 0);
+    assert_eq!(total(&app, &token, "/api/templates").await, 0);
 
     let created = app
         .post(
@@ -441,9 +393,9 @@ async fn templates_are_replaced_whole_counted_by_their_streamers_and_cloned() {
             }),
         )
         .await
-        .expect_status(StatusCode::CREATED)
-        .body;
+        .created();
     let template_id = id_of(&created);
+    let path = format!("/api/templates/{template_id}");
     assert_eq!(created["usage_count"], 0);
     assert_eq!(created["proxy_route"], json!({"kind": "direct"}));
     assert_eq!(
@@ -464,13 +416,12 @@ async fn templates_are_replaced_whole_counted_by_their_streamers_and_cloned() {
     // the route are kept.
     let replaced = app
         .put(
-            &format!("/api/templates/{template_id}"),
+            &path,
             &token,
             &json!({"output_file_format": "flv", "offline_check_count": 5}),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(replaced["name"], "Evening");
     assert_eq!(replaced["output_file_format"], "flv");
     assert_eq!(replaced["offline_check_count"], 5);
@@ -483,18 +434,9 @@ async fn templates_are_replaced_whole_counted_by_their_streamers_and_cloned() {
         assert_eq!(replaced[field], Value::Null, "{field}: {replaced}");
     }
     assert_eq!(replaced["proxy_route"], json!({"kind": "direct"}));
-    let stored = app
-        .get(&format!("/api/templates/{template_id}"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(stored, replaced);
+    assert_eq!(get_ok(&app, &token, &path).await, replaced);
     let refused = app
-        .put(
-            &format!("/api/templates/{template_id}"),
-            &token,
-            &json!({"offline_check_delay_ms": 999}),
-        )
+        .put(&path, &token, &json!({"offline_check_delay_ms": 999}))
         .await;
     refused.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
     let unknown = app
@@ -514,64 +456,49 @@ async fn templates_are_replaced_whole_counted_by_their_streamers_and_cloned() {
         .await;
     assert_eq!(streamer["state"], "DISABLED");
     assert_eq!(streamer["template_id"], template_id.as_str());
-    let stored = app
-        .get(&format!("/api/templates/{template_id}"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(stored["usage_count"], 1);
-    let listed = app
-        .get("/api/templates", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    assert_eq!(get_ok(&app, &token, &path).await["usage_count"], 1);
+    let listed = get_ok(&app, &token, "/api/templates").await;
     assert_eq!(listed["items"][0]["id"], template_id.as_str());
     assert_eq!(listed["items"][0]["usage_count"], 1);
-    let in_use = app
-        .delete(&format!("/api/templates/{template_id}"), &token)
-        .await;
+    let in_use = app.delete(&path, &token).await;
     in_use.assert_error(StatusCode::CONFLICT, "CONFLICT");
 
     // A clone copies the fields and the route under a new id and name.
+    let clone_path = format!("{path}/clone");
     let clone = app
-        .post(
-            &format!("/api/templates/{template_id}/clone"),
-            &token,
-            &json!({"new_name": "Evening copy"}),
-        )
+        .post(&clone_path, &token, &json!({"new_name": "Evening copy"}))
         .await
-        .expect_status(StatusCode::CREATED)
-        .body;
+        .created();
     assert_ne!(clone["id"], template_id.as_str());
     assert_eq!(clone["name"], "Evening copy");
     assert_eq!(clone["usage_count"], 0);
     for field in ["output_file_format", "offline_check_count", "proxy_route"] {
         assert_eq!(clone[field], replaced[field], "{field}: {clone}");
     }
-    for (path, body, status, code) in [
+    for (path, new_name, status, code) in [
         (
-            format!("/api/templates/{template_id}/clone"),
-            json!({"new_name": "Evening copy"}),
+            &clone_path,
+            "Evening copy",
             StatusCode::CONFLICT,
             "CONFLICT",
         ),
         (
-            format!("/api/templates/{template_id}/clone"),
-            json!({"new_name": ""}),
+            &clone_path,
+            "",
             StatusCode::UNPROCESSABLE_ENTITY,
             "VALIDATION_ERROR",
         ),
         (
-            "/api/templates/missing/clone".to_string(),
-            json!({"new_name": "Other"}),
+            &"/api/templates/missing/clone".to_string(),
+            "Other",
             StatusCode::NOT_FOUND,
             "NOT_FOUND",
         ),
     ] {
-        let refused = app.post(&path, &token, &body).await;
+        let refused = app.post(path, &token, &json!({"new_name": new_name})).await;
         refused.assert_error(status, code);
     }
-    assert_eq!(template_total(&app, &token).await, 2);
+    assert_eq!(total(&app, &token, "/api/templates").await, 2);
 
     app.put(
         &format!("/api/streamers/{}", id_of(&streamer)),
@@ -579,16 +506,10 @@ async fn templates_are_replaced_whole_counted_by_their_streamers_and_cloned() {
         &json!({"template_id": null}),
     )
     .await
-    .expect_status(StatusCode::OK);
-    let deleted = app
-        .delete(&format!("/api/templates/{template_id}"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    .ok();
+    let deleted = app.delete(&path, &token).await.ok();
     assert_eq!(deleted["success"], true);
-    let gone = app
-        .get(&format!("/api/templates/{template_id}"), &token)
-        .await;
+    let gone = app.get(&path, &token).await;
     gone.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
     let unknown = app.delete("/api/templates/missing", &token).await;
     unknown.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
@@ -603,16 +524,15 @@ async fn a_template_stays_until_its_deleted_streamer_is_reaped() {
     let template = app
         .post("/api/templates", &token, &json!({"name": "Held"}))
         .await
-        .expect_status(StatusCode::CREATED)
-        .body;
-    let template_id = id_of(&template);
+        .created();
+    let path = format!("/api/templates/{}", id_of(&template));
     let streamer = app
         .create_disabled_streamer(
             &token,
             json!({
                 "name": "Retiring",
                 "url": "https://live.bilibili.com/9002",
-                "template_id": template_id,
+                "template_id": template["id"],
             }),
         )
         .await;
@@ -620,59 +540,41 @@ async fn a_template_stays_until_its_deleted_streamer_is_reaped() {
     // An ended session whose session-complete pipeline was never dispatched
     // keeps the streamer's retirement outstanding, so its row stays marked
     // deleted instead of being reaped.
-    let database = app.database().await;
     let now = now_ms();
-    sqlx::query(
-        "INSERT INTO live_sessions (id, streamer_id, streamer_name, start_time, end_time, session_complete_dispatched) VALUES (?, ?, ?, ?, ?, 0)",
-    )
-    .bind("held-session")
-    .bind(&streamer_id)
-    .bind("Retiring")
-    .bind(now - 60_000)
-    .bind(now - 30_000)
-    .execute(&database)
-    .await
-    .expect("seed an unsettled session");
+    app.run_sql(&format!(
+        "INSERT INTO live_sessions (id, streamer_id, streamer_name, start_time, end_time, \
+             session_complete_dispatched) \
+         VALUES ('held-session', '{streamer_id}', 'Retiring', {}, {}, 0);",
+        now - 60_000,
+        now - 30_000
+    ))
+    .await;
 
     app.delete(&format!("/api/streamers/{streamer_id}"), &token)
         .await
-        .expect_status(StatusCode::OK);
-    let marked: Option<i64> =
-        sqlx::query_scalar("SELECT deleted_at IS NOT NULL FROM streamers WHERE id = ?")
-            .bind(&streamer_id)
-            .fetch_optional(&database)
-            .await
-            .expect("read the streamer row");
-    assert_eq!(marked, Some(1), "the row stays marked while work is owed");
-
-    let stored = app
-        .get(&format!("/api/templates/{template_id}"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(stored["usage_count"], 0, "a deleted streamer is not a user");
-    let refused = app
-        .delete(&format!("/api/templates/{template_id}"), &token)
+        .ok();
+    let marked = app
+        .query_i64(&format!(
+            "SELECT COUNT(*) FROM streamers WHERE id = '{streamer_id}' AND deleted_at IS NOT NULL"
+        ))
         .await;
+    assert_eq!(marked, 1, "the row stays marked while work is owed");
+
+    let stored = get_ok(&app, &token, &path).await;
+    assert_eq!(stored["usage_count"], 0, "a deleted streamer is not a user");
+    let refused = app.delete(&path, &token).await;
     refused.assert_error(StatusCode::CONFLICT, "CONFLICT");
-    app.get(&format!("/api/templates/{template_id}"), &token)
-        .await
-        .expect_status(StatusCode::OK);
-    database.close().await;
+    get_ok(&app, &token, &path).await;
 
     app.shutdown().await;
 }
 
 #[tokio::test]
-async fn engines_are_edited_partially_and_their_test_reports_availability() {
+async fn engines_are_validated_against_their_type_edited_partially_and_tested() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 
-    let listed = app
-        .get("/api/engines", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let listed = get_ok(&app, &token, "/api/engines").await;
     let mut defaults: Vec<&str> = listed
         .as_array()
         .expect("engine list")
@@ -685,33 +587,24 @@ async fn engines_are_edited_partially_and_their_test_reports_availability() {
         ["default-ffmpeg", "default-mesio", "default-streamlink"]
     );
 
-    let mesio = app
-        .post(
-            "/api/engines",
-            &token,
-            &json!({"name": "Fast mesio", "engine_type": "MESIO", "config": {"fix_flv": false}}),
-        )
-        .await
-        .expect_status(StatusCode::CREATED)
-        .body;
-    let mesio_id = id_of(&mesio);
+    let create = |body: Value| {
+        let (app, token) = (&app, &token);
+        async move { app.post("/api/engines", token, &body).await }
+    };
+    let mesio =
+        create(json!({"name": "Fast mesio", "engine_type": "MESIO", "config": {"fix_flv": false}}))
+            .await
+            .created();
+    let mesio_path = format!("/api/engines/{}", id_of(&mesio));
     assert_eq!(mesio["engine_type"], "MESIO");
     // The settings page parses `config` from a JSON string.
-    let config: Value =
-        serde_json::from_str(mesio["config"].as_str().expect("config is a JSON string"))
-            .expect("config parses");
-    assert_eq!(config, json!({"fix_flv": false}));
-    let stored = app
-        .get(&format!("/api/engines/{mesio_id}"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(stored, mesio);
-    let tested = app
-        .get(&format!("/api/engines/{mesio_id}/test"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let config_of = |engine: &Value| -> Value {
+        serde_json::from_str(engine["config"].as_str().expect("config is a JSON string"))
+            .expect("config parses")
+    };
+    assert_eq!(config_of(&mesio), json!({"fix_flv": false}));
+    assert_eq!(get_ok(&app, &token, &mesio_path).await, mesio);
+    let tested = get_ok(&app, &token, &format!("{mesio_path}/test")).await;
     assert_eq!(tested["available"], true);
     assert!(
         tested["version"]
@@ -722,73 +615,66 @@ async fn engines_are_edited_partially_and_their_test_reports_availability() {
 
     // PATCH changes only the fields it carries.
     let renamed = app
-        .patch(
-            &format!("/api/engines/{mesio_id}"),
-            &token,
-            &json!({"name": "Renamed mesio"}),
-        )
+        .patch(&mesio_path, &token, &json!({"name": "Renamed mesio"}))
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(renamed["name"], "Renamed mesio");
     assert_eq!(renamed["config"], mesio["config"]);
     let reconfigured = app
         .patch(
-            &format!("/api/engines/{mesio_id}"),
+            &mesio_path,
             &token,
             &json!({"config": {"fix_flv": true, "fix_hls": false}}),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(reconfigured["name"], "Renamed mesio");
-    let stored = app
-        .get(&format!("/api/engines/{mesio_id}"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let stored = get_ok(&app, &token, &mesio_path).await;
     assert_eq!(stored, reconfigured);
     assert_eq!(
-        serde_json::from_str::<Value>(stored["config"].as_str().unwrap_or_default())
-            .expect("config parses"),
+        config_of(&stored),
         json!({"fix_flv": true, "fix_hls": false})
     );
 
-    let ffmpeg = app
-        .post(
-            "/api/engines",
-            &token,
-            &json!({
-                "name": "Missing ffmpeg",
-                "engine_type": "FFMPEG",
-                "config": {"binary_path": "/nonexistent/ffmpeg"},
-            }),
-        )
-        .await
-        .expect_status(StatusCode::CREATED)
-        .body;
-    let tested = app
-        .get(&format!("/api/engines/{}/test", id_of(&ffmpeg)), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let ffmpeg = create(json!({
+        "name": "Missing ffmpeg",
+        "engine_type": "FFMPEG",
+        "config": {"binary_path": "/nonexistent/ffmpeg"},
+    }))
+    .await
+    .created();
+    let ffmpeg_test = format!("/api/engines/{}/test", id_of(&ffmpeg));
+    let tested = get_ok(&app, &token, &ffmpeg_test).await;
     assert_eq!(tested, json!({"available": false, "version": null}));
 
-    let bad_type = app
-        .post(
-            "/api/engines",
+    // A type or config that does not fit is refused, on create and on edit.
+    let bad_type = create(json!({"name": "Lowercase", "engine_type": "mesio", "config": {}})).await;
+    assert_eq!(bad_type.status, StatusCode::UNPROCESSABLE_ENTITY);
+    create(json!({"name": "Broken", "engine_type": "FFMPEG", "config": {"binary_path": 5}}))
+        .await
+        .assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
+    let fits =
+        create(json!({"name": "Fits", "engine_type": "FFMPEG", "config": {"timeout_secs": 10}}))
+            .await
+            .created();
+    let fits_path = format!("/api/engines/{}", id_of(&fits));
+    let refused = app
+        .patch(
+            &fits_path,
             &token,
-            &json!({"name": "Lowercase", "engine_type": "mesio", "config": {}}),
+            &json!({"config": {"timeout_secs": "soon"}}),
         )
         .await;
-    assert_eq!(bad_type.status, StatusCode::UNPROCESSABLE_ENTITY);
+    refused.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
+    assert_eq!(
+        get_ok(&app, &token, &fits_path).await["config"],
+        fits["config"]
+    );
 
-    app.delete(&format!("/api/engines/{mesio_id}"), &token)
-        .await
-        .expect_status(StatusCode::OK);
+    app.delete(&mesio_path, &token).await.ok();
     for (method, path) in [
-        (Method::GET, format!("/api/engines/{mesio_id}")),
-        (Method::DELETE, format!("/api/engines/{mesio_id}")),
+        (Method::GET, mesio_path.clone()),
+        (Method::DELETE, mesio_path),
         (Method::GET, "/api/engines/missing/test".to_string()),
     ] {
         let missing = app.send(method, &path, Some(&token), None).await;
@@ -798,61 +684,10 @@ async fn engines_are_edited_partially_and_their_test_reports_availability() {
         .patch("/api/engines/missing", &token, &json!({"name": "x"}))
         .await;
     missing.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
-    let listed = app
-        .get("/api/engines", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(listed.as_array().map(Vec::len), Some(4));
-
-    app.shutdown().await;
-}
-
-#[tokio::test]
-async fn an_engine_config_that_does_not_fit_its_type_is_refused() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-
-    let created = app
-        .post(
-            "/api/engines",
-            &token,
-            &json!({"name": "Broken", "engine_type": "FFMPEG", "config": {"binary_path": 5}}),
-        )
-        .await;
-    created.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
-    let listed = app
-        .get("/api/engines", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert!(
-        listed
-            .as_array()
-            .is_some_and(|engines| engines.iter().all(|engine| engine["name"] != "Broken")),
-        "{listed}"
-    );
-
-    let engine = app
-        .post(
-            "/api/engines",
-            &token,
-            &json!({"name": "Fits", "engine_type": "FFMPEG", "config": {"timeout_secs": 10}}),
-        )
-        .await
-        .expect_status(StatusCode::CREATED)
-        .body;
-    let path = format!("/api/engines/{}", id_of(&engine));
-    let updated = app
-        .patch(&path, &token, &json!({"config": {"timeout_secs": "soon"}}))
-        .await;
-    updated.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
-    let stored = app
-        .get(&path, &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(stored["config"], engine["config"]);
+    // The defaults, the missing ffmpeg and the one that fits: nothing
+    // refused was stored.
+    let listed = get_ok(&app, &token, "/api/engines").await;
+    assert_eq!(listed.as_array().map(Vec::len), Some(5), "{listed}");
 
     app.shutdown().await;
 }
@@ -868,11 +703,7 @@ async fn a_stored_engine_config_that_does_not_fit_its_type_still_loads() {
     .await;
     let token = app.admin_token().await;
 
-    let listed = app
-        .get("/api/engines", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let listed = get_ok(&app, &token, "/api/engines").await;
     assert!(
         listed
             .as_array()
@@ -882,8 +713,7 @@ async fn a_stored_engine_config_that_does_not_fit_its_type_still_loads() {
     let renamed = app
         .patch("/api/engines/legacy", &token, &json!({"name": "Renamed"}))
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(renamed["name"], "Renamed");
     assert_eq!(renamed["config"], r#"{"binary_path":5}"#);
     let fixed = app
@@ -893,8 +723,7 @@ async fn a_stored_engine_config_that_does_not_fit_its_type_still_loads() {
             &json!({"config": {"binary_path": "/usr/bin/ffmpeg"}}),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(fixed["config"], r#"{"binary_path":"/usr/bin/ffmpeg"}"#);
 
     app.shutdown().await;
@@ -921,7 +750,7 @@ async fn saved_proxies_never_return_their_password_and_report_conflicts_by_code(
         .expect_status(StatusCode::CREATED);
     assert!(!created.text.contains(PASSWORD), "{}", created.text);
     let proxy = created.body;
-    let proxy_id = id_of(&proxy);
+    let path = format!("/api/proxies/{}", id_of(&proxy));
     assert_eq!(proxy["name"], "Office");
     assert_eq!(proxy["url"], "http://10.20.30.40:3128");
     assert_eq!(proxy["scheme"], "http");
@@ -983,10 +812,7 @@ async fn saved_proxies_never_return_their_password_and_report_conflicts_by_code(
         .expect_status(StatusCode::OK);
     assert!(!listed.text.contains(PASSWORD));
     assert_eq!(listed.body, json!([proxy]));
-    let detail = app
-        .get(&format!("/api/proxies/{proxy_id}"), &token)
-        .await
-        .expect_status(StatusCode::OK);
+    let detail = app.get(&path, &token).await.expect_status(StatusCode::OK);
     assert!(!detail.text.contains(PASSWORD));
     assert_eq!(detail.body["proxy"], proxy);
     assert_eq!(
@@ -997,20 +823,19 @@ async fn saved_proxies_never_return_their_password_and_report_conflicts_by_code(
     // An omitted password is kept.
     let renamed = app
         .patch(
-            &format!("/api/proxies/{proxy_id}"),
+            &path,
             &token,
             &json!({"expected_version": 1, "name": "Office 2"}),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(renamed["name"], "Office 2");
     assert_eq!(renamed["version"], 2);
     assert_eq!(renamed["username"], "recorder");
     assert_eq!(renamed["has_password"], true);
     let stale = app
         .patch(
-            &format!("/api/proxies/{proxy_id}"),
+            &path,
             &token,
             &json!({"expected_version": 1, "name": "Lost update"}),
         )
@@ -1019,39 +844,27 @@ async fn saved_proxies_never_return_their_password_and_report_conflicts_by_code(
     // A null username removes the whole login.
     let anonymous = app
         .patch(
-            &format!("/api/proxies/{proxy_id}"),
+            &path,
             &token,
             &json!({"expected_version": 2, "username": null}),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(anonymous["username"], Value::Null);
     assert_eq!(anonymous["has_password"], false);
     assert_eq!(anonymous["version"], 3);
 
     let stale = app
-        .delete(
-            &format!("/api/proxies/{proxy_id}?expected_version=2"),
-            &token,
-        )
+        .delete(&format!("{path}?expected_version=2"), &token)
         .await;
     stale.assert_error(StatusCode::CONFLICT, "PROXY_STALE_VERSION");
     let deleted = app
-        .delete(
-            &format!("/api/proxies/{proxy_id}?expected_version=3"),
-            &token,
-        )
+        .delete(&format!("{path}?expected_version=3"), &token)
         .await;
     assert_eq!(deleted.status, StatusCode::NO_CONTENT, "{}", deleted.text);
-    let gone = app.get(&format!("/api/proxies/{proxy_id}"), &token).await;
+    let gone = app.get(&path, &token).await;
     gone.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
-    let listed = app
-        .get("/api/proxies", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(listed, json!([]));
+    assert_eq!(get_ok(&app, &token, "/api/proxies").await, json!([]));
 
     app.shutdown().await;
 }
@@ -1067,10 +880,9 @@ async fn a_proxy_in_use_cannot_be_deleted_and_the_refusal_lists_every_user() {
             &json!({"name": "Shared", "url": "socks5://10.9.8.7:1080"}),
         )
         .await
-        .expect_status(StatusCode::CREATED)
-        .body;
-    let proxy_id = id_of(&proxy);
-    let route = json!({"kind": "proxy", "id": proxy_id});
+        .created();
+    let proxy_path = format!("/api/proxies/{}", id_of(&proxy));
+    let route = json!({"kind": "proxy", "id": proxy["id"]});
 
     // A route naming a proxy that does not exist is refused, and refused
     // writes leave nothing behind.
@@ -1088,16 +900,19 @@ async fn a_proxy_in_use_cannot_be_deleted_and_the_refusal_lists_every_user() {
         .await;
     missing.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "PROXY_NOT_FOUND");
     assert_eq!(missing.body["details"], json!({"proxy_id": "gone"}));
-    assert_eq!(streamer_total(&app, &token).await, 0);
+    assert_eq!(total(&app, &token, "/api/streamers").await, 0);
 
     app.patch("/api/config/global", &token, &json!({"proxy_route": route}))
         .await
-        .expect_status(StatusCode::OK);
-    put_platform(&app, &token, "platform-bilibili", |body| {
-        body.insert("proxy_route".into(), route.clone());
-    })
-    .await
-    .expect_status(StatusCode::OK);
+        .ok();
+    set_platform_field(
+        &app,
+        &token,
+        "platform-bilibili",
+        "proxy_route",
+        route.clone(),
+    )
+    .await;
     let template = app
         .post(
             "/api/templates",
@@ -1105,8 +920,7 @@ async fn a_proxy_in_use_cannot_be_deleted_and_the_refusal_lists_every_user() {
             &json!({"name": "Routed template", "proxy_route": route}),
         )
         .await
-        .expect_status(StatusCode::CREATED)
-        .body;
+        .created();
     let streamer = app
         .create_disabled_streamer(
             &token,
@@ -1135,25 +949,17 @@ async fn a_proxy_in_use_cannot_be_deleted_and_the_refusal_lists_every_user() {
             "platform_name": "bilibili",
         }],
     });
-    let refused = app
-        .delete(&format!("/api/proxies/{proxy_id}"), &token)
-        .await;
+    let refused = app.delete(&proxy_path, &token).await;
     refused.assert_error(StatusCode::CONFLICT, "PROXY_REFERENCED");
     assert_eq!(
         refused.body["details"],
         json!({"references": expected_references})
     );
-    let listed = app
-        .get("/api/proxies", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(listed[0]["usage_count"], 5);
-    let detail = app
-        .get(&format!("/api/proxies/{proxy_id}"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    assert_eq!(
+        get_ok(&app, &token, "/api/proxies").await[0]["usage_count"],
+        5
+    );
+    let detail = get_ok(&app, &token, &proxy_path).await;
     assert_eq!(detail["references"], expected_references);
     assert_eq!(detail["proxy"]["usage_count"], 5);
 
@@ -1169,8 +975,7 @@ async fn the_effective_route_follows_streamer_then_template_then_platform_then_g
         let proxy = app
             .post("/api/proxies", &token, &json!({"name": name, "url": url}))
             .await
-            .expect_status(StatusCode::CREATED)
-            .body;
+            .created();
         proxies.push(id_of(&proxy));
     }
     let (proxy_a, proxy_b) = (proxies[0].clone(), proxies[1].clone());
@@ -1180,15 +985,9 @@ async fn the_effective_route_follows_streamer_then_template_then_platform_then_g
         &json!({"proxy_route": {"kind": "proxy", "id": proxy_a}}),
     )
     .await
-    .expect_status(StatusCode::OK);
-    put_platform(&app, &token, "platform-bilibili", |body| {
-        body.insert(
-            "proxy_route".into(),
-            json!({"kind": "proxy", "id": proxy_b}),
-        );
-    })
-    .await
-    .expect_status(StatusCode::OK);
+    .ok();
+    let route_b = json!({"kind": "proxy", "id": proxy_b});
+    set_platform_field(&app, &token, "platform-bilibili", "proxy_route", route_b).await;
     let template = app
         .post(
             "/api/templates",
@@ -1196,8 +995,7 @@ async fn the_effective_route_follows_streamer_then_template_then_platform_then_g
             &json!({"name": "Direct", "proxy_route": {"kind": "direct"}}),
         )
         .await
-        .expect_status(StatusCode::CREATED)
-        .body;
+        .created();
     let template_id = id_of(&template);
     let streamer = app
         .create_disabled_streamer(
@@ -1212,12 +1010,8 @@ async fn the_effective_route_follows_streamer_then_template_then_platform_then_g
     let streamer_id = id_of(&streamer);
     let streamer_query = format!("scope_type=streamer&scope_id={streamer_id}");
 
-    let resolved = effective_route(&app, &token, &streamer_query)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
     assert_eq!(
-        resolved,
+        effective_route(&app, &token, &streamer_query).await,
         json!({"kind": "direct", "proxy": null, "source": "template"})
     );
 
@@ -1232,16 +1026,12 @@ async fn the_effective_route_follows_streamer_then_template_then_platform_then_g
                 &json!({"streamer_specific_config": {"proxy_route": route}}),
             )
             .await
-            .expect_status(StatusCode::OK)
+            .ok()
         }
     };
     set_streamer_route(json!({"kind": "system"})).await;
-    let resolved = effective_route(&app, &token, &streamer_query)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
     assert_eq!(
-        resolved,
+        effective_route(&app, &token, &streamer_query).await,
         json!({"kind": "system", "proxy": null, "source": "streamer"})
     );
 
@@ -1252,11 +1042,8 @@ async fn the_effective_route_follows_streamer_then_template_then_platform_then_g
         &json!({"proxy_route": {"kind": "inherit"}}),
     )
     .await
-    .expect_status(StatusCode::OK);
-    let resolved = effective_route(&app, &token, &streamer_query)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    .ok();
+    let resolved = effective_route(&app, &token, &streamer_query).await;
     assert_eq!(
         resolved,
         json!({"kind": "proxy", "proxy": {"id": proxy_b, "name": "B"}, "source": "platform"})
@@ -1266,59 +1053,42 @@ async fn the_effective_route_follows_streamer_then_template_then_platform_then_g
         &token,
         &format!("scope_type=template&scope_id={template_id}&platform_id=platform-bilibili"),
     )
-    .await
-    .expect_status(StatusCode::OK)
-    .body;
+    .await;
     assert_eq!(template_scope, resolved);
 
-    put_platform(&app, &token, "platform-bilibili", |body| {
-        body.insert("proxy_route".into(), json!({"kind": "inherit"}));
-    })
-    .await
-    .expect_status(StatusCode::OK);
-    let resolved = effective_route(&app, &token, &streamer_query)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let inherit = json!({"kind": "inherit"});
+    set_platform_field(&app, &token, "platform-bilibili", "proxy_route", inherit).await;
     let global =
         json!({"kind": "proxy", "proxy": {"id": proxy_a, "name": "A"}, "source": "global"});
-    assert_eq!(resolved, global);
     for query in [
-        "scope_type=global".to_string(),
-        "scope_type=platform&scope_id=platform-bilibili".to_string(),
+        streamer_query.as_str(),
+        "scope_type=global",
+        "scope_type=platform&scope_id=platform-bilibili",
     ] {
-        let resolved = effective_route(&app, &token, &query)
-            .await
-            .expect_status(StatusCode::OK)
-            .body;
-        assert_eq!(resolved, global, "{query}");
+        assert_eq!(
+            effective_route(&app, &token, query).await,
+            global,
+            "{query}"
+        );
     }
 
-    for (query, status, code) in [
-        (
-            "scope_type=everything",
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "VALIDATION_ERROR",
-        ),
-        (
-            "scope_type=platform",
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "VALIDATION_ERROR",
-        ),
-        (
-            "scope_type=streamer&scope_id=%20",
-            StatusCode::UNPROCESSABLE_ENTITY,
-            "VALIDATION_ERROR",
-        ),
-        (
-            "scope_type=streamer&scope_id=missing",
-            StatusCode::NOT_FOUND,
-            "NOT_FOUND",
-        ),
+    for query in [
+        "scope_type=everything",
+        "scope_type=platform",
+        "scope_type=streamer&scope_id=%20",
     ] {
-        let refused = effective_route(&app, &token, query).await;
-        refused.assert_error(status, code);
+        let refused = app
+            .get(&format!("/api/proxies/effective?{query}"), &token)
+            .await;
+        refused.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
     }
+    let refused = app
+        .get(
+            "/api/proxies/effective?scope_type=streamer&scope_id=missing",
+            &token,
+        )
+        .await;
+    refused.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
 
     app.shutdown().await;
 }
@@ -1332,13 +1102,18 @@ async fn the_proxy_check_guards_its_target_and_reports_what_the_proxy_answered()
     // public literal the guard accepts) is never contacted.
     const TARGET: &str = "http://1.1.1.1/";
     let open = LocalHttpServer::start(204, "").await;
+    let check = |body: Value| {
+        let app = &app;
+        let token = &token;
+        async move { app.post("/api/proxies/test", token, &body).await }
+    };
 
     for body in [
         json!({"url": open.url("")}),
         json!({"url": open.url(""), "platform": "bilibili", "target_url": TARGET}),
         json!({"url": open.url(""), "platform": "nowhere"}),
     ] {
-        let refused = app.post("/api/proxies/test", &token, &body).await;
+        let refused = check(body).await;
         refused.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
     }
     for target in [
@@ -1349,26 +1124,14 @@ async fn the_proxy_check_guards_its_target_and_reports_what_the_proxy_answered()
         "http://10.1.2.3/",
         "not a url",
     ] {
-        let refused = app
-            .post(
-                "/api/proxies/test",
-                &token,
-                &json!({"url": open.url(""), "target_url": target}),
-            )
-            .await;
+        let refused = check(json!({"url": open.url(""), "target_url": target})).await;
         refused.assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
     }
     assert!(open.received().is_empty(), "refused checks send nothing");
 
-    let reached = app
-        .post(
-            "/api/proxies/test",
-            &token,
-            &json!({"url": open.url(""), "target_url": TARGET}),
-        )
+    let reached = check(json!({"url": open.url(""), "target_url": TARGET}))
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(reached["ok"], true, "{reached}");
     assert_eq!(reached["status"], 204);
     assert_eq!(reached["error"], Value::Null);
@@ -1379,29 +1142,16 @@ async fn the_proxy_check_guards_its_target_and_reports_what_the_proxy_answered()
     assert_eq!(received[0].path, TARGET, "a forward-proxy request");
 
     let guarded = LocalHttpServer::start(407, "").await;
-    let refused_login = app
-        .post(
-            "/api/proxies/test",
-            &token,
-            &json!({"url": guarded.url(""), "target_url": TARGET}),
-        )
+    let refused_login = check(json!({"url": guarded.url(""), "target_url": TARGET}))
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(refused_login["ok"], false);
     assert_eq!(refused_login["error"], "proxy_authentication_required");
 
     let closed = ClosedPort::reserve();
-    let closed_url = closed.url("");
-    let unreachable = app
-        .post(
-            "/api/proxies/test",
-            &token,
-            &json!({"url": closed_url, "target_url": TARGET}),
-        )
+    let unreachable = check(json!({"url": closed.url(""), "target_url": TARGET}))
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(unreachable["ok"], false);
     assert_eq!(unreachable["error"], "connect_failed");
     assert_eq!(unreachable["status"], Value::Null);
@@ -1419,18 +1169,12 @@ async fn the_proxy_check_guards_its_target_and_reports_what_the_proxy_answered()
             }),
         )
         .await
-        .expect_status(StatusCode::CREATED)
-        .body;
+        .created();
     let edited = LocalHttpServer::start(200, "").await;
-    let checked = app
-        .post(
-            "/api/proxies/test",
-            &token,
-            &json!({"proxy_id": saved["id"], "url": edited.url(""), "target_url": TARGET}),
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let checked =
+        check(json!({"proxy_id": saved["id"], "url": edited.url(""), "target_url": TARGET}))
+            .await
+            .ok();
     assert_eq!(checked["ok"], true, "{checked}");
     use base64::Engine as _;
     let expected = format!(
@@ -1443,13 +1187,7 @@ async fn the_proxy_check_guards_its_target_and_reports_what_the_proxy_answered()
         received[0].header("proxy-authorization"),
         Some(expected.as_str())
     );
-    let unknown = app
-        .post(
-            "/api/proxies/test",
-            &token,
-            &json!({"proxy_id": "missing", "target_url": TARGET}),
-        )
-        .await;
+    let unknown = check(json!({"proxy_id": "missing", "target_url": TARGET})).await;
     unknown.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
 
     // Private targets are refused only until the operator allows them.
@@ -1459,16 +1197,10 @@ async fn the_proxy_check_guards_its_target_and_reports_what_the_proxy_answered()
         &json!({"stream_proxy_allow_private_targets": true}),
     )
     .await
-    .expect_status(StatusCode::OK);
-    let private = app
-        .post(
-            "/api/proxies/test",
-            &token,
-            &json!({"url": open.url(""), "target_url": "http://127.0.0.1:9/"}),
-        )
+    .ok();
+    let private = check(json!({"url": open.url(""), "target_url": "http://127.0.0.1:9/"}))
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(private["ok"], true, "{private}");
 
     app.shutdown().await;
@@ -1480,17 +1212,8 @@ async fn account_selections_round_trip_on_streamers_and_templates() {
     let token = app.admin_token().await;
     let account = create_profile(&app, &token, bilibili_profile("Main")).await;
     let account_id = id_of(&account);
-    let huya_account = create_profile(
-        &app,
-        &token,
-        json!({
-            "platform_id": "platform-huya",
-            "label": "Huya",
-            "enabled": true,
-            "material": {"cookies": "udb=1"},
-        }),
-    )
-    .await;
+    let huya_account =
+        create_profile(&app, &token, profile("platform-huya", "Huya", "udb=1")).await;
 
     let created = app
         .create_disabled_streamer(
@@ -1505,7 +1228,7 @@ async fn account_selections_round_trip_on_streamers_and_templates() {
             }),
         )
         .await;
-    let streamer_id = id_of(&created);
+    let path = format!("/api/streamers/{}", id_of(&created));
     // The strict frontend schema needs every pool setting, so omitted ones
     // come back with their recommended defaults.
     let pool = json!({
@@ -1523,66 +1246,59 @@ async fn account_selections_round_trip_on_streamers_and_templates() {
     // A write that omits the selection keeps it.
     let kept = app
         .put(
-            &format!("/api/streamers/{streamer_id}"),
+            &path,
             &token,
             &json!({"streamer_specific_config": {"record_danmu": false}}),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(
         kept["streamer_specific_config"],
         json!({"credential_selection": pool, "record_danmu": false})
     );
-    let stored = app
-        .get(&format!("/api/streamers/{streamer_id}"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
     assert_eq!(
-        stored["streamer_specific_config"],
+        get_ok(&app, &token, &path).await["streamer_specific_config"],
         kept["streamer_specific_config"]
     );
     let removed = app
         .put(
-            &format!("/api/streamers/{streamer_id}"),
+            &path,
             &token,
             &json!({"streamer_specific_config": {"credential_selection": {"mode": "inherit"}}}),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(removed["streamer_specific_config"], json!({}));
 
-    let cookies = app
-        .post(
-            "/api/streamers",
-            &token,
-            &json!({
-                "name": "Cookies",
-                "url": "https://live.bilibili.com/9031",
-                "enabled": false,
-                "streamer_specific_config": {"cookies": "SESSDATA=raw"},
-            }),
-        )
-        .await;
-    cookies.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
-    let foreign = app
-        .post(
-            "/api/streamers",
-            &token,
-            &json!({
-                "name": "Foreign account",
-                "url": "https://live.bilibili.com/9032",
-                "enabled": false,
-                "streamer_specific_config": {
-                    "credential_selection": {"mode": "fixed", "credential_id": huya_account["id"]},
-                },
-            }),
-        )
-        .await;
-    foreign.assert_error(StatusCode::CONFLICT, "CREDENTIAL_REFERENCE_INACCESSIBLE");
-    assert_eq!(streamer_total(&app, &token).await, 1);
+    for (name, config, status, code) in [
+        (
+            "Cookies",
+            json!({"cookies": "SESSDATA=raw"}),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "VALIDATION_ERROR",
+        ),
+        (
+            "Foreign account",
+            json!({"credential_selection": {"mode": "fixed", "credential_id": huya_account["id"]}}),
+            StatusCode::CONFLICT,
+            "CREDENTIAL_REFERENCE_INACCESSIBLE",
+        ),
+    ] {
+        let refused = app
+            .post(
+                "/api/streamers",
+                &token,
+                &json!({
+                    "name": name,
+                    "url": "https://live.bilibili.com/9031",
+                    "enabled": false,
+                    "streamer_specific_config": config,
+                }),
+            )
+            .await;
+        refused.assert_error(status, code);
+    }
+    assert_eq!(total(&app, &token, "/api/streamers").await, 1);
 
     // Template overrides are keyed by the stored lowercase platform name.
     let capitalised = app
@@ -1596,7 +1312,7 @@ async fn account_selections_round_trip_on_streamers_and_templates() {
         )
         .await;
     capitalised.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
-    assert_eq!(template_total(&app, &token).await, 0);
+    assert_eq!(total(&app, &token, "/api/templates").await, 0);
     let fixed = json!({"mode": "fixed", "credential_id": account_id});
     let template = app
         .post(
@@ -1608,32 +1324,28 @@ async fn account_selections_round_trip_on_streamers_and_templates() {
             }),
         )
         .await
-        .expect_status(StatusCode::CREATED)
-        .body;
+        .created();
     assert_eq!(
         template["platform_overrides"],
         json!({"bilibili": {"credential_selection": fixed, "quality": 1}})
     );
-    let template_id = id_of(&template);
+    let template_path = format!("/api/templates/{}", id_of(&template));
     let replaced = app
         .put(
-            &format!("/api/templates/{template_id}"),
+            &template_path,
             &token,
             &json!({"platform_overrides": {"bilibili": {"quality": 2}}}),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(
         replaced["platform_overrides"],
         json!({"bilibili": {"credential_selection": fixed, "quality": 2}})
     );
-    let stored = app
-        .get(&format!("/api/templates/{template_id}"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(stored["platform_overrides"], replaced["platform_overrides"]);
+    assert_eq!(
+        get_ok(&app, &token, &template_path).await["platform_overrides"],
+        replaced["platform_overrides"]
+    );
 
     app.shutdown().await;
 }
@@ -1643,21 +1355,24 @@ async fn profile_writes_return_the_conflict_codes_the_editor_reads() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
     let account = create_profile(&app, &token, bilibili_profile("Shared")).await;
-    let account_id = id_of(&account);
-    let fixed = json!({"mode": "fixed", "credential_id": account_id});
+    let path = format!("/api/credentials/profiles/{}", id_of(&account));
+    let fixed = json!({"mode": "fixed", "credential_id": account["id"]});
 
     // The platform carries its selection as JSON text.
-    put_platform(&app, &token, "platform-bilibili", |body| {
-        body.insert("credential_selection".into(), json!(fixed.to_string()));
-    })
-    .await
-    .expect_status(StatusCode::OK);
+    let selection = json!(fixed.to_string());
+    set_platform_field(
+        &app,
+        &token,
+        "platform-bilibili",
+        "credential_selection",
+        selection,
+    )
+    .await;
     let kept = put_platform(&app, &token, "platform-bilibili", |body| {
         body.remove("credential_selection");
     })
     .await
-    .expect_status(StatusCode::OK)
-    .body;
+    .ok();
     let stored: Value = serde_json::from_str(
         kept["credential_selection"]
             .as_str()
@@ -1675,8 +1390,7 @@ async fn profile_writes_return_the_conflict_codes_the_editor_reads() {
             }),
         )
         .await
-        .expect_status(StatusCode::CREATED)
-        .body;
+        .created();
     let streamer = app
         .create_disabled_streamer(
             &token,
@@ -1688,21 +1402,15 @@ async fn profile_writes_return_the_conflict_codes_the_editor_reads() {
         )
         .await;
 
-    let delete_profile = |version: i64| {
-        let app = &app;
-        let token = &token;
-        let path = format!("/api/credentials/profiles/{account_id}");
+    let delete_profile = || {
+        let (app, token, path) = (&app, &token, &path);
+        let body = json!({"expected_version": 1});
         async move {
-            app.send(
-                Method::DELETE,
-                &path,
-                Some(token),
-                Some(&json!({"expected_version": version})),
-            )
-            .await
+            app.send(Method::DELETE, path, Some(token), Some(&body))
+                .await
         }
     };
-    let referenced = delete_profile(1).await;
+    let referenced = delete_profile().await;
     referenced.assert_error(StatusCode::CONFLICT, "CREDENTIAL_PROFILE_REFERENCED");
     let selection = |owner: Value, name: &str| {
         json!({
@@ -1723,11 +1431,7 @@ async fn profile_writes_return_the_conflict_codes_the_editor_reads() {
             "recordings": [],
         })
     );
-    let detail = app
-        .get(&format!("/api/credentials/profiles/{account_id}"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let detail = get_ok(&app, &token, &path).await;
     assert_eq!(
         detail["references"],
         referenced.body["details"]["references"]
@@ -1736,43 +1440,37 @@ async fn profile_writes_return_the_conflict_codes_the_editor_reads() {
 
     let stale = app
         .patch(
-            &format!("/api/credentials/profiles/{account_id}"),
+            &path,
             &token,
             &json!({"expected_version": 0, "label": "Lost update"}),
         )
         .await;
     stale.assert_error(StatusCode::CONFLICT, "CREDENTIAL_STALE_VERSION");
 
-    put_platform(&app, &token, "platform-bilibili", |body| {
-        body.insert(
-            "credential_selection".into(),
-            json!(json!({"mode": "inherit"}).to_string()),
-        );
-    })
-    .await
-    .expect_status(StatusCode::OK);
+    let inherit = json!(json!({"mode": "inherit"}).to_string());
+    set_platform_field(
+        &app,
+        &token,
+        "platform-bilibili",
+        "credential_selection",
+        inherit,
+    )
+    .await;
     app.delete(&format!("/api/templates/{}", id_of(&template)), &token)
         .await
-        .expect_status(StatusCode::OK);
+        .ok();
     app.delete(&format!("/api/streamers/{}", id_of(&streamer)), &token)
         .await
-        .expect_status(StatusCode::OK);
-    let deleted = delete_profile(1).await.expect_status(StatusCode::OK).body;
-    assert_eq!(deleted, json!({"deleted": true}));
-    let gone = app
-        .get(&format!("/api/credentials/profiles/{account_id}"), &token)
-        .await;
+        .ok();
+    assert_eq!(delete_profile().await.ok(), json!({"deleted": true}));
+    let gone = app.get(&path, &token).await;
     gone.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
 
     // A Streamlink account names its sites; two accounts cannot share one.
     let streamlink = |label: &str, site: &str| {
-        json!({
-            "platform_id": "platform-streamlink",
-            "label": label,
-            "enabled": true,
-            "material": {"cookies": "SID=1"},
-            "sites": [site],
-        })
+        let mut account = profile("platform-streamlink", label, "SID=1");
+        account["sites"] = json!([site]);
+        account
     };
     create_profile(&app, &token, streamlink("YouTube", "youtube.com")).await;
     let taken = app
@@ -1801,14 +1499,15 @@ async fn the_effective_account_selection_follows_streamer_then_template_then_pla
     }
     let fixed = |id: &str| json!({"mode": "fixed", "credential_id": id});
 
-    put_platform(&app, &token, "platform-bilibili", |body| {
-        body.insert(
-            "credential_selection".into(),
-            json!(fixed(&ids[0]).to_string()),
-        );
-    })
-    .await
-    .expect_status(StatusCode::OK);
+    let selection = json!(fixed(&ids[0]).to_string());
+    set_platform_field(
+        &app,
+        &token,
+        "platform-bilibili",
+        "credential_selection",
+        selection,
+    )
+    .await;
     let template = app
         .post(
             "/api/templates",
@@ -1819,8 +1518,7 @@ async fn the_effective_account_selection_follows_streamer_then_template_then_pla
             }),
         )
         .await
-        .expect_status(StatusCode::CREATED)
-        .body;
+        .created();
     let template_id = id_of(&template);
     let streamer = app
         .create_disabled_streamer(
@@ -1834,17 +1532,8 @@ async fn the_effective_account_selection_follows_streamer_then_template_then_pla
         )
         .await;
     let streamer_id = id_of(&streamer);
-    let selection_of = |scope: &str| {
-        let app = &app;
-        let token = &token;
-        let path = format!("/api/credentials/selection?{scope}&platform_id=platform-bilibili");
-        async move {
-            app.get(&path, token)
-                .await
-                .expect_status(StatusCode::OK)
-                .body
-        }
-    };
+    let selection_path =
+        |scope: &str| format!("/api/credentials/selection?{scope}&platform_id=platform-bilibili");
     let streamer_scope = format!("scope_type=streamer&scope_id={streamer_id}");
     let candidate_ids = |effective: &Value| -> Vec<String> {
         effective["candidates"]
@@ -1860,7 +1549,7 @@ async fn the_effective_account_selection_follows_streamer_then_template_then_pla
             .collect()
     };
 
-    let effective = selection_of(&streamer_scope).await;
+    let effective = get_ok(&app, &token, &selection_path(&streamer_scope)).await;
     assert_eq!(effective["configured"], fixed(&ids[2]));
     assert_eq!(
         effective["resolved"]["owner"],
@@ -1877,16 +1566,19 @@ async fn the_effective_account_selection_follows_streamer_then_template_then_pla
         &json!({"streamer_specific_config": {"credential_selection": {"mode": "inherit"}}}),
     )
     .await
-    .expect_status(StatusCode::OK);
-    let effective = selection_of(&streamer_scope).await;
+    .ok();
+    let effective = get_ok(&app, &token, &selection_path(&streamer_scope)).await;
     assert_eq!(effective["configured"], Value::Null);
     assert_eq!(
         effective["resolved"]["owner"],
         json!({"type": "template", "template_id": template_id})
     );
     assert_eq!(candidate_ids(&effective), [ids[1].clone()]);
-    let template_scope = selection_of(&format!("scope_type=template&scope_id={template_id}")).await;
-    assert_eq!(template_scope["configured"], fixed(&ids[1]));
+    let template_scope = selection_path(&format!("scope_type=template&scope_id={template_id}"));
+    assert_eq!(
+        get_ok(&app, &token, &template_scope).await["configured"],
+        fixed(&ids[1])
+    );
 
     app.put(
         &format!("/api/templates/{template_id}"),
@@ -1894,37 +1586,30 @@ async fn the_effective_account_selection_follows_streamer_then_template_then_pla
         &json!({"platform_overrides": {"bilibili": {"credential_selection": {"mode": "inherit"}}}}),
     )
     .await
-    .expect_status(StatusCode::OK);
-    let effective = selection_of(&streamer_scope).await;
+    .ok();
+    let effective = get_ok(&app, &token, &selection_path(&streamer_scope)).await;
     assert_eq!(
         effective["resolved"]["owner"],
         json!({"type": "platform", "platform_id": "platform-bilibili"})
     );
     assert_eq!(candidate_ids(&effective), [ids[0].clone()]);
-    let platform_scope = selection_of("scope_type=platform&scope_id=platform-bilibili").await;
-    assert_eq!(platform_scope["configured"], fixed(&ids[0]));
+    let platform_scope = selection_path("scope_type=platform&scope_id=platform-bilibili");
+    assert_eq!(
+        get_ok(&app, &token, &platform_scope).await["configured"],
+        fixed(&ids[0])
+    );
 
     for scope in [
         "scope_type=account&scope_id=x",
         "scope_type=streamer&scope_id=%20",
     ] {
-        let refused = app
-            .get(
-                &format!("/api/credentials/selection?{scope}&platform_id=platform-bilibili"),
-                &token,
-            )
-            .await;
+        let refused = app.get(&selection_path(scope), &token).await;
         refused.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
     }
     app.delete(&format!("/api/streamers/{streamer_id}"), &token)
         .await
-        .expect_status(StatusCode::OK);
-    let removed = app
-        .get(
-            &format!("/api/credentials/selection?{streamer_scope}&platform_id=platform-bilibili"),
-            &token,
-        )
-        .await;
+        .ok();
+    let removed = app.get(&selection_path(&streamer_scope), &token).await;
     removed.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
 
     app.shutdown().await;
@@ -1936,17 +1621,12 @@ async fn account_capabilities_and_checks_answer_without_a_provider_request() {
     let token = app.admin_token().await;
 
     let capabilities = |platform: &str| {
-        let app = &app;
-        let token = &token;
         let path = format!("/api/credentials/capabilities?platform_id={platform}");
+        let (app, token) = (&app, &token);
         async move { app.get(&path, token).await }
     };
-    let twitch = capabilities("platform-twitch")
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
     assert_eq!(
-        twitch,
+        capabilities("platform-twitch").await.ok(),
         json!({
             "refresh_token": false,
             "access_token": true,
@@ -1959,10 +1639,7 @@ async fn account_capabilities_and_checks_answer_without_a_provider_request() {
         })
     );
     // Streamlink serves many sites, so only its accounts are chosen per streamer.
-    let streamlink = capabilities("platform-streamlink")
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let streamlink = capabilities("platform-streamlink").await.ok();
     assert_eq!(streamlink["per_streamer_selection"], true);
     capabilities("%20")
         .await
@@ -1973,51 +1650,22 @@ async fn account_capabilities_and_checks_answer_without_a_provider_request() {
 
     // Without an access token or an auth-token cookie there is nothing for
     // Twitch to check, so the check fails before any request.
-    let unverifiable = create_profile(
-        &app,
-        &token,
-        json!({
-            "platform_id": "platform-twitch",
-            "label": "Cookie only",
-            "enabled": true,
-            "material": {"cookies": "unique_id=abc"},
-        }),
-    )
-    .await;
-    let unverifiable_id = id_of(&unverifiable);
+    let cookie_only = profile("platform-twitch", "Cookie only", "unique_id=abc");
+    let unverifiable = create_profile(&app, &token, cookie_only).await;
+    let path = format!("/api/credentials/profiles/{}", id_of(&unverifiable));
     let refused = app
-        .post(
-            &format!("/api/credentials/profiles/{unverifiable_id}/validate"),
-            &token,
-            &json!({}),
-        )
+        .post(&format!("{path}/validate"), &token, &json!({}))
         .await;
     refused.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
-    let detail = app
-        .get(
-            &format!("/api/credentials/profiles/{unverifiable_id}"),
-            &token,
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
     assert_eq!(
-        detail["health"],
+        get_ok(&app, &token, &path).await["health"],
         Value::Null,
         "an unverifiable check records nothing"
     );
 
-    let disabled = create_profile(
-        &app,
-        &token,
-        json!({
-            "platform_id": "platform-twitch",
-            "label": "Disabled",
-            "enabled": false,
-            "material": {"cookies": "auth-token=abc"},
-        }),
-    )
-    .await;
+    let mut disabled = profile("platform-twitch", "Disabled", "auth-token=abc");
+    disabled["enabled"] = json!(false);
+    let disabled = create_profile(&app, &token, disabled).await;
     for action in ["validate", "refresh"] {
         let refused = app
             .post(
@@ -2030,28 +1678,17 @@ async fn account_capabilities_and_checks_answer_without_a_provider_request() {
     }
 
     // A profile its provider cannot refresh is returned unchanged.
-    let huya_profile = create_profile(
-        &app,
-        &token,
-        json!({
-            "platform_id": "platform-huya",
-            "label": "Huya",
-            "enabled": true,
-            "material": {"cookies": "udb_uid=1"},
-        }),
-    )
-    .await;
+    let huya = create_profile(&app, &token, profile("platform-huya", "Huya", "udb_uid=1")).await;
     let refreshed = app
         .post(
-            &format!("/api/credentials/profiles/{}/refresh", id_of(&huya_profile)),
+            &format!("/api/credentials/profiles/{}/refresh", id_of(&huya)),
             &token,
             &json!({}),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(refreshed["profile"]["version"], huya_profile["version"]);
-    assert_eq!(refreshed["profile"]["revision"], huya_profile["revision"]);
+        .ok();
+    assert_eq!(refreshed["profile"]["version"], huya["version"]);
+    assert_eq!(refreshed["profile"]["revision"], huya["revision"]);
     assert_eq!(
         refreshed["capabilities"],
         json!({"validate": false, "refresh": false, "qr_login": false})
@@ -2065,47 +1702,41 @@ async fn account_capabilities_and_checks_answer_without_a_provider_request() {
 async fn polling_a_login_answers_from_its_stored_state_without_the_provider() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
-    let database = app.database().await;
-    let admin_id: String = sqlx::query_scalar("SELECT id FROM users WHERE username = 'admin'")
-        .fetch_one(&database)
-        .await
-        .expect("admin user id");
     let now = now_ms();
-    let target =
-        json!({"type": "create", "platform_id": "platform-bilibili", "label": "QR"}).to_string();
-    for (id, principal, state, profile, version) in [
-        ("login-pending", admin_id.as_str(), "pending", None, None),
-        (
-            "login-completed",
-            admin_id.as_str(),
-            "completed",
-            Some("profile-from-qr"),
-            Some(3_i64),
-        ),
-        ("login-other-user", "another-user", "pending", None, None),
-    ] {
-        sqlx::query(
-            "INSERT INTO credential_login_sessions (id, principal, platform_config_id, target, provider_auth_code, created_at, expires_at, state, result_profile_id, result_version, completed_at) VALUES (?, ?, 'platform-bilibili', ?, 'auth-code', ?, ?, ?, ?, ?, ?)",
+    let target = json!({"type": "create", "platform_id": "platform-bilibili", "label": "QR"});
+    let admin = "(SELECT id FROM users WHERE username = 'admin')";
+    // Every login expired a moment ago, well inside the receipt window.
+    let login = |id: &str, principal: &str, state: &str, result: &str| {
+        format!(
+            "('{id}', {principal}, 'platform-bilibili', '{target}', 'auth-code', {}, {}, \
+             '{state}', {result})",
+            now - 120_000,
+            now - 1_000
         )
-        .bind(id)
-        .bind(principal)
-        .bind(&target)
-        .bind(now - 120_000)
-        // Expired a moment ago, well inside the receipt window.
-        .bind(now - 1_000)
-        .bind(state)
-        .bind(profile)
-        .bind(version)
-        .bind(profile.map(|_| now - 2_000))
-        .execute(&database)
-        .await
-        .expect("seed a login session");
-    }
+    };
+    app.run_sql(&format!(
+        "INSERT INTO credential_login_sessions (id, principal, platform_config_id, target, \
+             provider_auth_code, created_at, expires_at, state, result_profile_id, \
+             result_version, completed_at) VALUES {}, {}, {};",
+        login("login-pending", admin, "pending", "NULL, NULL, NULL"),
+        login(
+            "login-completed",
+            admin,
+            "completed",
+            &format!("'profile-from-qr', 3, {}", now - 2_000)
+        ),
+        login(
+            "login-other-user",
+            "'another-user'",
+            "pending",
+            "NULL, NULL, NULL"
+        ),
+    ))
+    .await;
 
     let poll = |id: &str| {
-        let app = &app;
-        let token = &token;
         let path = format!("/api/credentials/login-sessions/{id}/poll");
+        let (app, token) = (&app, &token);
         async move { app.send(Method::POST, &path, Some(token), None).await }
     };
     let expired = poll("login-pending").await.expect_status(StatusCode::OK);
@@ -2117,8 +1748,7 @@ async fn polling_a_login_answers_from_its_stored_state_without_the_provider() {
         expired.header(reqwest::header::CACHE_CONTROL),
         Some("private, no-store")
     );
-    let expired_again = poll("login-pending").await;
-    assert_eq!(expired_again.body["status"], "expired");
+    assert_eq!(poll("login-pending").await.body["status"], "expired");
     let completed = poll("login-completed").await.expect_status(StatusCode::OK);
     assert_eq!(
         completed.body,
@@ -2133,7 +1763,6 @@ async fn polling_a_login_answers_from_its_stored_state_without_the_provider() {
             .await
             .assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
     }
-    database.close().await;
 
     app.shutdown().await;
 }
