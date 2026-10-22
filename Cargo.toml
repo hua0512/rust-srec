@@ -53,7 +53,7 @@ undocumented_unsafe_blocks = "deny"
 [workspace.dependencies]
 arc-swap = "1"
 bytes = "1.12.1"
-tokio = { version = "1.54.0", features = ["rt-multi-thread", "macros", "fs", "io-std", "io-util", "net", "process", "signal", "sync", "time"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "fs", "io-std", "io-util", "net", "process", "signal", "sync", "time"] }
 tokio-util = { version = "0.7.20", features = ["codec", "io", "rt", "time"] }
 # Use platform certificate verification consistently with the extractor clients.
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "query", "form", "stream", "rustls", "gzip", "deflate"] }
