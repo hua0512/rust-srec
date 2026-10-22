@@ -10,11 +10,13 @@
 //! a check or refresh leaves through the same proxy as the account's
 //! recordings.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use parking_lot::RwLock;
 use reqwest::Client;
 use serde::Serialize;
-
-use chrono::{DateTime, Utc};
 
 use super::platforms::{BilibiliProvider, DouyuProvider, SoopProvider, TwitchProvider};
 use super::{CredentialError, CredentialMaterial};
@@ -170,9 +172,52 @@ impl CredentialProvider for CookieProvider {
     }
 }
 
+/// Providers registered at runtime, by lowercase platform name.
+static REGISTERED: RwLock<Vec<(String, &'static dyn CredentialProvider)>> = RwLock::new(Vec::new());
+
+/// `register_provider_for_process` refused a platform that already has a
+/// registered provider.
+#[doc(hidden)]
+#[derive(Debug, PartialEq, Eq, thiserror::Error)]
+#[error("a credential provider for {0:?} is already registered")]
+pub struct DuplicateProvider(pub String);
+
+/// Use `provider` for accounts on `platform` (any case) instead of its
+/// built-in provider, everywhere in this process: profile validation, QR
+/// login, checks and refreshes. For the end-to-end suite, which registers its
+/// fake platform's provider; a registration lasts for the process and cannot
+/// be replaced. Unit tests replace providers per registry instead
+/// (`CredentialProviderRegistry::register_provider`).
+#[doc(hidden)]
+pub fn register_provider_for_process(
+    platform: &str,
+    provider: Arc<dyn CredentialProvider>,
+) -> Result<(), DuplicateProvider> {
+    let platform = platform.to_ascii_lowercase();
+    let mut registered = REGISTERED.write();
+    if registered.iter().any(|(name, _)| *name == platform) {
+        return Err(DuplicateProvider(platform));
+    }
+    // Lookups hand out `&'static` providers, so a registration is never freed.
+    let provider: &'static Arc<dyn CredentialProvider> = Box::leak(Box::new(provider));
+    registered.push((platform, provider.as_ref()));
+    Ok(())
+}
+
+/// The provider `register_provider_for_process` registered for `platform`, if any.
+pub(super) fn registered(platform: &str) -> Option<&'static dyn CredentialProvider> {
+    REGISTERED
+        .read()
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case(platform))
+        .map(|(_, provider)| *provider)
+}
+
 /// The provider for accounts on `platform` (a platform name, any case).
 pub fn provider(platform: &str) -> &'static dyn CredentialProvider {
-    if platform.eq_ignore_ascii_case("bilibili") {
+    if let Some(provider) = registered(platform) {
+        provider
+    } else if platform.eq_ignore_ascii_case("bilibili") {
         &BilibiliProvider
     } else if platform.eq_ignore_ascii_case("douyu") {
         &DouyuProvider

@@ -20,7 +20,8 @@ use super::{CredentialProfile, PlatformAdmission};
 pub struct CredentialProviderRegistry {
     admission: Arc<PlatformAdmission>,
     /// Whether platforms use their built-in providers. Without them every
-    /// account is plain cookies and no provider is ever called.
+    /// account is plain cookies, and only providers registered for the
+    /// process (`register_provider_for_process`) are called.
     platform_providers: bool,
     /// Test replacements for the built-in providers, by lowercase platform name.
     #[cfg(test)]
@@ -72,6 +73,9 @@ impl CredentialProviderRegistry {
         #[cfg(test)]
         if let Some(provider) = self.providers.get(&platform_name.to_ascii_lowercase()) {
             return provider.as_ref();
+        }
+        if let Some(provider) = super::provider::registered(platform_name) {
+            return provider;
         }
         if self.platform_providers {
             super::provider(platform_name)
