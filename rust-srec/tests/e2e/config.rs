@@ -1766,3 +1766,43 @@ async fn polling_a_login_answers_from_its_stored_state_without_the_provider() {
 
     app.shutdown().await;
 }
+
+#[tokio::test]
+async fn saved_proxy_login_limits_count_characters() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    let proxy = |name: &str, host: u8, username: String, password: String| {
+        json!({
+            "name": name,
+            "url": format!("http://10.20.31.{host}:3128"),
+            "username": username,
+            "password": password,
+        })
+    };
+
+    // Three bytes per character: at the limit, but far past it in bytes.
+    let at_limit = app
+        .post(
+            "/api/proxies",
+            &token,
+            &proxy("At limit", 1, "用".repeat(256), "密".repeat(1024)),
+        )
+        .await
+        .expect_status(StatusCode::CREATED);
+    assert_eq!(at_limit.body["username"], "用".repeat(256));
+
+    for (name, host, username, password) in [
+        ("Long username", 2, "用".repeat(257), "密".to_owned()),
+        ("Long password", 3, "用".to_owned(), "密".repeat(1025)),
+    ] {
+        app.post(
+            "/api/proxies",
+            &token,
+            &proxy(name, host, username, password),
+        )
+        .await
+        .assert_error(StatusCode::UNPROCESSABLE_ENTITY, "PROXY_INVALID");
+    }
+
+    app.shutdown().await;
+}

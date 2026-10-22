@@ -7,8 +7,9 @@ use super::ProxyError;
 /// Schemes every HTTP client, download engine and danmu tunnel can use.
 pub(crate) const SUPPORTED_SCHEMES: [&str; 4] = ["http", "https", "socks5", "socks5h"];
 
-const MAX_USERNAME_LEN: usize = 256;
-const MAX_PASSWORD_LEN: usize = 1024;
+/// Login limits, in characters like every other limit the API states.
+const MAX_USERNAME_CHARS: usize = 256;
+const MAX_PASSWORD_CHARS: usize = 1024;
 
 /// Rejects anything a client would not route through the proxy: the
 /// shared client builder would otherwise connect directly.
@@ -36,7 +37,9 @@ pub(crate) fn validate(endpoint: &ProxyEndpoint) -> Result<(), ProxyError> {
     // Clients and download engines send a proxy login only as a pair.
     match (&endpoint.username, &endpoint.password) {
         (Some(username), Some(password)) if !username.is_empty() => {
-            if username.len() > MAX_USERNAME_LEN || password.len() > MAX_PASSWORD_LEN {
+            if username.chars().count() > MAX_USERNAME_CHARS
+                || password.chars().count() > MAX_PASSWORD_CHARS
+            {
                 return Err(ProxyError::invalid("proxy login is too long"));
             }
             if username
