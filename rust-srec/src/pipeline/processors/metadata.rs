@@ -164,6 +164,17 @@ impl MetadataProcessor {
             args.extend(["-metadata".to_string(), format!("{}={}", key, value)]);
         }
 
+        // Rewriting an MP4-family file puts its index after the media unless
+        // asked otherwise, which would undo a remux's faststart and stop the
+        // copy playing before it has fully downloaded. The flag only applies
+        // to MP4-family muxers, and some ffmpeg builds reject it elsewhere.
+        if matches!(
+            super::utils::get_extension(output_path).as_deref(),
+            Some("mp4" | "m4a" | "m4v" | "mov")
+        ) {
+            args.extend(["-movflags".to_string(), "+faststart".to_string()]);
+        }
+
         // Output file
         args.push(output_path.to_string());
 
