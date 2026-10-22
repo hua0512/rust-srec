@@ -54,6 +54,7 @@ mod http;
 mod media;
 mod seed;
 mod smtp;
+pub mod tools;
 
 pub use fake_platform::{FakePlatform, FakeRoom};
 pub use http::{ClosedPort, ConnectRecorder, LocalHttpServer, ReceivedRequest};

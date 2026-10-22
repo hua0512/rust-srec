@@ -37,3 +37,5 @@ mod sockets;
 mod stream_proxy;
 mod streamers;
 mod telegram;
+mod tools_engines;
+mod tools_processors;
