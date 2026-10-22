@@ -260,13 +260,26 @@ async fn platform_configs_are_replaced_whole_but_keep_their_identity() {
     let (bad, invalid) = (StatusCode::BAD_REQUEST, StatusCode::UNPROCESSABLE_ENTITY);
     for (field, value, status, code) in [
         ("name", json!("renamed"), bad, "BAD_REQUEST"),
+        ("name", json!("Huya"), bad, "BAD_REQUEST"),
         ("fetch_delay_ms", json!(u64::MAX), bad, "BAD_REQUEST"),
         ("offline_check_count", json!(0), bad, "BAD_REQUEST"),
         ("offline_check_delay_ms", json!(999), bad, "BAD_REQUEST"),
         ("cookies", json!("sid=abc"), invalid, "COOKIES_REPLACED"),
         (
+            "cookies",
+            json!({"session": "abc"}),
+            invalid,
+            "COOKIES_REPLACED",
+        ),
+        (
             "proxy_config",
             json!({"enabled": true}),
+            invalid,
+            "PROXY_CONFIG_REPLACED",
+        ),
+        (
+            "proxy_config",
+            json!("{\"enabled\":true,\"url\":\"http://127.0.0.1:9\"}"),
             invalid,
             "PROXY_CONFIG_REPLACED",
         ),
@@ -288,7 +301,9 @@ async fn platform_configs_are_replaced_whole_but_keep_their_identity() {
         assert_eq!(stored, original, "{field}: nothing may change");
     }
     // A blank cookie value asks for none and is accepted.
-    set_platform_field(&app, &token, "platform-huya", "cookies", json!("  ")).await;
+    for cookies in [json!("  "), json!(""), Value::Null] {
+        set_platform_field(&app, &token, "platform-huya", "cookies", cookies).await;
+    }
 
     let replaced = put_platform(&app, &token, "platform-huya", |body| {
         body.insert("fetch_delay_ms".into(), json!(1234));
@@ -306,6 +321,15 @@ async fn platform_configs_are_replaced_whole_but_keep_their_identity() {
     assert_eq!(replaced["output_folder"], "/recordings/huya");
     assert_eq!(replaced["proxy_route"], json!({"kind": "direct"}));
     assert_eq!(app.get_ok(HUYA, &token).await, replaced);
+    let streamer = app
+        .create_disabled_streamer(
+            &token,
+            json!({
+                "name": "Platform identity", "url": "https://www.huya.com/12345",
+            }),
+        )
+        .await;
+    assert_eq!(streamer["platform_config_id"], original["id"]);
 
     // PUT replaces every override, but an omitted route keeps the stored one.
     let cleared = put_platform(&app, &token, "platform-huya", |body| {
@@ -344,6 +368,14 @@ async fn templates_are_replaced_whole_counted_by_their_streamers_and_cloned() {
         ),
         (
             json!({"name": "Legacy", "proxy_config": {"enabled": true}}),
+            "PROXY_CONFIG_REPLACED",
+        ),
+        (
+            json!({"name": "Legacy", "proxy_config": "{\"enabled\":false}"}),
+            "PROXY_CONFIG_REPLACED",
+        ),
+        (
+            json!({"name": "Legacy", "platform_overrides": {"bilibili": {"proxy_config": {"enabled": true}}}}),
             "PROXY_CONFIG_REPLACED",
         ),
         (
@@ -397,7 +429,7 @@ async fn templates_are_replaced_whole_counted_by_their_streamers_and_cloned() {
         .put(
             &path,
             &token,
-            &json!({"output_file_format": "flv", "offline_check_count": 5}),
+            &json!({"output_file_format": "flv", "offline_check_count": 5, "cookies": " "}),
         )
         .await
         .ok();
@@ -422,6 +454,18 @@ async fn templates_are_replaced_whole_counted_by_their_streamers_and_cloned() {
         .put("/api/templates/missing", &token, &json!({"name": "x"}))
         .await;
     unknown.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
+    for (body, code) in [
+        (json!({"cookies": "a=b"}), "COOKIES_REPLACED"),
+        (
+            json!({"proxy_route": {"kind": "proxy", "id": "missing"}}),
+            "PROXY_NOT_FOUND",
+        ),
+    ] {
+        app.put(&path, &token, &body)
+            .await
+            .assert_error(StatusCode::UNPROCESSABLE_ENTITY, code);
+        assert_eq!(app.get_ok(&path, &token).await, replaced);
+    }
 
     let streamer = app
         .create_disabled_streamer(
@@ -798,6 +842,24 @@ async fn saved_proxies_never_return_their_password_and_report_conflicts_by_code(
         detail.body["references"],
         json!({"global": false, "platforms": [], "templates": [], "streamers": [], "accounts": []})
     );
+    app.patch(
+        "/api/config/global",
+        &token,
+        &json!({"proxy_route": {"kind": "proxy", "id": proxy["id"]}}),
+    )
+    .await
+    .ok();
+    for path in ["/api/proxies/system", "/api/config/global"] {
+        let response = app.get(path, &token).await.expect_status(StatusCode::OK);
+        assert!(!response.text.contains(PASSWORD), "{path}");
+    }
+    app.patch(
+        "/api/config/global",
+        &token,
+        &json!({"proxy_route": {"kind": "direct"}}),
+    )
+    .await
+    .ok();
 
     // An omitted password is kept.
     let renamed = app
@@ -900,6 +962,15 @@ async fn a_proxy_in_use_cannot_be_deleted_and_the_refusal_lists_every_user() {
         )
         .await
         .created();
+    let kept = app
+        .put(
+            &format!("/api/templates/{}", id_of(&template)),
+            &token,
+            &json!({"name": "Routed template"}),
+        )
+        .await
+        .ok();
+    assert_eq!(kept["proxy_route"], route);
     let streamer = app
         .create_disabled_streamer(
             &token,
@@ -1149,6 +1220,13 @@ async fn the_proxy_check_guards_its_target_and_reports_what_the_proxy_answered()
         )
         .await
         .created();
+    app.patch(
+        &format!("/api/proxies/{}", id_of(&saved)),
+        &token,
+        &json!({"expected_version": saved["version"], "name": "Renamed saved proxy"}),
+    )
+    .await
+    .ok();
     let edited = LocalHttpServer::start(200, "").await;
     let checked =
         check(json!({"proxy_id": saved["id"], "url": edited.url(""), "target_url": TARGET}))
@@ -1257,6 +1335,12 @@ async fn account_selections_round_trip_on_streamers_and_templates() {
             "VALIDATION_ERROR",
         ),
         (
+            "Legacy proxy",
+            json!({"proxy_config": {"enabled": false}}),
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "PROXY_CONFIG_REPLACED",
+        ),
+        (
             "Foreign account",
             json!({"credential_selection": {"mode": "fixed", "credential_id": huya_account["id"]}}),
             StatusCode::CONFLICT,
@@ -1333,9 +1417,54 @@ async fn account_selections_round_trip_on_streamers_and_templates() {
 async fn profile_writes_return_the_conflict_codes_the_editor_reads() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
-    let account = create_profile(&app, &token, bilibili_profile("Shared")).await;
+    let mut material = bilibili_profile("Shared");
+    material["material"]["refresh_token"] = json!("refresh-sentinel");
+    let account = create_profile(&app, &token, material).await;
     let path = format!("/api/credentials/profiles/{}", id_of(&account));
     let fixed = json!({"mode": "fixed", "credential_id": account["id"]});
+    assert!(!account.to_string().contains("SESSDATA"));
+    assert!(!account.to_string().contains("sentinel"));
+    let listed = app
+        .get_ok(
+            "/api/credentials/profiles?platform_id=platform-bilibili",
+            &token,
+        )
+        .await;
+    assert_eq!(listed.as_array().map(Vec::len), Some(1));
+    assert_eq!(listed[0]["profile"]["id"], account["id"]);
+    assert!(!listed.to_string().contains("SESSDATA"));
+    assert!(!listed.to_string().contains("sentinel"));
+    assert_eq!(
+        app.get_ok(
+            "/api/credentials/profiles?platform_id=platform-twitch",
+            &token
+        )
+        .await,
+        json!([])
+    );
+    for (query, status) in [
+        ("platform_id=platform-missing", StatusCode::NOT_FOUND),
+        ("platform_id=%20", StatusCode::UNPROCESSABLE_ENTITY),
+        (
+            "scope_type=platform&scope_id=platform-bilibili&platform_id=platform-bilibili",
+            StatusCode::BAD_REQUEST,
+        ),
+    ] {
+        assert_eq!(
+            app.get(&format!("/api/credentials/profiles?{query}"), &token)
+                .await
+                .status,
+            status,
+            "{query}"
+        );
+    }
+    let edit = json!({"expected_version": account["version"], "label": "Renamed"});
+    let renamed = app.patch(&path, &token, &edit).await.ok();
+    assert_eq!(renamed["label"], "Renamed");
+    assert_eq!(renamed["revision"], account["revision"]);
+    app.patch(&path, &token, &edit)
+        .await
+        .assert_error(StatusCode::CONFLICT, "CREDENTIAL_STALE_VERSION");
 
     // The platform carries its selection as JSON text.
     let selection = json!(fixed.to_string());
@@ -1383,7 +1512,7 @@ async fn profile_writes_return_the_conflict_codes_the_editor_reads() {
 
     let delete_profile = || {
         let (app, token, path) = (&app, &token, &path);
-        let body = json!({"expected_version": 1});
+        let body = json!({"expected_version": renamed["version"]});
         async move {
             app.send(Method::DELETE, path, Some(token), Some(&body))
                 .await
@@ -1416,15 +1545,7 @@ async fn profile_writes_return_the_conflict_codes_the_editor_reads() {
         referenced.body["details"]["references"]
     );
     assert!(!detail.to_string().contains("SESSDATA"), "{detail}");
-
-    let stale = app
-        .patch(
-            &path,
-            &token,
-            &json!({"expected_version": 0, "label": "Lost update"}),
-        )
-        .await;
-    stale.assert_error(StatusCode::CONFLICT, "CREDENTIAL_STALE_VERSION");
+    assert!(!detail.to_string().contains("sentinel"), "{detail}");
 
     let inherit = json!(json!({"mode": "inherit"}).to_string());
     set_platform_field(
@@ -1658,21 +1779,23 @@ async fn account_capabilities_and_checks_answer_without_a_provider_request() {
 
     // A profile its provider cannot refresh is returned unchanged.
     let huya = create_profile(&app, &token, profile("platform-huya", "Huya", "udb_uid=1")).await;
-    let refreshed = app
-        .post(
-            &format!("/api/credentials/profiles/{}/refresh", id_of(&huya)),
-            &token,
-            &json!({}),
-        )
-        .await
-        .ok();
-    assert_eq!(refreshed["profile"]["version"], huya["version"]);
-    assert_eq!(refreshed["profile"]["revision"], huya["revision"]);
-    assert_eq!(
-        refreshed["capabilities"],
-        json!({"validate": false, "refresh": false, "qr_login": false})
-    );
-    assert_eq!(refreshed["health"], Value::Null);
+    for action in ["validate", "refresh"] {
+        let detail = app
+            .post(
+                &format!("/api/credentials/profiles/{}/{action}", id_of(&huya)),
+                &token,
+                &json!({}),
+            )
+            .await
+            .ok();
+        assert_eq!(detail["profile"]["version"], huya["version"]);
+        assert_eq!(detail["profile"]["revision"], huya["revision"]);
+        assert_eq!(
+            detail["capabilities"],
+            json!({"validate": false, "refresh": false, "qr_login": false})
+        );
+        assert_eq!(detail["health"], Value::Null);
+    }
 
     app.shutdown().await;
 }

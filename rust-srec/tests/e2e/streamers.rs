@@ -474,6 +474,48 @@ async fn list_filters_sorts_and_paginates_like_the_streamers_page() {
         }
     }
 
+    let configs = [
+        (
+            "alpha",
+            json!({"proxy_route": {"kind": "direct"}, "credential_selection": {"mode": "none"}}),
+        ),
+        ("bravo", json!({})),
+        ("delta", json!({"proxy_route": {"kind": "system"}})),
+    ];
+    for (id, config) in &configs {
+        app.put(
+            &format!("/api/streamers/{id}"),
+            &token,
+            &json!({"streamer_specific_config": config}),
+        )
+        .await
+        .ok();
+    }
+    for (offset, (id, config)) in configs.iter().enumerate() {
+        let page = list_page(
+            &app,
+            &token,
+            &format!("state=DISABLED&sort_by=name&limit=1&offset={offset}"),
+        )
+        .await;
+        assert_eq!(page["total"], 4);
+        assert_eq!(page["items"].as_array().map(Vec::len), Some(1));
+        assert_eq!(page["items"][0]["id"], *id);
+        let actual = &page["items"][0]["streamer_specific_config"];
+        if *id == "bravo" {
+            assert!(actual.get("proxy_route").is_none());
+            assert!(actual.get("credential_selection").is_none());
+        } else {
+            assert_eq!(actual, config);
+        }
+    }
+    assert!(
+        list_page(&app, &token, "state=DISABLED&sort_by=name&limit=1&offset=4").await["items"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+
     app.shutdown().await;
 }
 

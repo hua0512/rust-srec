@@ -3223,6 +3223,16 @@ mod tests {
             db_model_to_job(&job_to_db_model(&job)).manifest,
             job.manifest
         );
+        let named = job
+            .clone()
+            .with_streamer_name("StreamerName")
+            .with_session_title("SessionTitle")
+            .with_platform("Twitch");
+        let restored = db_model_to_job(&job_to_db_model(&named));
+        assert_eq!(restored.manifest, job.manifest);
+        assert_eq!(restored.platform.as_deref(), Some("Twitch"));
+        assert_eq!(restored.streamer_name.as_deref(), Some("StreamerName"));
+        assert_eq!(restored.session_title.as_deref(), Some("SessionTitle"));
 
         assert!(parse_job_state("{}").manifest.is_none());
         assert!(
@@ -3435,28 +3445,6 @@ mod tests {
                 .is_err()
         );
         assert!(!queue.persisted_log_cursor.contains_key(&job_id));
-    }
-
-    #[test]
-    fn test_job_db_state_roundtrip_preserves_platform() {
-        let job = Job::new(
-            "copy_move",
-            vec!["/input.flv".to_string()],
-            vec![],
-            "streamer-1",
-            "session-1",
-        )
-        .with_streamer_name("StreamerName".to_string())
-        .with_session_title("SessionTitle".to_string())
-        .with_platform("Twitch".to_string());
-
-        let db = job_to_db_model(&job);
-        assert!(db.state.contains("Twitch"));
-
-        let restored = db_model_to_job(&db);
-        assert_eq!(restored.platform.as_deref(), Some("Twitch"));
-        assert_eq!(restored.streamer_name.as_deref(), Some("StreamerName"));
-        assert_eq!(restored.session_title.as_deref(), Some("SessionTitle"));
     }
 
     /// resolve_job_metadata must write back-filled values to the job row's

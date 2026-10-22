@@ -33,7 +33,7 @@ async fn poll_login(app: &TestApp, token: &str, login_id: &str) -> Value {
 }
 
 #[tokio::test]
-async fn a_qr_login_saves_an_account_whose_cookies_reach_the_platform() {
+async fn a_qr_account_is_used_refreshed_and_kept_separate_from_other_accounts() {
     let accounts = FakeAccounts::install();
     let fake = FakePlatform::start().await;
     let room = fake.room("qr-login");
@@ -90,6 +90,71 @@ async fn a_qr_login_saves_an_account_whose_cookies_reach_the_platform() {
     let checks = fake.requests_to(&room, "status");
     assert_eq!(checks.len(), 1, "{checks:?}");
     assert_eq!(checks[0].header("cookie"), Some("session=qr-e2e; uid=7"));
+
+    let other = app
+        .post(
+            "/api/credentials/profiles",
+            &token,
+            &json!({
+                "platform_id": "platform-fake", "label": "Other account", "enabled": true,
+                "material": {"cookies": "session=other-qr-e2e"},
+            }),
+        )
+        .await
+        .ok();
+    accounts.refresh_to("session=qr-e2e; uid=7", "session=renewed-qr-e2e", || {});
+    let refreshed = app
+        .post(
+            &format!("/api/credentials/profiles/{profile_id}/refresh"),
+            &token,
+            &json!({}),
+        )
+        .await
+        .ok();
+    assert!(refreshed["profile"]["revision"].as_i64() > profile["revision"].as_i64());
+    app.post("/api/parse", &token, &json!({"url": room.url()}))
+        .await
+        .ok();
+    assert_eq!(
+        fake.requests_to(&room, "status")
+            .last()
+            .unwrap()
+            .header("cookie"),
+        Some("session=renewed-qr-e2e")
+    );
+    select_account(&app, &token, &id_of(&other)).await;
+    app.post("/api/parse", &token, &json!({"url": room.url()}))
+        .await
+        .ok();
+    assert_eq!(
+        fake.requests_to(&room, "status")
+            .last()
+            .unwrap()
+            .header("cookie"),
+        Some("session=other-qr-e2e")
+    );
+    let unchanged = app
+        .get_ok(
+            &format!("/api/credentials/profiles/{}", id_of(&other)),
+            &token,
+        )
+        .await;
+    assert_eq!(unchanged["profile"]["revision"], other["revision"]);
+    assert_eq!(accounts.refreshes_of("session=other-qr-e2e"), 0);
+    let backup = app.get_ok("/api/config/backup/export", &token).await;
+    let profiles = backup["credential_profiles"].as_array().unwrap();
+    for (label, cookies) in [
+        ("QR account", "session=renewed-qr-e2e"),
+        ("Other account", "session=other-qr-e2e"),
+    ] {
+        assert_eq!(
+            profiles
+                .iter()
+                .find(|profile| profile["label"] == label)
+                .unwrap()["cookies"],
+            cookies
+        );
+    }
 
     app.shutdown().await;
 }

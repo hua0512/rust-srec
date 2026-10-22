@@ -7,7 +7,7 @@
 
 use std::path::Path;
 
-use reqwest::StatusCode;
+use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 
 use crate::support::{TestApp, assert_fields, millis, now_ms};
@@ -306,6 +306,7 @@ async fn media_content_is_served_with_a_query_token_and_as_an_attachment() {
     let token = app.admin_token().await;
     let contents: &[u8] = b"\xFF\xD8\xFF\xE0 not really a jpeg";
     let cover = app.write_output_file("cover.jpg", contents);
+    let recording = app.write_output_file("récording one.mp4", b"payload");
     let vanished = app.output_path("vanished.jpg");
     let now = now_ms();
     let mut sql = session("covered", now - 600_000, Some(now - 60_000), 1_000).sql();
@@ -313,6 +314,7 @@ async fn media_content_is_served_with_a_query_token_and_as_an_attachment() {
     sql.push_str(&outputs(&[
         image("cover", cover.as_str(), contents.len() as i64, 300_000),
         image("vanished", vanished.as_str(), 5, 200_000),
+        ("download", "covered", recording.as_str(), "VIDEO", 7, now),
     ]));
     app.run_sql(&sql).await;
     let fetch = async |path: &str, authorization: Option<&str>| {
@@ -347,6 +349,38 @@ async fn media_content_is_served_with_a_query_token_and_as_an_attachment() {
             .and_then(|value| value.to_str().ok()),
         Some("attachment; filename=\"cover.jpg\"; filename*=UTF-8''cover.jpg")
     );
+
+    let read_key = app
+        .create_api_key(&token, "media download", "read_only")
+        .await
+        .raw;
+    const ATTACHMENT: &str =
+        "attachment; filename=\"r_cording one.mp4\"; filename*=UTF-8''r%C3%A9cording%20one.mp4";
+    for (method, query, expected) in [
+        (Method::GET, "", None),
+        (Method::GET, "&download=0", None),
+        (Method::GET, "&download=1", Some(ATTACHMENT)),
+        (Method::GET, "&download=true", Some(ATTACHMENT)),
+        (Method::HEAD, "", None),
+        (Method::HEAD, "&download=1", Some(ATTACHMENT)),
+    ] {
+        let path = format!("/api/media/download/content?token={read_key}{query}");
+        let response = app
+            .client()
+            .request(method.clone(), app.url(&path))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{method} {query}");
+        assert_eq!(
+            response
+                .headers()
+                .get("content-disposition")
+                .map(|value| value.to_str().unwrap()),
+            expected,
+            "{method} {query}"
+        );
+    }
 
     // A header always wins over the query token, so a bad one is refused.
     let unauthenticated = fetch(&thumbnail, None).await;

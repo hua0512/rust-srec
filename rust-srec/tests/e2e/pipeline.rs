@@ -1701,6 +1701,28 @@ async fn job_lists_filter_by_uppercase_status_and_cap_their_page() {
     let stalled = app.get_ok("/api/pipeline/stalled-operations", &token).await;
     assert_eq!(stalled, json!({ "items": [] }));
 
+    seed_standalone_job(&app, "job-standalone-pending", "PENDING", 0).await;
+    seed_standalone_job(&app, "job-standalone-cancelled", "CANCELLED", 0).await;
+    for route in ["jobs", "jobs/page"] {
+        let page = app
+            .get_ok(
+                &format!("/api/pipeline/{route}?status=CANCELLED&limit=200"),
+                &token,
+            )
+            .await;
+        assert_eq!(page["limit"], 100);
+        assert_eq!(page["items"].as_array().map(Vec::len), Some(1));
+        assert_eq!(page["items"][0]["id"], "job-standalone-cancelled");
+        assert_eq!(page["items"][0]["status"], "CANCELLED");
+        if route == "jobs" {
+            assert_eq!(page["total"], 1);
+        }
+    }
+    assert_eq!(
+        job(&app, &token, "job-standalone-pending").await["status"],
+        "PENDING"
+    );
+
     app.shutdown().await;
 }
 

@@ -122,18 +122,26 @@ async fn create_backup_content(app: &TestApp, token: &str) -> String {
     )
     .await
     .expect_status(StatusCode::OK);
-    app.post(
-        "/api/proxies",
+    let proxy = app
+        .post(
+            "/api/proxies",
+            token,
+            &json!({
+                "name": "Backup proxy",
+                "url": "http://127.0.0.1:3128",
+                "username": "proxy-user",
+                "password": "proxy-secret",
+            }),
+        )
+        .await
+        .expect_status(StatusCode::CREATED);
+    app.patch(
+        "/api/config/global",
         token,
-        &json!({
-            "name": "Backup proxy",
-            "url": "http://127.0.0.1:3128",
-            "username": "proxy-user",
-            "password": "proxy-secret",
-        }),
+        &json!({"proxy_route": {"kind": "proxy", "id": proxy.body["id"]}}),
     )
     .await
-    .expect_status(StatusCode::CREATED);
+    .ok();
     let profile = app
         .post(
             "/api/credentials/profiles",
@@ -350,7 +358,18 @@ async fn the_export_carries_what_a_restore_needs_and_leaves_out_sessions_and_api
     assert_eq!(log_filter, stored["log_filter_directive"]);
     assert!(!log_filter.is_empty());
     assert_eq!(global["stream_proxy_allow_private_targets"], true);
-    assert!(global.get("proxy_route").is_some());
+    assert_eq!(
+        global["proxy_route"],
+        json!({"kind": "proxy", "name": "Backup proxy"})
+    );
+    let proxy_id = app.get_ok("/api/proxies", &token).await[0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(
+        !text.contains(&proxy_id),
+        "proxy ids stay local to the install"
+    );
     assert!(
         global.get("proxy_config").is_none(),
         "no legacy proxy_config"
@@ -513,6 +532,41 @@ async fn a_backup_restores_into_a_fresh_install_and_exports_the_same_bundle() {
 
     let again = export(&target, &token).await;
     assert_same_bundle(&again, &bundle);
+
+    let mut bundle = again;
+    bundle["pipeline_presets"] = json!([{
+        "name": "Imported workflow", "description": null, "pipeline_type": null,
+        "dag_definition": {"name": "imported", "steps": [{
+            "id": "run", "step": {"type": "inline", "processor": "execute", "config": {"command": "exit 0"}},
+        }]},
+    }]);
+    let created = import(&target, &token, &bundle, "merge").await.ok();
+    assert_eq!(created["stats"]["pipeline_presets_created"], 1);
+    let token = sign_in_again(&target, RESTORED_PASSWORD).await;
+    let mut bundle = export(&target, &token).await;
+    bundle["pipeline_presets"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|preset| preset["name"] == "Imported workflow");
+    assert_eq!(bundle["pipeline_presets"].as_array().unwrap().len(), 1);
+    assert_eq!(bundle["pipeline_presets"][0]["pipeline_type"], "dag");
+    // Updating a backup keeps extension fields the typed DAG does not model.
+    bundle["pipeline_presets"][0]["dag_definition"]["x_layout"] = json!({"run": [10, 20]});
+    bundle["pipeline_presets"][0]["description"] = json!("updated");
+    bundle["pipeline_presets"][0]["pipeline_type"] = json!("legacy");
+    let updated = import(&target, &token, &bundle, "merge").await.ok();
+    assert_eq!(updated["stats"]["pipeline_presets_updated"], 1);
+    let token = sign_in_again(&target, RESTORED_PASSWORD).await;
+    let exported = export(&target, &token).await;
+    assert_eq!(
+        exported["pipeline_presets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|preset| preset["name"] == "Imported workflow")
+            .unwrap(),
+        &bundle["pipeline_presets"][0]
+    );
 
     target.shutdown().await;
 }

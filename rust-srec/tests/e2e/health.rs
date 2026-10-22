@@ -124,29 +124,33 @@ async fn liveness_and_idle_are_public_and_idle_reports_processing_jobs() {
 
     app.run_sql(
         "INSERT INTO job(id, job_type, status, config, state, created_at, updated_at) \
-         VALUES ('e2e-busy', 'remux', 'PROCESSING', '{}', '{}', 0, 0)",
+         VALUES ('e2e-busy', 'e2e_unclaimed', 'PROCESSING', '{}', '{}', 0, 0)",
     )
     .await;
-    let busy = get_public("/api/health/idle", None)
-        .await
-        .expect_status(StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(
-        busy.body,
-        json!({
-            "idle": false,
-            "active_recordings": 0,
-            "pending_recordings": 0,
-            "processing_jobs": 1,
-        })
-    );
-
-    app.run_sql("UPDATE job SET status = 'COMPLETED' WHERE id = 'e2e-busy'")
+    for status in ["PROCESSING", "PENDING", "COMPLETED", "FAILED", "CANCELLED"] {
+        app.run_sql(&format!(
+            "UPDATE job SET status = '{status}' WHERE id = 'e2e-busy'"
+        ))
         .await;
-    let idle = get_public("/api/health/idle", None)
-        .await
-        .expect_status(StatusCode::OK);
-    assert_eq!(idle.body["idle"], true);
-    assert_eq!(idle.body["processing_jobs"], 0);
+        let busy = status == "PROCESSING";
+        let response = get_public("/api/health/idle", None)
+            .await
+            .expect_status(if busy {
+                StatusCode::SERVICE_UNAVAILABLE
+            } else {
+                StatusCode::OK
+            });
+        assert_eq!(
+            response.body,
+            json!({
+                "idle": !busy,
+                "active_recordings": 0,
+                "pending_recordings": 0,
+                "processing_jobs": u8::from(busy),
+            }),
+            "{status}"
+        );
+    }
 
     app.shutdown().await;
 }

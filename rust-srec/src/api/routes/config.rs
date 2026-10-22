@@ -731,7 +731,6 @@ mod tests {
     use crate::config::ConfigService;
     use crate::database;
     use crate::database::repositories::{SqlxConfigRepository, SqlxStreamerRepository};
-    use crate::domain::value_objects::StreamerUrl;
 
     async fn config_state() -> (tempfile::TempDir, ConfigRouteState) {
         let dir = tempfile::tempdir().unwrap();
@@ -854,131 +853,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn global_and_platform_routes_are_written_explicitly_and_proxy_config_is_refused() {
+    async fn global_service_update_preserves_the_saved_proxy_route() {
         let (_dir, state) = config_state().await;
-        for (body, code) in [
-            (
-                json!({"proxy_config": "{\"enabled\":false}"}),
-                "PROXY_CONFIG_REPLACED",
-            ),
-            (
-                json!({"proxy_config": {"enabled": true}}),
-                "PROXY_CONFIG_REPLACED",
-            ),
-            (
-                json!({"proxy_route": {"kind": "inherit"}}),
-                "PROXY_ROUTE_INVALID",
-            ),
-            (
-                json!({"proxy_route": {"kind": "proxy", "id": "missing"}}),
-                "PROXY_NOT_FOUND",
-            ),
-        ] {
-            let error = update_global_config(State(state.clone()), Json(global_request(body)))
-                .await
-                .unwrap_err();
-            assert_eq!(error.status, StatusCode::UNPROCESSABLE_ENTITY);
-            assert_eq!(error.code, code);
-        }
-        // A null legacy field is what older clients send for "unset".
-        let Json(response) = update_global_config(
-            State(state.clone()),
-            Json(global_request(
-                json!({"proxy_config": null, "proxy_route": {"kind": "system"}}),
-            )),
-        )
-        .await
-        .unwrap();
-        assert_eq!(response.proxy_route, crate::proxies::ProxyRoute::System);
-        // Writes that omit the route keep it.
-        let Json(response) = update_global_config(
-            State(state.clone()),
-            Json(global_request(json!({"record_danmu": true}))),
-        )
-        .await
-        .unwrap();
-        assert_eq!(response.proxy_route, crate::proxies::ProxyRoute::System);
         let mut global = state.config_service.get_global_config().await.unwrap();
-        global.record_danmu = false;
+        state
+            .config_service
+            .update_global_config_with_route(&global, Some(&crate::proxies::ProxyRoute::System))
+            .await
+            .unwrap();
+        global.record_danmu = !global.record_danmu;
         state
             .config_service
             .update_global_config(&global)
             .await
             .unwrap();
-        assert_eq!(
-            super::get_global_config(State(state.clone()))
-                .await
-                .unwrap()
-                .0
-                .proxy_route,
-            crate::proxies::ProxyRoute::System
-        );
-
-        let Json(platform) =
-            super::get_platform_config(State(state.clone()), Path("platform-huya".into()))
-                .await
-                .unwrap();
-        assert_eq!(
-            platform.proxy_route,
-            Some(crate::proxies::ProxyRoute::Inherit)
-        );
-        let mut body = serde_json::to_value(&platform).unwrap();
-        assert!(body.get("proxy_config").is_none());
-        body["proxy_route"] = json!({"kind": "direct"});
-        let request: PlatformConfigResponse = serde_json::from_value(body.clone()).unwrap();
-        let Json(updated) = replace_platform_config(
-            State(state.clone()),
-            Path("platform-huya".into()),
-            Json(request),
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            updated.proxy_route,
-            Some(crate::proxies::ProxyRoute::Direct)
-        );
-        body.as_object_mut().unwrap().remove("proxy_route");
-        let Json(kept) = replace_platform_config(
-            State(state.clone()),
-            Path("platform-huya".into()),
-            Json(serde_json::from_value(body.clone()).unwrap()),
-        )
-        .await
-        .unwrap();
-        assert_eq!(kept.proxy_route, Some(crate::proxies::ProxyRoute::Direct));
-        assert!(body.get("cookies").is_none());
-        for (cookies, refused) in [
-            (json!("session=abc"), true),
-            (json!({"session": "abc"}), true),
-            (json!(""), false),
-            (serde_json::Value::Null, false),
-        ] {
-            let mut request = body.clone();
-            request["cookies"] = cookies;
-            let result = replace_platform_config(
-                State(state.clone()),
-                Path("platform-huya".into()),
-                Json(serde_json::from_value(request).unwrap()),
-            )
-            .await;
-            match result {
-                Err(error) => {
-                    assert!(refused);
-                    assert_eq!(error.status, StatusCode::UNPROCESSABLE_ENTITY);
-                    assert_eq!(error.code, "COOKIES_REPLACED");
-                }
-                Ok(_) => assert!(!refused),
-            }
-        }
-        body["proxy_config"] = json!("{\"enabled\":true,\"url\":\"http://p.example:1\"}");
-        let error = replace_platform_config(
-            State(state.clone()),
-            Path("platform-huya".into()),
-            Json(serde_json::from_value(body).unwrap()),
-        )
-        .await
-        .unwrap_err();
-        assert_eq!(error.code, "PROXY_CONFIG_REPLACED");
+        let response = super::get_global_config(State(state)).await.unwrap().0;
+        assert_eq!(response.proxy_route, crate::proxies::ProxyRoute::System);
+        assert_eq!(response.record_danmu, global.record_danmu);
     }
 
     #[test]
@@ -1137,54 +1028,6 @@ mod tests {
             serde_json::from_str::<Value>(after.danmu_statistics.as_deref().unwrap()).unwrap(),
             json!({"enabled": true})
         );
-    }
-
-    #[tokio::test]
-    async fn platform_replacement_preserves_exact_identity_and_resolvability() {
-        let (_dir, state) = config_state().await;
-        let before = state
-            .config_service
-            .get_platform_config_by_name("bilibili")
-            .await
-            .unwrap();
-        let original = PlatformConfigResponse::from(before.clone());
-        for name in ["renamed", "Bilibili"] {
-            let mut request = original.clone();
-            request.name = name.to_string();
-            request.fetch_delay_ms = Some(1234);
-            let error = replace_platform_config(
-                State(state.clone()),
-                Path(before.id.clone()),
-                Json(request),
-            )
-            .await
-            .expect_err("platform identity must not change");
-            assert_eq!(error.status, StatusCode::BAD_REQUEST);
-            let stored = state
-                .config_service
-                .get_platform_config(&before.id)
-                .await
-                .unwrap();
-            assert_eq!(
-                serde_json::to_value(&stored).unwrap(),
-                serde_json::to_value(&before).unwrap()
-            );
-        }
-        let mut request = original;
-        request.fetch_delay_ms = Some(1234);
-        let Json(response) =
-            replace_platform_config(State(state.clone()), Path(before.id.clone()), Json(request))
-                .await
-                .unwrap();
-        assert_eq!(response.name, before.platform_name);
-        let url = StreamerUrl::new("https://live.bilibili.com/12345").unwrap();
-        let stored = state
-            .config_service
-            .get_platform_config_by_name(&url.platform().unwrap().to_lowercase())
-            .await
-            .unwrap();
-        assert_eq!(stored.id, before.id);
-        assert_eq!(stored.fetch_delay_ms, Some(1234));
     }
 
     #[tokio::test]

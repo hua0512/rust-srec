@@ -637,96 +637,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn profiles_are_listed_per_platform_without_a_selecting_scope() {
-        let fixture = fixture().await;
-        let (status, created) = request(
-            &fixture.app,
-            "POST",
-            "/api/credentials/profiles",
-            Some(&fixture.full_key),
-            create_body("A"),
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK);
-        let get = |path: &'static str| {
-            let app = fixture.app.clone();
-            let key = fixture.full_key.clone();
-            async move { request(&app, "GET", path, Some(&key), serde_json::Value::Null).await }
-        };
-        let (status, listed) = get("/api/credentials/profiles?platform_id=platform-bilibili").await;
-        assert_eq!(status, StatusCode::OK);
-        let ids: Vec<_> = listed
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|detail| detail["profile"]["id"].clone())
-            .collect();
-        assert_eq!(ids, vec![created["id"].clone()]);
-        let (status, listed) = get("/api/credentials/profiles?platform_id=platform-twitch").await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(listed, serde_json::json!([]));
-        assert_eq!(
-            get("/api/credentials/profiles?platform_id=platform-missing")
-                .await
-                .0,
-            StatusCode::NOT_FOUND
-        );
-        assert_eq!(
-            get("/api/credentials/profiles?platform_id=%20").await.0,
-            StatusCode::UNPROCESSABLE_ENTITY
-        );
-        assert_eq!(
-            get("/api/credentials/profiles?scope_type=platform&scope_id=platform-bilibili&platform_id=platform-bilibili")
-                .await
-                .0,
-            StatusCode::BAD_REQUEST
-        );
-    }
-
-    #[tokio::test]
-    async fn summaries_never_return_secrets_and_stale_edits_conflict() {
-        let fixture = fixture().await;
-        let (status, profile) = request(
-            &fixture.app,
-            "POST",
-            "/api/credentials/profiles",
-            Some(&fixture.full_key),
-            create_body("A"),
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK);
-        assert!(!profile.to_string().contains("sentinel"));
-        let path = format!(
-            "/api/credentials/profiles/{}",
-            profile["id"].as_str().unwrap()
-        );
-        let edit = serde_json::json!({"expected_version":profile["version"],"label":"Renamed"});
-        let (status, updated) = request(
-            &fixture.app,
-            "PATCH",
-            &path,
-            Some(&fixture.full_key),
-            edit.clone(),
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(updated["revision"], profile["revision"]);
-        let (status, error) =
-            request(&fixture.app, "PATCH", &path, Some(&fixture.full_key), edit).await;
-        assert_eq!(status, StatusCode::CONFLICT);
-        assert_eq!(error["code"], "CREDENTIAL_STALE_VERSION");
-        let (_, detail) = request(
-            &fixture.app,
-            "GET",
-            &path,
-            Some(&fixture.full_key),
-            serde_json::Value::Null,
-        )
-        .await;
-        assert!(!detail.to_string().contains("sentinel"));
-    }
-
-    #[tokio::test]
     async fn an_account_route_names_a_saved_proxy_and_omitting_it_keeps_it() {
         let fixture = fixture().await;
         let saved = crate::database::repositories::proxies::save_for_test(
@@ -920,57 +830,6 @@ mod tests {
         )
         .await;
         assert!(platform["site"].is_null());
-    }
-
-    #[tokio::test]
-    async fn targeted_refresh_does_not_mutate_another_account() {
-        let fixture = fixture().await;
-        let (_, a) = request(
-            &fixture.app,
-            "POST",
-            "/api/credentials/profiles",
-            Some(&fixture.full_key),
-            create_body("A"),
-        )
-        .await;
-        let (_, b) = request(
-            &fixture.app,
-            "POST",
-            "/api/credentials/profiles",
-            Some(&fixture.full_key),
-            create_body("B"),
-        )
-        .await;
-        let id = a["id"].as_str().unwrap();
-        let (status, _) = request(
-            &fixture.app,
-            "POST",
-            &format!("/api/credentials/profiles/{id}/refresh"),
-            Some(&fixture.full_key),
-            serde_json::Value::Null,
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(
-            fixture
-                .state
-                .credential_profiles
-                .get(id)
-                .await
-                .unwrap()
-                .cookies,
-            "sid=refreshed-a"
-        );
-        assert_eq!(
-            fixture
-                .state
-                .credential_profiles
-                .get(b["id"].as_str().unwrap())
-                .await
-                .unwrap()
-                .cookies,
-            "sid=secret-sentinel"
-        );
     }
 
     #[tokio::test]
@@ -1269,36 +1128,5 @@ mod tests {
         assert_eq!(status, StatusCode::CONFLICT);
         assert_eq!(error["code"], "CREDENTIAL_PROFILE_REFERENCED");
         assert_eq!(error["details"]["references"], expected);
-    }
-
-    #[tokio::test]
-    async fn unsupported_validation_reports_capability_without_marking_invalid() {
-        let fixture = fixture().await;
-        let mut body = create_body("Unvalidated");
-        body["platform_id"] = "platform-huya".into();
-        let (_, profile) = request(
-            &fixture.app,
-            "POST",
-            "/api/credentials/profiles",
-            Some(&fixture.full_key),
-            body,
-        )
-        .await;
-        let path = format!(
-            "/api/credentials/profiles/{}/validate",
-            profile["id"].as_str().unwrap()
-        );
-        let (status, detail) = request(
-            &fixture.app,
-            "POST",
-            &path,
-            Some(&fixture.full_key),
-            serde_json::Value::Null,
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(detail["capabilities"]["validate"], false);
-        assert!(detail["health"].is_null());
-        assert_eq!(detail["profile"]["revision"], profile["revision"]);
     }
 }

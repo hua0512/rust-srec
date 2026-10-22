@@ -709,21 +709,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_unwrap_json_value() {
-        let double_encoded = serde_json::Value::String("{\"a\": 1}".to_string());
-        let unwrapped = unwrap_json_value(double_encoded);
-        assert_eq!(unwrapped["a"], 1);
-
-        let triple_encoded = serde_json::Value::String("\"{\\\"b\\\": 2}\"".to_string());
-        let unwrapped2 = unwrap_json_value(triple_encoded);
-        assert_eq!(unwrapped2["b"], 2);
-
-        let normal = serde_json::json!({"c": 3});
-        let unwrapped3 = unwrap_json_value(normal.clone());
-        assert_eq!(unwrapped3, normal);
-    }
-
     #[tokio::test]
     async fn filter_exports_materialize_utc_without_losing_explicit_zones_or_extensions() {
         use crate::database::models::{FilterDbModel, FilterType};
