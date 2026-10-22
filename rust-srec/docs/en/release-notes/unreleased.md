@@ -26,7 +26,7 @@
 - Fixed a streamer whose error was cleared through the API or MCP, or which was waiting for an unavailable output folder that became writable again, only being checked again once its previous retry delay ran out. It is now checked right away.
 - Clearing a streamer's error through the API or MCP no longer turns a disabled streamer back on or changes the state of a streamer that is live. Clearing the error of a streamer stopped by a fatal error, such as the room not being found, now resumes monitoring it; previously it was only checked again after rust-srec restarted.
 - Fixed a recording streamer that was disabled and enabled again soon after sometimes no longer being checked or recorded, until it was disabled and enabled once more or rust-srec restarted.
-- Fixed a streamer whose address is an HLS playlist (`.m3u8`) recorded through Streamlink being recorded again and again after the playlist ended. A finished playlist now counts as offline, so it is recorded once.
+- Fixed a streamer whose address is an HLS playlist (`.m3u8`) or DASH manifest (`.mpd`) recorded through Streamlink being recorded again and again after it ended. A finished playlist or manifest now counts as offline, so it is recorded once.
 
 ## Workflows and file processing
 

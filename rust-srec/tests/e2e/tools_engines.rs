@@ -7,7 +7,7 @@
 
 use serde_json::{Value, json};
 
-use crate::support::tools::{HlsOrigin, codecs, duration_secs, probe};
+use crate::support::tools::{DashOrigin, HlsOrigin, codecs, duration_secs, probe};
 use crate::support::{FakePlatform, FlvLoop, Seed, TestApp, WAIT, eventually, id_of, millis};
 
 /// The path of `segment`, checked against the size the backend stored for
@@ -162,14 +162,9 @@ async fn the_streamlink_engine_records_a_live_hls_room_with_the_platform_headers
     app.shutdown().await;
 }
 
-/// A URL no built-in platform claims but Streamlink can handle belongs to
-/// the Streamlink pseudo-platform: Streamlink reports it live, and the
-/// platform's default Streamlink engine records it. Once the playlist has
-/// ended it reads offline though it is still served, so it is recorded once.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "requires Streamlink, ffmpeg and ffprobe"]
-async fn a_url_only_streamlink_handles_is_monitored_and_recorded_through_streamlink() {
-    let origin = HlsOrigin::start(3).await;
+/// Create an enabled streamer for `url`, which no built-in platform claims,
+/// and return its id once it belongs to the Streamlink pseudo-platform.
+async fn monitor_through_streamlink(url: &str) -> (TestApp, String, String) {
     // Streamlink runs as its own process and takes the pseudo-platform's
     // route, so that route reaches the loopback origin; every other platform
     // stays on the dead end.
@@ -179,18 +174,19 @@ async fn a_url_only_streamlink_handles_is_monitored_and_recorded_through_streaml
     .await;
     let token = app.admin_token().await;
     let created = app
-        .create_enabled_streamer(
-            &token,
-            json!({ "name": "Bare playlist", "url": origin.playlist_url() }),
-        )
+        .create_enabled_streamer(&token, json!({ "name": "Bare URL", "url": url }))
         .await;
     assert_eq!(created["platform_config_id"], "platform-streamlink");
     let id = id_of(&created);
+    (app, token, id)
+}
 
-    origin.wait_for_segment(2).await;
-    origin.end();
-    let session = app.ended_session(&token, &id).await;
-    let segments = app.segments(&token, id_of(&session).as_str()).await;
+/// Panics unless the streamer was recorded once, by Streamlink's best
+/// stream into one three-second FLV file, and every check after that
+/// session ended found it offline.
+async fn assert_recorded_once(app: &TestApp, token: &str, id: &str) {
+    let session = app.ended_session(token, id).await;
+    let segments = app.segments(token, id_of(&session).as_str()).await;
     assert_eq!(segments.len(), 1, "{segments:?}");
     assert_flv_recording(&stored_path(&segments[0]), 3.0).await;
 
@@ -199,7 +195,7 @@ async fn a_url_only_streamlink_handles_is_monitored_and_recorded_through_streaml
     // the oldest check first.
     let ended_at = millis(&session["end_time"]);
     let history = eventually(WAIT, "a check after the end", || async {
-        let history = app.checks(&token, &id).await;
+        let history = app.checks(token, id).await;
         history
             .iter()
             .any(|check| millis(&check["checked_at"]) > ended_at)
@@ -208,8 +204,9 @@ async fn a_url_only_streamlink_handles_is_monitored_and_recorded_through_streaml
     .await;
     let check = &history[0];
     assert_eq!(check["outcome"], "live", "{history:?}");
-    // Streamlink names a media playlist's one stream `live` and offers it as
-    // `best` and `worst` too; the best is recorded.
+    // Streamlink names a media playlist's one stream `live` and a DASH
+    // presentation's by its resolution, and offers it as `best` and `worst`
+    // too; the best is recorded.
     assert_eq!(check["streams_extracted"], 3, "{history:?}");
     assert_eq!(check["stream_selected"]["quality"], "best", "{history:?}");
     assert!(
@@ -219,9 +216,39 @@ async fn a_url_only_streamlink_handles_is_monitored_and_recorded_through_streaml
             .all(|check| check["outcome"] == "offline"),
         "{history:?}"
     );
-    assert_eq!(app.sessions(&token, &id).await.len(), 1);
-    assert_eq!(app.streamer(&token, &id).await["state"], "NOT_LIVE");
+    assert_eq!(app.sessions(token, id).await.len(), 1);
+    assert_eq!(app.streamer(token, id).await["state"], "NOT_LIVE");
     assert_eq!(app.dead_end().attempts(), []);
+}
+
+/// A URL no built-in platform claims but Streamlink can handle belongs to
+/// the Streamlink pseudo-platform: Streamlink reports it live, and the
+/// platform's default Streamlink engine records it. Once the playlist has
+/// ended it reads offline though it is still served, so it is recorded once.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires Streamlink, ffmpeg and ffprobe"]
+async fn a_url_only_streamlink_handles_is_monitored_and_recorded_through_streamlink() {
+    let origin = HlsOrigin::start(3).await;
+    let (app, token, id) = monitor_through_streamlink(&origin.playlist_url()).await;
+
+    origin.wait_for_segment(2).await;
+    origin.end();
+    assert_recorded_once(&app, &token, &id).await;
+
+    app.shutdown().await;
+}
+
+/// A bare DASH manifest is recorded through Streamlink the same way, and
+/// reads offline once its MPD turns static.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires Streamlink, ffmpeg and ffprobe"]
+async fn a_url_only_streamlink_dash_manifest_is_recorded_once_it_ends() {
+    let origin = DashOrigin::start(3).await;
+    let (app, token, id) = monitor_through_streamlink(&origin.manifest_url()).await;
+
+    origin.wait_for_last_segments().await;
+    origin.end();
+    assert_recorded_once(&app, &token, &id).await;
 
     app.shutdown().await;
 }

@@ -83,16 +83,13 @@ brotli = { workspace = true }
 openssl = { workspace = true, optional = true, features = ["vendored"] }
 native-tls = { workspace = true, optional = true }
 process-utils = { path = "../process-utils" }
+roxmltree = { workspace = true }
 
 # Protocol Buffers
 prost = { workspace = true }
 
 [build-dependencies]
 prost-build = { workspace = true }
-
-[dev-dependencies]
-roxmltree = { workspace = true }
-
 
 [features]
 default = ["rustls-tls"]
