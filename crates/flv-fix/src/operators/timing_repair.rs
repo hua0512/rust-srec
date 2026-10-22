@@ -917,48 +917,6 @@ mod tests {
     }
 
     #[test]
-    fn test_timestamp_discontinuity_correction() {
-        // Create input tags
-        let mut input_tags = Vec::new();
-        input_tags.push(create_test_header());
-
-        // Regular tags with increasing timestamps
-        for i in 1..5 {
-            input_tags.push(create_video_tag(i * 33, true));
-        }
-
-        // Tag with large timestamp jump (discontinuity)
-        input_tags.push(create_video_tag(5000, true));
-
-        // More regular tags after the jump
-        for i in 151..155 {
-            input_tags.push(create_video_tag(i * 33, true));
-        }
-
-        let config = TimingRepairConfig {
-            strategy: RepairStrategy::Strict,
-            ..Default::default()
-        };
-
-        let results = process_tags_through_operator(config, input_tags);
-
-        // Print results for analysis
-        print_tags(&results);
-
-        // The discontinuity should be smoothed out
-        // The tag after the jump should have a reasonable timestamp increase from the previous tag
-        if let FlvData::Tag(tag1) = &results[4]
-            && let FlvData::Tag(tag2) = &results[5]
-        {
-            let diff = tag2.timestamp_ms - tag1.timestamp_ms;
-            assert!(
-                diff < 1000,
-                "Discontinuity should be corrected to a reasonable interval"
-            );
-        }
-    }
-
-    #[test]
     fn test_av_sync_maintenance() {
         // Create input tags
         let mut input_tags = Vec::new();

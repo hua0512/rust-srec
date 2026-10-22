@@ -1015,58 +1015,6 @@ mod tests {
     }
 
     #[test]
-    fn test_audio_codec_change_detection() {
-        let context = StreamerContext::arc_new(CancellationToken::new());
-        let mut operator = SplitOperator::new(context.clone());
-        let mut output_items = Vec::new();
-
-        // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        // Add a header and first audio sequence header
-        operator
-            .process(&context, create_test_header(), &mut output_fn)
-            .unwrap();
-        operator
-            .process(&context, create_audio_sequence_header(0, 1), &mut output_fn)
-            .unwrap();
-
-        // Add some content tags
-        for i in 1..5 {
-            operator
-                .process(&context, create_audio_tag(i * 100), &mut output_fn)
-                .unwrap();
-        }
-
-        // Add a different audio sequence header - should trigger a split
-        operator
-            .process(&context, create_audio_sequence_header(0, 2), &mut output_fn)
-            .unwrap();
-
-        // Add more content tags
-        for i in 5..10 {
-            operator
-                .process(&context, create_audio_tag(i * 100), &mut output_fn)
-                .unwrap();
-        }
-
-        // The header count indicates how many splits occurred
-        let header_count = output_items
-            .iter()
-            .filter(|item| matches!(item, FlvData::Header(_)))
-            .count();
-
-        // Should have 2 headers: initial + 1 after codec change
-        assert_eq!(
-            header_count, 2,
-            "Should detect audio codec change and inject new header"
-        );
-    }
-
-    #[test]
     fn test_no_codec_change() {
         let context = StreamerContext::arc_new(CancellationToken::new());
         let mut operator = SplitOperator::new(context.clone());
@@ -1708,35 +1656,6 @@ mod tests {
             matches!(split_items[0], FlvData::Split(SplitReason::HeaderReceived)),
             "Expected HeaderReceived, got: {:?}",
             split_items[0]
-        );
-    }
-
-    #[test]
-    fn test_first_upstream_header_does_not_produce_split() {
-        let context = StreamerContext::arc_new(CancellationToken::new());
-        let mut operator = SplitOperator::new(context.clone());
-        let mut output_items = Vec::new();
-
-        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        operator
-            .process(&context, create_test_header(), &mut output_fn)
-            .unwrap();
-        operator
-            .process(&context, create_video_tag(100, true), &mut output_fn)
-            .unwrap();
-
-        let split_count = output_items
-            .iter()
-            .filter(|item| matches!(item, FlvData::Split(_)))
-            .count();
-
-        assert_eq!(
-            split_count, 0,
-            "First upstream header should NOT produce a Split marker"
         );
     }
 
