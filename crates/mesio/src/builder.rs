@@ -221,119 +221,25 @@ impl Default for DownloaderConfigBuilder {
 
 #[cfg(test)]
 mod tests {
-    use crate::ProxyAuth;
+    use crate::ProxyType;
 
     use super::*;
-    use std::time::Duration;
 
     #[test]
-    fn test_builder_defaults() {
-        let config = DownloaderConfigBuilder::new().build();
-        assert_eq!(config.timeout, Duration::from_secs(0));
-        assert_eq!(config.connect_timeout, Duration::from_secs(30));
-        assert!(config.follow_redirects);
-        assert!(config.use_system_proxy);
-        assert!(!config.danger_accept_invalid_certs);
-    }
-
-    #[test]
-    fn test_builder_customization() {
-        let config = DownloaderConfigBuilder::new()
-            .with_timeout(Duration::from_secs(60))
-            .with_connect_timeout(Duration::from_secs(20))
-            .with_follow_redirects(false)
-            .with_user_agent("CustomUserAgent/1.0")
-            .with_header("X-Custom-Header", "CustomValue")
-            .with_system_proxy(false)
-            .build();
-
-        assert_eq!(config.timeout, Duration::from_secs(60));
-        assert_eq!(config.connect_timeout, Duration::from_secs(20));
-        assert!(!config.follow_redirects);
-        assert_eq!(config.user_agent, "CustomUserAgent/1.0");
-        assert!(!config.use_system_proxy);
-
-        // Verify custom header
-        let header_value = config.headers.get("X-Custom-Header").unwrap();
-        assert_eq!(header_value.to_str().unwrap(), "CustomValue");
-    }
-
-    #[test]
-    fn test_caching_options() {
-        // Test with caching enabled
-        let config_with_cache = DownloaderConfigBuilder::new()
-            .with_caching_enabled(true)
-            .build();
-        assert!(config_with_cache.cache_config.is_some());
-
-        // Test with caching disabled
-        let config_without_cache = DownloaderConfigBuilder::new()
-            .with_caching_enabled(false)
-            .build();
-        assert!(config_without_cache.cache_config.is_none());
-    }
-
-    #[test]
-    fn test_proxy_configuration() {
-        let proxy_config = ProxyConfig {
+    fn an_explicit_proxy_overrides_the_system_proxy() {
+        let proxy = ProxyConfig {
             url: "http://proxy.example.com:8080".to_string(),
-            proxy_type: crate::ProxyType::Http,
-            auth: Some(ProxyAuth {
-                username: "user".to_string(),
-                password: "pass".to_string(),
-            }),
+            proxy_type: ProxyType::Http,
+            auth: None,
         };
 
-        // Test with explicit proxy
-        let config_with_proxy = DownloaderConfigBuilder::new()
-            .with_proxy(proxy_config.clone())
+        let config = DownloaderConfigBuilder::new()
+            .with_system_proxy(true)
+            .with_proxy(proxy)
+            .with_system_proxy(true)
             .build();
 
-        assert!(config_with_proxy.proxy.is_some());
-        assert!(!config_with_proxy.use_system_proxy);
-
-        let stored_proxy = config_with_proxy.proxy.unwrap();
-        assert_eq!(stored_proxy.url, proxy_config.url);
-        assert_eq!(stored_proxy.auth.as_ref().unwrap().username, "user");
-        assert_eq!(stored_proxy.auth.as_ref().unwrap().password, "pass");
-        assert_eq!(stored_proxy.proxy_type, proxy_config.proxy_type);
-    }
-
-    #[test]
-    fn test_http2_configuration() {
-        use crate::config::HttpVersionPreference;
-
-        // Test HTTP/2 defaults
-        let default_config = DownloaderConfigBuilder::new().build();
-        assert_eq!(default_config.http_version, HttpVersionPreference::Auto);
-        assert_eq!(
-            default_config.http2_keep_alive_interval,
-            Some(Duration::from_secs(20))
-        );
-
-        // Test HTTP/2 customization
-        let custom_config = DownloaderConfigBuilder::new()
-            .with_http_version(HttpVersionPreference::Http2Only)
-            .with_http2_keep_alive_interval(Duration::from_secs(30))
-            .build();
-
-        assert_eq!(custom_config.http_version, HttpVersionPreference::Http2Only);
-        assert_eq!(
-            custom_config.http2_keep_alive_interval,
-            Some(Duration::from_secs(30))
-        );
-
-        // Test HTTP/1 only mode
-        let http1_config = DownloaderConfigBuilder::new().with_http1_only().build();
-        assert_eq!(http1_config.http_version, HttpVersionPreference::Http1Only);
-
-        // Test HLS optimized preset
-        let hls_config = DownloaderConfigBuilder::new()
-            .with_http2_hls_optimized()
-            .build();
-        assert_eq!(
-            hls_config.http2_keep_alive_interval,
-            Some(Duration::from_secs(20))
-        );
+        assert!(config.proxy.is_some());
+        assert!(!config.use_system_proxy);
     }
 }

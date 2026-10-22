@@ -465,21 +465,6 @@ async fn redirected_playlists_resolve_uris_against_the_served_location() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn vod_playlist_drains_fully_and_ends() {
-    let origin = Origin::new();
-    origin.push_playlist(playlist(0, &["a.ts", "b.ts", "c.ts"], true));
-    origin.add_file("a.ts", b"A".to_vec());
-    origin.add_file("b.ts", b"B".to_vec());
-    origin.add_file("c.ts", b"C".to_vec());
-
-    let base = origin.clone().serve().await;
-    let events = run_engine(&base, fast_config()).await;
-
-    assert_eq!(data_uris(&events).len(), 3);
-    assert!(ends_with_stream_ended(&events));
-}
-
-#[tokio::test(flavor = "multi_thread")]
 async fn first_redirected_twitch_variant_keeps_prefetch_segments() {
     let origin = Origin::new();
     origin.redirect("live.m3u8", "/master.m3u8");

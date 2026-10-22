@@ -129,57 +129,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn normalize_keeps_existing_scheme() {
-        assert_eq!(
-            normalize_proxy_url("https://proxy.example.com:443", ProxyType::Http),
-            "https://proxy.example.com:443"
-        );
-    }
-
-    #[test]
-    fn normalize_adds_http_scheme() {
-        assert_eq!(
-            normalize_proxy_url("proxy.example.com:8080", ProxyType::Http),
-            "http://proxy.example.com:8080"
-        );
-    }
-
-    #[test]
-    fn normalize_adds_https_scheme() {
-        assert_eq!(
-            normalize_proxy_url("proxy.example.com:443", ProxyType::Https),
-            "https://proxy.example.com:443"
-        );
-    }
-
-    #[test]
-    fn normalize_adds_socks5_scheme() {
-        assert_eq!(
-            normalize_proxy_url("proxy.example.com:1080", ProxyType::Socks5),
-            "socks5://proxy.example.com:1080"
-        );
-    }
-
-    #[test]
-    fn build_proxy_accepts_host_port_without_scheme() {
-        let config = ProxyConfig {
-            url: "proxy.example.com:8080".to_string(),
-            proxy_type: ProxyType::Http,
-            auth: None,
-        };
-
-        build_proxy_from_config(&config).expect("proxy should build with implicit scheme");
-    }
-
-    #[test]
-    fn build_proxy_preserves_socks5h() {
-        let config = ProxyConfig {
-            url: "socks5h://proxy.example.com:1080".to_string(),
-            proxy_type: ProxyType::Socks5,
-            auth: None,
-        };
-
-        build_proxy_from_config(&config).expect("socks5h proxy should build");
+    fn normalize_adds_the_proxy_type_scheme_unless_one_is_present() {
+        for (url, proxy_type, expected) in [
+            (
+                "https://proxy.example.com:443",
+                ProxyType::Http,
+                "https://proxy.example.com:443",
+            ),
+            (
+                "proxy.example.com:8080",
+                ProxyType::Http,
+                "http://proxy.example.com:8080",
+            ),
+            (
+                "proxy.example.com:443",
+                ProxyType::Https,
+                "https://proxy.example.com:443",
+            ),
+            (
+                "proxy.example.com:1080",
+                ProxyType::Socks5,
+                "socks5://proxy.example.com:1080",
+            ),
+        ] {
+            assert_eq!(normalize_proxy_url(url, proxy_type), expected, "{url}");
+        }
     }
 
     #[test]

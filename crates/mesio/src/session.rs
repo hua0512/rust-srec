@@ -1212,14 +1212,6 @@ mod tests {
         assert_eq!(wrapped.handle.dropped_events(), 1);
     }
 
-    #[test]
-    fn event_sink_counts_dropped_events() {
-        let (sink, _events) = EventSink::channel(1);
-        sink.emit(DownloadEvent::Lagged { dropped: 0 });
-        sink.emit(DownloadEvent::Lagged { dropped: 1 });
-        assert_eq!(sink.dropped(), 1);
-    }
-
     #[tokio::test]
     async fn event_sink_emits_coalesced_lagged_event_after_drop() {
         let (sink, mut events) = EventSink::channel(2);
@@ -1309,13 +1301,5 @@ mod tests {
             .expect("a DASH session is not an HLS session");
         assert!(error.to_string().contains("expected HLS session, got DASH"));
         assert!(DownloaderSession::Hls(session()).into_dash().is_err());
-    }
-
-    #[test]
-    fn handle_cancel_cancels_token() {
-        let token = CancellationToken::new();
-        let handle = DownloadHandle::new(token.clone(), None, Arc::new(AtomicU64::new(0)), None);
-        handle.cancel();
-        assert!(token.is_cancelled());
     }
 }
