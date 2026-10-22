@@ -14,6 +14,22 @@ type SessionLike<T> = {
 
 let browserSessionSingleton: SessionLike<SessionData> | null = null;
 
+const SESSION_COOKIE_NAME = 'srec_session';
+const SESSION_MAX_AGE_SECONDS = 30 * 24 * 60 * 60; // 30 days
+
+type RequestSession = {
+  data: Partial<SessionData>;
+  // Bumped by every update and clear. A seal that finishes after a newer write
+  // is stale and must not set the cookie, or a slower, older update (or one
+  // made before a sign-out) would end up in the response.
+  version: number;
+};
+
+// Server functions called during SSR run in the page's request, so one state
+// per request keeps a write visible to later reads in it, such as the token
+// re-read after a refresh, and decrypts the cookie only once.
+const requestSessions = new WeakMap<Request, Promise<RequestSession>>();
+
 export function resolveSessionSecret(
   sessionSecret = process.env.SESSION_SECRET,
   nodeEnv = process.env.NODE_ENV,
@@ -113,8 +129,33 @@ function getBrowserSession(): SessionLike<SessionData> {
   return browserSessionSingleton;
 }
 
-// Use TanStack Start's server session in SSR deployments, but fall back
-// to localStorage for pure-client builds (e.g. Tauri desktop).
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+async function openCookieSession(
+  sealed: string | undefined,
+  unsealCookie: (sealed: string) => Promise<unknown>,
+): Promise<RequestSession> {
+  const state: RequestSession = { data: {}, version: 0 };
+  if (!sealed) return state;
+  try {
+    // The payload is `{ data }`. Cookies from rust-srec 0.6 and earlier hold
+    // `{ id, createdAt, data }` in the same Iron seal, so they stay valid.
+    const unsealed = await unsealCookie(sealed);
+    if (isObject(unsealed) && isObject(unsealed.data)) {
+      state.data = unsealed.data as Partial<SessionData>;
+    }
+  } catch {
+    // Expired, tampered with, or sealed with another SESSION_SECRET: the
+    // request starts signed out and the next sign-in replaces the cookie.
+  }
+  return state;
+}
+
+// Use an encrypted cookie session (an Iron seal over Start's cookie helpers) in
+// SSR deployments, but fall back to localStorage for pure-client builds (e.g.
+// Tauri desktop).
 export async function useAppSession(): Promise<SessionLike<SessionData>> {
   // Desktop SPA builds never have a server runtime. Always use localStorage.
   if (isDesktopBuild()) {
@@ -131,45 +172,61 @@ export async function useAppSession(): Promise<SessionLike<SessionData>> {
     throw new Error('useAppSession is server-only outside desktop builds');
   }
 
-  const { useSession, getRequestHeader } =
-    await import('@tanstack/react-start/server');
+  const [
+    { defaults, seal, unseal },
+    { deleteCookie, getCookie, getRequest, setCookie },
+  ] = await Promise.all([
+    import('iron-webcrypto'),
+    import('@tanstack/react-start/server'),
+  ]);
 
-  // getRequestHeader throws outside of a request context (e.g. prerendering),
-  // which leaves resolveCookieSecurity on its NODE_ENV fallback.
-  let forwardedProto: string | undefined;
-  try {
-    forwardedProto = getRequestHeader('x-forwarded-proto');
-  } catch {
-    forwardedProto = undefined;
-  }
+  // Throws outside a request context, as Start's cookie helpers do.
+  const request = getRequest();
 
   const { secure, warnInsecure } = resolveCookieSecurity({
     cookieSecure: process.env.COOKIE_SECURE,
-    forwardedProto,
+    forwardedProto: request.headers.get('x-forwarded-proto') ?? undefined,
     nodeEnv: process.env.NODE_ENV,
   });
   if (warnInsecure) warnInsecureCookieOnce();
 
-  const session = await useSession<SessionData>({
-    name: 'srec_session',
-    password: resolveSessionSecret(),
-    cookie: {
-      secure,
-      sameSite: 'lax',
-      httpOnly: true,
-      maxAge: 30 * 24 * 60 * 60, // 30 days
-    },
-  });
+  const password = resolveSessionSecret();
+  // The seal expires with the cookie. Every update re-seals, which renews both.
+  const sealOptions = { ...defaults, ttl: SESSION_MAX_AGE_SECONDS * 1000 };
+  const cookieOptions = {
+    path: '/',
+    httpOnly: true,
+    sameSite: 'lax',
+    secure,
+  } as const;
+
+  let pending = requestSessions.get(request);
+  if (!pending) {
+    pending = openCookieSession(getCookie(SESSION_COOKIE_NAME), (sealed) =>
+      unseal(sealed, password, sealOptions),
+    );
+    requestSessions.set(request, pending);
+  }
+  const state = await pending;
 
   return {
     get data() {
-      return session.data;
+      return state.data;
     },
     async update(next: SessionData) {
-      await session.update(next);
+      state.data = next;
+      const version = ++state.version;
+      const sealed = await seal({ data: next }, password, sealOptions);
+      if (state.version !== version) return;
+      setCookie(SESSION_COOKIE_NAME, sealed, {
+        ...cookieOptions,
+        maxAge: SESSION_MAX_AGE_SECONDS,
+      });
     },
     async clear() {
-      await session.clear();
+      state.data = {};
+      state.version += 1;
+      deleteCookie(SESSION_COOKIE_NAME, cookieOptions);
     },
   };
 }
