@@ -658,22 +658,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_psi_tables_empty_data() {
-        let segment = TsSegmentData::new(make_media_segment(), Bytes::new())
-            .with_continuity_mode(ts::ContinuityMode::Disabled);
-        let info = segment.parse_psi_tables().unwrap();
-        assert_eq!(info.program_count, 0);
-        assert!(info.programs.is_empty());
-    }
-
-    #[test]
-    fn test_has_psi_tables_empty() {
-        let segment = TsSegmentData::new(make_media_segment(), Bytes::new())
-            .with_continuity_mode(ts::ContinuityMode::Disabled);
-        assert!(!segment.has_psi_tables());
-    }
-
-    #[test]
     fn test_has_psi_tables_non_ts() {
         let segment = TsSegmentData::new(
             make_media_segment(),

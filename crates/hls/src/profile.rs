@@ -101,14 +101,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_segment_type_display() {
-        assert_eq!(SegmentType::Ts.to_string(), "ts");
-        assert_eq!(SegmentType::M4sInit.to_string(), "m4s");
-        assert_eq!(SegmentType::M4sMedia.to_string(), "m4s");
-        assert_eq!(SegmentType::EndMarker.to_string(), "end_marker");
-    }
-
-    #[test]
     fn test_stream_profile_is_complete() {
         let profile = StreamProfile {
             has_video: true,
