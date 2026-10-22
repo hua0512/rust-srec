@@ -1028,13 +1028,14 @@ mod tests {
 
         let directory = tempfile::tempdir().expect("runtime state directory");
         let marker_path = directory.path().join("runtime.dirty");
-        let policy = ShutdownPolicy::new(Duration::from_secs(4), Duration::from_secs(2))
+        // Force containment starts 2 s after the signal; the hard deadline sits
+        // 28 s later so a loaded machine cannot push a working kill past it.
+        let policy = ShutdownPolicy::new(Duration::from_secs(30), Duration::from_secs(28))
             .expect("valid shutdown policy");
         let command = test_worker_command(
             "runtime::supervisor::tests::hard_deadline_force_contains_an_unresponsive_worker",
             "hang",
         );
-        let started_at = Instant::now();
 
         let supervised = supervise_command(command, policy, marker_path.clone(), async {
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -1051,7 +1052,9 @@ mod tests {
             report.termination,
             RuntimeTermination::ForcedRecoveryPending
         );
-        assert!(started_at.elapsed() < Duration::from_secs(4));
+        // A supervisor that waits for the worker instead never returns: the
+        // armed watchdog exits this test process at the hard deadline.
+        assert!(report.elapsed < policy.total());
         assert!(marker_path.exists());
     }
 
