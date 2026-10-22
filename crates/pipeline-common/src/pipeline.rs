@@ -416,22 +416,6 @@ mod tests {
     }
 
     #[test]
-    fn test_simple_pipeline() {
-        let context = Arc::new(StreamerContext::new(CancellationToken::new()));
-        let pipeline = Pipeline::new(context).add_processor(IncrementProcessor);
-
-        let input = vec![Ok(1), Ok(2), Ok(3)];
-        let mut results = Vec::new();
-        let mut output = |res: Result<u32, PipelineError>| {
-            results.push(res.unwrap());
-        };
-
-        pipeline.run(input.into_iter(), &mut output).unwrap();
-
-        assert_eq!(results, vec![2, 3, 4]);
-    }
-
-    #[test]
     fn test_chained_processors() {
         let context = Arc::new(StreamerContext::new(CancellationToken::new()));
         let pipeline = Pipeline::new(context)

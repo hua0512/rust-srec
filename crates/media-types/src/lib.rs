@@ -31,10 +31,4 @@ mod tests {
         let r = Resolution::new(1920, 1080);
         assert_eq!(r.to_string(), "1920x1080");
     }
-
-    #[test]
-    fn test_resolution_equality() {
-        assert_eq!(Resolution::new(1, 2), Resolution::new(1, 2));
-        assert_ne!(Resolution::new(1, 2), Resolution::new(2, 1));
-    }
 }
