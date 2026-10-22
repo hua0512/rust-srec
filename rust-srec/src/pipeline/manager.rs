@@ -102,7 +102,25 @@ const SESSION_COMPLETE_TTL_SECS: u64 = 48 * 60 * 60;
 const SESSION_COMPLETE_CLEANUP_INTERVAL_SECS: u64 = 10 * 60;
 const DAG_COMPLETION_DEDUP_TTL_SECS: u64 = 60 * 60;
 /// How often failed step jobs with a due automatic retry are re-queued.
-const RETRY_SWEEP_INTERVAL_SECS: u64 = 15;
+const RETRY_SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(15);
+
+/// Replaces [`RETRY_SWEEP_INTERVAL`] when set.
+static RETRY_SWEEP_INTERVAL_OVERRIDE: parking_lot::RwLock<Option<std::time::Duration>> =
+    parking_lot::RwLock::new(None);
+
+/// Sweep for due automatic retries every `interval` instead of every 15
+/// seconds, so end-to-end tests can observe a retry without waiting for the
+/// production cadence. Applies to pipeline managers started afterwards.
+#[doc(hidden)]
+pub fn override_retry_sweep_interval(interval: std::time::Duration) {
+    *RETRY_SWEEP_INTERVAL_OVERRIDE.write() = Some(interval);
+}
+
+fn retry_sweep_interval() -> std::time::Duration {
+    RETRY_SWEEP_INTERVAL_OVERRIDE
+        .read()
+        .unwrap_or(RETRY_SWEEP_INTERVAL)
+}
 
 fn parse_trailing_u32(value: &str) -> Option<u32> {
     let bytes = value.as_bytes();

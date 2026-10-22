@@ -77,7 +77,7 @@ where
         let retry_manager = Arc::downgrade(&self);
         let retry_token = self.cancellation_token.clone();
         runtime.tasks.spawn(async move {
-            let interval = std::time::Duration::from_secs(RETRY_SWEEP_INTERVAL_SECS);
+            let interval = retry_sweep_interval();
             loop {
                 tokio::select! {
                     _ = retry_token.cancelled() => break,

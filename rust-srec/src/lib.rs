@@ -57,4 +57,6 @@ pub mod streamer;
 #[doc(hidden)]
 pub mod utils;
 
+#[doc(hidden)]
+pub use api::auth_request::override_socket_revalidation_interval;
 pub use error::{Error, Result};

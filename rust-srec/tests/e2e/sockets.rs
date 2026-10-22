@@ -475,8 +475,8 @@ async fn log_stream_delivers_log_events_until_its_key_is_downgraded_to_read_only
     info_event(&app, &mut socket, &token).await;
 
     // No API changes a key's access level; the row is edited directly. The
-    // socket rechecks its credential every 5 s, so the close arrives within
-    // about 5 s, leaving about 5 s of WAIT's 10 s as margin.
+    // open socket rereads the key on its next periodic recheck. A new upgrade
+    // reads it through a cache of up to 5 s, which the edit does not clear.
     app.run_sql(&format!(
         "UPDATE api_keys SET access_level = 'read_only' WHERE id = '{}'",
         key.id
@@ -484,9 +484,13 @@ async fn log_stream_delivers_log_events_until_its_key_is_downgraded_to_read_only
     .await;
 
     assert_closes(&mut socket).await;
-    app.refused_socket("/api/logging/stream", Some(&key.raw))
-        .await
-        .assert_error(StatusCode::FORBIDDEN, "API_KEY_READ_ONLY");
+    eventually(WAIT, "a new upgrade to be refused", || async {
+        app.upgrade("/api/logging/stream", Some(&key.raw))
+            .await
+            .err()
+    })
+    .await
+    .assert_error(StatusCode::FORBIDDEN, "API_KEY_READ_ONLY");
 
     app.shutdown().await;
 }

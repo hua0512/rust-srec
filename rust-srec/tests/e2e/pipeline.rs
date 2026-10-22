@@ -2461,10 +2461,6 @@ async fn a_step_left_without_inputs_settles_without_a_job_on_completion_and_on_r
     app.shutdown().await;
 }
 
-/// Bound for an automatic step retry: the manager starts due retries every
-/// 15 seconds.
-const RETRY_SWEEP_WAIT: std::time::Duration = std::time::Duration::from_secs(40);
-
 /// The `error_message` of each `pipeline_failed` notification logged for
 /// `job_id`, newest first.
 async fn pipeline_failure_notices(app: &TestApp, token: &str, job_id: &str) -> Vec<String> {
@@ -2527,7 +2523,7 @@ async fn a_step_with_a_retry_budget_runs_again_before_its_workflow_fails() {
     );
     assert_eq!(step(&waiting, "run")["status"], "PROCESSING");
 
-    let spent = eventually(RETRY_SWEEP_WAIT, "the second attempt to fail", || async {
+    let spent = eventually(WAIT, "the second attempt to fail", || async {
         let body = job(&app, &token, &job_id).await;
         (body["status"] == "FAILED" && body["retry_count"] == 1).then_some(body)
     })
