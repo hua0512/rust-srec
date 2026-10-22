@@ -113,8 +113,8 @@ impl ActorMetadata {
 pub struct ActorHandle<M> {
     /// Sender for the actor's normal mailbox.
     sender: mpsc::Sender<M>,
-    /// Sender for high-priority messages (optional).
-    priority_sender: Option<mpsc::Sender<M>>,
+    /// Sender for high-priority messages.
+    priority_sender: mpsc::Sender<M>,
     /// Cancellation token for this actor.
     cancellation_token: CancellationToken,
     /// Actor metadata.
@@ -130,25 +130,7 @@ pub struct ActorHandle<M> {
 }
 
 impl<M> ActorHandle<M> {
-    /// Create a new actor handle.
-    pub fn new(
-        sender: mpsc::Sender<M>,
-        cancellation_token: CancellationToken,
-        metadata: ActorMetadata,
-    ) -> Self {
-        let max_capacity = sender.max_capacity();
-        Self {
-            sender,
-            priority_sender: None,
-            cancellation_token,
-            metadata,
-            max_capacity,
-            generation: 0,
-            stop_signal: ActorStopSignal::new(),
-        }
-    }
-
-    /// Create a new actor handle with priority channel support.
+    /// Create a new actor handle with a normal and a priority mailbox.
     pub fn with_priority(
         sender: mpsc::Sender<M>,
         priority_sender: mpsc::Sender<M>,
@@ -158,7 +140,7 @@ impl<M> ActorHandle<M> {
         let max_capacity = sender.max_capacity();
         Self {
             sender,
-            priority_sender: Some(priority_sender),
+            priority_sender,
             cancellation_token,
             metadata,
             max_capacity,
@@ -211,30 +193,23 @@ impl<M> ActorHandle<M> {
         }
     }
 
-    /// Send a high-priority message.
-    ///
-    /// If a priority channel is configured, the message is sent through it.
-    /// Otherwise, it falls back to the normal channel.
+    /// Send a high-priority message through the priority mailbox.
     pub async fn send_priority(&self, msg: M) -> Result<(), SendError> {
-        if let Some(ref priority_sender) = self.priority_sender {
-            match priority_sender.try_send(msg) {
-                Ok(()) => Ok(()),
-                Err(mpsc::error::TrySendError::Full(msg)) => {
-                    match tokio::time::timeout(DEFAULT_SEND_TIMEOUT, priority_sender.reserve())
-                        .await
-                    {
-                        Ok(Ok(permit)) => {
-                            permit.send(msg);
-                            Ok(())
-                        }
-                        Ok(Err(_)) => Err(SendError::ActorStopped),
-                        Err(_) => Err(SendError::Timeout),
+        match self.priority_sender.try_send(msg) {
+            Ok(()) => Ok(()),
+            Err(mpsc::error::TrySendError::Full(msg)) => {
+                match tokio::time::timeout(DEFAULT_SEND_TIMEOUT, self.priority_sender.reserve())
+                    .await
+                {
+                    Ok(Ok(permit)) => {
+                        permit.send(msg);
+                        Ok(())
                     }
+                    Ok(Err(_)) => Err(SendError::ActorStopped),
+                    Err(_) => Err(SendError::Timeout),
                 }
-                Err(mpsc::error::TrySendError::Closed(_)) => Err(SendError::ActorStopped),
             }
-        } else {
-            self.send(msg).await
+            Err(mpsc::error::TrySendError::Closed(_)) => Err(SendError::ActorStopped),
         }
     }
 
