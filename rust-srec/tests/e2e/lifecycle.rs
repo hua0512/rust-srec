@@ -30,6 +30,14 @@ async fn streamer(app: &TestApp, token: &str, id: &str) -> Value {
     get_ok(app, token, &format!("/api/streamers/{id}")).await
 }
 
+/// Apply `change` to the streamer and return the updated streamer.
+async fn update(app: &TestApp, token: &str, id: &str, change: &Value) -> Value {
+    app.put(&format!("/api/streamers/{id}"), token, change)
+        .await
+        .expect_status(StatusCode::OK)
+        .body
+}
+
 /// The streamer's sessions, newest first.
 async fn sessions(app: &TestApp, token: &str, streamer_id: &str) -> Vec<Value> {
     get_ok(
@@ -65,6 +73,11 @@ fn end_payloads(session: &Value) -> Vec<&Value> {
         .filter(|event| event["kind"] == "session_ended")
         .map(|event| &event["payload"])
         .collect()
+}
+
+/// A `session_ended` payload whose cause has only a type.
+fn end(cause: &str, via_hysteresis: bool) -> Value {
+    json!({ "kind": "session_ended", "cause": { "type": cause }, "via_hysteresis": via_hysteresis })
 }
 
 /// The titles a session recorded, oldest first.
@@ -122,18 +135,17 @@ async fn dags(app: &TestApp, token: &str, session_id: &str) -> Vec<Value> {
 /// A streamer row inserted before boot on `room`, for states the services
 /// load at startup.
 fn seeded_streamer(id: &str, room: &FakeRoom, state: &str, columns: &[(&str, &str)]) -> String {
-    let (names, values): (Vec<&str>, Vec<&str>) = columns.iter().copied().unzip();
+    let names: String = columns
+        .iter()
+        .map(|(name, _)| format!(", {name}"))
+        .collect();
+    let values: String = columns
+        .iter()
+        .map(|(_, value)| format!(", {value}"))
+        .collect();
     format!(
         "INSERT INTO streamers (id, name, url, platform_config_id, priority, state{names}) \
          VALUES ('{id}', '{id}', '{url}', 'platform-fake', 'NORMAL', '{state}'{values});\n",
-        names = names
-            .iter()
-            .map(|name| format!(", {name}"))
-            .collect::<String>(),
-        values = values
-            .iter()
-            .map(|value| format!(", {value}"))
-            .collect::<String>(),
         url = room.url(),
     )
 }
@@ -228,9 +240,7 @@ async fn the_first_check_after_a_restart_ends_or_reuses_the_session_it_left_open
     let gone_session = ended(&app, &token, "gone-session").await;
     assert_eq!(
         end_payloads(&gone_session),
-        [
-            &json!({ "kind": "session_ended", "cause": { "type": "streamer_offline" }, "via_hysteresis": false })
-        ]
+        [&end("streamer_offline", false)]
     );
     let dag = eventually(WAIT, "the session-complete workflow", || async {
         let dags = dags(&app, &token, "gone-session").await;
@@ -355,18 +365,10 @@ async fn an_offline_check_clears_earlier_failures_and_ends_a_session_a_backoff_l
         assert_eq!(checks(&app, &token, id).await[0]["outcome"], "offline");
     }
     let stale = ended(&app, &token, "stale-session").await;
-    assert_eq!(
-        end_payloads(&stale),
-        [
-            &json!({ "kind": "session_ended", "cause": { "type": "streamer_offline" }, "via_hysteresis": false })
-        ]
-    );
+    assert_eq!(end_payloads(&stale), [&end("streamer_offline", false)]);
     for id in ["failed", "backed-off"] {
-        assert_eq!(
-            sessions(&app, &token, id).await,
-            Vec::<Value>::new(),
-            "{id}"
-        );
+        let opened = sessions(&app, &token, id).await;
+        assert!(opened.is_empty(), "{id}: {opened:?}");
     }
 
     app.shutdown().await;
@@ -375,13 +377,8 @@ async fn an_offline_check_clears_earlier_failures_and_ends_a_session_a_backoff_l
 /// Create an enabled streamer watching `room` with `config` as its
 /// streamer-specific config, and return its id.
 async fn watch(app: &TestApp, token: &str, name: &str, room: &FakeRoom, config: Value) -> String {
-    id_of(
-        &app.create_enabled_streamer(
-            token,
-            json!({ "name": name, "url": room.url(), "streamer_specific_config": config }),
-        )
-        .await,
-    )
+    let streamer = json!({ "name": name, "url": room.url(), "streamer_specific_config": config });
+    id_of(&app.create_enabled_streamer(token, streamer).await)
 }
 
 /// The streamer's only session id, once it has one.
@@ -410,7 +407,8 @@ fn consecutive_failures_end() -> Value {
 
 /// Two dropped connections with no recorded part between them are taken as
 /// the broadcast ending: the session ends at once, without waiting for a
-/// status check.
+/// status check. A title first seen when the first drop resumes joins the
+/// session's title list, so the session is named by it from then on.
 ///
 /// The failures count within `offline_check_count` offline-check intervals,
 /// widened here to 5 s so a loaded machine still drops the second connection
@@ -419,19 +417,23 @@ fn consecutive_failures_end() -> Value {
 async fn two_dropped_connections_without_a_recorded_part_end_the_session() {
     let fake = FakePlatform::start().await;
     let room = fake.room("flaky");
-    room.set_live(room.live("Flaky"));
+    room.set_live(room.live("First title"));
     let app = TestApp::start_with(Seed::live().global("offline_check_delay_ms", 5_000)).await;
     let token = app.admin_token().await;
     let id = watch(&app, &token, "Flaky", &room, Value::Null).await;
 
     room.wait_for_media_connection(1).await;
     let session_id = only_session(&app, &token, &id).await;
+    room.set_live(room.live("Second title"));
     room.reset();
+    // The resume records the new title before it reconnects.
     room.wait_for_media_connection(2).await;
     room.reset();
 
     let session = ended(&app, &token, &session_id).await;
     assert_eq!(end_payloads(&session), [&consecutive_failures_end()]);
+    assert_eq!(session["title"], "Second title", "{session}");
+    assert_eq!(titles(&session), ["First title", "Second title"]);
     assert_eq!(sessions(&app, &token, &id).await.len(), 1);
 
     app.shutdown().await;
@@ -448,14 +450,8 @@ async fn a_part_recorded_between_dropped_connections_keeps_the_session() {
     room.set_live(room.live("First title"));
     let app = TestApp::start_with(Seed::live().global("offline_check_delay_ms", 5_000)).await;
     let token = app.admin_token().await;
-    let id = watch(
-        &app,
-        &token,
-        "Steady",
-        &room,
-        json!({ "max_part_size_bytes": 20_000 }),
-    )
-    .await;
+    let config = json!({ "max_part_size_bytes": 20_000 });
+    let id = watch(&app, &token, "Steady", &room, config).await;
 
     room.wait_for_media_connection(1).await;
     let session_id = only_session(&app, &token, &id).await;
@@ -471,27 +467,16 @@ async fn a_part_recorded_between_dropped_connections_keeps_the_session() {
     let mut flv = FlvLoop::tiny();
     room.push(flv.stream(6));
     eventually(WAIT, "a recorded part", || async {
-        let page = get_ok(
-            &app,
-            &token,
-            &format!("/api/sessions/{session_id}/segments"),
-        )
-        .await;
-        (page["items"]
-            .as_array()
-            .is_some_and(|items| !items.is_empty()))
-        .then_some(())
+        (segment_count(&app, &token, &session_id).await > 0).then_some(())
     })
     .await;
     room.reset();
 
     room.wait_for_media_connection(3).await;
-    let resumed = eventually(WAIT, "the streamer to read LIVE", || async {
-        let streamer = streamer(&app, &token, &id).await;
-        (streamer["state"] == "LIVE").then_some(streamer)
+    eventually(WAIT, "the streamer to read LIVE", || async {
+        (streamer(&app, &token, &id).await["state"] == "LIVE").then_some(())
     })
     .await;
-    assert_eq!(resumed["state"], "LIVE");
     let session = session(&app, &token, &session_id).await;
     assert_eq!(session["is_live"], true, "{session}");
     assert_eq!(end_payloads(&session), Vec::<&Value>::new());
@@ -500,34 +485,6 @@ async fn a_part_recorded_between_dropped_connections_keeps_the_session() {
     let session = ended(&app, &token, &session_id).await;
     assert_eq!(end_payloads(&session), [&consecutive_failures_end()]);
     assert_eq!(sessions(&app, &token, &id).await.len(), 1);
-
-    app.shutdown().await;
-}
-
-/// A title first seen when a dropped connection resumes joins the session's
-/// title list, so the session is named by it from then on.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_title_seen_when_a_dropped_connection_resumes_is_added_to_the_session() {
-    let fake = FakePlatform::start().await;
-    let room = fake.room("retitled");
-    room.set_live(room.live("First title"));
-    let app = TestApp::start_with(Seed::live().global("offline_check_delay_ms", 5_000)).await;
-    let token = app.admin_token().await;
-    let id = watch(&app, &token, "Retitled", &room, Value::Null).await;
-
-    room.wait_for_media_connection(1).await;
-    let session_id = only_session(&app, &token, &id).await;
-    room.set_live(room.live("Second title"));
-    room.reset();
-    room.wait_for_media_connection(2).await;
-
-    let session = eventually(WAIT, "the new title on the session", || async {
-        let session = session(&app, &token, &session_id).await;
-        (session["title"] == "Second title").then_some(session)
-    })
-    .await;
-    assert_eq!(session["is_live"], true, "{session}");
-    assert_eq!(titles(&session), ["First title", "Second title"]);
 
     app.shutdown().await;
 }
@@ -568,7 +525,7 @@ async fn disabling_ends_only_the_current_session_as_a_user_stop() {
     let over_id = watch(&app, &token, "Over", &over, Value::Null).await;
     let again_id = watch(&app, &token, "Again", &again, Value::Null).await;
 
-    let offline_end = json!({ "kind": "session_ended", "cause": { "type": "streamer_offline" }, "via_hysteresis": true });
+    let offline_end = end("streamer_offline", true);
     let mut first_sessions = Vec::new();
     for (id, room) in [(&over_id, &over), (&again_id, &again)] {
         room.wait_for_media_connection(1).await;
@@ -585,24 +542,11 @@ async fn disabling_ends_only_the_current_session_as_a_user_stop() {
     let second = new_session(&app, &token, &again_id, 1).await;
 
     for id in [&over_id, &again_id] {
-        let disabled = app
-            .put(
-                &format!("/api/streamers/{id}"),
-                &token,
-                &json!({ "enabled": false }),
-            )
-            .await
-            .expect_status(StatusCode::OK)
-            .body;
+        let disabled = update(&app, &token, id, &json!({ "enabled": false })).await;
         assert_eq!(disabled["state"], "DISABLED");
     }
     let second = ended(&app, &token, &second).await;
-    assert_eq!(
-        end_payloads(&second),
-        [
-            &json!({ "kind": "session_ended", "cause": { "type": "user_disabled" }, "via_hysteresis": false })
-        ]
-    );
+    assert_eq!(end_payloads(&second), [&end("user_disabled", false)]);
     for session_id in &first_sessions {
         assert_eq!(
             end_payloads(&session(&app, &token, session_id).await),
@@ -636,44 +580,29 @@ async fn updates_keep_a_backoff_until_disabling_clears_it_and_re_enabling_checks
     )))
     .await;
     let token = app.admin_token().await;
-    let path = "/api/streamers/resting";
 
-    for update in [json!({ "name": "Renamed" }), json!({ "priority": "HIGH" })] {
-        let updated = app
-            .put(path, &token, &update)
-            .await
-            .expect_status(StatusCode::OK)
-            .body;
+    for change in [json!({ "name": "Renamed" }), json!({ "priority": "HIGH" })] {
+        let updated = update(&app, &token, "resting", &change).await;
         let stored = streamer(&app, &token, "resting").await;
         for streamer in [&updated, &stored] {
-            assert_eq!(
-                streamer["state"], "TEMPORAL_DISABLED",
-                "{update}: {streamer}"
-            );
-            assert_eq!(streamer["consecutive_error_count"], 3, "{update}");
+            let context = format!("{change}: {streamer}");
+            assert_eq!(streamer["state"], "TEMPORAL_DISABLED", "{context}");
+            assert_eq!(streamer["consecutive_error_count"], 3, "{context}");
             assert_eq!(
                 streamer["last_error"], "Extraction failed (http)",
-                "{update}"
+                "{change}"
             );
-            assert_eq!(millis(&streamer["disabled_until"]), until, "{update}");
+            assert_eq!(millis(&streamer["disabled_until"]), until, "{context}");
         }
     }
     assert_eq!(streamer(&app, &token, "resting").await["name"], "Renamed");
 
-    let disabled = app
-        .put(path, &token, &json!({ "enabled": false }))
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let disabled = update(&app, &token, "resting", &json!({ "enabled": false })).await;
     assert_eq!(disabled["state"], "DISABLED", "{disabled}");
     assert_eq!(disabled["consecutive_error_count"], 0, "{disabled}");
     assert!(disabled["last_error"].is_null(), "{disabled}");
     assert!(disabled["disabled_until"].is_null(), "{disabled}");
-    let enabled = app
-        .put(path, &token, &json!({ "enabled": true }))
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let enabled = update(&app, &token, "resting", &json!({ "enabled": true })).await;
     assert_eq!(enabled["state"], "NOT_LIVE", "{enabled}");
     let history = eventually(WAIT, "a check after re-enabling", || async {
         let history = checks(&app, &token, "resting").await;
@@ -727,16 +656,11 @@ async fn a_url_change_frees_the_old_url_and_reserves_the_new_one() {
             .assert_error(StatusCode::CONFLICT, "CONFLICT");
     }
 
-    let moved = app
-        .put(
-            &path,
-            &token,
-            &json!({ "url": "https://live.bilibili.com/7003" }),
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(moved["url"], "https://live.bilibili.com/7003");
+    let moved = json!({ "url": "https://live.bilibili.com/7003" });
+    assert_eq!(
+        update(&app, &token, &moving, &moved).await["url"],
+        moved["url"]
+    );
     for url in [
         "https://LIVE.BILIBILI.COM/7003",
         "https://LIVE.BILIBILI.COM/7002",
@@ -768,6 +692,12 @@ fn file_count(dir: &Path) -> usize {
             if path.is_dir() { file_count(&path) } else { 1 }
         })
         .sum()
+}
+
+/// Create a disabled streamer and return its id.
+async fn disabled_streamer(app: &TestApp, token: &str, name: &str, url: &str) -> String {
+    let streamer = json!({ "name": name, "url": url });
+    id_of(&app.create_disabled_streamer(token, streamer).await)
 }
 
 async fn streamer_rows(app: &TestApp, id: &str) -> i64 {
@@ -863,17 +793,9 @@ async fn a_deleted_streamer_is_reaped_once_its_sessions_have_settled() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
     let settled_url = "https://live.bilibili.com/8001";
-    let settled = id_of(
-        &app.create_disabled_streamer(&token, json!({ "name": "Settled", "url": settled_url }))
-            .await,
-    );
-    let retiring = id_of(
-        &app.create_disabled_streamer(
-            &token,
-            json!({ "name": "Retiring", "url": "https://live.bilibili.com/8002" }),
-        )
-        .await,
-    );
+    let settled = disabled_streamer(&app, &token, "Settled", settled_url).await;
+    let retiring =
+        disabled_streamer(&app, &token, "Retiring", "https://live.bilibili.com/8002").await;
     // Inserted after startup, so the startup recovery does not settle the
     // second session.
     let (started, ended_at) = (now_ms() - 120_000, now_ms() - 60_000);
@@ -898,8 +820,7 @@ async fn a_deleted_streamer_is_reaped_once_its_sessions_have_settled() {
     assert_eq!(kept["streamer_name"], "Settled");
     assert_eq!(kept["output_count"], 1);
     assert_eq!(segment_count(&app, &token, "settled-session").await, 1);
-    app.create_disabled_streamer(&token, json!({ "name": "Successor", "url": settled_url }))
-        .await;
+    disabled_streamer(&app, &token, "Successor", settled_url).await;
 
     let path = format!("/api/streamers/{retiring}");
     app.delete(&path, &token)
@@ -964,19 +885,19 @@ async fn wait_until_queued(app: &TestApp, token: &str, id: &str) {
     .await;
 }
 
-async fn watch_with_priority(
-    app: &TestApp,
-    token: &str,
-    room: &FakeRoom,
-    priority: &str,
-) -> String {
-    id_of(
-        &app.create_enabled_streamer(
-            token,
-            json!({ "name": room.url(), "url": room.url(), "priority": priority }),
-        )
-        .await,
-    )
+/// Create an enabled streamer of `priority` watching `room`, and return its id.
+async fn watch_at(app: &TestApp, token: &str, room: &FakeRoom, priority: &str) -> String {
+    let streamer = json!({ "name": room.url(), "url": room.url(), "priority": priority });
+    id_of(&app.create_enabled_streamer(token, streamer).await)
+}
+
+/// A room per name, each live with its name as the title.
+fn live_rooms<const N: usize>(fake: &FakePlatform, names: [&str; N]) -> [FakeRoom; N] {
+    names.map(|name| {
+        let room = fake.room(name);
+        room.set_live(room.live(name));
+        room
+    })
 }
 
 fn recordings_started(fake: &FakePlatform, room: &FakeRoom) -> usize {
@@ -990,29 +911,22 @@ fn recordings_started(fake: &FakePlatform, room: &FakeRoom) -> usize {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn queued_recordings_start_high_priority_first_then_in_arrival_order() {
     let fake = FakePlatform::start().await;
-    let rooms: Vec<FakeRoom> = [
-        "running", "high-1", "high-2", "normal-1", "normal-2", "high-3",
-    ]
-    .into_iter()
-    .map(|name| {
-        let room = fake.room(name);
-        room.set_live(room.live(name));
-        room
-    })
-    .collect();
-    let [running, high_1, high_2, normal_1, normal_2, high_3] = &rooms[..] else {
-        unreachable!()
-    };
+    let [running, high_1, high_2, normal_1, normal_2, high_3] = &live_rooms(
+        &fake,
+        [
+            "running", "high-1", "high-2", "normal-1", "normal-2", "high-3",
+        ],
+    );
     let app = TestApp::start_with(Seed::live().global("max_concurrent_downloads", 1)).await;
     let token = app.admin_token().await;
 
     for (room, priority) in [(running, "NORMAL"), (high_1, "HIGH"), (high_2, "HIGH")] {
-        watch_with_priority(&app, &token, room, priority).await;
+        watch_at(&app, &token, room, priority).await;
         room.wait_for_media_connection(1).await;
     }
     let mut waiting = Vec::new();
     for (room, priority) in [(normal_1, "NORMAL"), (normal_2, "NORMAL"), (high_3, "HIGH")] {
-        let id = watch_with_priority(&app, &token, room, priority).await;
+        let id = watch_at(&app, &token, room, priority).await;
         wait_until_queued(&app, &token, &id).await;
         waiting.push(id);
     }
@@ -1040,17 +954,7 @@ async fn queued_recordings_start_high_priority_first_then_in_arrival_order() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn max_concurrent_downloads_changes_apply_to_waiting_recordings_at_once() {
     let fake = FakePlatform::start().await;
-    let rooms: Vec<FakeRoom> = ["first", "second", "third"]
-        .into_iter()
-        .map(|name| {
-            let room = fake.room(name);
-            room.set_live(room.live(name));
-            room
-        })
-        .collect();
-    let [first, second, third] = &rooms[..] else {
-        unreachable!()
-    };
+    let [first, second, third] = &live_rooms(&fake, ["first", "second", "third"]);
     let app = TestApp::start_with(Seed::live().global("max_concurrent_downloads", 1)).await;
     let token = app.admin_token().await;
     let set_limit = async |limit: u32| {
@@ -1063,16 +967,16 @@ async fn max_concurrent_downloads_changes_apply_to_waiting_recordings_at_once() 
         .expect_status(StatusCode::OK);
     };
 
-    let first_id = watch_with_priority(&app, &token, first, "NORMAL").await;
+    let first_id = watch_at(&app, &token, first, "NORMAL").await;
     first.wait_for_media_connection(1).await;
-    let second_id = watch_with_priority(&app, &token, second, "NORMAL").await;
+    let second_id = watch_at(&app, &token, second, "NORMAL").await;
     wait_until_queued(&app, &token, &second_id).await;
 
     set_limit(2).await;
     second.wait_for_media_connection(1).await;
 
     set_limit(1).await;
-    let third_id = watch_with_priority(&app, &token, third, "NORMAL").await;
+    let third_id = watch_at(&app, &token, third, "NORMAL").await;
     wait_until_queued(&app, &token, &third_id).await;
     assert!(!first.media_closed() && !second.media_closed());
 
