@@ -10,7 +10,7 @@ use std::path::Path;
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 
-use crate::support::{TestApp, id_of, millis, now_ms};
+use crate::support::{TestApp, assert_fields, millis, now_ms};
 
 fn rfc3339(ms: i64) -> String {
     chrono::DateTime::from_timestamp_millis(ms)
@@ -103,19 +103,6 @@ fn outputs(rows: &[(&str, &str, &str, &str, i64, i64)]) -> String {
         .collect()
 }
 
-async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
-    app.get(path, token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body
-}
-
-/// Create a disabled streamer and return its id.
-async fn disabled_streamer(app: &TestApp, token: &str, name: &str, url: &str) -> String {
-    let streamer = json!({ "name": name, "url": url });
-    id_of(&app.create_disabled_streamer(token, streamer).await)
-}
-
 fn ids(page: &Value) -> Vec<String> {
     page["items"]
         .as_array()
@@ -134,15 +121,6 @@ fn item<'a>(page: &'a Value, id: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("{id} missing from {page}"))
 }
 
-/// Panics unless each field of `expected` has that value in `actual`; an
-/// expected `null` also matches an absent field.
-#[track_caller]
-fn assert_fields(actual: &Value, expected: Value) {
-    for (key, value) in expected.as_object().expect("expected fields") {
-        assert_eq!(&actual[key], value, "{key} in {actual}");
-    }
-}
-
 #[tokio::test]
 async fn session_list_and_detail_describe_each_recording_even_after_its_streamer_is_deleted() {
     // Bob owns a session that is still live, so his row is seeded before
@@ -154,7 +132,9 @@ async fn session_list_and_detail_describe_each_recording_even_after_its_streamer
     )
     .await;
     let token = app.admin_token().await;
-    let alice = disabled_streamer(&app, &token, "Alice", "https://live.bilibili.com/11").await;
+    let alice = app
+        .disabled_streamer(&token, "Alice", "https://live.bilibili.com/11")
+        .await;
 
     let now = now_ms();
     let t0 = now - 3 * 3_600_000;
@@ -202,7 +182,7 @@ async fn session_list_and_detail_describe_each_recording_even_after_its_streamer
     app.run_sql(&sql).await;
 
     // Newest first; the zero-byte ended session is hidden by default.
-    let page = get_ok(&app, &token, "/api/sessions").await;
+    let page = app.get_ok("/api/sessions", &token).await;
     assert_eq!(page["total"], 4);
     assert_eq!(
         ids(&page),
@@ -267,14 +247,14 @@ async fn session_list_and_detail_describe_each_recording_even_after_its_streamer
         ("limit=2&offset=1", &["untitled", "titled"]),
     ];
     for (query, expected) in cases {
-        let page = get_ok(&app, &token, &format!("/api/sessions?{query}")).await;
+        let page = app.get_ok(&format!("/api/sessions?{query}"), &token).await;
         assert_eq!(ids(&page), expected, "{query}");
     }
-    let paged = get_ok(&app, &token, "/api/sessions?limit=2&offset=1").await;
+    let paged = app.get_ok("/api/sessions?limit=2&offset=1", &token).await;
     assert_fields(&paged, json!({ "total": 4, "limit": 2, "offset": 1 }));
 
     // The detail adds the lifecycle timeline, oldest first.
-    let detail = get_ok(&app, &token, "/api/sessions/titled").await;
+    let detail = app.get_ok("/api/sessions/titled", &token).await;
     let events = detail["events"].as_array().expect("events");
     let kinds: Vec<&str> = events
         .iter()
@@ -308,10 +288,12 @@ async fn session_list_and_detail_describe_each_recording_even_after_its_streamer
         .await
         .expect_status(StatusCode::OK);
     let orphan = json!({ "streamer_id": null, "streamer_name": recorded_as });
-    let orphaned = get_ok(&app, &token, "/api/sessions/titled").await;
+    let orphaned = app.get_ok("/api/sessions/titled", &token).await;
     assert_fields(&orphaned, orphan.clone());
     assert_eq!(orphaned["total_size_bytes"], 3_000);
-    let found = get_ok(&app, &token, "/api/sessions?search=as%20recorded").await;
+    let found = app
+        .get_ok("/api/sessions?search=as%20recorded", &token)
+        .await;
     assert_eq!(ids(&found), ["untitled", "titled"]);
     assert_fields(item(&found, "titled"), orphan);
 
@@ -342,7 +324,7 @@ async fn media_content_is_served_with_a_query_token_and_as_an_attachment() {
     };
 
     // The frontend appends the token to the thumbnail URL the session carries.
-    let thumbnail = get_ok(&app, &token, "/api/sessions/covered").await["thumbnail_url"]
+    let thumbnail = app.get_ok("/api/sessions/covered", &token).await["thumbnail_url"]
         .as_str()
         .expect("thumbnail_url")
         .to_string();
@@ -403,7 +385,7 @@ async fn segments_are_listed_newest_first_and_danmu_statistics_404_until_recorde
     ));
     app.run_sql(&sql).await;
 
-    let page = get_ok(&app, &token, "/api/sessions/segmented/segments").await;
+    let page = app.get_ok("/api/sessions/segmented/segments", &token).await;
     assert_fields(&page, json!({ "limit": 20, "offset": 0 }));
     assert_eq!(ids(&page), ["seg-1", "seg-0", "legacy"]);
     let first = item(&page, "seg-0");
@@ -429,15 +411,14 @@ async fn segments_are_listed_newest_first_and_danmu_statistics_404_until_recorde
     assert!(legacy["split_reason_details"].is_null());
     assert!(legacy["completed_at"].is_null());
 
-    let second = get_ok(
-        &app,
-        &token,
-        "/api/sessions/segmented/segments?limit=1&offset=1",
-    )
-    .await;
+    let second = app
+        .get_ok("/api/sessions/segmented/segments?limit=1&offset=1", &token)
+        .await;
     assert_eq!(ids(&second), ["seg-0"]);
     assert_fields(&second, json!({ "limit": 1, "offset": 1 }));
-    let page = get_ok(&app, &token, "/api/sessions/segmented/segments?limit=500").await;
+    let page = app
+        .get_ok("/api/sessions/segmented/segments?limit=500", &token)
+        .await;
     assert_eq!(page["limit"], 100);
 
     // An unknown session is a clean 404, and so is a session's statistics row
@@ -463,7 +444,9 @@ async fn segments_are_listed_newest_first_and_danmu_statistics_404_until_recorde
             t + 120_000
     ))
     .await;
-    let stats = get_ok(&app, &token, "/api/sessions/segmented/danmu-statistics").await;
+    let stats = app
+        .get_ok("/api/sessions/segmented/danmu-statistics", &token)
+        .await;
     assert_fields(
         &stats,
         json!({
@@ -482,7 +465,7 @@ async fn segments_are_listed_newest_first_and_danmu_statistics_404_until_recorde
         }),
     );
     assert_eq!(millis(&stats["start_time"]), t);
-    let detail = get_ok(&app, &token, "/api/sessions/segmented").await;
+    let detail = app.get_ok("/api/sessions/segmented", &token).await;
     assert_eq!(detail["danmu_count"], 9);
 
     app.shutdown().await;
@@ -527,7 +510,9 @@ async fn deleting_a_session_removes_its_records_but_leaves_its_files() {
             .await
             .assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
     }
-    let listed = get_ok(&app, &token, "/api/pipeline/outputs?session_id=doomed").await;
+    let listed = app
+        .get_ok("/api/pipeline/outputs?session_id=doomed", &token)
+        .await;
     assert_eq!(listed["total"], 0);
     assert_eq!(
         app.query_i64("SELECT COUNT(*) FROM session_events WHERE session_id = 'doomed'")
@@ -539,7 +524,7 @@ async fn deleting_a_session_removes_its_records_but_leaves_its_files() {
         Path::new(&video).exists(),
         "the recording must stay on disk"
     );
-    let kept = get_ok(&app, &token, "/api/sessions/kept").await;
+    let kept = app.get_ok("/api/sessions/kept", &token).await;
     assert_eq!(kept["output_count"], 1);
     app.delete("/api/sessions/doomed", &token)
         .await
@@ -564,7 +549,7 @@ async fn deleting_a_session_removes_its_records_but_leaves_its_files() {
     batch_delete(json!(too_many))
         .await
         .assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
-    get_ok(&app, &token, "/api/sessions/batch-3").await;
+    app.get_ok("/api/sessions/batch-3", &token).await;
     let empty = batch_delete(json!([])).await.expect_status(StatusCode::OK);
     assert_eq!(empty.body, json!({ "deleted": 0 }));
 
@@ -575,8 +560,12 @@ async fn deleting_a_session_removes_its_records_but_leaves_its_files() {
 async fn output_list_reports_file_types_and_uploads_and_the_summary_ignores_the_type_filter() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
-    let alpha = disabled_streamer(&app, &token, "Alpha", "https://live.bilibili.com/21").await;
-    let beta = disabled_streamer(&app, &token, "Beta", "https://live.bilibili.com/22").await;
+    let alpha = app
+        .disabled_streamer(&token, "Alpha", "https://live.bilibili.com/21")
+        .await;
+    let beta = app
+        .disabled_streamer(&token, "Beta", "https://live.bilibili.com/22")
+        .await;
 
     let base = now_ms() - 3_600_000;
     let end = Some(base + 600_000);
@@ -634,8 +623,10 @@ async fn output_list_reports_file_types_and_uploads_and_the_summary_ignores_the_
         b30 = base + 30_000,
     ));
     app.run_sql(&sql).await;
-    let get =
-        async |path: &str| get_ok(&app, &token, &format!("/api/pipeline/outputs{path}")).await;
+    let get = async |path: &str| {
+        app.get_ok(&format!("/api/pipeline/outputs{path}"), &token)
+            .await
+    };
 
     let page = get("").await;
     assert_eq!(page["total"], 6);
@@ -749,7 +740,7 @@ async fn deleting_an_output_removes_its_file_only_when_asked_and_shrinks_the_ses
     app.run_sql(&sql).await;
     // `(total_size_bytes, output_count)` of the session.
     let totals = async |id: &str| {
-        let session = get_ok(&app, &token, &format!("/api/sessions/{id}")).await;
+        let session = app.session(&token, id).await;
         (
             session["total_size_bytes"].clone(),
             session["output_count"].clone(),
@@ -757,10 +748,7 @@ async fn deleting_an_output_removes_its_file_only_when_asked_and_shrinks_the_ses
     };
     let delete = async |path: &str| {
         let path = format!("/api/pipeline/outputs/{path}");
-        app.delete(&path, &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body
+        app.delete(&path, &token).await.ok()
     };
 
     assert_eq!(totals("trimmed").await, (json!(3_500), json!(3)));
@@ -800,8 +788,7 @@ async fn deleting_an_output_removes_its_file_only_when_asked_and_shrinks_the_ses
     // Each id succeeds or fails on its own.
     let batch = batch_delete(json!(["batch-1", "no-such-output", "batch-2"]))
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(batch["requested"], 3);
     assert_eq!(batch["succeeded"], 2);
     assert_eq!(batch["failed"], 1);
@@ -869,7 +856,7 @@ async fn interrupted_outputs_delete_only_staged_temporary_files() {
     let batch_delete = async |body: Value| app.post(&path("/batch-delete"), &token, &body).await;
 
     // Newest interruption first; a file confirmed gone is forgotten.
-    let listed = get_ok(&app, &token, &path("")).await;
+    let listed = app.get_ok(&path(""), &token).await;
     let outputs = listed["outputs"].as_array().expect("outputs");
     let listed_ids: Vec<&str> = outputs
         .iter()
@@ -890,7 +877,7 @@ async fn interrupted_outputs_delete_only_staged_temporary_files() {
             .await,
         0
     );
-    let by_job = get_ok(&app, &token, &path("?job_id=job-b")).await;
+    let by_job = app.get_ok(&path("?job_id=job-b"), &token).await;
     assert_eq!(by_job["outputs"].as_array().map(Vec::len), Some(1));
     assert_eq!(by_job["outputs"][0]["id"], "precious");
 
@@ -925,14 +912,13 @@ async fn interrupted_outputs_delete_only_staged_temporary_files() {
         .assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
     let batch = batch_delete(json!({ "ids": ["kept", "no-such-entry"], "keep_files": true }))
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(batch["succeeded"], 1);
     assert_eq!(batch["failed"], 1);
     assert_eq!(batch["results"][1]["code"], "NOT_FOUND");
     assert!(Path::new(&kept).exists());
     assert_eq!(
-        get_ok(&app, &token, &path("")).await,
+        app.get_ok(&path(""), &token).await,
         json!({ "outputs": [], "total_size_bytes": 0 })
     );
 

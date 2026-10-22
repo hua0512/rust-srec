@@ -75,8 +75,7 @@ fn raw_key(created: &Response) -> String {
 async fn list_sessions(app: &TestApp, token: &str) -> Vec<Value> {
     app.get("/api/auth/sessions", token)
         .await
-        .expect_status(StatusCode::OK)
-        .body
+        .ok()
         .as_array()
         .expect("session list")
         .clone()
@@ -654,12 +653,7 @@ async fn logout_ends_one_lineage_and_logout_all_ends_every_browser_session() {
         .create_api_key(&b.access, "survives logout-all", "full")
         .await
         .raw;
-    let a2 = tokens_from(
-        &app.refresh(&a.refresh)
-            .await
-            .expect_status(StatusCode::OK)
-            .body,
-    );
+    let a2 = tokens_from(&app.refresh(&a.refresh).await.ok());
 
     // `logoutFn` sends only the refresh token.
     logout(&app, HeaderMap::new(), &a2.refresh)

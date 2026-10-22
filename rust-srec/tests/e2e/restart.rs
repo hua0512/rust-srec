@@ -7,41 +7,9 @@ use std::path::{Path, PathBuf};
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 
-use crate::support::{FakePlatform, FlvLoop, Seed, TestApp, WAIT, eventually, id_of};
-
-async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
-    app.get(path, token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body
-}
-
-/// Every file under `dir`, recursively, sorted.
-fn files_under(dir: &Path) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    for entry in std::fs::read_dir(dir).expect("read a directory") {
-        let path = entry.expect("a directory entry").path();
-        if path.is_dir() {
-            files.extend(files_under(&path));
-        } else {
-            files.push(path);
-        }
-    }
-    files.sort();
-    files
-}
-
-/// A workflow of one `execute` step that succeeds on every OS.
-fn succeed(name: &str) -> Value {
-    json!({
-        "name": name,
-        "steps": [{
-            "id": "succeed",
-            "step": { "type": "inline", "processor": "execute", "config": { "command": "exit 0" } },
-            "depends_on": [],
-        }],
-    })
-}
+use crate::support::{
+    FakePlatform, FlvLoop, Seed, TestApp, WAIT, eventually, files_under, id_of, succeed,
+};
 
 /// A restart in the middle of a recording keeps its session: the stopped
 /// part is stored, the new backend's first check finds the room still live
@@ -69,7 +37,7 @@ async fn a_restart_during_a_recording_continues_the_same_session() {
     })
     .await;
     let sessions_path = format!("/api/sessions?streamer_id={id}&include_empty=true");
-    let before = get_ok(&app, &token, &sessions_path).await["items"].clone();
+    let before = app.get_ok(&sessions_path, &token).await["items"].clone();
     let session_id = id_of(&before[0]);
 
     let app = app.restart().await;
@@ -80,14 +48,16 @@ async fn a_restart_during_a_recording_continues_the_same_session() {
     room.end();
 
     let session = eventually(WAIT, "the session to end", || async {
-        let sessions = get_ok(&app, &token, &sessions_path).await["items"].clone();
+        let sessions = app.get_ok(&sessions_path, &token).await["items"].clone();
         let sessions = sessions.as_array().expect("session items");
         assert_eq!(sessions.len(), 1, "{sessions:?}");
         (sessions[0]["is_live"] == false).then(|| sessions[0].clone())
     })
     .await;
     assert_eq!(id_of(&session), session_id);
-    let detail = get_ok(&app, &token, &format!("/api/sessions/{session_id}")).await;
+    let detail = app
+        .get_ok(&format!("/api/sessions/{session_id}"), &token)
+        .await;
     let ends: Vec<&Value> = detail["events"]
         .as_array()
         .expect("session events")
@@ -100,12 +70,9 @@ async fn a_restart_during_a_recording_continues_the_same_session() {
         json!({ "type": "streamer_offline" })
     );
 
-    let page = get_ok(
-        &app,
-        &token,
-        &format!("/api/sessions/{session_id}/segments"),
-    )
-    .await;
+    let page = app
+        .get_ok(&format!("/api/sessions/{session_id}/segments"), &token)
+        .await;
     let mut parts: Vec<PathBuf> = page["items"]
         .as_array()
         .expect("segment items")
@@ -117,12 +84,12 @@ async fn a_restart_during_a_recording_continues_the_same_session() {
     assert_eq!(files_under(app.output_dir()), parts);
 
     let dags = eventually(WAIT, "the session-complete workflow", || async {
-        let dags = get_ok(
-            &app,
-            &token,
-            &format!("/api/pipeline/dags?session_id={session_id}"),
-        )
-        .await["dags"]
+        let dags = app
+            .get_ok(
+                &format!("/api/pipeline/dags?session_id={session_id}"),
+                &token,
+            )
+            .await["dags"]
             .clone();
         let dags = dags.as_array().expect("dags").clone();
         (dags.iter().any(|dag| dag["status"] == "COMPLETED")).then_some(dags)
@@ -180,13 +147,17 @@ async fn a_restart_runs_again_the_job_it_interrupted_and_the_jobs_still_queued()
     };
     let dag_job = async |app: &TestApp, dag_id: &str| {
         eventually(WAIT, &format!("a job for workflow {dag_id}"), || async {
-            let dag = get_ok(app, &token, &format!("/api/pipeline/dag/{dag_id}")).await;
+            let dag = app
+                .get_ok(&format!("/api/pipeline/dag/{dag_id}"), &token)
+                .await;
             dag["steps"][0]["job_id"].as_str().map(str::to_owned)
         })
         .await
     };
     let job_status = async |app: &TestApp, job_id: &str| {
-        get_ok(app, &token, &format!("/api/pipeline/jobs/{job_id}")).await["status"].clone()
+        app.get_ok(&format!("/api/pipeline/jobs/{job_id}"), &token)
+            .await["status"]
+            .clone()
     };
 
     let interrupted = create(
@@ -206,14 +177,7 @@ async fn a_restart_runs_again_the_job_it_interrupted_and_the_jobs_still_queued()
 
     let app = app.restart().await;
     for dag_id in [&interrupted, &queued] {
-        let status = eventually(WAIT, &format!("workflow {dag_id} to finish"), || async {
-            let dag = get_ok(&app, &token, &format!("/api/pipeline/dag/{dag_id}")).await;
-            let status = dag["status"].as_str().unwrap_or_default().to_owned();
-            ["COMPLETED", "FAILED", "CANCELLED"]
-                .contains(&status.as_str())
-                .then_some(status)
-        })
-        .await;
+        let status = app.settled_dag(&token, dag_id).await["status"].clone();
         assert_eq!(status, "COMPLETED", "{dag_id}");
     }
     for job_id in [&interrupted_job, &queued_job] {

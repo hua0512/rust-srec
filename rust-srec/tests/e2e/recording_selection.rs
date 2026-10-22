@@ -3,7 +3,6 @@
 //! of `downloader::stream_selector`; these pin that each preference a
 //! streamer sets reaches the recording.
 
-use reqwest::StatusCode;
 use serde_json::{Value, json};
 
 use crate::support::cdn::{FakeCdn, HlsMedia};
@@ -125,8 +124,7 @@ async fn room_stream_and_engine_headers_reach_every_hls_request() {
             }),
         )
         .await
-        .expect_status(StatusCode::CREATED)
-        .body;
+        .created();
     app.create_enabled_streamer(
         &token,
         json!({ "name": "Headers", "url": room.url(), "template_id": id_of(&template) }),

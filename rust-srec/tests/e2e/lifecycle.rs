@@ -16,49 +16,20 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::support::{
     FakePlatform, FakeRoom, FlvLoop, LocalHttpServer, ReceivedRequest, Seed, TestApp, WAIT,
-    eventually, id_of, millis, now_ms, with_query,
+    eventually, id_of, millis, now_ms, seeded_streamer, succeed, with_query,
 };
-
-async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
-    app.get(path, token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body
-}
-
-async fn streamer(app: &TestApp, token: &str, id: &str) -> Value {
-    get_ok(app, token, &format!("/api/streamers/{id}")).await
-}
 
 /// Apply `change` to the streamer and return the updated streamer.
 async fn update(app: &TestApp, token: &str, id: &str, change: &Value) -> Value {
     app.put(&format!("/api/streamers/{id}"), token, change)
         .await
-        .expect_status(StatusCode::OK)
-        .body
-}
-
-/// The streamer's sessions, newest first.
-async fn sessions(app: &TestApp, token: &str, streamer_id: &str) -> Vec<Value> {
-    get_ok(
-        app,
-        token,
-        &format!("/api/sessions?streamer_id={streamer_id}&include_empty=true"),
-    )
-    .await["items"]
-        .as_array()
-        .expect("session items")
-        .clone()
-}
-
-async fn session(app: &TestApp, token: &str, id: &str) -> Value {
-    get_ok(app, token, &format!("/api/sessions/{id}")).await
+        .ok()
 }
 
 /// Wait for the session to end and return its detail.
 async fn ended(app: &TestApp, token: &str, id: &str) -> Value {
     eventually(WAIT, &format!("session {id} to end"), || async {
-        let session = session(app, token, id).await;
+        let session = app.session(token, id).await;
         (session["is_live"] == false).then_some(session)
     })
     .await
@@ -88,66 +59,6 @@ fn titles(session: &Value) -> Vec<&str> {
         .iter()
         .map(|entry| entry["title"].as_str().expect("title"))
         .collect()
-}
-
-/// The streamer's check history, oldest first.
-async fn checks(app: &TestApp, token: &str, id: &str) -> Vec<Value> {
-    get_ok(app, token, &format!("/api/streamers/{id}/check-history")).await["items"]
-        .as_array()
-        .expect("check history")
-        .clone()
-}
-
-/// Wait until the streamer has `count` more checks recorded than it has now.
-async fn wait_for_more_checks(app: &TestApp, token: &str, id: &str, count: usize) {
-    let target = checks(app, token, id).await.len() + count;
-    eventually(WAIT, &format!("{count} more checks of {id}"), || async {
-        (checks(app, token, id).await.len() >= target).then_some(())
-    })
-    .await;
-}
-
-/// A workflow of one `execute` step that succeeds on every OS.
-fn succeed(name: &str) -> Value {
-    json!({
-        "name": name,
-        "steps": [{
-            "id": "succeed",
-            "step": { "type": "inline", "processor": "execute", "config": { "command": "exit 0" } },
-            "depends_on": [],
-        }],
-    })
-}
-
-/// The session's workflows.
-async fn dags(app: &TestApp, token: &str, session_id: &str) -> Vec<Value> {
-    get_ok(
-        app,
-        token,
-        &format!("/api/pipeline/dags?session_id={session_id}"),
-    )
-    .await["dags"]
-        .as_array()
-        .expect("dags")
-        .clone()
-}
-
-/// A streamer row inserted before boot on `room`, for states the services
-/// load at startup.
-fn seeded_streamer(id: &str, room: &FakeRoom, state: &str, columns: &[(&str, &str)]) -> String {
-    let names: String = columns
-        .iter()
-        .map(|(name, _)| format!(", {name}"))
-        .collect();
-    let values: String = columns
-        .iter()
-        .map(|(_, value)| format!(", {value}"))
-        .collect();
-    format!(
-        "INSERT INTO streamers (id, name, url, platform_config_id, priority, state{names}) \
-         VALUES ('{id}', '{id}', '{url}', 'platform-fake', 'NORMAL', '{state}'{values});\n",
-        url = room.url(),
-    )
 }
 
 /// A session row still recording, as a restart leaves it, titled `title`.
@@ -196,7 +107,7 @@ fn webhook_channel(receiver: &LocalHttpServer, events: &[&str]) -> String {
 fn webhook_events(received: &[ReceivedRequest], streamer_id: &str) -> Vec<String> {
     received
         .iter()
-        .map(|request| serde_json::from_slice::<Value>(&request.body).expect("JSON webhook"))
+        .map(ReceivedRequest::json)
         .filter(|body| body["streamer_id"] == streamer_id)
         .map(|body| body["event_type"].as_str().expect("event type").to_owned())
         .collect()
@@ -243,7 +154,7 @@ async fn the_first_check_after_a_restart_ends_or_reuses_the_session_it_left_open
         [&end("streamer_offline", false)]
     );
     let dag = eventually(WAIT, "the session-complete workflow", || async {
-        let dags = dags(&app, &token, "gone-session").await;
+        let dags = app.dags(&token, "gone-session").await;
         dags.first()
             .filter(|dag| dag["status"] == "COMPLETED")
             .cloned()
@@ -262,24 +173,24 @@ async fn the_first_check_after_a_restart_ends_or_reuses_the_session_it_left_open
         ("same", &same, &["Before the restart"][..]),
     ] {
         room.wait_for_media_connection(1).await;
-        let reused = sessions(&app, &token, id).await;
+        let reused = app.sessions(&token, id).await;
         assert_eq!(reused.len(), 1, "{reused:?}");
-        let reused = session(&app, &token, &format!("{id}-session")).await;
+        let reused = app.session(&token, &format!("{id}-session")).await;
         assert_eq!(reused["is_live"], true, "{reused}");
         assert_eq!(end_payloads(&reused), Vec::<&Value>::new());
         assert_eq!(titles(&reused), expected_titles, "{id}");
-        assert_eq!(streamer(&app, &token, id).await["state"], "LIVE");
+        assert_eq!(app.streamer(&token, id).await["state"], "LIVE");
     }
 
     // Later offline checks change nothing for the ended session.
-    wait_for_more_checks(&app, &token, "gone", 2).await;
-    wait_for_more_checks(&app, &token, "quiet", 2).await;
-    let gone_session = session(&app, &token, "gone-session").await;
+    app.wait_for_more_checks(&token, "gone", 2).await;
+    app.wait_for_more_checks(&token, "quiet", 2).await;
+    let gone_session = app.session(&token, "gone-session").await;
     assert_eq!(end_payloads(&gone_session).len(), 1, "{gone_session}");
-    assert_eq!(dags(&app, &token, "gone-session").await.len(), 1);
-    assert_eq!(sessions(&app, &token, "quiet").await, Vec::<Value>::new());
+    assert_eq!(app.dags(&token, "gone-session").await.len(), 1);
+    assert_eq!(app.sessions(&token, "quiet").await, Vec::<Value>::new());
     for id in ["gone", "quiet"] {
-        let history = checks(&app, &token, id).await;
+        let history = app.checks(&token, id).await;
         assert!(
             history.iter().all(|check| check["outcome"] == "offline"),
             "{id}: {history:?}"
@@ -289,7 +200,7 @@ async fn the_first_check_after_a_restart_ends_or_reuses_the_session_it_left_open
     // The next live opens a new session.
     gone.set_live(gone.live("Next broadcast"));
     gone.wait_for_media_connection(1).await;
-    let gone_sessions = sessions(&app, &token, "gone").await;
+    let gone_sessions = app.sessions(&token, "gone").await;
     assert_eq!(gone_sessions.len(), 2, "{gone_sessions:?}");
     assert_ne!(gone_sessions[0]["id"], "gone-session");
     assert_eq!(gone_sessions[0]["is_live"], true);
@@ -355,36 +266,29 @@ async fn an_offline_check_clears_earlier_failures_and_ends_a_session_a_backoff_l
 
     for id in ["failed", "backed-off", "recording"] {
         let cleared = eventually(WAIT, &format!("{id}'s errors to clear"), || async {
-            let streamer = streamer(&app, &token, id).await;
+            let streamer = app.streamer(&token, id).await;
             (streamer["consecutive_error_count"] == 0).then_some(streamer)
         })
         .await;
         assert_eq!(cleared["state"], "NOT_LIVE", "{id}: {cleared}");
         assert!(cleared["last_error"].is_null(), "{id}: {cleared}");
         assert!(cleared["disabled_until"].is_null(), "{id}: {cleared}");
-        assert_eq!(checks(&app, &token, id).await[0]["outcome"], "offline");
+        assert_eq!(app.checks(&token, id).await[0]["outcome"], "offline");
     }
     let stale = ended(&app, &token, "stale-session").await;
     assert_eq!(end_payloads(&stale), [&end("streamer_offline", false)]);
     for id in ["failed", "backed-off"] {
-        let opened = sessions(&app, &token, id).await;
+        let opened = app.sessions(&token, id).await;
         assert!(opened.is_empty(), "{id}: {opened:?}");
     }
 
     app.shutdown().await;
 }
 
-/// Create an enabled streamer watching `room` with `config` as its
-/// streamer-specific config, and return its id.
-async fn watch(app: &TestApp, token: &str, name: &str, room: &FakeRoom, config: Value) -> String {
-    let streamer = json!({ "name": name, "url": room.url(), "streamer_specific_config": config });
-    id_of(&app.create_enabled_streamer(token, streamer).await)
-}
-
 /// The streamer's only session id, once it has one.
 async fn only_session(app: &TestApp, token: &str, streamer_id: &str) -> String {
     eventually(WAIT, "the session", || async {
-        let sessions = sessions(app, token, streamer_id).await;
+        let sessions = app.sessions(token, streamer_id).await;
         assert!(sessions.len() <= 1, "more than one session: {sessions:?}");
         sessions
             .first()
@@ -420,7 +324,7 @@ async fn two_dropped_connections_without_a_recorded_part_end_the_session() {
     room.set_live(room.live("First title"));
     let app = TestApp::start_with(Seed::live().global("offline_check_delay_ms", 5_000)).await;
     let token = app.admin_token().await;
-    let id = watch(&app, &token, "Flaky", &room, Value::Null).await;
+    let id = app.watch(&token, "Flaky", &room, Value::Null).await;
 
     room.wait_for_media_connection(1).await;
     let session_id = only_session(&app, &token, &id).await;
@@ -434,7 +338,7 @@ async fn two_dropped_connections_without_a_recorded_part_end_the_session() {
     assert_eq!(end_payloads(&session), [&consecutive_failures_end()]);
     assert_eq!(session["title"], "Second title", "{session}");
     assert_eq!(titles(&session), ["First title", "Second title"]);
-    assert_eq!(sessions(&app, &token, &id).await.len(), 1);
+    assert_eq!(app.sessions(&token, &id).await.len(), 1);
 
     app.shutdown().await;
 }
@@ -451,7 +355,7 @@ async fn a_part_recorded_between_dropped_connections_keeps_the_session() {
     let app = TestApp::start_with(Seed::live().global("offline_check_delay_ms", 5_000)).await;
     let token = app.admin_token().await;
     let config = json!({ "max_part_size_bytes": 20_000 });
-    let id = watch(&app, &token, "Steady", &room, config).await;
+    let id = app.watch(&token, "Steady", &room, config).await;
 
     room.wait_for_media_connection(1).await;
     let session_id = only_session(&app, &token, &id).await;
@@ -463,7 +367,7 @@ async fn a_part_recorded_between_dropped_connections_keeps_the_session() {
     // A plain read, not `eventually`: the drop's NOT_LIVE is written before
     // the re-check that resumes, and a later part sets LIVE too, so only a
     // read right after the reconnect pins what the resume wrote.
-    assert_eq!(streamer(&app, &token, &id).await["state"], "LIVE");
+    assert_eq!(app.streamer(&token, &id).await["state"], "LIVE");
     let mut flv = FlvLoop::tiny();
     room.push(flv.stream(6));
     eventually(WAIT, "a recorded part", || async {
@@ -474,17 +378,17 @@ async fn a_part_recorded_between_dropped_connections_keeps_the_session() {
 
     room.wait_for_media_connection(3).await;
     eventually(WAIT, "the streamer to read LIVE", || async {
-        (streamer(&app, &token, &id).await["state"] == "LIVE").then_some(())
+        (app.streamer(&token, &id).await["state"] == "LIVE").then_some(())
     })
     .await;
-    let session = session(&app, &token, &session_id).await;
+    let session = app.session(&token, &session_id).await;
     assert_eq!(session["is_live"], true, "{session}");
     assert_eq!(end_payloads(&session), Vec::<&Value>::new());
 
     room.reset();
     let session = ended(&app, &token, &session_id).await;
     assert_eq!(end_payloads(&session), [&consecutive_failures_end()]);
-    assert_eq!(sessions(&app, &token, &id).await.len(), 1);
+    assert_eq!(app.sessions(&token, &id).await.len(), 1);
 
     app.shutdown().await;
 }
@@ -493,17 +397,10 @@ async fn a_part_recorded_between_dropped_connections_keeps_the_session() {
 /// sessions, and return its id.
 async fn new_session(app: &TestApp, token: &str, streamer_id: &str, count: usize) -> String {
     eventually(WAIT, "a new session", || async {
-        let sessions = sessions(app, token, streamer_id).await;
+        let sessions = app.sessions(token, streamer_id).await;
         (sessions.len() > count).then(|| sessions[0]["id"].as_str().expect("session id").to_owned())
     })
     .await
-}
-
-/// Record a little of `room` and let its broadcast end.
-fn broadcast_ends(room: &FakeRoom) {
-    room.push(FlvLoop::tiny().stream(1));
-    room.set_offline();
-    room.end();
 }
 
 /// Disabling a streamer stops only its current recording: a session an
@@ -522,15 +419,15 @@ async fn disabling_ends_only_the_current_session_as_a_user_stop() {
     again.set_live(again.live("First broadcast"));
     let app = TestApp::start_with(Seed::live().global("offline_check_delay_ms", 4_000)).await;
     let token = app.admin_token().await;
-    let over_id = watch(&app, &token, "Over", &over, Value::Null).await;
-    let again_id = watch(&app, &token, "Again", &again, Value::Null).await;
+    let over_id = app.watch(&token, "Over", &over, Value::Null).await;
+    let again_id = app.watch(&token, "Again", &again, Value::Null).await;
 
     let offline_end = end("streamer_offline", true);
     let mut first_sessions = Vec::new();
     for (id, room) in [(&over_id, &over), (&again_id, &again)] {
         room.wait_for_media_connection(1).await;
         let session_id = only_session(&app, &token, id).await;
-        broadcast_ends(room);
+        room.broadcast_ends(1);
         assert_eq!(
             end_payloads(&ended(&app, &token, &session_id).await),
             [&offline_end]
@@ -549,12 +446,12 @@ async fn disabling_ends_only_the_current_session_as_a_user_stop() {
     assert_eq!(end_payloads(&second), [&end("user_disabled", false)]);
     for session_id in &first_sessions {
         assert_eq!(
-            end_payloads(&session(&app, &token, session_id).await),
+            end_payloads(&app.session(&token, session_id).await),
             [&offline_end],
             "{session_id}"
         );
     }
-    assert_eq!(sessions(&app, &token, &over_id).await.len(), 1);
+    assert_eq!(app.sessions(&token, &over_id).await.len(), 1);
 
     app.shutdown().await;
 }
@@ -583,7 +480,7 @@ async fn updates_keep_a_backoff_until_disabling_clears_it_and_re_enabling_checks
 
     for change in [json!({ "name": "Renamed" }), json!({ "priority": "HIGH" })] {
         let updated = update(&app, &token, "resting", &change).await;
-        let stored = streamer(&app, &token, "resting").await;
+        let stored = app.streamer(&token, "resting").await;
         for streamer in [&updated, &stored] {
             let context = format!("{change}: {streamer}");
             assert_eq!(streamer["state"], "TEMPORAL_DISABLED", "{context}");
@@ -595,7 +492,7 @@ async fn updates_keep_a_backoff_until_disabling_clears_it_and_re_enabling_checks
             assert_eq!(millis(&streamer["disabled_until"]), until, "{context}");
         }
     }
-    assert_eq!(streamer(&app, &token, "resting").await["name"], "Renamed");
+    assert_eq!(app.streamer(&token, "resting").await["name"], "Renamed");
 
     let disabled = update(&app, &token, "resting", &json!({ "enabled": false })).await;
     assert_eq!(disabled["state"], "DISABLED", "{disabled}");
@@ -605,7 +502,7 @@ async fn updates_keep_a_backoff_until_disabling_clears_it_and_re_enabling_checks
     let enabled = update(&app, &token, "resting", &json!({ "enabled": true })).await;
     assert_eq!(enabled["state"], "NOT_LIVE", "{enabled}");
     let history = eventually(WAIT, "a check after re-enabling", || async {
-        let history = checks(&app, &token, "resting").await;
+        let history = app.checks(&token, "resting").await;
         (!history.is_empty()).then_some(history)
     })
     .await;
@@ -632,8 +529,7 @@ async fn a_url_change_frees_the_old_url_and_reserves_the_new_one() {
     let moving = id_of(
         &create("Moving", "https://live.bilibili.com/7001")
             .await
-            .expect_status(StatusCode::CREATED)
-            .body,
+            .created(),
     );
     create("Other", "https://live.bilibili.com/7002")
         .await
@@ -677,10 +573,7 @@ async fn a_url_change_frees_the_old_url_and_reserves_the_new_one() {
 }
 
 async fn segment_count(app: &TestApp, token: &str, session_id: &str) -> usize {
-    get_ok(app, token, &format!("/api/sessions/{session_id}/segments")).await["items"]
-        .as_array()
-        .expect("segment items")
-        .len()
+    app.segments(token, session_id).await.len()
 }
 
 /// How many files are under `dir`, recursively.
@@ -692,12 +585,6 @@ fn file_count(dir: &Path) -> usize {
             if path.is_dir() { file_count(&path) } else { 1 }
         })
         .sum()
-}
-
-/// Create a disabled streamer and return its id.
-async fn disabled_streamer(app: &TestApp, token: &str, name: &str, url: &str) -> String {
-    let streamer = json!({ "name": name, "url": url });
-    id_of(&app.create_disabled_streamer(token, streamer).await)
 }
 
 async fn streamer_rows(app: &TestApp, id: &str) -> i64 {
@@ -721,8 +608,8 @@ async fn deleting_a_recording_streamer_ends_its_session_and_keeps_its_recording(
     let app = TestApp::start_with(Seed::live()).await;
     let token = app.admin_token().await;
 
-    let single_id = watch(&app, &token, "Single", &single, Value::Null).await;
-    let batched_id = watch(&app, &token, "Batched", &batched, Value::Null).await;
+    let single_id = app.watch(&token, "Single", &single, Value::Null).await;
+    let batched_id = app.watch(&token, "Batched", &batched, Value::Null).await;
     let mut recordings = Vec::new();
     for (id, room) in [(&single_id, &single), (&batched_id, &batched)] {
         room.wait_for_media_connection(1).await;
@@ -738,8 +625,7 @@ async fn deleting_a_recording_streamer_ends_its_session_and_keeps_its_recording(
     let deleted = app
         .delete(&format!("/api/streamers/{single_id}"), &token)
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(deleted["success"], true);
     let batch = app
         .post(
@@ -748,8 +634,7 @@ async fn deleting_a_recording_streamer_ends_its_session_and_keeps_its_recording(
             &json!({ "ids": [batched_id], "action": { "type": "delete" } }),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(batch["succeeded"], 1, "{batch}");
 
     for ((id, name), session_id) in [(&single_id, "Single"), (&batched_id, "Batched")]
@@ -772,7 +657,7 @@ async fn deleting_a_recording_streamer_ends_its_session_and_keeps_its_recording(
         );
         assert_eq!(session["streamer_name"], name);
         let session = eventually(WAIT, "the recorded part to be kept", || async {
-            let session = self::session(&app, &token, session_id).await;
+            let session = app.session(&token, session_id).await;
             (session["output_count"] == 1).then_some(session)
         })
         .await;
@@ -793,9 +678,10 @@ async fn a_deleted_streamer_is_reaped_once_its_sessions_have_settled() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
     let settled_url = "https://live.bilibili.com/8001";
-    let settled = disabled_streamer(&app, &token, "Settled", settled_url).await;
-    let retiring =
-        disabled_streamer(&app, &token, "Retiring", "https://live.bilibili.com/8002").await;
+    let settled = app.disabled_streamer(&token, "Settled", settled_url).await;
+    let retiring = app
+        .disabled_streamer(&token, "Retiring", "https://live.bilibili.com/8002")
+        .await;
     // Inserted after startup, so the startup recovery does not settle the
     // second session.
     let (started, ended_at) = (now_ms() - 120_000, now_ms() - 60_000);
@@ -815,12 +701,13 @@ async fn a_deleted_streamer_is_reaped_once_its_sessions_have_settled() {
         .await
         .expect_status(StatusCode::OK);
     assert_eq!(streamer_rows(&app, &settled).await, 0);
-    let kept = session(&app, &token, "settled-session").await;
+    let kept = app.session(&token, "settled-session").await;
     assert!(kept["streamer_id"].is_null(), "{kept}");
     assert_eq!(kept["streamer_name"], "Settled");
     assert_eq!(kept["output_count"], 1);
     assert_eq!(segment_count(&app, &token, "settled-session").await, 1);
-    disabled_streamer(&app, &token, "Successor", settled_url).await;
+    app.disabled_streamer(&token, "Successor", settled_url)
+        .await;
 
     let path = format!("/api/streamers/{retiring}");
     app.delete(&path, &token)
@@ -932,16 +819,16 @@ async fn queued_recordings_start_high_priority_first_then_in_arrival_order() {
     }
     assert_eq!(queued(&app, &token).await, waiting);
 
-    broadcast_ends(running);
+    running.broadcast_ends(1);
     high_3.wait_for_media_connection(1).await;
     assert_eq!(queued(&app, &token).await, waiting[..2]);
 
-    broadcast_ends(high_3);
+    high_3.broadcast_ends(1);
     normal_1.wait_for_media_connection(1).await;
     assert_eq!(queued(&app, &token).await, waiting[1..2]);
     assert_eq!(recordings_started(&fake, normal_2), 0);
 
-    broadcast_ends(normal_1);
+    normal_1.broadcast_ends(1);
     normal_2.wait_for_media_connection(1).await;
     assert_eq!(queued(&app, &token).await, Vec::<String>::new());
 
@@ -982,12 +869,12 @@ async fn max_concurrent_downloads_changes_apply_to_waiting_recordings_at_once() 
 
     // One recording ending leaves one running, which is the new limit.
     let first_session = only_session(&app, &token, &first_id).await;
-    broadcast_ends(first);
+    first.broadcast_ends(1);
     ended(&app, &token, &first_session).await;
     assert_eq!(queued(&app, &token).await, [third_id]);
     assert_eq!(recordings_started(&fake, third), 0);
 
-    broadcast_ends(second);
+    second.broadcast_ends(1);
     third.wait_for_media_connection(1).await;
 
     app.shutdown().await;
@@ -1031,7 +918,7 @@ async fn the_offline_notification_of_a_session_a_restart_left_open_counts_from_i
     for (id, session) in ended_sessions {
         let body = received
             .iter()
-            .map(|request| serde_json::from_slice::<Value>(&request.body).expect("JSON webhook"))
+            .map(ReceivedRequest::json)
             .find(|body| body["streamer_id"] == id)
             .unwrap_or_else(|| panic!("no offline notification for {id}"));
         let duration = body["data"]["StreamOffline"]["duration_secs"]

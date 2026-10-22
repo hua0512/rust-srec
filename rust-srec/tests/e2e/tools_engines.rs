@@ -11,37 +11,6 @@ use serde_json::{Value, json};
 use crate::support::tools::{HlsOrigin, codecs, duration_secs, probe};
 use crate::support::{FakePlatform, FlvLoop, Seed, TestApp, WAIT, eventually, id_of};
 
-async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
-    app.get(path, token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body
-}
-
-/// Wait for the streamer's only session to end and return its detail.
-async fn ended_session(app: &TestApp, token: &str, streamer_id: &str) -> Value {
-    let path = format!("/api/sessions?streamer_id={streamer_id}&include_empty=true");
-    let id = eventually(WAIT, "the session to end", || async {
-        let page = get_ok(app, token, &path).await;
-        let sessions = page["items"].as_array().expect("session items");
-        assert!(sessions.len() <= 1, "more than one session: {sessions:?}");
-        sessions
-            .first()
-            .filter(|session| session["is_live"] == false)
-            .map(|session| session["id"].as_str().expect("session id").to_owned())
-    })
-    .await;
-    get_ok(app, token, &format!("/api/sessions/{id}")).await
-}
-
-/// The session's stored segments, oldest first.
-async fn segments(app: &TestApp, token: &str, session_id: &str) -> Vec<Value> {
-    let page = get_ok(app, token, &format!("/api/sessions/{session_id}/segments")).await;
-    let mut items = page["items"].as_array().expect("segment items").clone();
-    items.sort_by_key(|segment| segment["segment_index"].as_i64());
-    items
-}
-
 /// The path of `segment`, checked against the size the backend stored for
 /// it.
 #[track_caller]
@@ -56,7 +25,9 @@ fn stored_path(segment: &Value) -> String {
 
 /// The path of the session's only segment.
 async fn only_segment(app: &TestApp, token: &str, session: &Value) -> String {
-    let segments = segments(app, token, session["id"].as_str().expect("session id")).await;
+    let segments = app
+        .segments(token, session["id"].as_str().expect("session id"))
+        .await;
     assert_eq!(segments.len(), 1, "{segments:?}");
     stored_path(&segments[0])
 }
@@ -106,7 +77,7 @@ async fn the_ffmpeg_engine_records_a_live_flv_room_with_the_platform_headers() {
     room.set_offline();
     room.end();
 
-    let session = ended_session(&app, &token, &id).await;
+    let session = app.ended_session(&token, &id).await;
     let path = only_segment(&app, &token, &session).await;
     assert_flv_recording(&path, 6.0).await;
     assert_eq!(
@@ -174,7 +145,7 @@ async fn the_streamlink_engine_records_a_live_hls_room_with_the_platform_headers
     room.set_offline();
     origin.end();
 
-    let session = ended_session(&app, &token, &id).await;
+    let session = app.ended_session(&token, &id).await;
     let path = only_segment(&app, &token, &session).await;
     assert_flv_recording(&path, 3.0).await;
     for index in 0..3 {
@@ -224,9 +195,9 @@ async fn a_url_only_streamlink_handles_is_monitored_and_recorded_through_streaml
     origin.end();
     let sessions = format!("/api/sessions?streamer_id={id}&include_empty=true");
     let first = eventually(WAIT, "the first part to be stored", || async {
-        let page = get_ok(&app, &token, &sessions).await;
+        let page = app.get_ok(&sessions, &token).await;
         let session_id = page["items"][0]["id"].as_str()?.to_owned();
-        segments(&app, &token, &session_id).await.into_iter().next()
+        app.segments(&token, &session_id).await.into_iter().next()
     })
     .await;
     app.put(
@@ -237,12 +208,14 @@ async fn a_url_only_streamlink_handles_is_monitored_and_recorded_through_streaml
     .await
     .expect_status(StatusCode::OK);
 
-    ended_session(&app, &token, &id).await;
+    app.ended_session(&token, &id).await;
     assert_eq!(first["segment_index"], 0, "{first}");
     assert_flv_recording(&stored_path(&first), 3.0).await;
 
     // The history lists the oldest check first.
-    let history = get_ok(&app, &token, &format!("/api/streamers/{id}/check-history")).await;
+    let history = app
+        .get_ok(&format!("/api/streamers/{id}/check-history"), &token)
+        .await;
     let check = &history["items"][0];
     assert_eq!(check["outcome"], "live", "{history}");
     // Streamlink names a media playlist's one stream `live` and offers it as

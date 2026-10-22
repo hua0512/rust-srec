@@ -28,6 +28,7 @@ use platforms_parser::media::{MediaFormat, MediaInfo, StreamFormat, StreamInfo};
 use serde_json::{Map, Value, json};
 
 use super::http::ReceivedRequest;
+use super::media::FlvLoop;
 use super::{WAIT, eventually};
 
 /// The name the platform registers under; `platform_config.platform_name`
@@ -459,6 +460,15 @@ impl FakeRoom {
     pub fn end(&self) {
         let body = self.room.media.lock().expect("room media lock").body.take();
         assert!(body.is_some(), "no media request is open");
+    }
+
+    /// Send `loops` repetitions of [`FlvLoop::tiny`] on the open media body,
+    /// then go offline and end the body.
+    #[track_caller]
+    pub fn broadcast_ends(&self, loops: u32) {
+        self.push(FlvLoop::tiny().stream(loops));
+        self.set_offline();
+        self.end();
     }
 
     /// Abort the open media body, as a dropped connection would.

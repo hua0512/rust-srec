@@ -20,13 +20,6 @@ fn parking() -> Seed {
     Seed::live().global("offline_check_delay_ms", 2_000)
 }
 
-async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
-    app.get(path, token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body
-}
-
 /// A stream at `url` that outranks the FLV stream every live answer of the
 /// room also offers.
 fn cdn_stream(url: &str, format: &str, media: &str) -> Value {
@@ -38,37 +31,6 @@ async fn watch(app: &TestApp, token: &str, name: &str, room: &FakeRoom) -> Strin
         &app.create_enabled_streamer(token, json!({ "name": name, "url": room.url() }))
             .await,
     )
-}
-
-async fn streamer(app: &TestApp, token: &str, id: &str) -> Value {
-    get_ok(app, token, &format!("/api/streamers/{id}")).await
-}
-
-/// The streamer's sessions, newest first.
-async fn sessions(app: &TestApp, token: &str, streamer_id: &str) -> Vec<Value> {
-    get_ok(
-        app,
-        token,
-        &format!("/api/sessions?streamer_id={streamer_id}&include_empty=true"),
-    )
-    .await["items"]
-        .as_array()
-        .expect("session items")
-        .clone()
-}
-
-/// Wait for the streamer's only session to end and return its detail.
-async fn ended_session(app: &TestApp, token: &str, streamer_id: &str) -> Value {
-    let id = eventually(WAIT, "the session to end", || async {
-        let sessions = sessions(app, token, streamer_id).await;
-        assert!(sessions.len() <= 1, "more than one session: {sessions:?}");
-        sessions
-            .first()
-            .filter(|session| session["is_live"] == false)
-            .map(|session| session["id"].as_str().expect("session id").to_owned())
-    })
-    .await;
-    get_ok(app, token, &format!("/api/sessions/{id}")).await
 }
 
 fn events(session: &Value) -> Vec<&Value> {
@@ -102,10 +64,7 @@ fn failed_start(event: &Value, kind: &str) {
 
 async fn segment_count(app: &TestApp, token: &str, session: &Value) -> usize {
     let id = session["id"].as_str().expect("session id");
-    get_ok(app, token, &format!("/api/sessions/{id}/segments")).await["items"]
-        .as_array()
-        .expect("segment items")
-        .len()
+    app.segments(token, id).await.len()
 }
 
 /// A start the server refuses, here with 403 for an FLV stream and with DRM
@@ -144,7 +103,7 @@ async fn a_refused_start_ends_its_session_and_backs_the_streamer_off() {
         room.set_live(room.live(name).stream(stream));
         let id = watch(&app, &token, name, &room).await;
 
-        let session = ended_session(&app, &token, &id).await;
+        let session = app.ended_session(&token, &id).await;
         let events = events(&session);
         assert_eq!(events.len(), 6, "{name}: {events:?}");
         assert_eq!(events[0], &started(false, name), "{name}");
@@ -164,7 +123,7 @@ async fn a_refused_start_ends_its_session_and_backs_the_streamer_off() {
         assert_eq!(segment_count(&app, &token, &session).await, 0, "{name}");
 
         let backing_off = eventually(WAIT, "the streamer to back off", || async {
-            let streamer = streamer(&app, &token, &id).await;
+            let streamer = app.streamer(&token, &id).await;
             (streamer["state"] == "TEMPORAL_DISABLED").then_some(streamer)
         })
         .await;
@@ -229,7 +188,7 @@ async fn rate_limited_playlists_are_retried_within_the_session() {
         room.set_offline();
         cdn.publish_hls(name, HlsMedia::Ts, 2, true);
 
-        let session = ended_session(&app, &token, &id).await;
+        let session = app.ended_session(&token, &id).await;
         let events = events(&session);
         let completed = json!({
             "kind": "session_ended", "cause": { "type": "completed" }, "via_hysteresis": false,
@@ -252,7 +211,7 @@ async fn rate_limited_playlists_are_retried_within_the_session() {
             assert!(cdn.requests_to(&playlist).len() >= before_refusal + 2);
         }
         let recovered = eventually(WAIT, "the error state to clear", || async {
-            let streamer = streamer(&app, &token, &id).await;
+            let streamer = app.streamer(&token, &id).await;
             (streamer["consecutive_error_count"] == 0).then_some(streamer)
         })
         .await;
@@ -310,7 +269,7 @@ async fn a_recording_cancelled_while_queued_never_starts_and_runs_no_workflow() 
     .await
     .expect_status(StatusCode::OK);
 
-    let session = ended_session(&app, &token, &id).await;
+    let session = app.ended_session(&token, &id).await;
     assert_eq!(
         events(&session),
         [
@@ -326,12 +285,12 @@ async fn a_recording_cancelled_while_queued_never_starts_and_runs_no_workflow() 
         (app.query_i64(&decided).await == 1).then_some(())
     })
     .await;
-    let dags = get_ok(
-        &app,
-        &token,
-        &format!("/api/pipeline/dags?session_id={session_id}"),
-    )
-    .await;
+    let dags = app
+        .get_ok(
+            &format!("/api/pipeline/dags?session_id={session_id}"),
+            &token,
+        )
+        .await;
     assert_eq!(dags["dags"], json!([]), "{dags}");
     assert_eq!(segment_count(&app, &token, &session).await, 0);
     assert_eq!(pending().await, Some(0));

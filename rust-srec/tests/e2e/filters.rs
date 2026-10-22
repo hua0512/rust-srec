@@ -10,41 +10,15 @@ use reqwest::StatusCode;
 use serde_json::{Value, json};
 
 use crate::support::{
-    FakePlatform, FlvLoop, LocalHttpServer, Seed, TestApp, WAIT, eventually, id_of,
+    FakePlatform, FlvLoop, LocalHttpServer, Seed, TestApp, WAIT, eventually, id_of, succeed,
 };
-
-async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
-    app.get(path, token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body
-}
 
 async fn wait_for_state(app: &TestApp, token: &str, id: &str, state: &str) {
     let path = format!("/api/streamers/{id}");
     eventually(WAIT, &format!("the streamer to be {state}"), || async {
-        (get_ok(app, token, &path).await["state"] == state).then_some(())
+        (app.get_ok(&path, token).await["state"] == state).then_some(())
     })
     .await;
-}
-
-/// The `items` of a list route.
-async fn items(app: &TestApp, token: &str, path: &str) -> Vec<Value> {
-    get_ok(app, token, path).await["items"]
-        .as_array()
-        .expect("items")
-        .clone()
-}
-
-/// The streamer's sessions, newest first.
-async fn sessions(app: &TestApp, token: &str, id: &str) -> Vec<Value> {
-    let path = format!("/api/sessions?streamer_id={id}&include_empty=true");
-    items(app, token, &path).await
-}
-
-/// The streamer's check history, oldest first.
-async fn checks(app: &TestApp, token: &str, id: &str) -> Vec<Value> {
-    items(app, token, &format!("/api/streamers/{id}/check-history")).await
 }
 
 async fn add_filter(
@@ -57,8 +31,7 @@ async fn add_filter(
     let body = json!({ "streamer_id": id, "filter_type": filter_type, "config": config });
     app.post(&format!("/api/streamers/{id}/filters"), token, &body)
         .await
-        .expect_status(StatusCode::CREATED)
-        .body
+        .created()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -69,10 +42,7 @@ async fn title_and_category_filters_hold_back_a_live_streamer_until_both_match()
     let token = app.admin_token().await;
     // Created disabled and enabled once filtered, so its first check already
     // applies the filters.
-    let id = id_of(
-        &app.create_disabled_streamer(&token, json!({ "name": "Filtered", "url": room.url() }))
-            .await,
-    );
+    let id = app.disabled_streamer(&token, "Filtered", room.url()).await;
     let keyword = json!({ "include": [], "exclude": ["rerun"] });
     add_filter(&app, &token, &id, "KEYWORD", keyword).await;
     let category = json!({ "categories": ["Just Chatting"] });
@@ -90,7 +60,7 @@ async fn title_and_category_filters_hold_back_a_live_streamer_until_both_match()
     ] {
         room.set_live(room.live(title).category(category));
         let check = eventually(WAIT, &format!("a check of {title:?}"), || async {
-            checks(&app, &token, &id)
+            app.checks(&token, &id)
                 .await
                 .into_iter()
                 .find(|check| check["title"] == title && check["category"] == category)
@@ -100,30 +70,18 @@ async fn title_and_category_filters_hold_back_a_live_streamer_until_both_match()
         assert_eq!(check["filter_reason"], reason, "{check}");
         // The check is recorded before the state it leads to.
         wait_for_state(&app, &token, &id, "OUT_OF_SCHEDULE").await;
-        assert_eq!(sessions(&app, &token, &id).await, Vec::<Value>::new());
+        assert_eq!(app.sessions(&token, &id).await, Vec::<Value>::new());
         assert_eq!(fake.requests_to(&room, "live.flv").len(), 0, "{title}");
     }
 
     room.set_live(room.live("Live again").category("Just Chatting"));
     room.wait_for_media_connection(1).await;
-    let sessions = sessions(&app, &token, &id).await;
+    let sessions = app.sessions(&token, &id).await;
     assert_eq!(sessions.len(), 1, "{sessions:?}");
     assert_eq!(sessions[0]["title"], "Live again");
     wait_for_state(&app, &token, &id, "LIVE").await;
 
     app.shutdown().await;
-}
-
-/// A workflow of one `execute` step that succeeds on every OS.
-fn succeed(name: &str) -> Value {
-    json!({
-        "name": name,
-        "steps": [{
-            "id": "succeed",
-            "step": { "type": "inline", "processor": "execute", "config": { "command": "exit 0" } },
-            "depends_on": [],
-        }],
-    })
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -195,13 +153,13 @@ async fn a_schedule_that_excludes_now_ends_a_recording_as_out_of_schedule() {
     })
     .await;
     let session = eventually(WAIT, "the session to end", || async {
-        let sessions = sessions(&app, &token, &id).await;
+        let sessions = app.sessions(&token, &id).await;
         assert_eq!(sessions.len(), 1, "{sessions:?}");
         (sessions[0]["is_live"] == false).then(|| sessions[0].clone())
     })
     .await;
     let session_id = id_of(&session);
-    let detail = get_ok(&app, &token, &format!("/api/sessions/{session_id}")).await;
+    let detail = app.session(&token, &session_id).await;
     let events = detail["events"].as_array().expect("session events");
     let kinds: Vec<&Value> = events.iter().map(|event| &event["kind"]).collect();
     assert_eq!(kinds, ["session_started", "session_ended"], "{detail}");
@@ -210,17 +168,13 @@ async fn a_schedule_that_excludes_now_ends_a_recording_as_out_of_schedule() {
         json!({ "kind": "session_ended", "cause": { "type": "out_of_schedule" }, "via_hysteresis": false })
     );
     wait_for_state(&app, &token, &id, "OUT_OF_SCHEDULE").await;
-    let last = checks(&app, &token, &id).await.pop().expect("a check");
+    let last = app.checks(&token, &id).await.pop().expect("a check");
     assert_eq!(last["outcome"], "filtered", "{last}");
     assert_eq!(last["filter_reason"], "OutOfSchedule", "{last}");
     assert_eq!(last["title"], "Scheduled show", "{last}");
 
     let dags = eventually(WAIT, "the session-complete workflow", || async {
-        let path = format!("/api/pipeline/dags?session_id={session_id}");
-        let dags = get_ok(&app, &token, &path).await["dags"]
-            .as_array()
-            .expect("dags")
-            .clone();
+        let dags = app.dags(&token, &session_id).await;
         (dags.len() == 1 && dags[0]["status"] == "COMPLETED").then_some(dags)
     })
     .await;
@@ -243,12 +197,10 @@ async fn a_schedule_that_excludes_now_ends_a_recording_as_out_of_schedule() {
     // arrived by now.
     let events: Vec<Value> = received
         .iter()
-        .map(|request| {
-            serde_json::from_slice::<Value>(&request.body).expect("JSON body")["event_type"].clone()
-        })
+        .map(|request| request.json()["event_type"].clone())
         .collect();
     assert_eq!(events, [json!("stream_online"), json!("stream_online")]);
-    assert_eq!(sessions(&app, &token, &id).await.len(), 2);
+    assert_eq!(app.sessions(&token, &id).await.len(), 2);
 
     app.shutdown().await;
 }
@@ -282,23 +234,18 @@ async fn an_edited_schedule_keeps_its_stored_timezone_unless_it_names_one() {
             &json!({ "filter_type": "TIME_BASED", "config": schedule() }),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(edited["config"]["timezone"], "Europe/Madrid", "{edited}");
     assert_eq!(edited["config"]["extension"], json!({ "preserve": true }));
-    assert_eq!(
-        get_ok(&app, &token, &path).await["config"],
-        edited["config"]
-    );
+    assert_eq!(app.get_ok(&path, &token).await["config"], edited["config"]);
     let mut utc = schedule();
     utc["timezone"] = Value::Null;
     let reset = app
         .patch(&path, &token, &json!({ "config": utc }))
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert!(reset["config"]["timezone"].is_null(), "{reset}");
-    assert!(get_ok(&app, &token, &path).await["config"]["timezone"].is_null());
+    assert!(app.get_ok(&path, &token).await["config"]["timezone"].is_null());
 
     // A new schedule without a timezone stores none, and keeps unknown
     // members.
@@ -316,8 +263,7 @@ async fn an_edited_schedule_keeps_its_stored_timezone_unless_it_names_one() {
             &json!({ "filter_type": "TIME_BASED", "config": schedule() }),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(retyped["filter_type"], "TIME_BASED");
     assert!(retyped["config"].get("timezone").is_none(), "{retyped}");
 

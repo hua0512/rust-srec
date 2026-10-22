@@ -154,8 +154,7 @@ async fn parse_validates_its_input_and_answers_privately() {
             &token,
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(effective["unavailable_reason"], "profiles_disabled");
 
     app.shutdown().await;
@@ -180,8 +179,7 @@ async fn baidupcs_tools_validate_login_material_and_report_a_missing_binary() {
             &json!({"binary_path": "/nonexistent/BaiduPCS-Go"}),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(status["resolved_binary_path"], "/nonexistent/BaiduPCS-Go");
     assert_eq!(status["binary_ok"], false);
     assert_eq!(status["logged_in"], false);

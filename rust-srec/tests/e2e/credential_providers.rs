@@ -10,16 +10,9 @@ use crate::support::{FakePlatform, Seed, TestApp, id_of};
 
 const PLATFORM: &str = "/api/config/platforms/platform-fake";
 
-async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
-    app.get(path, token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body
-}
-
 /// Make the profile `profile_id` the fake platform's fixed account.
 async fn select_account(app: &TestApp, token: &str, profile_id: &str) {
-    let mut platform = get_ok(app, token, PLATFORM).await;
+    let mut platform = app.get_ok(PLATFORM, token).await;
     // The platform route carries the selection as a JSON document in a string.
     platform["credential_selection"] =
         json!(json!({ "mode": "fixed", "credential_id": profile_id }).to_string());
@@ -36,8 +29,7 @@ async fn poll_login(app: &TestApp, token: &str, login_id: &str) -> Value {
         None,
     )
     .await
-    .expect_status(StatusCode::OK)
-    .body
+    .ok()
 }
 
 #[tokio::test]
@@ -48,12 +40,12 @@ async fn a_qr_login_saves_an_account_whose_cookies_reach_the_platform() {
     room.set_live(room.live("Signed in by QR"));
     let app = TestApp::start_with(Seed::live()).await;
     let token = app.admin_token().await;
-    let capabilities = get_ok(
-        &app,
-        &token,
-        "/api/credentials/capabilities?platform_id=platform-fake",
-    )
-    .await;
+    let capabilities = app
+        .get_ok(
+            "/api/credentials/capabilities?platform_id=platform-fake",
+            &token,
+        )
+        .await;
     assert_eq!(capabilities["qr_login"], true, "{capabilities}");
 
     let generated = app
@@ -63,8 +55,7 @@ async fn a_qr_login_saves_an_account_whose_cookies_reach_the_platform() {
             &json!({ "type": "create", "platform_id": "platform-fake", "label": "QR account" }),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     let login_id = generated["login_id"].as_str().expect("login id");
     let code = FakeAccounts::auth_code(generated["url"].as_str().expect("QR code URL"));
     let waiting = |status: &str| json!({ "status": status, "profile_id": null, "version": null });
@@ -81,12 +72,9 @@ async fn a_qr_login_saves_an_account_whose_cookies_reach_the_platform() {
     assert_eq!(poll_login(&app, &token, login_id).await, completed);
 
     let profile_id = completed["profile_id"].as_str().expect("saved profile id");
-    let detail = get_ok(
-        &app,
-        &token,
-        &format!("/api/credentials/profiles/{profile_id}"),
-    )
-    .await;
+    let detail = app
+        .get_ok(&format!("/api/credentials/profiles/{profile_id}"), &token)
+        .await;
     let profile = &detail["profile"];
     assert_eq!(profile["label"], "QR account");
     assert_eq!(profile["platform_config_id"], "platform-fake");
@@ -139,8 +127,7 @@ async fn a_check_rejected_for_authentication_refreshes_the_account_and_retries_w
             }),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     let profile_id = id_of(&created);
     select_account(&app, &token, &profile_id).await;
     app.create_enabled_streamer(&token, json!({ "name": "Refreshed", "url": room.url() }))
@@ -164,12 +151,9 @@ async fn a_check_rejected_for_authentication_refreshes_the_account_and_retries_w
     assert_eq!(media.len(), 1, "{media:?}");
     assert_eq!(media[0].header("cookie"), Some(fresh));
     assert_eq!(accounts.refreshes_of(stale), 1);
-    let refreshed = get_ok(
-        &app,
-        &token,
-        &format!("/api/credentials/profiles/{profile_id}"),
-    )
-    .await;
+    let refreshed = app
+        .get_ok(&format!("/api/credentials/profiles/{profile_id}"), &token)
+        .await;
     assert!(
         refreshed["profile"]["revision"].as_i64() > created["revision"].as_i64(),
         "the refresh stored new material: {refreshed}"

@@ -10,64 +10,20 @@
 
 use std::path::Path;
 
-use reqwest::StatusCode;
 use serde_json::{Value, json};
 
 use crate::support::fake_danmu::FakeDanmu;
-use crate::support::{FakePlatform, FakeRoom, FlvLoop, Seed, TestApp, WAIT, eventually, id_of};
-
-async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
-    app.get(path, token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body
-}
-
-/// A workflow of one `execute` step that succeeds on every OS.
-fn succeed(name: &str) -> Value {
-    json!({
-        "name": name,
-        "steps": [{
-            "id": "succeed",
-            "step": { "type": "inline", "processor": "execute", "config": { "command": "exit 0" } },
-            "depends_on": [],
-        }],
-    })
-}
-
-/// Create an enabled streamer watching `room`, with `config` as its
-/// streamer-specific config, and return its id.
-async fn watch(app: &TestApp, token: &str, room: &FakeRoom, config: Value) -> String {
-    let created = app
-        .create_enabled_streamer(
-            token,
-            json!({ "name": "Chatty", "url": room.url(), "streamer_specific_config": config }),
-        )
-        .await;
-    id_of(&created)
-}
-
-/// Wait for the streamer's only session to end and return its id.
-async fn ended_session(app: &TestApp, token: &str, streamer_id: &str) -> String {
-    let path = format!("/api/sessions?streamer_id={streamer_id}&include_empty=true");
-    eventually(WAIT, "the session to end", || async {
-        let page = get_ok(app, token, &path).await;
-        let sessions = page["items"].as_array().expect("session items").clone();
-        assert!(sessions.len() <= 1, "more than one session: {sessions:?}");
-        sessions
-            .first()
-            .filter(|session| session["is_live"] == false)
-            .map(|session| session["id"].as_str().expect("session id").to_owned())
-    })
-    .await
-}
+use crate::support::{
+    FakePlatform, FakeRoom, FlvLoop, Seed, TERMINAL_DAG_STATUSES, TestApp, WAIT, eventually,
+    succeed,
+};
 
 /// Wait until the session has `count` media outputs and return them sorted by
 /// file type.
 async fn outputs(app: &TestApp, token: &str, session_id: &str, count: usize) -> Vec<Value> {
     let path = format!("/api/pipeline/outputs?session_id={session_id}");
     let mut outputs = eventually(WAIT, "the session's outputs", || async {
-        let page = get_ok(app, token, &path).await;
+        let page = app.get_ok(&path, token).await;
         let items = page["items"].as_array().expect("output items").clone();
         assert!(items.len() <= count, "unexpected outputs: {items:?}");
         (items.len() == count).then_some(items)
@@ -98,7 +54,7 @@ async fn record(
     config: Value,
     chat: &[(&str, &str)],
 ) -> String {
-    let id = watch(app, token, room, config).await;
+    let id = app.watch(token, "Chatty", room, config).await;
     room.wait_for_media_connection(1).await;
     if !chat.is_empty() {
         // The collector is registered before it connects, so once connected a
@@ -117,7 +73,7 @@ async fn record(
     }
     room.set_offline();
     room.end();
-    ended_session(app, token, &id).await
+    app.ended_session_id(token, &id).await
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -200,30 +156,19 @@ async fn the_paired_segment_pipeline_receives_the_segments_video_and_danmu() {
     let video = outputs[1]["file_path"].as_str().expect("video path");
 
     let dag = eventually(WAIT, "the paired workflow to finish", || async {
-        let page = get_ok(
-            &app,
-            &token,
-            &format!("/api/pipeline/dags?session_id={session_id}"),
-        )
-        .await;
-        let dags = page["dags"].as_array().expect("dags").clone();
+        let dags = app.dags(&token, &session_id).await;
         assert!(dags.len() <= 1, "unexpected workflows: {dags:?}");
-        dags.into_iter().find(|dag| {
-            ["COMPLETED", "FAILED", "CANCELLED"]
-                .contains(&dag["status"].as_str().unwrap_or_default())
-        })
+        dags.into_iter()
+            .find(|dag| TERMINAL_DAG_STATUSES.contains(&dag["status"].as_str().unwrap_or_default()))
     })
     .await;
     assert_eq!(dag["name"], "paired", "{dag}");
     assert_eq!(dag["status"], "COMPLETED", "{dag}");
 
     let dag_id = dag["id"].as_str().expect("dag id");
-    let jobs = get_ok(
-        &app,
-        &token,
-        &format!("/api/pipeline/jobs?pipeline_id={dag_id}"),
-    )
-    .await;
+    let jobs = app
+        .get_ok(&format!("/api/pipeline/jobs?pipeline_id={dag_id}"), &token)
+        .await;
     let jobs = jobs["items"].as_array().expect("job items");
     assert_eq!(jobs.len(), 1, "{jobs:?}");
     assert_eq!(jobs[0]["input_path"], json!([video, xml]), "{jobs:?}");
@@ -261,12 +206,12 @@ async fn without_record_danmu_no_danmu_is_collected_and_no_paired_pipeline_runs(
     let outputs = outputs(&app, &token, &session_id, 1).await;
     assert_eq!(outputs[0]["format"], "VIDEO", "{outputs:?}");
     assert_eq!(xml_files(app.output_dir()), Vec::<String>::new());
-    let dags = get_ok(
-        &app,
-        &token,
-        &format!("/api/pipeline/dags?session_id={session_id}"),
-    )
-    .await;
+    let dags = app
+        .get_ok(
+            &format!("/api/pipeline/dags?session_id={session_id}"),
+            &token,
+        )
+        .await;
     assert_eq!(dags["dags"], json!([]), "{dags}");
     assert_eq!(danmu.connections(), 0);
 

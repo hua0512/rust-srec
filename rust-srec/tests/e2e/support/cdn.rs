@@ -87,7 +87,7 @@ const STATIC_MPD: &str = r#"<?xml version="1.0"?>
 /// A presentation whose only video is encrypted (`ContentProtection`).
 const DRM_MPD: &str = include_str!("../../../../crates/mesio/tests/fixtures/dash/drm.mpd");
 
-const M3U8: &str = "application/vnd.apple.mpegurl";
+pub(super) const M3U8: &str = "application/vnd.apple.mpegurl";
 const MPD: &str = "application/dash+xml";
 
 /// The segment container of an HLS stream [`FakeCdn::publish_hls`] serves.

@@ -2,12 +2,10 @@
 //! its bot token at with the backend's API-base override.
 
 use axum::response::IntoResponse;
-use reqwest::{Method, StatusCode};
+use reqwest::StatusCode;
 use serde_json::{Value, json};
 
-use crate::support::{
-    FakePlatform, LocalHttpServer, ReceivedRequest, Seed, TestApp, WAIT, eventually, id_of,
-};
+use crate::support::{FakePlatform, LocalHttpServer, Seed, TestApp, WAIT, eventually, id_of};
 
 /// A fake Bot API answering every `sendMessage` like Telegram does.
 async fn bot_api(status: u16, reply: Value) -> LocalHttpServer {
@@ -51,20 +49,6 @@ async fn telegram_channel(
     id_of(&response.body)
 }
 
-async fn test_send(app: &TestApp, token: &str, id: &str) -> crate::support::Response {
-    app.send(
-        Method::POST,
-        &format!("/api/notifications/channels/{id}/test"),
-        Some(token),
-        None,
-    )
-    .await
-}
-
-fn json_body(request: &ReceivedRequest) -> Value {
-    serde_json::from_slice(&request.body).expect("JSON request body")
-}
-
 /// The UTF-16 span an entity marks in a message's text.
 fn entity_text(message: &Value, entity: &Value) -> String {
     let units: Vec<u16> = message["text"]
@@ -85,7 +69,7 @@ async fn telegram_test_send_posts_the_message_for_the_chat_to_the_bot_api() {
     let bot_token = "4242:e2e-test-send-token";
     let channel = telegram_channel(&app, &token, &api, bot_token, "-1001234567890").await;
 
-    test_send(&app, &token, &channel)
+    app.test_send(&token, &channel)
         .await
         .expect_status(StatusCode::OK);
 
@@ -95,7 +79,7 @@ async fn telegram_test_send_posts_the_message_for_the_chat_to_the_bot_api() {
     assert_eq!(request.method, "POST");
     assert_eq!(request.path, format!("/bot{bot_token}/sendMessage"));
     assert_eq!(request.header("content-type"), Some("application/json"));
-    let message = json_body(request);
+    let message = request.json();
     assert_eq!(message["chat_id"], "-1001234567890");
     assert_eq!(
         message["text"],
@@ -148,7 +132,7 @@ async fn a_stream_online_event_reaches_the_configured_telegram_chat() {
     })
     .await;
     assert_eq!(received[0].path, format!("/bot{bot_token}/sendMessage"));
-    let message = json_body(&received[0]);
+    let message = received[0].json();
     assert_eq!(message["chat_id"], "@srec_alerts");
     let text = message["text"].as_str().expect("message text");
     assert!(
@@ -180,7 +164,8 @@ async fn a_bot_api_error_fails_the_test_send_without_echoing_the_bot_token_or_re
     let bot_token = "4444:e2e-private-bot-token";
     let channel = telegram_channel(&app, &token, &api, bot_token, "-1009999").await;
 
-    let response = test_send(&app, &token, &channel)
+    let response = app
+        .test_send(&token, &channel)
         .await
         .expect_status(StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(response.error_code(), Some("INTERNAL_ERROR"));

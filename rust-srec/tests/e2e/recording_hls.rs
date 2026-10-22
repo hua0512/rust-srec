@@ -10,18 +10,10 @@
 
 use std::path::Path;
 
-use reqwest::StatusCode;
 use serde_json::{Value, json};
 
 use crate::support::cdn::{FakeCdn, HlsMedia};
 use crate::support::{FakePlatform, FakeRoom, Seed, TestApp, WAIT, eventually, id_of};
-
-async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
-    app.get(path, token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body
-}
 
 /// A stream at `url` that outranks the room's own FLV stream.
 fn segmented_stream(url: &str, format: &str, media: &str) -> Value {
@@ -35,30 +27,17 @@ async fn watch(app: &TestApp, token: &str, name: &str, room: &FakeRoom) -> Strin
     )
 }
 
-/// The streamer's sessions, newest first.
-async fn sessions(app: &TestApp, token: &str, streamer_id: &str) -> Vec<Value> {
-    get_ok(
-        app,
-        token,
-        &format!("/api/sessions?streamer_id={streamer_id}&include_empty=true"),
-    )
-    .await["items"]
-        .as_array()
-        .expect("session items")
-        .clone()
-}
-
 /// Wait for the streamer's first session to end and return its detail.
 async fn first_session_ended(app: &TestApp, token: &str, streamer_id: &str) -> Value {
     let id = eventually(WAIT, "the session to end", || async {
-        sessions(app, token, streamer_id)
+        app.sessions(token, streamer_id)
             .await
             .last()
             .filter(|session| session["is_live"] == false)
             .map(|session| session["id"].as_str().expect("session id").to_owned())
     })
     .await;
-    get_ok(app, token, &format!("/api/sessions/{id}")).await
+    app.get_ok(&format!("/api/sessions/{id}"), token).await
 }
 
 /// The end of a session the stream itself ended.
@@ -79,7 +58,9 @@ fn events(session: &Value) -> Vec<&Value> {
 /// its recorded size, with extension `extension`, holding the whole stream.
 async fn only_segment(app: &TestApp, token: &str, session: &Value, extension: &str) -> Vec<u8> {
     let id = session["id"].as_str().expect("session id");
-    let page = get_ok(app, token, &format!("/api/sessions/{id}/segments")).await;
+    let page = app
+        .get_ok(&format!("/api/sessions/{id}/segments"), token)
+        .await;
     let segments = page["items"].as_array().expect("segment items");
     assert_eq!(segments.len(), 1, "{segments:?}");
     let segment = &segments[0];
@@ -131,7 +112,7 @@ async fn hls_recordings_end_with_the_playlist_for_ts_and_fmp4_segments() {
         cdn.publish_hls(name, media, 2, true);
 
         let session = first_session_ended(&app, &token, &id).await;
-        assert_eq!(sessions(&app, &token, &id).await.len(), 1, "{name}");
+        assert_eq!(app.sessions(&token, &id).await.len(), 1, "{name}");
         assert_eq!(
             events(&session),
             [
