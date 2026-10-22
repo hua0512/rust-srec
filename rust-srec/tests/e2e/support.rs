@@ -46,6 +46,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::{self, Message};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
+pub mod fake_danmu;
 mod fake_platform;
 mod http;
 mod media;

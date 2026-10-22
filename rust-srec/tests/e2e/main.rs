@@ -15,6 +15,7 @@ mod support;
 mod auth;
 mod backup;
 mod config;
+mod danmu;
 mod filters;
 mod health;
 mod lifecycle;
