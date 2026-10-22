@@ -20,6 +20,8 @@ env:
   CARGO_PROFILE_DEV_DEBUG: 0
   CARGO_PROFILE_TEST_DEBUG: 0
   CARGO_INCREMENTAL: 0
+  # PR merge-ref caches are isolated from other PRs; main warms shared caches.
+  SCCACHE_GHA_RW_MODE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'READ_WRITE' || 'READ_ONLY' }}
 
 jobs:
   clippy:
@@ -37,10 +39,9 @@ jobs:
           version: "v0.13.0"
       - uses: ./.github/actions/setup-rust
       - uses: ./.github/actions/setup-protoc
-      - name: Install Linux TLS dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev
+      - uses: ./.github/actions/setup-linux-deps
+        with:
+          packages: pkg-config libssl-dev
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: pr-clippy
@@ -61,10 +62,9 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-rust
       - uses: ./.github/actions/setup-protoc
-      - name: Install Linux TLS dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev
+      - uses: ./.github/actions/setup-linux-deps
+        with:
+          packages: pkg-config libssl-dev
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: pr-rustdoc
@@ -105,11 +105,19 @@ jobs:
       - uses: ./.github/actions/setup-rust
       - uses: taiki-e/install-action@nextest
       - uses: ./.github/actions/setup-protoc
-      - name: Install Linux TLS dependencies
+      - uses: actions/setup-python@v7
         if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev
+        with:
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: rust-srec/tests/e2e/streamlink-requirements.txt
+      - uses: ./.github/actions/setup-linux-deps
+        if: matrix.os == 'ubuntu-latest'
+        with:
+          packages: pkg-config libssl-dev ffmpeg rclone
+      - name: Install test-only Streamlink
+        if: matrix.os == 'ubuntu-latest'
+        run: 'python -m pip install --only-binary=:all: -r rust-srec/tests/e2e/streamlink-requirements.txt'
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: pr-test
@@ -117,59 +125,28 @@ jobs:
       - name: Run tests (backend only)
         if: matrix.os == 'ubuntu-latest'
         run: cargo nextest run --locked --workspace --exclude rust-srec-desktop --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback
+      # Keep the workspace and features identical to reuse the normal test build.
+      # Every ignored backend test runs except the SQLite stress test and open bugs.
+      - name: Run ffmpeg, rclone, and Streamlink gated tests
+        if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' }}
+        run: cargo nextest run --locked --workspace --exclude rust-srec-desktop --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback --run-ignored ignored-only -E 'package(=rust-srec) and not binary(=sqlite_claim_stress) and not test(/known_bug_/)'
       - name: Run tests
         if: matrix.os != 'ubuntu-latest'
-        run: cargo nextest run --locked --workspace --exclude rust-srec-desktop
+        run: cargo nextest run --locked --workspace --exclude rust-srec-desktop --timings
       - name: Run doctests (backend only)
         if: matrix.os == 'ubuntu-latest'
         run: cargo test --locked --workspace --exclude rust-srec-desktop --doc --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback
       - name: sccache stats
         if: always() && (runner.os != 'macOS' || runner.arch == 'ARM64')
         run: sccache --show-stats || true
-
-  tool-gated-tests:
-    name: Tool-gated tests (ffmpeg, rclone, streamlink)
-    needs: check-changes
-    if: needs.check-changes.outputs.rust == 'true'
-    runs-on: ubuntu-latest
-    env:
-      RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: "true"
-    steps:
-      - uses: actions/checkout@v7
-      - uses: mozilla-actions/sccache-action@v0.0.11
+      - name: Upload macOS build timings
+        if: ${{ !cancelled() && runner.os == 'macOS' }}
+        uses: actions/upload-artifact@v7
         with:
-          version: "v0.13.0"
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.14'
-          cache: pip
-          cache-dependency-path: rust-srec/tests/e2e/streamlink-requirements.txt
-      - uses: ./.github/actions/setup-rust
-      - uses: taiki-e/install-action@nextest
-      - uses: ./.github/actions/setup-protoc
-      - name: Install Linux TLS dependencies and fixture tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev ffmpeg rclone
-      # Pinned, wheel-only Streamlink; setup-python puts its console script on
-      # PATH for the gated tests.
-      - name: Install test-only Streamlink
-        run: 'python -m pip install --only-binary=:all: -r rust-srec/tests/e2e/streamlink-requirements.txt'
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: pr-test-tools
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      # Tests that need a real ffmpeg, rclone, or Streamlink are `#[ignore]`d so the plain
-      # suite runs anywhere; this job is where they are actually exercised. Every
-      # ignored test of the package runs here except the SQLite stress test and
-      # `known_bug_*` E2E tests (which assert the fix for a confirmed, open bug),
-      # so a newly gated test is picked up without editing this filter.
-      - name: Run ffmpeg, rclone, and Streamlink gated tests
-        run: cargo nextest run --locked -p rust-srec --run-ignored ignored-only -E 'not binary(sqlite_claim_stress) and not test(/known_bug_/)'
-      - name: sccache stats
-        if: always()
-        run: sccache --show-stats || true
+          name: cargo-timings-${{ matrix.os }}
+          path: target/cargo-timings/cargo-timing.html
+          if-no-files-found: warn
+          retention-days: 7
 
   check-changes:
     name: Check Changed Files
@@ -205,6 +182,7 @@ jobs:
               - 'rust-srec/src-tauri/**'
               - '.github/actions/setup-rust/**'
               - '.github/actions/setup-protoc/**'
+              - '.github/actions/setup-linux-deps/**'
               - '.github/workflows/pr.yml'
             frontend:
               - 'rust-srec/frontend/**'

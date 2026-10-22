@@ -1,0 +1,40 @@
+name: Clean closed PR caches
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  actions: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      # This runs with base-repository permissions. Never check out PR code here.
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const ref = `refs/pull/${context.payload.pull_request.number}/merge`;
+            const caches = await github.paginate(github.rest.actions.getActionsCacheList, {
+              ...context.repo,
+              ref,
+              per_page: 100,
+            });
+            for (const cache of caches) {
+              if (cache.ref !== ref) {
+                throw new Error(`Unexpected cache ref: ${cache.ref}`);
+              }
+              try {
+                await github.rest.actions.deleteActionsCacheById({
+                  ...context.repo,
+                  cache_id: cache.id,
+                });
+              } catch (error) {
+                // GitHub may evict a cache between listing and deletion.
+                if (error.status !== 404) throw error;
+              }
+              // Large PR caches can require hundreds of deletes; avoid API bursts.
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+            core.info(`Deleted ${caches.length} caches for ${ref}`);

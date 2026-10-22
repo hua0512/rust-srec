@@ -1,0 +1,16 @@
+name: Setup Linux dependencies
+description: Install Ubuntu packages with bounded downloads and a mirror fallback
+inputs:
+  packages:
+    description: Space-separated Ubuntu package names
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Install Ubuntu packages
+      shell: bash
+      env:
+        LINUX_PACKAGES: ${{ inputs.packages }}
+      run: |
+        read -r -a packages <<< "$LINUX_PACKAGES"
+        bash "$GITHUB_ACTION_PATH/install.sh" "${packages[@]}"

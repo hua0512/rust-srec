@@ -44,7 +44,7 @@ Rules:
   - Never sleep for a fixed time: use `eventually` with `WAIT`.
   - Each test starts its own `TestApp` and ends with `shutdown()`.
   - Don't mutate the process environment. The suite relies on nextest's process-per-test model.
-- A confirmed bug found while writing a test becomes a `known_bug_*` test with `#[ignore = "bug: …"]` that asserts the correct behavior. CI's tool-gated job excludes `known_bug_` tests. The fix removes the ignore and renames the test.
+- A confirmed bug found while writing a test becomes a `known_bug_*` test with `#[ignore = "bug: …"]` that asserts the correct behavior. CI's tool-gated tests exclude `known_bug_` tests. The fix removes the ignore and renames the test.
 - Commands: `cargo nextest run --locked -p rust-srec --test e2e`; one area: `-E 'test(/^auth::/)'`.
 
 ## ANTI-PATTERNS

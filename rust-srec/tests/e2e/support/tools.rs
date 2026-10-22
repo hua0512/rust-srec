@@ -3,7 +3,7 @@
 //! made.
 //!
 //! Those scenarios are `#[ignore]`d so the plain suite runs on any machine;
-//! CI's tool-gated job, which installs ffmpeg, rclone and Streamlink, runs
+//! CI's Linux test job, which installs ffmpeg, rclone and Streamlink, runs
 //! every ignored test but the `known_bug_*` ones.
 
 use serde_json::Value;
