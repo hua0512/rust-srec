@@ -69,6 +69,7 @@ import {
   listApiKeys,
   revokeApiKey,
 } from '@/server/functions/apiKeys';
+import { truncateChars } from '@/lib/char-count';
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/config/api-keys')(
   {
@@ -443,9 +444,8 @@ function CreateApiKeyDialog({
                   id="api-key-name"
                   className={CONFIG_INPUT}
                   value={name}
-                  maxLength={100}
                   placeholder={i18n._(msg`e.g. Claude assistant`)}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => setName(truncateChars(e.target.value, 100))}
                 />
               </div>
               <div className="space-y-2">
