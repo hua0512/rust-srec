@@ -37,6 +37,12 @@ fn execute(id: &str, command: &str, depends_on: &[&str]) -> Value {
     inline(id, "execute", json!({ "command": command }), depends_on)
 }
 
+/// `step` with `key` set, for the step fields beyond processor and order.
+fn with(mut step: Value, key: &str, value: Value) -> Value {
+    step[key] = value;
+    step
+}
+
 fn definition(name: &str, steps: Vec<Value>) -> Value {
     json!({ "name": name, "steps": steps })
 }
@@ -50,6 +56,47 @@ fn strings(value: &Value) -> Vec<String> {
         .collect()
 }
 
+fn read(path: &str) -> String {
+    std::fs::read_to_string(path).unwrap_or_else(|error| panic!("read {path}: {error}"))
+}
+
+/// `name` inside the directory `dir`, joined as the processors join them.
+fn joined(dir: &str, name: &str) -> String {
+    Path::new(dir).join(name).to_string_lossy().into_owned()
+}
+
+async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
+    app.get(path, token)
+        .await
+        .expect_status(StatusCode::OK)
+        .body
+}
+
+/// GET `path` and expect the API's 404.
+async fn assert_missing(app: &TestApp, token: &str, path: &str) {
+    let missing = app.get(path, token).await;
+    missing.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
+}
+
+async fn delete_ok(app: &TestApp, token: &str, path: &str) -> Value {
+    app.delete(path, token)
+        .await
+        .expect_status(StatusCode::OK)
+        .body
+}
+
+/// POST without a payload, as the retry and cancel actions take.
+async fn post_empty(app: &TestApp, token: &str, path: &str) -> Response {
+    app.post(path, token, &json!({})).await
+}
+
+async fn post_ok(app: &TestApp, token: &str, path: &str) -> Value {
+    post_empty(app, token, path)
+        .await
+        .expect_status(StatusCode::OK)
+        .body
+}
+
 async fn validate(app: &TestApp, token: &str, dag: Value) -> Value {
     app.post("/api/pipeline/validate", token, &json!({ "dag": dag }))
         .await
@@ -57,36 +104,43 @@ async fn validate(app: &TestApp, token: &str, dag: Value) -> Value {
         .body
 }
 
-async fn create_pipeline(app: &TestApp, token: &str, inputs: &[String], dag: Value) -> Response {
-    app.post(
-        "/api/pipeline/create",
-        token,
-        &json!({
-            "session_id": "session-e2e",
-            "streamer_id": "streamer-e2e",
-            "input_paths": inputs,
-            "dag": dag,
-        }),
-    )
-    .await
+async fn create_pipeline_as(
+    app: &TestApp,
+    token: &str,
+    (session_id, streamer_id): (&str, &str),
+    inputs: &[String],
+    dag: Value,
+) -> Response {
+    let body = json!({
+        "session_id": session_id,
+        "streamer_id": streamer_id,
+        "input_paths": inputs,
+        "dag": dag,
+    });
+    app.post("/api/pipeline/create", token, &body).await
 }
 
-/// Create a workflow and return its DAG id.
-async fn start_pipeline(app: &TestApp, token: &str, inputs: &[String], dag: Value) -> String {
-    let created = create_pipeline(app, token, inputs, dag)
-        .await
-        .expect_status(StatusCode::CREATED);
+async fn create_pipeline(app: &TestApp, token: &str, inputs: &[String], dag: Value) -> Response {
+    let ids = ("session-e2e", "streamer-e2e");
+    create_pipeline_as(app, token, ids, inputs, dag).await
+}
+
+/// The DAG id of a workflow the response says was created.
+fn created_id(created: Response) -> String {
+    let created = created.expect_status(StatusCode::CREATED);
     created.body["pipeline_id"]
         .as_str()
         .expect("pipeline_id")
         .to_string()
 }
 
+/// Create a workflow and return its DAG id.
+async fn start_pipeline(app: &TestApp, token: &str, inputs: &[String], dag: Value) -> String {
+    created_id(create_pipeline(app, token, inputs, dag).await)
+}
+
 async fn dag(app: &TestApp, token: &str, dag_id: &str) -> Value {
-    app.get(&format!("/api/pipeline/dag/{dag_id}"), token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body
+    get_ok(app, token, &format!("/api/pipeline/dag/{dag_id}")).await
 }
 
 /// Wait until the workflow reaches a terminal status and return its detail.
@@ -128,9 +182,37 @@ fn step_job_id(dag: &Value, step_id: &str) -> String {
 }
 
 async fn job(app: &TestApp, token: &str, job_id: &str) -> Value {
-    app.get(&format!("/api/pipeline/jobs/{job_id}"), token)
+    get_ok(app, token, &format!("/api/pipeline/jobs/{job_id}")).await
+}
+
+async fn job_reaches(app: &TestApp, token: &str, job_id: &str, status: &str) -> Value {
+    eventually(WAIT, &format!("job {job_id} to be {status}"), || async {
+        let body = job(app, token, job_id).await;
+        (body["status"] == status).then_some(body)
+    })
+    .await
+}
+
+async fn save_preset(app: &TestApp, token: &str, name: &str, dag: Value) -> Response {
+    let body = json!({ "name": name, "dag": dag });
+    app.post("/api/pipeline/presets", token, &body).await
+}
+
+fn job_preset(id: &str, name: &str) -> Value {
+    json!({
+        "id": id,
+        "name": name,
+        "description": "Copy to the archive",
+        "category": "file_ops",
+        "processor": "copy_move",
+        "config": "{\"destination\":\"/archive\",\"operation\":\"copy\"}",
+    })
+}
+
+async fn save_job_preset(app: &TestApp, token: &str, id: &str, name: &str) -> Value {
+    app.post("/api/job/presets", token, &job_preset(id, name))
         .await
-        .expect_status(StatusCode::OK)
+        .expect_status(StatusCode::CREATED)
         .body
 }
 
@@ -170,15 +252,8 @@ async fn seed_queued_dag(app: &TestApp, dag_id: &str) -> String {
     let now = now_ms();
     let job_id = format!("{dag_id}-job");
     let step_row_id = format!("{dag_id}-step");
-    let definition = json!({
-        "name": format!("Queued {dag_id}"),
-        "steps": [{
-            "id": "queued",
-            "step": { "type": "inline", "processor": UNCLAIMED_JOB_TYPE, "config": null },
-            "depends_on": [],
-        }],
-    })
-    .to_string();
+    let steps = vec![inline("queued", UNCLAIMED_JOB_TYPE, Value::Null, &[])];
+    let definition = definition(&format!("Queued {dag_id}"), steps).to_string();
     app.run_sql(&format!(
         "INSERT INTO dag_execution (id, dag_definition, status, streamer_id, session_id, \
              created_at, updated_at, total_steps, completed_steps, failed_steps) VALUES \
@@ -198,6 +273,41 @@ async fn seed_queued_dag(app: &TestApp, dag_id: &str) -> String {
     job_id
 }
 
+/// A workflow whose step `fails` failed while step `queued` still waits on
+/// its job, which a worker pool never claims: the state of a workflow whose
+/// other branch is held up behind busy workers.
+async fn seed_partly_failed_dag(app: &TestApp, dag_id: &str) {
+    let now = now_ms();
+    let steps = vec![
+        execute("fails", "exit 1", &[]),
+        inline("queued", UNCLAIMED_JOB_TYPE, Value::Null, &[]),
+    ];
+    let definition = definition(&format!("Partly failed {dag_id}"), steps).to_string();
+    app.run_sql(&format!(
+        "INSERT INTO dag_execution (id, dag_definition, status, streamer_id, session_id, \
+             created_at, updated_at, error, total_steps, completed_steps, failed_steps) VALUES \
+             ('{dag_id}', '{definition}', 'PROCESSING', 'streamer-seeded', 'session-seeded', \
+             {now}, {now}, 'Step ''fails'' failed: exit code 1', 2, 0, 1);
+         INSERT INTO job (id, job_type, status, config, state, created_at, updated_at, input, \
+             outputs, priority, streamer_id, session_id, retry_count, pipeline_id, started_at, \
+             completed_at, error) VALUES \
+             ('{dag_id}-failed', 'execute', 'FAILED', '{{}}', '{{}}', {now}, {now}, \
+             '[\"/recordings/clip.flv\"]', '[]', 0, 'streamer-seeded', 'session-seeded', 0, \
+             '{dag_id}', {now}, {now}, 'exit code 1'), \
+             ('{dag_id}-queued', '{UNCLAIMED_JOB_TYPE}', 'PENDING', '{{}}', '{{}}', {now}, {now}, \
+             '[\"/recordings/clip.flv\"]', '[]', 0, 'streamer-seeded', 'session-seeded', 0, \
+             '{dag_id}', NULL, NULL, NULL);
+         INSERT INTO dag_step_execution (id, dag_id, step_id, job_id, status, \
+             depends_on_step_ids, created_at, updated_at) VALUES \
+             ('{dag_id}-fails', '{dag_id}', 'fails', '{dag_id}-failed', 'FAILED', '[]', {now}, {now}), \
+             ('{dag_id}-queued-step', '{dag_id}', 'queued', '{dag_id}-queued', 'PROCESSING', '[]', \
+             {now}, {now});
+         UPDATE job SET dag_step_execution_id = '{dag_id}-fails' WHERE id = '{dag_id}-failed';
+         UPDATE job SET dag_step_execution_id = '{dag_id}-queued-step' WHERE id = '{dag_id}-queued';"
+    ))
+    .await;
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/pipeline/validate
 // ---------------------------------------------------------------------------
@@ -207,123 +317,82 @@ async fn validate_rejects_malformed_graphs_with_the_messages_the_editor_shows() 
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 
-    let empty = validate(&app, &token, definition("empty", vec![])).await;
-    assert_eq!(
-        empty,
+    // A graph of no steps or too many is refused before it is analysed.
+    let unanalysed = |error: &str| {
         json!({
             "valid": false,
-            "errors": ["DAG must have at least one step"],
+            "errors": [error],
             "warnings": [],
             "root_steps": [],
             "leaf_steps": [],
             "max_depth": 0,
         })
-    );
-
-    let duplicate = validate(
-        &app,
-        &token,
-        definition(
-            "duplicate",
-            vec![execute("a", "exit 0", &[]), execute("a", "exit 0", &[])],
-        ),
-    )
-    .await;
-    assert_eq!(duplicate["valid"], false);
-    assert_eq!(duplicate["errors"], json!(["Duplicate step ID: a"]));
-
-    let self_dependency = validate(
-        &app,
-        &token,
-        definition(
-            "self",
-            vec![
-                execute("root", "exit 0", &[]),
-                execute("a", "exit 0", &["a"]),
-            ],
-        ),
-    )
-    .await;
-    assert_eq!(self_dependency["valid"], false);
-    assert_eq!(
-        self_dependency["errors"],
-        json!(["Step 'a' depends on itself"])
-    );
-
-    let missing = validate(
-        &app,
-        &token,
-        definition(
-            "missing",
-            vec![
-                execute("a", "exit 0", &[]),
-                execute("b", "exit 0", &["ghost"]),
-            ],
-        ),
-    )
-    .await;
-    assert_eq!(missing["valid"], false);
-    assert_eq!(
-        missing["errors"],
-        json!(["Step 'b' depends on non-existent step 'ghost'"])
-    );
-
-    let no_root = validate(
-        &app,
-        &token,
-        definition(
-            "no-root",
-            vec![
-                execute("a", "exit 0", &["b"]),
-                execute("b", "exit 0", &["a"]),
-            ],
-        ),
-    )
-    .await;
-    assert_eq!(no_root["valid"], false);
-    assert_eq!(no_root["root_steps"], json!([]));
-    assert_eq!(
-        no_root["errors"],
-        json!([
-            "DAG has no root steps (all steps have dependencies)",
-            "Cycle detected involving: a -> b",
-        ])
-    );
-
-    // A cycle below a sound root. Structural errors suppress the creation
-    // checks, so the unknown processor on the root is not reported yet.
-    let cycle = validate(
-        &app,
-        &token,
-        definition(
-            "cycle",
-            vec![
-                inline("root", "transmogrify", json!({}), &[]),
-                execute("a", "exit 0", &["root", "b"]),
-                execute("b", "exit 0", &["a"]),
-            ],
-        ),
-    )
-    .await;
-    assert_eq!(cycle["valid"], false);
-    assert_eq!(cycle["root_steps"], json!(["root"]));
-    assert_eq!(cycle["errors"], json!(["Cycle detected involving: a -> b"]));
-
+    };
+    let empty = validate(&app, &token, definition("empty", vec![])).await;
+    assert_eq!(empty, unanalysed("DAG must have at least one step"));
     let oversized_steps: Vec<Value> = (0..1001)
         .map(|index| execute(&format!("s{index}"), "exit 0", &[]))
         .collect();
     let oversized = validate(&app, &token, definition("oversized", oversized_steps)).await;
     assert_eq!(
         oversized,
-        json!({
-            "valid": false,
-            "errors": ["DAG has 1001 steps, maximum allowed is 1000"],
-            "warnings": [],
-            "root_steps": [],
-            "leaf_steps": [],
-            "max_depth": 0,
-        })
+        unanalysed("DAG has 1001 steps, maximum allowed is 1000")
     );
+
+    // Each case: steps, errors and, where pinned, the root steps.
+    let cases = [
+        (
+            vec![execute("a", "exit 0", &[]), execute("a", "exit 0", &[])],
+            json!(["Duplicate step ID: a"]),
+            None,
+        ),
+        (
+            vec![
+                execute("root", "exit 0", &[]),
+                execute("a", "exit 0", &["a"]),
+            ],
+            json!(["Step 'a' depends on itself"]),
+            None,
+        ),
+        (
+            vec![
+                execute("a", "exit 0", &[]),
+                execute("b", "exit 0", &["ghost"]),
+            ],
+            json!(["Step 'b' depends on non-existent step 'ghost'"]),
+            None,
+        ),
+        (
+            vec![
+                execute("a", "exit 0", &["b"]),
+                execute("b", "exit 0", &["a"]),
+            ],
+            json!([
+                "DAG has no root steps (all steps have dependencies)",
+                "Cycle detected involving: a -> b",
+            ]),
+            Some(json!([])),
+        ),
+        // A cycle below a sound root. Structural errors suppress the creation
+        // checks, so the unknown processor on the root is not reported yet.
+        (
+            vec![
+                inline("root", "transmogrify", json!({}), &[]),
+                execute("a", "exit 0", &["root", "b"]),
+                execute("b", "exit 0", &["a"]),
+            ],
+            json!(["Cycle detected involving: a -> b"]),
+            Some(json!(["root"])),
+        ),
+    ];
+    for (steps, errors, roots) in cases {
+        let report = validate(&app, &token, definition("malformed", steps)).await;
+        assert_eq!(report["valid"], false, "{report}");
+        assert_eq!(report["errors"], errors, "{report}");
+        if let Some(roots) = roots {
+            assert_eq!(report["root_steps"], roots, "{report}");
+        }
+    }
 
     app.shutdown().await;
 }
@@ -333,85 +402,16 @@ async fn validate_reports_roots_leaves_and_depth_for_chains_fan_out_and_fan_in()
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 
-    let chain = validate(
-        &app,
-        &token,
-        definition(
-            "chain",
-            vec![
-                execute("a", "exit 0", &[]),
-                execute("b", "exit 0", &["a"]),
-                execute("c", "exit 0", &["b"]),
-            ],
-        ),
-    )
-    .await;
-    assert_eq!(
-        chain,
+    let sound = |roots: &[&str], leaves: &[&str], max_depth: u64, warnings: &[&str]| {
         json!({
             "valid": true,
             "errors": [],
-            "warnings": [],
-            "root_steps": ["a"],
-            "leaf_steps": ["c"],
-            "max_depth": 3,
+            "warnings": warnings,
+            "root_steps": roots,
+            "leaf_steps": leaves,
+            "max_depth": max_depth,
         })
-    );
-
-    let fan_out = validate(
-        &app,
-        &token,
-        definition(
-            "fan-out",
-            vec![
-                execute("a", "exit 0", &[]),
-                execute("b", "exit 0", &["a"]),
-                execute("c", "exit 0", &["a"]),
-            ],
-        ),
-    )
-    .await;
-    assert_eq!(fan_out["valid"], true);
-    assert_eq!(fan_out["root_steps"], json!(["a"]));
-    assert_eq!(fan_out["leaf_steps"], json!(["b", "c"]));
-    assert_eq!(fan_out["max_depth"], 2);
-
-    let fan_in = validate(
-        &app,
-        &token,
-        definition(
-            "fan-in",
-            vec![
-                execute("a", "exit 0", &[]),
-                execute("b", "exit 0", &[]),
-                execute("c", "exit 0", &["a", "b"]),
-            ],
-        ),
-    )
-    .await;
-    assert_eq!(fan_in["valid"], true);
-    assert_eq!(fan_in["root_steps"], json!(["a", "b"]));
-    assert_eq!(fan_in["leaf_steps"], json!(["c"]));
-    assert_eq!(fan_in["max_depth"], 2);
-
-    let single = validate(
-        &app,
-        &token,
-        definition("single", vec![execute("only", "exit 0", &[])]),
-    )
-    .await;
-    assert_eq!(
-        single,
-        json!({
-            "valid": true,
-            "errors": [],
-            "warnings": ["DAG has only one step - consider if a pipeline is necessary"],
-            "root_steps": ["only"],
-            "leaf_steps": ["only"],
-            "max_depth": 1,
-        })
-    );
-
+    };
     let deep_steps: Vec<Value> = (0..11)
         .map(|index| {
             let previous = format!("s{}", index.max(1) - 1);
@@ -423,13 +423,59 @@ async fn validate_reports_roots_leaves_and_depth_for_chains_fan_out_and_fan_in()
             execute(&format!("s{index}"), "exit 0", &depends_on)
         })
         .collect();
-    let deep = validate(&app, &token, definition("deep", deep_steps)).await;
-    assert_eq!(deep["valid"], true);
-    assert_eq!(deep["max_depth"], 11);
-    assert_eq!(
-        deep["warnings"],
-        json!(["DAG has depth 11 - deep pipelines may be slow"])
-    );
+    let cases = [
+        (
+            "chain",
+            vec![
+                execute("a", "exit 0", &[]),
+                execute("b", "exit 0", &["a"]),
+                execute("c", "exit 0", &["b"]),
+            ],
+            sound(&["a"], &["c"], 3, &[]),
+        ),
+        (
+            "fan-out",
+            vec![
+                execute("a", "exit 0", &[]),
+                execute("b", "exit 0", &["a"]),
+                execute("c", "exit 0", &["a"]),
+            ],
+            sound(&["a"], &["b", "c"], 2, &[]),
+        ),
+        (
+            "fan-in",
+            vec![
+                execute("a", "exit 0", &[]),
+                execute("b", "exit 0", &[]),
+                execute("c", "exit 0", &["a", "b"]),
+            ],
+            sound(&["a", "b"], &["c"], 2, &[]),
+        ),
+        (
+            "single",
+            vec![execute("only", "exit 0", &[])],
+            sound(
+                &["only"],
+                &["only"],
+                1,
+                &["DAG has only one step - consider if a pipeline is necessary"],
+            ),
+        ),
+        (
+            "deep",
+            deep_steps,
+            sound(
+                &["s0"],
+                &["s10"],
+                11,
+                &["DAG has depth 11 - deep pipelines may be slow"],
+            ),
+        ),
+    ];
+    for (name, steps, expected) in cases {
+        let report = validate(&app, &token, definition(name, steps)).await;
+        assert_eq!(report, expected, "{name}");
+    }
 
     app.shutdown().await;
 }
@@ -475,78 +521,36 @@ async fn validate_runs_the_creation_checks_once_the_graph_is_sound() {
         "{missing_preset}"
     );
 
-    let missing_workflow = validate(
-        &app,
-        &token,
-        definition(
-            "missing-workflow",
+    let cases = [
+        (
             vec![json!({ "id": "w", "step": { "type": "workflow", "name": "No Such Workflow" } })],
+            "Workflow 'No Such Workflow' not found",
         ),
-    )
-    .await;
-    assert_eq!(missing_workflow["valid"], false);
-    assert_eq!(
-        missing_workflow["errors"],
-        json!(["Workflow 'No Such Workflow' not found"])
-    );
-
-    let delete_beside_reader = validate(
-        &app,
-        &token,
-        definition(
-            "racy-delete",
+        (
             vec![
                 execute("probe", "exit 0", &[]),
                 inline("tidy", "delete", json!({}), &[]),
             ],
+            "Step 'tidy' removes the pipeline's inputs while 'probe' still read them; make 'tidy' depend on that step so it runs after them",
         ),
-    )
-    .await;
-    assert_eq!(delete_beside_reader["valid"], false);
-    assert_eq!(
-        delete_beside_reader["errors"],
-        json!([
-            "Step 'tidy' removes the pipeline's inputs while 'probe' still read them; make 'tidy' depend on that step so it runs after them"
-        ])
-    );
-
-    let zero_retry = validate(
-        &app,
-        &token,
-        definition(
-            "zero-retry",
-            vec![json!({
-                "id": "a",
-                "step": { "type": "inline", "processor": "execute", "config": { "command": "exit 0" } },
-                "retry": { "max_attempts": 0 },
-            })],
+        (
+            vec![with(
+                execute("a", "exit 0", &[]),
+                "retry",
+                json!({ "max_attempts": 0 }),
+            )],
+            "Step 'a' has a retry policy with zero attempts",
         ),
-    )
-    .await;
-    assert_eq!(zero_retry["valid"], false);
-    assert_eq!(
-        zero_retry["errors"],
-        json!(["Step 'a' has a retry policy with zero attempts"])
-    );
-
-    let zero_timeout = validate(
-        &app,
-        &token,
-        definition(
-            "zero-timeout",
-            vec![json!({
-                "id": "a",
-                "step": { "type": "inline", "processor": "execute", "config": { "command": "exit 0" } },
-                "timeout_secs": 0,
-            })],
+        (
+            vec![with(execute("a", "exit 0", &[]), "timeout_secs", json!(0))],
+            "Step 'a' has a zero timeout",
         ),
-    )
-    .await;
-    assert_eq!(zero_timeout["valid"], false);
-    assert_eq!(
-        zero_timeout["errors"],
-        json!(["Step 'a' has a zero timeout"])
-    );
+    ];
+    for (steps, error) in cases {
+        let report = validate(&app, &token, definition("refused", steps)).await;
+        assert_eq!(report["valid"], false, "{report}");
+        assert_eq!(report["errors"], json!([error]), "{report}");
+    }
 
     // Removal through a processor option only warns: the files go after the
     // step succeeds, so a sibling that finishes first is unaffected.
@@ -579,28 +583,11 @@ async fn validate_runs_the_creation_checks_once_the_graph_is_sound() {
     );
 
     // Job presets and workflows that exist resolve.
-    app.post(
-        "/api/job/presets",
-        &token,
-        &json!({
-            "id": "e2e-validate-preset",
-            "name": "e2e validate copy",
-            "processor": "copy_move",
-            "config": "{\"destination\":\"/tmp/e2e\"}",
-        }),
-    )
-    .await
-    .expect_status(StatusCode::CREATED);
-    app.post(
-        "/api/pipeline/presets",
-        &token,
-        &json!({
-            "name": "E2E Validate Flow",
-            "dag": definition("E2E Validate Flow", vec![execute("inner", "exit 0", &[])]),
-        }),
-    )
-    .await
-    .expect_status(StatusCode::CREATED);
+    save_job_preset(&app, &token, "e2e-validate-preset", "e2e validate copy").await;
+    let inner = definition("E2E Validate Flow", vec![execute("inner", "exit 0", &[])]);
+    save_preset(&app, &token, "E2E Validate Flow", inner)
+        .await
+        .expect_status(StatusCode::CREATED);
     let resolved = validate(
         &app,
         &token,
@@ -621,11 +608,7 @@ async fn validate_runs_the_creation_checks_once_the_graph_is_sound() {
     assert_eq!(resolved["errors"], json!([]));
 
     // Checking a definition never starts it.
-    let dags = app
-        .get("/api/pipeline/dags", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let dags = get_ok(&app, &token, "/api/pipeline/dags").await;
     assert_eq!(dags["total"], 0, "{dags}");
 
     app.shutdown().await;
@@ -686,11 +669,8 @@ async fn pipeline_presets_round_trip_and_keep_created_at_across_updates() {
     let created_at = millis(&created["created_at"]);
     let created_updated_at = millis(&created["updated_at"]);
 
-    let fetched = app
-        .get(&format!("/api/pipeline/presets/{id}"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let path = format!("/api/pipeline/presets/{id}");
+    let fetched = get_ok(&app, &token, &path).await;
     assert_eq!(fetched["dag"], created["dag"]);
     assert_eq!(millis(&fetched["created_at"]), created_at);
 
@@ -704,16 +684,13 @@ async fn pipeline_presets_round_trip_and_keep_created_at_across_updates() {
         (now_ms() > created_updated_at).then_some(())
     })
     .await;
+    let update = json!({
+        "name": "E2E Weekly Archive",
+        "description": null,
+        "dag": renamed_definition,
+    });
     let updated = app
-        .put(
-            &format!("/api/pipeline/presets/{id}"),
-            &token,
-            &json!({
-                "name": "E2E Weekly Archive",
-                "description": null,
-                "dag": renamed_definition,
-            }),
-        )
+        .put(&path, &token, &update)
         .await
         .expect_status(StatusCode::OK)
         .body;
@@ -723,11 +700,7 @@ async fn pipeline_presets_round_trip_and_keep_created_at_across_updates() {
     assert_eq!(millis(&updated["created_at"]), created_at);
     assert!(millis(&updated["updated_at"]) > created_updated_at);
 
-    let reread = app
-        .get(&format!("/api/pipeline/presets/{id}"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let reread = get_ok(&app, &token, &path).await;
     assert_eq!(reread["name"], "E2E Weekly Archive");
     assert_eq!(reread["dag"], renamed_definition);
     assert_eq!(millis(&reread["created_at"]), created_at);
@@ -741,37 +714,17 @@ async fn pipeline_presets_round_trip_and_keep_created_at_across_updates() {
         .await;
     missing.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
 
-    let listed = app
-        .get(
-            "/api/pipeline/presets?search=e2e%20weekly&limit=500",
-            &token,
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let search = "/api/pipeline/presets?search=e2e%20weekly&limit=500";
+    let listed = get_ok(&app, &token, search).await;
     assert_eq!(listed["total"], 1);
     assert_eq!(listed["limit"], 100);
     assert_eq!(listed["offset"], 0);
     assert_eq!(listed["presets"][0]["id"], id.as_str());
 
-    app.delete(&format!("/api/pipeline/presets/{id}"), &token)
-        .await
-        .expect_status(StatusCode::OK);
-    let gone = app
-        .get(&format!("/api/pipeline/presets/{id}"), &token)
-        .await;
-    gone.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
+    delete_ok(&app, &token, &path).await;
+    assert_missing(&app, &token, &path).await;
 
     app.shutdown().await;
-}
-
-async fn save_preset(app: &TestApp, token: &str, name: &str, dag: Value) -> Response {
-    app.post(
-        "/api/pipeline/presets",
-        token,
-        &json!({ "name": name, "dag": dag }),
-    )
-    .await
 }
 
 #[tokio::test]
@@ -791,11 +744,7 @@ async fn pipeline_presets_refuse_a_workflow_that_cannot_run_and_store_nothing() 
         definition(
             "x",
             vec![
-                json!({
-                    "id": "slow",
-                    "step": { "type": "inline", "processor": "execute", "config": { "command": "exit 0" } },
-                    "timeout_secs": 0,
-                }),
+                with(execute("slow", "exit 0", &[]), "timeout_secs", json!(0)),
                 inline("odd", "transmogrify", json!({}), &[]),
             ],
         ),
@@ -830,48 +779,34 @@ async fn pipeline_presets_refuse_a_workflow_that_cannot_run_and_store_nothing() 
         cycle.text
     );
 
-    let stored = app
-        .get("/api/pipeline/presets?search=E2E%20Rejected", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let stored = get_ok(&app, &token, "/api/pipeline/presets?search=E2E%20Rejected").await;
     assert_eq!(stored["total"], 0, "{stored}");
 
     // An update is checked the same way and leaves the stored workflow as it was.
-    let kept = app
-        .post(
-            "/api/pipeline/presets",
-            &token,
-            &json!({ "name": "E2E Kept", "dag": archive_definition("E2E Kept") }),
-        )
+    let kept = save_preset(&app, &token, "E2E Kept", archive_definition("E2E Kept"))
         .await
         .expect_status(StatusCode::CREATED)
         .body;
-    let kept_id = kept["id"].as_str().expect("id");
+    let path = format!("/api/pipeline/presets/{}", id_of(&kept));
+    let unknown = definition("x", vec![inline("odd", "transmogrify", json!({}), &[])]);
     let refused = app
         .put(
-            &format!("/api/pipeline/presets/{kept_id}"),
+            &path,
             &token,
-            &json!({
-                "name": "E2E Kept Broken",
-                "dag": definition("x", vec![inline("odd", "transmogrify", json!({}), &[])]),
-            }),
+            &json!({ "name": "E2E Kept Broken", "dag": unknown }),
         )
         .await;
     refused.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
+    let empty = definition("x", vec![]);
     let empty_update = app
         .put(
-            &format!("/api/pipeline/presets/{kept_id}"),
+            &path,
             &token,
-            &json!({ "name": "E2E Kept Empty", "dag": definition("x", vec![]) }),
+            &json!({ "name": "E2E Kept Empty", "dag": empty }),
         )
         .await;
     empty_update.assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
-    let unchanged = app
-        .get(&format!("/api/pipeline/presets/{kept_id}"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let unchanged = get_ok(&app, &token, &path).await;
     assert_eq!(unchanged["name"], "E2E Kept");
     assert_eq!(unchanged["dag"], archive_definition("E2E Kept"));
 
@@ -883,56 +818,30 @@ async fn pipeline_preset_preview_lists_each_job_and_a_topological_order() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 
-    app.post(
-        "/api/job/presets",
-        &token,
-        &json!({
-            "id": "e2e-preview-preset",
-            "name": "e2e preview copy",
-            "processor": "copy_move",
-            "config": "{\"destination\":\"/archive\"}",
-        }),
-    )
-    .await
-    .expect_status(StatusCode::CREATED);
-    app.post(
-        "/api/pipeline/presets",
-        &token,
-        &json!({
-            "name": "E2E Preview Inner",
-            "dag": definition("E2E Preview Inner", vec![execute("inner", "exit 0", &[])]),
-        }),
-    )
-    .await
-    .expect_status(StatusCode::CREATED);
-
-    let preset = app
-        .post(
-            "/api/pipeline/presets",
-            &token,
-            &json!({
-                "name": "E2E Preview",
-                "dag": definition(
-                    "E2E Preview",
-                    vec![
-                        json!({ "id": "finish", "step": { "type": "inline", "processor": "delete", "config": {} }, "depends_on": ["flow", "notify"] }),
-                        json!({ "id": "flow", "step": { "type": "workflow", "name": "E2E Preview Inner" }, "depends_on": ["prep"] }),
-                        execute("notify", "exit 0", &["prep"]),
-                        json!({ "id": "prep", "step": { "type": "preset", "name": "e2e preview copy" } }),
-                    ],
-                ),
-            }),
-        )
+    save_job_preset(&app, &token, "e2e-preview-preset", "e2e preview copy").await;
+    let inner = definition("E2E Preview Inner", vec![execute("inner", "exit 0", &[])]);
+    save_preset(&app, &token, "E2E Preview Inner", inner)
         .await
-        .expect_status(StatusCode::CREATED)
-        .body;
+        .expect_status(StatusCode::CREATED);
+
+    let steps = vec![
+        inline("finish", "delete", json!({}), &["flow", "notify"]),
+        json!({ "id": "flow", "step": { "type": "workflow", "name": "E2E Preview Inner" }, "depends_on": ["prep"] }),
+        execute("notify", "exit 0", &["prep"]),
+        json!({ "id": "prep", "step": { "type": "preset", "name": "e2e preview copy" } }),
+    ];
+    let preset = save_preset(
+        &app,
+        &token,
+        "E2E Preview",
+        definition("E2E Preview", steps),
+    )
+    .await
+    .expect_status(StatusCode::CREATED)
+    .body;
     let id = preset["id"].as_str().expect("id");
 
-    let preview = app
-        .get(&format!("/api/pipeline/presets/{id}/preview"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let preview = get_ok(&app, &token, &format!("/api/pipeline/presets/{id}/preview")).await;
     assert_eq!(preview["preset_id"], id);
     assert_eq!(preview["preset_name"], "E2E Preview");
     assert_eq!(
@@ -958,10 +867,7 @@ async fn pipeline_preset_preview_lists_each_job_and_a_topological_order() {
     assert!(position("notify") < position("finish"));
     assert_eq!(position("finish"), 3);
 
-    let missing = app
-        .get("/api/pipeline/presets/no-such-preset/preview", &token)
-        .await;
-    missing.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
+    assert_missing(&app, &token, "/api/pipeline/presets/no-such-preset/preview").await;
 
     app.shutdown().await;
 }
@@ -970,59 +876,27 @@ async fn pipeline_preset_preview_lists_each_job_and_a_topological_order() {
 // Job presets
 // ---------------------------------------------------------------------------
 
-fn job_preset(id: &str, name: &str) -> Value {
-    json!({
-        "id": id,
-        "name": name,
-        "description": "Copy to the archive",
-        "category": "file_ops",
-        "processor": "copy_move",
-        "config": "{\"destination\":\"/archive\",\"operation\":\"copy\"}",
-    })
-}
-
 #[tokio::test]
 async fn job_presets_resolve_by_exact_name_and_validate_their_writes() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 
     // Name order puts "e2e a ..." ahead of "e2e z ...".
-    let target = app
-        .post(
-            "/api/job/presets",
-            &token,
-            &job_preset("e2e-target", "e2e z target"),
-        )
-        .await
-        .expect_status(StatusCode::CREATED)
-        .body;
+    let target = save_job_preset(&app, &token, "e2e-target", "e2e z target").await;
     assert_eq!(target["id"], "e2e-target");
     assert_eq!(
         target["config"],
         "{\"destination\":\"/archive\",\"operation\":\"copy\"}"
     );
     millis(&target["created_at"]);
-    app.post(
-        "/api/job/presets",
-        &token,
-        &job_preset("e2e-decoy", "e2e a target decoy"),
-    )
-    .await
-    .expect_status(StatusCode::CREATED);
+    save_job_preset(&app, &token, "e2e-decoy", "e2e a target decoy").await;
 
-    let searched = app
-        .get("/api/job/presets?search=e2e&limit=1", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let searched = get_ok(&app, &token, "/api/job/presets?search=e2e&limit=1").await;
     assert_eq!(searched["presets"][0]["id"], "e2e-decoy");
     assert_eq!(searched["total"], 2);
 
-    let by_name = app
-        .get("/api/job/presets?name=e2e%20z%20target&limit=500", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let by_name = "/api/job/presets?name=e2e%20z%20target&limit=500";
+    let by_name = get_ok(&app, &token, by_name).await;
     assert_eq!(by_name["total"], 1);
     assert_eq!(by_name["limit"], 100);
     assert_eq!(by_name["offset"], 0);
@@ -1093,19 +967,12 @@ async fn job_presets_resolve_by_exact_name_and_validate_their_writes() {
         .await;
     missing.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
 
-    let reread = app
-        .get("/api/job/presets/e2e-target", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let reread = get_ok(&app, &token, "/api/job/presets/e2e-target").await;
     assert_eq!(reread["name"], "e2e z target");
     assert_eq!(reread["config"], "{\"destination\":\"/elsewhere\"}");
 
-    app.delete("/api/job/presets/e2e-decoy", &token)
-        .await
-        .expect_status(StatusCode::OK);
-    let deleted = app.get("/api/job/presets/e2e-decoy", &token).await;
-    deleted.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
+    delete_ok(&app, &token, "/api/job/presets/e2e-decoy").await;
+    assert_missing(&app, &token, "/api/job/presets/e2e-decoy").await;
 
     app.shutdown().await;
 }
@@ -1115,20 +982,12 @@ async fn cloning_a_job_preset_copies_it_under_a_new_id_and_refuses_a_taken_name(
     let app = TestApp::start().await;
     let token = app.admin_token().await;
 
-    app.post(
-        "/api/job/presets",
-        &token,
-        &job_preset("e2e-source", "e2e source"),
-    )
-    .await
-    .expect_status(StatusCode::CREATED);
+    save_job_preset(&app, &token, "e2e-source", "e2e source").await;
 
+    let clone_path = "/api/job/presets/e2e-source/clone";
+    let copy_name = json!({ "new_name": "e2e source copy" });
     let clone = app
-        .post(
-            "/api/job/presets/e2e-source/clone",
-            &token,
-            &json!({ "new_name": "e2e source copy" }),
-        )
+        .post(clone_path, &token, &copy_name)
         .await
         .expect_status(StatusCode::CREATED)
         .body;
@@ -1142,21 +1001,11 @@ async fn cloning_a_job_preset_copies_it_under_a_new_id_and_refuses_a_taken_name(
         clone["config"],
         "{\"destination\":\"/archive\",\"operation\":\"copy\"}"
     );
-    let stored = app
-        .get(&format!("/api/job/presets/{clone_id}"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let stored = get_ok(&app, &token, &format!("/api/job/presets/{clone_id}")).await;
     assert_eq!(stored["name"], "e2e source copy");
 
     // Creating under a taken name is a 409; cloning to one is a 422.
-    let taken = app
-        .post(
-            "/api/job/presets/e2e-source/clone",
-            &token,
-            &json!({ "new_name": "e2e source copy" }),
-        )
-        .await;
+    let taken = app.post(clone_path, &token, &copy_name).await;
     taken.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
 
     let missing = app
@@ -1168,11 +1017,7 @@ async fn cloning_a_job_preset_copies_it_under_a_new_id_and_refuses_a_taken_name(
         .await;
     missing.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
 
-    let listed = app
-        .get("/api/job/presets?search=e2e%20source", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let listed = get_ok(&app, &token, "/api/job/presets?search=e2e%20source").await;
     assert_eq!(listed["total"], 2, "{listed}");
 
     app.shutdown().await;
@@ -1264,24 +1109,18 @@ async fn creating_a_pipeline_returns_its_first_job_and_an_invalid_definition_cre
         assert_eq!(rejected.error_code(), Some("VALIDATION_ERROR"), "{label}");
     }
 
-    let dags = app
-        .get("/api/pipeline/dags", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let dags = get_ok(&app, &token, "/api/pipeline/dags").await;
     assert_eq!(dags["total"], 1, "{dags}");
-    let jobs = app
-        .get("/api/pipeline/jobs", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let jobs = get_ok(&app, &token, "/api/pipeline/jobs").await;
     assert_eq!(jobs["total"], 2, "{jobs}");
 
     app.shutdown().await;
 }
 
+/// An execute step settles its workflow as completed or failed; the job of a
+/// failed workflow's step can be retried only through that workflow.
 #[tokio::test]
-async fn execute_steps_settle_their_workflow_as_completed_or_failed() {
+async fn execute_steps_settle_their_workflow_and_a_failed_step_job_retries_only_through_it() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
     let input = app.write_output_file("execute/clip.flv", "clip");
@@ -1303,7 +1142,7 @@ async fn execute_steps_settle_their_workflow_as_completed_or_failed() {
     assert_eq!(succeeded["error_message"], Value::Null);
     assert!(succeeded["completed_at"].is_string());
 
-    let (_, failed) = run_pipeline(
+    let (dag_id, failed) = run_pipeline(
         &app,
         &token,
         std::slice::from_ref(&input),
@@ -1314,9 +1153,23 @@ async fn execute_steps_settle_their_workflow_as_completed_or_failed() {
     assert_eq!(failed["failed_steps"], 1);
     assert!(failed["error"].is_string(), "{failed}");
     assert_eq!(step(&failed, "run")["status"], "FAILED");
-    let failure = job(&app, &token, &step_job_id(&failed, "run")).await;
+    let job_id = step_job_id(&failed, "run");
+    let failure = job(&app, &token, &job_id).await;
     assert_eq!(failure["status"], "FAILED");
     assert!(failure["error_message"].is_string(), "{failure}");
+    assert_eq!(failure["belongs_to_workflow"], true);
+    assert_eq!(failure["pipeline_id"], dag_id.as_str());
+
+    let retry = format!("/api/pipeline/jobs/{job_id}/retry");
+    let refused = post_empty(&app, &token, &retry).await;
+    refused.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
+    let after = dag(&app, &token, &dag_id).await;
+    assert_eq!(after["status"], "FAILED");
+    assert_eq!(step(&after, "run")["status"], "FAILED");
+    assert_eq!(step_job_id(&after, "run"), job_id);
+    let unchanged = job(&app, &token, &job_id).await;
+    assert_eq!(unchanged["status"], "FAILED");
+    assert_eq!(unchanged["retry_count"], 0);
 
     app.shutdown().await;
 }
@@ -1348,14 +1201,8 @@ async fn copy_move_refuses_to_overwrite_an_existing_destination() {
     let failure = job(&app, &token, &step_job_id(&refused, "copy")).await;
     assert_eq!(failure["status"], "FAILED");
     assert!(failure["error_message"].is_string(), "{failure}");
-    assert_eq!(
-        std::fs::read_to_string(&existing).expect("destination"),
-        "earlier recording"
-    );
-    assert_eq!(
-        std::fs::read_to_string(&source).expect("source"),
-        "new recording"
-    );
+    assert_eq!(read(&existing), "earlier recording");
+    assert_eq!(read(&source), "new recording");
 
     let (_, replaced) = run_pipeline(
         &app,
@@ -1373,10 +1220,7 @@ async fn copy_move_refuses_to_overwrite_an_existing_destination() {
     )
     .await;
     assert_eq!(replaced["status"], "COMPLETED");
-    assert_eq!(
-        std::fs::read_to_string(&existing).expect("destination"),
-        "new recording"
-    );
+    assert_eq!(read(&existing), "new recording");
 
     app.shutdown().await;
 }
@@ -1387,10 +1231,7 @@ async fn a_delete_step_removes_the_previous_steps_outputs_and_keeps_the_source()
     let token = app.admin_token().await;
     let source = app.write_output_file("recordings/part.flv", "recording");
     let copies = app.output_path("copies");
-    let copy = Path::new(&copies)
-        .join("part.flv")
-        .to_string_lossy()
-        .into_owned();
+    let copy = joined(&copies, "part.flv");
 
     let (_, settled) = run_pipeline(
         &app,
@@ -1414,10 +1255,7 @@ async fn a_delete_step_removes_the_previous_steps_outputs_and_keeps_the_source()
     assert_eq!(step(&settled, "copy")["outputs"], json!([copy]));
     assert_eq!(step(&settled, "remove")["outputs"], json!([]));
     assert!(!Path::new(&copy).exists(), "the copy should be deleted");
-    assert_eq!(
-        std::fs::read_to_string(&source).expect("source"),
-        "recording"
-    );
+    assert_eq!(read(&source), "recording");
 
     app.shutdown().await;
 }
@@ -1465,11 +1303,8 @@ async fn batch_steps_refuse_a_single_output_path_for_several_inputs() {
         );
         assert!(!Path::new(&output).exists(), "{processor} wrote {output}");
     }
-    assert_eq!(std::fs::read_to_string(&inputs[0]).expect("first"), "first");
-    assert_eq!(
-        std::fs::read_to_string(&inputs[1]).expect("second"),
-        "second"
-    );
+    assert_eq!(read(&inputs[0]), "first");
+    assert_eq!(read(&inputs[1]), "second");
 
     app.shutdown().await;
 }
@@ -1547,72 +1382,67 @@ async fn compression_stores_entries_without_roots_drive_prefixes_or_parent_compo
 // Jobs
 // ---------------------------------------------------------------------------
 
+/// Only a running job with a progress report carries `progress`; every
+/// other job, whatever its status, reports it as null in its detail and in
+/// both job lists, rather than omitting it or showing a stale value. Only a
+/// job that has finished can be deleted.
 #[tokio::test]
-async fn pending_and_running_jobs_cannot_be_deleted() {
+async fn jobs_without_live_progress_report_null_progress_and_only_finished_ones_can_be_deleted() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
-    for (id, status) in [
-        ("job-pending", "PENDING"),
-        ("job-processing", "PROCESSING"),
-        ("job-completed", "COMPLETED"),
-        ("job-failed", "FAILED"),
-        ("job-cancelled", "CANCELLED"),
-    ] {
-        seed_standalone_job(&app, id, status, 0).await;
+    let statuses = ["PENDING", "PROCESSING", "COMPLETED", "FAILED", "CANCELLED"];
+    let id = |status: &str| format!("job-{}", status.to_lowercase());
+    for status in statuses {
+        seed_standalone_job(&app, &id(status), status, 0).await;
+        let detail = job(&app, &token, &id(status)).await;
+        assert_eq!(detail["status"], status);
+        assert_eq!(detail.get("progress"), Some(&Value::Null), "{detail}");
+    }
+    for path in ["/api/pipeline/jobs", "/api/pipeline/jobs/page"] {
+        let page = get_ok(&app, &token, path).await;
+        let items = page["items"].as_array().expect("items");
+        assert_eq!(items.len(), statuses.len(), "{path}: {page}");
+        for item in items {
+            assert_eq!(item.get("progress"), Some(&Value::Null), "{path}: {item}");
+        }
     }
 
-    for (id, status) in [("job-pending", "PENDING"), ("job-processing", "PROCESSING")] {
-        let refused = app
-            .delete(&format!("/api/pipeline/jobs/{id}"), &token)
-            .await;
-        refused.assert_error(StatusCode::CONFLICT, "CONFLICT");
-        assert_eq!(job(&app, &token, id).await["status"], status);
-    }
-
-    for id in ["job-completed", "job-failed", "job-cancelled"] {
-        let deleted = app
-            .delete(&format!("/api/pipeline/jobs/{id}"), &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body;
-        assert_eq!(deleted["success"], true);
-        let gone = app.get(&format!("/api/pipeline/jobs/{id}"), &token).await;
-        gone.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
+    for status in statuses {
+        let path = format!("/api/pipeline/jobs/{}", id(status));
+        let deleted = app.delete(&path, &token).await;
+        if matches!(status, "PENDING" | "PROCESSING") {
+            deleted.assert_error(StatusCode::CONFLICT, "CONFLICT");
+            assert_eq!(get_ok(&app, &token, &path).await["status"], status);
+        } else {
+            let deleted = deleted.expect_status(StatusCode::OK).body;
+            assert_eq!(deleted["success"], true, "{status}");
+            assert_missing(&app, &token, &path).await;
+        }
     }
 
     // Deleting a job that does not exist succeeds as a no-op.
-    app.delete("/api/pipeline/jobs/no-such-job", &token)
-        .await
-        .expect_status(StatusCode::OK);
+    delete_ok(&app, &token, "/api/pipeline/jobs/no-such-job").await;
 
     app.shutdown().await;
 }
 
-/// Run a workflow whose only step fails and return its job id.
-async fn failed_execute_job(app: &TestApp, token: &str) -> String {
+#[tokio::test]
+async fn job_logs_are_paged_leveled_and_capped_and_an_unknown_job_has_none() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
     let input = app.write_output_file("logs/clip.flv", "clip");
     let (_, failed) = run_pipeline(
-        app,
-        token,
+        &app,
+        &token,
         &[input],
         definition("fails", vec![execute("run", "exit 1", &[])]),
     )
     .await;
     assert_eq!(failed["status"], "FAILED");
-    step_job_id(&failed, "run")
-}
+    let job_id = step_job_id(&failed, "run");
+    let logs = format!("/api/pipeline/jobs/{job_id}/logs");
 
-#[tokio::test]
-async fn job_logs_are_paged_and_an_unknown_job_has_none() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-    let job_id = failed_execute_job(&app, &token).await;
-
-    let all = app
-        .get(&format!("/api/pipeline/jobs/{job_id}/logs"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let all = get_ok(&app, &token, &logs).await;
     assert_eq!(all["limit"], 20);
     assert_eq!(all["offset"], 0);
     let items = all["items"].as_array().expect("items");
@@ -1625,14 +1455,7 @@ async fn job_logs_are_paged_and_an_unknown_job_has_none() {
         assert!(item["message"].is_string(), "{item}");
     }
 
-    let second = app
-        .get(
-            &format!("/api/pipeline/jobs/{job_id}/logs?limit=1&offset=1"),
-            &token,
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let second = get_ok(&app, &token, &format!("{logs}?limit=1&offset=1")).await;
     assert_eq!(second["total"], total);
     assert_eq!(second["limit"], 1);
     assert_eq!(second["offset"], 1);
@@ -1642,65 +1465,40 @@ async fn job_logs_are_paged_and_an_unknown_job_has_none() {
     assert_eq!(page.len(), 1, "{second}");
     assert!(items.contains(&page[0]), "{second}");
 
-    let capped = app
-        .get(
-            &format!("/api/pipeline/jobs/{job_id}/logs?limit=5000"),
-            &token,
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let capped = get_ok(&app, &token, &format!("{logs}?limit=5000")).await;
     assert_eq!(capped["limit"], 1000);
+    // Levels use the uppercase names the job page highlights.
+    let level_of = |needle: &str| {
+        capped["items"]
+            .as_array()
+            .expect("items")
+            .iter()
+            .find(|item| item["message"].as_str().is_some_and(|m| m.contains(needle)))
+            .unwrap_or_else(|| panic!("a log line containing {needle}: {capped}"))["level"]
+            .clone()
+    };
+    assert_eq!(level_of("Executing command"), "INFO");
+    assert_eq!(level_of("Command failed with status"), "ERROR");
 
-    let unknown = app
-        .get("/api/pipeline/jobs/no-such-job/logs", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let unknown = get_ok(&app, &token, "/api/pipeline/jobs/no-such-job/logs").await;
     assert_eq!(unknown["items"], json!([]));
     assert_eq!(unknown["total"], 0);
 
     // A finished job has no live progress and, not being an upload, no
     // upload records.
-    let progress = app
-        .get(&format!("/api/pipeline/jobs/{job_id}/progress"), &token)
-        .await;
-    progress.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
-    let uploads = app
-        .get(&format!("/api/pipeline/jobs/{job_id}/uploads"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    assert_missing(
+        &app,
+        &token,
+        &format!("/api/pipeline/jobs/{job_id}/progress"),
+    )
+    .await;
+    let uploads = get_ok(
+        &app,
+        &token,
+        &format!("/api/pipeline/jobs/{job_id}/uploads"),
+    )
+    .await;
     assert_eq!(uploads, json!({ "items": [] }));
-
-    app.shutdown().await;
-}
-
-#[tokio::test]
-async fn job_log_levels_use_the_uppercase_names_the_job_page_highlights() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-    let job_id = failed_execute_job(&app, &token).await;
-
-    let logs = app
-        .get(
-            &format!("/api/pipeline/jobs/{job_id}/logs?limit=1000"),
-            &token,
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    let level_of = |needle: &str| {
-        logs["items"]
-            .as_array()
-            .expect("items")
-            .iter()
-            .find(|item| item["message"].as_str().is_some_and(|m| m.contains(needle)))
-            .unwrap_or_else(|| panic!("a log line containing {needle}: {logs}"))["level"]
-            .clone()
-    };
-    assert_eq!(level_of("Executing command"), "INFO");
-    assert_eq!(level_of("Command failed with status"), "ERROR");
 
     app.shutdown().await;
 }
@@ -1718,11 +1516,8 @@ async fn retrying_a_standalone_job_resets_it_to_pending() {
     assert_eq!(before["error_message"], "seeded failure");
     assert_eq!(before["belongs_to_workflow"], false);
 
-    let retried = app
-        .post("/api/pipeline/jobs/job-failed/retry", &token, &json!({}))
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let retry = |id: &str| format!("/api/pipeline/jobs/{id}/retry");
+    let retried = post_ok(&app, &token, &retry("job-failed")).await;
     assert_eq!(retried["id"], "job-failed");
     assert_eq!(retried["status"], "PENDING");
     assert_eq!(retried["retry_count"], 3);
@@ -1733,28 +1528,14 @@ async fn retrying_a_standalone_job_resets_it_to_pending() {
     assert_eq!(reread["status"], "PENDING");
     assert_eq!(reread["retry_count"], 3);
 
-    let again = app
-        .post("/api/pipeline/jobs/job-failed/retry", &token, &json!({}))
-        .await;
-    again.assert_error(StatusCode::CONFLICT, "CONFLICT");
-
-    let cancelled = app
-        .post("/api/pipeline/jobs/job-cancelled/retry", &token, &json!({}))
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let cancelled = post_ok(&app, &token, &retry("job-cancelled")).await;
     assert_eq!(cancelled["status"], "PENDING");
     assert_eq!(cancelled["retry_count"], 1);
     assert_eq!(cancelled["error_message"], Value::Null);
 
-    for id in ["job-completed", "job-pending"] {
-        let refused = app
-            .post(
-                &format!("/api/pipeline/jobs/{id}/retry"),
-                &token,
-                &json!({}),
-            )
-            .await;
+    // The retried job is pending again, so a second retry is refused too.
+    for id in ["job-failed", "job-completed", "job-pending"] {
+        let refused = post_empty(&app, &token, &retry(id)).await;
         refused.assert_error(StatusCode::CONFLICT, "CONFLICT");
     }
     assert_eq!(
@@ -1762,51 +1543,15 @@ async fn retrying_a_standalone_job_resets_it_to_pending() {
         "COMPLETED"
     );
 
-    let unknown = app
-        .post("/api/pipeline/jobs/no-such-job/retry", &token, &json!({}))
-        .await;
+    let unknown = post_empty(&app, &token, &retry("no-such-job")).await;
     unknown.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
 
     app.shutdown().await;
 }
 
-#[tokio::test]
-async fn a_failed_workflows_step_job_must_be_retried_through_the_workflow() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-    let input = app.write_output_file("retry/clip.flv", "clip");
-    let (dag_id, failed) = run_pipeline(
-        &app,
-        &token,
-        &[input],
-        definition("fails", vec![execute("run", "exit 1", &[])]),
-    )
-    .await;
-    let job_id = step_job_id(&failed, "run");
-    let before = job(&app, &token, &job_id).await;
-    assert_eq!(before["belongs_to_workflow"], true);
-    assert_eq!(before["pipeline_id"], dag_id.as_str());
-
-    let refused = app
-        .post(
-            &format!("/api/pipeline/jobs/{job_id}/retry"),
-            &token,
-            &json!({}),
-        )
-        .await;
-    refused.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
-
-    let after = dag(&app, &token, &dag_id).await;
-    assert_eq!(after["status"], "FAILED");
-    assert_eq!(step(&after, "run")["status"], "FAILED");
-    assert_eq!(step_job_id(&after, "run"), job_id);
-    let unchanged = job(&app, &token, &job_id).await;
-    assert_eq!(unchanged["status"], "FAILED");
-    assert_eq!(unchanged["retry_count"], 0);
-
-    app.shutdown().await;
-}
-
+/// Cancelling a queued job sticks and cancels its workflow. A finished job is
+/// refused, including the failed step job of a workflow that still runs, and
+/// that refusal leaves the workflow running.
 #[tokio::test]
 async fn cancelling_a_queued_job_sticks_and_cancels_its_workflow_but_a_finished_job_is_refused() {
     let app = TestApp::start().await;
@@ -1815,12 +1560,13 @@ async fn cancelling_a_queued_job_sticks_and_cancels_its_workflow_but_a_finished_
     seed_standalone_job(&app, "job-completed", "COMPLETED", 0).await;
     seed_standalone_job(&app, "job-failed", "FAILED", 0).await;
     let step_job = seed_queued_dag(&app, "dag-queued").await;
+    seed_partly_failed_dag(&app, "dag-partly-failed").await;
+    // With no job running, an unfinished workflow is displayed as PENDING.
+    let before = dag(&app, &token, "dag-partly-failed").await;
+    assert_eq!(before["status"], "PENDING", "{before}");
 
-    let cancelled = app
-        .post("/api/pipeline/jobs/job-pending/cancel", &token, &json!({}))
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let cancel = |id: &str| format!("/api/pipeline/jobs/{id}/cancel");
+    let cancelled = post_ok(&app, &token, &cancel("job-pending")).await;
     assert_eq!(cancelled["success"], true);
     assert!(cancelled["message"].is_string(), "{cancelled}");
     assert_eq!(
@@ -1828,54 +1574,45 @@ async fn cancelling_a_queued_job_sticks_and_cancels_its_workflow_but_a_finished_
         "CANCELLED"
     );
     // Cancelling again is accepted and changes nothing.
-    app.post("/api/pipeline/jobs/job-pending/cancel", &token, &json!({}))
-        .await
-        .expect_status(StatusCode::OK);
+    post_ok(&app, &token, &cancel("job-pending")).await;
     assert_eq!(
         job(&app, &token, "job-pending").await["status"],
         "CANCELLED"
     );
 
     // Cancelling a workflow's step job cancels the whole workflow.
-    app.post(
-        &format!("/api/pipeline/jobs/{step_job}/cancel"),
-        &token,
-        &json!({}),
-    )
-    .await
-    .expect_status(StatusCode::OK);
+    post_ok(&app, &token, &cancel(&step_job)).await;
     assert_eq!(job(&app, &token, &step_job).await["status"], "CANCELLED");
     let workflow = dag(&app, &token, "dag-queued").await;
     assert_eq!(workflow["status"], "CANCELLED");
     assert_eq!(step(&workflow, "queued")["status"], "CANCELLED");
 
     // A step job of a cancelled workflow is retried through the workflow too.
-    let refused = app
-        .post(
-            &format!("/api/pipeline/jobs/{step_job}/retry"),
-            &token,
-            &json!({}),
-        )
-        .await;
+    let retry = format!("/api/pipeline/jobs/{step_job}/retry");
+    let refused = post_empty(&app, &token, &retry).await;
     refused.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
     assert_eq!(job(&app, &token, &step_job).await["status"], "CANCELLED");
     assert_eq!(dag(&app, &token, "dag-queued").await["status"], "CANCELLED");
 
-    for (id, status) in [("job-completed", "COMPLETED"), ("job-failed", "FAILED")] {
-        let refused = app
-            .post(
-                &format!("/api/pipeline/jobs/{id}/cancel"),
-                &token,
-                &json!({}),
-            )
-            .await;
+    for (id, status) in [
+        ("job-completed", "COMPLETED"),
+        ("job-failed", "FAILED"),
+        ("dag-partly-failed-failed", "FAILED"),
+    ] {
+        let refused = post_empty(&app, &token, &cancel(id)).await;
         refused.assert_error(StatusCode::CONFLICT, "CONFLICT");
         assert_eq!(job(&app, &token, id).await["status"], status);
     }
+    let running = dag(&app, &token, "dag-partly-failed").await;
+    assert_eq!(running["status"], "PENDING", "{running}");
+    assert_eq!(step(&running, "fails")["status"], "FAILED");
+    assert_eq!(step(&running, "queued")["status"], "PROCESSING");
+    assert_eq!(
+        job(&app, &token, "dag-partly-failed-queued").await["status"],
+        "PENDING"
+    );
 
-    let unknown = app
-        .post("/api/pipeline/jobs/no-such-job/cancel", &token, &json!({}))
-        .await;
+    let unknown = post_empty(&app, &token, &cancel("no-such-job")).await;
     unknown.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
 
     app.shutdown().await;
@@ -1883,15 +1620,6 @@ async fn cancelling_a_queued_job_sticks_and_cancels_its_workflow_but_a_finished_
 
 #[cfg(unix)]
 const SLEEP: &str = "sleep 30";
-
-#[cfg(unix)]
-async fn job_reaches(app: &TestApp, token: &str, job_id: &str, status: &str) -> Value {
-    eventually(WAIT, &format!("job {job_id} to be {status}"), || async {
-        let body = job(app, token, job_id).await;
-        (body["status"] == status).then_some(body)
-    })
-    .await
-}
 
 /// Runs only on Unix: it needs a job that keeps running (`sleep`).
 #[cfg(unix)]
@@ -1913,15 +1641,7 @@ async fn cancelling_a_running_step_job_cancels_its_workflow_and_outlasts_the_wor
     let job_id = step_job_id(&dag(&app, &token, &dag_id).await, "wait");
     job_reaches(&app, &token, &job_id, "PROCESSING").await;
 
-    let cancelled = app
-        .post(
-            &format!("/api/pipeline/jobs/{job_id}/cancel"),
-            &token,
-            &json!({}),
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let cancelled = post_ok(&app, &token, &format!("/api/pipeline/jobs/{job_id}/cancel")).await;
     assert_eq!(cancelled["success"], true);
     assert_eq!(job(&app, &token, &job_id).await["status"], "CANCELLED");
     let cancelled_dag = dag(&app, &token, &dag_id).await;
@@ -1944,37 +1664,6 @@ async fn cancelling_a_running_step_job_cancels_its_workflow_and_outlasts_the_wor
     app.shutdown().await;
 }
 
-/// Only a running job with a progress report carries `progress`; every
-/// other job, whatever its status, reports it as null in its detail and in
-/// both job lists, rather than omitting it or showing a stale value.
-#[tokio::test]
-async fn jobs_without_live_progress_report_null_progress_in_detail_and_lists() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-    let statuses = ["PENDING", "PROCESSING", "COMPLETED", "FAILED", "CANCELLED"];
-    for status in statuses {
-        let id = format!("job-{status}");
-        seed_standalone_job(&app, &id, status, 0).await;
-        let detail = job(&app, &token, &id).await;
-        assert_eq!(detail["status"], status);
-        assert_eq!(detail.get("progress"), Some(&Value::Null), "{detail}");
-    }
-    for path in ["/api/pipeline/jobs", "/api/pipeline/jobs/page"] {
-        let page = app
-            .get(path, &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body;
-        let items = page["items"].as_array().expect("items");
-        assert_eq!(items.len(), statuses.len(), "{path}: {page}");
-        for item in items {
-            assert_eq!(item.get("progress"), Some(&Value::Null), "{path}: {item}");
-        }
-    }
-
-    app.shutdown().await;
-}
-
 #[tokio::test]
 async fn job_lists_filter_by_uppercase_status_and_cap_their_page() {
     let app = TestApp::start().await;
@@ -1989,11 +1678,11 @@ async fn job_lists_filter_by_uppercase_status_and_cap_their_page() {
         definition(
             "listed",
             vec![
-                json!({
-                    "id": "first",
-                    "step": { "type": "inline", "processor": "execute", "config": { "command": "exit 0" } },
-                    "retry": { "max_attempts": 3, "backoff_secs": 60 },
-                }),
+                with(
+                    execute("first", "exit 0", &[]),
+                    "retry",
+                    json!({ "max_attempts": 3, "backoff_secs": 60 }),
+                ),
                 execute("second", "exit 0", &["first"]),
             ],
         ),
@@ -2001,11 +1690,8 @@ async fn job_lists_filter_by_uppercase_status_and_cap_their_page() {
     .await;
     assert_eq!(completed["status"], "COMPLETED");
 
-    let completed_jobs = app
-        .get("/api/pipeline/jobs?status=COMPLETED&limit=500", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let completed_jobs = "/api/pipeline/jobs?status=COMPLETED&limit=500";
+    let completed_jobs = get_ok(&app, &token, completed_jobs).await;
     assert_eq!(completed_jobs["total"], 3);
     assert_eq!(completed_jobs["limit"], 100);
     let ids: BTreeSet<String> = completed_jobs["items"]
@@ -2034,22 +1720,20 @@ async fn job_lists_filter_by_uppercase_status_and_cap_their_page() {
         lowercase.text
     );
 
-    let page = app
-        .get("/api/pipeline/jobs/page?status=FAILED&limit=500", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let page = get_ok(
+        &app,
+        &token,
+        "/api/pipeline/jobs/page?status=FAILED&limit=500",
+    )
+    .await;
     assert_eq!(sorted_keys(&page), ["items", "limit", "offset"]);
     assert_eq!(page["limit"], 100);
     assert_eq!(page["items"].as_array().map(Vec::len), Some(1));
     assert_eq!(page["items"][0]["id"], "job-standalone-failed");
     assert_eq!(page["items"][0]["belongs_to_workflow"], false);
 
-    let workflow_jobs = app
-        .get(&format!("/api/pipeline/jobs?pipeline_id={dag_id}"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let workflow_jobs = format!("/api/pipeline/jobs?pipeline_id={dag_id}");
+    let workflow_jobs = get_ok(&app, &token, &workflow_jobs).await;
     assert_eq!(workflow_jobs["total"], 2);
     for item in workflow_jobs["items"].as_array().expect("items") {
         assert_eq!(item["pipeline_id"], dag_id.as_str());
@@ -2063,21 +1747,13 @@ async fn job_lists_filter_by_uppercase_status_and_cap_their_page() {
     let second = job(&app, &token, &step_job_id(&completed, "second")).await;
     assert_eq!(second["max_attempts"], Value::Null);
 
-    let stats = app
-        .get("/api/pipeline/stats", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let stats = get_ok(&app, &token, "/api/pipeline/stats").await;
     assert_eq!(stats["pending_count"], 0);
     assert_eq!(stats["processing_count"], 0);
     assert_eq!(stats["completed_count"], 3);
     assert_eq!(stats["failed_count"], 1);
     assert_eq!(stats["cancelled_count"], 0);
-    let stalled = app
-        .get("/api/pipeline/stalled-operations", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let stalled = get_ok(&app, &token, "/api/pipeline/stalled-operations").await;
     assert_eq!(stalled, json!({ "items": [] }));
 
     app.shutdown().await;
@@ -2123,6 +1799,11 @@ async fn completed_failed_and_queued_dags(app: &TestApp, token: &str) -> DagFixt
     }
 }
 
+async fn batch(app: &TestApp, token: &str, ids: Value, action: &str) -> Response {
+    let body = json!({ "ids": ids, "action": { "type": action } });
+    app.post("/api/pipeline/dags/batch", token, &body).await
+}
+
 #[tokio::test]
 async fn batch_dag_actions_report_a_result_per_item_and_omit_code_on_success() {
     let app = TestApp::start().await;
@@ -2131,12 +1812,8 @@ async fn batch_dag_actions_report_a_result_per_item_and_omit_code_on_success() {
         completed, failed, ..
     } = completed_failed_and_queued_dags(&app, &token).await;
 
-    let cancel = app
-        .post(
-            "/api/pipeline/dags/batch",
-            &token,
-            &json!({ "ids": [completed, "dag-queued", "no-such-dag"], "action": { "type": "cancel" } }),
-        )
+    let ids = json!([completed, "dag-queued", "no-such-dag"]);
+    let cancel = batch(&app, &token, ids, "cancel")
         .await
         .expect_status(StatusCode::OK)
         .body;
@@ -2155,12 +1832,7 @@ async fn batch_dag_actions_report_a_result_per_item_and_omit_code_on_success() {
     assert_eq!(dag(&app, &token, "dag-queued").await["status"], "CANCELLED");
     assert_eq!(dag(&app, &token, &completed).await["status"], "COMPLETED");
 
-    let retry = app
-        .post(
-            "/api/pipeline/dags/batch",
-            &token,
-            &json!({ "ids": [failed, completed], "action": { "type": "retry" } }),
-        )
+    let retry = batch(&app, &token, json!([failed, completed]), "retry")
         .await
         .expect_status(StatusCode::OK)
         .body;
@@ -2173,12 +1845,7 @@ async fn batch_dag_actions_report_a_result_per_item_and_omit_code_on_success() {
     assert_eq!(retry["results"][1]["code"], "VALIDATION_ERROR");
     assert_eq!(settled_dag(&app, &token, &failed).await["status"], "FAILED");
 
-    let delete = app
-        .post(
-            "/api/pipeline/dags/batch",
-            &token,
-            &json!({ "ids": [completed, "no-such-dag"], "action": { "type": "delete" } }),
-        )
+    let delete = batch(&app, &token, json!([completed, "no-such-dag"]), "delete")
         .await
         .expect_status(StatusCode::OK)
         .body;
@@ -2189,10 +1856,7 @@ async fn batch_dag_actions_report_a_result_per_item_and_omit_code_on_success() {
         json!({ "id": completed, "success": true })
     );
     assert_eq!(delete["results"][1]["code"], "NOT_FOUND");
-    let gone = app
-        .get(&format!("/api/pipeline/dag/{completed}"), &token)
-        .await;
-    gone.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
+    assert_missing(&app, &token, &format!("/api/pipeline/dag/{completed}")).await;
 
     app.shutdown().await;
 }
@@ -2213,13 +1877,7 @@ async fn batch_dag_requests_with_bad_ids_are_rejected_before_any_work() {
         ("oversized", json!(oversized)),
     ];
     for (label, ids) in bad_batches {
-        let rejected = app
-            .post(
-                "/api/pipeline/dags/batch",
-                &token,
-                &json!({ "ids": ids, "action": { "type": "cancel" } }),
-            )
-            .await;
+        let rejected = batch(&app, &token, ids, "cancel").await;
         assert_eq!(
             rejected.status,
             StatusCode::UNPROCESSABLE_ENTITY,
@@ -2229,13 +1887,7 @@ async fn batch_dag_requests_with_bad_ids_are_rejected_before_any_work() {
         assert_eq!(rejected.error_code(), Some("VALIDATION_ERROR"), "{label}");
     }
 
-    let unknown_action = app
-        .post(
-            "/api/pipeline/dags/batch",
-            &token,
-            &json!({ "ids": ["dag-queued"], "action": { "type": "purge" } }),
-        )
-        .await;
+    let unknown_action = batch(&app, &token, json!(["dag-queued"]), "purge").await;
     assert_eq!(
         unknown_action.status,
         StatusCode::UNPROCESSABLE_ENTITY,
@@ -2251,15 +1903,23 @@ async fn batch_dag_requests_with_bad_ids_are_rejected_before_any_work() {
     app.shutdown().await;
 }
 
+/// Cancelling stops an unfinished workflow and refuses a finished one;
+/// `retry_failed` then reruns every failed and cancelled workflow.
 #[tokio::test]
-async fn cancelling_a_dag_stops_its_steps_and_a_finished_dag_reports_already_terminal() {
+async fn cancelling_a_dag_stops_its_steps_and_retry_failed_reruns_every_failed_and_cancelled_dag() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
+    let retry_failed = async || post_ok(&app, &token, "/api/pipeline/dags/retry_failed").await;
+    let none = retry_failed().await;
+    assert_eq!(none["success"], true);
+    assert_eq!(none["count"], 0);
+    assert!(none["message"].is_string(), "{none}");
+
     let DagFixture {
         completed,
         failed,
+        failed_job,
         queued_job,
-        ..
     } = completed_failed_and_queued_dags(&app, &token).await;
 
     for finished in [&completed, &failed] {
@@ -2271,11 +1931,7 @@ async fn cancelling_a_dag_stops_its_steps_and_a_finished_dag_reports_already_ter
     assert_eq!(dag(&app, &token, &completed).await["status"], "COMPLETED");
     assert_eq!(dag(&app, &token, &failed).await["status"], "FAILED");
 
-    let cancelled = app
-        .delete("/api/pipeline/dag/dag-queued", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let cancelled = delete_ok(&app, &token, "/api/pipeline/dag/dag-queued").await;
     assert_eq!(cancelled["dag_id"], "dag-queued");
     assert_eq!(cancelled["cancelled_steps"], 1);
     assert!(cancelled["message"].is_string());
@@ -2298,11 +1954,7 @@ async fn cancelling_a_dag_stops_its_steps_and_a_finished_dag_reports_already_ter
         (completed.as_str(), 0),
         ("no-such-pipeline", 0),
     ] {
-        let swept = app
-            .delete(&format!("/api/pipeline/{pipeline_id}"), &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body;
+        let swept = delete_ok(&app, &token, &format!("/api/pipeline/{pipeline_id}")).await;
         assert_eq!(swept["success"], true, "{pipeline_id}");
         assert_eq!(swept["cancelled_count"], count, "{pipeline_id}");
     }
@@ -2310,6 +1962,23 @@ async fn cancelling_a_dag_stops_its_steps_and_a_finished_dag_reports_already_ter
         dag(&app, &token, "dag-queued-by-pipeline").await["status"],
         "CANCELLED"
     );
+    assert_eq!(dag(&app, &token, &completed).await["status"], "COMPLETED");
+
+    let bulk = retry_failed().await;
+    assert_eq!(bulk["success"], true);
+    assert_eq!(bulk["count"], 3);
+    assert!(bulk["message"].is_string(), "{bulk}");
+    for (dag_id, job_id) in [
+        ("dag-queued", queued_job.as_str()),
+        ("dag-queued-by-pipeline", "dag-queued-by-pipeline-job"),
+    ] {
+        assert_eq!(dag(&app, &token, dag_id).await["status"], "PENDING");
+        let requeued = job(&app, &token, job_id).await;
+        assert_eq!(requeued["status"], "PENDING", "{dag_id}");
+        assert_eq!(requeued["retry_count"], 1, "{dag_id}");
+    }
+    assert_eq!(settled_dag(&app, &token, &failed).await["status"], "FAILED");
+    assert_eq!(job(&app, &token, &failed_job).await["retry_count"], 1);
     assert_eq!(dag(&app, &token, &completed).await["status"], "COMPLETED");
 
     app.shutdown().await;
@@ -2343,27 +2012,14 @@ async fn deleting_a_dag_removes_its_steps_and_jobs_and_stops_it_first() {
         (completed.as_str(), job_ids.to_vec()),
         ("dag-queued", vec![queued_job]),
     ] {
-        let deleted = app
-            .delete(&format!("/api/pipeline/dag/{dag_id}/delete"), &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body;
+        let deleted = delete_ok(&app, &token, &format!("/api/pipeline/dag/{dag_id}/delete")).await;
         assert_eq!(deleted["dag_id"], dag_id);
-        let gone = app
-            .get(&format!("/api/pipeline/dag/{dag_id}"), &token)
-            .await;
-        gone.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
+        assert_missing(&app, &token, &format!("/api/pipeline/dag/{dag_id}")).await;
         for job_id in jobs {
-            let gone = app
-                .get(&format!("/api/pipeline/jobs/{job_id}"), &token)
-                .await;
-            gone.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
+            assert_missing(&app, &token, &format!("/api/pipeline/jobs/{job_id}")).await;
         }
-        let remaining = app
-            .get(&format!("/api/pipeline/jobs?pipeline_id={dag_id}"), &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body;
+        let remaining = format!("/api/pipeline/jobs?pipeline_id={dag_id}");
+        let remaining = get_ok(&app, &token, &remaining).await;
         assert_eq!(remaining["total"], 0);
         assert_eq!(remaining["items"], json!([]));
     }
@@ -2372,11 +2028,7 @@ async fn deleting_a_dag_removes_its_steps_and_jobs_and_stops_it_first() {
         .delete("/api/pipeline/dag/no-such-dag/delete", &token)
         .await;
     unknown.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
-    let dags = app
-        .get("/api/pipeline/dags", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let dags = get_ok(&app, &token, "/api/pipeline/dags").await;
     assert_eq!(dags["total"], 0);
 
     app.shutdown().await;
@@ -2411,10 +2063,7 @@ async fn retrying_a_failed_dag_reruns_the_failed_branch_and_keeps_completed_step
     let token = app.admin_token().await;
     let source = app.write_output_file("recordings/clip.flv", "recording");
     let conflict = app.write_output_file("published/clip.flv", "someone else's file");
-    let staged = Path::new(&app.output_path("staging"))
-        .join("clip.flv")
-        .to_string_lossy()
-        .into_owned();
+    let staged = joined(&app.output_path("staging"), "clip.flv");
 
     let (dag_id, failed) =
         run_pipeline(&app, &token, &[source], publish_definition(&app, vec![])).await;
@@ -2429,15 +2078,8 @@ async fn retrying_a_failed_dag_reruns_the_failed_branch_and_keeps_completed_step
     let publish_job = step_job_id(&failed, "publish");
 
     std::fs::remove_file(&conflict).expect("remove the conflicting file");
-    let retried = app
-        .post(
-            &format!("/api/pipeline/dag/{dag_id}/retry"),
-            &token,
-            &json!({}),
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let retry = format!("/api/pipeline/dag/{dag_id}/retry");
+    let retried = post_ok(&app, &token, &retry).await;
     assert_eq!(retried["dag_id"], dag_id.as_str());
     assert_eq!(retried["retried_steps"], 2);
     assert_eq!(retried["job_ids"], json!([publish_job]));
@@ -2456,68 +2098,12 @@ async fn retrying_a_failed_dag_reruns_the_failed_branch_and_keeps_completed_step
     assert_eq!(step_job_id(&rerun, "publish"), publish_job);
     assert_eq!(job(&app, &token, &publish_job).await["retry_count"], 1);
     assert_eq!(step(&rerun, "announce")["status"], "COMPLETED");
-    assert_eq!(
-        std::fs::read_to_string(&conflict).expect("published file"),
-        "recording"
-    );
+    assert_eq!(read(&conflict), "recording");
 
-    let refused = app
-        .post(
-            &format!("/api/pipeline/dag/{dag_id}/retry"),
-            &token,
-            &json!({}),
-        )
-        .await;
+    let refused = post_empty(&app, &token, &retry).await;
     refused.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
-    let unknown = app
-        .post("/api/pipeline/dag/no-such-dag/retry", &token, &json!({}))
-        .await;
+    let unknown = post_empty(&app, &token, "/api/pipeline/dag/no-such-dag/retry").await;
     unknown.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
-
-    app.shutdown().await;
-}
-
-#[tokio::test]
-async fn retry_failed_reruns_every_failed_and_cancelled_dag() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-
-    let none = app
-        .post("/api/pipeline/dags/retry_failed", &token, &json!({}))
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(none["success"], true);
-    assert_eq!(none["count"], 0);
-    assert!(none["message"].is_string(), "{none}");
-
-    let DagFixture {
-        completed,
-        failed,
-        failed_job,
-        queued_job,
-    } = completed_failed_and_queued_dags(&app, &token).await;
-    app.delete("/api/pipeline/dag/dag-queued", &token)
-        .await
-        .expect_status(StatusCode::OK);
-
-    let bulk = app
-        .post("/api/pipeline/dags/retry_failed", &token, &json!({}))
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(bulk["success"], true);
-    assert_eq!(bulk["count"], 2);
-    assert!(bulk["message"].is_string(), "{bulk}");
-
-    let queued = dag(&app, &token, "dag-queued").await;
-    assert_eq!(queued["status"], "PENDING");
-    let requeued = job(&app, &token, &queued_job).await;
-    assert_eq!(requeued["status"], "PENDING");
-    assert_eq!(requeued["retry_count"], 1);
-    assert_eq!(settled_dag(&app, &token, &failed).await["status"], "FAILED");
-    assert_eq!(job(&app, &token, &failed_job).await["retry_count"], 1);
-    assert_eq!(dag(&app, &token, &completed).await["status"], "COMPLETED");
 
     app.shutdown().await;
 }
@@ -2561,20 +2147,11 @@ async fn a_failed_step_leaves_independent_branches_running_and_retry_reruns_ever
     assert_eq!(step(&running, "slow")["status"], "PROCESSING");
     assert!(running["error"].is_string(), "{running}");
 
-    let running_retry = app
-        .post(
-            &format!("/api/pipeline/dag/{dag_id}/retry"),
-            &token,
-            &json!({}),
-        )
-        .await;
+    let retry = format!("/api/pipeline/dag/{dag_id}/retry");
+    let running_retry = post_empty(&app, &token, &retry).await;
     running_retry.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
 
-    let cancelled = app
-        .delete(&format!("/api/pipeline/dag/{dag_id}"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let cancelled = delete_ok(&app, &token, &format!("/api/pipeline/dag/{dag_id}")).await;
     assert_eq!(cancelled["cancelled_steps"], 1);
     let stopped = dag(&app, &token, &dag_id).await;
     assert_eq!(stopped["status"], "CANCELLED");
@@ -2584,15 +2161,7 @@ async fn a_failed_step_leaves_independent_branches_running_and_retry_reruns_ever
     let publish_job = step_job_id(&stopped, "publish");
 
     std::fs::remove_file(&conflict).expect("remove the conflicting file");
-    let retried = app
-        .post(
-            &format!("/api/pipeline/dag/{dag_id}/retry"),
-            &token,
-            &json!({}),
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let retried = post_ok(&app, &token, &retry).await;
     assert_eq!(retried["retried_steps"], 3);
     let restarted: BTreeSet<String> = strings(&retried["job_ids"]).into_iter().collect();
     assert_eq!(restarted, BTreeSet::from([publish_job, slow_job.clone()]));
@@ -2610,9 +2179,7 @@ async fn a_failed_step_leaves_independent_branches_running_and_retry_reruns_ever
     assert_eq!(slow["retry_count"], 1);
 
     // Stop the sleeping branch so shutdown does not wait for it.
-    app.delete(&format!("/api/pipeline/dag/{dag_id}"), &token)
-        .await
-        .expect_status(StatusCode::OK);
+    delete_ok(&app, &token, &format!("/api/pipeline/dag/{dag_id}")).await;
 
     app.shutdown().await;
 }
@@ -2631,49 +2198,20 @@ async fn dag_list_stats_detail_and_graph_agree_on_status_strings() {
     );
     let input = app.write_output_file("list-dags/clip.flv", "clip");
 
-    let diamond = app
-        .post(
-            "/api/pipeline/create",
-            &token,
-            &json!({
-                "session_id": "session-diamond",
-                "streamer_id": streamer_id,
-                "input_paths": [input],
-                "dag": definition(
-                    "Diamond",
-                    vec![
-                        execute("root", "exit 0", &[]),
-                        execute("left", "exit 0", &["root"]),
-                        execute("right", "exit 0", &["root"]),
-                        execute("join", "exit 0", &["left", "right"]),
-                    ],
-                ),
-            }),
-        )
-        .await
-        .expect_status(StatusCode::CREATED)
-        .body["pipeline_id"]
-        .as_str()
-        .expect("pipeline_id")
-        .to_string();
+    let inputs = std::slice::from_ref(&input);
+    let diamond_steps = vec![
+        execute("root", "exit 0", &[]),
+        execute("left", "exit 0", &["root"]),
+        execute("right", "exit 0", &["root"]),
+        execute("join", "exit 0", &["left", "right"]),
+    ];
+    let ids = ("session-diamond", streamer_id.as_str());
+    let diamond = definition("Diamond", diamond_steps);
+    let diamond = created_id(create_pipeline_as(&app, &token, ids, inputs, diamond).await);
     let completed = settled_dag(&app, &token, &diamond).await;
-    let failed = app
-        .post(
-            "/api/pipeline/create",
-            &token,
-            &json!({
-                "session_id": "session-failed",
-                "streamer_id": "streamer-gone",
-                "input_paths": [input],
-                "dag": definition("Fails", vec![execute("run", "exit 1", &[])]),
-            }),
-        )
-        .await
-        .expect_status(StatusCode::CREATED)
-        .body["pipeline_id"]
-        .as_str()
-        .expect("pipeline_id")
-        .to_string();
+    let ids = ("session-failed", "streamer-gone");
+    let fails = definition("Fails", vec![execute("run", "exit 1", &[])]);
+    let failed = created_id(create_pipeline_as(&app, &token, ids, inputs, fails).await);
     let failed_detail = settled_dag(&app, &token, &failed).await;
     seed_queued_dag(&app, "dag-queued").await;
 
@@ -2720,11 +2258,7 @@ async fn dag_list_stats_detail_and_graph_agree_on_status_strings() {
     assert_eq!(step(&queued, "queued")["job_status"], "PENDING");
 
     // Step counts and the graph.
-    let stats = app
-        .get(&format!("/api/pipeline/dag/{diamond}/stats"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let stats = get_ok(&app, &token, &format!("/api/pipeline/dag/{diamond}/stats")).await;
     assert_eq!(
         stats,
         json!({
@@ -2739,20 +2273,12 @@ async fn dag_list_stats_detail_and_graph_agree_on_status_strings() {
             "progress_percent": 100.0,
         })
     );
-    let queued_stats = app
-        .get("/api/pipeline/dag/dag-queued/stats", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let queued_stats = get_ok(&app, &token, "/api/pipeline/dag/dag-queued/stats").await;
     assert_eq!(queued_stats["processing"], 1);
     assert_eq!(queued_stats["total"], 1);
     assert_eq!(queued_stats["progress_percent"], 0.0);
 
-    let graph = app
-        .get(&format!("/api/pipeline/dag/{diamond}/graph"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let graph = get_ok(&app, &token, &format!("/api/pipeline/dag/{diamond}/graph")).await;
     assert_eq!(graph["dag_id"], diamond.as_str());
     assert_eq!(graph["name"], "Diamond");
     let nodes = graph["nodes"].as_array().expect("nodes");
@@ -2767,11 +2293,7 @@ async fn dag_list_stats_detail_and_graph_agree_on_status_strings() {
     assert_eq!(graph["edges"].as_array().map(Vec::len), Some(4), "{graph}");
 
     // The list and its counts.
-    let all = app
-        .get("/api/pipeline/dags?limit=500", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let all = get_ok(&app, &token, "/api/pipeline/dags?limit=500").await;
     assert_eq!(all["total"], 3);
     assert_eq!(all["limit"], 100);
     assert_eq!(all["offset"], 0);
@@ -2818,22 +2340,14 @@ async fn dag_list_stats_detail_and_graph_agree_on_status_strings() {
         ("session_id=session-failed", vec![failed.clone()]),
         ("search=e2e%20pipeline%20streamer", vec![diamond.clone()]),
     ] {
-        let listed = app
-            .get(&format!("/api/pipeline/dags?{query}"), &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body;
+        let listed = get_ok(&app, &token, &format!("/api/pipeline/dags?{query}")).await;
         assert_eq!(list_ids(&listed), expected, "{query}");
         assert_eq!(listed["total"], expected.len(), "{query}");
     }
     let bogus = app.get("/api/pipeline/dags?status=bogus", &token).await;
     bogus.assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
 
-    let counts = app
-        .get("/api/pipeline/dags/stats", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let counts = get_ok(&app, &token, "/api/pipeline/dags/stats").await;
     assert_eq!(counts["pending_count"], 1);
     assert_eq!(counts["processing_count"], 0);
     assert_eq!(counts["completed_count"], 1);
@@ -2850,8 +2364,7 @@ async fn dag_list_stats_detail_and_graph_agree_on_status_strings() {
         "/api/pipeline/dag/no-such-dag/stats",
         "/api/pipeline/dag/no-such-dag/graph",
     ] {
-        let missing = app.get(path, &token).await;
-        missing.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
+        assert_missing(&app, &token, path).await;
     }
 
     app.shutdown().await;
@@ -2880,13 +2393,9 @@ async fn workflow_steps_expand_under_their_own_ids_and_hand_on_their_leaves_in_o
         ),
         ("E2E Fan", fan_steps),
     ] {
-        app.post(
-            "/api/pipeline/presets",
-            &token,
-            &json!({ "name": name, "dag": definition(name, steps) }),
-        )
-        .await
-        .expect_status(StatusCode::CREATED);
+        save_preset(&app, &token, name, definition(name, steps))
+            .await
+            .expect_status(StatusCode::CREATED);
     }
     let workflow = |id: &str, name: &str, depends_on: &[&str]| {
         json!({
@@ -2981,11 +2490,12 @@ async fn a_step_left_without_inputs_settles_without_a_job_on_completion_and_on_r
     assert_eq!(sweep["status"], "COMPLETED");
     assert_eq!(sweep["job_id"], Value::Null);
     assert_eq!(sweep["outputs"], json!([]));
-    let jobs = app
-        .get(&format!("/api/pipeline/jobs?pipeline_id={dag_id}"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let jobs = get_ok(
+        &app,
+        &token,
+        &format!("/api/pipeline/jobs?pipeline_id={dag_id}"),
+    )
+    .await;
     assert_eq!(jobs["total"], 3, "{jobs}");
     assert!(Path::new(&source).exists());
 
@@ -2995,15 +2505,7 @@ async fn a_step_left_without_inputs_settles_without_a_job_on_completion_and_on_r
     ))
     .await;
     assert_eq!(dag(&app, &token, &dag_id).await["status"], "FAILED");
-    let retried = app
-        .post(
-            &format!("/api/pipeline/dag/{dag_id}/retry"),
-            &token,
-            &json!({}),
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let retried = post_ok(&app, &token, &format!("/api/pipeline/dag/{dag_id}/retry")).await;
     assert_eq!(retried["retried_steps"], 1, "{retried}");
     assert_eq!(retried["job_ids"], json!([]));
     let resettled = settled_dag(&app, &token, &dag_id).await;
@@ -3025,15 +2527,9 @@ const RETRY_SWEEP_WAIT: std::time::Duration = std::time::Duration::from_secs(40)
 /// The `error_message` of each `pipeline_failed` notification logged for
 /// `job_id`, newest first.
 async fn pipeline_failure_notices(app: &TestApp, token: &str, job_id: &str) -> Vec<String> {
-    let events = app
-        .get(
-            "/api/notifications/events?event_type=pipeline_failed",
-            token,
-        )
+    let events = "/api/notifications/events?event_type=pipeline_failed";
+    get_ok(app, token, events)
         .await
-        .expect_status(StatusCode::OK)
-        .body;
-    events
         .as_array()
         .expect("events")
         .iter()
@@ -3068,20 +2564,16 @@ async fn a_step_with_a_retry_budget_runs_again_before_its_workflow_fails() {
         &[input],
         definition(
             "budget",
-            vec![json!({
-                "id": "run",
-                "step": { "type": "inline", "processor": "execute", "config": { "command": "exit 1" } },
-                "retry": { "max_attempts": 2, "backoff_secs": 2 },
-            })],
+            vec![with(
+                execute("run", "exit 1", &[]),
+                "retry",
+                json!({ "max_attempts": 2, "backoff_secs": 2 }),
+            )],
         ),
     )
     .await;
     let job_id = step_job_id(&dag(&app, &token, &dag_id).await, "run");
-    let first = eventually(WAIT, "the first attempt to fail", || async {
-        let body = job(&app, &token, &job_id).await;
-        (body["status"] == "FAILED").then_some(body)
-    })
-    .await;
+    let first = job_reaches(&app, &token, &job_id, "FAILED").await;
     assert_eq!(first["retry_count"], 0, "{first}");
     assert_eq!(first["max_attempts"], 2);
     assert!(first["retry_after"].is_string(), "{first}");
@@ -3140,15 +2632,11 @@ async fn a_step_timeout_fails_a_job_that_outlives_it() {
         &[input],
         definition(
             "times out",
-            vec![json!({
-                "id": "wait",
-                "step": {
-                    "type": "inline",
-                    "processor": "execute",
-                    "config": { "command": long_running_command() },
-                },
-                "timeout_secs": 1,
-            })],
+            vec![with(
+                execute("wait", long_running_command(), &[]),
+                "timeout_secs",
+                json!(1),
+            )],
         ),
     )
     .await;
@@ -3156,85 +2644,6 @@ async fn a_step_timeout_fails_a_job_that_outlives_it() {
     let timed_out = job(&app, &token, &step_job_id(&failed, "wait")).await;
     let error = timed_out["error_message"].as_str().unwrap_or_default();
     assert!(error.starts_with("Job timed out after 1s"), "{timed_out}");
-
-    app.shutdown().await;
-}
-
-/// A workflow whose step `fails` failed while step `queued` still waits on
-/// its job, which a worker pool never claims: the state of a workflow whose
-/// other branch is held up behind busy workers.
-async fn seed_partly_failed_dag(app: &TestApp, dag_id: &str) {
-    let now = now_ms();
-    let definition = json!({
-        "name": format!("Partly failed {dag_id}"),
-        "steps": [
-            {
-                "id": "fails",
-                "step": { "type": "inline", "processor": "execute", "config": { "command": "exit 1" } },
-                "depends_on": [],
-            },
-            {
-                "id": "queued",
-                "step": { "type": "inline", "processor": UNCLAIMED_JOB_TYPE, "config": null },
-                "depends_on": [],
-            },
-        ],
-    })
-    .to_string();
-    app.run_sql(&format!(
-        "INSERT INTO dag_execution (id, dag_definition, status, streamer_id, session_id, \
-             created_at, updated_at, error, total_steps, completed_steps, failed_steps) VALUES \
-             ('{dag_id}', '{definition}', 'PROCESSING', 'streamer-seeded', 'session-seeded', \
-             {now}, {now}, 'Step ''fails'' failed: exit code 1', 2, 0, 1);
-         INSERT INTO job (id, job_type, status, config, state, created_at, updated_at, input, \
-             outputs, priority, streamer_id, session_id, retry_count, pipeline_id, started_at, \
-             completed_at, error) VALUES \
-             ('{dag_id}-failed', 'execute', 'FAILED', '{{}}', '{{}}', {now}, {now}, \
-             '[\"/recordings/clip.flv\"]', '[]', 0, 'streamer-seeded', 'session-seeded', 0, \
-             '{dag_id}', {now}, {now}, 'exit code 1'), \
-             ('{dag_id}-queued', '{UNCLAIMED_JOB_TYPE}', 'PENDING', '{{}}', '{{}}', {now}, {now}, \
-             '[\"/recordings/clip.flv\"]', '[]', 0, 'streamer-seeded', 'session-seeded', 0, \
-             '{dag_id}', NULL, NULL, NULL);
-         INSERT INTO dag_step_execution (id, dag_id, step_id, job_id, status, \
-             depends_on_step_ids, created_at, updated_at) VALUES \
-             ('{dag_id}-fails', '{dag_id}', 'fails', '{dag_id}-failed', 'FAILED', '[]', {now}, {now}), \
-             ('{dag_id}-queued-step', '{dag_id}', 'queued', '{dag_id}-queued', 'PROCESSING', '[]', \
-             {now}, {now});
-         UPDATE job SET dag_step_execution_id = '{dag_id}-fails' WHERE id = '{dag_id}-failed';
-         UPDATE job SET dag_step_execution_id = '{dag_id}-queued-step' WHERE id = '{dag_id}-queued';"
-    ))
-    .await;
-}
-
-#[tokio::test]
-async fn cancelling_the_failed_step_job_of_a_running_workflow_is_refused_and_leaves_it_running() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-    seed_partly_failed_dag(&app, "dag-partly-failed").await;
-    let before = dag(&app, &token, "dag-partly-failed").await;
-    // With no job running, an unfinished workflow is displayed as PENDING.
-    assert_eq!(before["status"], "PENDING", "{before}");
-
-    let refused = app
-        .post(
-            "/api/pipeline/jobs/dag-partly-failed-failed/cancel",
-            &token,
-            &json!({}),
-        )
-        .await;
-    refused.assert_error(StatusCode::CONFLICT, "CONFLICT");
-    let after = dag(&app, &token, "dag-partly-failed").await;
-    assert_eq!(after["status"], "PENDING", "{after}");
-    assert_eq!(step(&after, "fails")["status"], "FAILED");
-    assert_eq!(step(&after, "queued")["status"], "PROCESSING");
-    assert_eq!(
-        job(&app, &token, "dag-partly-failed-queued").await["status"],
-        "PENDING"
-    );
-    assert_eq!(
-        job(&app, &token, "dag-partly-failed-failed").await["status"],
-        "FAILED"
-    );
 
     app.shutdown().await;
 }
@@ -3327,11 +2736,7 @@ async fn interrupted_outputs_settle_gone_unreachable_batched_and_linked_files() 
     seed_interrupted_output(&app, "partial", &partial, &app.output_path("partial.mp4")).await;
 
     // A file already gone is settled without a deletion.
-    let settled = app
-        .delete("/api/pipeline/interrupted-outputs/gone", &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let settled = delete_ok(&app, &token, "/api/pipeline/interrupted-outputs/gone").await;
     assert_eq!(settled, json!({ "id": "gone", "file_deleted": false }));
     assert_eq!(interrupted_output_count(&app, "gone").await, 0);
 
@@ -3339,11 +2744,7 @@ async fn interrupted_outputs_settle_gone_unreachable_batched_and_linked_files() 
     // listing that overlaps another one in the same process skips the file
     // checks and reports every state unknown, so wait for one that ran them.
     let listed = eventually(WAIT, "a listing that checked the files", || async {
-        let listed = app
-            .get("/api/pipeline/interrupted-outputs", &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body;
+        let listed = get_ok(&app, &token, "/api/pipeline/interrupted-outputs").await;
         listed["outputs"]
             .as_array()
             .expect("outputs")
