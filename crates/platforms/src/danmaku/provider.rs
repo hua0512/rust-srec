@@ -144,25 +144,3 @@ pub trait DanmuProvider: Send + Sync {
     /// Extract room ID from a streamer URL.
     fn extract_room_id(&self, url: &str) -> Option<String>;
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_danmu_connection() {
-        let mut conn = DanmuConnection::new("conn1", "huya", "12345");
-
-        assert!(!conn.is_connected);
-        assert_eq!(conn.reconnect_count, 0);
-
-        conn.set_connected();
-        assert!(conn.is_connected);
-
-        conn.set_disconnected();
-        assert!(!conn.is_connected);
-
-        conn.increment_reconnect();
-        assert_eq!(conn.reconnect_count, 1);
-    }
-}

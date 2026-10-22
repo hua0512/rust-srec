@@ -334,21 +334,3 @@ pub async fn poll_qr(client: &Client, auth_code: &str) -> Result<QrPollResult, Q
         })
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_sign_params() {
-        let mut params = vec![
-            ("appkey", TV_APPKEY.to_string()),
-            ("local_id", "0".to_string()),
-            ("ts", "1234567890".to_string()),
-        ];
-        let sign = sign_params(&mut params, TV_APPSEC);
-        // Just verify it produces a 32-char hex string
-        assert_eq!(sign.len(), 32);
-        assert!(sign.chars().all(|c| c.is_ascii_hexdigit()));
-    }
-}

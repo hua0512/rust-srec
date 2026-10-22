@@ -249,15 +249,7 @@ mod tests {
     use crate::extractor::error::ExtractorError;
     use crate::extractor::platforms::huya::Huya;
 
-    fn read_test_file(file_name: &str) -> String {
-        let mut d = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        d.push("src/extractor/tests/test_data/huya/");
-        d.push(file_name);
-        std::fs::read_to_string(d).unwrap()
-    }
-
     #[test]
-    #[ignore]
     fn test_parse_mp_live_status() {
         let extractor = Huya::new(
             "https://www.huya.com/".to_string(),
@@ -266,9 +258,12 @@ mod tests {
             None,
         );
 
-        let response_str = read_test_file("mp_api_response.json");
+        let response_str = r#"{"status":200,"message":"","data":{
+            "realLiveStatus":"ON","liveStatus":"ON",
+            "liveData":{"introduction":"title","screenshot":"","bitRate":0}
+        }}"#;
         let mut response: super::super::models::MpApiResponse =
-            serde_json::from_str(&response_str).unwrap();
+            serde_json::from_str(response_str).unwrap();
 
         // Test case 1: Live on
         response.data.as_mut().unwrap().real_live_status = Some("ON");

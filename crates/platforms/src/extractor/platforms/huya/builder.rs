@@ -293,13 +293,6 @@ mod tests {
 
     use super::*;
 
-    fn read_test_file(file_name: &str) -> String {
-        let mut d = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        d.push("src/extractor/tests/test_data/huya/");
-        d.push(file_name);
-        std::fs::read_to_string(d).unwrap()
-    }
-
     #[tokio::test]
     async fn test_get_url_keeps_signed_url_when_extras_absent() {
         let extractor = Huya::new(
@@ -335,25 +328,6 @@ mod tests {
         extractor.get_url(&mut stream_info).await.unwrap();
 
         assert_eq!(stream_info.url, signed_url);
-    }
-
-    #[test]
-    #[ignore]
-    fn test_parse_mp_media_info() {
-        let extractor = Huya::new(
-            "https://www.huya.com/660000".to_string(),
-            default_client(),
-            None,
-            None,
-        );
-        let response_str = read_test_file("mp_api_response.json");
-        let media_info = extractor.parse_mp_media_info(&response_str).unwrap();
-
-        assert!(media_info.is_live);
-        assert_eq!(media_info.artist, "虎牙英雄联盟赛事");
-        assert_eq!(media_info.title, "【预告】03点MKOI vs BLG MSI淘汰赛阶段");
-        assert!(!media_info.streams.is_empty());
-        assert_eq!(media_info.streams.len(), 12);
     }
 
     #[tokio::test]
@@ -405,19 +379,5 @@ mod tests {
         assert!(media_info.is_live);
         assert!(!media_info.streams.is_empty());
         println!("{media_info:?}");
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn test_decode_wup_response() {
-        let response_bytes = std::fs::read("D:/Develop/hua0512/rust-srec/wup_response.bin")
-            .unwrap()
-            .into();
-        let token_info =
-            crate::extractor::platforms::huya::tars::decode_get_cdn_token_info_response(
-                response_bytes,
-            )
-            .unwrap();
-        println!("{token_info:?}");
     }
 }

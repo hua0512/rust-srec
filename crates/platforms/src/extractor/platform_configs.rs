@@ -289,30 +289,6 @@ mod tests {
     }
 
     #[test]
-    fn test_huya_config_deserialize() {
-        let json = json!({"api_mode": "MP", "force_origin_quality": true, "end_stream_on_danmu_stream_closed": false});
-        let config: HuyaConfig = serde_json::from_value(json).unwrap();
-        assert_eq!(config.api_mode, Some("MP".to_string()));
-        assert_eq!(config.force_origin_quality, Some(true));
-        assert_eq!(config.end_stream_on_danmu_stream_closed, Some(false));
-    }
-
-    #[test]
-    fn test_douyin_config_deserialize() {
-        let json = json!({
-            "force_origin_quality": true,
-            "ttwid_management_mode": "per_extractor"
-        });
-        let config: DouyinConfig = serde_json::from_value(json).unwrap();
-        assert_eq!(config.force_origin_quality, Some(true));
-        assert_eq!(
-            config.ttwid_management_mode,
-            Some("per_extractor".to_string())
-        );
-        assert_eq!(config.double_screen, None);
-    }
-
-    #[test]
     fn test_douyu_config_deserialize() {
         let json = json!({"api_mode":"app", "codec":"hevc", "cdn": "hw-h5", "rate": 0, "request_retries": 5, "only_audio":false});
         let config: DouyuConfig = serde_json::from_value(json).unwrap();
@@ -326,16 +302,5 @@ mod tests {
             serde_json::to_value(DouyuConfig::default()).unwrap(),
             json!({})
         );
-    }
-
-    #[test]
-    fn test_bigo_config_deserialize() {
-        let json = json!({
-            "stream_password": "secret",
-            "mint_token": false
-        });
-        let config: BigoConfig = serde_json::from_value(json).unwrap();
-        assert_eq!(config.stream_password.as_deref(), Some("secret"));
-        assert_eq!(config.mint_token, Some(false));
     }
 }

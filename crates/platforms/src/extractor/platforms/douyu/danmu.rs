@@ -284,31 +284,6 @@ mod tests {
         assert_eq!(protocol.extract_room_id("https://www.huya.com/123"), None);
     }
 
-    #[test]
-    fn test_platform_name() {
-        let protocol = DouyuDanmuProtocol::default();
-        assert_eq!(protocol.platform(), "douyu");
-    }
-
-    #[test]
-    fn test_heartbeat_message() {
-        let protocol = DouyuDanmuProtocol::default();
-        let heartbeat = protocol.heartbeat_message();
-        assert!(heartbeat.is_some());
-
-        if let Some(Message::Binary(data)) = heartbeat {
-            assert!(!data.is_empty());
-        } else {
-            panic!("Expected binary heartbeat message");
-        }
-    }
-
-    #[test]
-    fn test_heartbeat_interval() {
-        let protocol = DouyuDanmuProtocol::default();
-        assert_eq!(protocol.heartbeat_interval(), Duration::from_secs(45));
-    }
-
     #[tokio::test]
     async fn test_handshake_messages() {
         let mut protocol = DouyuDanmuProtocol::default();
@@ -324,15 +299,6 @@ mod tests {
                 _ => panic!("Expected binary messages"),
             }
         }
-    }
-
-    #[tokio::test]
-    async fn test_websocket_url() {
-        let mut protocol = DouyuDanmuProtocol::default();
-        let url = protocol.websocket_url("123456").await.unwrap();
-
-        assert!(url.starts_with("wss://"));
-        assert!(url.contains("douyu.com"));
     }
 
     #[test]

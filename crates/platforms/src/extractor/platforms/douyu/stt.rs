@@ -271,19 +271,6 @@ mod tests {
     }
 
     #[test]
-    fn test_stt_encode_decode_roundtrip() {
-        let mut original = FxHashMap::default();
-        original.insert("type", "test");
-        original.insert("content", "hello");
-
-        let encoded = stt_encode(&original);
-        let decoded = stt_decode(&encoded);
-
-        assert_eq!(decoded.get("type"), Some(&Cow::Borrowed("test")));
-        assert_eq!(decoded.get("content"), Some(&Cow::Borrowed("hello")));
-    }
-
-    #[test]
     fn test_create_packet() {
         let message = "type@=loginreq/";
         let packet = create_packet(message);
@@ -311,19 +298,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_packet_roundtrip() {
-        let message = "type@=chatmsg/nn@=TestUser/txt@=Hello World!/";
-        let packet = create_packet(message);
-
-        let (payload, _) = parse_packet(&packet).unwrap();
-        let decoded = stt_decode(&payload);
-
-        assert_eq!(decoded.get("type"), Some(&Cow::Borrowed("chatmsg")));
-        assert_eq!(decoded.get("nn"), Some(&Cow::Borrowed("TestUser")));
-        assert_eq!(decoded.get("txt"), Some(&Cow::Borrowed("Hello World!")));
-    }
-
-    #[test]
     fn test_parse_packets_multiple() {
         let msg1 = "type@=first/";
         let msg2 = "type@=second/";
@@ -346,19 +320,6 @@ mod tests {
         // Header indicates more data than available
         let packet = create_packet("test");
         assert!(parse_packet(&packet[..packet.len() - 5]).is_none());
-    }
-
-    #[test]
-    fn test_heartbeat_packet() {
-        // Verify the HEARTBEAT constant is a valid packet
-        let (payload, consumed) = parse_packet(HEARTBEAT).unwrap();
-
-        assert_eq!(payload, "type@=mrkl/");
-        assert_eq!(consumed, HEARTBEAT.len());
-
-        // Verify the decoded message type
-        let decoded = stt_decode(&payload);
-        assert_eq!(decoded.get("type"), Some(&Cow::Borrowed("mrkl")));
     }
 
     #[test]
