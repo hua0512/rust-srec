@@ -10,10 +10,6 @@ use bytes::Bytes;
 /// (ISO/IEC 14496-12 §8.5.2.2, §12.1.3).
 const VISUAL_SAMPLE_ENTRY_HEADER: usize = 78;
 
-/// Bytes of an audio sample entry body before child boxes begin: the 8-byte
-/// SampleEntry fields plus 20 bytes of AudioSampleEntry fields (§12.2.3).
-const AUDIO_SAMPLE_ENTRY_HEADER: usize = 28;
-
 pub fn make_box(fourcc: &[u8; 4], body: &[u8]) -> Vec<u8> {
     let size = (8 + body.len()) as u32;
     let mut out = Vec::with_capacity(size as usize);
@@ -46,17 +42,6 @@ pub fn make_visual_sample_entry(fourcc: &[u8; 4], children: &[u8]) -> Vec<u8> {
     out.extend_from_slice(&(total as u32).to_be_bytes());
     out.extend_from_slice(fourcc);
     out.extend_from_slice(&[0u8; VISUAL_SAMPLE_ENTRY_HEADER]);
-    out.extend_from_slice(children);
-    out
-}
-
-pub fn make_audio_sample_entry(fourcc: &[u8; 4], children: &[u8]) -> Vec<u8> {
-    let body_len = AUDIO_SAMPLE_ENTRY_HEADER + children.len();
-    let total = 8 + body_len;
-    let mut out = Vec::with_capacity(total);
-    out.extend_from_slice(&(total as u32).to_be_bytes());
-    out.extend_from_slice(fourcc);
-    out.extend_from_slice(&[0u8; AUDIO_SAMPLE_ENTRY_HEADER]);
     out.extend_from_slice(children);
     out
 }
