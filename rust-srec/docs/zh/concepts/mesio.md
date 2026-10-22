@@ -73,7 +73,7 @@ Mesio 可以录制 MPEG-DASH（`.mpd`）流，包括直播和已结束的点播�
 
 限制：
 
-- 拒绝录制 DRM 加密的流和 WebM 媒体。支持使用 `SegmentTemplate` 或 `SegmentList` 的清单，也支持使用 `SegmentBase` 的已结束节目；使用 `SegmentBase` 的直播清单会被拒绝。
+- 拒绝录制 DRM 加密的流和 WebM 媒体。支持使用 `SegmentTemplate` 或 `SegmentList` 的清单，也支持使用 `SegmentBase` 的已结束节目；使用 `SegmentBase` 的直播清单会被拒绝。录制开始时被拒绝的直播在结束前不会再次尝试：主播会显示该错误，下一场直播照常录制。
 - 不录制字幕及其他文本轨道。
 - 轨道从开始录制时所在的 Period 中选择：只在之后的 Period 中出现的轨道类型不会被加入。
 - 网页播放器无法播放 DASH 流，会提示该格式不受支持。录制得到的文件是普通的 MP4 文件。

@@ -8,8 +8,8 @@
 use futures::StreamExt;
 use mesio::flv::FlvProtocolConfig;
 use mesio::{
-    DashConfig, DownloadEvent, DownloadEventStream, DownloadRequest, MesioConfig, MesioDownloader,
-    ProtocolSelection,
+    DashConfig, DownloadError, DownloadEvent, DownloadEventStream, DownloadRequest, MesioConfig,
+    MesioDownloader, ProtocolSelection,
 };
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
@@ -21,7 +21,7 @@ use super::config::build_dash_config;
 use super::helpers::DownloadStats;
 use super::hls_downloader::{HlsDownloader, SegmentedProtocol, SessionLifecycle};
 use crate::database::models::engine::MesioEngineConfig;
-use crate::downloader::engine::traits::{DownloadHandle, EngineStartError};
+use crate::downloader::engine::traits::{DownloadFailureKind, DownloadHandle, EngineStartError};
 
 /// MPEG-DASH download orchestrator.
 ///
@@ -88,10 +88,15 @@ impl DashDownloader {
             .with_cancel(token.clone());
 
         let session = downloader.start_dash(request).await.map_err(|e| {
-            EngineStartError::new(
-                classify_download_error(&e),
-                format!("Failed to start DASH download: {e}"),
-            )
+            // Refused at the start, the presentation itself is unrecordable
+            // (e.g. DRM). Later in a recording the same refusal may come from
+            // one period only, so it keeps its general classification there.
+            let kind = if matches!(e, DownloadError::Unsupported { .. }) {
+                DownloadFailureKind::UnsupportedStream
+            } else {
+                classify_download_error(&e)
+            };
+            EngineStartError::new(kind, format!("Failed to start DASH download: {e}"))
         })?;
 
         // The observer ends with the session's event stream, or when this

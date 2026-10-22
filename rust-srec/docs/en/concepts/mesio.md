@@ -73,7 +73,7 @@ A recording starts a new file when the presentation moves to a new Period (for e
 
 Limitations:
 
-- DRM-protected (encrypted) streams and WebM media are refused. Manifests using `SegmentTemplate` or `SegmentList` are supported, and so are finished presentations using `SegmentBase`; a live manifest using `SegmentBase` is refused.
+- DRM-protected (encrypted) streams and WebM media are refused. Manifests using `SegmentTemplate` or `SegmentList` are supported, and so are finished presentations using `SegmentBase`; a live manifest using `SegmentBase` is refused. A broadcast refused when its recording starts is not tried again until it ends: the streamer shows the error, and its next broadcast is recorded as usual.
 - Subtitles and other text tracks are not recorded.
 - Tracks are chosen from the Period where recording starts: a track kind that only appears in a later Period is not added.
 - The web player cannot play DASH streams; it reports the format as unsupported. Recorded files are ordinary MP4 files.

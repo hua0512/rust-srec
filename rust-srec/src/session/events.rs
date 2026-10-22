@@ -175,6 +175,7 @@ fn failure_kind_label(kind: DownloadFailureKind) -> &'static str {
         DownloadFailureKind::OutputRootUnavailable { .. } => "output_root_unavailable",
         DownloadFailureKind::SourceUnavailable => "source_unavailable",
         DownloadFailureKind::Configuration => "configuration",
+        DownloadFailureKind::UnsupportedStream => "unsupported_stream",
         DownloadFailureKind::ProcessExit { .. } => "process_exit",
         DownloadFailureKind::Processing => "processing",
         DownloadFailureKind::Cancelled => "cancelled",

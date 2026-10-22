@@ -495,6 +495,10 @@ pub enum DownloadFailureKind {
     SourceUnavailable,
     /// Configuration/protocol error (invalid URL, unsupported protocol).
     Configuration,
+    /// The engine refused to start because the stream uses a feature it does
+    /// not record, such as DRM. Starting again during the same broadcast
+    /// cannot succeed, so the scheduler waits for the broadcast to end.
+    UnsupportedStream,
     /// External process exited abnormally (FFmpeg, Streamlink).
     ProcessExit { code: Option<i32> },
     /// Writer/pipeline processing error (FLV decode, segment processing).
@@ -520,9 +524,10 @@ impl DownloadFailureKind {
     }
     /// Whether this failure should count toward the circuit breaker.
     ///
-    /// Permanent HTTP client errors (4xx except 429) and configuration errors
-    /// are NOT counted because they indicate the specific resource is gone or
-    /// misconfigured, not that the engine is malfunctioning. Output-root
+    /// Permanent HTTP client errors (4xx except 429), configuration errors and
+    /// unsupported streams are NOT counted because they indicate the specific
+    /// resource is gone, misconfigured or unrecordable, not that the engine is
+    /// malfunctioning. Output-root
     /// failures are also excluded because they are infrastructure-level and
     /// already gated by the output-root gate; routing them
     /// into the engine circuit breaker would double-block recovery.
@@ -531,6 +536,7 @@ impl DownloadFailureKind {
             self,
             Self::HttpClientError { .. }
                 | Self::Configuration
+                | Self::UnsupportedStream
                 | Self::Cancelled
                 | Self::OutputRootUnavailable { .. }
                 | Self::CredentialUnavailable

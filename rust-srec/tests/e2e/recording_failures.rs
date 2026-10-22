@@ -67,88 +67,156 @@ async fn segment_count(app: &TestApp, token: &str, session: &Value) -> usize {
     app.segments(token, id).await.len()
 }
 
-/// A start the server refuses, here with 403 for an FLV stream and with DRM
-/// in a DASH presentation, is tried once more at once. When that fails too,
-/// the session ends as failed rather than staying open, and the streamer
-/// shows the error and backs off instead of trying again. Neither
-/// recording fetches any media.
+/// A start the server refuses, here with 403 for an FLV stream, is tried
+/// once more at once. When that fails too, the session ends as failed rather
+/// than staying open, and the streamer shows the error and backs off instead
+/// of trying again. The recording fetches no media.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_refused_start_ends_its_session_and_backs_the_streamer_off() {
     let fake = FakePlatform::start().await;
     let cdn = FakeCdn::start().await;
     cdn.put("/forbidden/live.flv", "video/x-flv", "FLV");
     cdn.fail("/forbidden/live.flv", 10, 403, &[]);
-    let protected = cdn.publish_protected_dash("protected");
-    let cases = [
-        (
-            "forbidden",
-            cdn_stream(&cdn.url("/forbidden/live.flv"), "flv", "flv"),
-            "/forbidden/live.flv",
-            "http_client_error",
-            "HTTP 403 Forbidden",
-        ),
-        (
-            "protected",
-            cdn_stream(&cdn.url(&protected), "dash", "fmp4"),
-            protected.as_str(),
-            "configuration",
-            "content protection (DRM)",
-        ),
-    ];
     let app = TestApp::start_with(parking()).await;
     let token = app.admin_token().await;
+    let room = fake.room("forbidden");
+    room.set_live(room.live("forbidden").stream(cdn_stream(
+        &cdn.url("/forbidden/live.flv"),
+        "flv",
+        "flv",
+    )));
+    let id = watch(&app, &token, "forbidden", &room).await;
 
-    for (name, stream, media_path, kind, error) in cases {
-        let room = fake.room(name);
-        room.set_live(room.live(name).stream(stream));
-        let id = watch(&app, &token, name, &room).await;
+    let session = app.ended_session(&token, &id).await;
+    let events = events(&session);
+    assert_eq!(events.len(), 6, "{events:?}");
+    assert_eq!(events[0], &started(false, "forbidden"));
+    failed_start(events[1], "http_client_error");
+    assert_eq!(events[2], &resumed());
+    assert_eq!(events[3], &started(true, "forbidden"));
+    failed_start(events[4], "http_client_error");
+    assert_eq!(
+        events[5],
+        &json!({
+            "kind": "session_ended",
+            "cause": { "type": "failed", "kind": "http_client_error" },
+            "via_hysteresis": true,
+        })
+    );
+    assert_eq!(segment_count(&app, &token, &session).await, 0);
 
-        let session = app.ended_session(&token, &id).await;
-        let events = events(&session);
-        assert_eq!(events.len(), 6, "{name}: {events:?}");
-        assert_eq!(events[0], &started(false, name), "{name}");
-        failed_start(events[1], kind);
-        assert_eq!(events[2], &resumed(), "{name}");
-        assert_eq!(events[3], &started(true, name), "{name}");
-        failed_start(events[4], kind);
-        assert_eq!(
-            events[5],
+    let backing_off = eventually(WAIT, "the streamer to back off", || async {
+        let streamer = app.streamer(&token, &id).await;
+        (streamer["state"] == "TEMPORAL_DISABLED").then_some(streamer)
+    })
+    .await;
+    assert_eq!(backing_off["consecutive_error_count"], 2, "{backing_off}");
+    let last_error = backing_off["last_error"].as_str().unwrap_or_default();
+    assert!(last_error.contains("HTTP 403 Forbidden"), "{last_error}");
+    let backoff_ms = millis(&backing_off["disabled_until"]) - now_ms();
+    assert!(
+        (30_000..=60_000).contains(&backoff_ms),
+        "backing off for {backoff_ms} ms"
+    );
+    // One request per start: the backoff, set before the session ended, has
+    // stopped the retries.
+    assert_eq!(cdn.requests_to("/forbidden/live.flv").len(), 2);
+    assert_eq!(cdn.queued_failures("/forbidden/live.flv"), 8);
+    assert_eq!(fake.requests_to(&room, "live.flv").len(), 0);
+
+    app.shutdown().await;
+}
+
+/// A start the engine refuses because the stream is DRM-protected is not
+/// tried again while that broadcast runs: the session ends at once, the
+/// streamer shows the error, and status checks go on. Once the broadcast has
+/// ended, the next one, unprotected, is recorded.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_drm_protected_broadcast_is_not_retried_and_the_next_one_records() {
+    let fake = FakePlatform::start().await;
+    let cdn = FakeCdn::start().await;
+    let protected = cdn.publish_protected_dash("protected");
+    let room = fake.room("drm");
+    room.set_live(
+        room.live("Protected")
+            .stream(cdn_stream(&cdn.url(&protected), "dash", "fmp4")),
+    );
+    let app = TestApp::start_with(Seed::live()).await;
+    let token = app.admin_token().await;
+    let id = watch(&app, &token, "drm", &room).await;
+
+    let refused = app.ended_session(&token, &id).await;
+    assert_eq!(
+        events(&refused),
+        [
+            &started(false, "Protected"),
             &json!({
                 "kind": "session_ended",
-                "cause": { "type": "failed", "kind": kind },
-                "via_hysteresis": true,
+                "cause": { "type": "failed", "kind": "unsupported_stream" },
+                "via_hysteresis": false,
             }),
-            "{name}"
-        );
-        assert_eq!(segment_count(&app, &token, &session).await, 0, "{name}");
+        ]
+    );
+    let streamer = eventually(WAIT, "the streamer to show the error", || async {
+        let streamer = app.streamer(&token, &id).await;
+        (streamer["consecutive_error_count"] == 1).then_some(streamer)
+    })
+    .await;
+    assert_eq!(streamer["state"], "NOT_LIVE", "{streamer}");
+    let last_error = streamer["last_error"].as_str().unwrap_or_default();
+    assert!(
+        last_error.contains("content protection (DRM)"),
+        "{last_error}"
+    );
 
-        let backing_off = eventually(WAIT, "the streamer to back off", || async {
-            let streamer = app.streamer(&token, &id).await;
-            (streamer["state"] == "TEMPORAL_DISABLED").then_some(streamer)
-        })
-        .await;
-        assert_eq!(backing_off["consecutive_error_count"], 2, "{backing_off}");
-        let last_error = backing_off["last_error"].as_str().unwrap_or_default();
-        assert!(last_error.contains(error), "{name}: {last_error}");
-        let backoff_ms = millis(&backing_off["disabled_until"]) - now_ms();
-        assert!(
-            (30_000..=60_000).contains(&backoff_ms),
-            "{name}: backing off for {backoff_ms} ms"
-        );
-        // One request per start: the backoff, set before the session ended,
-        // has stopped the retries.
-        assert_eq!(cdn.requests_to(media_path).len(), 2, "{name}");
-        assert_eq!(fake.requests_to(&room, "live.flv").len(), 0, "{name}");
-    }
-    // The DRM presentation's media was never asked for.
-    let protected_requests: Vec<String> = cdn
-        .requests()
-        .into_iter()
-        .map(|request| request.path)
-        .filter(|path| path.starts_with("/protected/"))
-        .collect();
-    assert_eq!(protected_requests, [protected.as_str(); 2]);
-    assert_eq!(cdn.queued_failures("/forbidden/live.flv"), 8);
+    // Later checks still find the room live and start nothing.
+    let checks = fake.requests_to(&room, "status").len();
+    eventually(WAIT, "three more status checks", || async {
+        (fake.requests_to(&room, "status").len() >= checks + 3).then_some(())
+    })
+    .await;
+    assert_eq!(cdn.requests_to(&protected).len(), 1);
+    assert_eq!(app.sessions(&token, &id).await.len(), 1);
+
+    // The check that finds the broadcast over clears the error.
+    room.set_offline();
+    let offline = eventually(WAIT, "the error to clear", || async {
+        let streamer = app.streamer(&token, &id).await;
+        (streamer["consecutive_error_count"] == 0).then_some(streamer)
+    })
+    .await;
+    assert_eq!(offline["last_error"], Value::Null, "{offline}");
+
+    let open = cdn.publish_dash("open");
+    room.set_live(
+        room.live("Open")
+            .stream(cdn_stream(&cdn.url(&open), "dash", "fmp4")),
+    );
+    cdn.wait_for_requests(&open, 1).await;
+    // A presentation this short may end before the room goes offline; a
+    // later check could then open a third session, so only the second is
+    // asserted on.
+    room.set_offline();
+    let recorded = eventually(WAIT, "the second session to end", || async {
+        let sessions = app.sessions(&token, &id).await;
+        sessions
+            .iter()
+            .find(|session| session["id"] != refused["id"] && session["is_live"] == false)
+            .map(|session| session["id"].as_str().expect("session id").to_owned())
+    })
+    .await;
+    let recorded = app.session(&token, &recorded).await;
+    assert_eq!(
+        events(&recorded),
+        [
+            &started(false, "Open"),
+            &json!({
+                "kind": "session_ended", "cause": { "type": "completed" }, "via_hysteresis": false,
+            }),
+        ]
+    );
+    assert_eq!(segment_count(&app, &token, &recorded).await, 1);
+    assert_eq!(cdn.requests_to(&protected).len(), 1);
 
     app.shutdown().await;
 }

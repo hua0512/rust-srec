@@ -11,7 +11,9 @@ use tokio::sync::oneshot;
 
 use crate::domain::{Priority, StreamerState};
 use crate::downloader::engine::DownloadProgress;
-use crate::downloader::{DownloadRejectedKind, DownloadStopCause, DownloadTerminalEvent};
+use crate::downloader::{
+    DownloadFailureKind, DownloadRejectedKind, DownloadStopCause, DownloadTerminalEvent,
+};
 use crate::streamer::StreamerMetadata;
 
 /// Messages that can be sent to a StreamerActor.
@@ -143,6 +145,14 @@ pub enum DownloadEndPolicy {
     /// immediately to verify status and potentially resume quickly.
     SegmentFailed(String),
 
+    /// The engine refused to start because the stream is unrecordable, e.g.
+    /// DRM-protected.
+    ///
+    /// Starting again cannot succeed while the same broadcast runs. The actor
+    /// keeps checking at the normal interval without emitting Live, and
+    /// records again once a check shows the broadcast ended.
+    UnsupportedStream(String),
+
     /// Download was blocked by circuit breaker.
     ///
     /// The engine's circuit breaker prevented the download from starting.
@@ -221,6 +231,11 @@ impl From<DownloadTerminalEvent> for DownloadEndPolicy {
                 stop_cause.map(Self::from).unwrap_or(Self::Completed)
             }
             DownloadTerminalEvent::Cancelled { cause, .. } => Self::from(cause),
+            DownloadTerminalEvent::Failed {
+                kind: DownloadFailureKind::UnsupportedStream,
+                error,
+                ..
+            } => Self::UnsupportedStream(error),
             DownloadTerminalEvent::Failed { error, .. } => Self::SegmentFailed(error),
             DownloadTerminalEvent::Rejected {
                 reason,
@@ -563,6 +578,10 @@ pub struct StreamerActorState {
     pub hysteresis: HysteresisState,
     /// Last check result.
     pub last_check: Option<CheckResult>,
+    /// Set while the broadcast the engine refused as unrecordable runs: Live
+    /// results are not emitted, since that would start the refused download
+    /// again. Cleared by the first NotLive result.
+    pub refused_broadcast: bool,
 }
 
 impl Default for StreamerActorState {
@@ -574,6 +593,7 @@ impl Default for StreamerActorState {
             last_download_activity_at: None,
             hysteresis: HysteresisState::default(),
             last_check: None,
+            refused_broadcast: false,
         }
     }
 }
@@ -588,6 +608,7 @@ impl StreamerActorState {
             last_download_activity_at: None,
             hysteresis: HysteresisState::from_state(metadata.state),
             last_check: None,
+            refused_broadcast: false,
         }
     }
 
@@ -607,6 +628,19 @@ impl StreamerActorState {
         config: &StreamerConfig,
         error_count: u32,
     ) -> bool {
+        if self.refused_broadcast && result.state == StreamerState::Live {
+            self.last_check = Some(result);
+            self.schedule_next_check(config, error_count);
+            return false;
+        }
+        // The monitor still shows the refused broadcast as live, so its end
+        // is emitted whatever the hysteresis state.
+        let refused_broadcast_ended =
+            self.refused_broadcast && result.state == StreamerState::NotLive;
+        if refused_broadcast_ended {
+            self.refused_broadcast = false;
+        }
+
         let prev_state = self.streamer_state;
         self.streamer_state = result.state;
 
@@ -628,6 +662,7 @@ impl StreamerActorState {
         {
             should_emit = true;
         }
+        should_emit |= refused_broadcast_ended;
 
         self.last_check = Some(result);
         self.schedule_next_check(config, error_count);
