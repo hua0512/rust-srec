@@ -207,8 +207,11 @@ async fn repeated_download_failures_open_the_circuit_breaker_and_successes_close
     let fake = FakePlatform::start().await;
     let room = fake.room("flaky");
     room.set_live(room.live("Flaky"));
+    // The attempt after the fifth failure does not always start at once; it
+    // can come a second or so later, when a one-second cooldown has already
+    // ended and lets it through. Three seconds leaves a wide margin.
     let downloads = DownloadManagerConfig {
-        circuit_breaker_cooldown_secs: 1,
+        circuit_breaker_cooldown_secs: 3,
         ..DownloadManagerConfig::default()
     };
     // The streamer backs off by itself after as many failures in a row as
@@ -243,7 +246,7 @@ async fn repeated_download_failures_open_the_circuit_breaker_and_successes_close
         attempt(false).await;
     }
     let mut expected = failed(5);
-    expected.push("rejected for 1s".to_owned());
+    expected.push("rejected for 3s".to_owned());
     assert_eq!(attempt_outcomes(&mut socket, &id, 6).await, expected);
 
     // Past the cooldown attempts run again; the room is still live.
