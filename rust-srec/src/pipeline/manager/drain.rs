@@ -119,15 +119,14 @@ where
         }
         // Standalone jobs, or jobs whose session was explicitly removed, still
         // carry the streamer id and must finish before its metadata is removed.
-        if let Some(repo) = &self.job_repository {
-            result.jobs = repo
-                .count_jobs(
-                    &JobFilters::new()
-                        .with_streamer_id(streamer_id)
-                        .with_statuses([JobStatus::Pending, JobStatus::Processing]),
-                )
-                .await?;
-        }
+        result.jobs = self
+            .job_repository
+            .count_jobs(
+                &JobFilters::new()
+                    .with_streamer_id(streamer_id)
+                    .with_statuses([JobStatus::Pending, JobStatus::Processing]),
+            )
+            .await?;
         Ok(result)
     }
 
@@ -249,17 +248,14 @@ where
             None => 0,
         };
 
-        let jobs = match &self.job_repository {
-            Some(repo) => {
-                repo.count_jobs(
-                    &JobFilters::new()
-                        .with_session_id(session_id)
-                        .with_statuses([JobStatus::Pending, JobStatus::Processing]),
-                )
-                .await?
-            }
-            None => 0,
-        };
+        let jobs = self
+            .job_repository
+            .count_jobs(
+                &JobFilters::new()
+                    .with_session_id(session_id)
+                    .with_statuses([JobStatus::Pending, JobStatus::Processing]),
+            )
+            .await?;
 
         Ok(SessionPipelineOutstanding {
             jobs,

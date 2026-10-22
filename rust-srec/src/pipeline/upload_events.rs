@@ -67,7 +67,7 @@ pub enum UploadStatusEvent {
     /// The number of upload jobs waiting for a worker changed.
     Queue { pending: u32 },
     /// A job other than an upload has been processing for
-    /// `job_queue::LONG_JOB_AFTER`; shorter jobs are never announced.
+    /// `JobQueueConfig::long_job_after`; shorter jobs are never announced.
     JobStarted {
         job_id: String,
         streamer_id: Option<String>,

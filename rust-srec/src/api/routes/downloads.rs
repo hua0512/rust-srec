@@ -1014,7 +1014,10 @@ mod tests {
             upload_status_broadcaster: crate::pipeline::UploadStatusBroadcaster::new(Arc::new(
                 |_| Bytes::new(),
             )),
-            pipeline_manager: Arc::new(PipelineManager::new()),
+            pipeline_manager: Arc::new(PipelineManager::with_repository(
+                Default::default(),
+                crate::database::test_support::job_repository().await,
+            )),
             streamer_avatar: Arc::new(|_| None),
             credential_blocks: Arc::new(crate::credentials::CredentialBlocks::new()),
             credential_attention: tokio::sync::watch::channel(0).1,
@@ -1196,7 +1199,10 @@ mod tests {
             upload_status_broadcaster: crate::pipeline::UploadStatusBroadcaster::new(Arc::new(
                 |_| Bytes::new(),
             )),
-            pipeline_manager: Arc::new(PipelineManager::new()),
+            pipeline_manager: Arc::new(PipelineManager::with_repository(
+                Default::default(),
+                crate::database::test_support::job_repository().await,
+            )),
             streamer_avatar: Arc::new(|_| None),
             credential_blocks: Arc::new(crate::credentials::CredentialBlocks::new()),
             credential_attention: tokio::sync::watch::channel(0).1,
@@ -1292,7 +1298,10 @@ mod tests {
                 |_| Bytes::new(),
             )),
             upload_status_broadcaster: upload_status_broadcaster.clone(),
-            pipeline_manager: Arc::new(PipelineManager::new()),
+            pipeline_manager: Arc::new(PipelineManager::with_repository(
+                Default::default(),
+                crate::database::test_support::job_repository().await,
+            )),
             streamer_avatar,
             credential_blocks: Arc::new(crate::credentials::CredentialBlocks::new()),
             credential_attention: tokio::sync::watch::channel(0).1,
@@ -1378,7 +1387,10 @@ mod tests {
             upload_status_broadcaster: crate::pipeline::UploadStatusBroadcaster::new(Arc::new(
                 |_| Bytes::new(),
             )),
-            pipeline_manager: Arc::new(PipelineManager::new()),
+            pipeline_manager: Arc::new(PipelineManager::with_repository(
+                Default::default(),
+                crate::database::test_support::job_repository().await,
+            )),
             streamer_avatar: Arc::new(|_| None),
             credential_blocks: blocks.clone(),
             credential_attention: attention_rx,

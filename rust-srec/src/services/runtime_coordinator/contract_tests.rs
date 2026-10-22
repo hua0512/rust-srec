@@ -238,7 +238,10 @@ impl Fixture {
             session_repository,
             session_cancels: Arc::new(SessionCancelTokens::new()),
             pending_pipelines: Arc::new(DashMap::new()),
-            pipeline_manager: Arc::new(PipelineManager::new()),
+            pipeline_manager: Arc::new(PipelineManager::with_repository(
+                Default::default(),
+                crate::database::test_support::job_repository().await,
+            )),
             session_lifecycle,
             task_supervisor,
             scheduler_handle: scheduler.handle(),

@@ -80,14 +80,15 @@ fn upload_started_event(job: &Job) -> Option<UploadStatusEvent> {
 }
 
 /// True when `job` is not an upload and has been processing for at least
-/// [`LONG_JOB_AFTER`] at `now`. Only such jobs reach the WebSocket, which
-/// keeps per-segment thumbnails and quick renames off it.
-fn is_long_job(job: &Job, now: DateTime<Utc>) -> bool {
+/// `long_job_after` (see [`JobQueueConfig::long_job_after`]) at `now`. Only
+/// such jobs reach the WebSocket, which keeps per-segment thumbnails and quick
+/// renames off it.
+fn is_long_job(job: &Job, now: DateTime<Utc>, long_job_after: std::time::Duration) -> bool {
     upload_kind_for_job_type(&job.job_type).is_none()
         && job.started_at.is_some_and(|started| {
             (now - started)
                 .to_std()
-                .is_ok_and(|elapsed| elapsed >= LONG_JOB_AFTER)
+                .is_ok_and(|elapsed| elapsed >= long_job_after)
         })
 }
 
@@ -134,6 +135,7 @@ fn heartbeat_events(
     cancellation_tokens: &DashMap<String, AttemptToken>,
     progress_cache: &DashMap<String, JobProgressSnapshot>,
     now: DateTime<Utc>,
+    long_job_after: std::time::Duration,
 ) -> Vec<UploadStatusEvent> {
     // Collected before touching jobs_cache: cancel_pipeline locks jobs_cache
     // and then cancellation_tokens, so holding a token guard here while
@@ -151,7 +153,7 @@ fn heartbeat_events(
         if job.status != JobStatus::Processing {
             continue;
         }
-        let long_job = is_long_job(&job, now);
+        let long_job = is_long_job(&job, now, long_job_after);
         let started = match upload_started_event(&job) {
             Some(started) => started,
             None if long_job => long_job_started_event(&job),
@@ -173,26 +175,14 @@ fn heartbeat_events(
 /// Upload jobs waiting for a worker. Uses the same job-type rule as
 /// [`upload_kind_for_job_type`], which SQL cannot express, so the database
 /// only groups pending jobs by type.
-async fn count_pending_uploads(
-    repo: Option<&Arc<dyn JobRepository>>,
-    jobs_cache: &DashMap<String, Job>,
-) -> Result<u32> {
-    let count: u64 = match repo {
-        Some(repo) => repo
-            .count_pending_jobs_by_type()
-            .await?
-            .into_iter()
-            .filter(|(job_type, _)| upload_kind_for_job_type(job_type).is_some())
-            .map(|(_, count)| count)
-            .sum(),
-        None => jobs_cache
-            .iter()
-            .filter(|job| {
-                job.status == JobStatus::Pending
-                    && upload_kind_for_job_type(&job.job_type).is_some()
-            })
-            .count() as u64,
-    };
+async fn count_pending_uploads(repo: &dyn JobRepository) -> Result<u32> {
+    let count: u64 = repo
+        .count_pending_jobs_by_type()
+        .await?
+        .into_iter()
+        .filter(|(job_type, _)| upload_kind_for_job_type(job_type).is_some())
+        .map(|(_, count)| count)
+        .sum();
     Ok(u32::try_from(count).unwrap_or(u32::MAX))
 }
 
@@ -201,7 +191,7 @@ const PROGRESS_FLUSH_INTERVAL_MS: u64 = 250;
 /// Must stay well under the frontend's upload staleness window
 /// (`STALE_AFTER_MS`, 2 minutes); see [`heartbeat_events`].
 const HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
-/// How long a job other than an upload runs before it reaches the WebSocket.
+/// Default for [`JobQueueConfig::long_job_after`].
 const LONG_JOB_AFTER: std::time::Duration = std::time::Duration::from_secs(10);
 /// How often the queued-uploads count is re-checked while a client is
 /// subscribed. Changes are only broadcast when the count moves.
@@ -333,6 +323,9 @@ pub struct JobQueueConfig {
     pub critical_threshold: usize,
     /// Poll interval in milliseconds.
     pub poll_interval_ms: u64,
+    /// How long a job other than an upload runs before it reaches the
+    /// WebSocket.
+    pub long_job_after: std::time::Duration,
 }
 
 impl Default for JobQueueConfig {
@@ -341,6 +334,7 @@ impl Default for JobQueueConfig {
             warning_threshold: 100,
             critical_threshold: 500,
             poll_interval_ms: 100,
+            long_job_after: LONG_JOB_AFTER,
         }
     }
 }
@@ -809,7 +803,6 @@ struct FailedUploadContext {
 enum FailureMetadata {
     Preserve,
     DatabaseLog,
-    DatabaseAndCacheLog,
 }
 
 /// Whether this call changed an active job to FAILED.
@@ -835,7 +828,7 @@ pub struct JobQueue {
     /// Notify when new jobs are added.
     notify: Arc<Notify>,
     /// Job repository for database persistence.
-    job_repository: Option<Arc<dyn JobRepository>>,
+    job_repository: Arc<dyn JobRepository>,
     /// Session repository for persisting media outputs (e.g., thumbnails).
     session_repo: std::sync::OnceLock<Arc<dyn SessionRepository>>,
     /// Streamer repository for looking up streamer metadata (e.g., name).
@@ -874,23 +867,8 @@ pub struct JobQueue {
 }
 
 impl JobQueue {
-    /// Create an in-memory job queue without persistence.
-    #[cfg(test)]
-    pub(crate) fn new() -> Self {
-        Self::build(JobQueueConfig::default(), None)
-    }
-
-    /// Create a new job queue with a job repository for database persistence.
+    /// Create a job queue that persists its jobs through `repository`.
     pub fn with_repository(config: JobQueueConfig, repository: Arc<dyn JobRepository>) -> Self {
-        Self::build(config, Some(repository))
-    }
-
-    /// Without a repository the queue keeps jobs in memory only, which only
-    /// tests build.
-    pub(crate) fn build(
-        config: JobQueueConfig,
-        repository: Option<Arc<dyn JobRepository>>,
-    ) -> Self {
         let (progress_tx, progress_rx) = tokio::sync::mpsc::channel::<JobProgressUpdate>(1024);
         // These maps are Arc-shared with the aggregator task: DashMap::clone
         // deep-copies contents, so a bare clone would permanently detach the
@@ -903,6 +881,7 @@ impl JobQueue {
         let progress_shutdown = CancellationToken::new();
         let progress_aggregator = spawn_progress_aggregator(
             repository.clone(),
+            config.long_job_after,
             progress_rx,
             jobs_cache.clone(),
             cancellation_tokens.clone(),
@@ -1009,7 +988,7 @@ impl JobQueue {
     }
 
     /// Publish `Started` for an upload job. Any other job is announced as
-    /// `JobStarted` after [`LONG_JOB_AFTER`], followed by its latest progress,
+    /// `JobStarted` after [`JobQueueConfig::long_job_after`], followed by its latest progress,
     /// and only if `attempt` is still running then. Called from `dequeue`
     /// right after the claim succeeds.
     fn announce_started(&self, job: &Job, attempt: u64) {
@@ -1022,8 +1001,9 @@ impl JobQueue {
         let progress_cache = self.progress_cache.clone();
         let upload_broadcaster = self.upload_broadcaster.clone();
         let job_id = job.id.clone();
+        let long_job_after = self.config.long_job_after;
         tokio::spawn(async move {
-            tokio::time::sleep(LONG_JOB_AFTER).await;
+            tokio::time::sleep(long_job_after).await;
             // The token guard is released before jobs_cache is locked; see
             // heartbeat_events for the lock order this avoids.
             let live = cancellation_tokens
@@ -1076,7 +1056,7 @@ impl JobQueue {
     /// Publish `JobEnded` when `job` ran long enough to have been announced
     /// (see [`is_long_job`]); shorter jobs never reach the socket.
     fn emit_long_job_ended(&self, job: &Job) {
-        if is_long_job(job, Utc::now())
+        if is_long_job(job, Utc::now(), self.config.long_job_after)
             && let Some(started_at) = job.started_at
         {
             self.emit_upload_event(UploadStatusEvent::JobEnded {
@@ -1091,7 +1071,7 @@ impl JobQueue {
     /// Best-effort, same policy as `persist_thumbnail_output`: a bookkeeping
     /// failure is logged and swallowed so it can never fail the job whose
     /// transfer already succeeded. No-op for non-upload job types and when
-    /// no repository is installed (in-memory queues in tests).
+    /// no upload record repository is installed.
     pub(crate) async fn persist_upload_records(
         &self,
         job_id: &str,
@@ -1135,34 +1115,31 @@ impl JobQueue {
         }
     }
 
-    /// In-flight upload jobs, and other jobs processing for 10 seconds or
-    /// more, with their latest progress snapshots. Feeds the WebSocket
+    /// In-flight upload jobs, and other jobs processing for
+    /// [`JobQueueConfig::long_job_after`] or more, with their latest progress
+    /// snapshots. Feeds the WebSocket
     /// `DownloadSnapshot`.
     pub async fn list_active_jobs(&self) -> Result<Vec<ActiveJobInfo>> {
         let now = Utc::now();
         let mut infos = Vec::new();
-        if let Some(repo) = &self.job_repository {
-            for db_job in repo.list_jobs_by_status(JobStatus::Processing).await? {
-                infos.extend(self.active_job_info(&db_model_to_job(&db_job), now));
-            }
-        } else {
-            for entry in self.jobs_cache.iter() {
-                if entry.status == JobStatus::Processing {
-                    infos.extend(self.active_job_info(entry.value(), now));
-                }
-            }
+        for db_job in self
+            .job_repository
+            .list_jobs_by_status(JobStatus::Processing)
+            .await?
+        {
+            infos.extend(self.active_job_info(&db_model_to_job(&db_job), now));
         }
         Ok(infos)
     }
 
     /// Upload jobs waiting for a worker.
     pub async fn count_pending_uploads(&self) -> Result<u32> {
-        count_pending_uploads(self.job_repository.as_ref(), &self.jobs_cache).await
+        count_pending_uploads(self.job_repository.as_ref()).await
     }
 
     fn active_job_info(&self, job: &Job, now: DateTime<Utc>) -> Option<ActiveJobInfo> {
         let uploader = upload_kind_for_job_type(&job.job_type);
-        if uploader.is_none() && !is_long_job(job, now) {
+        if uploader.is_none() && !is_long_job(job, now, self.config.long_job_after) {
             return None;
         }
         Some(ActiveJobInfo {
@@ -1253,16 +1230,13 @@ impl JobQueue {
     /// Persist the logs a processor returned with its result and fold them into
     /// the job's execution summary. Entries the streaming collector already wrote
     /// are not duplicated. Used for a result the pool turns into a failure, where
-    /// `complete_if_processing` never runs. A repository-less queue keeps no
-    /// execution history for failed jobs, so this is a no-op there.
+    /// `complete_if_processing` never runs.
     pub(crate) async fn record_result_logs(
         &self,
         job_id: &str,
         logs: &[JobLogEntry],
     ) -> Result<()> {
-        let Some(repo) = &self.job_repository else {
-            return Ok(());
-        };
+        let repo = &self.job_repository;
         let new_logs = self
             .persist_logs_to_db(job_id, logs, LogPersistence::Snapshot)
             .await?;
@@ -1297,9 +1271,7 @@ impl JobQueue {
         logs: &[JobLogEntry],
         mode: LogPersistence,
     ) -> Result<Vec<JobLogEntry>> {
-        let Some(repo) = &self.job_repository else {
-            return Ok(vec![]);
-        };
+        let repo = &self.job_repository;
         if logs.is_empty() {
             return Ok(vec![]);
         }
@@ -1503,9 +1475,9 @@ impl JobQueue {
 
         // Best-effort durability: without this write the streamer/session
         // rows must still exist at every future dequeue of this job.
-        if backfilled && let Some(repo) = &self.job_repository {
+        if backfilled {
             let state = job_state_json(job);
-            if let Err(e) = repo.update_job_state(&job.id, &state).await {
+            if let Err(e) = self.job_repository.update_job_state(&job.id, &state).await {
                 tracing::debug!(
                     job_id = %job.id,
                     error = %e,
@@ -1520,11 +1492,9 @@ impl JobQueue {
         let job_id = job.id.clone();
         let job_type = job.job_type.clone();
 
-        // Persist to database if repository is available
-        if let Some(repo) = &self.job_repository {
-            let db_model = job_to_db_model(&job);
-            repo.create_job(&db_model).await?;
-        }
+        self.job_repository
+            .create_job(&job_to_db_model(&job))
+            .await?;
 
         // Add to in-memory cache
         self.jobs_cache.insert(job_id.clone(), job);
@@ -1563,109 +1533,41 @@ impl JobQueue {
         // Note: This is called frequently by worker pools, so we use trace level
         // to avoid log spam. Use debug level only when a job is actually dequeued.
 
-        // Try to get from database if repository is available
-        if let Some(repo) = &self.job_repository {
-            if let Some(db_job) = repo.claim_next_pending_job(job_types).await? {
-                let mut job = db_model_to_job(&db_job);
-                job.status = JobStatus::Processing;
-                if job.started_at.is_none() {
-                    job.started_at = Some(Utc::now());
-                }
-
-                // Resolve missing metadata (streamer_name, session_title)
-                // These are not stored in the database, so we look them up from repositories
-                self.resolve_job_metadata(&mut job).await;
-
-                // Update cache
-                self.jobs_cache.insert(job.id.clone(), job.clone());
-
-                // Create cancellation token for this job (do not overwrite an existing token,
-                // e.g. if a cancellation raced with dequeue).
-                let attempt = self
-                    .cancellation_tokens
-                    .entry(job.id.clone())
-                    .or_default()
-                    .id();
-
-                self.announce_started(&job, attempt);
-                return Ok(Some(job));
-            }
-        } else {
-            // Fallback to in-memory cache
-            let mut selected: Option<(i32, chrono::DateTime<Utc>, String)> = None;
-            for entry in self.jobs_cache.iter() {
-                let job = entry.value();
-                if job.status != JobStatus::Pending {
-                    continue;
-                }
-                if let Some(types) = job_types
-                    && !types.iter().any(|t| t == &job.job_type)
-                {
-                    continue;
-                }
-
-                // Match the claim order of JobRepository::claim_next_pending_job:
-                // priority DESC, created_at ASC, id ASC.
-                let candidate = (job.priority, job.created_at, job.id.clone());
-                match &selected {
-                    None => selected = Some(candidate),
-                    Some((best_prio, best_created, best_id)) => {
-                        if candidate.0 > *best_prio
-                            || (candidate.0 == *best_prio && candidate.1 < *best_created)
-                            || (candidate.0 == *best_prio
-                                && candidate.1 == *best_created
-                                && candidate.2 < *best_id)
-                        {
-                            selected = Some(candidate);
-                        }
-                    }
-                }
-            }
-
-            if let Some((_, _, job_id)) = selected
-                && let Some(mut job_ref) = self.jobs_cache.get_mut(&job_id)
-            {
-                if job_ref.status != JobStatus::Pending {
-                    return Ok(None);
-                }
-                job_ref.status = JobStatus::Processing;
-                job_ref.started_at = Some(Utc::now());
-                let job = job_ref.clone();
-                drop(job_ref);
-
-                let attempt = self
-                    .cancellation_tokens
-                    .entry(job.id.clone())
-                    .or_default()
-                    .id();
-                self.announce_started(&job, attempt);
-                return Ok(Some(job));
-            }
+        let Some(db_job) = self
+            .job_repository
+            .claim_next_pending_job(job_types)
+            .await?
+        else {
+            return Ok(None);
+        };
+        let mut job = db_model_to_job(&db_job);
+        job.status = JobStatus::Processing;
+        if job.started_at.is_none() {
+            job.started_at = Some(Utc::now());
         }
 
-        Ok(None)
+        // Resolve missing metadata (streamer_name, session_title)
+        // These are not stored in the database, so we look them up from repositories
+        self.resolve_job_metadata(&mut job).await;
+
+        // Update cache
+        self.jobs_cache.insert(job.id.clone(), job.clone());
+
+        // Create cancellation token for this job (do not overwrite an existing token,
+        // e.g. if a cancellation raced with dequeue).
+        let attempt = self
+            .cancellation_tokens
+            .entry(job.id.clone())
+            .or_default()
+            .id();
+
+        self.announce_started(&job, attempt);
+        Ok(Some(job))
     }
 
     /// Count pending jobs, optionally filtered by job types.
     pub async fn count_pending_jobs(&self, job_types: Option<&[String]>) -> Result<u64> {
-        if let Some(repo) = &self.job_repository {
-            return repo.count_pending_jobs(job_types).await;
-        }
-
-        let mut count: u64 = 0;
-        for entry in self.jobs_cache.iter() {
-            let job = entry.value();
-            if job.status != JobStatus::Pending {
-                continue;
-            }
-            if let Some(types) = job_types
-                && !types.iter().any(|t| t == &job.job_type)
-            {
-                continue;
-            }
-            count = count.saturating_add(1);
-        }
-        Ok(count)
+        self.job_repository.count_pending_jobs(job_types).await
     }
 
     /// Wait for a job to become available.
@@ -1685,136 +1587,88 @@ impl JobQueue {
         job_id: &str,
         result: JobResult,
     ) -> Result<bool> {
-        let mut transitioned = false;
-
         // Capture outputs for persistence before they are moved into cache/DB models.
         let outputs_for_persist = result.outputs.clone();
-        let mut completed_job_type: Option<String> = None;
-        let mut completed_session_id: Option<String> = None;
-        let mut completed_streamer_id: Option<String> = None;
+        let repo = &self.job_repository;
+        let mut db_job = repo.get_job(job_id).await?;
 
-        // Update database if repository is available.
-        if let Some(repo) = &self.job_repository {
-            let mut db_job = repo.get_job(job_id).await?;
+        let completed_job_type = db_job.job_type.clone();
+        let completed_session_id = db_job.session_id.clone();
+        let completed_streamer_id = db_job.streamer_id.clone();
 
-            completed_job_type = Some(db_job.job_type.clone());
-            completed_session_id = db_job.session_id.clone();
-            completed_streamer_id = db_job.streamer_id.clone();
+        if db_job.get_status() != Some(JobStatus::Processing) {
+            self.finalize_cancelled_job(job_id);
+            return Ok(false);
+        }
 
-            if db_job.get_status() != Some(JobStatus::Processing) {
-                self.finalize_cancelled_job(job_id);
-                return Ok(false);
-            }
+        db_job.mark_completed();
+        if !result.outputs.is_empty() {
+            db_job.set_outputs(&result.outputs);
+        }
+        db_job.duration_secs = Some(result.duration_secs);
 
-            db_job.mark_completed();
-            if !result.outputs.is_empty() {
-                db_job.set_outputs(&result.outputs);
-            }
-            db_job.duration_secs = Some(result.duration_secs);
+        // Calculate queue wait time (DB stores epoch millis)
+        if let (created_ms, Some(started_ms)) = (db_job.created_at, db_job.started_at) {
+            let wait_ms = started_ms.saturating_sub(created_ms);
+            db_job.queue_wait_secs = Some((wait_ms as f64 / 1000.0).max(0.0));
+        }
 
-            // Calculate queue wait time (DB stores epoch millis)
-            if let (created_ms, Some(started_ms)) = (db_job.created_at, db_job.started_at) {
-                let wait_ms = started_ms.saturating_sub(created_ms);
-                db_job.queue_wait_secs = Some((wait_ms as f64 / 1000.0).max(0.0));
-            }
+        let updated = repo
+            .update_job_if_status(&db_job, JobStatus::Processing)
+            .await?;
+        if updated == 0 {
+            self.finalize_cancelled_job(job_id);
+            return Ok(false);
+        }
 
-            let updated = repo
-                .update_job_if_status(&db_job, JobStatus::Processing)
-                .await?;
-            if updated == 0 {
-                self.finalize_cancelled_job(job_id);
-                return Ok(false);
-            }
-
-            transitioned = true;
-
-            // The COMPLETED row above is the recovery boundary for DAG jobs. Execution logs and
-            // their summary are auxiliary observability writes and cannot make a processor rerun.
-            if !result.logs.is_empty() {
-                match self
-                    .persist_logs_to_db(job_id, &result.logs, LogPersistence::Snapshot)
-                    .await
-                {
-                    Ok(new_logs) => {
-                        let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
-                            db_job.execution_info.as_deref(),
-                            JsonContext::JobField {
-                                job_id: &db_job.id,
-                                field: "execution_info",
-                            },
-                            "Invalid execution_info JSON; resetting to defaults",
-                        );
-                        update_log_summary(&mut exec_info, &new_logs);
-                        extend_logs_capped(&mut exec_info, &new_logs);
-                        match serde_json::to_string(&exec_info) {
-                            Ok(execution_info) => {
-                                if let Err(error) = repo
-                                    .update_job_execution_info(job_id, &execution_info)
-                                    .await
-                                {
-                                    warn!(
-                                        job_id = %job_id,
-                                        error = %error,
-                                        "Failed to persist completed job log summary"
-                                    );
-                                }
-                            }
-                            Err(error) => {
+        // The COMPLETED row above is the recovery boundary for DAG jobs. Execution logs and
+        // their summary are auxiliary observability writes and cannot make a processor rerun.
+        if !result.logs.is_empty() {
+            match self
+                .persist_logs_to_db(job_id, &result.logs, LogPersistence::Snapshot)
+                .await
+            {
+                Ok(new_logs) => {
+                    let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
+                        db_job.execution_info.as_deref(),
+                        JsonContext::JobField {
+                            job_id: &db_job.id,
+                            field: "execution_info",
+                        },
+                        "Invalid execution_info JSON; resetting to defaults",
+                    );
+                    update_log_summary(&mut exec_info, &new_logs);
+                    extend_logs_capped(&mut exec_info, &new_logs);
+                    match serde_json::to_string(&exec_info) {
+                        Ok(execution_info) => {
+                            if let Err(error) = repo
+                                .update_job_execution_info(job_id, &execution_info)
+                                .await
+                            {
                                 warn!(
                                     job_id = %job_id,
                                     error = %error,
-                                    "Failed to serialize completed job log summary"
+                                    "Failed to persist completed job log summary"
                                 );
                             }
                         }
+                        Err(error) => {
+                            warn!(
+                                job_id = %job_id,
+                                error = %error,
+                                "Failed to serialize completed job log summary"
+                            );
+                        }
                     }
-                    Err(error) => {
-                        warn!(
-                            job_id = %job_id,
-                            error = %error,
-                            "Failed to persist completed job execution logs"
-                        );
-                    }
+                }
+                Err(error) => {
+                    warn!(
+                        job_id = %job_id,
+                        error = %error,
+                        "Failed to persist completed job execution logs"
+                    );
                 }
             }
-        }
-
-        // Update cache (in-memory mode or best-effort visibility).
-        if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
-            // Capture from cache if not already known (in-memory mode has no db_job).
-            if completed_job_type.is_none() {
-                completed_job_type = Some(job.job_type.clone());
-            }
-            if completed_session_id.is_none() && !job.session_id.is_empty() {
-                completed_session_id = Some(job.session_id.clone());
-            }
-            if completed_streamer_id.is_none() && !job.streamer_id.is_empty() {
-                completed_streamer_id = Some(job.streamer_id.clone());
-            }
-
-            if job.status != JobStatus::Cancelled {
-                transitioned |= matches!(job.status, JobStatus::Pending | JobStatus::Processing);
-                job.status = JobStatus::Completed;
-                job.completed_at = Some(Utc::now());
-                job.outputs = result.outputs;
-                job.duration_secs = Some(result.duration_secs);
-
-                // Update cached execution info if logs are present
-                if !result.logs.is_empty() {
-                    let mut exec_info = job.execution_info.clone().unwrap_or_default();
-                    update_log_summary(&mut exec_info, &result.logs);
-                    extend_logs_capped(&mut exec_info, &result.logs);
-                    job.execution_info = Some(exec_info);
-                }
-
-                // Calculate queue wait time
-                if let (Some(created), Some(started)) = (Some(job.created_at), job.started_at) {
-                    let wait_secs = (started - created).num_milliseconds() as f64 / 1000.0;
-                    job.queue_wait_secs = Some(wait_secs.max(0.0));
-                }
-            }
-        } else if self.job_repository.is_none() {
-            return Err(Error::not_found("Job", job_id));
         }
 
         // Persist thumbnail outputs to the session media_outputs table.
@@ -1824,9 +1678,7 @@ impl JobQueue {
         // - Preset-driven DAG steps (job_type == "thumbnail_<preset>")
         //
         // Segment persistence is handled by the download manager event path.
-        if completed_job_type
-            .as_deref()
-            .is_some_and(is_thumbnail_job_type)
+        if is_thumbnail_job_type(&completed_job_type)
             && let Some(session_id) = completed_session_id.as_deref()
         {
             for output_path in &outputs_for_persist {
@@ -1836,18 +1688,11 @@ impl JobQueue {
 
         // Persist per-file upload results and broadcast the terminal event
         // for upload job types (persist_upload_records itself no-ops for
-        // everything else). Gated on `transitioned`, matching fail_internal
-        // and cancel_job: in the repository-less queue a complete() racing a
-        // cancel must not persist COMPLETED records or emit
-        // Terminal{Completed} after Terminal{Cancelled}.
-        if transitioned
-            && let Some(job_type) = completed_job_type
-                .as_deref()
-                .filter(|jt| upload_kind_for_job_type(jt).is_some())
-        {
+        // everything else).
+        if upload_kind_for_job_type(&completed_job_type).is_some() {
             self.persist_upload_records(
                 job_id,
-                job_type,
+                &completed_job_type,
                 completed_streamer_id.as_deref(),
                 completed_session_id.as_deref(),
                 &result.uploads,
@@ -1872,7 +1717,7 @@ impl JobQueue {
                 error: None,
             });
         }
-        if transitioned && let Some(job) = self.jobs_cache.get(job_id) {
+        if let Some((_, job)) = self.jobs_cache.remove(job_id) {
             self.emit_long_job_ended(&job);
         }
 
@@ -1881,18 +1726,10 @@ impl JobQueue {
         let _ = self.persisted_log_cursor.remove(job_id);
         self.progress_cache.remove(job_id);
 
-        // In DB-backed mode, completed jobs can always be queried from the repository, so keeping
-        // terminal jobs in the in-memory cache only risks unbounded growth.
-        if self.job_repository.is_some() {
-            self.jobs_cache.remove(job_id);
-        }
+        self.decrement_depth(1);
+        info!("Job {} completed in {:.2}s", job_id, result.duration_secs);
 
-        if transitioned {
-            self.decrement_depth(1);
-            info!("Job {} completed in {:.2}s", job_id, result.duration_secs);
-        }
-
-        Ok(transitioned)
+        Ok(true)
     }
     /// Mark a job as failed.
     pub async fn fail(&self, job_id: &str, error: &str) -> Result<JobFailureOutcome> {
@@ -1959,7 +1796,7 @@ impl JobQueue {
                     step_number,
                     total_steps,
                 },
-                FailureMetadata::DatabaseAndCacheLog,
+                FailureMetadata::DatabaseLog,
                 uploads,
             )
             .await?;
@@ -1974,140 +1811,119 @@ impl JobQueue {
 
     /// Get a job by ID.
     pub async fn get_job(&self, id: &str) -> Result<Option<Job>> {
-        // Try database first if repository is available
-        if let Some(repo) = &self.job_repository {
-            match repo.get_job(id).await {
-                Ok(db_job) => {
-                    let job = db_model_to_job(&db_job);
-                    if let Some(info) = &job.execution_info
-                        && !info.logs.is_empty()
-                    {
-                        let (_, rows) =
-                            repo.list_execution_logs(id, &Pagination::new(0, 0)).await?;
-                        if rows > 0 {
-                            let owner: Arc<str> = Arc::from(id);
-                            for entry in &info.logs {
-                                entry.mark_persisted(owner.clone());
-                            }
+        let repo = &self.job_repository;
+        match repo.get_job(id).await {
+            Ok(db_job) => {
+                let job = db_model_to_job(&db_job);
+                if let Some(info) = &job.execution_info
+                    && !info.logs.is_empty()
+                {
+                    let (_, rows) = repo.list_execution_logs(id, &Pagination::new(0, 0)).await?;
+                    if rows > 0 {
+                        let owner: Arc<str> = Arc::from(id);
+                        for entry in &info.logs {
+                            entry.mark_persisted(owner.clone());
                         }
-                        // An empty log table may be a legacy snapshot-only job. Its
-                        // entries must be copied on the next snapshot update, before
-                        // new rows make list_job_logs stop using its legacy fallback.
                     }
-                    return Ok(Some(job));
+                    // An empty log table may be a legacy snapshot-only job. Its
+                    // entries must be copied on the next snapshot update, before
+                    // new rows make list_job_logs stop using its legacy fallback.
                 }
-                Err(Error::NotFound { .. }) => return Ok(None),
-                Err(e) => return Err(e),
+                Ok(Some(job))
             }
+            Err(Error::NotFound { .. }) => Ok(None),
+            Err(e) => Err(e),
         }
-
-        // Fallback to cache
-        Ok(self.jobs_cache.get(id).map(|job| job.clone()))
     }
 
-    /// List job execution logs (paged). When a database repository is configured, this reads
-    /// from `job_execution_logs`; otherwise it paginates the cached `execution_info.logs`.
+    /// List job execution logs (paged) from `job_execution_logs`, falling back to
+    /// the logs that legacy rows kept only in `execution_info`.
     pub async fn list_job_logs(
         &self,
         job_id: &str,
         pagination: &Pagination,
     ) -> Result<(Vec<JobLogEntry>, u64)> {
-        if let Some(repo) = &self.job_repository {
-            let (rows, total) = repo.list_execution_logs(job_id, pagination).await?;
+        let repo = &self.job_repository;
+        let (rows, total) = repo.list_execution_logs(job_id, pagination).await?;
 
-            let logs = rows
-                .into_iter()
-                .map(|row| {
-                    let timestamp = crate::database::time::ms_to_datetime(row.created_at);
+        let logs = rows
+            .into_iter()
+            .map(|row| {
+                let timestamp = crate::database::time::ms_to_datetime(row.created_at);
 
-                    if row.level.is_some() || row.message.is_some() {
-                        let level = row
-                            .level
-                            .as_deref()
-                            .map(|l| match l.to_ascii_uppercase().as_str() {
-                                "DEBUG" => LogLevel::Debug,
-                                "WARN" | "WARNING" => LogLevel::Warn,
-                                "ERROR" => LogLevel::Error,
-                                _ => LogLevel::Info,
-                            })
-                            .unwrap_or(LogLevel::Info);
-
-                        return JobLogEntry {
-                            timestamp,
-                            level,
-                            message: row.message.unwrap_or(row.entry),
-                            persisted_for: Arc::default(),
-                        };
-                    }
-
-                    if let Ok(entry) = serde_json::from_str::<JobLogEntry>(&row.entry) {
-                        return entry;
-                    }
-
-                    if let Ok(entry) = serde_json::from_str::<DbLogEntry>(&row.entry) {
-                        let level = match entry.level.to_ascii_uppercase().as_str() {
+                if row.level.is_some() || row.message.is_some() {
+                    let level = row
+                        .level
+                        .as_deref()
+                        .map(|l| match l.to_ascii_uppercase().as_str() {
                             "DEBUG" => LogLevel::Debug,
                             "WARN" | "WARNING" => LogLevel::Warn,
                             "ERROR" => LogLevel::Error,
                             _ => LogLevel::Info,
-                        };
+                        })
+                        .unwrap_or(LogLevel::Info);
 
-                        return JobLogEntry {
-                            timestamp,
-                            level,
-                            message: entry.message,
-                            persisted_for: Arc::default(),
-                        };
-                    }
-
-                    JobLogEntry {
+                    return JobLogEntry {
                         timestamp,
-                        level: LogLevel::Info,
-                        message: row.entry,
+                        level,
+                        message: row.message.unwrap_or(row.entry),
                         persisted_for: Arc::default(),
-                    }
-                })
-                .inspect(|entry| entry.mark_persisted(Arc::from(job_id)))
-                .collect();
+                    };
+                }
 
-            if total > 0 {
-                return Ok((logs, total));
-            }
+                if let Ok(entry) = serde_json::from_str::<JobLogEntry>(&row.entry) {
+                    return entry;
+                }
 
-            // Fallback for legacy rows that only stored logs in `job.execution_info`.
-            let exec_info = repo.get_job_execution_info(job_id).await?;
-            if let Some(exec_info) = exec_info
-                && let Ok(parsed) = serde_json::from_str::<JobExecutionInfo>(&exec_info)
-            {
-                let total = parsed.logs.len() as u64;
-                let start = pagination.offset as usize;
-                let limit = pagination.limit as usize;
-                let page: Vec<_> = parsed
-                    .logs
-                    .iter()
-                    .skip(start)
-                    .take(limit)
-                    .cloned()
-                    .collect();
-                return Ok((page, total));
-            }
+                if let Ok(entry) = serde_json::from_str::<DbLogEntry>(&row.entry) {
+                    let level = match entry.level.to_ascii_uppercase().as_str() {
+                        "DEBUG" => LogLevel::Debug,
+                        "WARN" | "WARNING" => LogLevel::Warn,
+                        "ERROR" => LogLevel::Error,
+                        _ => LogLevel::Info,
+                    };
 
-            return Ok((vec![], 0));
+                    return JobLogEntry {
+                        timestamp,
+                        level,
+                        message: entry.message,
+                        persisted_for: Arc::default(),
+                    };
+                }
+
+                JobLogEntry {
+                    timestamp,
+                    level: LogLevel::Info,
+                    message: row.entry,
+                    persisted_for: Arc::default(),
+                }
+            })
+            .inspect(|entry| entry.mark_persisted(Arc::from(job_id)))
+            .collect();
+
+        if total > 0 {
+            return Ok((logs, total));
         }
 
-        let logs = self
-            .jobs_cache
-            .get(job_id)
-            .and_then(|job| job.execution_info.clone())
-            .map(|info| info.logs)
-            .unwrap_or_default();
+        // Fallback for legacy rows that only stored logs in `job.execution_info`.
+        let exec_info = repo.get_job_execution_info(job_id).await?;
+        if let Some(exec_info) = exec_info
+            && let Ok(parsed) = serde_json::from_str::<JobExecutionInfo>(&exec_info)
+        {
+            let total = parsed.logs.len() as u64;
+            let start = pagination.offset as usize;
+            let limit = pagination.limit as usize;
+            let page: Vec<_> = parsed
+                .logs
+                .iter()
+                .skip(start)
+                .take(limit)
+                .cloned()
+                .collect();
+            return Ok((page, total));
+        }
 
-        let total = logs.len() as u64;
-        let start = pagination.offset as usize;
-        let limit = pagination.limit as usize;
-        let page: Vec<_> = logs.iter().skip(start).take(limit).cloned().collect();
-
-        Ok((page, total))
+        Ok((vec![], 0))
     }
 
     /// List jobs with filters and pagination.
@@ -2116,28 +1932,11 @@ impl JobQueue {
         filters: &JobFilters,
         pagination: &Pagination,
     ) -> Result<(Vec<Job>, u64)> {
-        if let Some(repo) = &self.job_repository {
-            let (db_jobs, total) = repo.list_jobs_filtered(filters, pagination).await?;
-            let jobs = db_jobs.iter().map(db_model_to_job).collect();
-            return Ok((jobs, total));
-        }
-
-        // Fallback to cache (basic filtering)
-        let ids = self.filter_cached_job_ids(filters);
-        let total = ids.len() as u64;
-
-        // Apply pagination
-        let start = pagination.offset as usize;
-        let end = std::cmp::min(start + pagination.limit as usize, ids.len());
-        let jobs = if start < ids.len() {
-            ids[start..end]
-                .iter()
-                .filter_map(|id| self.jobs_cache.get(id).map(|job| job.clone()))
-                .collect()
-        } else {
-            vec![]
-        };
-
+        let (db_jobs, total) = self
+            .job_repository
+            .list_jobs_filtered(filters, pagination)
+            .await?;
+        let jobs = db_jobs.iter().map(db_model_to_job).collect();
         Ok((jobs, total))
     }
 
@@ -2147,34 +1946,17 @@ impl JobQueue {
         filters: &JobFilters,
         pagination: &Pagination,
     ) -> Result<Vec<Job>> {
-        if let Some(repo) = &self.job_repository {
-            let db_jobs = repo.list_jobs_page_filtered(filters, pagination).await?;
-            let jobs = db_jobs.iter().map(db_model_to_job).collect();
-            return Ok(jobs);
-        }
-
-        // Fallback to cache (basic filtering)
-        let ids = self.filter_cached_job_ids(filters);
-        let start = pagination.offset as usize;
-        let end = std::cmp::min(start + pagination.limit as usize, ids.len());
-        let jobs = if start < ids.len() {
-            ids[start..end]
-                .iter()
-                .filter_map(|id| self.jobs_cache.get(id).map(|job| job.clone()))
-                .collect()
-        } else {
-            vec![]
-        };
-
-        Ok(jobs)
+        let db_jobs = self
+            .job_repository
+            .list_jobs_page_filtered(filters, pagination)
+            .await?;
+        Ok(db_jobs.iter().map(db_model_to_job).collect())
     }
 
     /// Failed jobs whose scheduled retry is due at `now`, earliest first.
     pub async fn list_due_retries(&self, now: DateTime<Utc>) -> Result<Vec<Job>> {
-        let Some(repo) = &self.job_repository else {
-            return Ok(Vec::new());
-        };
-        Ok(repo
+        Ok(self
+            .job_repository
             .list_jobs_due_for_retry(now.timestamp_millis())
             .await?
             .iter()
@@ -2184,9 +1966,7 @@ impl JobQueue {
 
     /// Drop the scheduled retry of `job_id`; the job stays failed.
     pub async fn clear_scheduled_retry(&self, job_id: &str) -> Result<()> {
-        if let Some(repo) = &self.job_repository {
-            repo.clear_job_retry(job_id).await?;
-        }
+        self.job_repository.clear_job_retry(job_id).await?;
         if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
             job.retry_after = None;
         }
@@ -2197,50 +1977,18 @@ impl JobQueue {
     /// Returns error if job is not in a retryable terminal status.
     pub async fn retry_job(&self, id: &str) -> Result<Job> {
         let attempt_lease = self.attempt_gate.write().await;
-        if let Some(repo) = &self.job_repository {
-            repo.reset_job_for_retry(id).await?;
+        self.job_repository.reset_job_for_retry(id).await?;
 
-            let _ = self.cancellation_tokens.remove(id);
-            let _ = self.persisted_log_cursor.remove(id);
-            self.progress_cache.remove(id);
-            self.jobs_cache.remove(id);
-
-            self.depth.fetch_add(1, Ordering::SeqCst);
-            drop(attempt_lease);
-            self.wake_workers();
-
-            let updated_job = db_model_to_job(&repo.get_job(id).await?);
-            info!("Job {} retried (attempt {})", id, updated_job.retry_count);
-            return Ok(updated_job);
-        }
-
-        let mut cached_job = self
-            .jobs_cache
-            .get_mut(id)
-            .ok_or_else(|| Error::not_found("Job", id))?;
-
-        if cached_job.status != JobStatus::Failed && cached_job.status != JobStatus::Cancelled {
-            return Err(Error::InvalidStateTransition {
-                from: cached_job.status.as_str().to_string(),
-                to: "PENDING".to_string(),
-            });
-        }
-
-        cached_job.status = JobStatus::Pending;
-        cached_job.started_at = None;
-        cached_job.completed_at = None;
-        cached_job.error = None;
-        cached_job.retry_count += 1;
-        let updated_job = cached_job.clone();
-        drop(cached_job);
         let _ = self.cancellation_tokens.remove(id);
         let _ = self.persisted_log_cursor.remove(id);
         self.progress_cache.remove(id);
+        self.jobs_cache.remove(id);
 
         self.depth.fetch_add(1, Ordering::SeqCst);
         drop(attempt_lease);
         self.wake_workers();
 
+        let updated_job = db_model_to_job(&self.job_repository.get_job(id).await?);
         info!("Job {} retried (attempt {})", id, updated_job.retry_count);
         Ok(updated_job)
     }
@@ -2275,13 +2023,7 @@ impl JobQueue {
             token.cancel();
         }
 
-        // Update database if repository is available
-        let updated = if let Some(repo) = &self.job_repository {
-            repo.mark_job_cancelled(id).await?
-        } else {
-            // In-memory mode: treat as updated if we were cancelling an active job.
-            matches!(job.status, JobStatus::Pending | JobStatus::Processing) as u64
-        };
+        let updated = self.job_repository.mark_job_cancelled(id).await?;
 
         // Update cache and get the updated job
         let cancelled_job = {
@@ -2305,9 +2047,7 @@ impl JobQueue {
             self.progress_cache.remove(id);
         }
 
-        if self.job_repository.is_some() {
-            self.jobs_cache.remove(id);
-        }
+        self.jobs_cache.remove(id);
 
         if updated > 0 {
             self.decrement_depth(1);
@@ -2336,9 +2076,9 @@ impl JobQueue {
                 }
                 _ => {} // Terminal states are fine for deletion
             }
-        } else if let Some(repo) = &self.job_repository {
+        } else {
             // If not in cache, check DB
-            match repo.get_job(id).await {
+            match self.job_repository.get_job(id).await {
                 Ok(job) => {
                     let status = match job.get_status() {
                         Some(s) => s,
@@ -2370,10 +2110,8 @@ impl JobQueue {
 
         // Proceed with deletion
 
-        // 1. Delete from database if available
-        if let Some(repo) = &self.job_repository {
-            repo.delete_job(id).await?;
-        }
+        // 1. Delete from database
+        self.job_repository.delete_job(id).await?;
 
         // 2. Remove from in-memory components
         self.jobs_cache.remove(id);
@@ -2388,33 +2126,27 @@ impl JobQueue {
     /// Cancel all jobs in a pipeline.
     /// Returns the list of cancelled jobs.
     pub async fn cancel_pipeline(&self, pipeline_id: &str) -> Result<Vec<Job>> {
+        let repo = &self.job_repository;
+        // Get all jobs in the pipeline before cancelling
+        let db_jobs = repo.get_jobs_by_pipeline(pipeline_id).await?;
+
+        let count = repo.cancel_jobs_by_pipeline(pipeline_id).await?;
+        info!(
+            "Cancelled {} jobs in pipeline {} (database)",
+            count, pipeline_id
+        );
+
+        // Convert to Job and collect cancelled ones
         let mut cancelled_jobs = Vec::new();
-        let mut db_cancelled: Option<u64> = None;
-
-        // If we have a repository, cancel in database first
-        if let Some(repo) = &self.job_repository {
-            // Get all jobs in the pipeline before cancelling
-            let db_jobs = repo.get_jobs_by_pipeline(pipeline_id).await?;
-
-            // Cancel in database
-            let count = repo.cancel_jobs_by_pipeline(pipeline_id).await?;
-            db_cancelled = Some(count);
-            info!(
-                "Cancelled {} jobs in pipeline {} (database)",
-                count, pipeline_id
-            );
-
-            // Convert to Job and collect cancelled ones
-            for db_job in db_jobs {
-                if matches!(
-                    db_job.get_status(),
-                    Some(JobStatus::Pending | JobStatus::Processing)
-                ) {
-                    let mut job = db_model_to_job(&db_job);
-                    job.status = JobStatus::Cancelled;
-                    job.completed_at = Some(Utc::now());
-                    cancelled_jobs.push(job);
-                }
+        for db_job in db_jobs {
+            if matches!(
+                db_job.get_status(),
+                Some(JobStatus::Pending | JobStatus::Processing)
+            ) {
+                let mut job = db_model_to_job(&db_job);
+                job.status = JobStatus::Cancelled;
+                job.completed_at = Some(Utc::now());
+                cancelled_jobs.push(job);
             }
         }
 
@@ -2429,29 +2161,17 @@ impl JobQueue {
             }
         }
 
-        let mut depth_reduction = 0usize;
         for id in &ids {
             let mut keep_tracking = self.cancellation_tokens.contains_key(id);
-            if let Some(mut job) = self.jobs_cache.get_mut(id) {
+            if let Some(job) = self.jobs_cache.get(id) {
                 if job.pipeline_id.as_deref() != Some(pipeline_id) {
                     continue;
-                }
-
-                if matches!(job.status, JobStatus::Pending | JobStatus::Processing) {
-                    depth_reduction += 1;
                 }
 
                 if job.status == JobStatus::Processing {
                     let token = self.cancellation_tokens.entry(id.to_string()).or_default();
                     token.cancel();
                     keep_tracking = true;
-                }
-
-                job.status = JobStatus::Cancelled;
-                job.completed_at = Some(Utc::now());
-
-                if self.job_repository.is_none() {
-                    cancelled_jobs.push(job.clone());
                 }
             }
 
@@ -2461,15 +2181,10 @@ impl JobQueue {
                 self.progress_cache.remove(id);
             }
 
-            if self.job_repository.is_some() {
-                self.jobs_cache.remove(id);
-            }
+            self.jobs_cache.remove(id);
         }
 
-        let reduction = db_cancelled.map(|v| v as usize).unwrap_or(depth_reduction);
-        if reduction > 0 {
-            self.decrement_depth(reduction);
-        }
+        self.decrement_depth(count as usize);
 
         for job in &cancelled_jobs {
             self.emit_upload_cancelled(&job.id, &job.job_type, &job.streamer_id);
@@ -2548,19 +2263,14 @@ impl JobQueue {
     fn clear_attempt_tracking(&self, job_id: &str) {
         let _ = self.persisted_log_cursor.remove(job_id);
         self.progress_cache.remove(job_id);
-
-        if self.job_repository.is_some() {
-            self.jobs_cache.remove(job_id);
-        }
+        self.jobs_cache.remove(job_id);
     }
 
     /// Recover jobs from database on startup.
     /// Loads pending jobs and resets processing jobs to pending.
     /// Cancelled jobs remain terminal until explicitly retried.
     pub async fn recover_jobs(&self) -> Result<usize> {
-        let Some(repo) = &self.job_repository else {
-            return Ok(0);
-        };
+        let repo = &self.job_repository;
 
         // Reset processing jobs to pending (they were interrupted by shutdown)
         let reset_processing = repo.reset_processing_jobs().await?;
@@ -2612,51 +2322,27 @@ impl JobQueue {
 
     /// Read the current processing count without scanning completed job history.
     pub async fn count_processing_jobs(&self) -> Result<u64> {
-        if let Some(repo) = &self.job_repository {
-            return repo
-                .count_jobs(&JobFilters {
-                    status: Some(crate::database::models::JobStatus::Processing),
-                    ..Default::default()
-                })
-                .await;
-        }
-        Ok(self
-            .jobs_cache
-            .iter()
-            .filter(|job| job.status == JobStatus::Processing)
-            .count() as u64)
+        self.job_repository
+            .count_jobs(&JobFilters {
+                status: Some(crate::database::models::JobStatus::Processing),
+                ..Default::default()
+            })
+            .await
     }
 
     /// Get job statistics.
     pub async fn get_stats(&self) -> Result<JobStats> {
-        if let Some(repo) = &self.job_repository {
-            let counts = repo.get_job_counts_by_status().await?;
-            let avg_processing_time = repo.get_avg_processing_time().await?;
+        let counts = self.job_repository.get_job_counts_by_status().await?;
+        let avg_processing_time = self.job_repository.get_avg_processing_time().await?;
 
-            return Ok(JobStats {
-                pending: counts.pending,
-                processing: counts.processing,
-                completed: counts.completed,
-                failed: counts.failed,
-                cancelled: counts.cancelled,
-                avg_processing_time_secs: avg_processing_time,
-            });
-        }
-
-        // Fallback to cache
-        let mut stats = JobStats::default();
-
-        for job in self.jobs_cache.iter().map(|e| e.value().clone()) {
-            match job.status {
-                JobStatus::Pending => stats.pending += 1,
-                JobStatus::Processing => stats.processing += 1,
-                JobStatus::Completed => stats.completed += 1,
-                JobStatus::Failed => stats.failed += 1,
-                JobStatus::Cancelled => stats.cancelled += 1,
-            }
-        }
-
-        Ok(stats)
+        Ok(JobStats {
+            pending: counts.pending,
+            processing: counts.processing,
+            completed: counts.completed,
+            failed: counts.failed,
+            cancelled: counts.cancelled,
+            avg_processing_time_secs: avg_processing_time,
+        })
     }
 
     // ========================================================================
@@ -2711,34 +2397,24 @@ impl JobQueue {
         }
 
         // Mark the original job as completed (it was split)
-        if let Some(repo) = &self.job_repository {
-            let result = async {
-                let mut db_job = repo.get_job(&job.id).await?;
-                db_job.mark_completed();
-                db_job.set_outputs(&[]); // No outputs, job was split
-                repo.update_job(&db_job).await
-            }
-            .await;
-            if let Err(error) = result {
-                self.rollback_split_jobs(&created_job_ids).await;
-                return Err(error);
-            }
+        let repo = &self.job_repository;
+        let result = async {
+            let mut db_job = repo.get_job(&job.id).await?;
+            db_job.mark_completed();
+            db_job.set_outputs(&[]); // No outputs, job was split
+            repo.update_job(&db_job).await
         }
-
-        // Update cache for original job
-        if let Some(mut original) = self.jobs_cache.get_mut(&job.id) {
-            original.status = JobStatus::Completed;
-            original.completed_at = Some(Utc::now());
+        .await;
+        if let Err(error) = result {
+            self.rollback_split_jobs(&created_job_ids).await;
+            return Err(error);
         }
 
         // Remove cancellation token for original job
         let _ = self.cancellation_tokens.remove(&job.id);
         let _ = self.persisted_log_cursor.remove(&job.id);
         self.progress_cache.remove(&job.id);
-
-        if self.job_repository.is_some() {
-            self.jobs_cache.remove(&job.id);
-        }
+        self.jobs_cache.remove(&job.id);
 
         // Adjust queue depth to account for the original job completing.
         // The split jobs are enqueued and already increment depth.
@@ -2768,25 +2444,23 @@ impl JobQueue {
     /// Record produced artifacts for observability. These paths do not convey
     /// temporary-file ownership and must never authorize generic failure cleanup.
     pub async fn record_produced_items(&self, job_id: &str, outputs: &[String]) -> Result<()> {
-        // Update database if repository is available
-        if let Some(repo) = &self.job_repository {
-            let exec_info_str = repo.get_job_execution_info(job_id).await?;
-            let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
-                exec_info_str.as_deref(),
-                JsonContext::JobField {
-                    job_id,
-                    field: "execution_info",
-                },
-                "Invalid execution_info JSON; resetting to defaults",
-            );
+        let repo = &self.job_repository;
+        let exec_info_str = repo.get_job_execution_info(job_id).await?;
+        let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
+            exec_info_str.as_deref(),
+            JsonContext::JobField {
+                job_id,
+                field: "execution_info",
+            },
+            "Invalid execution_info JSON; resetting to defaults",
+        );
 
-            // Retain produced artifacts across attempts.
-            exec_info.items_produced.extend(outputs.iter().cloned());
+        // Retain produced artifacts across attempts.
+        exec_info.items_produced.extend(outputs.iter().cloned());
 
-            let exec_info_json = serde_json::to_string(&exec_info)?;
-            repo.update_job_execution_info(job_id, &exec_info_json)
-                .await?;
-        }
+        let exec_info_json = serde_json::to_string(&exec_info)?;
+        repo.update_job_execution_info(job_id, &exec_info_json)
+            .await?;
 
         // Update cache
         if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
@@ -2802,24 +2476,21 @@ impl JobQueue {
     /// Patch the current processor before its log collector starts. Preserve all
     /// stored metadata, including unknown fields, without replaying embedded logs.
     pub async fn begin_execution(&self, job_id: &str, processor: &str) -> Result<()> {
-        if let Some(repo) = &self.job_repository {
-            let stored = repo.get_job_execution_info(job_id).await?;
-            let mut info = match stored {
-                Some(raw) if !raw.is_empty() => serde_json::from_str::<JobExecutionInfo>(&raw)?,
-                // Legacy writers also used an empty string for absent metadata.
-                // Nonempty malformed documents remain errors rather than losing history.
-                _ => JobExecutionInfo::default(),
-            };
-            info.current_processor = Some(processor.to_owned());
-            repo.update_job_execution_info(job_id, &serde_json::to_string(&info)?)
-                .await?;
-        }
+        let repo = &self.job_repository;
+        let stored = repo.get_job_execution_info(job_id).await?;
+        let mut info = match stored {
+            Some(raw) if !raw.is_empty() => serde_json::from_str::<JobExecutionInfo>(&raw)?,
+            // Legacy writers also used an empty string for absent metadata.
+            // Nonempty malformed documents remain errors rather than losing history.
+            _ => JobExecutionInfo::default(),
+        };
+        info.current_processor = Some(processor.to_owned());
+        repo.update_job_execution_info(job_id, &serde_json::to_string(&info)?)
+            .await?;
         if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
             job.execution_info
                 .get_or_insert_with(JobExecutionInfo::default)
                 .current_processor = Some(processor.to_owned());
-        } else if self.job_repository.is_none() {
-            return Err(Error::not_found("Job", job_id));
         }
         Ok(())
     }
@@ -2832,31 +2503,26 @@ impl JobQueue {
     ) -> Result<()> {
         let mut exec_info = exec_info;
 
-        // Update database if repository is available
-        if let Some(repo) = &self.job_repository {
-            if !exec_info.logs.is_empty() {
-                // make_contiguous() allows VecDeque to be used as a slice
-                let new_logs = self
-                    .persist_logs_to_db(
-                        job_id,
-                        exec_info.logs.make_contiguous(),
-                        LogPersistence::Snapshot,
-                    )
-                    .await?;
-                update_log_summary(&mut exec_info, &new_logs);
-                cap_logs_in_place(&mut exec_info.logs, EXECUTION_INFO_MAX_LOGS);
-            }
-
-            let exec_info_json = serde_json::to_string(&exec_info)?;
-            repo.update_job_execution_info(job_id, &exec_info_json)
+        if !exec_info.logs.is_empty() {
+            // make_contiguous() allows VecDeque to be used as a slice
+            let new_logs = self
+                .persist_logs_to_db(
+                    job_id,
+                    exec_info.logs.make_contiguous(),
+                    LogPersistence::Snapshot,
+                )
                 .await?;
+            update_log_summary(&mut exec_info, &new_logs);
+            cap_logs_in_place(&mut exec_info.logs, EXECUTION_INFO_MAX_LOGS);
         }
+
+        let exec_info_json = serde_json::to_string(&exec_info)?;
+        self.job_repository
+            .update_job_execution_info(job_id, &exec_info_json)
+            .await?;
 
         // Update cache
         if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
-            if !exec_info.logs.is_empty() {
-                cap_logs_in_place(&mut exec_info.logs, EXECUTION_INFO_MAX_LOGS);
-            }
             job.execution_info = Some(exec_info);
         }
 
@@ -2975,13 +2641,7 @@ impl JobQueue {
         metadata: FailureMetadata,
         uploads: &[UploadResultItem],
     ) -> Result<JobFailureOutcome> {
-        let FailedStep {
-            processor_name,
-            step_number,
-            total_steps,
-        } = step;
         let log_entry = JobLogEntry::error(format!("Job failed: {}", error));
-        let mut transitioned = false;
 
         // Capture everything needed to persist failed per-file results and
         // emit the terminal event before cache cleanup evicts the job.
@@ -2999,60 +2659,27 @@ impl JobQueue {
         // before the cleanup below has removed this attempt's tracking.
         let _attempt_lease = self.attempt_gate.read().await;
 
-        // Update database if repository is available
-        if let Some(repo) = &self.job_repository {
-            let updated = repo
-                .mark_job_failed(
-                    job_id,
-                    error,
-                    retry_after.map(|retry_after| retry_after.timestamp_millis()),
-                )
-                .await?;
-            if updated == 0 {
-                self.finalize_cancelled_job(job_id);
-                return Ok(JobFailureOutcome::Unchanged);
-            }
-            transitioned = true;
-
-            // FAILED is already durable. Auxiliary metadata errors must not suppress a
-            // retry or skip terminal cleanup after this transition has won.
-            if metadata != FailureMetadata::Preserve
-                && let Err(error) = self
-                    .persist_failure_metadata(repo.as_ref(), job_id, step, &log_entry)
-                    .await
-            {
-                warn!(job_id, %error, "Failed to persist failed job execution metadata");
-            }
+        let updated = self
+            .job_repository
+            .mark_job_failed(
+                job_id,
+                error,
+                retry_after.map(|retry_after| retry_after.timestamp_millis()),
+            )
+            .await?;
+        if updated == 0 {
+            self.finalize_cancelled_job(job_id);
+            return Ok(JobFailureOutcome::Unchanged);
         }
 
-        // Update cache
-        if let Some(mut job) = self.jobs_cache.get_mut(job_id) {
-            if matches!(job.status, JobStatus::Pending | JobStatus::Processing) {
-                transitioned = true;
-                job.status = JobStatus::Failed;
-                job.completed_at = Some(Utc::now());
-                job.error = Some(error.to_string());
-                job.retry_after = retry_after;
-
-                if metadata == FailureMetadata::DatabaseAndCacheLog {
-                    let exec_info = job
-                        .execution_info
-                        .get_or_insert_with(JobExecutionInfo::default);
-                    if let Some(name) = processor_name {
-                        exec_info.current_processor = Some(name.to_string());
-                    }
-                    if let Some(step) = step_number {
-                        exec_info.current_step = Some(step);
-                    }
-                    if let Some(total) = total_steps {
-                        exec_info.total_steps = Some(total);
-                    }
-                    extend_logs_capped(exec_info, std::slice::from_ref(&log_entry));
-                    update_log_summary(exec_info, std::slice::from_ref(&log_entry));
-                }
-            }
-        } else if self.job_repository.is_none() {
-            return Err(Error::not_found("Job", job_id));
+        // FAILED is already durable. Auxiliary metadata errors must not suppress a
+        // retry or skip terminal cleanup after this transition has won.
+        if metadata != FailureMetadata::Preserve
+            && let Err(error) = self
+                .persist_failure_metadata(self.job_repository.as_ref(), job_id, step, &log_entry)
+                .await
+        {
+            warn!(job_id, %error, "Failed to persist failed job execution metadata");
         }
 
         // Persist per-file rows only after this failure transition wins.
@@ -3062,7 +2689,7 @@ impl JobQueue {
         // file that did transfer before the batch failed is not recorded as
         // failed; every other input failed with the job's error.
         let mut file_counts = (0u32, 0u32, 0u32);
-        if transitioned && let Some(context) = &failed_upload_ctx {
+        if let Some(context) = &failed_upload_ctx {
             let reported: HashMap<&str, &UploadResultItem> = uploads
                 .iter()
                 .map(|item| (item.local_path.as_str(), item))
@@ -3099,7 +2726,7 @@ impl JobQueue {
             )
             .await;
         }
-        if transitioned && let Some(job) = self.jobs_cache.get(job_id) {
+        if let Some((_, job)) = self.jobs_cache.remove(job_id) {
             self.emit_long_job_ended(&job);
         }
 
@@ -3108,68 +2735,20 @@ impl JobQueue {
         let _ = self.persisted_log_cursor.remove(job_id);
         self.progress_cache.remove(job_id);
 
-        if self.job_repository.is_some() {
-            self.jobs_cache.remove(job_id);
+        self.decrement_depth(1);
+
+        if let Some(context) = failed_upload_ctx {
+            self.emit_upload_event(UploadStatusEvent::Terminal {
+                job_id: job_id.to_string(),
+                streamer_id: context.streamer_id,
+                status: UploadTerminalStatus::Failed,
+                files_succeeded: file_counts.0,
+                files_failed: file_counts.1,
+                files_skipped: file_counts.2,
+                error: Some(error.to_string()),
+            });
         }
-
-        if transitioned {
-            self.decrement_depth(1);
-
-            if let Some(context) = failed_upload_ctx {
-                self.emit_upload_event(UploadStatusEvent::Terminal {
-                    job_id: job_id.to_string(),
-                    streamer_id: context.streamer_id,
-                    status: UploadTerminalStatus::Failed,
-                    files_succeeded: file_counts.0,
-                    files_failed: file_counts.1,
-                    files_skipped: file_counts.2,
-                    error: Some(error.to_string()),
-                });
-            }
-        }
-        Ok(if transitioned {
-            JobFailureOutcome::Transitioned
-        } else {
-            JobFailureOutcome::Unchanged
-        })
-    }
-
-    fn filter_cached_job_ids(&self, filters: &JobFilters) -> Vec<String> {
-        let mut items: Vec<(i32, chrono::DateTime<Utc>, String)> = Vec::new();
-
-        for entry in self.jobs_cache.iter() {
-            let job = entry.value();
-
-            if let Some(status) = filters.status
-                && job.status != status
-            {
-                continue;
-            }
-            if let Some(streamer_id) = &filters.streamer_id
-                && &job.streamer_id != streamer_id
-            {
-                continue;
-            }
-
-            if let Some(session_id) = &filters.session_id
-                && &job.session_id != session_id
-            {
-                continue;
-            }
-
-            items.push((job.priority, job.created_at, job.id.clone()));
-        }
-
-        // Match list_jobs_filtered's display ordering: priority DESC, created_at DESC,
-        // id ASC for stability. This is the listing order, not the claim order used by
-        // dequeue.
-        items.sort_by(|a, b| {
-            b.0.cmp(&a.0)
-                .then_with(|| b.1.cmp(&a.1))
-                .then_with(|| a.2.cmp(&b.2))
-        });
-
-        items.into_iter().map(|(_, _, id)| id).collect()
+        Ok(JobFailureOutcome::Transitioned)
     }
 }
 
@@ -3182,8 +2761,10 @@ impl Drop for JobQueue {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_progress_aggregator(
-    repo: Option<Arc<dyn JobRepository>>,
+    repo: Arc<dyn JobRepository>,
+    long_job_after: std::time::Duration,
     mut rx: tokio::sync::mpsc::Receiver<JobProgressUpdate>,
     jobs_cache: Arc<DashMap<String, Job>>,
     cancellation_tokens: Arc<DashMap<String, AttemptToken>>,
@@ -3228,6 +2809,7 @@ fn spawn_progress_aggregator(
                             &cancellation_tokens,
                             &progress_cache,
                             Utc::now(),
+                            long_job_after,
                         ) {
                             broadcaster.send(event);
                         }
@@ -3247,7 +2829,7 @@ fn spawn_progress_aggregator(
                     }
                     if queue_count.is_none() {
                         queue_count =
-                            Some(count_pending_uploads(repo.as_ref(), &jobs_cache).boxed());
+                            Some(count_pending_uploads(repo.as_ref()).boxed());
                     }
                 }
                 Some(result) = OptionFuture::from(queue_count.as_mut()) => {
@@ -3295,7 +2877,12 @@ fn spawn_progress_aggregator(
                         );
                         let (long_job, streamer_id) = jobs_cache
                             .get(&job_id)
-                            .map(|job| (is_long_job(&job, now), non_empty(&job.streamer_id)))
+                            .map(|job| {
+                                (
+                                    is_long_job(&job, now, long_job_after),
+                                    non_empty(&job.streamer_id),
+                                )
+                            })
                             .unwrap_or_default();
                         if upload || long_job {
                             broadcaster.send(progress_event(
@@ -3657,7 +3244,10 @@ mod tests {
     /// the job's error.
     #[tokio::test]
     async fn failed_upload_job_keeps_reported_per_file_results() {
-        let queue = JobQueue::new();
+        let queue = JobQueue::with_repository(
+            Default::default(),
+            crate::database::test_support::job_repository().await,
+        );
         let broadcaster =
             UploadStatusBroadcaster::new(std::sync::Arc::new(|_: &UploadStatusEvent| {
                 bytes::Bytes::new()
@@ -3730,7 +3320,10 @@ mod tests {
 
     #[tokio::test]
     async fn baidupcs_progress_reports_are_broadcast_as_upload_progress() {
-        let queue = JobQueue::new();
+        let queue = JobQueue::with_repository(
+            Default::default(),
+            crate::database::test_support::job_repository().await,
+        );
         let broadcaster =
             UploadStatusBroadcaster::new(std::sync::Arc::new(|_: &UploadStatusEvent| {
                 bytes::Bytes::new()
@@ -4181,7 +3774,10 @@ mod tests {
             .expect("the aggregator handles the report");
         }
 
-        let queue = JobQueue::new();
+        let queue = JobQueue::with_repository(
+            Default::default(),
+            crate::database::test_support::job_repository().await,
+        );
 
         let mut job_ids = Vec::new();
         for _ in 0..4 {
@@ -4436,7 +4032,10 @@ mod tests {
     /// Test that split jobs preserve pipeline context.
     #[tokio::test]
     async fn test_split_job_preserves_pipeline_context() {
-        let queue = JobQueue::new();
+        let queue = JobQueue::with_repository(
+            Default::default(),
+            crate::database::test_support::job_repository().await,
+        );
 
         let job = Job::new(
             "remux",
@@ -4528,7 +4127,10 @@ mod tests {
     /// any progress exists. Other jobs, and cancelling ones, stay quiet.
     #[tokio::test]
     async fn heartbeat_reannounces_live_uploads_and_long_jobs() {
-        let queue = JobQueue::new();
+        let queue = JobQueue::with_repository(
+            Default::default(),
+            crate::database::test_support::job_repository().await,
+        );
         let mut ids = Vec::new();
         for job_type in ["rclone", "baidupcs_main", "rclone", "remux", "remux"] {
             let job = Job::new(job_type, vec!["/in.flv".to_string()], vec![], "s", "");
@@ -4557,6 +4159,7 @@ mod tests {
             &queue.cancellation_tokens,
             &queue.progress_cache,
             now,
+            LONG_JOB_AFTER,
         );
 
         assert_eq!(events.len(), 3, "{events:?}");
@@ -4580,16 +4183,20 @@ mod tests {
         }
     }
 
-    /// Jobs other than uploads reach the socket only after `LONG_JOB_AFTER`
-    /// of processing: announced with the progress they already have, then
-    /// their progress, then their end, and listed in the connect snapshot.
-    /// Shorter jobs stay off it entirely.
-    #[tokio::test(start_paused = true)]
-    async fn long_jobs_reach_the_socket_after_ten_seconds() {
+    /// Jobs other than uploads reach the socket only after
+    /// `JobQueueConfig::long_job_after` of processing: announced with the
+    /// progress they already have, then their progress, then their end, and
+    /// listed in the connect snapshot. Shorter jobs stay off it entirely.
+    #[tokio::test]
+    async fn long_jobs_reach_the_socket_after_the_long_job_delay() {
+        // Far longer than the few database calls a short job makes here.
+        const LONG_JOB_AFTER: std::time::Duration = std::time::Duration::from_millis(500);
         async fn next_event(
             rx: &mut tokio::sync::broadcast::Receiver<crate::pipeline::UploadBroadcastEnvelope>,
         ) -> Arc<UploadStatusEvent> {
-            tokio::time::timeout(LONG_JOB_AFTER * 2, async {
+            // Well under HEARTBEAT_INTERVAL, so a heartbeat cannot stand in
+            // for an event that has to come sooner.
+            tokio::time::timeout(std::time::Duration::from_secs(10), async {
                 loop {
                     let envelope = rx.recv().await.expect("broadcast channel stays open");
                     // The queued-uploads count is published independently.
@@ -4602,7 +4209,13 @@ mod tests {
             .expect("an event is published")
         }
 
-        let queue = JobQueue::new();
+        let queue = JobQueue::with_repository(
+            JobQueueConfig {
+                long_job_after: LONG_JOB_AFTER,
+                ..Default::default()
+            },
+            crate::database::test_support::job_repository().await,
+        );
         let broadcaster =
             UploadStatusBroadcaster::new(Arc::new(|_: &UploadStatusEvent| bytes::Bytes::new()));
         queue.set_upload_broadcaster(broadcaster.clone());
@@ -4617,15 +4230,7 @@ mod tests {
         let [short, long] = ids.as_slice() else {
             unreachable!()
         };
-        // The paused clock does not move Utc::now(), which the snapshot,
-        // progress and end checks read.
-        queue.jobs_cache.get_mut(long).unwrap().started_at = Some(Utc::now() - LONG_JOB_AFTER);
-
-        let active = queue.list_active_jobs().await.unwrap();
-        assert_eq!(
-            active.iter().map(|job| &job.job_id).collect::<Vec<_>>(),
-            [long]
-        );
+        assert!(queue.list_active_jobs().await.unwrap().is_empty());
         // Cached before the announcement, with nothing reported after it, as
         // while FFmpeg finalizes an MP4.
         let mut finalizing = JobProgressSnapshot::new(ProgressKind::Ffmpeg);
@@ -4654,6 +4259,11 @@ mod tests {
         }
         // With the announcement, not from the heartbeat.
         assert!(dequeued_at.elapsed() < HEARTBEAT_INTERVAL);
+        let active = queue.list_active_jobs().await.unwrap();
+        assert_eq!(
+            active.iter().map(|job| &job.job_id).collect::<Vec<_>>(),
+            [long]
+        );
 
         let mut snapshot = JobProgressSnapshot::new(ProgressKind::Ffmpeg);
         snapshot.percent = Some(42.0);
@@ -4769,7 +4379,10 @@ mod tests {
     /// raw ffmpeg/rclone JSON is too large to repeat for every step.
     #[tokio::test]
     async fn cached_progress_copies_the_snapshot_without_raw() {
-        let queue = JobQueue::new();
+        let queue = JobQueue::with_repository(
+            Default::default(),
+            crate::database::test_support::job_repository().await,
+        );
         let mut snapshot = JobProgressSnapshot::new(ProgressKind::Ffmpeg);
         snapshot.percent = Some(42.5);
         snapshot.current_file = Some("seg.flv".to_string());

@@ -2108,7 +2108,10 @@ async fn test_cancel_pipeline_tolerates_dag_deleted_mid_cancel() {
 
 #[tokio::test]
 async fn stop_settles_owned_pipeline_runtime_tasks() {
-    let manager: Arc<PipelineManager> = Arc::new(PipelineManager::new());
+    let manager: Arc<PipelineManager> = Arc::new(PipelineManager::with_repository(
+        Default::default(),
+        crate::database::test_support::job_repository().await,
+    ));
     assert!(manager.job_queue.progress_aggregator_is_running());
 
     manager.clone().start();
@@ -2128,7 +2131,10 @@ async fn stop_settles_owned_pipeline_runtime_tasks() {
 
 #[tokio::test]
 async fn baidupcs_upload_jobs_are_claimed() {
-    let manager: Arc<PipelineManager> = Arc::new(PipelineManager::new());
+    let manager: Arc<PipelineManager> = Arc::new(PipelineManager::with_repository(
+        Default::default(),
+        crate::database::test_support::job_repository().await,
+    ));
     manager.clone().start();
 
     let job_id = manager
@@ -2161,9 +2167,12 @@ async fn baidupcs_upload_jobs_are_claimed() {
 /// it produces sit PENDING forever. Mirrors `VALID_PROCESSORS` in
 /// `frontend/src/api/schemas/pipeline.ts`; the seeded `archive_zip` job preset in the initial
 /// schema migration also relies on "compression" resolving here.
-#[test]
-fn test_frontend_processor_names_are_all_claimable() {
-    let manager: PipelineManager = PipelineManager::new();
+#[tokio::test]
+async fn test_frontend_processor_names_are_all_claimable() {
+    let manager: PipelineManager = PipelineManager::with_repository(
+        Default::default(),
+        crate::database::test_support::job_repository().await,
+    );
     let supported = manager.supported_job_types();
 
     for processor in [
@@ -2421,7 +2430,11 @@ async fn test_create_dag_pipeline_rejects_a_step_that_removes_a_siblings_inputs(
 #[tokio::test]
 async fn test_paired_segment_recovers_segment_dag_completion_without_context() {
     let dag_repo = Arc::new(TestDagRepository::new());
-    let manager: PipelineManager = PipelineManager::new().with_dag_repository(dag_repo.clone());
+    let manager: PipelineManager = PipelineManager::with_repository(
+        Default::default(),
+        crate::database::test_support::job_repository().await,
+    )
+    .with_dag_repository(dag_repo.clone());
 
     let session_id = "session-1".to_string();
     let streamer_id = "streamer-1".to_string();
