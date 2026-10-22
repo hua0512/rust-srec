@@ -299,9 +299,9 @@ pub(crate) async fn assert_recording_stop(
             .message
             .strip_prefix("Streamlink task settlement failed: process cleanup was not confirmed: ")
             .expect("expired Streamlink failure must identify unconfirmed process cleanup");
-        let reasons = reasons.strip_suffix(
-            "; secondary process error: Streamlink cooperative drain incomplete: unsupported or unavailable Streamlink control profile",
-        ).unwrap_or(reasons);
+        let reasons = reasons
+            .strip_prefix("ffmpeg exceeded the stop deadline; ")
+            .unwrap_or(reasons);
         assert!(reasons.split("; process cleanup error: ").all(|reason| {
             ["streamlink", "ffmpeg"].into_iter().any(|process| {
                 reason.strip_prefix(&format!(
