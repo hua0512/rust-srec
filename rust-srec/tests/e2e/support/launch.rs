@@ -23,6 +23,10 @@ pub(super) async fn serve(
     output_dir: &Path,
     downloads: DownloadManagerConfig,
 ) -> (Arc<ServiceContainer>, SocketAddr) {
+    // Cadences the scenarios wait on, shortened from their production
+    // seconds so a retry or a revoked socket settles well within `WAIT`.
+    rust_srec::pipeline::override_retry_sweep_interval(Duration::from_millis(250));
+    rust_srec::override_socket_revalidation_interval(Duration::from_millis(250));
     let (pool, write_pool) = backend::init_database_pools(database_url)
         .await
         .expect("open the runtime pools");

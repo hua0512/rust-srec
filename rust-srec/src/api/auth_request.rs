@@ -10,6 +10,21 @@ use crate::api::auth_service::{AuthPrincipal, AuthService};
 use crate::api::error::ApiError;
 use crate::database::models::ApiKeyAccessLevel;
 
+/// How often an open socket rechecks the credential it was opened with.
+const SOCKET_REVALIDATION_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Replaces [`SOCKET_REVALIDATION_INTERVAL`] when set.
+static SOCKET_REVALIDATION_OVERRIDE: parking_lot::RwLock<Option<Duration>> =
+    parking_lot::RwLock::new(None);
+
+/// Recheck socket credentials every `interval` instead of every 5 seconds, so
+/// end-to-end tests can observe a revoked socket closing without waiting for
+/// the production cadence. Applies to sockets opened afterwards.
+#[doc(hidden)]
+pub fn override_socket_revalidation_interval(interval: Duration) {
+    *SOCKET_REVALIDATION_OVERRIDE.write() = Some(interval);
+}
+
 #[derive(Clone, Copy)]
 pub(crate) enum AccessPolicy {
     Read,
@@ -122,11 +137,11 @@ where
     C: FnMut() -> F,
     F: Future<Output = Result<(), ()>>,
 {
+    let interval = SOCKET_REVALIDATION_OVERRIDE
+        .read()
+        .unwrap_or(SOCKET_REVALIDATION_INTERVAL);
     let validation = async {
-        let mut ticker = tokio::time::interval_at(
-            tokio::time::Instant::now() + Duration::from_secs(5),
-            Duration::from_secs(5),
-        );
+        let mut ticker = tokio::time::interval_at(tokio::time::Instant::now() + interval, interval);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             ticker.tick().await;

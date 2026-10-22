@@ -80,8 +80,8 @@ const ADMIN_PASSWORD_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$ZTJlLWFkbWluLX
 pub const JWT_SECRET: &str = "e2e-test-jwt-secret-with-enough-entropy-0123456789";
 
 /// Bound for [`eventually`] and for every WebSocket read. Background work the
-/// tests wait for (event delivery, streamer reaping, workflow steps, socket
-/// revalidation every 5 s) settles well within it.
+/// tests wait for (event delivery, streamer reaping, workflow steps, step
+/// retries, socket revalidation) settles well within it.
 pub const WAIT: Duration = Duration::from_secs(10);
 /// Bound on one HTTP request and on shutdown. Neither is a latency check:
 /// many backends start in parallel and hash passwords, so a single request
@@ -695,7 +695,9 @@ impl TestApp {
         }
     }
 
-    async fn upgrade(&self, path: &str, bearer: Option<&str>) -> Result<Socket, Box<Response>> {
+    /// Open a WebSocket to `path` like [`Self::connect_socket`], returning the
+    /// response instead if the server refuses the upgrade.
+    pub async fn upgrade(&self, path: &str, bearer: Option<&str>) -> Result<Socket, Box<Response>> {
         let mut request = format!("ws://{}{path}", self.base_url.trim_start_matches("http://"))
             .into_client_request()
             .expect("valid WebSocket request");

@@ -32,6 +32,8 @@ pub use job_queue::{
     JobResult, JobStats, LogLevel, QueueDepthStatus,
 };
 pub(crate) use manager::PipelineRuntimeDependencies;
+#[doc(hidden)]
+pub use manager::override_retry_sweep_interval;
 pub use manager::{
     PipelineCreationResult, PipelineEvent, PipelineManager, PipelineManagerConfig, PipelineStats,
     SessionDrain, SessionPipelineOutstanding, StreamerDrain,
