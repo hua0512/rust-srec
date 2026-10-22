@@ -20,36 +20,31 @@ async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
         .body
 }
 
-async fn streamer(app: &TestApp, token: &str, id: &str) -> Value {
-    get_ok(app, token, &format!("/api/streamers/{id}")).await
-}
-
 async fn wait_for_state(app: &TestApp, token: &str, id: &str, state: &str) {
+    let path = format!("/api/streamers/{id}");
     eventually(WAIT, &format!("the streamer to be {state}"), || async {
-        (streamer(app, token, id).await["state"] == state).then_some(())
+        (get_ok(app, token, &path).await["state"] == state).then_some(())
     })
     .await;
 }
 
+/// The `items` of a list route.
+async fn items(app: &TestApp, token: &str, path: &str) -> Vec<Value> {
+    get_ok(app, token, path).await["items"]
+        .as_array()
+        .expect("items")
+        .clone()
+}
+
 /// The streamer's sessions, newest first.
 async fn sessions(app: &TestApp, token: &str, id: &str) -> Vec<Value> {
-    get_ok(
-        app,
-        token,
-        &format!("/api/sessions?streamer_id={id}&include_empty=true"),
-    )
-    .await["items"]
-        .as_array()
-        .expect("session items")
-        .clone()
+    let path = format!("/api/sessions?streamer_id={id}&include_empty=true");
+    items(app, token, &path).await
 }
 
 /// The streamer's check history, oldest first.
 async fn checks(app: &TestApp, token: &str, id: &str) -> Vec<Value> {
-    get_ok(app, token, &format!("/api/streamers/{id}/check-history")).await["items"]
-        .as_array()
-        .expect("check history")
-        .clone()
+    items(app, token, &format!("/api/streamers/{id}/check-history")).await
 }
 
 async fn add_filter(
@@ -59,14 +54,11 @@ async fn add_filter(
     filter_type: &str,
     config: Value,
 ) -> Value {
-    app.post(
-        &format!("/api/streamers/{id}/filters"),
-        token,
-        &json!({ "streamer_id": id, "filter_type": filter_type, "config": config }),
-    )
-    .await
-    .expect_status(StatusCode::CREATED)
-    .body
+    let body = json!({ "streamer_id": id, "filter_type": filter_type, "config": config });
+    app.post(&format!("/api/streamers/{id}/filters"), token, &body)
+        .await
+        .expect_status(StatusCode::CREATED)
+        .body
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -81,30 +73,16 @@ async fn title_and_category_filters_hold_back_a_live_streamer_until_both_match()
         &app.create_disabled_streamer(&token, json!({ "name": "Filtered", "url": room.url() }))
             .await,
     );
-    add_filter(
-        &app,
-        &token,
-        &id,
-        "KEYWORD",
-        json!({ "include": [], "exclude": ["rerun"] }),
-    )
-    .await;
-    add_filter(
-        &app,
-        &token,
-        &id,
-        "CATEGORY",
-        json!({ "categories": ["Just Chatting"] }),
-    )
-    .await;
+    let keyword = json!({ "include": [], "exclude": ["rerun"] });
+    add_filter(&app, &token, &id, "KEYWORD", keyword).await;
+    let category = json!({ "categories": ["Just Chatting"] });
+    add_filter(&app, &token, &id, "CATEGORY", category).await;
     room.set_live(room.live("Rerun of yesterday").category("Just Chatting"));
-    app.put(
-        &format!("/api/streamers/{id}"),
-        &token,
-        &json!({ "enabled": true }),
-    )
-    .await
-    .expect_status(StatusCode::OK);
+    let enable = json!({ "enabled": true });
+    let path = format!("/api/streamers/{id}");
+    app.put(&path, &token, &enable)
+        .await
+        .expect_status(StatusCode::OK);
 
     for (title, category, reason) in [
         ("Rerun of yesterday", "Just Chatting", "TitleMismatch"),
@@ -158,28 +136,23 @@ async fn a_schedule_that_excludes_now_ends_a_recording_as_out_of_schedule() {
         TestApp::start_with(Seed::live().session_complete_pipeline(&succeed("after-schedule")))
             .await;
     let token = app.admin_token().await;
+    let channel = json!({
+        "name": "Live alerts",
+        "channel_type": "Webhook",
+        "settings": { "url": receiver.url("/hook"), "locale": "en", "min_priority": 2 },
+    });
     let channel = app
-        .post(
-            "/api/notifications/channels",
-            &token,
-            &json!({
-                "name": "Live alerts",
-                "channel_type": "Webhook",
-                "settings": { "url": receiver.url("/hook"), "locale": "en", "min_priority": 2 },
-            }),
-        )
+        .post("/api/notifications/channels", &token, &channel)
         .await
         .expect_status(StatusCode::CREATED);
-    app.put(
-        &format!(
-            "/api/notifications/channels/{}/subscriptions",
-            id_of(&channel.body)
-        ),
-        &token,
-        &json!({ "events": ["stream_online", "stream_offline"] }),
-    )
-    .await
-    .expect_status(StatusCode::OK);
+    let subscriptions = format!(
+        "/api/notifications/channels/{}/subscriptions",
+        id_of(&channel.body)
+    );
+    let events = json!({ "events": ["stream_online", "stream_offline"] });
+    app.put(&subscriptions, &token, &events)
+        .await
+        .expect_status(StatusCode::OK);
     let id = id_of(
         &app.create_enabled_streamer(&token, json!({ "name": "Scheduled", "url": room.url() }))
             .await,
@@ -199,18 +172,12 @@ async fn a_schedule_that_excludes_now_ends_a_recording_as_out_of_schedule() {
     // full name, times exactly as written, seconds included.
     let hour = (chrono::Utc::now().hour() + 2) % 24;
     let (start, end) = (format!("{hour:02}:00:00"), format!("{hour:02}:30:59"));
-    let filter = add_filter(
-        &app,
-        &token,
-        &id,
-        "TIME_BASED",
-        json!({
-            "days_of_week": ["Mon", "tue", "WED", "Thu", "Fri", "Sat", "Sun"],
-            "start_time": start,
-            "end_time": end,
-        }),
-    )
-    .await;
+    let schedule = json!({
+        "days_of_week": ["Mon", "tue", "WED", "Thu", "Fri", "Sat", "Sun"],
+        "start_time": start,
+        "end_time": end,
+    });
+    let filter = add_filter(&app, &token, &id, "TIME_BASED", schedule).await;
     assert_eq!(
         filter["config"],
         json!({
@@ -249,12 +216,8 @@ async fn a_schedule_that_excludes_now_ends_a_recording_as_out_of_schedule() {
     assert_eq!(last["title"], "Scheduled show", "{last}");
 
     let dags = eventually(WAIT, "the session-complete workflow", || async {
-        let dags = get_ok(
-            &app,
-            &token,
-            &format!("/api/pipeline/dags?session_id={session_id}"),
-        )
-        .await["dags"]
+        let path = format!("/api/pipeline/dags?session_id={session_id}");
+        let dags = get_ok(&app, &token, &path).await["dags"]
             .as_array()
             .expect("dags")
             .clone();
@@ -265,12 +228,10 @@ async fn a_schedule_that_excludes_now_ends_a_recording_as_out_of_schedule() {
 
     // Removing the filter resumes recording the room, which is still live,
     // in a new session.
-    app.delete(
-        &format!("/api/streamers/{id}/filters/{}", id_of(&filter)),
-        &token,
-    )
-    .await
-    .expect_status(StatusCode::OK);
+    let filter_path = format!("/api/streamers/{id}/filters/{}", id_of(&filter));
+    app.delete(&filter_path, &token)
+        .await
+        .expect_status(StatusCode::OK);
     room.wait_for_media_connection(2).await;
     let received = eventually(WAIT, "the second stream_online", || async {
         let received = receiver.received();
@@ -296,13 +257,8 @@ async fn a_schedule_that_excludes_now_ends_a_recording_as_out_of_schedule() {
 async fn an_edited_schedule_keeps_its_stored_timezone_unless_it_names_one() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
-    let id = id_of(
-        &app.create_disabled_streamer(
-            &token,
-            json!({ "name": "Zoned", "url": "https://live.bilibili.com/9101" }),
-        )
-        .await,
-    );
+    let streamer = json!({ "name": "Zoned", "url": "https://live.bilibili.com/9101" });
+    let id = id_of(&app.create_disabled_streamer(&token, streamer).await);
     let filters = format!("/api/streamers/{id}/filters");
     let schedule = || {
         json!({
@@ -351,14 +307,8 @@ async fn an_edited_schedule_keeps_its_stored_timezone_unless_it_names_one() {
     assert_eq!(created["config"]["extension"], json!({ "preserve": true }));
 
     // Changing a cron filter into a schedule does not carry its timezone over.
-    let cron = add_filter(
-        &app,
-        &token,
-        &id,
-        "CRON",
-        json!({ "expression": "0 * * * * *", "timezone": "Europe/Madrid" }),
-    )
-    .await;
+    let cron = json!({ "expression": "0 * * * * *", "timezone": "Europe/Madrid" });
+    let cron = add_filter(&app, &token, &id, "CRON", cron).await;
     let retyped = app
         .patch(
             &format!("{filters}/{}", id_of(&cron)),
@@ -373,14 +323,10 @@ async fn an_edited_schedule_keeps_its_stored_timezone_unless_it_names_one() {
 
     // A cron filter keeps `local` and unknown members too; both kinds refuse
     // an unknown or blank timezone.
-    let local = add_filter(
-        &app,
-        &token,
-        &id,
-        "CRON",
-        json!({ "expression": "0 * * * * *", "timezone": "local", "extension": { "preserve": true } }),
-    )
-    .await;
+    let local = json!({
+        "expression": "0 * * * * *", "timezone": "local", "extension": { "preserve": true },
+    });
+    let local = add_filter(&app, &token, &id, "CRON", local).await;
     assert_eq!(local["config"]["timezone"], "local");
     assert_eq!(local["config"]["extension"], json!({ "preserve": true }));
     for kind in ["TIME_BASED", "CRON"] {
@@ -391,13 +337,9 @@ async fn an_edited_schedule_keeps_its_stored_timezone_unless_it_names_one() {
                 schedule()
             };
             config["timezone"] = json!(zone);
-            app.post(
-                &filters,
-                &token,
-                &json!({ "streamer_id": id, "filter_type": kind, "config": config }),
-            )
-            .await
-            .assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
+            let body = json!({ "streamer_id": id, "filter_type": kind, "config": config });
+            let refused = app.post(&filters, &token, &body).await;
+            refused.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
         }
     }
 

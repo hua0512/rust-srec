@@ -11,7 +11,7 @@
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 
-use crate::support::{TestApp, assert_recent, id_of, millis, now_ms};
+use crate::support::{Response, TestApp, assert_recent, id_of, millis, now_ms};
 
 const STATES: [&str; 11] = [
     "NOT_LIVE",
@@ -27,20 +27,44 @@ const STATES: [&str; 11] = [
     "DISABLED",
 ];
 
+/// The body of a response the test expects to succeed.
+trait Succeeded {
+    fn ok(self) -> Value;
+    fn created(self) -> Value;
+}
+
+impl Succeeded for Response {
+    #[track_caller]
+    fn ok(self) -> Value {
+        self.expect_status(StatusCode::OK).body
+    }
+
+    #[track_caller]
+    fn created(self) -> Value {
+        self.expect_status(StatusCode::CREATED).body
+    }
+}
+
+async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
+    app.get(path, token).await.ok()
+}
+
 async fn create_template(app: &TestApp, token: &str, name: &str) -> String {
     let template = app
         .post("/api/templates", token, &json!({ "name": name }))
         .await
-        .expect_status(StatusCode::CREATED)
-        .body;
+        .created();
     id_of(&template)
 }
 
+/// Creates a disabled streamer and returns its id.
+async fn disabled_streamer(app: &TestApp, token: &str, name: &str, url: &str) -> String {
+    let body = json!({ "name": name, "url": url });
+    id_of(&app.create_disabled_streamer(token, body).await)
+}
+
 async fn list_page(app: &TestApp, token: &str, query: &str) -> Value {
-    app.get(&format!("/api/streamers?{query}"), token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body
+    get_ok(app, token, &format!("/api/streamers?{query}")).await
 }
 
 fn names(page: &Value) -> Vec<String> {
@@ -53,10 +77,7 @@ fn names(page: &Value) -> Vec<String> {
 }
 
 async fn get_streamer(app: &TestApp, token: &str, id: &str) -> Value {
-    app.get(&format!("/api/streamers/{id}"), token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body
+    get_ok(app, token, &format!("/api/streamers/{id}")).await
 }
 
 /// A streamer row inserted before boot, for states only a platform check
@@ -95,8 +116,7 @@ async fn create_derives_the_platform_from_the_url_and_rejects_malformed_urls() {
             }),
         )
         .await
-        .expect_status(StatusCode::CREATED)
-        .body;
+        .created();
     assert_eq!(created["platform_config_id"], "platform-bilibili");
     assert_eq!(created["state"], "DISABLED");
     assert_eq!(created["enabled"], false);
@@ -139,8 +159,7 @@ async fn create_derives_the_platform_from_the_url_and_rejects_malformed_urls() {
             &json!({ "url": "https://live.bilibili.com/4063253/" }),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(metadata["platform"], "Bilibili");
     assert_eq!(metadata["channel_id"], "4063253");
     let configs: Vec<&str> = metadata["valid_platform_configs"]
@@ -223,8 +242,7 @@ async fn streamer_json_matches_the_frontend_schema() {
         )
         .await;
     assert_streamer_schema(&created);
-    let fresh_id = id_of(&created);
-    let fresh = get_streamer(&app, &token, &fresh_id).await;
+    let fresh = get_streamer(&app, &token, &id_of(&created)).await;
     assert_streamer_schema(&fresh);
     assert_eq!(fresh["state"], "DISABLED");
     assert_eq!(fresh["enabled"], false);
@@ -281,20 +299,13 @@ async fn streamer_json_matches_the_frontend_schema() {
 async fn batch_actions_validate_up_front_and_report_a_result_per_item() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
-    let first = id_of(
-        &app.create_disabled_streamer(
-            &token,
-            json!({ "name": "First", "url": "https://live.bilibili.com/1001" }),
-        )
-        .await,
-    );
-    let second = id_of(
-        &app.create_disabled_streamer(
-            &token,
-            json!({ "name": "Second", "url": "https://live.bilibili.com/1002" }),
-        )
-        .await,
-    );
+    let first = disabled_streamer(&app, &token, "First", "https://live.bilibili.com/1001").await;
+    let second = disabled_streamer(&app, &token, "Second", "https://live.bilibili.com/1002").await;
+    let batch = |ids: Value, action: Value| {
+        let (app, token) = (&app, &token);
+        let body = json!({ "ids": ids, "action": action });
+        async move { app.post("/api/streamers/batch", token, &body).await }
+    };
 
     let too_many: Vec<String> = (0..=100).map(|index| format!("id-{index}")).collect();
     for ids in [
@@ -303,13 +314,7 @@ async fn batch_actions_validate_up_front_and_report_a_result_per_item() {
         json!([first, first]),
         json!([first, "  "]),
     ] {
-        let response = app
-            .post(
-                "/api/streamers/batch",
-                &token,
-                &json!({ "ids": ids, "action": { "type": "set_priority", "priority": "HIGH" } }),
-            )
-            .await;
+        let response = batch(ids, json!({ "type": "set_priority", "priority": "HIGH" })).await;
         response.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
     }
     assert_eq!(
@@ -318,33 +323,22 @@ async fn batch_actions_validate_up_front_and_report_a_result_per_item() {
     );
 
     // An unknown template is refused before any streamer is touched.
-    let response = app
-        .post(
-            "/api/streamers/batch",
-            &token,
-            &json!({
-                "ids": [first, second],
-                "action": { "type": "set_template", "template_id": "no-such-template" },
-            }),
-        )
-        .await;
+    let response = batch(
+        json!([first, second]),
+        json!({ "type": "set_template", "template_id": "no-such-template" }),
+    )
+    .await;
     response.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
     assert!(get_streamer(&app, &token, &first).await["template_id"].is_null());
 
     // An unknown id fails alone; the others still apply, in request order.
     let template = create_template(&app, &token, "Batch template").await;
-    let result = app
-        .post(
-            "/api/streamers/batch",
-            &token,
-            &json!({
-                "ids": [first, "missing-streamer", second],
-                "action": { "type": "set_template", "template_id": template },
-            }),
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let result = batch(
+        json!([first, "missing-streamer", second]),
+        json!({ "type": "set_template", "template_id": template }),
+    )
+    .await
+    .ok();
     assert_eq!(result["requested"], 3);
     assert_eq!(result["succeeded"], 2);
     assert_eq!(result["failed"], 1);
@@ -374,15 +368,12 @@ async fn batch_actions_validate_up_front_and_report_a_result_per_item() {
         );
     }
 
-    let cleared = app
-        .post(
-            "/api/streamers/batch",
-            &token,
-            &json!({ "ids": [first], "action": { "type": "set_template", "template_id": null } }),
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let cleared = batch(
+        json!([first]),
+        json!({ "type": "set_template", "template_id": null }),
+    )
+    .await
+    .ok();
     assert_eq!(cleared["succeeded"], 1);
     assert!(get_streamer(&app, &token, &first).await["template_id"].is_null());
     assert_eq!(
@@ -390,39 +381,27 @@ async fn batch_actions_validate_up_front_and_report_a_result_per_item() {
         template
     );
 
-    let prioritised = app
-        .post(
-            "/api/streamers/batch",
-            &token,
-            &json!({ "ids": [first, second], "action": { "type": "set_priority", "priority": "LOW" } }),
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let prioritised = batch(
+        json!([first, second]),
+        json!({ "type": "set_priority", "priority": "LOW" }),
+    )
+    .await
+    .ok();
     assert_eq!(prioritised["succeeded"], 2);
-    let disabled = app
-        .post(
-            "/api/streamers/batch",
-            &token,
-            &json!({ "ids": [first], "action": { "type": "set_enabled", "enabled": false } }),
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let disabled = batch(
+        json!([first]),
+        json!({ "type": "set_enabled", "enabled": false }),
+    )
+    .await
+    .ok();
     assert_eq!(disabled["succeeded"], 1);
     let first_now = get_streamer(&app, &token, &first).await;
     assert_eq!(first_now["priority"], "LOW");
     assert_eq!(first_now["state"], "DISABLED");
 
-    let deleted = app
-        .post(
-            "/api/streamers/batch",
-            &token,
-            &json!({ "ids": [first, second], "action": { "type": "delete" } }),
-        )
+    let deleted = batch(json!([first, second]), json!({ "type": "delete" }))
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(deleted["succeeded"], 2);
     assert_eq!(list_page(&app, &token, "").await["total"], 0);
     for id in [&first, &second] {
@@ -472,7 +451,7 @@ async fn list_filters_sorts_and_paginates_like_the_streamers_page() {
         &json!({ "template_id": template }),
     )
     .await
-    .expect_status(StatusCode::OK);
+    .ok();
 
     // Errors first (ERROR, FATAL_ERROR, OUT_OF_SPACE, NOT_FOUND), then
     // CANCELLED, then DISABLED; priority descending, then name, within a state.
@@ -552,40 +531,30 @@ async fn deleting_a_streamer_hides_it_at_once_and_removes_what_it_owned() {
             }),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     let account_id = id_of(&account);
     let streamer = app
-        .post(
-            "/api/streamers",
+        .create_disabled_streamer(
             &token,
-            &json!({
+            json!({
                 "name": "Doomed",
                 "url": "https://live.bilibili.com/3001",
-                "enabled": false,
                 "streamer_specific_config": {
                     "credential_selection": { "mode": "fixed", "credential_id": account_id },
                 },
             }),
         )
-        .await
-        .expect_status(StatusCode::CREATED)
-        .body;
+        .await;
     let id = id_of(&streamer);
+    let path = format!("/api/streamers/{id}");
     assert_eq!(
         streamer["streamer_specific_config"]["credential_selection"]["credential_id"],
         account_id
     );
-    let kept = id_of(
-        &app.create_disabled_streamer(
-            &token,
-            json!({ "name": "Kept", "url": "https://live.bilibili.com/3002" }),
-        )
-        .await,
-    );
+    let kept = disabled_streamer(&app, &token, "Kept", "https://live.bilibili.com/3002").await;
 
     app.post(
-        &format!("/api/streamers/{id}/filters"),
+        &format!("{path}/filters"),
         &token,
         &json!({
             "streamer_id": id,
@@ -594,72 +563,51 @@ async fn deleting_a_streamer_hides_it_at_once_and_removes_what_it_owned() {
         }),
     )
     .await
-    .expect_status(StatusCode::CREATED);
-    let pool = app.database().await;
-    sqlx::query(
+    .created();
+    app.run_sql(&format!(
         "INSERT INTO streamer_check_history (streamer_id, checked_at, duration_ms, outcome) \
-         VALUES (?, ?, 12, 'offline')",
-    )
-    .bind(&id)
-    .bind(now_ms())
-    .execute(&pool)
-    .await
-    .expect("seed check history");
-    pool.close().await;
+         VALUES ('{id}', {}, 12, 'offline');",
+        now_ms()
+    ))
+    .await;
     assert_eq!(
-        app.get(&format!("/api/streamers/{id}/check-history"), &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body["items"]
+        get_ok(&app, &token, &format!("{path}/check-history")).await["items"]
             .as_array()
             .map(Vec::len),
         Some(1)
     );
 
     // The account cannot go while a streamer selects it.
-    let version = account["version"].clone();
-    let refused = app
-        .send(
-            reqwest::Method::DELETE,
-            &format!("/api/credentials/profiles/{account_id}"),
-            Some(&token),
-            Some(&json!({ "expected_version": version.clone() })),
-        )
-        .await;
+    let delete_account = || {
+        let (app, token) = (&app, &token);
+        let path = format!("/api/credentials/profiles/{account_id}");
+        let body = json!({ "expected_version": account["version"] });
+        async move {
+            app.send(reqwest::Method::DELETE, &path, Some(token), Some(&body))
+                .await
+        }
+    };
+    let refused = delete_account().await;
     assert_eq!(refused.status, StatusCode::CONFLICT, "{}", refused.text);
 
-    let deleted = app
-        .delete(&format!("/api/streamers/{id}"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let deleted = app.delete(&path, &token).await.ok();
     assert_eq!(deleted["success"], true);
     assert!(deleted["message"].is_string());
 
     // Gone for every route at once.
     for response in [
-        app.get(&format!("/api/streamers/{id}"), &token).await,
-        app.put(
-            &format!("/api/streamers/{id}"),
-            &token,
-            &json!({ "name": "Back" }),
-        )
-        .await,
-        app.post(
-            &format!("/api/streamers/{id}/clear-error"),
-            &token,
-            &json!({}),
-        )
-        .await,
+        app.get(&path, &token).await,
+        app.put(&path, &token, &json!({ "name": "Back" })).await,
+        app.post(&format!("{path}/clear-error"), &token, &json!({}))
+            .await,
         app.patch(
-            &format!("/api/streamers/{id}/priority"),
+            &format!("{path}/priority"),
             &token,
             &json!({ "priority": "HIGH" }),
         )
         .await,
-        app.get(&format!("/api/streamers/{id}/check-history"), &token)
-            .await,
-        app.delete(&format!("/api/streamers/{id}"), &token).await,
+        app.get(&format!("{path}/check-history"), &token).await,
+        app.delete(&path, &token).await,
     ] {
         response.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
     }
@@ -670,39 +618,19 @@ async fn deleting_a_streamer_hides_it_at_once_and_removes_what_it_owned() {
     // With nothing in flight the row is reaped inside the DELETE, so its
     // filters and check history are already gone and the account it selected
     // is free to delete.
+    for rows in [
+        format!("streamers WHERE id = '{id}'"),
+        format!("filters WHERE streamer_id = '{id}'"),
+        format!("streamer_check_history WHERE streamer_id = '{id}'"),
+    ] {
+        let count = app.query_i64(&format!("SELECT COUNT(*) FROM {rows}")).await;
+        assert_eq!(count, 0, "{rows}");
+    }
     assert_eq!(
-        app.query_i64(&format!("SELECT COUNT(*) FROM streamers WHERE id = '{id}'"))
-            .await,
-        0
+        get_ok(&app, &token, &format!("{path}/filters")).await,
+        json!([])
     );
-    assert_eq!(
-        app.query_i64(&format!(
-            "SELECT COUNT(*) FROM filters WHERE streamer_id = '{id}'"
-        ))
-        .await,
-        0
-    );
-    assert_eq!(
-        app.query_i64(&format!(
-            "SELECT COUNT(*) FROM streamer_check_history WHERE streamer_id = '{id}'"
-        ))
-        .await,
-        0
-    );
-    let filters = app
-        .get(&format!("/api/streamers/{id}/filters"), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(filters, json!([]));
-    app.send(
-        reqwest::Method::DELETE,
-        &format!("/api/credentials/profiles/{account_id}"),
-        Some(&token),
-        Some(&json!({ "expected_version": version })),
-    )
-    .await
-    .expect_status(StatusCode::OK);
+    delete_account().await.ok();
 
     app.shutdown().await;
 }
@@ -711,37 +639,22 @@ async fn deleting_a_streamer_hides_it_at_once_and_removes_what_it_owned() {
 async fn duplicate_urls_are_refused_case_insensitively_until_the_owner_is_reaped() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
-    let first = id_of(
-        &app.create_disabled_streamer(
-            &token,
-            json!({ "name": "First", "url": "https://live.bilibili.com/4001" }),
-        )
-        .await,
-    );
-    let second = id_of(
-        &app.create_disabled_streamer(
-            &token,
-            json!({ "name": "Second", "url": "https://live.bilibili.com/4002" }),
-        )
-        .await,
-    );
+    let first = disabled_streamer(&app, &token, "First", "https://live.bilibili.com/4001").await;
+    let second = disabled_streamer(&app, &token, "Second", "https://live.bilibili.com/4002").await;
+    // Creating a streamer at `url`, and moving `second` there, are both refused.
+    let assert_taken = |url: &'static str| {
+        let (app, token, second) = (&app, &token, &second);
+        async move {
+            let body = json!({ "name": "Copy", "url": url, "enabled": false });
+            let created = app.post("/api/streamers", token, &body).await;
+            created.assert_error(StatusCode::CONFLICT, "CONFLICT");
+            let path = format!("/api/streamers/{second}");
+            let moved = app.put(&path, token, &json!({ "url": url })).await;
+            moved.assert_error(StatusCode::CONFLICT, "CONFLICT");
+        }
+    };
 
-    let response = app
-        .post(
-            "/api/streamers",
-            &token,
-            &json!({ "name": "Copy", "url": "https://LIVE.BILIBILI.COM/4001", "enabled": false }),
-        )
-        .await;
-    response.assert_error(StatusCode::CONFLICT, "CONFLICT");
-    let response = app
-        .put(
-            &format!("/api/streamers/{second}"),
-            &token,
-            &json!({ "url": "https://LIVE.BILIBILI.COM/4001" }),
-        )
-        .await;
-    response.assert_error(StatusCode::CONFLICT, "CONFLICT");
+    assert_taken("https://LIVE.BILIBILI.COM/4001").await;
     assert_eq!(
         get_streamer(&app, &token, &second).await["url"],
         "https://live.bilibili.com/4002"
@@ -752,7 +665,7 @@ async fn duplicate_urls_are_refused_case_insensitively_until_the_owner_is_reaped
     // URL is free again.
     app.delete(&format!("/api/streamers/{first}"), &token)
         .await
-        .expect_status(StatusCode::OK);
+        .ok();
     let recreated = app
         .create_disabled_streamer(
             &token,
@@ -763,29 +676,19 @@ async fn duplicate_urls_are_refused_case_insensitively_until_the_owner_is_reaped
 
     // An ended session whose final pipeline was never settled keeps a deleted
     // streamer marked, and its URL stays reserved while it is.
-    let retiring = id_of(
-        &app.create_disabled_streamer(
-            &token,
-            json!({ "name": "Retiring", "url": "https://live.bilibili.com/4003" }),
-        )
-        .await,
-    );
-    let pool = app.database().await;
-    sqlx::query(
+    let retiring =
+        disabled_streamer(&app, &token, "Retiring", "https://live.bilibili.com/4003").await;
+    app.run_sql(&format!(
         "INSERT INTO live_sessions (id, streamer_id, streamer_name, start_time, end_time, \
              total_size_bytes, session_complete_dispatched) \
-         VALUES ('unsettled', ?, 'Retiring', ?, ?, 1024, 0)",
-    )
-    .bind(&retiring)
-    .bind(now_ms() - 120_000)
-    .bind(now_ms() - 60_000)
-    .execute(&pool)
-    .await
-    .expect("seed an unsettled session");
-    pool.close().await;
+         VALUES ('unsettled', '{retiring}', 'Retiring', {}, {}, 1024, 0);",
+        now_ms() - 120_000,
+        now_ms() - 60_000
+    ))
+    .await;
     app.delete(&format!("/api/streamers/{retiring}"), &token)
         .await
-        .expect_status(StatusCode::OK);
+        .ok();
     app.get(&format!("/api/streamers/{retiring}"), &token)
         .await
         .assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
@@ -796,22 +699,7 @@ async fn duplicate_urls_are_refused_case_insensitively_until_the_owner_is_reaped
         .await,
         1
     );
-    let response = app
-        .post(
-            "/api/streamers",
-            &token,
-            &json!({ "name": "Too soon", "url": "https://live.bilibili.com/4003", "enabled": false }),
-        )
-        .await;
-    response.assert_error(StatusCode::CONFLICT, "CONFLICT");
-    let response = app
-        .put(
-            &format!("/api/streamers/{second}"),
-            &token,
-            &json!({ "url": "https://LIVE.bilibili.com/4003" }),
-        )
-        .await;
-    response.assert_error(StatusCode::CONFLICT, "CONFLICT");
+    assert_taken("https://LIVE.bilibili.com/4003").await;
 
     app.shutdown().await;
 }
@@ -819,33 +707,34 @@ async fn duplicate_urls_are_refused_case_insensitively_until_the_owner_is_reaped
 #[tokio::test]
 async fn put_is_a_partial_update_and_disabling_clears_the_error_backoff() {
     let disabled_until = now_ms() + 3_600_000;
-    let seed = format!(
-        "{}{}\
-         INSERT INTO streamers (id, name, url, platform_config_id, state, priority, \
-             consecutive_error_count, last_error, disabled_until) \
-         VALUES ('fatal', 'Fatal', 'https://www.huya.com/fatal', 'platform-huya', 'FATAL_ERROR', \
-             'NORMAL', 4, 'banned', {disabled_until});",
-        seeded_streamer(
-            "errored",
-            "Errored",
-            "https://www.huya.com/errored",
-            "platform-huya",
-            "ERROR",
-            "NORMAL"
-        ),
-        seeded_streamer(
-            "cancelled",
-            "Cancelled",
-            "https://www.huya.com/cancelled",
-            "platform-huya",
-            "CANCELLED",
-            "NORMAL"
-        ),
-    );
-    let app = TestApp::start_seeded(&seed).await;
+    let app = TestApp::start_seeded(&format!(
+        "INSERT INTO streamers (id, name, url, platform_config_id, state, priority, \
+             consecutive_error_count, last_error, disabled_until) VALUES \
+         ('errored', 'Errored', 'https://www.huya.com/errored', 'platform-huya', 'ERROR', \
+             'NORMAL', 0, NULL, NULL), \
+         ('cancelled', 'Cancelled', 'https://www.huya.com/cancelled', 'platform-huya', \
+             'CANCELLED', 'NORMAL', 0, NULL, NULL), \
+         ('fatal', 'Fatal', 'https://www.huya.com/fatal', 'platform-huya', 'FATAL_ERROR', \
+             'NORMAL', 4, 'banned', {disabled_until});"
+    ))
+    .await;
     let token = app.admin_token().await;
     let template = create_template(&app, &token, "Partial").await;
 
+    // Create and update refuse an unknown template, as the batch route does.
+    let orphan = app
+        .post(
+            "/api/streamers",
+            &token,
+            &json!({
+                "name": "Orphan",
+                "url": "https://live.bilibili.com/6001",
+                "template_id": "no-such-template",
+                "enabled": false,
+            }),
+        )
+        .await;
+    orphan.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
     let created = app
         .post(
             "/api/streamers",
@@ -860,17 +749,20 @@ async fn put_is_a_partial_update_and_disabling_clears_the_error_backoff() {
             }),
         )
         .await
-        .expect_status(StatusCode::CREATED)
-        .body;
+        .created();
     let id = id_of(&created);
     let path = format!("/api/streamers/{id}");
+    let unknown = app
+        .put(&path, &token, &json!({ "template_id": "no-such-template" }))
+        .await;
+    unknown.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
+    assert_eq!(list_page(&app, &token, "").await["total"], 4);
 
     // Omitted fields are kept, including the template.
     let renamed = app
         .put(&path, &token, &json!({ "name": "Renamed" }))
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(renamed["name"], "Renamed");
     assert_eq!(renamed["template_id"], template);
     assert_eq!(renamed["priority"], "HIGH");
@@ -889,8 +781,7 @@ async fn put_is_a_partial_update_and_disabling_clears_the_error_backoff() {
             &json!({ "template_id": null, "priority": "LOW" }),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert!(cleared["template_id"].is_null());
     assert_eq!(cleared["priority"], "LOW");
     assert_eq!(cleared["name"], "Renamed");
@@ -903,8 +794,7 @@ async fn put_is_a_partial_update_and_disabling_clears_the_error_backoff() {
             &json!({ "url": "https://www.twitch.tv/moved" }),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(moved["platform_config_id"], "platform-twitch");
     let stored = get_streamer(&app, &token, &id).await;
     assert_eq!(stored["url"], "https://www.twitch.tv/moved");
@@ -924,8 +814,7 @@ async fn put_is_a_partial_update_and_disabling_clears_the_error_backoff() {
     let patched = app
         .patch(&priority, &token, &json!({ "priority": "HIGH" }))
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(patched["priority"], "HIGH");
     assert_eq!(patched["state"], "DISABLED");
     let invalid = app
@@ -946,8 +835,7 @@ async fn put_is_a_partial_update_and_disabling_clears_the_error_backoff() {
     let disabled = app
         .put("/api/streamers/fatal", &token, &json!({ "enabled": false }))
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(disabled["state"], "DISABLED");
     assert_eq!(disabled["enabled"], false);
     assert_eq!(disabled["consecutive_error_count"], 0);
@@ -969,8 +857,7 @@ async fn put_is_a_partial_update_and_disabling_clears_the_error_backoff() {
                 &json!({ "enabled": true }),
             )
             .await
-            .expect_status(StatusCode::OK)
-            .body;
+            .ok();
         assert_eq!(response["state"], state);
         assert_eq!(get_streamer(&app, &token, id).await["state"], state);
     }
@@ -987,65 +874,14 @@ async fn put_is_a_partial_update_and_disabling_clears_the_error_backoff() {
     app.shutdown().await;
 }
 
-/// Create and update refuse an unknown template as the batch route does.
-#[tokio::test]
-async fn unknown_template_id_is_rejected_on_create_and_update() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-
-    let created = app
-        .post(
-            "/api/streamers",
-            &token,
-            &json!({
-                "name": "Orphan",
-                "url": "https://live.bilibili.com/6001",
-                "template_id": "no-such-template",
-                "enabled": false,
-            }),
-        )
-        .await;
-    created.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
-    let id = id_of(
-        &app.create_disabled_streamer(
-            &token,
-            json!({ "name": "Plain", "url": "https://live.bilibili.com/6002" }),
-        )
-        .await,
-    );
-    let updated = app
-        .put(
-            &format!("/api/streamers/{id}"),
-            &token,
-            &json!({ "template_id": "no-such-template" }),
-        )
-        .await;
-    updated.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
-    assert_eq!(list_page(&app, &token, "").await["total"], 1);
-    assert!(get_streamer(&app, &token, &id).await["template_id"].is_null());
-
-    app.shutdown().await;
-}
-
 #[tokio::test]
 async fn check_history_is_oldest_first_and_clamped() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
-    let id = id_of(
-        &app.create_disabled_streamer(
-            &token,
-            json!({ "name": "Watched", "url": "https://live.bilibili.com/7001" }),
-        )
-        .await,
-    );
+    let id = disabled_streamer(&app, &token, "Watched", "https://live.bilibili.com/7001").await;
     let history = format!("/api/streamers/{id}/check-history");
 
-    let empty = app
-        .get(&history, &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(empty, json!({ "items": [] }));
+    assert_eq!(get_ok(&app, &token, &history).await, json!({ "items": [] }));
     app.get("/api/streamers/no-such-streamer/check-history", &token)
         .await
         .assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
@@ -1053,37 +889,21 @@ async fn check_history_is_oldest_first_and_clamped() {
     // 205 rows one second apart; the newest two carry stream telemetry, one
     // of them malformed.
     let base = now_ms() - 3_600_000;
-    let pool = app.database().await;
-    sqlx::query(
-        "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 203) \
-         INSERT INTO streamer_check_history (streamer_id, checked_at, duration_ms, outcome) \
-         SELECT ?, ? + i * 1000, i, 'offline' FROM n",
-    )
-    .bind(&id)
-    .bind(base)
-    .execute(&pool)
-    .await
-    .expect("seed offline checks");
-    sqlx::query(
-        "INSERT INTO streamer_check_history (streamer_id, checked_at, duration_ms, outcome, \
-             streams_extracted, stream_selected, streams_extracted_json, title, category, viewer_count) \
-         VALUES (?, ?, 204, 'live', 2, '{not json', '[broken', 'Broken telemetry', 'Games', 10), \
-                (?, ?, 205, 'live', 1, '{\"quality\":\"1080p\"}', '[{\"quality\":\"1080p\"}]', 'Live now', 'Games', 42)",
-    )
-    .bind(&id)
-    .bind(base + 204_000)
-    .bind(&id)
-    .bind(base + 205_000)
-    .execute(&pool)
-    .await
-    .expect("seed live checks");
-    pool.close().await;
+    app.run_sql(&format!(
+        r#"WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 203)
+        INSERT INTO streamer_check_history (streamer_id, checked_at, duration_ms, outcome)
+        SELECT '{id}', {base} + i * 1000, i, 'offline' FROM n;
+        INSERT INTO streamer_check_history (streamer_id, checked_at, duration_ms, outcome,
+            streams_extracted, stream_selected, streams_extracted_json, title, category, viewer_count)
+        VALUES ('{id}', {}, 204, 'live', 2, '{{not json', '[broken', 'Broken telemetry', 'Games', 10),
+            ('{id}', {}, 205, 'live', 1, '{{"quality":"1080p"}}', '[{{"quality":"1080p"}}]',
+                'Live now', 'Games', 42);"#,
+        base + 204_000,
+        base + 205_000
+    ))
+    .await;
 
-    let page = app
-        .get(&history, &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let page = get_ok(&app, &token, &history).await;
     let items = page["items"].as_array().expect("items");
     assert_eq!(items.len(), 60);
     let durations: Vec<i64> = items
@@ -1106,11 +926,7 @@ async fn check_history_is_oldest_first_and_clamped() {
     assert_eq!(millis(&newest["checked_at"]), base + 205_000);
 
     for (limit, expected) in [("0", 1), ("-5", 1), ("3", 3), ("1000", 200)] {
-        let page = app
-            .get(&format!("{history}?limit={limit}"), &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body;
+        let page = get_ok(&app, &token, &format!("{history}?limit={limit}")).await;
         let items = page["items"].as_array().expect("items");
         assert_eq!(items.len(), expected, "limit={limit}");
         assert_eq!(items.last().expect("newest")["duration_ms"], 205);
@@ -1123,33 +939,26 @@ async fn check_history_is_oldest_first_and_clamped() {
 async fn filters_belong_to_the_streamer_in_their_path() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
-    let owner = id_of(
-        &app.create_disabled_streamer(
-            &token,
-            json!({ "name": "Owner", "url": "https://live.bilibili.com/8001" }),
-        )
-        .await,
-    );
-    let other = id_of(
-        &app.create_disabled_streamer(
-            &token,
-            json!({ "name": "Other", "url": "https://live.bilibili.com/8002" }),
-        )
-        .await,
-    );
+    let owner = disabled_streamer(&app, &token, "Owner", "https://live.bilibili.com/8001").await;
+    let other = disabled_streamer(&app, &token, "Other", "https://live.bilibili.com/8002").await;
     let filters = format!("/api/streamers/{owner}/filters");
+    let keyword = |streamer_id: &str| {
+        json!({
+            "streamer_id": streamer_id,
+            "filter_type": "KEYWORD",
+            "config": { "include": ["live"], "exclude": ["rerun"] },
+        })
+    };
 
-    let mismatched = app
+    let unknown_streamer = app
         .post(
-            &filters,
+            "/api/streamers/no-such-streamer/filters",
             &token,
-            &json!({
-                "streamer_id": other,
-                "filter_type": "KEYWORD",
-                "config": { "include": ["a"], "exclude": [] },
-            }),
+            &keyword("no-such-streamer"),
         )
         .await;
+    unknown_streamer.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
+    let mismatched = app.post(&filters, &token, &keyword(&other)).await;
     mismatched.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
     let unknown = app
         .post(
@@ -1160,38 +969,17 @@ async fn filters_belong_to_the_streamer_in_their_path() {
         .await;
     unknown.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
 
-    let created = app
-        .post(
-            &filters,
-            &token,
-            &json!({
-                "streamer_id": owner,
-                "filter_type": "KEYWORD",
-                "config": { "include": ["live"], "exclude": ["rerun"] },
-            }),
-        )
-        .await
-        .expect_status(StatusCode::CREATED)
-        .body;
+    let created = app.post(&filters, &token, &keyword(&owner)).await.created();
     assert_eq!(created["streamer_id"], owner.as_str());
-    let keyword = id_of(&created);
+    let own = format!("{filters}/{}", id_of(&created));
+    assert_eq!(get_ok(&app, &token, &filters).await, json!([created]));
     assert_eq!(
-        app.get(&filters, &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body,
-        json!([created])
-    );
-    assert_eq!(
-        app.get(&format!("/api/streamers/{other}/filters"), &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body,
+        get_ok(&app, &token, &format!("/api/streamers/{other}/filters")).await,
         json!([])
     );
 
     // Another streamer's path cannot see, change or remove the filter.
-    let foreign = format!("/api/streamers/{other}/filters/{keyword}");
+    let foreign = format!("/api/streamers/{other}/filters/{}", id_of(&created));
     for response in [
         app.get(&foreign, &token).await,
         app.patch(
@@ -1204,26 +992,17 @@ async fn filters_belong_to_the_streamer_in_their_path() {
     ] {
         response.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
     }
-    let own = format!("{filters}/{keyword}");
-    let untouched = app
-        .get(&own, &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(untouched["config"], created["config"]);
+    assert_eq!(
+        get_ok(&app, &token, &own).await["config"],
+        created["config"]
+    );
 
     // Changing the type needs a config for the new type.
     let response = app
         .patch(&own, &token, &json!({ "filter_type": "CATEGORY" }))
         .await;
     response.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
-    assert_eq!(
-        app.get(&own, &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body["filter_type"],
-        "KEYWORD"
-    );
+    assert_eq!(get_ok(&app, &token, &own).await["filter_type"], "KEYWORD");
     let retyped = app
         .patch(
             &own,
@@ -1231,22 +1010,17 @@ async fn filters_belong_to_the_streamer_in_their_path() {
             &json!({ "filter_type": "CATEGORY", "config": { "categories": ["Music"] } }),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(retyped["filter_type"], "CATEGORY");
     assert_eq!(retyped["config"], json!({ "categories": ["Music"] }));
 
-    app.delete(&own, &token).await.expect_status(StatusCode::OK);
+    app.delete(&own, &token).await.ok();
     app.get(&own, &token)
         .await
         .assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
-    assert_eq!(
-        app.get(&filters, &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body,
-        json!([])
-    );
+    assert_eq!(get_ok(&app, &token, &filters).await, json!([]));
+    // Nothing refused above was stored for any streamer.
+    assert_eq!(app.query_i64("SELECT COUNT(*) FROM filters").await, 0);
 
     app.shutdown().await;
 }
@@ -1255,27 +1029,12 @@ async fn filters_belong_to_the_streamer_in_their_path() {
 async fn filter_configs_are_validated_and_normalized_when_saved() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
-    let id = id_of(
-        &app.create_disabled_streamer(
-            &token,
-            json!({ "name": "Filtered", "url": "https://live.bilibili.com/9001" }),
-        )
-        .await,
-    );
+    let id = disabled_streamer(&app, &token, "Filtered", "https://live.bilibili.com/9001").await;
     let filters = format!("/api/streamers/{id}/filters");
     let create = |filter_type: &'static str, config: Value| {
-        let app = &app;
-        let token = &token;
-        let filters = &filters;
-        let id = &id;
-        async move {
-            app.post(
-                filters,
-                token,
-                &json!({ "streamer_id": id, "filter_type": filter_type, "config": config }),
-            )
-            .await
-        }
+        let (app, token, filters) = (&app, &token, &filters);
+        let body = json!({ "streamer_id": id, "filter_type": filter_type, "config": config });
+        async move { app.post(filters, token, &body).await }
     };
 
     for (filter_type, config) in [
@@ -1305,39 +1064,25 @@ async fn filter_configs_are_validated_and_normalized_when_saved() {
     ] {
         let response = create(filter_type, config.clone()).await;
         assert_eq!(
-            response.status,
-            StatusCode::UNPROCESSABLE_ENTITY,
+            (response.status, response.error_code()),
+            (StatusCode::UNPROCESSABLE_ENTITY, Some("VALIDATION_ERROR")),
             "{filter_type} {config}: {}",
             response.text
         );
-        assert_eq!(
-            response.error_code(),
-            Some("VALIDATION_ERROR"),
-            "{}",
-            response.text
-        );
     }
-    assert_eq!(
-        app.get(&filters, &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body,
-        json!([])
-    );
+    assert_eq!(get_ok(&app, &token, &filters).await, json!([]));
 
     // Six- and seven-field cron expressions are accepted as written.
     for expression in ["0 0 22 * * 5,6", "0 30 9 * * Mon-Fri 2030"] {
         let created = create("CRON", json!({ "expression": expression }))
             .await
-            .expect_status(StatusCode::CREATED)
-            .body;
+            .created();
         assert_eq!(created["config"]["expression"], expression);
     }
 
     let regex = create("REGEX", json!({ "pattern": "^Live" }))
         .await
-        .expect_status(StatusCode::CREATED)
-        .body;
+        .created();
     assert_eq!(
         regex["config"],
         json!({ "pattern": "^Live", "case_insensitive": false, "exclude": false })
@@ -1350,19 +1095,14 @@ async fn filter_configs_are_validated_and_normalized_when_saved() {
         json!({ "days_of_week": ["mon", "SAT"], "start_time": "09:00", "end_time": "17:30" }),
     )
     .await
-    .expect_status(StatusCode::CREATED)
-    .body;
+    .created();
     let expected = json!({
         "days_of_week": ["Monday", "Saturday"],
         "start_time": "09:00:00",
         "end_time": "17:30:00",
     });
     assert_eq!(schedule["config"], expected);
-    let stored = app
-        .get(&format!("{filters}/{}", id_of(&schedule)), &token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let stored = get_ok(&app, &token, &format!("{filters}/{}", id_of(&schedule))).await;
     assert_eq!(stored["config"], expected);
 
     let keyword = create(
@@ -1370,16 +1110,14 @@ async fn filter_configs_are_validated_and_normalized_when_saved() {
         json!({ "include": ["  live ", "", "   "], "exclude": [" rerun", ""] }),
     )
     .await
-    .expect_status(StatusCode::CREATED)
-    .body;
+    .created();
     assert_eq!(
         keyword["config"],
         json!({ "include": ["live"], "exclude": ["rerun"] })
     );
     let category = create("CATEGORY", json!({ "categories": [" Games ", ""] }))
         .await
-        .expect_status(StatusCode::CREATED)
-        .body;
+        .created();
     assert_eq!(category["config"], json!({ "categories": ["Games"] }));
 
     // `local` is kept, and a replacement that omits the timezone keeps the
@@ -1392,8 +1130,7 @@ async fn filter_configs_are_validated_and_normalized_when_saved() {
         }),
     )
     .await
-    .expect_status(StatusCode::CREATED)
-    .body;
+    .created();
     assert_eq!(local["config"]["timezone"], "local");
     let local_path = format!("{filters}/{}", id_of(&local));
     let replaced = app
@@ -1403,8 +1140,7 @@ async fn filter_configs_are_validated_and_normalized_when_saved() {
             &json!({ "config": { "days_of_week": ["fri"], "start_time": "21:00", "end_time": "23:00" } }),
         )
         .await
-        .expect_status(StatusCode::OK)
-        .body;
+        .ok();
     assert_eq!(
         replaced["config"],
         json!({
@@ -1415,34 +1151,9 @@ async fn filter_configs_are_validated_and_normalized_when_saved() {
         })
     );
     assert_eq!(
-        app.get(&local_path, &token)
-            .await
-            .expect_status(StatusCode::OK)
-            .body["config"]["timezone"],
+        get_ok(&app, &token, &local_path).await["config"]["timezone"],
         "local"
     );
-
-    app.shutdown().await;
-}
-
-#[tokio::test]
-async fn creating_a_filter_for_an_unknown_streamer_is_a_404() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-
-    let response = app
-        .post(
-            "/api/streamers/no-such-streamer/filters",
-            &token,
-            &json!({
-                "streamer_id": "no-such-streamer",
-                "filter_type": "KEYWORD",
-                "config": { "include": ["live"], "exclude": [] },
-            }),
-        )
-        .await;
-    response.assert_error(StatusCode::NOT_FOUND, "NOT_FOUND");
-    assert_eq!(app.query_i64("SELECT COUNT(*) FROM filters").await, 0);
 
     app.shutdown().await;
 }
