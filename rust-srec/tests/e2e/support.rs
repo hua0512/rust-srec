@@ -1,10 +1,13 @@
 //! Harness that runs the real backend in-process for end-to-end tests.
 //!
 //! [`TestApp::start`] follows the desktop shell's bootstrap: migrations on a
-//! fresh SQLite file, the full `ServiceContainer`, and the HTTP server with JWT
-//! authentication bound to an ephemeral loopback port. Tests talk to it only
-//! over HTTP, so routing, authentication, validation and JSON shapes are
-//! exercised exactly as the frontend sees them.
+//! fresh SQLite file (copied from a migrated template, see [`migrate`]), the
+//! full `ServiceContainer`, and the HTTP server with JWT authentication bound
+//! to an ephemeral loopback port. Tests talk to it only over HTTP, so routing,
+//! authentication, validation and JSON shapes are exercised exactly as the
+//! frontend sees them. The seeded admin has already completed its forced
+//! password change unless the app is started with
+//! [`TestApp::start_with_seeded_admin`].
 //!
 //! Reliability rules for tests built on this harness: never reach the public
 //! network (create streamers disabled; use [`LocalHttpServer`] for outbound
@@ -28,7 +31,7 @@ use std::future::Future;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 
 use futures::StreamExt;
 use reqwest::header::{AsHeaderName, HeaderMap};
@@ -56,10 +59,17 @@ pub use seed::Seed;
 pub use smtp::SmtpFixture;
 
 pub const ADMIN_USERNAME: &str = "admin";
-/// Password of the admin account seeded by the initial migration.
+/// Password of the admin account seeded by the initial migration, which must
+/// be changed before anything else; only an app started with
+/// [`TestApp::start_with_seeded_admin`] keeps it.
 pub const SEEDED_ADMIN_PASSWORD: &str = "admin123!";
-/// Password [`TestApp::admin`] sets when it completes the forced change.
+/// Password of the admin in every other app, which has already completed the
+/// forced change.
 pub const ADMIN_PASSWORD: &str = "e2e-admin-Password-1";
+/// [`ADMIN_PASSWORD`] as Argon2id with the parameters the backend hashes new
+/// passwords with (m=19456, t=2, p=1). Writing it at startup saves each test
+/// the three hashes the forced change costs through the API.
+const ADMIN_PASSWORD_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$ZTJlLWFkbWluLXNlZWQtc2FsdA$dEDd0m0NX53FNRqVA3Qtu+okJPsz7g3VpVHeS3olG3I";
 /// Secret the API server signs access tokens with, for tests that mint tokens.
 pub const JWT_SECRET: &str = "e2e-test-jwt-secret-with-enough-entropy-0123456789";
 
@@ -150,6 +160,82 @@ fn logging() -> Arc<LoggingConfig> {
         .clone()
 }
 
+/// Create the migrated database file at `path`.
+///
+/// Migrating a fresh file takes about half a second in a debug build, so the
+/// first app a build of this binary starts publishes its freshly migrated
+/// file as a template under the target directory, and every later app, in
+/// any test process, copies it. Templates are keyed by the test binary's
+/// size and modification time: a rebuild, which may change the migrations or
+/// the code that runs them, never reuses an older one.
+async fn migrate(path: &Path, url: &str) {
+    let templates = Path::new(env!("CARGO_TARGET_TMPDIR")).join("e2e-databases");
+    let binary = std::env::current_exe()
+        .and_then(std::fs::metadata)
+        .expect("stat the test binary");
+    let built = binary
+        .modified()
+        .expect("the test binary's modification time")
+        .duration_since(UNIX_EPOCH)
+        .expect("a modification time after the epoch");
+    let template = templates.join(format!("{}-{}.db", binary.len(), built.as_nanos()));
+    if std::fs::copy(&template, path).is_ok() {
+        return;
+    }
+    // Drop whatever a failed copy left behind; there is usually nothing.
+    std::fs::remove_file(path).ok();
+
+    let pool = backend::init_migration_pool(url)
+        .await
+        .expect("open the migration pool");
+    // Convert proxy settings as if no proxy variables were set, so the
+    // fresh database (and with it every outbound route) does not depend on
+    // the developer's shell.
+    rust_srec::database::run_migrations_with_environment_proxy(&pool, false)
+        .await
+        .expect("run migrations");
+    // Closing the only connection checkpoints the WAL into the file, so the
+    // file alone holds the migrated database.
+    pool.close().await;
+    publish_template(path, &templates, &template);
+}
+
+/// Publish the migrated database at `path` as `template`, and remove
+/// templates and staging files older than a day. The rename makes a
+/// concurrent copy see either no template or a whole one. Every step is best
+/// effort: a failure only means a later app migrates its own file again.
+fn publish_template(path: &Path, templates: &Path, template: &Path) {
+    let mut wal = path.as_os_str().to_owned();
+    wal.push("-wal");
+    if std::fs::metadata(wal).is_ok_and(|wal| wal.len() > 0)
+        || std::fs::create_dir_all(templates).is_err()
+    {
+        return;
+    }
+    let Ok(staged) = tempfile::NamedTempFile::new_in(templates) else {
+        return;
+    };
+    if std::fs::copy(path, staged.path()).is_err() || staged.persist(template).is_err() {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(templates) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let stale = entry
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .is_ok_and(|modified| {
+                modified
+                    .elapsed()
+                    .is_ok_and(|age| age > Duration::from_secs(24 * 60 * 60))
+            });
+        if stale {
+            std::fs::remove_file(entry.path()).ok();
+        }
+    }
+}
+
 /// A running backend with its own temporary data directory.
 pub struct TestApp {
     base_url: String,
@@ -227,9 +313,17 @@ impl Response {
 pub type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 impl TestApp {
-    /// Start a backend on a fresh database.
+    /// Start a backend on a fresh database whose admin signs in with
+    /// [`ADMIN_PASSWORD`].
     pub async fn start() -> Self {
         Self::start_seeded("").await
+    }
+
+    /// Start a backend on a fresh database whose admin is still the one the
+    /// migration seeds: [`SEEDED_ADMIN_PASSWORD`], with a forced password
+    /// change pending. [`Self::admin`] does not work in this app.
+    pub async fn start_with_seeded_admin() -> Self {
+        Self::boot("", None, false).await
     }
 
     /// Start a backend after running `seed_sql` on the migrated database.
@@ -240,7 +334,7 @@ impl TestApp {
     /// database on each request can be inserted after start with
     /// [`Self::run_sql`] or [`Self::database`] instead.
     pub async fn start_seeded(seed_sql: &str) -> Self {
-        Self::boot(seed_sql, None).await
+        Self::boot(seed_sql, None, true).await
     }
 
     /// Start a backend that monitors streamers, seeded with `seed` (see
@@ -248,29 +342,36 @@ impl TestApp {
     pub async fn start_with(seed: Seed) -> Self {
         let dead_end = ConnectRecorder::start().await;
         let sql = seed.sql(&dead_end);
-        Self::boot(&sql, Some(dead_end)).await
+        Self::boot(&sql, Some(dead_end), true).await
     }
 
-    async fn boot(seed_sql: &str, dead_end: Option<ConnectRecorder>) -> Self {
+    async fn boot(
+        seed_sql: &str,
+        dead_end: Option<ConnectRecorder>,
+        change_admin_password: bool,
+    ) -> Self {
         assert_default_environment();
         backend::install_rustls_provider();
         let data_dir = tempfile::tempdir().expect("create the test data directory");
         let output_dir = data_dir.path().join("output");
         std::fs::create_dir_all(&output_dir).expect("create the test output directory");
 
-        let database_url = format!(
-            "sqlite:{}?mode=rwc",
-            data_dir.path().join("srec.db").display()
-        );
+        let database_path = data_dir.path().join("srec.db");
+        let database_url = format!("sqlite:{}?mode=rwc", database_path.display());
+        migrate(&database_path, &database_url).await;
         let migration_pool = backend::init_migration_pool(&database_url)
             .await
             .expect("open the migration pool");
-        // Convert proxy settings as if no proxy variables were set, so the
-        // fresh database (and with it every outbound route) does not depend on
-        // the developer's shell.
-        rust_srec::database::run_migrations_with_environment_proxy(&migration_pool, false)
+        if change_admin_password {
+            sqlx::query(
+                "UPDATE users SET password_hash = ?, must_change_password = FALSE WHERE username = ?",
+            )
+            .bind(ADMIN_PASSWORD_HASH)
+            .bind(ADMIN_USERNAME)
+            .execute(&migration_pool)
             .await
-            .expect("run migrations");
+            .expect("complete the seeded admin's password change");
+        }
         if !seed_sql.is_empty() {
             sqlx::raw_sql(sqlx::AssertSqlSafe(seed_sql.to_owned()))
                 .execute(&migration_pool)
@@ -497,30 +598,11 @@ impl TestApp {
             .await
     }
 
-    /// Tokens for the seeded admin after completing its forced password
-    /// change ([`ADMIN_PASSWORD`]). The first call performs the change; later
-    /// calls return the same session.
+    /// Tokens for the admin, signed in with [`ADMIN_PASSWORD`]. The first
+    /// call logs in; later calls return the same session.
     pub async fn admin(&self) -> &Tokens {
         self.admin
-            .get_or_init(|| async {
-                let first = self
-                    .login(ADMIN_USERNAME, SEEDED_ADMIN_PASSWORD)
-                    .await
-                    .expect_status(StatusCode::OK);
-                assert_eq!(first.body["must_change_password"], true);
-                let seeded = tokens_from(&first.body);
-                self.post(
-                    "/api/auth/change-password",
-                    &seeded.access,
-                    &json!({
-                        "current_password": SEEDED_ADMIN_PASSWORD,
-                        "new_password": ADMIN_PASSWORD,
-                    }),
-                )
-                .await
-                .expect_status(StatusCode::OK);
-                self.login_tokens(ADMIN_USERNAME, ADMIN_PASSWORD).await
-            })
+            .get_or_init(|| self.login_tokens(ADMIN_USERNAME, ADMIN_PASSWORD))
             .await
     }
 
