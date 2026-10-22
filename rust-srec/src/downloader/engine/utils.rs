@@ -31,7 +31,7 @@ pub use files::ensure_output_dir;
 pub use output_record_reader::OutputRecordReader;
 pub use redact::{redact_download_process_args, sanitize_engine_message};
 pub(crate) use settlement::settle_engine_tasks;
-pub(crate) use version_probe::{probe_version, probe_version_sync};
+pub(crate) use version_probe::{EngineVersion, probe_version};
 
 pub(super) fn observe_segment_event_send(
     result: Result<(), mpsc::error::SendError<SegmentEvent>>,

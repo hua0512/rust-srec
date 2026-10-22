@@ -16,7 +16,7 @@ use super::traits::{
     EngineType,
 };
 use super::utils::{
-    FfmpegEvents, FfmpegSource, PROCESS_CLEANUP_TIMEOUT, RecordingExit,
+    EngineVersion, FfmpegEvents, FfmpegSource, PROCESS_CLEANUP_TIMEOUT, RecordingExit,
     redact_download_process_args, settle_engine_tasks, terminate_and_reap,
 };
 use crate::database::models::engine::FfmpegEngineConfig;
@@ -97,8 +97,8 @@ fn append_faststart_option(
 pub struct FfmpegEngine {
     /// Engine configuration.
     config: FfmpegEngineConfig,
-    /// Cached version string.
-    version: Option<String>,
+    /// Version reported by the binary; `None` once probed means unavailable.
+    version: EngineVersion,
     #[cfg(test)]
     fixture: Option<super::utils::test_support::RecordingFixture>,
 }
@@ -111,8 +111,9 @@ impl FfmpegEngine {
 
     /// Create with a custom configuration.
     pub fn with_config(config: FfmpegEngineConfig) -> Self {
-        let version = super::utils::probe_version_sync(&config.binary_path, "-version")
-            .and_then(|output| output.lines().next().map(str::to_owned));
+        let version = EngineVersion::probe(&config.binary_path, "-version", |output| {
+            output.lines().next().map(str::to_owned)
+        });
         Self::with_version(config, version)
     }
 
@@ -121,10 +122,10 @@ impl FfmpegEngine {
         let version = super::utils::probe_version(&config.binary_path, "-version")
             .await
             .and_then(|output| output.lines().next().map(str::to_owned));
-        Self::with_version(config, version)
+        Self::with_version(config, EngineVersion::settled(version))
     }
 
-    fn with_version(config: FfmpegEngineConfig, version: Option<String>) -> Self {
+    fn with_version(config: FfmpegEngineConfig, version: EngineVersion) -> Self {
         Self {
             config,
             version,
@@ -502,11 +503,11 @@ impl DownloadEngine for FfmpegEngine {
     }
 
     fn is_available(&self) -> bool {
-        self.version.is_some()
+        self.version.get().is_some()
     }
 
     fn version(&self) -> Option<String> {
-        self.version.clone()
+        self.version.get().map(str::to_owned)
     }
 }
 
@@ -541,7 +542,8 @@ mod tests {
             assert!(error.message.contains("http://"), "{}", error.message);
             assert!(!error.message.contains("secret"));
         }
-        let engine = FfmpegEngine::with_version(FfmpegEngineConfig::default(), None);
+        let engine =
+            FfmpegEngine::with_version(FfmpegEngineConfig::default(), EngineVersion::settled(None));
         let config = DownloadConfig::new("https://cdn.example/live.flv", "/tmp", "s", "s", "x")
             .with_proxy(explicit("http://proxy.example:8080", None));
         let args = engine.build_args(&config);
@@ -578,7 +580,7 @@ mod tests {
                 binary_path: binary,
                 ..Default::default()
             },
-            version: None,
+            version: EngineVersion::settled(None),
             fixture: None,
         };
         assert_output_failure(&engine, dir.path()).await;
@@ -590,7 +592,7 @@ mod tests {
                 output_args: output_args.iter().map(ToString::to_string).collect(),
                 ..Default::default()
             },
-            version: None,
+            version: EngineVersion::settled(None),
             fixture: None,
         }
     }
@@ -607,7 +609,7 @@ mod tests {
                 ],
                 ..Default::default()
             },
-            version: None,
+            version: EngineVersion::settled(None),
             fixture: None,
         };
         for segment_duration in [0, 10] {
@@ -656,7 +658,7 @@ mod tests {
             let fixture = RecordingFixture::new(dir.path(), case);
             let engine = FfmpegEngine {
                 config: FfmpegEngineConfig::default(),
-                version: None,
+                version: EngineVersion::settled(None),
                 fixture: Some(fixture.clone()),
             };
             assert_recording_stop(engine, fixture, case).await;
@@ -671,7 +673,7 @@ mod tests {
             let directory = tempfile::tempdir().unwrap();
             let engine = FfmpegEngine {
                 config: FfmpegEngineConfig::default(),
-                version: None,
+                version: EngineVersion::settled(None),
                 fixture: Some(RecordingFixture::contract(directory.path(), case, false)),
             };
             assert_recording_contract(engine, directory.path(), case).await;

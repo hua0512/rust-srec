@@ -1,4 +1,5 @@
 use std::process::Stdio;
+use std::sync::{Arc, OnceLock};
 
 use process_utils::ContainedChild;
 use tokio::io::AsyncReadExt;
@@ -70,34 +71,60 @@ async fn run_probe(mut command: tokio::process::Command, budget: Duration) -> Op
     None
 }
 
-/// Compatibility for synchronous constructors. Runtime callers should use the
-/// async constructor; this bridge blocks its caller, but the child is bounded.
-pub(crate) fn probe_version_sync(path: &str, argument: &'static str) -> Option<String> {
-    let path = path.to_owned();
-    let worker = std::thread::Builder::new()
-        .name("engine-version-probe".to_owned())
-        .spawn(move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()?;
-            Ok::<_, std::io::Error>(runtime.block_on(probe_version(&path, argument)))
-        });
-    match worker {
-        Ok(worker) => match worker.join() {
-            Ok(Ok(version)) => version,
-            Ok(Err(error)) => {
-                warn!(%error, "Could not create engine probe runtime");
-                None
-            }
-            Err(_) => {
-                warn!("Engine probe worker panicked");
-                None
-            }
-        },
-        Err(error) => {
+/// An engine's version, probed on a background thread so that building an
+/// engine does not wait for its executable to start.
+///
+/// Reads block until the probe settles, which [`PROBE_TIMEOUT`] bounds. The
+/// probe has its own thread and runtime, so a read from inside an async
+/// runtime cannot deadlock with it.
+pub(crate) struct EngineVersion(Arc<OnceLock<Option<String>>>);
+
+impl EngineVersion {
+    /// Start probing `path argument`; `parse` turns its output into the version.
+    pub(crate) fn probe(
+        path: &str,
+        argument: &'static str,
+        parse: fn(String) -> Option<String>,
+    ) -> Self {
+        let version = Arc::new(OnceLock::new());
+        let result = version.clone();
+        let path = path.to_owned();
+        let worker = std::thread::Builder::new()
+            .name("engine-version-probe".to_owned())
+            .spawn(move || {
+                let probed = std::panic::catch_unwind(move || {
+                    let runtime = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()?;
+                    Ok::<_, std::io::Error>(runtime.block_on(probe_version(&path, argument)))
+                });
+                let output = match probed {
+                    Ok(Ok(output)) => output,
+                    Ok(Err(error)) => {
+                        warn!(%error, "Could not create engine probe runtime");
+                        None
+                    }
+                    Err(_) => {
+                        warn!("Engine probe worker panicked");
+                        None
+                    }
+                };
+                result.get_or_init(|| output.and_then(parse));
+            });
+        if let Err(error) = worker {
             warn!(%error, "Could not create engine probe worker");
-            None
+            version.get_or_init(|| None);
         }
+        Self(version)
+    }
+
+    /// An already known version.
+    pub(crate) fn settled(version: Option<String>) -> Self {
+        Self(Arc::new(OnceLock::from(version)))
+    }
+
+    pub(crate) fn get(&self) -> Option<&str> {
+        self.0.wait().as_deref()
     }
 }
 
@@ -230,14 +257,13 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn synchronous_compatibility_constructor_can_run_inside_a_runtime() {
+    async fn background_probe_can_be_read_inside_a_runtime() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(
-            probe_version_sync(
-                dir.path().join("missing-engine").to_str().unwrap(),
-                "--version"
-            )
-            .is_none()
+        let version = EngineVersion::probe(
+            dir.path().join("missing-engine").to_str().unwrap(),
+            "--version",
+            Some,
         );
+        assert!(version.get().is_none());
     }
 }
