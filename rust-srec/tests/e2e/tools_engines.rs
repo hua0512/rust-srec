@@ -5,11 +5,10 @@
 //! These need ffmpeg, ffprobe and Streamlink on `PATH`, so they are ignored
 //! in the plain suite; CI's tool-gated job runs them.
 
-use reqwest::StatusCode;
 use serde_json::{Value, json};
 
 use crate::support::tools::{HlsOrigin, codecs, duration_secs, probe};
-use crate::support::{FakePlatform, FlvLoop, Seed, TestApp, WAIT, eventually, id_of};
+use crate::support::{FakePlatform, FlvLoop, Seed, TestApp, WAIT, eventually, id_of, millis};
 
 /// The path of `segment`, checked against the size the backend stored for
 /// it.
@@ -165,11 +164,8 @@ async fn the_streamlink_engine_records_a_live_hls_room_with_the_platform_headers
 
 /// A URL no built-in platform claims but Streamlink can handle belongs to
 /// the Streamlink pseudo-platform: Streamlink reports it live, and the
-/// platform's default Streamlink engine records it.
-///
-/// Streamlink reports any reachable playlist live, ended or not, so the
-/// backend resumes the session after a download completes; the test ends
-/// it by disabling the streamer once the first part is stored.
+/// platform's default Streamlink engine records it. Once the playlist has
+/// ended it reads offline though it is still served, so it is recorded once.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires Streamlink, ffmpeg and ffprobe"]
 async fn a_url_only_streamlink_handles_is_monitored_and_recorded_through_streamlink() {
@@ -193,35 +189,38 @@ async fn a_url_only_streamlink_handles_is_monitored_and_recorded_through_streaml
 
     origin.wait_for_segment(2).await;
     origin.end();
-    let sessions = format!("/api/sessions?streamer_id={id}&include_empty=true");
-    let first = eventually(WAIT, "the first part to be stored", || async {
-        let page = app.get_ok(&sessions, &token).await;
-        let session_id = page["items"][0]["id"].as_str()?.to_owned();
-        app.segments(&token, &session_id).await.into_iter().next()
+    let session = app.ended_session(&token, &id).await;
+    let segments = app.segments(&token, id_of(&session).as_str()).await;
+    assert_eq!(segments.len(), 1, "{segments:?}");
+    assert_flv_recording(&stored_path(&segments[0]), 3.0).await;
+
+    // History rows are written in check order and after the check, so one
+    // from after the end means every earlier row is in. The history lists
+    // the oldest check first.
+    let ended_at = millis(&session["end_time"]);
+    let history = eventually(WAIT, "a check after the end", || async {
+        let history = app.checks(&token, &id).await;
+        history
+            .iter()
+            .any(|check| millis(&check["checked_at"]) > ended_at)
+            .then_some(history)
     })
     .await;
-    app.put(
-        &format!("/api/streamers/{id}"),
-        &token,
-        &json!({ "enabled": false }),
-    )
-    .await
-    .expect_status(StatusCode::OK);
-
-    app.ended_session(&token, &id).await;
-    assert_eq!(first["segment_index"], 0, "{first}");
-    assert_flv_recording(&stored_path(&first), 3.0).await;
-
-    // The history lists the oldest check first.
-    let history = app
-        .get_ok(&format!("/api/streamers/{id}/check-history"), &token)
-        .await;
-    let check = &history["items"][0];
-    assert_eq!(check["outcome"], "live", "{history}");
+    let check = &history[0];
+    assert_eq!(check["outcome"], "live", "{history:?}");
     // Streamlink names a media playlist's one stream `live` and offers it as
     // `best` and `worst` too; the best is recorded.
-    assert_eq!(check["streams_extracted"], 3, "{history}");
-    assert_eq!(check["stream_selected"]["quality"], "best", "{history}");
+    assert_eq!(check["streams_extracted"], 3, "{history:?}");
+    assert_eq!(check["stream_selected"]["quality"], "best", "{history:?}");
+    assert!(
+        history
+            .iter()
+            .filter(|check| millis(&check["checked_at"]) > ended_at)
+            .all(|check| check["outcome"] == "offline"),
+        "{history:?}"
+    );
+    assert_eq!(app.sessions(&token, &id).await.len(), 1);
+    assert_eq!(app.streamer(&token, &id).await["state"], "NOT_LIVE");
     assert_eq!(app.dead_end().attempts(), []);
 
     app.shutdown().await;
