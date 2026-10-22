@@ -1,5 +1,6 @@
 //! Helpers for the scenarios that need real media tools: ffmpeg runs,
-//! ffprobe readings and a loopback HLS origin serving media ffmpeg made.
+//! ffprobe readings and loopback HLS and DASH origins serving media ffmpeg
+//! made.
 //!
 //! Those scenarios are `#[ignore]`d so the plain suite runs on any machine;
 //! CI's tool-gated job, which installs ffmpeg, rclone and Streamlink, runs
@@ -8,7 +9,7 @@
 use serde_json::Value;
 
 use super::WAIT;
-use super::cdn::{FakeCdn, M3U8};
+use super::cdn::{FakeCdn, M3U8, MPD};
 use super::http::ReceivedRequest;
 
 /// Run `program` with `args` and return its stdout, panicking with its
@@ -30,6 +31,41 @@ async fn run(program: &str, args: &[&str]) -> Vec<u8> {
         String::from_utf8_lossy(&output.stderr)
     );
     output.stdout
+}
+
+/// The ffmpeg arguments for `secs` seconds of 32x32 H.264 test video with
+/// AAC audio, a keyframe every second.
+fn test_source(secs: &str) -> Vec<&str> {
+    vec![
+        "-v",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=32x32:rate=5",
+        "-f",
+        "lavfi",
+        "-i",
+        "sine=frequency=440:sample_rate=16000",
+        "-t",
+        secs,
+        "-map",
+        "0:v",
+        "-map",
+        "1:a",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-g",
+        "5",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "16k",
+        "-ac",
+        "1",
+    ]
 }
 
 pub async fn ffmpeg(args: &[&str]) {
@@ -90,35 +126,10 @@ impl HlsOrigin {
         let dir = tempfile::tempdir().expect("create the HLS work directory");
         let pattern = dir.path().join("seg%d.ts");
         let playlist = dir.path().join("made.m3u8");
-        ffmpeg(&[
-            "-v",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            "testsrc2=size=32x32:rate=5",
-            "-f",
-            "lavfi",
-            "-i",
-            "sine=frequency=440:sample_rate=16000",
-            "-t",
-            &segments.to_string(),
-            "-map",
-            "0:v",
-            "-map",
-            "1:a",
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast",
-            "-g",
-            "5",
-            "-c:a",
-            "aac",
-            "-b:a",
-            "16k",
-            "-ac",
-            "1",
+        let secs = segments.to_string();
+        let mut args = test_source(&secs);
+        let (pattern, playlist) = (pattern.to_string_lossy(), playlist.to_string_lossy());
+        args.extend([
             "-f",
             "hls",
             "-hls_time",
@@ -126,10 +137,10 @@ impl HlsOrigin {
             "-hls_list_size",
             "0",
             "-hls_segment_filename",
-            &pattern.to_string_lossy(),
-            &playlist.to_string_lossy(),
-        ])
-        .await;
+            &pattern,
+            &playlist,
+        ]);
+        ffmpeg(&args).await;
 
         let cdn = FakeCdn::start().await;
         for index in 0..segments {
@@ -178,4 +189,76 @@ impl HlsOrigin {
 
 fn segment_path(index: usize) -> String {
     format!("/live/seg{index}.ts")
+}
+
+/// A live DASH stream on 127.0.0.1: an MPD at `/live/stream.mpd` (Streamlink
+/// claims a URL by its `.mpd` path) whose segment timelines list one-second
+/// fMP4 segments of 32x32 H.264 video and AAC audio, in separate tracks. The
+/// MPD is `dynamic` until [`Self::end`] makes it `static`, as a live
+/// presentation's MPD does when the broadcast ends.
+pub struct DashOrigin {
+    cdn: FakeCdn,
+    /// The static MPD ffmpeg wrote.
+    finished: String,
+    segments: usize,
+}
+
+const MANIFEST: &str = "/live/stream.mpd";
+
+/// Attributes that turn ffmpeg's static MPD into a live one. Every segment is
+/// already published and within the presentation delay, so Streamlink
+/// fetches them all at once instead of waiting for a live edge.
+const DYNAMIC: &str = r#"type="dynamic" availabilityStartTime="1970-01-01T00:00:00Z" publishTime="1970-01-01T00:00:00Z" minimumUpdatePeriod="PT1S" suggestedPresentationDelay="PT30S""#;
+
+impl DashOrigin {
+    /// Make `segments` segments per track with ffmpeg and start serving them.
+    pub async fn start(segments: usize) -> Self {
+        let dir = tempfile::tempdir().expect("create the DASH work directory");
+        let manifest = dir.path().join("made.mpd");
+        let secs = segments.to_string();
+        let mut args = test_source(&secs);
+        let manifest_path = manifest.to_string_lossy();
+        args.extend(["-f", "dash", "-seg_duration", "1", &manifest_path]);
+        ffmpeg(&args).await;
+
+        let cdn = FakeCdn::start().await;
+        let entries = std::fs::read_dir(dir.path()).expect("list the DASH work directory");
+        for entry in entries {
+            let path = entry.expect("DASH work directory entry").path();
+            if path != manifest {
+                let name = path.file_name().expect("file name").to_string_lossy();
+                let body = std::fs::read(&path).expect("read a DASH segment");
+                cdn.put(&format!("/live/{name}"), "video/mp4", body);
+            }
+        }
+        let finished = std::fs::read_to_string(&manifest).expect("ffmpeg made the MPD");
+        assert!(finished.contains(r#"type="static""#), "{finished}");
+        cdn.put(
+            MANIFEST,
+            MPD,
+            finished.replacen(r#"type="static""#, DYNAMIC, 1),
+        );
+        Self {
+            cdn,
+            finished,
+            segments,
+        }
+    }
+
+    pub fn manifest_url(&self) -> String {
+        self.cdn.url(MANIFEST)
+    }
+
+    /// Make the MPD static, as a broadcast that has ended.
+    pub fn end(&self) {
+        self.cdn.put(MANIFEST, MPD, self.finished.clone());
+    }
+
+    /// Wait until the last segment of both tracks has been requested.
+    pub async fn wait_for_last_segments(&self) {
+        for track in 0..2 {
+            let path = format!("/live/chunk-stream{track}-{:05}.m4s", self.segments);
+            self.cdn.wait_for_requests(&path, 1).await;
+        }
+    }
 }

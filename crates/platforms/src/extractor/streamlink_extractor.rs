@@ -237,13 +237,14 @@ impl StreamlinkExtractor {
         }
     }
 
-    /// Whether the HLS playlist at `url` carries `#EXT-X-ENDLIST`, which a
-    /// live playlist never does. A playlist that cannot be fetched counts as
-    /// not ended, so a failed request leaves the check as Streamlink saw it.
-    async fn playlist_has_ended(
+    /// Whether the presentation at `url` has ended, as `has_ended` reads its
+    /// body. One that cannot be fetched counts as not ended, so a failed
+    /// request leaves the check as Streamlink saw it.
+    async fn presentation_has_ended(
         &self,
         url: &str,
         headers: Option<&FxHashMap<String, String>>,
+        has_ended: fn(&str) -> bool,
     ) -> bool {
         let mut request = self.extractor.client.get(url);
         for (name, value) in headers.into_iter().flatten() {
@@ -254,9 +255,9 @@ impl StreamlinkExtractor {
             Err(error) => Err(error),
         };
         match body {
-            Ok(body) => body.lines().any(|line| line.trim() == "#EXT-X-ENDLIST"),
+            Ok(body) => has_ended(&body),
             Err(error) => {
-                debug!(%error, "could not fetch the playlist to check for its end");
+                debug!(%error, "could not fetch the presentation to check for its end");
                 false
             }
         }
@@ -309,7 +310,13 @@ impl PlatformExtractor for StreamlinkExtractor {
         }
 
         let plugin = json.plugin.unwrap_or_else(|| "unknown".to_string());
-        let generic_hls = plugin == "hls";
+        // Streamlink's generic HLS and DASH plugins offer any reachable
+        // playlist or manifest as a stream, including one that has ended.
+        let has_ended: Option<fn(&str) -> bool> = match plugin.as_str() {
+            "hls" => Some(hls_playlist_has_ended),
+            "dash" => Some(dash_manifest_has_ended),
+            _ => None,
+        };
         let metadata = json.metadata.unwrap_or_default();
         let streams = json.streams.ok_or_else(|| ExtractorError::NoStreamsFound)?;
 
@@ -384,20 +391,20 @@ impl PlatformExtractor for StreamlinkExtractor {
             .or(first_headers)
             .map(|h| h.into_iter().collect::<FxHashMap<String, String>>());
 
-        // Streamlink's generic HLS plugin offers any reachable playlist as a
-        // stream, including one that has ended. Every variant ends together,
-        // so the best one tells whether the broadcast is over.
-        let is_live = if generic_hls {
-            let playlist = stream_infos
-                .iter()
-                .min_by_key(|s| s.priority)
-                .map(|s| s.url.as_str())
-                .unwrap_or_default();
-            !self
-                .playlist_has_ended(playlist, media_headers.as_ref())
-                .await
-        } else {
-            true
+        // Every HLS variant ends together and every DASH stream shares one
+        // manifest, so the best stream tells whether the broadcast is over.
+        let is_live = match has_ended {
+            Some(has_ended) => {
+                let url = stream_infos
+                    .iter()
+                    .min_by_key(|s| s.priority)
+                    .map(|s| s.url.as_str())
+                    .unwrap_or_default();
+                !self
+                    .presentation_has_ended(url, media_headers.as_ref(), has_ended)
+                    .await
+            }
+            None => true,
         };
 
         Ok(
@@ -481,6 +488,28 @@ fn infer_media_format(stream_format: StreamFormat, _url: &str) -> MediaFormat {
         StreamFormat::Mp4 => MediaFormat::Mp4,
         StreamFormat::Wss => MediaFormat::Flv,
         StreamFormat::Dash => MediaFormat::Fmp4,
+    }
+}
+
+/// Whether an HLS playlist carries `#EXT-X-ENDLIST`, which a live playlist
+/// never does.
+fn hls_playlist_has_ended(playlist: &str) -> bool {
+    playlist.lines().any(|line| line.trim() == "#EXT-X-ENDLIST")
+}
+
+/// Whether a DASH manifest describes a finished presentation: only a
+/// `dynamic` MPD is live, and `static` is the default type. A body that is
+/// not an MPD counts as not ended.
+fn dash_manifest_has_ended(manifest: &str) -> bool {
+    match roxmltree::Document::parse(manifest) {
+        Ok(document) => {
+            let root = document.root_element();
+            root.has_tag_name("MPD") && root.attribute("type") != Some("dynamic")
+        }
+        Err(error) => {
+            debug!(%error, "could not parse the DASH manifest to check for its end");
+            false
+        }
     }
 }
 
@@ -708,6 +737,22 @@ mod tests {
         )));
         assert_eq!(args, ["--http-proxy", "http://proxy:8080"]);
         assert!(removed.is_empty());
+    }
+
+    #[test]
+    fn only_a_dynamic_mpd_is_a_live_dash_manifest() {
+        let mpd = |attributes: &str| {
+            format!(
+                r#"<?xml version="1.0"?><MPD xmlns="urn:mpeg:dash:schema:mpd:2011"{attributes}><Period/></MPD>"#
+            )
+        };
+        assert!(!dash_manifest_has_ended(&mpd(r#" type="dynamic""#)));
+        assert!(dash_manifest_has_ended(&mpd(r#" type="static""#)));
+        assert!(dash_manifest_has_ended(&mpd("")));
+        assert!(!dash_manifest_has_ended(
+            "<html><body>Not found</body></html>"
+        ));
+        assert!(!dash_manifest_has_ended("not xml"));
     }
 
     #[test]
