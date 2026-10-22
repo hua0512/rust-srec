@@ -27,6 +27,14 @@ async fn streamer(app: &TestApp, token: &str, id: &str) -> Value {
     get_ok(app, token, &format!("/api/streamers/{id}")).await
 }
 
+async fn clear_error(app: &TestApp, token: &str, id: &str) -> Value {
+    let path = format!("/api/streamers/{id}/clear-error");
+    app.post(&path, token, &json!({}))
+        .await
+        .expect_status(StatusCode::OK)
+        .body
+}
+
 /// The streamer's check history, oldest first.
 async fn checks(app: &TestApp, token: &str, id: &str) -> Vec<Value> {
     get_ok(app, token, &format!("/api/streamers/{id}/check-history")).await["items"]
@@ -45,8 +53,10 @@ async fn wait_for_more_checks(app: &TestApp, token: &str, id: &str, count: usize
     .await;
 }
 
+/// Fatal answers stop monitoring and are recorded in the check history;
+/// clearing the error resumes monitoring.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn fatal_platform_answers_stop_monitoring_and_are_recorded_in_check_history() {
+async fn fatal_platform_answers_stop_monitoring_until_the_error_is_cleared() {
     let fake = FakePlatform::start().await;
     let app = TestApp::start_with(Seed::live()).await;
     let token = app.admin_token().await;
@@ -111,6 +121,23 @@ async fn fatal_platform_answers_stop_monitoring_and_are_recorded_in_check_histor
         assert!(history[0]["error_message"].is_null(), "{kind}");
     }
 
+    // Clearing the error of a fatally stopped streamer monitors it again. The
+    // monitor shares one result between checks of a streamer that start
+    // within 100 ms of each other; the control's checks above let that window
+    // pass, so only a check made after clear-error can see the room offline.
+    let (gone, gone_id) = &watched[0];
+    gone.set_offline();
+    clear_error(&app, &token, gone_id).await;
+    eventually(WAIT, "a check after clear-error", || async {
+        let history = checks(&app, &token, gone_id).await;
+        history
+            .iter()
+            .any(|check| check["outcome"] == "offline")
+            .then_some(())
+    })
+    .await;
+    assert_eq!(streamer(&app, &token, gone_id).await["state"], "NOT_LIVE");
+
     app.shutdown().await;
 }
 
@@ -135,8 +162,11 @@ async fn backing_off(fake: &FakePlatform) -> (TestApp, String, String, String) {
     (app, token, id, control_id)
 }
 
+/// Two failed checks in a row back the streamer off. Clearing the error
+/// resets its error fields and checks it again right away instead of at the
+/// end of its 60 s backoff.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn consecutive_check_failures_back_off_and_clear_error_resets_the_backoff() {
+async fn consecutive_check_failures_back_off_and_clear_error_resets_and_resumes_monitoring() {
     let fake = FakePlatform::start().await;
     let (app, token, id, _) = backing_off(&fake).await;
 
@@ -154,15 +184,9 @@ async fn consecutive_check_failures_back_off_and_clear_error_resets_the_backoff(
     let backoff = millis(&backing_off["disabled_until"]) - millis(&history[1]["checked_at"]);
     assert!((60_000..65_000).contains(&backoff), "{backoff} ms");
 
-    let cleared = app
-        .post(
-            &format!("/api/streamers/{id}/clear-error"),
-            &token,
-            &json!({}),
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    // Only a check made after clear-error can see the room offline.
+    fake.room("flaky").set_offline();
+    let cleared = clear_error(&app, &token, &id).await;
     let stored = streamer(&app, &token, &id).await;
     for streamer in [&cleared, &stored] {
         assert_eq!(streamer["state"], "NOT_LIVE", "{streamer}");
@@ -170,72 +194,12 @@ async fn consecutive_check_failures_back_off_and_clear_error_resets_the_backoff(
         assert!(streamer["disabled_until"].is_null(), "{streamer}");
         assert!(streamer["last_error"].is_null(), "{streamer}");
     }
-
-    app.shutdown().await;
-}
-
-/// Clearing the error checks the streamer again right away instead of at the
-/// end of its 60 s backoff.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn clear_error_resumes_monitoring_before_the_backoff_ends() {
-    let fake = FakePlatform::start().await;
-    let (app, token, id, _) = backing_off(&fake).await;
-    fake.room("flaky").set_offline();
-
-    app.post(
-        &format!("/api/streamers/{id}/clear-error"),
-        &token,
-        &json!({}),
-    )
-    .await
-    .expect_status(StatusCode::OK);
     let history = eventually(WAIT, "a check after clear-error", || async {
         let history = checks(&app, &token, &id).await;
         (history.len() > 2).then_some(history)
     })
     .await;
     assert_eq!(history[2]["outcome"], "offline", "{history:?}");
-    assert_eq!(streamer(&app, &token, &id).await["state"], "NOT_LIVE");
-
-    app.shutdown().await;
-}
-
-/// Clearing the error of a streamer that a fatal answer stopped monitors it
-/// again.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn clear_error_resumes_monitoring_a_fatally_stopped_streamer() {
-    let fake = FakePlatform::start().await;
-    let app = TestApp::start_with(Seed::live()).await;
-    let token = app.admin_token().await;
-    let room = fake.room("gone");
-    room.set_error("not_found", "the platform says no");
-    let id = watch(&app, &token, "Gone", room.url()).await;
-    let control_id = watch(&app, &token, "Control", fake.room("control").url()).await;
-    eventually(WAIT, "the fatal stop", || async {
-        (streamer(&app, &token, &id).await["state"] == "NOT_FOUND").then_some(())
-    })
-    .await;
-    // The monitor shares one result between checks of a streamer that start
-    // within 100 ms of each other; the control's checks let that window pass.
-    wait_for_more_checks(&app, &token, &control_id, 2).await;
-    // Only a check made after clear-error can see the room offline.
-    room.set_offline();
-
-    app.post(
-        &format!("/api/streamers/{id}/clear-error"),
-        &token,
-        &json!({}),
-    )
-    .await
-    .expect_status(StatusCode::OK);
-    eventually(WAIT, "a check after clear-error", || async {
-        let history = checks(&app, &token, &id).await;
-        history
-            .iter()
-            .any(|check| check["outcome"] == "offline")
-            .then_some(())
-    })
-    .await;
     assert_eq!(streamer(&app, &token, &id).await["state"], "NOT_LIVE");
 
     app.shutdown().await;
@@ -260,15 +224,7 @@ async fn clear_error_leaves_a_disabled_streamer_disabled() {
         .body;
     assert_eq!(disabled["state"], "DISABLED", "{disabled}");
 
-    let cleared = app
-        .post(
-            &format!("/api/streamers/{id}/clear-error"),
-            &token,
-            &json!({}),
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let cleared = clear_error(&app, &token, &id).await;
     let stored = streamer(&app, &token, &id).await;
     for streamer in [&cleared, &stored] {
         assert_eq!(streamer["state"], "DISABLED", "{streamer}");

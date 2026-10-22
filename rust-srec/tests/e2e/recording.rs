@@ -51,6 +51,30 @@ async fn streamer(app: &TestApp, token: &str, id: &str) -> Value {
     get_ok(app, token, &format!("/api/streamers/{id}")).await
 }
 
+/// Disable the streamer and return the updated streamer.
+async fn disable(app: &TestApp, token: &str, id: &str) -> Value {
+    let path = format!("/api/streamers/{id}");
+    app.put(&path, token, &json!({ "enabled": false }))
+        .await
+        .expect_status(StatusCode::OK)
+        .body
+}
+
+/// The streamer's check history, oldest first.
+async fn checks(app: &TestApp, token: &str, id: &str) -> Vec<Value> {
+    get_ok(app, token, &format!("/api/streamers/{id}/check-history")).await["items"]
+        .as_array()
+        .expect("check history")
+        .clone()
+}
+
+/// Send `loops` repetitions of media to `room` and let its broadcast end.
+fn broadcast_ends(room: &FakeRoom, loops: u32) {
+    room.push(FlvLoop::tiny().stream(loops));
+    room.set_offline();
+    room.end();
+}
+
 /// The streamer's sessions, newest first.
 async fn sessions(app: &TestApp, token: &str, streamer_id: &str) -> Vec<Value> {
     let page = get_ok(
@@ -97,6 +121,11 @@ fn end_payload(session: &Value) -> &Value {
         .iter()
         .find(|event| event["kind"] == "session_ended")
         .unwrap_or_else(|| panic!("no session_ended event: {session}"))["payload"]
+}
+
+/// The end of a session that disabling the streamer stopped.
+fn user_stop() -> Value {
+    json!({ "kind": "session_ended", "cause": { "type": "user_disabled" }, "via_hysteresis": false })
 }
 
 /// The session's segments, oldest first.
@@ -176,6 +205,12 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
     files
 }
 
+fn file_name(path: &Path) -> &str {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .expect("file name")
+}
+
 fn file_size(path: &str) -> u64 {
     std::fs::metadata(path)
         .unwrap_or_else(|error| panic!("{path}: {error}"))
@@ -208,9 +243,7 @@ async fn an_enabled_streamer_goes_live_records_flv_and_ends_when_the_platform_re
 
     room.wait_for_media_connection(1).await;
     assert_eq!(streamer(&app, &token, &id).await["state"], "LIVE");
-    room.push(FlvLoop::tiny().stream(3));
-    room.set_offline();
-    room.end();
+    broadcast_ends(&room, 3);
 
     let session = ended_session(&app, &token, &id).await;
     assert_eq!(session["streamer_id"], id.as_str());
@@ -244,10 +277,7 @@ async fn an_enabled_streamer_goes_live_records_flv_and_ends_when_the_platform_re
     let path = segment_path(segment);
     let file = Path::new(path);
     assert_eq!(files_under(app.output_dir()), [file.to_path_buf()]);
-    let name = file
-        .file_name()
-        .and_then(|name| name.to_str())
-        .expect("file name");
+    let name = file_name(file);
     assert!(
         name.starts_with("Alice-") && name.ends_with("-Morning stream.flv"),
         "{name}"
@@ -278,9 +308,8 @@ async fn an_enabled_streamer_goes_live_records_flv_and_ends_when_the_platform_re
     // The check that found the room live describes its candidates without
     // their URLs; every check after it found the room offline.
     let checks = eventually(WAIT, "the offline check in the history", || async {
-        let history = get_ok(&app, &token, &format!("/api/streamers/{id}/check-history")).await;
-        let items = history["items"].as_array().expect("check history").clone();
-        (items.len() >= 2).then_some(items)
+        let history = checks(&app, &token, &id).await;
+        (history.len() >= 2).then_some(history)
     })
     .await;
     let candidate = json!({
@@ -404,9 +433,7 @@ async fn offline_must_be_confirmed_offline_check_count_times_before_the_session_
     let id = watch(&app, &token, "Carol", &room, Value::Null).await;
 
     room.wait_for_media_connection(1).await;
-    room.push(FlvLoop::tiny().stream(1));
-    room.set_offline();
-    room.end();
+    broadcast_ends(&room, 1);
 
     // The body ending cleanly is the first of the three offline signals, so
     // the session ends at the second offline check after it.
@@ -419,12 +446,11 @@ async fn offline_must_be_confirmed_offline_check_count_times_before_the_session_
     // from after the end means every earlier row is in.
     let ended_at = millis(&session["end_time"]);
     let history = eventually(WAIT, "a check after the end", || async {
-        let history = get_ok(&app, &token, &format!("/api/streamers/{id}/check-history")).await;
-        let items = history["items"].as_array().expect("check history").clone();
-        items
+        let history = checks(&app, &token, &id).await;
+        history
             .iter()
             .any(|check| millis(&check["checked_at"]) > ended_at)
-            .then_some(items)
+            .then_some(history)
     })
     .await;
     let offline_before_end = history
@@ -436,15 +462,48 @@ async fn offline_must_be_confirmed_offline_check_count_times_before_the_session_
     app.shutdown().await;
 }
 
+/// Disabling a recording streamer ends its session as a user stop and runs
+/// the session-complete workflow on what it recorded.
+///
+/// After a restart the session a recording left open is in the database
+/// only, not in memory. Disabling the streamer still ends it, as a user
+/// stop; otherwise it would stay live forever and the next live check would
+/// reuse it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn disabling_a_recording_streamer_ends_its_session_and_runs_the_session_complete_pipeline() {
     let fake = FakePlatform::start().await;
     let room = fake.room("dave");
     room.set_live(room.live("Interrupted"));
-    let app =
-        TestApp::start_with(Seed::live().session_complete_pipeline(&succeed("after-disable")))
-            .await;
+    let restarted = fake.room("restarted");
+    // Backing off for a day, so the scheduler does not check the room; were
+    // it checked, an error keeps the check from ending the session itself.
+    restarted.set_error("http", "unavailable");
+    let backoff_until = (now_ms() + 86_400_000).to_string();
+    let started = now_ms() - 60_000;
+    let backing_off = [
+        ("state", "'TEMPORAL_DISABLED'"),
+        ("disabled_until", &backoff_until),
+    ];
+    let app = TestApp::start_with(
+        Seed::live()
+            .session_complete_pipeline(&succeed("after-disable"))
+            .rows(&format!(
+                "{}INSERT INTO live_sessions (id, streamer_id, streamer_name, start_time, \
+                     end_time, total_size_bytes, session_complete_dispatched) \
+                 VALUES ('open-session', 'restarted', 'restarted', {started}, NULL, 0, 0);\n",
+                seeded_streamer("restarted", &restarted, &backing_off),
+            )),
+    )
+    .await;
     let token = app.admin_token().await;
+    let left_open = sessions(&app, &token, "restarted").await;
+    assert_eq!(left_open[0]["is_live"], true, "{left_open:?}");
+    let disabled = disable(&app, &token, "restarted").await;
+    assert_eq!(disabled["state"], "DISABLED");
+    let session = ended_session(&app, &token, "restarted").await;
+    assert_eq!(session_id(&session), "open-session");
+    assert_eq!(end_payload(&session), &user_stop());
+
     let id = watch(&app, &token, "Dave", &room, Value::Null).await;
 
     room.wait_for_media_connection(1).await;
@@ -453,16 +512,7 @@ async fn disabling_a_recording_streamer_ends_its_session_and_runs_the_session_co
         (!files_under(app.output_dir()).is_empty()).then_some(())
     })
     .await;
-    let disabled = app
-        .put(
-            &format!("/api/streamers/{id}"),
-            &token,
-            &json!({ "enabled": false }),
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(disabled["state"], "DISABLED");
+    assert_eq!(disable(&app, &token, &id).await["state"], "DISABLED");
 
     // The room is still live, so the backend has to hang up by itself.
     eventually(WAIT, "the backend to hang up", || async {
@@ -471,10 +521,7 @@ async fn disabling_a_recording_streamer_ends_its_session_and_runs_the_session_co
     .await;
     let session = ended_session(&app, &token, &id).await;
     assert_eq!(event_kinds(&session), ["session_started", "session_ended"]);
-    assert_eq!(
-        end_payload(&session),
-        &json!({ "kind": "session_ended", "cause": { "type": "user_disabled" }, "via_hysteresis": false })
-    );
+    assert_eq!(end_payload(&session), &user_stop());
     // The workflow starts once the session's parts are stored.
     let dags = finished_dags(&app, &token, session_id(&session), 1).await;
     assert_eq!(dags[0]["name"], "after-disable");
@@ -498,31 +545,17 @@ async fn part_size_and_duration_limits_split_a_mesio_recording() {
     let app = TestApp::start_with(Seed::live()).await;
     let token = app.admin_token().await;
     // Six repetitions are about 38 KB of media tags spanning 12.7 s.
-    let sized = watch(
-        &app,
-        &token,
-        "Sized",
-        &by_size,
-        json!({ "max_part_size_bytes": 20_000 }),
-    )
-    .await;
+    let config = json!({ "max_part_size_bytes": 20_000 });
+    let sized = watch(&app, &token, "Sized", &by_size, config).await;
     // A name without time placeholders makes every part after the first
     // collide, so its sequence suffix does not depend on the parts opening
     // within one wall-clock second.
-    let timed = watch(
-        &app,
-        &token,
-        "Timed",
-        &by_duration,
-        json!({ "max_download_duration_secs": 4, "output_filename_template": "Timed" }),
-    )
-    .await;
+    let config = json!({ "max_download_duration_secs": 4, "output_filename_template": "Timed" });
+    let timed = watch(&app, &token, "Timed", &by_duration, config).await;
 
     for room in [&by_size, &by_duration] {
         room.wait_for_media_connection(1).await;
-        room.push(FlvLoop::tiny().stream(6));
-        room.set_offline();
-        room.end();
+        broadcast_ends(room, 6);
     }
     let parts = |segments: &[Value]| -> Vec<(Value, Value)> {
         segments
@@ -557,8 +590,8 @@ async fn part_size_and_duration_limits_split_a_mesio_recording() {
     );
     // The later parts of one download are numbered after the first.
     assert_eq!(
-        std::path::Path::new(segment_path(&timed_parts[0])).file_name(),
-        Some("Timed.flv".as_ref())
+        file_name(Path::new(segment_path(&timed_parts[0]))),
+        "Timed.flv"
     );
     let first = segment_path(&timed_parts[0]).trim_end_matches(".flv");
     assert_eq!(segment_path(&timed_parts[1]), format!("{first}-001.flv"));
@@ -568,28 +601,35 @@ async fn part_size_and_duration_limits_split_a_mesio_recording() {
     app.shutdown().await;
 }
 
+/// Platform titles and streamer names cannot escape the output directory.
+/// The default engine here holds output settings an older version stored,
+/// which this version no longer has; it still records.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn platform_titles_cannot_escape_the_output_directory() {
     let fake = FakePlatform::start().await;
     let room = fake.room("eve");
     // Both separators, parent references and a drive prefix.
     room.set_live(room.live(r"..\../C:/escape"));
-    let app = TestApp::start_with(Seed::live()).await;
+    let retired = json!({
+        "fix_flv": true,
+        "fix_hls": true,
+        "hls": { "output_config": {
+            "live_reorder_buffer_duration_ms": 30_000,
+            "live_reorder_buffer_max_segments": 10,
+            "max_pending_init_segments": 4,
+        } },
+    });
+    let app = TestApp::start_with(Seed::live().rows(&format!(
+        "UPDATE engine_configuration SET config = '{retired}' WHERE id = 'default-mesio';"
+    )))
+    .await;
     let token = app.admin_token().await;
     let folder = app.output_dir().join("{streamer}").join("{title}");
-    let id = watch(
-        &app,
-        &token,
-        "..",
-        &room,
-        json!({ "output_folder": folder.to_string_lossy() }),
-    )
-    .await;
+    let config = json!({ "output_folder": folder.to_string_lossy() });
+    let id = watch(&app, &token, "..", &room, config).await;
 
     room.wait_for_media_connection(1).await;
-    room.push(FlvLoop::tiny().stream(1));
-    room.set_offline();
-    room.end();
+    broadcast_ends(&room, 1);
     let session = ended_session(&app, &token, &id).await;
     let segments = segments(&app, &token, session_id(&session)).await;
     assert_eq!(segments.len(), 1, "{segments:?}");
@@ -600,10 +640,7 @@ async fn platform_titles_cannot_escape_the_output_directory() {
     let file = PathBuf::from(segment_path(&segments[0]));
     let directory = app.output_dir().join("unnamed").join("_.._C_escape");
     assert_eq!(file.parent(), Some(directory.as_path()));
-    let name = file
-        .file_name()
-        .and_then(|name| name.to_str())
-        .expect("file name");
+    let name = file_name(&file);
     assert!(
         name.starts_with("unnamed-") && name.ends_with("-_.._C_escape.flv"),
         "{name}"
@@ -613,11 +650,7 @@ async fn platform_titles_cannot_escape_the_output_directory() {
     let outside: Vec<PathBuf> = files_under(data_dir)
         .into_iter()
         .filter(|path| {
-            !path.starts_with(app.output_dir())
-                && !path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .is_some_and(|name| name.starts_with("srec.db"))
+            !path.starts_with(app.output_dir()) && !file_name(path).starts_with("srec.db")
         })
         .collect();
     assert_eq!(outside, Vec::<PathBuf>::new());
@@ -626,6 +659,9 @@ async fn platform_titles_cannot_escape_the_output_directory() {
     app.shutdown().await;
 }
 
+/// A segment smaller than the minimum is discarded and runs no workflow; a
+/// kept one runs the per-segment workflow, and a streamer's own
+/// session-complete workflow replaces the platform's.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn segments_smaller_than_the_minimum_are_discarded_and_not_pipelined() {
     let fake = FakePlatform::start().await;
@@ -634,33 +670,23 @@ async fn segments_smaller_than_the_minimum_are_discarded_and_not_pipelined() {
     let kept = fake.room("kept");
     kept.set_live(kept.live("Kept"));
     let app =
-        TestApp::start_with(Seed::live().session_complete_pipeline(&succeed("session-complete")))
+        TestApp::start_with(Seed::live().session_complete_pipeline(&succeed("platform-level")))
             .await;
     let token = app.admin_token().await;
-    // The same workflows on both; only the minimum segment size differs.
+    // The same per-segment workflow on both, and the platform's
+    // session-complete one on the short streamer.
     let per_segment = succeed("per-segment");
-    let short_id = watch(
-        &app,
-        &token,
-        "Short",
-        &short,
-        json!({ "min_segment_size_bytes": 10_000_000, "pipeline": per_segment }),
-    )
-    .await;
-    let kept_id = watch(
-        &app,
-        &token,
-        "Kept",
-        &kept,
-        json!({ "pipeline": per_segment }),
-    )
-    .await;
+    let config = json!({ "min_segment_size_bytes": 10_000_000, "pipeline": per_segment });
+    let short_id = watch(&app, &token, "Short", &short, config).await;
+    let kept_config = json!({
+        "pipeline": per_segment,
+        "session_complete_pipeline": succeed("streamer-level"),
+    });
+    let kept_id = watch(&app, &token, "Kept", &kept, kept_config).await;
 
     for room in [&short, &kept] {
         room.wait_for_media_connection(1).await;
-        room.push(FlvLoop::tiny().stream(1));
-        room.set_offline();
-        room.end();
+        broadcast_ends(room, 1);
     }
 
     let session = ended_session(&app, &token, &kept_id).await;
@@ -671,22 +697,15 @@ async fn segments_smaller_than_the_minimum_are_discarded_and_not_pipelined() {
         .iter()
         .map(|dag| dag["name"].as_str().unwrap_or_default())
         .collect();
-    assert_eq!(names, ["per-segment", "session-complete"]);
+    assert_eq!(names, ["per-segment", "streamer-level"]);
+    assert_eq!(kept_dags[1]["status"], "COMPLETED", "{kept_dags:?}");
 
     let session = ended_session(&app, &token, &short_id).await;
-    wait_for_session_complete_decision(&app, session_id(&session)).await;
-    assert_eq!(
-        segments(&app, &token, session_id(&session)).await,
-        Vec::<Value>::new()
-    );
-    assert_eq!(
-        outputs(&app, &token, session_id(&session)).await,
-        Vec::<Value>::new()
-    );
-    assert_eq!(
-        dags(&app, &token, session_id(&session)).await,
-        Vec::<Value>::new()
-    );
+    let id = session_id(&session);
+    wait_for_session_complete_decision(&app, id).await;
+    assert_eq!(segments(&app, &token, id).await, Vec::<Value>::new());
+    assert_eq!(outputs(&app, &token, id).await, Vec::<Value>::new());
+    assert_eq!(dags(&app, &token, id).await, Vec::<Value>::new());
     assert_eq!(session["output_count"], 0);
     assert_eq!(session["total_size_bytes"], 0);
     // The discarded file is gone; the kept recording is the only one left.
@@ -701,141 +720,19 @@ async fn segments_smaller_than_the_minimum_are_discarded_and_not_pipelined() {
 /// A streamer row inserted before boot on `room`, for states the services
 /// load at startup.
 fn seeded_streamer(id: &str, room: &FakeRoom, columns: &[(&str, &str)]) -> String {
-    let (names, values): (Vec<&str>, Vec<&str>) = columns.iter().copied().unzip();
+    let names: String = columns
+        .iter()
+        .map(|(name, _)| format!(", {name}"))
+        .collect();
+    let values: String = columns
+        .iter()
+        .map(|(_, value)| format!(", {value}"))
+        .collect();
     format!(
         "INSERT INTO streamers (id, name, url, platform_config_id, priority{names}) \
          VALUES ('{id}', '{id}', '{url}', 'platform-fake', 'NORMAL'{values});\n",
-        names = names
-            .iter()
-            .map(|name| format!(", {name}"))
-            .collect::<String>(),
-        values = values
-            .iter()
-            .map(|value| format!(", {value}"))
-            .collect::<String>(),
         url = room.url(),
     )
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_mesio_config_saved_with_since_retired_settings_still_records() {
-    let fake = FakePlatform::start().await;
-    let room = fake.room("legacy");
-    room.set_live(room.live("Legacy config"));
-    // Output settings an older version stored on the default engine, which
-    // this version no longer has.
-    let stored = json!({
-        "fix_flv": true,
-        "fix_hls": true,
-        "hls": { "output_config": {
-            "live_reorder_buffer_duration_ms": 30_000,
-            "live_reorder_buffer_max_segments": 10,
-            "max_pending_init_segments": 4,
-        } },
-    });
-    let app = TestApp::start_with(Seed::live().rows(&format!(
-        "UPDATE engine_configuration SET config = '{stored}' WHERE id = 'default-mesio';"
-    )))
-    .await;
-    let token = app.admin_token().await;
-    let id = watch(&app, &token, "Legacy", &room, Value::Null).await;
-
-    room.wait_for_media_connection(1).await;
-    room.push(FlvLoop::tiny().stream(1));
-    room.set_offline();
-    room.end();
-
-    let session = ended_session(&app, &token, &id).await;
-    let segments = segments(&app, &token, session_id(&session)).await;
-    assert_eq!(segments.len(), 1, "{segments:?}");
-    assert_recorded(&segments[0]);
-
-    app.shutdown().await;
-}
-
-/// After a restart the session a recording left open is in the database
-/// only, not in memory. Disabling the streamer still ends it, as a user
-/// stop; otherwise it would stay live forever and the next live check would
-/// reuse it.
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn disabling_a_streamer_ends_the_session_a_restart_left_open() {
-    let fake = FakePlatform::start().await;
-    let room = fake.room("restarted");
-    // Backing off for a day, so the scheduler does not check the room; were
-    // it checked, an error keeps the check from ending the session itself.
-    room.set_error("http", "unavailable");
-    let backoff_until = now_ms() + 86_400_000;
-    let started = now_ms() - 60_000;
-    let app = TestApp::start_with(Seed::live().rows(&format!(
-        "{}INSERT INTO live_sessions (id, streamer_id, streamer_name, start_time, end_time, \
-             total_size_bytes, session_complete_dispatched) \
-         VALUES ('open-session', 'restarted', 'restarted', {started}, NULL, 0, 0);\n",
-        seeded_streamer(
-            "restarted",
-            &room,
-            &[
-                ("state", "'TEMPORAL_DISABLED'"),
-                ("disabled_until", &backoff_until.to_string()),
-            ],
-        ),
-    )))
-    .await;
-    let token = app.admin_token().await;
-    assert_eq!(
-        sessions(&app, &token, "restarted").await[0]["is_live"],
-        true
-    );
-
-    let disabled = app
-        .put(
-            "/api/streamers/restarted",
-            &token,
-            &json!({ "enabled": false }),
-        )
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
-    assert_eq!(disabled["state"], "DISABLED");
-
-    let session = ended_session(&app, &token, "restarted").await;
-    assert_eq!(session_id(&session), "open-session");
-    assert_eq!(
-        end_payload(&session),
-        &json!({ "kind": "session_ended", "cause": { "type": "user_disabled" }, "via_hysteresis": false })
-    );
-
-    app.shutdown().await;
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn a_streamer_session_complete_pipeline_replaces_the_platform_one() {
-    let fake = FakePlatform::start().await;
-    let room = fake.room("frank");
-    room.set_live(room.live("Own workflow"));
-    let app =
-        TestApp::start_with(Seed::live().session_complete_pipeline(&succeed("platform-level")))
-            .await;
-    let token = app.admin_token().await;
-    let id = watch(
-        &app,
-        &token,
-        "Frank",
-        &room,
-        json!({ "session_complete_pipeline": succeed("streamer-level") }),
-    )
-    .await;
-
-    room.wait_for_media_connection(1).await;
-    room.push(FlvLoop::tiny().stream(1));
-    room.set_offline();
-    room.end();
-
-    let session = ended_session(&app, &token, &id).await;
-    let dags = finished_dags(&app, &token, session_id(&session), 1).await;
-    assert_eq!(dags[0]["name"], "streamer-level", "{dags:?}");
-    assert_eq!(dags[0]["status"], "COMPLETED", "{dags:?}");
-
-    app.shutdown().await;
 }
 
 /// Platforms that name no CDN in a stream's extras are matched against
@@ -856,14 +753,8 @@ async fn preferred_cdns_match_the_stream_url_when_the_platform_names_no_cdn() {
     })));
     let app = TestApp::start_with(Seed::live()).await;
     let token = app.admin_token().await;
-    let id = watch(
-        &app,
-        &token,
-        "Grace",
-        &room,
-        json!({ "stream_selection_config": { "preferred_cdns": ["cloudfront"] } }),
-    )
-    .await;
+    let config = json!({ "stream_selection_config": { "preferred_cdns": ["cloudfront"] } });
+    let id = watch(&app, &token, "Grace", &room, config).await;
 
     room.wait_for_media_connection(1).await;
     let media = fake.requests_to(&room, "live.flv");
@@ -872,9 +763,7 @@ async fn preferred_cdns_match_the_stream_url_when_the_platform_names_no_cdn() {
         media[0].path.ends_with("/live.flv?edge=cloudfront"),
         "{media:?}"
     );
-    room.push(FlvLoop::tiny().stream(1));
-    room.set_offline();
-    room.end();
+    broadcast_ends(&room, 1);
     ended_session(&app, &token, &id).await;
 
     app.shutdown().await;

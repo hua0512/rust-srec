@@ -9,11 +9,21 @@ use crate::support::{
     sorted_keys, tokens_from,
 };
 
-async fn export(app: &TestApp, token: &str) -> Value {
-    app.get("/api/config/backup/export", token)
+async fn get_ok(app: &TestApp, token: &str, path: &str) -> Value {
+    app.get(path, token)
         .await
         .expect_status(StatusCode::OK)
         .body
+}
+
+/// Create a disabled streamer and return its id.
+async fn disabled_streamer(app: &TestApp, token: &str, name: &str, url: &str) -> String {
+    let streamer = json!({ "name": name, "url": url });
+    id_of(&app.create_disabled_streamer(token, streamer).await)
+}
+
+async fn export(app: &TestApp, token: &str) -> Value {
+    get_ok(app, token, "/api/config/backup/export").await
 }
 
 async fn import(app: &TestApp, token: &str, config: &Value, mode: &str) -> Response {
@@ -31,10 +41,7 @@ async fn sign_in_again(app: &TestApp, password: &str) -> String {
 }
 
 async fn listed_streamers(app: &TestApp, token: &str) -> Vec<Value> {
-    app.get("/api/streamers?limit=100", token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body["items"]
+    get_ok(app, token, "/api/streamers?limit=100").await["items"]
         .as_array()
         .expect("streamer items")
         .clone()
@@ -47,6 +54,14 @@ fn streamer_named<'a>(bundle: &'a mut Value, name: &str) -> &'a mut Value {
         .iter_mut()
         .find(|streamer| streamer["name"] == name)
         .unwrap_or_else(|| panic!("the bundle has streamer {name}"))
+}
+
+/// Panics unless each field of `expected` has that value in `actual`.
+#[track_caller]
+fn assert_fields(actual: &Value, expected: Value) {
+    for (key, value) in expected.as_object().expect("expected fields") {
+        assert_eq!(&actual[key], value, "{key} in {actual}");
+    }
 }
 
 /// A bundle without the fields that change on every export or sign-in.
@@ -158,11 +173,7 @@ async fn create_backup_content(app: &TestApp, token: &str) -> String {
         )
         .await
         .expect_status(StatusCode::OK);
-    let mut huya = app
-        .get("/api/config/platforms/platform-huya", token)
-        .await
-        .expect_status(StatusCode::OK)
-        .body;
+    let mut huya = get_ok(app, token, "/api/config/platforms/platform-huya").await;
     huya["credential_selection"] =
         json!(json!({ "mode": "fixed", "credential_id": id_of(&profile.body) }).to_string());
     app.put("/api/config/platforms/platform-huya", token, &huya)
@@ -252,22 +263,16 @@ async fn the_export_carries_what_a_restore_needs_and_leaves_out_sessions_and_api
         .await
         .expect_status(StatusCode::CREATED);
     // No API sets an avatar (the platform's metadata refresh does) or a token
-    // in a streamer's own configuration (older installs kept one there).
-    let database = app.database().await;
-    sqlx::query("UPDATE streamers SET avatar = ?, streamer_specific_config = ? WHERE id = ?")
-        .bind("https://127.0.0.1/avatar.png")
-        .bind(r#"{"refresh_token":"streamer-refresh-secret"}"#)
-        .bind(&streamer)
-        .execute(&database)
-        .await
-        .expect("set the avatar");
-    // A replace import that dropped a template still in use leaves it retiring.
-    sqlx::query("INSERT INTO retirement_config_deletions (kind, config_id) VALUES ('template', ?)")
-        .bind(retired.body["id"].as_str().expect("template id"))
-        .execute(&database)
-        .await
-        .expect("retire the template");
-    database.close().await;
+    // in a streamer's own configuration (older installs kept one there). A
+    // replace import that dropped a template still in use leaves it retiring.
+    app.run_sql(&format!(
+        "UPDATE streamers SET avatar = 'https://127.0.0.1/avatar.png', \
+             streamer_specific_config = '{{\"refresh_token\":\"streamer-refresh-secret\"}}' \
+         WHERE id = '{streamer}';\n\
+         INSERT INTO retirement_config_deletions (kind, config_id) VALUES ('template', '{}');",
+        id_of(&retired.body),
+    ))
+    .await;
 
     let response = app
         .get("/api/config/backup/export", &token)
@@ -309,20 +314,12 @@ async fn the_export_carries_what_a_restore_needs_and_leaves_out_sessions_and_api
     let users = bundle["users"].as_array().expect("users");
     assert_eq!(users.len(), 1);
     assert_eq!(users[0]["username"], ADMIN_USERNAME);
-    assert!(
-        users[0]["password_hash"]
-            .as_str()
-            .expect("password hash")
-            .starts_with("$argon2id$")
-    );
     assert_eq!(users[0]["is_active"], true);
     assert_eq!(users[0]["must_change_password"], false);
-    assert!(
-        users[0]["roles"]
-            .as_array()
-            .expect("roles")
-            .contains(&json!("admin"))
-    );
+    let hash = users[0]["password_hash"].as_str().expect("password hash");
+    assert!(hash.starts_with("$argon2id$"), "{hash}");
+    let roles = users[0]["roles"].as_array().expect("roles");
+    assert!(roles.contains(&json!("admin")), "{roles:?}");
 
     let profiles = bundle["credential_profiles"].as_array().expect("profiles");
     assert_eq!(profiles.len(), 1);
@@ -354,31 +351,23 @@ async fn the_export_carries_what_a_restore_needs_and_leaves_out_sessions_and_api
 
     let streamers = bundle["streamers"].as_array().expect("streamers");
     assert_eq!(streamers.len(), 1);
-    assert_eq!(streamers[0]["name"], "Backup Alpha");
-    assert_eq!(streamers[0]["url"], "https://www.huya.com/990001");
-    assert_eq!(streamers[0]["platform"], "huya");
-    assert_eq!(streamers[0]["state"], "DISABLED");
-    assert_eq!(streamers[0]["avatar_url"], "https://127.0.0.1/avatar.png");
+    assert_fields(
+        &streamers[0],
+        json!({
+            "name": "Backup Alpha", "url": "https://www.huya.com/990001", "platform": "huya",
+            "state": "DISABLED", "avatar_url": "https://127.0.0.1/avatar.png",
+        }),
+    );
     assert_eq!(
         streamers[0]["streamer_specific_config"]["refresh_token"],
         "streamer-refresh-secret"
     );
 
     let global = &bundle["global_config"];
-    let stored = app
-        .get("/api/config/global", &token)
-        .await
-        .expect_status(StatusCode::OK);
-    assert_eq!(
-        global["log_filter_directive"],
-        stored.body["log_filter_directive"]
-    );
-    assert!(
-        !global["log_filter_directive"]
-            .as_str()
-            .expect("log filter")
-            .is_empty()
-    );
+    let stored = get_ok(&app, &token, "/api/config/global").await;
+    let log_filter = global["log_filter_directive"].as_str().expect("log filter");
+    assert_eq!(log_filter, stored["log_filter_directive"]);
+    assert!(!log_filter.is_empty());
     assert_eq!(global["stream_proxy_allow_private_targets"], true);
     assert!(global.get("proxy_route").is_some());
     assert!(
@@ -487,17 +476,14 @@ async fn a_backup_restores_into_a_fresh_install_and_exports_the_same_bundle() {
     for counter in &counters {
         assert!(stats[counter].is_u64(), "{counter}: {stats}");
     }
-    assert_eq!(stats["templates_created"], 1);
-    assert_eq!(stats["streamers_created"], 1);
-    assert_eq!(stats["channels_created"], 1);
-    assert_eq!(stats["users_created"], 0);
-    assert_eq!(
-        stats["users_updated"], 1,
-        "the admin is matched by username"
-    );
-    assert_eq!(
-        stats["platforms_updated"],
-        bundle["platforms"].as_array().expect("platforms").len()
+    // The admin is matched by username.
+    assert_fields(
+        stats,
+        json!({
+            "templates_created": 1, "streamers_created": 1, "channels_created": 1,
+            "users_created": 0, "users_updated": 1,
+            "platforms_updated": bundle["platforms"].as_array().expect("platforms").len(),
+        }),
     );
     for change in counters
         .iter()
@@ -519,36 +505,28 @@ async fn a_backup_restores_into_a_fresh_install_and_exports_the_same_bundle() {
     let streamers = listed_streamers(&target, &token).await;
     assert_eq!(streamers.len(), 1);
     let restored = &streamers[0];
-    assert_eq!(restored["name"], "Backup Alpha");
-    assert_eq!(restored["url"], "https://www.huya.com/990001");
-    assert_eq!(restored["state"], "DISABLED");
-    assert_eq!(restored["priority"], "HIGH");
+    assert_fields(
+        restored,
+        json!({
+            "name": "Backup Alpha", "url": "https://www.huya.com/990001", "state": "DISABLED",
+            "priority": "HIGH",
+        }),
+    );
     let template_id = restored["template_id"].as_str().expect("template assigned");
-    let template = target
-        .get(&format!("/api/templates/{template_id}"), &token)
-        .await
-        .expect_status(StatusCode::OK);
-    assert_eq!(template.body["name"], "Backup template");
-    let instances = target
-        .get("/api/notifications/instances", &token)
-        .await
-        .expect_status(StatusCode::OK);
+    let template = get_ok(&target, &token, &format!("/api/templates/{template_id}")).await;
+    assert_eq!(template["name"], "Backup template");
+    let instances = get_ok(&target, &token, "/api/notifications/instances").await;
     assert!(
         instances
-            .body
             .as_array()
             .expect("instances")
             .iter()
             .any(|instance| instance["display_name"] == "Backup webhook"),
-        "the restored channel is loaded: {}",
-        instances.body
+        "the restored channel is loaded: {instances}"
     );
-    let global = target
-        .get("/api/config/global", &token)
-        .await
-        .expect_status(StatusCode::OK);
-    assert_eq!(global.body["max_concurrent_downloads"], 3);
-    assert_eq!(global.body["stream_proxy_allow_private_targets"], true);
+    let global = get_ok(&target, &token, "/api/config/global").await;
+    assert_eq!(global["max_concurrent_downloads"], 3);
+    assert_eq!(global["stream_proxy_allow_private_targets"], true);
 
     let again = export(&target, &token).await;
     assert_same_bundle(&again, &bundle);
@@ -569,20 +547,15 @@ async fn an_import_resets_omitted_flags_keeps_the_log_filter_and_clears_omitted_
     ))
     .await;
     let token = app.admin_token().await;
-    let before = app
-        .get("/api/streamers/seeded-streamer", &token)
-        .await
-        .expect_status(StatusCode::OK);
-    assert_eq!(before.body["avatar_url"], SEEDED_AVATAR);
+    let streamer = async |token: &str| get_ok(&app, token, "/api/streamers/seeded-streamer").await;
+    assert_eq!(streamer(&token).await["avatar_url"], SEEDED_AVATAR);
 
     let mut bundle = export(&app, &token).await;
-    assert_eq!(
-        bundle["global_config"]["stream_proxy_allow_private_targets"],
-        true
-    );
-    assert_eq!(
-        bundle["global_config"]["log_filter_directive"],
-        SEEDED_LOG_FILTER
+    assert_fields(
+        &bundle["global_config"],
+        json!({
+            "stream_proxy_allow_private_targets": true, "log_filter_directive": SEEDED_LOG_FILTER,
+        }),
     );
     let invalid_mode = import(&app, &token, &bundle, "overwrite").await;
     assert_eq!(invalid_mode.status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -601,28 +574,15 @@ async fn an_import_resets_omitted_flags_keeps_the_log_filter_and_clears_omitted_
         .expect_status(StatusCode::OK);
     let token = sign_in_again(&app, ADMIN_PASSWORD).await;
 
-    let global = app
-        .get("/api/config/global", &token)
-        .await
-        .expect_status(StatusCode::OK);
+    let global = get_ok(&app, &token, "/api/config/global").await;
     assert_eq!(
-        global.body["stream_proxy_allow_private_targets"], false,
+        global["stream_proxy_allow_private_targets"], false,
         "an omitted private-target flag fails closed"
     );
-    assert_eq!(global.body["log_filter_directive"], SEEDED_LOG_FILTER);
-    let after = app
-        .get("/api/streamers/seeded-streamer", &token)
-        .await
-        .expect_status(StatusCode::OK);
-    assert_eq!(after.body["avatar_url"], Value::Null);
-    let database = app.database().await;
-    let avatar: Option<String> =
-        sqlx::query_scalar("SELECT avatar FROM streamers WHERE id = 'seeded-streamer'")
-            .fetch_one(&database)
-            .await
-            .expect("read the avatar");
-    assert_eq!(avatar, None);
-    database.close().await;
+    assert_eq!(global["log_filter_directive"], SEEDED_LOG_FILTER);
+    assert_eq!(streamer(&token).await["avatar_url"], Value::Null);
+    let cleared = "SELECT COUNT(*) FROM streamers WHERE id = 'seeded-streamer' AND avatar IS NULL";
+    assert_eq!(app.query_i64(cleared).await, 1);
 
     app.shutdown().await;
 }
@@ -631,11 +591,7 @@ async fn an_import_resets_omitted_flags_keeps_the_log_filter_and_clears_omitted_
 async fn omitted_time_filter_zones_mean_local_before_schema_0_1_8_and_utc_from_it() {
     let app = TestApp::start().await;
     let mut token = app.admin_token().await;
-    app.create_disabled_streamer(
-        &token,
-        json!({ "name": "Zoned", "url": "https://www.huya.com/440001" }),
-    )
-    .await;
+    disabled_streamer(&app, &token, "Zoned", "https://www.huya.com/440001").await;
     let unzoned = json!([{
         "filter_type": "TIME_BASED",
         "config": { "days_of_week": ["Monday"], "start_time": "09:00", "end_time": "17:00" },
@@ -667,20 +623,8 @@ async fn omitted_time_filter_zones_mean_local_before_schema_0_1_8_and_utc_from_i
 async fn merge_keeps_and_replace_removes_omitted_streamers_and_a_case_only_url_updates_in_place() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
-    let kept = id_of(
-        &app.create_disabled_streamer(
-            &token,
-            json!({ "name": "Case Room", "url": "https://www.huya.com/caseroom" }),
-        )
-        .await,
-    );
-    let omitted = id_of(
-        &app.create_disabled_streamer(
-            &token,
-            json!({ "name": "Omitted", "url": "https://www.huya.com/330002" }),
-        )
-        .await,
-    );
+    let kept = disabled_streamer(&app, &token, "Case Room", "https://www.huya.com/caseroom").await;
+    let omitted = disabled_streamer(&app, &token, "Omitted", "https://www.huya.com/330002").await;
 
     let mut bundle = export(&app, &token).await;
     bundle["streamers"]
@@ -696,23 +640,20 @@ async fn merge_keeps_and_replace_removes_omitted_streamers_and_a_case_only_url_u
     assert_eq!(merged.body["stats"]["streamers_updated"], 1);
     assert_eq!(merged.body["stats"]["streamers_deleted"], 0);
     let token = sign_in_again(&app, ADMIN_PASSWORD).await;
-    let streamers = listed_streamers(&app, &token).await;
-    let mut ids: Vec<&str> = streamers
-        .iter()
-        .map(|streamer| streamer["id"].as_str().expect("id"))
+    // The merge keeps the omitted streamer and updates the case-only match in
+    // place.
+    let mut urls: Vec<(String, Value)> = listed_streamers(&app, &token)
+        .await
+        .into_iter()
+        .map(|streamer| (id_of(&streamer), streamer["url"].clone()))
         .collect();
-    ids.sort_unstable();
-    let mut expected = vec![kept.as_str(), omitted.as_str()];
-    expected.sort_unstable();
-    assert_eq!(ids, expected, "merge keeps the omitted streamer");
-    let updated = streamers
-        .iter()
-        .find(|streamer| streamer["id"] == kept.as_str())
-        .expect("updated streamer");
-    assert_eq!(
-        updated["url"], "https://www.huya.com/CaseRoom",
-        "the case-only match was updated in place"
-    );
+    urls.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    let mut expected = vec![
+        (kept.clone(), json!("https://www.huya.com/CaseRoom")),
+        (omitted, json!("https://www.huya.com/330002")),
+    ];
+    expected.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    assert_eq!(urls, expected);
 
     let mut no_admin = bundle.clone();
     for user in no_admin["users"].as_array_mut().expect("users") {
@@ -742,86 +683,26 @@ async fn merge_keeps_and_replace_removes_omitted_streamers_and_a_case_only_url_u
     app.shutdown().await;
 }
 
+/// A rejected import changes nothing and ends no session; a successful one
+/// then ends every session.
 #[tokio::test]
-async fn a_successful_import_ends_every_session_and_a_rejected_one_ends_none() {
+async fn a_rejected_import_changes_nothing_and_a_successful_one_ends_every_session() {
     let app = TestApp::start().await;
     let first = app.admin().await.clone();
-    let mut bundle = export(&app, &first.access).await;
-    // Revocation does not depend on the bundle replacing any user.
-    bundle.as_object_mut().expect("bundle").remove("users");
-
-    let mut rejected = bundle.clone();
-    rejected["platforms"]
-        .as_array_mut()
-        .expect("platforms")
-        .push(json!({ "platform_name": "nosuchplatform" }));
-    let response = import(&app, &first.access, &rejected, "merge").await;
-    assert_eq!(
-        response.status,
-        StatusCode::BAD_REQUEST,
-        "{}",
-        response.text
-    );
-    app.get("/api/streamers", &first.access)
-        .await
-        .expect_status(StatusCode::OK);
-    let refreshed = app
-        .refresh(&first.refresh)
-        .await
-        .expect_status(StatusCode::OK);
-    let second = tokens_from(&refreshed.body);
-
-    import(&app, &second.access, &bundle, "merge")
-        .await
-        .expect_status(StatusCode::OK);
-    for access in [&first.access, &second.access] {
-        let response = app.get("/api/streamers", access).await;
-        assert_eq!(
-            response.status,
-            StatusCode::UNAUTHORIZED,
-            "{}",
-            response.text
-        );
-    }
-    let response = app.refresh(&second.refresh).await;
-    assert_eq!(
-        response.status,
-        StatusCode::UNAUTHORIZED,
-        "{}",
-        response.text
-    );
-    // Signing in still works: the import revoked sessions, not the account.
-    sign_in_again(&app, ADMIN_PASSWORD).await;
-
-    app.shutdown().await;
-}
-
-#[tokio::test]
-async fn a_rejected_import_changes_nothing() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-    app.create_disabled_streamer(
-        &token,
-        json!({ "name": "Stable", "url": "https://www.huya.com/220001" }),
-    )
-    .await;
+    let token = first.access.clone();
+    disabled_streamer(&app, &token, "Stable", "https://www.huya.com/220001").await;
     // A row still being removed keeps its URL; no API leaves one behind.
     // Inserted after start, the streamer manager never loads it, so the
     // reaper leaves it in place.
     let retiring_url = "https://www.huya.com/220099";
     let now = now_ms();
-    let database = app.database().await;
-    sqlx::query(
-        "INSERT INTO streamers (id, name, url, platform_config_id, state, priority, created_at, updated_at, deleted_at) VALUES ('retiring-streamer', 'Retiring', ?, 'platform-huya', 'DISABLED', 'NORMAL', ?, ?, ?)",
-    )
-    .bind(retiring_url)
-    .bind(now)
-    .bind(now)
-    .bind(now)
-    .execute(&database)
-    .await
-    .expect("seed a retiring streamer");
-    database.close().await;
+    app.run_sql(&format!(
+        "INSERT INTO streamers (id, name, url, platform_config_id, state, priority, created_at, \
+             updated_at, deleted_at) \
+         VALUES ('retiring-streamer', 'Retiring', '{retiring_url}', 'platform-huya', 'DISABLED', \
+             'NORMAL', {now}, {now}, {now});"
+    ))
+    .await;
 
     let baseline = export(&app, &token).await;
     let new_streamer = |name: &str, url: &str| {
@@ -838,7 +719,17 @@ async fn a_rejected_import_changes_nothing() {
         })
     };
     type Corrupt = Box<dyn Fn(&mut Value)>;
-    let cases: [(&str, Corrupt, &str); 7] = [
+    let cases: [(&str, Corrupt, &str); 8] = [
+        (
+            "unknown platform config",
+            Box::new(|bundle| {
+                bundle["platforms"]
+                    .as_array_mut()
+                    .expect("platforms")
+                    .push(json!({ "platform_name": "noplatformhere" }))
+            }),
+            "noplatformhere",
+        ),
         (
             "unknown platform",
             Box::new(|bundle| {
@@ -926,12 +817,38 @@ async fn a_rejected_import_changes_nothing() {
         assert!(text.contains(message), "{case}: {text}");
     }
 
-    // The token still works, so nothing was revoked, and nothing was written.
+    // The tokens still work, so nothing was revoked, and nothing was written.
     let after = export(&app, &token).await;
     assert_same_bundle(&after, &baseline);
     let streamers = listed_streamers(&app, &token).await;
     assert_eq!(streamers.len(), 1);
     assert_eq!(streamers[0]["name"], "Stable");
+    let refreshed = app
+        .refresh(&first.refresh)
+        .await
+        .expect_status(StatusCode::OK);
+    let second = tokens_from(&refreshed.body);
+
+    // Revocation does not depend on the bundle replacing any user.
+    let mut bundle = baseline;
+    bundle.as_object_mut().expect("bundle").remove("users");
+    import(&app, &second.access, &bundle, "merge")
+        .await
+        .expect_status(StatusCode::OK);
+    for response in [
+        app.get("/api/streamers", &first.access).await,
+        app.get("/api/streamers", &second.access).await,
+        app.refresh(&second.refresh).await,
+    ] {
+        assert_eq!(
+            response.status,
+            StatusCode::UNAUTHORIZED,
+            "{}",
+            response.text
+        );
+    }
+    // Signing in still works: the import revoked sessions, not the account.
+    sign_in_again(&app, ADMIN_PASSWORD).await;
 
     app.shutdown().await;
 }
@@ -940,33 +857,20 @@ async fn a_rejected_import_changes_nothing() {
 async fn a_late_database_failure_rolls_back_a_replace_import() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
-    app.create_disabled_streamer(
-        &token,
-        json!({ "name": "Kept", "url": "https://www.huya.com/110001" }),
-    )
-    .await;
-    let dropped = id_of(
-        &app.create_disabled_streamer(
-            &token,
-            json!({ "name": "Dropped", "url": "https://www.huya.com/110002" }),
-        )
-        .await,
-    );
+    disabled_streamer(&app, &token, "Kept", "https://www.huya.com/110001").await;
+    let dropped = disabled_streamer(&app, &token, "Dropped", "https://www.huya.com/110002").await;
     let baseline = export(&app, &token).await;
 
     // Fail the channel write, but only once the import has marked the dropped
     // streamer for removal: if channels were ever written first, the import
     // would succeed and this test would fail rather than pass with nothing to
     // roll back.
-    let database = app.database().await;
-    sqlx::query(sqlx::AssertSqlSafe(format!(
+    app.run_sql(&format!(
         "CREATE TRIGGER e2e_fail_channel_import BEFORE INSERT ON notification_channel
          WHEN (SELECT deleted_at FROM streamers WHERE id = '{dropped}') IS NOT NULL
          BEGIN SELECT RAISE(ABORT, 'injected import failure'); END"
-    )))
-    .execute(&database)
-    .await
-    .expect("install the failing trigger");
+    ))
+    .await;
 
     let mut bundle = baseline.clone();
     bundle["global_config"]["max_concurrent_downloads"] = json!(9);
@@ -986,14 +890,13 @@ async fn a_late_database_failure_rolls_back_a_replace_import() {
     assert_eq!(response.error_code(), Some("INTERNAL_ERROR"));
     assert!(!response.text.contains("injected"), "{}", response.text);
 
-    let deleted_at: Option<i64> =
-        sqlx::query_scalar("SELECT deleted_at FROM streamers WHERE id = ?")
-            .bind(&dropped)
-            .fetch_one(&database)
-            .await
-            .expect("read the dropped streamer");
-    assert_eq!(deleted_at, None, "the removal mark was rolled back");
-    database.close().await;
+    let unmarked =
+        format!("SELECT COUNT(*) FROM streamers WHERE id = '{dropped}' AND deleted_at IS NULL");
+    assert_eq!(
+        app.query_i64(&unmarked).await,
+        1,
+        "the removal mark was rolled back"
+    );
     let streamers = listed_streamers(&app, &token).await;
     let mut names: Vec<&str> = streamers
         .iter()
