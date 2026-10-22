@@ -274,7 +274,7 @@ async fn assert_shutdown(mode: &'static str, abort: bool) {
             ..Default::default()
         },
         ffmpeg_path: String::new(),
-        version: None,
+        version: EngineVersion::settled(None),
         fixture: None,
         shutdown_fixture: Some(fixture.clone()),
     };
@@ -441,7 +441,7 @@ async fn assert_late_stop(mode: &'static str, branch: &str) {
             ..Default::default()
         },
         ffmpeg_path: String::new(),
-        version: None,
+        version: EngineVersion::settled(None),
         fixture: None,
         shutdown_fixture: Some(fixture.clone()),
     };

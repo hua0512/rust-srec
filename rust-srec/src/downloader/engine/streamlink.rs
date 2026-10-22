@@ -18,7 +18,7 @@ use super::traits::{
     EngineType,
 };
 use super::utils::{
-    FfmpegEvents, FfmpegSource, PROCESS_CLEANUP_TIMEOUT, RecordingExit,
+    EngineVersion, FfmpegEvents, FfmpegSource, PROCESS_CLEANUP_TIMEOUT, RecordingExit,
     redact_download_process_args, sanitize_engine_message, settle_engine_tasks,
 };
 use crate::database::models::engine::StreamlinkEngineConfig;
@@ -52,8 +52,8 @@ pub struct StreamlinkEngine {
     config: StreamlinkEngineConfig,
     /// Path to ffmpeg binary (for remuxing).
     ffmpeg_path: String,
-    /// Cached version string.
-    version: Option<String>,
+    /// Version reported by the binary; `None` once probed means unavailable.
+    version: EngineVersion,
     #[cfg(test)]
     fixture: Option<super::utils::test_support::RecordingFixture>,
     #[cfg(test)]
@@ -68,8 +68,9 @@ impl StreamlinkEngine {
 
     /// Create with a custom configuration.
     pub fn with_config(config: StreamlinkEngineConfig) -> Self {
-        let version = super::utils::probe_version_sync(&config.binary_path, "--version")
-            .map(|output| output.trim().to_owned());
+        let version = EngineVersion::probe(&config.binary_path, "--version", |output| {
+            Some(output.trim().to_owned())
+        });
         Self::with_version(config, version)
     }
 
@@ -78,10 +79,10 @@ impl StreamlinkEngine {
         let version = super::utils::probe_version(&config.binary_path, "--version")
             .await
             .map(|output| output.trim().to_owned());
-        Self::with_version(config, version)
+        Self::with_version(config, EngineVersion::settled(version))
     }
 
-    fn with_version(config: StreamlinkEngineConfig, version: Option<String>) -> Self {
+    fn with_version(config: StreamlinkEngineConfig, version: EngineVersion) -> Self {
         let ffmpeg_path = config
             .ffmpeg_path
             .clone()
@@ -1164,11 +1165,11 @@ impl DownloadEngine for StreamlinkEngine {
     }
 
     fn is_available(&self) -> bool {
-        self.version.is_some()
+        self.version.get().is_some()
     }
 
     fn version(&self) -> Option<String> {
-        self.version.clone()
+        self.version.get().map(str::to_owned)
     }
 }
 
@@ -1182,7 +1183,7 @@ mod tests {
             return;
         };
         let config = serde_json::from_str(&json).unwrap();
-        let engine = StreamlinkEngine::with_version(config, None);
+        let engine = StreamlinkEngine::with_version(config, EngineVersion::settled(None));
         let args = vec!["-i".to_string(), "pipe:0".to_string()];
         let command = engine.ffmpeg_command(&args);
         let expected = std::env::var("SREC_STREAMLINK_EXPECTED_FFMPEG").unwrap();
@@ -1264,7 +1265,7 @@ mod tests {
         let engine = StreamlinkEngine {
             config: StreamlinkEngineConfig::default(),
             ffmpeg_path: String::new(),
-            version: None,
+            version: EngineVersion::settled(None),
             fixture: None,
             shutdown_fixture: None,
         };
@@ -1309,7 +1310,7 @@ mod tests {
             let engine = StreamlinkEngine {
                 config: StreamlinkEngineConfig::default(),
                 ffmpeg_path: String::new(),
-                version: None,
+                version: EngineVersion::settled(None),
                 fixture: Some(fixture.clone()),
                 shutdown_fixture: None,
             };
@@ -1326,7 +1327,7 @@ mod tests {
             let engine = StreamlinkEngine {
                 config: StreamlinkEngineConfig::default(),
                 ffmpeg_path: "unused-fixture".into(),
-                version: None,
+                version: EngineVersion::settled(None),
                 fixture: Some(RecordingFixture::contract(directory.path(), case, true)),
                 shutdown_fixture: None,
             };
