@@ -358,17 +358,9 @@ where
     }
 
     /// Create an in-memory Pipeline Manager without persistence repositories.
-    #[expect(
-        clippy::new_without_default,
-        reason = "production construction requires PipelineRuntimeDependencies"
-    )]
-    pub fn new() -> Self {
-        Self::with_config(PipelineManagerConfig::default())
-    }
-
-    /// Create an in-memory Pipeline Manager with custom configuration.
-    pub fn with_config(config: PipelineManagerConfig) -> Self {
-        Self::build(config, None)
+    #[cfg(test)]
+    pub(crate) fn new() -> Self {
+        Self::build(PipelineManagerConfig::default(), None)
     }
 
     /// Create a persistent pipeline manager with startup job recovery.
@@ -384,12 +376,10 @@ where
         job_repository: Option<Arc<dyn JobRepository>>,
     ) -> Self {
         let (event_tx, _) = broadcast::channel(256);
-        let job_queue = Arc::new(match &job_repository {
-            Some(repository) => {
-                JobQueue::with_repository(config.job_queue.clone(), repository.clone())
-            }
-            None => JobQueue::with_config(config.job_queue.clone()),
-        });
+        let job_queue = Arc::new(JobQueue::build(
+            config.job_queue.clone(),
+            job_repository.clone(),
+        ));
 
         let execute_timeout_secs = config.execute_timeout_secs;
 
