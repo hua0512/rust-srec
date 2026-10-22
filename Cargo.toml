@@ -53,7 +53,7 @@ undocumented_unsafe_blocks = "deny"
 [workspace.dependencies]
 arc-swap = "1"
 bytes = "1.12.1"
-tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "fs", "io-std", "io-util", "net", "process", "signal", "sync", "time"] }
+tokio = { version = "1.54.0", features = ["rt-multi-thread", "macros", "fs", "io-std", "io-util", "net", "process", "signal", "sync", "time"] }
 tokio-util = { version = "0.7.20", features = ["codec", "io", "rt", "time"] }
 # Use platform certificate verification consistently with the extractor clients.
 reqwest = { version = "0.13.5", default-features = false, features = ["json", "query", "form", "stream", "rustls", "gzip", "deflate"] }
@@ -86,13 +86,13 @@ axum = { version = "0.8.9", features = ["ws"] }
 sqlx = { version = "0.9.0", features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "sqlite", "macros", "uuid", "chrono", "json"] }
 utoipa = { version = "6", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "10", features = ["axum"] }
-rmcp = { version = "3.5.1", features = ["transport-streamable-http-server"] }
+rmcp = { version = "3.6.0", features = ["transport-streamable-http-server"] }
 schemars = "1.2.3"
 jsonwebtoken = { version = "11", features = ["aws_lc_rs"] }
 lettre = { version = "0.11.23", default-features = false, features = ["aws-lc-rs", "builder", "pool", "smtp-transport", "tokio1-rustls", "webpki-roots"] }
 mimalloc = "0.1.52"
 argon2 = "0.6.0"
-zip = { version = "9.0.4", default-features = false, features = ["deflate"] }
+zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
 tar = "0.4.46"
 chrono-tz = "0.10.4"
 cron = "0.17"
