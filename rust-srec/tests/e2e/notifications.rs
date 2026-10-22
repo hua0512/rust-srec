@@ -1310,8 +1310,16 @@ async fn a_recording_notifies_each_start_its_parts_and_workflow_and_one_offline_
     );
     let stream_offline = &offline[0]["data"]["StreamOffline"];
     assert_eq!(stream_offline["streamer_name"], "Notified");
-    assert!(stream_offline["duration_secs"].is_null());
     assert_eq!(offline[0]["priority_label"], "low");
+    // It reports how long the session lasted, the resumed part included.
+    let duration = stream_offline["duration_secs"]
+        .as_f64()
+        .unwrap_or_else(|| panic!("no duration: {}", offline[0]));
+    let lasted = millis(&session["end_time"]) - millis(&session["start_time"]);
+    assert!(
+        ((duration * 1000.0).round() as i64 - lasted).abs() <= 1,
+        "{duration} s for a session of {lasted} ms"
+    );
     for body in &online {
         assert_eq!(body["title"], "🔴 Notified is now live!", "{body}");
         assert_eq!(body["priority_label"], "normal");

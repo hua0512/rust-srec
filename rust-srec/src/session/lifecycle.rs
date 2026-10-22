@@ -866,6 +866,22 @@ impl SessionLifecycle {
         .await
     }
 
+    /// When the session started: from its in-memory state, else from its
+    /// row, which is all a restart leaves. `None` when neither has it.
+    async fn known_started_at(&self, session_id: &str) -> Option<DateTime<Utc>> {
+        let in_memory = self.sessions.get(session_id).map(|e| e.started_at());
+        if in_memory.is_some() {
+            return in_memory;
+        }
+        match self.repo.session_started_at(session_id).await {
+            Ok(started_at) => started_at,
+            Err(error) => {
+                warn!(session_id, %error, "failed to read the session's start time");
+                None
+            }
+        }
+    }
+
     async fn on_live_detected_inner(
         &self,
         args: LiveDetectedArgs<'_>,
@@ -919,12 +935,20 @@ impl SessionLifecycle {
             return Ok(outcome);
         }
 
+        // A reused session keeps its start, which after a restart only its
+        // row still holds.
+        let started_at = match &outcome {
+            StartSessionOutcome::ReusedActive { session_id } => {
+                self.known_started_at(session_id).await.unwrap_or(args.now)
+            }
+            _ => args.now,
+        };
         self.sessions.insert(
             outcome.session_id().to_string(),
             SessionState::recording(
                 args.streamer_id.to_string(),
                 outcome.session_id().to_string(),
-                args.now,
+                started_at,
             ),
         );
         self.set_current_session(args.streamer_id, outcome.session_id());
@@ -1652,22 +1676,25 @@ impl SessionLifecycle {
             }
         }
 
+        // Read before sealing the commit: no await may follow it.
+        let started_at = self.known_started_at(session_id).await;
+
         crate::database::committed_writer::prepare_owned_commit()?;
         // The stripe excludes resume and timer completion until publication.
         // Keep the existing timer armed if the preceding SQL write fails.
         if let Some((_, handle)) = self.hysteresis.remove(session_id) {
             handle.cancel();
         }
-        // Pull `started_at` for the `Ended` state from the prior entry.
-        let started_at = self
-            .sessions
-            .get(session_id)
-            .map(|e| e.started_at())
-            .unwrap_or(ended_at);
 
         self.sessions.insert(
             session_id.to_string(),
-            SessionState::ended(streamer_id, session_id, started_at, ended_at, cause.clone()),
+            SessionState::ended(
+                streamer_id,
+                session_id,
+                started_at.unwrap_or(ended_at),
+                ended_at,
+                cause.clone(),
+            ),
         );
         self.refresh_current_session_if_current(streamer_id, session_id);
 
@@ -1683,6 +1710,7 @@ impl SessionLifecycle {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             streamer_name: streamer_name.to_string(),
+            started_at,
             ended_at,
             cause,
             via_hysteresis,
@@ -1807,17 +1835,13 @@ impl SessionLifecycle {
         // In-memory update. Pull `started_at` from the prior state if
         // present; otherwise default to `now` (cold-start case where we
         // recovered the session from the DB).
-        let started_at = self
-            .sessions
-            .get(&session_id)
-            .map(|e| e.started_at())
-            .unwrap_or(now);
+        let started_at = self.sessions.get(&session_id).map(|e| e.started_at());
         self.sessions.insert(
             session_id.clone(),
             SessionState::ended(
                 streamer_id,
                 &session_id,
-                started_at,
+                started_at.unwrap_or(now),
                 now,
                 TerminalCause::UserDisabled,
             ),
@@ -1838,6 +1862,7 @@ impl SessionLifecycle {
             session_id: session_id.clone(),
             streamer_id: streamer_id.to_string(),
             streamer_name: streamer_name.to_string(),
+            started_at,
             ended_at: now,
             cause: TerminalCause::UserDisabled,
             via_hysteresis: was_in_hysteresis,
@@ -1920,17 +1945,13 @@ impl SessionLifecycle {
         // an active row that has no in-memory snapshot. The DB row remains
         // authoritative; this short-lived `Ended` snapshot only needs a
         // conservative timestamp until retention evicts it.
-        let started_at = self
-            .sessions
-            .get(&session_id)
-            .map(|e| e.started_at())
-            .unwrap_or(now);
+        let started_at = self.sessions.get(&session_id).map(|e| e.started_at());
         self.sessions.insert(
             session_id.clone(),
             SessionState::ended(
                 streamer_id,
                 &session_id,
-                started_at,
+                started_at.unwrap_or(now),
                 now,
                 TerminalCause::OutOfSchedule,
             ),
@@ -1949,6 +1970,7 @@ impl SessionLifecycle {
             session_id: session_id.clone(),
             streamer_id: streamer_id.to_string(),
             streamer_name: streamer_name.to_string(),
+            started_at,
             ended_at: now,
             cause: TerminalCause::OutOfSchedule,
             via_hysteresis: was_in_hysteresis,

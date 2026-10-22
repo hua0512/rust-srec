@@ -64,12 +64,15 @@ pub(crate) fn session_notification(transition: SessionTransition) -> Option<Noti
         crate::session::SessionTransition::Ended {
             streamer_id,
             streamer_name,
+            started_at,
             ended_at,
             ..
         } => Some(NotificationEvent::StreamOffline {
             streamer_id,
             streamer_name,
-            duration_secs: None,
+            duration_secs: started_at.map(|started_at| {
+                (ended_at - started_at).num_milliseconds().max(0) as f64 / 1000.0
+            }),
             timestamp: ended_at,
         }),
         // Hysteresis quiet-period transitions are
