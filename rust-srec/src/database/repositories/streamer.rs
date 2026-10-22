@@ -20,9 +20,6 @@ pub trait StreamerRepository: Send + Sync {
     async fn create_streamer_for_manager(&self, row: &StreamerDbModel) -> Result<()> {
         self.create_streamer(row).await
     }
-    async fn update_streamer_for_manager(&self, row: &StreamerDbModel) -> Result<()> {
-        self.update_streamer(row).await
-    }
     async fn patch_streamer_for_manager(
         &self,
         patch: crate::streamer::manager::StreamerUpdateParams,
@@ -190,18 +187,6 @@ impl StreamerRepository for SqlxStreamerRepository {
             .map(|_| ());
         }
         self.create_streamer(row).await
-    }
-    async fn update_streamer_for_manager(&self, row: &StreamerDbModel) -> Result<()> {
-        if let Some(store) = self.mutation_owner()? {
-            return committed::write_for_manager(
-                store,
-                row.id.clone(),
-                committed::Mutation::Update(row.clone()),
-            )
-            .await
-            .map(|_| ());
-        }
-        self.update_streamer(row).await
     }
     async fn patch_streamer_for_manager(
         &self,

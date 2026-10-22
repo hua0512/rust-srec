@@ -214,7 +214,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     ///
     /// Note: This creates a scheduler with its own cancellation token and uses
     /// `NoOpCheckerFactory` for status checking. For real status checking, use
-    /// `with_monitor()` instead.
+    /// `with_monitor_and_config()` instead.
     pub fn new(
         streamer_manager: Arc<StreamerManager<R>>,
         event_broadcaster: ConfigEventBroadcaster,
@@ -232,7 +232,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     /// without needing a forwarding task.
     ///
     /// Note: Uses `NoOpCheckerFactory` for status checking. For real status checking,
-    /// use `with_monitor()` instead.
+    /// use `with_monitor_and_config()` instead.
     pub fn with_cancellation(
         streamer_manager: Arc<StreamerManager<R>>,
         event_broadcaster: ConfigEventBroadcaster,
@@ -250,7 +250,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     ///
     /// Note: This creates a scheduler with its own cancellation token and uses
     /// `NoOpCheckerFactory` for status checking. For real status checking, use
-    /// `with_monitor()` instead.
+    /// `with_monitor_and_config()` instead.
     pub fn with_config(
         streamer_manager: Arc<StreamerManager<R>>,
         event_broadcaster: ConfigEventBroadcaster,
@@ -270,7 +270,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     /// and cancellation behavior.
     ///
     /// Note: Uses `NoOpCheckerFactory` for status checking. For real status checking,
-    /// use `with_monitor()` instead.
+    /// use `with_monitor_and_config()` instead.
     pub fn with_full_config(
         streamer_manager: Arc<StreamerManager<R>>,
         event_broadcaster: ConfigEventBroadcaster,
@@ -305,47 +305,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             configuration: configuration::ConfigurationWork::default(),
             download_heartbeat_last_sent: DashMap::new(),
         }
-    }
-
-    /// Create a new scheduler with a StreamMonitor for real status checking.
-    ///
-    /// This constructor creates a `MonitorCheckerFactory` from the provided StreamMonitor
-    /// and passes it to the Supervisor. Actors spawned by this scheduler will use real
-    /// status checking via the StreamMonitor infrastructure.
-    ///
-    /// # Arguments
-    ///
-    /// * `streamer_manager` - The streamer manager for accessing streamer state
-    /// * `event_broadcaster` - Event broadcaster for config updates
-    /// * `monitor` - The StreamMonitor for real status detection
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let scheduler = Scheduler::with_monitor(
-    ///     streamer_manager,
-    ///     event_broadcaster,
-    ///     monitor,
-    /// );
-    /// ```
-    pub fn with_monitor<SR, FR, SSR, CR>(
-        streamer_manager: Arc<StreamerManager<R>>,
-        event_broadcaster: ConfigEventBroadcaster,
-        monitor: Arc<StreamMonitor<SR, FR, SSR, CR>>,
-    ) -> Self
-    where
-        SR: StreamerRepository + Send + Sync + 'static,
-        FR: FilterRepository + Send + Sync + 'static,
-        SSR: SessionRepository + Send + Sync + 'static,
-        CR: ConfigRepository + Send + Sync + 'static,
-    {
-        Self::with_monitor_and_config(
-            streamer_manager,
-            event_broadcaster,
-            monitor,
-            SchedulerConfig::default(),
-            CancellationToken::new(),
-        )
     }
 
     /// Create a new scheduler with a StreamMonitor and custom configuration.
@@ -493,17 +452,9 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         self.download_event_rx = Some(receiver);
     }
 
-    /// Get the number of active streamer actors.
-    pub fn active_actor_count(&self) -> usize {
-        self.supervisor.registry().streamer_count()
-    }
-
-    /// Check if the scheduler is running.
-    pub fn is_running(&self) -> bool {
-        !self.cancellation_token.is_cancelled()
-    }
-
-    /// Resolve effective timing before spawning or replacing the actor's restart config.
+    /// Resolve effective timing the way the configuration queue does, for tests
+    /// that spawn an actor directly.
+    #[cfg(test)]
     async fn create_streamer_config(&self, metadata: &StreamerMetadata) -> Result<StreamerConfig> {
         let base = StreamerConfig {
             check_interval_ms: self.config.check_interval_ms,
@@ -734,7 +685,9 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         }
     }
 
-    /// Spawn a streamer actor.
+    /// Spawn a streamer actor directly, resolving its timing inline. The running
+    /// scheduler spawns through the configuration queue instead.
+    #[cfg(test)]
     async fn spawn_streamer_actor(&mut self, metadata: StreamerMetadata) -> Result<()> {
         let streamer_id = metadata.id.clone();
 
@@ -928,14 +881,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         info!("Shutting down scheduler");
         self.cancellation_token.cancel();
         self.supervisor.shutdown().await
-    }
-
-    /// Add a new streamer dynamically.
-    ///
-    /// This spawns a new StreamerActor for the streamer without requiring
-    /// a full re-schedule.
-    pub async fn add_streamer(&mut self, metadata: StreamerMetadata) -> Result<()> {
-        self.spawn_streamer_actor(metadata).await
     }
 
     /// Remove a streamer dynamically.

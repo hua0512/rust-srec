@@ -246,12 +246,6 @@ impl DownloadConfig {
         self
     }
 
-    /// Set the common pipeline configuration.
-    pub fn with_pipeline_config(mut self, config: PipelineConfig) -> Self {
-        self.pipeline_config = Some(config);
-        self
-    }
-
     /// Set the HLS-specific pipeline configuration.
     pub fn with_hls_pipeline_config(mut self, config: HlsPipelineConfig) -> Self {
         self.hls_pipeline_config = Some(config);

@@ -874,14 +874,10 @@ pub struct JobQueue {
 }
 
 impl JobQueue {
-    /// Create a new job queue.
-    pub fn new() -> Self {
-        Self::with_config(JobQueueConfig::default())
-    }
-
-    /// Create a new job queue with custom configuration.
-    pub fn with_config(config: JobQueueConfig) -> Self {
-        Self::build(config, None)
+    /// Create an in-memory job queue without persistence.
+    #[cfg(test)]
+    pub(crate) fn new() -> Self {
+        Self::build(JobQueueConfig::default(), None)
     }
 
     /// Create a new job queue with a job repository for database persistence.
@@ -889,7 +885,12 @@ impl JobQueue {
         Self::build(config, Some(repository))
     }
 
-    fn build(config: JobQueueConfig, repository: Option<Arc<dyn JobRepository>>) -> Self {
+    /// Without a repository the queue keeps jobs in memory only, which only
+    /// tests build.
+    pub(crate) fn build(
+        config: JobQueueConfig,
+        repository: Option<Arc<dyn JobRepository>>,
+    ) -> Self {
         let (progress_tx, progress_rx) = tokio::sync::mpsc::channel::<JobProgressUpdate>(1024);
         // These maps are Arc-shared with the aggregator task: DashMap::clone
         // deep-copies contents, so a bare clone would permanently detach the
@@ -3597,12 +3598,6 @@ fn db_model_to_job(db_job: &JobDbModel) -> Job {
         platform,
         session_start,
         manifest,
-    }
-}
-
-impl Default for JobQueue {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

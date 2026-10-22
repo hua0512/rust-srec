@@ -299,7 +299,7 @@ async fn test_priority_channel_processes_before_normal() {
     let config = create_test_config();
     let token = CancellationToken::new();
 
-    let (actor, handle) = StreamerActor::with_priority_channel(
+    let (actor, handle) = StreamerActor::new(
         "test-streamer".to_string(),
         metadata_store,
         config,
@@ -626,7 +626,7 @@ impl StatusChecker for AssertNotCalledStatusChecker {
 async fn fatal_timer_and_mailbox_errors_stop_gracefully() {
     for trigger in ["timer", "normal", "priority", "late-priority"] {
         let metadata = create_test_metadata_store();
-        let (mut actor, handle) = StreamerActor::with_priority_channel(
+        let (mut actor, handle) = StreamerActor::new(
             "test-streamer".to_owned(),
             metadata.clone(),
             create_test_config(),

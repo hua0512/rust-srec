@@ -429,7 +429,7 @@ async fn silent_removal_invalidates_without_events_and_deletion_notifies_after_i
 #[tokio::test]
 async fn manager_mutation_notifications_survive_cancellation_inside_commit() {
     for phase in [CommitPhase::BeforeCommit, CommitPhase::AfterCommit] {
-        for operation in ["create", "update", "patch"] {
+        for operation in ["create", "patch"] {
             let f = fixture().await;
             let mut events = f.store.cache.broadcaster.subscribe();
             let gate = Arc::new(CommitTestGate::default());
@@ -447,11 +447,6 @@ async fn manager_mutation_notifications_survive_cancellation_inside_commit() {
                         manager
                             .create_streamer(StreamerMetadata::from_db_model(&row))
                             .await
-                    }
-                    "update" => {
-                        let mut metadata = manager.get_streamer("state-test").unwrap();
-                        metadata.name = "Updated".into();
-                        manager.update_streamer(metadata).await
                     }
                     _ => {
                         let mut update = patch();

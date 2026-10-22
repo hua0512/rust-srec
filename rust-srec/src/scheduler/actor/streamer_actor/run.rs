@@ -22,7 +22,7 @@ impl StreamerActor {
         loop {
             // First, drain all priority messages before processing normal messages
             // This ensures high-priority operations (like Stop) are handled promptly
-            if let Some(msg) = self.try_recv_priority() {
+            if let Ok(msg) = self.priority_mailbox.try_recv() {
                 let should_stop = self.handle_run_message(msg).await?;
 
                 if should_stop {
@@ -43,8 +43,8 @@ impl StreamerActor {
                 // Bias towards handling messages first
                 biased;
 
-                // Check priority mailbox first (if configured)
-                Some(msg) = Self::recv_priority_opt(&mut self.priority_mailbox) => {
+                // Check priority mailbox first
+                Some(msg) = self.priority_mailbox.recv() => {
                     let should_stop = self.handle_run_message(msg).await?;
 
                     if should_stop {
@@ -105,26 +105,6 @@ impl StreamerActor {
                 Ok(true)
             }
             result => result,
-        }
-    }
-
-    /// Try to receive a message from the priority mailbox without blocking.
-    pub(super) fn try_recv_priority(&mut self) -> Option<StreamerMessage> {
-        if let Some(ref mut priority_rx) = self.priority_mailbox {
-            priority_rx.try_recv().ok()
-        } else {
-            None
-        }
-    }
-
-    /// Helper to receive from an optional priority mailbox.
-    /// Returns a future that is pending forever if the mailbox is None.
-    pub(super) async fn recv_priority_opt(
-        priority_mailbox: &mut Option<mpsc::Receiver<StreamerMessage>>,
-    ) -> Option<StreamerMessage> {
-        match priority_mailbox {
-            Some(rx) => rx.recv().await,
-            None => std::future::pending().await,
         }
     }
 
