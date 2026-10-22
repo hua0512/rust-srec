@@ -11,32 +11,20 @@ const SHORT_STOP_BUDGET: Duration = Duration::from_millis(100);
 // Allow native process reaping and event delivery to be scheduled after the
 // deadline, while still detecting the old three-/five-second settlement waits.
 const SETTLEMENT_SLACK: Duration = Duration::from_millis(500);
-// The old startup handshake waits 500 ms. Keep this case's total bound below
-// that cap, with children already running before negotiation begins.
-const HANDSHAKE_SETTLEMENT_SLACK: Duration = Duration::from_millis(250);
 
 #[derive(Clone)]
 pub(super) struct Fixture {
     directory: PathBuf,
     mode: &'static str,
-    negotiation_entered: Arc<Notify>,
 }
 
 impl Fixture {
-    pub(super) fn negotiating_stop(&self) {
-        self.negotiation_entered.notify_one();
-    }
-
     pub(super) fn settling_after_source_exit(&self) {
         std::fs::write(self.path("settling-after-source-exit"), b"waiting").unwrap();
     }
 
     pub(super) fn settling_after_ffmpeg_exit(&self) {
         std::fs::write(self.path("settling-after-ffmpeg-exit"), b"waiting").unwrap();
-    }
-
-    fn cooperative(&self) -> bool {
-        self.mode.starts_with("cooperative") || self.mode == "early-ack-output-failure"
     }
 
     pub(super) fn command(&self, source: bool) -> tokio::process::Command {
@@ -118,16 +106,11 @@ fn shutdown_child() {
             output.display()
         );
         std::fs::write(directory.join("ffmpeg-ready"), b"ready").unwrap();
-        if mode == "ffmpeg-exit-late-stop" || mode == "early-ack-output-failure" {
+        if mode == "ffmpeg-exit-late-stop" {
             let mut prefix = [0; 8];
             std::io::stdin().read_exact(&mut prefix).unwrap();
             file.write_all(&prefix).unwrap();
             file.flush().unwrap();
-            if mode == "early-ack-output-failure" {
-                wait_for_child_release(&directory.join("fail-output"));
-                eprintln!("[out#0 @ fixture] Error opening output file: Permission denied");
-                std::process::exit(17);
-            }
             wait_for_child_release(&directory.join("release-leading-child"));
             std::process::exit(0);
         }
@@ -153,35 +136,8 @@ fn shutdown_child() {
         std::io::stdout().flush().unwrap();
         // This tail is already accepted before the fixture advertises readiness.
         let accepted_tail = vec![b'x'; TAIL_BYTES];
-        let mut control = if (mode.starts_with("cooperative") && mode != "cooperative-handshake-tightened") || mode == "early-ack-output-failure" {
-            let port: u16 = std::env::var("SREC_STREAMLINK_CONTROL_PORT").unwrap().parse().unwrap();
-            let token = std::env::var("SREC_STREAMLINK_CONTROL_TOKEN").unwrap();
-            let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
-            stream.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
-            writeln!(stream, "{}", serde_json::json!({
-                "token": token, "protocol": 1, "profile": "streamlink-8.5.0-drain-v1", "event": "ready",
-            })).unwrap();
-            Some((stream, token))
-        } else { None };
         std::fs::write(directory.join("source-ready"), b"ready").unwrap();
-        if let Some((stream, token)) = &mut control {
-            use std::io::BufRead;
-            let mut command = String::new();
-            std::io::BufReader::new(&mut *stream).read_line(&mut command).unwrap();
-            let command: serde_json::Value = serde_json::from_str(&command).unwrap();
-            assert_eq!(command["token"], *token);
-            assert_eq!(command["command"], "stop");
-            std::fs::write(directory.join("stop-received"), command["budget_ms"].as_u64().unwrap().to_string()).unwrap();
-            if mode == "cooperative-long" || mode == "cooperative-tightened" {
-                std::fs::write(directory.join("source-tail-held"), b"accepted").unwrap();
-                wait_for_child_release(&directory.join("release-source"));
-            } else if mode == "early-ack-output-failure" {
-                writeln!(stream, "{}", serde_json::json!({
-                    "token": token, "protocol": 1, "profile": "streamlink-8.5.0-drain-v1", "event": "drained",
-                })).unwrap();
-                std::fs::write(directory.join("early-drained"), b"acknowledged").unwrap();
-            }
-        } else if mode == "graceful" {
+        if mode == "graceful" {
             #[cfg(unix)]
             tokio::time::timeout(Duration::from_secs(10), signal.recv())
                 .await
@@ -194,10 +150,10 @@ fn shutdown_child() {
             })
             .await
             .unwrap();
-        } else if mode == "cooperative-handshake-tightened" {
-            std::fs::write(directory.join("source-handshake-held"), b"ready without control").unwrap();
-            wait_for_child_release(&directory.join("release-source"));
-        } else if mode == "stubborn" || mode == "ffmpeg-exit-late-stop" {
+        } else if matches!(
+            mode.as_str(),
+            "stubborn" | "forced-source" | "ffmpeg-exit-late-stop"
+        ) {
             tokio::time::sleep(Duration::from_secs(30)).await;
             leaf.kill().unwrap();
             leaf.wait().unwrap();
@@ -208,11 +164,6 @@ fn shutdown_child() {
         std::io::stdout().write_all(&accepted_tail).unwrap();
         std::io::stdout().write_all(b"<tail>").unwrap();
         std::io::stdout().flush().unwrap();
-        if let Some((stream, token)) = &mut control && mode != "early-ack-output-failure" {
-            writeln!(stream, "{}", serde_json::json!({
-                "token": token, "protocol": 1, "profile": "streamlink-8.5.0-drain-v1", "event": "drained",
-            })).unwrap();
-        }
     });
     std::process::exit(0);
 }
@@ -266,33 +217,29 @@ fn collect_events(
 }
 
 fn deadline_cleanup_failure<'a>(mode: &str, error: &'a EngineStartError) -> Option<&'a str> {
-    if error.kind != DownloadFailureKind::Other {
+    if error.kind != DownloadFailureKind::Other
+        || !matches!(
+            mode,
+            "stubborn" | "source-exit-late-stop" | "ffmpeg-exit-late-stop"
+        )
+    {
         return None;
     }
-    let suffix = match mode {
-        "stubborn" | "cooperative-handshake-tightened" => {
-            "; secondary process error: Streamlink cooperative drain incomplete: unsupported or unavailable Streamlink control profile"
-        }
-        "cooperative-tightened" => {
-            "; secondary process error: Streamlink cooperative drain incomplete: producer, stdout forwarding, or remux finalization did not finish naturally"
-        }
-        "source-exit-late-stop" | "ffmpeg-exit-late-stop" => "",
-        _ => return None,
-    };
     let failure = error
         .message
         .strip_prefix("Streamlink task settlement failed: process cleanup was not confirmed: ")?;
     // Consume the whole message: an auxiliary timeout/panic or unrelated process
-    // error must still fail the test, including one after the expected suffix.
-    let cleanup = failure.strip_suffix(suffix)?;
+    // error must still fail the test.
     let cleanup = if mode == "ffmpeg-exit-late-stop" {
-        cleanup
+        failure
             .strip_prefix("FFmpeg exited before Streamlink completed; process cleanup error: ")?
     } else {
-        cleanup
+        failure
     };
+    // A forced FFmpeg exit leads the message when its own containment succeeded.
     let cleanup = cleanup
-        .strip_prefix("process cleanup error: ")
+        .strip_prefix("ffmpeg exceeded the stop deadline; ")
+        .or_else(|| cleanup.strip_prefix("process cleanup error: "))
         .unwrap_or(cleanup);
     let prefixes = [
         "failed to contain streamlink before the stop deadline: deadline elapsed while reaping force-terminated child ",
@@ -320,22 +267,14 @@ async fn assert_shutdown(mode: &'static str, abort: bool) {
     let fixture = Fixture {
         directory: directory.path().to_path_buf(),
         mode,
-        negotiation_entered: Arc::new(Notify::new()),
     };
     let engine = StreamlinkEngine {
         config: StreamlinkEngineConfig {
-            graceful_stop_timeout_secs: if matches!(
-                mode,
-                "cooperative-long" | "cooperative-tightened" | "cooperative-handshake-tightened"
-            ) {
-                10
-            } else {
-                5
-            },
+            graceful_stop_timeout_secs: 5,
             ..Default::default()
         },
         ffmpeg_path: String::new(),
-        version: fixture.cooperative().then(|| "streamlink 8.5.0".to_owned()),
+        version: None,
         fixture: None,
         shutdown_fixture: Some(fixture.clone()),
     };
@@ -361,9 +300,6 @@ async fn assert_shutdown(mode: &'static str, abort: bool) {
     tokio::time::timeout(Duration::from_secs(5), segment_started.notified())
         .await
         .expect("FFmpeg must announce its output before stop");
-    if mode == "cooperative-handshake-tightened" {
-        wait_for_file(&fixture.path("source-handshake-held")).await;
-    }
     if abort {
         task.abort();
         assert!(
@@ -377,81 +313,19 @@ async fn assert_shutdown(mode: &'static str, abort: bool) {
         return;
     }
     let mut stop_deadline = None;
-    let mut settlement_slack = SETTLEMENT_SLACK;
     if mode != "natural" {
         if mode == "stubborn" {
             let deadline = Instant::now() + SHORT_STOP_BUDGET;
             handle.set_stop_deadline(deadline);
             stop_deadline = Some(deadline);
-        } else if matches!(
-            mode,
-            "cooperative-long" | "cooperative-tightened" | "cooperative-handshake-tightened"
-        ) {
-            let deadline = Instant::now() + Duration::from_secs(10);
+        } else if mode == "forced-source" {
+            // Long enough that FFmpeg finishes on its own once the ignored
+            // shutdown request ends in Streamlink's forced termination.
+            let deadline = Instant::now() + Duration::from_secs(2);
             handle.set_stop_deadline(deadline);
             stop_deadline = Some(deadline);
         }
         handle.cancellation_token.cancel();
-        if mode == "cooperative-long" {
-            wait_for_file(&fixture.path("stop-received")).await;
-            tokio::time::sleep(Duration::from_millis(3250)).await;
-            assert!(
-                !task.is_finished(),
-                "a supported drain must outlive the legacy three-second cutoff"
-            );
-            tokio::fs::write(fixture.path("release-source"), b"release")
-                .await
-                .unwrap();
-        } else if mode == "cooperative-tightened" {
-            wait_for_file(&fixture.path("source-tail-held")).await;
-            let received_budget: u64 = tokio::fs::read_to_string(fixture.path("stop-received"))
-                .await
-                .unwrap()
-                .parse()
-                .unwrap();
-            assert!(
-                received_budget > 2000,
-                "the producer must first observe the original long stop budget"
-            );
-            assert!(handle.cancellation_token.is_cancelled());
-            assert!(
-                !task.is_finished(),
-                "accepted source data must still be held when the deadline tightens"
-            );
-            let deadline = Instant::now() + SHORT_STOP_BUDGET;
-            // Cancellation is already observed. Only the deadline changes; a
-            // second cancellation notification cannot rescue a stale timer.
-            handle.set_stop_deadline(deadline);
-            stop_deadline = Some(deadline);
-        } else if mode == "cooperative-handshake-tightened" {
-            // The current-thread producer polls request_stop before yielding
-            // after this synchronous notification. No filesystem polling delay
-            // can consume the old handshake's 500 ms before we tighten it.
-            tokio::time::timeout(
-                Duration::from_secs(5),
-                fixture.negotiation_entered.notified(),
-            )
-            .await
-            .unwrap();
-            assert!(handle.cancellation_token.is_cancelled());
-            assert!(
-                !task.is_finished(),
-                "the unavailable companion handshake must still be pending"
-            );
-            let deadline = Instant::now() + SHORT_STOP_BUDGET;
-            handle.set_stop_deadline(deadline);
-            stop_deadline = Some(deadline);
-            settlement_slack = HANDSHAKE_SETTLEMENT_SLACK;
-        } else if mode == "early-ack-output-failure" {
-            wait_for_file(&fixture.path("early-drained")).await;
-            assert!(
-                !task.is_finished(),
-                "an acknowledgement cannot complete a still-open output pipeline"
-            );
-            tokio::fs::write(fixture.path("fail-output"), b"fail")
-                .await
-                .unwrap();
-        }
         // Hidden Windows children have no console-signal contract. This fixture
         // exits naturally during the same bounded grace period instead.
         #[cfg(windows)]
@@ -462,7 +336,7 @@ async fn assert_shutdown(mode: &'static str, abort: bool) {
         }
     }
     let completion_deadline = stop_deadline
-        .map(|deadline| deadline + settlement_slack)
+        .map(|deadline| deadline + SETTLEMENT_SLACK)
         .unwrap_or_else(|| Instant::now() + Duration::from_secs(8));
     let result = tokio::time::timeout_at(completion_deadline, task)
         .await
@@ -511,9 +385,7 @@ async fn assert_shutdown(mode: &'static str, abort: bool) {
         assert_descendants_stopped(&fixture).await;
         return;
     }
-    if mode != "early-ack-output-failure" {
-        assert_eq!(completed.len(), 1, "{events:?}");
-    }
+    assert_eq!(completed.len(), 1, "{events:?}");
     let terminal = events
         .iter()
         .position(|event| {
@@ -523,67 +395,31 @@ async fn assert_shutdown(mode: &'static str, abort: bool) {
             )
         })
         .unwrap();
-    assert!(completed.iter().all(|index| *index < terminal));
-    if matches!(
-        mode,
-        "stubborn" | "cooperative-tightened" | "cooperative-handshake-tightened"
-    ) {
+    assert!(completed[0] < terminal);
+    // The short `stubborn` budget may or may not leave FFmpeg time to finish on
+    // its own, so that mode's outcome is not pinned.
+    if mode == "forced-source" {
+        // Streamlink is forced, but FFmpeg exits on its own: an ordinary stop
+        // that keeps every byte forwarded before the termination.
+        let output = tokio::fs::read(fixture.path("final.ts")).await.unwrap();
+        // `<prefix>` is the source's last write before it hangs; the bytes ahead
+        // of it are the test harness's own stdout.
+        assert!(output.ends_with(b"<prefix>"), "{output:?}");
         assert!(
-            matches!(events[terminal], SegmentEvent::DownloadFailed { .. }),
-            "deadline expiry must not publish successful completion: {events:?}"
-        );
-        assert!(
-            !events
-                .iter()
-                .any(|event| matches!(event, SegmentEvent::DownloadCompleted { .. }))
-        );
-        assert_eq!(
-            events
-                .iter()
-                .filter(|event| matches!(event, SegmentEvent::DownloadFailed { .. }))
-                .count(),
-            1,
+            matches!(events[terminal], SegmentEvent::DownloadCompleted { .. }),
             "{events:?}"
         );
-    } else if mode == "early-ack-output-failure" {
-        let output_failure = events
-            .iter()
-            .position(|event| matches!(event, SegmentEvent::OutputIoError { .. }))
-            .expect("the fixture output error must remain observable");
-        assert!(output_failure < terminal);
-        assert!(
-            matches!(
-                &events[terminal],
-                SegmentEvent::DownloadFailed {
-                    kind: DownloadFailureKind::OutputRootUnavailable { .. },
-                    ..
-                }
-            ),
-            "output failure must retain terminal precedence: {events:?}"
-        );
-        assert!(
-            !events
-                .iter()
-                .any(|event| matches!(event, SegmentEvent::DownloadCompleted { .. }))
-        );
-    } else {
+    } else if mode != "stubborn" {
         let output = tokio::fs::read(fixture.path("final.ts")).await.unwrap();
         assert!(output.ends_with(b"<tail>"));
         assert_eq!(
             &output[output.len() - TAIL_BYTES - 6..output.len() - 6],
             vec![b'x'; TAIL_BYTES]
         );
-        if mode == "natural" || fixture.cooperative() {
-            assert!(matches!(
-                events[terminal],
-                SegmentEvent::DownloadCompleted { .. }
-            ));
-        } else {
-            assert!(
-                matches!(&events[terminal], SegmentEvent::DownloadFailed { message, .. }
-                if message.contains("cooperative drain incomplete"))
-            );
-        }
+        assert!(
+            matches!(events[terminal], SegmentEvent::DownloadCompleted { .. }),
+            "{events:?}"
+        );
     }
     assert_descendants_stopped(&fixture).await;
 }
@@ -593,37 +429,11 @@ async fn graceful_shutdown_drains_emitted_tail_before_final_segment() {
     assert_shutdown("graceful", false).await;
 }
 
-#[tokio::test]
-async fn authenticated_control_drains_the_tail_without_console_signals() {
-    assert_shutdown("cooperative", false).await;
-}
-
-#[tokio::test]
-async fn cooperative_drain_can_finish_after_the_legacy_three_second_cutoff() {
-    assert_shutdown("cooperative-long", false).await;
-}
-
-#[tokio::test(flavor = "current_thread")]
-async fn tightening_the_deadline_wakes_an_already_stopping_cooperative_drain() {
-    assert_shutdown("cooperative-tightened", false).await;
-}
-
-#[tokio::test(flavor = "current_thread")]
-async fn tightening_the_deadline_interrupts_a_pending_companion_handshake() {
-    assert_shutdown("cooperative-handshake-tightened", false).await;
-}
-
-#[tokio::test]
-async fn an_early_authenticated_acknowledgement_cannot_mask_output_failure() {
-    assert_shutdown("early-ack-output-failure", false).await;
-}
-
 async fn assert_late_stop(mode: &'static str, branch: &str) {
     let directory = tempfile::tempdir().unwrap();
     let fixture = Fixture {
         directory: directory.path().to_path_buf(),
         mode,
-        negotiation_entered: Arc::new(Notify::new()),
     };
     let engine = StreamlinkEngine {
         config: StreamlinkEngineConfig {
@@ -767,6 +577,11 @@ async fn late_stop_shortens_source_settlement_after_ffmpeg_exit() {
 #[tokio::test]
 async fn expired_grace_force_contains_both_process_trees() {
     assert_shutdown("stubborn", false).await;
+}
+
+#[tokio::test]
+async fn forced_streamlink_exit_completes_with_the_forwarded_output() {
+    assert_shutdown("forced-source", false).await;
 }
 
 #[tokio::test]

@@ -1,0 +1,2 @@
+# Test-only Streamlink for the tool-gated E2E recordings; runtime images are unaffected.
+streamlink==8.6.2

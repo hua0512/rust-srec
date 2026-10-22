@@ -176,9 +176,7 @@ FFmpeg 和 Streamlink 的版本检查限时三秒，必要时随后执行有时�
 
 ## 停止 Streamlink 录制 {#停止-streamlink-录制}
 
-受支持的 Streamlink 8.5.0 读取器可停止获取新数据，同时把缓冲数据传给 FFmpeg 完成文件收尾。此过程必须在录制停止期限内完成，强制停止可能截断最后输出。
-
-旧版、便携版、自定义可执行文件和不受支持的读取器保留正常录制行为，但停止时可能报告 `Streamlink cooperative drain incomplete`。详见[读取器支持范围及停止机制](../development/engines.md#停止-streamlink-录制)。
+停止 Streamlink 录制时，后端会请求 Streamlink 退出，最多等待三秒，然后终止它。随后 FFmpeg 在录制停止期限内为已收到的全部数据完成文件收尾。仍缓存在 Streamlink 内部的数据会丢失，因此最终文件可能缺少最后几秒。在 Windows 上，Streamlink 不会收到退出请求，等待结束后即被终止；等待期间它会继续录制，因此文件最多可能比停止时刻多出约三秒。详见[停止机制](../development/engines.md#停止-streamlink-录制)。
 
 下载会话和媒体修复架构见 [Mesio 内部实现](./mesio.md)。
 

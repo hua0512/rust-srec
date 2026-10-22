@@ -180,9 +180,7 @@ Missing named engine configurations retain the default-engine fallback. Database
 
 ## Stopping Streamlink Recordings {#stopping-streamlink-recordings}
 
-Supported Streamlink 8.5.0 readers can stop acquiring new data while buffered data is forwarded to FFmpeg for finalization. This must finish within the recording's stop deadline. Forced stops can truncate the final output.
-
-Old, portable, or custom executables and unsupported readers keep their ordinary recording behavior, but stopping may report `Streamlink cooperative drain incomplete`. See [supported reader profiles and stopping mechanics](../development/engines.md#stopping-streamlink-recordings).
+Stopping a Streamlink recording asks Streamlink to exit, waits up to three seconds for it, and then terminates it. FFmpeg then finalizes everything it has received, within the recording's stop deadline. Data still buffered inside Streamlink is lost, so the final file can miss its last few seconds. On Windows, Streamlink receives no exit request and is terminated after that wait; it keeps recording during the wait, so the file can run up to about three seconds past the stop. See [stopping mechanics](../development/engines.md#stopping-streamlink-recordings).
 
 For download-session and media-repair architecture, see [Mesio internals](./mesio.md).
 

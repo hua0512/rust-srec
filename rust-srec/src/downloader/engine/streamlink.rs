@@ -3,7 +3,6 @@
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
@@ -24,12 +23,10 @@ use super::utils::{
 };
 use crate::database::models::engine::StreamlinkEngineConfig;
 
-/// Cap for Streamlink's cooperative or natural exit before forcing containment.
-/// Used after FFmpeg exits and during cancellation, where the remaining shared
-/// stop budget can shorten this grace further.
+/// Cap for Streamlink's own exit before forcing containment. Used after FFmpeg
+/// exits and after a stop request, where the remaining shared stop budget can
+/// shorten this grace further.
 const STREAMLINK_SETTLE_TIMEOUT: Duration = Duration::from_secs(3);
-
-mod control;
 
 #[cfg(test)]
 mod shutdown_tests;
@@ -419,32 +416,6 @@ impl StopBudget {
         };
         (hard - cleanup - finalize, hard - finalize)
     }
-
-    async fn within<T, F: std::future::Future<Output = T>>(
-        &self,
-        future: F,
-        mut deadline: Instant,
-        source: bool,
-    ) -> Option<T> {
-        let mut future = std::pin::pin!(future);
-        let mut updates = self.handle.stop_deadline_updates();
-        loop {
-            drop(updates.borrow_and_update());
-            deadline = deadline.min(if source {
-                self.process_deadlines(true).0
-            } else {
-                self.deadline()
-            });
-            tokio::select! {
-                biased;
-                result = &mut future => return Some(result),
-                changed = updates.changed() => {
-                    if changed.is_err() { return tokio::time::timeout_at(deadline, future).await.ok(); }
-                }
-                _ = tokio::time::sleep_until(deadline) => return None,
-            }
-        }
-    }
 }
 
 enum ChildWait {
@@ -510,11 +481,7 @@ async fn wait_then_terminate(
             let (result, contained, natural) =
                 wait_for_stop(child, process_name, wait, hard, budget, false).await;
             return (
-                if natural {
-                    result
-                } else {
-                    result.and_then(|_| Err(format!("{process_name} exceeded the stop deadline")))
-                },
+                require_natural_exit(result, natural, process_name),
                 contained,
             );
         }
@@ -527,8 +494,23 @@ async fn wait_then_terminate(
     }
 }
 
+/// A process that had to be force-terminated did not finish its work, whatever
+/// exit code the termination produced.
+fn require_natural_exit(
+    result: std::result::Result<Option<i32>, String>,
+    natural: bool,
+    process_name: &str,
+) -> std::result::Result<Option<i32>, String> {
+    if natural {
+        result
+    } else {
+        result.and_then(|_| Err(format!("{process_name} exceeded the stop deadline")))
+    }
+}
+
 /// Stop-phase waits and containment share the attempt's absolute deadline.
-/// A forced zero exit is still not proof of a natural buffered drain.
+/// The third value is whether the process exited on its own before the wait
+/// deadline; a forced zero exit is not a natural one.
 async fn wait_for_stop(
     child: &mut ContainedChild,
     process_name: &str,
@@ -555,10 +537,16 @@ async fn wait_for_stop(
         Ok(Err(error)) => Some(format!("failed to wait for {process_name}: {error}")),
         Err(_) => None,
     };
-    warn!(
-        process = process_name,
-        "Recording process did not finish within its stop deadline; forcing containment"
-    );
+    // Streamlink outliving its grace is routine: hidden Windows children get no
+    // shutdown request, so every stop there ends by terminating it.
+    if process_name == "streamlink" {
+        debug!("Streamlink did not exit within its grace period; terminating");
+    } else {
+        warn!(
+            process = process_name,
+            "Recording process did not finish within its stop deadline; forcing containment"
+        );
+    }
     let contained = loop {
         drop(updates.borrow_and_update());
         hard_deadline = hard_deadline.min(budget.process_deadlines(source).1);
@@ -678,38 +666,6 @@ impl StreamlinkEngine {
 
         // Spawn streamlink process
         let mut streamlink_command = process_utils::tokio_command(&self.config.binary_path);
-        #[cfg(not(test))]
-        let fixture_control = false;
-        #[cfg(test)]
-        let fixture_control = self.shutdown_fixture.is_some();
-        let profile_available = if control::Companion::supports_version(self.version.as_deref()) {
-            if fixture_control {
-                true
-            } else {
-                tokio::select! {
-                    supported = control::Companion::cached_capability(&self.config.binary_path) => supported,
-                    _ = handle.cancellation_token.cancelled() => {
-                        return Err(EngineStartError::new(DownloadFailureKind::Other, "Streamlink startup was cancelled"));
-                    }
-                }
-            }
-        } else {
-            false
-        };
-        let companion = if profile_available {
-            match control::Companion::prepare().await {
-                Ok(companion) => {
-                    companion.configure(&mut streamlink_command);
-                    Some(companion)
-                }
-                Err(error) => {
-                    warn!(%error, "Streamlink control unavailable; cooperative draining cannot be verified");
-                    None
-                }
-            }
-        } else {
-            None
-        };
         streamlink_command.args(&streamlink_args);
         config.proxy.apply_environment(&mut streamlink_command);
         #[cfg(test)]
@@ -719,9 +675,6 @@ impl StreamlinkEngine {
         #[cfg(test)]
         if let Some(fixture) = &self.shutdown_fixture {
             streamlink_command = fixture.command(true);
-            if let Some(companion) = &companion {
-                companion.configure_environment(&mut streamlink_command);
-            }
         }
         streamlink_command
             .stdout(Stdio::piped())
@@ -866,8 +819,6 @@ impl StreamlinkEngine {
         let forced_settlement = CancellationToken::new();
         let process_forced_settlement = forced_settlement.clone();
         let pipe_failure = Arc::new(Mutex::new(None::<String>));
-        let pipe_eof = Arc::new(AtomicBool::new(false));
-        let process_pipe_eof = pipe_eof.clone();
         let process_pipe_failure = pipe_failure.clone();
         #[cfg(test)]
         let inject_unconfirmed_cleanup = self
@@ -887,62 +838,36 @@ impl StreamlinkEngine {
 
             let (pipeline_exit, cleanup_confirmed) = tokio::select! {
                 _ = cancellation_token_wait.cancelled() => {
-                    let stop_deadline = budget.deadline();
-                    let remaining = stop_deadline.saturating_duration_since(Instant::now());
-                    let cleanup_reserve = Duration::from_secs(1).min(remaining / 4);
-                    let finalize_reserve = Duration::from_secs(2).min(remaining / 2);
-                    let streamlink_deadline = stop_deadline - cleanup_reserve - finalize_reserve;
-                    let cooperative = if let Some(companion) = &companion {
-                        #[cfg(test)]
-                        if let Some(fixture) = &shutdown_fixture { fixture.negotiating_stop(); }
-                        budget.within(companion.request_stop(streamlink_deadline), streamlink_deadline, true)
-                            .await.unwrap_or(false)
-                    } else { false };
-                    if !cooperative { match streamlink.request_shutdown() {
+                    let (streamlink_wait, streamlink_hard) = budget.process_deadlines(true);
+                    let (ffmpeg_wait, ffmpeg_hard) = budget.process_deadlines(false);
+                    match streamlink.request_shutdown() {
                         Ok(true) => debug!("Requested cooperative Streamlink shutdown"),
                         Ok(false) => debug!("Waiting for Streamlink exit before contained termination"),
                         Err(error) => warn!(%error, "Could not request cooperative Streamlink shutdown; using bounded exit wait"),
-                    } }
-                    let source_deadline = if cooperative { streamlink_deadline } else {
-                        streamlink_deadline.min(Instant::now() + STREAMLINK_SETTLE_TIMEOUT)
-                    };
-                    let (streamlink_cleanup, streamlink_confirmed, source_natural) = wait_for_stop(
+                    }
+                    // Forced containment of Streamlink is an ordinary stop: hidden
+                    // Windows children have no shutdown signal, and FFmpeg still
+                    // finalizes everything forwarded before the pipe closed.
+                    let (streamlink_cleanup, streamlink_confirmed, _) = wait_for_stop(
                         &mut streamlink,
                         "streamlink",
-                        source_deadline,
-                        stop_deadline - finalize_reserve,
+                        streamlink_wait.min(Instant::now() + STREAMLINK_SETTLE_TIMEOUT),
+                        streamlink_hard,
                         &budget,
                         true,
                     ).await;
                     let (ffmpeg_result, ffmpeg_confirmed, ffmpeg_natural) =
-                        wait_for_stop(&mut ffmpeg, "ffmpeg", stop_deadline - cleanup_reserve, stop_deadline, &budget, false).await;
-                    let mut outcome = match ffmpeg_result {
+                        wait_for_stop(&mut ffmpeg, "ffmpeg", ffmpeg_wait, ffmpeg_hard, &budget, false).await;
+                    let mut outcome = match require_natural_exit(ffmpeg_result, ffmpeg_natural, "ffmpeg") {
                         Ok(code) => StreamlinkPipelineExit::Ffmpeg(code),
                         Err(message) => StreamlinkPipelineExit::Failed {
                             kind: DownloadFailureKind::ProcessExit { code: None },
                             message,
                         },
                     };
-                    let source_clean = matches!(streamlink_cleanup, Ok(Some(0))) && source_natural;
                     if let Err(cleanup_error) = streamlink_cleanup {
                             warn!(%cleanup_error, "Failed to stop streamlink cleanly");
                             outcome = outcome.with_cleanup_error(cleanup_error);
-                    }
-                    let drain = if cooperative && source_clean && ffmpeg_natural
-                        && matches!(outcome, StreamlinkPipelineExit::Ffmpeg(Some(0)))
-                        && process_pipe_eof.load(Ordering::Acquire) {
-                        match &companion {
-                            Some(companion) => budget.within(companion.drain_result(stop_deadline), stop_deadline, false)
-                                .await.unwrap_or_else(|| Err("companion verification exceeded the current stop deadline".into())),
-                            None => Err("control companion unavailable".into()),
-                        }
-                    } else {
-                        Err(if !cooperative { "unsupported or unavailable Streamlink control profile" }
-                            else { "producer, stdout forwarding, or remux finalization did not finish naturally" }.into())
-                    };
-                    if let Err(reason) = drain {
-                        warn!(download_id = %budget.handle.id, %reason, "Streamlink cooperative drain incomplete");
-                        outcome = outcome.with_secondary_error(format!("Streamlink cooperative drain incomplete: {reason}"));
                     }
                     (apply_pipe_failure(outcome, process_pipe_failure.lock().clone()), streamlink_confirmed && ffmpeg_confirmed)
                 }
@@ -1119,10 +1044,7 @@ impl StreamlinkEngine {
                     }
                     result = streamlink_stdout.read(&mut buffer) => {
                         match result {
-                            Ok(0) => {
-                                pipe_eof.store(true, Ordering::Release);
-                                break;
-                            }
+                            Ok(0) => break,
                             Ok(n) => {
                                 let written = tokio::select! {
                                     _ = pipe_forced_settlement.cancelled() => break,
@@ -1253,47 +1175,6 @@ impl DownloadEngine for StreamlinkEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[tokio::test(start_paused = true)]
-    async fn tightened_budget_bounds_negotiation_and_proof_without_restarting_the_future() {
-        for source in [true, false] {
-            let (events, _receiver) = tokio::sync::mpsc::channel(1);
-            let handle = Arc::new(DownloadHandle::new(
-                "budget",
-                EngineType::Streamlink,
-                DownloadConfig::new(
-                    "https://invalid.test/",
-                    ".",
-                    "streamer",
-                    "Streamer",
-                    "session",
-                ),
-                events,
-            ));
-            handle.cancellation_token.cancel();
-            let budget = StopBudget {
-                handle: handle.clone(),
-                configured: Duration::from_secs(60),
-                observed: Mutex::new(None),
-            };
-            let entered = std::sync::atomic::AtomicUsize::new(0);
-            let start = Instant::now();
-            let mut waiting = Box::pin(budget.within(
-                async {
-                    entered.fetch_add(1, Ordering::Relaxed);
-                    std::future::pending::<()>().await;
-                },
-                start + Duration::from_secs(60),
-                source,
-            ));
-            assert!(futures::poll!(&mut waiting).is_pending());
-            handle.set_stop_deadline(start + Duration::from_millis(100));
-            tokio::time::advance(Duration::from_millis(101)).await;
-            assert!(waiting.await.is_none());
-            assert_eq!(Instant::now(), start + Duration::from_millis(101));
-            assert_eq!(entered.load(Ordering::Relaxed), 1);
-        }
-    }
 
     #[test]
     fn ffmpeg_command_selection_child() {
