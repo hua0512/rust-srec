@@ -251,7 +251,7 @@ async fn malformed_expired_and_forged_credentials_are_rejected() {
 
 #[tokio::test]
 async fn forced_password_change_blocks_everything_except_remediation() {
-    let app = TestApp::start().await;
+    let app = TestApp::start_with_seeded_admin().await;
 
     let login = app
         .login(ADMIN_USERNAME, SEEDED_ADMIN_PASSWORD)
@@ -321,6 +321,19 @@ async fn forced_password_change_blocks_everything_except_remediation() {
     )
     .await
     .expect_status(StatusCode::OK);
+
+    let stale = app.login(ADMIN_USERNAME, SEEDED_ADMIN_PASSWORD).await;
+    assert_eq!(stale.status, StatusCode::UNAUTHORIZED);
+    assert_eq!(stale.body, invalid_login_body());
+    let changed = app
+        .login(ADMIN_USERNAME, ADMIN_PASSWORD)
+        .await
+        .expect_status(StatusCode::OK);
+    assert_eq!(changed.body["must_change_password"], false);
+    assert_eq!(
+        streamers_status(&app, &tokens_from(&changed.body).access).await,
+        StatusCode::OK
+    );
 
     app.shutdown().await;
 }
@@ -438,7 +451,7 @@ async fn failed_logins_are_generic_and_lock_the_account_after_five() {
         );
     }
     // A success inside the budget starts the account's count over.
-    app.login(ADMIN_USERNAME, SEEDED_ADMIN_PASSWORD)
+    app.login(ADMIN_USERNAME, ADMIN_PASSWORD)
         .await
         .expect_status(StatusCode::OK);
 
@@ -453,7 +466,7 @@ async fn failed_logins_are_generic_and_lock_the_account_after_five() {
         );
     }
 
-    let throttled = app.login(ADMIN_USERNAME, SEEDED_ADMIN_PASSWORD).await;
+    let throttled = app.login(ADMIN_USERNAME, ADMIN_PASSWORD).await;
     let retry_after = throttled
         .header(header::RETRY_AFTER)
         .and_then(|value| value.parse::<u64>().ok());

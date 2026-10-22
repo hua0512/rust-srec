@@ -147,6 +147,12 @@ incremental = true
 [profile.dev.package.sqlx-macros]
 opt-level = 3
 
+# An unoptimized Argon2id verify of a stored password takes about half a
+# second, 20x the optimized one, and every login in a debug build or test pays
+# it. Its BLAKE2 dependency makes no measurable difference.
+[profile.dev.package.argon2]
+opt-level = 3
+
 [profile.release]
 lto = true
 codegen-units = 1
