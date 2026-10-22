@@ -2270,10 +2270,6 @@ msgstr "Connection status: {statusLabel}"
 msgid "Connection/activity timeout"
 msgstr "Connection/activity timeout"
 
-#: src/components/config/shared/offline-check-card.tsx:110
-msgid "Consecutive failed checks needed to confirm offline."
-msgstr "Consecutive failed checks needed to confirm offline."
-
 #: src/components/streamers/card/stream-avatar-info.tsx:133
 msgid "Consecutive Failures"
 msgstr "Consecutive Failures"
@@ -6992,8 +6988,8 @@ msgid "Number of attempts before failing the upload."
 msgstr "Number of attempts before failing the upload."
 
 #: src/components/config/global/network-system-card.tsx:130
-msgid "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
-msgstr "Number of consecutive failed checks required to definitively confirm a streamer has gone offline. Higher values prevent \"fake\" offline detection."
+msgid "Number of consecutive offline signals required to confirm a streamer has gone offline. A recording that ends cleanly counts as the first, and each later offline check adds one. Higher values prevent \"fake\" offline detection."
+msgstr "Number of consecutive offline signals required to confirm a streamer has gone offline. A recording that ends cleanly counts as the first, and each later offline check adds one. Higher values prevent \"fake\" offline detection."
 
 #: src/components/config/global/retention-card.tsx:39
 msgid "Number of days to keep completed, failed, or cancelled jobs and workflow executions. Set to 0 to retain them indefinitely."
@@ -7082,6 +7078,10 @@ msgstr "Offline Detection"
 #: src/components/config/shared/offline-check-card.tsx:94
 msgid "Offline Detection Count"
 msgstr "Offline Detection Count"
+
+#: src/components/config/shared/offline-check-card.tsx:110
+msgid "Offline signals needed to confirm offline. A recording that ends cleanly counts as the first."
+msgstr "Offline signals needed to confirm offline. A recording that ends cleanly counts as the first."
 
 #: src/components/config/engines/forms/mesio-sections.tsx:144
 msgid "Offset Consistency Check"
