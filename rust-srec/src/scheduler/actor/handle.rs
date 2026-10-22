@@ -6,7 +6,7 @@
 //! - Priority channel support for high-priority messages
 
 use std::fmt;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use tokio::sync::mpsc;
 use tokio_util::sync::{CancellationToken, DropGuard};
@@ -90,8 +90,6 @@ pub enum SendError {
 pub struct ActorMetadata {
     /// Unique actor identifier.
     pub id: String,
-    /// When the actor was spawned.
-    pub spawned_at: Instant,
     /// Whether this is a high-priority actor.
     pub high_priority: bool,
 }
@@ -101,14 +99,8 @@ impl ActorMetadata {
     pub fn streamer(id: impl Into<String>, high_priority: bool) -> Self {
         Self {
             id: id.into(),
-            spawned_at: Instant::now(),
             high_priority,
         }
-    }
-
-    /// Get the actor's uptime.
-    pub fn uptime(&self) -> Duration {
-        self.spawned_at.elapsed()
     }
 }
 

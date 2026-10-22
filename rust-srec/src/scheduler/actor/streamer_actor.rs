@@ -99,7 +99,7 @@ pub struct StreamerActor {
     /// Mailbox for receiving normal-priority messages.
     mailbox: mpsc::Receiver<StreamerMessage>,
     /// Mailbox for receiving high-priority messages (checked first).
-    priority_mailbox: Option<mpsc::Receiver<StreamerMessage>>,
+    priority_mailbox: mpsc::Receiver<StreamerMessage>,
     /// Handle for sending messages to self (for self-scheduling).
     #[expect(
         dead_code,
@@ -135,6 +135,10 @@ pub const DEFAULT_PRIORITY_MAILBOX_CAPACITY: usize = DEFAULT_MAILBOX_CAPACITY / 
 impl StreamerActor {
     /// Create a new StreamerActor with a status checker.
     ///
+    /// Messages sent on the handle's priority channel are processed before
+    /// normal ones, so critical operations (like Stop) are handled promptly
+    /// even under backpressure.
+    ///
     /// # Arguments
     ///
     /// * `streamer_id` - The streamer ID
@@ -143,50 +147,6 @@ impl StreamerActor {
     /// * `cancellation_token` - Token for graceful shutdown
     /// * `status_checker` - Status checker for performing actual status checks
     pub fn new(
-        streamer_id: String,
-        metadata_store: Arc<DashMap<String, Arc<StreamerMetadata>>>,
-        config: StreamerConfig,
-        cancellation_token: CancellationToken,
-        status_checker: Arc<dyn StatusChecker>,
-    ) -> (Self, ActorHandle<StreamerMessage>) {
-        let (tx, rx) = mpsc::channel(DEFAULT_MAILBOX_CAPACITY);
-        let is_high_priority = config.priority == Priority::High;
-
-        let actor_metadata = ActorMetadata::streamer(&streamer_id, is_high_priority);
-        let handle = ActorHandle::new(tx.clone(), cancellation_token.clone(), actor_metadata);
-
-        // Get initial state from metadata store
-        let state = metadata_store
-            .get(&streamer_id)
-            .map(|m| StreamerActorState::from_metadata(&m))
-            .unwrap_or_default();
-
-        let actor = Self {
-            feedback_sequence: 0,
-            config_revision: 0,
-            current_download: None,
-            id: streamer_id,
-            mailbox: rx,
-            priority_mailbox: None,
-            self_handle: tx,
-            state,
-            initial_status_pending: true,
-            live_watchdog_backoff_until: None,
-            metadata_store,
-            config,
-            cancellation_token,
-            status_checker,
-        };
-
-        (actor, handle)
-    }
-
-    /// Create a new StreamerActor with priority channel support.
-    ///
-    /// High-priority messages are processed before normal messages,
-    /// ensuring critical operations (like Stop) are handled promptly
-    /// even under backpressure.
-    pub fn with_priority_channel(
         streamer_id: String,
         metadata_store: Arc<DashMap<String, Arc<StreamerMetadata>>>,
         config: StreamerConfig,
@@ -217,7 +177,7 @@ impl StreamerActor {
             current_download: None,
             id: streamer_id,
             mailbox: rx,
-            priority_mailbox: Some(priority_rx),
+            priority_mailbox: priority_rx,
             self_handle: tx,
             state,
             initial_status_pending: true,

@@ -134,11 +134,6 @@ impl ActorRegistry {
         self.streamers.get(id)
     }
 
-    /// Get all streamer IDs.
-    pub fn streamer_ids(&self) -> impl Iterator<Item = &String> {
-        self.streamers.keys()
-    }
-
     /// Get all streamer handles.
     pub fn streamer_handles(
         &self,

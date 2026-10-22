@@ -115,7 +115,7 @@ async fn stopped_and_cancelled_generations_settle_retained_feedback_without_rest
             let mut scheduler = scheduler(&["one"]).await;
             let feedback = scheduler.reliable_feedback();
             let metadata = scheduler.streamer_manager.get_streamer("one").unwrap();
-            scheduler.add_streamer(metadata).await.unwrap();
+            scheduler.spawn_streamer_actor(metadata).await.unwrap();
             let actor = scheduler
                 .supervisor
                 .registry()
@@ -165,7 +165,7 @@ async fn blocked_resolution_and_lagged_progress_do_not_lose_terminal_or_block_re
     tokio::time::timeout(Duration::from_secs(6), async {
         let mut scheduler = scheduler(&["one", "removed"]).await;
         for metadata in scheduler.streamer_manager.get_all() {
-            scheduler.add_streamer(metadata).await.unwrap();
+            scheduler.spawn_streamer_actor(metadata).await.unwrap();
         }
         let feedback = scheduler.reliable_feedback();
         let resolver = Arc::new(GateResolver::new());
@@ -271,7 +271,7 @@ async fn replacement_generation_and_state_sync_invalidate_inflight_configuration
     tokio::time::timeout(Duration::from_secs(6), async {
         let mut scheduler = scheduler(&["one", "disabled"]).await;
         for metadata in scheduler.streamer_manager.get_all() {
-            scheduler.add_streamer(metadata).await.unwrap();
+            scheduler.spawn_streamer_actor(metadata).await.unwrap();
         }
         let old = scheduler
             .supervisor
@@ -335,7 +335,7 @@ async fn replacement_seeds_the_recording_identity_even_when_metadata_has_not_cau
         let mut scheduler = scheduler(&["one"]).await;
         let feedback = scheduler.reliable_feedback();
         scheduler
-            .add_streamer(scheduler.streamer_manager.get_streamer("one").unwrap())
+            .spawn_streamer_actor(scheduler.streamer_manager.get_streamer("one").unwrap())
             .await
             .unwrap();
         let (start, end) = feedback.reserve_attempt("one").unwrap();

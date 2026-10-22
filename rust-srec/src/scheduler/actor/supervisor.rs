@@ -79,21 +79,6 @@ pub struct Supervisor {
 }
 
 impl Supervisor {
-    /// Create a new supervisor with a metadata store.
-    ///
-    /// Uses `NoOpStatusChecker`; no platform requests are made.
-    /// The metadata_store should be obtained from `StreamerManager::metadata_store()`.
-    pub fn new(
-        cancellation_token: CancellationToken,
-        metadata_store: Arc<DashMap<String, Arc<StreamerMetadata>>>,
-    ) -> Self {
-        Self::with_config(
-            cancellation_token,
-            SupervisorConfig::default(),
-            metadata_store,
-        )
-    }
-
     /// Create a new supervisor with custom configuration and metadata store.
     ///
     /// Uses `NoOpStatusChecker`; no platform requests are made.
@@ -176,7 +161,7 @@ impl Supervisor {
 
         // Create actor with priority channel support and injected status checker
         // Actor receives a reference to the shared metadata store
-        let (mut actor, handle) = StreamerActor::with_priority_channel(
+        let (mut actor, handle) = StreamerActor::new(
             id.clone(),
             self.metadata_store.clone(),
             config.clone(),
@@ -315,10 +300,6 @@ impl Supervisor {
     /// Process pending restarts that are due.
     ///
     /// Returns the number of actors restarted.
-    pub fn process_pending_restarts(&mut self) -> usize {
-        self.process_pending_restarts_at(tokio::time::Instant::now())
-    }
-
     pub(crate) fn process_pending_restarts_at(&mut self, now: tokio::time::Instant) -> usize {
         let mut restarted = 0;
 
@@ -382,11 +363,6 @@ impl Supervisor {
     /// Get the next restart time, if any.
     pub fn next_restart_time(&self) -> Option<tokio::time::Instant> {
         self.pending_restarts.iter().map(|r| r.restart_at).min()
-    }
-
-    /// Get the number of pending restarts.
-    pub fn pending_restart_count(&self) -> usize {
-        self.pending_restarts.len()
     }
 
     /// Initiate graceful shutdown.
@@ -589,22 +565,6 @@ pub struct ShutdownReport {
     pub forced_terminations: usize,
     /// Number of Stop messages that failed to send.
     pub stop_message_failures: usize,
-}
-
-impl ShutdownReport {
-    /// Check if all actors stopped gracefully.
-    pub fn all_graceful(&self) -> bool {
-        self.forced_terminations == 0 && self.stop_message_failures == 0
-    }
-
-    /// Get the percentage of actors that stopped gracefully.
-    pub fn graceful_percentage(&self) -> f64 {
-        if self.total_actors == 0 {
-            100.0
-        } else {
-            (self.graceful_stops as f64 / self.total_actors as f64) * 100.0
-        }
-    }
 }
 
 /// Statistics about the supervisor.
@@ -813,7 +773,7 @@ mod tests {
             TaskCompletionAction::RestartScheduled { .. }
         ));
         assert!(!supervisor.registry().has_streamer("panics"));
-        assert_eq!(supervisor.pending_restart_count(), 1);
+        assert_eq!(supervisor.pending_restarts.len(), 1);
 
         token.cancel();
     }
@@ -827,7 +787,8 @@ mod tests {
             Arc::new(create_test_metadata("test-1")),
         );
 
-        let mut supervisor = Supervisor::new(token.clone(), metadata_store);
+        let mut supervisor =
+            Supervisor::with_config(token.clone(), SupervisorConfig::default(), metadata_store);
 
         let first = supervisor
             .spawn_streamer("test-1", create_test_config())
@@ -845,7 +806,7 @@ mod tests {
         ));
 
         assert!(matches!(action, TaskCompletionAction::Superseded { .. }));
-        assert_eq!(supervisor.pending_restart_count(), 0);
+        assert!(supervisor.pending_restarts.is_empty());
         assert_eq!(supervisor.restart_tracker().recent_failures("test-1"), 0);
         assert_eq!(
             supervisor
@@ -867,7 +828,8 @@ mod tests {
             Arc::new(create_test_metadata("test-1")),
         );
 
-        let mut supervisor = Supervisor::new(token.clone(), metadata_store);
+        let mut supervisor =
+            Supervisor::with_config(token.clone(), SupervisorConfig::default(), metadata_store);
 
         let handle = supervisor
             .spawn_streamer("test-1", create_test_config())
@@ -887,7 +849,7 @@ mod tests {
         ));
 
         assert!(matches!(action, TaskCompletionAction::Superseded { .. }));
-        assert_eq!(supervisor.pending_restart_count(), 0);
+        assert!(supervisor.pending_restarts.is_empty());
         assert_eq!(supervisor.restart_tracker().recent_failures("test-1"), 0);
         assert!(!supervisor.registry().has_streamer("test-1"));
 
@@ -903,7 +865,8 @@ mod tests {
             Arc::new(create_test_metadata("test-1")),
         );
 
-        let mut supervisor = Supervisor::new(token.clone(), metadata_store);
+        let mut supervisor =
+            Supervisor::with_config(token.clone(), SupervisorConfig::default(), metadata_store);
         supervisor
             .spawn_streamer("test-1", create_test_config())
             .expect("test actor should start");
@@ -981,7 +944,8 @@ mod tests {
             "removed".to_owned(),
             Arc::new(create_test_metadata("removed")),
         );
-        let mut supervisor = Supervisor::new(token.clone(), metadata.clone());
+        let mut supervisor =
+            Supervisor::with_config(token.clone(), SupervisorConfig::default(), metadata.clone());
         let handle = supervisor
             .spawn_streamer("removed", create_test_config())
             .unwrap();
@@ -1005,7 +969,7 @@ mod tests {
             supervisor.handle_task_completion(result),
             TaskCompletionAction::Stopped { .. }
         ));
-        assert_eq!(supervisor.pending_restart_count(), 0);
+        assert!(supervisor.pending_restarts.is_empty());
         assert_eq!(supervisor.restart_tracker.total_restarts("removed"), 0);
         token.cancel();
     }
@@ -1050,7 +1014,10 @@ mod tests {
                     action,
                     TaskCompletionAction::RestartScheduled { .. }
                 ));
-                assert_eq!(supervisor.process_pending_restarts(), 1);
+                assert_eq!(
+                    supervisor.process_pending_restarts_at(tokio::time::Instant::now()),
+                    1
+                );
                 handle = supervisor
                     .registry()
                     .get_streamer("panics")
@@ -1061,8 +1028,11 @@ mod tests {
                     action,
                     TaskCompletionAction::RestartLimitExceeded { .. }
                 ));
-                assert_eq!(supervisor.pending_restart_count(), 0);
-                assert_eq!(supervisor.process_pending_restarts(), 0);
+                assert!(supervisor.pending_restarts.is_empty());
+                assert_eq!(
+                    supervisor.process_pending_restarts_at(tokio::time::Instant::now()),
+                    0
+                );
             }
         }
         supervisor.remove_streamer("panics");
