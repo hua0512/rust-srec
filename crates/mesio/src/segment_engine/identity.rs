@@ -100,11 +100,9 @@ impl IdentityPolicy for StripQueryIdentity {
             .map(|(k, v)| (k.into_owned(), v.into_owned()))
             .collect();
 
-        if kept.len() == resolved.query_pairs().count() && resolved.query().is_some() {
-            // Nothing stripped: keep the URL verbatim (cheapest stable form).
-            return Arc::from(resolved.as_str());
-        }
-
+        // Rebuild the query even when nothing was stripped: a verbatim URL
+        // keeps the origin's parameter order and percent-encoding, so it would
+        // not match the same pairs arriving in another order.
         kept.sort();
         let mut canonical = resolved.clone();
         canonical.set_fragment(None);
@@ -187,8 +185,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "bug: a URL with no insignificant key is kept verbatim, so its parameter order still forks identity"]
-    fn known_bug_strip_query_policy_sorts_params_when_nothing_is_stripped() {
+    fn strip_query_policy_sorts_params_when_nothing_is_stripped() {
         let policy = StripQueryIdentity::new(["token"]);
         let a = policy.canonical_uri(&url("https://e.com/s1.ts?b=2&a=1"));
         let b = policy.canonical_uri(&url("https://e.com/s1.ts?a=1&b=2"));
