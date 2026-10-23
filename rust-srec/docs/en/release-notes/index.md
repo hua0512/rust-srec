@@ -8,7 +8,7 @@ Track version updates, behavior changes, compatibility notes, and upgrade guidan
 
 ## Latest release
 
-- [`v0.8.0`](./v0.8.0.md) — Windows portable notification registration, the Rust-Srec notification display name, and visible notification test errors
+- [`v0.7.1`](./v0.7.1.md) — Windows portable notification registration, the Rust-Srec notification display name, and visible notification test errors
 
 ## Archive
 
