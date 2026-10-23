@@ -6,13 +6,53 @@ use serde::{Deserialize, Serialize};
 use tauri::Emitter;
 use tauri::Listener;
 use tauri::Manager;
+#[cfg(not(windows))]
 use tauri_plugin_notification::NotificationExt;
 
 use crate::DesktopBackendState;
 
 pub const EVENT_SET_DESKTOP_NOTIFICATIONS: &str = "rust-srec://desktop-notifications-set";
 pub const EVENT_UPDATED_DESKTOP_NOTIFICATIONS: &str = "rust-srec://desktop-notifications-updated";
-pub const EVENT_TEST_DESKTOP_NOTIFICATIONS: &str = "rust-srec://desktop-notifications-test";
+
+#[cfg(windows)]
+mod windows;
+
+/// Use the same delivery path for the test button and backend events.
+pub async fn show_desktop_notification(
+    app: &tauri::AppHandle,
+    title: String,
+    body: String,
+) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let app_id = app.config().identifier.clone();
+        let data_dir = app
+            .path()
+            .app_data_dir()
+            .map_err(|error| error.to_string())?;
+        // Registry/file IO and WinRT delivery must not block the UI or an async worker.
+        tauri::async_runtime::spawn_blocking(move || {
+            windows::show(&app_id, "Rust-Srec", &data_dir, &title, &body)
+                .map_err(|error| format!("{error:#}"))
+        })
+        .await
+        .map_err(|error| error.to_string())?
+    }
+    #[cfg(not(windows))]
+    {
+        app.notification()
+            .builder()
+            .title(title)
+            .body(body)
+            .show()
+            .map_err(|error| error.to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn test_desktop_notifications(app: tauri::AppHandle) -> Result<(), String> {
+    show_desktop_notification(&app, "Rust-Srec".into(), "Test desktop notification".into()).await
+}
 
 /// Event types that should trigger native desktop notifications by default.
 /// Focus on "stream online" and error conditions.
@@ -220,21 +260,6 @@ pub fn register_desktop_notifications_ipc(app_handle: &tauri::AppHandle) {
 
             if let Err(e) = handle.emit(EVENT_UPDATED_DESKTOP_NOTIFICATIONS, parsed) {
                 log::warn!("Failed to emit desktop notifications update: {}", e);
-            }
-        });
-    }
-
-    {
-        let handle = app_handle.clone();
-        let _ = app_handle.listen(EVENT_TEST_DESKTOP_NOTIFICATIONS, move |_event| {
-            if let Err(e) = handle
-                .notification()
-                .builder()
-                .title("Rust-Srec")
-                .body("Test desktop notification")
-                .show()
-            {
-                log::warn!("Failed to show desktop test notification: {}", e);
             }
         });
     }

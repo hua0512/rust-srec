@@ -85,6 +85,6 @@ export async function setDesktopNotificationsConfig(
 
 export async function testDesktopNotifications(): Promise<void> {
   if (!isTauriRuntime()) return;
-  const { emit } = await import('@tauri-apps/api/event');
-  await emit('rust-srec://desktop-notifications-test');
+  const { invoke } = await import('@tauri-apps/api/core');
+  await invoke('test_desktop_notifications');
 }

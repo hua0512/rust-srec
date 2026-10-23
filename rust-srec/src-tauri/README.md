@@ -48,3 +48,24 @@ cargo tauri build
 - SQLite DB is stored in the Tauri app data directory.
 - Logs are stored in the Tauri app log directory.
 - Recordings default to `<app_data_dir>/output` (only if the DB was still at `/app/output`).
+
+## Windows notifications
+
+Before submitting a native notification, the app registers its configured bundle identifier
+under `HKCU\Software\Classes\AppUserModelId`, with the display name **Rust-Srec** and an icon
+stored in the app data directory. This supplies the notification identity for portable ZIP builds
+without requiring an installer or administrator access. Existing activation settings and
+Windows notification preferences are preserved. The registration and icon remain after exit.
+
+The desktop notification **Test** button reports registration and submission errors.
+Successful submission does not guarantee a banner: Windows notification settings and
+Do Not Disturb can suppress it.
+
+To validate on Windows, use a user profile where rust-srec has never been installed:
+
+1. Extract the portable ZIP and launch its executable.
+2. Open **Notifications → Desktop Notifications → Test** and verify a native rust-srec popup.
+3. Trigger a selected event (for example, a stream going online) and verify its popup.
+4. Exit, move the portable folder, relaunch, and repeat the test.
+5. Disable rust-srec notifications in Windows settings and verify that testing does not
+   re-enable them. Also smoke-test an installed build to check coexistence.

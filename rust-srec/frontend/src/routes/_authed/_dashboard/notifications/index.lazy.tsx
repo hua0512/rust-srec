@@ -566,7 +566,12 @@ function NotificationsPage() {
           config={desktopNotificationsConfig}
           eventTypes={desktopEventTypes}
           onTest={() => {
-            void testDesktopNotifications();
+            void testDesktopNotifications().catch((error: unknown) => {
+              toast.error(i18n._(msg`Failed to send test notification`), {
+                description:
+                  error instanceof Error ? error.message : String(error),
+              });
+            });
           }}
           onConfigChange={(next) => {
             setDesktopNotificationsConfigState(next);

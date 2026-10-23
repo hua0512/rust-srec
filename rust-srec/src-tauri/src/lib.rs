@@ -14,7 +14,6 @@ use tauri::Listener;
 use tauri::Manager;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 
 mod desktop_notifications;
@@ -22,6 +21,7 @@ mod desktop_notifications;
 use desktop_notifications::{
     DesktopNotificationConfig, load_or_create_desktop_notifications_config,
     register_desktop_notifications_ipc, should_deliver_desktop_notification,
+    show_desktop_notification, test_desktop_notifications,
 };
 
 /// Cooperative drain budget handed to `ServiceContainer::shutdown_with_hard_cap`.
@@ -1219,12 +1219,7 @@ async fn run_desktop_notification_listener(
                         let title = event.title();
                         let body = event.description();
 
-                        if let Err(e) = app_handle
-                            .notification()
-                            .builder()
-                            .title(&title)
-                            .body(&body)
-                            .show()
+                        if let Err(e) = show_desktop_notification(&app_handle, title, body).await
                         {
                             log::warn!("Failed to show desktop notification: {}", e);
                         }
@@ -1339,7 +1334,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             open_desktop_recovery_location,
             restart_desktop,
-            quit_desktop
+            quit_desktop,
+            test_desktop_notifications
         ])
         .setup(move |app| {
             let data_dir = app.path().app_data_dir()?;
