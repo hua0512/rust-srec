@@ -36,6 +36,10 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 rust-srec = { path = ".." }
 
+[target.'cfg(windows)'.dependencies]
+notify-rust = "4.18.2"
+windows-registry = "0.6.1"
+
 [features]
 # Managed by the Tauri CLI.
 # When enabled, Tauri serves assets via the custom protocol instead of expecting a dev server.

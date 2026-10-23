@@ -5612,6 +5612,7 @@ dependencies = [
  "anyhow",
  "hex",
  "log",
+ "notify-rust",
  "rand 0.10.3",
  "rust-srec",
  "serde",
@@ -5624,6 +5625,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "tracing-appender",
+ "windows-registry",
 ]
 
 [[package]]
