@@ -156,6 +156,7 @@ export default defineConfig({
               items: [
                 { text: "Overview", link: "/en/release-notes/" },
                 { text: "Unreleased", link: "/en/release-notes/unreleased" },
+                { text: "v0.8.0", link: "/en/release-notes/v0.8.0" },
                 { text: "v0.7.0", link: "/en/release-notes/v0.7.0" },
                 { text: "v0.6.0", link: "/en/release-notes/v0.6.0" },
                 { text: "v0.5.1", link: "/en/release-notes/v0.5.1" },
@@ -304,6 +305,7 @@ export default defineConfig({
               items: [
                 { text: "概览", link: "/zh/release-notes/" },
                 { text: "未发布", link: "/zh/release-notes/unreleased" },
+                { text: "v0.8.0", link: "/zh/release-notes/v0.8.0" },
                 { text: "v0.7.0", link: "/zh/release-notes/v0.7.0" },
                 { text: "v0.6.0", link: "/zh/release-notes/v0.6.0" },
                 { text: "v0.5.1", link: "/zh/release-notes/v0.5.1" },

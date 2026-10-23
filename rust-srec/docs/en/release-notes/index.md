@@ -8,9 +8,11 @@ Track version updates, behavior changes, compatibility notes, and upgrade guidan
 
 ## Latest release
 
-- [`v0.7.0`](./v0.7.0.md) — MPEG-DASH recording with Mesio, TikTok DASH streams and HTTP/2 downloads, live progress for workflow steps, redesigned engine settings and cleanup of partial files from interrupted jobs, plus fixes for HLS segments, webhook notifications, stuck copies and the web interface layout
+- [`v0.8.0`](./v0.8.0.md) — Windows portable notification registration, the Rust-Srec notification display name, and visible notification test errors
 
 ## Archive
+
+- [`v0.7.0`](./v0.7.0.md) — MPEG-DASH recording with Mesio, TikTok DASH streams and HTTP/2 downloads, live progress for workflow steps, redesigned engine settings and cleanup of partial files from interrupted jobs, plus fixes for HLS segments, webhook notifications, stuck copies and the web interface layout
 
 - [`v0.6.0`](./v0.6.0.md) — multiple accounts per platform and saved proxies, API keys with a built-in MCP server, Baidu Netdisk uploads, lossless cutting of live recordings, automatic output cleanup, per-step workflow retries, TikTok danmu, Douyu App extraction and a reworked live player, plus a broad reliability pass over shutdown, recovery, pipelines and credential handling
 
