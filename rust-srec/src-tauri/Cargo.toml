@@ -38,7 +38,7 @@ rust-srec = { path = ".." }
 
 [target.'cfg(windows)'.dependencies]
 notify-rust = "4.18.2"
-windows-registry = "0.6.1"
+windows-registry = "0.100.0"
 
 [features]
 # Managed by the Tauri CLI.
