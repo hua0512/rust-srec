@@ -8,9 +8,11 @@ Track version updates, behavior changes, compatibility notes, and upgrade guidan
 
 ## Latest release
 
-- [`v0.6.0`](./v0.6.0.md) — multiple accounts per platform and saved proxies, API keys with a built-in MCP server, Baidu Netdisk uploads, lossless cutting of live recordings, automatic output cleanup, per-step workflow retries, TikTok danmu, Douyu App extraction and a reworked live player, plus a broad reliability pass over shutdown, recovery, pipelines and credential handling
+- [`v0.7.0`](./v0.7.0.md) — MPEG-DASH recording with Mesio, TikTok DASH streams and HTTP/2 downloads, live progress for workflow steps, redesigned engine settings and cleanup of partial files from interrupted jobs, plus fixes for HLS segments, webhook notifications, stuck copies and the web interface layout
 
 ## Archive
+
+- [`v0.6.0`](./v0.6.0.md) — multiple accounts per platform and saved proxies, API keys with a built-in MCP server, Baidu Netdisk uploads, lossless cutting of live recordings, automatic output cleanup, per-step workflow retries, TikTok danmu, Douyu App extraction and a reworked live player, plus a broad reliability pass over shutdown, recovery, pipelines and credential handling
 
 - [`v0.5.1`](./v0.5.1.md) — event hooks removed in favor of notification channels, Bigo streamers picked up as soon as they go live, and turning a streamer off now clears its error and retry backoff
 

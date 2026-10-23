@@ -1,6 +1,6 @@
 [package]
 name = "strev"
-version = "0.4.0"
+version = "0.5.0"
 edition.workspace = true
 rust-version.workspace = true
 description = "Strev (Streev) - CLI tool for streaming media extraction and retrieval from various platforms"

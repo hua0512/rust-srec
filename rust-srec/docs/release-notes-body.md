@@ -1,25 +1,21 @@
-## rust-srec v0.6.0
+## rust-srec v0.7.0
 
-This release adds multiple accounts per platform, saved proxies, API keys and MCP access, Baidu Netdisk uploads, lossless cutting of live recordings, automatic output cleanup, per-step workflow retries, a reworked live player, and configurable danmu statistics. It also fixes recording shutdown, restart recovery, file handling, and credential exposure in logs.
+This release adds MPEG-DASH recording with Mesio, TikTok DASH streams and HTTP/2 downloads for HLS and DASH, and shows live progress, speed and time remaining for workflow steps such as remuxing, copies, compression and uploads. It also redesigns the engine settings, lists partial files left by interrupted jobs, and fixes missing or repeated HLS segments, webhook notifications, stuck copies and a broad range of recording, workflow and web interface problems.
 
 ### Highlights
-- **Multiple accounts per platform** — save several accounts for a platform and choose one fixed account or a pool that rotates or falls back when a login fails. Accounts are managed on the platform page, with QR login for Bilibili and Douyu, and each account can use its own proxy.
-- **Saved proxies** — save proxies once under **Settings → Proxies**, test them, and choose direct, system proxy, or a saved proxy for global settings, each platform, template, streamer, and account. Rate limiting on one proxy pauses only the requests that go through it.
-- **API keys and MCP** — expiring or non-expiring `read_only` and `full` API keys, plus a built-in MCP server at `/api/mcp` for recording queries, danmu analysis, and configuration management.
-- **Baidu Netdisk uploads** — a new `baidupcs` processor with BaiduPCS-Go bundled in Docker, login from the preset editor, destination templates, and per-file results.
-- **Lossless cutting** — **Split file now** finishes the current file and continues recording in a new one without reconnecting or re-encoding. FFmpeg and Streamlink need the experimental **Enable lossless cutting** engine option.
-- **Output retention** — optionally remove outputs from ended sessions after a chosen number of days, as records only or with their files.
-- **Workflow retries and timeouts** — per-step retry counts, backoff, and timeouts that survive restarts, plus save-time workflow validation and batch actions for pipeline jobs and media outputs.
-- **Platforms and player** — TikTok danmu, Douyu Android App extraction, restored RedBook extraction, and a live player with connection controls, playback recovery, stream pickers, and latency presets.
-- **Danmu statistics** — configurable rankings, live snapshots that survive restarts, gift and chatter statistics, and word segmentation for Chinese and Japanese.
-- **Reliability** — recordings, chat files, and pipeline work are finalized at shutdown and resumed after restart without repeating completed steps. Credentials no longer appear in logs.
+- **MPEG-DASH recording** — Mesio records live and finished `.mpd` streams, merging separate video and audio into one MP4, with a new **DASH** tab for quality, audio language, start position and download limits. Encrypted (DRM) streams are not supported.
+- **TikTok DASH streams** — TikTok rooms now also list their DASH streams; FLV stays the default unless `dash` is put first in **Preferred Formats**.
+- **Faster, sturdier HLS** — with **HTTP Version** on **Auto**, Mesio uses HTTP/2 for HLS and DASH on direct connections, backs off when a server answers HTTP 429 instead of ending the recording, and no longer leaves out slow, retried or repeated segments of finished streams.
+- **Live workflow progress** — remuxing, transcoding, copies, compression and rclone/Baidu Netdisk uploads show percentage, speed, time remaining and the current file on the job page, the workflow page and the top bar, including automatic retries.
+- **Interrupted jobs** — partial files left by a crash or forced exit are listed for review and cleanup, and copies stuck on an unresponsive disk or share are shown instead of running on unnoticed.
+- **Engine settings** — Mesio, FFmpeg and Streamlink settings are regrouped into per-format tabs and sections with an **Advanced** area, and template overrides can inherit, reset or override every setting.
+- **New workflow** — **Full Processing (Single Pass)** writes recording metadata while remuxing instead of rewriting the file in a separate step.
+- **Fixes** — webhook channels from the web interface now send notifications, rclone **Max Retries** takes effect, Bigo login walls and Douyin mobile-API rooms are no longer shown as offline, and pages no longer overflow at laptop and desktop sizes.
 
 ### Review before upgrading
-- **Take a backup first.** On first start, cookies and logins in platform, template, and streamer settings become account profiles, and proxy settings become saved proxies. Going back to an earlier version needs the backup.
-- **Direct means direct.** With **Direct**, FFmpeg and Streamlink now ignore `HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY`; choose **System proxy** where they should still apply.
-- **API changes.** Requests that still send `cookies` or `proxy_config` are rejected; use `/api/credentials` with `credential_selection`, and `proxy_route`. API clients must serialize token refreshes, since reusing a consumed refresh token can revoke all of that user's sessions.
-- **Douyu defaults to the App method.** Without a signed-in account, rooms with several qualities usually stay at 超清; add a signed-in account for the original quality.
-- **Mesio Loop Protection** and Offset Consistency Check are now off by default for new engines; engines saved earlier keep their settings.
-- **Update the web container and the backend together**, and rotate any credentials that appeared in logs you shared before.
+- **System certificates.** Mesio downloads and most desktop-app connections now trust the operating system's certificates. If connections fail with a certificate error, update the system's certificates, such as `ca-certificates` on Linux.
+- **Native-resolution thumbnails** that were silently saved at 320 pixels wide are not repaired: turn on **Native resolution** and save them again.
+- **HTTP/2 only** now really uses HTTP/2, so it fails against servers without HTTP/2.
+- **Removed settings** that had no effect: **Rclone Executable** (use `RCLONE_PATH`), the thumbnail **Output Pattern**, Mesio's **Live Reorder Window** and the **Settings updated** notification event.
 
-Full release notes: https://docs.srec.rs/en/release-notes/v0.6.0 · 中文版：https://docs.srec.rs/zh/release-notes/v0.6.0
+Full release notes: https://docs.srec.rs/en/release-notes/v0.7.0 · 中文版：https://docs.srec.rs/zh/release-notes/v0.7.0
