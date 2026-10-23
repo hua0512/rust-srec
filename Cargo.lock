@@ -3720,7 +3720,7 @@ dependencies = [
 
 [[package]]
 name = "mesio"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "byteorder",
  "bytes",
@@ -5535,7 +5535,7 @@ dependencies = [
 
 [[package]]
 name = "rust-srec"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -5607,7 +5607,7 @@ dependencies = [
 
 [[package]]
 name = "rust-srec-desktop"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -6572,7 +6572,7 @@ checksum = "ff7589a1859b09232522bb9edf076ca7fcf14ded96685d3fa629db73023ffbb7"
 
 [[package]]
 name = "strev"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "clap",
