@@ -52,8 +52,8 @@ cargo tauri build
 ## Windows notifications
 
 Before submitting a native notification, the app registers its configured bundle identifier
-under `HKCU\Software\Classes\AppUserModelId`, with a display name and an icon stored in
-the app data directory. This supplies the notification identity for portable ZIP builds
+under `HKCU\Software\Classes\AppUserModelId`, with the display name **Rust-Srec** and an icon
+stored in the app data directory. This supplies the notification identity for portable ZIP builds
 without requiring an installer or administrator access. Existing activation settings and
 Windows notification preferences are preserved. The registration and icon remain after exit.
 

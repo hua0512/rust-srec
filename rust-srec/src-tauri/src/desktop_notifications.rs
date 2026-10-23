@@ -26,18 +26,13 @@ pub async fn show_desktop_notification(
     #[cfg(windows)]
     {
         let app_id = app.config().identifier.clone();
-        let display_name = app
-            .config()
-            .product_name
-            .clone()
-            .unwrap_or_else(|| "Rust-Srec".into());
         let data_dir = app
             .path()
             .app_data_dir()
             .map_err(|error| error.to_string())?;
         // Registry/file IO and WinRT delivery must not block the UI or an async worker.
         tauri::async_runtime::spawn_blocking(move || {
-            windows::show(&app_id, &display_name, &data_dir, &title, &body)
+            windows::show(&app_id, "Rust-Srec", &data_dir, &title, &body)
                 .map_err(|error| format!("{error:#}"))
         })
         .await
