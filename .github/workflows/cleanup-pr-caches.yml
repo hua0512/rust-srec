@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # This runs with base-repository permissions. Never check out PR code here.
-      - uses: actions/github-script@v8
+      - uses: actions/github-script@v9
         with:
           script: |
             const ref = `refs/pull/${context.payload.pull_request.number}/merge`;
