@@ -74,7 +74,8 @@ async fn upgrade_drops_only_the_inert_default_buffer_size() {
     }
 
     // Replaying the statement changes nothing more.
-    let migration = include_str!("../migrations/20261013120000_drop_inert_mesio_buffer_size.sql");
+    let migration =
+        include_str!("../../migrations/20261013120000_drop_inert_mesio_buffer_size.sql");
     sqlx::raw_sql(migration).execute(&pool).await.unwrap();
     assert_eq!(
         parsed(config(&pool, "stored-default").await),

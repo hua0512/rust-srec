@@ -69,7 +69,7 @@ async fn index_upgrade_removes_page_sorts_and_preserves_cleanup_and_statistics()
     .run(&pool)
     .await
     .unwrap();
-    sqlx::raw_sql(include_str!("fixtures/database_query_plans.sql"))
+    sqlx::raw_sql(include_str!("../fixtures/database_query_plans.sql"))
         .execute(&pool)
         .await
         .unwrap();

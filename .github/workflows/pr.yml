@@ -130,7 +130,7 @@ jobs:
       # Every ignored backend test runs except the SQLite stress test and open bugs.
       - name: Run ffmpeg, rclone, and Streamlink gated tests
         if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' }}
-        run: cargo nextest run --locked --workspace --exclude rust-srec-desktop --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback --run-ignored ignored-only -E 'package(=rust-srec) and not binary(=sqlite_claim_stress) and not test(/known_bug_/)'
+        run: cargo nextest run --locked --workspace --exclude rust-srec-desktop --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback --run-ignored ignored-only -E 'package(=rust-srec) and not test(/^sqlite_claim_stress::/) and not test(/known_bug_/)'
       - name: Run tests
         if: matrix.os != 'ubuntu-latest'
         run: cargo nextest run --locked --workspace --exclude rust-srec-desktop --timings

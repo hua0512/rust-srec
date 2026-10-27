@@ -23,8 +23,10 @@ async fn canonical_timestamp_inventory_storage_and_nullability() {
         .unwrap();
     // Includes the post-migration conversions that drop their pending markers.
     rust_srec::database::run_migrations(&pool).await.unwrap();
-    let inventory: BTreeMap<String, TableContract> =
-        serde_json::from_str(include_str!("fixtures/timestamp_contract_inventory.json")).unwrap();
+    let inventory: BTreeMap<String, TableContract> = serde_json::from_str(include_str!(
+        "../fixtures/timestamp_contract_inventory.json"
+    ))
+    .unwrap();
     let tables: BTreeSet<String> = sqlx::query_scalar(
         "SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name != '_sqlx_migrations'",
     ).fetch_all(&pool).await.unwrap().into_iter().collect();
@@ -33,7 +35,7 @@ async fn canonical_timestamp_inventory_storage_and_nullability() {
     // These are storage fixtures, not proof of application write bindings. Public
     // account/token writes are checked separately in account_token_contracts;
     // preset_template_timestamps covers the DateTime/EpochMillis adapters.
-    sqlx::raw_sql(include_str!("fixtures/timestamp_contract_rows.sql"))
+    sqlx::raw_sql(include_str!("../fixtures/timestamp_contract_rows.sql"))
         .execute(&pool)
         .await
         .unwrap();

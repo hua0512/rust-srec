@@ -132,6 +132,10 @@ roxmltree = "0.21.1"
 
 [profile.dev]
 incremental = true
+# Full debug info roughly doubles link time for the backend's test binaries and
+# the size of target/. Line tables keep file:line in backtraces; set
+# CARGO_PROFILE_DEV_DEBUG=full when a debugger needs local variables.
+debug = "line-tables-only"
 strip = false
 lto = false
 opt-level = 0
