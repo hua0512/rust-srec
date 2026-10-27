@@ -21,6 +21,7 @@ env:
   CARGO_PROFILE_TEST_DEBUG: 0
   CARGO_INCREMENTAL: 0
   # PR merge-ref caches are isolated from other PRs; main warms shared caches.
+  # sccache ignores SCCACHE_GHA_RW_MODE before v0.16.0.
   SCCACHE_GHA_RW_MODE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'READ_WRITE' || 'READ_ONLY' }}
 
 jobs:
@@ -36,7 +37,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: mozilla-actions/sccache-action@v0.0.11
         with:
-          version: "v0.13.0"
+          version: "v0.19.0"
       - uses: ./.github/actions/setup-rust
       - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-linux-deps
@@ -101,7 +102,7 @@ jobs:
       - uses: mozilla-actions/sccache-action@v0.0.11
         if: runner.os != 'macOS' || runner.arch == 'ARM64'
         with:
-          version: "v0.13.0"
+          version: "v0.19.0"
       - uses: ./.github/actions/setup-rust
       - uses: taiki-e/install-action@nextest
       - uses: ./.github/actions/setup-protoc
@@ -270,7 +271,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: mozilla-actions/sccache-action@v0.0.11
         with:
-          version: "v0.13.0"
+          version: "v0.19.0"
       - uses: ./.github/actions/setup-rust
       - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
