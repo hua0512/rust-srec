@@ -2,7 +2,7 @@ use sqlx::{SqlitePool, migrate::Migrator, sqlite::SqlitePoolOptions};
 
 const VERSION: i64 = 20260909120000;
 const MIGRATION: &str =
-    include_str!("../migrations/20260909120000_preserve_local_filter_timezones.sql");
+    include_str!("../../migrations/20260909120000_preserve_local_filter_timezones.sql");
 static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
 
 async fn rows(pool: &SqlitePool) -> Vec<(String, String, String, String)> {

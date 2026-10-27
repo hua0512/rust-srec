@@ -33,7 +33,7 @@ Production-ready recorder backend (REST API + scheduler + pipeline + SQLite).
 ## TESTING
 Pin each behavior at the highest layer that can reach it without the public network:
 1. **End-to-end, `tests/e2e/`**: the default for anything observable through the REST API or WebSockets: status codes, API error `code`s, JSON the frontend reads, persisted effects read back through the API, and auth/security outcomes. `support::TestApp` starts the real backend in-process (fresh SQLite, `ServiceContainer`, JWT-authenticated server on an ephemeral loopback port); tests talk to it only over HTTP. Write one scenario per test, asserting the precise contract.
-2. **Database integration, other `tests/*.rs`**: repository and migration contracts on real SQLite.
+2. **Database integration, `tests/integration/`**: repository and migration contracts on real SQLite, one module per suite in a single test binary.
 3. **Unit tests beside the module**: only for logic the E2E suite cannot reach offline: engine and extractor behavior, external-tool argument building and output parsing, state machines, time math, concurrency, cancellation and fault injection. Keep one focused test per behavior.
 
 Rules:

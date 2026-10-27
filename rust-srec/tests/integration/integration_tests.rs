@@ -248,7 +248,7 @@ mod database_tests {
         .expect("Failed to seed previous global_config schema");
 
         sqlx::raw_sql(include_str!(
-            "../migrations/20260510000000_remove_session_gap_time_secs.sql"
+            "../../migrations/20260510000000_remove_session_gap_time_secs.sql"
         ))
         .execute(&pool)
         .await
@@ -401,7 +401,7 @@ mod database_tests {
 
         let mut tx = pool.begin().await.expect("Failed to begin transaction");
         sqlx::raw_sql(include_str!(
-            "../migrations/20260804000000_remove_event_hooks.sql"
+            "../../migrations/20260804000000_remove_event_hooks.sql"
         ))
         .execute(&mut *tx)
         .await
