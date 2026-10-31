@@ -12,7 +12,7 @@
     },
     "devDependencies": {
         "mermaid": "^12.2.0",
-        "vitepress": "2.0.0-alpha.20",
+        "vitepress": "2.0.0-alpha.21",
         "vitepress-mermaid-preview": "^0.2.1"
     }
 }
