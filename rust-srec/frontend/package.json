@@ -61,7 +61,7 @@
     "hls.js": "^1.7.3",
     "iron-webcrypto": "^2.0.0",
     "ky": "^2.2.0",
-    "lucide-react": "^1.61.0",
+    "lucide-react": "^1.63.0",
     "motion": "^14.5.0",
     "mpegts.js": "^1.8.2",
     "nitro": "latest",
