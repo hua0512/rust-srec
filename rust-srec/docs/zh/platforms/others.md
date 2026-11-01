@@ -39,7 +39,7 @@
 - **弹幕**: ✅ 已支持
 
 ::: info 带密码的直播
-请把密码以 `?password=...` 的形式加到主播 URL 中，例如 `https://twitcasting.tv/{用户}?password=secret`。
+在 Twitcasting 平台设置中填写 **直播密码**，或把密码以 `?password=...` 的形式加到主播 URL 中（例如 `https://twitcasting.tv/{用户}?password=secret`）。URL 中的密码优先。
 :::
 
 ## 微博
