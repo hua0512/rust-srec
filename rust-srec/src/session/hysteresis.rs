@@ -48,18 +48,12 @@ use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
 use crate::session::state::TerminalCause;
+use crate::streamer::metadata::{DEFAULT_OFFLINE_CHECK_COUNT, DEFAULT_OFFLINE_CHECK_DELAY_MS};
 
 /// Hard cap on the derived hysteresis window. Defends against pathological
 /// scheduler configs (e.g. `offline_check_interval_ms = 600_000`) that
 /// would otherwise park sessions for unreasonable durations.
 pub const MAX_HYSTERESIS_WINDOW: Duration = Duration::from_secs(5 * 60);
-
-/// Default scheduler-derived window: `(3 + 1) × 20 s = 80 s`. Chosen to
-/// match the hard-coded defaults in
-/// [`crate::scheduler::SchedulerConfig::default`] so a freshly-installed
-/// instance has consistent behaviour without any explicit configuration.
-const DEFAULT_OFFLINE_CHECK_COUNT: u32 = 3;
-const DEFAULT_OFFLINE_CHECK_INTERVAL_MS: u64 = 20_000;
 
 /// Tunable backstop window for the lifecycle's hysteresis state.
 ///
@@ -103,12 +97,10 @@ impl HysteresisConfig {
     }
 }
 
+/// The window for the shared offline-check defaults: `(3 + 1) × 10 s = 40 s`.
 impl Default for HysteresisConfig {
     fn default() -> Self {
-        Self::from_scheduler(
-            DEFAULT_OFFLINE_CHECK_COUNT,
-            DEFAULT_OFFLINE_CHECK_INTERVAL_MS,
-        )
+        Self::from_scheduler(DEFAULT_OFFLINE_CHECK_COUNT, DEFAULT_OFFLINE_CHECK_DELAY_MS)
     }
 }
 

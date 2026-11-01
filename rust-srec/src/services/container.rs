@@ -325,7 +325,7 @@ impl ServiceContainer {
 
         // Populate resolved offline_check_* on the in-memory metadata cache
         // for every hydrated streamer. Without this, freshly hydrated metadata
-        // sits at default (3 / 20_000) and platform/template/streamer overrides
+        // sits at the defaults (3 / 10 s) and platform/template/streamer overrides
         // wouldn't take effect until each streamer's config was independently
         // resolved (e.g. on first config-update event).
         self.runtime_coordinator

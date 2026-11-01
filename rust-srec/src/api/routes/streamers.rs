@@ -355,8 +355,8 @@ pub async fn create_streamer(
                 Some(v.to_string())
             }
         }),
-        offline_check_count: 3,
-        offline_check_delay_ms: 20_000,
+        offline_check_count: crate::streamer::metadata::DEFAULT_OFFLINE_CHECK_COUNT,
+        offline_check_delay_ms: crate::streamer::metadata::DEFAULT_OFFLINE_CHECK_DELAY_MS,
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),
         deleted_at: None,

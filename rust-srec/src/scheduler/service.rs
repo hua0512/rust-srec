@@ -28,6 +28,7 @@ use crate::database::repositories::{
 use crate::downloader::DownloadTerminalEvent;
 use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent};
 use crate::monitor::StreamMonitor;
+use crate::streamer::metadata::{DEFAULT_OFFLINE_CHECK_COUNT, DEFAULT_OFFLINE_CHECK_DELAY_MS};
 use crate::streamer::{StreamerManager, StreamerMetadata};
 
 use super::actor::{
@@ -106,12 +107,6 @@ const SCHEDULER_COMMAND_CAPACITY: usize = 64;
 /// Default check interval (60 seconds).
 const DEFAULT_CHECK_INTERVAL_MS: u64 = 60_000;
 
-/// Default offline check interval (20 seconds).
-const DEFAULT_OFFLINE_CHECK_INTERVAL_MS: u64 = 20_000;
-
-/// Default offline check count before switching to offline interval.
-const DEFAULT_OFFLINE_CHECK_COUNT: u32 = 3;
-
 #[async_trait::async_trait]
 trait ActorConfigResolver: Send + Sync {
     async fn resolve(&self, streamer_id: &str, base: StreamerConfig) -> Result<StreamerConfig>;
@@ -150,7 +145,7 @@ impl Default for SchedulerConfig {
     fn default() -> Self {
         Self {
             check_interval_ms: DEFAULT_CHECK_INTERVAL_MS,
-            offline_check_interval_ms: DEFAULT_OFFLINE_CHECK_INTERVAL_MS,
+            offline_check_interval_ms: DEFAULT_OFFLINE_CHECK_DELAY_MS,
             offline_check_count: DEFAULT_OFFLINE_CHECK_COUNT,
             supervisor_config: SupervisorConfig::default(),
         }

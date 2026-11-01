@@ -147,7 +147,7 @@ async fn actor_creation_and_every_config_scope_resolve_four_layers_without_metad
             metadata.offline_check_count,
             metadata.offline_check_delay_ms
         ),
-        (3, 20_000)
+        (DEFAULT_OFFLINE_CHECK_COUNT, DEFAULT_OFFLINE_CHECK_DELAY_MS)
     );
     scheduler.spawn_streamer_actor(metadata).await.unwrap();
     assert_config(&scheduler, 1, 10_000, 60_000);
