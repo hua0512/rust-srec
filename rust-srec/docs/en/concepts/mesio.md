@@ -51,7 +51,7 @@ For HLS, all download state lives in one place — the **Scheduler Reactor**. It
 
 - **Segment identity and de-duplication**, so segments are not re-fetched when a playlist refresh rotates auth tokens (for example Twitch signed URLs, where the rotating query parameters can be stripped so the same segment is recognized across refreshes).
 - **The retry budget**, including transparently retrying a signed URL that expires mid-download against a newer one.
-- **Bounded concurrent fetch tasks**, whose in-flight downloads, decryption work, and output buffers are each capped by explicit memory budgets — so a fast or encrypted stream can no longer grow memory without limit.
+- **Bounded concurrent fetch tasks**, whose in-flight downloads, decryption work, and output buffers are each capped by explicit memory budgets — so a fast or encrypted stream cannot grow memory without limit.
 
 Decryption runs on a separate **crypto pool**, off the scheduling loop, so decryption does not block scheduling when many encrypted segments arrive at once. The **SequenceAssembler** then guarantees ordered output, writes fMP4 init segments before the media that depends on them (avoiding codec-mismatch corruption), and emits explicit gaps instead of silently stalling when segments drop out of the live window.
 
@@ -105,4 +105,4 @@ Mesio-specific processing options are documented on the [Engines](./engines.md) 
 - [MPEG-DASH recording](./engines.md#mpeg-dash) — record DASH streams with separately delivered video and audio merged into one file.
 
 > [!NOTE]
-> The full engine design lives alongside the source at [`crates/mesio/docs/HLS_ENGINE_ARCHITECTURE.md`](https://github.com/hua0512/rust-srec/blob/main/crates/mesio/docs/HLS_ENGINE_ARCHITECTURE.md) and [`crates/mesio/docs/DOWNLOADER_ENGINE_ARCHITECTURE_PLAN.md`](https://github.com/hua0512/rust-srec/blob/main/crates/mesio/docs/DOWNLOADER_ENGINE_ARCHITECTURE_PLAN.md).
+> The full engine design lives alongside the source at [`crates/mesio/docs/HLS_ENGINE_ARCHITECTURE.md`](https://github.com/hua0512/rust-srec/blob/main/crates/mesio/docs/HLS_ENGINE_ARCHITECTURE.md).

@@ -3,19 +3,19 @@
 ## AcFun
 
 - **URL**: `https://live.acfun.cn/live/{房间号}`
-- **协议**: HLS
+- **协议**: FLV
 - **弹幕**: ❌ 不支持
 
 ## 熊猫直播
 
-- **URL**: `https://www.pandalive.co.kr/{房间号}`
-- **协议**: FLV
+- **URL**: `https://www.pandalive.co.kr/play/{id}`
+- **协议**: HLS
 - **弹幕**: ❌ 不支持
 
 ## Picarto
 
 - **URL**: `https://picarto.tv/{频道}`
-- **协议**: HLS
+- **协议**: HLS/MP4
 - **弹幕**: ❌ 不支持
 
 ## 小红书
@@ -38,11 +38,15 @@
 - **协议**: HLS
 - **弹幕**: ✅ 已支持
 
+::: info 带密码的直播
+请把密码以 `?password=...` 的形式加到主播 URL 中，例如 `https://twitcasting.tv/{用户}?password=secret`。
+:::
+
 ## 微博
 
 - **URL**: `https://weibo.com/l/wblive/p/show/{id}`, `https://weibo.com/u/{uid}`
-- **协议**: HLS
+- **协议**: FLV/HLS
 - **弹幕**: ❌ 不支持
 ::: info
-使用 `https://weibo.com/u/{uid}` 格式的链接需要已登录的[账号凭据配置](../concepts/configuration.md#账号配置与选择)。
+未配置账号时，会使用内置的访客会话访问微博，该会话可能失效。如果链接（尤其是 `https://weibo.com/u/{uid}`）无法解析，请添加已登录的[账号凭据配置](../concepts/configuration.md#账号配置与选择)。
 :::

@@ -69,9 +69,15 @@ stateDiagram-v2
     Processing --> Completed: Success
     Processing --> Failed: Error
     Failed --> Processing: Retry
+    Pending --> Cancelled: Cancel
+    Processing --> Cancelled: Cancel
+    Cancelled --> Processing: Retry
     Completed --> [*]
     Failed --> [*]
+    Cancelled --> [*]
 ```
+
+These are the states of a workflow execution (`PENDING`, `PROCESSING`, `COMPLETED`, `FAILED`, `CANCELLED`). Each step additionally starts as `BLOCKED` until every step it depends on has completed, then becomes `PENDING` until its job is created. A step whose dependency failed, or whose workflow failed or was cancelled, ends as `CANCELLED`.
 
 On the workflow page, a step whose job is waiting for a free worker shows **Queued**, and a step whose job is running shows **Running**, with a progress bar when the job reports its progress.
 

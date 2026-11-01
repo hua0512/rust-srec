@@ -16,6 +16,26 @@ Use `start_hls`, `start_dash` or `start_flv` when the protocol is known. Use
 `start` with `ProtocolSelection::Auto` when the URL should be detected at
 runtime; a path ending in `.mpd` is detected as DASH.
 
+## Session Contract
+
+- `items` is lossless and backpressured. Boundaries travel on it, never on
+  `events`: a normal end is `HlsData::EndMarker(Some(SplitReason::EndOfStream))`,
+  a discontinuity is `HlsData::EndMarker(Some(SplitReason::Discontinuity))` (DASH
+  also emits `StreamStructureChange` when the track layout changes), and a fatal
+  failure is a terminal `Err(DownloadError)`; FLV ends by closing the stream.
+  Pipe consumers can derive file/pipe boundaries from `items` alone.
+- `events` is bounded and drops under backpressure (`handle.dropped_events()`
+  counts drops). `Progress` is coalesced (by default every 256 KiB or 100 ms);
+  `ResourceFinished` carries the exact byte count.
+- `handle.metrics()` returns lossless HLS/DASH counters, or `None` when
+  metrics are disabled (`metrics_enabled` in the HLS or DASH output config).
+  Do not rebuild totals from `events`.
+- `handle.join()` waits for the session's `DownloadTerminal`.
+- With `DownloadRequest::sources`, HLS and DASH fail over by restarting on the
+  next source, emitting `SourceSelected` and a `Discontinuity` end marker
+  between attempts. FLV picks a source at startup only; non-default
+  `FlvReconnect` modes are rejected with `DownloadError::Configuration`.
+
 ## Basic Usage
 
 ```rust
@@ -94,8 +114,8 @@ while let Some(item) = session.items.next().await {
 ## Configuration
 
 Use `MesioConfig` for protocol configuration and cancellation defaults.
-Protocol-specific builders remain available for constructing `HlsConfig` and
-`FlvProtocolConfig`.
+`FlvProtocolBuilder`, `HlsProtocolBuilder` and `DashProtocolBuilder` build the
+`FlvProtocolConfig`, `HlsConfig` and `DashConfig` it holds.
 
 ```rust
 use mesio_engine::{FlvProtocolBuilder, HlsProtocolBuilder, MesioConfig, MesioDownloader};
@@ -150,8 +170,9 @@ limits and cancellation still apply.
 
 The logging `Redacted` URL adapter shows only an origin and a redaction marker;
 relative/malformed URIs are fully masked. `redact_url_for_log` provides the same
-behavior for strings. `redact_url`/`redact_url_str` retain their existing structural
-redaction for callers that need it. Source-health, playlist and retry logs retain
+behavior for strings. `redact_url`/`redact_url_str` keep the URL structure
+(userinfo removed, query keys kept, query values masked) for callers that need
+it. Source-health, playlist and retry logs retain
 counts, typed classes and numeric status information while omitting authentication
 material, response bodies and free-form upstream failure details.
 

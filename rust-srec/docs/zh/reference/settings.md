@@ -4,7 +4,7 @@
 
 ## 全局设置 {#全局设置}
 
-通过 **设置** → **全局** 访问。设置项分为以下几类：
+通过 **设置** → **全局** 访问。下表中的设置名即全局配置 API（`/api/config/global`）和配置备份中使用的字段名。设置项分为以下几类：
 
 ### 文件配置 (File Configuration) {#文件配置-file-configuration}
 | 设置 | 说明 | 默认值 |
@@ -29,39 +29,43 @@
 | `top_talkers` | 每场列出的发言人和礼物赠送者数量（1–500） | `100` |
 | `top_words` | 每场列出的高频词数量（1–500） | `50` |
 | `top_gifts` | 每场列出的礼物名称数量（1–500） | `20` |
-| `rate_bucket_secs` | 活跃度时间线的精度（秒）。超长直播会自动降低精度，因此场次页面会读取实际精度而不是假定。 | `10` |
+| `rate_bucket_secs` | 活跃度时间线的精度（秒，1–3600）。超长直播会自动降低精度，因此场次页面会读取实际精度而不是假定。 | `10` |
 | `talker_capacity` | 跟踪的不同发言人数（64–8192）。低于此值时计数精确；超过后为近似值，场次页面会用 `≈` 标注。 | `2048` |
 | `word_capacity` | 跟踪的不同词数（64–8192），取舍相同 | `2048` |
-| `gift_capacity` | 跟踪的不同礼物名称数量 | `256` |
-| `extra_stop_words` | 在内置列表之外，额外从高频词图表中排除的词 | 无 |
+| `gift_capacity` | 跟踪的不同礼物名称数量（16–8192） | `256` |
+| `extra_stop_words` | 在内置列表之外，额外从高频词图表中排除的词（最多 500 个） | 无 |
 
 超出范围的值会被收敛到最近的可用值而不是报错，且列出的数量不会超过跟踪的数量。
 
 ### 资源限制 (Resource Limits) {#资源限制-resource-limits}
 | 设置 | 说明 | 默认值 |
 |------|------|--------|
-| `min_segment_size` | 保留分段的最小大小 | `1MB` |
-| `max_download_duration_secs` | 分段的最大时长 | `0` (不限制) |
-| `max_part_size` | 分段的最大大小 | `8GB` |
+| `min_segment_size_bytes` | 保留分段的最小大小 | `1048576`（1 MiB） |
+| `max_download_duration_secs` | 分段的最大时长（秒） | `0` (不限制) |
+| `max_part_size_bytes` | 分段的最大大小 | `8589934592`（8 GiB） |
 
 ### 并发与性能 (Concurrency & Performance) {#并发与性能-concurrency-performance}
 | 设置 | 说明 | 默认值 |
 |------|------|--------|
 | `max_concurrent_downloads` | 最大同时录制任务数 | `6` |
 | `max_concurrent_uploads` | 最大同时上传任务数 | `3` |
-| `max_cpu_jobs` | 最大并发 CPU 密集型任务数 | `0` (Auto / 自动) |
-| `max_io_jobs` | 最大并发 I/O 密集型任务数；百度网盘上传单独逐个运行，不计入 | `8` (0 = Auto / 自动) |
-| `download_engine` | 录制引擎 (`ffmpeg`, `mesio` 等) | `mesio` |
-| `queue_freshness_threshold` | 当某项录制在并发队列中等待时间超过该阈值时，rust-srec 会在启动前重新检查主播以刷新流地址和请求头。对签名 URL 会在几分钟内过期的平台尤其有用。设为 `0` 表示每次排队等待都刷新。 | `60 秒` |
+| `max_concurrent_cpu_jobs` | 最大并发 CPU 密集型任务数 | `0` (Auto / 自动) |
+| `max_concurrent_io_jobs` | 最大并发 I/O 密集型任务数；百度网盘上传单独逐个运行，不计入 | `8` (0 = Auto / 自动) |
+| `default_download_engine` | 录制使用的[引擎配置](../concepts/engines.md)名称 | `default-mesio`（内置的 Mesio 配置） |
+| `queue_freshness_threshold_ms` | 单位为毫秒。当某项录制在并发队列中等待时间超过该阈值时，rust-srec 会在启动前重新检查主播以刷新流地址和请求头。对签名 URL 会在几分钟内过期的平台尤其有用。设为 `0` 表示每次排队等待都刷新。 | `60000`（60 秒） |
+| `pipeline_cpu_job_timeout_secs` | 单个 CPU 密集型流水线任务的最长运行时间，超时即取消（最小 `1`） | `3600` |
+| `pipeline_io_job_timeout_secs` | 单个 I/O 密集型流水线任务的最长运行时间，超时即取消（最小 `1`） | `3600` |
+| `pipeline_execute_timeout_secs` | `execute` 处理器命令的最长运行时间（最小 `1`） | `3600` |
+| `gpu_health_probe_interval_secs` | GPU 健康监视器调用 `nvidia-smi` 探测的间隔秒数；修改在下一次探测时生效（最小 `1`） | `30` |
 
-由哪个提取器解析流地址是与 `download_engine` 相互独立的设置，此处不提供，需要在平台、模板或主播层级配置。参见[引擎与提取器选择](./configuration-overrides.md#引擎与提取器选择)。
+由哪个提取器解析流地址是与 `default_download_engine` 相互独立的设置，此处不提供，需要在平台、模板或主播层级配置。参见[引擎与提取器选择](./configuration-overrides.md#引擎与提取器选择)。
 
 ### 网络与系统 (Network & System) {#网络与系统-network-system}
 | 设置 | 说明 | 默认值 |
 |------|------|--------|
-| `streamer_check_interval` | 检查主播状态的间隔 | `60 Secs` |
-| `offline_check_interval` | 检查离线状态的间隔 | `20 Secs` |
-| `offline_detection_count` | 确认主播离线所需的连续离线信号次数。正常结束的录制计为第一次，因此按默认值会话在第二次离线检查时结束，详见[离线判定](configuration-overrides.md#离线判定和下载失败恢复共用同一个次数)。同一个最终配置值也决定连续下载失败多少次后进入临时冷却；下载失败阈值最低为 `2`。 | `3` |
+| `streamer_check_delay_ms` | 检查主播状态的间隔（毫秒） | `60000`（60 秒） |
+| `offline_check_delay_ms` | 离线检查的间隔（毫秒） | 新安装为 `10000`（10 秒） |
+| `offline_check_count` | 确认主播离线所需的连续离线信号次数。正常结束的录制计为第一次，因此按默认值会话在第二次离线检查时结束，详见[离线判定](configuration-overrides.md#离线判定和下载失败恢复共用同一个次数)。同一个最终配置值也决定连续下载失败多少次后进入临时冷却；下载失败阈值最低为 `2`。 | `3` |
 | `proxy_route` | **默认代理**：平台、模板、主播或账号未自行选择时的连接方式。可选 **直连**、**系统代理** 或[已保存的代理](#代理-proxies)。详见[代理](../concepts/configuration.md#proxies)。 | **直连**；首次启动或升级时设置了代理环境变量则为 **系统代理** |
 | `stream_proxy_allow_private_targets` | 允许播放器的 **服务器代理** 和代理测试访问私有或本地网络上的地址 | `false` |
 

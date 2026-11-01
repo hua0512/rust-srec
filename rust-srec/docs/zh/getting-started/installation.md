@@ -5,6 +5,7 @@
 | 方式 | 适用场景 | Web 界面 | API |
 |---|---|---|---|
 | [Docker](./docker.md) | 大多数用户和生产主机 | `http://localhost:15275` | `http://localhost:12555/api` |
+| [桌面应用](#桌面应用) | 在一台个人电脑上录制 | 内置于应用 | 仅供应用内部使用 |
 | 预编译二进制 | 仅后端或自定义部署 | 需单独部署前端 | 后端默认：`http://localhost:12555/api` |
 | [systemd 服务](#systemd-服务-linux) | 不使用 Docker 运行后端的 Linux 主机 | 需单独部署前端 | `http://localhost:12555/api` |
 | 使用示例 `.env` 的源码工作区 | 开发与贡献 | `http://localhost:15275` | `http://localhost:8080/api` |
@@ -14,6 +15,10 @@ Docker 会把前端容器的 `80` 端口和后端容器的 `8080` 端口映射�
 ## Docker（推荐）
 
 Docker 已打包后端、前端和所需运行时依赖。请先按 [Docker 部署指南](./docker.md)安装，再继续[完成第一次录制](./first-recording.md)。
+
+## 桌面应用
+
+桌面应用在 Windows、Linux 或 macOS 的同一个窗口中同时运行后端和 Web 界面。请从包含桌面版构建的发布版的 [GitHub Releases](https://github.com/hua0512/rust-srec/releases) 页面下载安装包。它不需要 `.env` 文件：会自行生成 `JWT_SECRET`，只在本机监听，并在你选择其他**输出文件夹**之前把录制保存到其应用数据目录下的 `output` 文件夹。同一时间只能运行一个实例，且不能与独立后端共用同一个数据库。
 
 ## 预编译二进制
 

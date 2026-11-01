@@ -8,11 +8,14 @@
 //!
 //! - Generic `Processor<T>` trait for processing any type of data
 //! - Generic `Pipeline<T>` implementation for chaining processors
-//! - Common error types and context sharing utilities
+//! - Threaded pipelines (`channel_pipeline`) and a generic writer task with
+//!   file rotation
+//! - Manual split control, progress reporting and `StreamerContext`
+//!   (cancellation and shared state)
 //!
 //! ## License
 //!
-//! MIT License
+//! MIT OR Apache-2.0
 //!
 //! ## Authors
 //!

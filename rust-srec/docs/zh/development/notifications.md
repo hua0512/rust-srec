@@ -4,7 +4,7 @@
 
 ## SMTP 所有权
 
-邮件渠道会为连续消息复用 SMTP 连接。替换配置后会使用独立连接池；此前已接收的投递任务仍使用原渠道。禁用渠道或被优先级过滤的消息不会初始化 SMTP 传输。邮件仍立即发送：存储 JSON 中的旧 `batch_window_secs` 设置会被忽略，Rust `EmailConfig` 接口已移除此字段。
+邮件渠道会为连续消息复用 SMTP 连接。替换配置后会使用独立连接池；此前已接收的投递任务仍使用原渠道。禁用渠道或被优先级过滤的消息不会初始化 SMTP 传输。邮件立即发送；存储 JSON 中的 `batch_window_secs` 键会被忽略。
 
 ## 本地化渲染
 
@@ -42,7 +42,7 @@ Web Push 发送成功后会清除持久化限流状态，包括首次 HTTP 请�
 ## 后端通知接口 {#后端通知接口}
 
 渠道注册与重载、源事件映射、投递与重试、Web Push 队列与工作任务分别由独立模块
-负责。公开事件目录和本地化方法仍可通过 `notification::events` 访问。自定义 Rust
-渠道可以继续实现 `NotificationChannel::send`；新增的可选 `send_rendered` 方法提供
+负责。公开事件目录和本地化方法位于 `notification::events`。自定义 Rust
+渠道实现 `NotificationChannel::send`；可选的 `send_rendered` 方法提供
 `RenderedEvent`，便于复用共享的标题和正文。直接调用内置渠道与队列投递使用相同的
 过滤和消息构建路径。默认 `test` 方法同样遵守正常投递的过滤规则。

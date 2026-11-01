@@ -94,9 +94,9 @@ It manages service lifecycle, dependencies, and shutdown order.
 
 ## Service Container Responsibilities {#service-container-responsibilities}
 
-Container assembly, ordered shutdown, output-root helpers and event decisions live in separate private modules. Initialization still discovers output roots once and shares that snapshot between health registration and startup write probes. The public container API and shutdown deadlines are unchanged.
+Container assembly, ordered shutdown, output-root helpers and event decisions live in separate private modules. Initialization discovers output roots once and shares that snapshot between health registration and startup write probes.
 
-Startup logs retain database/configuration I/O, engine discovery, awaited initialization phases and overall timings. Individual timings for synchronous wrapper construction and background-task spawning are omitted; those entries did not measure the work later performed by the tasks.
+Startup logs time database/configuration I/O, engine discovery, awaited initialization phases and the overall startup. Synchronous wrapper construction and background-task spawning are not timed individually, because that would not measure the work the tasks perform later.
 
 ## Core components (what each one actually does) {#core-components-what-each-one-actually-does}
 
@@ -189,8 +189,7 @@ Recurring checks sample an interval within ±10% of the configured cadence. An
 unchanged effective interval preserves the pending deadline; a changed interval
 can bring it forward but never postpone an already scheduled check. Smart-wake
 hints, admission/cooldown deadlines, explicit immediate checks and parked/live
-states keep their existing timing authority. Rust callers of `Scheduler::add_streamer`
-now await configuration resolution before actor creation.
+states keep their own timing.
 
 Non-recoverable actor errors represent terminal decisions, such as a removed
 streamer. Both timer and mailbox paths stop gracefully and run configured state
@@ -411,16 +410,16 @@ sequenceDiagram
   A-->>C: JSON response
 ```
 
-Most protected routes use JWT middleware when JWT is configured. The full health and readiness
-handlers validate bearer tokens themselves and return `401` when JWT authentication is not
-configured; liveness remains public. WebSocket, media, and stream-proxy routes use their documented
+Protected routes use JWT middleware unless authentication is disabled with `AUTH_DISABLED`, in
+which case every route is unauthenticated. The full health and readiness handlers validate bearer
+tokens themselves; liveness and idle checks are public. WebSocket, media, and stream-proxy routes use their documented
 query-parameter authentication paths.
 
 ## Scheduler State and Backoff {#scheduler-state-and-backoff}
 
-Streamer actors use in-memory scheduling state and the database-backed metadata cache. Runtime recovery still uses the database and session lifecycle; no actor state files are required.
+Streamer actors use in-memory scheduling state and the database-backed metadata cache. Runtime recovery uses the database and session lifecycle; no actor state files are required.
 
-Monitoring retains its transactional error writes and `disabled_until_for_error_count` calculation. Backoff preserves the configured threshold, starts at 60 seconds, doubles and caps at one hour; very large stored error counts reach that cap without overflowing. Database/cache publication now shares the committed writer boundary described above.
+Monitoring uses transactional error writes and the `disabled_until_for_error_count` calculation. Backoff preserves the configured threshold, starts at 60 seconds, doubles and caps at one hour; very large stored error counts reach that cap without overflowing. Database/cache publication shares the committed writer boundary described above.
 
 ### Reliable lifecycle feedback {#reliable-lifecycle-feedback}
 
@@ -484,8 +483,10 @@ remain local to each API state.
 - Logging uses `tracing` with a reloadable filter and log retention cleanup
 - Health endpoints:
   - `GET /api/health/live` (no auth; suitable for container liveness)
-  - `GET /api/health` and `GET /api/health/ready` require a valid bearer token and return `401` when
-    JWT authentication is not configured
+  - `GET /api/health/idle` (no auth; reports whether any recording or pipeline job is running, used by
+    the Watchtower update hooks)
+  - `GET /api/health` and `GET /api/health/ready` require a valid bearer token unless authentication
+    is disabled
 - Shutdown:
   - The standalone executable keeps SQLite, sockets, and recording files inside an OS-contained
     worker process. A dedicated parent thread observes termination signals and arms the absolute
@@ -519,17 +520,17 @@ The actor keeps mailbox execution, individual checks, reliable feedback, termina
 decisions and live wake decisions in separate modules. Only an explicit
 streamer-offline terminal policy submits Offline to the monitor. Clean completions
 and user/unknown stops resume verification; shutdown and disable park polling.
-Infrastructure blocks retain their existing persistence and retry policy, and
-feedback acknowledgement still follows effect application.
+Infrastructure blocks keep their persistence and retry policy, and
+feedback acknowledgement follows effect application.
 
 Explicit check deadlines take precedence over the Live watchdog. For a parked Live
 actor, the earliest watchdog, stale-heartbeat or schedule-boundary wake is then
 bounded below by the failed-watchdog retry floor. Recurring polling retains its
 ±10% jitter; smart-wake, admission and immediate deadlines keep their authority.
 
-Rust callers should use `DownloadEndPolicy::Stopped(DownloadStopCause::User)`:
-The wire-level `DownloadStopCause::User` remains.
-`StreamerActor` and `Supervisor` metadata-store constructor parameters now contain
+A user stop is `DownloadEndPolicy::Stopped(DownloadStopCause::User)`, carrying the
+wire-level stop cause.
+`StreamerActor` and `Supervisor` metadata-store constructor parameters contain
 `Arc<StreamerMetadata>` values. Obtain the shared store from `StreamerManager`;
 actor checks clone an immutable Arc snapshot instead of configuration JSON.
 `StatusChecker`, which takes borrowed metadata inputs, is the scheduler's only
@@ -537,4 +538,4 @@ status-check interface.
 
 ## Standalone shutdown deadline
 
-The deadline starts when the parent observes `SIGINT` or `SIGTERM`, including while startup admission or marker I/O is in progress, and covers the parent process exit as well as worker cleanup. The server first asks its isolated runtime to shut down gracefully; the runtime's own drain budget is derived from these same two values (the timeout minus the force reserve, less a small scheduling margin), so raising the timeout lengthens the phase that actually finalizes recordings. At the start of the force reserve, it terminates the contained process tree if the runtime is still active and exits unsuccessfully. Exit status `124` identifies hard-deadline expiry; `125` means the terminal process-tree termination request itself failed. A worker-local fatal failure fails closed instead of starting an unbounded graceful drain. A retained marker means startup recovery may be required; later clean runs do not clear the earlier unresolved recovery state. The marker does not by itself reconstruct an artifact that was interrupted before it reached SQLite. Remove it only while the backend is stopped and after the interrupted artifacts have been reconciled. Recording engines clamp their own graceful-stop wait to whatever remains of this budget, so a per-engine stop timeout that is longer than the shutdown timeout no longer causes the engine child to be killed mid-finalization. A shutdown that overruns its grace period but still finalizes everything exits cleanly; only work that could not be contained is reported as a crash.
+The deadline starts when the parent observes `SIGINT` or `SIGTERM`, including while startup admission or marker I/O is in progress, and covers the parent process exit as well as worker cleanup. The server first asks its isolated runtime to shut down gracefully; the runtime's own drain budget is derived from these same two values (the timeout minus the force reserve, less a small scheduling margin), so raising the timeout lengthens the phase that actually finalizes recordings. At the start of the force reserve, it terminates the contained process tree if the runtime is still active and exits unsuccessfully. Exit status `124` identifies hard-deadline expiry; `125` means the terminal process-tree termination request itself failed. A worker-local fatal failure fails closed instead of starting an unbounded graceful drain. A retained marker means startup recovery may be required; later clean runs do not clear the earlier unresolved recovery state. The marker does not by itself reconstruct an artifact that was interrupted before it reached SQLite. Remove it only while the backend is stopped and after the interrupted artifacts have been reconciled. Recording engines clamp their own graceful-stop wait to whatever remains of this budget, so a per-engine stop timeout that is longer than the shutdown timeout does not cause the engine child to be killed mid-finalization. A shutdown that overruns its grace period but still finalizes everything exits cleanly; only work that could not be contained is reported as a crash.

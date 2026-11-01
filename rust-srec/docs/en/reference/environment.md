@@ -91,6 +91,8 @@ Both share the window length set by `API_LOGIN_WINDOW_SECS`.
 |----------|-------------|---------|
 | `ACCESS_TOKEN_EXPIRATION_SECS` | JWT access token lifetime | `3600` (1h) |
 | `REFRESH_TOKEN_EXPIRATION_SECS` | JWT refresh token lifetime | `604800` (7d) |
+| `REFRESH_TOKEN_REUSE_GRACE_SECS` | Seconds after a refresh token is consumed during which a replay is rejected without revoking other sessions; see [refresh token rotation](../operations/security.md#refresh-token-rotation) | `0` |
+| `REVOKE_ALL_ON_REFRESH_TOKEN_REUSE` | Revoke all of the user's sessions when a consumed refresh token is replayed (`true`/`false`, also `1`/`0`, `yes`/`no`, `on`/`off`; anything else counts as `true`) | `true` |
 
 ## Browser Notifications (Web Push / VAPID) {#browser-notifications-web-push-vapid}
 | Variable | Description | Default |
@@ -108,6 +110,18 @@ Both share the window length set by `API_LOGIN_WINDOW_SECS`.
 | `RUST_SREC_OUTPUT_ROOTS` | Comma-separated list of **absolute** paths to treat as output-root boundaries for the write gate. If unset, the gate uses a heuristic that takes the first **two named components** of each resolved output path (e.g. `/rec/huya` for `/rec/huya/X/20260415`, `/home/user` for `/home/user/recordings/X/20260415`). Two named components is the smallest safe default — it avoids accidentally sharing a gate key across unrelated users in `/home/...` layouts. For a single-mount `/rec`-style layout where you want one gate key per mount (and therefore one aggregated notification on failure instead of one per platform), set this explicitly: `RUST_SREC_OUTPUT_ROOTS=/rec`. | - |
 
 The heuristic groups deep paths under broader keys: `/var/lib/rust-srec/output` uses `/var/lib`. Startup discovery tests a concrete recording directory that resolves to that same key, so it does not require write access to a read-only ancestor. Setting `RUST_SREC_OUTPUT_ROOTS=/var/lib/rust-srec/output` gives the directory its own boundary; the longest matching configured prefix wins. Explicit boundaries are themselves probed and should name writable recording locations. See [output-root probes](../operations/storage.md#output-root-probes) for discovery limits.
+
+## External tools {#external-tools}
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `FFMPEG_PATH` | FFmpeg binary used by pipeline processors, and by the Streamlink engine when its configuration names no FFmpeg path. The FFmpeg download engine uses the binary path in its engine configuration instead. | `ffmpeg` |
+| `FFPROBE_PATH` | FFprobe binary used by the `audio_extract` processor | `ffprobe` |
+| `STREAMLINK_PATH` | Streamlink binary used to check whether Streamlink can handle a URL when adding a streamer. Recording uses the binary path in the Streamlink engine configuration. | `streamlink` |
+| `RCLONE_PATH` | rclone binary used by the `rclone` processor | `rclone` |
+| `BAIDUPCS_PATH` | BaiduPCS-Go binary, used when the preset sets no `binary_path` | `BaiduPCS-Go` |
+| `DANMAKU_FACTORY_PATH` | DanmakuFactory binary, used when the preset sets no `binary_path` | `DanmakuFactory` |
+
+A bare name is looked up on `PATH`. The Docker image bundles these tools.
 
 ## Resource Limits (Docker) {#resource-limits-docker}
 | Variable | Description | Default |

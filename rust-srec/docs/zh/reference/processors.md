@@ -8,18 +8,20 @@
 
 | 处理器 ID | 功能 | 核心参数 |
 |----------|------|---------|
-| `remux` | 更改容器格式，也可选择重新编码 | `format`, `video_codec`, `audio_codec` |
-| `danmaku_factory` | 弹幕转换 | `output_format` (ass) |
-| `ass_burnin` | 将字幕硬烧录进视频 | 处理器预设配置 |
+| `remux` | 更改容器格式，也可选择重新编码 | `format`, `video_codec`, `audio_codec`, `crf`, `preset`, `remove_input_on_success` |
+| `danmaku_factory` | 使用 DanmakuFactory 将弹幕 XML 转换为 ASS 字幕 | `binary_path`, `args`, `extra_args`, `delete_source_xml_on_success` |
+| `ass_burnin` | 将 ASS 字幕硬烧录进对应的视频 | `match_strategy`, `video_codec`, `crf`, `preset`, `fonts_dir`, `delete_source_videos_on_success` |
 | `thumbnail` | 从视频中提取画面作为图片 | `timestamp_secs`, `width`, `quality`, `preserve_resolution` |
-| `audio_extract` | 提取音轨 | `format`, `bitrate`, `sample_rate` |
+| `audio_extract` | 提取音轨 | `format`, `bitrate`, `sample_rate`, `channels`, `output_path` |
 | `compression` | 将文件打包为 ZIP 或 tar.gz 归档 | `format`, `compression_level`, `output_path`, `overwrite`, `preserve_paths` |
 | `rclone` | 云端同步 | `destination_root`, `operation`, `time_anchor`, `max_retries`, `args` |
 | `baidupcs` | 通过 BaiduPCS-Go 上传到百度网盘 | `destination_root`, `policy`, `norapid`, `time_anchor`, `args` |
-| `copy_move` | 复制或移动本地文件 | 目标路径与操作设置 |
-| `metadata` | 写入元数据（nfo, json） | - |
-| `delete` | 自动清理中间文件 | - |
+| `copy_move` | 复制或移动本地文件 | `operation`, `destination`, `time_anchor`, `overwrite`, `exclude_patterns` |
+| `metadata` | 使用 FFmpeg 将元数据标签写入媒体文件 | `title`, `artist`, `date`, `album`, `comment`, `custom` |
+| `delete` | 删除它收到的文件，即其所依赖步骤的输出 | `max_retries`, `retry_delay_ms` |
 | `execute` | 运行程序或自定义 Shell 命令 | `program`, `args` 或 `command`, `scan_output_dir`, `scan_extension` |
+
+基于 FFmpeg 的处理器在设置了 `FFMPEG_PATH` 时使用该路径，调用外部工具的处理器读取各自的[路径变量](./environment.md#外部工具)。
 
 `rclone` 和 `baidupcs` 会在同一次任务运行中重试失败的上传；每次重试都会记入任务日志，任务进度和顶栏会显示当前是第几次尝试。
 

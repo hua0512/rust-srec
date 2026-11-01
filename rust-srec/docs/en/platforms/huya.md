@@ -18,7 +18,8 @@ https://www.huya.com/{room_id}
 ::: info
 - **Authentication**: Typically **not required**. If specific streams need cookies, add them as an account profile in **Settings** → **Platforms** → **Huya**.
 - **Preferred Format**: Huya supports both **FLV** and **HLS**. FLV is generally recommended for recording.
-- **Stream Quality**: `force_origin_quality` is enabled by default to attempt to get the highest available quality.
-- **Protocols**: Supports `use_wup` and `use_wup_v2` (default) for stream extraction. Note that **WUP only supports rooms with numeric IDs**.
+- **Stream Quality**: Turn on **Force Origin Quality** (`force_origin_quality`, off by default) to attempt to get the highest available quality.
+- **Extraction API Mode** (`api_mode`): `WEB` (default) reads the room page; `MP` and `WUP` use Huya's app APIs and work only for rooms with numeric IDs. Rooms with non-numeric IDs always use `WEB`.
+- **Client Type (ctype)** (`platform`): the client identity sent with stream requests, `huya_pc_exe` by default.
 - **CDN Selection**: The extractor automatically attempts to select the best CDN for your location.
 :::

@@ -325,14 +325,16 @@ impl CommandExecutor {
             ("TikTok", "tiktok.com/@{username}/live"),
             ("Twitcasting", "twitcasting.tv/{username}"),
             ("Picarto", "picarto.tv/{channel_name}"),
-            ("PandaTV", "pandalive.co.kr/play/{user_id} (Defunct)"),
+            ("SOOP", "play.sooplive.co.kr/{user_id}"),
+            ("Bigo", "bigo.tv/{room_id}"),
+            ("PandaTV", "pandalive.co.kr/play/{user_id}"),
             (
                 "Weibo",
                 "weibo.com/u/{user_id}, weibo.com/l/wblive/p/show/{live_id}",
             ),
             (
                 "Redbook",
-                "xiaohongshu.com/user/profile/{user_id}, xhslink.com/{share_id}",
+                "xhslink.com/m/{share_id}, xhslink.com/o/{share_id}",
             ),
         ];
 

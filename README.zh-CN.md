@@ -27,7 +27,7 @@ rust-srec 是一款基于 Rust 编写的直播录制工具，主打自动化和�
 
 ## 支持平台
 
-Bilibili、抖音、斗鱼、虎牙、Twitch、TikTok、AcFun、Picarto、小红书、TwitCasting、微博、PandaTV（已停服）
+Bilibili、抖音、斗鱼、虎牙、Twitch、TikTok、SOOP、Bigo Live、AcFun、Picarto、小红书、TwitCasting、微博、PandaTV（已停服）
 
 ## 快速上手（Docker）
 
@@ -48,7 +48,7 @@ $env:SREC_LANG = "zh"; irm https://docs.srec.rs/install.ps1 | iex
 若不想跟随 `latest`，可用 `VERSION` 指定版本；镜像 tag 以 `v` 开头：
 
 ```bash
-curl -fsSL https://docs.srec.rs/install.sh | SREC_LANG=zh VERSION=v0.5.1 bash
+curl -fsSL https://docs.srec.rs/install.sh | SREC_LANG=zh VERSION=v0.7.1 bash
 ```
 
 > 将远程脚本直接管道给 shell，执行的是服务器当次返回的内容。如需先行审阅，可下载 [install.sh](https://docs.srec.rs/install.sh) 检查后再运行本地副本，或参考 [Docker 部署文档](https://docs.srec.rs/zh/getting-started/docker)中的手动步骤。
@@ -57,7 +57,7 @@ curl -fsSL https://docs.srec.rs/install.sh | SREC_LANG=zh VERSION=v0.5.1 bash
 
 ## 核心功能
 
-- **多平台支持**：开箱即用，覆盖 12 个主流直播平台。
+- **多平台支持**：开箱即用，覆盖 14 个主流直播平台；其他站点可通过 Streamlink 录制。
 - **三种下载引擎**：可选 `ffmpeg`、`streamlink`，以及内置的 Rust 引擎 `mesio`。
 - **后处理流水线**：自动转码、切片，或将录像交给你自己的脚本继续处理。
 - **Web 界面与 REST API**：浏览器里管理主播，API 用于自动化（JWT 鉴权，OpenAPI 文档位于 `/api/docs`）。
@@ -70,7 +70,7 @@ curl -fsSL https://docs.srec.rs/install.sh | SREC_LANG=zh VERSION=v0.5.1 bash
 | 工具 | 用途 | 文档 |
 | --- | --- | --- |
 | `strev` | 解析直播链接，提取支持平台的流媒体信息。 | [`strev-cli/README.md`](./strev-cli/README.md) |
-| `mesio` | 命令行下载并修复 FLV / HLS 流。 | [`mesio-cli/README.md`](./mesio-cli/README.md) |
+| `mesio` | 命令行下载并修复 FLV、HLS 与 MPEG-DASH 流。 | [`mesio-cli/README.md`](./mesio-cli/README.md) |
 
 ## 相关文档
 
@@ -85,15 +85,15 @@ curl -fsSL https://docs.srec.rs/install.sh | SREC_LANG=zh VERSION=v0.5.1 bash
 
 - `rust-srec/`：录制器后端（API、调度器、流水线、数据库）
 - `strev-cli/`、`mesio-cli/`：上面提到的两个命令行工具
-- `crates/`：可复用的库 —— 平台解析、FLV / HLS / TS 协议、`mesio` 下载引擎以及流修复工具
+- `crates/`：可复用的库 —— 平台解析、编解码与容器解析（FLV、MPEG-TS、MP4、HLS）、`mesio` 下载引擎以及流修复工具
 
 常用命令：
 
 ```bash
-cargo build                       # 编译全部
-cargo test                        # 运行测试
-cargo clippy -- -D warnings       # 静态检查
-cargo fmt                         # 格式化代码
+cargo build --locked              # 编译后端与两个 CLI（桌面端单独构建）
+cargo test --locked               # 运行测试
+cargo clippy --locked --all-targets -- -D warnings   # 静态检查
+cargo fmt --all                   # 格式化代码
 ```
 
 欢迎提交 PR，详见 [CONTRIBUTING.md](./CONTRIBUTING.md)。

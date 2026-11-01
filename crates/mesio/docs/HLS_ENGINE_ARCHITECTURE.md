@@ -1,6 +1,6 @@
 # HLS Engine Architecture
 
-This document describes the target architecture for the Mesio HLS engine. The goal is a production-grade downloader with explicit lifecycle ownership, deterministic scheduling, bounded memory behavior, and minimal media-payload copying.
+This document describes the architecture of the Mesio segment engine: the protocol-neutral core in `crates/mesio/src/segment_engine/` and its HLS front end in `crates/mesio/src/hls/engine/`. The MPEG-DASH engine reuses the same core (see Module layout). The design aims for explicit lifecycle ownership, deterministic scheduling, bounded memory behavior, and minimal media-payload copying.
 
 ## Goals
 
@@ -9,7 +9,7 @@ This document describes the target architecture for the Mesio HLS engine. The go
 - Preserve output correctness for fMP4 init segments, discontinuities, byte ranges, and live gaps.
 - Keep media bytes zero-copy where possible by moving `bytes::Bytes` handles through the pipeline.
 - Make retries, terminal failures, and skipped gaps observable and testable.
-- Keep implementation modular enough to support future LL-HLS, alternate cache backends, and direct-to-sink output.
+- Keep the core modular enough to host further protocols and features (MPEG-DASH uses it today; LL-HLS is not implemented).
 
 ## Non-Goals
 
@@ -24,11 +24,11 @@ The stages below are a logical data flow, not a one-task-per-stage deployment:
 
 ```text
 PlaylistWatcher
-    -> ManifestPlanner        (deterministic snapshot diff)
+    -> planner                (deterministic snapshot diff, SegmentPlanner)
     -> SegmentStateStore      (identity, lifecycle, scheduling)
     -> fetch-and-process      (download + decrypt -> SegmentPayload)
     -> SequenceAssembler
-    -> OutputSink
+    -> AssemblerSink          (HLS: HlsEventSink)
 ```
 
 The runtime collapses these into **two owned loops plus an off-thread crypto
@@ -38,18 +38,19 @@ pool**, not a chain of tasks passing work to each other:
 Task A  PlaylistWatcher        async playlist polling; emits PlaylistSnapshot
                                    |
                                    v  (snapshot channel)
-Task B  Scheduler Reactor      owns SegmentStateStore; runs ManifestPlanner on
+Task B  Scheduler Reactor      owns SegmentStateStore; runs the planner on
                                each snapshot; drives bounded fetch-and-process
                                futures; applies their outcomes; forwards finished
                                payloads downstream
            |  spawns per-segment tasks (JoinSet, bounded by max_concurrency)
-           |  each task: fetch -> CryptoExecutor (off-thread) -> SegmentPayload
+           |  each task: fetch -> CryptoExecutor (spawn_blocking) -> SegmentPayload
                                    |
                                    v  (AssemblerInput channel)
 Task C  SequenceAssembler /     reorder by MSN, gap policy, init-before-media,
-        OutputSink             terminal events
+        AssemblerSink          terminal events
 
-        CryptoExecutor pool    CPU-bound AES, off the reactor thread
+        CryptoExecutor         CPU-bound AES on Tokio's blocking pool, off the
+                               reactor thread
 ```
 
 ### Module layout
@@ -91,7 +92,7 @@ protocol. Data-plane payloads move by value: out of the spawned futures and acro
 a single downstream channel to the assembler.
 
 The reactor loop never blocks. Network I/O happens inside the spawned
-fetch-and-process futures; AES happens in the crypto pool; the loop itself only
+fetch-and-process futures; AES happens in the crypto executor; the loop itself only
 mutates state and decides what to spawn next. Concurrency comes from the spawned
 futures, bounded by the dispatch gate's `inflight.len() < max_concurrency` check —
 the reactor is the sole spawner, so no semaphore is needed — not from a second
@@ -108,28 +109,10 @@ limit, and the single source of truth is never copied across a task boundary. Ba
 becomes one gate (slots ∧ inflight-bytes ∧ pending-bytes) checked in one place,
 and shutdown becomes one `select!` arm. See Scheduling Model for the loop itself.
 
-The reactor also makes the LL-HLS goal cheap rather than a new pipeline shape.
-Each LL-HLS feature maps onto machinery the loop already has:
-
-- Blocking playlist reload (`_HLS_msn` / `_HLS_part` long-poll) is just the
-  `PlaylistWatcher`'s request; the reactor sees the resulting snapshot like any
-  other.
-- Partial segments (parts) reuse the scheduling and byte-budget machinery, but they
-  require a part dimension in identity that does not exist yet: the current
-  `SegmentKey` has no part index. Adding LL-HLS means first defining that — a
-  `PartKey`/part index on `SegmentKey` (extend `ByteRangeKey` or add a part field) —
-  and only then do parts dedup like segments.
-- Preload hints (`EXT-X-PRELOAD-HINT`) would be descriptors with a low-priority
-  `SegmentSource`, the same way Twitch prefetch is. Whether a preload hint collapses
-  into the published part is **not** automatic: it needs an explicit
-  preload→published-part promotion rule (the hint URL and the eventual part must map
-  to one identity, with the same fetch-URL-refresh-on-rediscovery handling). That
-  rule must be specified before claiming preload dedup is safe.
-
-Given those two additions, a higher part rate just tops up more slots per loop pass
-and the byte budgets bound memory unchanged — no new stage, no new task. The point
-is that LL-HLS fits the reactor's *shape*; it still needs the part identity model
-and promotion rule defined, not assumed.
+LL-HLS is not implemented. Blocking playlist reload would fit the watcher, and
+parts and preload hints could reuse the scheduling and byte-budget machinery, but
+`SegmentKey` has no part dimension and there is no preload-to-part promotion rule,
+so both would have to be designed before parts could be deduplicated.
 
 ## Component Responsibilities
 
@@ -207,33 +190,36 @@ snapshot is a superset:
   - `Some(End)` → begin the authoritative-end drain (→ `StreamEnded`).
   - `Some(Failed(_))` → pipeline error (→ `Err`).
   - `changed()` → `Err` with no terminal value seen → the watcher died before
-    signalling: pipeline error (`Terminal::WatcherFailed`), **not** a clean end.
+    signalling: pipeline error (`Terminal::PipelineError`), **not** a clean end.
 
   A watcher failure can therefore never masquerade as a clean ENDLIST drain.
 
-### ManifestPlanner
+### Planner
 
-Diffs playlist snapshots into normalized segment descriptors. This is a
-deterministic function the reactor calls on each `PlaylistSnapshot` —
-`plan(&snapshot, &store, &mut ctx) -> Planned { descriptors, missing }` — not a
-task. `descriptors` are the new segments to schedule; `missing` are explicit MSN
-ranges the snapshot proves were dropped from the window before being seen (see
-Snapshot channel).
+Diffs playlist snapshots into normalized segment descriptors. The reactor is
+generic over `SegmentPlanner` (`segment_engine/control.rs`) and calls it on each
+snapshot; it is not a task. For HLS, `PlannerContext` implements it through the
+deterministic `plan(&snapshot, &mut ctx) -> Planned` in `hls/engine/planner.rs`.
+`Planned` carries `descriptors` (every plannable segment in the window, including
+already-known keys so the store can refresh their fetch metadata), `missing` (MSN
+ranges the snapshot proves were dropped from the window before being seen, see
+Snapshot channel), `skipped` (MSNs that will never be planned: ads, empty URIs,
+uninferable BYTERANGEs, malformed URLs) and `reset`.
 
 `ctx` is a `PlannerContext` owned by the reactor and threaded through every call,
 because two pieces of normalization are inherently cross-snapshot and cannot be
 derived from a single snapshot:
 
 - **The BYTERANGE inference chain.** A snapshot's first BYTERANGE segment may
-  continue a chain started in the previous snapshot, so the last inferred range
-  end (`last_byterange_uri` / `last_byterange_end`) must survive across refreshes.
-  Resetting it at each refresh would mis-skip every chain-continuing segment at a
-  refresh boundary — the property the existing
-  `process_segments_preserves_byterange_context_across_refreshes` test pins down.
+  continue a chain started in the previous snapshot, so the chain
+  (`PlannerContext::byterange_chain`) must survive across refreshes. Resetting it
+  at each refresh would mis-skip every chain-continuing segment at a refresh
+  boundary — the property the `byterange_chain_survives_refresh_boundary` test
+  pins down.
 - **The last contiguous planned MSN**, the baseline for window-slide gap
   detection.
 
-`plan()` is pure over `(snapshot, store, ctx)` — no I/O, no clock reads — so
+`plan()` is pure over `(snapshot, ctx)` — no I/O, no clock reads — so
 normalization stays unit-testable in isolation: tests construct a context, feed a
 sequence of snapshots, and assert descriptors, missing ranges, and how the context
 evolves. The reactor loop stays thin either way.
@@ -251,7 +237,7 @@ Responsibilities:
 - Distinguish a window that moved *backwards*: a small regression is a stale CDN
   edge (plan nothing, wait for a fresh window — never re-anchor the BYTERANGE
   chain or regress fetch URLs); a regression beyond a few window-lengths is a
-  media-sequence reset, returned as `Planned::reset`. The reactor surfaces a
+  media-sequence reset, returned as `Planned.reset`. The reactor surfaces a
   reset as a terminal pipeline error, because the assembler's emit cursor never
   regresses — re-based segments would be stale-rejected forever, a silent
   download-and-discard loop. A reset means the stream restarts as a new session.
@@ -272,7 +258,7 @@ executor task and no work-handoff channel between "the store" and "the executor"
 
 The reactor is a `select!` loop (see Scheduling Model for the body) that:
 
-- Ingests `PlaylistSnapshot` values, runs `ManifestPlanner`, and registers new
+- Ingests snapshots, runs the planner, and registers new
   descriptors in the `SegmentStateStore`.
 - Spawns bounded fetch-and-process futures for ready work, gated by the
   `inflight.len() < max_concurrency` dispatch bound and the byte budgets.
@@ -282,7 +268,7 @@ The reactor is a `select!` loop (see Scheduling Model for the body) that:
 - Tears down deterministically on cancellation or authoritative end.
 
 It must not block. All network I/O is inside the spawned futures; all AES is in
-the crypto pool. The loop only mutates state and decides what to spawn.
+the crypto executor. The loop only mutates state and decides what to spawn.
 
 #### SegmentStateStore
 
@@ -296,8 +282,8 @@ Responsibilities:
   (`parsed_url`, key fetch URL, byte range, `source`) while preserving lifecycle
   state (see Re-discovery must refresh fetch metadata). Never retry a stale URL.
 - Track retry eligibility and terminal failures, owning the lifecycle retry budget.
-- Produce ready jobs in priority order via `next_ready_job(now, &budget)` /
-  `next_ready_jobs(slots, now, &budget)`, reserving the estimated download bytes
+- Produce ready jobs in priority order via
+  `next_ready_jobs_within(slots, now, &budget, window)`, reserving the estimated download bytes
   against the budget as part of admission (see Byte budget ownership). The returned
   job owns the RAII reservation, so admission and byte-charging are one step.
 - Report `has_unfinished_work()` — true while any segment is `Discovered`, `Queued`,
@@ -306,9 +292,10 @@ Responsibilities:
   segment waiting on a future retry deadline is unfinished work and must hold the
   stream open until it completes, terminalizes, or is skipped.
 - Apply outcomes, mapping `FailureClass` to retryable-vs-terminal. `apply_outcome`
-  returns the `AssemblerInput` items the outcome implies (a `Payload` on success, a
-  `TerminalFailed`/`Skipped` when it terminalizes or skips), so the assembler is told
-  about segments that will never complete.
+  returns `OutcomeEffects`: the `AssemblerInput` items the outcome implies (a
+  `Payload` on success, a `TerminalFailed`/`Skipped` when it terminalizes or skips),
+  so the assembler is told about segments that will never complete, and an optional
+  `RetryNotice` the reactor turns into `DownloadEvent::RetryScheduled`.
 - Prune old state for long-running live streams under one invariant: **never
   evict an entry whose `SegmentKey` can still appear in the playlist window**.
   Evicting a `Completed` entry still inside the window makes the next refresh
@@ -329,9 +316,9 @@ Responsibilities:
 
 #### fetch-and-process future
 
-The per-segment data-plane unit the reactor spawns. It collapses what would
-otherwise be a `DownloadExecutor` and a `PayloadProcessor` into one future, so the
-payload is finished by the time the reactor observes the outcome.
+The per-segment data-plane unit the reactor spawns (`segment_engine/fetch.rs`).
+Download and payload processing run in one future, so the payload is finished by
+the time the reactor observes the outcome.
 
 Responsibilities:
 
@@ -352,20 +339,22 @@ It must not:
 - Decide whether a failed segment is globally retried later, or its priority.
 - Predict future segments.
 
-### PayloadProcessor
+### Payload processing
 
-Transforms raw segment bytes into HLS payloads. This is the processing half of the
+Transforms raw segment bytes into typed payloads. This is the processing half of the
 fetch-and-process future, not a separate task — it runs in the same spawned future
 that downloaded the bytes, so no channel hop sits between fetch and decrypt.
 
 Responsibilities:
 
-- Decrypt encrypted segments through a bounded crypto executor.
+- Decrypt encrypted segments through the crypto executor (via `SegmentDecryptor`;
+  HLS supplies `HlsDecryptor`).
 - Fetch and cache decryption keys without blocking async I/O.
 - Derive the effective IV from the playlist key tag or MSN.
 - Preserve `Bytes` when no transform is needed.
 - Convert mutable transforms through `BytesMut` only when required.
-- Return typed payloads for init/media/TS data.
+- Return typed payloads for TS, TS init (`EXT-X-MAP` of a TS stream), fMP4 init
+  and fMP4 media data.
 
 This component is where unavoidable byte copies should happen. The rest of the pipeline should move handles.
 
@@ -376,6 +365,7 @@ channel carries `AssemblerInput`, not bare payloads, so that completions, skips,
 terminal failures, and end-of-stream all cross the boundary in order:
 
 ```rust
+// Abridged; see segment_engine/input.rs and control.rs.
 pub enum AssemblerInput {
     Payload(SegmentPayload),
     /// The store gave up on these MSNs (gap-skip policy or terminal failure of a
@@ -389,6 +379,9 @@ pub enum AssemblerInput {
     /// Forwarded to the sink immediately on drain, never reordered; counts
     /// toward max_pending_items, never toward payload bytes.
     Notice(EngineNotice),
+    /// Terminal pipeline error: the buffer is dropped and the error becomes the
+    /// stream's terminal `Err`.
+    Fatal(DownloadError),
     /// Authoritative end: drain the reorder buffer in order, then emit StreamEnded.
     End,
 }
@@ -396,6 +389,8 @@ pub enum AssemblerInput {
 pub enum EngineNotice {
     ManifestRefreshed { sequence_base: u64, target_duration: f64 },
     End,
+    /// DASH: a Period has begun that does not carry this track.
+    TrackAbsent { section_id: Option<Arc<str>>, section_start: Duration, after_sequence: u64 },
 }
 ```
 
@@ -404,20 +399,20 @@ already marked `TerminalFailed` or `Skipped` would leave the assembler blocked o
 MSN that can never complete. The reactor derives these items from
 `store.apply_outcome` and from planner-detected missing ranges.
 
-`Notice` exists so the consumer-facing channel has exactly one producer. Today the
-playlist engine sends `EndlistEncountered`/`PlaylistRefreshed` straight to the
-client channel while the output task sends data events, so playlist events can race
-ahead of in-flight segments. Here the watcher never touches the client channel: the
+`Notice` exists so the consumer-facing channel has exactly one producer; if the
+watcher sent `EndlistEncountered`/`PlaylistRefreshed` to the client channel
+directly, playlist events could race ahead of in-flight segments. The watcher
+never touches the client channel: the
 reactor derives notices from the snapshot it just planned (`PlaylistRefreshed` from
 a new generation, `EndlistEncountered` from `TerminalCause::End`, both as
 `EngineNotice`s in the planner's `PlanOutcome`) and pushes
 them through `pending` like any other item. The assembler forwards a `Notice`
-immediately on drain — notices carry no MSN and are never reordered — preserving
-today's at-refresh-time semantics with a single ordered producer. `SegmentTimeout`
+immediately on drain — notices carry no MSN and are never reordered — so they keep
+at-refresh-time semantics with a single ordered producer. `SegmentTimeout`
 and `GapSkipped` remain assembler-generated.
 
-`Skipped` carries an MSN **range**, and the reactor coalesces on enqueue
-(`push_skipped`): pushing `Skipped { from, to }` adjacent to or overlapping the tail
+`Skipped` carries an MSN **range**, and the reactor's `PendingQueue` coalesces on
+enqueue (`PendingQueue::push`): pushing `Skipped { from, to }` adjacent to or overlapping the tail
 of `pending` extends that item instead of appending a new one. This bounds control
 items independently of how wide a window-slide is — a 10 000-segment gap is one
 `Skipped`, not 10 000 — and complements the `max_pending_items` cap.
@@ -464,12 +459,13 @@ Responsibilities:
   emitted or already skipped).
 - Continue draining `AssemblerInput` even when reorder buffers are under pressure, because the next item may unblock the buffer.
 
-When the reorder buffer is at `max_reorder_buffer_bytes` and blocked on a missing
+When the reorder buffer is at a `buffer_limits` cap (`max_segments` or
+`max_bytes`) and blocked on a missing
 MSN, the assembler does not wait out the gap policy's count/duration threshold:
 buffer-over-budget forces the skip decision immediately — the blocking gap is
 skipped, the gap event is emitted, and emission resumes. A late completion for a
 skipped MSN is then rejected as stale. This is the defined enforcement action for
-`max_reorder_buffer_bytes`; waiting at the cap would recreate exactly the deadlock
+`buffer_limits`; waiting at the cap would recreate exactly the deadlock
 the keep-draining rule exists to prevent. The same fail-safe applies when the
 cursor media is gated on an unresolved fMP4 init key: below the buffer limit the
 assembler still waits for a slow init, but at the limit it skips that media as a
@@ -478,10 +474,11 @@ the buffer near both limits, and a VOD stream that waits for every segment is
 exempt from the forced skip (see "Reordering window (VOD and throttled live
 output)").
 
-### OutputSink
+### Output sink (`AssemblerSink`)
 
 Owns the final consumer-facing stream boundary. It is an `AssemblerSink` the
-assembler calls inline (no extra channel hop); for HLS, `HlsEventSink`.
+assembler calls inline (no extra channel hop); for HLS, `HlsEventSink`
+(`hls/engine/output.rs`); for DASH, each track's `TrackSink` feeds the muxer.
 
 Responsibilities:
 
@@ -523,10 +520,10 @@ pub struct ByteRangeKey {
 Rules:
 
 - Do not use MSN alone as identity.
-- Do not use formatted strings as the primary identity once this model exists.
+- Do not use formatted strings as the primary identity.
 - Include BYTERANGE in identity. `ByteRangeKey.offset` is the resolved absolute
-  offset, not an `Option`: the manifest planner must infer it from the prior
-  segment's end (the `last_byterange_end` inference path) before building the
+  offset, not an `Option`: the planner must infer it from the prior
+  segment's end (the BYTERANGE inference chain) before building the
   key. A BYTERANGE that has no explicit offset and no inferable predecessor is a
   skip, not an `offset == 0` guess.
 - Init and media at the same URI are distinct resources, so `SegmentKind`
@@ -560,19 +557,19 @@ Rules:
   differ (Twitch already has bespoke handling). Expose it as a small hook:
 
   ```rust
-  pub trait IdentityPolicy {
+  pub trait IdentityPolicy: Send + Sync {
       /// Produce the canonical identity URI for a resolved segment URL.
       fn canonical_uri(&self, resolved: &Url) -> Arc<str>;
   }
   ```
 
-- The default policy keeps the full resolved URL (current behavior), so sources
+- The default policy (`FullUrlIdentity`) keeps the full resolved URL, so sources
   without a known token scheme are never under-deduplicated. The consequence is
   that rotated-auth-param dedup is **not** a global guarantee: it holds only for a
-  source that has a configured token-aware policy. The matching acceptance
-  criterion is scoped the same way — stripping arbitrary query params by default
+  source that has a configured token-aware policy (`StripQueryIdentity`, selected
+  through `SegmentIdentityPolicy`). Stripping arbitrary query params by default
   would risk merging genuinely distinct segments, which is the worse failure.
-- Normalization happens once, in the manifest planner, before the key exists.
+- Normalization happens once, in the planner, before the key exists.
   Later stages compare keys, never URLs.
 - MSN is not a substitute for URI identity: it resets across discontinuities and
   playlist reloads, so it cannot anchor identity (see the MSN-alone rule above).
@@ -647,7 +644,7 @@ media it governs.
 
 ### EncryptionDescriptor
 
-`EncryptionDescriptor` is the normalized encryption metadata needed by the payload processor. It should be created by the manifest planner so the processor does not need to reinterpret raw playlist key tags.
+`EncryptionDescriptor` is the normalized encryption metadata needed by payload processing. The planner creates it, so processing never reinterprets raw playlist key tags.
 
 ```rust
 pub struct EncryptionDescriptor {
@@ -684,7 +681,7 @@ pub enum KeyFormat {
 
 Rules:
 
-- AES-128 CBC with `KEYFORMAT=identity` is the first supported target.
+- AES-128 CBC with `KEYFORMAT=identity` is the only supported method.
 - If an AES-128 key tag omits IV for media, derive the IV from the segment MSN
   before decryption.
 - If an AES-128 key tag applies to an `EXT-X-MAP`, it must include an explicit
@@ -708,38 +705,32 @@ Rules:
 pub enum SegmentState {
     Discovered,
     Queued,
-    InFlight {
-        attempt: u32,
-        started_at: Instant,
-    },
-    Completed {
-        completed_at: Instant,
-    },
-    RetryAt {
-        attempt: u32,
-        retry_at: Instant,
-        class: FailureClass,
-        reason: Arc<str>,
-    },
-    TerminalFailed {
-        class: FailureClass,
-        reason: Arc<str>,
-    },
-    Skipped {
-        reason: SkipReason,
-    },
+    InFlight,
+    Completed,
+    RetryAt { retry_at: Instant },
+    TerminalFailed { error: SharedError },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureClass {
     Http(u16),
+    /// 429, or 503 with `Retry-After`: retried after `delay` without spending
+    /// the retry budget, until `StoreConfig::max_throttled` has passed.
+    RateLimited { status: u16, delay: Duration, held_back: bool },
     Network,
     Timeout,
     Decode,
     UnsupportedCrypto,
     InvalidFormat,
+    /// The byte budget could not grow to fit the body. Retryable.
+    OverBudget,
+    /// The segment can never fit the budget or per-segment maximum. Terminal.
+    Oversize,
 }
 ```
+
+Attempt counts and other per-segment bookkeeping live in the store's
+`SegmentRecord`, not in the state. Skipped segments leave lifecycle state through
+`AssemblerInput::Skipped`; there is no `Skipped` state.
 
 `FailureClass` is the machine-readable classification; `reason: Arc<str>` is the
 human-readable detail. Retry policy (see Retry Model) and the per-class
@@ -747,8 +738,9 @@ observability counters key off `FailureClass`, so neither parses the string.
 
 Rules:
 
-- A segment can be scheduled only from `Discovered` or due `RetryAt`.
-- `Completed`, `TerminalFailed`, and `Skipped` are not schedulable.
+- A segment can be scheduled only from `Discovered` or `Queued` (a due `RetryAt`
+  is promoted to `Queued`).
+- `Completed` and `TerminalFailed` are not schedulable.
 - A retry budget belongs to the state store, not the per-attempt fetch retry inside the future.
 - State transitions should be unit-tested directly.
 
@@ -766,6 +758,9 @@ pub enum SegmentOutcome {
         msn: u64,
         class: FailureClass,
         reason: Arc<str>,
+        /// The precise error when the failure site has one (a key fetch names
+        /// the key, not the segment).
+        error: Option<DownloadError>,
     },
 }
 ```
@@ -786,6 +781,11 @@ pub enum SegmentPayload {
         data: Bytes,
         descriptor: Arc<SegmentDescriptor>,
     },
+    /// An `EXT-X-MAP` section of an MPEG-TS stream (PAT/PMT packets).
+    TsInit {
+        data: Bytes,
+        descriptor: Arc<SegmentDescriptor>,
+    },
     Mp4Media {
         data: Bytes,
         descriptor: Arc<SegmentDescriptor>,
@@ -793,7 +793,7 @@ pub enum SegmentPayload {
 }
 ```
 
-`SegmentPayload` should move through channels by value. Cloning should clone `Bytes` handles, not byte buffers.
+`SegmentPayload` moves through channels by value. Cloning clones `Bytes` handles, not byte buffers.
 
 ## Zero-Copy Strategy
 
@@ -816,22 +816,11 @@ Bytes -> BytesMut -> decrypt/repair/transmux -> Bytes
 
 This allows one intentional copy only when mutation is genuinely required. AES-CBC decryption, transmuxing, or repair stages may need new output bytes.
 
-Future extension:
-
-```rust
-pub trait PayloadBuffer {
-    fn as_bytes(&self) -> &[u8];
-    fn into_bytes(self) -> Bytes;
-}
-```
-
-This can later support memory cache payloads, file-backed payloads, or direct sink writes without changing scheduling state.
-
 ## Encrypted Streams
 
 Encryption and decryption are CPU-bound once the key bytes and encrypted payload are available. The async runtime must not perform AES work on core I/O worker threads.
 
-Recommended encrypted-stream flow, all inside one fetch-and-process future except
+The encrypted-stream flow runs inside one fetch-and-process future except
 the final hand-off:
 
 ```text
@@ -861,25 +850,19 @@ fetch-and-process future:
 
 ### CryptoExecutor
 
-Use a crypto executor abstraction so the engine can change execution strategy without changing the rest of the pipeline.
-
-Dispatch on a backend enum rather than a `dyn` trait. A trait with
-`async fn decrypt_aes128_cbc` is not dyn-compatible, so `Box<dyn CryptoExecutor>`
-would not compile — which defeats the goal of swapping backends at runtime. Since
-the backend set is closed and already enumerated, an enum that matches internally
-gives runtime selection with no object-safety problem and no `async_trait`
-boxing:
+Decryption goes through `CryptoExecutor` (`segment_engine/crypto.rs`) so the
+execution strategy can change without touching the rest of the pipeline. It
+dispatches on a closed backend enum rather than a `dyn` trait: a trait with
+`async fn decrypt_aes128_cbc` is not dyn-compatible, and an enum gives runtime
+selection with no object-safety problem and no `async_trait` boxing.
 
 ```rust
 pub enum CryptoBackend {
+    /// Decrypt on the calling task. Only for tests or callers already on a
+    /// blocking-tolerant thread.
+    Inline,
+    /// `tokio::task::spawn_blocking`.
     TokioBlocking,
-    DedicatedThreadPool,
-    Rayon,
-}
-
-pub struct CryptoExecutor {
-    backend: CryptoBackend,
-    // e.g. an owned rayon::ThreadPool when backend == Rayon
 }
 
 impl CryptoExecutor {
@@ -888,46 +871,18 @@ impl CryptoExecutor {
         data: Bytes,
         key: [u8; 16],
         iv: [u8; 16],
-    ) -> Result<Bytes, HlsDownloaderError> {
-        match self.backend {
-            CryptoBackend::TokioBlocking => { /* spawn_blocking */ }
-            CryptoBackend::DedicatedThreadPool => { /* pool + oneshot */ }
-            CryptoBackend::Rayon => { /* pool.spawn + tokio oneshot bridge */ }
-        }
-    }
+    ) -> Result<Bytes, DownloadError>;
 }
 ```
 
-The `Rayon` and `DedicatedThreadPool` arms bridge a synchronous pool back into
-async with a `oneshot` per operation; account for that bridge when comparing
-against `TokioBlocking`. If a generic seam is ever wanted, make it a
-static-dispatch trait bound (`fn new<E: CryptoExecutor>`), not a trait object.
+The engine uses `TokioBlocking` (`Inline` when
+`offload_decryption_to_cpu_pool` is off):
 
-Default backend:
-
-- `TokioBlocking`.
-
-Reasoning:
-
-- It integrates with the existing Tokio pipeline.
-- It avoids blocking async I/O workers.
+- It integrates with the existing Tokio runtime and keeps AES off async I/O workers.
 - Segment-level parallelism already exists through concurrent segment processing.
 - AES-128 CBC is chained within a segment, so useful parallelism is mostly across segments, not within one segment.
-- It avoids adding a second CPU runtime until profiling proves it is needed.
-
-Optional backend:
-
-- `Rayon`, using a dedicated pool, not the global pool.
-
-Use Rayon only when profiling shows encrypted streams are CPU-bound and Tokio blocking work is contending with other blocking tasks. If enabled, configure a bounded pool:
-
-```rust
-let pool = rayon::ThreadPoolBuilder::new()
-    .num_threads(crypto_threads)
-    .build()?;
-```
-
-Do not call the Rayon global pool from random pipeline code. Keep it behind `CryptoExecutor` so CPU budgets are explicit.
+- It avoids a second CPU pool. Add a dedicated pool backend only if profiling shows
+  encrypted streams contending with other blocking work.
 
 ### Copy Behavior
 
@@ -958,18 +913,22 @@ suspends every other arm (discovery, retry, cancellation, other completions). Th
 two places this matters are completion forwarding and snapshot intake, handled by a
 permit-driven forward and a coalescing watch channel respectively:
 
+A simplified sketch of `run_reactor` (`segment_engine/reactor.rs`); the real loop
+also wakes on emit-cursor and rate-limit-hold changes and stops when the assembler
+closes on its own:
+
 ```rust
-// `pending`: reactor-local VecDeque<AssemblerInput>. Carries payloads AND control
+// `pending`: reactor-local PendingQueue of AssemblerInput. Carries payloads AND control
 // items (Skipped / TerminalFailed / Notice / End). Bounded two ways: payload bytes
 // against max_pending_payload_bytes, total items against max_pending_items; adjacent
 // Skipped ranges are coalesced on push so control items cannot grow unbounded (see
 // SequenceAssembler).
-// `pending_payload_bytes`: running counter of payload bytes in `pending`, maintained
+// `pending.payload_bytes()`: running counter of payload bytes in `pending`, maintained
 // on push/pop — never recomputed by walking the buffer.
-// `planner_ctx`: PlannerContext — cross-snapshot BYTERANGE inference chain and last
-// contiguous planned MSN (see ManifestPlanner).
-// `budget`: Arc<ByteBudget> shared with the spawned tasks (see Byte Budget Ownership).
-// The reactor reserves download bytes at admission (via next_ready_job) and hands the
+// `planner`: the SegmentPlanner (HLS: PlannerContext — cross-snapshot BYTERANGE
+// inference chain and last contiguous planned MSN, see Planner).
+// `budget`: Arc<ByteBudget> shared with the spawned tasks (see Byte budget ownership).
+// The reactor reserves download bytes at admission (via next_ready_jobs_within) and hands the
 // RAII reservation to the task; the task reconciles it to the real size and reserves
 // processing bytes itself.
 let mut ending = false;     // a terminal cause was seen: drain known work, then finish
@@ -982,26 +941,30 @@ loop {
         // snapshot intake so missing-range pushes can't grow it unbounded. The watch
         // retains the latest value (incl. a terminal one), so nothing is lost — the
         // arm re-enables and re-reads once `pending` drains.
-        changed = playlist_rx.changed(),
+        changed = snapshot_rx.changed(),
             if !ending && pending.len() < max_pending_items => {
             match changed {
                 Ok(()) => {
-                    let snapshot = playlist_rx.borrow_and_update().clone();
+                    let snapshot = snapshot_rx.borrow_and_update().clone();
                     // The terminal cause is explicit on the snapshot, never inferred
                     // from a sender drop. A `Failed` snapshot is the only one not
                     // planned; an ENDLIST snapshot still carries the final window, so
                     // it is planned/ingested like any other *before* `ending` is set.
-                    match snapshot.terminal {
-                        Some(TerminalCause::Failed(reason)) =>
-                            Some(Terminal::PipelineError(reason)),
+                    let planned = planner.plan(&snapshot);
+                    match planned.terminal.clone() {
+                        Some(TerminalCause::Failed(error)) =>
+                            Some(Terminal::PipelineError(error.to_string().into())),
                         terminal => {
-                            let planned = plan(&snapshot, &store, &mut planner_ctx);
                             store.ingest(planned.descriptors, Instant::now());
-                            for r in planned.missing { push_skipped(&mut pending, r); }
+                            for (from_msn, to_msn) in planned.missing {
+                                pending.push(AssemblerInput::Skipped { from_msn, to_msn });
+                            }
                             // Snapshot-derived notices (PlaylistRefreshed /
                             // EndlistEncountered) cross the same ordered boundary
                             // as payloads — see AssemblerInput::Notice.
-                            push_notices(&mut pending, &snapshot);
+                            for notice in planned.notices {
+                                pending.push(AssemblerInput::Notice(notice));
+                            }
                             if matches!(terminal, Some(TerminalCause::End)) {
                                 ending = true;
                             }
@@ -1011,7 +974,7 @@ loop {
                 }
                 // Sender dropped WITHOUT a terminal snapshot first: the watcher task
                 // died (fetch/parse failure), not a clean end. Pipeline error, not End.
-                Err(_) => Some(Terminal::WatcherFailed),
+                Err(_) => Some(Terminal::PipelineError("watcher failed".into())),
             }
         }
         // Completion: apply_outcome returns the assembler events this outcome implies
@@ -1020,19 +983,21 @@ loop {
         Some(joined) = inflight.join_next() => {
             match joined {
                 Ok(outcome) => {
-                    for ev in store.apply_outcome(&outcome, Instant::now()) {
-                        push_input(&mut pending, ev);    // coalesces adjacent Skipped
+                    let effects = store.apply_outcome(outcome, Instant::now());
+                    for ev in effects.assembler_inputs {
+                        pending.push(ev);                // coalesces adjacent Skipped
                     }
+                    // effects.retry_notice -> DownloadEvent::RetryScheduled
                     None
                 }
                 Err(e) if e.is_cancelled() => None,      // aborted on shutdown
-                Err(e) => Some(Terminal::TaskPanic(e)),  // surfaced, not swallowed
+                Err(_) => Some(Terminal::PipelineError("segment task panicked".into())),
             }
         }
         // Forward: only when an item is buffered AND downstream has a permit.
         permit = assembler_tx.reserve(), if !pending.is_empty() => {
             match permit {
-                Ok(permit) => { permit.send(pending.pop_front().unwrap()); None } // sync send
+                Ok(permit) => { permit.send(pending.pop()?); None } // sync send
                 Err(_) => Some(Terminal::DownstreamClosed), // sink gone: terminal, visible
             }
         }
@@ -1054,28 +1019,29 @@ loop {
     // sleep_until(next_retry_deadline) arm wakes the loop to run it before End.
     if ending && !store.has_unfinished_work() {
         if !end_queued {
-            pending.push_back(AssemblerInput::End);   // last item; drains via forward arm
+            pending.push(AssemblerInput::End);        // last item; drains via forward arm
             end_queued = true;
         } else if pending.is_empty() {                // End has been forwarded
             break Terminal::AuthoritativeEnd;
         }
     }
 
-    // Top-up gate. The download-byte budget is enforced *at admission*: next_ready_job
-    // reserves the estimated download bytes against `budget` and hands back a job that
-    // owns the RAII reservation, returning None if there is no ready work OR the budget
-    // cannot fit the estimate. Reserving before the spawn (not inside the task) closes
+    // Top-up gate. The download-byte budget is enforced *at admission*:
+    // next_ready_jobs_within reserves the estimated download bytes against `budget` and
+    // hands back jobs that own their RAII reservations, stopping early when there is no
+    // ready work OR the budget cannot fit the next estimate. Reserving before the spawn (not inside the task) closes
     // the check-then-spawn-then-reserve race where many tasks pass an advisory read
     // before any of them has charged. Pending payload bytes / item count stay reactor-
     // local gates. This runs while `ending` too — the final ENDLIST/VOD window is ready
     // work that must download before the drain condition above can be satisfied.
-    let now = Instant::now();
-    while inflight.len() < max_concurrency
-        && pending_payload_bytes < max_pending_payload_bytes
+    if pending.payload_bytes() < max_pending_payload_bytes
         && pending.len() < max_pending_items
     {
-        let Some(job) = store.next_ready_job(now, &budget) else { break };  // reserves or None
-        inflight.spawn(fetch_and_process(job, processor.clone(), crypto.clone(), budget.clone()));
+        let slots = max_concurrency - inflight.len();
+        let (jobs, inputs) =
+            store.next_ready_jobs_within(slots, Instant::now(), &budget, media_window);
+        for input in inputs { pending.push(input); }   // admission-time oversize
+        for job in jobs { inflight.spawn(fetch_and_process(job, fetch_ctx.clone())); }
     }
 }
 ```
@@ -1088,7 +1054,7 @@ Why this shape:
   fired, no cancellation observed. Buffering into `pending` and forwarding only when
   `assembler_tx.reserve()` yields a permit keeps every arm live. A closed downstream
   (`reserve()` → `Err`) is **terminal and surfaced**, never `.ok()`-swallowed,
-  honoring the OutputSink "send errors visible" contract.
+  honoring the output sink's "send errors visible" contract.
 - **`JoinSet`, not `FuturesUnordered`.** Cancellation semantics differ:
   `JoinSet::drop`/`abort_all` aborts its tasks, whereas a `FuturesUnordered` of
   detached `JoinHandle`s would drop the handles and leave the spawned tasks running.
@@ -1102,8 +1068,8 @@ Why this shape:
   `pending.len() < max_pending_items` (so snapshot-derived missing-range pushes are
   suspended, not unbounded). The only overshoot is the in-flight set's completions
   (≤ `max_concurrency`), which cannot be refused once the work is done. Adjacent
-  `Skipped` ranges are also coalesced on push (`push_skipped`/`push_input`), so a
-  wide window-slide is one item, not many. `push_*` never drop items — the bound is
+  `Skipped` ranges are also coalesced on push (`PendingQueue::push`), so a
+  wide window-slide is one item, not many. `push` never drops items — the bound is
   enforced by suspending the producer, never by discarding an event.
 - **One typed boundary to the assembler.** `pending` holds `AssemblerInput`, not
   bare payloads, so terminal failures, skips, and end-of-stream cross the same
@@ -1121,21 +1087,18 @@ Why this shape:
   as the final item, forwards it, and only then breaks `Terminal::AuthoritativeEnd`.
   Cancellation, by contrast, breaks immediately.
 
-`store.next_ready_job(now, &budget)` returns the highest-priority schedulable
-segment, reserves its estimated download bytes against `budget`, and marks it
-in-flight — all in one call, so dedup, scheduling, and byte admission share one
-decision point with no lock, no work-handoff protocol, and no check-then-reserve
-race. It returns `None` when there is no ready work *or* the budget cannot fit the
-estimate. `next_ready_jobs(slots, now, &budget)` is just the batched form for a
-single top-up pass:
+`store.next_ready_jobs_within(slots, now, &budget, window)` returns up to `slots`
+schedulable segments in priority order, reserves each one's estimated download
+bytes against `budget`, and marks it in-flight — all in one call, so dedup,
+scheduling, and byte admission share one decision point with no lock, no
+work-handoff protocol, and no check-then-reserve race. It stops early when there
+is no ready work *or* the budget cannot fit the next estimate. `window` (a
+`MediaWindow` from the assembler's emit cursor) limits media admission for VOD and
+throttled live output (see Reordering window); inits are always admitted.
 
-```rust
-let jobs = store.next_ready_jobs(available_slots, now, &budget);
-```
-
-The reactor body must stay cheap: `ingest`, `apply_outcome`, `next_ready_job`, and
-the permit-send are in-memory operations. All network I/O lives in the spawned
-tasks; all AES lives in the crypto pool. If the loop ever does real work, it stops
+The reactor body must stay cheap: `ingest`, `apply_outcome`,
+`next_ready_jobs_within`, and the permit-send are in-memory operations. All network
+I/O lives in the spawned tasks; all AES lives in the crypto executor. If the loop ever does real work, it stops
 being able to dispatch.
 
 ### Priority
@@ -1159,23 +1122,23 @@ Within the same priority:
 Lower-MSN-first is a deliberate ordering choice, not a neutral default: after a
 stall it drains the oldest pending media before the live edge, favoring ordered
 catch-up over latency. That is correct for archival/VOD output. A future
-low-latency-live mode may want bounded catch-up or newest-first; keep the
-comparator pluggable rather than hard-coding the order across the scheduler.
+low-latency-live mode would want bounded catch-up or newest-first, so the order
+lives in one comparator rather than across the scheduler.
 
 ### Ready Queue Structures
 
-The ready queue can be implemented with:
+The store keeps:
 
-- `VecDeque<SegmentKey>` for normal ordered work.
+- `BTreeSet<ReadyEntry>` (with a `ready_lookup` map back to keys) for ordered ready work.
 - `BinaryHeap<Reverse<RetryEntry>>` for retry deadlines.
 - `HashMap<SegmentKey, SegmentRecord>` for authoritative state.
 
 This avoids repeated batch sorting on hot paths and keeps the scheduler simple.
 
-The `HashMap` is the single source of truth; the `VecDeque` and `BinaryHeap` are
+The `HashMap` is the single source of truth; the ready set and retry heap are
 **advisory** indexes. Pruning for long-running live streams (`max_state_entries`)
 can evict a `HashMap` entry whose `SegmentKey` still sits in the queue or heap, so
-a popped key may be stale or absent. Therefore `next_ready_jobs` re-validates each
+a popped key may be stale or absent. Therefore `next_ready_jobs_within` re-validates each
 popped key against the `HashMap` and silently drops keys that are gone or no
 longer schedulable (lazy deletion / tombstones). Never treat a queue/heap entry as
 authoritative on its own.
@@ -1211,12 +1174,15 @@ Examples:
 - CDN returns a transient 404 for a segment that may appear shortly.
 - network retries were exhausted, but the segment is still relevant.
 
-Recommended classification, expressed over `FailureClass`:
+Classification, expressed over `FailureClass`:
 
-- Retryable: `Http(404 | 429 | 500..=599)`, `Network`, `Timeout`, `Decode`.
+- Retryable: `Http(404 | 425 | 429 | 500..=599)`, `Network`, `Timeout`, `Decode`.
 - Conditionally retryable: `Http(401 | 403)` — see auth-failure rule below.
-- Terminal: `UnsupportedCrypto`, `InvalidFormat`, and malformed URLs (which never
-  produce a job).
+- Retried without spending the budget: `RateLimited`, until `max_throttled` has
+  passed (see Bounded rate-limit holds).
+- Retryable: `OverBudget` (the budget is freer on the next attempt).
+- Terminal: `UnsupportedCrypto`, `InvalidFormat`, `Oversize`, and malformed URLs
+  (which never produce a job).
 
 The state store owns this mapping: the fetch-and-process future reports a
 `FailureClass`, and the store decides retryable-vs-terminal from the class and the
@@ -1243,16 +1209,17 @@ retry loop.
 
 ## Backpressure and Memory
 
-Backpressure should be based on bytes in the pipeline, not only segment count.
+Backpressure is based on bytes in the pipeline, not only segment count.
 
-Recommended budgets:
+Budgets:
 
 - `max_inflight_download_bytes` — raw response bodies, from download start until
   consumed (wrapped on the clear path, or fed to decrypt on the encrypted path).
 - `max_processing_bytes` — decrypted/transformed **output** resident in the
   decrypt/transform stage. The encrypted input stays under download bytes, so input
   and output are both counted while they coexist (see release points below).
-- `max_reorder_buffer_bytes` — payloads buffered in the assembler awaiting order.
+- `buffer_limits` (`max_bytes`, `max_segments`) — payloads buffered in the
+  assembler awaiting order.
 - `max_pending_payload_bytes` — completed payloads buffered in the reactor between
   completion and the downstream permit-send.
 - `max_pending_items` — total `AssemblerInput` items buffered in the reactor,
@@ -1301,12 +1268,11 @@ waits for a crypto slot:
   path the download reservation plays the same role, held until wrap.
 - `max_pending_payload_bytes` covers the wrapped payload from when it enters the
   reactor's `pending` buffer until the permit-send downstream.
-- `max_reorder_buffer_bytes` covers a payload from when the assembler buffers it
+- `buffer_limits.max_bytes` covers a payload from when the assembler buffers it
   until emit or skip.
 
-Crypto admission is gated by **bytes, not just queue depth**. The
-`crypto executor queue depth` metric counts operations, but a handful of large
-segments can exceed memory while depth stays low. Because decrypt runs inside the
+Crypto admission is gated by **bytes, not queue depth**: a handful of large
+segments can exceed memory while the number of queued decrypts stays low. Because decrypt runs inside the
 fetch-and-process task, enforce this with a shared byte-counting gate (a
 `max_processing_bytes` semaphore). The decrypted output size is not known until
 after padding removal, so the task **reserves an upper bound before dispatching
@@ -1314,7 +1280,7 @@ crypto** — the encrypted input length, since AES-CBC output is never larger th
 input — and reconciles the reservation to the actual output size once decrypt
 returns, releasing fully on wrap. A task parked on that gate still holds its
 encrypted input's download reservation, so that capacity stays unavailable and the
-reactor's admission step (`next_ready_job`) cannot reserve for new downloads — a
+reactor's admission step (`next_ready_jobs_within`) cannot reserve for new downloads — a
 decrypt backlog throttles the front of the pipeline instead of piling up uncounted
 bytes.
 
@@ -1338,9 +1304,10 @@ primitives**, not bare counters you read then charge — a reservation is acquir
 up front and held by an RAII guard that releases on drop:
 
 ```rust
+// Abridged; see segment_engine/budget.rs.
 pub struct ByteBudget {
-    download: ByteSemaphore,    // max_inflight_download_bytes
-    processing: ByteSemaphore,  // max_processing_bytes
+    pub download: ByteSemaphore,    // max_inflight_download_bytes
+    pub processing: ByteSemaphore,  // max_processing_bytes
 }
 
 /// RAII byte reservation. Releases its held bytes on drop. `grow` tries to acquire
@@ -1357,11 +1324,11 @@ impl ByteReservation {
 }
 ```
 
-- **Download bytes are reserved at admission, not inside the task.** `next_ready_job`
+- **Download bytes are reserved at admission, not inside the task.** `next_ready_jobs_within`
   calls `download.try_reserve(estimate)` (the resolved `ByteRangeKey.length` when
   present, else the running size estimate — see Backpressure and Memory) and
   returns the job owning the `ByteReservation`;
-  if the reservation fails, it returns `None` and nothing spawns. Reserving *before*
+  if the reservation fails, it stops and nothing more spawns. Reserving *before*
   the spawn — rather than reading an atomic in the gate and charging later inside the
   task — closes the race where many tasks pass an advisory read before any of them
   has charged. The task receives the reservation, streams the body, and reconciles it
@@ -1392,13 +1359,10 @@ impl ByteReservation {
   buffer.
 
 **Bounded overshoot of `pending`.** The top-up gate checks
-`pending_payload_bytes < max_pending_payload_bytes` *before spawning*, but tasks
+`pending.payload_bytes() < max_pending_payload_bytes` *before spawning*, but tasks
 already in flight still push their payloads to `pending` on completion. So `pending`
 can exceed its budget by at most the in-flight set's worth of payloads (≤
-`max_concurrency` segments). This bounded overshoot is acceptable and documented; if
-a hard cap is required, reserve the estimated payload bytes against the pending
-budget at spawn time and reconcile to the real size on completion, so the gate
-accounts for not-yet-arrived payloads.
+`max_concurrency` segments). This bounded overshoot is accepted.
 
 Important rule:
 
@@ -1508,12 +1472,11 @@ already-known work then **differs by cause**:
   is why the set is a `JoinSet` and not a `FuturesUnordered` of detached
   `JoinHandle`s, which would leave the spawned tasks running.
 - In all cases, `CryptoExecutor` work already dispatched cannot be cancelled:
-  `spawn_blocking` tasks run to completion, and rayon/pool jobs finish their current
-  operation. Bound the crypto queue (`crypto executor queue depth` and
-  `max_processing_bytes`) so teardown cannot block behind an unbounded backlog of
-  pending decrypts.
+  `spawn_blocking` tasks run to completion. `max_processing_bytes` bounds the
+  decrypt backlog, so teardown cannot block behind an unbounded queue of pending
+  decrypts.
 
-So `OutputSink` emits `StreamEnded` on the authoritative-end path **only**; on
+So the output sink emits `StreamEnded` on the authoritative-end path **only**; on
 cancellation it emits nothing, and on pipeline error it emits an `Err`. Send errors
 during teardown are surfaced, not swallowed.
 
@@ -1525,229 +1488,41 @@ either a lost tail segment or a teardown that hangs on in-flight work.
 
 ## Observability
 
-Metrics should be attached to state transitions and payload movement.
+Two channels report on a session, and they are kept separate:
 
-Recommended counters:
+- `PerformanceMetrics` (`segment_engine/metrics.rs`): lossless atomic counters —
+  segment downloads, bytes and latency, download errors, decryptions (count, bytes,
+  time), cache hits/misses, prefetch initiated/used. `DownloadHandle::metrics()`
+  returns a `MetricsSnapshot`; `output_config.metrics_enabled` gates collection.
+- `DownloadEvent`s: best-effort telemetry derived at the same call sites —
+  resource start/progress/finish for playlists, segments and keys,
+  `RetryScheduled`, `GapSkipped`, `SegmentTimeout`, `PlaylistRefreshed`, and the
+  DASH `TrackStalled`/`TrackDropped`. The event channel drops under backpressure,
+  so totals come from the metrics, never from summing events.
 
-- playlist refresh success/failure
-- descriptors discovered
-- jobs queued
-- jobs deduplicated
-- jobs started
-- jobs completed
-- attempt retries
-- lifecycle retries
-- terminal failures
-- gap skips
-- stale completions rejected
-- bytes downloaded
-- bytes emitted
-- key fetch success/failure
-- key cache hits/misses
-- decryption operations
-- decryption bytes
-- decryption latency
-- crypto executor queue depth
-- inflight download bytes (gauge)
-- processing bytes — crypto input + output resident (gauge)
-- pending payload bytes — reactor buffer awaiting downstream permit (gauge)
-- cache hits/misses
-- reorder buffer depth/bytes
+Per-segment fields (MSN, segment key, URI) belong on tracing fields and spans, not
+on metric labels: a live stream produces unbounded MSNs, so promoting them to labels
+would create unbounded cardinality. URLs are logged through the `redact` helpers,
+never with raw keys, IVs, cookies or signed query values.
 
-Recommended spans:
+## Testing
 
-- playlist URL and refresh generation
-- segment key, MSN, kind
-- retry attempt and reason
-- key URI fingerprint, never raw key bytes
-- crypto backend and decrypt duration
-- output gap from/to sequence
+- Store, planner, assembler, budget and crypto logic have unit tests beside each
+  module (no I/O): state transitions, priority and tombstones, the prune invariant,
+  planner context across snapshots, init gating and gap policy.
+- `tests/hls_engine.rs` is the HLS integration harness: a scripted mock origin
+  (axum) replays playlist generations and serves segment and key bodies with
+  per-path fault injection (HTTP errors, timeouts, truncated bodies, rotating
+  tokens, ENDLIST, window slides). It checks the invariants below end-to-end
+  against the public `HlsStreamEvent` stream — the loop-shape properties (admission
+  reservation, ENDLIST drain ordering, a 403 retried against a refreshed URL,
+  coalesced window-slide skips) that unit tests cannot reach.
+- `tests/dash_engine.rs` and `tests/dash_manifest.rs` cover the DASH engine and
+  MPD parsing the same way.
 
-Per-segment fields (MSN, segment key, URI) belong on spans, where each is a
-distinct trace, not on metric labels. A live stream produces unbounded MSNs, so
-promoting them to counter labels creates unbounded metric cardinality. Counters
-above are aggregated and label only on bounded dimensions (`FailureClass`,
-`SegmentKind`, `source`, crypto backend).
+## Invariants (acceptance criteria)
 
-## Implementation Plan
-
-### Phase 1: Introduce Typed Identity
-
-- Add `SegmentKey`, `ByteRangeKey`, and `SegmentDescriptor`.
-- Convert playlist segment discovery to produce descriptors.
-- Keep existing scheduler APIs temporarily by adapting descriptors into current jobs.
-- Add tests for:
-  - same MSN init/media identity separation
-  - byte range identity separation
-  - query-param inherited identity
-  - rotated auth query parameter resolves to the same `SegmentKey`
-  - Twitch prefetch carries `SegmentSource::PlaylistPrefetch` but the same
-    `SegmentKey` as its later media incarnation (no second key)
-
-### Phase 2: Build the Scheduler Reactor
-
-This phase replaces the current split — `SegmentLifecycleRegistry` on the
-playlist-monitor task plus the scheduler's own `pending_identities` and
-`active_job_identities` sets, three dedup structures across two tasks — with one
-reactor task that owns a single `SegmentStateStore` and drives downloads directly.
-Folding the state owner and the download driver together is the point: it removes
-the work-handoff channel and the unbounded outcome feedback channel
-(`coordinator.rs:101`) in one move.
-
-It is also the riskiest phase, so it lands as three independently shippable
-steps. The watcher extraction comes first because everything else is built
-against it: `playlist.rs` (~1,500 lines) currently mixes refresh logic, job
-production, lifecycle, Twitch preprocessing, and direct client-event emission,
-and pulling snapshot production out of it is real work in its own right.
-
-#### Phase 2a: Extract the PlaylistWatcher
-
-- Split snapshot production out of `playlist.rs` into its own task: fetch,
-  textual preprocessing (Twitch prefetch rewrite), parse, publish
-  `PlaylistSnapshot` over the coalescing watch channel — nothing else.
-- Add `PlaylistSnapshot::terminal` and have the watcher set it before dropping
-  the sender, on both the `End` and failure paths.
-- Remove the watcher's direct client-event sends (`EndlistEncountered`,
-  `PlaylistRefreshed`); these become reactor-derived `AssemblerInput::Notice`
-  items in 2c, leaving the client channel with a single producer.
-- Drive the existing job production from the snapshots temporarily, so 2a ships
-  without behavior change while the old scheduler still runs.
-
-#### Phase 2b: SegmentStateStore and ManifestPlanner (no I/O)
-
-- Move all three dedup structures into one `SegmentStateStore` keyed by `SegmentKey`.
-- Replace formatted string identities with `SegmentKey`.
-- Implement the priority ready queue (`VecDeque` + retry `BinaryHeap` + authoritative
-  `HashMap`) with the tombstone invariant; expose `next_ready_job(now, &budget)` /
-  `next_ready_jobs(..)` (reserving download bytes at admission) and
-  `has_unfinished_work()` (Discovered/Queued/InFlight/RetryAt — the drain predicate).
-- Enforce the prune invariant — never evict an entry whose `SegmentKey` can still
-  appear in the playlist window — with direct tests proving pruning cannot cause a
-  re-download.
-- Implement `plan(&snapshot, &store, &mut PlannerContext)`: the cross-snapshot
-  BYTERANGE inference chain and last-contiguous-MSN tracking live in the context;
-  MSN-gap detection returns explicit `missing` ranges; ad segments are dropped
-  here.
-- Remove batch sorting as the primary scheduling primitive.
-- Add explicit state-transition, priority/tombstone, and planner-context tests
-  against the store and planner directly (no I/O).
-
-#### Phase 2c: The Reactor Loop and Byte Budgets
-
-- Build the `select!` loop: ingest snapshots from the coalescing watch channel,
-  reading `snapshot.terminal` for the cause (`End` vs a failure) and treating a
-  bare sender-drop as `WatcherFailed`; plan/ingest the ENDLIST snapshot before setting
-  `ending` so its final window is not dropped; guard the discovery arm with
-  `if !ending && pending.len() < max_pending_items` so a closed watch cannot hot-loop
-  and snapshot intake cannot overflow `pending`. Drive a `JoinSet` of fetch-and-process
-  tasks bounded by the `inflight.len() < max_concurrency` dispatch gate, apply
-  outcomes, forward `AssemblerInput` via permit-reserve into a bounded `pending`
-  buffer (never `send().await` in an arm), wake on the earliest retry deadline, and
-  handle the terminal causes plus the drain → enqueue-`End` → finish
-  authoritative-end path. Gate the drain on `!store.has_unfinished_work()` (which
-  includes future-deadline `RetryAt`), not on "nothing schedulable now".
-- Define `AssemblerInput` (with `push_skipped` range coalescing and the `Notice`
-  variant carrying playlist-level events) and have `apply_outcome` return the items
-  to forward, so terminal/skip state reaches the assembler. Bound `pending` by
-  `max_pending_payload_bytes` AND `max_pending_items`, enforced by suspending the
-  producers (dispatch gate, snapshot intake) — never by dropping events.
-- Introduce the shared `Arc<ByteBudget>` of counting reservation primitives (not
-  bare counters). Download bytes are reserved at admission inside `next_ready_job`
-  (RAII `ByteReservation` moved into the task), grown at chunk granularity if the body
-  exceeds the estimate and aborted if it can't fit; processing bytes are reserved at
-  the encrypted-input upper bound before decrypt and reconciled after. The reactor's
-  dispatch gate is slots ∧ pending-bytes ∧ pending-items; download bytes gate via the
-  admission reservation, not a separate read.
-- Keep the old scheduler's active/pending sets only as temporary assertions, then
-  delete them once the reactor owns scheduling.
-- Keep a small dispatch coalescing window only if profiling shows it helps.
-
-### Phase 3: Zero-Copy Payload Pipeline
-
-Parts of this phase are verify-and-formalize, not build: the fetcher already
-returns `Bytes` (`fetcher.rs`, via `response.bytes()` and streamed
-`BytesMut::freeze`), and decryption already offloads to `spawn_blocking` with a
-TTL key cache (`decryption.rs`). Confirm those, then close the typed gaps.
-
-- Confirm the fetcher returns `Bytes` (already true) and that the streamed path
-  freezes without an extra copy.
-- Ensure cache stores and returns `Bytes`.
-- Make processor return typed `SegmentPayload`.
-- Keep no-op transforms as handle moves.
-- Convert decrypt/repair paths through `BytesMut` only when required.
-- Add `EncryptionDescriptor` and normalize key/IV metadata before processing.
-- Wrap the existing `spawn_blocking` decrypt path in `CryptoExecutor` with
-  `TokioBlocking` as the default backend (mostly a formalization of current
-  behavior).
-- Keep a `Rayon` backend optional and disabled by default until benchmarks justify it.
-- Add metrics for decryption latency, bytes, queue depth, and key cache behavior.
-
-### Phase 4: Sequence Assembler Integration
-
-`OutputManager` already implements the assembler's core: MSN-keyed reorder
-(`BTreeMap`), a separate `pending_init_segments` map with fMP4 init gating,
-discontinuity pre-flush, configurable gap-skip strategies, live pruning via
-`split_off`, and keep-draining-at-limit. This phase renames it to
-`SequenceAssembler` and feeds it explicit segment state — it does not
-reimplement reorder/init/gap logic.
-
-- Feed the assembler the single `AssemblerInput` stream (`Payload` / `Skipped` /
-  `TerminalFailed` / `End`), not bare payloads.
-- Make gap decisions using explicit segment state.
-- Keep draining `AssemblerInput` under reorder-buffer pressure.
-- Add tests for:
-  - out-of-order completion under full buffer
-  - retryable missing segment followed by late success
-  - terminal segment failure unblocks the assembler instead of stalling it
-  - planner-detected window-slide surfaces as `AssemblerInput::Skipped`
-  - fMP4 init rotation across discontinuities
-
-### Phase 5: Configuration Cleanup
-
-- Remove any remaining scheduler-side prefetch configuration.
-- Expose lifecycle retry and byte-budget settings.
-- Expose per-source `IdentityPolicy` wiring: how a source (e.g. Twitch) supplies
-  its token-aware policy, and that the default full-URL policy applies everywhere
-  else (see Identity Normalization).
-- Keep backward-compatible deserialization where persisted config may contain old fields.
-
-### Integration Test Harness
-
-Lands with Phase 2 and grows with each later phase. Most acceptance criteria are
-loop-shape properties that store unit tests cannot catch — admission-time
-reservation, ENDLIST drain ordering, a 403 retried against a refreshed URL,
-coalesced window-slide skips — and are only verifiable against a scripted origin.
-The harness is therefore a deliverable, not an afterthought:
-
-- A local mock CDN (axum/hyper) that replays scripted playlist generations and
-  serves segment bodies, with per-request fault injection: 404/403/429/5xx,
-  timeouts, truncated bodies, missing or lying `Content-Length`, rotating auth
-  tokens on segment and key URLs, ENDLIST, and window slides.
-- Scenario tests asserting the acceptance criteria end-to-end against the public
-  `HlsStreamEvent` stream.
-- Replaces the `#[ignore]`d coordinator test that hits a real CDN with a
-  hardcoded signed URL (`coordinator.rs`); delete that test when the harness
-  lands.
-
-## Migration Notes
-
-- The current playlist-engine task (which owns `SegmentLifecycleRegistry`) and the
-  separate `BatchScheduler` task collapse into the single Scheduler Reactor. The
-  `PlaylistWatcher` stays its own task and feeds the reactor snapshots. Net task
-  count drops from three (playlist+scheduler+output) to two loops plus the crypto
-  pool, and the unbounded outcome channel is removed.
-- Existing `ScheduledSegmentJob` can be replaced by `SegmentDescriptor` plus the
-  fetch-and-process future's local metadata.
-- Existing `SegmentLifecycleRegistry` can evolve into `SegmentStateStore` rather than being deleted immediately.
-- Existing `OutputManager` can become `SequenceAssembler` with the same external event contract.
-- Existing Twitch prefetch handling stays playlist-provided and lowest priority,
-  but moves from the dedup identity to `SegmentDescriptor::source`. The current
-  identity (URI-only, `playlist.rs`) already collapses a prefetch URL and its
-  later media incarnation into one download; preserve that property — do not let
-  the typed key reintroduce a second download by keying on prefetch-ness.
-- Old prefetch config should remain ignored on deserialization until persisted configs have naturally rolled forward.
-
-## Acceptance Criteria
+The engine guarantees the following; the integration harness and unit tests check them.
 
 - A segment cannot be downloaded twice while it is queued or in flight.
 - A playlist-prefetch segment that later appears as a normal media segment is downloaded at most once.
@@ -1773,9 +1548,8 @@ The harness is therefore a deliverable, not an afterthought:
 - A rotated init segment is emitted before the media that depends on it, even when that media completes before the rotated init arrives.
 - A media-sequence reset (window regressing far below the planned watermark) terminates the stream with an error, never a silent download-and-discard loop and never a clean `StreamEnded`. A small backward step (stale CDN edge) plans nothing and waits, without manufacturing a `missing` range over already-decided MSNs.
 - The decrypted payload of an encrypted segment stays charged to a byte budget continuously until the payload is wrapped, with no uncounted window across the post-decrypt cache write.
-- A reorder buffer at `max_reorder_buffer_bytes` forces the gap-skip decision immediately instead of waiting at the cap; a late completion for a skipped MSN is rejected as stale.
+- A reorder buffer at a `buffer_limits` cap forces the gap-skip decision immediately instead of waiting at the cap (except for a VOD stream that waits for every segment); a late completion for a skipped MSN is rejected as stale.
 - The client event channel has a single producer: playlist-level events (`PlaylistRefreshed`, `EndlistEncountered`) reach the consumer via `AssemblerInput::Notice` through the assembler, never directly from the watcher.
 - Concurrent fetch-and-process futures needing the same decryption key issue one key fetch (single-flight by `key_identity_uri`).
 - No media payload copy happens on the no-op path from fetcher to output.
 - The ready queue and retry heap never schedule a `SegmentKey` absent from the authoritative state map after pruning.
-- Clippy and tests pass with `-D warnings`.

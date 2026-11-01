@@ -15,7 +15,7 @@ Upgrade the backend and frontend together. Database migrations run at startup an
 Edit `.env` so `VERSION` is the reviewed target, for example:
 
 ```dotenv
-VERSION=v0.5.1
+VERSION=v0.7.1
 ```
 
 Then run:
@@ -90,15 +90,35 @@ preserved. Malformed/non-object JSON is left unchanged; the migration does not
 repair historical invalid configurations.
 
 New omitted/null timezones mean UTC. Existing TimeBased editor updates that omit
-the member retain the stored zone; explicit null requests UTC. Backup exports now
+the member retain the stored zone; explicit null requests UTC. Backup exports
 use schema `0.1.8` and explicit zones, while older TimeBased backup omissions import
 as local. See [filter timezones](../guides/schedules.md#filter-timezones-and-boundaries).
 
+## Account credentials {#upgrading-from-configuration-cookies}
+
+Versions before v0.6.0 stored cookies, tokens and logins (Twitch OAuth token, Douyin TTWID, Douyu device ID, SOOP username and password) directly in platform, template and streamer configuration. The first start of v0.6.0 or later converts them into [account profiles](../concepts/configuration.md#account-profiles-and-selection):
+
+- Each platform, template or streamer that carried its own credentials gets a profile on its platform, labeled after it with "(migrated)", and a fixed selection of that profile. The profile holds what its recordings used before, including the platform's SOOP login.
+- Identical credentials on one platform share a single profile.
+- A template's cookie is converted only for platforms whose streamers use the template.
+- A cookie on the Streamlink platform, or a template cookie used by Streamlink streamers, becomes a fixed selection on each of those streamers that has no account of its own, because a [Streamlink account](../concepts/configuration.md#streamlink-accounts) is never shared by every site. Backups are imported the same way, including a Streamlink platform or template selection; an imported pool there keeps only its first account.
+- Empty cookie fields are treated as unset: that scope inherits.
+- Credentials that are not valid account material are dropped, with a warning in the log.
+
+Take a backup before upgrading; going back to an earlier version needs it. See [backup and rollback](./backup-restore.md#credential-profiles-and-rollback).
+
 ## Proxy settings {#proxy-settings}
 
-The first start of a version with saved proxies converts the proxy configured on global, platform, template and streamer settings into saved proxies under **Settings → Proxies**, and points each setting at its proxy. Take the pre-upgrade backup first: the conversion clears the old settings, and an earlier version cannot read the new ones. Check that the proxy environment variables the backend should see are set before that start. If `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` is set and the global proxy was turned off or empty, the global default becomes **System proxy**; otherwise it becomes **Direct**. A setting that could not be kept, such as a `socks4` address, becomes **Direct** and is logged as a warning.
+Versions before v0.6.0 stored a proxy address and login in global, platform, template and streamer settings. The first start of v0.6.0 or later converts them into saved proxies under **Settings → Proxies** and points each setting at its proxy. Take the pre-upgrade backup first: the conversion clears the old settings, and an earlier version cannot read the new ones. Check that the proxy environment variables the backend should see are set before that start.
 
-After starting, review **Settings → Proxies** and the **Default proxy** under **Settings → Global → Network & System**. **Direct** now also keeps FFmpeg and Streamlink off the environment's proxy. See [upgrading from proxy settings](../concepts/configuration.md#upgrading-proxy-settings) for every rule.
+- Each distinct address and username becomes a saved proxy named after its `host:port`, with ` 2`, ` 3`… added when the name is taken, and every setting that used it chooses it. A login written into the address moves into the username and password fields, and an address without a scheme gets `http://`. Settings with the same address and username share one proxy; when their passwords differ, the first one found is kept.
+- **Use System Proxy** becomes **System proxy**. On a platform, template or streamer, a proxy that was turned off becomes **Direct**, and no proxy setting becomes **Inherit**.
+- An address no engine can use, such as `socks4`, becomes **Direct**, with a warning in the log.
+- A global proxy that was turned off or empty becomes **System proxy** when `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` is set at that start, otherwise **Direct**. That keeps FFmpeg and Streamlink downloads on the environment's proxy; live checks, Mesio downloads and danmu use it too. Choose **Direct** afterwards if they should not.
+
+**Direct** keeps FFmpeg and Streamlink off the environment's proxy, so a platform, template or streamer whose proxy was turned off no longer sends their downloads through it after the upgrade. Choose **System proxy** there if it should.
+
+After starting, review **Settings → Proxies** and the **Default proxy** under **Settings → Global → Network & System**. Older backups are converted the same way when imported, except for the environment rule; see [proxies in backups](./backup-restore.md#proxies-in-backups).
 
 ## Rollback
 

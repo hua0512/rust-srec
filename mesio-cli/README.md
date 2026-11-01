@@ -1,7 +1,6 @@
 # Mesio CLI
 
-[![crates.io](https://img.shields.io/crates/v/mesio-cli.svg)](https://crates.io/crates/mesio-cli)
-![Version](https://img.shields.io/badge/version-0.2.4-blue)![Rust](https://img.shields.io/badge/rust-2024-orange)
+![Rust](https://img.shields.io/badge/rust-2024-orange)
 
 Mesio is a powerful command-line tool for downloading, processing, and repairing media streams and files, with support for **FLV (Flash Video)**, **HLS (HTTP Live Streaming)** and **MPEG-DASH**. It's part of the [rust-srec](https://github.com/hua0512/rust-srec) project, designed to handle common issues in media streams.
 
@@ -14,8 +13,7 @@ Mesio is a powerful command-line tool for downloading, processing, and repairing
   - Duration problems
   - Metadata inconsistencies
 - **HLS Downloader**:
-  - HTTP/2 multiplexing for efficient concurrent downloads
-  - Concurrent segment downloads for faster performance
+  - Concurrent segment downloads, multiplexed over HTTP/2 when the server supports it
   - Automatic retries for failed segments
   - Playlist caching to reduce redundant requests
   - Adaptive refresh intervals for live streams
@@ -44,7 +42,7 @@ git clone https://github.com/hua0512/rust-srec.git
 cd rust-srec
 
 # Build and install the mesio CLI tool
-cargo build --release -p mesio
+cargo build --locked --release -p mesio
 
 # The binary will be available at
 ./target/release/mesio
@@ -96,18 +94,21 @@ REQUIRED:
 
 OPTIONS:
   -o, --output-dir <DIR>    Directory where processed files will be saved (default: ./fix)
-  -n, --name <TEMPLATE>     Output file name template (e.g., '%u%Y%m%d_%H%M%S_p%i')
-      --output-format <FORMAT>  Output format for downloaded content [default: file, values: file, stdout, stderr]
+  -n, --name <TEMPLATE>     Output file name template [default: %u%Y%m%d_%H%M%S_p%i]
+  -O, --output-format <FORMAT>  Output format for downloaded content [default: file, values: file, stdout, stderr]
 ```
+
+Name template placeholders: `%u` (unique identifier), `%Y` (year), `%m` (month), `%d` (day),
+`%H` (hour), `%M` (minute), `%S` (second), `%i` (output index).
 
 ### Processing Options
 
 ```text
   -m, --max-size <SIZE>     Maximum size for output files (e.g., "4GB", "500MB"). Use 0 for unlimited.
   -d, --max-duration <DUR>  Maximum duration for output files (e.g., "30m", "1.5h"). Use 0 for unlimited.
-  -b, --buffer-size <SIZE>  Buffer size for internal processing channels [default: 16]
+  -b, --channel-size <SIZE> Channel size for internal processing channels [default: 64]
       --download-buffer <SIZE>  Buffer size for downloading in bytes [default: 65536]
-  --fix                 Enable processing/fixing pipeline (by default streams are downloaded as raw data)
+      --fix                 Enable processing/fixing pipeline (by default streams are downloaded as raw data)
 ```
 
 ### Flv Processing Options
@@ -119,10 +120,13 @@ OPTIONS:
 ### HLS Options
 
 ```text
-      --hls-concurrency <NUM>     Maximum number of concurrent segment downloads [default: 4]
-      --hls-retries <NUM>         Number of retry attempts for failed segments [default: 3]
-      --hls-segment-timeout <SEC> Timeout for individual segment downloads in seconds [default: 30]
-      --hls-cache-playlists     Enable caching of HLS playlists [default: true]
+      --hls-concurrency <NUM>                    Maximum number of concurrent segment downloads [default: 3]
+      --hls-playlist-fetch-timeout <SEC>         Timeout for fetching the initial playlist in seconds [default: 15]
+      --hls-playlist-min-refresh-interval <SEC>  Minimum interval for refreshing live playlists in seconds [default: 1]
+      --hls-playlist-retries <NUM>               Number of retry attempts for failed playlist downloads [default: 5]
+      --hls-retries <NUM>                        Number of retry attempts for failed segments [default: 3]
+      --hls-segment-timeout <SEC>                Timeout for individual segment downloads in seconds [default: 10]
+      --hls-cache-playlists                      Enable caching of HLS playlists [default: true]
 ```
 
 ### DASH Options
@@ -134,9 +138,9 @@ OPTIONS:
       --dash-no-audio                   Skip separate audio tracks (audio carried inside the video track is kept)
       --dash-no-video                   Record audio only
       --dash-concurrency <NUM>          Concurrent segment downloads per track [default: 5]
-      --dash-manifest-timeout <SEC>     Timeout of each manifest (MPD) request in seconds [default: 15]
+      --dash-manifest-timeout <SEC>     Timeout of each manifest (MPD) or segment index request in seconds [default: 15]
       --dash-min-refresh-interval <SEC> Minimum interval between live manifest refreshes in seconds [default: 1]
-      --dash-manifest-retries <NUM>     Consecutive failed manifest refreshes tolerated [default: 5]
+      --dash-manifest-retries <NUM>     Consecutive failed manifest refreshes tolerated, and segment index request retries [default: 5]
       --dash-segment-timeout <SEC>      Timeout for individual segment downloads in seconds [default: 10]
       --dash-retries <NUM>              Number of retry attempts for failed segments [default: 3]
       --dash-live-start <POLICY>        Live start: auto, edge, delay=SECONDS [default: auto]
@@ -172,16 +176,15 @@ OPTIONS:
       --http2-keepalive <SECONDS>  TCP keep-alive interval for HTTP/2 connections [default: 20]
 ```
 
-### HTTP/2 Support
+### HTTP Version
 
-Mesio automatically negotiates HTTP/2 when available, providing significant performance benefits for HLS streaming:
+- `auto` (default): negotiates HTTP/2 when an `https://` server offers it and no proxy is in use.
+  System-proxy mode counts as a proxy, so this needs `--no-proxy`. Otherwise, and always for FLV,
+  HTTP/1.1 is used.
+- `http2`: HTTP/2 only (prior knowledge); fails against servers and `http://` URLs without HTTP/2.
+- `http1`: HTTP/1.1 only.
 
-- **Connection Multiplexing**: Multiple segment downloads share a single TCP connection
-- **Reduced Latency**: No TCP handshake overhead per segment
-- **Header Compression**: HPACK compression reduces repeated header overhead
-- **Better Bandwidth Utilization**: Concurrent streams without head-of-line blocking
-
-HTTP/2 is enabled by default (`--http-version auto`). Use `--http-version http1` to force HTTP/1.1 if needed.
+With HTTP/2, concurrent HLS and DASH segment downloads share one connection.
 
 ### Proxy Options
 

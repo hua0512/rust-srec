@@ -39,7 +39,7 @@ If filesystem sampling takes longer than one second, health checks retain previo
 
 ## SQLite Memory Budget
 
-Database connections share a suggested 64 MiB private page-cache allowance. File-backed databases also use a 256 MiB memory-mapping setting. Neither is a hard process-memory limit: recordings, queries, connection overhead, and operating-system caching also use memory. No new environment setting is required. Allocation details are in [Monitoring implementation](../development/monitoring.md#sqlite-memory-budget).
+Database connections share a suggested 64 MiB private page-cache allowance. File-backed databases also use a 256 MiB memory-mapping setting. Neither is a hard process-memory limit: recordings, queries, connection overhead, and operating-system caching also use memory. Allocation details are in [Monitoring implementation](../development/monitoring.md#sqlite-memory-budget).
 
 ## Logs
 
@@ -82,8 +82,7 @@ successful maintenance bounds managed named files to 16 × 16 MiB by default;
 unrelated names, symlinks, filesystem overhead and deleted files still held open
 by readers are outside that bound. Do not remove `.rust-srec.log.lock` while any
 instance is running; it also stores the rotation counter. Uncoordinated external
-writers or older application versions sharing the directory cannot honor these
-limits. If capacity cannot be reclaimed, file writes fail instead of exceeding
+writers sharing the directory cannot honor these limits. If capacity cannot be reclaimed, file writes fail instead of exceeding
 the limits; console and live logging remain independent.
 
 Invalid limit settings or file initialization failures return a startup error.

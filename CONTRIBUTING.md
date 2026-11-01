@@ -83,14 +83,15 @@ pnpm -C rust-srec/frontend build
 
 ## Desktop wrapper (optional)
 
-The Tauri project is in `rust-srec/src-tauri`.
-
-CI builds without bundling:
+The Tauri project is in `rust-srec/src-tauri`. A plain Cargo build compiles the wrapper and embeds whatever is in `rust-srec/frontend/dist-desktop` (an empty directory when the desktop frontend has not been built), so build the frontend first when you need a working app:
 
 ```bash
 # Requires frontend deps installed (see Frontend section).
+pnpm -C rust-srec/frontend build:desktop
 cargo build --locked -p rust-srec-desktop
 ```
+
+CI runs the Tauri CLI's `tauri build --debug --no-bundle` on Windows, which builds the desktop frontend through `beforeBuildCommand`.
 
 ## Reporting bugs
 

@@ -39,13 +39,19 @@ Pasted cookies are not renewed automatically: once Bilibili stops accepting them
 
 ## Quality Options
 
+Set **Preferred Quality (QN)** (`quality`) in the Bilibili platform settings, or override it for a template or streamer. It is the highest quality to request; the default is `30000`, which asks for the best quality the room offers.
+
 | Quality | Description |
 |---------|-------------|
+| `30000` | 杜比视界 (Dolby Vision), default |
+| `20000` | 4K |
 | `10000` | 原画 (Original) |
+| `401` | 蓝光杜比 (Blu-ray Dolby) |
 | `400` | 蓝光 (Blu-ray) |
 | `250` | 超清 (Super HD) |
 | `150` | 高清 (HD) |
 | `80` | 流畅 (Smooth) |
+| `0` | Lowest available |
 
 ## Notes
 

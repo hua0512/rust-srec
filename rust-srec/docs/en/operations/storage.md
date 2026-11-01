@@ -68,12 +68,13 @@ These limits do not change the key used by a new recording attempt.
 - Set `max_concurrent_downloads` to cap simultaneous writers.
 - Split long recordings with duration or part-size limits if downstream systems cannot handle very large files.
 - Keep CPU and IO pipeline concurrency below the sustained capacity of the host.
-- Configure job and notification-event history retention separately; those settings do not delete media files.
+- Job and notification-event history retention do not delete media files.
+- **Output retention (days)** under **Global Settings → Retention** removes the outputs of ended sessions after that many days. It is off (`0`) by default, and removes only the records unless **Delete records and files** is selected. See [retention settings](../reference/settings.md#retention).
 - Use a tested pipeline move/upload step only after verifying the destination and delete-source behavior on noncritical data.
 
 Deleting a streamer reclaims nothing. Its sessions and the media-output rows, segments, and danmaku statistics recorded against them are kept on purpose. To reclaim space, delete the media outputs you no longer need with the option to remove the file from disk, then delete the sessions. That order matters: deleting a session also removes its media-output rows, and those rows hold the only paths the application has to the files. See [Deletion Semantics](./data-governance.md#deletion-semantics).
 
-Rust-Srec does not replace an organizational media lifecycle policy. Automate media deletion or archival outside the application if your retention requirement demands it, and protect that automation against deleting active files.
+Output retention covers registered media outputs only, not every pipeline derivative or remote upload, so it does not replace an organizational media lifecycle policy. Automate any further deletion or archival outside the application, and protect that automation against deleting active files.
 
 ## Alerts and Failure Handling
 

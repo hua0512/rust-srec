@@ -91,6 +91,8 @@ import { withBase } from 'vitepress'
 |------|------|--------|
 | `ACCESS_TOKEN_EXPIRATION_SECS` | JWT 访问令牌有效期 | `3600` (1h) |
 | `REFRESH_TOKEN_EXPIRATION_SECS` | JWT 刷新令牌有效期 | `604800` (7d) |
+| `REFRESH_TOKEN_REUSE_GRACE_SECS` | 刷新令牌被使用后的这段秒数内，重放只会被拒绝而不会撤销其他会话；见[刷新令牌轮换](../operations/security.md#刷新令牌轮换) | `0` |
+| `REVOKE_ALL_ON_REFRESH_TOKEN_REUSE` | 已使用的刷新令牌被重放时，撤销该用户的全部会话（`true`/`false`，也接受 `1`/`0`、`yes`/`no`、`on`/`off`；其他值视为 `true`） | `true` |
 
 ## 浏览器通知 (Web Push / VAPID) {#浏览器通知-web-push-vapid}
 | 变量 | 说明 | 默认值 |
@@ -108,6 +110,18 @@ import { withBase } from 'vitepress'
 | `RUST_SREC_OUTPUT_ROOTS` | 以逗号分隔的**绝对**路径列表，作为写入门（write gate）的输出根边界。未设置时，写入门会对每个解析后的输出路径取前**两段有名分量**作为默认（例如 `/rec/huya/X/20260415` → `/rec/huya`，`/home/user/recordings/X/20260415` → `/home/user`）。两段是最小安全默认值——它可以避免意外将 `/home/...` 布局下不同用户合并到同一个门键。如果您是 `/rec` 这种单挂载布局，且希望一个挂载点对应一个门键（从而在故障时只收到一条聚合通知、而不是按平台分别通知），请显式设置：`RUST_SREC_OUTPUT_ROOTS=/rec`。 | - |
 
 默认规则会把深层路径归入较宽的键：`/var/lib/rust-srec/output` 使用 `/var/lib`。启动发现会测试映射到同一键的具体录制目录，因此不要求对只读祖先目录具有写权限。设置 `RUST_SREC_OUTPUT_ROOTS=/var/lib/rust-srec/output` 可为该目录指定独立边界；最长匹配的显式前缀优先。显式边界本身也会被探测，应指向可写的录制位置。发现范围的限制详见[输出根探测](../operations/storage.md#输出根探测)。
+
+## 外部工具 {#外部工具}
+| 变量 | 说明 | 默认值 |
+|------|------|--------|
+| `FFMPEG_PATH` | 流水线处理器使用的 FFmpeg 程序；Streamlink 引擎配置未指定 FFmpeg 路径时也使用它。FFmpeg 下载引擎则使用其引擎配置中的程序路径。 | `ffmpeg` |
+| `FFPROBE_PATH` | `audio_extract` 处理器使用的 FFprobe 程序 | `ffprobe` |
+| `STREAMLINK_PATH` | 添加主播时用于检查 Streamlink 能否处理该地址的 Streamlink 程序。录制使用 Streamlink 引擎配置中的程序路径。 | `streamlink` |
+| `RCLONE_PATH` | `rclone` 处理器使用的 rclone 程序 | `rclone` |
+| `BAIDUPCS_PATH` | 预设未设置 `binary_path` 时使用的 BaiduPCS-Go 程序 | `BaiduPCS-Go` |
+| `DANMAKU_FACTORY_PATH` | 预设未设置 `binary_path` 时使用的 DanmakuFactory 程序 | `DanmakuFactory` |
+
+只写程序名时在 `PATH` 中查找。Docker 镜像已内置这些工具。
 
 ## 资源限制 (Docker) {#资源限制-docker}
 | 变量 | 说明 | 默认值 |

@@ -66,8 +66,8 @@ curl http://localhost:12555/api/streamers \
 修改密码会原子撤销已有会话，需要重新登录；成功导入配置同样会撤销登录会话与
 刷新令牌。
 
-升级到绑定会话的 JWT 后，未绑定会话的旧访问令牌会被拒绝。使用仍有效的旧刷新
-令牌换取新令牌对，或重新登录。`GET /api/auth/sessions` 仍列出有效的刷新令牌记录：
+未绑定登录会话的访问令牌会被拒绝；请使用有效的刷新令牌换取绑定会话的令牌对，
+或重新登录。`GET /api/auth/sessions` 列出有效的刷新令牌记录：
 轮换后 ID 可能改变；刷新令牌已到期或已清理的会话即使访问令牌仍有效，也可能
 不在列表中。
 
@@ -82,18 +82,21 @@ curl http://localhost:12555/api/streamers \
 
 | 前缀 | 用途 | 认证 |
 |---|---|---|
-| `/api/health` | 存活、就绪与依赖状态 | 混合；启用认证时仅 `/live` 公开 |
+| `/api/health` | 存活、就绪、空闲状态与依赖状态 | 混合；`/live` 与 `/idle` 公开 |
 | `/api/auth` | 登录、刷新、退出、改密与会话 | 混合；以 Swagger 为准 |
 | `/api/streamers` | 主播增删改查、检查、过滤器与批量操作 | Bearer 令牌 |
 | `/api/config` | 全局/平台配置与备份导入导出 | Bearer 令牌 |
 | `/api/templates` | 可复用配置模板 | Bearer 令牌 |
 | `/api/engines` | 下载引擎实例 | Bearer 令牌 |
 | `/api/sessions` | 录制会话 | Bearer 令牌 |
-| `/api/pipeline` | 工作流、任务、预设、执行与产物 | Bearer 令牌 |
+| `/api/pipeline` | 工作流、任务、流水线预设、执行与产物 | Bearer 令牌 |
+| `/api/job` | 任务预设 | Bearer 令牌 |
 | `/api/notifications` | 通知渠道、订阅、偏好与事件 | Bearer 令牌 |
 | `/api/credentials` | 账号凭据配置、选择状态、验证、刷新与二维码登录 | Bearer 令牌 |
 | `/api/proxies` | 已保存的代理、连通性测试和生效的代理设置 | Bearer 令牌；API 密钥需 `full` 权限 |
 | `/api/parse` | URL 与元数据解析 | Bearer 令牌 |
+| `/api/tools/baidupcs` | BaiduPCS-Go 账号状态、登录与退出 | Bearer 令牌 |
+| `/api/mcp` | MCP 服务（Streamable HTTP） | Bearer 令牌；见 [API 密钥与 MCP](./api-keys-mcp.md) |
 | `/api/downloads`、`/api/logging`、`/api/media`、`/api/stream-proxy` | 实时或媒体访问 | 因路由而异；查看 Swagger |
 
 请求和响应字段应以生成的 OpenAPI 文档为准，不要仅根据本页摘要猜测。
@@ -189,12 +192,13 @@ API 错误使用统一结构：
 `POST /api/parse/batch` 每次最多接受 100 个 URL；`DELETE /api/sessions/batch`
 每次最多接受 100 个会话 ID。超限数组会在处理任何项目之前返回 `422`，更大的任务
 应拆成多次请求；空数组仍有效。登录设备描述在日志和新存储的令牌中最多保留 256 个
-Unicode 字符。刷新也会限制旧令牌继承的描述，但不会批量重写已有数据行。
+Unicode 字符，刷新后的令牌继承的描述同样受此限制。
 
-内部数据库、文件系统、已存储 JSON 和凭据错误会返回通用消息，不再嵌入后端诊断。
-安全的请求校验消息仍保持可读性。凭据刷新保留既有的 `400` 状态及
-`requires_relogin` 提示。
+内部数据库、文件系统、已存储 JSON 和凭据错误会返回通用消息，不嵌入后端诊断。
+安全的请求校验消息保持可读性。凭据刷新需要重新登录时返回 `422`，错误码为
+`PLATFORM_AUTHENTICATION_REQUIRED`；平台限流时返回 `429` 并附带 `Retry-After`；
+其他提供方错误返回通用错误。
 
-v0.5 API 路径没有版本前缀。请固定后端镜像或二进制版本，把配套 OpenAPI JSON 与生成客户端一同保存，并在升级前测试。破坏性行为会记录在[发布说明](../release-notes/)中。
+API 路径没有版本前缀。请固定后端镜像或二进制版本，把配套 OpenAPI JSON 与生成客户端一同保存，并在升级前测试。破坏性行为会记录在[发布说明](../release-notes/)中。
 
 网络部署应在反向代理处终止 TLS、限制 API 访问来源，非必要时不要公开 Swagger。参见[安全](../operations/security.md)和[生产部署](../operations/production.md)。

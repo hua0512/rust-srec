@@ -169,6 +169,18 @@ This section is now in [Recording schedules](../guides/schedules.md#filter-timez
 
 </div>
 
+<div id="upgrading-from-configuration-cookies" class="legacy-section">
+
+This section is now in [Upgrade and Rollback](../operations/upgrading.md#upgrading-from-configuration-cookies).
+
+</div>
+
+<div id="upgrading-proxy-settings" class="legacy-section">
+
+This section is now in [Upgrade and Rollback](../operations/upgrading.md#proxy-settings).
+
+</div>
+
 ## Account profiles and selection
 
 A profile stores one account's complete cookies and supported refresh or login material for one platform. Save accounts separately; never concatenate cookies from different accounts. Profiles belong to their platform and are managed on the platform page. The platform, a template's override for that platform, and any streamer on it can each select from the platform's profiles; a selection cannot name another platform's profile. Cookies, tokens and account logins are not stored in configuration itself.
@@ -204,19 +216,6 @@ Streamers on sites without a built-in extractor, such as YouTube or Kick, all be
 
 A Twitch streamer whose [extractor](../reference/configuration-overrides.md#extractor) is set to Streamlink stays on the Twitch platform and uses Twitch accounts as usual; its profile's cookies and access token are passed to Streamlink.
 
-### Upgrading from configuration cookies {#upgrading-from-configuration-cookies}
-
-Earlier versions stored cookies, tokens and logins (Twitch OAuth token, Douyin TTWID, Douyu device ID, SOOP username and password) directly in platform, template and streamer configuration. The first start after upgrading converts them:
-
-- Each platform, template or streamer that carried its own credentials gets a profile on its platform, labeled after it with "(migrated)", and a fixed selection of that profile. The profile holds what its recordings used before, including the platform's SOOP login.
-- Identical credentials on one platform share a single profile.
-- A template's cookie is converted only for platforms whose streamers use the template.
-- A cookie on the Streamlink platform, or a template cookie used by Streamlink streamers, becomes a fixed selection on each of those streamers that has no account of its own, because a [Streamlink account](#streamlink-accounts) is never shared by every site. Backups are imported the same way, including a Streamlink platform or template selection; an imported pool there keeps only its first account.
-- Empty cookie fields are treated as unset: that scope now inherits.
-- Credentials that are not valid account material are dropped, with a warning in the log.
-
-Take a backup before upgrading; going back to an earlier version needs it. See [backup and rollback](../operations/backup-restore.md#credential-profiles-and-rollback).
-
 ## Proxies {#proxies}
 
 Save the proxies you use under **Settings → Proxies**, then choose how each scope and account connects: directly, through the server's system proxy, or through a saved proxy.
@@ -233,7 +232,7 @@ Changes are saved at once and apply to the next check, extraction or connection;
 
 ### Choosing how to connect {#choosing-a-proxy}
 
-Global settings choose the **Default proxy** under **Network & System**: **Direct**, **System proxy** or a saved proxy. Platforms, templates and streamers choose on their **Proxy** tab, which also offers **Inherit**. The most specific choice other than Inherit wins: streamer, then template, then platform, then global. A template that inherits leaves each streamer on its own platform's setting.
+Global settings choose the **Default proxy** under **Network & System**: **Direct**, **System proxy** or a saved proxy. A new installation starts with **System proxy** when `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` is set on its first start, otherwise **Direct**. Platforms, templates and streamers choose on their **Proxy** tab, which also offers **Inherit**. The most specific choice other than Inherit wins: streamer, then template, then platform, then global. A template that inherits leaves each streamer on its own platform's setting.
 
 The chosen connection carries live checks and parsing, downloads with every engine, danmu, and playback through the **Server proxy**.
 
@@ -254,16 +253,3 @@ Changing an account's proxy setting counts as changing its credentials: the acco
 ### Rate limits per connection {#proxy-rate-limits}
 
 Platforms throttle a connection rather than an account. Direct, System proxy and each saved proxy are separate connections; without proxy environment variables, System proxy counts as Direct. When a platform limits requests, only its requests on that connection pause, whichever setting or account chose it. A pool with failover then moves on to an account on another connection, skipping accounts that use the throttled one, and tries accounts whose connection is still paused last. Each pause sends a *Platform rate limited* notification naming the connection. Changing a saved proxy's address or username ends its pause.
-
-### Upgrading from proxy settings {#upgrading-proxy-settings}
-
-Earlier versions stored a proxy address and login in global, platform, template and streamer settings. The first start after upgrading converts them:
-
-- Each distinct address and username becomes a saved proxy named after its `host:port`, with ` 2`, ` 3`… added when the name is taken, and every setting that used it chooses it. A login written into the address moves into the username and password fields, and an address without a scheme gets `http://`. Settings with the same address and username share one proxy; when their passwords differ, the first one found is kept.
-- **Use System Proxy** becomes **System proxy**. On a platform, template or streamer, a proxy that was turned off becomes **Direct**, and no proxy setting becomes **Inherit**.
-- An address no engine can use, such as `socks4`, becomes **Direct**, with a warning in the log.
-- A global proxy that was turned off or empty becomes **System proxy** when `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` is set at that start, otherwise **Direct**. That keeps FFmpeg and Streamlink downloads on the environment's proxy, which they used before; live checks, Mesio downloads and danmu now use it too. Choose **Direct** afterwards if they should not. A new installation chooses its default the same way on its first start.
-
-Because **Direct** now keeps FFmpeg and Streamlink off the environment's proxy, a platform, template or streamer whose proxy was turned off no longer sends their downloads through it. Choose **System proxy** there if it should.
-
-Take a backup before upgrading; going back to an earlier version needs it. Older backups are converted the same way when imported, except for the environment rule; see [proxies in backups](../operations/backup-restore.md#proxies-in-backups).

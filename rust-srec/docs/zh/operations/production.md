@@ -20,7 +20,7 @@ flowchart LR
 
 ## 部署基线
 
-1. 固定所部署的版本。采用 [Docker 部署](../getting-started/docker.md)时，把两个镜像的 `VERSION` 固定为 `v0.5.1`，变更需审批的环境不要使用 `latest`；采用 [systemd 服务](../getting-started/installation.md#systemd-服务-linux)时，安装正式发布的二进制而非临时构建，并记录对应版本。
+1. 固定所部署的版本。采用 [Docker 部署](../getting-started/docker.md)时，把两个镜像的 `VERSION` 固定为 `v0.7.1`，变更需审批的环境不要使用 `latest`；采用 [systemd 服务](../getting-started/installation.md#systemd-服务-linux)时，安装正式发布的二进制而非临时构建，并记录对应版本。
 2. 为 `JWT_SECRET` 和 `SESSION_SECRET` 生成互不相同的唯一值，并限制 `.env` 文件权限。systemd 主机上，后端密钥保存在 `/etc/rust-srec/rust-srec.env`，权限 `0640`、属主 `root:rust-srec`。
 3. 把宿主机端口绑定到私网地址或回环地址。Compose 的回环映射格式为 `127.0.0.1:15275:80` 和 `127.0.0.1:12555:8080`。systemd unit 出厂为 `API_BIND_ADDRESS=0.0.0.0`；不希望 API 离开本机时，在 `/etc/rust-srec/rust-srec.env` 中设置 `API_BIND_ADDRESS=127.0.0.1`。
 4. 在持续维护的反向代理终止 HTTPS，并转发 `Host`、`X-Forwarded-For` 与 `X-Forwarded-Proto`。只要反向代理发送 `X-Forwarded-Proto: https`，会话 Cookie 就会自动带上 `Secure` 标记；如果代理无法发送该请求头，请显式设置 `COOKIE_SECURE=true`。

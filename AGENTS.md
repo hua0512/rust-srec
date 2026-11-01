@@ -10,7 +10,7 @@ Use the map below to locate the task. Read supporting docs, examples, and skills
 | --- | --- |
 | Backend: REST API, scheduler, pipeline, SQLite | `rust-srec/`, package `rust-srec`; [backend rules](rust-srec/AGENTS.md) |
 | CLIs | `strev-cli/` (package `strev`), `mesio-cli/` (package `mesio`) |
-| Protocols, containers, platform extractors, download engine | `crates/*`; use the affected crate's `Cargo.toml` for its package name |
+| Protocols, containers, platform extractors, download engine | `crates/*`; [crate map and module guide](crates/AGENTS.md) |
 | Web UI and desktop frontend | `rust-srec/frontend/`; [frontend rules](rust-srec/frontend/AGENTS.md) |
 | Desktop wrapper | `rust-srec/src-tauri/`; [desktop rules](rust-srec/src-tauri/AGENTS.md) |
 | Documentation site | `rust-srec/docs/`; [docs rules](rust-srec/docs/AGENTS.md) |
@@ -21,6 +21,7 @@ Use the map below to locate the task. Read supporting docs, examples, and skills
 - Rust edition and minimum supported version: [Cargo.toml](Cargo.toml). Development toolchain and components: [rust-toolchain.toml](rust-toolchain.toml).
 - Node: [.nvmrc](.nvmrc). pnpm and scripts: [frontend package.json](rust-srec/frontend/package.json) and [docs package.json](rust-srec/docs/package.json). Install dependencies when needed with `pnpm install --frozen-lockfile` in the relevant directory.
 - Rust builds involving protobuf generation need `protoc` on PATH; the CI version is in [.github/actions/setup-protoc/action.yml](.github/actions/setup-protoc/action.yml).
+- Held dependencies (nothing enforces these, so reject Dependabot bumps): `cc` stays at 1.8.0 in `Cargo.lock`, because 1.9.0 breaks MSVC builds under sccache. Frontend holds are listed in the [frontend rules](rust-srec/frontend/AGENTS.md#pitfalls).
 - Exact CI targets, platform prerequisites, and feature combinations live in [.github/workflows/pr.yml](.github/workflows/pr.yml). Release build combinations live in the corresponding `.github/workflows/release-*.yml` files. Consult these when reproducing CI or changing build/release behavior.
 
 Run Rust commands from the repository root. Replace `<package>` and `<test_name>` with the affected package and test filter:
@@ -34,6 +35,8 @@ cargo nextest run --locked -p <package>
 cargo nextest run --locked -p <package> -E 'test(<test_name>)'
 cargo test --locked -p <package> <test_name>  # fallback if nextest is unavailable
 cargo test --locked -p <package> --doc       # when doctests are affected
+RUSTDOCFLAGS="-D warnings" cargo doc --locked --workspace --exclude rust-srec-desktop --all-features --no-deps --document-private-items
+                                             # CI's Rustdoc job; run when doc comments change or items are renamed
 ```
 
 Use `cargo fmt --all` to apply formatting, and review the diff for unrelated changes. Add `--release` when release-mode behavior or a release artifact is relevant. Use default features on Windows; do not use `--all-features` there with the current OpenSSL prerequisites. On Linux, reproduce the specific CI feature selection when it is relevant rather than assuming `--all-features` is equivalent.
@@ -72,7 +75,7 @@ After relevant checks pass, repeat or broaden them only for new changes, failure
 
 - Use rustfmt defaults and idiomatic names. Group explicit imports as `std`, external crates, then `crate`/`super`.
 - Prefer extending an existing module unless the change introduces a separate logical component. Use `src/foo.rs` / `src/foo/`; do not introduce `mod.rs` files.
-- Comments explain invariants, caller contracts, ordering constraints, and non-obvious reasons. Avoid restating code or narrating a chat/PR history. A relevant upstream issue may support a workaround, but explain the constraint locally so the comment stands on its own.
+- Comments explain invariants, caller contracts, ordering constraints, and non-obvious reasons. Avoid restating code, narrating a chat/PR history, or describing how the code differs from an earlier or unshipped revision: a comment must make sense to someone reading only the final file. A relevant upstream issue may support a workaround, but explain the constraint locally so the comment stands on its own.
 - Collapse nested `if` statements with let chains when equivalent and clearer, following Clippy. Keep stylistic cleanup within the task's changed area.
 - Prefer explicit types over string-based APIs; validate strings at boundaries. Prefer `Arc<T>` for shared ownership and release locks before `.await` where possible; never hold a synchronous mutex guard across an await.
 - Do not introduce `unwrap()` / `expect()` in production paths. Propagate errors with context and use targeted `thiserror` variants before flattening errors to strings. `anyhow::Result<()>` is acceptable at binary entrypoints.
@@ -87,6 +90,11 @@ A task is complete when the requested scope is implemented, necessary related do
 
 Continue authorized work through implementation and validation. Existing user instructions or an agreed issue establish scope; do not reopen that decision for routine implementation choices. If essential information is missing, ask once with the concrete dependency and continue work that does not depend on the answer. Explain an actual blocker rather than stopping at a plan or treating optional checks as mandatory approval gates.
 
-Commit, open a PR, push, or tag according to the task's existing authorization; a request for a PR includes the needed task branch, commit, and branch push. Release tags/publication follow the release skill's separate scope. Review the staged diff and include only the task's files/hunks. An unrequested commit or a completely clean worktree is not a completion requirement.
+Commit, open a PR, push, or tag according to the task's existing authorization; a request for a PR includes the needed task branch, commit, and branch push. Release tags/publication follow the release skill's separate scope. Review the staged diff and include only the task's files/hunks. Commits and PR bodies carry no AI-tool attribution (no `Co-Authored-By` trailer or "Generated with" footer). An unrequested commit or a completely clean worktree is not a completion requirement.
+
+User-visible changes get an entry in `rust-srec/docs/{en,zh}/release-notes/unreleased.md`, in both languages:
+- Write for someone who runs the app, not someone who reads the source: what they will see differently and why it matters. No type, field, file or trait names, no implementation reasoning, and no engineering jargon (keyframe, container, scheduler, Web Worker); UI feature names are fine.
+- A fix for a regression whose cause is in no release (`git tag --contains <sha>` is empty) gets no entry, because users never saw the bug. Say so in the PR body.
+- Link to the docs site at `https://docs.srec.rs/` (e.g. `/en/release-notes/vX.Y.Z`).
 
 Remove only clearly disposable temporary artifacts created by this task. Preserve pre-existing changes, untracked work, local data, and useful caches. Avoid repository-wide formatting, unrelated fixes, destructive cleanup, or deleting files merely to make `git status` clean.

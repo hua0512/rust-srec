@@ -26,7 +26,7 @@ Windows PowerShell：
 $env:SREC_LANG = "zh"; irm https://docs.srec.rs/install.ps1 | iex
 ```
 
-安装脚本会下载 Compose 和环境文件、生成唯一密钥、检测可选的 NVIDIA 支持，并询问是否启动服务。两个入口都会按 `SREC_LANG` 或系统语言选择对应语言的安装脚本；上面的命令显式指定了 `zh`，因此系统语言不是中文时也会使用中文安装脚本。
+安装脚本会下载 Compose 和环境文件、生成唯一密钥、检测可选的 NVIDIA 支持，并询问是否启动服务。未设置 `VERSION` 时，它会询问安装稳定版 `latest` 镜像还是开发版 `dev` 镜像。两个入口都会按 `SREC_LANG` 或系统语言选择对应语言的安装脚本；上面的命令显式指定了 `zh`，因此系统语言不是中文时也会使用中文安装脚本。
 
 ::: warning 审查远程脚本
 把远程响应直接传给 Shell 会执行网络上当时返回的内容。有变更控制要求的环境应先下载脚本、审查内容和校验值，再运行已审核的本地副本，或采用下面的手动安装。
@@ -43,7 +43,7 @@ $env:SREC_LANG = "zh"; irm https://docs.srec.rs/install.ps1 | iex
 使用已审查发布版时应设置准确版本。Linux/macOS 示例：
 
 ```bash
-curl -fsSL https://docs.srec.rs/install.sh | SREC_LANG=zh RUST_SREC_DIR=/opt/rust-srec VERSION=v0.5.1 bash
+curl -fsSL https://docs.srec.rs/install.sh | SREC_LANG=zh RUST_SREC_DIR=/opt/rust-srec VERSION=v0.7.1 bash
 ```
 
 ::: warning 与 systemd 服务的路径冲突
@@ -144,3 +144,9 @@ docker compose up -d
 修改 `VERSION` 前先阅读[升级与回滚](../operations/upgrading.md)。`docker compose down` 会移除容器和网络，但保留绑定挂载的宿主机数据；删除任何宿主机目录前必须核对准确路径。
 
 面向互联网的主机应完成[生产部署](../operations/production.md)，不要直接公开示例端口。
+
+<div id="gpu-硬件加速-nvidia" class="legacy-section">
+
+此节内容已移至[NVIDIA GPU](#nvidia-gpu)。
+
+</div>

@@ -7,21 +7,23 @@
 //! ## Features
 //!
 //! - FLV stream analysis and validation
-//! - Stream repair and fixing capabilities
-//! - Pipeline-based processing architecture
-//! - Configurable processing operators
-//! - Async and sync processing modes
-//! - Metadata manipulation and script tag handling
+//! - Stream repair: defragmentation, header checks, GOP sorting, duplicate
+//!   filtering, timestamp repair, size/duration splitting
+//! - Pipeline-based processing architecture with configurable operators
+//! - `onMetaData` patching (duration, keyframe index) when an output file closes
 //!
 //! ## Component Overview
 //!
+//! - `amf`: `onMetaData` model and builder used to patch closed files
 //! - `analyzer`: Tools for analyzing FLV stream structure and content
 //! - `constants`: String constants to avoid repeated allocations
 //! - `operators`: Modular pipeline operators for stream transformations
-//! - `pipeline`: Stream processing pipeline implementation
-//! - `script_modifier`: Utilities for manipulating FLV script tags
+//! - `pipeline`: `FlvPipeline`, which fixes the operator order
+//! - `script_modifier`: Post-hoc patcher for FLV script tags in finished files
 //! - `utils`: Helper functions and utilities
-//! - `writer`: Asynchronous FLV writing functionality
+//! - `writer`: `FlvWriter`, the protocol writer for FLV output
+//! - `writer_task`: FLV format strategy for the shared writer task (file
+//!   rotation, metadata patching)
 
 pub mod amf;
 mod analyzer;

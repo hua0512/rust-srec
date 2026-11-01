@@ -9,7 +9,7 @@ Start with a successful recording and make sure FFmpeg is available to the backe
 1. Open **Workflows** and choose **Create Workflow**. Name it `MP4 and thumbnail`.
 2. Add a `remux` step, set the output format to `mp4`, and leave source removal disabled for this first test.
 3. Add a `thumbnail` step and make it depend on `remux`. Select a timestamp and image width.
-4. Save the workflow, then assign it to a streamer or template's **Segment Pipeline**.
+4. Save the workflow, then assign it to a streamer or template's **Per-segment Pipeline**.
 5. Record a video segment. Inspect the workflow in **Pipeline Jobs** and confirm that the converted video and thumbnail exist before enabling uploads or deletion.
 
 ```mermaid
@@ -92,14 +92,14 @@ Fan-out describes graph routing, not a guarantee of simultaneous execution.
 When a worker becomes free, a step that continues a workflow already in progress is claimed before the first step of a new workflow at the same priority, and within that order the oldest job goes first. A busy queue therefore finishes workflows instead of leaving many half done.
 
 ## Automatic Cleanup {#automatic-cleanup}
-A `delete` step removes the files produced by the steps it depends on — not the original recording. This is safe after an `upload` step (rclone copy passes the uploaded files through as its output), so a `delete` with `depends_on: upload` implements "delete the local copy after a successful upload".
+A `delete` step removes the files produced by the steps it depends on — not the original recording. This is safe after an `rclone` step in `copy` mode, which passes the uploaded files through as its output, so a `delete` that depends on that step implements "delete the local copy after a successful upload".
 
 Do **not** place a `delete` step after a `remux`/transcode step: it would delete the converted result, because that is what the transcode produced. To delete the original source after converting, enable **Remove Input on Success** (`remove_input_on_success`) on the transcode step instead.
 
 A step that removes its inputs (`delete`, an `rclone` or `copy_move` step in `move` mode, or a `baidupcs` step with **Delete local files after upload**) must not share a parent with another step that still reads the same files, because fan-out runs both at once. Such a workflow is rejected when it is saved or validated, with a message naming the steps involved; make the removing step depend on the other reader, directly or through other steps, so it runs after it. Root steps all read the pipeline's inputs and count as sharing one parent. Removal driven by a processor option, such as **Remove Input on Success**, happens only after that step has succeeded, so beside a reader it is reported as a warning when the workflow is validated or saved and logged when it runs: whichever sibling finishes first decides whether the other still finds its file. Saving a workflow also checks that every preset and workflow it names exists and that every processor is available, instead of failing when the next recording finishes.
 
 ::: tip Performance Tip
-Re-encoding (such as `ass_burnin`) is CPU-intensive. Limit concurrency in `cpu_pool` to avoid system load that could disrupt downloads.
+Re-encoding (such as `ass_burnin`) is CPU-intensive. Set a low **Max CPU Jobs** (`max_concurrent_cpu_jobs`) in global settings to avoid system load that could disrupt downloads.
 :::
 
 ## Error handling {#error-handling}

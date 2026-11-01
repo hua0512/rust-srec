@@ -39,9 +39,9 @@ runtime uses the resolved per-streamer value for both:
 - consecutive download failures before placing the streamer into temporary cooldown
 
 A recording that ends cleanly because the stream stopped counts as the first offline signal; the
-rest come from offline checks `offline_check_delay_ms` apart. With the defaults (`3` and 20
-seconds) the session ends at the second offline check, about 40 seconds after the recording
-stopped, and a count of `1` or `2` ends it at the first check. A recording that stops with a
+rest come from offline checks `offline_check_delay_ms` apart. With the defaults of a new
+installation (`3` and 10 seconds) the session ends at the second offline check, about 20 seconds
+after the recording stopped, and a count of `1` or `2` ends it at the first check. A recording that stops with a
 network or download error does not count, so all `offline_check_count` checks are needed. If the
 streamer is live again before offline is confirmed, recording continues in the same session. When
 the stream itself marks its end, with an HLS end-of-playlist tag or the end of a DASH
@@ -65,12 +65,6 @@ before anything reads it.
 The serialized `StreamerMetadata` aliases `effective_offline_check_count` and
 `effective_offline_check_delay_ms` are deprecated and will be removed in a future version. New
 integrations must use `offline_check_count` and `offline_check_delay_ms`.
-
-The `cookies` and `proxy_config` fields that platforms, templates and global settings carried
-before [account profiles](#credential-selection-json) and [proxy routes](#proxy-route-json) are
-deprecated too. The first start of this version converts what the database stored in them and
-leaves them empty, and imports convert them from older backups; they will be removed in a future
-version.
 :::
 
 ### Cookies are not a configuration field {#cookies-present-wins-including-empty-strings}

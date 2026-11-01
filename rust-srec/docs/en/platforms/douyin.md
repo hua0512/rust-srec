@@ -28,6 +28,6 @@ Douyin usually records without an account: when no `ttwid` cookie is supplied, o
 
 ::: info
 - **Double Screen**: Support for double screen stream data is enabled by default.
-- **Interactive Games**: You can choose to skip "Interactive Games" (互动玩法) recordings.
+- **Interactive Games**: "Interactive Games" (互动玩法) rooms are treated as offline by default (`skip_interactive_games`); turn the option off to record them.
 - **Mobile API**: If the PC API fails, try enabling `force_mobile_api`.
 :::

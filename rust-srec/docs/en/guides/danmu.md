@@ -3,7 +3,7 @@
 ## Enable chat recording
 
 1. Check the [platform guide](../platforms/) for danmu support and any login requirements.
-2. Enable `record_danmu` in global settings, or override it for a platform, template, or streamer.
+2. Turn on **Record Danmu** (`record_danmu`) in global settings, or override it for a platform, template, or streamer.
 3. Record a live session and open its session page to inspect chat files and statistics.
 
 Video and chat files are associated by recording segment. A paired-segment workflow waits for both files before processing them. See [workflow triggers](../concepts/pipeline.md#pipeline-triggers) for subtitle conversion and burn-in.

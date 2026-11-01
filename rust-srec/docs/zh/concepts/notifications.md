@@ -24,18 +24,18 @@ flowchart LR
 
 ## 可用目标
 
-| 目标 | v0.5 Web 界面 | 要求 |
+| 目标 | Web 界面 | 要求 |
 |---|---|---|
 | Webhook | 可创建、编辑、测试 | HTTPS 端点；可选请求头或认证 |
 | Telegram | 可创建、编辑、测试 | 机器人令牌和 Chat ID |
 | Gotify | 可创建、编辑、测试 | 服务器 URL 和应用令牌 |
 | Email | 可创建、编辑、测试 | SMTP 主机、发件人与收件人；仅在中继允许时可不填凭据 |
-| Discord | 可表示已有渠道；v0.5 表单禁用新建选择 | 后端/API 支持 Discord Webhook 设置 |
+| Discord | 可显示已有渠道；表单中无法新建 Discord 渠道（标为即将推出） | Discord Webhook URL；需通过 API 创建 |
 | Web Push | 按浏览器配置 | VAPID 密钥，以及 HTTPS 或 localhost |
 | 实时轮询 | 按浏览器配置 | 应用标签页必须保持打开 |
 | 桌面通知 | 仅桌面版 | 操作系统通知权限 |
 
-因此 Discord 是受后端支持、但 v0.5 Web 界面新建受限的渠道，并非该版本界面中普遍可选的渠道。
+通过 API 创建的 Discord 渠道可以正常投递，但 Web 表单暂不支持新建该类型渠道。
 
 ## 优先级
 
@@ -67,7 +67,7 @@ Telegram 渠道支持 `HTML`、`Markdown`、`MarkdownV2`（不区分大小写）
 生成 VAPID 密钥对，并在后端启动前设置三个变量：
 
 ```bash
-docker run --rm ghcr.io/hua0512/rust-srec-vapid:v0.5.1
+docker run --rm ghcr.io/hua0512/rust-srec-vapid:latest
 ```
 
 ```dotenv
@@ -86,7 +86,7 @@ WEB_PUSH_VAPID_SUBJECT=mailto:operations@example.com
 
 Web Push 使用独立的 2,048 事件队列。已满或不可用时，丢弃所有优先级的新事件，包括严重事件。`notification_stats.web_push_dropped` 记录丢弃数量，不自动重放；事件历史和外部渠道独立继续。超大载荷在发送前失败，关闭时会在期限内尝试发送已排队事件。
 
-邮件立即投递，旧 `batch_window_secs` 设置被忽略。渠道实现和工作任务约定见[通知内部实现](../development/notifications.md)。
+每个事件的邮件都会立即发送；已保存邮件设置中的 `batch_window_secs` 字段会被忽略。渠道实现和工作任务约定见[通知内部实现](../development/notifications.md)。
 
 ## 存储严重事件
 

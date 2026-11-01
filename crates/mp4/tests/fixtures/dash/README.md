@@ -2,8 +2,9 @@
 
 Synthetic test pattern and tone generated with FFmpeg's DASH muxer: one
 initialization segment and two 1-second media segments for a 64x64 H.264
-(High profile, with B-frames) video track, and the same for a mono AAC audio
-track (whose last segment holds the remaining tail). Both sources use track
+(High profile, with B-frames) video track, and one initialization segment and
+three media segments for a mono AAC audio track (the short third segment holds
+the remaining tail). Both sources use track
 ID 1, different movie timescales (1000 and 48000) and edit lists, and their
 media segments start with `styp` and `sidx` — the layout the merger rewrites.
 Tests use the checked-in files, so FFmpeg is not a test dependency.

@@ -9,8 +9,9 @@ This folder contains the Tauri desktop wrapper for `rust-srec`.
 - Uses a single-instance mechanism so attempting to start the app twice focuses the existing window.
 - Acquires a runtime lease keyed on the SQLite database as a safety net, so neither a second
   desktop instance nor a standalone `rust-srec` server can start against the same database.
-- Injects the resolved backend base URL into the webview as:
-  - `globalThis.__RUST_SREC_BACKEND_URL__ = "http://127.0.0.1:<port>"`
+- Injects the resolved backend base URL into the webview as
+  `globalThis.__RUST_SREC_BACKEND_URL__ = "http://127.0.0.1:<port>"`, along with
+  `__RUST_SREC_BOOT_ERROR__` and `__RUST_SREC_DESKTOP_NOTIFICATIONS__`.
 - On first run, if the database output folder is still the docker default (`/app/output`), it is
   updated to a desktop-safe directory under the app data directory.
 - Ensures auth is consistently enabled by generating (and persisting) a per-install `JWT_SECRET`
@@ -28,12 +29,8 @@ From `rust-srec/src-tauri`:
 cargo tauri dev
 ```
 
-This uses the frontend dev server at `http://localhost:15275`.
-
-Notes:
-- `cargo tauri dev` runs the frontend dev server via `beforeDevCommand`.
-- The command locates the frontend directory relative to the repo root (supports both
-  `rust-srec/frontend` and `frontend` layouts) using `rust-srec/scripts/run-frontend.cjs`.
+`beforeDevCommand` starts the desktop frontend dev server (`pnpm -C frontend dev:desktop`,
+run from `rust-srec/`), and the webview loads it from `http://127.0.0.1:15275`.
 
 ## Build
 
@@ -42,6 +39,9 @@ From `rust-srec/src-tauri`:
 ```bash
 cargo tauri build
 ```
+
+`beforeBuildCommand` builds the desktop frontend (`pnpm -C frontend build:desktop`) into
+`rust-srec/frontend/dist-desktop`, which the app embeds.
 
 ## Data locations
 

@@ -24,18 +24,18 @@ Channel settings and subscriptions are separate. Creating a destination without 
 
 ## Available Destinations
 
-| Destination | v0.5 web interface | Requirements |
+| Destination | Web interface | Requirements |
 |---|---|---|
 | Webhook | Create, edit, test | HTTPS endpoint; optional headers or auth |
 | Telegram | Create, edit, test | Bot token and chat ID |
 | Gotify | Create, edit, test | Server URL and application token |
 | Email | Create, edit, test | SMTP host, sender, recipients; credentials optional only when the relay permits it |
-| Discord | Existing channels can be represented; new selection is disabled in the v0.5 form | Backend/API supports Discord webhook settings |
+| Discord | Existing channels are shown; new Discord channels cannot be created in the form (marked as coming soon) | Discord webhook URL; create through the API |
 | Web Push | Configure per browser | VAPID keys and HTTPS, or localhost |
 | Live polling | Configure per browser | The application tab must remain open |
 | Desktop notification | Desktop build only | Operating-system notification permission |
 
-Discord is therefore a backend capability with a web-interface limitation, not a generally selectable v0.5 UI channel.
+Discord delivery works for channels created through the API, but the web form does not offer it for new channels yet.
 
 ## Priority
 
@@ -67,7 +67,7 @@ Telegram channel settings accept `HTML`, `Markdown`, and `MarkdownV2` (case-inse
 Generate a VAPID key pair and set all three variables before starting the backend:
 
 ```bash
-docker run --rm ghcr.io/hua0512/rust-srec-vapid:v0.5.1
+docker run --rm ghcr.io/hua0512/rust-srec-vapid:latest
 ```
 
 ```dotenv
@@ -86,7 +86,7 @@ When the ordinary notification queue is full, the oldest pending notification an
 
 Web Push uses a separate 2,048-event queue. When full or unavailable, it drops new events at every priority, including critical. Drops are counted by `notification_stats.web_push_dropped` and are not replayed. Event history and external channels continue independently. Oversized push payloads fail before sending; shutdown attempts to send queued events within its time limit.
 
-Email delivery is immediate; the old `batch_window_secs` setting is ignored. For channel implementations and delivery-worker contracts, see [Notification internals](../development/notifications.md).
+Email is sent immediately for each event; a `batch_window_secs` field in saved email settings is ignored. For channel implementations and delivery-worker contracts, see [Notification internals](../development/notifications.md).
 
 ## Critical Storage Events
 
