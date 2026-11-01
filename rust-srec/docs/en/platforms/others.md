@@ -39,7 +39,7 @@ Share links need no account. If you select an [account profile](../concepts/conf
 - **Danmaku**: ✅ Supported
 
 ::: info Password-protected broadcasts
-Add the password to the streamer URL as `?password=...`, for example `https://twitcasting.tv/{user}?password=secret`.
+Set **Stream Password** in the Twitcasting platform settings, or add the password to the streamer URL as `?password=...` (for example `https://twitcasting.tv/{user}?password=secret`). A password in the URL takes priority.
 :::
 
 ## Weibo

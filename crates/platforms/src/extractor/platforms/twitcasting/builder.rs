@@ -4,7 +4,7 @@ use crate::{
         hls_extractor::HlsExtractor,
         platform_extractor::{Extractor, PlatformExtractor},
         platforms::twitcasting::models::{StreamContainer, TwitcastingData},
-        utils::capture_group_1_or_invalid_url,
+        utils::{capture_group_1_or_invalid_url, extras_get_str},
     },
     media::{MediaInfo, stream_info::StreamInfo},
 };
@@ -33,6 +33,8 @@ pub static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 
 pub struct Twitcasting {
     pub extractor: Extractor,
+    /// Room password from the platform option; a `password` query parameter on the URL wins.
+    stream_password: Option<String>,
 }
 
 impl Twitcasting {
@@ -40,9 +42,12 @@ impl Twitcasting {
         url: String,
         client: Client,
         cookies: Option<String>,
-        _extras: Option<serde_json::Value>,
+        extras: Option<serde_json::Value>,
     ) -> Self {
         let mut extractor = Extractor::new("Twitcasting", url, client);
+        let stream_password = extras_get_str(extras.as_ref(), "password")
+            .filter(|password| !password.is_empty())
+            .map(str::to_owned);
 
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
@@ -50,7 +55,10 @@ impl Twitcasting {
         extractor.add_header_typed(reqwest::header::ACCEPT_LANGUAGE, "en-US, en;q=0.9");
         extractor.set_referer_static(BASE_URL);
 
-        Self { extractor }
+        Self {
+            extractor,
+            stream_password,
+        }
     }
 
     /// Extract room ID from URL without cloning
@@ -75,16 +83,22 @@ impl Twitcasting {
         params
     }
 
-    /// Extract password hash from URL query parameters
+    /// MD5 hex of the room password, taken from the URL's `password` query parameter or else the
+    /// platform option.
     fn extract_password_hash(&self) -> Result<Option<String>, ExtractorError> {
         let url = Url::parse(&self.extractor.url)
             .map_err(|e| ExtractorError::InvalidUrl(format!("Failed to parse URL: {e}")))?;
 
         let query_params = url.query_pairs().collect::<FxHashMap<_, _>>();
+        let password = query_params
+            .get("password")
+            .map(|password| password.as_ref())
+            .filter(|password| !password.is_empty())
+            .or(self.stream_password.as_deref());
 
-        Ok(query_params.get("password").map(|pass_param| {
+        Ok(password.map(|password| {
             let mut md5 = Md5::new();
-            md5.update(pass_param.as_bytes());
+            md5.update(password.as_bytes());
             crate::digest_to_hex(&md5.finalize())
         }))
     }
@@ -308,6 +322,37 @@ mod tests {
         let extractor = Twitcasting::new(url.to_string(), default_client(), None, None);
         let media_info = extractor.extract().await.unwrap();
         println!("{media_info:?}");
+    }
+
+    #[test]
+    fn password_comes_from_the_url_or_else_the_platform_option() {
+        let md5_hex = |password: &str| {
+            use md5::{Digest, Md5};
+            crate::digest_to_hex(&Md5::digest(password.as_bytes()))
+        };
+        let option = Some(serde_json::json!({ "password": "from-option" }));
+
+        let from_option = Twitcasting::new(
+            "https://twitcasting.tv/someone".to_string(),
+            default_client(),
+            None,
+            option.clone(),
+        );
+        assert_eq!(
+            from_option.extract_password_hash().unwrap(),
+            Some(md5_hex("from-option"))
+        );
+
+        let from_url = Twitcasting::new(
+            "https://twitcasting.tv/someone?password=from-url".to_string(),
+            default_client(),
+            None,
+            option,
+        );
+        assert_eq!(
+            from_url.extract_password_hash().unwrap(),
+            Some(md5_hex("from-url"))
+        );
     }
 
     #[test]
