@@ -30,6 +30,11 @@ Design doc: `docs/HLS_ENGINE_ARCHITECTURE.md` (segment engine; read before chang
 - `cache/`, `rate_limit.rs`, `proxy.rs`, `redact.rs`: caching, rate limiting, proxy config, URL/secret redaction for logs.
 - Tests: `tests/hls_engine.rs`, `tests/dash_engine.rs`, `tests/dash_manifest.rs` with local fixtures.
 
+Design decisions (ask before reversing):
+- No ffmpeg dependency for muxing and no third-party MP4/MPD crate: extend `crates/mp4`, citing the spec clause, fuzzed, never panicking.
+- DRM (CENC) is out of scope; protected content fails with a typed error.
+- Known limits kept on purpose: HLS progress counts bytes from failed attempts (real network traffic); `DownloadError::StreamNetwork` keeps a string reason because rust-srec constructs it; the opt-in `vod_segment_timeout` only arms once a later segment has arrived; one slow VOD segment can hold the 80% byte window (skipping instead used to drop segments still in flight); a DASH encoder restart that reuses segment numbers ends through the 60 s stall watchdog; a video-only DASH Period waits up to `max_audio_lag` and reports `TrackStalled` (see `dash/mux.rs`).
+
 ## platforms-parser (`crates/platforms`)
 
 - `extractor/factory.rs`: the `platform_registry!` table mapping URL regexes to extractors, and `ExtractorSelection` (built-in vs. streamlink fallback in `streamlink_extractor.rs`).
@@ -38,6 +43,9 @@ Design doc: `docs/HLS_ENGINE_ARCHITECTURE.md` (segment engine; read before chang
 - `danmaku/`: provider trait, `registry.rs` (`ProviderRegistry::with_defaults` lists chat providers), shared WebSocket provider, XML writer, statistics.
 - `media/`: `MediaInfo` and `StreamInfo` returned by extractors.
 - Tests that hit live platforms are `#[ignore]`d; keep new ones that way.
+- Platform notes:
+  - TikTok's `cmaf` stream is a live DASH MPD and is opt-in (`format_opt_in`); FLV stays the default.
+  - Douyu: the App endpoint gets origin quality only with the `token` built from the account's `acf_*` cookies (`app_token()` in `douyu/app.rs`). Signed-in Web needs the session cookies on `getEncryption` too, or signing returns 403. Signed-out Web URLs carry a signed `expire=300`, so don't rewrite URL parameters. `live_signed_in_playback` (ignored; set `DOUYU_COOKIES` and `DOUYU_LIVE_URL`) checks both paths against a real account.
 
 Adding a platform touches, besides its directory: `extractor/platforms.rs`, the registry in `extractor/factory.rs`, `extractor/platform_configs.rs` if it has settings, `danmaku/registry.rs` if it has chat, `crates/platforms/README.md`, `strev-cli/src/commands.rs` (`list_platforms`), a backend migration seeding its `platform_config` row (e.g. `rust-srec/migrations/20260715000000_add_soop_platform.sql`) and `rust-srec/src/proxies/probe.rs`, frontend `src/lib/utils.ts`, `src/components/pipeline/constants.tsx` and `src/api/schemas/platform-configs.ts`, the docs pages under `rust-srec/docs/{en,zh}/platforms/`, and the platform lists in the root `README.md`/`README.zh-CN.md`.
 
