@@ -4,38 +4,23 @@ A high-performance, user-friendly CLI tool for extracting streaming media inform
 
 ## Features
 
-### 🚀 Performance Optimizations
+- **Extraction** of stream information through `platforms-parser`, with a Streamlink fallback for URLs no built-in extractor handles.
+- **Retries with exponential backoff** and a per-request timeout.
+- **Batch processing** of URLs from a file, concurrently.
+- **Output formats**: pretty, JSON, compact JSON, table, CSV.
+- **Stream selection**: interactive prompt, or automatic with `--auto-select`; filter by quality and stream format.
+- **Proxy support**: HTTP, HTTPS and SOCKS5, with authentication.
+- **Shell completions** for bash, zsh, fish, PowerShell and elvish.
 
-- **Async/await concurrency** - Non-blocking operations for better performance
-- **HTTP client reuse** - Efficient connection pooling
-- **Retry logic with exponential backoff** - Robust error handling
-- **Configurable timeouts** - Avoid hanging requests
-- **Batch processing** - Process multiple URLs concurrently
-
-### 🎯 User Experience
-
-- **Multiple output formats** - Pretty, JSON, CSV, Table
-- **Interactive stream selection** - Choose from available streams
-- **Stream filtering** - Filter by quality and format
-- **Auto-selection mode** - Automatically pick best quality
-- **Progress indicators** - Visual feedback for long operations
-- **Colored output** - Enhanced readability
-- **Configuration file support** - Persistent settings
-- **Extras displayed by default** - Rich metadata included automatically
-
-### 🛠 Advanced Features
-
-- **Batch processing** - Handle multiple URLs from files
-- **Shell completions** - For bash, zsh, fish, powershell
-- **Verbose/quiet modes** - Configurable logging levels
-- **File output** - Save results to files
-- **Configuration management** - Show/reset configuration
-- **Rich output for resolved streams** - `resolve` command supports all output formats
+Cargo features (all default): `interactive` (stream selection prompt), `colored-output`,
+`table-output`, `regex-filters` (`--quality`/`--format` are regular expressions; substring
+matches without it).
 
 ## Installation
 
 ```bash
-cargo build --release -p strev
+cargo build --locked --release -p strev
+# The binary is ./target/release/strev
 ```
 
 ## Commands
@@ -75,13 +60,14 @@ Extracts media information from a single URL.
 | `--output <FORMAT>`    | `-o`  | Output format (`pretty`, `json`, `json-compact`, `table`, `csv`). | `pretty` |
 | `--output-file <PATH>` | `-O`  | Save the output to a file instead of `stdout`.     | (none)   |
 | `--quality <QUALITY>`  |       | Filter streams by quality (e.g., "1080p").         | (none)   |
-| `--format <FORMAT>`    |       | Filter streams by format (e.g., "mp4", "flv").     | (none)   |
-| `--auto-select`        |       | Auto-select the best quality stream without a prompt.| `false`  |
+| `--format <FORMAT>`    |       | Filter streams by stream format (`flv`, `hls`, `mp4`, `wss`, `dash`). | (none)   |
+| `--auto-select`        |       | Auto-select the best stream without a prompt.      | `false`  |
 
 #### Behavior
 
-*   **Interactive Mode:** By default (when `output` is `pretty` or `table` and `--auto-select` is not used), if multiple media streams are found, it will prompt the user to select one. This interactive prompt is disabled if the output is not to a TTY.
-*   **Auto-Selection:** When `--auto-select` is specified, it automatically selects the stream with the highest priority value.
+*   **Stream selection:** Only the `pretty` and `table` output formats select a stream and resolve its final URL; the other formats print the extracted media information. When several streams match the filters and `--auto-select` is not used, a prompt asks for one.
+*   **Auto-Selection:** `--auto-select` picks the stream with the lowest priority value, then the highest bitrate.
+*   Some streams (for example DASH) are offered only on request: they are never auto-selected unless `--format` names their format.
 
 ---
 
@@ -99,12 +85,12 @@ Processes multiple URLs from a file in parallel.
 | `--output-dir <PATH>`     | `-o`  | Directory to save output files.                | (none)  |
 | `--output-format <FORMAT>`| `-f`  | Output format for the results.                 | `json`  |
 | `--max-concurrent <NUM>`  |       | Maximum number of concurrent extractions.      | `5`     |
-| `--continue-on-error`     |       | Continue processing even if some URLs fail.    | `false` |
+| `--continue-on-error`     |       | Accepted but has no effect: failed URLs are always reported and processing continues. | `false` |
 
 #### Behavior
 
 *   Reads URLs from the specified input file, ignoring empty lines and lines starting with `#`.
-*   Always uses **auto-selection** for streams, choosing the one with the highest bitrate and priority.
+*   Always uses **auto-selection** (lowest priority value, then highest bitrate); streams offered only on request are skipped.
 *   If `--output-dir` is specified, results are saved to `batch_results.json` (for JSON formats) or `batch_summary.txt` (for other formats) in that directory.
 
 ---
@@ -138,7 +124,7 @@ Lists all supported platforms and their URL patterns.
 
 | Option       | Short | Description                               | Default |
 | ------------ | ----- | ----------------------------------------- | ------- |
-| `--detailed` | `-d`  | Show detailed information (currently no effect). | `false` |
+| `--detailed` | `-d`  | Accepted but has no effect.               | `false` |
 
 ---
 
@@ -167,7 +153,7 @@ Generates shell completion scripts.
 
 | Argument | Description                                       |
 | -------- | ------------------------------------------------- |
-| `SHELL`  | **Required.** The shell to generate completions for (e.g., `bash`, `zsh`, `fish`, `powershell`). |
+| `SHELL`  | **Required.** The shell to generate completions for (`bash`, `elvish`, `fish`, `powershell`, `zsh`). |
 
 ## Proxy Support
 
@@ -199,8 +185,9 @@ strev batch --input urls.txt \
 
 ### Configuration File Proxy Settings
 
+These keys go in the configuration file described below; `--proxy` overrides them.
+
 ```toml
-# Default proxy settings
 default_proxy = "http://proxy.example.com:8080"
 default_proxy_username = "username"
 default_proxy_password = "password"
@@ -208,69 +195,62 @@ default_proxy_password = "password"
 
 ## Configuration File
 
-The CLI tool supports configuration files in TOML format. Default location:
+The configuration file is TOML. Without `--config`, it is read from
+`<config dir>/streev-cli/default-config.toml`, where `<config dir>` is:
 
-- **Windows**: `%APPDATA%\strev\config.toml`
-- **macOS**: `~/Library/Application Support/strev/config.toml`
-- **Linux**: `~/.config/strev/config.toml`
+- **Windows**: `%APPDATA%`
+- **macOS**: `~/Library/Application Support`
+- **Linux**: `$XDG_CONFIG_HOME` or `~/.config`
 
-Example configuration:
+A missing file means defaults. Every non-optional key must be present, so start from
+`strev config --reset`, which writes the defaults to that path (or to `--config`), and edit the
+result; `strev config --show` prints the effective configuration.
 
 ```toml
-default_output_format = "json"
-default_timeout = 45
-default_retries = 5
-max_concurrent = 10
-auto_select = true
-include_extras = true  # Extras are included by default
+default_output_format = "pretty"
+default_timeout = 30
+default_retries = 3
+max_concurrent = 5
+auto_select = false
+include_extras = true
 colored_output = true
-user_agent = "strev/1.0.0"
-
-[default_cookies]
-# Platform-specific default cookies
+# Optional: default_cookies, default_output_dir, user_agent,
+# default_proxy, default_proxy_username, default_proxy_password
 ```
 
+Only `colored_output` and the `default_proxy*` settings take effect; the other commands use
+their command-line options and defaults.
+
 ## Supported Platforms
+
+Run `strev platforms` for the list built into the CLI. The extractor accepts these URLs (the
+`www.` prefix is optional):
 
 | Platform    | Supported URL Type                               | Description |
 |-------------|--------------------------------------------------|-------------|
 | Acfun       | `acfun.cn/live/{room_id}`                        | Live streaming platform |
+| Bigo        | `bigo.tv/{room_id}`                              | Live streaming platform |
 | Bilibili    | `live.bilibili.com/{room_id}`                    | Live streaming platform |
 | Douyin      | `live.douyin.com/{room_id}`                      | TikTok China live streaming |
 | Douyu       | `douyu.com/{room_id}`                            | Gaming live streaming |
 | Huya        | `huya.com/{room_id}`                             | Gaming live streaming |
-| PandaTV     | `pandalive.co.kr/play/{user_id}` (Defunct)       | Live streaming platform |
+| PandaTV     | `pandalive.co.kr/play/{user_id}`                 | Live streaming platform |
 | Picarto     | `picarto.tv/{channel_name}`                      | Art streaming platform |
-| Redbook     | `xiaohongshu.com/user/profile/{user_id}` or `xhslink.com/{share_id}` | Lifestyle live streaming |
-| TikTok      | `tiktok.com/@{username}/live`                   | Short-form video live streaming |
+| Redbook     | `xhslink.com/m/{share_id}` or `xhslink.com/o/{share_id}` | Lifestyle live streaming |
+| SOOP        | `play.sooplive.co.kr/{user_id}`                  | Live streaming platform (formerly AfreecaTV) |
+| TikTok      | `tiktok.com/@{username}/live`                    | Short-form video live streaming |
 | TwitCasting | `twitcasting.tv/{username}`                      | Live broadcasting service |
 | Twitch      | `twitch.tv/{channel_name}`                       | Gaming and creative content |
 | Weibo       | `weibo.com/u/{user_id}` or `weibo.com/l/wblive/p/show/{live_id}` | Social media live streaming |
 
+Other URLs are passed to Streamlink when the `streamlink` executable is installed. See
+[`crates/platforms/README.md`](../crates/platforms/README.md) for host variants.
+
 ## Development
 
-### Dependencies
-
-- `tokio` - Async runtime
-- `clap` - Command-line argument parsing
-- `serde` - Serialization/deserialization
-- `reqwest` - HTTP client
-- `colored` - Terminal colors
-- `indicatif` - Progress bars
-- `inquire` - Interactive prompts
-- `config` - Configuration management
-- `tracing` - Structured logging
-
-### Building
-
 ```bash
-cargo build --release -p strev
-```
-
-### Testing
-
-```bash
-cargo test -p strev
+cargo build --locked -p strev
+cargo nextest run --locked -p strev
 ```
 
 ## License

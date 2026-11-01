@@ -27,13 +27,13 @@
 # /var/lib/rust-srec/output and /var/log/rust-srec on each start, so a fresh
 # host needs nothing pre-created.
 #
-# Then set the recording directory in the web interface. The database ships
-# with output_folder = /app/output, a path that belongs to the container image
-# and that ProtectSystem=strict neither provides nor makes writable; no
-# environment variable overrides it. Until it names /var/lib/rust-srec/output
-# or a volume listed under ReadWritePaths= below, the service runs but every
-# recording fails. Point RUST_SREC_OUTPUT_ROOTS= at the same directory, or the
-# write gate reports the service degraded.
+# On a fresh database, OUTPUT_DIR= below sets the recording directory to
+# /var/lib/rust-srec/output. An existing database keeps the folder saved in the
+# web interface (a database copied from a Docker install has /app/output, which
+# ProtectSystem=strict neither provides nor makes writable). Until that folder
+# is /var/lib/rust-srec/output or a volume listed under ReadWritePaths= below,
+# the service runs but every recording fails. Keep RUST_SREC_OUTPUT_ROOTS=
+# pointing at the same directory, or the write gate reports the service degraded.
 #
 # /opt/rust-srec is also the directory the Docker Compose installer defaults to
 # (RUST_SREC_DIR). Pick a different path for the binary if both deployments

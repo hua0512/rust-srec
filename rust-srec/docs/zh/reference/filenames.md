@@ -7,8 +7,8 @@ Rust-Srec 支持在 `output_folder` 和 `output_filename_template` 中使用两�
 
 | 变量 | 说明 |
 |------|------|
-| `{streamer}` | 主播显示名称 |
-| `{title}` | 当前直播标题 |
+| `{streamer}` | 主播显示名称，文件名中不允许的字符会替换为 `_` |
+| `{title}` | 当前直播标题，同样经过字符替换 |
 | `{platform}` | 平台名称 (如 bilibili) |
 | `{session_id}` | 录制会话的唯一 ID (仅适用于 `output_folder`) |
 
@@ -23,11 +23,15 @@ Rust-Srec 支持在 `output_folder` 和 `output_filename_template` 中使用两�
 | `%H` | 小时 (00-23) |
 | `%M` | 分钟 (00-59) |
 | `%S` | 秒数 (00-59) |
-| `%i` | 分段序列号 |
+| `%i` | 分段序列号；仅适用于 `output_filename_template` |
 | `%t` | Unix 时间戳 |
 | `%%` | 字面量百分号 |
 
-示例：`{streamer}/%Y-%m-%d/%H-%M-%S_{title}`
+时间占位符按服务器本地时区渲染。无法识别的 `%` 序列保持原样。
+
+`output_filename_template` 命名的是文件而不是路径，目录层级请放在 `output_folder` 中。`/`、`:` 等文件名中不允许的字符可能会被替换为 `_`。
+
+示例：将 `output_folder` 设为 `/rec/{streamer}/%Y-%m-%d`，`output_filename_template` 设为 `%H-%M-%S_{title}`。
 
 ## 流水线目标路径占位符 {#流水线目标路径占位符}
 
@@ -38,8 +42,7 @@ Rust-Srec 支持在 `output_folder` 和 `output_filename_template` 中使用两�
 
 rclone 默认使用任务创建时间展开时间占位符。将 `time_anchor` 设为
 `session_start` 后，同一场直播的所有分段都会归入直播开始日期对应的文件夹，
-即使直播跨过午夜也不会拆到次日目录。copy/move 在省略 `time_anchor` 时会保留
-历史行为，按执行时刻展开；需要确定性的锚点时可设为 `job_created` 或
+即使直播跨过午夜也不会拆到次日目录。copy/move 在省略 `time_anchor` 时按执行时刻展开；需要确定性的锚点时可设为 `job_created` 或
 `session_start`。
 
 使用会话开始时间作为锚点时，请在文件名模板中保留 `%Y%m%d-%H%M%S` 或 `%t`。

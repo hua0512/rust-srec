@@ -69,9 +69,15 @@ stateDiagram-v2
     Processing --> Completed: 成功
     Processing --> Failed: 失败
     Failed --> Processing: 重试
+    Pending --> Cancelled: 取消
+    Processing --> Cancelled: 取消
+    Cancelled --> Processing: 重试
     Completed --> [*]
     Failed --> [*]
+    Cancelled --> [*]
 ```
+
+以上是工作流执行的状态（`PENDING`、`PROCESSING`、`COMPLETED`、`FAILED`、`CANCELLED`）。每个步骤还会先处于 `BLOCKED`，直到其依赖的所有步骤都已完成，然后在创建任务前处于 `PENDING`。依赖步骤失败，或所在工作流失败或被取消时，该步骤以 `CANCELLED` 结束。
 
 在工作流页面中，任务正在等待空闲工作线程的步骤显示为**排队中**，任务正在运行的步骤显示为**运行中**；任务报告进度时还会显示进度条。
 

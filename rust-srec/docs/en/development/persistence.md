@@ -5,7 +5,7 @@ For contributors changing database transactions and import behavior. Operators s
 ## Import Persistence Ownership {#import-persistence-ownership}
 
 Import and ordinary repository writes share the same typed field bindings. Import
-still reserves one SQLite write transaction for all ten configuration domains,
+reserves one SQLite write transaction for all ten configuration domains,
 subscription/filter replacement, email-slot swaps and authentication invalidation.
 Existing IDs and creation times remain stable; caller-selected update times and
 raw JSON are preserved. Extractor settings absent from the backup format retain
@@ -28,6 +28,5 @@ streamer error increments each return the count produced by their own update.
 ## Query batching
 
 Pipeline job pages resolve display names through deduplicated streamer batches,
-with at most 500 IDs per query. Job order and response fields are unchanged.
-Missing streamers still have no display name. A failed batch is retried by owner,
+with at most 500 IDs per query. Missing streamers have no display name. A failed batch is retried by owner,
 retaining names that can be read without failing the job page.

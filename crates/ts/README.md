@@ -1,11 +1,15 @@
 # TS Parser Crate
 
-A Rust library for parsing MPEG Transport Stream (TS) PAT (Program Association Table) and PMT (Program Map Table) data.
+A Rust library for parsing MPEG Transport Stream (TS) data: PAT (Program Association Table), PMT (Program Map Table), PES headers, adaptation fields, descriptors and SCTE-35 splice information.
 
 ## Features
 
 - **PAT Parsing**: Parse Program Association Tables to discover programs and their PMT PIDs
 - **PMT Parsing**: Parse Program Map Tables to discover elementary streams and their types
+- **PES and Adaptation Fields**: PES headers with PTS/DTS (`PesHeader`, `PesHeaderRef`) and adaptation fields with PCR (`AdaptationField`, `Pcr`)
+- **SCTE-35**: Splice information sections (`splice_insert`, `time_signal`), auto-detected from PMT entries registered as `CUEI`
+- **Descriptors and CRC-32**: Descriptor iteration (`DescriptorIterator`) and MPEG-2 section CRC validation (`validate_section_crc32`)
+- **Continuity Tracking**: Per-PID continuity counter checks (`ContinuityMode`, `ContinuityStatus`)
 - **Stream Type Detection**: Comprehensive support for MPEG-2, H.264, H.265, AAC, AC-3, and many other stream types
 - **Error Handling**: Robust error handling with detailed error messages
 - **Zero-copy Design**: Efficient parsing with minimal allocations
@@ -32,12 +36,12 @@ A Rust library for parsing MPEG Transport Stream (TS) PAT (Program Association T
 
 ## Usage
 
-Add this to your `Cargo.toml`:
+The crate is used inside this workspace as a path dependency:
 
 ```toml
 [dependencies]
-ts = "0.1.0"
-bytes = "1.0" # Required for the zero-copy parser
+ts = { path = "../ts" }
+bytes = "1" # Required for the zero-copy parser
 ```
 
 This crate provides the zero-copy `TsParser`: a high-performance parser that uses
@@ -49,7 +53,7 @@ This parser is designed for high-performance scenarios. It avoids allocations by
 
 ```rust
 use bytes::Bytes;
-use ts::{TsParser, PatRef, PmtRef, StreamType};
+use ts::{PatRef, PmtRef, TsPacketRef, TsParser};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut parser = TsParser::new();
@@ -58,7 +62,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ts_data = Bytes::from(std::fs::read("example.ts")?);
 
     // Define a callback for when a PAT is found
-    let on_pat = |pat: PatRef| {
+    let on_pat = |pat: PatRef| -> ts::Result<()> {
         println!("\nPAT found (ts_id={}):", pat.transport_stream_id);
         for program in pat.programs() {
             if program.program_number != 0 {
@@ -70,7 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // Define a callback for when a PMT is found
-    let on_pmt = |pmt: PmtRef| {
+    let on_pmt = |pmt: PmtRef| -> ts::Result<()> {
         println!("PMT found (program={}):", pmt.program_number);
         for stream_result in pmt.streams() {
             let stream = stream_result?;
@@ -81,7 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Parse the data, triggering the callbacks as PAT/PMT sections are found.
     // The last argument is an optional per-packet callback; None skips it.
-    parser.parse_packets(ts_data, on_pat, on_pmt, None::<fn(&TsPacketRef) -> Result<()>>)?;
+    parser.parse_packets(ts_data, on_pat, on_pmt, None::<fn(&TsPacketRef) -> ts::Result<()>>)?;
 
     Ok(())
 }
@@ -121,13 +125,14 @@ The high-performance, callback-based parser.
   - `on_pat: FnMut(PatRef) -> Result<()>`: A callback invoked when a PAT is parsed.
   - `on_pmt: FnMut(PmtRef) -> Result<()>`: A callback invoked when a PMT is parsed.
   - `on_packet: Option<FnMut(&TsPacketRef) -> Result<()>>`: An optional callback invoked for every parsed packet; pass `None` to skip it.
+- `parse_packets_with_scte35(...)`: Same as `parse_packets`, with an extra `on_scte35: FnMut(SpliceInfoSectionRef) -> Result<()>` callback for SCTE-35 sections.
 - `reset(&mut self)`: Clears the parser's internal state.
 
 ### Data Structures
 
 The crate provides two sets of data structures for PAT/PMT information:
 
-- **Owned (`Pat`, `Pmt`)**: These structs hold owned data, copied from the input buffer. They are produced by the owned `Pat::parse`/`Pmt::parse` entry points.
+- **Owned (`Pat`, `Pmt`)**: These structs hold owned data, copied from the input buffer. They are produced by `Pat::parse`/`Pmt::parse` (or `parse_with_crc` to validate the section CRC).
 - **Zero-Copy (`PatRef`, `PmtRef`)**: These structs hold references to the input buffer (`Bytes`). They are passed to the callbacks in the zero-copy `TsParser`. They provide efficient iterators over programs and streams (e.g., `PatRef::programs()`, `PmtRef::streams()`).
 
 ### `StreamType`
@@ -141,21 +146,24 @@ Enum representing various stream types defined in MPEG-2 and other standards.
 
 ## Error Handling
 
-The crate provides detailed error types through `TsError`:
+The crate reports errors through `TsError`, including:
 
 - `InvalidPacketSize` - TS packet is not 188 bytes
 - `InvalidSyncByte` - Sync byte is not 0x47
 - `InsufficientData` - Not enough data to parse
 - `InvalidTableId` - Wrong table ID for PAT/PMT
+- `InvalidSectionLength`, `Crc32Mismatch` - Malformed or corrupted PSI sections
+- `ContinuityError`, `DuplicatePacket` - Continuity counter violations
+- `InvalidPesStartCode`, `InvalidPtsDtsFlags` - Malformed PES headers
+- `InvalidScte35` - Malformed SCTE-35 section
 - `ParseError` - General parsing errors
 
 ## Testing
 
-Run the test suite:
+Run the test suite from the repository root:
 
 ```bash
-cd crates/ts
-cargo test
+cargo nextest run --locked -p ts
 ```
 
 ## License

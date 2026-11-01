@@ -8,107 +8,114 @@ This library provides a unified interface to extract streaming media information
 
 ## Supported Platforms
 
-| Platform    | Supported URL Type                               |
-|-------------|--------------------------------------------------|
-| Acfun       | `acfun.cn/live/{room_id}`                        |
-| Bilibili    | `live.bilibili.com/{room_id}`                    |
-| Douyin      | `live.douyin.com/{room_id}`                      |
-| Douyu       | `douyu.com/{room_id}`                            |
-| Huya        | `huya.com/{room_id}`                             |
-| PandaTV     | `pandalive.co.kr/play/{user_id}` (Defunct)       |
-| Picarto     | `picarto.tv/{channel_name}`                      |
-| Redbook     | `xhslink.com/m/{share_id}` |
-| TikTok      | `tiktok.com/@{username}/live`                   |
-| TwitCasting | `twitcasting.tv/{username}`                      |
-| Twitch      | `twitch.tv/{channel_name}`                       |
-| Weibo       | `weibo.com/u/{user_id}` or `weibo.com/l/wblive/p/show/{live_id}` |
+| Platform    | Supported URL Type                               | Danmaku |
+|-------------|--------------------------------------------------|---------|
+| Acfun       | `acfun.cn/live/{room_id}` (also `live.`/`m.` hosts) | |
+| Bigo        | `bigo.tv/{room_id}` or `bigo.tv/{lang}/{room_id}` | Yes |
+| Bilibili    | `live.bilibili.com/{room_id}`                    | Yes |
+| Douyin      | `live.douyin.com/{room_id}`                      | Yes |
+| Douyu       | `douyu.com/{room_id}` (numeric)                  | Yes |
+| Huya        | `huya.com/{room_id}`                             | Yes |
+| PandaTV     | `pandalive.co.kr/play/{user_id}`                 | |
+| Picarto     | `picarto.tv/{channel_name}`                      | |
+| Redbook     | `xhslink.com/m/{share_id}` or `xhslink.com/o/{share_id}` (profile URLs are rejected) | |
+| SOOP        | `play.sooplive.co.kr/{user_id}[/{broadcast_id}]` (also `ch.`/`m.` hosts, `sooplive.com`, `afreecatv.com`) | Yes |
+| TikTok      | `tiktok.com/@{username}/live`                    | Yes |
+| TwitCasting | `twitcasting.tv/{username}`                      | Yes |
+| Twitch      | `twitch.tv/{channel_name}`                       | Yes |
+| Weibo       | `weibo.com/u/{user_id}` or `weibo.com/l/wblive/p/show/{live_id}` | |
+
+URLs that match no built-in extractor fall back to a [Streamlink](https://streamlink.github.io/)
+extractor when the `streamlink` executable is available. Pass
+`ExtractorSelection::Streamlink` to `create_extractor` to force it for any URL.
 
 ## Features
 
-* **Broad Platform Support**: Extract streaming data from a wide range of popular live streaming and video platforms.
-* **Unified API**: A single, easy-to-use interface (`extract`, `get_url`) for all supported platforms, simplifying your code.
-* **Asynchronous by Design**: Built with `async/await` for non-blocking, high-performance network operations suitable for concurrent applications.
-* **Extensible Architecture**: The underlying factory pattern and `PlatformExtractor` trait make it straightforward to add support for new platforms.
-* **Built-in Cookie Management**: Each extractor instance maintains its own cookie store, providing robust support for platforms that require authentication or session management.
+* **Unified API**: every platform implements the `PlatformExtractor` trait (`extract`, `get_url`).
+* **Asynchronous**: built on `async/await` and `reqwest`.
+* **Extensible**: `ExtractorFactory` selects an extractor from a URL regex registry.
+* **Cookie management**: each extractor instance keeps its own cookie store.
+* **Danmaku**: `danmaku::ProviderRegistry::with_defaults()` provides live chat providers for the platforms marked above.
 
 ## Usage
 
-### Extractor error compatibility
-
-`ExtractorError` includes `Authentication { code }` and
-`RateLimited { scope, code, retry_after }`. Downstream exhaustive matches must
-handle these variants. Both `extract` and `get_url` can return them; preserve
-the variants when wrapping errors. Only an explicit account authentication
-failure or `ThrottleScope::Account` is evidence for account recovery. A generic
-HTTP 401/403, age restriction, or unknown throttle scope does not establish that
-an account is invalid. SOOP login-required and Bilibili login-expired response
-codes retain typed evidence; ambiguous platform failures remain ordinary errors.
-
-Use `category()` for logs that must not include upstream bodies or signed URLs.
-`retry_after` can exceed a caller's default backoff cap and should be honored.
-
-`ExtractorError::check_response` also exposes this HTTP classification to provider
-adapters. Bilibili `QrLoginError` and `TokenRefreshError` include a `Response`
-variant carrying it; exhaustive matches must handle that variant. QR, token and
-cookie validation retain HTTP 429 and its retry delay before decoding the body.
-
-Bilibili `QrGenerateResponse` has an optional `expires_in` field (seconds)
-with a deserialization default for providers that omit it. Callers constructing
-this struct must supply the field. QR response `Debug` output redacts login
-material; retain provider expiry when storing a login-session deadline.
-
-Add `platforms-parser` and `reqwest` to your `Cargo.toml` dependencies.
+Add `platforms-parser`, `reqwest` and `tokio` to your `Cargo.toml` dependencies.
 
 ```rust
-use platforms_parser::extractor::factory::ExtractorFactory;
+use platforms_parser::extractor::factory::{ExtractorFactory, ExtractorSelection};
 use reqwest::Client;
 
 #[tokio::main]
 async fn main() {
     let url = "https://www.twitch.tv/some_channel"; // Example URL
-    let client = Client::new();
-    let factory = ExtractorFactory::new(client);
+    let factory = ExtractorFactory::new(Client::new());
 
-    match factory.create_extractor(url, None, None) {
-        Ok(extractor) => {
-            match extractor.extract().await {
-                Ok(media_info) => {
-                    println!("Title: {}", media_info.title);
-                    println!("Uploader: {}", media_info.uploader);
-                    
-                    if let Some(headers) = &media_info.headers {
-                        println!("Headers:");
-                        for (key, value) in headers {
-                            println!("  {}: {}", key, value);
-                        }
-                    }
+    match factory.create_extractor(url, None, None, ExtractorSelection::Auto) {
+        Ok(extractor) => match extractor.extract().await {
+            Ok(media_info) => {
+                println!("Title: {}", media_info.title);
+                println!("Artist: {}", media_info.artist);
 
-                    for (i, mut stream) in media_info.streams.into_iter().enumerate() {
-                        // For some platforms, you need to call get_url to get the real stream url
-                        extractor.get_url(&mut stream).await.unwrap();
-                        println!("  Stream {}:", i + 1);
-                        println!("    URL: {}", stream.url);
-                        println!("    Quality: {}", stream.quality);
+                if let Some(headers) = &media_info.headers {
+                    println!("Headers:");
+                    for (key, value) in headers {
+                        println!("  {key}: {value}");
                     }
                 }
-                Err(e) => {
-                    eprintln!("Extraction failed: {:?}", e);
+
+                for (i, mut stream) in media_info.streams.into_iter().enumerate() {
+                    // Some platforms resolve the playable URL only in get_url.
+                    if let Err(e) = extractor.get_url(&mut stream).await {
+                        eprintln!("  Stream {}: {e:?}", i + 1);
+                        continue;
+                    }
+                    println!("  Stream {}:", i + 1);
+                    println!("    URL: {}", stream.url);
+                    println!("    Quality: {}", stream.quality);
                 }
             }
-        }
-        Err(e) => {
-            eprintln!("Failed to create extractor: {:?}", e);
-        }
+            Err(e) => eprintln!("Extraction failed: {e:?}"),
+        },
+        Err(e) => eprintln!("Failed to create extractor: {e:?}"),
     }
 }
 ```
 
+`create_extractor(url, cookies, extras, selection)` takes an optional cookie
+string and optional platform-specific JSON extras.
+
 > [!NOTE]
 > **Additional URL resolution required for some platforms**
 >
-> Some platforms (e.g., `Huya`, `Douyu`, `Bilibili`) require an additional asynchronous call to resolve the final, playable stream URL. The `extract` method may return a `StreamInfo` object with a temporary or incomplete URL.
+> Some platforms (e.g., `Huya`, `Douyu`, `Bilibili`) resolve the final, playable stream URL in a second asynchronous call. The `extract` method may return a `StreamInfo` with a temporary or incomplete URL.
 >
-> Always call `extractor.get_url(&mut stream_info).await` to ensure you have the correct, final URL before attempting to use it. For platforms that do not require this step, the default implementation will do nothing.
+> Always call `extractor.get_url(&mut stream_info).await` before using the URL. For platforms that do not need this step, the default implementation does nothing.
+
+### Errors
+
+`ExtractorError` includes `Authentication { code }` and
+`RateLimited { scope, code, retry_after }`; both `extract` and `get_url` can
+return them, so preserve the variants when wrapping errors. Only an explicit
+account authentication failure or `ThrottleScope::Account` is evidence that an
+account needs recovery. A generic HTTP 401/403, age restriction, or unknown
+throttle scope does not establish that an account is invalid. SOOP
+login-required and Bilibili login-expired response codes map to typed errors;
+ambiguous platform failures remain ordinary errors.
+
+`retry_after` can exceed a caller's default backoff cap and should be honored.
+`ExtractorError::check_response` applies the same HTTP classification for
+provider adapters; Bilibili `QrLoginError` and `TokenRefreshError` wrap it in a
+`Response` variant. QR, token and cookie validation surface HTTP 429 and its
+retry delay before decoding the body. `QrGenerateResponse::expires_in` carries
+the provider's QR expiry in seconds when the provider sends one.
+
+### Diagnostic privacy
+
+Use `ExtractorError::category()` for logs that must not include upstream bodies
+or signed URLs. Extraction diagnostics log response sizes, counts and safe error
+categories instead of authentication-bearing bodies, signed URLs, request
+builders or cookie values. The `Debug` views of `Extractor` and of QR login
+responses redact network and login material.
 
 ## License
 
@@ -116,8 +123,3 @@ This project is licensed under either of the following, at your option:
 
 * MIT License
 * Apache License, Version 2.0
-
-Extraction diagnostics log response sizes, counts and safe error categories
-instead of authentication-bearing bodies, signed URLs, request builders or cookie
-values. `Extractor`'s `Debug` view reports the platform and field counts while
-redacting network material; its request/response cookie behavior is unchanged.

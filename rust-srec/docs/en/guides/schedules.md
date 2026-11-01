@@ -22,7 +22,7 @@ overlapping or touching intervals remain continuously matched. A missing local
 boundary advances to the first valid minute within three hours; larger skipped
 date windows are omitted.
 
-Omitted or null timezone now means UTC for both rule types. Upgrades preserve
+Omitted or null timezone means UTC for both rule types. Upgrades preserve
 existing TimeBased omissions by storing explicit `"local"`; existing explicit
 IANA zones and Cron rules keep their meaning. Both filter forms let you choose
 UTC or **Server local**, or enter an IANA name. Server local means the backend
@@ -38,8 +38,8 @@ Replacing a Cron configuration without a timezone uses UTC.
 
 Backup schema `0.1.8` exports an explicit timezone for both types. Importing a
 TimeBased omission from schema `0.1.7` or earlier retains local-time behavior;
-new-schema omissions mean UTC. `"local"` continues to follow the destination
-server's timezone, as legacy local rules did. Unknown JSON members are retained.
+new-schema omissions mean UTC. `"local"` follows the destination
+server's timezone. Unknown JSON members are retained.
 
 Cron matching has minute granularity, including expressions containing
-seconds; stop scans remain bounded to eight days.
+seconds; stop scans are bounded to eight days.

@@ -28,7 +28,7 @@ Production-ready recorder backend (REST API + scheduler + pipeline + SQLite).
 - **API State**: `AppState` (`src/api/server.rs`) is the shared context for Axum routes.
 - **Errors**: Propagate to `crate::error::Error`; handle API-specific errors in `src/api/error.rs`.
 - **Migrations**: New schema changes go in new files in `migrations/`; never edit a shipped one — sqlx checksums applied migrations and any change breaks startup on existing installs, so correct it with another new file.
-- **Table rebuilds**: Preserve data, triggers, indexes, and foreign-key integrity, and account for interrupted migration replay. Read the [table rebuild procedure](../CONTRIBUTING.md#sqlite-table-rebuilds) when changing a migration that rebuilds a table; it specifies fixture checks and when a real-data rehearsal is needed. Rebuilding `streamers`, `template_config`, `platform_config` or `credential_profiles` inside SQLx's default migration transaction, where foreign keys stay on, deletes account selections (`credential_selections`, `credential_selection_members`) or fails on them; use that procedure's `-- no-transaction` / `PRAGMA foreign_keys=OFF` form.
+- **Table rebuilds**: Follow the [table rebuild procedure](../CONTRIBUTING.md#sqlite-table-rebuilds) for any migration that rebuilds a table. Rebuilding `streamers`, `template_config`, `platform_config` or `credential_profiles` always needs its `-- no-transaction` / `PRAGMA foreign_keys=OFF` form; inside SQLx's default transaction the rebuild deletes or fails on the account selections that reference those tables.
 
 ## TESTING
 Pin each behavior at the highest layer that can reach it without the public network:
@@ -53,14 +53,16 @@ Rules:
 - **Locks**: Never hold a synchronous mutex guard across `.await`. Keep async-lock critical sections short and await while holding one only when the operation requires that serialization.
 
 ## COMMANDS
-- **Run (Dev)**: `cargo run -p rust-srec --bin rust-srec`
+- **Run (Dev)**: `cargo run --locked -p rust-srec --bin rust-srec` (set `JWT_SECRET`, or `AUTH_DISABLED=true` with a loopback `API_BIND_ADDRESS`)
 - **Docker**: `docker compose up -d` (from `rust-srec/` directory)
 - **Environment Variables**:
+  - `JWT_SECRET`: Required to start the API unless `AUTH_DISABLED=true`.
+  - `AUTH_DISABLED`: `true`/`1` runs the API without authentication; allowed only when `API_BIND_ADDRESS` is a loopback IP (local development).
   - `DATABASE_URL`: SQLite connection string (default: `sqlite:srec.db?mode=rwc`).
   - `LOG_DIR`: Directory for log files (default: `logs`).
   - `API_BIND_ADDRESS`: Server host (default: `0.0.0.0`).
   - `API_PORT`: Server port (default: `12555`).
-  - `API_CORS_ORIGINS`: Comma-separated exact browser origins (`scheme://host[:port]`) allowed when authentication is disabled. Default: `http://localhost:15275`, `http://127.0.0.1:15275`, `http://[::1]:15275`, `tauri://localhost`, `http://tauri.localhost`. Ignored while `JWT_SECRET` is set (any origin is allowed then).
+  - `API_CORS_ORIGINS`: Comma-separated exact browser origins (`scheme://host[:port]`) allowed when authentication is disabled (`AUTH_DISABLED=true`). Default: `http://localhost:15275`, `http://127.0.0.1:15275`, `http://[::1]:15275`, `tauri://localhost`, `http://tauri.localhost`. Ignored while `JWT_SECRET` is set (any origin is allowed then).
   - `API_LOGIN_MAX_FAILURES`: Failed logins tolerated per account per window (default: `5`).
   - `API_LOGIN_IP_MAX_FAILURES`: Failed logins tolerated per source address per window (default: `100`). Loose on purpose — behind the bundled frontend or any reverse proxy, every login shares the proxy's address.
   - `API_LOGIN_WINDOW_SECS`: Length of the failed-login window in seconds (default: `900`).

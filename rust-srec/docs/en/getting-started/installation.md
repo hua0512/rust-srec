@@ -5,6 +5,7 @@
 | Method | Best for | Web interface | API |
 |---|---|---|---|
 | [Docker](./docker.md) | Most users and production hosts | `http://localhost:15275` | `http://localhost:12555/api` |
+| [Desktop app](#desktop-app) | Recording on one personal computer | Built into the app | Internal to the app |
 | Pre-built binary | Backend-only or custom deployments | Deploy the frontend separately | Backend default: `http://localhost:12555/api` |
 | [systemd service](#systemd-service-linux) | Linux hosts running the backend without Docker | Deploy the frontend separately | `http://localhost:12555/api` |
 | Source checkout with the example `.env` files | Development and contribution | `http://localhost:15275` | `http://localhost:8080/api` |
@@ -14,6 +15,10 @@ Docker maps the frontend's container port `80` and the backend's container port 
 ## Docker (Recommended)
 
 Docker packages the backend, frontend, and required runtime dependencies. Follow the [Docker deployment guide](./docker.md), then continue with [Make Your First Recording](./first-recording.md).
+
+## Desktop App
+
+The desktop app runs the backend and web interface together in one window on Windows, Linux, or macOS. Download its installer from the [GitHub Releases](https://github.com/hua0512/rust-srec/releases) page of a release that includes desktop builds. It needs no `.env` file: it generates its own `JWT_SECRET`, listens only on the local machine, and saves recordings to an `output` folder in its application data directory until you choose another **Output Folder**. Only one copy can run at a time, and it cannot share a database with a standalone backend.
 
 ## Pre-built Binaries
 

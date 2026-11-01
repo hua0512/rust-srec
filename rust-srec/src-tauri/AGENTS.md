@@ -33,7 +33,7 @@ Applies to the desktop wrapper. Follow root workflow rules; apply parent backend
 Run Tauri commands from `rust-srec/`, with the frontend and platform prerequisites installed. Node and pnpm versions come from the root `.nvmrc` and frontend `package.json`.
 
 - Dev: `cargo tauri dev`
-  - Uses frontend dev server at `http://localhost:15275`.
+  - `beforeDevCommand` starts the desktop frontend dev server (`pnpm -C frontend dev:desktop`) at `http://127.0.0.1:15275`.
 - Build: `cargo tauri build`
 - Check: `cargo check --locked -p rust-srec-desktop`
 

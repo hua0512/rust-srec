@@ -1,8 +1,8 @@
 //! # Mesio
 //!
-//! A library for downloading media content from various sources.
-//! Supports FLV, HLS, MPEG-DASH, and other streaming formats with efficient
-//! processing pipeline integration.
+//! A library for downloading live and on-demand media streams over HLS,
+//! MPEG-DASH and FLV, producing items for the `flv-fix`/`hls-fix` processing
+//! pipelines.
 //!
 //! ## Features
 //!

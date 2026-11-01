@@ -26,7 +26,7 @@ Windows PowerShell:
 irm https://docs.srec.rs/install.ps1 | iex
 ```
 
-The installer downloads Compose and environment files, generates unique secrets, detects optional NVIDIA support, and offers to start the services. Both entry points pick a localized installer from `SREC_LANG` or the system locale; set `SREC_LANG` explicitly to override it.
+The installer downloads Compose and environment files, generates unique secrets, detects optional NVIDIA support, and offers to start the services. When `VERSION` is not set, it asks whether to install the stable `latest` image or the `dev` development build. Both entry points pick a localized installer from `SREC_LANG` or the system locale; set `SREC_LANG` explicitly to override it.
 
 ::: warning Review Remote Scripts
 Piping a remote script to a shell executes the current network response. Environments with change control should download the script, verify its contents and checksum, then run the reviewed local copy or use the manual setup below.
@@ -43,7 +43,7 @@ Installer settings:
 For a reviewed release, set an explicit version. Example for Linux/macOS:
 
 ```bash
-curl -fsSL https://docs.srec.rs/install.sh | RUST_SREC_DIR=/opt/rust-srec VERSION=v0.5.1 bash
+curl -fsSL https://docs.srec.rs/install.sh | RUST_SREC_DIR=/opt/rust-srec VERSION=v0.7.1 bash
 ```
 
 ::: warning Path Collision with the systemd Service
@@ -144,3 +144,9 @@ docker compose up -d
 Use [Upgrade and Rollback](../operations/upgrading.md) before changing `VERSION`. `docker compose down` removes containers and the network but leaves bind-mounted host data; verify exact paths before deleting any host directory.
 
 For an Internet-facing host, complete [Production Deployment](../operations/production.md) instead of publishing the example ports directly.
+
+<div id="gpu-hardware-acceleration-nvidia" class="legacy-section">
+
+This section is now in [NVIDIA GPU](#nvidia-gpu).
+
+</div>

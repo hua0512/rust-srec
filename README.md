@@ -28,7 +28,7 @@
 
 ## Supported platforms
 
-Bilibili · Douyin · Douyu · Huya · Twitch · TikTok · AcFun · Picarto · Redbook · TwitCasting · Weibo · PandaTV (legacy)
+Bilibili · Douyin · Douyu · Huya · Twitch · TikTok · SOOP · Bigo Live · AcFun · Picarto · Redbook · TwitCasting · Weibo · PandaTV (legacy)
 
 ## Quick start (Docker)
 
@@ -49,7 +49,7 @@ The installer downloads the Compose and environment files, generates the require
 To pin a release instead of tracking `latest`, pass `VERSION` — image tags use a leading `v`:
 
 ```bash
-curl -fsSL https://docs.srec.rs/install.sh | VERSION=v0.5.1 bash
+curl -fsSL https://docs.srec.rs/install.sh | VERSION=v0.7.1 bash
 ```
 
 > Piping a remote script to a shell runs whatever the server returns. To review it first, download [install.sh](https://docs.srec.rs/install.sh) and run your local copy, or follow the manual Compose steps in the [Docker guide](https://docs.srec.rs/en/getting-started/docker).
@@ -58,7 +58,7 @@ Prefer a binary or to build from source? See the [installation guide](https://do
 
 ## Highlights
 
-- **Multi-platform** — 12 streaming sites supported out of the box.
+- **Multi-platform** — 14 streaming sites supported out of the box; other sites can be recorded through Streamlink.
 - **Three download engines** — pick `ffmpeg`, `streamlink`, or the built-in Rust engine (`mesio`).
 - **Post-processing pipelines** — automatically transcode, segment, or hand off recordings to your own scripts.
 - **Web UI + REST API** — manage streamers from the browser; automate with the API (JWT-protected, OpenAPI docs at `/api/docs`).
@@ -71,7 +71,7 @@ Two standalone tools ship in the same repo:
 | Tool | What it's for | Docs |
 | --- | --- | --- |
 | `strev` | Inspect a live-stream URL and pull out media info from supported platforms. | [`strev-cli/README.md`](./strev-cli/README.md) |
-| `mesio` | Download and repair FLV / HLS streams from the command line. | [`mesio-cli/README.md`](./mesio-cli/README.md) |
+| `mesio` | Download and repair FLV, HLS and MPEG-DASH streams from the command line. | [`mesio-cli/README.md`](./mesio-cli/README.md) |
 
 ## Helpful links
 
@@ -86,15 +86,15 @@ This is a Cargo workspace. The main pieces:
 
 - `rust-srec/` — the recorder backend (API, scheduler, pipeline, database)
 - `strev-cli/`, `mesio-cli/` — the CLI tools above
-- `crates/` — reusable libraries: platform extractors, FLV / HLS / TS parsers, the `mesio` download engine, and stream-repair utilities
+- `crates/` — reusable libraries: platform extractors, codec and container parsers (FLV, MPEG-TS, MP4, HLS), the `mesio` download engine, and stream-repair utilities
 
 Common commands:
 
 ```bash
-cargo build                       # build everything
-cargo test                        # run tests
-cargo clippy -- -D warnings       # lint
-cargo fmt                         # format
+cargo build --locked              # build the backend and both CLIs (the desktop app is built separately)
+cargo test --locked               # run tests
+cargo clippy --locked --all-targets -- -D warnings   # lint
+cargo fmt --all                   # format
 ```
 
 Contributions welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md).

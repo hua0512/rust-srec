@@ -4,7 +4,7 @@ Set defaults under **Settings → Global**. Platform, template, and streamer ove
 
 ## Global Settings {#global-settings}
 
-Access via **Settings** → **Global**. The settings are organized into several categories:
+Access via **Settings** → **Global**. The setting names below are the field names used by the global configuration API (`/api/config/global`) and configuration backups. The settings are organized into several categories:
 
 ### File Configuration {#file-configuration}
 | Setting | Description | Default |
@@ -30,11 +30,11 @@ you leave out keeps its default, so `{"top_talkers": 200}` is a complete overrid
 | `top_talkers` | Chatters and gift senders listed per session (1–500) | `100` |
 | `top_words` | Frequent words listed per session (1–500) | `50` |
 | `top_gifts` | Gift names listed per session (1–500) | `20` |
-| `rate_bucket_secs` | Activity-timeline granularity in seconds. Very long streams are automatically coarsened, so the session page reads the width back rather than assuming it. | `10` |
+| `rate_bucket_secs` | Activity-timeline granularity in seconds (1–3600). Very long streams are automatically coarsened, so the session page reads the width back rather than assuming it. | `10` |
 | `talker_capacity` | Distinct chatters tracked (64–8192). While a stream has fewer than this, counts are exact; above it they become close estimates and the session page marks them with `≈`. | `2048` |
 | `word_capacity` | Distinct words tracked (64–8192), same trade-off | `2048` |
-| `gift_capacity` | Distinct gift names tracked | `256` |
-| `extra_stop_words` | Words to exclude from the frequent-words chart, on top of the built-in list | none |
+| `gift_capacity` | Distinct gift names tracked (16–8192) | `256` |
+| `extra_stop_words` | Words to exclude from the frequent-words chart, on top of the built-in list (at most 500) | none |
 
 Out-of-range values are clamped rather than rejected, and a reported list is never
 longer than what is tracked.
@@ -42,28 +42,32 @@ longer than what is tracked.
 ### Resource Limits {#resource-limits}
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `min_segment_size` | Minimum size before a segment is kept | `1MB` |
-| `max_download_duration_secs` | Max duration before splitting the recording | `0` (disabled) |
-| `max_part_size` | Max size before splitting the recording | `8GB` |
+| `min_segment_size_bytes` | Minimum size before a segment is kept | `1048576` (1 MiB) |
+| `max_download_duration_secs` | Max duration in seconds before splitting the recording | `0` (disabled) |
+| `max_part_size_bytes` | Max size before splitting the recording | `8589934592` (8 GiB) |
 
 ### Concurrency & Performance {#concurrency-performance}
 | Setting | Description | Default |
 |---------|-------------|---------|
 | `max_concurrent_downloads` | Max simultaneous recording tasks | `6` |
 | `max_concurrent_uploads` | Max simultaneous upload tasks | `3` |
-| `max_cpu_jobs` | Max concurrent CPU-intensive tasks | `0` (Auto) |
-| `max_io_jobs` | Max concurrent I/O-intensive tasks; Baidu Netdisk uploads run separately, one at a time | `8` (0 = Auto) |
-| `download_engine` | Engine used for recording (`ffmpeg`, `mesio`, etc.) | `mesio` |
-| `queue_freshness_threshold` | When a recording has been waiting for a free slot longer than this, rust-srec re-checks the streamer to refresh stream URLs and headers before starting. Useful on platforms whose signed URLs expire within minutes. Set to `0` to refresh on every queue wait. | `60 Secs` |
+| `max_concurrent_cpu_jobs` | Max concurrent CPU-intensive tasks | `0` (Auto) |
+| `max_concurrent_io_jobs` | Max concurrent I/O-intensive tasks; Baidu Netdisk uploads run separately, one at a time | `8` (0 = Auto) |
+| `default_download_engine` | Name of the [engine configuration](../concepts/engines.md) used for recording | `default-mesio` (the built-in Mesio configuration) |
+| `queue_freshness_threshold_ms` | Milliseconds; when a recording has been waiting for a free slot longer than this, rust-srec re-checks the streamer to refresh stream URLs and headers before starting. Useful on platforms whose signed URLs expire within minutes. Set to `0` to refresh on every queue wait. | `60000` (60 s) |
+| `pipeline_cpu_job_timeout_secs` | Longest a single CPU-bound pipeline job may run before it is cancelled (minimum `1`) | `3600` |
+| `pipeline_io_job_timeout_secs` | Longest a single I/O-bound pipeline job may run before it is cancelled (minimum `1`) | `3600` |
+| `pipeline_execute_timeout_secs` | Longest an `execute` processor command may run (minimum `1`) | `3600` |
+| `gpu_health_probe_interval_secs` | Seconds between `nvidia-smi` probes by the GPU health monitor; changes apply on the next probe (minimum `1`) | `30` |
 
-Which extractor resolves the stream URL is a separate setting from `download_engine`, is not exposed here, and is set per platform, template, or streamer. See [Engine and extractor selection](./configuration-overrides.md#engine-and-extractor-selection).
+Which extractor resolves the stream URL is a separate setting from `default_download_engine`, is not exposed here, and is set per platform, template, or streamer. See [Engine and extractor selection](./configuration-overrides.md#engine-and-extractor-selection).
 
 ### Network & System {#network-system}
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `streamer_check_interval` | Interval between checking streamer status | `60 Secs` |
-| `offline_check_interval` | Interval between checking offline status | `20 Secs` |
-| `offline_detection_count` | Consecutive offline signals before confirming the streamer is offline. A recording that ends cleanly counts as the first, so the default ends a session at the second offline check; see [Offline detection](configuration-overrides.md#offline-detection-and-download-failure-recovery-share-one-count). The same resolved count controls when consecutive download failures enter temporary cooldown. Download failures use a minimum threshold of `2`. | `3` |
+| `streamer_check_delay_ms` | Interval between checking streamer status, in milliseconds | `60000` (60 s) |
+| `offline_check_delay_ms` | Interval between offline checks, in milliseconds | `10000` (10 s) on new installations |
+| `offline_check_count` | Consecutive offline signals before confirming the streamer is offline. A recording that ends cleanly counts as the first, so the default ends a session at the second offline check; see [Offline detection](configuration-overrides.md#offline-detection-and-download-failure-recovery-share-one-count). The same resolved count controls when consecutive download failures enter temporary cooldown. Download failures use a minimum threshold of `2`. | `3` |
 | `proxy_route` | **Default proxy**: how requests connect unless a platform, template, streamer or account chooses otherwise. **Direct**, **System proxy**, or a [saved proxy](#proxies). See [Proxies](../concepts/configuration.md#proxies). | **Direct**, or **System proxy** when proxy environment variables were set at the first start or the upgrade |
 | `stream_proxy_allow_private_targets` | Let the player's **Server proxy** and proxy tests reach addresses on private or local networks | `false` |
 

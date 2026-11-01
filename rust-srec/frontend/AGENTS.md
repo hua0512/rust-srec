@@ -20,8 +20,9 @@ Applies to `rust-srec/frontend/`. Use the root rules for shared workflow and com
 
 ## WHERE TO LOOK
 
-- `src/routeTree.gen.ts`: AUTO-GENERATED route definitions. Do not edit.
-- `src/api/proto/gen/*_pb.ts`: AUTO-GENERATED Protobuf modules. Regenerate via `proto:gen`; `buf.gen.yaml` defines the output.
+- `src/routeTree.gen.ts`: AUTO-GENERATED route definitions.
+- `src/api/proto/gen/*_pb.ts`: AUTO-GENERATED Protobuf modules from `../proto`; `buf.gen.yaml` defines the output.
+- `src/locales/{en,zh-CN}/messages.po`: Lingui catalogs; the runtime loads the compiled `messages.ts` beside each.
 - `src/router.tsx` / `src/router.desktop.tsx`: Router configuration for web vs desktop.
 - `src/main.desktop.tsx`: Entry point for Tauri desktop build.
 
@@ -45,13 +46,15 @@ Run from `rust-srec/frontend/`. Use Node from the root `.nvmrc` and pnpm from th
 
 - `pnpm dev`: Start dev server on http://localhost:15275.
 - `pnpm build`: Production web build.
-- `pnpm build:desktop`: Production desktop build (requires Tauri context).
+- `pnpm dev:desktop`: Desktop (CSR) dev server on http://127.0.0.1:15275, used by `cargo tauri dev`.
+- `pnpm build:desktop`: Production desktop build into `dist-desktop/` (runs `proto:gen` first).
 - `pnpm proto:gen`: Regenerate Protobuf TypeScript modules using Buf.
 - `pnpm lint`: Run oxlint.
 - `pnpm fmt`: Apply oxfmt; review the diff for unrelated formatting changes.
 - `pnpm fmt:check`: Check formatting without rewriting files.
 - `pnpm test`: Run vitest.
 - `pnpm typecheck`: Check TypeScript types.
+- `pnpm extract` / `pnpm compile`: After changing UI strings, extract the Lingui catalogs, translate `zh-CN`, then compile `messages.ts`.
 
 ## VALIDATION
 

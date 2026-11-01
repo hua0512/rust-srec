@@ -5,10 +5,8 @@ For contributors changing sampling, database cache allocation, and log rotation.
 ## Startup Output Paths {#startup-output-paths}
 
 Startup discovers and caps the output-root paths once, then shares that exact
-snapshot between disk-health registration and the one-shot write probes. It does
-not repeat all streamer configuration lookups for the second consumer. Existing
-limits remain: at most 16 write-probe targets, four probes at a time, and a
-five-second timeout per probe. Later configuration changes still rely on actual
+snapshot between disk-health registration and the one-shot write probes. Limits: at most 16 write-probe targets, four probes at a time, and a
+five-second timeout per probe. Later configuration changes rely on actual
 output writes for write-gate feedback; the startup snapshot is not a live inventory.
 
 ## Slow Filesystem Sampling {#slow-filesystem-sampling}
@@ -31,17 +29,16 @@ The standard database pools share a 64 MiB suggested private page-cache budget:
 56 MiB is divided by the configured maximum number of read connections, rounding
 down to whole KiB, and 8 MiB is reserved for the single serialized writer. With
 10 readers, each uses `PRAGMA cache_size = -5734`; the writer uses `-8192`.
-The adaptive read-pool limit remains twice the available CPU count, capped at 10.
+The adaptive read-pool limit is twice the available CPU count, capped at 10.
 Rust callers of `init_pool_with_size` share the same reader allowance across their
 requested limit; opening the write pool separately uses the reserved writer allowance.
 
-This replaces a separate roughly 64 MiB allowance for every connection. Smaller
-private caches can cause more page reads for large working sets. The existing
-256 MiB `mmap_size` setting remains enabled for file-backed databases, allowing
+Small private caches can cause more page reads for large working sets. The
+256 MiB `mmap_size` setting is enabled for file-backed databases, allowing
 reads to use memory-mapped pages and the operating system's file cache. SQLite
 treats `cache_size` as a suggestion; this is not a hard limit on database or process
 memory. Mappings, temporary queries, connection overhead and the recorder's other
-services also contribute to memory use. No new environment variable is required.
+services also contribute to memory use.
 
 ## Logs {#logs}
 
@@ -86,8 +83,7 @@ by readers are outside that bound. Do not remove `.rust-srec.log.lock` while any
 instance is running; it also stores the rotation counter. Uncoordinated external
 writers or older application versions sharing the directory cannot honor these
 limits. If capacity cannot be reclaimed, file writes fail instead of exceeding
-the limits; console and live logging remain independent. The nonblocking producer
-queue is retained. Emergency panic writes in abort builds try the same ownership
+the limits; console and live logging remain independent. Emergency panic writes in abort builds try the same ownership
 without waiting and fall back to stderr on failure.
 
 Invalid limit settings or file initialization failures return a startup error.

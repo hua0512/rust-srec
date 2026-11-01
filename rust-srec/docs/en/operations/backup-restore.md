@@ -17,12 +17,10 @@ The configuration export can contain platform cookies, profile refresh/access to
 
 In the web interface, open **Settings > Backup & Restore** and download an export. The API equivalents are `GET /api/config/backup/export` and `POST /api/config/backup/import`.
 
-Filter and notification-subscription lookups use batches of up to 500 owners,
-preserving streamer/channel order and each owner's existing child order. If a
-batch read fails, the backend retries those owners individually so healthy
-neighbors remain in the export. As before, an owner whose related-data lookup
-still fails has an empty filter/subscription list; the backend logs the recovery
-and failure counts. Failures to load the main configuration lists still abort the export.
+If the filters or notification subscriptions of one streamer or channel cannot
+be read, that streamer or channel is exported with an empty list and the backend
+logs a warning; the rest of the export is unaffected. Failures to load the main
+configuration lists abort the export.
 
 Import supports two modes:
 
@@ -96,7 +94,7 @@ An export with no profiles, no selection and no [saved proxies](#proxies-in-back
 
 Profile UUIDs are preserved when free. An existing UUID is updated only if it belongs to the same platform; otherwise the entire import fails. Accounts are never guessed from labels or cookie contents. Profiles are matched to platforms by platform name. Repeated imports update the same accounts. All profile/reference validation and configuration writes share one transaction.
 
-Backups from versions that stored cookies in configuration are converted on import with the same rules as the [upgrade](../concepts/configuration.md#upgrading-from-configuration-cookies): their cookies, tokens and logins become profiles that the imported scopes select. The backup's schema version is kept, so its other fields are read as before.
+Backups from versions that stored cookies in configuration are converted on import with the same rules as the [upgrade](./upgrading.md#upgrading-from-configuration-cookies): their cookies, tokens and logins become profiles that the imported scopes select. The backup's schema version is kept, so its other fields are read as before.
 
 Merge retains omitted profiles and omitted selection policies; use an explicit `inherit` policy to reset a selection. Replace retires omitted profiles and removed owners, stops affected recordings after commit, and retains material until active sessions settle before physical deletion. Runtime publication continues even if the HTTP client disconnects. Restored material receives a new revision so old refresh results cannot overwrite it; later download attempts obtain fresh media. Managed profile health, throttle pauses, round-robin positions, session bindings, QR receipts and playback contexts are not configuration-backup data.
 
@@ -108,4 +106,4 @@ A schema `1.0.0` export includes every [saved proxy](../concepts/configuration.m
 
 Import matches each proxy in the bundle by name, or else by address and username, updating that proxy or creating a new one, before writing the settings that choose it. A setting naming a proxy that is neither in the bundle nor on the server rejects the import. Merge keeps saved proxies the bundle omits and keeps a scope's proxy setting when the bundle gives none. Replace sets such scopes to inherit, except the global setting, and deletes omitted proxies that nothing uses any more; proxies still in use stay. Restoring a proxy with a different address or username counts as changing the credentials of the accounts that choose it: they are checked again.
 
-Backups from versions before saved proxies are converted on import with the same rules as the [upgrade](../concepts/configuration.md#upgrading-proxy-settings), except that the server's environment variables are not consulted: a global proxy that was turned off becomes **Direct**. An address and username already saved on the server reuse that proxy, keeping its password; new proxies get names not yet taken.
+Backups from versions before saved proxies are converted on import with the same rules as the [upgrade](./upgrading.md#proxy-settings), except that the server's environment variables are not consulted: a global proxy that was turned off becomes **Direct**. An address and username already saved on the server reuse that proxy, keeping its password; new proxies get names not yet taken.

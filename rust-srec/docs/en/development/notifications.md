@@ -4,7 +4,7 @@ For contributors implementing channels and delivery workers. Operator setup is i
 
 ## SMTP ownership
 
-Email channels reuse SMTP connections for successive messages. Each configuration replacement owns a separate connection pool; deliveries already admitted against the previous configuration retain their original channel. Disabled or priority-filtered messages do not initialize SMTP transport. Email delivery remains immediate: the obsolete `batch_window_secs` setting is ignored in stored JSON and is no longer part of the Rust `EmailConfig` interface.
+Email channels reuse SMTP connections for successive messages. Each configuration replacement owns a separate connection pool; deliveries already admitted against the previous configuration retain their original channel. Disabled or priority-filtered messages do not initialize SMTP transport. Email is sent immediately; a `batch_window_secs` key in stored JSON is ignored.
 
 ## Localized rendering
 
@@ -48,8 +48,8 @@ oversized metadata fails before an HTTP request is sent.
 
 Channel registry/reload operations, source-event mappings, delivery/retries and the
 Web Push queue/worker each have a dedicated module. The public event catalog and
-localized rendering methods remain available through `notification::events`.
-Custom Rust channels can keep implementing `NotificationChannel::send`; the new
+localized rendering methods are in `notification::events`.
+Custom Rust channels implement `NotificationChannel::send`; the
 optional `send_rendered` method receives a `RenderedEvent` for integrations that
 want to reuse the shared title/body. Direct built-in sends use the same filtering
 and payload construction as queued delivery. The default `test` method follows

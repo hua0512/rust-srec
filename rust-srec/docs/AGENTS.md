@@ -12,6 +12,8 @@ VitePress-based documentation site for `rust-srec`. Multi-language (EN/ZH).
 - `reference/`: Settings, environment variables, filename templates, processors, and workflow definitions.
 - `operations/`: Deployment, storage, backup, monitoring, and security procedures.
 - `development/`: Runtime architecture and implementation contracts for contributors.
+- `platforms/`, `api/`: Per-platform pages and API/MCP access.
+- `release-notes/`: Versioned notes plus the `unreleased.md` staging page; at the docs root, `release-notes-body.md` is the GitHub release body and `release-notes.md` describes that workflow.
 - `.vitepress/`: VitePress engine, configuration, and theme.
   - `config.mts`: Central source of truth for sidebar, navbar, and locale routing.
 - `public/`: Static assets (logos, diagrams, sample configuration files).

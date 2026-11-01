@@ -54,11 +54,6 @@ Session authorization checks durable revocation and current user state on every
 request that could grant access; a database failure cannot fall back to a cached
 grant. These actions do not revoke separately managed API keys.
 
-After upgrading to session-bound access tokens, previously issued unbound JWTs
-can no longer authenticate. An existing valid refresh token can be exchanged for
-a bound token pair; otherwise sign in again. Clients must handle this one-time
-refresh or sign-in boundary even when an old access token has not yet expired.
-
 ## Refresh Token Rotation
 
 Clients must serialize refresh requests and save the replacement token before
@@ -74,7 +69,6 @@ from a session already closed by logout does not sign out other devices.
 `REFRESH_TOKEN_REUSE_GRACE_SECS` defaults to `0`. A positive value suppresses
 revocation of other sessions for replays within that many seconds of the original
 revocation, but the replay still fails and never issues another token pair.
-Unlike earlier versions, grace does not permit refreshing with a revoked token.
 A request that loses the atomic rotation race follows the same reuse policy, so
 with default settings it also revokes the winner's access and refresh tokens. Clients must
 serialize refreshes, including across tabs or server instances.

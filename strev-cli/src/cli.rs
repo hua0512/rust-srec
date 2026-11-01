@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "strev-cli",
+    name = "strev",
     about = "Strev (Streev) - CLI tool for streaming media extraction and retrieval from various platforms",
     version,
     author

@@ -3,19 +3,19 @@
 ## AcFun
 
 - **URL**: `https://live.acfun.cn/live/{room_id}`
-- **Protocol**: HLS
+- **Protocol**: FLV
 - **Danmaku**: ❌ Not supported
 
 ## PandaTV
 
-- **URL**: `https://www.pandalive.co.kr/{room_id}`
-- **Protocol**: FLV
+- **URL**: `https://www.pandalive.co.kr/play/{id}`
+- **Protocol**: HLS
 - **Danmaku**: ❌ Not supported
 
 ## Picarto
 
 - **URL**: `https://picarto.tv/{channel}`
-- **Protocol**: HLS
+- **Protocol**: HLS/MP4
 - **Danmaku**: ❌ Not supported
 
 ## Redbook (小红书)
@@ -38,11 +38,15 @@ Share links need no account. If you select an [account profile](../concepts/conf
 - **Protocol**: HLS
 - **Danmaku**: ✅ Supported
 
+::: info Password-protected broadcasts
+Add the password to the streamer URL as `?password=...`, for example `https://twitcasting.tv/{user}?password=secret`.
+:::
+
 ## Weibo
 
 - **URL**: `https://weibo.com/l/wblive/p/show/{id}`, `https://weibo.com/u/{uid}`
-- **Protocol**: HLS
+- **Protocol**: FLV/HLS
 - **Danmaku**: ❌ Not supported
 ::: info
-Links in the format `https://weibo.com/u/{uid}` require a logged-in [account profile](../concepts/configuration.md#account-profiles-and-selection).
+Without an account, Weibo is accessed with a built-in guest session, which can stop working. If links, especially `https://weibo.com/u/{uid}`, stop resolving, add a logged-in [account profile](../concepts/configuration.md#account-profiles-and-selection).
 :::

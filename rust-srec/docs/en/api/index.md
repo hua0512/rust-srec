@@ -69,9 +69,9 @@ key cannot act as this optional session credential. Authenticated
 revoke existing sessions atomically and require a new login; successful
 configuration imports also revoke login sessions and refresh tokens.
 
-After upgrading to session-bound JWTs, old unbound access tokens are rejected.
-Use an existing valid refresh token once to obtain a bound token pair, or sign in
-again. `GET /api/auth/sessions` still lists active refresh-token records: IDs may
+Access tokens that are not bound to a login session are rejected; use a valid
+refresh token to obtain a bound token pair, or sign in again.
+`GET /api/auth/sessions` lists active refresh-token records: IDs may
 change on rotation, and sessions whose refresh token has expired or been cleaned
 up may be absent even while their access token is valid.
 
@@ -87,18 +87,21 @@ Treat access tokens, refresh tokens, cookies, and platform credentials as secret
 
 | Prefix | Purpose | Authentication |
 |---|---|---|
-| `/api/health` | Liveness, readiness, and dependency status | Mixed; only `/live` is public when auth is enabled |
+| `/api/health` | Liveness, readiness, idle state, and dependency status | Mixed; `/live` and `/idle` are public |
 | `/api/auth` | Login, refresh, logout, password change, sessions | Mixed; see Swagger |
 | `/api/streamers` | Streamer CRUD, checks, filters, and batch actions | Bearer token |
 | `/api/config` | Global/platform configuration and backup import/export | Bearer token |
 | `/api/templates` | Reusable configuration templates | Bearer token |
 | `/api/engines` | Download engine instances | Bearer token |
 | `/api/sessions` | Recording sessions | Bearer token |
-| `/api/pipeline` | Workflows, jobs, presets, executions, and outputs | Bearer token |
+| `/api/pipeline` | Workflows, jobs, pipeline presets, executions, and outputs | Bearer token |
+| `/api/job` | Job presets | Bearer token |
 | `/api/notifications` | Channels, subscriptions, preferences, and events | Bearer token |
 | `/api/credentials` | Account profiles, selection status, validation, refresh and QR login | Bearer token |
 | `/api/proxies` | Saved proxies, reachability tests and effective proxy settings | Bearer token; API keys need `full` access |
 | `/api/parse` | URL and metadata parsing | Bearer token |
+| `/api/tools/baidupcs` | BaiduPCS-Go account status, login and logout | Bearer token |
+| `/api/mcp` | MCP server (Streamable HTTP) | Bearer token; see [API Keys & MCP](./api-keys-mcp.md) |
 | `/api/downloads`, `/api/logging`, `/api/media`, `/api/stream-proxy` | Realtime or media access | Route-specific; inspect Swagger |
 
 Use the generated OpenAPI document for request and response schemas instead of guessing fields from this summary.
@@ -206,14 +209,12 @@ Clients should branch on HTTP status and `code`, not parse the human-readable `m
 accepts at most 100 session IDs. Larger arrays receive `422` before any item is
 processed. Split larger work into separate requests; empty arrays remain valid.
 Login device descriptions are limited to 256 Unicode characters in logs and
-newly stored tokens. Refresh also bounds descriptions inherited from older
-tokens; existing rows are not bulk-rewritten.
+newly stored tokens, including descriptions a refreshed token inherits.
 
 Internal database, filesystem, stored-JSON and credential errors use generic
 responses rather than embedding backend diagnostics. Safe request-validation
-messages remain descriptive. Credential refresh retains its existing `400`
-status and `requires_relogin` indication.
+messages stay descriptive. A credential refresh that needs a new login returns `422` with code `PLATFORM_AUTHENTICATION_REQUIRED`; a platform rate limit returns `429` with `Retry-After`; other provider failures return a generic error.
 
-The v0.5 API paths are not prefixed with a version. Pin the backend image or binary version, keep the matching OpenAPI JSON with generated clients, and test before upgrading. Breaking behavior is described in the [Release Notes](../release-notes/).
+API paths are not prefixed with a version. Pin the backend image or binary version, keep the matching OpenAPI JSON with generated clients, and test before upgrading. Breaking behavior is described in the [Release Notes](../release-notes/).
 
 For network deployments, terminate TLS at a reverse proxy, restrict the API to intended clients, and do not expose Swagger publicly unless it is needed. See [Security](../operations/security.md) and [Production Deployment](../operations/production.md).

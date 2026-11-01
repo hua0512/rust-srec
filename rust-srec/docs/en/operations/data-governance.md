@@ -42,7 +42,7 @@ For a retention or erasure policy this means removing a streamer is not the eras
 
 A pipeline can still change remote data, just not as part of a deletion the application offers: an `rclone` step set to `sync` removes files at the destination that are absent from the source, `args` passes arbitrary flags through to rclone, and an `execute` step runs whatever command it is given. Treat those steps as having the full reach of the credentials they run with.
 
-Two narrow cases delete a file without being asked to: a recorded segment below `min_segment_size_bytes` is removed from disk with its sibling chat file while the session is still running, and a failed pipeline job's partial outputs are cleaned up. Neither substitutes for a retention policy.
+Three cases delete a file without a per-file request: a recorded segment below `min_segment_size_bytes` is removed from disk with its sibling chat file while the session is still running; a failed pipeline job's partial outputs are cleaned up; and [output retention](../reference/settings.md#retention), when enabled with **Delete records and files**, removes the tracked files of expired outputs. Output retention covers registered media outputs only, not every derivative or remote copy, so none of these substitutes for a complete retention policy.
 
 Database changes roll back together if a media-record deletion fails. Optional filesystem deletion is not transactional.
 
@@ -52,7 +52,7 @@ Sessions, pipeline jobs, notification events, and logs are operational tools, no
 
 ## Decommissioning
 
-Disable streamers, revoke platform and notification credentials, revoke user sessions, stop the service, inventory remote outputs, then erase or archive data according to policy. Neither disabling nor deleting streamers is a purge: recording history and the streamer names stored on it survive a streamer delete, and no delete removes a media file unless it is a media-output delete asked to remove the file too. Include configuration exports and backups; deleting the live database alone is insufficient.
+Disable streamers, revoke platform and notification credentials, revoke user sessions, stop the service, inventory remote outputs, then erase or archive data according to policy. Neither disabling nor deleting streamers is a purge: recording history and the streamer names stored on it survive a streamer delete, and no delete removes a media file unless it is a media-output delete asked to remove the file too, or output retention set to delete files. Include configuration exports and backups; deleting the live database alone is insufficient.
 
 <div id="concurrent-database-updates" class="legacy-section">
 

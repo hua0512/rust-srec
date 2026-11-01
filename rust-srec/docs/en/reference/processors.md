@@ -8,18 +8,20 @@ Each pipeline step is executed by a specialized processor:
 
 | Processor ID | Function | Core Parameters |
 |--------------|----------|-----------------|
-| `remux` | Changes container format, optionally re-encoding | `format`, `video_codec`, `audio_codec` |
-| `danmaku_factory` | Danmaku conversion | `output_format` (ass) |
-| `ass_burnin` | Hard-burn subtitles into video | Processor preset configuration |
+| `remux` | Changes container format, optionally re-encoding | `format`, `video_codec`, `audio_codec`, `crf`, `preset`, `remove_input_on_success` |
+| `danmaku_factory` | Converts danmaku XML to ASS subtitles with DanmakuFactory | `binary_path`, `args`, `extra_args`, `delete_source_xml_on_success` |
+| `ass_burnin` | Hard-burns ASS subtitles into the matching video | `match_strategy`, `video_codec`, `crf`, `preset`, `fonts_dir`, `delete_source_videos_on_success` |
 | `thumbnail` | Extracts a video frame as an image | `timestamp_secs`, `width`, `quality`, `preserve_resolution` |
-| `audio_extract` | Extracts an audio track | `format`, `bitrate`, `sample_rate` |
+| `audio_extract` | Extracts an audio track | `format`, `bitrate`, `sample_rate`, `channels`, `output_path` |
 | `compression` | Bundles files into a ZIP or tar.gz archive | `format`, `compression_level`, `output_path`, `overwrite`, `preserve_paths` |
 | `rclone` | Cloud synchronization | `destination_root`, `operation`, `time_anchor`, `max_retries`, `args` |
 | `baidupcs` | Baidu Netdisk upload via BaiduPCS-Go | `destination_root`, `policy`, `norapid`, `time_anchor`, `args` |
-| `copy_move` | Copies or moves local files | Destination and operation settings |
-| `metadata` | Writes metadata (nfo, json) | - |
-| `delete` | Automatically cleans up files | - |
+| `copy_move` | Copies or moves local files | `operation`, `destination`, `time_anchor`, `overwrite`, `exclude_patterns` |
+| `metadata` | Embeds metadata tags into the media file with FFmpeg | `title`, `artist`, `date`, `album`, `comment`, `custom` |
+| `delete` | Deletes the files it receives, that is, the outputs of the steps it depends on | `max_retries`, `retry_delay_ms` |
 | `execute` | Runs a program or custom shell command | `program`, `args` or `command`, `scan_output_dir`, `scan_extension` |
+
+FFmpeg-based processors use `FFMPEG_PATH` when it is set, and the external-tool processors read their own [path variables](./environment.md#external-tools).
 
 `rclone` and `baidupcs` retry a failed upload within the same job run; each retry is noted in the job log, and the job's progress and the top bar show which attempt is running.
 

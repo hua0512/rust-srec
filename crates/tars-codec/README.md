@@ -1,151 +1,75 @@
-# TARS Codec - Zero-Copy Implementation
+# TARS Codec
 
-A high-performance, zero-copy implementation of the TARS (Tencent Application Request System) protocol for Rust.
+An encoder and decoder for the TARS (Tencent Application Request System) wire
+protocol, built on the `bytes` crate. In this workspace it backs the Huya
+extractor and danmaku client in `platforms-parser`.
 
 ## Features
 
-### 🚀 Zero-Copy Performance
-
-- **StringRef**: Zero-copy string parsing using `Bytes` - avoids allocations until conversion needed
-- **Binary**: Zero-copy binary data handling
-- **Efficient Collections**: Uses `SmallVec` and `FxHashMap` for optimal performance
-- **Bytes Integration**: Full integration with the `bytes` crate for zero-copy buffer management
-
-### 🔧 Dual API Design
-
-- **Standard API**: Backward-compatible, allocates strings as needed
-- **Zero-Copy API**: Optional zero-copy mode for maximum performance
+- **Message framing**: `TarsCodec` implements `tokio_util::codec::{Decoder, Encoder}`
+  for length-prefixed `TarsMessage` frames (request header plus a body of named
+  raw payloads).
+- **Value model**: `TarsValue` covers the TARS types (integers, floats, strings,
+  structs, maps, lists, `SimpleList` byte arrays) and keeps binary payloads as
+  `Bytes`.
+- **Zero-copy strings**: `TarsValue::StringRef(Bytes)` holds string data without
+  copying; `decode_response_zero_copy` decodes a frame in that mode.
+- **Compact collections**: lists use `SmallVec`, structs and maps use `FxHashMap`.
 
 ## Usage
 
-### Standard Usage (Backward Compatible)
+### Decoding a response frame
+
+`TarsMessage::body` maps each field name to its raw TARS-encoded payload.
+Decode a payload with `decode_tars_value`, or with `decode_tars_struct` when it
+is a struct without the outer struct begin/end markers.
 
 ```rust
-use tars_codec::{decode_response, TarsMessage};
 use bytes::BytesMut;
+use tars_codec::{TarsError, decode_response, decode_tars_value};
 
-let mut buffer = BytesMut::from(&data[..]);
-let message = decode_response(&mut buffer)?;
-```
+fn read_frame(buffer: &mut BytesMut) -> Result<(), TarsError> {
+    // `None` means the buffer does not yet hold a complete frame.
+    let Some(message) = decode_response(buffer)? else {
+        return Ok(());
+    };
 
-### Zero-Copy Usage (Maximum Performance)
-
-```rust
-use tars_codec::{decode_response_zero_copy, TarsValue};
-use bytes::Bytes;
-
-// Zero-copy decoding - strings remain as Bytes until accessed
-let bytes = Bytes::from(data);
-let message = decode_response_zero_copy(bytes)?;
-
-// Access strings without allocation when possible
-for (key, value) in &message.body {
-    if let Some(tars_value) = value.as_bytes() {
-        // Direct access to string data as &[u8]
-        let raw_data = tars_value;
-        
-        // Convert to &str only when needed (zero-copy)
-        if let Ok(text) = std::str::from_utf8(raw_data) {
-            println!("String content: {}", text);
+    for (name, payload) in &message.body {
+        let value = decode_tars_value(payload.clone())?;
+        if let Some(text) = value.as_str() {
+            println!("{name}: {text}");
         }
     }
-}
-```
-
-### Accessing String Data
-
-```rust
-// Zero-copy string access
-if let Some(text) = tars_value.as_str() {
-    println!("Text: {}", text); // No allocation!
-}
-
-// Convert to owned String only when needed
-if let Some(owned) = tars_value.into_string() {
-    // Allocates only if the value was StringRef
-    return owned;
-}
-```
-
-## Performance Benefits
-
-### Memory Efficiency
-
-- **Reduced Allocations**: String data stays as reference-counted `Bytes`
-- **Zero-Copy Slicing**: Use `bytes.slice()` for substring operations
-- **Lazy Conversion**: Strings converted to `String` only when explicitly needed
-
-### CPU Efficiency
-
-- **FxHashMap**: 2-3x faster than `std::collections::HashMap` using rustc-hash
-- **SmallVec**: Stack-allocated small arrays avoid heap allocation
-- **Direct Buffer Access**: No intermediate copying for binary data
-
-### Network Efficiency
-
-- **Shared Buffers**: Multiple values can reference the same underlying buffer
-- **Reference Counting**: Automatic memory management without GC overhead
-- **Zero-Copy Parsing**: Parse directly from network buffers
-
-## API Reference
-
-### Zero-Copy Types
-
-- `TarsValue::StringRef(Bytes)` - Zero-copy string data
-- `TarsValue::Binary(Bytes)` - Zero-copy binary data
-- `TarsValue::SimpleList(Bytes)` - Zero-copy byte arrays
-
-### Methods
-
-- `decode_response_zero_copy(bytes)` - Zero-copy message parsing
-- `TarsValue::as_str()` - Zero-copy string access
-- `TarsValue::into_string()` - Convert to owned String when needed
-- `TarsValue::as_bytes()` - Direct access to underlying bytes
-
-## Example: High-Performance Stream Processing
-
-```rust
-use tars_codec::{decode_response_zero_copy, TarsValue};
-use bytes::Bytes;
-
-fn process_stream(data: Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
-    let bytes = Bytes::from(data);
-    let message = decode_response_zero_copy(bytes)?;
-    
-    // Process without allocations
-    for (key, value_bytes) in &message.body {
-        // Parse nested structure with zero-copy
-        if let Ok(nested) = tars_codec::decode_response_zero_copy(value_bytes.clone()) {
-            // Access string fields without allocation
-            for field in nested.body.values() {
-                if let Some(text) = field.as_str() {
-                    // Zero-copy string processing
-                    process_text_field(text);
-                }
-            }
-        }
-    }
-    
     Ok(())
 }
-
-fn process_text_field(text: &str) {
-    // Work directly with borrowed string data
-    println!("Processing: {}", text);
-}
 ```
 
-## Performance Comparison
+`decode_response_from_bytes` and `decode_response_zero_copy` decode one complete
+frame from owned `Bytes`; the zero-copy variant keeps strings as
+`TarsValue::StringRef` instead of allocating `String`s.
 
-| Operation | Standard | Zero-Copy | Improvement |
-|-----------|----------|-----------|-------------|
-| String Parsing | Allocation per string | Reference only | 50-80% faster |
-| Memory Usage | Full copy | Shared reference | 60-90% reduction |
-| Binary Data | Vec allocation | Direct slice | Zero overhead |
+### Encoding
 
-## Dependencies
+- `encode_request(&TarsMessage)` encodes a framed request.
+- `encode_tars_value(&TarsValue)` encodes a value; a `TarsValue::Struct` is
+  written as its fields only.
+- `encode_tars_value_wrapped(&TarsValue)` encodes a value with struct begin/end
+  markers.
+- `next_request_id()` returns a process-wide incrementing request ID.
 
-- `bytes = "1.0"` - Zero-copy buffer management
-- `smallvec = "1.15"` - Stack-optimized small collections  
-- `rustc-hash = "2.1"` - High-performance FxHashMap implementation
-- `tokio-util = "0.7"` - Codec traits for async integration
+### Value accessors
+
+- `TarsValue::as_str()` borrows `String` and `StringRef` values as `&str`.
+- `TarsValue::into_string()` returns an owned `String`, copying only `StringRef`
+  data.
+- `TarsValue::as_bytes()` borrows `SimpleList`, `Binary` and `StringRef` data.
+- `TarsValue::as_i32()` reads `Byte`, `Short` and `Int` values.
+
+## Example
+
+`examples/allocation_demo.rs` compares the memory layout of `SmallVec` and
+`Vec` list storage for `TarsValue`:
+
+```bash
+cargo run --locked -p tars-codec --example allocation_demo
+```

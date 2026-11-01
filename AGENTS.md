@@ -10,7 +10,7 @@ Use the map below to locate the task. Read supporting docs, examples, and skills
 | --- | --- |
 | Backend: REST API, scheduler, pipeline, SQLite | `rust-srec/`, package `rust-srec`; [backend rules](rust-srec/AGENTS.md) |
 | CLIs | `strev-cli/` (package `strev`), `mesio-cli/` (package `mesio`) |
-| Protocols, containers, platform extractors, download engine | `crates/*`; use the affected crate's `Cargo.toml` for its package name |
+| Protocols, containers, platform extractors, download engine | `crates/*`; [crate map and module guide](crates/AGENTS.md) |
 | Web UI and desktop frontend | `rust-srec/frontend/`; [frontend rules](rust-srec/frontend/AGENTS.md) |
 | Desktop wrapper | `rust-srec/src-tauri/`; [desktop rules](rust-srec/src-tauri/AGENTS.md) |
 | Documentation site | `rust-srec/docs/`; [docs rules](rust-srec/docs/AGENTS.md) |
