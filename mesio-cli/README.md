@@ -114,7 +114,7 @@ Name template placeholders: `%u` (unique identifier), `%Y` (year), `%m` (month),
 ### Flv Processing Options
 
 ```text
-  -k, --keyframe-index                Inject keyframe index in metadata for better seeking [default: true]
+  -k, --keyframe-index[=<BOOL>]       Inject keyframe index in metadata for better seeking; --keyframe-index=false disables it [default: true]
 ```
 
 ### HLS Options
@@ -126,7 +126,7 @@ Name template placeholders: `%u` (unique identifier), `%Y` (year), `%m` (month),
       --hls-playlist-retries <NUM>               Number of retry attempts for failed playlist downloads [default: 5]
       --hls-retries <NUM>                        Number of retry attempts for failed segments [default: 3]
       --hls-segment-timeout <SEC>                Timeout for individual segment downloads in seconds [default: 10]
-      --hls-cache-playlists                      Enable caching of HLS playlists [default: true]
+      --hls-cache-playlists[=<BOOL>]             Enable caching of HLS playlists; =false disables it [default: true]
 ```
 
 ### DASH Options
@@ -193,7 +193,7 @@ With HTTP/2, concurrent HLS and DASH segment downloads share one connection.
       --proxy-type <TYPE>        Proxy type: http, https, socks5 [default: http]
       --proxy-user <USERNAME>    Username for proxy authentication
       --proxy-pass <PASSWORD>    Password for proxy authentication
-      --use-system-proxy         Use system proxy settings if no explicit proxy is configured [default: true]
+      --use-system-proxy[=<BOOL>]  Use system proxy settings if no explicit proxy is configured; =false disables it [default: true]
       --no-proxy                 Disable all proxy settings for downloads
 ```
 
