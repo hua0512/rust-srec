@@ -1,6 +1,6 @@
 # platforms-parser
 
-[![License](https://img.shields.io/crates/l/platforms-parser.svg)](https://github.com/hua0512/rust-srec/blob/main/LICENSE)
+[![License](https://img.shields.io/crates/l/platforms-parser.svg)](https://github.com/hua0512/rust-srec#license)
 
 This library provides a unified interface to extract streaming media information (like video URLs, titles, and metadata) from various live streaming and video-on-demand platforms.
 
@@ -121,5 +121,5 @@ responses redact network and login material.
 
 This project is licensed under either of the following, at your option:
 
-* MIT License
-* Apache License, Version 2.0
+* [MIT License](https://github.com/hua0512/rust-srec/blob/main/LICENSE-MIT)
+* [Apache License, Version 2.0](https://github.com/hua0512/rust-srec/blob/main/LICENSE-APACHE)

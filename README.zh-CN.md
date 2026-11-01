@@ -100,4 +100,4 @@ cargo fmt --all                   # 格式化代码
 
 ## 开源协议
 
-基于 [MIT 协议](./LICENSE)发布。
+可任选 [MIT 协议](./LICENSE-MIT) 或 [Apache 2.0 协议](./LICENSE-APACHE) 使用。
