@@ -600,7 +600,7 @@ async fn definitive_offline_bypasses_streamer_disabled_until() {
     streamer_repo.update_streamer(&streamer).await.unwrap();
 
     // `make_lifecycle_fast` shrinks the hysteresis backstop to 25 ms so
-    // the test doesn't have to wait for the default 80 s window in case
+    // the test doesn't have to wait for the default 40 s window in case
     // the classifier never promotes. The backoff-bypass invariant being
     // tested is independent of the hysteresis window length.
     let lifecycle = make_lifecycle_fast(pool.clone());

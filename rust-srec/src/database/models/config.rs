@@ -169,8 +169,9 @@ impl Default for GlobalConfigDbModel {
             max_concurrent_downloads: 6,
             max_concurrent_uploads: 3,
             streamer_check_delay_ms: 60000,
-            offline_check_delay_ms: 20000,
-            offline_check_count: 3,
+            offline_check_delay_ms: crate::streamer::metadata::DEFAULT_OFFLINE_CHECK_DELAY_MS
+                as i64,
+            offline_check_count: crate::streamer::metadata::DEFAULT_OFFLINE_CHECK_COUNT as i32,
             default_download_engine: "mesio".to_string(),
             default_extractor: None,
             max_concurrent_cpu_jobs: 0, // Auto

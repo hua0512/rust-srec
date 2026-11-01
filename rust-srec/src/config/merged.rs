@@ -699,8 +699,14 @@ impl MergedConfigBuilder {
             paired_segment_pipeline: self.paired_segment_pipeline,
             platform_extras: self.platform_extras,
             auto_thumbnail: self.auto_thumbnail.unwrap_or(true),
-            offline_check_count: self.offline_check_count.unwrap_or(3).max(1),
-            offline_check_delay_ms: self.offline_check_delay_ms.unwrap_or(20_000).max(1_000),
+            offline_check_count: self
+                .offline_check_count
+                .unwrap_or(crate::streamer::metadata::DEFAULT_OFFLINE_CHECK_COUNT)
+                .max(1),
+            offline_check_delay_ms: self
+                .offline_check_delay_ms
+                .unwrap_or(crate::streamer::metadata::DEFAULT_OFFLINE_CHECK_DELAY_MS)
+                .max(1_000),
         }
     }
 }

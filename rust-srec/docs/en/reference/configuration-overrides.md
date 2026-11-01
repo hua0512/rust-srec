@@ -39,8 +39,8 @@ runtime uses the resolved per-streamer value for both:
 - consecutive download failures before placing the streamer into temporary cooldown
 
 A recording that ends cleanly because the stream stopped counts as the first offline signal; the
-rest come from offline checks `offline_check_delay_ms` apart. With the defaults of a new
-installation (`3` and 10 seconds) the session ends at the second offline check, about 20 seconds
+rest come from offline checks `offline_check_delay_ms` apart. With the defaults
+(`3` and 10 seconds) the session ends at the second offline check, about 20 seconds
 after the recording stopped, and a count of `1` or `2` ends it at the first check. A recording that stops with a
 network or download error does not count, so all `offline_check_count` checks are needed. If the
 streamer is live again before offline is confirmed, recording continues in the same session. When
