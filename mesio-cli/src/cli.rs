@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use clap::{Parser, ValueEnum};
+use clap::{ArgAction, Parser, ValueEnum};
 use mesio_engine::dash::{AudioSelection, LiveStartPolicy, VideoSelection};
 use mesio_engine::{
     DashConfig, DashProtocolBuilder, DownloaderConfig, ProtocolSelection, ProxyType,
@@ -86,8 +86,12 @@ pub struct CliArgs {
     #[arg(
         short = 'k',
         long,
-        default_value = "true",
-        help = "Inject keyframe index in metadata for better seeking"
+        action = ArgAction::Set,
+        num_args = 0..=1,
+        require_equals = true,
+        default_value_t = true,
+        default_missing_value = "true",
+        help = "Inject keyframe index in metadata for better seeking (disable with --keyframe-index=false)"
     )]
     pub keyframe_index: bool,
 
@@ -169,8 +173,12 @@ pub struct CliArgs {
     /// Use system proxy settings for downloads
     #[arg(
         long,
-        default_value = "true",
-        help = "Use system proxy settings for downloads if no explicit proxy is configured"
+        action = ArgAction::Set,
+        num_args = 0..=1,
+        require_equals = true,
+        default_value_t = true,
+        default_missing_value = "true",
+        help = "Use system proxy settings for downloads if no explicit proxy is configured (disable with --use-system-proxy=false)"
     )]
     pub use_system_proxy: bool,
 
@@ -268,8 +276,12 @@ pub struct CliArgs {
     /// Enable HLS playlist caching
     #[arg(
         long,
-        default_value = "true",
-        help = "Enable caching of HLS playlists to reduce redundant downloads"
+        action = ArgAction::Set,
+        num_args = 0..=1,
+        require_equals = true,
+        default_value_t = true,
+        default_missing_value = "true",
+        help = "Enable caching of HLS playlists to reduce redundant downloads (disable with --hls-cache-playlists=false)"
     )]
     pub hls_cache_playlists: bool,
 
@@ -589,6 +601,27 @@ mod tests {
     fn command_definition_is_valid() {
         use clap::CommandFactory;
         CliArgs::command().debug_assert();
+    }
+
+    #[test]
+    fn default_on_flags_can_be_turned_off_without_swallowing_the_url() {
+        let defaults = parse(&[]).unwrap();
+        assert!(
+            defaults.keyframe_index && defaults.use_system_proxy && defaults.hls_cache_playlists
+        );
+
+        let off = parse(&[
+            "--keyframe-index=false",
+            "--use-system-proxy=false",
+            "--hls-cache-playlists=false",
+        ])
+        .unwrap();
+        assert!(!off.keyframe_index && !off.use_system_proxy && !off.hls_cache_playlists);
+
+        // A bare flag stays a switch: the URL after `-k` is still the input.
+        let bare = parse(&["-k"]).unwrap();
+        assert!(bare.keyframe_index);
+        assert_eq!(bare.input, ["https://example.com/live.mpd"]);
     }
 
     #[test]
