@@ -101,4 +101,4 @@ Contributions welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## License
 
-Licensed under either of the [MIT License](./LICENSE-MIT) or the [Apache License, Version 2.0](./LICENSE-APACHE), at your option.
+Licensed under either of the [MIT License](./LICENSE-MIT) or the [Apache License, Version 2.0](./LICENSE-APACHE), at your option. Third-party attributions are in [NOTICE](./NOTICE).

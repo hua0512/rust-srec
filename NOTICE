@@ -1,0 +1,25 @@
+rust-srec
+Copyright (c) 2025 the rust-srec project authors
+
+Licensed under either of the MIT License (LICENSE-MIT) or the Apache License,
+Version 2.0 (LICENSE-APACHE), at your option.
+
+This product includes software derived from the Scuffle project
+(https://github.com/ScuffleCloud/scuffle):
+
+    Copyright 2025 Scuffle LLC.
+    Licensed under either of the MIT License or the Apache License,
+    Version 2.0, at your option. The texts of both licences are in
+    LICENSE-MIT and LICENSE-APACHE.
+
+The following crates are derived from Scuffle crates of the same name:
+
+    crates/aac
+    crates/av1
+    crates/bytes-util
+    crates/expgolomb
+    crates/h264
+    crates/h265 (fork of scuffle_h265)
+
+Parts of crates/flv (audio, video and script tag parsing) are based on
+Scuffle's flv crate.
