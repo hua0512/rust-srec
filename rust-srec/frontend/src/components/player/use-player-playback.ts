@@ -269,6 +269,7 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
   const [supportsLivePresets, setSupportsLivePresets] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<ArtplayerInstance | null>(null);
+  const [player, setPlayer] = useState<ArtplayerInstance | null>(null);
   const statisticsReader = useRef<(() => PlaybackStatistics) | null>(null);
   const [statistics, setStatistics] = useState<PlaybackStatistics | null>(null);
   const volumeRef = useRef(volume);
@@ -384,6 +385,7 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
         currentArt.video.pause();
         currentArt.destroy(false);
         if (playerRef.current === currentArt) playerRef.current = null;
+        setPlayer((current) => (current === currentArt ? null : current));
       }
       container.replaceChildren();
     };
@@ -523,6 +525,7 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
           return;
         }
         playerRef.current = createdArt;
+        setPlayer(createdArt);
         statisticsReader.current = () =>
           readPlaybackStatistics(createdArt.video, isLive, hls?.latency);
 
@@ -619,6 +622,7 @@ export function usePlayerPlayback(options: UsePlayerPlaybackOptions) {
   );
   return {
     containerRef,
+    player,
     error: playbackError,
     loading,
     reload,

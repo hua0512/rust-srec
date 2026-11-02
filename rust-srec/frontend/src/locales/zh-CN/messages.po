@@ -463,6 +463,16 @@ msgstr "1（最佳）- 31（最差）"
 msgid "1 year"
 msgstr "1 年"
 
+#: src/components/player/danmu-settings-panel.tsx:34
+msgctxt "danmu area"
+msgid "1/2"
+msgstr "半屏"
+
+#: src/components/player/danmu-settings-panel.tsx:33
+msgctxt "danmu area"
+msgid "1/4"
+msgstr "1/4 屏"
+
 #: src/components/notifications/forms/telegram-form.tsx:50
 msgid "123456:ABC-DEF..."
 msgstr "123456:ABC-DEF..."
@@ -478,6 +488,11 @@ msgstr "2"
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:252
 msgid "24-hour timeline"
 msgstr "24 小时时间线"
+
+#: src/components/player/danmu-settings-panel.tsx:35
+msgctxt "danmu area"
+msgid "3/4"
+msgstr "3/4 屏"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:490
 msgid "30 days"
@@ -1272,7 +1287,7 @@ msgstr "认证"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:249
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:68
-#: src/components/player/player-card.tsx:248
+#: src/components/player/player-card.tsx:253
 msgid "Auto"
 msgstr "自动"
 
@@ -1461,7 +1476,7 @@ msgstr "未找到 BaiduPCS-Go 可执行文件（<0>{0}</0>）。请先安装，�
 msgid "BaiduPCS-Go Executable (Optional)"
 msgstr "BaiduPCS-Go 可执行文件（可选）"
 
-#: src/components/player/player-card.tsx:290
+#: src/components/player/player-card.tsx:295
 msgid "Balanced"
 msgstr "均衡"
 
@@ -1541,6 +1556,11 @@ msgstr "比特率"
 msgid "Blacklisted CDNs"
 msgstr "CDN黑名单"
 
+#: src/components/player/danmu-settings-panel.tsx:339
+msgctxt "danmu blocklist"
+msgid "Block"
+msgstr "屏蔽"
+
 #: src/components/pipeline/status-config.ts:140
 msgid "Blocked"
 msgstr "已阻止"
@@ -1548,6 +1568,10 @@ msgstr "已阻止"
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:329
 msgid "Blocked by browser"
 msgstr "被浏览器阻止"
+
+#: src/components/player/danmu-settings-panel.tsx:304
+msgid "Blocklist"
+msgstr "屏蔽列表"
 
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:42
 msgid "Blu-ray (400)"
@@ -1573,6 +1597,11 @@ msgstr "机器人令牌"
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:362
 msgid "both directions at 10 MiB/s"
 msgstr "双向均为 10 MiB/s"
+
+#: src/components/player/danmu-settings-panel.tsx:24
+msgctxt "danmu"
+msgid "Bottom"
+msgstr "底部"
 
 #: src/components/danmu/danmu-viewer.tsx:48
 #: src/components/danmu/danmu-viewer.tsx:225
@@ -1621,7 +1650,7 @@ msgstr "前方缓冲时长"
 msgid "Buffering"
 msgstr "缓冲中"
 
-#: src/components/player/player-card.tsx:276
+#: src/components/player/player-card.tsx:281
 msgid "Buffering presets are unavailable for this playback path."
 msgstr "当前播放方式不支持缓冲预设。"
 
@@ -1770,7 +1799,7 @@ msgstr "修改密码"
 msgid "Change Password Required"
 msgstr "需要修改密码"
 
-#: src/components/player/player-card.tsx:546
+#: src/components/player/player-card.tsx:552
 msgid "Change source"
 msgstr "切换直播源"
 
@@ -1790,7 +1819,7 @@ msgstr "账号的修改会立即保存。"
 msgid "Changing Password..."
 msgstr "正在修改密码..."
 
-#: src/components/player/player-card.tsx:273
+#: src/components/player/player-card.tsx:278
 msgid "Changing this restarts the player."
 msgstr "更改后会重新启动播放器。"
 
@@ -1999,7 +2028,7 @@ msgstr "正在克隆..."
 msgid "Close"
 msgstr "关闭"
 
-#: src/components/player/player-card.tsx:482
+#: src/components/player/player-card.tsx:488
 msgid "Close playback details"
 msgstr "关闭播放详情"
 
@@ -2035,6 +2064,11 @@ msgstr "折叠方式"
 #: src/components/config/shared/danmu-statistics-card.tsx:192
 msgid "Collect statistics"
 msgstr "收集统计"
+
+#: src/components/player/danmu-settings-panel.tsx:25
+msgctxt "danmu"
+msgid "Coloured"
+msgstr "彩色"
 
 #: src/components/notifications/channel-form.tsx:476
 msgid "Coming soon"
@@ -2258,7 +2292,7 @@ msgid "Connecting..."
 msgstr "连接中..."
 
 #: src/components/notifications/events/payload-preview.tsx:53
-#: src/components/player/player-card.tsx:227
+#: src/components/player/player-card.tsx:232
 msgid "Connection"
 msgstr "连接方式"
 
@@ -2445,7 +2479,7 @@ msgstr "无法加载预设 <0>{presetName}</0>。请确认服务器可访问后�
 msgid "Could not request lossless cutting. Refresh the recording status and try again."
 msgstr "无法请求无损分段。请刷新录制状态后重试。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:206
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:216
 msgid "Could not show the file: {message}"
 msgstr "无法显示该文件：{message}"
 
@@ -2792,6 +2826,11 @@ msgstr "弹幕控制"
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:359
 msgid "Danmu Service"
 msgstr "弹幕服务"
+
+#: src/components/player/danmu-settings-panel.tsx:197
+#: src/components/player/player-danmu.tsx:28
+msgid "Danmu settings"
+msgstr "弹幕设置"
 
 #: src/components/config/shared/danmu-statistics-card.tsx:174
 #: src/components/sessions/danmu-stats-panel.tsx:174
@@ -3258,7 +3297,7 @@ msgstr "尺寸与滤镜"
 
 #: src/components/notifications/browser-notification-listener.tsx:60
 #: src/components/notifications/events/payload-preview.tsx:58
-#: src/components/player/player-card.tsx:251
+#: src/components/player/player-card.tsx:256
 #: src/components/proxies/proxy-route-label.tsx:33
 msgid "Direct"
 msgstr "直连"
@@ -3329,6 +3368,10 @@ msgstr "磁盘空间"
 #: src/components/upload-status-indicator.tsx:441
 msgid "Dismiss"
 msgstr "忽略"
+
+#: src/components/player/danmu-settings-panel.tsx:252
+msgid "Display area"
+msgstr "显示区域"
 
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:38
 msgid "Dolby Vision (30000)"
@@ -3401,7 +3444,7 @@ msgid "Download engine (mesio)"
 msgstr "下载引擎（mesio）"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:238
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:248
 msgid "Download failed: {0}"
 msgstr "下载失败：{0}"
 
@@ -3414,8 +3457,8 @@ msgstr "下载管理"
 msgid "Download Retry Policy"
 msgstr "录制重试策略"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:219
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:237
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:229
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:247
 msgid "Download started"
 msgstr "下载已开始"
 
@@ -3827,7 +3870,7 @@ msgstr "加载平台失败"
 msgid "Error loading preset"
 msgstr "加载预设失败"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:271
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:281
 msgid "Error Loading Session"
 msgstr "加载录制会话失败"
 
@@ -3860,6 +3903,10 @@ msgstr "事件类型"
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:369
 msgid "Events"
 msgstr "事件"
+
+#: src/components/player/danmu-settings-panel.tsx:49
+msgid "Exact user name"
+msgstr "完整用户名"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:357
 msgid "Examples:"
@@ -4382,6 +4429,11 @@ msgstr "故障切换开启"
 msgid "Falls back to the BAIDUPCS_PATH environment variable, then PATH lookup."
 msgstr "留空时依次使用 BAIDUPCS_PATH 环境变量和 PATH 查找。"
 
+#: src/components/player/danmu-settings-panel.tsx:43
+msgctxt "danmu speed"
+msgid "Fast"
+msgstr "较快"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:6
 msgid "Fast Compression"
 msgstr "快速压缩"
@@ -4640,6 +4692,10 @@ msgstr "跟随录制的代理"
 msgid "Follows the recording"
 msgstr "跟随录制"
 
+#: src/components/player/danmu-settings-panel.tsx:267
+msgid "Font size"
+msgstr "字号"
+
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:263
 msgid "Fonts Directory"
 msgstr "字体目录"
@@ -4743,6 +4799,11 @@ msgstr "来自主播"
 #: src/components/proxies/proxy-route-label.tsx:40
 msgid "from the template"
 msgstr "来自模板"
+
+#: src/components/player/danmu-settings-panel.tsx:36
+msgctxt "danmu area"
+msgid "Full"
+msgstr "全屏"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:209
 msgid "Full access"
@@ -4866,7 +4927,7 @@ msgstr "返回"
 
 #: src/components/default-catch-boundary.tsx:58
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:323
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:279
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:289
 msgid "Go Back"
 msgstr "返回"
 
@@ -4974,6 +5035,15 @@ msgstr "正常"
 #: src/components/config/engines/forms/mesio-sections.tsx:236
 msgid "Height"
 msgstr "高度"
+
+#: src/components/player/danmu-settings-panel.tsx:221
+msgctxt "danmu"
+msgid "Hide"
+msgstr "屏蔽类型"
+
+#: src/components/player/player-danmu.tsx:27
+msgid "Hide danmu"
+msgstr "隐藏弹幕"
 
 #: src/routes/_authed/change-password.lazy.tsx:172
 #: src/routes/_authed/change-password.lazy.tsx:214
@@ -5092,7 +5162,7 @@ msgstr "场次页面如何汇总弹幕活跃度。"
 msgid "How checks, recordings, danmu and playback here connect. An account with its own proxy setting keeps it."
 msgstr "此处的检查、录制、弹幕和播放的连接方式。设置了自己代理的账号仍使用其自身设置。"
 
-#: src/components/player/player-card.tsx:491
+#: src/components/player/player-card.tsx:497
 msgid "How far playback trails the available stream, not the total broadcast delay."
 msgstr "播放进度落后于可用直播流的时长，而不是直播的总延迟。"
 
@@ -5444,7 +5514,7 @@ msgstr "检查间隔。"
 msgid "Interval between offline checks."
 msgstr "离线检查之间的间隔。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:213
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:223
 msgid "Invalid download URL"
 msgstr "下载链接无效"
 
@@ -5519,7 +5589,7 @@ msgstr "任务超时"
 
 #: src/components/layout/site-header.tsx:54
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:357
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:367
 msgid "Jobs"
 msgstr "处理任务"
 
@@ -5649,7 +5719,7 @@ msgstr "最近刷新"
 msgid "Last used"
 msgstr "最近使用"
 
-#: src/components/player/player-card.tsx:268
+#: src/components/player/player-card.tsx:273
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:235
 msgid "Latency"
 msgstr "延迟"
@@ -5735,7 +5805,7 @@ msgstr "列表"
 msgid "Live"
 msgstr "直播"
 
-#: src/components/player/player-card.tsx:332
+#: src/components/player/player-card.tsx:337
 #: src/components/sessions/session-card.tsx:167
 #: src/components/sessions/session-header.tsx:27
 msgid "LIVE"
@@ -5928,7 +5998,7 @@ msgstr "不会使用无损分段"
 msgid "Lossless Split"
 msgstr "无损分割"
 
-#: src/components/player/player-card.tsx:289
+#: src/components/player/player-card.tsx:294
 #: src/components/streamers/config/streamer-recording-fields.tsx:113
 #: src/components/streamers/streamer-batch-action-bar.tsx:184
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:592
@@ -6164,7 +6234,7 @@ msgstr "媒体文件"
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "处理任务完成后，媒体文件将显示在此处。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:428
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:438
 msgid "Media Player"
 msgstr "媒体播放器"
 
@@ -6183,6 +6253,10 @@ msgstr "内存使用率"
 #: src/components/config/global/import-mode-radio-group.tsx:90
 msgid "Merge Changes"
 msgstr "合并更改"
+
+#: src/components/player/danmu-settings-panel.tsx:288
+msgid "Merge repeated comments"
+msgstr "合并重复弹幕"
 
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:232
 msgid "Message"
@@ -6882,6 +6956,11 @@ msgstr "所选账号在尝试次数内都未能登录。请检查它们的状态
 msgid "Normal"
 msgstr "正常"
 
+#: src/components/player/danmu-settings-panel.tsx:42
+msgctxt "danmu speed"
+msgid "Normal"
+msgstr "适中"
+
 #: src/lib/priority.ts:16
 msgctxt "priority"
 msgid "Normal"
@@ -6940,6 +7019,10 @@ msgstr "原始分辨率下不使用"
 #: src/components/credentials/account-usage.tsx:174
 msgid "Not used while disabled"
 msgstr "已禁用，不会使用"
+
+#: src/components/player/danmu-settings-panel.tsx:344
+msgid "Nothing blocked."
+msgstr "暂无屏蔽内容。"
 
 #: src/components/credentials/account-selection-section.tsx:341
 msgid "Nothing it inherits from chooses an account"
@@ -7129,6 +7212,11 @@ msgstr "仅对超过阈值大小的文件生效。默认值为 4，设为 0 可�
 msgid "Only supported for MP4/MOV/M4V"
 msgstr "仅支持 MP4/MOV/M4V"
 
+#: src/components/player/danmu-settings-panel.tsx:243
+msgctxt "danmu"
+msgid "Opacity"
+msgstr "不透明度"
+
 #: src/components/sessions/session-card.tsx:245
 #: src/components/shared/decorated-card.tsx:184
 #: src/components/streamers/card/stream-actions-menu.tsx:41
@@ -7314,7 +7402,7 @@ msgstr "覆盖输出文件夹。"
 msgid "Override pipelines and platform options for specific platforms."
 msgstr "为特定平台覆盖处理管道和平台选项。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:326
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:336
 msgid "Overview"
 msgstr "概览"
 
@@ -7481,6 +7569,10 @@ msgstr "路径变量"
 #: src/components/logging/log-viewer.tsx:427
 msgid "Pause"
 msgstr "暂停"
+
+#: src/components/player/danmu-settings-panel.tsx:293
+msgid "Pause a comment on hover"
+msgstr "悬停时暂停弹幕"
 
 #: src/components/player/playback-state.ts:19
 msgid "Paused"
@@ -7742,7 +7834,7 @@ msgstr "平台"
 msgid "Play"
 msgstr "播放"
 
-#: src/components/player/player-card.tsx:434
+#: src/components/player/player-card.tsx:439
 msgid "Playback"
 msgstr "播放"
 
@@ -7750,9 +7842,9 @@ msgstr "播放"
 msgid "Playback could not start. Retry, refresh the stream URL, or choose another source."
 msgstr "无法开始播放。请重试、刷新直播地址或切换直播源。"
 
-#: src/components/player/player-card.tsx:397
-#: src/components/player/player-card.tsx:398
-#: src/components/player/player-card.tsx:475
+#: src/components/player/player-card.tsx:402
+#: src/components/player/player-card.tsx:403
+#: src/components/player/player-card.tsx:481
 msgid "Playback details"
 msgstr "播放详情"
 
@@ -7760,7 +7852,7 @@ msgstr "播放详情"
 msgid "Playback error"
 msgstr "播放错误"
 
-#: src/components/player/player-card.tsx:509
+#: src/components/player/player-card.tsx:515
 msgid "Playback Error"
 msgstr "播放错误"
 
@@ -7773,8 +7865,8 @@ msgstr "跳转时播放停滞。请重试以重新加载视频。"
 msgid "Player"
 msgstr "播放器"
 
-#: src/components/player/player-card.tsx:409
-#: src/components/player/player-card.tsx:410
+#: src/components/player/player-card.tsx:414
+#: src/components/player/player-card.tsx:415
 msgid "Player settings"
 msgstr "播放器设置"
 
@@ -7887,7 +7979,7 @@ msgstr "首选画质 (QN)"
 msgid "Preferred Video Codec"
 msgstr "首选视频编码"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:236
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:246
 msgid "Preparing download..."
 msgstr "正在准备下载……"
 
@@ -8407,7 +8499,7 @@ msgstr "录制将使用临时分块"
 msgid "Recording will start when schedule allows"
 msgstr "录制将在计划允许时开始"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:345
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:355
 msgid "Recordings"
 msgstr "录制内容"
 
@@ -8452,8 +8544,8 @@ msgstr "刷新重试延迟（毫秒）"
 msgid "Refresh status"
 msgstr "刷新状态"
 
-#: src/components/player/player-card.tsx:310
-#: src/components/player/player-card.tsx:525
+#: src/components/player/player-card.tsx:315
+#: src/components/player/player-card.tsx:531
 msgid "Refresh stream URL"
 msgstr "刷新直播地址"
 
@@ -8486,8 +8578,8 @@ msgstr "已拒绝"
 msgid "Rejected during use; a refresh is queued"
 msgstr "使用时被拒绝，已排队刷新"
 
-#: src/components/player/player-card.tsx:383
-#: src/components/player/player-card.tsx:384
+#: src/components/player/player-card.tsx:388
+#: src/components/player/player-card.tsx:389
 msgid "Reload Player"
 msgstr "重新加载播放器"
 
@@ -8541,8 +8633,8 @@ msgstr "移除登录信息"
 msgid "Remove platform override"
 msgstr "移除平台覆盖项"
 
-#: src/components/player/player-card.tsx:456
-#: src/components/player/player-card.tsx:457
+#: src/components/player/player-card.tsx:461
+#: src/components/player/player-card.tsx:462
 msgid "Remove player"
 msgstr "移除播放器"
 
@@ -8719,6 +8811,11 @@ msgstr "需要启用“录制弹幕”。"
 msgid "Reset"
 msgstr "重置"
 
+#: src/components/player/danmu-settings-panel.tsx:211
+msgctxt "danmu"
+msgid "Reset"
+msgstr "恢复默认"
+
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:110
 msgid "Reset to defaults"
 msgstr "恢复默认值"
@@ -8806,7 +8903,7 @@ msgid "Retries for locked files"
 msgstr "锁定文件重试次数"
 
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:88
-#: src/components/player/player-card.tsx:517
+#: src/components/player/player-card.tsx:523
 #: src/components/sessions/danmu-stats-panel.tsx:240
 msgid "Retry"
 msgstr "重试"
@@ -9146,6 +9243,11 @@ msgstr "调度器"
 msgid "Scrolling"
 msgstr "滚动弹幕"
 
+#: src/components/player/danmu-settings-panel.tsx:22
+msgctxt "danmu"
+msgid "Scrolling"
+msgstr "滚动"
+
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:49
 msgid "SD / Low"
 msgstr "标清 / 低清"
@@ -9473,11 +9575,11 @@ msgstr "服务器本地使用后端服务器的时区。也可输入 Europe/Berl
 msgid "Server not configured"
 msgstr "服务器未配置"
 
-#: src/components/player/player-card.tsx:257
+#: src/components/player/player-card.tsx:262
 msgid "Server proxy"
 msgstr "服务器代理"
 
-#: src/components/player/player-card.tsx:234
+#: src/components/player/player-card.tsx:239
 msgid "Server proxy relays playback through this app's server with the source's upstream proxy settings."
 msgstr "服务器代理会通过本应用的服务器转发播放，并使用该来源配置的上游代理设置。"
 
@@ -9553,7 +9655,7 @@ msgstr "会话 ID 是必需的"
 msgid "Session Menu"
 msgstr "会话菜单"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:274
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:284
 msgid "Session not found"
 msgstr "未找到录制会话"
 
@@ -9627,10 +9729,19 @@ msgstr "共享的处理管道工具"
 msgid "Shell command"
 msgstr "Shell 命令"
 
+#: src/components/player/danmu-settings-panel.tsx:298
+msgid "Show activity above the progress bar"
+msgstr "在进度条上方显示弹幕热度"
+
 #. placeholder {0}: stats.top_talkers.length
 #: src/components/sessions/danmu-stats-panel.tsx:583
 msgid "Show all {0}"
 msgstr "显示全部 {0} 位"
+
+#: src/components/player/danmu-settings-panel.tsx:216
+#: src/components/player/player-danmu.tsx:26
+msgid "Show danmu"
+msgstr "显示弹幕"
 
 #: src/components/streamers/progress-indicator.tsx:57
 msgid "Show download details"
@@ -9761,7 +9872,12 @@ msgstr "跳过了 {skippedCount} 个重复的流"
 msgid "Skips the rapid-upload (秒传) hash check before transferring (--norapid)."
 msgstr "上传前跳过秒传哈希检测（--norapid）。"
 
-#: src/components/player/player-card.tsx:291
+#: src/components/player/danmu-settings-panel.tsx:41
+msgctxt "danmu speed"
+msgid "Slow"
+msgstr "较慢"
+
+#: src/components/player/player-card.tsx:296
 msgid "Smooth"
 msgstr "流畅"
 
@@ -9794,6 +9910,7 @@ msgstr "空间节省"
 msgid "Specific"
 msgstr "特定"
 
+#: src/components/player/danmu-settings-panel.tsx:277
 #: src/components/streamers/edit/active-download-card.tsx:116
 msgid "Speed"
 msgstr "速度"
@@ -9940,7 +10057,7 @@ msgstr "存储"
 msgid "Stores these credentials on the server (plaintext, like platform cookies) so upload jobs can log in again by themselves when the session expires. Logging out forgets them."
 msgstr "将这些凭据保存在服务器上（明文，与平台 Cookie 相同），登录会话过期时上传任务可以自行重新登录。退出登录会一并清除。"
 
-#: src/components/player/player-card.tsx:430
+#: src/components/player/player-card.tsx:435
 msgid "Stream"
 msgstr "直播流"
 
@@ -9991,7 +10108,7 @@ msgstr "直播密码"
 msgid "Stream Player"
 msgstr "流播放器"
 
-#: src/components/player/player-card.tsx:216
+#: src/components/player/player-card.tsx:221
 msgid "Stream source"
 msgstr "直播源"
 
@@ -10175,6 +10292,11 @@ msgstr "成功处理 {0} 个主播"
 #: src/components/filters/filter-types.ts:114
 msgid "Sunday"
 msgstr "星期日"
+
+#: src/components/player/danmu-settings-panel.tsx:28
+msgctxt "danmu"
+msgid "Super chats"
+msgstr "醒目留言"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:112
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:191
@@ -10617,7 +10739,7 @@ msgstr "此服务器提供内置的 MCP 端点（streamable HTTP）。使用 API
 msgid "This source needs custom request headers. Use Auto or Server proxy to keep those headers."
 msgstr "此直播源需要自定义请求头。请使用自动模式或服务器代理以保留这些请求头。"
 
-#: src/components/player/player-card.tsx:230
+#: src/components/player/player-card.tsx:235
 msgid "This source needs request headers, so Direct is unavailable."
 msgstr "此来源需要请求头，因此无法使用直连。"
 
@@ -10729,7 +10851,7 @@ msgid "time-of-day timetable"
 msgstr "按时间段调度"
 
 #: src/components/sessions/danmu-stats-panel.tsx:479
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:332
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:342
 msgid "Timeline"
 msgstr "时间线"
 
@@ -10830,6 +10952,11 @@ msgstr "令牌"
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:536
 msgid "Tool Location"
 msgstr "工具位置"
+
+#: src/components/player/danmu-settings-panel.tsx:23
+msgctxt "danmu"
+msgid "Top"
+msgstr "顶部"
 
 #: src/components/config/shared/danmu-statistics-card.tsx:214
 msgid "Top chatters to keep"
@@ -11036,7 +11163,7 @@ msgstr "尝试调整搜索。"
 msgid "Try Again"
 msgstr "重试"
 
-#: src/components/player/player-card.tsx:534
+#: src/components/player/player-card.tsx:540
 msgid "Try server proxy"
 msgstr "尝试服务器代理"
 
@@ -11087,6 +11214,10 @@ msgstr "极速压缩"
 #: src/components/pipeline/presets/default-presets-i18n.ts:85
 msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "超快 H.264 编码（CRF 26），用于快速分享。"
+
+#: src/components/player/danmu-settings-panel.tsx:359
+msgid "Unblock {value}"
+msgstr "取消屏蔽 {value}"
 
 #: src/components/health/health-status-badge.tsx:59
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:622
@@ -11325,6 +11456,11 @@ msgstr "被 {usage} 处使用"
 msgid "Used wherever a platform, template, streamer or account does not choose its own."
 msgstr "在平台、模板、主播或账号未自行选择时使用。"
 
+#: src/components/player/danmu-settings-panel.tsx:316
+msgctxt "danmu"
+msgid "User"
+msgstr "用户"
+
 #: src/components/config/engines/forms/ffmpeg-form.tsx:30
 #: src/components/config/engines/forms/mesio-sections.tsx:285
 msgid "User Agent"
@@ -11422,11 +11558,21 @@ msgstr "验证输出"
 msgid "Version"
 msgstr "版本"
 
+#: src/components/player/danmu-settings-panel.tsx:44
+msgctxt "danmu speed"
+msgid "Very fast"
+msgstr "极快"
+
+#: src/components/player/danmu-settings-panel.tsx:40
+msgctxt "danmu speed"
+msgid "Very slow"
+msgstr "极慢"
+
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:137
 msgid "veryfast"
 msgstr "veryfast"
 
-#: src/components/player/player-card.tsx:369
+#: src/components/player/player-card.tsx:374
 msgid "via server proxy"
 msgstr "通过服务器代理"
 
@@ -11452,7 +11598,7 @@ msgstr "视频编码变化"
 msgid "Video only"
 msgstr "仅视频"
 
-#: src/components/player/player-card.tsx:327
+#: src/components/player/player-card.tsx:332
 msgid "Video Player"
 msgstr "视频播放器"
 
@@ -11655,6 +11801,15 @@ msgstr "宽度（像素，保持宽高比）"
 #: src/components/config/templates/template-editor.tsx:115
 msgid "With the engine's settings, this records neither video nor audio"
 msgstr "结合引擎的设置，这样既不会录制视频也不会录制音频"
+
+#: src/components/player/danmu-settings-panel.tsx:310
+msgctxt "danmu blocklist"
+msgid "Word"
+msgstr "关键词"
+
+#: src/components/player/danmu-settings-panel.tsx:48
+msgid "Word to hide"
+msgstr "要屏蔽的关键词"
 
 #: src/components/pipeline/workflows/flow-editor/step-node.tsx:163
 msgid "workflow"

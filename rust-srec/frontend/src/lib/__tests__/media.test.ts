@@ -1,4 +1,5 @@
 import {
+  findDanmuOutput,
   isPlayable,
   normalizePlayerMediaType,
   resolvePlayerMediaType,
@@ -71,5 +72,28 @@ describe('isPlayable', () => {
     expect(
       isPlayable({ format: 'VIDEO', file_path: '/recordings/video.mp4.tmp' }),
     ).toBe(false);
+  });
+});
+
+describe('findDanmuOutput', () => {
+  const xml = (file_path: string) => ({ format: 'DANMU_XML', file_path });
+  const video = { format: 'VIDEO', file_path: '/rec/Alice/seg_1.mp4' };
+
+  it('pairs the XML recorded beside the segment, not a prefix match', () => {
+    const outputs = [
+      xml('/rec/Alice/seg_10.xml'),
+      { format: 'VIDEO', file_path: '/rec/Alice/seg_1.flv' },
+      xml('/rec/Alice/seg_1.xml'),
+    ];
+
+    expect(findDanmuOutput(video, outputs)).toBe(outputs[2]);
+  });
+
+  it('accepts a moved file only when its name is unambiguous', () => {
+    const moved = xml('C:\\archive\\seg_1.xml');
+    expect(findDanmuOutput(video, [moved])).toBe(moved);
+    expect(
+      findDanmuOutput(video, [moved, xml('/other/seg_1.xml')]),
+    ).toBeUndefined();
   });
 });

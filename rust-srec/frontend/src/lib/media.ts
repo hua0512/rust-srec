@@ -100,3 +100,43 @@ export function isPlayable(output: {
 
   return extension !== undefined && PLAYABLE_EXTENSIONS.has(extension);
 }
+
+interface OutputPath {
+  format: string;
+  file_path: string;
+}
+
+/** The path without its extension, using `/` separators. */
+function pathStem(path: string): string {
+  const normalized = path.replaceAll('\\', '/');
+  const dot = normalized.lastIndexOf('.');
+  return dot > normalized.lastIndexOf('/') + 1
+    ? normalized.slice(0, dot)
+    : normalized;
+}
+
+function baseName(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1);
+}
+
+/**
+ * The danmu XML recorded alongside `video`. Recording writes it beside the
+ * segment under the same name, so the path minus its extension matches. When a
+ * later step moved one of the two, a single XML with the same file name is
+ * still accepted; several would be ambiguous.
+ */
+export function findDanmuOutput<T extends OutputPath>(
+  video: OutputPath,
+  outputs: readonly T[],
+): T | undefined {
+  const danmu = outputs.filter((output) => output.format === 'DANMU_XML');
+  const stem = pathStem(video.file_path);
+  const exact = danmu.find((output) => pathStem(output.file_path) === stem);
+  if (exact) return exact;
+
+  const name = baseName(stem);
+  const sameName = danmu.filter(
+    (output) => baseName(pathStem(output.file_path)) === name,
+  );
+  return sameName.length === 1 ? sameName[0] : undefined;
+}
