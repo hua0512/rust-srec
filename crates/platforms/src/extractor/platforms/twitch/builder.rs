@@ -1,11 +1,12 @@
 use std::sync::LazyLock;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::extractor::error::ExtractorError;
 use crate::extractor::hls_extractor::HlsExtractor;
 use crate::extractor::platform_extractor::{Extractor, PlatformExtractor};
 use crate::extractor::platforms::twitch::auth::resolve_oauth_token;
-use crate::extractor::platforms::twitch::models::TwitchResponse;
+use crate::extractor::platforms::twitch::models::{
+    PlaybackAccessToken, PlaybackAccessTokenResponse, TwitchResponse,
+};
 use crate::extractor::utils::{capture_group_1_or_invalid_url, extras_get_str};
 use crate::media::StreamInfo;
 use crate::media::media_info::MediaInfo;
@@ -25,6 +26,41 @@ pub struct Twitch {
     /// Whether requests carry an account OAuth token, so a rejected request
     /// is evidence against that account rather than an anonymous failure.
     has_oauth_token: bool,
+    /// Comma-separated `supported_codecs` usher parameter.
+    supported_codecs: String,
+}
+
+/// Codecs usher can be offered. Twitch serves some qualities only in H.265 or
+/// AV1, and only to a client that lists them; it may still serve H.264 for
+/// renditions it re-encodes.
+const KNOWN_CODECS: [&str; 3] = ["h264", "h265", "av1"];
+
+/// The `supported_codecs` usher parameter from the platform option, given as
+/// a list or a comma-separated string. Unknown names are dropped and an empty
+/// selection falls back to H.264, which every recording path handles.
+fn supported_codecs(extras: Option<&serde_json::Value>) -> String {
+    let requested: Vec<String> = match extras.and_then(|extras| extras.get("supported_codecs")) {
+        Some(serde_json::Value::Array(values)) => values
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .map(str::to_owned)
+            .collect(),
+        Some(serde_json::Value::String(value)) => value.split(',').map(str::to_owned).collect(),
+        _ => Vec::new(),
+    };
+    let mut codecs: Vec<&str> = Vec::new();
+    for codec in requested {
+        let codec = codec.trim().to_ascii_lowercase();
+        if let Some(known) = KNOWN_CODECS.iter().find(|known| **known == codec)
+            && !codecs.contains(known)
+        {
+            codecs.push(known);
+        }
+    }
+    if codecs.is_empty() {
+        codecs.push("h264");
+    }
+    codecs.join(",")
 }
 
 impl Twitch {
@@ -44,6 +80,7 @@ impl Twitch {
         extractor.add_header_str("device-id", Self::get_device_id());
         extractor.add_header_str("Client-Id", "kimne78kx3ncx6brgo4mv6wki5h1ko");
 
+        let supported_codecs = supported_codecs(extras.as_ref());
         let oauth_token = resolve_oauth_token(
             extras_get_str(extras.as_ref(), "oauth_token"),
             cookies.as_deref(),
@@ -59,6 +96,7 @@ impl Twitch {
             extractor,
             gql_url: Self::GPL_API_URL.to_owned(),
             has_oauth_token: oauth_token.is_some(),
+            supported_codecs,
         }
     }
 
@@ -177,6 +215,17 @@ impl Twitch {
             .ok_or_else(|| {
                 ExtractorError::ValidationError("Could not find user_or_error".to_string())
             })?;
+        if user_or_error.typename == "UserDoesNotExist" {
+            let reason = user_or_error.reason.as_deref().unwrap_or_default();
+            debug!(reason, "Twitch reports the channel does not exist");
+            return Err(
+                if reason.starts_with("TOS_") || reason.eq_ignore_ascii_case("DMCA") {
+                    ExtractorError::StreamerBanned
+                } else {
+                    ExtractorError::StreamerNotFound
+                },
+            );
+        }
 
         // Try to get detailed user info from stream_metadata, fallback to user_or_error data
         let user_opt = stream_metadata.data.as_ref().and_then(|d| d.user.as_ref());
@@ -216,29 +265,33 @@ impl Twitch {
             .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
             .map(|dt| dt.with_timezone(&Utc));
 
-        if !is_live {
-            return Ok(MediaInfo::builder(Self::BASE_URL, title, artist)
-                .category_opt(category)
-                .live_start_time_opt(live_start_time)
-                .artist_url(avatar_url)
-                .is_live(is_live)
-                .build());
-        }
+        let streams = if is_live {
+            self.get_streams(room_id).await?
+        } else {
+            None
+        };
 
-        let streams = self.get_streams(room_id).await?;
-
-        Ok(MediaInfo::builder(Self::BASE_URL, title, artist)
+        let media_info = MediaInfo::builder(Self::BASE_URL, title, artist)
             .category_opt(category)
             .live_start_time_opt(live_start_time)
-            .artist_url(avatar_url)
-            .is_live(is_live)
-            .streams(streams)
-            .headers(self.extractor.get_platform_headers_map())
-            .build())
+            .artist_url(avatar_url);
+        Ok(match streams {
+            Some(streams) => media_info
+                .is_live(true)
+                .streams(streams)
+                .headers(self.extractor.get_platform_headers_map())
+                .build(),
+            None => media_info.is_live(false).build(),
+        })
     }
 
-    pub async fn get_streams(&self, rid: &str) -> Result<Vec<StreamInfo>, ExtractorError> {
-        let live_gpl = self.build_persisted_query_request(
+    /// The live playback token and its signature, or `None` when Twitch issues
+    /// none because the channel is offline or does not exist.
+    async fn playback_access_token(
+        &self,
+        rid: &str,
+    ) -> Result<Option<PlaybackAccessToken>, ExtractorError> {
+        let query = self.build_persisted_query_request(
             "PlaybackAccessToken",
             "ed230aa1e33e07eebb8928504583da78a5173989fadfb1ac94be06a04f3cdbe9",
             serde_json::json!({
@@ -253,58 +306,76 @@ impl Twitch {
             }),
         );
 
-        let response = self.post_gql::<serde_json::Value>(live_gpl).await?;
-        let stream_playback_access_token = response
-            .first()
-            .and_then(|data| {
-                data.get("data")
-                    .and_then(|data| data.get("streamPlaybackAccessToken"))
-            })
+        let response = self
+            .post_gql::<PlaybackAccessTokenResponse>(query)
+            .await?
+            .into_iter()
+            .next()
             .ok_or_else(|| {
-                ExtractorError::ValidationError(
-                    "Could not find streamPlaybackAccessToken".to_string(),
-                )
+                ExtractorError::ValidationError("Empty Twitch access token response".to_owned())
             })?;
+        match response {
+            PlaybackAccessTokenResponse {
+                data: Some(data), ..
+            } => Ok(data.stream_playback_access_token),
+            PlaybackAccessTokenResponse { errors, .. } => {
+                let message = errors
+                    .into_iter()
+                    .next()
+                    .map_or_else(|| "no data".to_owned(), |error| error.message);
+                Err(ExtractorError::ValidationError(format!(
+                    "Twitch access token request failed: {message}"
+                )))
+            }
+        }
+    }
 
-        let playback_token = stream_playback_access_token.get("value").ok_or_else(|| {
-            ExtractorError::ValidationError("Could not find token value".to_string())
-        })?;
-        let signature = stream_playback_access_token
-            .get("signature")
-            .ok_or_else(|| {
-                ExtractorError::ValidationError("Could not find signature".to_string())
-            })?;
+    /// The live variants, or `None` when the channel has no playable stream:
+    /// no access token, or usher not yet (or no longer) serving a playlist,
+    /// which lags the live status reported by GQL.
+    pub async fn get_streams(&self, rid: &str) -> Result<Option<Vec<StreamInfo>>, ExtractorError> {
+        let Some(token) = self.playback_access_token(rid).await? else {
+            debug!("Twitch issued no playback token; treating the channel as offline");
+            return Ok(None);
+        };
 
-        let m3u8_url = format!("https://usher.ttvnw.net/api/channel/hls/{rid}.m3u8");
+        let m3u8_url = format!(
+            "https://usher.ttvnw.net/api/v2/channel/hls/{}.m3u8",
+            rid.to_ascii_lowercase()
+        );
+        let p = rand::rng().random_range(0..1_000_000u32).to_string();
 
-        let epoch_seconds = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let epoch_seconds_str = epoch_seconds.to_string();
-
-        let headers = self.extractor.get_platform_headers();
-        let streams = self
+        let result = self
             .extract_hls_stream_with_params(
                 &self.extractor.client,
-                Some(headers.clone()),
+                Some(self.extractor.get_platform_headers().clone()),
                 Some(&[
-                    ("player", "twitchweb"),
-                    ("p", &epoch_seconds_str),
+                    ("platform", "web"),
+                    ("p", p.as_str()),
                     ("allow_source", "true"),
                     ("allow_audio_only", "true"),
-                    ("allow_spectre", "true"),
+                    ("playlist_include_framerate", "true"),
+                    ("supported_codecs", self.supported_codecs.as_str()),
                     ("fast_bread", "true"),
-                    ("token", playback_token.as_str().unwrap_or("")),
-                    ("sig", signature.as_str().unwrap_or("")),
+                    ("token", token.value.as_str()),
+                    ("sig", token.signature.as_str()),
                 ]),
                 &m3u8_url,
                 None,
                 None,
             )
-            .await?;
+            .await;
 
-        Ok(streams)
+        match result {
+            Ok(streams) => Ok(Some(streams)),
+            Err(ExtractorError::HttpError(error))
+                if error.status() == Some(reqwest::StatusCode::NOT_FOUND) =>
+            {
+                debug!("Twitch usher has no playlist for the channel; treating it as offline");
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
     }
 }
 

@@ -81,8 +81,12 @@ export const DouyuConfigSchema = z
   .strict();
 
 // Twitch platform-specific configuration
+export const TwitchCodecValues = ['av1', 'h265', 'h264'] as const;
+
 export const TwitchConfigSchema = z
   .object({
+    // Codecs announced to Twitch; unset means H.264 only.
+    supported_codecs: z.array(z.enum(TwitchCodecValues)).nullable().optional(),
     end_stream_on_danmu_stream_closed: z.boolean().nullable().optional(),
   })
   .strict();

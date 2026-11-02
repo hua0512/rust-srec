@@ -33,11 +33,11 @@ msgid "\"{0}\" will be removed. Streamers using it fall back to the default engi
 msgstr "\"{0}\" will be removed. Streamers using it fall back to the default engine."
 
 #. placeholder {0}: revokeTarget?.name
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:298
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:299
 msgid "\"{0}\" will stop working immediately. This cannot be undone."
 msgstr "\"{0}\" will stop working immediately. This cannot be undone."
 
-#: src/components/proxies/proxy-editor-dialog.tsx:175
+#: src/components/proxies/proxy-editor-dialog.tsx:176
 msgid "“{conflictName}” already uses this address and username."
 msgstr "“{conflictName}” already uses this address and username."
 
@@ -74,7 +74,7 @@ msgid "(Preserve source)"
 msgstr "(Preserve source)"
 
 #. placeholder {0}: filteredEventTypes?.length || 0
-#: src/components/notifications/subscription-manager.tsx:452
+#: src/components/notifications/subscription-manager.tsx:456
 msgid "{0, plural, one {# available} other {# available}}"
 msgstr "{0, plural, one {# available} other {# available}}"
 
@@ -140,7 +140,7 @@ msgid "{0, plural, one {# Segment} other {# Segments}} ({1, plural, one {# File}
 msgstr "{0, plural, one {# Segment} other {# Segments}} ({1, plural, one {# File} other {# Files}})"
 
 #. placeholder {0}: selectedEvents.length
-#: src/components/notifications/subscription-manager.tsx:447
+#: src/components/notifications/subscription-manager.tsx:451
 msgid "{0, plural, one {# selected} other {# selected}}"
 msgstr "{0, plural, one {# selected} other {# selected}}"
 
@@ -377,7 +377,7 @@ msgstr "{selections, plural, one {Remove it from the account selection of # conf
 msgid "{sessions, plural, one {Wait for the active recording using it to end.} other {Wait for the # active recordings using it to end.}}"
 msgstr "{sessions, plural, one {Wait for the active recording using it to end.} other {Wait for the # active recordings using it to end.}}"
 
-#: src/components/credentials/profile-editor-dialog.tsx:77
+#: src/components/credentials/profile-editor-dialog.tsx:78
 msgid "{site} already belongs to the account {label}. A site can belong to one account only."
 msgstr "{site} already belongs to the account {label}. A site can belong to one account only."
 
@@ -563,7 +563,7 @@ msgstr "Absolute path or 'streamlink' in PATH"
 msgid "Accept Invalid Certificates"
 msgstr "Accept Invalid Certificates"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:178
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:179
 msgid "Access"
 msgstr "Access"
 
@@ -571,7 +571,7 @@ msgstr "Access"
 msgid "Access level"
 msgstr "Access level"
 
-#: src/components/credentials/profile-editor-dialog.tsx:305
+#: src/components/credentials/profile-editor-dialog.tsx:307
 msgid "Access token"
 msgstr "Access token"
 
@@ -583,7 +583,7 @@ msgstr "Access was denied. Refresh the stream URL or check the source credential
 msgid "Account"
 msgstr "Account"
 
-#: src/components/credentials/profile-editor-dialog.tsx:381
+#: src/components/credentials/profile-editor-dialog.tsx:383
 msgid "Account checks, refreshes, recordings, danmu and playback with this account go through this setting. Following the recording uses the proxy of whatever uses the account; checks then use the platform's."
 msgstr "Account checks, refreshes, recordings, danmu and playback with this account go through this setting. Following the recording uses the proxy of whatever uses the account; checks then use the platform's."
 
@@ -648,7 +648,7 @@ msgstr "Action"
 msgid "Actions"
 msgstr "Actions"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:222
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:223
 #: src/routes/_authed/_dashboard/config/language.lazy.tsx:113
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:457
 msgid "Active"
@@ -700,7 +700,7 @@ msgstr "Add a streamer"
 
 #: src/components/credentials/credential-selection-editor.tsx:383
 #: src/components/credentials/platform-accounts-section.tsx:122
-#: src/components/credentials/profile-editor-dialog.tsx:198
+#: src/components/credentials/profile-editor-dialog.tsx:199
 msgid "Add account"
 msgstr "Add account"
 
@@ -806,8 +806,8 @@ msgid "Add Pipeline Step"
 msgstr "Add Pipeline Step"
 
 #: src/components/proxies/proxies-panel.tsx:160
-#: src/components/proxies/proxy-editor-dialog.tsx:206
-#: src/components/proxies/proxy-editor-dialog.tsx:361
+#: src/components/proxies/proxy-editor-dialog.tsx:207
+#: src/components/proxies/proxy-editor-dialog.tsx:363
 msgid "Add proxy"
 msgstr "Add proxy"
 
@@ -856,7 +856,7 @@ msgstr "Added to every HLS request, for example for signed URLs or CDN routing."
 msgid "Additional arguments appended to the command."
 msgstr "Additional arguments appended to the command."
 
-#: src/components/proxies/proxy-editor-dialog.tsx:246
+#: src/components/proxies/proxy-editor-dialog.tsx:248
 #: src/components/proxies/proxy-row.tsx:216
 msgid "Address"
 msgstr "Address"
@@ -962,6 +962,14 @@ msgstr "All Time"
 msgid "All Types"
 msgstr "All Types"
 
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:56
+msgid "Allow AV1"
+msgstr "Allow AV1"
+
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:51
+msgid "Allow H.265 (HEVC)"
+msgstr "Allow H.265 (HEVC)"
+
 #: src/components/player/playback-presets.ts:10
 msgid "Allow more startup buffering. Playback may start later and add delay."
 msgstr "Allow more startup buffering. Playback may start later and add delay."
@@ -970,7 +978,7 @@ msgstr "Allow more startup buffering. Playback may start later and add delay."
 msgid "Allow private stream proxy targets"
 msgstr "Allow private stream proxy targets"
 
-#: src/components/config/global/network-system-card.tsx:173
+#: src/components/config/global/network-system-card.tsx:175
 msgid "Allow Private Stream Proxy Targets"
 msgstr "Allow Private Stream Proxy Targets"
 
@@ -1006,7 +1014,7 @@ msgstr "Anonymized Metadata • UTF-8 Format"
 msgid "Another address…"
 msgstr "Another address…"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:172
+#: src/components/proxies/proxy-editor-dialog.tsx:173
 msgid "Another proxy is already named “{conflictName}”."
 msgstr "Another proxy is already named “{conflictName}”."
 
@@ -1030,20 +1038,20 @@ msgstr "Any language"
 msgid "Any priority"
 msgstr "Any priority"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:376
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:377
 msgid "API key copied to clipboard"
 msgstr "API key copied to clipboard"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:390
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:391
 msgid "API key created"
 msgstr "API key created"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:113
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:114
 msgid "API key revoked"
 msgstr "API key revoked"
 
 #: src/components/sidebar/user-menu.tsx:119
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:130
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:131
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:74
 msgid "API Keys"
 msgstr "API Keys"
@@ -1428,7 +1436,7 @@ msgstr "Baidu Netdisk login failed"
 msgid "Baidu Netdisk logout failed"
 msgstr "Baidu Netdisk logout failed"
 
-#: src/lib/notification-event-types.ts:45
+#: src/lib/notification-event-types.ts:46
 msgid "Baidu Netdisk re-login failed"
 msgstr "Baidu Netdisk re-login failed"
 
@@ -1645,7 +1653,7 @@ msgstr "Caching and progress"
 #: src/components/layout/themes/import-modal.tsx:103
 #: src/components/notifications/channel-card.tsx:183
 #: src/components/notifications/channel-form.tsx:454
-#: src/components/notifications/subscription-manager.tsx:462
+#: src/components/notifications/subscription-manager.tsx:466
 #: src/components/pipeline/interrupted-output-list.tsx:259
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:118
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:176
@@ -1660,10 +1668,10 @@ msgstr "Caching and progress"
 #: src/components/pipeline/workflows/step-config-dialog.tsx:842
 #: src/components/pipeline/workflows/workflow-card.tsx:104
 #: src/components/proxies/delete-proxy-dialog.tsx:105
-#: src/components/proxies/proxy-editor-dialog.tsx:358
+#: src/components/proxies/proxy-editor-dialog.tsx:360
 #: src/components/streamers/streamer-batch-action-bar.tsx:224
 #: src/components/streamers/streamer-editor.tsx:244
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:306
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:307
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:504
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:241
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:174
@@ -1770,7 +1778,7 @@ msgstr "Change source"
 msgid "Changes apply to the next check or recording; ones already running keep their connection."
 msgstr "Changes apply to the next check or recording; ones already running keep their connection."
 
-#: src/components/proxies/proxy-editor-dialog.tsx:210
+#: src/components/proxies/proxy-editor-dialog.tsx:211
 msgid "Changes apply to the next connection everywhere this proxy is used."
 msgstr "Changes apply to the next connection everywhere this proxy is used."
 
@@ -2307,7 +2315,7 @@ msgstr "Convert only the danmu recorded for this session's segments"
 msgid "Cookie string"
 msgstr "Cookie string"
 
-#: src/components/credentials/profile-editor-dialog.tsx:283
+#: src/components/credentials/profile-editor-dialog.tsx:285
 #: src/components/player/url-input-form.tsx:247
 #: src/components/player/url-input-form.tsx:361
 msgid "Cookies"
@@ -2351,7 +2359,7 @@ msgstr "Copy / Move"
 msgid "Copy address"
 msgstr "Copy address"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:409
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:410
 msgid "Copy API key"
 msgstr "Copy API key"
 
@@ -2395,7 +2403,7 @@ msgstr "Copy the file to another location. Keeps the original file."
 msgid "Copy the full Cookie header from a logged-in Baidu Netdisk page (browser DevTools, Network tab). It must include BDUSS and STOKEN entries."
 msgstr "Copy the full Cookie header from a logged-in Baidu Netdisk page (browser DevTools, Network tab). It must include BDUSS and STOKEN entries."
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:394
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:395
 msgid "Copy this key now. For security reasons it is shown only once and cannot be recovered later."
 msgstr "Copy this key now. For security reasons it is shown only once and cannot be recovered later."
 
@@ -2451,7 +2459,7 @@ msgstr "Count"
 msgid "Counts stay exact while a stream has fewer distinct chatters than this. 64–8192."
 msgstr "Counts stay exact while a stream has fewer distinct chatters than this. 64–8192."
 
-#: src/components/config/global/network-system-card.tsx:186
+#: src/components/config/global/network-system-card.tsx:188
 msgid "Covers LAN restreamers, cameras and tailnet addresses. Leave this off unless you stream from local sources: it re-opens requests to internal addresses for any signed-in user."
 msgstr "Covers LAN restreamers, cameras and tailnet addresses. Leave this off unless you stream from local sources: it re-opens requests to internal addresses for any signed-in user."
 
@@ -2497,8 +2505,8 @@ msgstr "Create a template to define reusable download configurations."
 msgid "Create a ZIP archive of the file. Good for bundling with metadata."
 msgstr "Create a ZIP archive of the file. Good for bundling with metadata."
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:146
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:428
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:147
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:429
 msgid "Create API key"
 msgstr "Create API key"
 
@@ -2586,19 +2594,19 @@ msgstr "Creating…"
 msgid "Creation Mode"
 msgstr "Creation Mode"
 
-#: src/lib/notification-event-types.ts:43
+#: src/lib/notification-event-types.ts:44
 msgid "Credential expiring soon"
 msgstr "Credential expiring soon"
 
-#: src/lib/notification-event-types.ts:41
+#: src/lib/notification-event-types.ts:42
 msgid "Credential invalid"
 msgstr "Credential invalid"
 
-#: src/lib/notification-event-types.ts:40
+#: src/lib/notification-event-types.ts:41
 msgid "Credential refresh failed"
 msgstr "Credential refresh failed"
 
-#: src/lib/notification-event-types.ts:39
+#: src/lib/notification-event-types.ts:40
 msgid "Credential refreshed"
 msgstr "Credential refreshed"
 
@@ -2618,7 +2626,7 @@ msgstr "Credentials remembered for automatic re-login"
 msgid "Credentials saved successfully"
 msgstr "Credentials saved successfully"
 
-#: src/lib/notification-event-types.ts:42
+#: src/lib/notification-event-types.ts:43
 msgid "Credentials unavailable"
 msgstr "Credentials unavailable"
 
@@ -2777,7 +2785,7 @@ msgid "Danmu"
 msgstr "Danmu"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:218
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:22
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:113
 msgid "Danmu Control"
 msgstr "Danmu Control"
 
@@ -2897,7 +2905,7 @@ msgstr "Default password for password-protected rooms. Can be overridden per str
 msgid "Default pipeline flow. Configure the sequence of processors for new jobs."
 msgstr "Default pipeline flow. Configure the sequence of processors for new jobs."
 
-#: src/components/config/global/network-system-card.tsx:162
+#: src/components/config/global/network-system-card.tsx:164
 msgid "Default proxy"
 msgstr "Default proxy"
 
@@ -3164,7 +3172,7 @@ msgstr "Description"
 msgid "Description is managed by the system"
 msgstr "Description is managed by the system"
 
-#: src/components/notifications/subscription-manager.tsx:362
+#: src/components/notifications/subscription-manager.tsx:366
 msgid "Deselect All"
 msgstr "Deselect All"
 
@@ -3326,7 +3334,7 @@ msgstr "Dismiss"
 msgid "Dolby Vision (30000)"
 msgstr "Dolby Vision (30000)"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:420
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:421
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:176
 msgid "Done"
 msgstr "Done"
@@ -3572,7 +3580,7 @@ msgstr "Earlier files are still being finalized, so the cut was not made. Record
 msgid "Edit"
 msgstr "Edit"
 
-#: src/components/credentials/profile-editor-dialog.tsx:198
+#: src/components/credentials/profile-editor-dialog.tsx:199
 msgid "Edit account"
 msgstr "Edit account"
 
@@ -3594,7 +3602,7 @@ msgstr "Edit filter"
 msgid "Edit Preset: {0}"
 msgstr "Edit Preset: {0}"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:206
+#: src/components/proxies/proxy-editor-dialog.tsx:207
 msgid "Edit proxy"
 msgstr "Edit proxy"
 
@@ -3760,7 +3768,7 @@ msgstr "Enter a URL above"
 msgid "Enter a URL to parse and play a stream"
 msgstr "Enter a URL to parse and play a stream"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:63
+#: src/components/proxies/proxy-editor-dialog.tsx:64
 msgid "Enter an address such as http://proxy.example:8080."
 msgstr "Enter an address such as http://proxy.example:8080."
 
@@ -3772,11 +3780,11 @@ msgstr "Enter keywords to exclude..."
 msgid "Enter keywords to include..."
 msgstr "Enter keywords to include..."
 
-#: src/components/credentials/profile-editor-dialog.tsx:275
+#: src/components/credentials/profile-editor-dialog.tsx:277
 msgid "Enter the credentials of this one account. Never mix cookies from different accounts."
 msgstr "Enter the credentials of this one account. Never mix cookies from different accounts."
 
-#: src/components/credentials/profile-editor-dialog.tsx:270
+#: src/components/credentials/profile-editor-dialog.tsx:272
 msgid "Enter the new credentials in full. Token and login fields left empty are cleared. Saved credentials are never shown."
 msgstr "Enter the new credentials in full. Token and login fields left empty are cleared. Saved credentials are never shown."
 
@@ -3946,11 +3954,11 @@ msgstr "Experimental"
 msgid "Expert mode: Edit the raw platform-specific configuration directly."
 msgstr "Expert mode: Edit the raw platform-specific configuration directly."
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:235
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:236
 msgid "Expired"
 msgstr "Expired"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:187
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:188
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:476
 msgid "Expires"
 msgstr "Expires"
@@ -4096,7 +4104,7 @@ msgstr "Failed to copy"
 msgid "Failed to copy destination"
 msgstr "Failed to copy destination"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:356
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:357
 msgid "Failed to create API key"
 msgstr "Failed to create API key"
 
@@ -4303,11 +4311,12 @@ msgstr "Failed to retry steps"
 msgid "Failed to retry workflow"
 msgstr "Failed to retry workflow"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:117
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:118
 msgid "Failed to revoke API key"
 msgstr "Failed to revoke API key"
 
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:299
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:570
 msgid "Failed to send test notification"
 msgstr "Failed to send test notification"
 
@@ -4347,7 +4356,7 @@ msgstr "Failed to update settings"
 msgid "Failed to update streamer"
 msgstr "Failed to update streamer"
 
-#: src/components/notifications/subscription-manager.tsx:246
+#: src/components/notifications/subscription-manager.tsx:250
 msgid "Failed to update subscriptions"
 msgstr "Failed to update subscriptions"
 
@@ -4399,7 +4408,7 @@ msgstr "Fast H.264 compression (CRF 23). Good balance of speed, quality, and fil
 
 #: src/components/streamers/edit/status-check-history.tsx:374
 #: src/components/streamers/edit/status-check-history.tsx:395
-#: src/lib/notification-event-types.ts:32
+#: src/lib/notification-event-types.ts:33
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:124
 msgid "Fatal error"
 msgstr "Fatal error"
@@ -4735,7 +4744,7 @@ msgstr "from the streamer"
 msgid "from the template"
 msgstr "from the template"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:208
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:209
 msgid "Full access"
 msgstr "Full access"
 
@@ -4896,7 +4905,7 @@ msgstr "GPU HQ Archive"
 msgid "GPU Standard"
 msgstr "GPU Standard"
 
-#: src/lib/notification-event-types.ts:35
+#: src/lib/notification-event-types.ts:36
 msgid "GPU unavailable"
 msgstr "GPU unavailable"
 
@@ -5171,7 +5180,7 @@ msgstr "HTTP requests"
 msgid "HTTP Version"
 msgstr "HTTP Version"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:255
+#: src/components/proxies/proxy-editor-dialog.tsx:257
 msgid "http, https, socks5 or socks5h."
 msgstr "http, https, socks5 or socks5h."
 
@@ -5569,7 +5578,7 @@ msgstr "Keeps decryption from stalling other downloads."
 #: src/components/notifications/forms/webhook-form.tsx:420
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:113
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:144
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:175
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:176
 msgid "Key"
 msgstr "Key"
 
@@ -5593,7 +5602,7 @@ msgstr "Key Timeout (ms)"
 msgid "Keyword"
 msgstr "Keyword"
 
-#: src/components/credentials/profile-editor-dialog.tsx:209
+#: src/components/credentials/profile-editor-dialog.tsx:210
 msgid "Label"
 msgstr "Label"
 
@@ -5636,7 +5645,7 @@ msgid "Last refreshed"
 msgstr "Last refreshed"
 
 #: src/components/credentials/account-usage.tsx:355
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:184
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:185
 msgid "Last used"
 msgstr "Last used"
 
@@ -5657,7 +5666,7 @@ msgstr "Leave attempts empty or at 1 for no automatic retry; the backoff doubles
 msgid "Leave empty for stream copy"
 msgstr "Leave empty for stream copy"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:315
+#: src/components/proxies/proxy-editor-dialog.tsx:317
 msgid "Leave empty to keep the current password."
 msgstr "Leave empty to keep the current password."
 
@@ -5666,11 +5675,11 @@ msgstr "Leave empty to keep the current password."
 msgid "Leave empty to use the saved account selection."
 msgstr "Leave empty to use the saved account selection."
 
-#: src/components/credentials/profile-editor-dialog.tsx:225
+#: src/components/credentials/profile-editor-dialog.tsx:227
 msgid "Leave off to keep the stored credentials."
 msgstr "Leave off to keep the stored credentials."
 
-#: src/components/proxies/proxy-editor-dialog.tsx:66
+#: src/components/proxies/proxy-editor-dialog.tsx:67
 msgid "Leave out any path: only scheme://host:port."
 msgstr "Leave out any path: only scheme://host:port."
 
@@ -5682,7 +5691,7 @@ msgstr "Leave this off to only remove the records and keep the files where they 
 msgid "Left"
 msgstr "Left"
 
-#: src/components/config/global/network-system-card.tsx:176
+#: src/components/config/global/network-system-card.tsx:178
 msgid "Let the player proxy sources on private or local networks."
 msgstr "Let the player proxy sources on private or local networks."
 
@@ -5895,7 +5904,7 @@ msgstr "Login invalid"
 msgid "Logs"
 msgstr "Logs"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:132
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:133
 msgid "Long-lived credentials for programmatic access to the REST API and the built-in MCP server. Read-only keys can inspect recording sessions and non-sensitive status; configuration and operational records require full access."
 msgstr "Long-lived credentials for programmatic access to the REST API and the built-in MCP server. Read-only keys can inspect recording sessions and non-sensitive status; configuration and operational records require full access."
 
@@ -5985,7 +5994,7 @@ msgstr "Manage specialized extraction and identification options."
 msgid "Manage storage paths and file formats."
 msgstr "Manage storage paths and file formats."
 
-#: src/components/notifications/subscription-manager.tsx:316
+#: src/components/notifications/subscription-manager.tsx:320
 msgid "Manage Subscriptions"
 msgstr "Manage Subscriptions"
 
@@ -6386,10 +6395,10 @@ msgstr "My Template"
 #: src/components/notifications/channel-form.tsx:381
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:230
 #: src/components/pipeline/workflows/workflow-editor.tsx:203
-#: src/components/proxies/proxy-editor-dialog.tsx:232
+#: src/components/proxies/proxy-editor-dialog.tsx:233
 #: src/components/streamers/config/streamer-identity-fields.tsx:97
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:172
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:440
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:173
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:441
 msgid "Name"
 msgstr "Name"
 
@@ -6449,8 +6458,8 @@ msgstr "Network & Content"
 msgid "Network & System"
 msgstr "Network & System"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:242
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:249
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:243
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:250
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:484
 msgid "Never"
 msgstr "Never"
@@ -6527,7 +6536,7 @@ msgstr "No active recordings"
 msgid "No answer within 10 seconds"
 msgstr "No answer within 10 seconds"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:160
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:161
 msgid "No API keys yet. Create one to let scripts or AI assistants access this server."
 msgstr "No API keys yet. Create one to let scripts or AI assistants access this server."
 
@@ -6638,7 +6647,7 @@ msgstr "No logs available for this execution."
 msgid "No logs to display"
 msgstr "No logs to display"
 
-#: src/components/notifications/subscription-manager.tsx:381
+#: src/components/notifications/subscription-manager.tsx:385
 msgid "No matching events found"
 msgstr "No matching events found"
 
@@ -7155,7 +7164,7 @@ msgstr "Optional"
 msgid "Optional description for this preset"
 msgstr "Optional description for this preset"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:297
+#: src/components/proxies/proxy-editor-dialog.tsx:299
 msgid "Optional."
 msgstr "Optional."
 
@@ -7176,7 +7185,7 @@ msgstr "Original (10000)"
 msgid "Original / Blu-ray"
 msgstr "Original / Blu-ray"
 
-#: src/lib/notification-event-types.ts:33
+#: src/lib/notification-event-types.ts:34
 msgid "Out of disk space"
 msgstr "Out of disk space"
 
@@ -7228,7 +7237,7 @@ msgstr "Output Detection"
 msgid "Output Folder"
 msgstr "Output Folder"
 
-#: src/lib/notification-event-types.ts:34
+#: src/lib/notification-event-types.ts:35
 msgid "Output folder unavailable"
 msgstr "Output folder unavailable"
 
@@ -7412,12 +7421,12 @@ msgstr "Partial file deleted"
 msgid "Passthrough Inputs"
 msgstr "Passthrough Inputs"
 
-#: src/components/credentials/profile-editor-dialog.tsx:334
+#: src/components/credentials/profile-editor-dialog.tsx:336
 #: src/components/notifications/forms/email-form.tsx:106
 #: src/components/notifications/forms/email-form.tsx:112
 #: src/components/notifications/forms/webhook-form.tsx:300
 #: src/components/notifications/forms/webhook-form.tsx:307
-#: src/components/proxies/proxy-editor-dialog.tsx:312
+#: src/components/proxies/proxy-editor-dialog.tsx:314
 #: src/routes/_public/login.lazy.tsx:190
 msgid "Password"
 msgstr "Password"
@@ -7449,7 +7458,7 @@ msgstr "Past"
 msgid "Paste a channel link. Everything else can wait."
 msgstr "Paste a channel link. Everything else can wait."
 
-#: src/components/credentials/profile-editor-dialog.tsx:243
+#: src/components/credentials/profile-editor-dialog.tsx:245
 msgid "Paste cookies"
 msgstr "Paste cookies"
 
@@ -7564,7 +7573,7 @@ msgstr "Pick a preset theme or import a custom one."
 msgid "Pipeline"
 msgstr "Pipeline"
 
-#: src/lib/notification-event-types.ts:29
+#: src/lib/notification-event-types.ts:30
 msgid "Pipeline cancelled"
 msgstr "Pipeline cancelled"
 
@@ -7580,11 +7589,11 @@ msgstr "Pipeline deleted successfully"
 msgid "Pipeline Execution"
 msgstr "Pipeline Execution"
 
-#: src/lib/notification-event-types.ts:28
+#: src/lib/notification-event-types.ts:29
 msgid "Pipeline failed"
 msgstr "Pipeline failed"
 
-#: src/lib/notification-event-types.ts:27
+#: src/lib/notification-event-types.ts:28
 msgid "Pipeline finished"
 msgstr "Pipeline finished"
 
@@ -7643,15 +7652,15 @@ msgstr "Pipeline name is required"
 msgid "Pipeline not found"
 msgstr "Pipeline not found"
 
-#: src/lib/notification-event-types.ts:30
+#: src/lib/notification-event-types.ts:31
 msgid "Pipeline queue backing up"
 msgstr "Pipeline queue backing up"
 
-#: src/lib/notification-event-types.ts:31
+#: src/lib/notification-event-types.ts:32
 msgid "Pipeline queue critical"
 msgstr "Pipeline queue critical"
 
-#: src/lib/notification-event-types.ts:26
+#: src/lib/notification-event-types.ts:27
 msgid "Pipeline started"
 msgstr "Pipeline started"
 
@@ -7705,7 +7714,7 @@ msgstr "Platform Override Settings"
 msgid "Platform Overrides"
 msgstr "Platform Overrides"
 
-#: src/lib/notification-event-types.ts:38
+#: src/lib/notification-event-types.ts:39
 msgid "Platform rate limited"
 msgstr "Platform rate limited"
 
@@ -8012,7 +8021,7 @@ msgstr "Priority high-low"
 msgid "Priority low-high"
 msgstr "Priority low-high"
 
-#: src/components/config/global/network-system-card.tsx:183
+#: src/components/config/global/network-system-card.tsx:185
 msgid "Private Network Access"
 msgstr "Private Network Access"
 
@@ -8122,15 +8131,15 @@ msgstr "Protocol Settings"
 msgid "Proxies"
 msgstr "Proxies"
 
-#: src/components/config/global/network-system-card.tsx:156
+#: src/components/config/global/network-system-card.tsx:158
 #: src/components/config/shared-config-editor.tsx:190
 #: src/components/config/shared/proxy-route-picker.tsx:445
 #: src/components/credentials/account-usage.tsx:415
-#: src/components/credentials/profile-editor-dialog.tsx:371
+#: src/components/credentials/profile-editor-dialog.tsx:373
 msgid "Proxy"
 msgstr "Proxy"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:65
+#: src/components/proxies/proxy-editor-dialog.tsx:66
 msgid "Put the login in the username and password fields instead."
 msgstr "Put the login in the username and password fields instead."
 
@@ -8156,6 +8165,7 @@ msgid "Quality Rate"
 msgstr "Quality Rate"
 
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:161
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:72
 msgid "Quality Settings"
 msgstr "Quality Settings"
 
@@ -8247,7 +8257,7 @@ msgstr "Read Buffer Size (bytes)"
 msgid "Read Timeout (ms)"
 msgstr "Read Timeout (ms)"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:212
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:213
 msgid "Read-only"
 msgstr "Read-only"
 
@@ -8327,6 +8337,14 @@ msgstr "Record Danmu"
 msgid "Record Separate Audio"
 msgstr "Record Separate Audio"
 
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:57
+msgid "Record the qualities some channels stream only in AV1. H.264 qualities stay available. Turn on only if your players and post-processing handle AV1."
+msgstr "Record the qualities some channels stream only in AV1. H.264 qualities stay available. Turn on only if your players and post-processing handle AV1."
+
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:52
+msgid "Record the qualities some channels stream only in H.265. H.264 qualities stay available. Turn on only if your players and post-processing handle H.265."
+msgstr "Record the qualities some channels stream only in H.265. H.264 qualities stay available. Turn on only if your players and post-processing handle H.265."
+
 #: src/components/config/engines/forms/mesio-sections.tsx:760
 msgid "Record Video"
 msgstr "Record Video"
@@ -8347,11 +8365,11 @@ msgctxt "live recordings using an account"
 msgid "Recording"
 msgstr "Recording"
 
-#: src/lib/notification-event-types.ts:22
+#: src/lib/notification-event-types.ts:23
 msgid "Recording cancelled"
 msgstr "Recording cancelled"
 
-#: src/lib/notification-event-types.ts:21
+#: src/lib/notification-event-types.ts:22
 msgid "Recording error"
 msgstr "Recording error"
 
@@ -8360,7 +8378,7 @@ msgstr "Recording error"
 msgid "Recording Filters"
 msgstr "Recording Filters"
 
-#: src/lib/notification-event-types.ts:20
+#: src/lib/notification-event-types.ts:21
 msgid "Recording finished"
 msgstr "Recording finished"
 
@@ -8368,7 +8386,7 @@ msgstr "Recording finished"
 msgid "Recording is paused"
 msgstr "Recording is paused"
 
-#: src/lib/notification-event-types.ts:23
+#: src/lib/notification-event-types.ts:24
 msgid "Recording rejected"
 msgstr "Recording rejected"
 
@@ -8377,7 +8395,7 @@ msgid "Recording split successfully."
 msgstr "Recording split successfully."
 
 #: src/components/sessions/timeline-tab.tsx:320
-#: src/lib/notification-event-types.ts:19
+#: src/lib/notification-event-types.ts:20
 msgid "Recording started"
 msgstr "Recording started"
 
@@ -8439,7 +8457,7 @@ msgstr "Refresh status"
 msgid "Refresh stream URL"
 msgstr "Refresh stream URL"
 
-#: src/components/credentials/profile-editor-dialog.tsx:297
+#: src/components/credentials/profile-editor-dialog.tsx:299
 msgid "Refresh token"
 msgstr "Refresh token"
 
@@ -8515,7 +8533,7 @@ msgstr "Remove header"
 msgid "Remove Input on Success"
 msgstr "Remove Input on Success"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:289
+#: src/components/proxies/proxy-editor-dialog.tsx:291
 msgid "Remove login"
 msgstr "Remove login"
 
@@ -8625,7 +8643,7 @@ msgstr "Replace All"
 msgid "Replace configuration?"
 msgstr "Replace configuration?"
 
-#: src/components/credentials/profile-editor-dialog.tsx:223
+#: src/components/credentials/profile-editor-dialog.tsx:225
 msgid "Replace credentials"
 msgstr "Replace credentials"
 
@@ -8855,19 +8873,19 @@ msgstr "Reusable processor configurations for pipeline steps"
 msgid "Review recorded streams and manage archives"
 msgstr "Review recorded streams and manage archives"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:315
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:316
 msgid "Revoke"
 msgstr "Revoke"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:260
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:261
 msgid "Revoke API key"
 msgstr "Revoke API key"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:295
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:296
 msgid "Revoke API key?"
 msgstr "Revoke API key?"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:227
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:228
 msgid "Revoked"
 msgstr "Revoked"
 
@@ -8979,14 +8997,14 @@ msgstr "Sanitized streamer name"
 msgid "Saturday"
 msgstr "Saturday"
 
-#: src/components/credentials/profile-editor-dialog.tsx:411
+#: src/components/credentials/profile-editor-dialog.tsx:413
 msgid "Save account"
 msgstr "Save account"
 
 #: src/components/config/engines/engine-editor.tsx:266
 #: src/components/filters/FilterDialog.tsx:298
 #: src/components/notifications/channel-form.tsx:459
-#: src/components/proxies/proxy-editor-dialog.tsx:361
+#: src/components/proxies/proxy-editor-dialog.tsx:363
 #: src/components/shared/save-fab.tsx:93
 #: src/components/streamers/streamer-editor.tsx:331
 msgid "Save changes"
@@ -8994,7 +9012,7 @@ msgstr "Save changes"
 
 #: src/components/config/platforms/platform-editor.tsx:186
 #: src/components/config/templates/template-editor.tsx:207
-#: src/components/notifications/subscription-manager.tsx:472
+#: src/components/notifications/subscription-manager.tsx:476
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:805
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:380
@@ -9021,7 +9039,7 @@ msgstr "Save with incomplete delete checks?"
 msgid "Save Workflow"
 msgstr "Save Workflow"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:253
+#: src/components/proxies/proxy-editor-dialog.tsx:255
 msgid "Saved as {normalized}"
 msgstr "Saved as {normalized}"
 
@@ -9033,7 +9051,7 @@ msgstr "Saved proxies"
 msgid "Saved proxies & system proxy"
 msgstr "Saved proxies & system proxy"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:215
+#: src/components/proxies/proxy-editor-dialog.tsx:216
 msgid "Saved proxies can be chosen in global, platform, template, streamer and account settings."
 msgstr "Saved proxies can be chosen in global, platform, template, streamer and account settings."
 
@@ -9050,7 +9068,7 @@ msgstr "Saved proxies that global, platform, template, streamer and account sett
 msgid "Saved proxy"
 msgstr "Saved proxy"
 
-#: src/components/credentials/profile-editor-dialog.tsx:201
+#: src/components/credentials/profile-editor-dialog.tsx:202
 msgid "Saved right away, separately from the rest of this page."
 msgstr "Saved right away, separately from the rest of this page."
 
@@ -9082,7 +9100,7 @@ msgstr "Scan a directory for new files created by the command. Detected files wi
 msgid "Scan Directory"
 msgstr "Scan Directory"
 
-#: src/components/credentials/profile-editor-dialog.tsx:239
+#: src/components/credentials/profile-editor-dialog.tsx:241
 msgid "Scan QR code"
 msgstr "Scan QR code"
 
@@ -9144,7 +9162,7 @@ msgstr "Search comments..."
 msgid "Search engines..."
 msgstr "Search engines..."
 
-#: src/components/notifications/subscription-manager.tsx:347
+#: src/components/notifications/subscription-manager.tsx:351
 msgid "Search events..."
 msgstr "Search events..."
 
@@ -9226,7 +9244,7 @@ msgstr "Segment Cache TTL (ms)"
 msgid "Segment downloads"
 msgstr "Segment downloads"
 
-#: src/lib/notification-event-types.ts:25
+#: src/lib/notification-event-types.ts:26
 msgid "Segment finished"
 msgstr "Segment finished"
 
@@ -9235,7 +9253,7 @@ msgstr "Segment finished"
 msgid "Segment Retries"
 msgstr "Segment Retries"
 
-#: src/lib/notification-event-types.ts:24
+#: src/lib/notification-event-types.ts:25
 msgid "Segment started"
 msgstr "Segment started"
 
@@ -9291,7 +9309,7 @@ msgid "Select a streamer"
 msgstr "Select a streamer"
 
 #: src/components/notifications/desktop-channel-dialog.tsx:173
-#: src/components/notifications/subscription-manager.tsx:365
+#: src/components/notifications/subscription-manager.tsx:369
 msgid "Select All"
 msgstr "Select All"
 
@@ -9398,7 +9416,7 @@ msgid "Select the days required for this filter to apply."
 msgstr "Select the days required for this filter to apply."
 
 #. placeholder {0}: channel.name
-#: src/components/notifications/subscription-manager.tsx:319
+#: src/components/notifications/subscription-manager.tsx:323
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "Select the events that should trigger notifications for <0>{0}</0>."
 
@@ -9494,7 +9512,7 @@ msgstr "Session Complete Pipeline"
 msgid "Session complete pipeline is not supported for this entity."
 msgstr "Session complete pipeline is not supported for this entity."
 
-#: src/lib/notification-event-types.ts:44
+#: src/lib/notification-event-types.ts:45
 msgid "Session cookies not saved"
 msgstr "Session cookies not saved"
 
@@ -9633,7 +9651,7 @@ msgstr "Show less"
 msgid "Show password"
 msgstr "Show password"
 
-#: src/components/credentials/profile-editor-dialog.tsx:403
+#: src/components/credentials/profile-editor-dialog.tsx:405
 msgid "Show QR code"
 msgstr "Show QR code"
 
@@ -9650,11 +9668,11 @@ msgstr "Sidebar Layout"
 msgid "Sign In"
 msgstr "Sign In"
 
-#: src/components/credentials/profile-editor-dialog.tsx:251
+#: src/components/credentials/profile-editor-dialog.tsx:253
 msgid "Sign in by scanning a QR code with the {appName} app. Nothing to copy or paste."
 msgstr "Sign in by scanning a QR code with the {appName} app. Nothing to copy or paste."
 
-#: src/components/credentials/profile-editor-dialog.tsx:256
+#: src/components/credentials/profile-editor-dialog.tsx:258
 msgid "Sign in by scanning a QR code with the platform's app. Nothing to copy or paste."
 msgstr "Sign in by scanning a QR code with the platform's app. Nothing to copy or paste."
 
@@ -9693,7 +9711,7 @@ msgid "Single URL"
 msgstr "Single URL"
 
 #: src/components/credentials/account-usage.tsx:315
-#: src/components/credentials/profile-editor-dialog.tsx:346
+#: src/components/credentials/profile-editor-dialog.tsx:348
 msgid "Sites"
 msgstr "Sites"
 
@@ -9853,7 +9871,7 @@ msgstr "STARTED"
 msgid "State"
 msgstr "State"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:181
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:182
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:514
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:478
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:429
@@ -9950,11 +9968,11 @@ msgstr "Stream Mapping (-map)"
 msgid "Stream monitoring encountered issues"
 msgstr "Stream monitoring encountered issues"
 
-#: src/lib/notification-event-types.ts:18
+#: src/lib/notification-event-types.ts:19
 msgid "Stream offline"
 msgstr "Stream offline"
 
-#: src/lib/notification-event-types.ts:17
+#: src/lib/notification-event-types.ts:18
 msgid "Stream online"
 msgstr "Stream online"
 
@@ -10082,7 +10100,7 @@ msgstr "Streamers"
 msgid "Streamers currently live will appear here."
 msgstr "Streamers currently live will appear here."
 
-#: src/components/credentials/profile-editor-dialog.tsx:359
+#: src/components/credentials/profile-editor-dialog.tsx:361
 msgid "Streamers on these sites that don't choose an account use this one. A site also covers its subdomains, so youtube.com covers www.youtube.com and m.youtube.com. Separate sites with commas."
 msgstr "Streamers on these sites that don't choose an account use this one. A site also covers its subdomains, so youtube.com covers www.youtube.com and m.youtube.com. Separate sites with commas."
 
@@ -10127,7 +10145,7 @@ msgstr "Streams per file (--multi-thread-streams)."
 msgid "Subscriptions"
 msgstr "Subscriptions"
 
-#: src/components/notifications/subscription-manager.tsx:239
+#: src/components/notifications/subscription-manager.tsx:243
 msgid "Subscriptions updated"
 msgstr "Subscriptions updated"
 
@@ -10209,11 +10227,11 @@ msgstr "System proxy"
 msgid "System proxy: <0>{url}</0>"
 msgstr "System proxy: <0>{url}</0>"
 
-#: src/lib/notification-event-types.ts:37
+#: src/lib/notification-event-types.ts:38
 msgid "System shutting down"
 msgstr "System shutting down"
 
-#: src/lib/notification-event-types.ts:36
+#: src/lib/notification-event-types.ts:37
 msgid "System started"
 msgstr "System started"
 
@@ -10340,7 +10358,7 @@ msgstr "Test notification sent"
 msgid "Testing…"
 msgstr "Testing…"
 
-#: src/components/credentials/profile-editor-dialog.tsx:310
+#: src/components/credentials/profile-editor-dialog.tsx:312
 msgid "The access token alone signs in; cookies are optional."
 msgstr "The access token alone signs in; cookies are optional."
 
@@ -10396,7 +10414,7 @@ msgstr "The download tools recordings can use. Each one is checked on the server
 msgid "The file is split at the next safe boundary."
 msgstr "The file is split at the next safe boundary."
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:431
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:432
 msgid "The key inherits your account's permissions, limited by the access level you pick here."
 msgstr "The key inherits your account's permissions, limited by the access level you pick here."
 
@@ -10432,7 +10450,7 @@ msgstr "The proxy rejected the login"
 msgid "The recording ended before the cut completed."
 msgstr "The recording ended before the cut completed."
 
-#: src/components/proxies/proxy-editor-dialog.tsx:295
+#: src/components/proxies/proxy-editor-dialog.tsx:297
 msgid "The saved login will be removed."
 msgstr "The saved login will be removed."
 
@@ -10583,7 +10601,7 @@ msgstr "This proxy is in use"
 msgid "This proxy no longer exists. Requests fail until another is chosen."
 msgstr "This proxy no longer exists. Requests fail until another is chosen."
 
-#: src/components/proxies/proxy-editor-dialog.tsx:179
+#: src/components/proxies/proxy-editor-dialog.tsx:180
 msgid "This proxy was changed elsewhere. Close the editor and open it again."
 msgstr "This proxy was changed elsewhere. Close the editor and open it again."
 
@@ -11254,7 +11272,7 @@ msgstr "URL"
 msgid "URL is required"
 msgstr "URL is required"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:348
+#: src/components/proxies/proxy-editor-dialog.tsx:350
 msgid "Use “{conflictName}” instead"
 msgstr "Use “{conflictName}” instead"
 
@@ -11262,7 +11280,7 @@ msgstr "Use “{conflictName}” instead"
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "Use <0>-movflags +faststart</0>"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:64
+#: src/components/proxies/proxy-editor-dialog.tsx:65
 msgid "Use an http, https, socks5 or socks5h address."
 msgstr "Use an http, https, socks5 or socks5h address."
 
@@ -11303,7 +11321,7 @@ msgstr "used {when}"
 msgid "used by {usage}"
 msgstr "used by {usage}"
 
-#: src/components/config/global/network-system-card.tsx:165
+#: src/components/config/global/network-system-card.tsx:167
 msgid "Used wherever a platform, template, streamer or account does not choose its own."
 msgstr "Used wherever a platform, template, streamer or account does not choose its own."
 
@@ -11317,12 +11335,12 @@ msgctxt "terminal-cause"
 msgid "User Disabled"
 msgstr "User Disabled"
 
-#: src/components/credentials/profile-editor-dialog.tsx:321
+#: src/components/credentials/profile-editor-dialog.tsx:323
 #: src/components/notifications/forms/email-form.tsx:86
 #: src/components/notifications/forms/email-form.tsx:91
 #: src/components/notifications/forms/webhook-form.tsx:280
 #: src/components/notifications/forms/webhook-form.tsx:286
-#: src/components/proxies/proxy-editor-dialog.tsx:275
+#: src/components/proxies/proxy-editor-dialog.tsx:277
 #: src/routes/_public/login.lazy.tsx:170
 msgid "Username"
 msgstr "Username"
