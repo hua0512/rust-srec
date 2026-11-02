@@ -35,7 +35,7 @@ import { toast } from 'sonner';
 import { ArrowLeft, AlertCircle } from 'lucide-react';
 import { getMediaDownloadUrl, getMediaUrl, isSameOriginUrl } from '@/lib/url';
 import { isTauriRuntime, revealItemInDir } from '@/utils/tauri';
-import { resolvePlayerMediaType } from '@/lib/media';
+import { findDanmuOutput, resolvePlayerMediaType } from '@/lib/media';
 import { formatDuration } from '@/lib/format';
 import { isNotFoundError } from '@/lib/api-error';
 import type { MediaOutput } from '@/api/schemas/system';
@@ -185,6 +185,16 @@ function SessionDetailPage() {
   });
 
   const outputs = outputsData || [];
+  const playingDanmu =
+    playingOutput && playingOutput.format === 'VIDEO'
+      ? findDanmuOutput(playingOutput, outputs)
+      : undefined;
+  const playingDanmuUrl = playingDanmu
+    ? getMediaUrl(
+        `/api/media/${playingDanmu.id}/content`,
+        user?.token?.access_token,
+      ) || undefined
+    : undefined;
   const dags = dagsData?.dags || [];
   const segments = segmentsData || [];
 
@@ -475,6 +485,7 @@ function SessionDetailPage() {
                     isLive={false}
                     mediaDurationSecs={playingOutput.duration_secs}
                     mediaFileSizeBytes={playingOutput.file_size_bytes}
+                    danmuUrl={playingDanmuUrl}
                     className="w-full h-full border-0 rounded-none bg-black"
                     contentClassName="min-h-0"
                     defaultWebFullscreen

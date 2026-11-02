@@ -1,8 +1,13 @@
 import { SaxesParser, type SaxesTagPlain } from 'saxes';
 
+export type DanmuKind = 'chat' | 'gift' | 'superchat';
+
 export interface DanmuComment {
+  kind: DanmuKind;
   time: number;
   mode: number;
+  /** `0xRRGGBB`, or `null` when the element carries no colour. */
+  color: number | null;
   timestampMs: number | null;
   userHash: string;
   rowId: string;
@@ -54,8 +59,10 @@ function parseStandardComment(
 
   const legacyIdentity = parseLegacyIdentity(parts[7]);
   return {
+    kind: 'chat',
     time,
     mode,
+    color: parseNumber(parts[3]),
     timestampMs: normalizeDanmuTimestamp(parts[4]),
     userHash: parts[6],
     rowId: legacyIdentity.rowId,
@@ -74,8 +81,10 @@ function parseGift(
   const giftName = attributes.giftname || 'Gift';
   const giftCount = attributes.giftcount;
   return {
+    kind: 'gift',
     time,
     mode: 1,
+    color: null,
     timestampMs: normalizeDanmuTimestamp(attributes.timestamp),
     userHash: attributes.uid || '',
     rowId: `gift-${index}`,
@@ -92,8 +101,10 @@ function parseSuperChat(
   if (time === null) return null;
 
   return {
+    kind: 'superchat',
     time,
     mode: 5,
+    color: null,
     timestampMs: normalizeDanmuTimestamp(attributes.timestamp),
     userHash: attributes.uid || '',
     rowId: `sc-${index}`,

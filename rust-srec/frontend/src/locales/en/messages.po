@@ -463,6 +463,16 @@ msgstr "1 (best) - 31 (worst)"
 msgid "1 year"
 msgstr "1 year"
 
+#: src/components/player/danmu-settings-panel.tsx:34
+msgctxt "danmu area"
+msgid "1/2"
+msgstr "1/2"
+
+#: src/components/player/danmu-settings-panel.tsx:33
+msgctxt "danmu area"
+msgid "1/4"
+msgstr "1/4"
+
 #: src/components/notifications/forms/telegram-form.tsx:50
 msgid "123456:ABC-DEF..."
 msgstr "123456:ABC-DEF..."
@@ -478,6 +488,11 @@ msgstr "2"
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:252
 msgid "24-hour timeline"
 msgstr "24-hour timeline"
+
+#: src/components/player/danmu-settings-panel.tsx:35
+msgctxt "danmu area"
+msgid "3/4"
+msgstr "3/4"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:490
 msgid "30 days"
@@ -1272,7 +1287,7 @@ msgstr "Authentication"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:249
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:68
-#: src/components/player/player-card.tsx:248
+#: src/components/player/player-card.tsx:253
 msgid "Auto"
 msgstr "Auto"
 
@@ -1461,7 +1476,7 @@ msgstr "BaiduPCS-Go binary not available at <0>{0}</0>. Install it or set the bi
 msgid "BaiduPCS-Go Executable (Optional)"
 msgstr "BaiduPCS-Go Executable (Optional)"
 
-#: src/components/player/player-card.tsx:290
+#: src/components/player/player-card.tsx:295
 msgid "Balanced"
 msgstr "Balanced"
 
@@ -1541,6 +1556,11 @@ msgstr "Bitrate"
 msgid "Blacklisted CDNs"
 msgstr "Blacklisted CDNs"
 
+#: src/components/player/danmu-settings-panel.tsx:339
+msgctxt "danmu blocklist"
+msgid "Block"
+msgstr "Block"
+
 #: src/components/pipeline/status-config.ts:140
 msgid "Blocked"
 msgstr "Blocked"
@@ -1548,6 +1568,10 @@ msgstr "Blocked"
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:329
 msgid "Blocked by browser"
 msgstr "Blocked by browser"
+
+#: src/components/player/danmu-settings-panel.tsx:304
+msgid "Blocklist"
+msgstr "Blocklist"
 
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:42
 msgid "Blu-ray (400)"
@@ -1573,6 +1597,11 @@ msgstr "Bot Token"
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:362
 msgid "both directions at 10 MiB/s"
 msgstr "both directions at 10 MiB/s"
+
+#: src/components/player/danmu-settings-panel.tsx:24
+msgctxt "danmu"
+msgid "Bottom"
+msgstr "Bottom"
 
 #: src/components/danmu/danmu-viewer.tsx:48
 #: src/components/danmu/danmu-viewer.tsx:225
@@ -1621,7 +1650,7 @@ msgstr "Buffered ahead"
 msgid "Buffering"
 msgstr "Buffering"
 
-#: src/components/player/player-card.tsx:276
+#: src/components/player/player-card.tsx:281
 msgid "Buffering presets are unavailable for this playback path."
 msgstr "Buffering presets are unavailable for this playback path."
 
@@ -1770,7 +1799,7 @@ msgstr "Change Password"
 msgid "Change Password Required"
 msgstr "Change Password Required"
 
-#: src/components/player/player-card.tsx:546
+#: src/components/player/player-card.tsx:552
 msgid "Change source"
 msgstr "Change source"
 
@@ -1790,7 +1819,7 @@ msgstr "Changes to accounts are saved right away."
 msgid "Changing Password..."
 msgstr "Changing Password..."
 
-#: src/components/player/player-card.tsx:273
+#: src/components/player/player-card.tsx:278
 msgid "Changing this restarts the player."
 msgstr "Changing this restarts the player."
 
@@ -1999,7 +2028,7 @@ msgstr "Cloning..."
 msgid "Close"
 msgstr "Close"
 
-#: src/components/player/player-card.tsx:482
+#: src/components/player/player-card.tsx:488
 msgid "Close playback details"
 msgstr "Close playback details"
 
@@ -2035,6 +2064,11 @@ msgstr "Collapsible"
 #: src/components/config/shared/danmu-statistics-card.tsx:192
 msgid "Collect statistics"
 msgstr "Collect statistics"
+
+#: src/components/player/danmu-settings-panel.tsx:25
+msgctxt "danmu"
+msgid "Coloured"
+msgstr "Coloured"
 
 #: src/components/notifications/channel-form.tsx:476
 msgid "Coming soon"
@@ -2258,7 +2292,7 @@ msgid "Connecting..."
 msgstr "Connecting..."
 
 #: src/components/notifications/events/payload-preview.tsx:53
-#: src/components/player/player-card.tsx:227
+#: src/components/player/player-card.tsx:232
 msgid "Connection"
 msgstr "Connection"
 
@@ -2445,7 +2479,7 @@ msgstr "Could not load the preset <0>{presetName}</0>. Check that the server is 
 msgid "Could not request lossless cutting. Refresh the recording status and try again."
 msgstr "Could not request lossless cutting. Refresh the recording status and try again."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:206
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:216
 msgid "Could not show the file: {message}"
 msgstr "Could not show the file: {message}"
 
@@ -2792,6 +2826,11 @@ msgstr "Danmu Control"
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:359
 msgid "Danmu Service"
 msgstr "Danmu Service"
+
+#: src/components/player/danmu-settings-panel.tsx:197
+#: src/components/player/player-danmu.tsx:28
+msgid "Danmu settings"
+msgstr "Danmu settings"
 
 #: src/components/config/shared/danmu-statistics-card.tsx:174
 #: src/components/sessions/danmu-stats-panel.tsx:174
@@ -3258,7 +3297,7 @@ msgstr "Dimensions & Filters"
 
 #: src/components/notifications/browser-notification-listener.tsx:60
 #: src/components/notifications/events/payload-preview.tsx:58
-#: src/components/player/player-card.tsx:251
+#: src/components/player/player-card.tsx:256
 #: src/components/proxies/proxy-route-label.tsx:33
 msgid "Direct"
 msgstr "Direct"
@@ -3329,6 +3368,10 @@ msgstr "Disk Space"
 #: src/components/upload-status-indicator.tsx:441
 msgid "Dismiss"
 msgstr "Dismiss"
+
+#: src/components/player/danmu-settings-panel.tsx:252
+msgid "Display area"
+msgstr "Display area"
 
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:38
 msgid "Dolby Vision (30000)"
@@ -3401,7 +3444,7 @@ msgid "Download engine (mesio)"
 msgstr "Download engine (mesio)"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:238
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:248
 msgid "Download failed: {0}"
 msgstr "Download failed: {0}"
 
@@ -3414,8 +3457,8 @@ msgstr "Download Manager"
 msgid "Download Retry Policy"
 msgstr "Download Retry Policy"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:219
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:237
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:229
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:247
 msgid "Download started"
 msgstr "Download started"
 
@@ -3827,7 +3870,7 @@ msgstr "Error loading platform"
 msgid "Error loading preset"
 msgstr "Error loading preset"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:271
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:281
 msgid "Error Loading Session"
 msgstr "Error Loading Session"
 
@@ -3860,6 +3903,10 @@ msgstr "Event Types"
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:369
 msgid "Events"
 msgstr "Events"
+
+#: src/components/player/danmu-settings-panel.tsx:49
+msgid "Exact user name"
+msgstr "Exact user name"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:357
 msgid "Examples:"
@@ -4382,6 +4429,11 @@ msgstr "Failover on"
 msgid "Falls back to the BAIDUPCS_PATH environment variable, then PATH lookup."
 msgstr "Falls back to the BAIDUPCS_PATH environment variable, then PATH lookup."
 
+#: src/components/player/danmu-settings-panel.tsx:43
+msgctxt "danmu speed"
+msgid "Fast"
+msgstr "Fast"
+
 #: src/components/pipeline/presets/default-presets-i18n.ts:6
 msgid "Fast Compression"
 msgstr "Fast Compression"
@@ -4640,6 +4692,10 @@ msgstr "Follow the recording's proxy"
 msgid "Follows the recording"
 msgstr "Follows the recording"
 
+#: src/components/player/danmu-settings-panel.tsx:267
+msgid "Font size"
+msgstr "Font size"
+
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:263
 msgid "Fonts Directory"
 msgstr "Fonts Directory"
@@ -4743,6 +4799,11 @@ msgstr "from the streamer"
 #: src/components/proxies/proxy-route-label.tsx:40
 msgid "from the template"
 msgstr "from the template"
+
+#: src/components/player/danmu-settings-panel.tsx:36
+msgctxt "danmu area"
+msgid "Full"
+msgstr "Full"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:209
 msgid "Full access"
@@ -4866,7 +4927,7 @@ msgstr "Go back"
 
 #: src/components/default-catch-boundary.tsx:58
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:323
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:279
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:289
 msgid "Go Back"
 msgstr "Go Back"
 
@@ -4974,6 +5035,15 @@ msgstr "Healthy"
 #: src/components/config/engines/forms/mesio-sections.tsx:236
 msgid "Height"
 msgstr "Height"
+
+#: src/components/player/danmu-settings-panel.tsx:221
+msgctxt "danmu"
+msgid "Hide"
+msgstr "Hide"
+
+#: src/components/player/player-danmu.tsx:27
+msgid "Hide danmu"
+msgstr "Hide danmu"
 
 #: src/routes/_authed/change-password.lazy.tsx:172
 #: src/routes/_authed/change-password.lazy.tsx:214
@@ -5092,7 +5162,7 @@ msgstr "How chat activity is summarised on the session page."
 msgid "How checks, recordings, danmu and playback here connect. An account with its own proxy setting keeps it."
 msgstr "How checks, recordings, danmu and playback here connect. An account with its own proxy setting keeps it."
 
-#: src/components/player/player-card.tsx:491
+#: src/components/player/player-card.tsx:497
 msgid "How far playback trails the available stream, not the total broadcast delay."
 msgstr "How far playback trails the available stream, not the total broadcast delay."
 
@@ -5444,7 +5514,7 @@ msgstr "Interval between checks."
 msgid "Interval between offline checks."
 msgstr "Interval between offline checks."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:213
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:223
 msgid "Invalid download URL"
 msgstr "Invalid download URL"
 
@@ -5519,7 +5589,7 @@ msgstr "Job Timeouts"
 
 #: src/components/layout/site-header.tsx:54
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:357
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:367
 msgid "Jobs"
 msgstr "Jobs"
 
@@ -5649,7 +5719,7 @@ msgstr "Last refreshed"
 msgid "Last used"
 msgstr "Last used"
 
-#: src/components/player/player-card.tsx:268
+#: src/components/player/player-card.tsx:273
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:235
 msgid "Latency"
 msgstr "Latency"
@@ -5735,7 +5805,7 @@ msgstr "List"
 msgid "Live"
 msgstr "Live"
 
-#: src/components/player/player-card.tsx:332
+#: src/components/player/player-card.tsx:337
 #: src/components/sessions/session-card.tsx:167
 #: src/components/sessions/session-header.tsx:27
 msgid "LIVE"
@@ -5928,7 +5998,7 @@ msgstr "Lossless cutting will not be used"
 msgid "Lossless Split"
 msgstr "Lossless Split"
 
-#: src/components/player/player-card.tsx:289
+#: src/components/player/player-card.tsx:294
 #: src/components/streamers/config/streamer-recording-fields.tsx:113
 #: src/components/streamers/streamer-batch-action-bar.tsx:184
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:592
@@ -6164,7 +6234,7 @@ msgstr "Media Outputs"
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "Media outputs will appear here when pipeline jobs complete."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:428
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:438
 msgid "Media Player"
 msgstr "Media Player"
 
@@ -6183,6 +6253,10 @@ msgstr "Memory Usage"
 #: src/components/config/global/import-mode-radio-group.tsx:90
 msgid "Merge Changes"
 msgstr "Merge Changes"
+
+#: src/components/player/danmu-settings-panel.tsx:288
+msgid "Merge repeated comments"
+msgstr "Merge repeated comments"
 
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:232
 msgid "Message"
@@ -6882,6 +6956,11 @@ msgstr "None of the selected accounts could sign in within the attempt limit. Ch
 msgid "Normal"
 msgstr "Normal"
 
+#: src/components/player/danmu-settings-panel.tsx:42
+msgctxt "danmu speed"
+msgid "Normal"
+msgstr "Normal"
+
 #: src/lib/priority.ts:16
 msgctxt "priority"
 msgid "Normal"
@@ -6940,6 +7019,10 @@ msgstr "Not used at native resolution"
 #: src/components/credentials/account-usage.tsx:174
 msgid "Not used while disabled"
 msgstr "Not used while disabled"
+
+#: src/components/player/danmu-settings-panel.tsx:344
+msgid "Nothing blocked."
+msgstr "Nothing blocked."
 
 #: src/components/credentials/account-selection-section.tsx:341
 msgid "Nothing it inherits from chooses an account"
@@ -7129,6 +7212,11 @@ msgstr "Only kicks in for files above the Cutoff size. Default is 4. Set to 0 to
 msgid "Only supported for MP4/MOV/M4V"
 msgstr "Only supported for MP4/MOV/M4V"
 
+#: src/components/player/danmu-settings-panel.tsx:243
+msgctxt "danmu"
+msgid "Opacity"
+msgstr "Opacity"
+
 #: src/components/sessions/session-card.tsx:245
 #: src/components/shared/decorated-card.tsx:184
 #: src/components/streamers/card/stream-actions-menu.tsx:41
@@ -7314,7 +7402,7 @@ msgstr "Override output folder."
 msgid "Override pipelines and platform options for specific platforms."
 msgstr "Override pipelines and platform options for specific platforms."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:326
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:336
 msgid "Overview"
 msgstr "Overview"
 
@@ -7481,6 +7569,10 @@ msgstr "Path Variables"
 #: src/components/logging/log-viewer.tsx:427
 msgid "Pause"
 msgstr "Pause"
+
+#: src/components/player/danmu-settings-panel.tsx:293
+msgid "Pause a comment on hover"
+msgstr "Pause a comment on hover"
 
 #: src/components/player/playback-state.ts:19
 msgid "Paused"
@@ -7742,7 +7834,7 @@ msgstr "Platforms"
 msgid "Play"
 msgstr "Play"
 
-#: src/components/player/player-card.tsx:434
+#: src/components/player/player-card.tsx:439
 msgid "Playback"
 msgstr "Playback"
 
@@ -7750,9 +7842,9 @@ msgstr "Playback"
 msgid "Playback could not start. Retry, refresh the stream URL, or choose another source."
 msgstr "Playback could not start. Retry, refresh the stream URL, or choose another source."
 
-#: src/components/player/player-card.tsx:397
-#: src/components/player/player-card.tsx:398
-#: src/components/player/player-card.tsx:475
+#: src/components/player/player-card.tsx:402
+#: src/components/player/player-card.tsx:403
+#: src/components/player/player-card.tsx:481
 msgid "Playback details"
 msgstr "Playback details"
 
@@ -7760,7 +7852,7 @@ msgstr "Playback details"
 msgid "Playback error"
 msgstr "Playback error"
 
-#: src/components/player/player-card.tsx:509
+#: src/components/player/player-card.tsx:515
 msgid "Playback Error"
 msgstr "Playback Error"
 
@@ -7773,8 +7865,8 @@ msgstr "Playback stalled while seeking. Retry to reload the video."
 msgid "Player"
 msgstr "Player"
 
-#: src/components/player/player-card.tsx:409
-#: src/components/player/player-card.tsx:410
+#: src/components/player/player-card.tsx:414
+#: src/components/player/player-card.tsx:415
 msgid "Player settings"
 msgstr "Player settings"
 
@@ -7887,7 +7979,7 @@ msgstr "Preferred Quality (QN)"
 msgid "Preferred Video Codec"
 msgstr "Preferred Video Codec"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:236
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:246
 msgid "Preparing download..."
 msgstr "Preparing download..."
 
@@ -8407,7 +8499,7 @@ msgstr "Recording uses temporary chunks"
 msgid "Recording will start when schedule allows"
 msgstr "Recording will start when schedule allows"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:345
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:355
 msgid "Recordings"
 msgstr "Recordings"
 
@@ -8452,8 +8544,8 @@ msgstr "Refresh Retry Delay (ms)"
 msgid "Refresh status"
 msgstr "Refresh status"
 
-#: src/components/player/player-card.tsx:310
-#: src/components/player/player-card.tsx:525
+#: src/components/player/player-card.tsx:315
+#: src/components/player/player-card.tsx:531
 msgid "Refresh stream URL"
 msgstr "Refresh stream URL"
 
@@ -8486,8 +8578,8 @@ msgstr "Rejected"
 msgid "Rejected during use; a refresh is queued"
 msgstr "Rejected during use; a refresh is queued"
 
-#: src/components/player/player-card.tsx:383
-#: src/components/player/player-card.tsx:384
+#: src/components/player/player-card.tsx:388
+#: src/components/player/player-card.tsx:389
 msgid "Reload Player"
 msgstr "Reload Player"
 
@@ -8541,8 +8633,8 @@ msgstr "Remove login"
 msgid "Remove platform override"
 msgstr "Remove platform override"
 
-#: src/components/player/player-card.tsx:456
-#: src/components/player/player-card.tsx:457
+#: src/components/player/player-card.tsx:461
+#: src/components/player/player-card.tsx:462
 msgid "Remove player"
 msgstr "Remove player"
 
@@ -8719,6 +8811,11 @@ msgstr "Requires \"Record Danmu\" to be enabled."
 msgid "Reset"
 msgstr "Reset"
 
+#: src/components/player/danmu-settings-panel.tsx:211
+msgctxt "danmu"
+msgid "Reset"
+msgstr "Reset"
+
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:110
 msgid "Reset to defaults"
 msgstr "Reset to defaults"
@@ -8806,7 +8903,7 @@ msgid "Retries for locked files"
 msgstr "Retries for locked files"
 
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:88
-#: src/components/player/player-card.tsx:517
+#: src/components/player/player-card.tsx:523
 #: src/components/sessions/danmu-stats-panel.tsx:240
 msgid "Retry"
 msgstr "Retry"
@@ -9146,6 +9243,11 @@ msgstr "Scheduler"
 msgid "Scrolling"
 msgstr "Scrolling"
 
+#: src/components/player/danmu-settings-panel.tsx:22
+msgctxt "danmu"
+msgid "Scrolling"
+msgstr "Scrolling"
+
 #: src/components/config/platforms/tabs/specific-configs/douyu-quality-combobox.tsx:49
 msgid "SD / Low"
 msgstr "SD / Low"
@@ -9473,11 +9575,11 @@ msgstr "Server local uses the backend server's timezone. You can also enter an I
 msgid "Server not configured"
 msgstr "Server not configured"
 
-#: src/components/player/player-card.tsx:257
+#: src/components/player/player-card.tsx:262
 msgid "Server proxy"
 msgstr "Server proxy"
 
-#: src/components/player/player-card.tsx:234
+#: src/components/player/player-card.tsx:239
 msgid "Server proxy relays playback through this app's server with the source's upstream proxy settings."
 msgstr "Server proxy relays playback through this app's server with the source's upstream proxy settings."
 
@@ -9553,7 +9655,7 @@ msgstr "Session ID is required"
 msgid "Session Menu"
 msgstr "Session Menu"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:274
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:284
 msgid "Session not found"
 msgstr "Session not found"
 
@@ -9627,10 +9729,19 @@ msgstr "Shared pipeline utilities"
 msgid "Shell command"
 msgstr "Shell command"
 
+#: src/components/player/danmu-settings-panel.tsx:298
+msgid "Show activity above the progress bar"
+msgstr "Show activity above the progress bar"
+
 #. placeholder {0}: stats.top_talkers.length
 #: src/components/sessions/danmu-stats-panel.tsx:583
 msgid "Show all {0}"
 msgstr "Show all {0}"
+
+#: src/components/player/danmu-settings-panel.tsx:216
+#: src/components/player/player-danmu.tsx:26
+msgid "Show danmu"
+msgstr "Show danmu"
 
 #: src/components/streamers/progress-indicator.tsx:57
 msgid "Show download details"
@@ -9761,7 +9872,12 @@ msgstr "Skipped {skippedCount} duplicate stream(s)"
 msgid "Skips the rapid-upload (秒传) hash check before transferring (--norapid)."
 msgstr "Skips the rapid-upload (秒传) hash check before transferring (--norapid)."
 
-#: src/components/player/player-card.tsx:291
+#: src/components/player/danmu-settings-panel.tsx:41
+msgctxt "danmu speed"
+msgid "Slow"
+msgstr "Slow"
+
+#: src/components/player/player-card.tsx:296
 msgid "Smooth"
 msgstr "Smooth"
 
@@ -9794,6 +9910,7 @@ msgstr "Space Saver"
 msgid "Specific"
 msgstr "Specific"
 
+#: src/components/player/danmu-settings-panel.tsx:277
 #: src/components/streamers/edit/active-download-card.tsx:116
 msgid "Speed"
 msgstr "Speed"
@@ -9940,7 +10057,7 @@ msgstr "Storage"
 msgid "Stores these credentials on the server (plaintext, like platform cookies) so upload jobs can log in again by themselves when the session expires. Logging out forgets them."
 msgstr "Stores these credentials on the server (plaintext, like platform cookies) so upload jobs can log in again by themselves when the session expires. Logging out forgets them."
 
-#: src/components/player/player-card.tsx:430
+#: src/components/player/player-card.tsx:435
 msgid "Stream"
 msgstr "Stream"
 
@@ -9991,7 +10108,7 @@ msgstr "Stream Password"
 msgid "Stream Player"
 msgstr "Stream Player"
 
-#: src/components/player/player-card.tsx:216
+#: src/components/player/player-card.tsx:221
 msgid "Stream source"
 msgstr "Stream source"
 
@@ -10175,6 +10292,11 @@ msgstr "Successfully processed {0} streamers"
 #: src/components/filters/filter-types.ts:114
 msgid "Sunday"
 msgstr "Sunday"
+
+#: src/components/player/danmu-settings-panel.tsx:28
+msgctxt "danmu"
+msgid "Super chats"
+msgstr "Super chats"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:112
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:191
@@ -10617,7 +10739,7 @@ msgstr "This server exposes a built-in MCP endpoint (streamable HTTP). Add it to
 msgid "This source needs custom request headers. Use Auto or Server proxy to keep those headers."
 msgstr "This source needs custom request headers. Use Auto or Server proxy to keep those headers."
 
-#: src/components/player/player-card.tsx:230
+#: src/components/player/player-card.tsx:235
 msgid "This source needs request headers, so Direct is unavailable."
 msgstr "This source needs request headers, so Direct is unavailable."
 
@@ -10729,7 +10851,7 @@ msgid "time-of-day timetable"
 msgstr "time-of-day timetable"
 
 #: src/components/sessions/danmu-stats-panel.tsx:479
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:332
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:342
 msgid "Timeline"
 msgstr "Timeline"
 
@@ -10830,6 +10952,11 @@ msgstr "Token"
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:536
 msgid "Tool Location"
 msgstr "Tool Location"
+
+#: src/components/player/danmu-settings-panel.tsx:23
+msgctxt "danmu"
+msgid "Top"
+msgstr "Top"
 
 #: src/components/config/shared/danmu-statistics-card.tsx:214
 msgid "Top chatters to keep"
@@ -11036,7 +11163,7 @@ msgstr "Try adjusting your search."
 msgid "Try Again"
 msgstr "Try Again"
 
-#: src/components/player/player-card.tsx:534
+#: src/components/player/player-card.tsx:540
 msgid "Try server proxy"
 msgstr "Try server proxy"
 
@@ -11087,6 +11214,10 @@ msgstr "Ultrafast Compression"
 #: src/components/pipeline/presets/default-presets-i18n.ts:85
 msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "Ultrafast H.264 encoding (CRF 26) for quick sharing."
+
+#: src/components/player/danmu-settings-panel.tsx:359
+msgid "Unblock {value}"
+msgstr "Unblock {value}"
 
 #: src/components/health/health-status-badge.tsx:59
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:622
@@ -11325,6 +11456,11 @@ msgstr "used by {usage}"
 msgid "Used wherever a platform, template, streamer or account does not choose its own."
 msgstr "Used wherever a platform, template, streamer or account does not choose its own."
 
+#: src/components/player/danmu-settings-panel.tsx:316
+msgctxt "danmu"
+msgid "User"
+msgstr "User"
+
 #: src/components/config/engines/forms/ffmpeg-form.tsx:30
 #: src/components/config/engines/forms/mesio-sections.tsx:285
 msgid "User Agent"
@@ -11422,11 +11558,21 @@ msgstr "Verify Output"
 msgid "Version"
 msgstr "Version"
 
+#: src/components/player/danmu-settings-panel.tsx:44
+msgctxt "danmu speed"
+msgid "Very fast"
+msgstr "Very fast"
+
+#: src/components/player/danmu-settings-panel.tsx:40
+msgctxt "danmu speed"
+msgid "Very slow"
+msgstr "Very slow"
+
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:137
 msgid "veryfast"
 msgstr "veryfast"
 
-#: src/components/player/player-card.tsx:369
+#: src/components/player/player-card.tsx:374
 msgid "via server proxy"
 msgstr "via server proxy"
 
@@ -11452,7 +11598,7 @@ msgstr "Video codec change"
 msgid "Video only"
 msgstr "Video only"
 
-#: src/components/player/player-card.tsx:327
+#: src/components/player/player-card.tsx:332
 msgid "Video Player"
 msgstr "Video Player"
 
@@ -11655,6 +11801,15 @@ msgstr "Width in pixels (keeps aspect ratio)"
 #: src/components/config/templates/template-editor.tsx:115
 msgid "With the engine's settings, this records neither video nor audio"
 msgstr "With the engine's settings, this records neither video nor audio"
+
+#: src/components/player/danmu-settings-panel.tsx:310
+msgctxt "danmu blocklist"
+msgid "Word"
+msgstr "Word"
+
+#: src/components/player/danmu-settings-panel.tsx:48
+msgid "Word to hide"
+msgstr "Word to hide"
 
 #: src/components/pipeline/workflows/flow-editor/step-node.tsx:163
 msgid "workflow"

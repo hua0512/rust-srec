@@ -31,6 +31,7 @@ import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
 import { usePlayerPlayback } from './use-player-playback';
+import { PlayerDanmu } from './player-danmu';
 import {
   playbackPresetMessages,
   type PlaybackPreset,
@@ -67,6 +68,8 @@ export interface PlayerCardProps {
   isLive?: boolean;
   mediaDurationSecs?: number | null;
   mediaFileSizeBytes?: number;
+  /** Danmu XML drawn over the video, timed from its start. */
+  danmuUrl?: string;
 }
 
 type SettingsTab = 'stream' | 'playback';
@@ -104,6 +107,7 @@ export function PlayerCard({
   isLive = false,
   mediaDurationSecs,
   mediaFileSizeBytes,
+  danmuUrl,
 }: PlayerCardProps) {
   const { i18n } = useLingui();
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>('auto');
@@ -121,6 +125,7 @@ export function PlayerCard({
   const presetId = useId();
   const {
     containerRef,
+    player,
     error: playbackError,
     loading: playbackLoading,
     reload,
@@ -469,6 +474,7 @@ export function PlayerCard({
         )}
       >
         <div ref={containerRef} className="absolute inset-0 h-full w-full" />
+        <PlayerDanmu player={player} url={danmuUrl} />
         {detailsOpen && !error && (
           <div
             role="region"

@@ -15,6 +15,7 @@ const hook = vi.mocked(usePlayerPlayback);
 const reload = vi.fn();
 const playback: ReturnType<typeof usePlayerPlayback> = {
   containerRef: { current: null },
+  player: null,
   error: null,
   loading: false,
   reload,
