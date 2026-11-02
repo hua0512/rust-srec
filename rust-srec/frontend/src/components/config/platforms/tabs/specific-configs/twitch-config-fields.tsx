@@ -1,7 +1,8 @@
 import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
 import { Trans } from '@lingui/react/macro';
-import { Shield, Zap } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
+import { Activity, Shield } from 'lucide-react';
 import {
   FormControl,
   FormDescription,
@@ -44,38 +45,52 @@ function toggleCodec(
   return TwitchCodecValues.filter((value) => selected.has(value));
 }
 
-const OPTIONAL_CODECS: { codec: OptionalCodec; label: ReactNode }[] = [
-  { codec: 'h265', label: <Trans>Allow H.265 (HEVC)</Trans> },
-  { codec: 'av1', label: <Trans>Allow AV1</Trans> },
-];
+const OPTIONAL_CODECS = [
+  {
+    codec: 'h265',
+    label: msg`Allow H.265 (HEVC)`,
+    description: msg`Record the qualities some channels stream only in H.265. H.264 qualities stay available. Turn on only if your players and post-processing handle H.265.`,
+  },
+  {
+    codec: 'av1',
+    label: msg`Allow AV1`,
+    description: msg`Record the qualities some channels stream only in AV1. H.264 qualities stay available. Turn on only if your players and post-processing handle AV1.`,
+  },
+] as const;
 
 /** The OAuth token belongs to a Twitch account profile, not to these options. */
 export function TwitchConfigFields<TFieldValues extends FieldValues>({
   form,
   fieldName,
 }: TwitchConfigFieldsProps<TFieldValues>) {
+  const { i18n } = useLingui();
+
   return (
     <div className="space-y-12">
       <section className="space-y-6">
-        <ConfigSectionHeading icon={Zap} accent="indigo">
-          <Trans>Extraction Settings</Trans>
+        <ConfigSectionHeading icon={Activity} accent="indigo">
+          <Trans>Quality Settings</Trans>
         </ConfigSectionHeading>
+
         <FormField
           control={form.control}
           name={configPath<TFieldValues>(fieldName, 'supported_codecs')}
           render={({ field }) => {
             const value = field.value as TwitchCodec[] | null | undefined;
             return (
-              <div className="grid gap-4">
-                {OPTIONAL_CODECS.map(({ codec, label }) => (
+              <div className="grid gap-6">
+                {OPTIONAL_CODECS.map(({ codec, label, description }) => (
                   <FormItem
                     key={codec}
                     className="flex flex-row items-center justify-between rounded-2xl border bg-muted/5 p-5 transition-all hover:bg-muted/10 border-border/50"
                   >
                     <div className="space-y-1.5 pr-4">
                       <FormLabel className="text-sm font-bold text-foreground">
-                        {label}
+                        {i18n._(label)}
                       </FormLabel>
+                      <FormDescription className="text-xs leading-relaxed font-medium">
+                        {i18n._(description)}
+                      </FormDescription>
                     </div>
                     <FormControl>
                       <Switch
@@ -87,14 +102,6 @@ export function TwitchConfigFields<TFieldValues extends FieldValues>({
                     </FormControl>
                   </FormItem>
                 ))}
-                <FormDescription className="text-[11px] font-medium px-1">
-                  <Trans>
-                    Some channels stream their highest qualities only in H.265
-                    or AV1, and Twitch offers them only when allowed here. H.264
-                    is always allowed. Leave both off if your players or
-                    post-processing cannot handle these codecs.
-                  </Trans>
-                </FormDescription>
               </div>
             );
           }}

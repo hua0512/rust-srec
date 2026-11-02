@@ -962,11 +962,11 @@ msgstr "All Time"
 msgid "All Types"
 msgstr "All Types"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:49
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:56
 msgid "Allow AV1"
 msgstr "Allow AV1"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:48
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:51
 msgid "Allow H.265 (HEVC)"
 msgstr "Allow H.265 (HEVC)"
 
@@ -2785,7 +2785,7 @@ msgid "Danmu"
 msgstr "Danmu"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:218
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:106
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:113
 msgid "Danmu Control"
 msgstr "Danmu Control"
 
@@ -4027,7 +4027,6 @@ msgstr "Extraction Method"
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:36
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:69
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:46
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:61
 msgid "Extraction Settings"
 msgstr "Extraction Settings"
 
@@ -8166,6 +8165,7 @@ msgid "Quality Rate"
 msgstr "Quality Rate"
 
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:161
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:72
 msgid "Quality Settings"
 msgstr "Quality Settings"
 
@@ -8336,6 +8336,14 @@ msgstr "Record Danmu"
 #: src/components/config/engines/forms/mesio-sections.tsx:766
 msgid "Record Separate Audio"
 msgstr "Record Separate Audio"
+
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:57
+msgid "Record the qualities some channels stream only in AV1. H.264 qualities stay available. Turn on only if your players and post-processing handle AV1."
+msgstr "Record the qualities some channels stream only in AV1. H.264 qualities stay available. Turn on only if your players and post-processing handle AV1."
+
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:52
+msgid "Record the qualities some channels stream only in H.265. H.264 qualities stay available. Turn on only if your players and post-processing handle H.265."
+msgstr "Record the qualities some channels stream only in H.265. H.264 qualities stay available. Turn on only if your players and post-processing handle H.265."
 
 #: src/components/config/engines/forms/mesio-sections.tsx:760
 msgid "Record Video"
@@ -9764,10 +9772,6 @@ msgstr "SMTP Host"
 #: src/components/notifications/forms/email-form.tsx:47
 msgid "smtp.gmail.com"
 msgstr "smtp.gmail.com"
-
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:91
-msgid "Some channels stream their highest qualities only in H.265 or AV1, and Twitch offers them only when allowed here. H.264 is always allowed. Leave both off if your players or post-processing cannot handle these codecs."
-msgstr "Some channels stream their highest qualities only in H.265 or AV1, and Twitch offers them only when allowed here. H.264 is always allowed. Leave both off if your players or post-processing cannot handle these codecs."
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:822
 msgid "Some referenced presets could not be resolved. This step may delete a converted result. Save anyway?"
