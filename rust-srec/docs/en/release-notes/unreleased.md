@@ -12,3 +12,4 @@
 - **Twitch**: a channel that does not exist is now shown as not found, and a suspended channel as banned, instead of failing every live check with a data error.
 
 - **Twitcasting**: the **Stream Password** platform setting now unlocks password-protected broadcasts. Before, only a password added to the streamer URL (`?password=...`) worked; a password in the URL still takes priority.
+- **YouTube**: a link to an uploaded or finished video is now reported as offline instead of live, so it is no longer recorded again on every live check. Live broadcasts are unaffected.
