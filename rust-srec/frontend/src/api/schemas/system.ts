@@ -311,6 +311,8 @@ export const ParseUrlResponseSchema = z.object({
   is_live: z.boolean(),
   media_info: z.any().optional(),
   playback: ManagedPlaybackSchema.nullable().optional(),
+  /** Opens the live chat stream; absent when the source has none. */
+  danmu_handle: z.string().nullable().optional(),
   error: z.string().nullable().optional(),
 });
 export type ParseUrlResponse = z.infer<typeof ParseUrlResponseSchema>;

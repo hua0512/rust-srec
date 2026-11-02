@@ -1,6 +1,6 @@
 import { buildDanmuTrack } from '@/components/danmu/danmu-track';
 import type { DanmuComment } from '@/components/danmu/danmu-parser';
-import { DanmuOverlay } from '../danmu-overlay';
+import { DanmuOverlay, type LiveDanmuItem } from '../danmu-overlay';
 import {
   defaultDanmuPreferences,
   type DanmuPreferences,
@@ -53,7 +53,11 @@ function shown(layer: HTMLElement): string[] {
   return Array.from(layer.children, (node) => node.textContent ?? '');
 }
 
-function mount(comments: DanmuComment[]) {
+function live(text: string, user = ''): LiveDanmuItem {
+  return { text, color: null, kind: 'chat', user };
+}
+
+function mount(comments: DanmuComment[] | null) {
   const layer = document.createElement('div');
   // 100 px tall: 16 px text on 21 px lines gives three scrolling lanes.
   Object.defineProperty(layer, 'clientWidth', { value: 800 });
@@ -62,7 +66,7 @@ function mount(comments: DanmuComment[]) {
   const overlay = new DanmuOverlay(
     layer,
     video as unknown as HTMLVideoElement,
-    buildDanmuTrack(comments),
+    comments && buildDanmuTrack(comments),
   );
   return { layer, video, overlay };
 }
@@ -150,6 +154,53 @@ describe('DanmuOverlay', () => {
     frameAt(video, 29.5);
     frameAt(video, 30);
     expect(shown(layer)).toEqual(['after seek']);
+    overlay.destroy();
+  });
+
+  it('spreads a live batch over time and drops it while paused', () => {
+    const { layer, video, overlay } = mount(null);
+    overlay.push([live('a'), live('b')]);
+
+    frameAt(video, 0);
+    expect(shown(layer)).toEqual(['a']);
+    frameAt(video, 0.1);
+    expect(shown(layer)).toEqual(['a', 'b']);
+
+    video.paused = true;
+    video.dispatchEvent(new Event('pause'));
+    overlay.push([live('late')]);
+    video.paused = false;
+    video.dispatchEvent(new Event('playing'));
+    frameAt(video, 0.5);
+    expect(shown(layer)).toEqual(['a', 'b']);
+    overlay.destroy();
+  });
+
+  it('filters live comments and merges repeats within the window', () => {
+    const { layer, video, overlay } = mount(null);
+    configure(overlay, {
+      merge: true,
+      blockedKeywords: ['spam'],
+      blockedUsers: ['Carol'],
+      hidden: { ...defaultDanmuPreferences().hidden, superchat: true },
+    });
+    overlay.push([
+      live('hello'),
+      live('Buy SPAM'),
+      live('hi', 'Carol'),
+      { ...live('thanks'), kind: 'superchat' },
+      live('hello'),
+    ]);
+    frameAt(video, 1);
+    expect(shown(layer)).toEqual(['hello']);
+
+    // Still inside the first group's window, then past it.
+    frameAt(video, 2);
+    overlay.push([live('hello')]);
+    for (let time = 3; time <= 11; time++) frameAt(video, time);
+    overlay.push([live('hello')]);
+    frameAt(video, 11.1);
+    expect(shown(layer)).toEqual(['hello', 'hello']);
     overlay.destroy();
   });
 });

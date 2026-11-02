@@ -21,7 +21,10 @@ export type WebSocketStatus =
 export interface UseAuthedWebSocketOptions {
   /** Current access token; the socket is opened only while one is present. */
   accessToken: string | undefined;
-  /** Endpoint below the API base; defaults to the download progress stream. */
+  /**
+   * Endpoint below the API base, optionally with a query string; defaults to
+   * the download progress stream. Changing it reopens the socket.
+   */
   path?: string;
   /** Prefix for this stream's dev-only console diagnostics. */
   debugLabel?: string;
@@ -29,6 +32,11 @@ export interface UseAuthedWebSocketOptions {
   /** Runs on every successful handshake, e.g. to send a subscription. */
   onOpen?: (socket: WebSocket) => void;
   onStatusChange?: (status: WebSocketStatus) => void;
+  /**
+   * Decides whether an unexpected close is retried; by default every one is.
+   * A declined close stays closed until the path or session changes.
+   */
+  shouldReconnect?: (event: CloseEvent) => boolean;
   /**
    * Runs on an intentional close — the session ended or the caller unmounted —
    * and never on a reconnect, so callers can tear down state that only makes
@@ -70,6 +78,7 @@ export function useAuthedWebSocket(
   const onOpenRef = useRef(options.onOpen);
   const onStatusChangeRef = useRef(options.onStatusChange);
   const onDisconnectRef = useRef(options.onDisconnect);
+  const shouldReconnectRef = useRef(options.shouldReconnect);
   useEffect(() => {
     pathRef.current = path;
     debugLabelRef.current = debugLabel;
@@ -77,6 +86,7 @@ export function useAuthedWebSocket(
     onOpenRef.current = options.onOpen;
     onStatusChangeRef.current = options.onStatusChange;
     onDisconnectRef.current = options.onDisconnect;
+    shouldReconnectRef.current = options.shouldReconnect;
   });
 
   // Read by connect() instead of captured, so renewing the access token does
@@ -172,7 +182,11 @@ export function useAuthedWebSocket(
       applyStatus('disconnected');
       wsRef.current = null;
 
-      if (!intentionalCloseRef.current && accessTokenRef.current) {
+      if (
+        !intentionalCloseRef.current &&
+        accessTokenRef.current &&
+        (shouldReconnectRef.current?.(event) ?? true)
+      ) {
         scheduleReconnect();
       }
     };
@@ -207,6 +221,7 @@ export function useAuthedWebSocket(
       return;
     }
     intentionalCloseRef.current = true;
+    reconnectAttemptRef.current = 0;
 
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
@@ -225,6 +240,7 @@ export function useAuthedWebSocket(
 
   // Connection lifecycle. Keyed on whether there is a session at all, not on
   // the token itself: renewing the access token leaves the open socket alone.
+  // A new path is a different stream, so it gets a fresh socket.
   const isAuthenticated = !!accessToken;
   useEffect(() => {
     if (isAuthenticated) {
@@ -236,7 +252,7 @@ export function useAuthedWebSocket(
     return () => {
       disconnect();
     };
-  }, [isAuthenticated, connect, disconnect]);
+  }, [isAuthenticated, path, connect, disconnect]);
 
   const send = useCallback((data: string | Blob | BufferSource) => {
     const ws = wsRef.current;

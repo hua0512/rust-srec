@@ -70,6 +70,8 @@ export interface PlayerCardProps {
   mediaFileSizeBytes?: number;
   /** Danmu XML drawn over the video, timed from its start. */
   danmuUrl?: string;
+  /** A live source's chat, drawn over the video as it arrives. */
+  liveDanmuHandle?: string | null;
 }
 
 type SettingsTab = 'stream' | 'playback';
@@ -108,6 +110,7 @@ export function PlayerCard({
   mediaDurationSecs,
   mediaFileSizeBytes,
   danmuUrl,
+  liveDanmuHandle,
 }: PlayerCardProps) {
   const { i18n } = useLingui();
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>('auto');
@@ -474,7 +477,11 @@ export function PlayerCard({
         )}
       >
         <div ref={containerRef} className="absolute inset-0 h-full w-full" />
-        <PlayerDanmu player={player} url={danmuUrl} />
+        <PlayerDanmu
+          player={player}
+          url={danmuUrl}
+          liveHandle={liveDanmuHandle}
+        />
         {detailsOpen && !error && (
           <div
             role="region"

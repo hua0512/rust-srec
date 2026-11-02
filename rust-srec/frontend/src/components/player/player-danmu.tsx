@@ -13,6 +13,7 @@ import {
   type DanmuPreferences,
 } from './danmu-preferences';
 import { DanmuSettingsPanel } from './danmu-settings-panel';
+import { useLiveDanmu } from './use-live-danmu';
 
 const LAYER = 'danmu';
 /**
@@ -74,20 +75,25 @@ interface Mounted {
 }
 
 /**
- * Danmu for a recording: the overlay, an activity strip above the progress
- * bar, a show/hide button and a settings panel in the control bar. The panel
- * renders inside the player so it stays usable in fullscreen. Preferences are
- * remembered for every player in this browser.
+ * Danmu over the player, from a recording's danmu file at `url` or a live
+ * source's chat through `liveHandle`: the overlay, a show/hide button and a
+ * settings panel in the control bar, plus an activity strip above the
+ * progress bar for a recording. The panel renders inside the player so it
+ * stays usable in fullscreen. Preferences are remembered for every player in
+ * this browser. Live chat is only connected while danmu is shown.
  */
 export function PlayerDanmu({
   player,
   url,
+  liveHandle,
 }: {
   player: Artplayer | null;
-  url: string | undefined;
+  url?: string;
+  liveHandle?: string | null;
 }) {
   const { i18n } = useLingui();
   const track = useDanmuTrack(url);
+  const live = Boolean(liveHandle);
   const [preferences, setPreferences] =
     useState<DanmuPreferences>(readDanmuPreferences);
   const [mounted, setMounted] = useState<Mounted | null>(null);
@@ -97,19 +103,24 @@ export function PlayerDanmu({
   preferencesRef.current = preferences;
 
   useEffect(() => {
-    if (!player || !track || track.times.length === 0) return;
+    const recorded = track && track.times.length > 0 ? track : null;
+    if (!player || (!recorded && !live)) return;
 
     const layer = player.layers.add({ name: LAYER, html: '' });
     if (!layer) return;
-    const overlay = new DanmuOverlay(layer, player.video, track);
+    const overlay = new DanmuOverlay(layer, player.video, recorded);
     overlay.configure(preferencesRef.current);
 
-    const progressBar = player.template.$player.querySelector<HTMLElement>(
-      '.art-control-progress-inner',
-    );
-    const heatmap = progressBar
-      ? new DanmuHeatmap(progressBar, player.video, track.times)
+    // A live stream has no timeline for the activity strip to summarise.
+    const progressBar = recorded
+      ? player.template.$player.querySelector<HTMLElement>(
+          '.art-control-progress-inner',
+        )
       : null;
+    const heatmap =
+      recorded && progressBar
+        ? new DanmuHeatmap(progressBar, player.video, recorded.times)
+        : null;
 
     const panelHost = document.createElement('div');
     // Spans the player so the panel can size to it. The bottom inset keeps
@@ -169,7 +180,7 @@ export function PlayerDanmu({
         player.layers.remove(LAYER);
       }
     };
-  }, [player, track, i18n]);
+  }, [player, track, live, i18n]);
 
   useEffect(() => {
     if (!mounted || !player) return;
@@ -207,15 +218,39 @@ export function PlayerDanmu({
     };
   }, [panelOpen, mounted]);
 
-  if (!mounted || !panelOpen) return null;
-  return createPortal(
-    <div
-      className="dark pointer-events-auto w-80 max-w-full max-h-full overflow-y-auto rounded-lg border border-white/10 bg-black/85 p-4 text-foreground shadow-xl backdrop-blur"
-      role="dialog"
-      aria-label={i18n._(DANMU_SETTINGS)}
-    >
-      <DanmuSettingsPanel preferences={preferences} onChange={setPreferences} />
-    </div>,
-    mounted.panelHost,
+  if (!mounted) return null;
+  return (
+    <>
+      {/* Live chat is connected only while it can be shown. */}
+      {liveHandle && preferences.visible && (
+        <LiveDanmuFeed handle={liveHandle} overlay={mounted.overlay} />
+      )}
+      {panelOpen &&
+        createPortal(
+          <div
+            className="dark pointer-events-auto w-80 max-w-full max-h-full overflow-y-auto rounded-lg border border-white/10 bg-black/85 p-4 text-foreground shadow-xl backdrop-blur"
+            role="dialog"
+            aria-label={i18n._(DANMU_SETTINGS)}
+          >
+            <DanmuSettingsPanel
+              preferences={preferences}
+              onChange={setPreferences}
+              heatmapSetting={mounted.heatmap !== null}
+            />
+          </div>,
+          mounted.panelHost,
+        )}
+    </>
   );
+}
+
+function LiveDanmuFeed({
+  handle,
+  overlay,
+}: {
+  handle: string;
+  overlay: DanmuOverlay;
+}) {
+  useLiveDanmu(handle, (items) => overlay.push(items));
+  return null;
 }
