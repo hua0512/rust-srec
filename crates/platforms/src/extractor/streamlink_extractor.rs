@@ -319,6 +319,7 @@ impl PlatformExtractor for StreamlinkExtractor {
         };
         let metadata = json.metadata.unwrap_or_default();
         let streams = json.streams.ok_or_else(|| ExtractorError::NoStreamsFound)?;
+        let recorded_video = is_recorded_video(&plugin, &streams);
 
         let title = metadata.title.unwrap_or_default();
         let artist = metadata.author.unwrap_or_default();
@@ -394,6 +395,7 @@ impl PlatformExtractor for StreamlinkExtractor {
         // Every HLS variant ends together and every DASH stream shares one
         // manifest, so the best stream tells whether the broadcast is over.
         let is_live = match has_ended {
+            _ if recorded_video => false,
             Some(has_ended) => {
                 let url = stream_infos
                     .iter()
@@ -489,6 +491,19 @@ fn infer_media_format(stream_format: StreamFormat, _url: &str) -> MediaFormat {
         StreamFormat::Wss => MediaFormat::Flv,
         StreamFormat::Dash => MediaFormat::Fmp4,
     }
+}
+
+/// Whether `streams` can only be a recorded video. Streamlink's YouTube plugin
+/// offers a live broadcast as HLS, but still offers an uploaded or finished
+/// video as progressive files, which would otherwise read as live.
+fn is_recorded_video(plugin: &str, streams: &HashMap<String, StreamlinkStream>) -> bool {
+    plugin == "youtube"
+        && !streams.values().any(|stream| {
+            stream
+                .stream_type
+                .as_deref()
+                .is_some_and(|t| t.eq_ignore_ascii_case("hls"))
+        })
 }
 
 /// Whether an HLS playlist carries `#EXT-X-ENDLIST`, which a live playlist
