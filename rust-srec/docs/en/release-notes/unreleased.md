@@ -8,6 +8,7 @@
 
 ## Fixes
 
+- **Huya**: ordinary chat messages are now recorded without a colour, so they appear white in converted subtitles and burned-in videos instead of blue. Messages Huya colours still keep their colour. Chat files recorded before this update keep the blue.
 - **Twitch**: a channel that has just gone live or just ended is now reported as offline until its stream can be played, instead of failing the live check with an error. When Twitch refuses playback, its own error message is shown.
 - **Twitch**: a channel that does not exist is now shown as not found, and a suspended channel as banned, instead of failing every live check with a data error.
 

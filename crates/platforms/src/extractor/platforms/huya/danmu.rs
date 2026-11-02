@@ -374,8 +374,8 @@ impl HuyaDanmuProtocol {
                                             username.clone(),
                                             content.clone(),
                                         );
-                                        if color != -1 && color != 0 {
-                                            danmu = danmu.with_color(format!("#{:06X}", color));
+                                        if let Some(color) = bullet_color(color) {
+                                            danmu = danmu.with_color(color);
                                         }
                                         return Ok(vec![DanmuItem::Message(danmu)].into());
                                     }
@@ -401,6 +401,19 @@ impl HuyaDanmuProtocol {
             // Other types
             _ => Ok(DanmuProtocolOutput::default()),
         }
+    }
+}
+
+/// The `#RRGGBB` colour of a chat message, or `None` for an uncoloured one.
+///
+/// Huya marks ordinary chat with `255`, which read as RGB would turn every
+/// plain message blue. `-1` and `0` also mean uncoloured, and anything outside
+/// 24-bit RGB is not a colour.
+fn bullet_color(i_color: i32) -> Option<String> {
+    match i_color {
+        255 => None,
+        1..=0xFF_FFFF => Some(format!("#{i_color:06X}")),
+        _ => None,
     }
 }
 
