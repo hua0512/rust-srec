@@ -33,11 +33,11 @@ msgid "\"{0}\" will be removed. Streamers using it fall back to the default engi
 msgstr "将删除“{0}”。正在使用它的主播会回退到默认引擎。"
 
 #. placeholder {0}: revokeTarget?.name
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:298
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:299
 msgid "\"{0}\" will stop working immediately. This cannot be undone."
 msgstr "“{0}”将立即失效。此操作无法撤销。"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:175
+#: src/components/proxies/proxy-editor-dialog.tsx:176
 msgid "“{conflictName}” already uses this address and username."
 msgstr "“{conflictName}”已在使用相同的地址和用户名。"
 
@@ -74,7 +74,7 @@ msgid "(Preserve source)"
 msgstr "（保留源文件）"
 
 #. placeholder {0}: filteredEventTypes?.length || 0
-#: src/components/notifications/subscription-manager.tsx:452
+#: src/components/notifications/subscription-manager.tsx:456
 msgid "{0, plural, one {# available} other {# available}}"
 msgstr "{0, plural, other {# 项可选}}"
 
@@ -140,7 +140,7 @@ msgid "{0, plural, one {# Segment} other {# Segments}} ({1, plural, one {# File}
 msgstr "{0, plural, other {# 个分段}}（{1, plural, other {# 个文件}}）"
 
 #. placeholder {0}: selectedEvents.length
-#: src/components/notifications/subscription-manager.tsx:447
+#: src/components/notifications/subscription-manager.tsx:451
 msgid "{0, plural, one {# selected} other {# selected}}"
 msgstr "{0, plural, other {已选 # 项}}"
 
@@ -377,7 +377,7 @@ msgstr "{selections, plural, other {请先从 # 项配置的账号选择中移�
 msgid "{sessions, plural, one {Wait for the active recording using it to end.} other {Wait for the # active recordings using it to end.}}"
 msgstr "{sessions, plural, other {请等待使用它的 # 个进行中的录制结束。}}"
 
-#: src/components/credentials/profile-editor-dialog.tsx:77
+#: src/components/credentials/profile-editor-dialog.tsx:78
 msgid "{site} already belongs to the account {label}. A site can belong to one account only."
 msgstr "{site} 已属于账号 {label}。一个网站只能属于一个账号。"
 
@@ -563,7 +563,7 @@ msgstr "绝对路径，或在 PATH 中时填写“streamlink”"
 msgid "Accept Invalid Certificates"
 msgstr "接受无效证书"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:178
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:179
 msgid "Access"
 msgstr "权限"
 
@@ -571,7 +571,7 @@ msgstr "权限"
 msgid "Access level"
 msgstr "权限级别"
 
-#: src/components/credentials/profile-editor-dialog.tsx:305
+#: src/components/credentials/profile-editor-dialog.tsx:307
 msgid "Access token"
 msgstr "访问令牌"
 
@@ -583,7 +583,7 @@ msgstr "访问被拒绝。请刷新直播地址或检查源站凭据。如果应
 msgid "Account"
 msgstr "账号"
 
-#: src/components/credentials/profile-editor-dialog.tsx:381
+#: src/components/credentials/profile-editor-dialog.tsx:383
 msgid "Account checks, refreshes, recordings, danmu and playback with this account go through this setting. Following the recording uses the proxy of whatever uses the account; checks then use the platform's."
 msgstr "使用此账号的账号检查、刷新、录制、弹幕和播放都按此设置连接。选择“跟随录制”时，使用账号的录制用什么代理就走什么代理，账号检查则使用平台的代理设置。"
 
@@ -648,7 +648,7 @@ msgstr "操作"
 msgid "Actions"
 msgstr "操作"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:222
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:223
 #: src/routes/_authed/_dashboard/config/language.lazy.tsx:113
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:457
 msgid "Active"
@@ -700,7 +700,7 @@ msgstr "添加主播"
 
 #: src/components/credentials/credential-selection-editor.tsx:383
 #: src/components/credentials/platform-accounts-section.tsx:122
-#: src/components/credentials/profile-editor-dialog.tsx:198
+#: src/components/credentials/profile-editor-dialog.tsx:199
 msgid "Add account"
 msgstr "添加账号"
 
@@ -806,8 +806,8 @@ msgid "Add Pipeline Step"
 msgstr "添加处理管道步骤"
 
 #: src/components/proxies/proxies-panel.tsx:160
-#: src/components/proxies/proxy-editor-dialog.tsx:206
-#: src/components/proxies/proxy-editor-dialog.tsx:361
+#: src/components/proxies/proxy-editor-dialog.tsx:207
+#: src/components/proxies/proxy-editor-dialog.tsx:363
 msgid "Add proxy"
 msgstr "添加代理"
 
@@ -856,7 +856,7 @@ msgstr "附加到每个 HLS 请求，例如用于签名 URL 或 CDN 路由。"
 msgid "Additional arguments appended to the command."
 msgstr "附加到命令的额外参数。"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:246
+#: src/components/proxies/proxy-editor-dialog.tsx:248
 #: src/components/proxies/proxy-row.tsx:216
 msgid "Address"
 msgstr "地址"
@@ -962,6 +962,14 @@ msgstr "全部时间"
 msgid "All Types"
 msgstr "所有类型"
 
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:49
+msgid "Allow AV1"
+msgstr "允许 AV1"
+
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:48
+msgid "Allow H.265 (HEVC)"
+msgstr "允许 H.265 (HEVC)"
+
 #: src/components/player/playback-presets.ts:10
 msgid "Allow more startup buffering. Playback may start later and add delay."
 msgstr "允许更多启动缓冲，可能延后开始播放并增加延迟。"
@@ -970,7 +978,7 @@ msgstr "允许更多启动缓冲，可能延后开始播放并增加延迟。"
 msgid "Allow private stream proxy targets"
 msgstr "允许私有网络流代理目标"
 
-#: src/components/config/global/network-system-card.tsx:173
+#: src/components/config/global/network-system-card.tsx:175
 msgid "Allow Private Stream Proxy Targets"
 msgstr "允许私有网络流代理目标"
 
@@ -1006,7 +1014,7 @@ msgstr "匿名元数据 • UTF-8 格式"
 msgid "Another address…"
 msgstr "其他地址…"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:172
+#: src/components/proxies/proxy-editor-dialog.tsx:173
 msgid "Another proxy is already named “{conflictName}”."
 msgstr "已有名为“{conflictName}”的代理。"
 
@@ -1030,20 +1038,20 @@ msgstr "任意语言"
 msgid "Any priority"
 msgstr "任意优先级"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:376
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:377
 msgid "API key copied to clipboard"
 msgstr "API 密钥已复制到剪贴板"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:390
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:391
 msgid "API key created"
 msgstr "API 密钥已创建"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:113
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:114
 msgid "API key revoked"
 msgstr "API 密钥已吊销"
 
 #: src/components/sidebar/user-menu.tsx:119
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:130
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:131
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:74
 msgid "API Keys"
 msgstr "API 密钥"
@@ -1428,7 +1436,7 @@ msgstr "百度网盘登录失败"
 msgid "Baidu Netdisk logout failed"
 msgstr "百度网盘退出登录失败"
 
-#: src/lib/notification-event-types.ts:45
+#: src/lib/notification-event-types.ts:46
 msgid "Baidu Netdisk re-login failed"
 msgstr "百度网盘重新登录失败"
 
@@ -1645,7 +1653,7 @@ msgstr "缓存与进度"
 #: src/components/layout/themes/import-modal.tsx:103
 #: src/components/notifications/channel-card.tsx:183
 #: src/components/notifications/channel-form.tsx:454
-#: src/components/notifications/subscription-manager.tsx:462
+#: src/components/notifications/subscription-manager.tsx:466
 #: src/components/pipeline/interrupted-output-list.tsx:259
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:118
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:176
@@ -1660,10 +1668,10 @@ msgstr "缓存与进度"
 #: src/components/pipeline/workflows/step-config-dialog.tsx:842
 #: src/components/pipeline/workflows/workflow-card.tsx:104
 #: src/components/proxies/delete-proxy-dialog.tsx:105
-#: src/components/proxies/proxy-editor-dialog.tsx:358
+#: src/components/proxies/proxy-editor-dialog.tsx:360
 #: src/components/streamers/streamer-batch-action-bar.tsx:224
 #: src/components/streamers/streamer-editor.tsx:244
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:306
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:307
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:504
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:241
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:174
@@ -1770,7 +1778,7 @@ msgstr "切换直播源"
 msgid "Changes apply to the next check or recording; ones already running keep their connection."
 msgstr "更改会在下一次检查或录制时生效，进行中的连接保持不变。"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:210
+#: src/components/proxies/proxy-editor-dialog.tsx:211
 msgid "Changes apply to the next connection everywhere this proxy is used."
 msgstr "更改会在所有使用此代理的地方于下一次连接时生效。"
 
@@ -2307,7 +2315,7 @@ msgstr "只转换本次会话各分段录制的弹幕"
 msgid "Cookie string"
 msgstr "Cookie 字符串"
 
-#: src/components/credentials/profile-editor-dialog.tsx:283
+#: src/components/credentials/profile-editor-dialog.tsx:285
 #: src/components/player/url-input-form.tsx:247
 #: src/components/player/url-input-form.tsx:361
 msgid "Cookies"
@@ -2351,7 +2359,7 @@ msgstr "复制/移动"
 msgid "Copy address"
 msgstr "复制地址"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:409
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:410
 msgid "Copy API key"
 msgstr "复制 API 密钥"
 
@@ -2395,7 +2403,7 @@ msgstr "将文件复制到其他位置，保留原始文件。"
 msgid "Copy the full Cookie header from a logged-in Baidu Netdisk page (browser DevTools, Network tab). It must include BDUSS and STOKEN entries."
 msgstr "在已登录的百度网盘页面中（浏览器开发者工具的 Network 标签）复制完整的 Cookie 请求头，其中必须包含 BDUSS 和 STOKEN。"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:394
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:395
 msgid "Copy this key now. For security reasons it is shown only once and cannot be recovered later."
 msgstr "请立即复制此密钥。出于安全考虑，它只显示一次，之后无法找回。"
 
@@ -2451,7 +2459,7 @@ msgstr "次数"
 msgid "Counts stay exact while a stream has fewer distinct chatters than this. 64–8192."
 msgstr "当一场直播的不同发言人数少于此值时，计数保持精确。范围 64–8192。"
 
-#: src/components/config/global/network-system-card.tsx:186
+#: src/components/config/global/network-system-card.tsx:188
 msgid "Covers LAN restreamers, cameras and tailnet addresses. Leave this off unless you stream from local sources: it re-opens requests to internal addresses for any signed-in user."
 msgstr "涵盖局域网转推、摄像头和 tailnet 地址。除非你从本地源拉流，否则请保持关闭：它会为任何已登录用户重新开放对内部地址的请求。"
 
@@ -2497,8 +2505,8 @@ msgstr "创建模板以定义可复用的录制配置。"
 msgid "Create a ZIP archive of the file. Good for bundling with metadata."
 msgstr "为文件创建 ZIP 压缩包，适合与元数据一起打包。"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:146
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:428
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:147
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:429
 msgid "Create API key"
 msgstr "创建 API 密钥"
 
@@ -2586,19 +2594,19 @@ msgstr "创建中…"
 msgid "Creation Mode"
 msgstr "创建模式"
 
-#: src/lib/notification-event-types.ts:43
+#: src/lib/notification-event-types.ts:44
 msgid "Credential expiring soon"
 msgstr "凭据即将过期"
 
-#: src/lib/notification-event-types.ts:41
+#: src/lib/notification-event-types.ts:42
 msgid "Credential invalid"
 msgstr "凭据无效"
 
-#: src/lib/notification-event-types.ts:40
+#: src/lib/notification-event-types.ts:41
 msgid "Credential refresh failed"
 msgstr "凭据刷新失败"
 
-#: src/lib/notification-event-types.ts:39
+#: src/lib/notification-event-types.ts:40
 msgid "Credential refreshed"
 msgstr "凭据已刷新"
 
@@ -2618,7 +2626,7 @@ msgstr "已保存凭据，可自动重新登录"
 msgid "Credentials saved successfully"
 msgstr "凭据保存成功"
 
-#: src/lib/notification-event-types.ts:42
+#: src/lib/notification-event-types.ts:43
 msgid "Credentials unavailable"
 msgstr "凭据不可用"
 
@@ -2777,7 +2785,7 @@ msgid "Danmu"
 msgstr "弹幕"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:218
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:22
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:106
 msgid "Danmu Control"
 msgstr "弹幕控制"
 
@@ -2897,7 +2905,7 @@ msgstr "密码锁房的默认密码。可在主播 URL 上用 ?pwd= 覆盖。"
 msgid "Default pipeline flow. Configure the sequence of processors for new jobs."
 msgstr "默认处理管道流程。为新的处理任务配置处理器顺序。"
 
-#: src/components/config/global/network-system-card.tsx:162
+#: src/components/config/global/network-system-card.tsx:164
 msgid "Default proxy"
 msgstr "默认代理"
 
@@ -3164,7 +3172,7 @@ msgstr "描述"
 msgid "Description is managed by the system"
 msgstr "描述由系统管理"
 
-#: src/components/notifications/subscription-manager.tsx:362
+#: src/components/notifications/subscription-manager.tsx:366
 msgid "Deselect All"
 msgstr "取消全选"
 
@@ -3326,7 +3334,7 @@ msgstr "忽略"
 msgid "Dolby Vision (30000)"
 msgstr "杜比视界 (30000)"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:420
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:421
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:176
 msgid "Done"
 msgstr "已完成"
@@ -3572,7 +3580,7 @@ msgstr "之前的文件仍在收尾，本次未分段，录制仍在继续。"
 msgid "Edit"
 msgstr "编辑"
 
-#: src/components/credentials/profile-editor-dialog.tsx:198
+#: src/components/credentials/profile-editor-dialog.tsx:199
 msgid "Edit account"
 msgstr "编辑账号"
 
@@ -3594,7 +3602,7 @@ msgstr "编辑过滤器"
 msgid "Edit Preset: {0}"
 msgstr "编辑预设：{0}"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:206
+#: src/components/proxies/proxy-editor-dialog.tsx:207
 msgid "Edit proxy"
 msgstr "编辑代理"
 
@@ -3760,7 +3768,7 @@ msgstr "请在上方输入链接"
 msgid "Enter a URL to parse and play a stream"
 msgstr "输入 URL 以解析并播放流"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:63
+#: src/components/proxies/proxy-editor-dialog.tsx:64
 msgid "Enter an address such as http://proxy.example:8080."
 msgstr "请输入地址，例如 http://proxy.example:8080。"
 
@@ -3772,11 +3780,11 @@ msgstr "输入要排除的关键词..."
 msgid "Enter keywords to include..."
 msgstr "输入要包含的关键词..."
 
-#: src/components/credentials/profile-editor-dialog.tsx:275
+#: src/components/credentials/profile-editor-dialog.tsx:277
 msgid "Enter the credentials of this one account. Never mix cookies from different accounts."
 msgstr "只填写这一个账号的凭据。切勿混用不同账号的 Cookie。"
 
-#: src/components/credentials/profile-editor-dialog.tsx:270
+#: src/components/credentials/profile-editor-dialog.tsx:272
 msgid "Enter the new credentials in full. Token and login fields left empty are cleared. Saved credentials are never shown."
 msgstr "请完整填写新的凭据。留空的令牌和登录字段会被清除。已保存的凭据不会显示。"
 
@@ -3946,11 +3954,11 @@ msgstr "实验性"
 msgid "Expert mode: Edit the raw platform-specific configuration directly."
 msgstr "专家模式：直接编辑原始的平台特定配置。"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:235
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:236
 msgid "Expired"
 msgstr "已过期"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:187
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:188
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:476
 msgid "Expires"
 msgstr "过期时间"
@@ -4019,6 +4027,7 @@ msgstr "提取方式"
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:36
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:69
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:46
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:61
 msgid "Extraction Settings"
 msgstr "提取设置"
 
@@ -4096,7 +4105,7 @@ msgstr "复制失败"
 msgid "Failed to copy destination"
 msgstr "复制目标路径失败"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:356
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:357
 msgid "Failed to create API key"
 msgstr "创建 API 密钥失败"
 
@@ -4303,11 +4312,12 @@ msgstr "无法重试步骤"
 msgid "Failed to retry workflow"
 msgstr "重试工作流失败"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:117
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:118
 msgid "Failed to revoke API key"
 msgstr "吊销 API 密钥失败"
 
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:299
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:570
 msgid "Failed to send test notification"
 msgstr "发送测试通知失败"
 
@@ -4347,7 +4357,7 @@ msgstr "更新设置失败"
 msgid "Failed to update streamer"
 msgstr "更新主播失败"
 
-#: src/components/notifications/subscription-manager.tsx:246
+#: src/components/notifications/subscription-manager.tsx:250
 msgid "Failed to update subscriptions"
 msgstr "更新订阅失败"
 
@@ -4399,7 +4409,7 @@ msgstr "快速 H.264 压缩（CRF 23）。在速度、画质与体积之间取�
 
 #: src/components/streamers/edit/status-check-history.tsx:374
 #: src/components/streamers/edit/status-check-history.tsx:395
-#: src/lib/notification-event-types.ts:32
+#: src/lib/notification-event-types.ts:33
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:124
 msgid "Fatal error"
 msgstr "致命错误"
@@ -4735,7 +4745,7 @@ msgstr "来自主播"
 msgid "from the template"
 msgstr "来自模板"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:208
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:209
 msgid "Full access"
 msgstr "完全访问"
 
@@ -4896,7 +4906,7 @@ msgstr "GPU 高质量归档"
 msgid "GPU Standard"
 msgstr "GPU 标准"
 
-#: src/lib/notification-event-types.ts:35
+#: src/lib/notification-event-types.ts:36
 msgid "GPU unavailable"
 msgstr "GPU 不可用"
 
@@ -5171,7 +5181,7 @@ msgstr "HTTP 请求"
 msgid "HTTP Version"
 msgstr "HTTP 版本"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:255
+#: src/components/proxies/proxy-editor-dialog.tsx:257
 msgid "http, https, socks5 or socks5h."
 msgstr "支持 http、https、socks5 或 socks5h。"
 
@@ -5569,7 +5579,7 @@ msgstr "避免解密阻塞其他下载。"
 #: src/components/notifications/forms/webhook-form.tsx:420
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:113
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:144
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:175
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:176
 msgid "Key"
 msgstr "键"
 
@@ -5593,7 +5603,7 @@ msgstr "密钥超时（毫秒）"
 msgid "Keyword"
 msgstr "关键字"
 
-#: src/components/credentials/profile-editor-dialog.tsx:209
+#: src/components/credentials/profile-editor-dialog.tsx:210
 msgid "Label"
 msgstr "名称"
 
@@ -5636,7 +5646,7 @@ msgid "Last refreshed"
 msgstr "最近刷新"
 
 #: src/components/credentials/account-usage.tsx:355
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:184
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:185
 msgid "Last used"
 msgstr "最近使用"
 
@@ -5657,7 +5667,7 @@ msgstr "尝试次数留空或填 1 表示不自动重试；退避时间在每次
 msgid "Leave empty for stream copy"
 msgstr "留空以进行流复制"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:315
+#: src/components/proxies/proxy-editor-dialog.tsx:317
 msgid "Leave empty to keep the current password."
 msgstr "留空则保留当前密码。"
 
@@ -5666,11 +5676,11 @@ msgstr "留空则保留当前密码。"
 msgid "Leave empty to use the saved account selection."
 msgstr "留空以使用已保存的账号选择策略。"
 
-#: src/components/credentials/profile-editor-dialog.tsx:225
+#: src/components/credentials/profile-editor-dialog.tsx:227
 msgid "Leave off to keep the stored credentials."
 msgstr "保持关闭则保留已保存的凭据。"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:66
+#: src/components/proxies/proxy-editor-dialog.tsx:67
 msgid "Leave out any path: only scheme://host:port."
 msgstr "请去掉路径，只填写 scheme://host:port。"
 
@@ -5682,7 +5692,7 @@ msgstr "不勾选则仅删除记录，磁盘上的文件保持原样。"
 msgid "Left"
 msgstr "左侧"
 
-#: src/components/config/global/network-system-card.tsx:176
+#: src/components/config/global/network-system-card.tsx:178
 msgid "Let the player proxy sources on private or local networks."
 msgstr "允许播放器代理位于私有或本地网络上的源。"
 
@@ -5895,7 +5905,7 @@ msgstr "登录失效"
 msgid "Logs"
 msgstr "日志"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:132
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:133
 msgid "Long-lived credentials for programmatic access to the REST API and the built-in MCP server. Read-only keys can inspect recording sessions and non-sensitive status; configuration and operational records require full access."
 msgstr "用于通过 REST API 和内置 MCP 服务器进行编程访问的长期凭据。只读密钥可以查看录制会话和非敏感状态；配置和运维记录需要完全访问权限。"
 
@@ -5985,7 +5995,7 @@ msgstr "管理专门的提取和识别选项。"
 msgid "Manage storage paths and file formats."
 msgstr "管理存储路径和文件格式。"
 
-#: src/components/notifications/subscription-manager.tsx:316
+#: src/components/notifications/subscription-manager.tsx:320
 msgid "Manage Subscriptions"
 msgstr "管理订阅"
 
@@ -6386,10 +6396,10 @@ msgstr "我的模板"
 #: src/components/notifications/channel-form.tsx:381
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:230
 #: src/components/pipeline/workflows/workflow-editor.tsx:203
-#: src/components/proxies/proxy-editor-dialog.tsx:232
+#: src/components/proxies/proxy-editor-dialog.tsx:233
 #: src/components/streamers/config/streamer-identity-fields.tsx:97
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:172
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:440
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:173
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:441
 msgid "Name"
 msgstr "名称"
 
@@ -6449,8 +6459,8 @@ msgstr "网络与内容"
 msgid "Network & System"
 msgstr "网络与系统"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:242
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:249
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:243
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:250
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:484
 msgid "Never"
 msgstr "永不"
@@ -6527,7 +6537,7 @@ msgstr "暂无正在录制"
 msgid "No answer within 10 seconds"
 msgstr "10 秒内无响应"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:160
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:161
 msgid "No API keys yet. Create one to let scripts or AI assistants access this server."
 msgstr "还没有 API 密钥。创建一个以便脚本或 AI 助手访问此服务器。"
 
@@ -6638,7 +6648,7 @@ msgstr "该执行记录暂无日志。"
 msgid "No logs to display"
 msgstr "暂无日志可显示"
 
-#: src/components/notifications/subscription-manager.tsx:381
+#: src/components/notifications/subscription-manager.tsx:385
 msgid "No matching events found"
 msgstr "未找到匹配的事件"
 
@@ -7155,7 +7165,7 @@ msgstr "可选"
 msgid "Optional description for this preset"
 msgstr "此预设的可选描述"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:297
+#: src/components/proxies/proxy-editor-dialog.tsx:299
 msgid "Optional."
 msgstr "可选。"
 
@@ -7176,7 +7186,7 @@ msgstr "原画 (10000)"
 msgid "Original / Blu-ray"
 msgstr "原画 / 蓝光"
 
-#: src/lib/notification-event-types.ts:33
+#: src/lib/notification-event-types.ts:34
 msgid "Out of disk space"
 msgstr "磁盘空间不足"
 
@@ -7228,7 +7238,7 @@ msgstr "输出检测"
 msgid "Output Folder"
 msgstr "输出文件夹"
 
-#: src/lib/notification-event-types.ts:34
+#: src/lib/notification-event-types.ts:35
 msgid "Output folder unavailable"
 msgstr "输出目录不可用"
 
@@ -7412,12 +7422,12 @@ msgstr "残留文件已删除"
 msgid "Passthrough Inputs"
 msgstr "透传输入"
 
-#: src/components/credentials/profile-editor-dialog.tsx:334
+#: src/components/credentials/profile-editor-dialog.tsx:336
 #: src/components/notifications/forms/email-form.tsx:106
 #: src/components/notifications/forms/email-form.tsx:112
 #: src/components/notifications/forms/webhook-form.tsx:300
 #: src/components/notifications/forms/webhook-form.tsx:307
-#: src/components/proxies/proxy-editor-dialog.tsx:312
+#: src/components/proxies/proxy-editor-dialog.tsx:314
 #: src/routes/_public/login.lazy.tsx:190
 msgid "Password"
 msgstr "密码"
@@ -7449,7 +7459,7 @@ msgstr "过去"
 msgid "Paste a channel link. Everything else can wait."
 msgstr "先粘贴频道链接，其他设置稍后再填。"
 
-#: src/components/credentials/profile-editor-dialog.tsx:243
+#: src/components/credentials/profile-editor-dialog.tsx:245
 msgid "Paste cookies"
 msgstr "粘贴 Cookie"
 
@@ -7564,7 +7574,7 @@ msgstr "选择预设主题或导入自定义主题。"
 msgid "Pipeline"
 msgstr "处理管道"
 
-#: src/lib/notification-event-types.ts:29
+#: src/lib/notification-event-types.ts:30
 msgid "Pipeline cancelled"
 msgstr "管道已取消"
 
@@ -7580,11 +7590,11 @@ msgstr "处理管道已删除"
 msgid "Pipeline Execution"
 msgstr "处理管道执行"
 
-#: src/lib/notification-event-types.ts:28
+#: src/lib/notification-event-types.ts:29
 msgid "Pipeline failed"
 msgstr "管道失败"
 
-#: src/lib/notification-event-types.ts:27
+#: src/lib/notification-event-types.ts:28
 msgid "Pipeline finished"
 msgstr "管道完成"
 
@@ -7643,15 +7653,15 @@ msgstr "处理管道名称是必填项"
 msgid "Pipeline not found"
 msgstr "未找到该处理管道"
 
-#: src/lib/notification-event-types.ts:30
+#: src/lib/notification-event-types.ts:31
 msgid "Pipeline queue backing up"
 msgstr "管道队列积压"
 
-#: src/lib/notification-event-types.ts:31
+#: src/lib/notification-event-types.ts:32
 msgid "Pipeline queue critical"
 msgstr "管道队列严重积压"
 
-#: src/lib/notification-event-types.ts:26
+#: src/lib/notification-event-types.ts:27
 msgid "Pipeline started"
 msgstr "管道开始"
 
@@ -7705,7 +7715,7 @@ msgstr "平台覆盖设置"
 msgid "Platform Overrides"
 msgstr "平台覆盖项"
 
-#: src/lib/notification-event-types.ts:38
+#: src/lib/notification-event-types.ts:39
 msgid "Platform rate limited"
 msgstr "平台限流"
 
@@ -8012,7 +8022,7 @@ msgstr "优先级从高到低"
 msgid "Priority low-high"
 msgstr "优先级从低到高"
 
-#: src/components/config/global/network-system-card.tsx:183
+#: src/components/config/global/network-system-card.tsx:185
 msgid "Private Network Access"
 msgstr "私有网络访问"
 
@@ -8122,15 +8132,15 @@ msgstr "协议设置"
 msgid "Proxies"
 msgstr "代理"
 
-#: src/components/config/global/network-system-card.tsx:156
+#: src/components/config/global/network-system-card.tsx:158
 #: src/components/config/shared-config-editor.tsx:190
 #: src/components/config/shared/proxy-route-picker.tsx:445
 #: src/components/credentials/account-usage.tsx:415
-#: src/components/credentials/profile-editor-dialog.tsx:371
+#: src/components/credentials/profile-editor-dialog.tsx:373
 msgid "Proxy"
 msgstr "代理"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:65
+#: src/components/proxies/proxy-editor-dialog.tsx:66
 msgid "Put the login in the username and password fields instead."
 msgstr "请将登录信息填写在用户名和密码栏中。"
 
@@ -8247,7 +8257,7 @@ msgstr "读取缓冲区大小（字节）"
 msgid "Read Timeout (ms)"
 msgstr "读取超时 (ms)"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:212
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:213
 msgid "Read-only"
 msgstr "只读"
 
@@ -8347,11 +8357,11 @@ msgctxt "live recordings using an account"
 msgid "Recording"
 msgstr "正在录制"
 
-#: src/lib/notification-event-types.ts:22
+#: src/lib/notification-event-types.ts:23
 msgid "Recording cancelled"
 msgstr "录制已取消"
 
-#: src/lib/notification-event-types.ts:21
+#: src/lib/notification-event-types.ts:22
 msgid "Recording error"
 msgstr "录制出错"
 
@@ -8360,7 +8370,7 @@ msgstr "录制出错"
 msgid "Recording Filters"
 msgstr "录制过滤器"
 
-#: src/lib/notification-event-types.ts:20
+#: src/lib/notification-event-types.ts:21
 msgid "Recording finished"
 msgstr "录制完成"
 
@@ -8368,7 +8378,7 @@ msgstr "录制完成"
 msgid "Recording is paused"
 msgstr "录制已暂停"
 
-#: src/lib/notification-event-types.ts:23
+#: src/lib/notification-event-types.ts:24
 msgid "Recording rejected"
 msgstr "录制被拒绝"
 
@@ -8377,7 +8387,7 @@ msgid "Recording split successfully."
 msgstr "录制分段成功。"
 
 #: src/components/sessions/timeline-tab.tsx:320
-#: src/lib/notification-event-types.ts:19
+#: src/lib/notification-event-types.ts:20
 msgid "Recording started"
 msgstr "录制已开始"
 
@@ -8439,7 +8449,7 @@ msgstr "刷新状态"
 msgid "Refresh stream URL"
 msgstr "刷新直播地址"
 
-#: src/components/credentials/profile-editor-dialog.tsx:297
+#: src/components/credentials/profile-editor-dialog.tsx:299
 msgid "Refresh token"
 msgstr "刷新令牌"
 
@@ -8515,7 +8525,7 @@ msgstr "移除请求头"
 msgid "Remove Input on Success"
 msgstr "成功后移除输入"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:289
+#: src/components/proxies/proxy-editor-dialog.tsx:291
 msgid "Remove login"
 msgstr "移除登录信息"
 
@@ -8625,7 +8635,7 @@ msgstr "全部替换"
 msgid "Replace configuration?"
 msgstr "替换配置？"
 
-#: src/components/credentials/profile-editor-dialog.tsx:223
+#: src/components/credentials/profile-editor-dialog.tsx:225
 msgid "Replace credentials"
 msgstr "替换凭据"
 
@@ -8855,19 +8865,19 @@ msgstr "处理管道步骤可复用的处理器配置"
 msgid "Review recorded streams and manage archives"
 msgstr "查看录制内容并管理归档"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:315
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:316
 msgid "Revoke"
 msgstr "吊销"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:260
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:261
 msgid "Revoke API key"
 msgstr "吊销 API 密钥"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:295
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:296
 msgid "Revoke API key?"
 msgstr "吊销 API 密钥？"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:227
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:228
 msgid "Revoked"
 msgstr "已吊销"
 
@@ -8979,14 +8989,14 @@ msgstr "清理后的主播名称"
 msgid "Saturday"
 msgstr "星期六"
 
-#: src/components/credentials/profile-editor-dialog.tsx:411
+#: src/components/credentials/profile-editor-dialog.tsx:413
 msgid "Save account"
 msgstr "保存账号"
 
 #: src/components/config/engines/engine-editor.tsx:266
 #: src/components/filters/FilterDialog.tsx:298
 #: src/components/notifications/channel-form.tsx:459
-#: src/components/proxies/proxy-editor-dialog.tsx:361
+#: src/components/proxies/proxy-editor-dialog.tsx:363
 #: src/components/shared/save-fab.tsx:93
 #: src/components/streamers/streamer-editor.tsx:331
 msgid "Save changes"
@@ -8994,7 +9004,7 @@ msgstr "保存更改"
 
 #: src/components/config/platforms/platform-editor.tsx:186
 #: src/components/config/templates/template-editor.tsx:207
-#: src/components/notifications/subscription-manager.tsx:472
+#: src/components/notifications/subscription-manager.tsx:476
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:805
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:380
@@ -9021,7 +9031,7 @@ msgstr "删除检查尚未完成，仍要保存吗？"
 msgid "Save Workflow"
 msgstr "保存工作流"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:253
+#: src/components/proxies/proxy-editor-dialog.tsx:255
 msgid "Saved as {normalized}"
 msgstr "将保存为 {normalized}"
 
@@ -9033,7 +9043,7 @@ msgstr "已保存的代理"
 msgid "Saved proxies & system proxy"
 msgstr "已保存的代理与系统代理"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:215
+#: src/components/proxies/proxy-editor-dialog.tsx:216
 msgid "Saved proxies can be chosen in global, platform, template, streamer and account settings."
 msgstr "已保存的代理可在全局、平台、模板、主播和账号设置中选用。"
 
@@ -9050,7 +9060,7 @@ msgstr "全局、平台、模板、主播和账号设置可选用这些已保存
 msgid "Saved proxy"
 msgstr "已保存的代理"
 
-#: src/components/credentials/profile-editor-dialog.tsx:201
+#: src/components/credentials/profile-editor-dialog.tsx:202
 msgid "Saved right away, separately from the rest of this page."
 msgstr "立即保存，与本页其他设置分开保存。"
 
@@ -9082,7 +9092,7 @@ msgstr "扫描目录以查找命令创建的新文件。检测到的文件将传
 msgid "Scan Directory"
 msgstr "扫描目录"
 
-#: src/components/credentials/profile-editor-dialog.tsx:239
+#: src/components/credentials/profile-editor-dialog.tsx:241
 msgid "Scan QR code"
 msgstr "扫码登录"
 
@@ -9144,7 +9154,7 @@ msgstr "搜索弹幕…"
 msgid "Search engines..."
 msgstr "搜索引擎..."
 
-#: src/components/notifications/subscription-manager.tsx:347
+#: src/components/notifications/subscription-manager.tsx:351
 msgid "Search events..."
 msgstr "搜索事件..."
 
@@ -9226,7 +9236,7 @@ msgstr "分段缓存 TTL（毫秒）"
 msgid "Segment downloads"
 msgstr "分段下载"
 
-#: src/lib/notification-event-types.ts:25
+#: src/lib/notification-event-types.ts:26
 msgid "Segment finished"
 msgstr "分段完成"
 
@@ -9235,7 +9245,7 @@ msgstr "分段完成"
 msgid "Segment Retries"
 msgstr "分段重试次数"
 
-#: src/lib/notification-event-types.ts:24
+#: src/lib/notification-event-types.ts:25
 msgid "Segment started"
 msgstr "分段开始"
 
@@ -9291,7 +9301,7 @@ msgid "Select a streamer"
 msgstr "选择主播"
 
 #: src/components/notifications/desktop-channel-dialog.tsx:173
-#: src/components/notifications/subscription-manager.tsx:365
+#: src/components/notifications/subscription-manager.tsx:369
 msgid "Select All"
 msgstr "全选"
 
@@ -9398,7 +9408,7 @@ msgid "Select the days required for this filter to apply."
 msgstr "选择此过滤器生效的日期。"
 
 #. placeholder {0}: channel.name
-#: src/components/notifications/subscription-manager.tsx:319
+#: src/components/notifications/subscription-manager.tsx:323
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "选择会为 <0>{0}</0> 触发通知的事件。"
 
@@ -9494,7 +9504,7 @@ msgstr "会话完成处理管道"
 msgid "Session complete pipeline is not supported for this entity."
 msgstr "该实体不支持会话完成处理管道。"
 
-#: src/lib/notification-event-types.ts:44
+#: src/lib/notification-event-types.ts:45
 msgid "Session cookies not saved"
 msgstr "会话 Cookie 未保存"
 
@@ -9633,7 +9643,7 @@ msgstr "收起"
 msgid "Show password"
 msgstr "显示密码"
 
-#: src/components/credentials/profile-editor-dialog.tsx:403
+#: src/components/credentials/profile-editor-dialog.tsx:405
 msgid "Show QR code"
 msgstr "显示二维码"
 
@@ -9650,11 +9660,11 @@ msgstr "侧边栏布局"
 msgid "Sign In"
 msgstr "登录"
 
-#: src/components/credentials/profile-editor-dialog.tsx:251
+#: src/components/credentials/profile-editor-dialog.tsx:253
 msgid "Sign in by scanning a QR code with the {appName} app. Nothing to copy or paste."
 msgstr "使用 {appName} App 扫描二维码登录，无需复制粘贴。"
 
-#: src/components/credentials/profile-editor-dialog.tsx:256
+#: src/components/credentials/profile-editor-dialog.tsx:258
 msgid "Sign in by scanning a QR code with the platform's app. Nothing to copy or paste."
 msgstr "使用平台 App 扫描二维码登录，无需复制粘贴。"
 
@@ -9693,7 +9703,7 @@ msgid "Single URL"
 msgstr "单个 URL"
 
 #: src/components/credentials/account-usage.tsx:315
-#: src/components/credentials/profile-editor-dialog.tsx:346
+#: src/components/credentials/profile-editor-dialog.tsx:348
 msgid "Sites"
 msgstr "网站"
 
@@ -9754,6 +9764,10 @@ msgstr "SMTP 主机"
 #: src/components/notifications/forms/email-form.tsx:47
 msgid "smtp.gmail.com"
 msgstr "smtp.gmail.com"
+
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:91
+msgid "Some channels stream their highest qualities only in H.265 or AV1, and Twitch offers them only when allowed here. H.264 is always allowed. Leave both off if your players or post-processing cannot handle these codecs."
+msgstr "部分频道的最高画质仅以 H.265 或 AV1 提供，只有在此处允许后 Twitch 才会提供这些画质。H.264 始终允许。如果你的播放器或后期处理无法处理这些编码，请保持两项关闭。"
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:822
 msgid "Some referenced presets could not be resolved. This step may delete a converted result. Save anyway?"
@@ -9853,7 +9867,7 @@ msgstr "已启动"
 msgid "State"
 msgstr "状态"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:181
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:182
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:514
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:478
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:429
@@ -9950,11 +9964,11 @@ msgstr "流映射 (-map)"
 msgid "Stream monitoring encountered issues"
 msgstr "流监控遇到问题"
 
-#: src/lib/notification-event-types.ts:18
+#: src/lib/notification-event-types.ts:19
 msgid "Stream offline"
 msgstr "已下播"
 
-#: src/lib/notification-event-types.ts:17
+#: src/lib/notification-event-types.ts:18
 msgid "Stream online"
 msgstr "开播"
 
@@ -10082,7 +10096,7 @@ msgstr "主播"
 msgid "Streamers currently live will appear here."
 msgstr "当前正在直播的主播会显示在这里。"
 
-#: src/components/credentials/profile-editor-dialog.tsx:359
+#: src/components/credentials/profile-editor-dialog.tsx:361
 msgid "Streamers on these sites that don't choose an account use this one. A site also covers its subdomains, so youtube.com covers www.youtube.com and m.youtube.com. Separate sites with commas."
 msgstr "这些网站上未选择账号的主播会使用此账号。网站也包括其子域名，因此 youtube.com 也包括 www.youtube.com 和 m.youtube.com。多个网站用逗号分隔。"
 
@@ -10127,7 +10141,7 @@ msgstr "每个文件的流数（--multi-thread-streams）。"
 msgid "Subscriptions"
 msgstr "订阅"
 
-#: src/components/notifications/subscription-manager.tsx:239
+#: src/components/notifications/subscription-manager.tsx:243
 msgid "Subscriptions updated"
 msgstr "订阅已更新"
 
@@ -10209,11 +10223,11 @@ msgstr "系统代理"
 msgid "System proxy: <0>{url}</0>"
 msgstr "系统代理：<0>{url}</0>"
 
-#: src/lib/notification-event-types.ts:37
+#: src/lib/notification-event-types.ts:38
 msgid "System shutting down"
 msgstr "系统正在关闭"
 
-#: src/lib/notification-event-types.ts:36
+#: src/lib/notification-event-types.ts:37
 msgid "System started"
 msgstr "系统已启动"
 
@@ -10340,7 +10354,7 @@ msgstr "测试通知已发送"
 msgid "Testing…"
 msgstr "测试中…"
 
-#: src/components/credentials/profile-editor-dialog.tsx:310
+#: src/components/credentials/profile-editor-dialog.tsx:312
 msgid "The access token alone signs in; cookies are optional."
 msgstr "仅凭访问令牌即可登录；Cookie 可选。"
 
@@ -10396,7 +10410,7 @@ msgstr "录制可使用的下载工具。每个工具都会在服务器上检查
 msgid "The file is split at the next safe boundary."
 msgstr "文件将在下一个安全分割点分割。"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:431
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:432
 msgid "The key inherits your account's permissions, limited by the access level you pick here."
 msgstr "密钥继承你账户的权限，并受此处选择的权限级别限制。"
 
@@ -10432,7 +10446,7 @@ msgstr "代理拒绝了登录信息"
 msgid "The recording ended before the cut completed."
 msgstr "分段完成前录制已结束。"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:295
+#: src/components/proxies/proxy-editor-dialog.tsx:297
 msgid "The saved login will be removed."
 msgstr "保存的登录信息将被移除。"
 
@@ -10583,7 +10597,7 @@ msgstr "此代理正在使用中"
 msgid "This proxy no longer exists. Requests fail until another is chosen."
 msgstr "此代理已不存在。在改选其他代理前，请求都会失败。"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:179
+#: src/components/proxies/proxy-editor-dialog.tsx:180
 msgid "This proxy was changed elsewhere. Close the editor and open it again."
 msgstr "此代理已在别处被修改。请关闭编辑器后重新打开。"
 
@@ -11254,7 +11268,7 @@ msgstr "URL"
 msgid "URL is required"
 msgstr "必须填写 URL"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:348
+#: src/components/proxies/proxy-editor-dialog.tsx:350
 msgid "Use “{conflictName}” instead"
 msgstr "改用“{conflictName}”"
 
@@ -11262,7 +11276,7 @@ msgstr "改用“{conflictName}”"
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "使用 <0>-movflags +faststart</0>"
 
-#: src/components/proxies/proxy-editor-dialog.tsx:64
+#: src/components/proxies/proxy-editor-dialog.tsx:65
 msgid "Use an http, https, socks5 or socks5h address."
 msgstr "请使用 http、https、socks5 或 socks5h 地址。"
 
@@ -11303,7 +11317,7 @@ msgstr "{when}使用"
 msgid "used by {usage}"
 msgstr "被 {usage} 处使用"
 
-#: src/components/config/global/network-system-card.tsx:165
+#: src/components/config/global/network-system-card.tsx:167
 msgid "Used wherever a platform, template, streamer or account does not choose its own."
 msgstr "在平台、模板、主播或账号未自行选择时使用。"
 
@@ -11317,12 +11331,12 @@ msgctxt "terminal-cause"
 msgid "User Disabled"
 msgstr "已被用户停用"
 
-#: src/components/credentials/profile-editor-dialog.tsx:321
+#: src/components/credentials/profile-editor-dialog.tsx:323
 #: src/components/notifications/forms/email-form.tsx:86
 #: src/components/notifications/forms/email-form.tsx:91
 #: src/components/notifications/forms/webhook-form.tsx:280
 #: src/components/notifications/forms/webhook-form.tsx:286
-#: src/components/proxies/proxy-editor-dialog.tsx:275
+#: src/components/proxies/proxy-editor-dialog.tsx:277
 #: src/routes/_public/login.lazy.tsx:170
 msgid "Username"
 msgstr "用户名"

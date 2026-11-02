@@ -128,6 +128,9 @@ pub struct TwitchConfig {
     /// OAuth token for authentication
     #[serde(skip_serializing_if = "Option::is_none")]
     pub oauth_token: Option<String>,
+    /// Codecs announced to Twitch (`h264`, `h265`, `av1`); unset means H.264 only
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supported_codecs: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_stream_on_danmu_stream_closed: Option<bool>,
 }

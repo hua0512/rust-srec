@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use m3u8_rs::{MasterPlaylist, Playlist};
+use m3u8_rs::{MasterPlaylist, Playlist, QuotedOrUnquoted, VariantStream};
 use reqwest::Client;
 use serde::Serialize;
 use url::Url;
@@ -51,7 +51,9 @@ pub trait HlsExtractor: Sync {
                 request = request.query(params);
             }
 
-            let response = request.send().await?.bytes().await?;
+            let response = ExtractorError::check_response(request.send().await?)?
+                .bytes()
+                .await?;
             let playlist = m3u8_rs::parse_playlist_res(&response)
                 .map_err(|e| ExtractorError::HlsPlaylistError(e.to_string()))?;
 
@@ -84,6 +86,22 @@ pub trait HlsExtractor: Sync {
     }
 }
 
+/// The variant name an Amazon IVS playlist (Twitch usher v2) carries in place
+/// of an `EXT-X-MEDIA` video group. The source rendition maps to `chunked`,
+/// the group id those playlists used for it, so it keeps the name "Source".
+fn ivs_variant_name(variant: &VariantStream) -> Option<String> {
+    let attributes = variant.other_attributes.as_ref()?;
+    let attribute = |name: &str| match attributes.get(name)? {
+        QuotedOrUnquoted::Quoted(value) | QuotedOrUnquoted::Unquoted(value) => Some(value.as_str()),
+    };
+    if attribute("IVS-VARIANT-SOURCE").is_some_and(|source| source.eq_ignore_ascii_case("source")) {
+        return Some("chunked".to_owned());
+    }
+    attribute("STABLE-VARIANT-ID")
+        .or_else(|| attribute("IVS-NAME"))
+        .map(str::to_owned)
+}
+
 fn process_master_playlist(
     playlist: MasterPlaylist,
     base_url: &Url,
@@ -97,14 +115,16 @@ fn process_master_playlist(
             let stream_url = base_url.join(&variant.uri).ok()?;
             let bitrate = variant.bandwidth / 1000;
 
-            // debug!("variant: {:?}", variant);
-            let video = variant.video.unwrap_or_default();
+            let video = variant
+                .video
+                .clone()
+                .or_else(|| ivs_variant_name(&variant))
+                .unwrap_or_default();
             let video = if video == "chunked" || video.is_empty() {
                 "Source".to_string()
             } else {
                 video
             };
-            // debug!("video: {:?}", video);
             let quality = variant
                 .resolution
                 .map(|r| format!("{} - {}x{}", video, r.width, r.height))
@@ -121,4 +141,52 @@ fn process_master_playlist(
             )
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn qualities(playlist: &str) -> Vec<String> {
+        let Ok(Playlist::MasterPlaylist(playlist)) =
+            m3u8_rs::parse_playlist_res(playlist.as_bytes())
+        else {
+            panic!("not a master playlist");
+        };
+        let base_url = Url::parse("https://usher.example/master.m3u8").unwrap();
+        process_master_playlist(playlist, &base_url, None)
+            .into_iter()
+            .map(|stream| stream.quality)
+            .collect()
+    }
+
+    /// Twitch usher v2 drops the `EXT-X-MEDIA` groups the v1 playlist names
+    /// its variants by; both must yield the same quality names.
+    #[test]
+    fn twitch_usher_v2_variants_keep_the_v1_quality_names() {
+        let v1 = r#"#EXTM3U
+#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="chunked",NAME="1080p60 (source)",AUTOSELECT=YES,DEFAULT=YES
+#EXT-X-STREAM-INF:BANDWIDTH=9008208,RESOLUTION=1920x1080,CODECS="avc1.64002A,mp4a.40.2",VIDEO="chunked",FRAME-RATE=60.000
+https://example/1080p60.m3u8
+#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="480p30",NAME="480p",AUTOSELECT=YES,DEFAULT=YES
+#EXT-X-STREAM-INF:BANDWIDTH=1427999,RESOLUTION=852x480,CODECS="avc1.4D401F,mp4a.40.2",VIDEO="480p30",FRAME-RATE=30.000
+https://example/480p30.m3u8
+#EXT-X-MEDIA:TYPE=VIDEO,GROUP-ID="audio_only",NAME="audio_only",AUTOSELECT=NO,DEFAULT=NO
+#EXT-X-STREAM-INF:BANDWIDTH=160000,CODECS="mp4a.40.2",VIDEO="audio_only"
+https://example/audio_only.m3u8
+"#;
+        let v2 = r#"#EXTM3U
+#EXT-X-SESSION-DATA:DATA-ID="NODE",VALUE="example"
+#EXT-X-STREAM-INF:BANDWIDTH=9008208,RESOLUTION=1920x1080,CODECS="avc1.64002A,mp4a.40.2",FRAME-RATE=60.000,STABLE-VARIANT-ID="1080p60",IVS-NAME="1080p60",IVS-VARIANT-SOURCE="source"
+https://example/1080p60.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=1427999,RESOLUTION=852x480,CODECS="avc1.4D401F,mp4a.40.2",FRAME-RATE=30.000,STABLE-VARIANT-ID="480p30",IVS-NAME="480p",IVS-VARIANT-SOURCE="transcode"
+https://example/480p30.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=160000,CODECS="mp4a.40.2",STABLE-VARIANT-ID="audio_only",IVS-NAME="audio_only",IVS-VARIANT-SOURCE="transcode"
+https://example/audio_only.m3u8
+"#;
+
+        let expected = ["Source - 1920x1080", "480p30 - 852x480", "audio_only"];
+        assert_eq!(qualities(v1), expected);
+        assert_eq!(qualities(v2), expected);
+    }
 }

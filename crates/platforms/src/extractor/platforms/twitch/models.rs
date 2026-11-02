@@ -33,16 +33,23 @@ pub struct Extensions {
     pub request_id: String,
 }
 
-// Structs for UserOrError (from the first object)
+/// A `User`, or a `UserDoesNotExist` that carries only `reason` (`UNKNOWN`
+/// for no such login, `TOS_*` or `DMCA` for a suspension), so the user
+/// fields default when absent.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserOrError {
+    #[serde(default)]
     pub id: String,
+    #[serde(default)]
     pub login: String,
+    #[serde(default)]
     pub display_name: String,
     #[serde(default)]
+    pub reason: Option<String>,
+    #[serde(default)]
     pub primary_color_hex: Option<String>,
-    #[serde(rename = "profileImageURL")]
+    #[serde(default, rename = "profileImageURL")]
     pub profile_image_url: String,
     pub stream: Option<Stream>,
     #[serde(rename = "__typename")]
@@ -157,4 +164,24 @@ pub struct LastBroadcast {
     pub title: Option<String>,
     #[serde(rename = "__typename")]
     pub typename: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PlaybackAccessTokenResponse {
+    pub data: Option<PlaybackAccessTokenData>,
+    #[serde(default)]
+    pub errors: Vec<TwitchError>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaybackAccessTokenData {
+    /// Null when the channel is offline or does not exist.
+    pub stream_playback_access_token: Option<PlaybackAccessToken>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PlaybackAccessToken {
+    pub value: String,
+    pub signature: String,
 }
