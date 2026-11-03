@@ -12,5 +12,5 @@ workspace = true
 bytes = { workspace = true }
 tokio-util = { workspace = true, features = ["codec"] }
 thiserror = { workspace = true }
-smallvec = "1.16.3"
+smallvec = "1.16.4"
 rustc-hash = { workspace = true }

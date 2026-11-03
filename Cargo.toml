@@ -71,7 +71,7 @@ regex = { version = "1.13.1", default-features = false, features = ["std", "unic
 jieba-rs = "0.11.0"
 futures = "0.3.34"
 chrono = { version = "0.4.45", features = ["serde"] }
-uuid = { version = "1.28.0", features = ["v4", "serde"] }
+uuid = { version = "1.29.0", features = ["v4", "serde"] }
 prost = "0.14.4"
 prost-build = "0.14.4"
 parking_lot = "0.12.5"
@@ -86,7 +86,7 @@ axum = { version = "0.8.9", features = ["ws"] }
 sqlx = { version = "0.9.0", features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "sqlite", "macros", "uuid", "chrono", "json"] }
 utoipa = { version = "6", features = ["axum_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "10", features = ["axum"] }
-rmcp = { version = "3.6.0", features = ["transport-streamable-http-server"] }
+rmcp = { version = "3.8.0", features = ["transport-streamable-http-server"] }
 schemars = "1.2.3"
 jsonwebtoken = { version = "11", features = ["aws_lc_rs"] }
 lettre = { version = "0.11.23", default-features = false, features = ["aws-lc-rs", "builder", "pool", "smtp-transport", "tokio1-rustls", "webpki-roots"] }
@@ -128,7 +128,7 @@ aes-gcm = "0.11.1"
 hkdf = "0.13"
 p256 = { version = "0.14", features = ["ecdsa", "ecdh"] }
 tower = { version = "0.5.3", features = ["util"] }
-roxmltree = "0.21.1"
+roxmltree = "0.21.2"
 
 [profile.dev]
 incremental = true

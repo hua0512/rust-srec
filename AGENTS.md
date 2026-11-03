@@ -21,7 +21,7 @@ Use the map below to locate the task. Read supporting docs, examples, and skills
 - Rust edition and minimum supported version: [Cargo.toml](Cargo.toml). Development toolchain and components: [rust-toolchain.toml](rust-toolchain.toml).
 - Node: [.nvmrc](.nvmrc). pnpm and scripts: [frontend package.json](rust-srec/frontend/package.json) and [docs package.json](rust-srec/docs/package.json). Install dependencies when needed with `pnpm install --frozen-lockfile` in the relevant directory.
 - Rust builds involving protobuf generation need `protoc` on PATH; the CI version is in [.github/actions/setup-protoc/action.yml](.github/actions/setup-protoc/action.yml).
-- Held dependencies (nothing enforces these, so reject Dependabot bumps): `cc` stays at 1.8.0 in `Cargo.lock`, because 1.9.0 breaks MSVC builds under sccache. Frontend holds are listed in the [frontend rules](rust-srec/frontend/AGENTS.md#pitfalls).
+- Held dependencies (nothing enforces these, so reject Dependabot bumps): `cc` stays at 1.8.0 in `Cargo.lock`, because 1.9.0 breaks MSVC builds under sccache. `parking_lot` stays on 0.12 while dependencies such as crossterm, moka, tao and tracing-subscriber use 0.12, because 0.13 would compile a second copy. Frontend version constraints are listed in the [frontend rules](rust-srec/frontend/AGENTS.md#pitfalls).
 - Exact CI targets, platform prerequisites, and feature combinations live in [.github/workflows/pr.yml](.github/workflows/pr.yml). Release build combinations live in the corresponding `.github/workflows/release-*.yml` files. Consult these when reproducing CI or changing build/release behavior.
 
 Run Rust commands from the repository root. Replace `<package>` and `<test_name>` with the affected package and test filter:
