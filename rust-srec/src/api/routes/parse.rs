@@ -96,10 +96,12 @@ pub struct LiveDanmuQuery {
 /// 200 ms. The server reconnects to the platform on its own while the socket
 /// is open.
 ///
-/// After the upgrade, an unusable socket closes with 4404 (unknown, expired
-/// or foreign handle, or a managed playback that needs renewal), 4422 (no
-/// usable danmu connection) or 4429 (too many live danmu sockets). Client
-/// messages are ignored.
+/// A managed parse's handle is rechecked against its playback context when
+/// the socket opens and on every 30 s heartbeat. After the upgrade, an
+/// unusable socket closes with 4404 (unknown, expired or foreign handle, or
+/// a managed playback that needs renewal), 4422 (no usable danmu
+/// connection), 4429 (too many live danmu sockets) or 1011 (the check itself
+/// failed; the same handle may work later). Client messages are ignored.
 async fn live_danmu_ws(
     ws: WebSocketUpgrade,
     State(state): State<LiveDanmuRouteState>,
@@ -119,21 +121,18 @@ async fn live_danmu_ws(
         .map(|principal| principal.claims.sub.as_str())
         .unwrap_or(super::LOCAL_ANONYMOUS_PRINCIPAL);
     let admitted = match state.parse.playback.get_danmu(&query.handle, subject) {
-        Ok(target) => match &target.playback_handle {
-            Some(playback) => match validate_playback(&state.parse, playback, subject).await {
-                Ok(_) => live::admit(&target).map(|admitted| (admitted, target)),
-                Err(error) => {
-                    debug!(code = %error.code, "live danmu refused: playback needs renewal");
-                    Err(live::Refusal::UnknownHandle)
-                }
-            },
-            None => live::admit(&target).map(|admitted| (admitted, target)),
-        },
+        Ok(target) => {
+            match recheck_danmu_playback(&state.parse, target.playback_handle.as_deref(), subject)
+                .await
+            {
+                Ok(()) => live::admit(&target).map(|admitted| (admitted, target)),
+                Err(refusal) => Err(refusal),
+            }
+        }
         Err(_) => Err(live::Refusal::UnknownHandle),
     };
     let subject = subject.to_owned();
-    let handle = query.handle;
-    let contexts = state.parse.playback.clone();
+    let parse = state.parse;
     // Socket client messages are ignored, so nothing larger than a close
     // frame needs to be accepted.
     let ws = ws.max_message_size(1024).max_frame_size(1024);
@@ -142,27 +141,52 @@ async fn live_danmu_ws(
             Ok(admitted) => admitted,
             Err(refusal) => return live::refuse(socket, refusal).await,
         };
-        // Lookups only renew the idle expiry, so a client reconnecting after
-        // a long watch still finds its handles; the account checks run when
-        // a socket opens.
-        let keepalive = move || {
-            let alive = contexts.get_danmu(&handle, &subject).is_ok()
-                && target
-                    .playback_handle
-                    .as_deref()
-                    .is_none_or(|playback| contexts.get(playback, &subject).is_ok());
-            if !alive {
-                debug!("live danmu handle expired while its socket was open");
-            }
+        let recheck = move || {
+            let parse = parse.clone();
+            let playback = target.playback_handle.clone();
+            let subject = subject.clone();
+            async move { recheck_danmu_playback(&parse, playback.as_deref(), &subject).await }
         };
         run_authenticated_session(
             state.auth_service,
             principal,
             AccessPolicy::Full,
-            live::serve(socket, admitted, keepalive),
+            live::serve(socket, admitted, recheck),
         )
         .await
     }))
+}
+
+/// Run the playback account checks for a managed danmu target; unmanaged
+/// targets (`playback` is `None`) have none.
+async fn recheck_danmu_playback(
+    state: &ParseRouteState,
+    playback: Option<&str>,
+    principal: &str,
+) -> Result<(), live::Refusal> {
+    let Some(playback) = playback else {
+        return Ok(());
+    };
+    validate_playback(state, playback, principal)
+        .await
+        .map(|_| ())
+        .map_err(|error| danmu_refusal(&error))
+}
+
+/// A playback that expired, belongs to someone else or needs renewal refuses
+/// its danmu handle for good. Any other failure is the server's: the client
+/// may retry the same handle, so it must not be told to renew playback.
+fn danmu_refusal(error: &ApiError) -> live::Refusal {
+    match error.code.as_str() {
+        "PLAYBACK_CONTEXT_EXPIRED" | "PLAYBACK_CONTEXT_FORBIDDEN" | "PLAYBACK_RENEWAL_REQUIRED" => {
+            debug!(code = %error.code, "live danmu refused: playback needs renewal");
+            live::Refusal::UnknownHandle
+        }
+        _ => {
+            warn!(code = %error.code, error = %error.message, "live danmu: playback check failed");
+            live::Refusal::ServerError
+        }
+    }
 }
 
 #[derive(Default)]
@@ -1118,6 +1142,20 @@ mod tests {
         let database =
             playback_profile_error(crate::Error::Database("database unavailable".into()));
         assert_eq!(database.status, StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn only_playback_invalidation_refuses_a_danmu_handle() {
+        use crate::services::playback_context::PlaybackError;
+        for error in [
+            PlaybackError::Expired,
+            PlaybackError::Forbidden,
+            PlaybackError::RenewalRequired,
+        ] {
+            assert_eq!(danmu_refusal(&error.into()), live::Refusal::UnknownHandle);
+        }
+        let database = ApiError::from(crate::Error::Database("database unavailable".into()));
+        assert_eq!(danmu_refusal(&database), live::Refusal::ServerError);
     }
 
     #[tokio::test]

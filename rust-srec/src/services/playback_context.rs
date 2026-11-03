@@ -119,10 +119,28 @@ struct Entry<T> {
     data: Arc<T>,
 }
 
-type Entries<T> = Mutex<HashMap<String, Entry<T>>>;
+struct Entries<T> {
+    map: Mutex<HashMap<String, Entry<T>>>,
+    /// Whether entries also expire after the idle period, not only after the
+    /// absolute one.
+    idles: bool,
+}
 
-/// Playback contexts and the live danmu handles issued with parses. Both
-/// kinds share the capacity and expiry rules but not their handle space.
+impl<T> Entries<T> {
+    fn new(idles: bool) -> Self {
+        Self {
+            map: Mutex::new(HashMap::new()),
+            idles,
+        }
+    }
+}
+
+/// Playback contexts and the live danmu handles issued with parses, in
+/// separate handle spaces with one capacity and absolute expiry.
+///
+/// Only playback contexts idle out. A danmu handle that expired could only
+/// be replaced by renewing playback, which reloads the video, so it lasts
+/// until the absolute expiry or eviction.
 pub struct PlaybackContextService {
     entries: Entries<PlaybackData>,
     danmu: Entries<LiveDanmuTarget>,
@@ -134,8 +152,8 @@ pub struct PlaybackContextService {
 impl Default for PlaybackContextService {
     fn default() -> Self {
         Self {
-            entries: Mutex::new(HashMap::new()),
-            danmu: Mutex::new(HashMap::new()),
+            entries: Entries::new(true),
+            danmu: Entries::new(false),
             capacity: MAX_CONTEXTS,
             idle: IDLE_EXPIRY,
             absolute: ABSOLUTE_EXPIRY,
@@ -194,7 +212,7 @@ impl PlaybackContextService {
         self.insert_entry(&self.danmu, principal, target)
     }
 
-    /// Looks up a live danmu target and renews its idle expiry.
+    /// Looks up a live danmu target.
     pub(crate) fn get_danmu(
         &self,
         handle: &str,
@@ -206,8 +224,9 @@ impl PlaybackContextService {
     fn insert_entry<T>(&self, entries: &Entries<T>, principal: &str, data: T) -> String {
         let handle = hex::encode(rand::random::<[u8; 32]>());
         let now = Instant::now();
-        let mut entries = entries.lock();
-        self.prune(&mut entries, now);
+        let idles = entries.idles;
+        let mut entries = entries.map.lock();
+        self.prune(&mut entries, now, idles);
         if entries.len() >= self.capacity
             && let Some(oldest) = entries
                 .iter()
@@ -228,10 +247,10 @@ impl PlaybackContextService {
         handle
     }
 
-    fn prune<T>(&self, entries: &mut HashMap<String, Entry<T>>, now: Instant) {
+    fn prune<T>(&self, entries: &mut HashMap<String, Entry<T>>, now: Instant, idles: bool) {
         entries.retain(|_, entry| {
             now.duration_since(entry.created) < self.absolute
-                && now.duration_since(entry.used) < self.idle
+                && (!idles || now.duration_since(entry.used) < self.idle)
         });
     }
 
@@ -251,8 +270,9 @@ impl PlaybackContextService {
         principal: &str,
     ) -> Result<Arc<T>, PlaybackError> {
         let now = Instant::now();
-        let mut entries = entries.lock();
-        self.prune(&mut entries, now);
+        let idles = entries.idles;
+        let mut entries = entries.map.lock();
+        self.prune(&mut entries, now, idles);
         let entry = entries.get_mut(handle).ok_or(PlaybackError::Expired)?;
         if entry.principal != principal {
             return Err(PlaybackError::Forbidden);

@@ -37,21 +37,30 @@ static SOCKETS: Semaphore = Semaphore::const_new(MAX_SOCKETS);
 /// Close codes the player distinguishes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Refusal {
-    /// The handle is unknown, expired, or belongs to another principal.
+    /// The handle is unknown, expired, or belongs to another principal, or
+    /// its managed playback needs renewal.
     UnknownHandle = 4404,
     /// The platform has no usable danmu connection for this room.
     Unavailable = 4422,
     /// Every live danmu slot is in use.
     TooManySockets = 4429,
+    /// The server could not check the handle; the same handle may work on a
+    /// later attempt.
+    ServerError = 1011,
 }
 
 impl Refusal {
-    fn reason(self) -> &'static str {
-        match self {
+    fn close_frame(self) -> Message {
+        let reason = match self {
             Self::UnknownHandle => "unknown or expired danmu handle",
             Self::Unavailable => "danmu unavailable for this room",
             Self::TooManySockets => "too many live danmu sockets",
-        }
+            Self::ServerError => "danmu handle could not be checked",
+        };
+        Message::Close(Some(CloseFrame {
+            code: self as u16,
+            reason: reason.into(),
+        }))
     }
 }
 
@@ -59,9 +68,9 @@ impl Refusal {
 /// deliberately implements neither `Debug` nor `Serialize`.
 pub(crate) struct LiveDanmuTarget {
     room: DanmuRoom,
-    /// The playback context of a managed parse. A socket opens only while
-    /// that context's account checks pass, so cookies of a disabled or
-    /// replaced account are not reused.
+    /// The playback context of a managed parse. Its account checks run when
+    /// a socket opens and on every heartbeat, so the cookies of a disabled or
+    /// replaced account stop being used.
     pub(crate) playback_handle: Option<String>,
     /// Resolved to a danmu proxy when a socket opens, like a recording does
     /// when its collector starts.
@@ -127,11 +136,7 @@ pub(crate) fn admit(target: &LiveDanmuTarget) -> Result<Admitted, Refusal> {
 
 /// Close a socket that was refused before it upgraded.
 pub(crate) async fn refuse(mut socket: WebSocket, refusal: Refusal) {
-    let frame = CloseFrame {
-        code: refusal as u16,
-        reason: refusal.reason().into(),
-    };
-    if let Err(error) = socket.send(Message::Close(Some(frame))).await {
+    if let Err(error) = socket.send(refusal.close_frame()).await {
         debug!(%error, "live danmu: closing a refused socket failed");
     }
 }
@@ -180,13 +185,17 @@ fn enqueue(pending: &mut VecDeque<LiveItem>, message: DanmuMessage) {
     });
 }
 
-/// Serve live danmu on `socket` until the client leaves. `keepalive` runs on
-/// every heartbeat so the handle being served does not idle out.
+/// Serve live danmu on `socket` until the client leaves or `recheck`, run on
+/// every heartbeat, refuses the handle; the socket then closes with that
+/// refusal's code.
 ///
 /// The provider connection lives in its own task that a drop guard cancels,
 /// so it is disconnected even when this future is dropped mid-send, as
 /// happens when the socket's credential is revoked.
-pub(crate) async fn serve(socket: WebSocket, admitted: Admitted, keepalive: impl Fn()) {
+pub(crate) async fn serve<F>(socket: WebSocket, admitted: Admitted, mut recheck: impl FnMut() -> F)
+where
+    F: Future<Output = Result<(), Refusal>>,
+{
     let pending = Arc::new(Mutex::new(VecDeque::with_capacity(MAX_BATCH_ITEMS)));
     let cancel = CancellationToken::new();
     let _stop = cancel.clone().drop_guard();
@@ -229,19 +238,35 @@ pub(crate) async fn serve(socket: WebSocket, admitted: Admitted, keepalive: impl
                     debug!("live danmu client stopped answering pings");
                     break;
                 }
-                keepalive();
-                awaiting_pong = true;
-                Message::Ping(Bytes::new())
+                match recheck().await {
+                    Ok(()) => {
+                        awaiting_pong = true;
+                        Message::Ping(Bytes::new())
+                    }
+                    Err(refusal) => {
+                        // Closing anyway; a client too slow to take the
+                        // close frame loses only the code.
+                        let close = sender.send(refusal.close_frame());
+                        if !matches!(tokio::time::timeout(HEARTBEAT_INTERVAL, close).await, Ok(Ok(()))) {
+                            debug!(?refusal, "live danmu: close frame not delivered");
+                        }
+                        break;
+                    }
+                }
             }
         };
         // A client that stops reading would otherwise park this loop in
         // `send`, heartbeat included, for as long as its TCP window lasts.
-        if !matches!(
-            tokio::time::timeout(HEARTBEAT_INTERVAL, sender.send(outgoing)).await,
-            Ok(Ok(()))
-        ) {
-            debug!("live danmu client stopped reading");
-            break;
+        match tokio::time::timeout(HEARTBEAT_INTERVAL, sender.send(outgoing)).await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                debug!(%error, "live danmu: send failed");
+                break;
+            }
+            Err(_) => {
+                debug!("live danmu: send timed out; the client stopped reading");
+                break;
+            }
         }
     }
 }
