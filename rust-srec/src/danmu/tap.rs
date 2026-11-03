@@ -22,25 +22,18 @@ pub struct DanmuTaps {
 }
 
 impl DanmuTaps {
-    /// Claim the room for one collection. `None` when another collection
-    /// already holds it; that one keeps serving viewers until it ends.
-    pub(crate) fn register(
-        self: &Arc<Self>,
-        platform: &str,
-        room_id: &str,
-    ) -> Option<TapRegistration> {
+    /// Claim the room for one collection. The latest claim wins: new viewers
+    /// follow it, while viewers of an older claim keep it until its
+    /// collection ends and then subscribe again.
+    pub(crate) fn register(self: &Arc<Self>, platform: &str, room_id: &str) -> TapRegistration {
         let key = (platform.to_owned(), room_id.to_owned());
-        let mut rooms = self.rooms.lock();
-        if rooms.contains_key(&key) {
-            return None;
-        }
         let (sender, _) = broadcast::channel(TAP_CAPACITY);
-        rooms.insert(key.clone(), sender.clone());
-        Some(TapRegistration {
+        self.rooms.lock().insert(key.clone(), sender.clone());
+        TapRegistration {
             taps: Arc::clone(self),
             key,
             sender,
-        })
+        }
     }
 
     /// Follow the room's recording, if one is collecting it. The receiver

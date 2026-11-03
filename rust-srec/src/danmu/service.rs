@@ -717,7 +717,6 @@ impl DanmuService {
         self.collections.contains_key(session_id)
     }
 
-    /// Get all active session IDs.
     /// The rooms this service is collecting, for live viewers to follow.
     pub fn taps(&self) -> Arc<DanmuTaps> {
         self.taps.clone()
@@ -948,9 +947,8 @@ async fn cancelled_collection_start(
 struct CollectionTaskContext {
     session_id: String,
     streamer_id: String,
-    /// The room claim for live viewers; `None` when another collection of
-    /// the same room holds it.
-    tap: Option<TapRegistration>,
+    /// The room claim for live viewers.
+    tap: TapRegistration,
     room_id: String,
     provider: Arc<dyn platforms_parser::danmaku::DanmuProvider>,
     conn_config: ConnectionConfig,
@@ -1039,7 +1037,7 @@ async fn collection_task(ctx: CollectionTaskContext) -> CollectionTaskReport {
                 conn_config,
                 statistics,
                 events: events.clone(),
-                tap,
+                tap: Some(tap),
             }),
         ) => (
             match result {
