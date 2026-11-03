@@ -69,7 +69,8 @@ export function getMediaDownloadUrl(
 /**
  * Build the WebSocket URL with JWT token as query parameter.
  * @param accessToken - JWT access token
- * @param endpoint - WebSocket endpoint path (default: /downloads/ws)
+ * @param endpoint - WebSocket endpoint path, optionally with a query string
+ *   (default: /downloads/ws)
  */
 export function buildWebSocketUrl(
   accessToken: string,
@@ -99,7 +100,8 @@ export function buildWebSocketUrl(
 
   const basePath = wsUrl.replace(/\/$/, '');
   const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  return `${basePath}${path}?token=${accessToken}`;
+  const separator = path.includes('?') ? '&' : '?';
+  return `${basePath}${path}${separator}token=${accessToken}`;
 }
 
 /**

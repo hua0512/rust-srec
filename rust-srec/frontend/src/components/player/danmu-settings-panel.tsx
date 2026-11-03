@@ -148,6 +148,8 @@ function SwitchRow({
 export interface DanmuSettingsPanelProps {
   preferences: DanmuPreferences;
   onChange: (preferences: DanmuPreferences) => void;
+  /** Whether the activity strip exists, so its switch means something. */
+  showHeatmapSetting: boolean;
 }
 
 /**
@@ -157,6 +159,7 @@ export interface DanmuSettingsPanelProps {
 export function DanmuSettingsPanel({
   preferences,
   onChange,
+  showHeatmapSetting,
 }: DanmuSettingsPanelProps) {
   const { i18n } = useLingui();
   const [blockKind, setBlockKind] = useState<BlockKind>('keyword');
@@ -294,11 +297,13 @@ export function DanmuSettingsPanel({
           checked={preferences.hoverPause}
           onChange={(hoverPause) => update({ hoverPause })}
         />
-        <SwitchRow
-          label={<Trans>Show activity above the progress bar</Trans>}
-          checked={preferences.heatmap}
-          onChange={(heatmap) => update({ heatmap })}
-        />
+        {showHeatmapSetting && (
+          <SwitchRow
+            label={<Trans>Show activity above the progress bar</Trans>}
+            checked={preferences.heatmap}
+            onChange={(heatmap) => update({ heatmap })}
+          />
+        )}
       </div>
 
       <Section title={<Trans>Blocklist</Trans>}>

@@ -26,6 +26,14 @@ The settings and blocklist are remembered in this browser and apply to every rec
 
 The chat only appears while its XML file is kept. A workflow that converts the XML and deletes the original leaves the video without it.
 
+## Watch a live stream with its chat
+
+A live stream played on the **Player** page shows its chat over the picture as it arrives, on platforms whose chat rust-srec can read (see the [platform guide](../platforms/)). Each player in the grid shows the chat of its own stream.
+
+The same button and **Danmu settings** apply, except the activity strip, which only a recording has. Super chats appear at the top. With **Merge repeated comments** on, a repeat of a message within 10 seconds is hidden, without a count.
+
+Live chat is not saved for later: messages sent while the video is paused or buffering are skipped. While the chat is hidden, the player does not receive it at all. A dropped chat connection reconnects on its own.
+
 ## Configure the summary
 
 Use **Danmu Statistics** to choose ranking lengths, activity intervals, tracking capacity, and extra stop words. These settings follow the same configuration hierarchy as recording settings. [The field reference](../reference/settings.md#danmu-statistics) lists defaults and limits.

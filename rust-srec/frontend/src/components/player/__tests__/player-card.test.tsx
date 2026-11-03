@@ -8,9 +8,17 @@ import {
 import { setupI18n } from '@lingui/core';
 import { I18nProvider } from '@lingui/react';
 import { PlayerCard } from '../player-card';
+import type { PlayerDanmu } from '../player-danmu';
 import { usePlayerPlayback } from '../use-player-playback';
 
 vi.mock('../use-player-playback', () => ({ usePlayerPlayback: vi.fn() }));
+let danmuProps: React.ComponentProps<typeof PlayerDanmu> | undefined;
+vi.mock('../player-danmu', () => ({
+  PlayerDanmu: (props: React.ComponentProps<typeof PlayerDanmu>) => {
+    danmuProps = props;
+    return null;
+  },
+}));
 const hook = vi.mocked(usePlayerPlayback);
 const reload = vi.fn();
 const playback: ReturnType<typeof usePlayerPlayback> = {
@@ -203,4 +211,32 @@ it('only shows a visible status chip for transitional states', () => {
   view.rerender(player());
   expect(screen.getByRole('status')).not.toHaveClass('sr-only');
   expect(screen.getByRole('status')).toHaveTextContent('Buffering');
+});
+
+it('renews for expired live chat at most once a minute, never beside another renewal', async () => {
+  let finish: () => void = () => {};
+  const refresh = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const view = render(
+    player({ onRefreshSource: refresh, liveDanmuHandle: 'h1' }),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Player settings' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh stream URL' }));
+  act(() => danmuProps?.onLiveExpired?.());
+  expect(refresh).toHaveBeenCalledOnce();
+  await act(async () => finish());
+
+  // The renewal rebuilt the player with a new handle that failed at once.
+  view.rerender(player({ onRefreshSource: refresh, liveDanmuHandle: 'h2' }));
+  act(() => danmuProps?.onLiveExpired?.());
+  expect(refresh).toHaveBeenCalledOnce();
+
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_000);
+  act(() => danmuProps?.onLiveExpired?.());
+  expect(refresh).toHaveBeenCalledTimes(2);
+  clock.mockRestore();
 });

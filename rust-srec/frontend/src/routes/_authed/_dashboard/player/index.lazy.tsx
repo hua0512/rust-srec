@@ -552,6 +552,7 @@ const PlayerItem = React.memo(function PlayerItem({
           onRefreshSource={onRefreshSource}
           mediaType={player.currentStream.format}
           isLive={player.response.is_live}
+          liveDanmuHandle={player.response.danmu_handle}
           headers={headers}
           streamData={player.currentStream.data}
           onRemove={onRemove}
