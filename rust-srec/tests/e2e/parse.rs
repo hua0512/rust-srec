@@ -333,10 +333,6 @@ async fn live_danmu_streams_a_parsed_rooms_chat_until_the_socket_closes() {
     let parsed = parse(&app, &token, "/api/parse", json!({ "url": room.url() })).await;
     let handle = parsed["danmu_handle"].as_str().expect("a danmu handle");
     let mut socket = app.connect_socket(&path(handle), None).await;
-    assert_eq!(
-        next_json(&mut socket).await,
-        json!({"type": "status", "state": "connected"})
-    );
     danmu.wait_for_connection(1).await;
     danmu.chat("alice", "  hello  ");
     assert_eq!(

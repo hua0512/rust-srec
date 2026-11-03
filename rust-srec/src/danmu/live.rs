@@ -12,7 +12,7 @@ use parking_lot::Mutex;
 use platforms_parser::danmaku::{DanmuItem, DanmuMessage, DanmuType, ProviderRegistry};
 use platforms_parser::media::MediaInfo;
 use serde::Serialize;
-use tokio::sync::{Semaphore, SemaphorePermit, watch};
+use tokio::sync::{Semaphore, SemaphorePermit};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
@@ -28,6 +28,9 @@ const MAX_BATCH_ITEMS: usize = 100;
 const FLUSH_INTERVAL: Duration = Duration::from_millis(200);
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 
+/// The recorder's `DanmuService` owns its registry and is not reachable from
+/// API routes. Providers keep no state between connections, so a registry of
+/// its own gives the live socket the same providers.
 static PROVIDERS: LazyLock<ProviderRegistry> = LazyLock::new(ProviderRegistry::with_defaults);
 static SOCKETS: Semaphore = Semaphore::const_new(MAX_SOCKETS);
 
@@ -56,6 +59,10 @@ impl Refusal {
 /// deliberately implements neither `Debug` nor `Serialize`.
 pub(crate) struct LiveDanmuTarget {
     room: DanmuRoom,
+    /// The playback context of a managed parse. A socket opens only while
+    /// that context's account checks pass, so cookies of a disabled or
+    /// replaced account are not reused.
+    pub(crate) playback_handle: Option<String>,
     /// Resolved to a danmu proxy when a socket opens, like a recording does
     /// when its collector starts.
     route: ResolvedRoute,
@@ -79,7 +86,11 @@ impl LiveDanmuTarget {
             .as_ref()
             .map(|extras| extras.iter().map(|(k, v)| (k.clone(), v.clone())).collect());
         match resolve_room(&PROVIDERS, url, cookies, extras, None) {
-            Ok(room) => Some(Self { room, route }),
+            Ok(room) => Some(Self {
+                room,
+                playback_handle: None,
+                route,
+            }),
             Err(error) => {
                 debug!(%error, "live danmu unavailable for parsed stream");
                 None
@@ -125,14 +136,6 @@ pub(crate) async fn refuse(mut socket: WebSocket, refusal: Refusal) {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum LinkState {
-    Connecting,
-    Connected,
-    Reconnecting,
-}
-
 #[derive(Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum ItemKind {
@@ -152,7 +155,6 @@ struct LiveItem {
 #[serde(tag = "type", rename_all = "snake_case")]
 enum Frame<'a> {
     Batch { items: &'a [LiveItem] },
-    Status { state: LinkState },
 }
 
 /// Queue `message` for the next batch, dropping the oldest item when full.
@@ -178,17 +180,17 @@ fn enqueue(pending: &mut VecDeque<LiveItem>, message: DanmuMessage) {
     });
 }
 
-/// Serve live danmu on `socket` until the client leaves.
+/// Serve live danmu on `socket` until the client leaves. `keepalive` runs on
+/// every heartbeat so the handle being served does not idle out.
 ///
 /// The provider connection lives in its own task that a drop guard cancels,
 /// so it is disconnected even when this future is dropped mid-send, as
 /// happens when the socket's credential is revoked.
-pub(crate) async fn serve(socket: WebSocket, admitted: Admitted) {
+pub(crate) async fn serve(socket: WebSocket, admitted: Admitted, keepalive: impl Fn()) {
     let pending = Arc::new(Mutex::new(VecDeque::with_capacity(MAX_BATCH_ITEMS)));
-    let (state_tx, mut state_rx) = watch::channel(LinkState::Connecting);
     let cancel = CancellationToken::new();
     let _stop = cancel.clone().drop_guard();
-    tokio::spawn(forward(admitted, pending.clone(), state_tx, cancel));
+    tokio::spawn(forward(admitted, pending.clone(), cancel));
 
     let (mut sender, mut receiver) = socket.split();
     let mut flush = tokio::time::interval(FLUSH_INTERVAL);
@@ -209,43 +211,37 @@ pub(crate) async fn serve(socket: WebSocket, admitted: Admitted) {
                 Some(Ok(Message::Close(_))) | Some(Err(_)) | None => break,
                 Some(Ok(_)) => continue,
             },
-            changed = state_rx.changed() => {
-                if changed.is_err() {
-                    break;
-                }
-                let state = *state_rx.borrow_and_update();
-                text_frame(&Frame::Status { state })
-            }
             _ = flush.tick() => {
                 let items: Vec<LiveItem> = pending.lock().drain(..).collect();
                 if items.is_empty() {
                     continue;
                 }
-                text_frame(&Frame::Batch { items: &items })
+                match serde_json::to_string(&Frame::Batch { items: &items }) {
+                    Ok(text) => Message::Text(text.into()),
+                    Err(error) => {
+                        warn!(%error, "live danmu: failed to encode a batch");
+                        continue;
+                    }
+                }
             }
             _ = heartbeat.tick() => {
                 if awaiting_pong {
                     debug!("live danmu client stopped answering pings");
                     break;
                 }
+                keepalive();
                 awaiting_pong = true;
-                Some(Message::Ping(Bytes::new()))
+                Message::Ping(Bytes::new())
             }
         };
-        if let Some(message) = outgoing
-            && sender.send(message).await.is_err()
-        {
+        // A client that stops reading would otherwise park this loop in
+        // `send`, heartbeat included, for as long as its TCP window lasts.
+        if !matches!(
+            tokio::time::timeout(HEARTBEAT_INTERVAL, sender.send(outgoing)).await,
+            Ok(Ok(()))
+        ) {
+            debug!("live danmu client stopped reading");
             break;
-        }
-    }
-}
-
-fn text_frame(frame: &Frame<'_>) -> Option<Message> {
-    match serde_json::to_string(frame) {
-        Ok(text) => Some(Message::Text(text.into())),
-        Err(error) => {
-            warn!(%error, "live danmu: failed to encode a frame");
-            None
         }
     }
 }
@@ -255,7 +251,6 @@ fn text_frame(frame: &Frame<'_>) -> Option<Message> {
 async fn forward(
     admitted: Admitted,
     pending: Arc<Mutex<VecDeque<LiveItem>>>,
-    state: watch::Sender<LinkState>,
     cancel: CancellationToken,
 ) {
     // The slot is held until the provider is disconnected, not merely until
@@ -269,15 +264,15 @@ async fn forward(
         room_id,
         config,
     } = room;
+    // Failed attempts since the last item arrived.
     let mut attempt = 0u32;
     loop {
         let connected = tokio::select! {
             _ = cancel.cancelled() => return,
             connected = provider.connect(&room_id, config.clone()) => connected,
         };
-        match connected {
+        let cause = match connected {
             Ok(mut stream) => {
-                state.send_replace(LinkState::Connected);
                 let cancelled = loop {
                     tokio::select! {
                         _ = cancel.cancelled() => break true,
@@ -297,14 +292,22 @@ async fn forward(
                 if cancelled {
                     return;
                 }
+                "provider transport closed".to_owned()
             }
-            Err(error) => warn!(%room_id, %error, "live danmu: connect failed"),
-        }
-        state.send_replace(LinkState::Reconnecting);
+            Err(error) => error.to_string(),
+        };
         attempt = attempt.saturating_add(1);
+        let delay = reconnect_delay(attempt);
+        let delay_ms = delay.as_millis() as u64;
+        // One warning per outage; the retries that follow it are routine.
+        if attempt == 1 {
+            warn!(%room_id, %cause, delay_ms, "live danmu: reconnecting");
+        } else {
+            debug!(%room_id, %cause, attempt, delay_ms, "live danmu: reconnecting");
+        }
         tokio::select! {
             _ = cancel.cancelled() => return,
-            _ = tokio::time::sleep(reconnect_delay(attempt)) => {}
+            _ = tokio::time::sleep(delay) => {}
         }
     }
 }

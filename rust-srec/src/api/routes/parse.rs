@@ -70,14 +70,14 @@ pub fn danmu_router() -> Router<AppState> {
 #[derive(Clone)]
 pub struct LiveDanmuRouteState {
     auth_service: Option<std::sync::Arc<crate::api::auth_service::AuthService>>,
-    playback: std::sync::Arc<crate::services::playback_context::PlaybackContextService>,
+    parse: ParseRouteState,
 }
 
 impl FromRef<AppState> for LiveDanmuRouteState {
     fn from_ref(state: &AppState) -> Self {
         Self {
             auth_service: state.auth_service.clone(),
-            playback: state.playback_contexts.clone(),
+            parse: ParseRouteState::from_ref(state),
         }
     }
 }
@@ -93,11 +93,13 @@ pub struct LiveDanmuQuery {
 
 /// Live chat of a parsed stream, as JSON text frames:
 /// `{"type":"batch","items":[{"text","color","kind","user"}]}` at most every
-/// 200 ms, and `{"type":"status","state":"connected"|"reconnecting"}`.
+/// 200 ms. The server reconnects to the platform on its own while the socket
+/// is open.
 ///
 /// After the upgrade, an unusable socket closes with 4404 (unknown, expired
-/// or foreign handle), 4422 (no usable danmu connection) or 4429 (too many
-/// live danmu sockets). Client messages are ignored.
+/// or foreign handle, or a managed playback that needs renewal), 4422 (no
+/// usable danmu connection) or 4429 (too many live danmu sockets). Client
+/// messages are ignored.
 async fn live_danmu_ws(
     ws: WebSocketUpgrade,
     State(state): State<LiveDanmuRouteState>,
@@ -116,24 +118,50 @@ async fn live_danmu_ws(
         .as_ref()
         .map(|principal| principal.claims.sub.as_str())
         .unwrap_or(super::LOCAL_ANONYMOUS_PRINCIPAL);
-    let admitted = state
-        .playback
-        .get_danmu(&query.handle, subject)
-        .map_err(|_| live::Refusal::UnknownHandle)
-        .and_then(|target| live::admit(&target));
+    let admitted = match state.parse.playback.get_danmu(&query.handle, subject) {
+        Ok(target) => match &target.playback_handle {
+            Some(playback) => match validate_playback(&state.parse, playback, subject).await {
+                Ok(_) => live::admit(&target).map(|admitted| (admitted, target)),
+                Err(error) => {
+                    debug!(code = %error.code, "live danmu refused: playback needs renewal");
+                    Err(live::Refusal::UnknownHandle)
+                }
+            },
+            None => live::admit(&target).map(|admitted| (admitted, target)),
+        },
+        Err(_) => Err(live::Refusal::UnknownHandle),
+    };
+    let subject = subject.to_owned();
+    let handle = query.handle;
+    let contexts = state.parse.playback.clone();
+    // Socket client messages are ignored, so nothing larger than a close
+    // frame needs to be accepted.
+    let ws = ws.max_message_size(1024).max_frame_size(1024);
     Ok(ws.on_upgrade(move |socket| async move {
-        match admitted {
-            Ok(admitted) => {
-                run_authenticated_session(
-                    state.auth_service,
-                    principal,
-                    AccessPolicy::Full,
-                    live::serve(socket, admitted),
-                )
-                .await
+        let (admitted, target) = match admitted {
+            Ok(admitted) => admitted,
+            Err(refusal) => return live::refuse(socket, refusal).await,
+        };
+        // Lookups only renew the idle expiry, so a client reconnecting after
+        // a long watch still finds its handles; the account checks run when
+        // a socket opens.
+        let keepalive = move || {
+            let alive = contexts.get_danmu(&handle, &subject).is_ok()
+                && target
+                    .playback_handle
+                    .as_deref()
+                    .is_none_or(|playback| contexts.get(playback, &subject).is_ok());
+            if !alive {
+                debug!("live danmu handle expired while its socket was open");
             }
-            Err(refusal) => live::refuse(socket, refusal).await,
-        }
+        };
+        run_authenticated_session(
+            state.auth_service,
+            principal,
+            AccessPolicy::Full,
+            live::serve(socket, admitted, keepalive),
+        )
+        .await
     }))
 }
 
@@ -484,19 +512,22 @@ async fn extract_managed(
         .await
         .map_err(ApiError::from)?;
     let is_live = extraction.value.is_live;
-    let danmu_handle = LiveDanmuTarget::resolve(
+    let danmu = LiveDanmuTarget::resolve(
         &config.source.url,
         &extraction.value,
         Some(extraction.snapshot.material.cookies.clone()),
         extraction.snapshot.route.clone(),
-    )
-    .map(|target| state.playback.insert_danmu(principal, target));
+    );
     let playback = state.playback.insert(
         principal,
         config.source,
         extraction.snapshot,
         extraction.value,
     )?;
+    let danmu_handle = danmu.map(|mut target| {
+        target.playback_handle = Some(playback.handle.clone());
+        state.playback.insert_danmu(principal, target)
+    });
     Ok(ParseUrlResponse {
         playback: Some(playback),
         success: true,
