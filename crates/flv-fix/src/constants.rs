@@ -44,5 +44,6 @@ pub const ERROR_NO_ACTIVE_WRITER: &str = "Attempted write_tag with no active wri
 // AMF0 script data names
 pub const AMF0_ON_METADATA: &str = "onMetaData";
 
-// Default creator value
-pub const DEFAULT_CREATOR: &str = "Srec";
+/// `metadatacreator` for every file this pipeline writes. It is unversioned
+/// because this crate cannot see the version of the application linking it.
+pub const METADATA_CREATOR: &str = "Mesio";

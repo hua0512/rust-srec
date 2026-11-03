@@ -1,5 +1,6 @@
 use crate::amf::model::{AmfScriptData, KeyframeData};
 use crate::analyzer::FlvStats;
+use crate::constants::METADATA_CREATOR;
 use amf0::{Amf0Encoder, Amf0Marker, Amf0Value, Amf0WriteError};
 use byteorder::{BigEndian, WriteBytesExt};
 use flv::{audio::AudioCodec, video::VideoCodec};
@@ -109,6 +110,7 @@ impl OnMetaDataBuilder {
             self.data.audiocodecid = stats.audio_codec;
         }
         self.data.filesize = Some(stats.file_size);
+        self.data.datasize = Some(stats.tags_size);
         self.data.audiosize = Some(stats.audio_data_size);
         self.data.lasttimestamp = Some(stats.last_timestamp);
         self.data.has_video = Some(stats.has_video);
@@ -294,7 +296,7 @@ impl OnMetaDataBuilder {
             .data
             .metadatacreator
             .take()
-            .unwrap_or_else(|| concat!("Mesio v", env!("CARGO_PKG_VERSION")).to_string());
+            .unwrap_or_else(|| METADATA_CREATOR.to_string());
         if creator.len().saturating_add(padding_bytes) <= u16::MAX as usize {
             creator.extend(std::iter::repeat_n(' ', padding_bytes));
             self.data.metadatacreator = Some(creator);
@@ -585,10 +587,7 @@ impl OnMetaDataBuilder {
                 .metadatacreator
                 .take()
                 .map(|v| Amf0Value::String(Cow::Owned(v)))
-                .or(Some(Amf0Value::String(Cow::Borrowed(concat!(
-                    "Mesio v",
-                    env!("CARGO_PKG_VERSION")
-                ))))),
+                .or(Some(Amf0Value::String(Cow::Borrowed(METADATA_CREATOR)))),
             _ => None,
         }
     }

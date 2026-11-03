@@ -4,6 +4,7 @@ use crate::{
         model::AmfScriptData,
     },
     analyzer::{AnalyzerError, FlvAnalyzer, FlvStats},
+    constants::METADATA_CREATOR,
 };
 use bytes::Bytes;
 use flv::{FlvData, FlvHeader, FlvWriter, script::ScriptData};
@@ -161,9 +162,10 @@ impl FlvFormatStrategy {
         else {
             return Ok(None);
         };
-        let Ok(model) = AmfScriptData::from_amf_object_ref(properties) else {
+        let Ok(mut model) = AmfScriptData::from_amf_object_ref(properties) else {
             return Ok(None);
         };
+        model.metadatacreator = Some(METADATA_CREATOR.to_owned());
 
         let include_keyframes = model.spacer_size.is_some() || model.keyframes.is_some();
         let prepared_tag = if model.spacer_size.is_none() {

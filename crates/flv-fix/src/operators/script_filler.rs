@@ -46,6 +46,7 @@
 //!
 
 use crate::amf::{builder::OnMetaDataBuilder, model::AmfScriptData};
+use crate::constants::METADATA_CREATOR;
 use amf0::Amf0Value;
 use bytes::Bytes;
 use flv::data::FlvData;
@@ -143,12 +144,14 @@ impl ScriptKeyframesFillerOperator {
 
         let original_payload_size = tag.data().len() as u32;
 
-        let script_data_model = AmfScriptData::from_amf_object_ref(props).map_err(|e| {
+        let mut script_data_model = AmfScriptData::from_amf_object_ref(props).map_err(|e| {
             PipelineError::Strategy(Box::new(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 e.to_string(),
             )))
         })?;
+
+        script_data_model.metadatacreator = Some(METADATA_CREATOR.to_owned());
 
         trace!("Script data model: {:?}", script_data_model);
 
