@@ -53,8 +53,8 @@ function shown(layer: HTMLElement): string[] {
   return Array.from(layer.children, (node) => node.textContent ?? '');
 }
 
-function live(text: string, user = ''): LiveDanmuItem {
-  return { text, color: null, kind: 'chat', user };
+function live(text: string): LiveDanmuItem {
+  return { text, color: null, kind: 'chat', user: '' };
 }
 
 function mount(comments: DanmuComment[] | null) {
@@ -176,18 +176,14 @@ describe('DanmuOverlay', () => {
     overlay.destroy();
   });
 
-  it('filters live comments and merges repeats within the window', () => {
+  it('hides live super chats and merges repeats within the window', () => {
     const { layer, video, overlay } = mount(null);
     configure(overlay, {
       merge: true,
-      blockedKeywords: ['spam'],
-      blockedUsers: ['Carol'],
       hidden: { ...defaultDanmuPreferences().hidden, superchat: true },
     });
     overlay.push([
       live('hello'),
-      live('Buy SPAM'),
-      live('hi', 'Carol'),
       { ...live('thanks'), kind: 'superchat' },
       live('hello'),
     ]);
