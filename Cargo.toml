@@ -98,7 +98,7 @@ chrono-tz = "0.10.4"
 cron = "0.17"
 dotenvy = "0.15.7"
 # Health sampling and disk maintenance use only CPU/memory and disk inventory.
-sysinfo = { version = "0.39.6", default-features = false, features = ["system", "disk"] }
+sysinfo = { version = "0.40.1", default-features = false, features = ["system", "disk"] }
 tracing-appender = "0.2.5"
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect"] }
 m3u8-rs = "6.0.1"
