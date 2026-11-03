@@ -471,13 +471,15 @@ export class DanmuOverlay {
       this.options.merge && repeats > 1
         ? `${comment.text} ×${repeats}`
         : comment.text;
-    const textWidth = this.textWidth(text);
     let keyframes: Keyframe[];
     let durationSecs: number;
 
     if (position === TRACK_SCROLL) {
       const lane = freeLane(this.scrollLanes, now);
       if (lane < 0) return;
+      // Measured only once a lane is free: in busy chat most comments find
+      // none and are dropped.
+      const textWidth = this.textWidth(text);
       const speed = this.width / DANMU_SPEED_SECS[this.options.speed];
       // The lane takes its next comment once this one's tail, plus a gap of
       // one line height, has entered the player.
@@ -493,6 +495,7 @@ export class DanmuOverlay {
       const lane = freeLane(lanes, now);
       if (lane < 0) return;
       lanes[lane] = now + FIXED_SECS;
+      const textWidth = this.textWidth(text);
       const y =
         position === TRACK_TOP
           ? lane * this.lineHeight
