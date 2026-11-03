@@ -155,6 +155,8 @@ pub struct ApiServices {
     /// Streamers whose latest credential acquisition found no usable account.
     pub(crate) credential_blocks: Arc<crate::credentials::CredentialBlocks>,
     pub(crate) playback_contexts: Arc<crate::services::playback_context::PlaybackContextService>,
+    /// Rooms recordings are collecting, which live danmu sockets follow.
+    pub(crate) danmu_taps: Arc<crate::danmu::DanmuTaps>,
     /// Validated, transactional configuration import application service.
     pub(crate) configuration_import_service:
         Arc<crate::services::config_import::ConfigurationImportService>,

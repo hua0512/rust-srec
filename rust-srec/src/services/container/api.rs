@@ -112,6 +112,7 @@ impl ServiceContainer {
             proxies: self.proxies.clone(),
             credential_blocks: self.stream_monitor.credential_blocks().clone(),
             playback_contexts: self.playback_contexts.clone(),
+            danmu_taps: self.danmu_service.taps(),
             credential_login_sessions: self.credential_login_sessions.clone(),
             configuration_import_service: self.configuration_import_service.clone(),
             runtime_coordinator: self.runtime_coordinator.clone(),

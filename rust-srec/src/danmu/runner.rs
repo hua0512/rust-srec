@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use platforms_parser::danmaku::{
-    ConnectionConfig, DanmuConnection, DanmuControlEvent, DanmuItem, DanmuProvider,
+    ConnectionConfig, DanmuConnection, DanmuControlEvent, DanmuItem, DanmuProvider, DanmuType,
     message::DanmuMessage,
 };
 
@@ -26,6 +26,7 @@ use crate::error::{Error, Result};
 use super::events::{CollectionCommand, DanmuAuthentication, DanmuEvent, DanmuEventPublisher};
 use super::lifecycle::{CollectionExitReason, CollectionOutcome};
 use super::statistics_session::StatisticsSession;
+use super::tap::TapRegistration;
 
 /// Configuration constants for the collection runner.
 mod config {
@@ -134,6 +135,10 @@ pub(crate) struct CollectionRunner {
     outage_alerted: bool,
 
     events: DanmuEventPublisher,
+
+    /// This collection's claim on its room for live viewers; held for the
+    /// runner's lifetime, across reconnects and segments.
+    tap: Option<TapRegistration>,
 }
 
 /// Parameters for creating a new collection runner.
@@ -145,6 +150,7 @@ pub(crate) struct RunnerParams {
     pub conn_config: ConnectionConfig,
     pub statistics: StatisticsSession,
     pub events: DanmuEventPublisher,
+    pub tap: Option<TapRegistration>,
 }
 
 impl CollectionRunner {
@@ -159,6 +165,7 @@ impl CollectionRunner {
             conn_config,
             statistics,
             events,
+            tap,
         } = params;
 
         // Connect to danmu stream
@@ -179,6 +186,7 @@ impl CollectionRunner {
                 link_down_since: None,
                 outage_alerted: false,
                 events,
+                tap,
             },
             stream.items,
         ))
@@ -760,6 +768,12 @@ impl CollectionRunner {
         // Update session-level statistics.
         self.statistics.record_message(&message);
 
+        if let Some(tap) = &self.tap
+            && matches!(message.message_type, DanmuType::Chat | DanmuType::SuperChat)
+        {
+            tap.publish(&message);
+        }
+
         // Buffer the message (will be written on flush)
         if self.current_writer.is_some() {
             self.message_buffer.push(message);
@@ -804,6 +818,7 @@ mod tests {
             )
             .await,
             events,
+            tap: None,
         })
         .await
         .expect("first connect succeeds")

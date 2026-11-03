@@ -1,5 +1,6 @@
-//! Live chat for the player: each viewer socket gets its own provider
-//! connection, forwarded as small JSON batches. Nothing is recorded.
+//! Live chat for the player, forwarded as small JSON batches. A viewer
+//! socket follows a recording's connection to the room when there is one and
+//! opens its own provider connection otherwise. Nothing is recorded.
 
 use std::collections::VecDeque;
 use std::sync::{Arc, LazyLock};
@@ -12,15 +13,16 @@ use parking_lot::Mutex;
 use platforms_parser::danmaku::{DanmuItem, DanmuMessage, DanmuType, ProviderRegistry};
 use platforms_parser::media::MediaInfo;
 use serde::Serialize;
-use tokio::sync::{Semaphore, SemaphorePermit};
+use tokio::sync::{Semaphore, SemaphorePermit, broadcast};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, warn};
 
 use super::room::{DanmuRoom, resolve_room};
 use super::runner::reconnect_delay;
+use super::tap::DanmuTaps;
 use crate::proxies::{ResolvedRoute, SystemProxy};
 
-/// Live danmu sockets open at once, across all principals. Each holds a
+/// Live danmu sockets open at once, across all principals. Each may hold a
 /// platform connection, so the cap bounds outbound connections too.
 const MAX_SOCKETS: usize = 16;
 /// Live chat is worthless late: a batch keeps only the newest items.
@@ -28,9 +30,9 @@ const MAX_BATCH_ITEMS: usize = 100;
 const FLUSH_INTERVAL: Duration = Duration::from_millis(200);
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 
-/// The recorder's `DanmuService` owns its registry and is not reachable from
-/// API routes. Providers keep no state between connections, so a registry of
-/// its own gives the live socket the same providers.
+/// Resolves rooms when a parse issues a handle, before any service state is
+/// involved. Providers keep no state between connections, so this registry
+/// resolves the same rooms, and room keys, as the recorder's.
 static PROVIDERS: LazyLock<ProviderRegistry> = LazyLock::new(ProviderRegistry::with_defaults);
 static SOCKETS: Semaphore = Semaphore::const_new(MAX_SOCKETS);
 
@@ -111,11 +113,14 @@ impl LiveDanmuTarget {
 /// A connection ready to serve, holding its slot under the global cap.
 pub(crate) struct Admitted {
     room: DanmuRoom,
+    taps: Arc<DanmuTaps>,
     permit: SemaphorePermit<'static>,
 }
 
-/// Claim a slot and the proxy for `target`, before the socket upgrades.
-pub(crate) fn admit(target: &LiveDanmuTarget) -> Result<Admitted, Refusal> {
+/// Claim a slot and the proxy for `target`, before the socket upgrades. The
+/// slot is held whether the socket follows a recording through `taps` or
+/// connects on its own.
+pub(crate) fn admit(target: &LiveDanmuTarget, taps: Arc<DanmuTaps>) -> Result<Admitted, Refusal> {
     let proxy = target
         .route
         .danmu_proxy(SystemProxy::current())
@@ -130,6 +135,7 @@ pub(crate) fn admit(target: &LiveDanmuTarget) -> Result<Admitted, Refusal> {
             room_id: target.room.room_id.clone(),
             config: target.room.config.clone().with_proxy(proxy),
         },
+        taps,
         permit,
     })
 }
@@ -164,7 +170,7 @@ enum Frame<'a> {
 
 /// Queue `message` for the next batch, dropping the oldest item when full.
 /// Only chat and super chats with text are shown.
-fn enqueue(pending: &mut VecDeque<LiveItem>, message: DanmuMessage) {
+fn enqueue(pending: &mut VecDeque<LiveItem>, message: &DanmuMessage) {
     let kind = match message.message_type {
         DanmuType::Chat => ItemKind::Chat,
         DanmuType::SuperChat => ItemKind::Superchat,
@@ -181,7 +187,7 @@ fn enqueue(pending: &mut VecDeque<LiveItem>, message: DanmuMessage) {
         text: text.to_owned(),
         color: message.rgb_color(),
         kind,
-        user: message.username,
+        user: message.username.clone(),
     });
 }
 
@@ -271,8 +277,13 @@ where
     }
 }
 
-/// Keep a provider connection open until `cancel`, reconnecting with the
-/// recorder's back-off whenever the provider's transport gives up.
+/// Feed `pending` with the room's chat until `cancel`.
+///
+/// Before each connection attempt, a recording collecting the same room is
+/// followed instead of opening another platform connection. When that
+/// recording ends, the socket connects on its own straight away; its own
+/// connection is retried with the recorder's back-off whenever the
+/// provider's transport gives up.
 async fn forward(
     admitted: Admitted,
     pending: Arc<Mutex<VecDeque<LiveItem>>>,
@@ -282,6 +293,7 @@ async fn forward(
     // the socket closes.
     let Admitted {
         room,
+        taps,
         permit: _permit,
     } = admitted;
     let DanmuRoom {
@@ -292,6 +304,22 @@ async fn forward(
     // Failed attempts since the last item arrived.
     let mut attempt = 0u32;
     loop {
+        if let Some(mut tap) = taps.subscribe(provider.platform(), &room_id) {
+            debug!(%room_id, "live danmu: following the recording's connection");
+            loop {
+                tokio::select! {
+                    _ = cancel.cancelled() => return,
+                    message = tap.recv() => match message {
+                        Ok(message) => enqueue(&mut pending.lock(), &message),
+                        // Missed chat is not worth replaying late.
+                        Err(broadcast::error::RecvError::Lagged(_)) => {}
+                        Err(broadcast::error::RecvError::Closed) => break,
+                    },
+                }
+            }
+            attempt = 0;
+            continue;
+        }
         let connected = tokio::select! {
             _ = cancel.cancelled() => return,
             connected = provider.connect(&room_id, config.clone()) => connected,
@@ -304,7 +332,7 @@ async fn forward(
                         item = stream.items.recv() => match item {
                             Some(DanmuItem::Message(message)) => {
                                 attempt = 0;
-                                enqueue(&mut pending.lock(), message);
+                                enqueue(&mut pending.lock(), &message);
                             }
                             Some(DanmuItem::Control(_)) => {}
                             None => break false,
@@ -346,16 +374,16 @@ mod tests {
         let mut pending = VecDeque::new();
         enqueue(
             &mut pending,
-            DanmuMessage::gift("g", "u", "Giver", "rocket", 1),
+            &DanmuMessage::gift("g", "u", "Giver", "rocket", 1),
         );
-        enqueue(&mut pending, DanmuMessage::chat("e", "u", "User", "   "));
+        enqueue(&mut pending, &DanmuMessage::chat("e", "u", "User", "   "));
         enqueue(
             &mut pending,
-            DanmuMessage::super_chat("s", "u", "Patron", " thanks ", 30).with_color("#FF8800"),
+            &DanmuMessage::super_chat("s", "u", "Patron", " thanks ", 30).with_color("#FF8800"),
         );
         for index in 0..MAX_BATCH_ITEMS {
             let chat = DanmuMessage::chat("c", "u", "", format!("chat {index}"));
-            enqueue(&mut pending, chat.with_color("not a colour"));
+            enqueue(&mut pending, &chat.with_color("not a colour"));
         }
         assert_eq!(pending.len(), MAX_BATCH_ITEMS);
         assert_eq!(pending[0].text, "chat 0", "the oldest item was dropped");
@@ -364,7 +392,7 @@ mod tests {
         let mut pending = VecDeque::new();
         enqueue(
             &mut pending,
-            DanmuMessage::super_chat("s", "u", "Patron", " thanks ", 30).with_color("#FF8800"),
+            &DanmuMessage::super_chat("s", "u", "Patron", " thanks ", 30).with_color("#FF8800"),
         );
         let items: Vec<_> = pending.into_iter().collect();
         assert_eq!(

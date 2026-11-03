@@ -1,14 +1,17 @@
 //! URL parsing, offline only: every request here is refused or answered
 //! before an extractor contacts a platform. BaiduPCS tool routes too.
 
-use reqwest::StatusCode;
-use serde_json::{Value, json};
+use std::time::Duration;
 
 use futures::StreamExt;
+use reqwest::StatusCode;
+use serde_json::{Value, json};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::support::fake_danmu::FakeDanmu;
-use crate::support::{FakePlatform, Response, Seed, Socket, TestApp, WAIT, eventually, with_query};
+use crate::support::{
+    FakePlatform, FlvLoop, Response, Seed, Socket, TestApp, WAIT, eventually, with_query,
+};
 
 /// The caching and referrer headers every parse answer carries.
 #[track_caller]
@@ -348,6 +351,70 @@ async fn live_danmu_streams_a_parsed_rooms_chat_until_the_socket_closes() {
     })
     .await;
     assert_eq!(danmu.connections(), 1);
+
+    app.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn live_danmu_follows_a_recording_of_the_room_and_connects_itself_after_it_ends() {
+    let fake = FakePlatform::start().await;
+    let room = fake.room("recorded-chat");
+    room.set_live(room.live("Recorded chat"));
+    let danmu = FakeDanmu::of(&room);
+    let app = TestApp::start_with(Seed::live()).await;
+    let token = app.admin_token().await;
+    let streamer = app
+        .watch(&token, "Recorded", &room, json!({ "record_danmu": true }))
+        .await;
+    room.wait_for_media_connection(1).await;
+    danmu.wait_for_connection(1).await;
+
+    let parsed = parse(&app, &token, "/api/parse", json!({ "url": room.url() })).await;
+    let handle = parsed["danmu_handle"].as_str().expect("a danmu handle");
+    let path = with_query(
+        "/api/parse/danmu/ws",
+        &[("handle", handle), ("token", token.as_str())],
+    );
+    let mut socket = app.connect_socket(&path, None).await;
+    // Chat sent before the socket follows the recording is not replayed, so
+    // keep chatting until a batch arrives.
+    let first = tokio::time::timeout(WAIT, async {
+        loop {
+            danmu.chat("alice", "from the recording");
+            let next = tokio::time::timeout(Duration::from_millis(300), next_json(&mut socket));
+            if let Ok(frame) = next.await {
+                return frame;
+            }
+        }
+    })
+    .await
+    .expect("recorded chat reaches the live socket");
+    assert_eq!(first["items"][0]["user"], "alice", "{first}");
+    assert_eq!(danmu.connections(), 1, "the socket opened no connection");
+
+    room.push(FlvLoop::tiny().stream(3));
+    room.set_offline();
+    room.end();
+    app.ended_session_id(&token, &streamer).await;
+    danmu.wait_for_connection(2).await;
+    danmu.chat("bob", "after the recording");
+    // Batches of the recording's chat may still be in flight.
+    let after = tokio::time::timeout(WAIT, async {
+        loop {
+            let frame = next_json(&mut socket).await;
+            if frame["items"][0]["user"] == "bob" {
+                return frame;
+            }
+        }
+    })
+    .await
+    .expect("the socket's own connection delivers chat");
+    assert_eq!(
+        after,
+        json!({"type": "batch", "items": [
+            {"text": "after the recording", "color": null, "kind": "chat", "user": "bob"},
+        ]})
+    );
 
     app.shutdown().await;
 }

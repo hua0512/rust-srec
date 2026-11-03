@@ -39,6 +39,7 @@ use super::lifecycle::{
 };
 use super::runner::{CollectionRunner, RunnerParams};
 use super::statistics_session::StatisticsSession;
+use super::tap::{DanmuTaps, TapRegistration};
 
 const STOP_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -120,6 +121,7 @@ struct CollectionState {
 pub struct DanmuService {
     /// Provider registry
     providers: Arc<ProviderRegistry>,
+    taps: Arc<DanmuTaps>,
     /// Active collections (session_id -> state)
     collections: Arc<DashMap<String, CollectionState>>,
     /// Reverse index for fast lookups (streamer_id -> session_id).
@@ -242,6 +244,7 @@ impl DanmuService {
     pub fn with_providers(providers: ProviderRegistry) -> Self {
         Self {
             providers: Arc::new(providers),
+            taps: Arc::default(),
             collections: Arc::new(DashMap::new()),
             sessions_by_streamer: Arc::new(DashMap::new()),
             events: DanmuEventPublisher::new(256),
@@ -470,9 +473,11 @@ impl DanmuService {
         self.sessions_by_streamer
             .insert(streamer_id.clone(), session_id.clone());
 
+        let tap = self.taps.register(provider.platform(), &room_id);
         let collection = collection_task(CollectionTaskContext {
             session_id: session_id.clone(),
             streamer_id: streamer_id.clone(),
+            tap,
             room_id,
             provider: Arc::clone(&provider),
             conn_config: connection_config,
@@ -713,6 +718,12 @@ impl DanmuService {
     }
 
     /// Get all active session IDs.
+    /// The rooms this service is collecting, for live viewers to follow.
+    pub fn taps(&self) -> Arc<DanmuTaps> {
+        self.taps.clone()
+    }
+
+    /// Get all active session IDs.
     pub fn active_sessions(&self) -> Vec<String> {
         self.collections.iter().map(|r| r.key().clone()).collect()
     }
@@ -937,6 +948,9 @@ async fn cancelled_collection_start(
 struct CollectionTaskContext {
     session_id: String,
     streamer_id: String,
+    /// The room claim for live viewers; `None` when another collection of
+    /// the same room holds it.
+    tap: Option<TapRegistration>,
     room_id: String,
     provider: Arc<dyn platforms_parser::danmaku::DanmuProvider>,
     conn_config: ConnectionConfig,
@@ -992,6 +1006,7 @@ async fn collection_task(ctx: CollectionTaskContext) -> CollectionTaskReport {
     let CollectionTaskContext {
         session_id,
         streamer_id,
+        tap,
         room_id,
         provider,
         conn_config,
@@ -1024,6 +1039,7 @@ async fn collection_task(ctx: CollectionTaskContext) -> CollectionTaskReport {
                 conn_config,
                 statistics,
                 events: events.clone(),
+                tap,
             }),
         ) => (
             match result {

@@ -71,6 +71,7 @@ pub fn danmu_router() -> Router<AppState> {
 pub struct LiveDanmuRouteState {
     auth_service: Option<std::sync::Arc<crate::api::auth_service::AuthService>>,
     parse: ParseRouteState,
+    taps: std::sync::Arc<crate::danmu::DanmuTaps>,
 }
 
 impl FromRef<AppState> for LiveDanmuRouteState {
@@ -78,6 +79,7 @@ impl FromRef<AppState> for LiveDanmuRouteState {
         Self {
             auth_service: state.auth_service.clone(),
             parse: ParseRouteState::from_ref(state),
+            taps: state.danmu_taps.clone(),
         }
     }
 }
@@ -125,7 +127,9 @@ async fn live_danmu_ws(
             match recheck_danmu_playback(&state.parse, target.playback_handle.as_deref(), subject)
                 .await
             {
-                Ok(()) => live::admit(&target).map(|admitted| (admitted, target)),
+                Ok(()) => {
+                    live::admit(&target, state.taps.clone()).map(|admitted| (admitted, target))
+                }
                 Err(refusal) => Err(refusal),
             }
         }
