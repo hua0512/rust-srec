@@ -86,10 +86,13 @@ export function PlayerDanmu({
   player,
   url,
   liveHandle,
+  onLiveExpired,
 }: {
   player: Artplayer | null;
   url?: string;
   liveHandle?: string | null;
+  /** Asks for a renewed `liveHandle` after the server forgot this one. */
+  onLiveExpired?: () => void;
 }) {
   const { i18n } = useLingui();
   const track = useDanmuTrack(url);
@@ -223,7 +226,11 @@ export function PlayerDanmu({
     <>
       {/* Live chat is connected only while it can be shown. */}
       {liveHandle && preferences.visible && (
-        <LiveDanmuFeed handle={liveHandle} overlay={mounted.overlay} />
+        <LiveDanmuFeed
+          handle={liveHandle}
+          overlay={mounted.overlay}
+          onExpired={onLiveExpired}
+        />
       )}
       {panelOpen &&
         createPortal(
@@ -235,7 +242,7 @@ export function PlayerDanmu({
             <DanmuSettingsPanel
               preferences={preferences}
               onChange={setPreferences}
-              heatmapSetting={mounted.heatmap !== null}
+              showHeatmapSetting={mounted.heatmap !== null}
             />
           </div>,
           mounted.panelHost,
@@ -247,10 +254,12 @@ export function PlayerDanmu({
 function LiveDanmuFeed({
   handle,
   overlay,
+  onExpired,
 }: {
   handle: string;
   overlay: DanmuOverlay;
+  onExpired?: () => void;
 }) {
-  useLiveDanmu(handle, (items) => overlay.push(items));
+  useLiveDanmu(handle, (items) => overlay.push(items), onExpired);
   return null;
 }

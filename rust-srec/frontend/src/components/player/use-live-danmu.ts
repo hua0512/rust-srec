@@ -1,14 +1,21 @@
+import { useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { sessionQueryOptions } from '@/api/session';
 import { useAuthedWebSocket } from '@/hooks/use-authed-websocket';
 import type { LiveDanmuItem } from './danmu-overlay';
 
+/** The handle is unknown or expired; only a renewed one can connect. */
+const CLOSE_UNKNOWN_HANDLE = 4404;
+/** The platform has no chat to relay; retrying cannot help. */
+const CLOSE_UNSUPPORTED = 4422;
+/** Too many sockets are open; one may free up, so retry, but slowly. */
+const CLOSE_TOO_MANY = 4429;
+const TOO_MANY_MIN_DELAY_MS = 15_000;
 /**
- * Closes the server sends for a handle it will never serve: unknown or
- * expired, a platform without chat, or too many sockets. Retrying the same
- * handle cannot help; a renewed handle opens a new socket.
+ * At most one renewal is asked for in this span, so a source whose renewed
+ * handles keep failing does not loop.
  */
-const FINAL_CLOSE_CODES = new Set([4404, 4422, 4429]);
+const RENEWAL_INTERVAL_MS = 60_000;
 
 function isItem(value: unknown): value is LiveDanmuItem {
   if (!value || typeof value !== 'object') return false;
@@ -38,12 +45,15 @@ function parseLiveDanmuFrame(data: unknown): LiveDanmuItem[] {
 
 /**
  * Streams a live source's chat to `onItems` while mounted. Unexpected drops
- * are retried with backoff; a new `handle` opens a new socket.
+ * are retried with backoff; a new `handle` opens a new socket. When the
+ * server no longer knows the handle, `onExpired` is asked for a renewed one.
  */
 export function useLiveDanmu(
   handle: string,
   onItems: (items: LiveDanmuItem[]) => void,
+  onExpired?: () => void,
 ): void {
+  const lastRenewal = useRef(-Infinity);
   const { data: session } = useQuery({
     ...sessionQueryOptions,
     enabled: typeof window !== 'undefined',
@@ -58,6 +68,20 @@ export function useLiveDanmu(
       const items = parseLiveDanmuFrame(event.data);
       if (items.length > 0) onItems(items);
     },
-    shouldReconnect: (event) => !FINAL_CLOSE_CODES.has(event.code),
+    reconnectDelay: (event, delay) => {
+      if (event.code === CLOSE_UNKNOWN_HANDLE) {
+        const now = Date.now();
+        if (onExpired && now - lastRenewal.current >= RENEWAL_INTERVAL_MS) {
+          lastRenewal.current = now;
+          onExpired();
+        }
+        return null;
+      }
+      if (event.code === CLOSE_UNSUPPORTED) return null;
+      if (event.code === CLOSE_TOO_MANY) {
+        return Math.max(delay, TOO_MANY_MIN_DELAY_MS);
+      }
+      return delay;
+    },
   });
 }

@@ -211,6 +211,14 @@ export function PlayerCard({
       setRefreshing(false);
     }
   };
+  // The chat's handle expiring says nothing about the video, so a failed
+  // renewal leaves playback alone and the chat simply stays off.
+  const renewLiveDanmu = onRefreshSource
+    ? () => {
+        if (refreshing) return;
+        void onRefreshSource().catch(() => {});
+      }
+    : undefined;
   const chooseConnection = (mode: ConnectionMode) => {
     setRefreshFailed(false);
     setConnectionMode(mode);
@@ -481,6 +489,7 @@ export function PlayerCard({
           player={player}
           url={danmuUrl}
           liveHandle={liveDanmuHandle}
+          onLiveExpired={renewLiveDanmu}
         />
         {detailsOpen && !error && (
           <div

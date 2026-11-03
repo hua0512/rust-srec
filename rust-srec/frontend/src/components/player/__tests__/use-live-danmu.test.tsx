@@ -39,11 +39,13 @@ class MockWebSocket {
 function Harness({
   handle,
   onItems,
+  onExpired,
 }: {
   handle: string;
   onItems: (items: LiveDanmuItem[]) => void;
+  onExpired: () => void;
 }) {
-  useLiveDanmu(handle, onItems);
+  useLiveDanmu(handle, onItems, onExpired);
   return null;
 }
 
@@ -61,18 +63,19 @@ function renderWithSession(handle: string) {
   };
   queryClient.setQueryData(sessionQueryOptions.queryKey, session);
   const onItems = vi.fn();
+  const onExpired = vi.fn();
   const view = render(
     <QueryClientProvider client={queryClient}>
-      <Harness handle={handle} onItems={onItems} />
+      <Harness handle={handle} onItems={onItems} onExpired={onExpired} />
     </QueryClientProvider>,
   );
   const rerender = (next: string) =>
     view.rerender(
       <QueryClientProvider client={queryClient}>
-        <Harness handle={next} onItems={onItems} />
+        <Harness handle={next} onItems={onItems} onExpired={onExpired} />
       </QueryClientProvider>,
     );
-  return { onItems, rerender };
+  return { onItems, onExpired, rerender };
 }
 
 describe('useLiveDanmu', () => {
@@ -97,7 +100,7 @@ describe('useLiveDanmu', () => {
     act(() => {
       for (const data of [
         'not json',
-        JSON.stringify({ type: 'status', state: 'connected' }),
+        JSON.stringify({ type: 'unknown', items: [item] }),
         JSON.stringify({ type: 'batch', items: [item, { text: 1 }] }),
       ]) {
         socket.onmessage?.(new MessageEvent('message', { data }));
@@ -107,22 +110,39 @@ describe('useLiveDanmu', () => {
     expect(onItems).toHaveBeenCalledExactlyOnceWith([item]);
   });
 
-  it('gives up on an expired handle until a renewed one arrives', () => {
-    const { rerender } = renderWithSession('h1');
+  it('asks for a renewed handle when it expires, without looping', () => {
+    const { onExpired, rerender } = renderWithSession('h1');
     act(() => MockWebSocket.instances[0].emitClose(4404));
     act(() => {
-      vi.advanceTimersByTime(60_000);
+      vi.advanceTimersByTime(30_000);
     });
+    expect(onExpired).toHaveBeenCalledOnce();
     expect(MockWebSocket.instances).toHaveLength(1);
 
     rerender('h2');
     expect(MockWebSocket.instances).toHaveLength(2);
     expect(MockWebSocket.instances[1].url).toContain('handle=h2');
 
-    // Any other drop is retried.
-    act(() => MockWebSocket.instances[1].emitClose(1006));
+    // A renewed handle that fails straight away is not renewed again yet.
+    act(() => MockWebSocket.instances[1].emitClose(4404));
+    expect(onExpired).toHaveBeenCalledOnce();
+  });
+
+  it('retries a full server slowly and any other drop promptly', () => {
+    renderWithSession('h1');
+    act(() => MockWebSocket.instances[0].emitClose(4429));
+    act(() => {
+      vi.advanceTimersByTime(14_000);
+    });
+    expect(MockWebSocket.instances).toHaveLength(1);
     act(() => {
       vi.advanceTimersByTime(1_000);
+    });
+    expect(MockWebSocket.instances).toHaveLength(2);
+
+    act(() => MockWebSocket.instances[1].emitClose(1006));
+    act(() => {
+      vi.advanceTimersByTime(2_000);
     });
     expect(MockWebSocket.instances).toHaveLength(3);
   });

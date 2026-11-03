@@ -33,13 +33,14 @@ export interface UseAuthedWebSocketOptions {
   onOpen?: (socket: WebSocket) => void;
   onStatusChange?: (status: WebSocketStatus) => void;
   /**
-   * Decides whether an unexpected close is retried; by default every one is.
-   * A declined close stays closed until the path or session changes.
+   * Picks the wait before retrying an unexpected close, given the default
+   * backoff `delay` in milliseconds; `null` leaves the socket closed until the
+   * path or session changes. By default every close is retried after `delay`.
    */
-  shouldReconnect?: (event: CloseEvent) => boolean;
+  reconnectDelay?: (event: CloseEvent, delay: number) => number | null;
   /**
-   * Runs on an intentional close — the session ended or the caller unmounted —
-   * and never on a reconnect, so callers can tear down state that only makes
+   * Runs on an intentional close — the session ended, the path changed or the
+   * caller unmounted — and never on a reconnect, so callers can tear down state that only makes
    * sense while a session is live.
    */
   onDisconnect?: () => void;
@@ -78,7 +79,7 @@ export function useAuthedWebSocket(
   const onOpenRef = useRef(options.onOpen);
   const onStatusChangeRef = useRef(options.onStatusChange);
   const onDisconnectRef = useRef(options.onDisconnect);
-  const shouldReconnectRef = useRef(options.shouldReconnect);
+  const reconnectDelayRef = useRef(options.reconnectDelay);
   useEffect(() => {
     pathRef.current = path;
     debugLabelRef.current = debugLabel;
@@ -86,7 +87,7 @@ export function useAuthedWebSocket(
     onOpenRef.current = options.onOpen;
     onStatusChangeRef.current = options.onStatusChange;
     onDisconnectRef.current = options.onDisconnect;
-    shouldReconnectRef.current = options.shouldReconnect;
+    reconnectDelayRef.current = options.reconnectDelay;
   });
 
   // Read by connect() instead of captured, so renewing the access token does
@@ -111,11 +112,15 @@ export function useAuthedWebSocket(
     onStatusChangeRef.current?.(next);
   }, []);
 
-  const scheduleReconnect = useCallback(() => {
-    const delay = Math.min(
+  const scheduleReconnect = useCallback((event: CloseEvent) => {
+    const backoff = Math.min(
       WS_RECONNECT_BASE_DELAY * Math.pow(2, reconnectAttemptRef.current),
       WS_RECONNECT_MAX_DELAY,
     );
+    const delay = reconnectDelayRef.current
+      ? reconnectDelayRef.current(event, backoff)
+      : backoff;
+    if (delay === null) return;
     reconnectAttemptRef.current++;
 
     reconnectTimeoutRef.current = setTimeout(() => {
@@ -182,12 +187,8 @@ export function useAuthedWebSocket(
       applyStatus('disconnected');
       wsRef.current = null;
 
-      if (
-        !intentionalCloseRef.current &&
-        accessTokenRef.current &&
-        (shouldReconnectRef.current?.(event) ?? true)
-      ) {
-        scheduleReconnect();
+      if (!intentionalCloseRef.current && accessTokenRef.current) {
+        scheduleReconnect(event);
       }
     };
 

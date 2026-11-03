@@ -203,4 +203,24 @@ describe('DanmuOverlay', () => {
     expect(shown(layer)).toEqual(['hello', 'hello']);
     overlay.destroy();
   });
+
+  it('rides out live-edge nudges but resets on a jump back', () => {
+    const { layer, video, overlay } = mount(null);
+    configure(overlay, { merge: true });
+    overlay.push([live('hello')]);
+    frameAt(video, 0);
+
+    video.currentTime = 0.5;
+    video.dispatchEvent(new Event('seeking'));
+    expect(shown(layer)).toEqual(['hello']);
+
+    video.currentTime = 0.2;
+    video.dispatchEvent(new Event('seeking'));
+    expect(shown(layer)).toEqual([]);
+    // Remembered repeats belonged to the old timeline.
+    overlay.push([live('hello')]);
+    frameAt(video, 0.2);
+    expect(shown(layer)).toEqual(['hello']);
+    overlay.destroy();
+  });
 });

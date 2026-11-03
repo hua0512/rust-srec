@@ -149,7 +149,7 @@ export interface DanmuSettingsPanelProps {
   preferences: DanmuPreferences;
   onChange: (preferences: DanmuPreferences) => void;
   /** Whether the activity strip exists, so its switch means something. */
-  heatmapSetting: boolean;
+  showHeatmapSetting: boolean;
 }
 
 /**
@@ -159,7 +159,7 @@ export interface DanmuSettingsPanelProps {
 export function DanmuSettingsPanel({
   preferences,
   onChange,
-  heatmapSetting,
+  showHeatmapSetting,
 }: DanmuSettingsPanelProps) {
   const { i18n } = useLingui();
   const [blockKind, setBlockKind] = useState<BlockKind>('keyword');
@@ -297,7 +297,7 @@ export function DanmuSettingsPanel({
           checked={preferences.hoverPause}
           onChange={(hoverPause) => update({ hoverPause })}
         />
-        {heatmapSetting && (
+        {showHeatmapSetting && (
           <SwitchRow
             label={<Trans>Show activity above the progress bar</Trans>}
             checked={preferences.heatmap}

@@ -280,7 +280,6 @@ export class DanmuOverlay {
     }
     this.resizeObserver?.disconnect();
     this.clear();
-    this.recentTexts.clear();
     this.pool.length = 0;
   }
 
@@ -288,7 +287,7 @@ export class DanmuOverlay {
     ['playing', () => this.resume()],
     ['pause', () => this.pause()],
     ['waiting', () => this.pause()],
-    ['seeking', () => this.seekTo(this.video.currentTime)],
+    ['seeking', () => this.seeking()],
     [
       'ratechange',
       () => {
@@ -354,8 +353,24 @@ export class DanmuOverlay {
     }
   };
 
+  /**
+   * Live players nudge `currentTime` on their own to stay near the live edge,
+   * so without a track only a move back, or forward past `JUMP_SECS` (the
+   * rule `tick` uses), resets the overlay.
+   */
+  private seeking(): void {
+    const now = this.video.currentTime;
+    if (this.track || now < this.lastTime || now - this.lastTime > JUMP_SECS) {
+      this.seekTo(now);
+    } else {
+      this.lastTime = now;
+    }
+  }
+
   private seekTo(time: number): void {
     this.clear();
+    // Merge-window times are media times, which no longer compare.
+    this.recentTexts.clear();
     if (this.track) this.cursor = lowerBound(this.track.times, time);
     this.lastTime = time;
   }
