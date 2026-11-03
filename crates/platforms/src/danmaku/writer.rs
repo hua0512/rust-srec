@@ -179,7 +179,7 @@ impl XmlDanmuWriter {
                 _ => {
                     // Get danmu type for Bilibili format
                     let danmu_type = message_type_to_bilibili_type(&message.message_type);
-                    let color = message_color_to_bilibili_color(message).unwrap_or(DEFAULT_COLOR);
+                    let color = message.rgb_color().unwrap_or(DEFAULT_COLOR);
                     let content = message_content_for_xml(message);
 
                     // Format: <d p="{time},{type},{size},{color},{timestamp},{pool},{uid_crc32},{row_id}" user="{username}">{content}</d>
@@ -280,20 +280,6 @@ pub fn message_type_to_int(msg_type: &DanmuType) -> u8 {
         DanmuType::Subscription => 7,
         DanmuType::Other => 0,
     }
-}
-
-fn message_color_to_bilibili_color(message: &DanmuMessage) -> Option<u32> {
-    let raw = message.color.as_deref()?.trim();
-    if raw.is_empty() {
-        return None;
-    }
-
-    let hex = raw.strip_prefix('#').unwrap_or(raw);
-    if hex.len() != 6 || !hex.is_ascii() {
-        return None;
-    }
-
-    u32::from_str_radix(hex, 16).ok()
 }
 
 fn message_content_for_xml(message: &DanmuMessage) -> Cow<'_, str> {

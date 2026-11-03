@@ -4,7 +4,11 @@
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 
-use crate::support::{FakePlatform, Response, Seed, TestApp, WAIT};
+use futures::StreamExt;
+use tokio_tungstenite::tungstenite::Message;
+
+use crate::support::fake_danmu::FakeDanmu;
+use crate::support::{FakePlatform, Response, Seed, Socket, TestApp, WAIT, eventually, with_query};
 
 /// The caching and referrer headers every parse answer carries.
 #[track_caller]
@@ -68,7 +72,7 @@ async fn parse_validates_its_input_and_answers_privately() {
 
     assert_eq!(
         parse(&app, &token, "/api/parse", json!({"url": ""})).await,
-        json!({"success": false, "is_live": false, "media_info": null, "error": "URL cannot be empty"})
+        json!({"success": false, "is_live": false, "media_info": null, "error": "URL cannot be empty", "danmu_handle": null})
     );
 
     if streamlink_available().await {
@@ -79,7 +83,7 @@ async fn parse_validates_its_input_and_answers_privately() {
         // also pins that none is returned.
         assert_eq!(
             parse(&app, &token, "/api/parse", unsupported).await,
-            json!({"success": false, "is_live": false, "media_info": null, "error": "Unsupported platform"})
+            json!({"success": false, "is_live": false, "media_info": null, "error": "Unsupported platform", "danmu_handle": null})
         );
     }
 
@@ -239,6 +243,7 @@ async fn parse_returns_streams_for_a_live_room() {
             "success": true,
             "is_live": true,
             "error": null,
+            "danmu_handle": null,
             "media_info": {
                 "site_url": room.url(),
                 "title": "Parsed show",
@@ -269,6 +274,84 @@ async fn parse_returns_streams_for_a_live_room() {
         "{requests:?}"
     );
     assert_eq!(app.dead_end().attempts(), []);
+
+    app.shutdown().await;
+}
+
+/// The next JSON text frame; pings and other control frames are skipped.
+async fn next_json(socket: &mut Socket) -> Value {
+    tokio::time::timeout(WAIT, async {
+        loop {
+            match socket.next().await {
+                Some(Ok(Message::Text(text))) => {
+                    return serde_json::from_str(&text).expect("a JSON frame");
+                }
+                Some(Ok(Message::Close(frame))) => panic!("socket closed: {frame:?}"),
+                Some(Ok(_)) => continue,
+                other => panic!("socket ended: {other:?}"),
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for a text frame")
+}
+
+/// The close code the server ends `socket` with.
+async fn close_code(socket: &mut Socket) -> u16 {
+    tokio::time::timeout(WAIT, async {
+        loop {
+            match socket.next().await {
+                Some(Ok(Message::Close(Some(frame)))) => return u16::from(frame.code),
+                Some(Ok(Message::Close(None))) | None => panic!("closed without a code"),
+                Some(Ok(_)) => continue,
+                Some(Err(error)) => panic!("socket failed: {error}"),
+            }
+        }
+    })
+    .await
+    .expect("timed out waiting for the close frame")
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn live_danmu_streams_a_parsed_rooms_chat_until_the_socket_closes() {
+    let fake = FakePlatform::start().await;
+    let room = fake.room("chatty");
+    room.set_live(room.live("Chat show"));
+    let danmu = FakeDanmu::of(&room);
+    let app = TestApp::start_with(Seed::live()).await;
+    let token = app.admin_token().await;
+    let path = |handle: &str| {
+        with_query(
+            "/api/parse/danmu/ws",
+            &[("handle", handle), ("token", token.as_str())],
+        )
+    };
+
+    let mut unknown = app.connect_socket(&path("unknown"), None).await;
+    assert_eq!(close_code(&mut unknown).await, 4404);
+
+    let parsed = parse(&app, &token, "/api/parse", json!({ "url": room.url() })).await;
+    let handle = parsed["danmu_handle"].as_str().expect("a danmu handle");
+    let mut socket = app.connect_socket(&path(handle), None).await;
+    assert_eq!(
+        next_json(&mut socket).await,
+        json!({"type": "status", "state": "connected"})
+    );
+    danmu.wait_for_connection(1).await;
+    danmu.chat("alice", "  hello  ");
+    assert_eq!(
+        next_json(&mut socket).await,
+        json!({"type": "batch", "items": [
+            {"text": "hello", "color": null, "kind": "chat", "user": "alice"},
+        ]})
+    );
+
+    socket.close(None).await.expect("close the socket");
+    eventually(WAIT, "the danmu connection released", || async {
+        (danmu.disconnects() == 1).then_some(())
+    })
+    .await;
+    assert_eq!(danmu.connections(), 1);
 
     app.shutdown().await;
 }

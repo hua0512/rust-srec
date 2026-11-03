@@ -15,6 +15,7 @@ use serde::Serialize;
 use tokio::time::Instant;
 
 use crate::credentials::{CredentialBinding, CredentialOwner, CredentialSnapshot};
+use crate::danmu::live::LiveDanmuTarget;
 
 const MAX_CONTEXTS: usize = 1024;
 pub(crate) const MAX_PLAYBACK_STREAMS: usize = 128;
@@ -111,15 +112,20 @@ pub struct PlaybackStream {
     pub format_opt_in: bool,
 }
 
-struct Entry {
+struct Entry<T> {
     principal: String,
     created: Instant,
     used: Instant,
-    data: Arc<PlaybackData>,
+    data: Arc<T>,
 }
 
+type Entries<T> = Mutex<HashMap<String, Entry<T>>>;
+
+/// Playback contexts and the live danmu handles issued with parses. Both
+/// kinds share the capacity and expiry rules but not their handle space.
 pub struct PlaybackContextService {
-    entries: Mutex<HashMap<String, Entry>>,
+    entries: Entries<PlaybackData>,
+    danmu: Entries<LiveDanmuTarget>,
     capacity: usize,
     idle: Duration,
     absolute: Duration,
@@ -129,6 +135,7 @@ impl Default for PlaybackContextService {
     fn default() -> Self {
         Self {
             entries: Mutex::new(HashMap::new()),
+            danmu: Mutex::new(HashMap::new()),
             capacity: MAX_CONTEXTS,
             idle: IDLE_EXPIRY,
             absolute: ABSOLUTE_EXPIRY,
@@ -165,17 +172,41 @@ impl PlaybackContextService {
                 format_opt_in: stream.format_opt_in,
             })
             .collect();
-        let handle = hex::encode(rand::random::<[u8; 32]>());
-        let response = ManagedPlayback {
-            handle: handle.clone(),
-            binding: snapshot.binding.clone(),
-            title: media.title.clone(),
-            artist: media.artist.clone(),
-            is_live: media.is_live,
-            streams,
+        let binding = snapshot.binding.clone();
+        let (title, artist, is_live) = (media.title.clone(), media.artist.clone(), media.is_live);
+        let data = PlaybackData {
+            source,
+            snapshot,
+            media,
         };
+        Ok(ManagedPlayback {
+            handle: self.insert_entry(&self.entries, principal, data),
+            binding,
+            title,
+            artist,
+            is_live,
+            streams,
+        })
+    }
+
+    /// Stores a live danmu target behind a new handle bound to `principal`.
+    pub(crate) fn insert_danmu(&self, principal: &str, target: LiveDanmuTarget) -> String {
+        self.insert_entry(&self.danmu, principal, target)
+    }
+
+    /// Looks up a live danmu target and renews its idle expiry.
+    pub(crate) fn get_danmu(
+        &self,
+        handle: &str,
+        principal: &str,
+    ) -> Result<Arc<LiveDanmuTarget>, PlaybackError> {
+        self.get_entry(&self.danmu, handle, principal)
+    }
+
+    fn insert_entry<T>(&self, entries: &Entries<T>, principal: &str, data: T) -> String {
+        let handle = hex::encode(rand::random::<[u8; 32]>());
         let now = Instant::now();
-        let mut entries = self.entries.lock();
+        let mut entries = entries.lock();
         self.prune(&mut entries, now);
         if entries.len() >= self.capacity
             && let Some(oldest) = entries
@@ -186,22 +217,18 @@ impl PlaybackContextService {
             entries.remove(&oldest);
         }
         entries.insert(
-            handle,
+            handle.clone(),
             Entry {
                 principal: principal.to_owned(),
                 created: now,
                 used: now,
-                data: Arc::new(PlaybackData {
-                    source,
-                    snapshot,
-                    media,
-                }),
+                data: Arc::new(data),
             },
         );
-        Ok(response)
+        handle
     }
 
-    fn prune(&self, entries: &mut HashMap<String, Entry>, now: Instant) {
+    fn prune<T>(&self, entries: &mut HashMap<String, Entry<T>>, now: Instant) {
         entries.retain(|_, entry| {
             now.duration_since(entry.created) < self.absolute
                 && now.duration_since(entry.used) < self.idle
@@ -214,8 +241,17 @@ impl PlaybackContextService {
         handle: &str,
         principal: &str,
     ) -> Result<Arc<PlaybackData>, PlaybackError> {
+        self.get_entry(&self.entries, handle, principal)
+    }
+
+    fn get_entry<T>(
+        &self,
+        entries: &Entries<T>,
+        handle: &str,
+        principal: &str,
+    ) -> Result<Arc<T>, PlaybackError> {
         let now = Instant::now();
-        let mut entries = self.entries.lock();
+        let mut entries = entries.lock();
         self.prune(&mut entries, now);
         let entry = entries.get_mut(handle).ok_or(PlaybackError::Expired)?;
         if entry.principal != principal {

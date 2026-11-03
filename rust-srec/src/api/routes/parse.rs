@@ -2,9 +2,10 @@
 
 use axum::{
     Extension, Json, Router,
-    extract::{FromRef, State},
+    extract::{FromRef, Query, State, ws::WebSocketUpgrade},
     http::HeaderMap,
-    routing::post,
+    response::IntoResponse,
+    routing::{get, post},
 };
 use platforms_parser::extractor::error::ExtractorError;
 use platforms_parser::extractor::factory::{ExtractorFactory, ExtractorSelection};
@@ -16,6 +17,7 @@ use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{ParseUrlRequest, ParseUrlResponse};
 use crate::api::server::AppState;
 use crate::credentials::OperationDeadline;
+use crate::danmu::live::{self, LiveDanmuTarget};
 use crate::proxies::ProxyTarget;
 
 #[derive(Clone)]
@@ -57,6 +59,82 @@ pub fn router() -> Router<AppState> {
         .route("/batch", post(parse_url_batch))
         .route("/resolve", post(resolve_url))
         .route("/playback/renew", post(renew_playback))
+}
+
+/// The live danmu socket authenticates itself, like the other WebSockets, so
+/// it sits outside the shared auth layer and accepts a `?token=` fallback.
+pub fn danmu_router() -> Router<AppState> {
+    Router::new().route("/ws", get(live_danmu_ws))
+}
+
+#[derive(Clone)]
+pub struct LiveDanmuRouteState {
+    auth_service: Option<std::sync::Arc<crate::api::auth_service::AuthService>>,
+    playback: std::sync::Arc<crate::services::playback_context::PlaybackContextService>,
+}
+
+impl FromRef<AppState> for LiveDanmuRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_service: state.auth_service.clone(),
+            playback: state.playback_contexts.clone(),
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub struct LiveDanmuQuery {
+    /// A parse response's `danmu_handle`.
+    handle: String,
+    /// Session JWT or full-access API key, used only without an
+    /// Authorization header.
+    token: Option<String>,
+}
+
+/// Live chat of a parsed stream, as JSON text frames:
+/// `{"type":"batch","items":[{"text","color","kind","user"}]}` at most every
+/// 200 ms, and `{"type":"status","state":"connected"|"reconnecting"}`.
+///
+/// After the upgrade, an unusable socket closes with 4404 (unknown, expired
+/// or foreign handle), 4422 (no usable danmu connection) or 4429 (too many
+/// live danmu sockets). Client messages are ignored.
+async fn live_danmu_ws(
+    ws: WebSocketUpgrade,
+    State(state): State<LiveDanmuRouteState>,
+    Query(query): Query<LiveDanmuQuery>,
+    headers: HeaderMap,
+) -> ApiResult<impl IntoResponse> {
+    use crate::api::auth_request::{AccessPolicy, authorize_request, run_authenticated_session};
+    let principal = authorize_request(
+        state.auth_service.as_ref(),
+        &headers,
+        query.token.as_deref(),
+        AccessPolicy::Full,
+    )
+    .await?;
+    let subject = principal
+        .as_ref()
+        .map(|principal| principal.claims.sub.as_str())
+        .unwrap_or(super::LOCAL_ANONYMOUS_PRINCIPAL);
+    let admitted = state
+        .playback
+        .get_danmu(&query.handle, subject)
+        .map_err(|_| live::Refusal::UnknownHandle)
+        .and_then(|target| live::admit(&target));
+    Ok(ws.on_upgrade(move |socket| async move {
+        match admitted {
+            Ok(admitted) => {
+                run_authenticated_session(
+                    state.auth_service,
+                    principal,
+                    AccessPolicy::Full,
+                    live::serve(socket, admitted),
+                )
+                .await
+            }
+            Err(refusal) => live::refuse(socket, refusal).await,
+        }
+    }))
 }
 
 #[derive(Default)]
@@ -124,6 +202,7 @@ async fn parse_one(
         let extractor_factory = extractor_factory_for_proxy(&route.target)?;
         admit_parse(state, &extractor_config, &route, deadline).await?;
         let platform_id = extractor_config.platform_id.clone();
+        let danmu_cookies = extractor_config.cookies.clone();
         let response = process_parse_request(
             &extractor_factory,
             request.url,
@@ -131,6 +210,10 @@ async fn parse_one(
             extractor_config.platform_extras,
             extractor_config.extractor,
             |error| observe_parse_error(state, platform_id.as_deref(), &route, error),
+            |url, media| {
+                LiveDanmuTarget::resolve(url, media, danmu_cookies, route.clone())
+                    .map(|target| state.playback.insert_danmu(principal, target))
+            },
         )
         .await;
         Ok(response)
@@ -401,6 +484,13 @@ async fn extract_managed(
         .await
         .map_err(ApiError::from)?;
     let is_live = extraction.value.is_live;
+    let danmu_handle = LiveDanmuTarget::resolve(
+        &config.source.url,
+        &extraction.value,
+        Some(extraction.snapshot.material.cookies.clone()),
+        extraction.snapshot.route.clone(),
+    )
+    .map(|target| state.playback.insert_danmu(principal, target));
     let playback = state.playback.insert(
         principal,
         config.source,
@@ -413,6 +503,7 @@ async fn extract_managed(
         is_live,
         media_info: None,
         error: None,
+        danmu_handle,
     })
 }
 
@@ -593,6 +684,7 @@ pub async fn parse_url_batch(
                     is_live: false,
                     media_info: None,
                     error: Some(error.message),
+                    danmu_handle: None,
                 }),
         );
     }
@@ -781,6 +873,7 @@ async fn process_parse_request(
     platform_extras: Option<serde_json::Value>,
     extractor_selection: ExtractorSelection,
     on_extract_error: impl FnOnce(&ExtractorError),
+    danmu_handle: impl FnOnce(&str, &platforms_parser::media::MediaInfo) -> Option<String>,
 ) -> ParseUrlResponse {
     // Validate URL
     if url.is_empty() {
@@ -790,6 +883,7 @@ async fn process_parse_request(
             is_live: false,
             media_info: None,
             error: Some("URL cannot be empty".to_string()),
+            danmu_handle: None,
         };
     }
 
@@ -811,6 +905,7 @@ async fn process_parse_request(
                 is_live: false,
                 media_info: None,
                 error: Some("Unsupported platform".to_string()),
+                danmu_handle: None,
             };
         }
         Err(e) => {
@@ -821,6 +916,7 @@ async fn process_parse_request(
                 is_live: false,
                 media_info: None,
                 error: Some(format!("Failed to create extractor: {}", e)),
+                danmu_handle: None,
             };
         }
     };
@@ -846,6 +942,7 @@ async fn process_parse_request(
                         is_live: false,
                         media_info: None,
                         error: Some(format!("Failed to serialize media info: {}", e)),
+                        danmu_handle: None,
                     };
                 }
             };
@@ -856,6 +953,7 @@ async fn process_parse_request(
                 is_live: media_info.is_live,
                 media_info: Some(media_info_value),
                 error: None,
+                danmu_handle: danmu_handle(&url, &media_info),
             }
         }
         Err(e) => {
@@ -891,6 +989,7 @@ async fn process_parse_request(
                 is_live: false,
                 media_info: None,
                 error: Some(error_message),
+                danmu_handle: None,
             }
         }
     }

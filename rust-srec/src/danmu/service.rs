@@ -431,87 +431,11 @@ impl DanmuService {
             }
         }
 
-        // Find provider for URL
-        let provider = self.providers.get_by_url(&streamer_url).ok_or_else(|| {
-            Error::from(platforms_parser::danmaku::DanmakuError::connection(
-                format!("No danmu provider for URL: {}", streamer_url),
-            ))
-        })?;
-
-        // Extract room ID - use platform-specific extras when available
-        // - Huya: uses "presenter_uid" from extras
-        // - Douyin: uses "id_str" from extras
-        // - Douyu: uses "rid" from extras
-        // - Bigo: uses studio "room_id" from extras (not siteId from the URL)
-        // - TikTok: uses webcast "room_id" from extras (URL has only the @handle)
-        // - Others: fallback to URL-based extraction
-        let platform = provider.platform();
-        let room_id = match platform {
-            "huya" => {
-                // Huya uses presenter_uid for danmu connection
-                extras
-                    .as_ref()
-                    .and_then(|e| e.get("presenter_uid"))
-                    .cloned()
-                    .or_else(|| provider.extract_room_id(&streamer_url))
-            }
-            "douyin" => {
-                // Douyin uses id_str (room_id) for danmu connection
-                extras
-                    .as_ref()
-                    .and_then(|e| e.get("id_str"))
-                    .cloned()
-                    .or_else(|| provider.extract_room_id(&streamer_url))
-            }
-            "douyu" => {
-                // Douyu uses rid for danmu connection
-                extras
-                    .as_ref()
-                    .and_then(|e| e.get("rid"))
-                    .cloned()
-                    .or_else(|| provider.extract_room_id(&streamer_url))
-            }
-            "soop" => {
-                // SOOP chat path uses bj id; chat host/FTK arrive via MediaInfo extras.
-                extras
-                    .as_ref()
-                    .and_then(|e| e.get("bjid").or_else(|| e.get("channel_id")))
-                    .cloned()
-                    .or_else(|| provider.extract_room_id(&streamer_url))
-            }
-            "bigo" => {
-                // Bigo WS enter needs studio roomId (not siteId from the URL)
-                extras
-                    .as_ref()
-                    .and_then(|e| e.get("room_id"))
-                    .cloned()
-                    .or_else(|| provider.extract_room_id(&streamer_url))
-            }
-            "tiktok" => {
-                // TikTok chat joins by numeric webcast room_id; the URL only
-                // carries the @handle, which the provider can resolve itself.
-                extras
-                    .as_ref()
-                    .and_then(|e| e.get("room_id"))
-                    .cloned()
-                    .or_else(|| provider.extract_room_id(&streamer_url))
-            }
-            _ => provider.extract_room_id(&streamer_url),
-        }
-        .ok_or_else(|| {
-            Error::from(platforms_parser::danmaku::DanmakuError::connection(
-                format!("Could not extract room ID from URL: {}", streamer_url),
-            ))
-        })?;
-
-        // Build connection config
-        let mut connection_config =
-            ConnectionConfig::with_cookies(cookies.clone()).with_proxy(proxy);
-        if let Some(e) = extras {
-            // Remove common fields that are used for room ID extraction but might be useful as extras too
-            // We keep them in extras for now as it's cleaner
-            connection_config = connection_config.with_extras(e);
-        }
+        let super::room::DanmuRoom {
+            provider,
+            room_id,
+            config: connection_config,
+        } = super::room::resolve_room(&self.providers, &streamer_url, cookies, extras, proxy)?;
 
         // Create command channel
         let (command_tx, command_rx) = mpsc::channel(32);

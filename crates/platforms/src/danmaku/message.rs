@@ -131,6 +131,17 @@ impl DanmuMessage {
         self
     }
 
+    /// The colour as `0xRRGGBB`, from a `RRGGBB` or `#RRGGBB` hex string.
+    /// Missing or malformed colours are `None`.
+    pub fn rgb_color(&self) -> Option<u32> {
+        let raw = self.color.as_deref()?.trim();
+        let hex = raw.strip_prefix('#').unwrap_or(raw);
+        if hex.len() != 6 || !hex.is_ascii() {
+            return None;
+        }
+        u32::from_str_radix(hex, 16).ok()
+    }
+
     /// Set the color of the message.
     pub fn with_color(mut self, color: impl Into<String>) -> Self {
         self.color = Some(color.into());

@@ -50,6 +50,16 @@ mod config {
     pub const RECONNECT_ALERT_AFTER_SECS: u64 = 300;
 }
 
+/// Exponential back-off before reconnect `attempt` (counted from 1), doubling
+/// from `RECONNECT_BASE_DELAY_MS` up to `RECONNECT_MAX_DELAY_MS`.
+pub(super) fn reconnect_delay(attempt: u32) -> Duration {
+    let shift = attempt.saturating_sub(1).min(5);
+    let millis = config::RECONNECT_BASE_DELAY_MS
+        .saturating_mul(1_u64 << shift)
+        .min(config::RECONNECT_MAX_DELAY_MS);
+    Duration::from_millis(millis)
+}
+
 /// Result of command handling - indicates whether to continue or stop.
 #[derive(Debug, PartialEq)]
 pub(crate) enum CommandResult {
@@ -407,7 +417,7 @@ impl CollectionRunner {
         let down_since = *self.link_down_since.get_or_insert_with(Instant::now);
         let downtime = down_since.elapsed();
 
-        let delay = Self::reconnect_delay(attempt);
+        let delay = reconnect_delay(attempt);
         self.events.publish(DanmuEvent::Reconnecting {
             session_id: self.session_id.clone(),
             attempt,
@@ -526,16 +536,6 @@ impl CollectionRunner {
             "danmu: reconnecting with the recording's current account"
         );
         true
-    }
-
-    /// Exponential back-off, doubling from `RECONNECT_BASE_DELAY_MS` up to
-    /// `RECONNECT_MAX_DELAY_MS`.
-    fn reconnect_delay(attempt: u32) -> Duration {
-        let shift = attempt.saturating_sub(1).min(5);
-        let millis = config::RECONNECT_BASE_DELAY_MS
-            .saturating_mul(1_u64 << shift)
-            .min(config::RECONNECT_MAX_DELAY_MS);
-        Duration::from_millis(millis)
     }
 
     /// Handle a command from the channel.

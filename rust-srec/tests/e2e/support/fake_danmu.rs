@@ -47,6 +47,7 @@ struct FeedState {
     /// The item channel of the newest connection.
     sender: Option<mpsc::Sender<DanmuItem>>,
     connections: usize,
+    disconnects: usize,
 }
 
 struct FakeDanmuProvider;
@@ -77,6 +78,9 @@ impl DanmuProvider for FakeDanmuProvider {
     }
 
     async fn disconnect(&self, connection: &mut DanmuConnection) -> DanmakuResult<()> {
+        if let Some(feed) = feed(&connection.room_id) {
+            feed.state.lock().expect("danmu feed lock").disconnects += 1;
+        }
         connection.set_disconnected();
         Ok(())
     }
@@ -114,6 +118,11 @@ impl FakeDanmu {
     /// How many times the backend has connected to the feed.
     pub fn connections(&self) -> usize {
         self.feed.state.lock().expect("danmu feed lock").connections
+    }
+
+    /// How many times the backend has released a connection to the feed.
+    pub fn disconnects(&self) -> usize {
+        self.feed.state.lock().expect("danmu feed lock").disconnects
     }
 
     /// Wait until the backend has connected `count` times.
