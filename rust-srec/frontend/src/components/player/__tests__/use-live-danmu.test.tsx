@@ -110,7 +110,7 @@ describe('useLiveDanmu', () => {
     expect(onItems).toHaveBeenCalledExactlyOnceWith([item]);
   });
 
-  it('asks for a renewed handle when it expires, without looping', () => {
+  it('asks for a renewed handle when it expires and connects with it', () => {
     const { onExpired, rerender } = renderWithSession('h1');
     act(() => MockWebSocket.instances[0].emitClose(4404));
     act(() => {
@@ -122,10 +122,6 @@ describe('useLiveDanmu', () => {
     rerender('h2');
     expect(MockWebSocket.instances).toHaveLength(2);
     expect(MockWebSocket.instances[1].url).toContain('handle=h2');
-
-    // A renewed handle that fails straight away is not renewed again yet.
-    act(() => MockWebSocket.instances[1].emitClose(4404));
-    expect(onExpired).toHaveBeenCalledOnce();
   });
 
   it('retries a full server slowly and any other drop promptly', () => {

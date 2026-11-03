@@ -40,8 +40,8 @@ export interface UseAuthedWebSocketOptions {
   reconnectDelay?: (event: CloseEvent, delay: number) => number | null;
   /**
    * Runs on an intentional close — the session ended, the path changed or the
-   * caller unmounted — and never on a reconnect, so callers can tear down state that only makes
-   * sense while a session is live.
+   * caller unmounted — and never on a reconnect, so callers can tear down
+   * state that only makes sense while a session is live.
    */
   onDisconnect?: () => void;
 }

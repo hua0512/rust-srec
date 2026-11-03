@@ -1,4 +1,3 @@
-import { useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { sessionQueryOptions } from '@/api/session';
 import { useAuthedWebSocket } from '@/hooks/use-authed-websocket';
@@ -11,11 +10,6 @@ const CLOSE_UNSUPPORTED = 4422;
 /** Too many sockets are open; one may free up, so retry, but slowly. */
 const CLOSE_TOO_MANY = 4429;
 const TOO_MANY_MIN_DELAY_MS = 15_000;
-/**
- * At most one renewal is asked for in this span, so a source whose renewed
- * handles keep failing does not loop.
- */
-const RENEWAL_INTERVAL_MS = 60_000;
 
 function isItem(value: unknown): value is LiveDanmuItem {
   if (!value || typeof value !== 'object') return false;
@@ -53,7 +47,6 @@ export function useLiveDanmu(
   onItems: (items: LiveDanmuItem[]) => void,
   onExpired?: () => void,
 ): void {
-  const lastRenewal = useRef(-Infinity);
   const { data: session } = useQuery({
     ...sessionQueryOptions,
     enabled: typeof window !== 'undefined',
@@ -70,11 +63,7 @@ export function useLiveDanmu(
     },
     reconnectDelay: (event, delay) => {
       if (event.code === CLOSE_UNKNOWN_HANDLE) {
-        const now = Date.now();
-        if (onExpired && now - lastRenewal.current >= RENEWAL_INTERVAL_MS) {
-          lastRenewal.current = now;
-          onExpired();
-        }
+        onExpired?.();
         return null;
       }
       if (event.code === CLOSE_UNSUPPORTED) return null;

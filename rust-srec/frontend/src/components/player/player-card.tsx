@@ -76,6 +76,12 @@ export interface PlayerCardProps {
 
 type SettingsTab = 'stream' | 'playback';
 
+/**
+ * At most one renewal a minute is started for the live chat, so a source whose
+ * renewed chat keeps failing does not reload the stream in a loop.
+ */
+const CHAT_RENEWAL_INTERVAL_MS = 60_000;
+
 // Steady states are already visible in the video itself, so only transitional
 // and failure states earn a visible chip; the rest stay screen-reader only.
 const noticeableStatuses = new Set<PlaybackStatus>([
@@ -124,6 +130,9 @@ export function PlayerCard({
   const [refreshing, setRefreshing] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
   const automaticRenewal = useRef(false);
+  /** The renewal in flight, shared so only one runs at a time. */
+  const renewal = useRef<Promise<void> | null>(null);
+  const lastChatRenewal = useRef(-Infinity);
   const connectionId = useId();
   const presetId = useId();
   const {
@@ -156,6 +165,16 @@ export function PlayerCard({
     mediaFileSizeBytes,
   });
 
+  const renew = (refresh: () => Promise<void>) => {
+    if (!renewal.current) {
+      setRefreshing(true);
+      renewal.current = refresh().finally(() => {
+        renewal.current = null;
+        setRefreshing(false);
+      });
+    }
+    return renewal.current;
+  };
   useEffect(() => {
     setRefreshFailed(false);
   }, [url, streamData]);
@@ -176,10 +195,7 @@ export function PlayerCard({
     )
       return;
     automaticRenewal.current = true;
-    setRefreshing(true);
-    void onRefreshSource()
-      .catch(() => setRefreshFailed(true))
-      .finally(() => setRefreshing(false));
+    void renew(onRefreshSource).catch(() => setRefreshFailed(true));
   }, [playbackStatus, playbackError, streamData, onRefreshSource]);
   const error = refreshFailed ? 'resolution' : playbackError;
   const status = refreshing ? 'resolving' : error ? 'error' : playbackStatus;
@@ -201,22 +217,22 @@ export function PlayerCard({
   };
   const refreshSource = async () => {
     if (!onRefreshSource || refreshing) return;
-    setRefreshing(true);
     setRefreshFailed(false);
     try {
-      await onRefreshSource();
+      await renew(onRefreshSource);
     } catch {
       setRefreshFailed(true);
-    } finally {
-      setRefreshing(false);
     }
   };
-  // The chat's handle expiring says nothing about the video, so a failed
-  // renewal leaves playback alone and the chat simply stays off.
+  // The chat's handle is renewed with the stream, so a successful renewal
+  // reloads the stream. A failed one leaves the video as it was, with the chat
+  // off.
   const renewLiveDanmu = onRefreshSource
     ? () => {
-        if (refreshing) return;
-        void onRefreshSource().catch(() => {});
+        const now = Date.now();
+        if (now - lastChatRenewal.current < CHAT_RENEWAL_INTERVAL_MS) return;
+        lastChatRenewal.current = now;
+        void renew(onRefreshSource).catch(() => {});
       }
     : undefined;
   const chooseConnection = (mode: ConnectionMode) => {
