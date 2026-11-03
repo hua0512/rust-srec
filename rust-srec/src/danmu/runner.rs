@@ -16,7 +16,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use platforms_parser::danmaku::{
-    ConnectionConfig, DanmuConnection, DanmuControlEvent, DanmuItem, DanmuProvider,
+    ConnectionConfig, DanmuConnection, DanmuControlEvent, DanmuItem, DanmuProvider, DanmuType,
     message::DanmuMessage,
 };
 
@@ -26,6 +26,7 @@ use crate::error::{Error, Result};
 use super::events::{CollectionCommand, DanmuAuthentication, DanmuEvent, DanmuEventPublisher};
 use super::lifecycle::{CollectionExitReason, CollectionOutcome};
 use super::statistics_session::StatisticsSession;
+use super::tap::TapRegistration;
 
 /// Configuration constants for the collection runner.
 mod config {
@@ -48,6 +49,16 @@ mod config {
     /// emitted once for the outage. Reconnecting continues regardless; this only
     /// marks the point where an outage is worth an operator's attention.
     pub const RECONNECT_ALERT_AFTER_SECS: u64 = 300;
+}
+
+/// Exponential back-off before reconnect `attempt` (counted from 1), doubling
+/// from `RECONNECT_BASE_DELAY_MS` up to `RECONNECT_MAX_DELAY_MS`.
+pub(super) fn reconnect_delay(attempt: u32) -> Duration {
+    let shift = attempt.saturating_sub(1).min(5);
+    let millis = config::RECONNECT_BASE_DELAY_MS
+        .saturating_mul(1_u64 << shift)
+        .min(config::RECONNECT_MAX_DELAY_MS);
+    Duration::from_millis(millis)
 }
 
 /// Result of command handling - indicates whether to continue or stop.
@@ -124,6 +135,10 @@ pub(crate) struct CollectionRunner {
     outage_alerted: bool,
 
     events: DanmuEventPublisher,
+
+    /// This collection's claim on its room for live viewers; held for the
+    /// runner's lifetime, across reconnects and segments.
+    tap: Option<TapRegistration>,
 }
 
 /// Parameters for creating a new collection runner.
@@ -135,6 +150,7 @@ pub(crate) struct RunnerParams {
     pub conn_config: ConnectionConfig,
     pub statistics: StatisticsSession,
     pub events: DanmuEventPublisher,
+    pub tap: Option<TapRegistration>,
 }
 
 impl CollectionRunner {
@@ -149,6 +165,7 @@ impl CollectionRunner {
             conn_config,
             statistics,
             events,
+            tap,
         } = params;
 
         // Connect to danmu stream
@@ -169,6 +186,7 @@ impl CollectionRunner {
                 link_down_since: None,
                 outage_alerted: false,
                 events,
+                tap,
             },
             stream.items,
         ))
@@ -407,7 +425,7 @@ impl CollectionRunner {
         let down_since = *self.link_down_since.get_or_insert_with(Instant::now);
         let downtime = down_since.elapsed();
 
-        let delay = Self::reconnect_delay(attempt);
+        let delay = reconnect_delay(attempt);
         self.events.publish(DanmuEvent::Reconnecting {
             session_id: self.session_id.clone(),
             attempt,
@@ -526,16 +544,6 @@ impl CollectionRunner {
             "danmu: reconnecting with the recording's current account"
         );
         true
-    }
-
-    /// Exponential back-off, doubling from `RECONNECT_BASE_DELAY_MS` up to
-    /// `RECONNECT_MAX_DELAY_MS`.
-    fn reconnect_delay(attempt: u32) -> Duration {
-        let shift = attempt.saturating_sub(1).min(5);
-        let millis = config::RECONNECT_BASE_DELAY_MS
-            .saturating_mul(1_u64 << shift)
-            .min(config::RECONNECT_MAX_DELAY_MS);
-        Duration::from_millis(millis)
     }
 
     /// Handle a command from the channel.
@@ -760,6 +768,12 @@ impl CollectionRunner {
         // Update session-level statistics.
         self.statistics.record_message(&message);
 
+        if let Some(tap) = &self.tap
+            && matches!(message.message_type, DanmuType::Chat | DanmuType::SuperChat)
+        {
+            tap.publish(&message);
+        }
+
         // Buffer the message (will be written on flush)
         if self.current_writer.is_some() {
             self.message_buffer.push(message);
@@ -804,6 +818,7 @@ mod tests {
             )
             .await,
             events,
+            tap: None,
         })
         .await
         .expect("first connect succeeds")

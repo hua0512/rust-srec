@@ -1295,6 +1295,9 @@ pub struct ParseUrlResponse {
     pub media_info: Option<serde_json::Value>,
     /// Error message if extraction failed
     pub error: Option<String>,
+    /// Opens `/api/parse/danmu/ws` for this stream's live chat. Present only
+    /// for a live stream whose platform has chat; bound to the caller.
+    pub danmu_handle: Option<String>,
 }
 
 /// Request to resolve the true URL for a stream.

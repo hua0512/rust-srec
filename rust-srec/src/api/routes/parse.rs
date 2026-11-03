@@ -2,9 +2,10 @@
 
 use axum::{
     Extension, Json, Router,
-    extract::{FromRef, State},
+    extract::{FromRef, Query, State, ws::WebSocketUpgrade},
     http::HeaderMap,
-    routing::post,
+    response::IntoResponse,
+    routing::{get, post},
 };
 use platforms_parser::extractor::error::ExtractorError;
 use platforms_parser::extractor::factory::{ExtractorFactory, ExtractorSelection};
@@ -16,6 +17,7 @@ use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{ParseUrlRequest, ParseUrlResponse};
 use crate::api::server::AppState;
 use crate::credentials::OperationDeadline;
+use crate::danmu::live::{self, LiveDanmuTarget};
 use crate::proxies::ProxyTarget;
 
 #[derive(Clone)]
@@ -57,6 +59,138 @@ pub fn router() -> Router<AppState> {
         .route("/batch", post(parse_url_batch))
         .route("/resolve", post(resolve_url))
         .route("/playback/renew", post(renew_playback))
+}
+
+/// The live danmu socket authenticates itself, like the other WebSockets, so
+/// it sits outside the shared auth layer and accepts a `?token=` fallback.
+pub fn danmu_router() -> Router<AppState> {
+    Router::new().route("/ws", get(live_danmu_ws))
+}
+
+#[derive(Clone)]
+pub struct LiveDanmuRouteState {
+    auth_service: Option<std::sync::Arc<crate::api::auth_service::AuthService>>,
+    parse: ParseRouteState,
+    taps: std::sync::Arc<crate::danmu::DanmuTaps>,
+}
+
+impl FromRef<AppState> for LiveDanmuRouteState {
+    fn from_ref(state: &AppState) -> Self {
+        Self {
+            auth_service: state.auth_service.clone(),
+            parse: ParseRouteState::from_ref(state),
+            taps: state.danmu_taps.clone(),
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+pub struct LiveDanmuQuery {
+    /// A parse response's `danmu_handle`.
+    handle: String,
+    /// Session JWT or full-access API key, used only without an
+    /// Authorization header.
+    token: Option<String>,
+}
+
+/// Live chat of a parsed stream, as JSON text frames:
+/// `{"type":"batch","items":[{"text","color","kind","user"}]}` at most every
+/// 200 ms. The server reconnects to the platform on its own while the socket
+/// is open.
+///
+/// A managed parse's handle is rechecked against its playback context when
+/// the socket opens and on every 30 s heartbeat. After the upgrade, an
+/// unusable socket closes with 4404 (unknown, expired or foreign handle, or
+/// a managed playback that needs renewal), 4422 (no usable danmu
+/// connection), 4429 (too many live danmu sockets) or 1011 (the check itself
+/// failed; the same handle may work later). Client messages are ignored.
+async fn live_danmu_ws(
+    ws: WebSocketUpgrade,
+    State(state): State<LiveDanmuRouteState>,
+    Query(query): Query<LiveDanmuQuery>,
+    headers: HeaderMap,
+) -> ApiResult<impl IntoResponse> {
+    use crate::api::auth_request::{AccessPolicy, authorize_request, run_authenticated_session};
+    let principal = authorize_request(
+        state.auth_service.as_ref(),
+        &headers,
+        query.token.as_deref(),
+        AccessPolicy::Full,
+    )
+    .await?;
+    let subject = principal
+        .as_ref()
+        .map(|principal| principal.claims.sub.as_str())
+        .unwrap_or(super::LOCAL_ANONYMOUS_PRINCIPAL);
+    let admitted = match state.parse.playback.get_danmu(&query.handle, subject) {
+        Ok(target) => {
+            match recheck_danmu_playback(&state.parse, target.playback_handle.as_deref(), subject)
+                .await
+            {
+                Ok(()) => {
+                    live::admit(&target, state.taps.clone()).map(|admitted| (admitted, target))
+                }
+                Err(refusal) => Err(refusal),
+            }
+        }
+        Err(_) => Err(live::Refusal::UnknownHandle),
+    };
+    let subject = subject.to_owned();
+    let parse = state.parse;
+    // Socket client messages are ignored, so nothing larger than a close
+    // frame needs to be accepted.
+    let ws = ws.max_message_size(1024).max_frame_size(1024);
+    Ok(ws.on_upgrade(move |socket| async move {
+        let (admitted, target) = match admitted {
+            Ok(admitted) => admitted,
+            Err(refusal) => return live::refuse(socket, refusal).await,
+        };
+        let recheck = move || {
+            let parse = parse.clone();
+            let playback = target.playback_handle.clone();
+            let subject = subject.clone();
+            async move { recheck_danmu_playback(&parse, playback.as_deref(), &subject).await }
+        };
+        run_authenticated_session(
+            state.auth_service,
+            principal,
+            AccessPolicy::Full,
+            live::serve(socket, admitted, recheck),
+        )
+        .await
+    }))
+}
+
+/// Run the playback account checks for a managed danmu target; unmanaged
+/// targets (`playback` is `None`) have none.
+async fn recheck_danmu_playback(
+    state: &ParseRouteState,
+    playback: Option<&str>,
+    principal: &str,
+) -> Result<(), live::Refusal> {
+    let Some(playback) = playback else {
+        return Ok(());
+    };
+    validate_playback(state, playback, principal)
+        .await
+        .map(|_| ())
+        .map_err(|error| danmu_refusal(&error))
+}
+
+/// A playback that expired, belongs to someone else or needs renewal refuses
+/// its danmu handle for good. Any other failure is the server's: the client
+/// may retry the same handle, so it must not be told to renew playback.
+fn danmu_refusal(error: &ApiError) -> live::Refusal {
+    match error.code.as_str() {
+        "PLAYBACK_CONTEXT_EXPIRED" | "PLAYBACK_CONTEXT_FORBIDDEN" | "PLAYBACK_RENEWAL_REQUIRED" => {
+            debug!(code = %error.code, "live danmu refused: playback needs renewal");
+            live::Refusal::UnknownHandle
+        }
+        _ => {
+            warn!(code = %error.code, error = %error.message, "live danmu: playback check failed");
+            live::Refusal::ServerError
+        }
+    }
 }
 
 #[derive(Default)]
@@ -124,6 +258,7 @@ async fn parse_one(
         let extractor_factory = extractor_factory_for_proxy(&route.target)?;
         admit_parse(state, &extractor_config, &route, deadline).await?;
         let platform_id = extractor_config.platform_id.clone();
+        let danmu_cookies = extractor_config.cookies.clone();
         let response = process_parse_request(
             &extractor_factory,
             request.url,
@@ -131,6 +266,10 @@ async fn parse_one(
             extractor_config.platform_extras,
             extractor_config.extractor,
             |error| observe_parse_error(state, platform_id.as_deref(), &route, error),
+            |url, media| {
+                LiveDanmuTarget::resolve(url, media, danmu_cookies, route.clone())
+                    .map(|target| state.playback.insert_danmu(principal, target))
+            },
         )
         .await;
         Ok(response)
@@ -401,18 +540,29 @@ async fn extract_managed(
         .await
         .map_err(ApiError::from)?;
     let is_live = extraction.value.is_live;
+    let danmu = LiveDanmuTarget::resolve(
+        &config.source.url,
+        &extraction.value,
+        Some(extraction.snapshot.material.cookies.clone()),
+        extraction.snapshot.route.clone(),
+    );
     let playback = state.playback.insert(
         principal,
         config.source,
         extraction.snapshot,
         extraction.value,
     )?;
+    let danmu_handle = danmu.map(|mut target| {
+        target.playback_handle = Some(playback.handle.clone());
+        state.playback.insert_danmu(principal, target)
+    });
     Ok(ParseUrlResponse {
         playback: Some(playback),
         success: true,
         is_live,
         media_info: None,
         error: None,
+        danmu_handle,
     })
 }
 
@@ -593,6 +743,7 @@ pub async fn parse_url_batch(
                     is_live: false,
                     media_info: None,
                     error: Some(error.message),
+                    danmu_handle: None,
                 }),
         );
     }
@@ -781,6 +932,7 @@ async fn process_parse_request(
     platform_extras: Option<serde_json::Value>,
     extractor_selection: ExtractorSelection,
     on_extract_error: impl FnOnce(&ExtractorError),
+    danmu_handle: impl FnOnce(&str, &platforms_parser::media::MediaInfo) -> Option<String>,
 ) -> ParseUrlResponse {
     // Validate URL
     if url.is_empty() {
@@ -790,6 +942,7 @@ async fn process_parse_request(
             is_live: false,
             media_info: None,
             error: Some("URL cannot be empty".to_string()),
+            danmu_handle: None,
         };
     }
 
@@ -811,6 +964,7 @@ async fn process_parse_request(
                 is_live: false,
                 media_info: None,
                 error: Some("Unsupported platform".to_string()),
+                danmu_handle: None,
             };
         }
         Err(e) => {
@@ -821,6 +975,7 @@ async fn process_parse_request(
                 is_live: false,
                 media_info: None,
                 error: Some(format!("Failed to create extractor: {}", e)),
+                danmu_handle: None,
             };
         }
     };
@@ -846,6 +1001,7 @@ async fn process_parse_request(
                         is_live: false,
                         media_info: None,
                         error: Some(format!("Failed to serialize media info: {}", e)),
+                        danmu_handle: None,
                     };
                 }
             };
@@ -856,6 +1012,7 @@ async fn process_parse_request(
                 is_live: media_info.is_live,
                 media_info: Some(media_info_value),
                 error: None,
+                danmu_handle: danmu_handle(&url, &media_info),
             }
         }
         Err(e) => {
@@ -891,6 +1048,7 @@ async fn process_parse_request(
                 is_live: false,
                 media_info: None,
                 error: Some(error_message),
+                danmu_handle: None,
             }
         }
     }
@@ -988,6 +1146,20 @@ mod tests {
         let database =
             playback_profile_error(crate::Error::Database("database unavailable".into()));
         assert_eq!(database.status, StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn only_playback_invalidation_refuses_a_danmu_handle() {
+        use crate::services::playback_context::PlaybackError;
+        for error in [
+            PlaybackError::Expired,
+            PlaybackError::Forbidden,
+            PlaybackError::RenewalRequired,
+        ] {
+            assert_eq!(danmu_refusal(&error.into()), live::Refusal::UnknownHandle);
+        }
+        let database = ApiError::from(crate::Error::Database("database unavailable".into()));
+        assert_eq!(danmu_refusal(&database), live::Refusal::ServerError);
     }
 
     #[tokio::test]

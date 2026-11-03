@@ -137,6 +137,8 @@ pub fn create_router(state: AppState) -> Router {
         .nest("/api/logging", logging::router())
         // Media route with optional query param auth (not middleware)
         .nest("/api/media", media::router())
+        // Live danmu WebSocket with query-param auth (not middleware)
+        .nest("/api/parse/danmu", parse::danmu_router())
         // Stream proxy route with query-param auth (not middleware)
         .nest("/api/stream-proxy", stream_proxy::router::<AppState>())
         // Merge protected routes

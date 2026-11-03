@@ -39,6 +39,7 @@ use super::lifecycle::{
 };
 use super::runner::{CollectionRunner, RunnerParams};
 use super::statistics_session::StatisticsSession;
+use super::tap::{DanmuTaps, TapRegistration};
 
 const STOP_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -120,6 +121,7 @@ struct CollectionState {
 pub struct DanmuService {
     /// Provider registry
     providers: Arc<ProviderRegistry>,
+    taps: Arc<DanmuTaps>,
     /// Active collections (session_id -> state)
     collections: Arc<DashMap<String, CollectionState>>,
     /// Reverse index for fast lookups (streamer_id -> session_id).
@@ -242,6 +244,7 @@ impl DanmuService {
     pub fn with_providers(providers: ProviderRegistry) -> Self {
         Self {
             providers: Arc::new(providers),
+            taps: Arc::default(),
             collections: Arc::new(DashMap::new()),
             sessions_by_streamer: Arc::new(DashMap::new()),
             events: DanmuEventPublisher::new(256),
@@ -431,87 +434,11 @@ impl DanmuService {
             }
         }
 
-        // Find provider for URL
-        let provider = self.providers.get_by_url(&streamer_url).ok_or_else(|| {
-            Error::from(platforms_parser::danmaku::DanmakuError::connection(
-                format!("No danmu provider for URL: {}", streamer_url),
-            ))
-        })?;
-
-        // Extract room ID - use platform-specific extras when available
-        // - Huya: uses "presenter_uid" from extras
-        // - Douyin: uses "id_str" from extras
-        // - Douyu: uses "rid" from extras
-        // - Bigo: uses studio "room_id" from extras (not siteId from the URL)
-        // - TikTok: uses webcast "room_id" from extras (URL has only the @handle)
-        // - Others: fallback to URL-based extraction
-        let platform = provider.platform();
-        let room_id = match platform {
-            "huya" => {
-                // Huya uses presenter_uid for danmu connection
-                extras
-                    .as_ref()
-                    .and_then(|e| e.get("presenter_uid"))
-                    .cloned()
-                    .or_else(|| provider.extract_room_id(&streamer_url))
-            }
-            "douyin" => {
-                // Douyin uses id_str (room_id) for danmu connection
-                extras
-                    .as_ref()
-                    .and_then(|e| e.get("id_str"))
-                    .cloned()
-                    .or_else(|| provider.extract_room_id(&streamer_url))
-            }
-            "douyu" => {
-                // Douyu uses rid for danmu connection
-                extras
-                    .as_ref()
-                    .and_then(|e| e.get("rid"))
-                    .cloned()
-                    .or_else(|| provider.extract_room_id(&streamer_url))
-            }
-            "soop" => {
-                // SOOP chat path uses bj id; chat host/FTK arrive via MediaInfo extras.
-                extras
-                    .as_ref()
-                    .and_then(|e| e.get("bjid").or_else(|| e.get("channel_id")))
-                    .cloned()
-                    .or_else(|| provider.extract_room_id(&streamer_url))
-            }
-            "bigo" => {
-                // Bigo WS enter needs studio roomId (not siteId from the URL)
-                extras
-                    .as_ref()
-                    .and_then(|e| e.get("room_id"))
-                    .cloned()
-                    .or_else(|| provider.extract_room_id(&streamer_url))
-            }
-            "tiktok" => {
-                // TikTok chat joins by numeric webcast room_id; the URL only
-                // carries the @handle, which the provider can resolve itself.
-                extras
-                    .as_ref()
-                    .and_then(|e| e.get("room_id"))
-                    .cloned()
-                    .or_else(|| provider.extract_room_id(&streamer_url))
-            }
-            _ => provider.extract_room_id(&streamer_url),
-        }
-        .ok_or_else(|| {
-            Error::from(platforms_parser::danmaku::DanmakuError::connection(
-                format!("Could not extract room ID from URL: {}", streamer_url),
-            ))
-        })?;
-
-        // Build connection config
-        let mut connection_config =
-            ConnectionConfig::with_cookies(cookies.clone()).with_proxy(proxy);
-        if let Some(e) = extras {
-            // Remove common fields that are used for room ID extraction but might be useful as extras too
-            // We keep them in extras for now as it's cleaner
-            connection_config = connection_config.with_extras(e);
-        }
+        let super::room::DanmuRoom {
+            provider,
+            room_id,
+            config: connection_config,
+        } = super::room::resolve_room(&self.providers, &streamer_url, cookies, extras, proxy)?;
 
         // Create command channel
         let (command_tx, command_rx) = mpsc::channel(32);
@@ -546,9 +473,11 @@ impl DanmuService {
         self.sessions_by_streamer
             .insert(streamer_id.clone(), session_id.clone());
 
+        let tap = self.taps.register(provider.platform(), &room_id);
         let collection = collection_task(CollectionTaskContext {
             session_id: session_id.clone(),
             streamer_id: streamer_id.clone(),
+            tap,
             room_id,
             provider: Arc::clone(&provider),
             conn_config: connection_config,
@@ -788,6 +717,11 @@ impl DanmuService {
         self.collections.contains_key(session_id)
     }
 
+    /// The rooms this service is collecting, for live viewers to follow.
+    pub fn taps(&self) -> Arc<DanmuTaps> {
+        self.taps.clone()
+    }
+
     /// Get all active session IDs.
     pub fn active_sessions(&self) -> Vec<String> {
         self.collections.iter().map(|r| r.key().clone()).collect()
@@ -1013,6 +947,8 @@ async fn cancelled_collection_start(
 struct CollectionTaskContext {
     session_id: String,
     streamer_id: String,
+    /// The room claim for live viewers.
+    tap: TapRegistration,
     room_id: String,
     provider: Arc<dyn platforms_parser::danmaku::DanmuProvider>,
     conn_config: ConnectionConfig,
@@ -1068,6 +1004,7 @@ async fn collection_task(ctx: CollectionTaskContext) -> CollectionTaskReport {
     let CollectionTaskContext {
         session_id,
         streamer_id,
+        tap,
         room_id,
         provider,
         conn_config,
@@ -1100,6 +1037,7 @@ async fn collection_task(ctx: CollectionTaskContext) -> CollectionTaskReport {
                 conn_config,
                 statistics,
                 events: events.clone(),
+                tap: Some(tap),
             }),
         ) => (
             match result {

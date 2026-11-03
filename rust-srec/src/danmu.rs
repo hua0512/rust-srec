@@ -17,12 +17,16 @@ pub use platforms_parser::danmaku::{
 mod checkpoint;
 pub mod events;
 mod lifecycle;
+pub(crate) mod live;
+mod room;
 mod runner;
 pub mod service;
 mod statistics_session;
+mod tap;
 #[cfg(test)]
 pub(crate) mod test_support;
 
 pub use events::DanmuEvent;
 pub use lifecycle::CollectionSpec;
 pub use service::DanmuService;
+pub use tap::DanmuTaps;
