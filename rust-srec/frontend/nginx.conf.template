@@ -14,9 +14,26 @@ map $http_x_forwarded_proto $forwarded_proto {
     ~*^https  https;
 }
 
+# Request path without its query string, for the access log. Media and
+# WebSocket URLs carry the sign-in token as `?token=`, and the log would
+# otherwise keep a copy of every one. The error log still shows the full
+# request line when the backend cannot be reached; nginx has no setting to
+# change what an error entry contains.
+map $request_uri $log_path {
+    ~^(?<uri_path>[^?]*)  $uri_path;
+}
+
+log_format redacted '$remote_addr - $remote_user [$time_local] '
+                    '"$request_method $log_path $server_protocol" '
+                    '$status $body_bytes_sent "$http_referer" '
+                    '"$http_user_agent" "$http_x_forwarded_for"';
+
 server {
     listen 80;
     server_name localhost;
+
+    server_tokens off;
+    access_log /var/log/nginx/access.log redacted;
 
     # Browser hardening for every response this server produces. `always` also
     # covers 4xx and 5xx responses, including proxied errors, which nginx
@@ -27,8 +44,17 @@ server {
     # Framing is left open so dashboards on another port or subdomain can embed
     # the UI. The session cookie is SameSite=Lax, so a frame on an unrelated
     # site loads signed out.
+    #
+    # The Content-Security-Policy leaves scripts and styles unrestricted. Every
+    # server-rendered page carries inline scripts (the router's hydration data
+    # and the theme and sidebar pre-paint scripts) whose content changes per
+    # request, so hashes cannot cover them, and a nonce would have to come from
+    # the SSR server rather than from here. A `script-src` that still allowed
+    # 'unsafe-inline' would block nothing, so only the directives that hold
+    # regardless are set.
     add_header X-Content-Type-Options nosniff always;
     add_header Referrer-Policy strict-origin-when-cross-origin always;
+    add_header Content-Security-Policy "object-src 'none'; base-uri 'self'; form-action 'self'" always;
 
     # Gzip compression
     gzip on;
