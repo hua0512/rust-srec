@@ -18,7 +18,8 @@
 //! - **TimeConsistency**: Maintains consistent timestamps throughout the stream
 //! - **TimingRepair**: Fixes timestamp anomalies like negative values or jumps
 //! - **Limit**: Enforces file size and duration limits
-//! - **ScriptKeyframesFiller**: Prepares metadata for proper seeking by adding keyframe placeholders
+//! - **ScriptKeyframesFiller**: Prepares metadata for proper seeking by adding keyframe placeholders,
+//!   inserting an onMetaData tag into segments that have none
 //! - **ScriptFilter**: Removes or modifies problematic script tags
 
 use crate::operators::{
@@ -314,11 +315,11 @@ mod test {
     use pipeline_common::{CancellationToken, PipelineError};
 
     use super::*;
-    use crate::test_utils::create_audio_sequence_header;
     use crate::test_utils::fixtures::{
         AAC_LC_SILENCE, AV1_CODEC_CONFIG, AV1_KEYFRAME, AVC_CONFIG_16X16, AVC_IDR_16X16,
         AVC_P_16X16,
     };
+    use crate::test_utils::{create_audio_sequence_header, create_script_tag};
 
     /// Duration of one 1024-sample AAC frame at 44.1 kHz, rounded down.
     const AAC_FRAME_MS: u32 = 23;
@@ -337,7 +338,7 @@ mod test {
         tag(timestamp, FlvTagType::Audio, AAC_LC_SILENCE)
     }
 
-    fn run_pipeline(
+    fn run_pipeline_with_scripts(
         common: &PipelineConfig,
         config: FlvPipelineConfig,
         input: impl IntoIterator<Item = FlvData>,
@@ -350,6 +351,18 @@ mod test {
                 output.push(item.unwrap())
             })
             .unwrap();
+        output
+    }
+
+    /// Runs the pipeline and drops script tags from the output, so tests about
+    /// media can compare against inputs without onMetaData.
+    fn run_pipeline(
+        common: &PipelineConfig,
+        config: FlvPipelineConfig,
+        input: impl IntoIterator<Item = FlvData>,
+    ) -> Vec<FlvData> {
+        let mut output = run_pipeline_with_scripts(common, config, input);
+        output.retain(|item| !matches!(item, FlvData::Tag(tag) if tag.is_script_tag()));
         output
     }
 
@@ -612,6 +625,82 @@ mod test {
                 run_pipeline(&PipelineConfig::default(), config, input.clone()),
                 expected
             );
+        }
+    }
+
+    #[test]
+    fn every_segment_opens_with_one_onmetadata_carrying_a_keyframe_index() {
+        // Every output file needs one onMetaData ahead of the decoder
+        // configuration and media, with a keyframe index for the writer to fill
+        // in when the file closes. A source without one gets a minimal tag; a
+        // source that sends one just after its first keyframe keeps its own.
+        const FRAME_MS: u32 = 100;
+        const SPLIT_MS: u32 = 1_000;
+        let common = PipelineConfig {
+            max_duration: Some(Duration::from_millis(SPLIT_MS.into())),
+            ..PipelineConfig::default()
+        };
+        let source_width = 1920.0;
+        for source_metadata in [None, Some(create_script_tag(0, false))] {
+            let mut input = vec![
+                FlvData::Header(FlvHeader::new(true, true)),
+                tag(0, FlvTagType::Video, AVC_CONFIG_16X16),
+                create_audio_sequence_header(0, 0x12),
+            ];
+            for frame in 0..=2 * SPLIT_MS / FRAME_MS {
+                input.push(tag(frame * FRAME_MS, FlvTagType::Video, AVC_IDR_16X16));
+                if frame == 0 {
+                    input.extend(source_metadata.clone());
+                }
+            }
+
+            let output = run_pipeline_with_scripts(&common, FlvPipelineConfig::default(), input);
+
+            let mut segments: Vec<Vec<&FlvTag>> = Vec::new();
+            for item in &output {
+                match item {
+                    FlvData::Header(_) => segments.push(Vec::new()),
+                    FlvData::Tag(tag) => segments.last_mut().unwrap().push(tag),
+                    _ => {}
+                }
+            }
+            assert_eq!(segments.len(), 3);
+            for (index, segment) in segments.iter().enumerate() {
+                let case = if source_metadata.is_some() {
+                    "with source metadata"
+                } else {
+                    "without source metadata"
+                };
+                let scripts: Vec<usize> = (0..segment.len())
+                    .filter(|&i| segment[i].is_script_tag())
+                    .collect();
+                assert_eq!(
+                    scripts,
+                    [0],
+                    "{case}: segment {index} needs one leading script tag"
+                );
+                let script = flv::script::ScriptData::demux(&mut std::io::Cursor::new(
+                    segment[0].data().clone(),
+                ))
+                .unwrap();
+                assert_eq!(script.name, crate::AMF0_ON_METADATA);
+                let properties = script.data[0].as_object_properties().unwrap();
+                assert!(
+                    properties.iter().any(|(key, _)| key == "keyframes"),
+                    "{case}: segment {index} onMetaData lacks a keyframe index"
+                );
+                let width = properties
+                    .iter()
+                    .find(|(key, _)| key == "width")
+                    .and_then(|(_, value)| value.as_number());
+                if source_metadata.is_some() {
+                    assert_eq!(
+                        width,
+                        Some(source_width),
+                        "{case}: segment {index} lost the source onMetaData"
+                    );
+                }
+            }
         }
     }
 }
