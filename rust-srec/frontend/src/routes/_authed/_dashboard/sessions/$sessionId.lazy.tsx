@@ -66,6 +66,13 @@ const SESSION_TIMELINE_PAGE_SIZE = 100;
 const LIVE_SESSION_POLL_MS = 30_000;
 
 /**
+ * How often a recording session's segments and outputs are re-read. Each
+ * finished segment is announced over the live-updates socket, which re-reads
+ * them at once, so this only covers a socket that was down at the time.
+ */
+const LIVE_SESSION_FALLBACK_POLL_MS = 120_000;
+
+/**
  * Ask the browser to save `href` without leaving the page. `filename` only
  * applies to a same-origin URL; elsewhere the response's own
  * `Content-Disposition` names the file.
@@ -172,14 +179,14 @@ function SessionDetailPage() {
   const { data: outputsData, isLoading: isOutputsLoading } = useQuery({
     queryKey: ['pipeline', 'outputs', sessionId],
     queryFn: () => listAllSessionOutputs(sessionId),
-    refetchInterval: isSessionLive ? LIVE_SESSION_POLL_MS : false,
+    refetchInterval: isSessionLive ? LIVE_SESSION_FALLBACK_POLL_MS : false,
   });
 
   const { data: segmentsData, isLoading: isSegmentsLoading } = useQuery({
     queryKey: ['sessions', sessionId, 'segments'],
     queryFn: () => listAllSessionSegments(sessionId),
     enabled: Boolean(sessionId),
-    refetchInterval: isSessionLive ? LIVE_SESSION_POLL_MS : false,
+    refetchInterval: isSessionLive ? LIVE_SESSION_FALLBACK_POLL_MS : false,
   });
 
   // Turning the polls off does not fetch again, so the last reads predate the

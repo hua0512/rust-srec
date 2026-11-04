@@ -407,6 +407,23 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             }
             break;
 
+          case EventType.SEGMENT_COMPLETED:
+            // The segment is stored before this is sent, so an open session
+            // page can read it now rather than at its next slow poll.
+            if (
+              message.payload.case === 'segmentCompleted' &&
+              message.payload.value.sessionId
+            ) {
+              const { sessionId } = message.payload.value;
+              void queryClient.invalidateQueries({
+                queryKey: ['sessions', sessionId],
+              });
+              void queryClient.invalidateQueries({
+                queryKey: ['pipeline', 'outputs', sessionId],
+              });
+            }
+            break;
+
           case EventType.DOWNLOAD_META:
             if (message.payload.case === 'downloadMeta') {
               upsertMeta(message.payload.value);
