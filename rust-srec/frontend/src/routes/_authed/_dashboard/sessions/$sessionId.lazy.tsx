@@ -1,6 +1,6 @@
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { createLazyFileRoute } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getSession,
   getSessionDanmuStatistics,
@@ -61,6 +61,9 @@ const PlayerCard = React.lazy(() =>
 );
 
 const SESSION_TIMELINE_PAGE_SIZE = 100;
+
+/** How often a session that is still recording is re-read. */
+const LIVE_SESSION_POLL_MS = 30_000;
 
 /**
  * Ask the browser to save `href` without leaving the page. `filename` only
@@ -141,6 +144,12 @@ function SessionDetailPage() {
   } = useQuery({
     queryKey: ['sessions', sessionId],
     queryFn: () => getSession({ data: sessionId }),
+    // A recording session gains duration, size and finally its end time
+    // while it is open; the page follows it until it ends.
+    refetchInterval: (query) =>
+      query.state.data && !query.state.data.end_time
+        ? LIVE_SESSION_POLL_MS
+        : false,
   });
 
   // While the session is still live, the backend upserts an in-progress
@@ -148,6 +157,7 @@ function SessionDetailPage() {
   // at the same cadence. Also recovers from the initial 404 emitted before
   // the first snapshot lands.
   const isSessionLive = Boolean(session) && !session?.end_time;
+  const queryClient = useQueryClient();
   const danmuStatsQuery = useQuery({
     queryKey: ['sessions', sessionId, 'danmu-statistics'],
     queryFn: () => getSessionDanmuStatistics({ data: sessionId }),
@@ -162,13 +172,35 @@ function SessionDetailPage() {
   const { data: outputsData, isLoading: isOutputsLoading } = useQuery({
     queryKey: ['pipeline', 'outputs', sessionId],
     queryFn: () => listAllSessionOutputs(sessionId),
+    refetchInterval: isSessionLive ? LIVE_SESSION_POLL_MS : false,
   });
 
   const { data: segmentsData, isLoading: isSegmentsLoading } = useQuery({
     queryKey: ['sessions', sessionId, 'segments'],
     queryFn: () => listAllSessionSegments(sessionId),
     enabled: Boolean(sessionId),
+    refetchInterval: isSessionLive ? LIVE_SESSION_POLL_MS : false,
   });
+
+  // Turning the polls off does not fetch again, so the last reads predate the
+  // session's final segment, outputs and statistics. Read them once more when
+  // a session watched while live ends.
+  const sawLiveSessionRef = useRef(false);
+  useEffect(() => {
+    if (isSessionLive) {
+      sawLiveSessionRef.current = true;
+      return;
+    }
+    if (!session || !sawLiveSessionRef.current) return;
+    sawLiveSessionRef.current = false;
+    for (const queryKey of [
+      ['sessions', sessionId, 'segments'],
+      ['sessions', sessionId, 'danmu-statistics'],
+      ['pipeline', 'outputs', sessionId],
+    ]) {
+      void queryClient.invalidateQueries({ queryKey });
+    }
+  }, [isSessionLive, session, sessionId, queryClient]);
 
   const { data: dagsData, isLoading: isDagsLoading } = useQuery({
     queryKey: ['pipeline', 'dags', sessionId],
