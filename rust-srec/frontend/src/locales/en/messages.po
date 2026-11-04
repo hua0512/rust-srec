@@ -1428,6 +1428,7 @@ msgid "Back to presets"
 msgstr "Back to presets"
 
 #: src/components/sessions/session-header.tsx:67
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:334
 msgid "Back to Sessions"
 msgstr "Back to Sessions"
 
@@ -2560,7 +2561,7 @@ msgstr "Could not load the preset <0>{presetName}</0>. Check that the server is 
 msgid "Could not request lossless cutting. Refresh the recording status and try again."
 msgstr "Could not request lossless cutting. Refresh the recording status and try again."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:256
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:257
 msgid "Could not show the file: {message}"
 msgstr "Could not show the file: {message}"
 
@@ -3559,7 +3560,7 @@ msgid "Download engine (mesio)"
 msgstr "Download engine (mesio)"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:288
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:289
 msgid "Download failed: {0}"
 msgstr "Download failed: {0}"
 
@@ -3572,8 +3573,8 @@ msgstr "Download Manager"
 msgid "Download Retry Policy"
 msgstr "Download Retry Policy"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:269
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:287
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:270
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:288
 msgid "Download started"
 msgstr "Download started"
 
@@ -4010,7 +4011,7 @@ msgstr "Error loading platform"
 msgid "Error loading preset"
 msgstr "Error loading preset"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:321
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:324
 msgid "Error Loading Session"
 msgstr "Error Loading Session"
 
@@ -5095,7 +5096,6 @@ msgid "Go back"
 msgstr "Go back"
 
 #: src/components/default-catch-boundary.tsx:58
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:329
 msgid "Go Back"
 msgstr "Go Back"
 
@@ -5697,7 +5697,7 @@ msgstr "Interval between checks."
 msgid "Interval between offline checks."
 msgstr "Interval between offline checks."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:263
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:264
 msgid "Invalid download URL"
 msgstr "Invalid download URL"
 
@@ -5777,7 +5777,7 @@ msgstr "Job Timeouts"
 
 #: src/components/layout/site-header.tsx:54
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:407
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:413
 msgid "Jobs"
 msgstr "Jobs"
 
@@ -6448,7 +6448,7 @@ msgstr "Media Outputs"
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "Media outputs will appear here when pipeline jobs complete."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:478
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:484
 msgid "Media Player"
 msgstr "Media Player"
 
@@ -7666,7 +7666,7 @@ msgstr "Override output folder."
 msgid "Override pipelines and platform options for specific platforms."
 msgstr "Override pipelines and platform options for specific platforms."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:376
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:382
 msgid "Overview"
 msgstr "Overview"
 
@@ -8254,7 +8254,7 @@ msgstr "Preferred Quality (QN)"
 msgid "Preferred Video Codec"
 msgstr "Preferred Video Codec"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:286
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:287
 msgid "Preparing download..."
 msgstr "Preparing download..."
 
@@ -8777,7 +8777,7 @@ msgstr "Recording uses temporary chunks"
 msgid "Recording will start when schedule allows"
 msgstr "Recording will start when schedule allows"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:395
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:401
 msgid "Recordings"
 msgstr "Recordings"
 
@@ -9957,7 +9957,7 @@ msgstr "Session ID is required"
 msgid "Session Menu"
 msgstr "Session Menu"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:324
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:327
 msgid "Session not found"
 msgstr "Session not found"
 
@@ -11160,7 +11160,7 @@ msgid "time-of-day timetable"
 msgstr "time-of-day timetable"
 
 #: src/components/sessions/danmu-stats-panel.tsx:490
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:382
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:388
 msgid "Timeline"
 msgstr "Timeline"
 

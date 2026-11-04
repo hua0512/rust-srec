@@ -1428,6 +1428,7 @@ msgid "Back to presets"
 msgstr "返回预设列表"
 
 #: src/components/sessions/session-header.tsx:67
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:334
 msgid "Back to Sessions"
 msgstr "返回录制会话"
 
@@ -2560,7 +2561,7 @@ msgstr "无法加载预设 <0>{presetName}</0>。请确认服务器可访问后�
 msgid "Could not request lossless cutting. Refresh the recording status and try again."
 msgstr "无法请求无损分段。请刷新录制状态后重试。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:256
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:257
 msgid "Could not show the file: {message}"
 msgstr "无法显示该文件：{message}"
 
@@ -3559,7 +3560,7 @@ msgid "Download engine (mesio)"
 msgstr "下载引擎（mesio）"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:288
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:289
 msgid "Download failed: {0}"
 msgstr "下载失败：{0}"
 
@@ -3572,8 +3573,8 @@ msgstr "下载管理"
 msgid "Download Retry Policy"
 msgstr "录制重试策略"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:269
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:287
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:270
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:288
 msgid "Download started"
 msgstr "下载已开始"
 
@@ -4010,7 +4011,7 @@ msgstr "加载平台失败"
 msgid "Error loading preset"
 msgstr "加载预设失败"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:321
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:324
 msgid "Error Loading Session"
 msgstr "加载录制会话失败"
 
@@ -5095,7 +5096,6 @@ msgid "Go back"
 msgstr "返回"
 
 #: src/components/default-catch-boundary.tsx:58
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:329
 msgid "Go Back"
 msgstr "返回"
 
@@ -5697,7 +5697,7 @@ msgstr "检查间隔。"
 msgid "Interval between offline checks."
 msgstr "离线检查之间的间隔。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:263
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:264
 msgid "Invalid download URL"
 msgstr "下载链接无效"
 
@@ -5777,7 +5777,7 @@ msgstr "任务超时"
 
 #: src/components/layout/site-header.tsx:54
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:407
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:413
 msgid "Jobs"
 msgstr "处理任务"
 
@@ -6448,7 +6448,7 @@ msgstr "媒体文件"
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "处理任务完成后，媒体文件将显示在此处。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:478
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:484
 msgid "Media Player"
 msgstr "媒体播放器"
 
@@ -7666,7 +7666,7 @@ msgstr "覆盖输出文件夹。"
 msgid "Override pipelines and platform options for specific platforms."
 msgstr "为特定平台覆盖处理管道和平台选项。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:376
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:382
 msgid "Overview"
 msgstr "概览"
 
@@ -8254,7 +8254,7 @@ msgstr "首选画质 (QN)"
 msgid "Preferred Video Codec"
 msgstr "首选视频编码"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:286
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:287
 msgid "Preparing download..."
 msgstr "正在准备下载……"
 
@@ -8777,7 +8777,7 @@ msgstr "录制将使用临时分块"
 msgid "Recording will start when schedule allows"
 msgstr "录制将在计划允许时开始"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:395
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:401
 msgid "Recordings"
 msgstr "录制内容"
 
@@ -9957,7 +9957,7 @@ msgstr "会话 ID 是必需的"
 msgid "Session Menu"
 msgstr "会话菜单"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:324
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:327
 msgid "Session not found"
 msgstr "未找到录制会话"
 
@@ -11160,7 +11160,7 @@ msgid "time-of-day timetable"
 msgstr "按时间段调度"
 
 #: src/components/sessions/danmu-stats-panel.tsx:490
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:382
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:388
 msgid "Timeline"
 msgstr "时间线"
 
