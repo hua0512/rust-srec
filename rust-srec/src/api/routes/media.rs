@@ -5,7 +5,7 @@ use std::fmt::Write as _;
 use axum::Router;
 use axum::extract::{FromRef, Path, Query, Request, State};
 use axum::http::HeaderValue;
-use axum::http::header::CONTENT_DISPOSITION;
+use axum::http::header::{CONTENT_DISPOSITION, CONTENT_SECURITY_POLICY, X_CONTENT_TYPE_OPTIONS};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use tower_http::services::ServeFile;
@@ -157,6 +157,14 @@ pub async fn get_media_content(
     match ServeFile::new(path).try_call(req).await {
         Ok(response) => {
             let mut response = response.into_response();
+            // The type is guessed from the extension and the file is served on
+            // the API origin, which the bundled deployment shares with the web
+            // UI. A recorded XML, SVG or HTML file must not be sniffed into a
+            // page there, and if opened directly gets no scripts and an opaque
+            // origin. Players, images and `fetch` are unaffected.
+            let headers = response.headers_mut();
+            headers.insert(X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+            headers.insert(CONTENT_SECURITY_POLICY, HeaderValue::from_static("sandbox"));
             if wants_attachment
                 && let Ok(value) =
                     HeaderValue::from_str(&attachment_disposition(&media.file_path, &id))
