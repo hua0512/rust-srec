@@ -52,8 +52,10 @@ export default defineConfig({
   },
   plugins: [
     themePrePaint(),
-    lingui({ macroTransform: true }),
     devtools(),
+    // After devtools(), which tags console calls with their source line and
+    // must see the code before macros are rewritten.
+    lingui({ macroTransform: true }),
     tailwindcss(),
     tanstackRouter({
       target: 'react',

@@ -39,8 +39,10 @@ export default defineConfig(() => ({
     __THEME_CACHE_ID__: JSON.stringify(computeThemeCacheId()),
   },
   plugins: [
-    lingui({ macroTransform: true }),
     devtools(),
+    // After devtools(), which tags console calls with their source line and
+    // must see the code before macros are rewritten.
+    lingui({ macroTransform: true }),
     previewCacheHeaders(),
     nitro({
       // Ship .br/.gz next to each asset so the server sends them as-is instead
