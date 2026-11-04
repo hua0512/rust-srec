@@ -537,10 +537,16 @@ function ThemePreview({
         </div>
 
         <div className="space-y-2">
-          <Label className="text-xs text-muted-foreground">
+          <Label
+            htmlFor="theme-preview-input"
+            className="text-xs text-muted-foreground"
+          >
             <Trans>Input</Trans>
           </Label>
-          <Input placeholder={i18n._(msg`Type something...`)} />
+          <Input
+            id="theme-preview-input"
+            placeholder={i18n._(msg`Type something...`)}
+          />
         </div>
 
         <div className="flex gap-2">

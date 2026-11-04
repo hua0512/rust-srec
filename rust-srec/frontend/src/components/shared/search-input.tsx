@@ -6,6 +6,8 @@ interface SearchInputProps {
   defaultValue?: string;
   onSearch: (value: string) => void;
   placeholder?: string;
+  /** Accessible name; defaults to the placeholder, which screen readers do not announce as one. */
+  'aria-label'?: string;
   className?: string;
 }
 
@@ -14,6 +16,7 @@ export const SearchInput = memo(
     defaultValue = '',
     onSearch,
     placeholder,
+    'aria-label': ariaLabel,
     className,
   }: SearchInputProps) => {
     const [value, setValue] = useState(defaultValue);
@@ -42,9 +45,14 @@ export const SearchInput = memo(
 
     return (
       <div className={`relative w-full ${className}`}>
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Search
+          aria-hidden="true"
+          className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
+        />
         <Input
+          type="search"
           placeholder={placeholder}
+          aria-label={ariaLabel ?? placeholder}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onCompositionStart={() => setIsComposing(true)}

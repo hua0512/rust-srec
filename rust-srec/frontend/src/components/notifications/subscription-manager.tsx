@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getSubscriptions,
@@ -200,6 +200,7 @@ export function SubscriptionManager({
 }: SubscriptionManagerProps) {
   const queryClient = useQueryClient();
   const { i18n } = useLingui();
+  const labelIdPrefix = useId();
   const [selectedEvents, setSelectedEvents] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -346,9 +347,14 @@ export function SubscriptionManager({
             {/* Search and Filters */}
             <div className="flex items-center gap-2">
               <div className="relative flex-1">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Search
+                  aria-hidden="true"
+                  className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground"
+                />
                 <Input
+                  type="search"
                   placeholder={i18n._(msg`Search events...`)}
+                  aria-label={i18n._(msg`Search events...`)}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-9 bg-muted/40 border-primary/10 transition-colors focus:bg-background h-9"
@@ -390,6 +396,7 @@ export function SubscriptionManager({
                     const isSelected = selectedEvents.includes(type.event_type);
                     const iconConfig = getEventIcon(type.event_type);
                     const IconComponent = iconConfig.icon;
+                    const labelId = `${labelIdPrefix}-${type.event_type}`;
                     return (
                       <div
                         key={type.event_type}
@@ -405,6 +412,7 @@ export function SubscriptionManager({
                       >
                         <Checkbox
                           checked={isSelected}
+                          aria-labelledby={labelId}
                           onCheckedChange={() => handleToggle(type.event_type)}
                           // The whole row toggles too, so the click has to stop
                           // here or the row would immediately toggle it back.
@@ -421,6 +429,7 @@ export function SubscriptionManager({
                         <div className="flex-1 space-y-1">
                           <div className="flex items-center justify-between">
                             <Label
+                              id={labelId}
                               className={`font-medium cursor-pointer transition-colors ${isSelected ? 'text-primary' : 'text-foreground'}`}
                             >
                               {i18n._(eventTypeLabel(type.event_type))}

@@ -40,6 +40,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -316,6 +317,8 @@ function NotificationEventsPage() {
                 return (
                   <button
                     key={filter.value}
+                    type="button"
+                    aria-pressed={isActive}
                     onClick={() => handleSetPriority(filter.value)}
                     className={cn(
                       'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200',
@@ -342,8 +345,14 @@ function NotificationEventsPage() {
 
             <div className="flex items-center bg-muted/30 p-1 rounded-full border border-border/50 shrink-0">
               <Select value={eventType} onValueChange={handleSetEventType}>
-                <SelectTrigger className="h-7 border-none bg-transparent hover:bg-background/50 transition-colors rounded-full text-xs font-medium px-3 gap-1.5 focus:ring-0 shadow-none">
-                  <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+                <SelectTrigger
+                  aria-label={i18n._(msg`Event Type`)}
+                  className="h-7 border-none bg-transparent hover:bg-background/50 transition-colors rounded-full text-xs font-medium px-3 gap-1.5 focus:ring-0 shadow-none"
+                >
+                  <Activity
+                    className="h-3.5 w-3.5 text-muted-foreground"
+                    aria-hidden="true"
+                  />
                   <SelectValue placeholder={i18n._(msg`Event Type`)} />
                 </SelectTrigger>
                 <SelectContent>
@@ -364,9 +373,11 @@ function NotificationEventsPage() {
                 variant="ghost"
                 size="icon"
                 onClick={clearFilters}
+                aria-label={i18n._(msg`Clear filters`)}
+                title={i18n._(msg`Clear filters`)}
                 className="h-8 w-8 rounded-full hover:bg-destructive/10 hover:text-destructive shrink-0"
               >
-                <X className="h-4 w-4" />
+                <X className="h-4 w-4" aria-hidden="true" />
               </Button>
             )}
 
@@ -511,6 +522,9 @@ function NotificationEventsPage() {
               </div>
               {selectedPayload?.title}
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              <Trans>The full event payload as JSON.</Trans>
+            </DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-[70vh] rounded-xl bg-muted/50 p-4 border">
             {selectedPayload && <JsonViewer json={selectedPayload.payload} />}

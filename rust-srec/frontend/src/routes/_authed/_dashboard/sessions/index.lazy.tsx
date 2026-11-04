@@ -270,6 +270,8 @@ function SessionsPage() {
                 return (
                   <button
                     key={filter.value}
+                    type="button"
+                    aria-pressed={isActive}
                     onClick={() =>
                       updateSearch({ status: filter.value, page: 1 })
                     }
@@ -297,6 +299,7 @@ function SessionsPage() {
               <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
                 <PopoverTrigger asChild>
                   <button
+                    type="button"
                     className={cn(
                       'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200',
                       currentTimeRange === 'custom' || dateRange?.from
@@ -357,6 +360,8 @@ function SessionsPage() {
                 return (
                   <button
                     key={filter.value}
+                    type="button"
+                    aria-pressed={isActive}
                     onClick={() =>
                       updateSearch({
                         timeRange: filter.value,
@@ -384,6 +389,7 @@ function SessionsPage() {
                 size="icon"
                 onClick={clearFilters}
                 aria-label={i18n._(msg`Clear filters`)}
+                title={i18n._(msg`Clear filters`)}
                 className="h-8 w-8 rounded-full hover:bg-destructive/10 hover:text-destructive shrink-0"
               >
                 <X className="h-4 w-4" />
@@ -467,7 +473,18 @@ function SessionsPage() {
 
         {/* FAB toggle button */}
         <motion.button
+          type="button"
           onClick={toggleSelectionMode}
+          aria-label={
+            selectionMode
+              ? i18n._(msg`Exit selection mode`)
+              : i18n._(msg`Select sessions`)
+          }
+          title={
+            selectionMode
+              ? i18n._(msg`Exit selection mode`)
+              : i18n._(msg`Select sessions`)
+          }
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.9 }}
           className={cn(

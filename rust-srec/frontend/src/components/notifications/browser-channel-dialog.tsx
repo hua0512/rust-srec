@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Trans } from '@lingui/react/macro';
+import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { cn } from '@/lib/utils';
 import { MIN_PRIORITY_OPTIONS } from '@/lib/priority';
@@ -89,6 +90,7 @@ export function BrowserChannelDialog({
                 </Badge>
               </div>
               <Switch
+                aria-label={i18n._(msg`Live Polling`)}
                 checked={browserNotificationsEnabled}
                 onCheckedChange={onBrowserNotificationsToggle}
               />
@@ -126,6 +128,7 @@ export function BrowserChannelDialog({
                 </Badge>
               </div>
               <Switch
+                aria-label={i18n._(msg`Web Push`)}
                 checked={webPushEnabled}
                 onCheckedChange={onWebPushToggle}
                 disabled={!webPushSupported}
@@ -142,7 +145,10 @@ export function BrowserChannelDialog({
                   onValueChange={(val) => onWebPushPriorityChange(Number(val))}
                   disabled={!webPushSupported}
                 >
-                  <SelectTrigger className="h-7 w-32 bg-background/40 border-border/20 text-[10px]">
+                  <SelectTrigger
+                    aria-label={i18n._(msg`Priority Filter`)}
+                    className="h-7 w-32 bg-background/40 border-border/20 text-[10px]"
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

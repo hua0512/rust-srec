@@ -63,7 +63,11 @@ export function ColorPicker({
 
   return (
     <div className="space-y-2">
-      <Label htmlFor={`color-${cssVar}`} className="text-xs font-medium">
+      <Label
+        id={`color-label-${cssVar}`}
+        htmlFor={`color-${cssVar}`}
+        className="text-xs font-medium"
+      >
         {label}
       </Label>
       <div className="flex items-start gap-2">
@@ -86,6 +90,7 @@ export function ColorPicker({
         <Input
           type="text"
           placeholder={`${cssVar} value`}
+          aria-labelledby={`color-label-${cssVar}`}
           value={resolvedValue}
           onChange={handleTextChange}
           className="h-8 text-xs flex-1"

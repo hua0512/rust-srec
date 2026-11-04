@@ -51,14 +51,18 @@ const BLOCK_PLACEHOLDER = {
 
 function Section({
   title,
+  titleId,
   children,
 }: {
   title: ReactNode;
+  titleId?: string;
   children: ReactNode;
 }) {
   return (
     <section className="space-y-2">
-      <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
+      <h3 id={titleId} className="text-xs font-medium text-muted-foreground">
+        {title}
+      </h3>
       {children}
     </section>
   );
@@ -107,10 +111,12 @@ function SliderRow({
   step: number;
   onChange: (value: number) => void;
 }) {
+  const labelId = useId();
   return (
-    <Section title={label}>
+    <Section title={label} titleId={labelId}>
       <div className="flex items-center gap-3">
         <Slider
+          aria-labelledby={labelId}
           value={[value]}
           min={min}
           max={max}

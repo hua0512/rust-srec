@@ -470,6 +470,8 @@ function PipelineJobsPage() {
             {STATUS_FILTERS.map(({ value, label, icon: Icon }) => (
               <button
                 key={label}
+                type="button"
+                aria-pressed={selectedStatus === value}
                 onClick={() => handleStatusChange(value)}
                 className={`relative px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-1.5 shrink-0 shadow-sm ring-1 ${
                   selectedStatus === value

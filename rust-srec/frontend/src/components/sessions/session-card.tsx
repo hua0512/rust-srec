@@ -96,10 +96,24 @@ export const SessionCard = memo(
         <Card
           className={cn(
             'flex flex-col h-full bg-card border border-border/50 shadow-[0_2px_12px_rgba(0,0,0,0.08)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.15)] hover:-translate-y-0.5 hover:border-primary/25 transition-[transform,box-shadow,border-color] duration-300 ease-out group relative overflow-hidden rounded-2xl',
-            selectionMode && 'cursor-pointer',
+            selectionMode &&
+              'cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             isSelected && 'ring-2 ring-primary border-primary/50',
           )}
           onClick={handleCardClick}
+          role={selectionMode ? 'checkbox' : undefined}
+          aria-checked={selectionMode ? isSelected : undefined}
+          tabIndex={selectionMode ? 0 : undefined}
+          onKeyDown={(event) => {
+            if (
+              selectionMode &&
+              onSelectChange &&
+              (event.key === 'Enter' || event.key === ' ')
+            ) {
+              event.preventDefault();
+              onSelectChange(session.id, !isSelected);
+            }
+          }}
         >
           {/* Subtle corner tint */}
           <div className="absolute top-0 left-0 w-1/2 h-1/2 bg-gradient-to-br from-primary/[0.03] to-transparent pointer-events-none" />
@@ -212,7 +226,12 @@ export const SessionCard = memo(
             </div>
           </CardContent>
 
-          <CardFooter className="p-3 pt-0 flex justify-between items-center relative z-10">
+          {/* A checkbox cannot hold other controls, so while the card is one
+              its links and menu leave the tab order and the pointer. */}
+          <CardFooter
+            inert={selectionMode}
+            className="p-3 pt-0 flex justify-between items-center relative z-10"
+          >
             <Button
               variant="ghost"
               size="sm"

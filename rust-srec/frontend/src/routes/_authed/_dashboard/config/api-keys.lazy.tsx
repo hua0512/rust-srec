@@ -92,9 +92,9 @@ function keyStatus(key: ApiKey): 'active' | 'revoked' | 'expired' {
   return 'active';
 }
 
-function formatMs(ms: number | null | undefined) {
+function formatMs(ms: number | null | undefined, locale: string) {
   if (!ms) return null;
-  return new Date(ms).toLocaleString();
+  return new Date(ms).toLocaleString(locale);
 }
 
 function ApiKeysPage() {
@@ -251,14 +251,14 @@ function ApiKeysPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {formatMs(key.last_used_at) ?? (
+                          {formatMs(key.last_used_at, i18n.locale) ?? (
                             <span className="opacity-60">
                               <Trans>Never</Trans>
                             </span>
                           )}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {formatMs(key.expires_at) ?? (
+                          {formatMs(key.expires_at, i18n.locale) ?? (
                             <span className="opacity-60">
                               <Trans>Never</Trans>
                             </span>
@@ -455,6 +455,7 @@ function CreateApiKeyDialog({
                 </ConfigFieldLabel>
                 <Input
                   id="api-key-name"
+                  aria-label={i18n._(msg`Name`)}
                   className={CONFIG_INPUT}
                   value={name}
                   placeholder={i18n._(msg`e.g. Claude assistant`)}
@@ -469,7 +470,10 @@ function CreateApiKeyDialog({
                   value={accessLevel}
                   onValueChange={(v) => setAccessLevel(v as ApiKeyAccessLevel)}
                 >
-                  <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
+                  <SelectTrigger
+                    aria-label={i18n._(msg`Access level`)}
+                    className={CONFIG_SELECT_TRIGGER}
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className={CONFIG_SELECT_CONTENT}>
@@ -489,7 +493,10 @@ function CreateApiKeyDialog({
                   <Trans>Expires</Trans>
                 </ConfigFieldLabel>
                 <Select value={expiry} onValueChange={setExpiry}>
-                  <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
+                  <SelectTrigger
+                    aria-label={i18n._(msg`Expires`)}
+                    className={CONFIG_SELECT_TRIGGER}
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className={CONFIG_SELECT_CONTENT}>

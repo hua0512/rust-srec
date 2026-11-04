@@ -79,7 +79,7 @@ export const StepsList = memo(
                   <Reorder.Item
                     key={id || `step-${index}`}
                     value={dagStep}
-                    className="relative group"
+                    className="relative group/step"
                   >
                     <motion.div
                       layout
@@ -167,7 +167,7 @@ export const StepsList = memo(
                         </div>
                       </div>
 
-                      <div className="flex items-center opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center opacity-100 md:opacity-0 md:group-hover/step:opacity-100 md:group-focus-within/step:opacity-100 transition-opacity">
                         {onReplace && (
                           <Button
                             type="button"
@@ -179,6 +179,7 @@ export const StepsList = memo(
                               onReplace(index);
                             }}
                             title={i18n._(msg`Replace Step`)}
+                            aria-label={i18n._(msg`Replace Step`)}
                           >
                             <Replace className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                           </Button>
@@ -194,6 +195,7 @@ export const StepsList = memo(
                               onEdit?.(index);
                             }}
                             title={i18n._(msg`Configure Step`)}
+                            aria-label={i18n._(msg`Configure Step`)}
                           >
                             <Settings className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                           </Button>
@@ -214,7 +216,7 @@ export const StepsList = memo(
                             <X className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                           </Button>
                         )}
-                        <GripVertical className="hidden sm:block h-4 w-4 opacity-20 group-hover:opacity-50 transition-opacity ml-1 cursor-grab" />
+                        <GripVertical className="hidden sm:block h-4 w-4 opacity-20 group-hover/step:opacity-50 transition-opacity ml-1 cursor-grab" />
                       </div>
                     </motion.div>
                   </Reorder.Item>

@@ -88,6 +88,8 @@ function NotificationsPage() {
     useState(false);
 
   const [isDesktopDialogOpen, setIsDesktopDialogOpen] = useState(false);
+  const openInternalChannelSettings = () =>
+    isDesktop ? setIsDesktopDialogOpen(true) : setIsBrowserDialogOpen(true);
 
   const defaultDesktopConfig: DesktopNotificationConfig = {
     enabled: true,
@@ -428,13 +430,12 @@ function NotificationsPage() {
             >
               {/* Browser Card First */}
               <motion.div variants={itemVariants}>
+                {/* The whole card opens the settings for a pointer; the footer
+                    button is the keyboard and screen-reader way in, and its
+                    click bubbles to the same idempotent handler. */}
                 <div
-                  onClick={() =>
-                    isDesktop
-                      ? setIsDesktopDialogOpen(true)
-                      : setIsBrowserDialogOpen(true)
-                  }
-                  className="cursor-pointer relative overflow-hidden group border border-border/40 hover:border-primary/20 transition-all duration-500 hover:shadow-2xl hover:shadow-primary/10 bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl rounded-3xl p-6 h-full flex flex-col justify-between min-h-[220px]"
+                  onClick={openInternalChannelSettings}
+                  className="cursor-pointer has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring relative overflow-hidden group border border-border/40 hover:border-primary/20 transition-all duration-500 hover:shadow-2xl hover:shadow-primary/10 bg-gradient-to-br from-background/80 to-background/40 backdrop-blur-xl rounded-3xl p-6 h-full flex flex-col justify-between min-h-[220px]"
                 >
                   <CardDecoration />
 
@@ -519,12 +520,16 @@ function NotificationsPage() {
                     </div>
                   </div>
 
-                  <div className="relative z-10 mt-6 pt-4 border-t border-border/10 flex items-center justify-between text-[11px] font-medium text-primary/80 group-hover:text-primary transition-colors">
+                  <button
+                    type="button"
+                    onClick={openInternalChannelSettings}
+                    className="relative z-10 mt-6 pt-4 w-full border-t border-border/10 flex items-center justify-between text-[11px] font-medium text-primary/80 group-hover:text-primary focus-visible:text-primary focus-visible:outline-none transition-colors"
+                  >
                     <span>
                       <Trans>Configure Settings</Trans>
                     </span>
-                    <Settings2 className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100 transition-all translate-x-2 group-hover:translate-x-0 duration-300" />
-                  </div>
+                    <Settings2 className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all translate-x-2 group-hover:translate-x-0 group-focus-within:translate-x-0 duration-300" />
+                  </button>
                 </div>
               </motion.div>
 

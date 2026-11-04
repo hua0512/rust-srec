@@ -389,6 +389,7 @@ function StreamersPage() {
           <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto_auto] gap-1 sm:contents">
             <Select value={platformFilter} onValueChange={handlePlatformChange}>
               <SelectTrigger
+                aria-label={i18n._(msg`Platform`)}
                 className={`h-8 w-full rounded-full border-0 px-2.5 shadow-none transition-colors hover:bg-background/60 focus-visible:ring-2 sm:w-40 ${
                   platformFilter === 'all'
                     ? 'text-muted-foreground dark:bg-transparent'
@@ -422,6 +423,7 @@ function StreamersPage() {
 
             <Select value={templateFilter} onValueChange={handleTemplateChange}>
               <SelectTrigger
+                aria-label={i18n._(msg`Template`)}
                 className={`h-8 w-full rounded-full border-0 px-2.5 shadow-none transition-colors hover:bg-background/60 focus-visible:ring-2 sm:w-40 ${
                   templateFilter === 'all'
                     ? 'text-muted-foreground dark:bg-transparent'
@@ -507,7 +509,7 @@ function StreamersPage() {
                 <div className="space-y-5 p-4">
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-2">
-                      <Label>
+                      <Label htmlFor="streamer-filter-priority">
                         <Trans>Priority</Trans>
                       </Label>
                       <Select
@@ -522,7 +524,10 @@ function StreamersPage() {
                           });
                         }}
                       >
-                        <SelectTrigger className="w-full rounded-xl">
+                        <SelectTrigger
+                          id="streamer-filter-priority"
+                          className="w-full rounded-xl"
+                        >
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -543,7 +548,7 @@ function StreamersPage() {
                     </div>
 
                     <div className="space-y-2">
-                      <Label>
+                      <Label htmlFor="streamer-filter-sort">
                         <Trans>Sort by</Trans>
                       </Label>
                       <Select
@@ -558,7 +563,10 @@ function StreamersPage() {
                           });
                         }}
                       >
-                        <SelectTrigger className="w-full rounded-xl">
+                        <SelectTrigger
+                          id="streamer-filter-sort"
+                          className="w-full rounded-xl"
+                        >
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -755,6 +763,8 @@ function StreamersPage() {
             >
               <Button
                 onClick={() => navigate({ to: '/streamers/new' })}
+                aria-label={i18n._(msg`Add Streamer`)}
+                title={i18n._(msg`Add Streamer`)}
                 size="icon"
                 className="h-14 w-14 rounded-full shadow-2xl bg-primary hover:bg-primary/90 text-primary-foreground flex items-center justify-center p-0"
               >
