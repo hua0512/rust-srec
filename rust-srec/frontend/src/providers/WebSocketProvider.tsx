@@ -541,6 +541,10 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     ],
   );
 
+  // Whether this session's socket has opened before, so a reconnect can be
+  // told apart from the first connect.
+  const hasConnectedRef = useRef(false);
+
   /**
    * Ends the session's live view: signed out, or the provider unmounting. This
    * is the only path that empties the stores. A reconnect must not come through
@@ -549,6 +553,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
    * reason.
    */
   const handleDisconnect = useCallback(() => {
+    hasConnectedRef.current = false;
     dropPendingProgress();
     clearAll();
     // Uploads live in their own store and have to be emptied separately.
@@ -563,6 +568,17 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     onOpen: () => {
       // Attention changes while disconnected were never announced.
       void invalidateCredentialAttention(queryClient);
+      if (hasConnectedRef.current) {
+        // Checks recorded and streamer state changes while the socket was
+        // down were never announced either.
+        void queryClient.invalidateQueries({
+          predicate: (query) =>
+            query.queryKey[0] === 'streamer' &&
+            query.queryKey[2] === 'check-history',
+        });
+        void queryClient.invalidateQueries({ queryKey: ['streamers'] });
+      }
+      hasConnectedRef.current = true;
     },
     onStatusChange: setConnectionStatus,
     onDisconnect: handleDisconnect,
