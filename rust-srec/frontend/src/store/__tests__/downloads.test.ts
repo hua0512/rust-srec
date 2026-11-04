@@ -1,5 +1,7 @@
 import {
+  STALE_AFTER_MS,
   TERMINATED_TTL_MS,
+  sweepStaleDownloads,
   sweepTerminatedDownloads,
   useDownloadStore,
 } from '../downloads';
@@ -97,6 +99,28 @@ describe('useDownloadStore terminated tracking', () => {
     // With the marker gone, the id is usable again.
     store.upsertMetrics(metricsFor('dl-1'));
     expect(useDownloadStore.getState().viewsById.has('dl-1')).toBe(true);
+  });
+
+  it('drops a download that stopped reporting, keeping one that reports', () => {
+    vi.useFakeTimers();
+    try {
+      const store = useDownloadStore.getState();
+      store.upsertMetrics(metricsFor('ghost'));
+      store.upsertMetrics(metricsFor('live'));
+
+      vi.advanceTimersByTime(STALE_AFTER_MS - 1_000);
+      store.upsertMetrics(metricsFor('live'));
+      vi.advanceTimersByTime(1_000);
+
+      const versionBefore = useDownloadStore.getState().version;
+      sweepStaleDownloads();
+      const state = useDownloadStore.getState();
+      expect(state.viewsById.has('ghost')).toBe(false);
+      expect(state.viewsById.has('live')).toBe(true);
+      expect(state.version).toBe(versionBefore + 1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
