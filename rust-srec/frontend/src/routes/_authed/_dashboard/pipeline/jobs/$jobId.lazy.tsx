@@ -17,6 +17,7 @@ import {
   deletePipelineJob,
 } from '@/server/functions/pipeline';
 import type { Job } from '@/api/schemas/pipeline';
+import type { JobProgressSnapshot } from '@/api/schemas/session';
 import {
   flattenLogPages,
   latestLogTotal,
@@ -24,6 +25,9 @@ import {
   replaceNewestLogPage,
   type JobLogPages,
 } from '@/lib/job-log-pages';
+import { hasReportedProgress, liveProgressSnapshot } from '@/lib/job-progress';
+import { useWebSocket } from '@/providers/WebSocketContext';
+import { useUploadStore } from '@/store/uploads';
 import { JobProgressPanel } from '@/components/pipeline/jobs/job-progress-panel';
 import { JobInterruptedOutputsCard } from '@/components/pipeline/jobs/job-interrupted-outputs-card';
 import { JobUploadsCard } from '@/components/pipeline/jobs/job-uploads-card';
@@ -80,6 +84,13 @@ export const Route = createLazyFileRoute(
 
 import { formatDate } from '@/lib/datetime';
 
+/**
+ * How often a queued or running job is re-read. Its progress arrives over the
+ * live-updates socket, and the socket's end-of-job events trigger an
+ * immediate read, so this only has to catch status changes.
+ */
+const ACTIVE_JOB_POLL_MS = 3_000;
+
 /** Matches the backend's page cap for `/pipeline/jobs/{id}/logs`. */
 const LOG_PAGE_SIZE = 1000;
 
@@ -99,7 +110,7 @@ function JobDetailsPage() {
     refetchInterval: (query) => {
       const data = query.state.data;
       if (data?.status === 'PROCESSING' || data?.status === 'PENDING') {
-        return 1000;
+        return ACTIVE_JOB_POLL_MS;
       }
       // The retry sweeper re-queues a due retry within about 15 s, so a slower
       // poll still follows the job back to PENDING.
@@ -115,10 +126,40 @@ function JobDetailsPage() {
     jobStatus === 'FAILED' ||
     jobStatus === 'CANCELLED';
 
-  const { data: progressSnapshot } = useQuery({
+  // Uploads and jobs that have run for a while report their progress over
+  // the live-updates socket; the endpoint is polled only while that has
+  // nothing for this job. Only these booleans are read here: the figures
+  // change twice a second and are read by LiveJobProgressPanel alone, so the
+  // page and its logs do not re-render with them.
+  const { isConnected } = useWebSocket();
+  const hasLiveView = useUploadStore(
+    (state) => state.uploadsByJobId.has(jobId) || state.jobsByJobId.has(jobId),
+  );
+  const hasLiveProgress = useUploadStore((state) =>
+    hasReportedProgress(
+      state.uploadsByJobId.get(jobId) ?? state.jobsByJobId.get(jobId),
+    ),
+  );
+  const showLiveProgress =
+    isConnected && jobStatus === 'PROCESSING' && hasLiveProgress;
+
+  // The socket announces the end of a job it was reporting before the next
+  // poll would notice; read the job straight away.
+  const hadLiveViewRef = useRef(false);
+  useEffect(() => {
+    if (hadLiveViewRef.current && !hasLiveView && isConnected) {
+      void queryClient.invalidateQueries({
+        queryKey: ['pipeline', 'job', jobId],
+        exact: true,
+      });
+    }
+    hadLiveViewRef.current = hasLiveView;
+  }, [hasLiveView, isConnected, jobId, queryClient]);
+
+  const { data: polledSnapshot } = useQuery({
     queryKey: ['pipeline', 'job', jobId, 'progress'],
     queryFn: () => getPipelineJobProgress({ data: { id: jobId } }),
-    enabled: jobStatus === 'PROCESSING',
+    enabled: jobStatus === 'PROCESSING' && !showLiveProgress,
     refetchInterval: 1000,
     retry: false, // Don't retry on 404 when no progress is available
     throwOnError: false, // Silently handle errors - progress is optional
@@ -129,7 +170,7 @@ function JobDetailsPage() {
   const { data: uploadsData } = useQuery({
     queryKey: ['pipeline', 'job', jobId, 'uploads'],
     queryFn: () => getPipelineJobUploads({ data: { id: jobId } }),
-    refetchInterval: isJobActive ? 2000 : false,
+    refetchInterval: isJobActive ? 5000 : false,
     enabled: !!job,
     throwOnError: false, // The card simply doesn't render without records
   });
@@ -677,7 +718,11 @@ function JobDetailsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-6 flex-1 flex flex-col gap-6">
-                <JobProgressPanel job={job} snapshot={progressSnapshot} />
+                <LiveJobProgressPanel
+                  job={job}
+                  live={showLiveProgress}
+                  polledSnapshot={polledSnapshot}
+                />
                 <Separator className="bg-border/50" />
                 <div className="space-y-6">
                   <TimelineItem
@@ -996,5 +1041,33 @@ function TimelineItem({
         {time || <span className="opacity-0">.</span>}
       </div>
     </div>
+  );
+}
+
+/**
+ * The job's progress panel, fed from the live-updates socket while `live`,
+ * otherwise from the polled snapshot.
+ */
+function LiveJobProgressPanel({
+  job,
+  live,
+  polledSnapshot,
+}: {
+  job: Job;
+  live: boolean;
+  polledSnapshot?: JobProgressSnapshot;
+}) {
+  const liveView = useUploadStore((state) =>
+    live
+      ? (state.uploadsByJobId.get(job.id) ?? state.jobsByJobId.get(job.id))
+      : undefined,
+  );
+  const startedAtMs = job.started_at ? Date.parse(job.started_at) : 0;
+  const liveSnapshot = useMemo(
+    () => liveProgressSnapshot(liveView, startedAtMs),
+    [liveView, startedAtMs],
+  );
+  return (
+    <JobProgressPanel job={job} snapshot={liveSnapshot ?? polledSnapshot} />
   );
 }

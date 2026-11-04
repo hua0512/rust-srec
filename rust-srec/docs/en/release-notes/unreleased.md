@@ -24,6 +24,11 @@
 - **Lists**: deleting the last items on the last page of the sessions, media outputs, pipeline jobs, presets or workflows list now goes back to the previous page, instead of showing an empty page that says nothing was found.
 - **Confirmations**: deleting a streamer or sessions now asks in an in-app dialog instead of a browser prompt, and deleting a streamer filter now asks first instead of deleting it at once.
 - **Unsaved changes**: leaving the template, platform, engine, preset or workflow editor with unsaved edits now asks before discarding them. Global settings and the streamer editor, which already asked, now ask in an in-app dialog.
+- **Live updates**: download, upload and check progress no longer stops for a while when your sign-in renews, including in a tab left in the background.
+- **Browser notifications**: critical-event notifications now appear while the app's tab is in the background, instead of only once you return to it.
+- **Streamer cards**: a recording that ended while the app's live connection had fallen behind no longer stays shown as recording, and check history and streamer status catch up as soon as the connection to the server comes back instead of staying out of date for several minutes.
+- **Session page**: a session that is still recording now shows each new segment when it finishes, keeps its duration and size up to date, and shows when it ends, without reloading the page.
+- **Job page**: a running job's page shows progress as it is reported and asks the server for updates far less often.
 - **FLV recordings**: files recorded with the Mesio engine now list Mesio as their creator instead of an outdated version number, and their real data size instead of 0, so media tools show correct file details.
 - **FLV recordings**: with the Mesio engine and **Fix FLV Streams** on, when a stream restarted mid-broadcast, for example after the streamer turned on stream delay, the recording could become one very long file that players showed as 0 seconds long and that was never split by the duration limit. Recordings now keep counting time across such restarts and split as configured.
 - **FLV recordings**: with the Mesio engine and **Fix FLV Streams** on, browser players can now show the length of a recording and seek in it when the stream sent no file information.

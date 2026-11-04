@@ -94,6 +94,9 @@ export function BrowserNotificationListener() {
       listEvents({ data: { limit: 50, offset: 0, priority: '10' } }),
     enabled: shouldPoll,
     refetchInterval: 60_000,
+    // Browser notifications matter most while the tab is in the background,
+    // so this poll is exempt from the app-wide pause for hidden tabs.
+    refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
   });
 

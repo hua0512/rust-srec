@@ -39,6 +39,13 @@ export interface UseAuthedWebSocketOptions {
    */
   reconnectDelay?: (event: CloseEvent, delay: number) => number | null;
   /**
+   * Runs when the socket drops without being asked to, once its reconnect is
+   * scheduled. The backend closes a socket when the token it was opened with
+   * expires, so this is where a caller renews the session: a renewed token
+   * that arrives while the reconnect waits is used straight away.
+   */
+  onUnexpectedClose?: (event: CloseEvent) => void;
+  /**
    * Runs on an intentional close — the session ended, the path changed or the
    * caller unmounted — and never on a reconnect, so callers can tear down
    * state that only makes sense while a session is live.
@@ -80,6 +87,7 @@ export function useAuthedWebSocket(
   const onStatusChangeRef = useRef(options.onStatusChange);
   const onDisconnectRef = useRef(options.onDisconnect);
   const reconnectDelayRef = useRef(options.reconnectDelay);
+  const onUnexpectedCloseRef = useRef(options.onUnexpectedClose);
   useEffect(() => {
     pathRef.current = path;
     debugLabelRef.current = debugLabel;
@@ -88,6 +96,7 @@ export function useAuthedWebSocket(
     onStatusChangeRef.current = options.onStatusChange;
     onDisconnectRef.current = options.onDisconnect;
     reconnectDelayRef.current = options.reconnectDelay;
+    onUnexpectedCloseRef.current = options.onUnexpectedClose;
   });
 
   // Read by connect() instead of captured, so renewing the access token does
@@ -189,6 +198,7 @@ export function useAuthedWebSocket(
 
       if (!intentionalCloseRef.current && accessTokenRef.current) {
         scheduleReconnect(event);
+        onUnexpectedCloseRef.current?.(event);
       }
     };
 

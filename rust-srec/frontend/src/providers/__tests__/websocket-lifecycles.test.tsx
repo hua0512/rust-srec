@@ -14,12 +14,12 @@ import { useDownloadStore } from '@/store/downloads';
 import { useUploadStore } from '@/store/uploads';
 import { WebSocketProvider } from '../WebSocketProvider';
 
-function sessionWithToken(accessToken: string) {
+function sessionWithToken(accessToken: string, expiresInMs = 60 * 60_000) {
   return {
     username: 'user',
     token: {
       access_token: accessToken,
-      expires_in: Date.now() + 60 * 60_000,
+      expires_in: Date.now() + expiresInMs,
       refresh_expires_in: Date.now() + 24 * 60 * 60_000,
     },
     roles: [],
@@ -33,6 +33,12 @@ const routeContext = vi.hoisted(() => ({
 
 vi.mock('@tanstack/react-router', () => ({
   useRouteContext: () => routeContext,
+}));
+
+const checkAuthFnMock = vi.hoisted(() => vi.fn());
+
+vi.mock('@/server/functions/auth', () => ({
+  checkAuthFn: checkAuthFnMock,
 }));
 
 class MockWebSocket {
@@ -136,6 +142,8 @@ describe('WebSocket lifecycle ownership', () => {
     vi.useFakeTimers();
     MockWebSocket.instances = [];
     routeContext.user = sessionWithToken('token-a');
+    checkAuthFnMock.mockReset();
+    checkAuthFnMock.mockRejectedValue(new Error('offline'));
     vi.stubGlobal('WebSocket', MockWebSocket);
   });
 
@@ -220,6 +228,37 @@ describe('WebSocket lifecycle ownership', () => {
       vi.advanceTimersByTime(WS_RECONNECT_WINDOW_MS);
     });
     expect(MockWebSocket.instances).toHaveLength(2);
+  });
+
+  it('renews an expiring session when the provider socket drops', async () => {
+    // Inside the renewal window, as when the backend closes the socket at
+    // token expiry.
+    routeContext.user = sessionWithToken('token-a', 10_000);
+    const queryClient = createQueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <WebSocketProvider>
+          <div>child</div>
+        </WebSocketProvider>
+      </QueryClientProvider>,
+    );
+
+    const firstSocket = MockWebSocket.instances[0];
+    // Let the check on mount fail first, so only the drop can renew.
+    await act(async () => {
+      firstSocket.emitOpen();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    checkAuthFnMock.mockResolvedValue(sessionWithToken('token-b'));
+
+    await act(async () => {
+      firstSocket.emitClose();
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    // Reopened with the renewed token without waiting out the backoff.
+    expect(MockWebSocket.instances).toHaveLength(2);
+    expect(MockWebSocket.instances[1].url).toContain('token-b');
   });
 
   it('keeps the log socket open across a token rotation and reopens it once after a drop', async () => {

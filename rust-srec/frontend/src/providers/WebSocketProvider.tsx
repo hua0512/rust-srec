@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useRef, ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, ReactNode } from 'react';
 import { useRouteContext } from '@tanstack/react-router';
 import {
   useQuery,
   useQueryClient,
   type QueryClient,
 } from '@tanstack/react-query';
-import { fromBinary, toBinary, create } from '@bufbuild/protobuf';
-import { sessionQueryOptions } from '@/api/session';
+import { fromBinary } from '@bufbuild/protobuf';
+import { sessionPollInterval, sessionQueryOptions } from '@/api/session';
 import { useDownloadStore, type DownloadMetrics } from '@/store/downloads';
 import { useUploadStore } from '@/store/uploads';
 import type {
@@ -24,9 +24,6 @@ import type {
 } from '@/api/proto/gen/download_progress_pb.js';
 import {
   WsMessageSchema,
-  ClientMessageSchema,
-  SubscribeRequestSchema,
-  UnsubscribeRequestSchema,
   EventType,
   JobPhase as WireJobPhase,
   UploadTerminalStatus,
@@ -50,6 +47,9 @@ import { invalidateCredentialAttention } from '@/api/credential-profiles';
  * one-second cadence while the page updates only a couple of times a second.
  */
 export const PROGRESS_FLUSH_MS = 500;
+
+/** Longest a finished segment waits before its session's lists are re-read. */
+const SEGMENT_REFRESH_MS = 30_000;
 
 export async function handleUploadTerminal(
   queryClient: QueryClient,
@@ -142,8 +142,10 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     // socket. A token is only wanted again when a dropped socket has to be
     // reopened; this poll is what supplies a usable one for that, and a
     // renewal that lands while a reconnect is waiting out its backoff is taken
-    // up straight away.
-    refetchInterval: 60_000,
+    // up straight away. It is timed to land inside the renewal window and
+    // keeps running in a hidden tab, whose sockets expire all the same.
+    refetchInterval: (query) => sessionPollInterval(query.state.data),
+    refetchIntervalInBackground: true,
   });
   const accessToken = sessionData?.token?.access_token;
 
@@ -223,6 +225,47 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => dropPendingProgress, [dropPendingProgress]);
+
+  // Sessions with a finished segment whose page lists are due a re-read.
+  const segmentRefreshTimersRef = useRef(
+    new Map<string, ReturnType<typeof setTimeout>>(),
+  );
+
+  /**
+   * Re-reads a session's segments and outputs after one of its segments
+   * finished; the segment is stored before the event is sent. Each re-read
+   * lists every segment, so bursts are collapsed into one read per
+   * SEGMENT_REFRESH_MS. A hidden tab only marks them stale, and its next
+   * focus reads them.
+   */
+  const scheduleSegmentRefresh = useCallback(
+    (sessionId: string) => {
+      const timers = segmentRefreshTimersRef.current;
+      if (timers.has(sessionId)) return;
+      timers.set(
+        sessionId,
+        setTimeout(() => {
+          timers.delete(sessionId);
+          const refetchType = document.hidden ? 'none' : 'active';
+          for (const queryKey of [
+            ['sessions', sessionId, 'segments'],
+            ['pipeline', 'outputs', sessionId],
+          ]) {
+            void queryClient.invalidateQueries({ queryKey, refetchType });
+          }
+        }, SEGMENT_REFRESH_MS),
+      );
+    },
+    [queryClient],
+  );
+
+  useEffect(() => {
+    const timers = segmentRefreshTimersRef.current;
+    return () => {
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
 
   const handleMessage = useCallback(
     (event: MessageEvent) => {
@@ -408,6 +451,15 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             }
             break;
 
+          case EventType.SEGMENT_COMPLETED:
+            if (
+              message.payload.case === 'segmentCompleted' &&
+              message.payload.value.sessionId
+            ) {
+              scheduleSegmentRefresh(message.payload.value.sessionId);
+            }
+            break;
+
           case EventType.DOWNLOAD_META:
             if (message.payload.case === 'downloadMeta') {
               upsertMeta(message.payload.value);
@@ -539,8 +591,13 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       queryClient,
       flushProgress,
       scheduleProgressFlush,
+      scheduleSegmentRefresh,
     ],
   );
+
+  // Whether this session's socket has opened before, so a reconnect can be
+  // told apart from the first connect.
+  const hasConnectedRef = useRef(false);
 
   /**
    * Ends the session's live view: signed out, or the provider unmounting. This
@@ -550,60 +607,48 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
    * reason.
    */
   const handleDisconnect = useCallback(() => {
+    hasConnectedRef.current = false;
     dropPendingProgress();
     clearAll();
     // Uploads live in their own store and have to be emptied separately.
     clearAllUploads();
   }, [clearAll, clearAllUploads, dropPendingProgress]);
 
-  const { send } = useAuthedWebSocket({
+  useAuthedWebSocket({
     accessToken,
     onMessage: handleMessage,
-    onOpen: (ws) => {
+    // A fresh socket starts unfiltered and opens with a full snapshot, so
+    // nothing has to be sent to receive every streamer's events.
+    onOpen: () => {
       // Attention changes while disconnected were never announced.
       void invalidateCredentialAttention(queryClient);
-      // Explicitly Clear any filters to ensure we receive everything
-      const unsubscribeReq = create(UnsubscribeRequestSchema, {});
-      const clientMessage = create(ClientMessageSchema, {
-        action: { case: 'unsubscribe', value: unsubscribeReq },
-      });
-      ws.send(toBinary(ClientMessageSchema, clientMessage));
+      if (hasConnectedRef.current) {
+        // Checks recorded and streamer state changes while the socket was
+        // down were never announced either.
+        void queryClient.invalidateQueries({
+          predicate: (query) =>
+            query.queryKey[0] === 'streamer' &&
+            query.queryKey[2] === 'check-history',
+        });
+        void queryClient.invalidateQueries({ queryKey: ['streamers'] });
+      }
+      hasConnectedRef.current = true;
     },
     onStatusChange: setConnectionStatus,
     onDisconnect: handleDisconnect,
+    // A drop at token expiry would otherwise retry with the expired token
+    // until the next scheduled check. A check inside the renewal window
+    // renews the token; a session that is still fresh is not re-fetched.
+    onUnexpectedClose: () => {
+      void queryClient.fetchQuery(sessionQueryOptions).catch(() => {});
+    },
   });
 
-  const subscribe = useCallback(
-    (streamerId: string) => {
-      const subscribeReq = create(SubscribeRequestSchema, { streamerId });
-      const clientMessage = create(ClientMessageSchema, {
-        action: { case: 'subscribe', value: subscribeReq },
-      });
-      send(toBinary(ClientMessageSchema, clientMessage));
-    },
-    [send],
-  );
-
-  const unsubscribe = useCallback(
-    (_streamerId: string) => {
-      // Protocol unsubscribe is global (clears filter).
-      const unsubscribeReq = create(UnsubscribeRequestSchema, {});
-      const clientMessage = create(ClientMessageSchema, {
-        action: { case: 'unsubscribe', value: unsubscribeReq },
-      });
-      send(toBinary(ClientMessageSchema, clientMessage));
-    },
-    [send],
-  );
+  const isConnected = connectionStatus === 'connected';
+  const contextValue = useMemo(() => ({ isConnected }), [isConnected]);
 
   return (
-    <WebSocketContext.Provider
-      value={{
-        isConnected: connectionStatus === 'connected',
-        subscribe,
-        unsubscribe,
-      }}
-    >
+    <WebSocketContext.Provider value={contextValue}>
       {children}
     </WebSocketContext.Provider>
   );
