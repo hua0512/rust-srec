@@ -21,6 +21,7 @@ import type { JobProgressSnapshot } from '@/api/schemas/session';
 import {
   newestLogPageOffset,
   replaceNewestLogPage,
+  sameLogRows,
   type JobLogPages,
 } from '@/lib/job-log-pages';
 import { hasReportedProgress, liveProgressSnapshot } from '@/lib/job-progress';
@@ -209,10 +210,27 @@ function JobDetailsPage() {
     getPipelineJobLogs({
       data: { id: jobId, limit: LOG_PAGE_SIZE, offset },
     }).then(
-      (page) =>
-        queryClient.setQueryData<JobLogPages>(logsQueryKey, (prev) =>
-          replaceNewestLogPage(prev, page),
-        ),
+      (page) => {
+        const prev = queryClient.getQueryData<JobLogPages>(logsQueryKey);
+        const next = replaceNewestLogPage(prev, page);
+        const held = prev?.pages.at(-1)?.items ?? [];
+        // A capped log keeps its count while its rows move on, so the read
+        // is refused even though it differs; every page has shifted then,
+        // and only a full re-read lines them up.
+        if (
+          next === prev &&
+          !sameLogRows(
+            held,
+            page.items,
+            0,
+            Math.max(held.length, page.items.length),
+          )
+        ) {
+          void queryClient.invalidateQueries({ queryKey: logsQueryKey });
+          return;
+        }
+        queryClient.setQueryData<JobLogPages>(logsQueryKey, next);
+      },
       () => {}, // The already-loaded rows stay on screen
     );
   }, [isJobActive, isJobTerminal, jobId, logsQueryKey, queryClient]);

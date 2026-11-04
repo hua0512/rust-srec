@@ -67,6 +67,12 @@ export function replaceNewestLogPage(
   // The reader paged on (or back to the start) while this read was in flight;
   // the window it describes is no longer the newest one.
   if (current.offset !== page.offset) return data;
+  // Known limitation: once a job reaches its row cap the backend evicts the
+  // oldest row for each new one, so the count and total stop changing and a
+  // live read of a capped job is refused here. Its new rows appear with the
+  // read taken when the job finishes. Accepting such reads would slide the
+  // loaded window under the reader instead, since earlier pages are not
+  // re-read and their offsets no longer line up.
   if (
     page.items.length <= current.items.length &&
     page.total <= current.total
