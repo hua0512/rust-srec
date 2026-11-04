@@ -552,6 +552,46 @@ export type MesioConfig = z.infer<typeof MesioConfigSchema>;
 export const MesioConfigOverrideSchema = overrideSettings(mesioShape);
 export type MesioConfigOverride = z.infer<typeof MesioConfigOverrideSchema>;
 
+const ENGINE_SHAPES = {
+  FFMPEG: ffmpegShape,
+  STREAMLINK: streamlinkShape,
+  MESIO: mesioShape,
+} satisfies Record<string, z.ZodRawShape>;
+
+function seedShape(shape: z.ZodRawShape, value: unknown) {
+  const current =
+    value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const seeded: Record<string, unknown> = { ...current };
+  for (const [key, field] of Object.entries(shape)) {
+    const fields = groupOf(field as z.ZodType);
+    if (fields) {
+      seeded[key] = seedShape(fields.shape, current[key]);
+    } else if (!(key in seeded)) {
+      seeded[key] = undefined;
+    }
+  }
+  return seeded;
+}
+
+/**
+ * The form value an engine editor starts from: `config`, with every field and group of the
+ * engine's settings present, unset ones as `undefined`.
+ *
+ * The settings inputs register their fields, and react-hook-form writes each one into the form
+ * values. A key the starting value lacks is then a new `undefined` key, and since react-hook-form
+ * compares key counts, the form stays changed after an edit is undone. A group stored as `null`
+ * becomes an object, because a field registered under `null` reads `null`. Saving drops the empty
+ * groups again (`withoutEmptyGroups`).
+ */
+export function engineConfigFormValue(
+  engineType: keyof typeof ENGINE_SHAPES,
+  config: unknown,
+): Record<string, unknown> {
+  return seedShape(ENGINE_SHAPES[engineType], config);
+}
+
 // --- Engine Override Schemas ---
 
 export const EngineConfigOverrideSchema = z.union([
