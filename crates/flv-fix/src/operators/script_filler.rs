@@ -13,8 +13,8 @@
 //! 3. Compatibility issues with certain players that expect standard metadata
 //! 4. Poor streaming performance when keyframe information is needed for adapting quality
 //!
-//! This operator ensures the first script tag in the FLV stream contains properly
-//! structured metadata including:
+//! This operator ensures each segment (everything after an FLV header) opens with
+//! a script tag containing properly structured metadata including:
 //!
 //! - Standard metadata properties like duration, dimensions, codec info
 //! - Empty keyframe index structure with pre-allocated space
@@ -23,7 +23,10 @@
 //! ## Operation
 //!
 //! The operator:
-//! - Processes only the first script tag in the stream
+//! - Processes only the first script tag in each segment
+//! - Holds a segment's leading sequence headers until a script tag or the first
+//!   media frame arrives, and inserts a minimal onMetaData tag ahead of them if
+//!   no script tag came before that frame
 //! - Preserves any existing metadata values when possible
 //! - Adds default values for missing but important metadata
 //! - Constructs empty keyframe arrays that can be filled by later operators
@@ -76,11 +79,19 @@ impl Default for ScriptFillerConfig {
     }
 }
 
+/// Sequence headers held while a segment's metadata is undecided: one per
+/// track, which is all `SplitOperator` lets through before the first media tag.
+const MAX_HELD_SEQUENCE_TAGS: usize = 2;
+
 /// Operator to modify the first script tag with keyframe information.
 pub struct ScriptKeyframesFillerOperator {
     context: Arc<StreamerContext>,
     config: ScriptFillerConfig,
-    seen_first_script_tag: bool,
+    /// Whether the current segment's onMetaData has been emitted, either the
+    /// source's first script tag or an inserted one.
+    metadata_decided: bool,
+    /// Sequence headers that arrived before the segment's metadata was decided.
+    held_sequence_tags: Vec<FlvTag>,
     has_video: bool,
 }
 
@@ -90,9 +101,50 @@ impl ScriptKeyframesFillerOperator {
         Self {
             context,
             config,
-            seen_first_script_tag: false,
+            metadata_decided: false,
+            held_sequence_tags: Vec::new(),
             has_video: true,
         }
+    }
+
+    fn release_held_sequence_tags(
+        &mut self,
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
+        for tag in std::mem::take(&mut self.held_sequence_tags) {
+            output(FlvData::Tag(tag))?;
+        }
+        Ok(())
+    }
+
+    /// Inserts a minimal onMetaData for a segment that reached media without
+    /// one, ahead of the held sequence headers.
+    ///
+    /// The writer fills in duration and the keyframe index on close only if the
+    /// file has an onMetaData tag, and players expect it ahead of audio and
+    /// video. A source onMetaData that arrives after this point is dropped
+    /// downstream as a duplicate.
+    fn insert_metadata(
+        &mut self,
+        next: &FlvTag,
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+    ) -> Result<(), PipelineError> {
+        self.metadata_decided = true;
+        let first = self.held_sequence_tags.first().unwrap_or(next);
+        info!(
+            streamer = %self.context.name,
+            timestamp_ms = first.timestamp_ms,
+            "Segment has no onMetaData; inserting one"
+        );
+        let metadata = FlvTag::new(
+            first.timestamp_ms,
+            first.stream_id,
+            FlvTagType::ScriptData,
+            false,
+            Self::create_script_tag_payload(),
+        );
+        output(FlvData::Tag(self.add_keyframes_to_amf(metadata)?))?;
+        self.release_held_sequence_tags(output)
     }
 
     fn create_script_tag_payload() -> Bytes {
@@ -257,19 +309,21 @@ impl Processor<FlvData> for ScriptKeyframesFillerOperator {
         match input {
             FlvData::Header(header) => {
                 debug!("{} Received Header. Forwarding.", self.context.name);
-                // reset flag
-                self.seen_first_script_tag = false;
+                // Held headers belong to the segment that received them.
+                self.release_held_sequence_tags(output)?;
+                self.metadata_decided = false;
                 self.has_video = header.has_video;
 
                 output(FlvData::Header(header))
             }
             FlvData::Tag(tag) if tag.tag_type() == FlvTagType::ScriptData => {
-                if !self.seen_first_script_tag {
+                if !self.metadata_decided {
                     debug!("{} Found first script tag. Modifying.", self.context.name);
-                    self.seen_first_script_tag = true;
+                    self.metadata_decided = true;
 
                     let inject_script = self.add_keyframes_to_amf(tag)?;
-                    output(FlvData::Tag(inject_script))
+                    output(FlvData::Tag(inject_script))?;
+                    self.release_held_sequence_tags(output)
                 } else {
                     debug!(
                         "{} Found subsequent script tag. Forwarding.",
@@ -279,12 +333,26 @@ impl Processor<FlvData> for ScriptKeyframesFillerOperator {
                     output(FlvData::Tag(tag))
                 }
             }
-            // Handle other FlvData types if necessary
+            // Sequence headers can reach this operator ahead of the source's
+            // onMetaData (GOP sorting releases them on their own at the first
+            // keyframe), so hold them until a script tag or media tag decides
+            // which onMetaData opens the segment.
+            FlvData::Tag(tag)
+                if !self.metadata_decided
+                    && (tag.is_video_sequence_header() || tag.is_audio_sequence_header())
+                    && self.held_sequence_tags.len() < MAX_HELD_SEQUENCE_TAGS =>
+            {
+                self.held_sequence_tags.push(tag);
+                Ok(())
+            }
+            FlvData::Tag(tag) if !self.metadata_decided => {
+                self.insert_metadata(&tag, output)?;
+                output(FlvData::Tag(tag))
+            }
+            FlvData::Tag(_) => output(input),
+            // A split marker or end of stream closes the segment.
             _ => {
-                // trace!(
-                //     "{} Received other data type. Forwarding.",
-                //     self.context.name
-                // );
+                self.release_held_sequence_tags(output)?;
                 output(input)
             }
         }
@@ -293,8 +361,9 @@ impl Processor<FlvData> for ScriptKeyframesFillerOperator {
     fn finish(
         &mut self,
         _context: &Arc<StreamerContext>,
-        _output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
+        output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
+        self.release_held_sequence_tags(output)?;
         info!(
             "{} Script modification operator finished.",
             self.context.name
