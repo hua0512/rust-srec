@@ -846,6 +846,12 @@ impl MaintenanceScheduler {
                 .map_err(|error| {
                     Error::Database(format!("Available-space probe task failed: {error}"))
                 })?
+                .map_err(|error| {
+                    Error::Database(format!(
+                        "could not list disks to check available space for '{}': {error}",
+                        path.display()
+                    ))
+                })?
                 .ok_or_else(|| {
                     Error::Database(format!(
                         "could not determine available space for '{}'",
@@ -917,11 +923,12 @@ fn is_due(last: Option<DateTime<Utc>>, now: DateTime<Utc>, interval: Duration) -
     })
 }
 
-fn available_space_for_path(path: &Path) -> Option<u64> {
-    let disks = Disks::new_with_refreshed_list();
+/// Free space on the longest mount point containing `path`, or `None` when no
+/// listed disk contains it.
+fn available_space_for_path(path: &Path) -> std::result::Result<Option<u64>, sysinfo::Error> {
+    let disks = Disks::new_with_refreshed_list()?;
     let path = path.to_string_lossy();
-    disks
-        .list()
+    Ok(disks
         .iter()
         .filter_map(|disk| {
             let mount = disk.mount_point().to_string_lossy();
@@ -929,7 +936,7 @@ fn available_space_for_path(path: &Path) -> Option<u64> {
                 .then_some((mount.len(), disk.available_space()))
         })
         .max_by_key(|(mount_len, _)| *mount_len)
-        .map(|(_, available)| available)
+        .map(|(_, available)| available))
 }
 
 #[cfg(test)]

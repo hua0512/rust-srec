@@ -30,7 +30,7 @@ async fn timed_out_sampling_remains_single_flight_and_late_cpu_requires_disk_ref
             started.send(()).unwrap();
             blocked.recv_timeout(Duration::from_secs(5)).unwrap();
         }
-        sampled(disks)
+        Ok(sampled(disks))
     });
     let (first, ()) = tokio::join!(sampler.sample(false, Duration::from_millis(30)), async {
         entered.await.unwrap();
@@ -131,7 +131,7 @@ async fn blocked_sampling_marks_stale_disks_but_cheap_probes_continue_and_recove
             if attempts == 1 && initially_critical {
                 Arc::make_mut(&mut metrics.disks)[0].available_space = 1;
             }
-            metrics
+            Ok(metrics)
         });
         let checker = HealthChecker::new();
         let cheap_calls = Arc::new(AtomicUsize::new(0));
@@ -219,7 +219,7 @@ fn blocked_sampler_does_not_delay_checker_or_tokio_runtime_shutdown() {
                     }
                     blocked.recv_timeout(Duration::from_secs(5)).unwrap();
                     sample_done.send(()).unwrap();
-                    sampled(disks)
+                    Ok(sampled(disks))
                 })
             });
             tokio::time::timeout(Duration::from_secs(1), entered)

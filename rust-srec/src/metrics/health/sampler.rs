@@ -15,15 +15,16 @@ struct SysinfoCache {
 }
 
 impl SysinfoCache {
-    fn new() -> Self {
-        Self {
+    /// Fails only where `sysinfo` does not support the platform.
+    fn new() -> Result<Self, sysinfo::Error> {
+        Ok(Self {
             system: System::new_with_specifics(
                 RefreshKind::nothing()
                     .with_cpu(CpuRefreshKind::everything())
                     .with_memory(MemoryRefreshKind::everything()),
-            ),
-            disks: sysinfo::Disks::new(),
-        }
+            )?,
+            disks: sysinfo::Disks::new()?,
+        })
     }
 
     /// In-place refresh of CPU and memory metrics.
@@ -76,14 +77,16 @@ impl SysinfoCache {
     }
 }
 
+type SampleResult = Result<SystemMetricsSnapshot, String>;
+
 struct SampleRequest {
     include_disks: bool,
-    reply: oneshot::Sender<SystemMetricsSnapshot>,
+    reply: oneshot::Sender<SampleResult>,
 }
 
 struct PendingSample {
     include_disks: bool,
-    reply: oneshot::Receiver<SystemMetricsSnapshot>,
+    reply: oneshot::Receiver<SampleResult>,
 }
 
 /// At most one probe is in flight, even after an async timeout. A blocked OS call
@@ -101,17 +104,24 @@ impl SystemSampler {
         let mut cache = None;
         Self::with_sampling_fn(move |include_disks| {
             // Both initialization and refresh may enter blocking filesystem/OS calls.
-            let cache = cache.get_or_insert_with(SysinfoCache::new);
+            // A failed initialization leaves the cache empty, so the next sample retries.
+            let cache = match &mut cache {
+                Some(cache) => cache,
+                empty => empty
+                    .insert(SysinfoCache::new().map_err(|error| {
+                        format!("Could not initialize system metrics: {error}")
+                    })?),
+            };
             cache.refresh_cpu_mem();
             if include_disks {
                 cache.refresh_disks();
             }
-            cache.snapshot(include_disks)
+            Ok(cache.snapshot(include_disks))
         })
     }
 
     pub(super) fn with_sampling_fn(
-        mut sample: impl FnMut(bool) -> SystemMetricsSnapshot + Send + 'static,
+        mut sample: impl FnMut(bool) -> SampleResult + Send + 'static,
     ) -> Self {
         let (requests, receiver) = sync_channel::<SampleRequest>(1);
         let worker = std::thread::Builder::new()
@@ -194,7 +204,11 @@ impl SystemSampler {
                     self.failure = Some(failure.clone());
                     return Err(failure);
                 }
-                Ok(Ok(snapshot)) => {
+                Ok(Ok(Err(error))) => {
+                    self.pending = None;
+                    return Err(error);
+                }
+                Ok(Ok(Ok(snapshot))) => {
                     self.pending = None;
                     self.latest = snapshot;
                     if !include_disks || sampled_disks {

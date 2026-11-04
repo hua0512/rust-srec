@@ -419,7 +419,7 @@ impl HealthChecker {
         metrics: SystemMetricsSnapshot,
     ) -> JoinHandle<()> {
         self.start_with_sampler(cancel, move || {
-            SystemSampler::with_sampling_fn(move |_| metrics.clone())
+            SystemSampler::with_sampling_fn(move |_| Ok(metrics.clone()))
         })
     }
 
@@ -776,7 +776,7 @@ mod tests {
         let checker = Arc::new(HealthChecker::new());
         let cancel = CancellationToken::new();
         let handle = checker.start_with_sampler(cancel.child_token(), || {
-            SystemSampler::with_sampling_fn(|_| SystemMetricsSnapshot::empty())
+            SystemSampler::with_sampling_fn(|_| Ok(SystemMetricsSnapshot::empty()))
         });
 
         // Let one tick land.
@@ -829,7 +829,7 @@ mod tests {
 
         let cancel = CancellationToken::new();
         let handle = checker.start_with_sampler(cancel.child_token(), || {
-            SystemSampler::with_sampling_fn(|_| SystemMetricsSnapshot::empty())
+            SystemSampler::with_sampling_fn(|_| Ok(SystemMetricsSnapshot::empty()))
         });
         // The first-fill triggers both probes; the panic happens inside
         // its spawned task, the good probe completes normally.
