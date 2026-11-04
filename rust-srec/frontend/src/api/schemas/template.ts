@@ -6,6 +6,7 @@ import {
   DanmuStatisticsObjectSchema,
   DanmuStatisticsOverrideSchema,
   DownloadRetryPolicyObjectSchema,
+  DownloadRetryPolicyReadSchema,
   jsonTextField,
 } from './common';
 import { ProxyRouteSchema } from './proxies';
@@ -48,7 +49,7 @@ export const TemplateSchema = z.object({
   ),
   download_retry_policy: jsonTextField(
     'download_retry_policy',
-    DownloadRetryPolicyObjectSchema,
+    DownloadRetryPolicyReadSchema,
   ),
   proxy_route: ProxyRouteSchema.optional(),
   pipeline: jsonTextField('pipeline', DagPipelineDefinitionSchema),

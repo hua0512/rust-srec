@@ -5,6 +5,7 @@ import {
   DanmuStatisticsObjectSchema,
   DanmuStatisticsOverrideSchema,
   DownloadRetryPolicyObjectSchema,
+  DownloadRetryPolicyReadSchema,
   jsonTextField,
 } from './common';
 import { ProxyRouteSchema } from './proxies';
@@ -49,7 +50,7 @@ export const PlatformConfigSchema = z.object({
   ),
   download_retry_policy: jsonTextField(
     'download_retry_policy',
-    DownloadRetryPolicyObjectSchema,
+    DownloadRetryPolicyReadSchema,
   ),
   /** The platform's route; absent on a write keeps the stored one. */
   proxy_route: ProxyRouteSchema.optional(),

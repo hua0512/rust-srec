@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { jsonTextField } from '../common';
 import { PlatformConfigSchema } from '../platform';
+import { CreateStreamerSchema, StreamerSchema } from '../streamer';
 import { TemplateSchema } from '../template';
 
 const schema = z.object({
@@ -142,5 +143,71 @@ describe('config rows with unreadable JSON columns', () => {
       preferred_qualities: ['source'],
     });
     expect(parsed.danmu_statistics).toBeNull();
+  });
+});
+
+// A streamer's config is free-form JSON that the backend reads leniently: one
+// value it tolerates used to reject the entire streamer list.
+describe('streamer configs the backend tolerates', () => {
+  const config = {
+    extractor: 'Streamlink',
+    offline_check_count: 0,
+    offline_check_delay_ms: 10,
+    download_retry_policy: '{"max_retries":5}',
+    stream_selection_config: '{"preferred_formats":null}',
+    pipeline: JSON.stringify({
+      name: 'p',
+      steps: [
+        {
+          id: 'remux',
+          step: { type: 'preset', name: 'remux' },
+          retry: null,
+          timeout_secs: null,
+        },
+      ],
+    }),
+  };
+
+  it('reads them as the backend resolves them', () => {
+    const parsed = StreamerSchema.parse({
+      id: 'streamer-1',
+      name: 'Streamer',
+      url: 'https://example.com/live',
+      platform_config_id: 'platform-1',
+      state: 'NOT_LIVE',
+      priority: 'NORMAL',
+      enabled: true,
+      consecutive_error_count: 0,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      streamer_specific_config: config,
+    });
+
+    expect(parsed.streamer_specific_config).toMatchObject({
+      extractor: 'streamlink',
+      offline_check_count: 1,
+      offline_check_delay_ms: 1000,
+      download_retry_policy: { max_retries: 5, initial_delay_ms: 1000 },
+      stream_selection_config: { preferred_formats: null },
+      pipeline: { steps: [{ id: 'remux', retry: null }] },
+    });
+  });
+
+  it('still refuses them in a request', () => {
+    const request = { name: 'Streamer', url: 'https://example.com/live' };
+    for (const [key, value] of [
+      ['extractor', 'Streamlink'],
+      ['offline_check_count', 0],
+      ['offline_check_delay_ms', 10],
+      ['download_retry_policy', { max_retries: 5 }],
+    ] as const) {
+      expect(
+        CreateStreamerSchema.safeParse({
+          ...request,
+          enabled: true,
+          streamer_specific_config: { [key]: value },
+        }).success,
+      ).toBe(false);
+    }
   });
 });

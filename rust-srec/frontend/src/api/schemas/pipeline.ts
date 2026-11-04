@@ -309,8 +309,9 @@ export const DagStepDefinitionSchema = z.object({
   id: z.string(),
   step: PipelineStepSchema,
   depends_on: z.array(z.string()).optional(),
-  retry: StepRetryPolicySchema.optional(),
-  timeout_secs: z.number().int().min(1).optional(),
+  // `Option`s on the backend `DagStep`, which reads `null` as unset.
+  retry: StepRetryPolicySchema.nullish(),
+  timeout_secs: z.number().int().min(1).nullish(),
 });
 export type DagStepDefinition = z.infer<typeof DagStepDefinitionSchema>;
 
