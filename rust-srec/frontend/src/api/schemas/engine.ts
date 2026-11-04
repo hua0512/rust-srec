@@ -635,7 +635,7 @@ export type EngineType = z.infer<typeof EngineTypeSchema>;
 // This provides react-hook-form compatibility while maintaining runtime validation
 export const CreateEngineRequestSchema = z
   .object({
-    name: z.string().min(1, 'Name is required'),
+    name: z.string().min(1, zodError(msg`Name is required`)),
     engine_type: EngineTypeSchema,
     config: z.record(z.string(), z.unknown()),
   })
@@ -676,7 +676,10 @@ export type CreateEngineRequest = z.infer<typeof CreateEngineRequestSchema>;
 // --- Update Request Schema ---
 export const UpdateEngineRequestSchema = z
   .object({
-    name: z.string().min(1, 'Name is required').optional(),
+    name: z
+      .string()
+      .min(1, zodError(msg`Name is required`))
+      .optional(),
     engine_type: EngineTypeSchema.optional(),
     config: z.record(z.string(), z.unknown()).optional(),
     version: z.string().optional(),

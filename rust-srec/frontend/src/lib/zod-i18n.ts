@@ -5,9 +5,11 @@ import { en, zhCN } from 'zod/locales';
 
 // Zod resolves an issue's message when it validates, not when the schema is built, so schema
 // constants shared with server validators can carry translatable messages. The browser binds its
-// one Lingui instance here; the server never does, because a process-wide binding would leak one
-// request's locale into another, and its validators fall back to Zod's English messages.
+// one Lingui instance here. The server binds only a fixed English instance as the fallback: a
+// per-request binding would leak one request's locale into another, and production builds compile
+// `msg` descriptors to their id alone, so without a catalog there is no text to show.
 let active: I18n | undefined;
+let fallback: I18n | undefined;
 
 const zodLocales: Record<string, ReturnType<typeof en>> = {
   en: en(),
@@ -19,7 +21,13 @@ const zodLocales: Record<string, ReturnType<typeof en>> = {
  * schema validates, not while it is built.
  */
 export function zodText(descriptor: MessageDescriptor): string | undefined {
-  return active ? active._(descriptor) : descriptor.message;
+  const i18n = active ?? fallback;
+  return i18n ? i18n._(descriptor) : descriptor.message;
+}
+
+/** Sets the English instance that server validators word their messages with. */
+export function setZodFallbackI18n(i18n: I18n) {
+  fallback = i18n;
 }
 
 /** A schema's error parameter whose message follows the active locale. */

@@ -121,34 +121,36 @@ export function PlatformOverrideCard({
       <Collapsible open={isOpen} onOpenChange={setIsOpen}>
         <CardHeader className="p-0">
           <div className="flex items-center justify-between p-4">
-            <CollapsibleTrigger asChild>
-              <button
-                type="button"
-                className="group/trigger flex items-center gap-4 flex-1 cursor-pointer text-left rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <span className="flex w-8 h-8 items-center justify-center rounded-md group-hover/trigger:bg-muted/80 shrink-0">
-                  {isOpen ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  )}
-                </span>
+            <h4 className="flex flex-1 min-w-0">
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  className="group/trigger flex items-center gap-4 flex-1 cursor-pointer text-left rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <span className="flex w-8 h-8 items-center justify-center rounded-md group-hover/trigger:bg-muted/80 shrink-0">
+                    {isOpen ? (
+                      <ChevronDown className="h-4 w-4" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4" />
+                    )}
+                  </span>
 
-                <span className="flex items-center gap-3">
-                  <span className="p-2 bg-teal-500/10 text-teal-600 dark:text-teal-400 rounded-lg">
-                    <LayoutGrid className="w-5 h-5" />
-                  </span>
-                  <span className="flex flex-col">
-                    <span className="font-semibold text-base">
-                      {formatPlatformName(platformName)}
+                  <span className="flex items-center gap-3">
+                    <span className="p-2 bg-teal-500/10 text-teal-600 dark:text-teal-400 rounded-lg">
+                      <LayoutGrid className="w-5 h-5" />
                     </span>
-                    <span className="text-xs text-muted-foreground">
-                      <Trans>Platform Override Settings</Trans>
+                    <span className="flex flex-col">
+                      <span className="font-semibold text-base">
+                        {formatPlatformName(platformName)}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        <Trans>Platform Override Settings</Trans>
+                      </span>
                     </span>
                   </span>
-                </span>
-              </button>
-            </CollapsibleTrigger>
+                </button>
+              </CollapsibleTrigger>
+            </h4>
 
             <Button
               variant="ghost"
