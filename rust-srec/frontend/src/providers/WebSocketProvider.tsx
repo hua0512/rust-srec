@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, ReactNode } from 'react';
 import { useRouteContext } from '@tanstack/react-router';
 import {
   useQuery,
   useQueryClient,
   type QueryClient,
 } from '@tanstack/react-query';
-import { fromBinary, toBinary, create } from '@bufbuild/protobuf';
+import { fromBinary } from '@bufbuild/protobuf';
 import { sessionPollInterval, sessionQueryOptions } from '@/api/session';
 import { useDownloadStore, type DownloadMetrics } from '@/store/downloads';
 import { useUploadStore } from '@/store/uploads';
@@ -24,9 +24,6 @@ import type {
 } from '@/api/proto/gen/download_progress_pb.js';
 import {
   WsMessageSchema,
-  ClientMessageSchema,
-  SubscribeRequestSchema,
-  UnsubscribeRequestSchema,
   EventType,
   JobPhase as WireJobPhase,
   UploadTerminalStatus,
@@ -558,18 +555,14 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     clearAllUploads();
   }, [clearAll, clearAllUploads, dropPendingProgress]);
 
-  const { send } = useAuthedWebSocket({
+  useAuthedWebSocket({
     accessToken,
     onMessage: handleMessage,
-    onOpen: (ws) => {
+    // A fresh socket starts unfiltered and opens with a full snapshot, so
+    // nothing has to be sent to receive every streamer's events.
+    onOpen: () => {
       // Attention changes while disconnected were never announced.
       void invalidateCredentialAttention(queryClient);
-      // Explicitly Clear any filters to ensure we receive everything
-      const unsubscribeReq = create(UnsubscribeRequestSchema, {});
-      const clientMessage = create(ClientMessageSchema, {
-        action: { case: 'unsubscribe', value: unsubscribeReq },
-      });
-      ws.send(toBinary(ClientMessageSchema, clientMessage));
     },
     onStatusChange: setConnectionStatus,
     onDisconnect: handleDisconnect,
@@ -581,37 +574,11 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     },
   });
 
-  const subscribe = useCallback(
-    (streamerId: string) => {
-      const subscribeReq = create(SubscribeRequestSchema, { streamerId });
-      const clientMessage = create(ClientMessageSchema, {
-        action: { case: 'subscribe', value: subscribeReq },
-      });
-      send(toBinary(ClientMessageSchema, clientMessage));
-    },
-    [send],
-  );
-
-  const unsubscribe = useCallback(
-    (_streamerId: string) => {
-      // Protocol unsubscribe is global (clears filter).
-      const unsubscribeReq = create(UnsubscribeRequestSchema, {});
-      const clientMessage = create(ClientMessageSchema, {
-        action: { case: 'unsubscribe', value: unsubscribeReq },
-      });
-      send(toBinary(ClientMessageSchema, clientMessage));
-    },
-    [send],
-  );
+  const isConnected = connectionStatus === 'connected';
+  const contextValue = useMemo(() => ({ isConnected }), [isConnected]);
 
   return (
-    <WebSocketContext.Provider
-      value={{
-        isConnected: connectionStatus === 'connected',
-        subscribe,
-        unsubscribe,
-      }}
-    >
+    <WebSocketContext.Provider value={contextValue}>
       {children}
     </WebSocketContext.Provider>
   );

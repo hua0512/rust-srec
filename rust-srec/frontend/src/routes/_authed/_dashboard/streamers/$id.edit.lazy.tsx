@@ -9,7 +9,6 @@ import { Filter as FilterIcon } from 'lucide-react';
 
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDownloadStore } from '@/store/downloads';
-import { useDownloadProgress } from '@/hooks/use-download-progress';
 import { getPlatformFromUrl } from '@/lib/utils';
 import {
   deleteFilter,
@@ -44,9 +43,6 @@ function EditStreamerPage() {
   const { i18n } = useLingui();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-
-  // Keeps the active-download card live while this page is open.
-  useDownloadProgress({ streamerId: id });
 
   const { data: streamer, isLoading } = useQuery({
     queryKey: ['streamer', id],
