@@ -20,6 +20,7 @@ import {
 import {
   AllPlatformConfigsSchema,
   ExtractorSelectionSchema,
+  extractorSelectionRead,
 } from './platform-configs';
 import { ProxyRouteSchema } from './proxies';
 
@@ -189,16 +190,7 @@ export const StreamerSpecificConfigReadSchema =
       )
       .nullable()
       .optional(),
-    // The backend matches the name case-insensitively and inherits when it is unknown.
-    extractor: z
-      .preprocess((value) => {
-        if (typeof value !== 'string') return null;
-        const selection = ExtractorSelectionSchema.safeParse(
-          value.toLowerCase(),
-        );
-        return selection.success ? selection.data : null;
-      }, ExtractorSelectionSchema.nullable())
-      .optional(),
+    extractor: extractorSelectionRead({ trim: false }),
     offline_check_count: offlineCheckOverrideRead(1),
     offline_check_delay_ms: offlineCheckOverrideRead(1000),
   });

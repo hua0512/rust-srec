@@ -12,6 +12,7 @@ import {
 } from '../../api/schemas';
 import { z } from 'zod';
 import { CredentialSelectionSchema } from '@/api/schemas/credential-profiles';
+import { ExtractorSelectionSchema } from '@/api/schemas/platform-configs';
 
 // --- Global Config ---
 export const getGlobalConfig = createServerFn({ method: 'GET' }).handler(
@@ -89,6 +90,7 @@ const OVERRIDE_WRITE_FIELDS = {
 
 const PlatformConfigWriteSchema = PlatformConfigSchema.partial().extend({
   ...OVERRIDE_WRITE_FIELDS,
+  extractor: ExtractorSelectionSchema.nullable().optional(),
   credential_selection: CredentialSelectionSchema.optional().transform(
     (value) => (value === undefined ? undefined : JSON.stringify(value)),
   ),

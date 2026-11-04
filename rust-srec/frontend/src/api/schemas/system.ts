@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { DanmuStatisticsObjectSchema, jsonTextField } from './common';
-import { ExtractorSelectionSchema } from './platform-configs';
+import {
+  ExtractorSelectionSchema,
+  extractorSelectionRead,
+} from './platform-configs';
 import { DagPipelineDefinitionSchema } from './pipeline';
 import { ProxyRouteSchema } from './proxies';
 
@@ -29,7 +32,7 @@ export const GlobalConfigSchema = z.object({
   offline_check_delay_ms: z.number(),
   offline_check_count: z.number(),
   default_download_engine: z.string(),
-  default_extractor: ExtractorSelectionSchema.nullable().optional(),
+  default_extractor: extractorSelectionRead({ trim: true }),
   max_concurrent_cpu_jobs: z.number(),
   max_concurrent_io_jobs: z.number(),
   job_history_retention_days: z.number().int().min(0),

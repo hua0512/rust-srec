@@ -147,3 +147,19 @@ export const AllPlatformConfigsSchema = z.union([
  */
 export const ExtractorSelectionSchema = z.enum(['auto', 'streamlink']);
 export type ExtractorSelection = z.infer<typeof ExtractorSelectionSchema>;
+
+/**
+ * A stored extractor name as the backend resolves it: matched case-insensitively, and `null`
+ * (inherit) when it is unknown, so one bad row cannot fail a whole response. `trim` matches the
+ * layers whose names the backend trims first. Requests and forms keep the strict
+ * `ExtractorSelectionSchema`.
+ */
+export const extractorSelectionRead = ({ trim }: { trim: boolean }) =>
+  z
+    .preprocess((value) => {
+      if (typeof value !== 'string') return null;
+      const name = trim ? value.trim() : value;
+      const selection = ExtractorSelectionSchema.safeParse(name.toLowerCase());
+      return selection.success ? selection.data : null;
+    }, ExtractorSelectionSchema.nullable())
+    .optional();
