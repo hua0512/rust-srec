@@ -60,6 +60,21 @@ export function snapshotProgress(
   };
 }
 
+/** Whether a live entry carries any progress yet. */
+export function hasReportedProgress(
+  view: UploadView | JobView | undefined,
+): boolean {
+  if (!view) return false;
+  const job: Partial<JobView> = view;
+  return (
+    view.percent !== undefined ||
+    view.bytesDone !== undefined ||
+    view.progressFilesDone !== undefined ||
+    view.phase !== undefined ||
+    job.outTimeMs !== undefined
+  );
+}
+
 /**
  * A job's live progress from the socket, in the shape of the job page's
  * snapshot, or undefined until it has reported any. `notBeforeMs` is the
@@ -71,17 +86,8 @@ export function liveProgressSnapshot(
   view: UploadView | JobView | undefined,
   notBeforeMs: number,
 ): JobProgressSnapshot | undefined {
-  if (!view) return undefined;
+  if (!view || !hasReportedProgress(view)) return undefined;
   const job: Partial<JobView> = view;
-  if (
-    view.percent === undefined &&
-    view.bytesDone === undefined &&
-    view.progressFilesDone === undefined &&
-    view.phase === undefined &&
-    job.outTimeMs === undefined
-  ) {
-    return undefined;
-  }
   const toNumber = (value: bigint | undefined) =>
     value === undefined ? undefined : Number(value);
   return {
