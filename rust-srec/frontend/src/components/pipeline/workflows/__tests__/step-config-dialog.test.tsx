@@ -322,6 +322,31 @@ describe('StepConfigDialog preset steps', () => {
     });
   });
 
+  it('detaches the stored preset config, not changes made in the preview', async () => {
+    const step: DagStepDefinition = {
+      id: 'thumb',
+      depends_on: [],
+      step: { type: 'preset', name: 'thumbnail' },
+    };
+    const { onSave } = renderDialog(step);
+
+    const detach = await screen.findByRole('button', {
+      name: /Detach & Edit/i,
+    });
+    await waitFor(() => expect(detach).toBeEnabled());
+    expect(screen.getByRole('spinbutton', { name: 'Width' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('switch'));
+
+    fireEvent.click(detach);
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    expect(onSave.mock.calls[0][0].step.config).toMatchObject({
+      preserve_resolution: false,
+      width: 640,
+    });
+  });
+
   it('saves the detached edits after the preset stops resolving', async () => {
     const step: DagStepDefinition = {
       id: 'thumb',
