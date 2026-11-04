@@ -52,13 +52,17 @@ async function incomingRequestSignal(): Promise<AbortSignal | undefined> {
   }
 }
 
-function timeoutSignal(ms: number): AbortSignal {
+/** Functions that release what a fallback signal holds once the call is done. */
+type Cleanups = Array<() => void>;
+
+function timeoutSignal(ms: number, cleanups: Cleanups): AbortSignal {
   if (typeof AbortSignal.timeout === 'function') return AbortSignal.timeout(ms);
   const controller = new AbortController();
-  setTimeout(
+  const timer = setTimeout(
     () => controller.abort(new DOMException('Timed out', 'TimeoutError')),
     ms,
   );
+  cleanups.push(() => clearTimeout(timer));
   return controller.signal;
 }
 
@@ -66,7 +70,7 @@ function timeoutSignal(ms: number): AbortSignal {
  * One signal that aborts with the first of `signals`. The desktop app runs
  * this in the system WebView, and `AbortSignal.any` needs Safari 17.4 there.
  */
-function anySignal(signals: AbortSignal[]): AbortSignal {
+function anySignal(signals: AbortSignal[], cleanups: Cleanups): AbortSignal {
   if (signals.length === 1) return signals[0];
   if (typeof AbortSignal.any === 'function') return AbortSignal.any(signals);
   const controller = new AbortController();
@@ -75,9 +79,11 @@ function anySignal(signals: AbortSignal[]): AbortSignal {
       controller.abort(signal.reason);
       break;
     }
-    signal.addEventListener('abort', () => controller.abort(signal.reason), {
-      once: true,
-    });
+    // Removed when the call is done, so a long-lived caller signal does not
+    // keep one listener per finished call.
+    const onAbort = () => controller.abort(signal.reason);
+    signal.addEventListener('abort', onAbort, { once: true });
+    cleanups.push(() => signal.removeEventListener('abort', onAbort));
   }
   return controller.signal;
 }
@@ -152,104 +158,116 @@ export const fetchBackend = async <T = any>(
   const url = `${baseUrl}${path}`;
 
   const clientSignal = await incomingRequestSignal();
+  const cleanups: Cleanups = [];
   const requestSignal = () =>
     anySignal(
-      [timeoutSignal(timeoutMs), clientSignal, init.signal].filter(
+      [timeoutSignal(timeoutMs, cleanups), clientSignal, init.signal].filter(
         (signal): signal is AbortSignal => signal != null,
       ),
+      cleanups,
     );
 
-  const response = await fetch(url, {
-    ...init,
-    headers,
-    signal: requestSignal(),
-  });
-
-  if (import.meta.env.DEV) {
-    console.log(
-      `[API] ${init.method || 'GET'} ${endpoint} - Status: ${response.status}`,
-    );
+  try {
+    return await sendWithRefresh();
+  } finally {
+    for (const cleanup of cleanups) cleanup();
   }
 
-  // Handle errors
-  if (!response.ok) {
-    let failed = response;
-    if (response.status === 401) {
-      console.log(`[API] 401 Unauthorized for ${url}. Attempting refresh...`);
-      // Read the 401 now: its signal's timeout keeps running during the
-      // refresh and would otherwise fail the body read reported below.
-      failed = new Response(await response.arrayBuffer(), {
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers,
-      });
+  async function sendWithRefresh(): Promise<T> {
+    const response = await fetch(url, {
+      ...init,
+      headers,
+      signal: requestSignal(),
+    });
 
-      let refresh: Awaited<ReturnType<typeof refreshAuthTokenGlobal>> | null =
-        null;
-      try {
-        // Use the global refresh mechanism to prevent race conditions
-        refresh = await refreshAuthTokenGlobal();
-      } catch (refreshError) {
-        if (refreshError instanceof BackendApiError) {
-          throw refreshError;
-        }
-        console.error(
-          '[API] Token refresh failed during interceptor:',
-          refreshError,
-        );
-        // Fall through to throw original 401
-      }
-
-      if (refresh?.status === 'refreshed') {
-        // Failures of the retry itself, an abort or timeout included, are
-        // its own and propagate instead of being reported as the first 401.
-        console.log(`[API] Token refreshed. Retrying ${url}...`);
-        headers.set('Authorization', `Bearer ${refresh.accessToken}`);
-        const retryResponse = await fetch(url, {
-          ...init,
-          headers,
-          signal: requestSignal(),
-        });
-
-        if (retryResponse.ok) {
-          // Return JSON if possible from retry
-          const contentType = retryResponse.headers.get('content-type');
-          if (contentType && contentType.includes('application/json')) {
-            return retryResponse.json();
-          }
-          if (retryResponse.status === 204) {
-            return null as T;
-          }
-          return retryResponse.text() as unknown as T;
-        }
-        console.log(`[API] Retry failed with status: ${retryResponse.status}`);
-        // If retry failed, throw error from retry response
-        await throwBackendError(retryResponse);
-      } else if (refresh) {
-        // No usable token, so the request is not retried and the original
-        // 401 is reported below. Session handling belongs to
-        // refreshAuthTokenGlobal, which cleared it for 'rejected' and left
-        // it intact for 'transient' or 'superseded'. In particular, an old
-        // request must never be replayed as a newly signed-in user.
-        console.log(
-          `[API] Refresh ${refresh.status} for retry of ${endpoint}.`,
-        );
-      }
+    if (import.meta.env.DEV) {
+      console.log(
+        `[API] ${init.method || 'GET'} ${endpoint} - Status: ${response.status}`,
+      );
     }
 
-    await throwBackendError(failed);
-  }
+    // Handle errors
+    if (!response.ok) {
+      let failed = response;
+      if (response.status === 401) {
+        console.log(`[API] 401 Unauthorized for ${url}. Attempting refresh...`);
+        // Read the 401 now: its signal's timeout keeps running during the
+        // refresh and would otherwise fail the body read reported below.
+        failed = new Response(await response.arrayBuffer(), {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+        });
 
-  // Handle empty responses
-  if (response.status === 204) {
-    return null as T;
-  }
+        let refresh: Awaited<ReturnType<typeof refreshAuthTokenGlobal>> | null =
+          null;
+        try {
+          // Use the global refresh mechanism to prevent race conditions
+          refresh = await refreshAuthTokenGlobal();
+        } catch (refreshError) {
+          if (refreshError instanceof BackendApiError) {
+            throw refreshError;
+          }
+          console.error(
+            '[API] Token refresh failed during interceptor:',
+            refreshError,
+          );
+          // Fall through to throw original 401
+        }
 
-  // Return JSON if possible
-  const contentType = response.headers.get('content-type');
-  if (contentType && contentType.includes('application/json')) {
-    return response.json();
-  }
+        if (refresh?.status === 'refreshed') {
+          // Failures of the retry itself, an abort or timeout included, are
+          // its own and propagate instead of being reported as the first 401.
+          console.log(`[API] Token refreshed. Retrying ${url}...`);
+          headers.set('Authorization', `Bearer ${refresh.accessToken}`);
+          const retryResponse = await fetch(url, {
+            ...init,
+            headers,
+            signal: requestSignal(),
+          });
 
-  return response.text() as unknown as T;
+          if (retryResponse.ok) {
+            // Return JSON if possible from retry
+            const contentType = retryResponse.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+              return retryResponse.json();
+            }
+            if (retryResponse.status === 204) {
+              return null as T;
+            }
+            return retryResponse.text() as unknown as T;
+          }
+          console.log(
+            `[API] Retry failed with status: ${retryResponse.status}`,
+          );
+          // If retry failed, throw error from retry response
+          await throwBackendError(retryResponse);
+        } else if (refresh) {
+          // No usable token, so the request is not retried and the original
+          // 401 is reported below. Session handling belongs to
+          // refreshAuthTokenGlobal, which cleared it for 'rejected' and left
+          // it intact for 'transient' or 'superseded'. In particular, an old
+          // request must never be replayed as a newly signed-in user.
+          console.log(
+            `[API] Refresh ${refresh.status} for retry of ${endpoint}.`,
+          );
+        }
+      }
+
+      await throwBackendError(failed);
+    }
+
+    // Handle empty responses
+    if (response.status === 204) {
+      return null as T;
+    }
+
+    // Return JSON if possible
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('application/json')) {
+      return response.json();
+    }
+
+    return response.text() as unknown as T;
+  }
 };
