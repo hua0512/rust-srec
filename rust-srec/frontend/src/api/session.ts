@@ -24,7 +24,7 @@ const SESSION_POLL_MAX_MS = 60_000;
  */
 const SESSION_POLL_RENEWAL_LEAD_MS = 5_000;
 
-/** Shortest wait between checks, for a renewal that did not go through. */
+/** Shortest wait between checks. */
 const SESSION_POLL_MIN_MS = 5_000;
 
 /**
@@ -32,6 +32,12 @@ const SESSION_POLL_MIN_MS = 5_000;
  * before it expires. Sockets are closed by the backend once the token they
  * were opened with expires, so waiting a fixed interval could let it lapse
  * and leave a reopened socket with nothing valid to present.
+ *
+ * Past the renewal point the token is overdue: renewal failed for now (the
+ * backend is unreachable) or this clock runs ahead of the server's. Each
+ * check then waits as long as the token has already been overdue, which
+ * doubles the wait every check up to the longest one instead of asking
+ * for a renewal every few seconds in every tab.
  */
 export function sessionPollInterval(
   session: { token: { expires_in: number } } | null | undefined,
@@ -41,11 +47,11 @@ export function sessionPollInterval(
   if (expiry === undefined || !Number.isFinite(expiry)) {
     return SESSION_POLL_MAX_MS;
   }
-  const untilRenewal =
-    expiry - TOKEN_RENEWAL_BUFFER_MS + SESSION_POLL_RENEWAL_LEAD_MS - now;
+  const renewAt =
+    expiry - TOKEN_RENEWAL_BUFFER_MS + SESSION_POLL_RENEWAL_LEAD_MS;
   return Math.max(
     SESSION_POLL_MIN_MS,
-    Math.min(SESSION_POLL_MAX_MS, untilRenewal),
+    Math.min(SESSION_POLL_MAX_MS, Math.abs(renewAt - now)),
   );
 }
 
