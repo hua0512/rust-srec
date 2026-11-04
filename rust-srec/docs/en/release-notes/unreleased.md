@@ -10,6 +10,8 @@
 
 ## Fixes
 
+- **Presets**: opening a saved remux preset or workflow step that encodes with NVIDIA (NVENC) could switch its encoder preset to Medium, and the next save kept that change. The saved preset is now kept.
+- **Streamers page**: one streamer whose saved settings could not be read no longer stops the whole streamers list from loading. Those settings show as not configured.
 - **FLV recordings**: files recorded with the Mesio engine now list Mesio as their creator instead of an outdated version number, and their real data size instead of 0, so media tools show correct file details.
 - **FLV recordings**: with the Mesio engine and **Fix FLV Streams** on, when a stream restarted mid-broadcast, for example after the streamer turned on stream delay, the recording could become one very long file that players showed as 0 seconds long and that was never split by the duration limit. Recordings now keep counting time across such restarts and split as configured.
 - **FLV recordings**: browser players can now show the length of a recording and seek in it when the stream sent no file information. This applies to recordings made with the Mesio engine and **Fix FLV Streams** on; FFmpeg and Streamlink recordings are unchanged.

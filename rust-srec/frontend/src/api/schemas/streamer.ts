@@ -9,6 +9,7 @@ import {
   DanmuStatisticsOverrideSchema,
   DownloadRetryPolicyObjectSchema,
   PrioritySchema,
+  decodeJsonText,
 } from './common';
 import {
   BatchIdsSchema,
@@ -41,7 +42,7 @@ export const StreamerSpecificConfigSchema = z.object({
   // Use z.preprocess for all complex fields that might come as JSON strings
   stream_selection_config: z
     .preprocess(
-      (val) => (typeof val === 'string' ? JSON.parse(val) : val),
+      decodeJsonText('stream_selection_config'),
       StreamSelectionConfigObjectSchema.nullable().optional(),
     )
     .nullable()
@@ -53,7 +54,7 @@ export const StreamerSpecificConfigSchema = z.object({
 
   danmu_statistics: z
     .preprocess(
-      (val) => (typeof val === 'string' ? JSON.parse(val) : val),
+      decodeJsonText('danmu_statistics'),
       DanmuStatisticsObjectSchema.nullable().optional(),
     )
     .nullable()
@@ -61,7 +62,7 @@ export const StreamerSpecificConfigSchema = z.object({
 
   download_retry_policy: z
     .preprocess(
-      (val) => (typeof val === 'string' ? JSON.parse(val) : val),
+      decodeJsonText('download_retry_policy'),
       DownloadRetryPolicyObjectSchema.nullable().optional(),
     )
     .nullable()
@@ -69,21 +70,21 @@ export const StreamerSpecificConfigSchema = z.object({
 
   pipeline: z
     .preprocess(
-      (val) => (typeof val === 'string' ? JSON.parse(val) : val),
+      decodeJsonText('pipeline'),
       DagPipelineDefinitionSchema.nullable().optional(),
     )
     .nullable()
     .optional(),
   session_complete_pipeline: z
     .preprocess(
-      (val) => (typeof val === 'string' ? JSON.parse(val) : val),
+      decodeJsonText('session_complete_pipeline'),
       DagPipelineDefinitionSchema.nullable().optional(),
     )
     .nullable()
     .optional(),
   paired_segment_pipeline: z
     .preprocess(
-      (val) => (typeof val === 'string' ? JSON.parse(val) : val),
+      decodeJsonText('paired_segment_pipeline'),
       DagPipelineDefinitionSchema.nullable().optional(),
     )
     .nullable()
