@@ -30,11 +30,10 @@ RUN cargo chef prepare --recipe-path recipe.json --bin rust-srec
 # =============================================================================
 FROM chef AS cacher
 
-# Install build dependencies including protoc.
+# Install build dependencies.
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-        protobuf-compiler \
         pkg-config \
         libssl-dev \
         ; \
@@ -43,10 +42,6 @@ RUN set -eux; \
 WORKDIR /app
 
 COPY --from=planner /app/recipe.json recipe.json
-
-# Build scripts in this workspace compile protobufs; ensure proto files are available
-# during dependency cooking.
-COPY --from=planner /app/rust-srec/proto rust-srec/proto
 
 # Build only dependencies - this layer is cached if recipe.json unchanged.
 # The recipe has a reduced workspace and lockfile; keep any lockfile updates
@@ -59,11 +54,10 @@ RUN cargo chef cook --release --recipe-path recipe.json \
 # =============================================================================
 FROM chef AS builder
 
-# Install build dependencies including protoc.
+# Install build dependencies.
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-        protobuf-compiler \
         pkg-config \
         libssl-dev \
         ; \

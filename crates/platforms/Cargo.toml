@@ -88,8 +88,9 @@ roxmltree = { workspace = true }
 # Protocol Buffers
 prost = { workspace = true }
 
-[build-dependencies]
+[dev-dependencies]
 prost-build = { workspace = true }
+protox = { workspace = true }
 
 [features]
 default = ["rustls-tls"]

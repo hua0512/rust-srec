@@ -91,7 +91,6 @@ jobs:
           version: "v0.19.0"
       - uses: ./.github/actions/setup-rust
       - uses: taiki-e/install-action@nextest
-      - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: ci
@@ -139,7 +138,6 @@ jobs:
     with:
       packages: '-p rust-srec --bins'
       binaries: '["rust-srec", "rust-srec-vapid"]'
-      need_protoc: true
 
   desktop:
     name: Desktop
@@ -174,8 +172,6 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           target: ${{ contains(matrix.args, '--target') && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-
-      - uses: ./.github/actions/setup-protoc
 
       - uses: Swatinem/rust-cache@v2
         with:

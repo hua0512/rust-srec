@@ -10,3 +10,9 @@
 
 # Keep Dockerfiles LF for Linux builds.
 **/Dockerfile text eol=lf
+
+# Rust code generated from the .proto schemas; regenerate rather than edit.
+rust-srec/src/api/proto/download_progress.rs linguist-generated=true
+rust-srec/src/api/proto/log_event.rs linguist-generated=true
+crates/platforms/src/extractor/platforms/douyin/douyin_proto.rs linguist-generated=true
+crates/platforms/src/extractor/platforms/tiktok/tiktok_proto.rs linguist-generated=true

@@ -28,7 +28,6 @@ jobs:
         with:
           version: "v0.19.0"
       - uses: ./.github/actions/setup-rust
-      - uses: ./.github/actions/setup-protoc
       - name: Install Linux TLS dependencies
         run: |
           sudo apt-get update
@@ -69,7 +68,6 @@ jobs:
           version: "v0.19.0"
       - uses: ./.github/actions/setup-rust
       - uses: taiki-e/install-action@nextest
-      - uses: ./.github/actions/setup-protoc
       - name: Install Linux TLS dependencies
         if: matrix.os == 'ubuntu-latest'
         run: |
@@ -100,7 +98,6 @@ jobs:
       features_normal: 'mesio/tls-native-fallback,strev/tls-native-fallback,rust-srec/tls-native-fallback'
       features_musl: 'mesio/static-ssl,strev/static-ssl,rust-srec/static-ssl'
       binaries: '["mesio", "strev", "rust-srec", "rust-srec-vapid"]'
-      need_protoc: true
 
   docker-build:
     name: Build Docker
