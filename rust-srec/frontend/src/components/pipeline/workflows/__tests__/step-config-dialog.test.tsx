@@ -334,7 +334,10 @@ describe('StepConfigDialog preset steps', () => {
       name: /Detach & Edit/i,
     });
     await waitFor(() => expect(detach).toBeEnabled());
-    expect(screen.getByRole('spinbutton', { name: 'Width' })).toBeDisabled();
+    // jsdom does not enforce `inert`, so the toggle below still reaches the preview's form state.
+    expect(
+      screen.getByRole('spinbutton', { name: 'Width' }).closest('[inert]'),
+    ).not.toBeNull();
     fireEvent.click(screen.getByRole('switch'));
 
     fireEvent.click(detach);

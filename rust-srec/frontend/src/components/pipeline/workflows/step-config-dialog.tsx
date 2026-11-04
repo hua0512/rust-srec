@@ -120,10 +120,12 @@ export const StepConfigDialog = memo(function StepConfigDialog(
 ) {
   const { open, onOpenChange, dagStep } = props;
   // Each opening, and each step object handed in while open, is a fresh editing session: the
-  // body remounts and seeds its state from `dagStep` on its first render.
+  // body remounts and seeds its state from `dagStep` on its first render. Closing keeps the
+  // session, so the body does not remount during the exit animation.
   const [session, setSession] = useState({ open, dagStep, id: 0 });
   if (session.open !== open || session.dagStep !== dagStep) {
-    setSession({ open, dagStep, id: session.id + 1 });
+    const opened = open && (!session.open || session.dagStep !== dagStep);
+    setSession({ open, dagStep, id: opened ? session.id + 1 : session.id });
   }
 
   return (
@@ -260,7 +262,7 @@ function StepConfigDialogBody({
   );
 
   // Form for displaying the preset config (read-only)
-  const presetForm = useForm({ values: presetValues, disabled: true });
+  const presetForm = useForm({ values: presetValues });
 
   const [idValue, setIdValue] = useState(dagStep?.id || '');
   const [dependsOn, setDependsOn] = useState<string[]>(
@@ -440,7 +442,7 @@ function StepConfigDialogBody({
                   </div>
                 )}
                 {presetDetail && (
-                  <div className="space-y-6 [&_input]:pointer-events-none [&_textarea]:pointer-events-none [&_label]:pointer-events-none [&_button:not([role=tab])]:pointer-events-none [&_input]:opacity-70 [&_textarea]:opacity-70 [&_label]:opacity-70 [&_button:not([role=tab])]:opacity-70 grayscale-[0.1]">
+                  <div className="space-y-6">
                     <div className="flex items-center gap-2 mb-4">
                       <div className="h-8 w-1 rounded bg-primary/20" />
                       <h3 className="font-semibold text-lg tracking-tight">
@@ -448,26 +450,20 @@ function StepConfigDialogBody({
                         <Trans>Configuration</Trans>
                       </h3>
                     </div>
-                    <div className="rounded-xl border bg-card p-6 shadow-sm">
+                    {/* Read-only preview: `inert` keeps every control out of reach of the
+                        pointer, keyboard and assistive technology. */}
+                    <div
+                      inert
+                      className="rounded-xl border bg-card p-6 shadow-sm opacity-70 grayscale-[0.1]"
+                    >
                       <Form {...presetForm}>
-                        <form
-                          className="contents"
-                          onSubmit={(event) => {
-                            // Read-only preview: its fields can still be reached with Tab,
-                            // and Enter in a lone text field would submit the form that
-                            // embeds the workflow editor.
-                            event.preventDefault();
-                            event.stopPropagation();
-                          }}
-                        >
-                          {presetProcessorDef && (
-                            <Suspense fallback={PROCESSOR_FORM_FALLBACK}>
-                              <presetProcessorDef.component
-                                control={presetForm.control}
-                              />
-                            </Suspense>
-                          )}
-                        </form>
+                        {presetProcessorDef && (
+                          <Suspense fallback={PROCESSOR_FORM_FALLBACK}>
+                            <presetProcessorDef.component
+                              control={presetForm.control}
+                            />
+                          </Suspense>
+                        )}
                       </Form>
                     </div>
                   </div>

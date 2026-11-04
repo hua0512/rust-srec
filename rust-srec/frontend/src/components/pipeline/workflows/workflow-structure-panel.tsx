@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Layout, List, Share2 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 
@@ -52,6 +52,13 @@ export function WorkflowStructurePanel({
 }: WorkflowStructurePanelProps) {
   const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
   const embedded = variant === 'embedded';
+  const { closeEditor } = controller;
+  const handleEditorOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open) closeEditor();
+    },
+    [closeEditor],
+  );
 
   const stepsList = (
     <StepsList
@@ -173,7 +180,7 @@ export function WorkflowStructurePanel({
 
       <StepConfigDialog
         open={controller.editingStep !== null}
-        onOpenChange={(open) => !open && controller.closeEditor()}
+        onOpenChange={handleEditorOpenChange}
         dagStep={controller.editingStep}
         onSave={controller.saveEditedStep}
         allSteps={controller.steps}

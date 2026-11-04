@@ -5,7 +5,7 @@ import type { Control, FieldPath, FieldValues, Path } from 'react-hook-form';
  * Props every processor config form receives. The host form decides where the
  * processor's config lives (at the root, or under `pathPrefix`), so `control`
  * is typed against the host's untyped values and fields are addressed through
- * {@link processorFieldPath}.
+ * {@link useProcessorFieldPath}.
  */
 export interface ProcessorConfigFormProps {
   control: Control<FieldValues>;
