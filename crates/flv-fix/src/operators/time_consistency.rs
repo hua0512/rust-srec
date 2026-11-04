@@ -20,6 +20,8 @@
 //! - Records the last timestamp before a split and first timestamp after
 //! - Calculates appropriate offsets to maintain timeline continuity
 //! - Applies these offsets to all subsequent tags until the next split
+//! - Re-bases the offset when the source restarts its timeline well before the
+//!   segment's start, so the output keeps advancing instead of sticking at 0
 //!
 //! ## Configuration
 //!
@@ -48,7 +50,50 @@
 use flv::data::FlvData;
 use pipeline_common::{PipelineError, Processor, StreamerContext};
 use std::sync::Arc;
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
+
+/// How far before the segment's base a media tag may land and still be clamped
+/// to 0. Audio and video are not perfectly aligned at a segment start, so a tag
+/// slightly older than the first one is ordinary interleaving. Anything further
+/// back means the source restarted its timeline below the base; clamping that
+/// would pin every following tag to 0 until the source caught up again.
+const MAX_CLAMPED_LAG_MS: i64 = 1_000;
+
+/// Frame steps outside this range are not trusted to predict the next frame.
+const PLAUSIBLE_STEP_MS: std::ops::RangeInclusive<u32> = 10..=100;
+
+/// Steps assumed when a track has no plausible observed step: one frame at
+/// 30 fps, and one 1024-sample AAC frame at 44.1 kHz.
+const FALLBACK_VIDEO_STEP_MS: u32 = 33;
+const FALLBACK_AUDIO_STEP_MS: u32 = 23;
+
+/// The last emitted media timestamp of one track in the current segment, and
+/// the step that led to it.
+#[derive(Default)]
+struct TrackClock {
+    last_timestamp: Option<u32>,
+    last_step: u32,
+}
+
+impl TrackClock {
+    fn record(&mut self, timestamp: u32) {
+        if let Some(last) = self.last_timestamp {
+            self.last_step = timestamp.saturating_sub(last);
+        }
+        self.last_timestamp = Some(timestamp);
+    }
+
+    /// When this track's next frame is due, if it has emitted one.
+    fn next_expected(&self, fallback_step: u32) -> Option<i64> {
+        let step = if PLAUSIBLE_STEP_MS.contains(&self.last_step) {
+            self.last_step
+        } else {
+            fallback_step
+        };
+        self.last_timestamp
+            .map(|last| i64::from(last) + i64::from(step))
+    }
+}
 
 /// Defines how timestamps should be handled across stream splits
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -78,6 +123,11 @@ struct TimelineState {
     /// Current timestamp offset to apply
     timestamp_offset: i64,
 
+    /// Per-track media clocks of the current segment, which decide where a
+    /// restarted source timeline resumes.
+    audio_clock: TrackClock,
+    video_clock: TrackClock,
+
     /// Whether we need to calculate a new offset
     needs_offset_calculation: bool,
 }
@@ -90,6 +140,8 @@ impl TimelineState {
             last_timestamp: None,
             first_timestamp_in_segment: None,
             timestamp_offset: 0,
+            audio_clock: TrackClock::default(),
+            video_clock: TrackClock::default(),
             needs_offset_calculation: false,
         }
     }
@@ -99,7 +151,9 @@ impl TimelineState {
         self.new_segment = true;
         self.first_timestamp_in_segment = None;
         self.needs_offset_calculation = true;
-        self.timestamp_offset = 0
+        self.timestamp_offset = 0;
+        self.audio_clock = TrackClock::default();
+        self.video_clock = TrackClock::default();
     }
 }
 
@@ -235,6 +289,40 @@ impl Processor<FlvData> for TimeConsistencyOperator {
                     self.state.new_segment = false;
                 }
 
+                // Sequence headers and script tags carry no media time, so a
+                // stale timestamp on them is clamped rather than moving the
+                // timeline.
+                let is_media = (tag.is_audio_tag() && !tag.is_audio_sequence_header())
+                    || (tag.is_video_tag() && !tag.is_video_sequence_header());
+                if is_media
+                    && i64::from(tag.timestamp_ms) + self.state.timestamp_offset
+                        < -MAX_CLAMPED_LAG_MS
+                {
+                    // The re-basing tag lands where the later of the two
+                    // tracks expects its next frame, so it stays on that
+                    // track's frame grid. The offset is shared, so both tracks
+                    // keep their relative timing from the source; timing
+                    // repair downstream corrects a track that still lands
+                    // before its own previous tag.
+                    let resume_at = self
+                        .state
+                        .video_clock
+                        .next_expected(FALLBACK_VIDEO_STEP_MS)
+                        .max(self.state.audio_clock.next_expected(FALLBACK_AUDIO_STEP_MS))
+                        .unwrap_or(0);
+                    let new_offset = resume_at - i64::from(tag.timestamp_ms);
+                    warn!(
+                        streamer = %self.context.name,
+                        segment = self.state.segment_count,
+                        source_timestamp_ms = tag.timestamp_ms,
+                        resume_at_ms = resume_at,
+                        old_offset_ms = self.state.timestamp_offset,
+                        new_offset_ms = new_offset,
+                        "Source timeline restarted before the segment start; re-basing timestamps"
+                    );
+                    self.state.timestamp_offset = new_offset;
+                }
+
                 // Apply timestamp correction if needed
                 if self.state.timestamp_offset != 0 {
                     let corrected =
@@ -249,6 +337,14 @@ impl Processor<FlvData> for TimeConsistencyOperator {
 
                 // Remember the last timestamp we've seen
                 self.state.last_timestamp = Some(tag.timestamp_ms);
+                if is_media {
+                    let clock = if tag.is_video_tag() {
+                        &mut self.state.video_clock
+                    } else {
+                        &mut self.state.audio_clock
+                    };
+                    clock.record(tag.timestamp_ms);
+                }
 
                 // Forward the tag with possibly adjusted timestamp
                 output(FlvData::Tag(tag))
