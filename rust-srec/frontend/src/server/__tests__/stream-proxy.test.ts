@@ -109,6 +109,7 @@ it('forwards identity, source headers and ranges only to the backend, with serve
   expect(init!.redirect).toBe('manual');
   expect(init!.signal).toBe(request.signal);
   expect(response.status).toBe(206);
+  expect(response.headers.get('Content-Type')).toBe('video/mp2t');
   expect(response.headers.get('Content-Range')).toBe('bytes 0-1/3');
   expect(response.headers.get('Cache-Control')).toBe('private, no-store');
   expect(response.headers.has('Set-Cookie')).toBe(false);
@@ -188,4 +189,24 @@ it('reports cancellation without leaking backend fetch errors', async () => {
   );
   expect(failure.status).toBe(502);
   expect(await failure.text()).not.toContain('secret');
+});
+
+it('never lets upstream content run as a page on the app origin', async () => {
+  fetchMock.mockResolvedValue(
+    new Response('<script>alert(1)</script>', {
+      headers: { 'Content-Type': 'video/mp4;,text/html' },
+    }),
+  );
+  const target = 'https://app.example/stream-proxy?url=https://evil.example/x';
+  const response = await handleStreamProxyRequest(new Request(target));
+  expect(response.headers.get('Content-Type')).toBe('application/octet-stream');
+  expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
+  expect(response.headers.get('Content-Security-Policy')).toContain('sandbox');
+
+  fetchMock.mockClear();
+  const otherSite = await handleStreamProxyRequest(
+    new Request(target, { headers: { 'Sec-Fetch-Site': 'same-site' } }),
+  );
+  expect(otherSite.status).toBe(403);
+  expect(fetchMock).not.toHaveBeenCalled();
 });
