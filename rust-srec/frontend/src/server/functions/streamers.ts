@@ -1,6 +1,6 @@
 import { createServerFn } from '@/server/createServerFn';
 import { parseInput } from '../validate';
-import { fetchBackend } from '../api';
+import { fetchBackend, LONG_BACKEND_TIMEOUT_MS } from '../api';
 import { backendPath, PathIdSchema, withQuery } from '../backend-path';
 import {
   StreamerSchema,
@@ -158,6 +158,7 @@ export const extractMetadata = createServerFn({ method: 'POST' })
   .handler(async ({ data: url }) => {
     const json = await fetchBackend('/streamers/extract-metadata', {
       method: 'POST',
+      timeoutMs: LONG_BACKEND_TIMEOUT_MS,
       body: JSON.stringify({ url }),
     });
     return ExtractMetadataResponseSchema.parse(json);

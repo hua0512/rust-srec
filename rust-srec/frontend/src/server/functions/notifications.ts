@@ -1,6 +1,6 @@
 import { createServerFn } from '@/server/createServerFn';
 import { parseInput } from '../validate';
-import { fetchBackend } from '../api';
+import { fetchBackend, PLATFORM_BACKEND_TIMEOUT_MS } from '../api';
 import {
   backendPath,
   PathIdSchema,
@@ -115,6 +115,7 @@ export const testChannel = createServerFn({ method: 'POST' })
   .handler(async ({ data: id }) => {
     await fetchBackend(backendPath`/notifications/channels/${id}/test`, {
       method: 'POST',
+      timeoutMs: PLATFORM_BACKEND_TIMEOUT_MS,
     });
   });
 

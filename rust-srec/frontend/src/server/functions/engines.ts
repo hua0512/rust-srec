@@ -1,6 +1,6 @@
 import { createServerFn } from '@/server/createServerFn';
 import { parseInput } from '../validate';
-import { fetchBackend } from '../api';
+import { fetchBackend, LONG_BACKEND_TIMEOUT_MS } from '../api';
 import { backendPath, PathIdSchema } from '../backend-path';
 import {
   EngineConfigSchema,
@@ -122,6 +122,8 @@ export const deleteEngine = createServerFn({ method: 'POST' })
 export const testEngine = createServerFn({ method: 'POST' })
   .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
-    const json = await fetchBackend(backendPath`/engines/${id}/test`);
+    const json = await fetchBackend(backendPath`/engines/${id}/test`, {
+      timeoutMs: LONG_BACKEND_TIMEOUT_MS,
+    });
     return EngineTestResponseSchema.parse(json);
   });

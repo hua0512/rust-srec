@@ -1,4 +1,4 @@
-import { fetchBackend } from '../api';
+import { fetchBackend, PLATFORM_BACKEND_TIMEOUT_MS } from '../api';
 import { createServerFn } from '@/server/createServerFn';
 import { parseInput } from '../validate';
 import {
@@ -19,6 +19,7 @@ export const parseUrl = createServerFn({ method: 'POST' })
   .handler(async ({ data }: { data: ParseUrlRequest }) => {
     const json = await fetchBackend('/parse', {
       method: 'POST',
+      timeoutMs: PLATFORM_BACKEND_TIMEOUT_MS,
       body: JSON.stringify(data),
     });
     return ParseUrlResponseSchema.parse(json);
@@ -30,6 +31,7 @@ export const renewPlayback = createServerFn({ method: 'POST' })
     ParseUrlResponseSchema.parse(
       await fetchBackend('/parse/playback/renew', {
         method: 'POST',
+        timeoutMs: PLATFORM_BACKEND_TIMEOUT_MS,
         body: JSON.stringify({ playback_handle: data }),
       }),
     ),
@@ -45,6 +47,7 @@ export const parseUrlBatch = createServerFn({ method: 'POST' })
   .handler(async ({ data }: { data: ParseUrlRequest[] }) => {
     const json = await fetchBackend('/parse/batch', {
       method: 'POST',
+      timeoutMs: PLATFORM_BACKEND_TIMEOUT_MS,
       body: JSON.stringify(data),
     });
     return z.array(ParseUrlResponseSchema).parse(json);
@@ -60,6 +63,7 @@ export const resolveUrl = createServerFn({ method: 'POST' })
   .handler(async ({ data }: { data: ResolveUrlRequest }) => {
     const json = await fetchBackend('/parse/resolve', {
       method: 'POST',
+      timeoutMs: PLATFORM_BACKEND_TIMEOUT_MS,
       body: JSON.stringify(data),
     });
     return ResolveUrlResponseSchema.parse(json);

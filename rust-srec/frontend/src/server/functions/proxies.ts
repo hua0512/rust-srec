@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { createServerFn } from '@/server/createServerFn';
 import { parseInput } from '../validate';
-import { fetchBackend } from '../api';
+import { fetchBackend, LONG_BACKEND_TIMEOUT_MS } from '../api';
 import { backendPath, PathIdSchema, withQuery } from '../backend-path';
 import {
   CreateProxySchema,
@@ -100,6 +100,7 @@ export const testProxy = createServerFn({ method: 'POST' })
     ProbeOutcomeSchema.parse(
       await fetchBackend('/proxies/test', {
         method: 'POST',
+        timeoutMs: LONG_BACKEND_TIMEOUT_MS,
         body: JSON.stringify(data),
       }),
     ),

@@ -8,8 +8,47 @@ import {
   hasPasswordChangeRequiredCode,
 } from '../lib/api-error';
 import { isValidSession } from '../utils/session';
+import { isDesktopBuild } from '../utils/desktop';
 
 export { BackendApiError };
+
+/** Default bound on one backend request; the retry after a refresh gets its own. */
+export const BACKEND_TIMEOUT_MS = 15_000;
+
+/**
+ * For calls that run external tools or move many rows or files: engine and
+ * proxy tests, BaiduPCS login, configuration backups and batch deletes.
+ */
+export const LONG_BACKEND_TIMEOUT_MS = 120_000;
+
+/**
+ * For calls that reach a streaming platform or a notification service. The
+ * backend bounds platform operations, including the wait for a free platform
+ * slot, at 5 minutes, and a notification channel's timeout goes up to the
+ * same, so this only adds a margin for the answer to arrive.
+ */
+export const PLATFORM_BACKEND_TIMEOUT_MS = 310_000;
+
+export interface FetchBackendInit extends RequestInit {
+  /** Replaces {@link BACKEND_TIMEOUT_MS} for a call known to take longer. */
+  timeoutMs?: number;
+}
+
+/**
+ * The signal of the request this server function is answering, so that a
+ * browser that navigates away or cancels the query also cancels the backend
+ * call. Desktop builds call the backend from the browser and have none.
+ */
+async function incomingRequestSignal(): Promise<AbortSignal | undefined> {
+  if (isDesktopBuild()) return undefined;
+  try {
+    const { getRequest } = await import('@tanstack/react-start/server');
+    return getRequest().signal;
+  } catch {
+    // Called outside a request context.
+    return undefined;
+  }
+}
 
 /**
  * Parses the failure body and throws it as a BackendApiError. For the
@@ -44,12 +83,12 @@ async function throwBackendError(response: Response): Promise<never> {
  */
 export const fetchBackend = async <T = any>(
   endpoint: string,
-  init?: RequestInit,
+  { timeoutMs = BACKEND_TIMEOUT_MS, ...init }: FetchBackendInit = {},
 ): Promise<T> => {
   const session = await useAppSession();
   const token = session.data.token?.access_token;
 
-  const headers = new Headers(init?.headers);
+  const headers = new Headers(init.headers);
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
@@ -57,13 +96,13 @@ export const fetchBackend = async <T = any>(
   // so the request trace is development-only.
   if (import.meta.env.DEV) {
     console.log(
-      `[API] ${init?.method || 'GET'} ${endpoint} - ${token ? 'token present' : 'no token in session'}`,
+      `[API] ${init.method || 'GET'} ${endpoint} - ${token ? 'token present' : 'no token in session'}`,
     );
   }
 
   // Ensure Content-Type is set for JSON bodies if not already present
   if (
-    init?.body &&
+    init.body &&
     !headers.has('Content-Type') &&
     typeof init.body === 'string'
   ) {
@@ -80,14 +119,23 @@ export const fetchBackend = async <T = any>(
   const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   const url = `${baseUrl}${path}`;
 
+  const clientSignal = await incomingRequestSignal();
+  const requestSignal = () =>
+    AbortSignal.any(
+      [AbortSignal.timeout(timeoutMs), clientSignal, init.signal].filter(
+        (signal): signal is AbortSignal => signal != null,
+      ),
+    );
+
   const response = await fetch(url, {
     ...init,
     headers,
+    signal: requestSignal(),
   });
 
   if (import.meta.env.DEV) {
     console.log(
-      `[API] ${init?.method || 'GET'} ${endpoint} - Status: ${response.status}`,
+      `[API] ${init.method || 'GET'} ${endpoint} - Status: ${response.status}`,
     );
   }
 
@@ -104,6 +152,7 @@ export const fetchBackend = async <T = any>(
           const retryResponse = await fetch(url, {
             ...init,
             headers,
+            signal: requestSignal(),
           });
 
           if (retryResponse.ok) {
