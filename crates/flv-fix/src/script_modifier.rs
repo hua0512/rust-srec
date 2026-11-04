@@ -255,7 +255,7 @@ mod tests {
         let file_size = std::fs::metadata(&path).unwrap().len();
         let stats = FlvStats {
             file_size,
-            duration: 1,
+            duration: 0.1,
             has_video: true,
             last_timestamp: 100,
             video_stats: Some(VideoStats {
@@ -312,7 +312,7 @@ mod tests {
             .map(|(_, v)| v)
             .expect("Expected duration field");
 
-        assert_eq!(*duration, Amf0Value::Number(stats.duration as f64));
+        assert_eq!(*duration, Amf0Value::Number(stats.duration));
 
         std::fs::remove_file(&path).ok();
     }
@@ -348,7 +348,7 @@ mod tests {
         inject_stats_into_script_data(
             &path,
             &FlvStats {
-                duration: 42,
+                duration: 42.0,
                 ..Default::default()
             },
             false,
