@@ -79,18 +79,18 @@ export function SettingGrid({
 }
 
 /** An override select trigger: its value wraps rather than cutting off what it resolves to. */
-export const OVERRIDE_SELECT_TRIGGER = cn(
+const OVERRIDE_SELECT_TRIGGER = cn(
   CONFIG_SELECT_TRIGGER,
   'h-auto min-h-11 whitespace-normal text-left *:data-[slot=select-value]:line-clamp-none',
 );
 
 /** Select values for the two non-value states of an override field. */
-export const INHERIT = 'inherit';
-export const RESET = 'reset';
+const INHERIT = 'inherit';
+const RESET = 'reset';
 
-export type OverrideMode = typeof INHERIT | typeof RESET | 'custom';
+type OverrideMode = typeof INHERIT | typeof RESET | 'custom';
 
-export function overrideMode(value: unknown): OverrideMode {
+function overrideMode(value: unknown): OverrideMode {
   if (value === undefined) return INHERIT;
   if (value === null) return RESET;
   return 'custom';
@@ -102,7 +102,7 @@ function defaultChoice(i18n: I18n, fallback: string): string {
 }
 
 /** The two non-value choices an override field offers, labelled with what they resolve to. */
-export function OverrideStateItems({
+function OverrideStateItems({
   inherited,
   fallback,
 }: {
@@ -121,7 +121,7 @@ export function OverrideStateItems({
 }
 
 /** A setting's value as a select option label. `null` is an engine's disabled timeout. */
-export function describeValue(i18n: I18n, value: unknown): string {
+function describeValue(i18n: I18n, value: unknown): string {
   if (value === true) return i18n._(msg`On`);
   if (value === false) return i18n._(msg`Off`);
   if (value === null) return i18n._(msg`Disabled`);
@@ -161,7 +161,7 @@ export function OverrideScope({
 }
 
 /** Marks the fields below as editing a template's override of an engine. */
-export function EngineOverrideProvider({
+function EngineOverrideProvider({
   basePath,
   engineConfig,
   schema,
@@ -272,7 +272,7 @@ export function useEngineOverride() {
  * A field's form value. In an override, a field below a group reset with `null` reads as `null`:
  * the form itself reports such a field as absent, which would show it as inherited.
  */
-export function useSettingValue(path: string): unknown {
+function useSettingValue(path: string): unknown {
   const context = React.useContext(EngineOverrideContext);
   // The field's groups, outermost first, then the field itself.
   const names = React.useMemo(() => {
@@ -777,7 +777,7 @@ function scalar(value: unknown): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined;
 }
 
-export function describePolicy(
+function describePolicy(
   i18n: I18n,
   options: readonly PolicyOption[],
   policy: unknown,
