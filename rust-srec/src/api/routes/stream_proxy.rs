@@ -565,6 +565,33 @@ fn relayed_content_type(value: Option<&HeaderValue>) -> HeaderValue {
     }
 }
 
+/// Whether an upstream `Content-Type` names an HTML page or a JSON document,
+/// which a provider sends for error pages and API answers rather than media.
+///
+/// Media types are case-insensitive and may carry whitespace and parameters.
+/// Every entry of a comma list counts, since browsers act on the last one, and
+/// a value that is not visible ASCII is treated as a page.
+fn is_page_or_api_content_type(value: &HeaderValue) -> bool {
+    let Ok(raw) = value.to_str() else {
+        return true;
+    };
+    raw.split(',').any(|item| {
+        let media_type = item
+            .split(';')
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase();
+        let Some((top, sub)) = media_type.split_once('/') else {
+            return false;
+        };
+        matches!(
+            (top, sub),
+            ("text", "html") | ("application", "xhtml+xml") | ("application" | "text", "json")
+        ) || sub.ends_with("+json")
+    })
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StreamProxyQuery {
@@ -797,10 +824,7 @@ async fn managed_stream_proxy(
     if upstream
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| {
-            value.starts_with("text/html") || value.starts_with("application/json")
-        })
+        .is_some_and(is_page_or_api_content_type)
     {
         return Err(ApiError::new(
             StatusCode::BAD_GATEWAY,
@@ -1050,6 +1074,12 @@ async fn relay_upstream(
                 )
             })?;
             let rewritten = rewrite_hls_manifest(manifest, &final_url, context);
+            // A manifest recognised by its content may arrive under any type,
+            // and native HLS players only accept it under the HLS one.
+            out_headers.insert(
+                axum::http::header::CONTENT_TYPE,
+                HeaderValue::from_static("application/vnd.apple.mpegurl"),
+            );
             out_headers.remove(axum::http::header::CONTENT_LENGTH);
             out_headers.remove(axum::http::header::CONTENT_RANGE);
             out_headers.remove(axum::http::header::ACCEPT_RANGES);
@@ -1168,6 +1198,30 @@ mod tests {
         link.query_pairs()
             .find(|(key, _)| key == name)
             .map(|(_, value)| value.into_owned())
+    }
+
+    #[test]
+    fn managed_relay_recognises_pages_and_api_answers_in_any_spelling() {
+        let page_or_api =
+            |value: &str| is_page_or_api_content_type(&HeaderValue::from_str(value).unwrap());
+        for value in [
+            "text/html",
+            "Text/HTML; charset=utf-8",
+            " text/html",
+            "application/json",
+            "application/problem+json",
+            "video/mp4, text/html",
+        ] {
+            assert!(page_or_api(value), "{value}");
+        }
+        for value in [
+            "video/mp2t",
+            "application/vnd.apple.mpegurl",
+            "text/plain",
+            "application/octet-stream",
+        ] {
+            assert!(!page_or_api(value), "{value}");
+        }
     }
 
     #[test]

@@ -49,9 +49,11 @@ fn upstream_reply(address: SocketAddr, request: &ReceivedRequest) -> UpstreamRes
             .into_response();
     }
     match path {
+        // Labelled as plain text, as many CDNs do: the proxy recognises the
+        // manifest by its content and must still relay it as HLS.
         "/live/index.m3u8" => (
             [
-                (header::CONTENT_TYPE, "application/vnd.apple.mpegurl"),
+                (header::CONTENT_TYPE, "text/plain; charset=utf-8"),
                 (header::ETAG, "\"manifest-v1\""),
             ],
             MANIFEST,
