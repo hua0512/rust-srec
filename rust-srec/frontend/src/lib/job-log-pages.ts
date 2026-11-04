@@ -41,12 +41,21 @@ export function latestLogTotal(data: JobLogPages | undefined): number {
   return data?.pages[data.pages.length - 1]?.total ?? 0;
 }
 
+function endsLater(page: JobLogPage, than: JobLogPage): boolean {
+  const last = page.items.at(-1);
+  if (!last) return false;
+  const thanLast = than.items.at(-1);
+  return (
+    !thanLast || Date.parse(last.timestamp) > Date.parse(thanLast.timestamp)
+  );
+}
+
 /**
  * Folds a freshly read newest page back into the loaded pages so the reader
  * sees the rows added since, and so the "is there more" answer comes from a
  * current total rather than the one the page was first loaded with.
  *
- * Only ever grows the page. A read that came back with fewer rows or a lower
+ * Only ever moves the page forward. A read that came back with fewer rows or a lower
  * total than what is already held describes an older state of the log — a
  * response that raced past a newer one — and taking it would drop rows that
  * are already on screen, permanently once the job is finished and nothing
@@ -69,7 +78,11 @@ export function replaceNewestLogPage(
   if (current.offset !== page.offset) return data;
   if (
     page.items.length <= current.items.length &&
-    page.total <= current.total
+    page.total <= current.total &&
+    // Once a job reaches its row cap the backend drops the oldest row for
+    // each new one, so the count and total stay put while the window slides
+    // on. A read ending in a later row is still newer.
+    !endsLater(page, current)
   ) {
     return data;
   }
