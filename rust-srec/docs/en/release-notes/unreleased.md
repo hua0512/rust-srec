@@ -18,6 +18,12 @@
 - **Security**: a link crafted by another site could make the stream proxy show a page that acted as the signed-in user. The proxy now only passes on video, audio, images and playlists, and refuses requests from other sites.
 - **Security**: a failed sign-in no longer writes the entered password to the server log, and a failed sign-out no longer writes the sign-in token.
 - **Sign-in**: a failed sign-in now shows the server's reason instead of an internal server address.
+- **Sessions page**: every session can now be reached through the page numbers. Before, the page count assumed 50 sessions per page while each page showed 20, so the sessions beyond the last page number could not be reached from the list.
+- **Sessions page**: when the list fails to load, the page now says so and offers **Retry**, instead of reporting an empty library. A search or filter that matches nothing now says no sessions match and offers **Clear filters**.
+- **Dashboard** and **API Keys** settings: a section that fails to load now shows the error with a **Retry** button, instead of loading forever or looking empty.
+- **Lists**: deleting the last items on the last page of the sessions, media outputs, pipeline jobs, presets or workflows list now goes back to the previous page, instead of showing an empty page that says nothing was found.
+- **Confirmations**: deleting a streamer or sessions now asks in an in-app dialog instead of a browser prompt, and deleting a streamer filter now asks first instead of deleting it at once.
+- **Unsaved changes**: leaving the template, platform, engine, preset or workflow editor with unsaved edits now asks before discarding them. Global settings and the streamer editor, which already asked, now ask in an in-app dialog.
 - **FLV recordings**: files recorded with the Mesio engine now list Mesio as their creator instead of an outdated version number, and their real data size instead of 0, so media tools show correct file details.
 - **FLV recordings**: with the Mesio engine and **Fix FLV Streams** on, when a stream restarted mid-broadcast, for example after the streamer turned on stream delay, the recording could become one very long file that players showed as 0 seconds long and that was never split by the duration limit. Recordings now keep counting time across such restarts and split as configured.
 - **FLV recordings**: with the Mesio engine and **Fix FLV Streams** on, browser players can now show the length of a recording and seek in it when the stream sent no file information.

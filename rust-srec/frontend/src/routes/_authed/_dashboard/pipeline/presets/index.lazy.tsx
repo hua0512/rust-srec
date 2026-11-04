@@ -1,4 +1,3 @@
-import { getPaginationPages } from '@/lib/pagination';
 import { createLazyFileRoute } from '@tanstack/react-router';
 import {
   useQuery,
@@ -43,22 +42,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { DashboardHeader } from '@/components/shared/dashboard-header';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination';
+import { ListPagination } from '@/components/shared/list-pagination';
 import { CARD_GRID } from '@/lib/grid';
 import { cn } from '@/lib/utils';
 
@@ -67,8 +51,6 @@ export const Route = createLazyFileRoute(
 )({
   component: PresetsPage,
 });
-
-const PAGE_SIZES = [12, 24, 48, 96];
 
 function PresetsPage() {
   const { i18n } = useLingui();
@@ -123,7 +105,6 @@ function PresetsPage() {
 
   const presets = data?.presets;
   const totalCount = data?.total ?? 0;
-  const totalPages = Math.ceil(totalCount / pageSize);
 
   // Memoize categories to prevent flickering
   const categoriesRef = useRef<string[]>([]);
@@ -134,9 +115,9 @@ function PresetsPage() {
     return categoriesRef.current;
   }, [data?.categories]);
 
-  const paginationPages = useMemo(
-    () => getPaginationPages(totalPages, currentPage),
-    [totalPages, currentPage],
+  const handlePageIndexChange = useCallback(
+    (index: number) => updateSearch({ page: index || undefined }),
+    [updateSearch],
   );
 
   const deleteMutation = useMutation({
@@ -358,83 +339,13 @@ function PresetsPage() {
           )}
         </AnimatePresence>
 
-        {/* Pagination Controls */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between mt-8 pt-6 border-t">
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">
-                <Trans>Per page:</Trans>
-              </span>
-              <Select
-                value={pageSize.toString()}
-                onValueChange={(value) => {
-                  updateSearch({ size: Number(value), page: undefined });
-                }}
-              >
-                <SelectTrigger className="w-20 h-8">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PAGE_SIZES.map((size) => (
-                    <SelectItem key={size} value={size.toString()}>
-                      {size}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Pagination>
-              <PaginationContent>
-                <PaginationItem>
-                  <PaginationPrevious
-                    onClick={() =>
-                      updateSearch({ page: Math.max(0, currentPage - 1) })
-                    }
-                    className={
-                      currentPage === 0
-                        ? 'pointer-events-none opacity-50'
-                        : 'cursor-pointer'
-                    }
-                  />
-                </PaginationItem>
-
-                {paginationPages.map((page, idx) =>
-                  page === 'ellipsis' ? (
-                    <PaginationItem key={`ellipsis-${idx}`}>
-                      <PaginationEllipsis />
-                    </PaginationItem>
-                  ) : (
-                    <PaginationItem key={page}>
-                      <PaginationLink
-                        isActive={currentPage === page}
-                        onClick={() => updateSearch({ page })}
-                        className="cursor-pointer"
-                      >
-                        {page + 1}
-                      </PaginationLink>
-                    </PaginationItem>
-                  ),
-                )}
-
-                <PaginationItem>
-                  <PaginationNext
-                    onClick={() =>
-                      updateSearch({
-                        page: Math.min(totalPages - 1, currentPage + 1),
-                      })
-                    }
-                    className={
-                      currentPage >= totalPages - 1
-                        ? 'pointer-events-none opacity-50'
-                        : 'cursor-pointer'
-                    }
-                  />
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
-          </div>
-        )}
+        <ListPagination
+          pageIndex={currentPage}
+          totalCount={data?.total}
+          pageSize={pageSize}
+          onPageIndexChange={handlePageIndexChange}
+          onPageSizeChange={(size) => updateSearch({ size, page: undefined })}
+        />
 
         {/* Clone Dialog */}
         <Dialog open={cloneDialogOpen} onOpenChange={setCloneDialogOpen}>

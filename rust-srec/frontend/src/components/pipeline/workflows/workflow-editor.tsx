@@ -37,6 +37,7 @@ import {
   WorkflowStepLibrary,
   WorkflowStructurePanel,
 } from './workflow-structure-panel';
+import { UnsavedChangesGuard } from '@/components/shared/unsaved-changes-guard';
 
 const workflowSchema = z.object({
   name: z.string().min(1, 'Name is required'),
@@ -174,6 +175,7 @@ export function WorkflowEditor({
 
       <div className="@container flex-1 max-w-[1600px] mx-auto w-full px-4 md:px-8 py-8">
         <Form {...form}>
+          <UnsavedChangesGuard when={form.formState.isDirty && !isUpdating} />
           <form
             onSubmit={form.handleSubmit(onSubmit)}
             className="grid grid-cols-1 @3xl:grid-cols-12 gap-8 h-full"

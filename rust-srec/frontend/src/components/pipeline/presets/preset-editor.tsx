@@ -11,6 +11,7 @@ import { PresetMetaForm } from './editor/preset-meta-form';
 import { PresetConfigForm } from './editor/preset-config-form';
 import { PresetSaveFab } from './editor/preset-save-fab';
 import { getProcessorDefinition } from './processors/registry';
+import { UnsavedChangesGuard } from '@/components/shared/unsaved-changes-guard';
 
 const BasePresetFormSchema = z.object({
   id: z.string().min(1),
@@ -111,6 +112,7 @@ export function PresetEditor({
     <div className="min-h-screen pb-20 pt-4">
       <div className="max-w-6xl mx-auto p-4 md:p-6 relative">
         <Form {...form}>
+          <UnsavedChangesGuard when={isDirty && !isUpdating} />
           {/* Two columns only when the editor itself is wide enough: the app sidebar takes a share
               of the viewport that a breakpoint cannot see. The query container wraps only the
               form, so the fixed save button is never inside it. */}

@@ -1,6 +1,7 @@
 import { createLazyFileRoute } from '@tanstack/react-router';
 import {
   useQuery,
+  useMutation,
   keepPreviousData,
   useQueryClient,
 } from '@tanstack/react-query';
@@ -19,19 +20,14 @@ import {
   Trash2,
   LayoutGrid,
   RefreshCcw,
+  SearchX,
 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
-import { msg } from '@lingui/core/macro';
+import { msg, plural } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination';
+import { ListPagination } from '@/components/shared/list-pagination';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { QueryError } from '@/components/shared/query-error';
 import { cn } from '@/lib/utils';
 import { FAB_ANCHOR } from '@/components/shared/save-fab';
 import {
@@ -60,14 +56,19 @@ export const Route = createLazyFileRoute('/_authed/_dashboard/sessions/')({
   component: SessionsPage,
 });
 
+type SessionsSearch = ReturnType<typeof Route.useSearch>;
+type SessionStatus = NonNullable<SessionsSearch['status']>;
+type SessionTimeRange = NonNullable<SessionsSearch['timeRange']>;
+
+const DEFAULT_LIMIT = 20;
+
 function SessionsPage() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
   const queryClient = useQueryClient();
   const { i18n } = useLingui();
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
-
-  const [isDeleting, setIsDeleting] = useState(false);
+  const [confirmBatchDelete, setConfirmBatchDelete] = useState(false);
 
   // Calculate dates based on timeRange or use custom dates
   const { from_date, to_date } = useMemo(() => {
@@ -111,11 +112,15 @@ function SessionsPage() {
         ? false
         : undefined;
 
+  // Sent with the request rather than left to the server function's own
+  // default, so the page count below is always computed from the size used.
+  const limit = search.limit || DEFAULT_LIMIT;
+
   const query = useQuery({
     queryKey: [
       'sessions',
       search.page,
-      search.limit,
+      limit,
       search.streamer_id,
       search.search,
       activeOnly,
@@ -126,7 +131,7 @@ function SessionsPage() {
       listSessions({
         data: {
           page: search.page,
-          limit: search.limit,
+          limit,
           streamer_id: search.streamer_id,
           search: search.search,
           active_only: activeOnly,
@@ -140,43 +145,30 @@ function SessionsPage() {
 
   const updateSearch = useUpdateSearch<typeof search>();
 
-  const total = query.data?.total || 0;
-  const limit = search.limit || 50;
-  const totalPages = Math.ceil(total / limit) || 1;
   const currentPage = search.page || 1;
 
-  // Generate page numbers for pagination
-  const pageNumbers = useMemo(() => {
-    const pages = [];
-    if (totalPages <= 7) {
-      for (let i = 1; i <= totalPages; i++) pages.push(i);
-    } else {
-      if (currentPage <= 4) {
-        for (let i = 1; i <= 5; i++) pages.push(i);
-        pages.push('...');
-        pages.push(totalPages);
-      } else if (currentPage >= totalPages - 3) {
-        pages.push(1);
-        pages.push('...');
-        for (let i = totalPages - 4; i <= totalPages; i++) pages.push(i);
-      } else {
-        pages.push(1);
-        pages.push('...');
-        for (let i = currentPage - 1; i <= currentPage + 1; i++) pages.push(i);
-        pages.push('...');
-        pages.push(totalPages);
-      }
-    }
-    return pages;
-  }, [totalPages, currentPage]);
+  // The URL counts pages from 1; the pager counts them from 0.
+  const handlePageIndexChange = useCallback(
+    (index: number) =>
+      updateSearch({ page: index > 0 ? index + 1 : undefined }),
+    [updateSearch],
+  );
 
-  const statusFilters = [
+  const statusFilters: {
+    value: SessionStatus;
+    label: string;
+    icon: typeof Filter;
+  }[] = [
     { value: 'all', label: i18n._(msg`All`), icon: Filter },
     { value: 'active', label: i18n._(msg`Live`), icon: Activity },
     { value: 'completed', label: i18n._(msg`Done`), icon: CheckCircle2 },
   ];
 
-  const timeFilters = [
+  // `custom` is set from the calendar, not from a pill.
+  const timeFilters: {
+    value: Exclude<SessionTimeRange, 'custom'>;
+    label: string;
+  }[] = [
     { value: 'all', label: i18n._(msg`All Time`) },
     { value: 'today', label: i18n._(msg`Today`) },
     { value: 'yesterday', label: i18n._(msg`Yesterday`) },
@@ -184,12 +176,14 @@ function SessionsPage() {
     { value: 'month', label: i18n._(msg`Month`) },
   ];
 
-  const hasActiveFilters =
+  const hasActiveFilters = Boolean(
     search.streamer_id ||
     search.search ||
     (search.status && search.status !== 'all') ||
     (search.timeRange && search.timeRange !== 'all') ||
-    search.from;
+    search.from,
+  );
+  const clearFilters = () => navigate({ search: {}, replace: true });
 
   const currentStatus = search.status || 'all';
   const currentTimeRange = search.timeRange || 'all';
@@ -225,34 +219,27 @@ function SessionsPage() {
     ].join('|'),
   });
 
-  const handleBatchDelete = useCallback(async () => {
-    if (selectedIds.size === 0) return;
-
-    if (
-      !window.confirm(
-        i18n._(
-          msg`Are you sure you want to delete ${selectedIds.size} sessions? This action cannot be undone.`,
-        ),
-      )
-    ) {
-      return;
-    }
-
-    setIsDeleting(true);
-    try {
-      const result = await deleteSessions({ data: Array.from(selectedIds) });
+  const batchDeleteMutation = useMutation({
+    mutationFn: (ids: string[]) => deleteSessions({ data: ids }),
+    onSuccess: (result) => {
       toast.success(
-        i18n._(msg`Successfully deleted ${result.deleted} sessions`),
+        i18n._(
+          msg`${plural(result.deleted, {
+            one: 'Deleted # session',
+            other: 'Deleted # sessions',
+          })}`,
+        ),
       );
       exitSelectionMode();
       void queryClient.invalidateQueries({ queryKey: ['sessions'] });
-    } catch (error) {
+    },
+    onError: (error) => {
       console.error('Failed to delete sessions:', error);
       toast.error(i18n._(msg`Failed to delete sessions`));
-    } finally {
-      setIsDeleting(false);
-    }
-  }, [selectedIds, exitSelectionMode, i18n, queryClient]);
+    },
+  });
+
+  const selectedCount = selectedIds.size;
 
   return (
     <div className="min-h-screen space-y-6 bg-gradient-to-br from-background via-background to-muted/20">
@@ -284,7 +271,7 @@ function SessionsPage() {
                   <button
                     key={filter.value}
                     onClick={() =>
-                      updateSearch({ status: filter.value as any, page: 1 })
+                      updateSearch({ status: filter.value, page: 1 })
                     }
                     className={cn(
                       'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200',
@@ -370,21 +357,14 @@ function SessionsPage() {
                 return (
                   <button
                     key={filter.value}
-                    onClick={() => {
-                      if (filter.value !== 'custom') {
-                        updateSearch({
-                          timeRange: filter.value as any,
-                          from: undefined,
-                          to: undefined,
-                          page: 1,
-                        });
-                      } else {
-                        updateSearch({
-                          timeRange: filter.value as any,
-                          page: 1,
-                        });
-                      }
-                    }}
+                    onClick={() =>
+                      updateSearch({
+                        timeRange: filter.value,
+                        from: undefined,
+                        to: undefined,
+                        page: 1,
+                      })
+                    }
                     className={cn(
                       'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 whitespace-nowrap',
                       isActive
@@ -402,7 +382,8 @@ function SessionsPage() {
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => navigate({ search: {}, replace: true })}
+                onClick={clearFilters}
+                aria-label={i18n._(msg`Clear filters`)}
                 className="h-8 w-8 rounded-full hover:bg-destructive/10 hover:text-destructive shrink-0"
               >
                 <X className="h-4 w-4" />
@@ -468,8 +449,10 @@ function SessionsPage() {
                 <Button
                   variant="destructive"
                   size="sm"
-                  onClick={handleBatchDelete}
-                  disabled={selectedIds.size === 0 || isDeleting}
+                  onClick={() => setConfirmBatchDelete(true)}
+                  disabled={
+                    selectedCount === 0 || batchDeleteMutation.isPending
+                  }
                   className="h-9 px-4 rounded-full text-xs font-semibold gap-1.5 disabled:opacity-40"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -521,7 +504,13 @@ function SessionsPage() {
       </div>
 
       <div className="p-4 md:px-8 space-y-6 pb-20">
-        {query.isPending ? (
+        {query.isError && !query.data ? (
+          <QueryError
+            title={<Trans>Failed to load sessions</Trans>}
+            error={query.error}
+            onRetry={() => void query.refetch()}
+          />
+        ) : query.isPending ? (
           <div className={cn(COMPACT_CARD_GRID, 'gap-4')}>
             {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
               <div
@@ -573,6 +562,29 @@ function SessionsPage() {
             selectedIds={selectedIds}
             onSelectionChange={handleSelectionChange}
           />
+        ) : hasActiveFilters ? (
+          <motion.div
+            key="no-results"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex flex-col items-center justify-center py-32 text-center space-y-6 border-2 border-dashed border-muted-foreground/20 rounded-2xl bg-muted/5 backdrop-blur-sm shadow-sm"
+          >
+            <div className="p-6 bg-primary/5 rounded-full ring-1 ring-primary/10">
+              <SearchX className="h-16 w-16 text-primary/60" />
+            </div>
+            <div className="space-y-2 max-w-md">
+              <h3 className="font-semibold text-2xl tracking-tight">
+                <Trans>No sessions found</Trans>
+              </h3>
+              <p className="text-muted-foreground">
+                <Trans>No sessions match the current search or filters.</Trans>
+              </p>
+            </div>
+            <Button variant="outline" onClick={clearFilters} className="mt-4">
+              <X className="mr-2 h-4 w-4" />
+              <Trans>Clear filters</Trans>
+            </Button>
+          </motion.div>
         ) : (
           <motion.div
             key="empty"
@@ -605,58 +617,27 @@ function SessionsPage() {
           </motion.div>
         )}
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="mt-8">
-            <Pagination>
-              <PaginationContent>
-                <PaginationItem>
-                  <PaginationPrevious
-                    onClick={() =>
-                      currentPage > 1 && updateSearch({ page: currentPage - 1 })
-                    }
-                    className={
-                      currentPage === 1
-                        ? 'pointer-events-none opacity-50'
-                        : 'cursor-pointer'
-                    }
-                  />
-                </PaginationItem>
-
-                {pageNumbers.map((page, idx) => (
-                  <PaginationItem key={idx}>
-                    {page === '...' ? (
-                      <PaginationEllipsis />
-                    ) : (
-                      <PaginationLink
-                        isActive={currentPage === page}
-                        onClick={() => updateSearch({ page: page as number })}
-                        className="cursor-pointer"
-                      >
-                        {page}
-                      </PaginationLink>
-                    )}
-                  </PaginationItem>
-                ))}
-
-                <PaginationItem>
-                  <PaginationNext
-                    onClick={() =>
-                      currentPage < totalPages &&
-                      updateSearch({ page: currentPage + 1 })
-                    }
-                    className={
-                      currentPage === totalPages
-                        ? 'pointer-events-none opacity-50'
-                        : 'cursor-pointer'
-                    }
-                  />
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
-          </div>
-        )}
+        <ListPagination
+          pageIndex={currentPage - 1}
+          totalCount={query.data?.total}
+          pageSize={limit}
+          onPageIndexChange={handlePageIndexChange}
+        />
       </div>
+
+      <ConfirmDialog
+        open={confirmBatchDelete}
+        onOpenChange={setConfirmBatchDelete}
+        title={<Trans>Delete sessions</Trans>}
+        description={i18n._(
+          msg`${plural(selectedCount, {
+            one: 'Are you sure you want to delete # session? This action cannot be undone.',
+            other:
+              'Are you sure you want to delete # sessions? This action cannot be undone.',
+          })}`,
+        )}
+        onConfirm={() => batchDeleteMutation.mutate(Array.from(selectedIds))}
+      />
     </div>
   );
 }

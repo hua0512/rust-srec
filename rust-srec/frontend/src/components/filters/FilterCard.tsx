@@ -15,7 +15,9 @@ import { AlertTriangle, Pencil, Trash2 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
+import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { DAYS, filterTypeMeta } from './filter-types';
 
 type Filter = z.infer<typeof FilterSchema>;
@@ -23,11 +25,13 @@ type Filter = z.infer<typeof FilterSchema>;
 interface FilterCardProps {
   filter: Filter;
   onEdit: (filter: Filter) => void;
+  /** Called once the person has confirmed the delete. */
   onDelete: (filterId: string) => void;
 }
 
 export function FilterCard({ filter, onEdit, onDelete }: FilterCardProps) {
   const { i18n } = useLingui();
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const meta = filterTypeMeta(filter.filter_type);
   const Icon = meta?.icon;
 
@@ -208,7 +212,7 @@ export function FilterCard({ filter, onEdit, onDelete }: FilterCardProps) {
               variant="ghost"
               size="icon"
               className="h-7 w-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-              onClick={() => onDelete(filter.id)}
+              onClick={() => setConfirmDelete(true)}
             >
               <Trash2 className="h-3.5 w-3.5" />
               <span className="sr-only">
@@ -219,6 +223,17 @@ export function FilterCard({ filter, onEdit, onDelete }: FilterCardProps) {
         </div>
       </CardHeader>
       <CardContent className="flex-1">{renderConfig()}</CardContent>
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={<Trans>Delete filter</Trans>}
+        description={
+          <Trans>
+            Remove this filter from the streamer? This cannot be undone.
+          </Trans>
+        }
+        onConfirm={() => onDelete(filter.id)}
+      />
     </Card>
   );
 }

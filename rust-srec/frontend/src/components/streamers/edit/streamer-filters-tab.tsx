@@ -5,6 +5,8 @@ import { Trans } from '@lingui/react/macro';
 import { Skeleton } from '@/components/ui/skeleton';
 import { FilterList } from '../../filters/FilterList';
 import { FilterDialog } from '../../filters/FilterDialog';
+import { CARD_GRID } from '@/lib/grid';
+import { cn } from '@/lib/utils';
 
 interface StreamerFiltersTabProps {
   streamerId: string;
@@ -49,7 +51,7 @@ export function StreamerFiltersTab({
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className={cn(CARD_GRID, 'gap-6')}>
           <Skeleton className="h-40 w-full rounded-xl" />
           <Skeleton className="h-40 w-full rounded-xl" />
           <Skeleton className="h-40 w-full rounded-xl" />

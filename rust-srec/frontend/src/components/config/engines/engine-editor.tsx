@@ -33,8 +33,10 @@ import {
 } from '@/components/ui/card';
 import {
   EngineConfigSchema,
+  type EngineType,
   CreateEngineRequestSchema,
   UpdateEngineRequestSchema,
+  engineConfigFormValue,
 } from '@/api/schemas';
 import { createEngine, updateEngine } from '@/server/functions';
 import { SaveFab } from '@/components/shared/save-fab';
@@ -49,6 +51,7 @@ import {
   CONFIG_SELECT_TRIGGER,
   ConfigFieldLabel,
 } from '@/components/config/shared/config-field';
+import { UnsavedChangesGuard } from '@/components/shared/unsaved-changes-guard';
 
 interface EngineEditorProps {
   engine?: z.infer<typeof EngineConfigSchema>;
@@ -156,6 +159,7 @@ function EngineForm({
 
   return (
     <Form {...form}>
+      <UnsavedChangesGuard when={form.formState.isDirty && !isSubmitting} />
       <form
         id="engine-form"
         onSubmit={form.handleSubmit(onSubmit)}
@@ -217,7 +221,10 @@ function EngineForm({
                       field.onChange(value);
                       // Another type's settings do not carry over; an empty configuration uses
                       // the new engine's defaults.
-                      form.setValue('config', {});
+                      form.setValue(
+                        'config',
+                        engineConfigFormValue(value as EngineType, {}),
+                      );
                     }}
                     value={field.value}
                   >
@@ -281,12 +288,12 @@ export function EngineEditor({ engine, onSuccess }: EngineEditorProps) {
     ? {
         name: engine.name,
         engine_type: engine.engine_type,
-        config: engine.config as Record<string, unknown>,
+        config: engineConfigFormValue(engine.engine_type, engine.config),
       }
     : {
         name: '',
         engine_type: 'FFMPEG' as const,
-        config: {},
+        config: engineConfigFormValue('FFMPEG', {}),
       };
 
   return (

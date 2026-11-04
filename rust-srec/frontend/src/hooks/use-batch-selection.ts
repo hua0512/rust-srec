@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import type { BatchResponse } from '@/api/schemas';
 
 interface UseBatchSelectionOptions {
   /**
@@ -81,4 +84,68 @@ export function useBatchSelection({
     toggleSelectionMode,
     exitSelectionMode,
   };
+}
+
+interface UseBatchActionMutationOptions<TVariables> {
+  mutationFn: (variables: TVariables) => Promise<BatchResponse>;
+  /** Refetches what the batch changed; runs after every response, partial or not. */
+  invalidate: () => void;
+  selection: Pick<
+    ReturnType<typeof useBatchSelection>,
+    'setSelectedIds' | 'exitSelectionMode'
+  >;
+  /** Toast text for a batch where every item went through. */
+  successMessage: (succeeded: number) => string;
+  /** Toast text for a batch where some items failed. */
+  partialMessage: (succeeded: number, failed: number) => string;
+  /** Toast text when the request itself fails and the error has no message. */
+  errorMessage: string;
+}
+
+/** Item errors listed under a partial-failure toast; the rest stay selected. */
+const LISTED_ERRORS = 3;
+
+/**
+ * The mutation behind a list page's batch action bar.
+ *
+ * Batch endpoints apply items one by one without rolling back, so a response
+ * can be partial. A full success leaves selection mode; a partial one keeps
+ * only the failed rows selected, so repeating the action targets exactly the
+ * rows that did not go through.
+ */
+export function useBatchActionMutation<TVariables>({
+  mutationFn,
+  invalidate,
+  selection: { setSelectedIds, exitSelectionMode },
+  successMessage,
+  partialMessage,
+  errorMessage,
+}: UseBatchActionMutationOptions<TVariables>) {
+  return useMutation({
+    mutationFn,
+    onSuccess: (result) => {
+      invalidate();
+
+      if (result.failed === 0) {
+        toast.success(successMessage(result.succeeded));
+        exitSelectionMode();
+        return;
+      }
+
+      const failedResults = result.results.filter((item) => !item.success);
+      setSelectedIds(new Set(failedResults.map((item) => item.id)));
+      toast.warning(partialMessage(result.succeeded, result.failed), {
+        description: failedResults
+          .slice(0, LISTED_ERRORS)
+          .map((item) => item.error)
+          .filter(Boolean)
+          .join('; '),
+      });
+    },
+    onError: (error) => {
+      toast.error(
+        error instanceof Error && error.message ? error.message : errorMessage,
+      );
+    },
+  });
 }

@@ -10,6 +10,9 @@ import { Button } from '@/components/ui/button';
 import { MoreHorizontal, Trash, Edit, Play, Pause, Video } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { Trans } from '@lingui/react/macro';
+import { useState } from 'react';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { useMenuDialog } from '@/hooks/use-menu-dialog';
 import { z } from 'zod';
 import { StreamerSchema } from '@/api/schemas';
 import { useLosslessCutItem } from './lossless-cut-action';
@@ -17,6 +20,7 @@ import { useLosslessCutItem } from './lossless-cut-action';
 interface StreamActionsMenuProps {
   downloadId?: string;
   streamer: z.infer<typeof StreamerSchema>;
+  /** Called once the person has confirmed the delete. */
   onDelete: (id: string) => void;
   onToggle: (id: string, enabled: boolean) => void;
 }
@@ -28,78 +32,96 @@ export const StreamActionsMenu = ({
   onToggle,
 }: StreamActionsMenuProps) => {
   const cutAction = useLosslessCutItem(downloadId);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const { menuButtonRef, openDialog, onCloseAutoFocus } = useMenuDialog();
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 md:group-focus-within:opacity-100 transition-opacity -mr-2 text-muted-foreground hover:text-foreground"
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            ref={menuButtonRef}
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100 md:group-focus-within:opacity-100 transition-opacity -mr-2 text-muted-foreground hover:text-foreground"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+            <span className="sr-only">
+              <Trans>Open menu</Trans>
+            </span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          className="w-56"
+          onCloseAutoFocus={onCloseAutoFocus}
         >
-          <MoreHorizontal className="h-4 w-4" />
-          <span className="sr-only">
-            <Trans>Open menu</Trans>
-          </span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel>
-          <Trans>Actions</Trans>
-        </DropdownMenuLabel>
-        <DropdownMenuItem
-          onClick={() => onToggle(streamer.id, !streamer.enabled)}
-          className="cursor-pointer group"
-        >
-          {streamer.enabled ? (
+          <DropdownMenuLabel>
+            <Trans>Actions</Trans>
+          </DropdownMenuLabel>
+          <DropdownMenuItem
+            onClick={() => onToggle(streamer.id, !streamer.enabled)}
+            className="cursor-pointer group"
+          >
+            {streamer.enabled ? (
+              <>
+                <Pause className="mr-2 h-4 w-4 text-orange-500 group-hover:text-orange-600 dark:text-orange-400 dark:group-hover:text-orange-300" />
+                <span className="text-orange-600 group-hover:text-orange-700 dark:text-orange-400 dark:group-hover:text-orange-300 transition-colors">
+                  <Trans>Disable</Trans>
+                </span>
+              </>
+            ) : (
+              <>
+                <Play className="mr-2 h-4 w-4 text-green-500 group-hover:text-green-600 dark:text-green-400 dark:group-hover:text-green-300" />
+                <span className="text-green-600 group-hover:text-green-700 dark:text-green-400 dark:group-hover:text-green-300 transition-colors">
+                  <Trans>Enable</Trans>
+                </span>
+              </>
+            )}
+          </DropdownMenuItem>
+          {cutAction && (
             <>
-              <Pause className="mr-2 h-4 w-4 text-orange-500 group-hover:text-orange-600 dark:text-orange-400 dark:group-hover:text-orange-300" />
-              <span className="text-orange-600 group-hover:text-orange-700 dark:text-orange-400 dark:group-hover:text-orange-300 transition-colors">
-                <Trans>Disable</Trans>
-              </span>
-            </>
-          ) : (
-            <>
-              <Play className="mr-2 h-4 w-4 text-green-500 group-hover:text-green-600 dark:text-green-400 dark:group-hover:text-green-300" />
-              <span className="text-green-600 group-hover:text-green-700 dark:text-green-400 dark:group-hover:text-green-300 transition-colors">
-                <Trans>Enable</Trans>
-              </span>
+              <DropdownMenuSeparator />
+              {cutAction}
             </>
           )}
-        </DropdownMenuItem>
-        {cutAction && (
-          <>
-            <DropdownMenuSeparator />
-            {cutAction}
-          </>
-        )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild className="cursor-pointer group">
-          <Link to="/player" search={{ url: streamer.url }}>
-            <Video className="mr-2 h-4 w-4 text-purple-500 group-hover:text-purple-600 dark:text-purple-400 dark:group-hover:text-purple-300" />
-            <span className="text-purple-600 group-hover:text-purple-700 dark:text-purple-400 dark:group-hover:text-purple-300 transition-colors">
-              <Trans>Watch</Trans>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild className="cursor-pointer group">
+            <Link to="/player" search={{ url: streamer.url }}>
+              <Video className="mr-2 h-4 w-4 text-purple-500 group-hover:text-purple-600 dark:text-purple-400 dark:group-hover:text-purple-300" />
+              <span className="text-purple-600 group-hover:text-purple-700 dark:text-purple-400 dark:group-hover:text-purple-300 transition-colors">
+                <Trans>Watch</Trans>
+              </span>
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem asChild className="cursor-pointer group">
+            <Link to="/streamers/$id/edit" params={{ id: streamer.id }}>
+              <Edit className="mr-2 h-4 w-4 text-blue-500 group-hover:text-blue-600 dark:text-blue-400 dark:group-hover:text-blue-300" />
+              <span className="text-blue-600 group-hover:text-blue-700 dark:text-blue-400 dark:group-hover:text-blue-300 transition-colors">
+                <Trans>Edit</Trans>
+              </span>
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onSelect={openDialog(() => setConfirmDelete(true))}
+            className="cursor-pointer group focus:bg-red-50 dark:focus:bg-red-950/20"
+          >
+            <Trash className="mr-2 h-4 w-4 text-red-500 group-hover:text-red-600" />
+            <span className="text-red-600 group-hover:text-red-700">
+              <Trans>Delete</Trans>
             </span>
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild className="cursor-pointer group">
-          <Link to="/streamers/$id/edit" params={{ id: streamer.id }}>
-            <Edit className="mr-2 h-4 w-4 text-blue-500 group-hover:text-blue-600 dark:text-blue-400 dark:group-hover:text-blue-300" />
-            <span className="text-blue-600 group-hover:text-blue-700 dark:text-blue-400 dark:group-hover:text-blue-300 transition-colors">
-              <Trans>Edit</Trans>
-            </span>
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => onDelete(streamer.id)}
-          className="cursor-pointer group focus:bg-red-50 dark:focus:bg-red-950/20"
-        >
-          <Trash className="mr-2 h-4 w-4 text-red-500 group-hover:text-red-600" />
-          <span className="text-red-600 group-hover:text-red-700">
-            <Trans>Delete</Trans>
-          </span>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={<Trans>Delete streamer</Trans>}
+        description={
+          <Trans>Are you sure you want to delete this streamer?</Trans>
+        }
+        onConfirm={() => onDelete(streamer.id)}
+      />
+    </>
   );
 };

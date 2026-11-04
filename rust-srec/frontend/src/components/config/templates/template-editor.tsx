@@ -29,6 +29,7 @@ import type { ProxyRouteInherit } from '../shared/proxy-route-picker';
 import { INHERIT_ROUTE } from '@/api/schemas/proxies';
 import { enginesQueryOptions } from '@/api/engines';
 import { withEngineOverrideChecks } from './engine-override-checks';
+import { UnsavedChangesGuard } from '@/components/shared/unsaved-changes-guard';
 
 export type TemplateFormValues = z.input<typeof UpdateTemplateRequestSchema>;
 
@@ -135,6 +136,7 @@ export function TemplateEditor({
 
   return (
     <Form {...form}>
+      <UnsavedChangesGuard when={form.formState.isDirty && !isSubmitting} />
       <form
         id="template-form"
         onSubmit={form.handleSubmit((data) => onSubmit(data))}

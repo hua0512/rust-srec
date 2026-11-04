@@ -2,6 +2,7 @@ import { deleteStreamer, updateStreamer } from '@/server/functions';
 import { CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DashboardCard } from '@/components/dashboard/dashboard-card';
+import { QueryError } from '@/components/shared/query-error';
 import { StreamerCard } from '@/components/streamers/streamer-card';
 import {
   Activity,
@@ -96,17 +97,34 @@ function Dashboard() {
   // Three summaries on one screen, so they share the same relaxed interval the
   // other overview pages use. Anything that moves second by second — download
   // and upload progress — arrives over the live connection, not from here.
-  const { data: health, isLoading: isHealthLoading } = useQuery({
+  // A failed poll keeps the last good data on screen; the error replaces a
+  // section only when there is nothing to show.
+  const {
+    data: health,
+    isLoading: isHealthLoading,
+    error: healthError,
+    refetch: refetchHealth,
+  } = useQuery({
     ...systemHealthQueryOptions,
     refetchInterval: 10000,
   });
 
-  const { data: stats, isLoading: isStatsLoading } = useQuery({
+  const {
+    data: stats,
+    isLoading: isStatsLoading,
+    error: statsError,
+    refetch: refetchStats,
+  } = useQuery({
     ...pipelineStatsQueryOptions,
     refetchInterval: 10000,
   });
 
-  const { data: streamers, isLoading: isStreamersLoading } = useQuery({
+  const {
+    data: streamers,
+    isLoading: isStreamersLoading,
+    error: streamersError,
+    refetch: refetchStreamers,
+  } = useQuery({
     ...liveStreamersQueryOptions,
     refetchInterval: 10000,
   });
@@ -142,15 +160,10 @@ function Dashboard() {
   const deleteMutate = deleteMutation.mutate;
   const toggleMutate = toggleMutation.mutate;
 
+  // StreamerCard's menu asks for confirmation before calling this.
   const handleDelete = useCallback(
-    (id: string) => {
-      if (
-        confirm(i18n._(msg`Are you sure you want to delete this streamer?`))
-      ) {
-        deleteMutate(id);
-      }
-    },
-    [deleteMutate, i18n],
+    (id: string) => deleteMutate(id),
+    [deleteMutate],
   );
 
   const handleToggle = useCallback(
@@ -208,7 +221,13 @@ function Dashboard() {
             </Button>
           </div>
 
-          {isHealthLoading || !health ? (
+          {healthError && !health ? (
+            <QueryError
+              title={<Trans>Failed to load system status</Trans>}
+              error={healthError}
+              onRetry={() => void refetchHealth()}
+            />
+          ) : isHealthLoading || !health ? (
             <div className={GRID_4}>
               {Array.from({ length: SKELETON_COUNT }, (_, i) => (
                 <CardSkeleton key={i} />
@@ -306,7 +325,13 @@ function Dashboard() {
             </h2>
           </div>
 
-          {isStatsLoading ? (
+          {statsError && !stats ? (
+            <QueryError
+              title={<Trans>Failed to load pipeline statistics</Trans>}
+              error={statsError}
+              onRetry={() => void refetchStats()}
+            />
+          ) : isStatsLoading ? (
             <div className={GRID_4}>
               {Array.from({ length: SKELETON_COUNT }, (_, i) => (
                 <CardSkeleton key={i} />
@@ -385,7 +410,13 @@ function Dashboard() {
             )}
           </div>
 
-          {isStreamersLoading ? (
+          {streamersError && !streamers ? (
+            <QueryError
+              title={<Trans>Failed to load active recordings</Trans>}
+              error={streamersError}
+              onRetry={() => void refetchStreamers()}
+            />
+          ) : isStreamersLoading ? (
             <div className={GRID_STREAMERS}>
               {Array.from({ length: SKELETON_COUNT }, (_, i) => (
                 <StreamerCardSkeleton key={i} />

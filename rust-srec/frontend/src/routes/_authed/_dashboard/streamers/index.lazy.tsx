@@ -6,7 +6,7 @@ import {
   keepPreviousData,
 } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
-import { useMemo, useEffect, useCallback } from 'react';
+import { useMemo, useCallback } from 'react';
 import {
   deleteStreamer,
   updateStreamer,
@@ -38,11 +38,15 @@ import {
 import { toast } from 'sonner';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
-import { msg } from '@lingui/core/macro';
+import { msg, plural } from '@lingui/core/macro';
 import { StreamerCard } from '@/components/streamers/streamer-card';
 import { SearchInput } from '@/components/shared/search-input';
 import { useUpdateSearch } from '@/hooks/use-update-search';
-import { useBatchSelection } from '@/hooks/use-batch-selection';
+import {
+  useBatchActionMutation,
+  useBatchSelection,
+} from '@/hooks/use-batch-selection';
+import { ListPagination } from '@/components/shared/list-pagination';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { DashboardHeader } from '@/components/shared/dashboard-header';
@@ -54,15 +58,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination';
 import {
   Popover,
   PopoverContent,
@@ -77,8 +72,6 @@ import { cn } from '@/lib/utils';
 export const Route = createLazyFileRoute('/_authed/_dashboard/streamers/')({
   component: StreamersPage,
 });
-
-const PAGE_SIZES = [12, 24, 48, 96];
 
 type PriorityFilter = 'all' | 'HIGH' | 'NORMAL' | 'LOW';
 type SortOption =
@@ -219,7 +212,6 @@ function StreamersPage() {
 
   const streamers = streamersData?.items || [];
   const totalCount = streamersData?.total || 0;
-  const totalPages = Math.ceil(totalCount / pageSize);
 
   const pageIds = useMemo(
     () => streamers.map((streamer) => streamer.id),
@@ -251,37 +243,12 @@ function StreamersPage() {
     ].join('|'),
   });
 
-  // Page overflow protection: reset to last valid page when filters reduce results
-  useEffect(() => {
-    if (page > totalPages && totalPages > 0) {
-      updateSearch({ page: totalPages });
-    }
-  }, [totalPages, page, updateSearch]);
-
-  // Pagination logic
-  const paginationPages = useMemo(() => {
-    const pages: (number | 'ellipsis')[] = [];
-    // Current interface uses 1-based page, but internal calc might be easier with 0-based conceptual
-    const current = page;
-    const total = totalPages;
-
-    if (total <= 7) {
-      for (let i = 1; i <= total; i++) pages.push(i);
-    } else {
-      pages.push(1);
-      if (current > 3) pages.push('ellipsis');
-      for (
-        let i = Math.max(2, current - 1);
-        i <= Math.min(total - 1, current + 1);
-        i++
-      ) {
-        pages.push(i);
-      }
-      if (current < total - 2) pages.push('ellipsis');
-      pages.push(total);
-    }
-    return pages;
-  }, [totalPages, page]);
+  // The URL counts pages from 1; the pager counts them from 0.
+  const handlePageIndexChange = useCallback(
+    (index: number) =>
+      updateSearch({ page: index > 0 ? index + 1 : undefined }),
+    [updateSearch],
+  );
 
   // Mutations
   const deleteMutation = useMutation({
@@ -305,7 +272,7 @@ function StreamersPage() {
       toast.error(error.message || i18n._(msg`Failed to update streamer`)),
   });
 
-  const batchMutation = useMutation({
+  const batchMutation = useBatchActionMutation({
     mutationFn: ({
       ids,
       action,
@@ -313,39 +280,24 @@ function StreamersPage() {
       ids: string[];
       action: BatchStreamerAction;
     }) => batchUpdateStreamers({ data: { ids, action } }),
-    onSuccess: (result) => {
-      void queryClient.invalidateQueries({ queryKey: ['streamers'] });
-
-      if (result.failed === 0) {
-        toast.success(
-          i18n._(msg`Successfully processed ${result.succeeded} streamers`),
-        );
-        exitSelectionMode();
-        return;
-      }
-
-      const failedResults = result.results.filter((item) => !item.success);
-      setSelectedIds(new Set(failedResults.map((item) => item.id)));
-      toast.warning(
-        i18n._(
-          msg`Processed ${result.succeeded} streamers; ${result.failed} failed`,
-        ),
-        {
-          description: failedResults
-            .slice(0, 3)
-            .map((item) => item.error)
-            .filter(Boolean)
-            .join('; '),
-        },
-      );
-    },
-    onError: (error) => {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : i18n._(msg`Failed to process selected streamers`),
-      );
-    },
+    invalidate: () =>
+      void queryClient.invalidateQueries({ queryKey: ['streamers'] }),
+    selection: { setSelectedIds, exitSelectionMode },
+    successMessage: (succeeded) =>
+      i18n._(
+        msg`${plural(succeeded, {
+          one: 'Processed # streamer',
+          other: 'Processed # streamers',
+        })}`,
+      ),
+    partialMessage: (succeeded, failed) =>
+      i18n._(
+        msg`${plural(succeeded, {
+          one: 'Processed # streamer',
+          other: 'Processed # streamers',
+        })}; ${failed} failed`,
+      ),
+    errorMessage: i18n._(msg`Failed to process selected streamers`),
   });
 
   const handleBatchAction = useCallback(
@@ -362,15 +314,10 @@ function StreamersPage() {
   const deleteMutate = deleteMutation.mutate;
   const toggleMutate = toggleMutation.mutate;
 
+  // StreamerCard's menu asks for confirmation before calling this.
   const handleDelete = useCallback(
-    (id: string) => {
-      if (
-        confirm(i18n._(msg`Are you sure you want to delete this streamer?`))
-      ) {
-        deleteMutate(id);
-      }
-    },
-    [deleteMutate, i18n],
+    (id: string) => deleteMutate(id),
+    [deleteMutate],
   );
 
   const handleToggle = useCallback(
@@ -787,90 +734,14 @@ function StreamersPage() {
           )}
         </AnimatePresence>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between mt-8 pt-6 border-t font-medium text-sm">
-            <div className="flex items-center gap-3 text-muted-foreground">
-              <span>
-                <Trans>Rows per page</Trans>
-              </span>
-              <Select
-                value={pageSize.toString()}
-                onValueChange={(v) => {
-                  updateSearch({ size: Number(v), page: undefined });
-                }}
-              >
-                {/* No fixed width: `w-16` was narrower than the trigger's own padding plus
-                    chevron, so the value was clipped. */}
-                <SelectTrigger className="h-8 w-auto">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PAGE_SIZES.map((size) => (
-                    <SelectItem key={size} value={size.toString()}>
-                      {size}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Pagination
-              className="w-auto mx-0"
-              aria-label={i18n._(msg`Streamer pagination`)}
-            >
-              <PaginationContent>
-                <PaginationItem>
-                  <PaginationPrevious
-                    onClick={() => page > 1 && updateSearch({ page: page - 1 })}
-                    aria-label={i18n._(msg`Go to previous page`)}
-                    aria-disabled={page === 1}
-                    tabIndex={page === 1 ? -1 : 0}
-                    className={
-                      page === 1
-                        ? 'pointer-events-none opacity-50 cursor-not-allowed'
-                        : 'cursor-pointer'
-                    }
-                  />
-                </PaginationItem>
-                {paginationPages.map((p, i) =>
-                  p === 'ellipsis' ? (
-                    <PaginationItem key={`ellipsis-${i}`} aria-hidden="true">
-                      <PaginationEllipsis />
-                    </PaginationItem>
-                  ) : (
-                    <PaginationItem key={p}>
-                      <PaginationLink
-                        isActive={page === p}
-                        onClick={() => updateSearch({ page: p })}
-                        aria-label={i18n._(msg`Go to page ${p}`)}
-                        aria-current={page === p ? 'page' : undefined}
-                        className="cursor-pointer"
-                      >
-                        {p}
-                      </PaginationLink>
-                    </PaginationItem>
-                  ),
-                )}
-                <PaginationItem>
-                  <PaginationNext
-                    onClick={() =>
-                      page < totalPages && updateSearch({ page: page + 1 })
-                    }
-                    aria-label={i18n._(msg`Go to next page`)}
-                    aria-disabled={page === totalPages}
-                    tabIndex={page === totalPages ? -1 : 0}
-                    className={
-                      page === totalPages
-                        ? 'pointer-events-none opacity-50 cursor-not-allowed'
-                        : 'cursor-pointer'
-                    }
-                  />
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
-          </div>
-        )}
+        <ListPagination
+          pageIndex={page - 1}
+          totalCount={streamersData?.total}
+          pageSize={pageSize}
+          onPageIndexChange={handlePageIndexChange}
+          onPageSizeChange={(size) => updateSearch({ size, page: undefined })}
+          aria-label={i18n._(msg`Streamer pagination`)}
+        />
 
         <AnimatePresence>
           {!selectionMode && (
