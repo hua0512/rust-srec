@@ -68,7 +68,8 @@ const LIVE_SESSION_POLL_MS = 30_000;
 /**
  * How often a recording session's segments and outputs are re-read. Each
  * finished segment is announced over the live-updates socket, which re-reads
- * them at once, so this only covers a socket that was down at the time.
+ * them within half a minute, so this only covers a socket that was down at
+ * the time.
  */
 const LIVE_SESSION_FALLBACK_POLL_MS = 120_000;
 

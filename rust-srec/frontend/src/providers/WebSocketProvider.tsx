@@ -48,6 +48,9 @@ import { invalidateCredentialAttention } from '@/api/credential-profiles';
  */
 export const PROGRESS_FLUSH_MS = 500;
 
+/** Longest a finished segment waits before its session's lists are re-read. */
+const SEGMENT_REFRESH_MS = 30_000;
+
 export async function handleUploadTerminal(
   queryClient: QueryClient,
   terminal: Pick<
@@ -222,6 +225,47 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => dropPendingProgress, [dropPendingProgress]);
+
+  // Sessions with a finished segment whose page lists are due a re-read.
+  const segmentRefreshTimersRef = useRef(
+    new Map<string, ReturnType<typeof setTimeout>>(),
+  );
+
+  /**
+   * Re-reads a session's segments and outputs after one of its segments
+   * finished; the segment is stored before the event is sent. Each re-read
+   * lists every segment, so bursts are collapsed into one read per
+   * SEGMENT_REFRESH_MS. A hidden tab only marks them stale, and its next
+   * focus reads them.
+   */
+  const scheduleSegmentRefresh = useCallback(
+    (sessionId: string) => {
+      const timers = segmentRefreshTimersRef.current;
+      if (timers.has(sessionId)) return;
+      timers.set(
+        sessionId,
+        setTimeout(() => {
+          timers.delete(sessionId);
+          const refetchType = document.hidden ? 'none' : 'active';
+          for (const queryKey of [
+            ['sessions', sessionId, 'segments'],
+            ['pipeline', 'outputs', sessionId],
+          ]) {
+            void queryClient.invalidateQueries({ queryKey, refetchType });
+          }
+        }, SEGMENT_REFRESH_MS),
+      );
+    },
+    [queryClient],
+  );
+
+  useEffect(() => {
+    const timers = segmentRefreshTimersRef.current;
+    return () => {
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
 
   const handleMessage = useCallback(
     (event: MessageEvent) => {
@@ -408,19 +452,11 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             break;
 
           case EventType.SEGMENT_COMPLETED:
-            // The segment is stored before this is sent, so an open session
-            // page can read it now rather than at its next slow poll.
             if (
               message.payload.case === 'segmentCompleted' &&
               message.payload.value.sessionId
             ) {
-              const { sessionId } = message.payload.value;
-              void queryClient.invalidateQueries({
-                queryKey: ['sessions', sessionId],
-              });
-              void queryClient.invalidateQueries({
-                queryKey: ['pipeline', 'outputs', sessionId],
-              });
+              scheduleSegmentRefresh(message.payload.value.sessionId);
             }
             break;
 
@@ -555,6 +591,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       queryClient,
       flushProgress,
       scheduleProgressFlush,
+      scheduleSegmentRefresh,
     ],
   );
 
