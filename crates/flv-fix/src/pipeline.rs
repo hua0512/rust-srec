@@ -316,8 +316,8 @@ mod test {
 
     use super::*;
     use crate::test_utils::fixtures::{
-        AAC_LC_SILENCE, AV1_CODEC_CONFIG, AV1_KEYFRAME, AVC_CONFIG_16X16, AVC_IDR_16X16,
-        AVC_P_16X16,
+        AAC_LC_CONFIG, AAC_LC_SILENCE, AV1_CODEC_CONFIG, AV1_KEYFRAME, AVC_CONFIG_16X16,
+        AVC_IDR_16X16, AVC_P_16X16,
     };
     use crate::test_utils::{create_audio_sequence_header, create_script_tag};
 
@@ -535,12 +535,12 @@ mod test {
     #[test]
     fn timeline_restart_below_cached_frames_keeps_advancing_and_splits() {
         // A reconnect that first replays a few cached frames from the old
-        // timeline, then restarts the live timeline near zero.
+        // timeline, then restarts the live timeline near zero: far below the
+        // cached frames, or only about 500 ms below them.
         const FRAME_MS: u32 = 40;
         const FRAMES_PER_GOP: u32 = 25;
         const LIMIT_MS: u32 = 2_000;
         const LIVE_FRAMES: u32 = 5 * FRAMES_PER_GOP;
-        const CACHED_START_MS: u32 = 5_000_000;
         let common = PipelineConfig {
             max_duration: Some(Duration::from_millis(LIMIT_MS.into())),
             ..PipelineConfig::default()
@@ -552,53 +552,107 @@ mod test {
                 aac_silence(timestamp),
             ]
         };
-        let mut input = vec![
-            FlvData::Header(FlvHeader::new(true, true)),
-            tag(0, FlvTagType::Video, AVC_CONFIG_16X16),
-            create_audio_sequence_header(0, 0x12),
-        ];
-        input.extend((0..8).flat_map(|i| frame(CACHED_START_MS + i * FRAME_MS, i == 0)));
-        input.extend(
-            (0..LIVE_FRAMES).flat_map(|i| frame(i * FRAME_MS, i.is_multiple_of(FRAMES_PER_GOP))),
-        );
+        for cached_start_ms in [5_000_000, 500] {
+            let mut input = vec![
+                FlvData::Header(FlvHeader::new(true, true)),
+                tag(0, FlvTagType::Video, AVC_CONFIG_16X16),
+                create_audio_sequence_header(0, 0x12),
+            ];
+            input.extend((0..8).flat_map(|i| frame(cached_start_ms + i * FRAME_MS, i == 0)));
+            input.extend(
+                (0..LIVE_FRAMES)
+                    .flat_map(|i| frame(i * FRAME_MS, i.is_multiple_of(FRAMES_PER_GOP))),
+            );
 
-        let output = run_pipeline(&common, FlvPipelineConfig::default(), input);
+            let output = run_pipeline(&common, FlvPipelineConfig::default(), input);
 
-        let mut segments: Vec<Vec<&FlvTag>> = Vec::new();
-        for item in &output {
-            match item {
-                FlvData::Header(_) => segments.push(Vec::new()),
-                FlvData::Tag(tag)
-                    if tag.is_video_tag()
-                        && !tag.is_video_sequence_header()
-                        && let Some(segment) = segments.last_mut() =>
-                {
-                    segment.push(tag)
+            let mut segments: Vec<Vec<&FlvTag>> = Vec::new();
+            for item in &output {
+                match item {
+                    FlvData::Header(_) => segments.push(Vec::new()),
+                    FlvData::Tag(tag)
+                        if tag.is_video_tag()
+                            && !tag.is_video_sequence_header()
+                            && let Some(segment) = segments.last_mut() =>
+                    {
+                        segment.push(tag)
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
-        }
-        // The first restarted frame follows the last cached one by one frame.
-        assert_eq!(
-            segments[0][8].timestamp_ms - segments[0][7].timestamp_ms,
-            FRAME_MS
-        );
-        for (index, segment) in segments.iter().enumerate() {
-            let timestamps: Vec<u32> = segment.iter().map(|tag| tag.timestamp_ms).collect();
-            assert!(
-                timestamps.windows(2).all(|pair| pair[0] < pair[1]),
-                "segment {index} video timestamps must keep advancing: {timestamps:?}"
+            // The first restarted frame follows the last cached one by one frame.
+            assert_eq!(
+                segments[0][8].timestamp_ms - segments[0][7].timestamp_ms,
+                FRAME_MS
+            );
+            for (index, segment) in segments.iter().enumerate() {
+                let timestamps: Vec<u32> = segment.iter().map(|tag| tag.timestamp_ms).collect();
+                assert!(
+                    timestamps.windows(2).all(|pair| pair[0] < pair[1]),
+                    "cached start {cached_start_ms}, segment {index}: video must advance: {timestamps:?}"
+                );
+            }
+            let split_count = output
+                .iter()
+                .filter(|item| matches!(item, FlvData::Split(SplitReason::DurationLimit)))
+                .count();
+            assert_eq!(
+                split_count,
+                (LIVE_FRAMES * FRAME_MS / LIMIT_MS) as usize,
+                "the duration limit must split the restarted timeline"
             );
         }
-        let split_count = output
-            .iter()
-            .filter(|item| matches!(item, FlvData::Split(SplitReason::DurationLimit)))
-            .count();
-        assert_eq!(
-            split_count,
-            (LIVE_FRAMES * FRAME_MS / LIMIT_MS) as usize,
-            "the duration limit must split the restarted timeline"
-        );
+    }
+
+    #[test]
+    fn stream_starting_below_zero_matches_the_unshifted_stream() {
+        // FLV timestamps are signed, and encoders that start on a B-frame
+        // write the first tags slightly below zero. Audio follows video by
+        // 66 ms, so the shifted stream starts with video at -66 ms and audio
+        // at 0 ms. The recording must not depend on where the source starts.
+        const FRAME_MS: i32 = 40;
+        const AUDIO_LAG_MS: i32 = 66;
+        const FRAMES_PER_GOP: i32 = 25;
+        let stream = |shift: i32| {
+            let tag_at =
+                |timestamp: i32, kind, data| (timestamp, tag(timestamp as u32, kind, data));
+            let mut media = Vec::new();
+            for i in 0..3 * FRAMES_PER_GOP {
+                let video = if i % FRAMES_PER_GOP == 0 {
+                    AVC_IDR_16X16
+                } else {
+                    AVC_P_16X16
+                };
+                let timestamp = shift + i * FRAME_MS;
+                media.push(tag_at(timestamp, FlvTagType::Video, video));
+                media.push(tag_at(
+                    timestamp + AUDIO_LAG_MS,
+                    FlvTagType::Audio,
+                    AAC_LC_SILENCE,
+                ));
+            }
+            // Interleave by time, video first on ties, as a muxer writes it.
+            media.sort_by_key(|(timestamp, _)| *timestamp);
+            let mut input = vec![
+                FlvData::Header(FlvHeader::new(true, true)),
+                tag_at(shift, FlvTagType::Video, AVC_CONFIG_16X16).1,
+                tag_at(shift, FlvTagType::Audio, AAC_LC_CONFIG).1,
+            ];
+            input.extend(media.into_iter().map(|(_, tag)| tag));
+            input
+        };
+        let expected = stream(0);
+        for shift in [0, -AUDIO_LAG_MS] {
+            assert_eq!(
+                run_pipeline(
+                    &PipelineConfig::default(),
+                    FlvPipelineConfig::default(),
+                    stream(shift)
+                ),
+                expected,
+                "shift {shift} ms"
+            );
+        }
     }
 
     #[test]

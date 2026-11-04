@@ -158,8 +158,14 @@ impl GopSortOperator {
             let mut video_iter = self.video_tags.drain(..).peekable();
 
             // Preserve per-stream order, with video first on timestamp ties.
+            // Timestamps are compared by their wrapping difference (serial
+            // number arithmetic): a tag just below zero orders before one at
+            // zero, and a GOP crossing the signed 32-bit boundary (about 24.8
+            // days of source uptime) stays in order. The first media tag of a
+            // segment is then the earliest one, and the timeline is based on it.
             while let (Some(audio), Some(video)) = (audio_iter.peek(), video_iter.peek()) {
-                let next = if video.timestamp_ms <= audio.timestamp_ms {
+                let video_first = video.timestamp_ms.wrapping_sub(audio.timestamp_ms) as i32 <= 0;
+                let next = if video_first {
                     video_iter.next()
                 } else {
                     audio_iter.next()
@@ -385,6 +391,44 @@ mod tests {
             }
             expected.push(marker);
             assert_eq!(output, expected, "video tail {video_tail}");
+        }
+    }
+
+    #[test]
+    fn interleaving_follows_timestamps_across_the_32_bit_boundaries() {
+        // A GOP spanning zero (a source starting just below it) or the
+        // signed 32-bit boundary (about 24.8 days of uptime) keeps timestamp
+        // order: neither the raw nor the signed value is monotonic there.
+        for boundary in [0, 1 << 31] {
+            let at = |offset: i32| u32::wrapping_add_signed(boundary, offset);
+            let context = StreamerContext::arc_new(CancellationToken::new());
+            let mut operator = GopSortOperator::new(context.clone());
+            let mut output = Vec::new();
+            let mut emit = |item| {
+                output.push(item);
+                Ok(())
+            };
+            for item in [
+                create_test_header(),
+                create_video_tag(at(-20), true),
+                create_audio_tag(at(-5)),
+                create_audio_tag(at(3)),
+                create_video_tag(at(20), false),
+            ] {
+                operator.process(&context, item, &mut emit).unwrap();
+            }
+            operator.finish(&context, &mut emit).unwrap();
+            assert_eq!(
+                output,
+                vec![
+                    create_test_header(),
+                    create_video_tag(at(-20), true),
+                    create_audio_tag(at(-5)),
+                    create_audio_tag(at(3)),
+                    create_video_tag(at(20), false),
+                ],
+                "boundary {boundary}"
+            );
         }
     }
 

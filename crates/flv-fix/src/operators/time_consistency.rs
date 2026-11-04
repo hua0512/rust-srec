@@ -53,11 +53,15 @@ use std::sync::Arc;
 use tracing::{debug, trace, warn};
 
 /// How far before the segment's base a media tag may land and still be clamped
-/// to 0. Audio and video are not perfectly aligned at a segment start, so a tag
-/// slightly older than the first one is ordinary interleaving. Anything further
-/// back means the source restarted its timeline below the base; clamping that
-/// would pin every following tag to 0 until the source caught up again.
-const MAX_CLAMPED_LAG_MS: i64 = 1_000;
+/// to 0. GOP sorting upstream merges audio and video in timestamp order within
+/// each group it releases, so ordinary A/V interleaving does not lag the base;
+/// only muxing jitter does. A tag further below the base means the source
+/// restarted its timeline there; clamping it would pin every following tag to
+/// 0 until the source caught up again, so the timeline is re-based instead.
+///
+/// Media sent before the first keyframe is released as a group of its own, so
+/// a first keyframe more than this far behind such tags is also re-based.
+const MAX_CLAMPED_LAG_MS: i64 = 100;
 
 /// Frame steps outside this range are not trusted to predict the next frame.
 const PLAUSIBLE_STEP_MS: std::ops::RangeInclusive<u32> = 10..=100;
@@ -68,28 +72,30 @@ const FALLBACK_VIDEO_STEP_MS: u32 = 33;
 const FALLBACK_AUDIO_STEP_MS: u32 = 23;
 
 /// The last emitted media timestamp of one track in the current segment, and
-/// the step that led to it.
+/// the last plausible step observed in this segment.
 #[derive(Default)]
 struct TrackClock {
     last_timestamp: Option<u32>,
-    last_step: u32,
+    /// The last step within `PLAUSIBLE_STEP_MS`, or `None` until the segment
+    /// has two plausibly spaced frames. A duplicate or metadata packet (0 ms)
+    /// or a glitch step does not replace an earlier good measurement.
+    last_step: Option<u32>,
 }
 
 impl TrackClock {
     fn record(&mut self, timestamp: u32) {
         if let Some(last) = self.last_timestamp {
-            self.last_step = timestamp.saturating_sub(last);
+            let step = timestamp.saturating_sub(last);
+            if PLAUSIBLE_STEP_MS.contains(&step) {
+                self.last_step = Some(step);
+            }
         }
         self.last_timestamp = Some(timestamp);
     }
 
     /// When this track's next frame is due, if it has emitted one.
     fn next_expected(&self, fallback_step: u32) -> Option<i64> {
-        let step = if PLAUSIBLE_STEP_MS.contains(&self.last_step) {
-            self.last_step
-        } else {
-            fallback_step
-        };
+        let step = self.last_step.unwrap_or(fallback_step);
         self.last_timestamp
             .map(|last| i64::from(last) + i64::from(step))
     }
@@ -117,8 +123,8 @@ struct TimelineState {
     /// Last timestamp seen in the previous segment
     last_timestamp: Option<u32>,
 
-    /// First timestamp seen in the current segment
-    first_timestamp_in_segment: Option<u32>,
+    /// First media timestamp of the current segment, read as signed
+    first_timestamp_in_segment: Option<i32>,
 
     /// Current timestamp offset to apply
     timestamp_offset: i64,
@@ -174,15 +180,11 @@ impl TimeConsistencyOperator {
         }
     }
 
-    fn apply_offset(timestamp_ms: u32, offset: i64) -> u32 {
-        let expected = timestamp_ms as i128 + offset as i128;
-        if expected <= 0 {
-            0
-        } else if expected >= u32::MAX as i128 {
-            u32::MAX
-        } else {
-            expected as u32
-        }
+    /// Shift a signed source timestamp into the output timeline, which never
+    /// goes below zero.
+    fn apply_offset(timestamp_ms: i32, offset: i64) -> u32 {
+        let expected = i64::from(timestamp_ms) + offset;
+        u32::try_from(expected.max(0)).unwrap_or(u32::MAX)
     }
 
     /// Calculate timestamp offset based on continuity mode and current state
@@ -194,7 +196,7 @@ impl TimeConsistencyOperator {
             match self.continuity_mode {
                 ContinuityMode::Continuous => {
                     // Make current segment continue from where the previous one ended
-                    self.state.timestamp_offset = last as i64 - first as i64;
+                    self.state.timestamp_offset = i64::from(last) - i64::from(first);
                     debug!(
                         "{} Maintaining continuous timeline: offset = {}ms",
                         self.context.name, self.state.timestamp_offset
@@ -202,7 +204,7 @@ impl TimeConsistencyOperator {
                 }
                 ContinuityMode::Reset => {
                     // Reset timeline - this means applying a negative offset to bring timestamps to zero
-                    self.state.timestamp_offset = -(first as i64);
+                    self.state.timestamp_offset = -i64::from(first);
                     debug!(
                         "{} Resetting timeline to zero: offset = {}ms",
                         self.context.name, self.state.timestamp_offset
@@ -239,18 +241,18 @@ impl Processor<FlvData> for TimeConsistencyOperator {
                 output(input)
             }
             FlvData::Tag(mut tag) => {
-                let original_timestamp = tag.timestamp_ms;
+                // Source timestamps are signed (SI32): a timeline may start
+                // slightly below zero.
+                let original_timestamp = tag.signed_timestamp_ms();
 
                 // For normal media tags, handle timestamp adjustment
                 if self.state.new_segment {
                     // For sequence headers, always set timestamp to 0
                     if tag.is_video_sequence_header() || tag.is_audio_sequence_header() {
-                        // Save original timestamp for debugging
-                        let original = tag.timestamp_ms;
-                        if original != 0 {
+                        if original_timestamp != 0 {
                             debug!(
                                 "{} Reset sequence header timestamp from {}ms to 0ms",
-                                self.context.name, original
+                                self.context.name, original_timestamp
                             );
                             // Set timestamp to 0
                             tag.timestamp_ms = 0;
@@ -259,7 +261,7 @@ impl Processor<FlvData> for TimeConsistencyOperator {
                         return output(FlvData::Tag(tag));
                     } else if tag.is_script_tag() {
                         // Keep script metadata at timestamp 0 for maximum player compatibility.
-                        if tag.timestamp_ms != 0 {
+                        if original_timestamp != 0 {
                             debug!(
                                 "{} Reset script data timestamp: {}ms -> 0ms",
                                 self.context.name, original_timestamp
@@ -271,19 +273,23 @@ impl Processor<FlvData> for TimeConsistencyOperator {
 
                     if self.state.first_timestamp_in_segment.is_none() {
                         // Record the first timestamp in this segment
-                        self.state.first_timestamp_in_segment = Some(tag.timestamp_ms);
+                        self.state.first_timestamp_in_segment = Some(original_timestamp);
                         debug!(
                             "{} First timestamp in segment {}: {}ms",
-                            self.context.name, self.state.segment_count, tag.timestamp_ms
+                            self.context.name, self.state.segment_count, original_timestamp
                         );
 
                         if self.state.segment_count > 1 && self.state.needs_offset_calculation {
                             self.calculate_timestamp_offset();
-                        } else if self.state.segment_count == 1
-                            && self.continuity_mode == ContinuityMode::Reset
-                        {
-                            // use the first timestamp as the delta
-                            self.state.timestamp_offset = -(tag.timestamp_ms as i64);
+                        } else if self.state.segment_count == 1 {
+                            // Reset starts the timeline at the first tag.
+                            // Continuous keeps the source timeline, moved up
+                            // only as far as needed to start at zero.
+                            let to_zero = -i64::from(original_timestamp);
+                            self.state.timestamp_offset = match self.continuity_mode {
+                                ContinuityMode::Reset => to_zero,
+                                ContinuityMode::Continuous => to_zero.max(0),
+                            };
                         }
                     }
                     self.state.new_segment = false;
@@ -295,7 +301,7 @@ impl Processor<FlvData> for TimeConsistencyOperator {
                 let is_media = (tag.is_audio_tag() && !tag.is_audio_sequence_header())
                     || (tag.is_video_tag() && !tag.is_video_sequence_header());
                 if is_media
-                    && i64::from(tag.timestamp_ms) + self.state.timestamp_offset
+                    && i64::from(original_timestamp) + self.state.timestamp_offset
                         < -MAX_CLAMPED_LAG_MS
                 {
                     // The re-basing tag lands where the later of the two
@@ -310,11 +316,11 @@ impl Processor<FlvData> for TimeConsistencyOperator {
                         .next_expected(FALLBACK_VIDEO_STEP_MS)
                         .max(self.state.audio_clock.next_expected(FALLBACK_AUDIO_STEP_MS))
                         .unwrap_or(0);
-                    let new_offset = resume_at - i64::from(tag.timestamp_ms);
+                    let new_offset = resume_at - i64::from(original_timestamp);
                     warn!(
                         streamer = %self.context.name,
                         segment = self.state.segment_count,
-                        source_timestamp_ms = tag.timestamp_ms,
+                        source_timestamp_ms = original_timestamp,
                         resume_at_ms = resume_at,
                         old_offset_ms = self.state.timestamp_offset,
                         new_offset_ms = new_offset,
@@ -323,15 +329,14 @@ impl Processor<FlvData> for TimeConsistencyOperator {
                     self.state.timestamp_offset = new_offset;
                 }
 
-                // Apply timestamp correction if needed
-                if self.state.timestamp_offset != 0 {
-                    let corrected =
-                        Self::apply_offset(tag.timestamp_ms, self.state.timestamp_offset);
-                    tag.timestamp_ms = corrected;
-
+                // Applied even with a zero offset, so a tag below zero is
+                // clamped rather than written as a negative timestamp.
+                tag.timestamp_ms =
+                    Self::apply_offset(original_timestamp, self.state.timestamp_offset);
+                if i64::from(tag.timestamp_ms) != i64::from(original_timestamp) {
                     trace!(
                         "{} Adjusted timestamp: {}ms -> {}ms",
-                        self.context.name, original_timestamp, corrected
+                        self.context.name, original_timestamp, tag.timestamp_ms
                     );
                 }
 
