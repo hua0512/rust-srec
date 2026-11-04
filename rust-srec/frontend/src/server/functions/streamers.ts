@@ -150,7 +150,11 @@ export const updateStreamer = createServerFn({ method: 'POST' })
 export const deleteStreamer = createServerFn({ method: 'POST' })
   .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
-    await fetchBackend(backendPath`/streamers/${id}`, { method: 'DELETE' });
+    // Stopping a live recording can take the backend about half a minute.
+    await fetchBackend(backendPath`/streamers/${id}`, {
+      method: 'DELETE',
+      timeoutMs: LONG_BACKEND_TIMEOUT_MS,
+    });
   });
 
 export const extractMetadata = createServerFn({ method: 'POST' })
