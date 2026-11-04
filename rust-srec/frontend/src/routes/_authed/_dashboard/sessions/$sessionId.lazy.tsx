@@ -139,7 +139,7 @@ function SessionDetailPage() {
     isError,
     error,
   } = useQuery({
-    queryKey: ['session', sessionId],
+    queryKey: ['sessions', sessionId],
     queryFn: () => getSession({ data: sessionId }),
   });
 
@@ -149,7 +149,7 @@ function SessionDetailPage() {
   // the first snapshot lands.
   const isSessionLive = Boolean(session) && !session?.end_time;
   const danmuStatsQuery = useQuery({
-    queryKey: ['session', 'danmu-statistics', sessionId],
+    queryKey: ['sessions', sessionId, 'danmu-statistics'],
     queryFn: () => getSessionDanmuStatistics({ data: sessionId }),
     enabled: Boolean(sessionId),
     staleTime: 30000,
