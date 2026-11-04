@@ -1,4 +1,4 @@
-import { getPaginationPages } from '../pagination';
+import { clampPageIndex, getPaginationPages } from '../pagination';
 
 it.each<[number, number, (number | 'ellipsis')[]]>([
   [0, 0, []],
@@ -12,4 +12,16 @@ it.each<[number, number, (number | 'ellipsis')[]]>([
   [10, 9, [0, 'ellipsis', 8, 9]],
 ])('lists %i pages around index %i', (totalPages, currentPage, expected) => {
   expect(getPaginationPages(totalPages, currentPage)).toEqual(expected);
+});
+
+// Deleting the last rows of the last page leaves the URL pointing past the end,
+// and deleting every row leaves no pages at all.
+it.each<[number, number, number]>([
+  [2, 3, 2],
+  [3, 3, 2],
+  [5, 3, 2],
+  [0, 0, 0],
+  [2, 0, 0],
+])('clamps index %i into %i pages as %i', (pageIndex, totalPages, expected) => {
+  expect(clampPageIndex(pageIndex, totalPages)).toBe(expected);
 });

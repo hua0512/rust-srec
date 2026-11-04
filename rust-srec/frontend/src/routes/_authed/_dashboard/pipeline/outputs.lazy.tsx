@@ -1,4 +1,3 @@
-import { getPaginationPages } from '@/lib/pagination';
 import { useCallback, useMemo, type ReactNode } from 'react';
 import { createLazyFileRoute } from '@tanstack/react-router';
 import {
@@ -27,22 +26,6 @@ import { DashboardHeader } from '@/components/shared/dashboard-header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { containerVariants, itemVariants } from '@/lib/animation';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination';
-import {
   FileVideo,
   AlertCircle,
   Film,
@@ -54,7 +37,11 @@ import { OutputCard } from '@/components/pipeline/outputs/output-card';
 import { OutputBatchActionBar } from '@/components/pipeline/outputs/output-batch-action-bar';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { useBatchSelection } from '@/hooks/use-batch-selection';
+import {
+  useBatchActionMutation,
+  useBatchSelection,
+} from '@/hooks/use-batch-selection';
+import { ListPagination } from '@/components/shared/list-pagination';
 import {
   MEDIA_FILE_TYPE_ORDER,
   getMediaFileTypeMeta,
@@ -68,8 +55,6 @@ export const Route = createLazyFileRoute(
 )({
   component: PipelineOutputsPage,
 });
-
-const PAGE_SIZES = [12, 24, 48, 96];
 
 /**
  * One pill in the file-type filter row, matching the pipeline jobs status
@@ -170,7 +155,6 @@ function PipelineOutputsPage() {
 
   const outputs = outputsData?.items || [];
   const totalOutputs = outputsData?.total || 0;
-  const totalPages = Math.ceil(totalOutputs / pageSize);
 
   // `Intl.NumberFormat` rather than `i18n.number`, which Lingui v6 deprecates.
   const numberFormat = useMemo(
@@ -245,43 +229,26 @@ function PipelineOutputsPage() {
       ),
   });
 
-  const batchDeleteMutation = useMutation({
+  const batchDeleteMutation = useBatchActionMutation({
     mutationFn: ({ ids, deleteFile }: { ids: string[]; deleteFile: boolean }) =>
       batchDeletePipelineOutputs({ data: { ids, delete_file: deleteFile } }),
-    onSuccess: (result) => {
-      invalidateOutputs();
-
-      if (result.failed === 0) {
-        toast.success(
-          i18n._(msg`Successfully deleted ${result.succeeded} outputs`),
-        );
-        exitSelectionMode();
-        return;
-      }
-
-      // Keep only the failures selected so a retry targets exactly the outputs
-      // that were not removed.
-      const failedResults = result.results.filter((item) => !item.success);
-      setSelectedIds(new Set(failedResults.map((item) => item.id)));
-      toast.warning(
-        i18n._(
-          msg`Deleted ${result.succeeded} outputs; ${result.failed} failed`,
-        ),
-        {
-          description: failedResults
-            .slice(0, 3)
-            .map((item) => item.error)
-            .filter(Boolean)
-            .join('; '),
-        },
-      );
-    },
-    onError: (error) =>
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : i18n._(msg`Failed to delete selected outputs`),
+    invalidate: invalidateOutputs,
+    selection: { setSelectedIds, exitSelectionMode },
+    successMessage: (succeeded) =>
+      i18n._(
+        msg`${plural(succeeded, {
+          one: 'Deleted # output',
+          other: 'Deleted # outputs',
+        })}`,
       ),
+    partialMessage: (succeeded, failed) =>
+      i18n._(
+        msg`${plural(succeeded, {
+          one: 'Deleted # output',
+          other: 'Deleted # outputs',
+        })}; ${failed} failed`,
+      ),
+    errorMessage: i18n._(msg`Failed to delete selected outputs`),
   });
 
   const deleteMutate = deleteMutation.mutate;
@@ -301,9 +268,9 @@ function PipelineOutputsPage() {
     [selectedIds, batchDeleteMutation],
   );
 
-  const paginationPages = useMemo(
-    () => getPaginationPages(totalPages, currentPage),
-    [totalPages, currentPage],
+  const handlePageIndexChange = useCallback(
+    (index: number) => updateSearch({ page: index || undefined }),
+    [updateSearch],
   );
 
   if (isError) {
@@ -497,83 +464,13 @@ function PipelineOutputsPage() {
           )}
         </AnimatePresence>
 
-        {/* Pagination Controls */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between mt-8 pt-6 border-t">
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">
-                <Trans>Per page:</Trans>
-              </span>
-              <Select
-                value={pageSize.toString()}
-                onValueChange={(value) => {
-                  updateSearch({ size: Number(value), page: undefined });
-                }}
-              >
-                <SelectTrigger className="w-20 h-8">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PAGE_SIZES.map((size) => (
-                    <SelectItem key={size} value={size.toString()}>
-                      {size}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Pagination>
-              <PaginationContent>
-                <PaginationItem>
-                  <PaginationPrevious
-                    onClick={() =>
-                      updateSearch({ page: Math.max(0, currentPage - 1) })
-                    }
-                    className={
-                      currentPage === 0
-                        ? 'pointer-events-none opacity-50'
-                        : 'cursor-pointer'
-                    }
-                  />
-                </PaginationItem>
-
-                {paginationPages.map((page, idx) =>
-                  page === 'ellipsis' ? (
-                    <PaginationItem key={`ellipsis-${idx}`}>
-                      <PaginationEllipsis />
-                    </PaginationItem>
-                  ) : (
-                    <PaginationItem key={page}>
-                      <PaginationLink
-                        isActive={currentPage === page}
-                        onClick={() => updateSearch({ page })}
-                        className="cursor-pointer"
-                      >
-                        {page + 1}
-                      </PaginationLink>
-                    </PaginationItem>
-                  ),
-                )}
-
-                <PaginationItem>
-                  <PaginationNext
-                    onClick={() =>
-                      updateSearch({
-                        page: Math.min(totalPages - 1, currentPage + 1),
-                      })
-                    }
-                    className={
-                      currentPage >= totalPages - 1
-                        ? 'pointer-events-none opacity-50'
-                        : 'cursor-pointer'
-                    }
-                  />
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
-          </div>
-        )}
+        <ListPagination
+          pageIndex={currentPage}
+          totalCount={outputsData?.total}
+          pageSize={pageSize}
+          onPageIndexChange={handlePageIndexChange}
+          onPageSizeChange={(size) => updateSearch({ size, page: undefined })}
+        />
       </div>
 
       <AnimatePresence>

@@ -1,4 +1,3 @@
-import { getPaginationPages } from '@/lib/pagination';
 import { useMemo, useCallback, memo } from 'react';
 import { createLazyFileRoute } from '@tanstack/react-router';
 import {
@@ -30,22 +29,6 @@ import { isDagAlreadyTerminalError } from '@/lib/api-error';
 import { FAB_ANCHOR } from '@/components/shared/save-fab';
 import { containerVariants, itemVariants } from '@/lib/animation';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination';
-import {
   Activity,
   RefreshCw,
   XCircle,
@@ -63,15 +46,17 @@ import { PipelineBatchActionBar } from '@/components/pipeline/jobs/pipeline-batc
 import { SearchInput } from '@/components/shared/search-input';
 import { DashboardHeader } from '@/components/shared/dashboard-header';
 import { useUpdateSearch } from '@/hooks/use-update-search';
-import { useBatchSelection } from '@/hooks/use-batch-selection';
+import {
+  useBatchActionMutation,
+  useBatchSelection,
+} from '@/hooks/use-batch-selection';
+import { ListPagination } from '@/components/shared/list-pagination';
 import { formatDuration } from '@/lib/format';
 import { CARD_GRID } from '@/lib/grid';
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/pipeline/jobs/')({
   component: PipelineJobsPage,
 });
-
-const PAGE_SIZES = [12, 24, 48, 96];
 
 function PipelineJobsPage() {
   const navigate = Route.useNavigate();
@@ -163,8 +148,6 @@ function PipelineJobsPage() {
   const pipelines: DagSummary[] = pipelinesData?.dags || [];
   const totalPipelines = pipelinesData?.total || 0;
 
-  const totalPages = Math.ceil(totalPipelines / pageSize);
-
   const pageIds = useMemo(
     () => pipelines.map((pipeline) => pipeline.id),
     [pipelines],
@@ -205,9 +188,9 @@ function PipelineJobsPage() {
     return { cancellable, retryable };
   }, [pipelines, selectedIds]);
 
-  const paginationPages = useMemo(
-    () => getPaginationPages(totalPages, currentPage),
-    [totalPages, currentPage],
+  const handlePageIndexChange = useCallback(
+    (index: number) => updateSearch({ page: index || undefined }),
+    [updateSearch],
   );
 
   const cancelPipelineMutation = useMutation({
@@ -276,55 +259,31 @@ function PipelineJobsPage() {
       toast.error(i18n._(msg`Failed to retry all failed pipelines`)),
   });
 
-  const batchMutation = useMutation({
+  const batchMutation = useBatchActionMutation({
     mutationFn: ({ ids, action }: { ids: string[]; action: BatchDagAction }) =>
       batchPipelines({ data: { ids, action } }),
-    onSuccess: (result) => {
+    invalidate: () => {
       void queryClient.invalidateQueries({
         queryKey: ['pipeline', 'pipelines'],
       });
       void queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
-
-      if (result.failed === 0) {
-        toast.success(
-          i18n._(
-            msg`${plural(result.succeeded, {
-              one: 'Processed # pipeline',
-              other: 'Processed # pipelines',
-            })}`,
-          ),
-        );
-        exitSelectionMode();
-        return;
-      }
-
-      // Keep only the failures selected so a retry of the action targets exactly
-      // the pipelines that did not go through.
-      const failedResults = result.results.filter((item) => !item.success);
-      setSelectedIds(new Set(failedResults.map((item) => item.id)));
-      toast.warning(
-        i18n._(
-          msg`${plural(result.succeeded, {
-            one: 'Processed # pipeline',
-            other: 'Processed # pipelines',
-          })}; ${result.failed} failed`,
-        ),
-        {
-          description: failedResults
-            .slice(0, 3)
-            .map((item) => item.error)
-            .filter(Boolean)
-            .join('; '),
-        },
-      );
     },
-    onError: (error) => {
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : i18n._(msg`Failed to process selected pipelines`),
-      );
-    },
+    selection: { setSelectedIds, exitSelectionMode },
+    successMessage: (succeeded) =>
+      i18n._(
+        msg`${plural(succeeded, {
+          one: 'Processed # pipeline',
+          other: 'Processed # pipelines',
+        })}`,
+      ),
+    partialMessage: (succeeded, failed) =>
+      i18n._(
+        msg`${plural(succeeded, {
+          one: 'Processed # pipeline',
+          other: 'Processed # pipelines',
+        })}; ${failed} failed`,
+      ),
+    errorMessage: i18n._(msg`Failed to process selected pipelines`),
   });
 
   const handleBatchAction = useCallback(
@@ -585,100 +544,13 @@ function PipelineJobsPage() {
           )}
         </AnimatePresence>
 
-        {/* Pagination Controls */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between mt-8 pt-6 border-t">
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="text-xs sm:text-sm text-muted-foreground">
-                <Trans>Per page:</Trans>
-              </span>
-              <Select
-                value={pageSize.toString()}
-                onValueChange={(value) => {
-                  updateSearch({ size: Number(value), page: undefined });
-                }}
-              >
-                <SelectTrigger className="w-16 sm:w-20 h-8 text-xs sm:text-sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PAGE_SIZES.map((size) => (
-                    <SelectItem
-                      key={size}
-                      value={size.toString()}
-                      className="text-xs sm:text-sm"
-                    >
-                      {size}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex-1 min-w-0">
-              <Pagination className="justify-end w-auto overflow-x-auto no-scrollbar">
-                <PaginationContent className="flex-nowrap">
-                  <PaginationItem>
-                    <PaginationPrevious
-                      onClick={() =>
-                        updateSearch({
-                          page: Math.max(0, currentPage - 1),
-                        })
-                      }
-                      className={cn(
-                        'h-8 px-2 sm:px-3 text-xs sm:text-sm',
-                        currentPage === 0
-                          ? 'pointer-events-none opacity-50'
-                          : 'cursor-pointer',
-                      )}
-                    />
-                  </PaginationItem>
-
-                  <div className="hidden sm:flex items-center">
-                    {paginationPages.map(
-                      (page: number | 'ellipsis', idx: number) =>
-                        page === 'ellipsis' ? (
-                          <PaginationItem key={`ellipsis-${idx}`}>
-                            <PaginationEllipsis />
-                          </PaginationItem>
-                        ) : (
-                          <PaginationItem key={page}>
-                            <PaginationLink
-                              isActive={currentPage === page}
-                              onClick={() => updateSearch({ page })}
-                              className="cursor-pointer h-8 w-8 text-xs font-medium"
-                            >
-                              {page + 1}
-                            </PaginationLink>
-                          </PaginationItem>
-                        ),
-                    )}
-                  </div>
-
-                  <div className="sm:hidden flex items-center px-4 text-xs font-medium text-muted-foreground">
-                    {currentPage + 1} / {totalPages}
-                  </div>
-
-                  <PaginationItem>
-                    <PaginationNext
-                      onClick={() =>
-                        updateSearch({
-                          page: Math.min(totalPages - 1, currentPage + 1),
-                        })
-                      }
-                      className={cn(
-                        'h-8 px-2 sm:px-3 text-xs sm:text-sm',
-                        currentPage >= totalPages - 1
-                          ? 'pointer-events-none opacity-50'
-                          : 'cursor-pointer',
-                      )}
-                    />
-                  </PaginationItem>
-                </PaginationContent>
-              </Pagination>
-            </div>
-          </div>
-        )}
+        <ListPagination
+          pageIndex={currentPage}
+          totalCount={pipelinesData?.total}
+          pageSize={pageSize}
+          onPageIndexChange={handlePageIndexChange}
+          onPageSizeChange={(size) => updateSearch({ size, page: undefined })}
+        />
       </div>
       {/* Retry All Failed FAB. Hidden while selecting so it cannot overlap the
           batch action bar, which offers a scoped retry instead. */}

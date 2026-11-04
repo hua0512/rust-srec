@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { FilterCard } from './FilterCard';
 import { Trans } from '@lingui/react/macro';
 import { FilterX } from 'lucide-react';
+import { CARD_GRID } from '@/lib/grid';
+import { cn } from '@/lib/utils';
 
 type Filter = z.infer<typeof FilterSchema>;
 
@@ -33,7 +35,12 @@ export function FilterList({ filters, onEdit, onDelete }: FilterListProps) {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div
+      className={cn(
+        CARD_GRID,
+        'gap-5 animate-in fade-in slide-in-from-bottom-4 duration-500',
+      )}
+    >
       {filters.map((filter, index) => (
         <div
           key={filter.id}

@@ -19,6 +19,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SettingsCard } from '@/components/config/settings-card';
+import { QueryError } from '@/components/shared/query-error';
 import {
   CONFIG_INPUT,
   CONFIG_SELECT_CONTENT,
@@ -100,7 +101,12 @@ function ApiKeysPage() {
   const { i18n } = useLingui();
   const queryClient = useQueryClient();
 
-  const { data: keys, isLoading } = useQuery({
+  const {
+    data: keys,
+    isLoading,
+    error,
+    refetch,
+  } = useQuery({
     queryKey: ['auth', 'api-keys'],
     queryFn: () => listApiKeys(),
   });
@@ -148,7 +154,14 @@ function ApiKeysPage() {
             </Button>
           }
         >
-          {isLoading ? (
+          {error && !keys ? (
+            <QueryError
+              title={<Trans>Failed to load API keys</Trans>}
+              error={error}
+              onRetry={() => void refetch()}
+              className="mt-2"
+            />
+          ) : isLoading ? (
             <div className="space-y-3 pt-2">
               <Skeleton className="h-10 w-full" />
               <Skeleton className="h-10 w-full" />

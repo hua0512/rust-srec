@@ -21,3 +21,12 @@ export function getPaginationPages(
   }
   return pages;
 }
+
+/**
+ * The zero-based page index to show when `pageIndex` may lie past the last
+ * page, as it does once a delete or a refetch shrinks the result set. An empty
+ * result set has no pages, and its only valid index is the first.
+ */
+export function clampPageIndex(pageIndex: number, totalPages: number): number {
+  return Math.max(0, Math.min(pageIndex, totalPages - 1));
+}
