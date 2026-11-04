@@ -24,6 +24,9 @@ import {
   replaceNewestLogPage,
   type JobLogPages,
 } from '@/lib/job-log-pages';
+import { liveProgressSnapshot } from '@/lib/job-progress';
+import { useWebSocket } from '@/providers/WebSocketContext';
+import { useUploadStore } from '@/store/uploads';
 import { JobProgressPanel } from '@/components/pipeline/jobs/job-progress-panel';
 import { JobInterruptedOutputsCard } from '@/components/pipeline/jobs/job-interrupted-outputs-card';
 import { JobUploadsCard } from '@/components/pipeline/jobs/job-uploads-card';
@@ -80,6 +83,13 @@ export const Route = createLazyFileRoute(
 
 import { formatDate } from '@/lib/datetime';
 
+/**
+ * How often a queued or running job is re-read. Its progress arrives over the
+ * live-updates socket, and the socket's end-of-job events trigger an
+ * immediate read, so this only has to catch status changes.
+ */
+const ACTIVE_JOB_POLL_MS = 3_000;
+
 /** Matches the backend's page cap for `/pipeline/jobs/{id}/logs`. */
 const LOG_PAGE_SIZE = 1000;
 
@@ -99,7 +109,7 @@ function JobDetailsPage() {
     refetchInterval: (query) => {
       const data = query.state.data;
       if (data?.status === 'PROCESSING' || data?.status === 'PENDING') {
-        return 1000;
+        return ACTIVE_JOB_POLL_MS;
       }
       // The retry sweeper re-queues a due retry within about 15 s, so a slower
       // poll still follows the job back to PENDING.
@@ -115,21 +125,52 @@ function JobDetailsPage() {
     jobStatus === 'FAILED' ||
     jobStatus === 'CANCELLED';
 
-  const { data: progressSnapshot } = useQuery({
+  // Uploads and jobs that have run for a while report their progress over
+  // the live-updates socket; the endpoint is polled only while that has
+  // nothing for this job.
+  const { isConnected } = useWebSocket();
+  const liveView = useUploadStore(
+    (state) => state.uploadsByJobId.get(jobId) ?? state.jobsByJobId.get(jobId),
+  );
+  const startedAtMs = job?.started_at ? Date.parse(job.started_at) : 0;
+  const liveSnapshot = useMemo(
+    () =>
+      isConnected && jobStatus === 'PROCESSING'
+        ? liveProgressSnapshot(liveView, startedAtMs)
+        : undefined,
+    [isConnected, jobStatus, liveView, startedAtMs],
+  );
+
+  // The socket announces the end of a job it was reporting before the next
+  // poll would notice; read the job straight away.
+  const hadLiveViewRef = useRef(false);
+  useEffect(() => {
+    const hasLiveView = liveView !== undefined;
+    if (hadLiveViewRef.current && !hasLiveView && isConnected) {
+      void queryClient.invalidateQueries({
+        queryKey: ['pipeline', 'job', jobId],
+        exact: true,
+      });
+    }
+    hadLiveViewRef.current = hasLiveView;
+  }, [liveView, isConnected, jobId, queryClient]);
+
+  const { data: polledSnapshot } = useQuery({
     queryKey: ['pipeline', 'job', jobId, 'progress'],
     queryFn: () => getPipelineJobProgress({ data: { id: jobId } }),
-    enabled: jobStatus === 'PROCESSING',
+    enabled: jobStatus === 'PROCESSING' && !liveSnapshot,
     refetchInterval: 1000,
     retry: false, // Don't retry on 404 when no progress is available
     throwOnError: false, // Silently handle errors - progress is optional
   });
+  const progressSnapshot = liveSnapshot ?? polledSnapshot;
 
   // Durable per-file upload results. Records land when the job reaches a
   // terminal state, so refetch while active and settle once terminal.
   const { data: uploadsData } = useQuery({
     queryKey: ['pipeline', 'job', jobId, 'uploads'],
     queryFn: () => getPipelineJobUploads({ data: { id: jobId } }),
-    refetchInterval: isJobActive ? 2000 : false,
+    refetchInterval: isJobActive ? 5000 : false,
     enabled: !!job,
     throwOnError: false, // The card simply doesn't render without records
   });

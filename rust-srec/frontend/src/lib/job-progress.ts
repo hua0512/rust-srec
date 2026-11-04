@@ -6,7 +6,7 @@ import { getProcessorDefinition } from '@/components/pipeline/presets/processors
 import { formatLocalizedDuration } from '@/lib/date-utils';
 import { formatSpeed } from '@/lib/format';
 import { formatUploadBytes } from '@/lib/upload-format';
-import type { UploadProgressInput } from '@/store/uploads';
+import type { JobView, UploadProgressInput, UploadView } from '@/store/uploads';
 
 /** A media position in milliseconds as "01:02:03". */
 export function formatTimecode(ms: number): string {
@@ -57,6 +57,51 @@ export function snapshotProgress(
     currentFile: snapshot?.current_file,
     attempt: snapshot?.attempt,
     maxAttempts: snapshot?.max_attempts,
+  };
+}
+
+/**
+ * A job's live progress from the socket, in the shape of the job page's
+ * snapshot, or undefined until it has reported any. `notBeforeMs` is the
+ * start of the attempt being shown: the live entry always belongs to the
+ * current attempt, but it is timed on this client's clock, which may run
+ * behind the server's.
+ */
+export function liveProgressSnapshot(
+  view: UploadView | JobView | undefined,
+  notBeforeMs: number,
+): JobProgressSnapshot | undefined {
+  if (!view) return undefined;
+  const job: Partial<JobView> = view;
+  if (
+    view.percent === undefined &&
+    view.bytesDone === undefined &&
+    view.progressFilesDone === undefined &&
+    view.phase === undefined &&
+    job.outTimeMs === undefined
+  ) {
+    return undefined;
+  }
+  const toNumber = (value: bigint | undefined) =>
+    value === undefined ? undefined : Number(value);
+  return {
+    updated_at: new Date(
+      Math.max(view.lastEventAtMs, notBeforeMs || 0),
+    ).toISOString(),
+    percent: view.percent,
+    bytes_done: toNumber(view.bytesDone),
+    bytes_total: toNumber(view.bytesTotal),
+    speed_bytes_per_sec: view.speedBytesPerSec,
+    eta_secs: view.etaSecs,
+    out_time_ms: toNumber(job.outTimeMs),
+    duration_ms: toNumber(job.durationMs),
+    speed_x: job.speedX,
+    files_done: view.progressFilesDone,
+    files_total: view.progressFilesTotal,
+    phase: view.phase,
+    current_file: view.currentFile,
+    attempt: view.attempt,
+    max_attempts: view.maxAttempts,
   };
 }
 
