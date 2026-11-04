@@ -83,8 +83,8 @@ msgstr "{0, plural, one {# available} other {# available}}"
 msgid "{0, plural, one {# done} other {# done}}"
 msgstr "{0, plural, one {# done} other {# done}}"
 
-#. placeholder {0}: job.execution_info.log_error_count
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:817
+#. placeholder {0}: errorCount ?? 0
+#: src/components/pipeline/jobs/job-log-viewer.tsx:94
 msgid "{0, plural, one {# Error} other {# Errors}}"
 msgstr "{0, plural, one {# Error} other {# Errors}}"
 
@@ -112,11 +112,6 @@ msgstr "{0, plural, one {# file} other {# files}}"
 #: src/components/shared/json-viewer.tsx:129
 msgid "{0, plural, one {# item} other {# items}}"
 msgstr "{0, plural, one {# item} other {# items}}"
-
-#. placeholder {0}: job.execution_info.log_lines_total
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:837
-msgid "{0, plural, one {# Line} other {# Lines}}"
-msgstr "{0, plural, one {# Line} other {# Lines}}"
 
 #. placeholder {0}: comments.length
 #: src/components/danmu/danmu-viewer.tsx:171
@@ -152,8 +147,8 @@ msgstr "{0, plural, one {# selected} other {# selected}}"
 msgid "{0, plural, one {# step} other {# steps}}"
 msgstr "{0, plural, one {# step} other {# steps}}"
 
-#. placeholder {0}: job.execution_info.log_warn_count
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:827
+#. placeholder {0}: warnCount ?? 0
+#: src/components/pipeline/jobs/job-log-viewer.tsx:104
 msgid "{0, plural, one {# Warning} other {# Warnings}}"
 msgstr "{0, plural, one {# Warning} other {# Warnings}}"
 
@@ -322,6 +317,10 @@ msgstr "{hours}h"
 #: src/components/credentials/account-selection-section.tsx:113
 msgid "{label} is set up for {sites}, but this streamer is on {host}. Its cookies will be sent to {host}."
 msgstr "{label} is set up for {sites}, but this streamer is on {host}. Its cookies will be sent to {host}."
+
+#: src/components/pipeline/jobs/job-log-viewer.tsx:114
+msgid "{linesTotal, plural, one {# Line} other {# Lines}}"
+msgstr "{linesTotal, plural, one {# Line} other {# Lines}}"
 
 #: src/components/streamers/edit/status-check-history.tsx:474
 msgid "{minutes}m"
@@ -1190,10 +1189,6 @@ msgstr "Archive to Cloud"
 msgid "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 msgstr "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:523
-msgid "Are you sure you want to delete this job? This will permanently remove it from your list."
-msgstr "Are you sure you want to delete this job? This will permanently remove it from your list."
-
 #: src/components/sessions/session-card.tsx:319
 msgid "Are you sure you want to delete this session? This action cannot be undone."
 msgstr "Are you sure you want to delete this session? This action cannot be undone."
@@ -1250,11 +1245,11 @@ msgstr "At least one input path is required"
 msgid "At least one step is required"
 msgstr "At least one step is required"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:958
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:859
 msgid "Attempt {attempt}"
 msgstr "Attempt {attempt}"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:954
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:855
 msgid "Attempt {attempt} of {maxAttempts}"
 msgstr "Attempt {attempt} of {maxAttempts}"
 
@@ -1414,7 +1409,8 @@ msgstr "Back"
 msgid "Back to engines"
 msgstr "Back to engines"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:405
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:373
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:421
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:153
 msgid "Back to Jobs"
 msgstr "Back to Jobs"
@@ -1770,7 +1766,7 @@ msgstr "Caching and progress"
 msgid "Cancel"
 msgstr "Cancel"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:512
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:528
 msgid "Cancel Execution"
 msgstr "Cancel Execution"
 
@@ -2181,7 +2177,7 @@ msgstr "Complete workflow: Remux, generate thumbnail, add metadata, and upload."
 #: src/components/pipeline/status-config.ts:150
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:366
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:296
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:747
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:755
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:88
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:443
 msgid "Completed"
@@ -2410,7 +2406,7 @@ msgstr "Consecutive Failures"
 msgid "Container"
 msgstr "Container"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:552
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:570
 msgid "Context"
 msgstr "Context"
 
@@ -2702,7 +2698,7 @@ msgstr "Create your first workflow to define a sequence of processing steps for 
 #: src/components/config/global/backup-restore-card.tsx:92
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:302
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:302
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:729
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:737
 msgid "Created"
 msgstr "Created"
 
@@ -3153,7 +3149,7 @@ msgstr "Delete File"
 msgid "Delete filter"
 msgstr "Delete filter"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:532
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:538
 msgid "Delete Job"
 msgstr "Delete Job"
 
@@ -3249,6 +3245,10 @@ msgstr "Delete the converted result?"
 #: src/components/config/engines/engines-panel.tsx:258
 msgid "Delete this engine?"
 msgstr "Delete this engine?"
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:544
+msgid "Delete this job?"
+msgstr "Delete this job?"
 
 #: src/components/pipeline/outputs/delete-outputs-dialog.tsx:104
 msgid "Delete with files"
@@ -3990,11 +3990,11 @@ msgstr "Error"
 
 #: src/components/streamers/card/use-streamer-status.tsx:297
 #: src/components/streamers/card/use-streamer-status.tsx:337
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:780
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:788
 msgid "Error Details"
 msgstr "Error Details"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:356
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:363
 msgid "Error Loading Job"
 msgstr "Error Loading Job"
 
@@ -4256,7 +4256,7 @@ msgstr "Failed steps retry initiated"
 msgid "Failed to autofill name"
 msgstr "Failed to autofill name"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:313
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:305
 msgid "Failed to cancel job"
 msgstr "Failed to cancel job"
 
@@ -4342,7 +4342,7 @@ msgstr "Failed to delete engine"
 msgid "Failed to delete filter"
 msgstr "Failed to delete filter"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:325
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:330
 msgid "Failed to delete job"
 msgstr "Failed to delete job"
 
@@ -4510,7 +4510,7 @@ msgstr "Failed to query BaiduPCS-Go status."
 msgid "Failed to retry all failed pipelines"
 msgstr "Failed to retry all failed pipelines"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:280
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:276
 msgid "Failed to retry job"
 msgstr "Failed to retry job"
 
@@ -4518,7 +4518,7 @@ msgstr "Failed to retry job"
 msgid "Failed to retry steps"
 msgstr "Failed to retry steps"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:299
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:293
 msgid "Failed to retry workflow"
 msgstr "Failed to retry workflow"
 
@@ -5095,7 +5095,6 @@ msgid "Go back"
 msgstr "Go back"
 
 #: src/components/default-catch-boundary.tsx:58
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:364
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:329
 msgid "Go Back"
 msgstr "Go Back"
@@ -5473,6 +5472,10 @@ msgstr "ID"
 msgid "ID is required"
 msgstr "ID is required"
 
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:470
+msgid "ID: {jobId}"
+msgstr "ID: {jobId}"
+
 #: src/components/config/engines/engine-editor.tsx:180
 msgid "Identity and type of the engine."
 msgstr "Identity and type of the engine."
@@ -5559,6 +5562,10 @@ msgstr "In the desktop app, the operating system's proxy setting reaches only so
 msgid "In use by the active recording"
 msgstr "In use by the active recording"
 
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:608
+msgid "In: {inputSize}"
+msgstr "In: {inputSize}"
+
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:459
 msgid "Inactive"
 msgstr "Inactive"
@@ -5643,7 +5650,7 @@ msgstr "Input Arguments"
 msgid "Input Options (-i flags)"
 msgstr "Input Options (-i flags)"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:627
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:635
 msgid "Input Path"
 msgstr "Input Path"
 
@@ -5723,7 +5730,7 @@ msgstr "Jitter"
 msgid "Job"
 msgstr "Job"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:307
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:301
 msgid "Job cancelled"
 msgstr "Job cancelled"
 
@@ -5744,15 +5751,15 @@ msgstr "Job creation time"
 msgid "Job creation time (default)"
 msgstr "Job creation time (default)"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:321
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:313
 msgid "Job deleted"
 msgstr "Job deleted"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:428
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:444
 msgid "Job Details"
 msgstr "Job Details"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:359
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:366
 msgid "Job not found"
 msgstr "Job not found"
 
@@ -5760,7 +5767,7 @@ msgstr "Job not found"
 msgid "Job Presets"
 msgstr "Job Presets"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:274
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:272
 msgid "Job retry initiated"
 msgstr "Job retry initiated"
 
@@ -6037,18 +6044,18 @@ msgstr "Loading Danmu"
 msgid "Loading editor components..."
 msgstr "Loading editor components..."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:856
+#: src/components/pipeline/jobs/job-log-viewer.tsx:130
 msgid "Loading logs..."
 msgstr "Loading logs..."
+
+#: src/components/pipeline/jobs/job-log-viewer.tsx:140
+msgid "Loading more logs..."
+msgstr "Loading more logs..."
 
 #: src/components/pipeline/workflows/step-library.tsx:471
 #: src/components/pipeline/workflows/step-library.tsx:609
 msgid "Loading more..."
 msgstr "Loading more..."
-
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:893
-msgid "Loading older logs..."
-msgstr "Loading older logs..."
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:441
 msgid "Loading preset details..."
@@ -6426,8 +6433,6 @@ msgid "Maximum quality compression with HEVC, then upload to cloud storage."
 msgstr "Maximum quality compression with HEVC, then upload to cloud storage."
 
 #: src/components/ui/input-with-unit.tsx:29
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:595
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:606
 msgid "MB"
 msgstr "MB"
 
@@ -6721,7 +6726,7 @@ msgid "Name autofilled successfully"
 msgstr "Name autofilled successfully"
 
 #: src/api/schemas/engine.ts:638
-#: src/api/schemas/engine.ts:679
+#: src/api/schemas/engine.ts:681
 #: src/api/schemas/notifications.ts:177
 #: src/api/schemas/notifications.ts:183
 #: src/api/schemas/notifications.ts:189
@@ -6931,7 +6936,7 @@ msgstr "No filters yet"
 msgid "No gift data"
 msgstr "No gift data"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:649
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:657
 msgid "No input paths"
 msgstr "No input paths"
 
@@ -6960,7 +6965,7 @@ msgstr "No limit"
 msgid "No log files found"
 msgstr "No log files found"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:905
+#: src/components/pipeline/jobs/job-log-viewer.tsx:152
 msgid "No logs available for this execution."
 msgstr "No logs available for this execution."
 
@@ -6996,7 +7001,7 @@ msgstr "No new media arrived in time, so no safe cut boundary was found. Recordi
 msgid "No other steps available to depend on."
 msgstr "No other steps available to depend on."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:684
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:692
 msgid "No output generated"
 msgstr "No output generated"
 
@@ -7545,6 +7550,10 @@ msgstr "Out of space"
 msgid "Out of Space"
 msgstr "Out of Space"
 
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:613
+msgid "Out: {outputSize}"
+msgstr "Out: {outputSize}"
+
 #: src/components/config/platforms/platform-card.tsx:119
 #: src/components/config/shared-config-editor.tsx:168
 #: src/components/config/templates/template-card.tsx:146
@@ -7597,7 +7606,7 @@ msgstr "Output Metrics"
 msgid "Output Options"
 msgstr "Output Options"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:662
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:670
 msgid "Output Path"
 msgstr "Output Path"
 
@@ -7906,7 +7915,7 @@ msgstr "Per-Streamer"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:861
 #: src/components/sessions/overview-tab.tsx:212
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:717
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:725
 msgid "Performance"
 msgstr "Performance"
 
@@ -7925,7 +7934,7 @@ msgstr "Pick a preset theme or import a custom one."
 #: src/components/config/shared-config-editor.tsx:212
 #: src/components/layout/site-header.tsx:41
 #: src/lib/menu-list.ts:70
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:570
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:588
 msgid "Pipeline"
 msgstr "Pipeline"
 
@@ -9128,7 +9137,7 @@ msgstr "Resolving stream"
 msgid "Resource Limits"
 msgstr "Resource Limits"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:584
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:602
 msgid "Resources"
 msgstr "Resources"
 
@@ -9205,7 +9214,7 @@ msgstr "Retry backoff (seconds)"
 msgid "Retry Delay (ms)"
 msgstr "Retry Delay (ms)"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:501
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:517
 msgid "Retry Job"
 msgstr "Retry Job"
 
@@ -9222,7 +9231,7 @@ msgstr "Retry Policy"
 msgid "Retry selected"
 msgstr "Retry selected"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:487
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:503
 msgid "Retry Workflow"
 msgstr "Retry Workflow"
 
@@ -9936,7 +9945,7 @@ msgid "Session entered pending confirmation. Additional details are unavailable.
 msgstr "Session entered pending confirmation. Additional details are unavailable."
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:332
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:557
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:575
 msgid "Session ID"
 msgstr "Session ID"
 
@@ -10277,7 +10286,7 @@ msgid "Start Time"
 msgstr "Start Time"
 
 #: src/components/sessions/overview-tab.tsx:231
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:736
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:744
 msgid "Started"
 msgstr "Started"
 
@@ -10468,7 +10477,7 @@ msgid "Streamer deleted"
 msgstr "Streamer deleted"
 
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:325
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:563
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:581
 msgid "Streamer ID"
 msgstr "Streamer ID"
 
@@ -10991,13 +11000,17 @@ msgstr "This is a default preset. Description cannot be modified."
 msgid "This job has ended, but a file operation it started has not returned. The disk or network share it uses stopped responding, and the worker stays reserved until it answers. Check that the destination is reachable."
 msgstr "This job has ended, but a file operation it started has not returned. The disk or network share it uses stopped responding, and the worker stays reserved until it answers. Check that the destination is reachable."
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:478
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:494
 msgid "This job is a workflow step, so it restarts together with the rest of the workflow."
 msgstr "This job is a workflow step, so it restarts together with the rest of the workflow."
 
 #: src/components/player/playback-state.ts:32
 msgid "This media format is not supported by your browser. Choose another format or browser."
 msgstr "This media format is not supported by your browser. Choose another format or browser."
+
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:546
+msgid "This permanently removes the job and its logs. This cannot be undone."
+msgstr "This permanently removes the job and its logs. This cannot be undone."
 
 #: src/components/config/shared/pipeline-tabs-section.tsx:102
 msgid "This pipeline runs immediately after a recording segment is finished. Use it for tasks that only require the individual video segment, such as remuxing, thumbnail generation, or per-segment uploads."
@@ -11285,7 +11298,7 @@ msgstr "Top Words"
 msgid "total"
 msgstr "total"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:842
+#: src/components/pipeline/jobs/job-log-viewer.tsx:119
 msgid "Total"
 msgstr "Total"
 
@@ -12136,7 +12149,7 @@ msgstr "Workflow deleted successfully"
 msgid "Workflow not found"
 msgstr "Workflow not found"
 
-#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:290
+#: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:286
 msgid "Workflow retry initiated"
 msgstr "Workflow retry initiated"
 
