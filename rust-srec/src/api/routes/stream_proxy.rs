@@ -503,6 +503,17 @@ fn looks_like_hls_manifest(bytes: &[u8]) -> bool {
     bytes.starts_with(b"#EXTM3U")
 }
 
+/// The essence of one media type: parameters dropped, trimmed and lowercased,
+/// since media types are case-insensitive.
+fn media_type_essence(value: &str) -> String {
+    value
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+}
+
 fn is_hls_content_type(headers: &reqwest::header::HeaderMap) -> bool {
     let Some(content_type) = headers
         .get(reqwest::header::CONTENT_TYPE)
@@ -510,9 +521,8 @@ fn is_hls_content_type(headers: &reqwest::header::HeaderMap) -> bool {
     else {
         return false;
     };
-    let media_type = content_type.split(';').next().unwrap_or_default().trim();
     matches!(
-        media_type.to_ascii_lowercase().as_str(),
+        media_type_essence(content_type).as_str(),
         "application/vnd.apple.mpegurl"
             | "application/x-mpegurl"
             | "audio/mpegurl"
@@ -539,12 +549,7 @@ fn relayed_content_type(value: Option<&HeaderValue>) -> HeaderValue {
     if raw.contains(',') {
         return opaque;
     }
-    let media_type = raw
-        .split(';')
-        .next()
-        .unwrap_or_default()
-        .trim()
-        .to_ascii_lowercase();
+    let media_type = media_type_essence(raw);
     let Some((top, sub)) = media_type.split_once('/') else {
         return opaque;
     };
@@ -568,7 +573,6 @@ fn relayed_content_type(value: Option<&HeaderValue>) -> HeaderValue {
 /// Whether an upstream `Content-Type` names an HTML page or a JSON document,
 /// which a provider sends for error pages and API answers rather than media.
 ///
-/// Media types are case-insensitive and may carry whitespace and parameters.
 /// Every entry of a comma list counts, since browsers act on the last one, and
 /// a value that is not visible ASCII is treated as a page.
 fn is_page_or_api_content_type(value: &HeaderValue) -> bool {
@@ -576,12 +580,7 @@ fn is_page_or_api_content_type(value: &HeaderValue) -> bool {
         return true;
     };
     raw.split(',').any(|item| {
-        let media_type = item
-            .split(';')
-            .next()
-            .unwrap_or_default()
-            .trim()
-            .to_ascii_lowercase();
+        let media_type = media_type_essence(item);
         let Some((top, sub)) = media_type.split_once('/') else {
             return false;
         };

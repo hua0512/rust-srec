@@ -533,25 +533,31 @@ pub async fn import_config(
     State(state): State<AppState>,
     Json(request): Json<ImportRequest>,
 ) -> ApiResult<Json<ImportResult>> {
-    let outcome = state
-        .configuration_import_service
-        .import(request.config, request.mode)
-        .await
-        .map_err(|error| match error {
-            crate::services::config_import::ConfigurationImportError::Validation(message) => {
-                ApiError::bad_request(message)
-            }
-            crate::services::config_import::ConfigurationImportError::Database(error) => {
-                ApiError::from(error)
-            }
-        })?;
-
-    // The import writes user rows in its own transaction without going
-    // through `AuthService`, so cached `authorize_access_token` state may no
-    // longer match the rows just written; drop it all.
-    if let Some(auth_service) = state.auth_service.as_ref() {
-        auth_service.invalidate_user_cache();
-    }
+    let import_service = state.configuration_import_service.clone();
+    let auth_service = state.auth_service.clone();
+    // Detached, so a caller that disconnects or times out cannot cut the
+    // import short after its commit, nor skip the cache invalidation below.
+    let outcome = tokio::spawn(async move {
+        let outcome = import_service.import(request.config, request.mode).await;
+        // The import writes user rows in its own transaction without going
+        // through `AuthService`, so cached `authorize_access_token` state may
+        // no longer match them. It is dropped on failure too: a failure after
+        // the commit still leaves the new rows in place.
+        if let Some(auth_service) = auth_service {
+            auth_service.invalidate_user_cache();
+        }
+        outcome
+    })
+    .await
+    .map_err(|_| ApiError::internal("Configuration import task failed"))?
+    .map_err(|error| match error {
+        crate::services::config_import::ConfigurationImportError::Validation(message) => {
+            ApiError::bad_request(message)
+        }
+        crate::services::config_import::ConfigurationImportError::Database(error) => {
+            ApiError::from(error)
+        }
+    })?;
 
     let stats = outcome.stats;
     let mut message = format!(
