@@ -50,6 +50,28 @@ export function jsonTextField<Schema extends z.ZodType>(
     .optional();
 }
 
+/**
+ * `z.preprocess` step for a JSON-text column whose value must still match its
+ * schema strictly: text that is not JSON becomes `null` instead of throwing,
+ * so one unreadable row no longer fails a whole list response. The backend
+ * cannot use such text either, so nothing is lost when a save overwrites it.
+ * Valid JSON that fails the schema still fails the parse, unlike
+ * `jsonTextField`, because degrading it would let the next whole-object save
+ * delete a value the backend accepts.
+ */
+export function decodeJsonText(field: string) {
+  return (value: unknown): unknown => {
+    if (typeof value !== 'string') return value;
+    if (value.trim() === '') return null;
+    try {
+      return JSON.parse(value);
+    } catch (error) {
+      console.warn(`Discarding unreadable JSON in "${field}":`, error);
+      return null;
+    }
+  };
+}
+
 // --- Priority Enum ---
 export const PrioritySchema = z
   .enum(['HIGH', 'NORMAL', 'LOW'])

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DanmuStatisticsObjectSchema } from './common';
+import { DanmuStatisticsObjectSchema, jsonTextField } from './common';
 import { ExtractorSelectionSchema } from './platform-configs';
 import { DagPipelineDefinitionSchema } from './pipeline';
 import { ProxyRouteSchema } from './proxies';
@@ -19,9 +19,9 @@ export const GlobalConfigSchema = z.object({
   max_concurrent_uploads: z.number(),
   streamer_check_delay_ms: z.number(),
 
-  danmu_statistics: z.preprocess(
-    (val) => (typeof val === 'string' ? JSON.parse(val) : val),
-    DanmuStatisticsObjectSchema.nullable().optional(),
+  danmu_statistics: jsonTextField(
+    'danmu_statistics',
+    DanmuStatisticsObjectSchema,
   ),
   /** How requests connect unless a narrower scope chooses; never inherit. */
   proxy_route: ProxyRouteSchema,
