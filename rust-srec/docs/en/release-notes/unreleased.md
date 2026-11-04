@@ -19,7 +19,7 @@
 - **Sessions page**: every session can now be reached through the page numbers. Before, the page count assumed 50 sessions per page while each page showed 20, so the sessions beyond the last page number could not be reached from the list.
 - **Sessions page**: when the list fails to load, the page now says so and offers **Retry**, instead of reporting an empty library. A search or filter that matches nothing now says no sessions match and offers **Clear filters**.
 - **Dashboard** and **API Keys** settings: a section that fails to load now shows the error with a **Retry** button, instead of loading forever or looking empty.
-- **Lists**: deleting the last items on the last page of the streamers, sessions, media outputs, pipeline jobs, presets or workflows list now goes back to the previous page, instead of showing an empty page that says nothing was found.
+- **Lists**: deleting the last items on the last page of the sessions, media outputs, pipeline jobs, presets or workflows list now goes back to the previous page, instead of showing an empty page that says nothing was found.
 - **Confirmations**: deleting a streamer or sessions now asks in an in-app dialog instead of a browser prompt, and deleting a streamer filter now asks first instead of deleting it at once.
 - **Unsaved changes**: leaving the template, platform, engine, preset or workflow editor with unsaved edits now asks before discarding them. Global settings and the streamer editor, which already asked, now ask in an in-app dialog.
 - **FLV recordings**: files recorded with the Mesio engine now list Mesio as their creator instead of an outdated version number, and their real data size instead of 0, so media tools show correct file details.

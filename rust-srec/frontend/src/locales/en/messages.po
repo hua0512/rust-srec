@@ -293,7 +293,7 @@ msgstr "{count} overridden"
 msgid "{displayName} Configuration"
 msgstr "{displayName} Configuration"
 
-#: src/components/config/engines/engine-editor.tsx:74
+#: src/components/config/engines/engine-editor.tsx:76
 msgid "{engine} Settings"
 msgstr "{engine} Settings"
 
@@ -576,7 +576,7 @@ msgstr "A template being removed lets go of the proxy once the recordings using 
 msgid "A template can't turn this off; do that on the engine."
 msgstr "A template can't turn this off; do that on the engine."
 
-#: src/components/config/engines/engine-editor.tsx:200
+#: src/components/config/engines/engine-editor.tsx:202
 msgid "A unique and descriptive name for this configuration."
 msgstr "A unique and descriptive name for this configuration."
 
@@ -793,7 +793,7 @@ msgstr "Add exclude regex pattern"
 msgid "Add extra argument"
 msgstr "Add extra argument"
 
-#: src/components/streamers/edit/streamer-filters-tab.tsx:47
+#: src/components/streamers/edit/streamer-filters-tab.tsx:49
 msgid "Add Filter"
 msgstr "Add Filter"
 
@@ -1382,7 +1382,7 @@ msgstr "Awaiting first check"
 msgid "Back"
 msgstr "Back"
 
-#: src/components/config/engines/engine-editor.tsx:314
+#: src/components/config/engines/engine-editor.tsx:319
 msgid "Back to engines"
 msgstr "Back to engines"
 
@@ -1524,7 +1524,7 @@ msgstr "Basic Auth"
 msgid "Basic details for this configuration template."
 msgstr "Basic details for this configuration template."
 
-#: src/components/config/engines/engine-editor.tsx:175
+#: src/components/config/engines/engine-editor.tsx:177
 msgid "Basic Information"
 msgstr "Basic Information"
 
@@ -2238,11 +2238,11 @@ msgstr "Configure a download tool to record with."
 msgid "Configure and launch a manual processing pipeline."
 msgstr "Configure and launch a manual processing pipeline."
 
-#: src/components/config/engines/engine-editor.tsx:324
+#: src/components/config/engines/engine-editor.tsx:329
 msgid "Configure download engine parameters"
 msgstr "Configure download engine parameters"
 
-#: src/components/config/engines/engine-editor.tsx:96
+#: src/components/config/engines/engine-editor.tsx:98
 msgid "Configure granular options for the selected engine."
 msgstr "Configure granular options for the selected engine."
 
@@ -2574,11 +2574,11 @@ msgstr "Create channel"
 msgid "Create Directories"
 msgstr "Create Directories"
 
-#: src/components/config/engines/engine-editor.tsx:268
+#: src/components/config/engines/engine-editor.tsx:273
 msgid "Create engine"
 msgstr "Create engine"
 
-#: src/components/config/engines/engine-editor.tsx:320
+#: src/components/config/engines/engine-editor.tsx:325
 msgid "Create Engine"
 msgstr "Create Engine"
 
@@ -2646,7 +2646,7 @@ msgstr "Creating..."
 msgid "Creating…"
 msgstr "Creating…"
 
-#: src/components/config/engines/engine-editor.tsx:341
+#: src/components/config/engines/engine-editor.tsx:346
 msgid "Creation Mode"
 msgstr "Creation Mode"
 
@@ -2986,7 +2986,7 @@ msgstr "Default: Dolby Vision (30000)"
 msgid "Define how this step identifies itself and connects to others."
 msgstr "Define how this step identifies itself and connects to others."
 
-#: src/components/streamers/edit/streamer-filters-tab.tsx:33
+#: src/components/streamers/edit/streamer-filters-tab.tsx:35
 msgid "Define rules to automatically record or skip streams based on title, time, or language."
 msgstr "Define rules to automatically record or skip streams based on title, time, or language."
 
@@ -3612,7 +3612,7 @@ msgstr "e.g. flv, hls, dash"
 msgid "e.g. gdrive:/videos"
 msgstr "e.g. gdrive:/videos"
 
-#: src/components/config/engines/engine-editor.tsx:195
+#: src/components/config/engines/engine-editor.tsx:197
 msgid "e.g. High Quality Streamlink"
 msgstr "e.g. High Quality Streamlink"
 
@@ -3665,7 +3665,7 @@ msgstr "Edit account"
 msgid "Edit channel"
 msgstr "Edit channel"
 
-#: src/components/config/engines/engine-editor.tsx:320
+#: src/components/config/engines/engine-editor.tsx:325
 msgid "Edit Engine"
 msgstr "Edit Engine"
 
@@ -3688,7 +3688,7 @@ msgstr "Edit proxy"
 msgid "Edit Workflow: {0}"
 msgstr "Edit Workflow: {0}"
 
-#: src/components/config/engines/engine-editor.tsx:339
+#: src/components/config/engines/engine-editor.tsx:344
 msgid "Editing Mode"
 msgstr "Editing Mode"
 
@@ -3798,7 +3798,7 @@ msgstr "Engine created successfully"
 msgid "Engine deleted"
 msgstr "Engine deleted"
 
-#: src/components/config/engines/engine-editor.tsx:190
+#: src/components/config/engines/engine-editor.tsx:192
 msgid "Engine Name"
 msgstr "Engine Name"
 
@@ -3806,7 +3806,7 @@ msgstr "Engine Name"
 msgid "Engine Overrides"
 msgstr "Engine Overrides"
 
-#: src/components/config/engines/engine-editor.tsx:215
+#: src/components/config/engines/engine-editor.tsx:217
 msgid "Engine Type"
 msgstr "Engine Type"
 
@@ -4985,15 +4985,15 @@ msgstr "Go back"
 msgid "Go Back"
 msgstr "Go Back"
 
-#: src/components/ui/pagination.tsx:99
+#: src/components/ui/pagination.tsx:103
 msgid "Go to next page"
 msgstr "Go to next page"
 
-#: src/components/shared/list-pagination.tsx:151
+#: src/components/shared/list-pagination.tsx:148
 msgid "Go to page {pageNumber}"
 msgstr "Go to page {pageNumber}"
 
-#: src/components/ui/pagination.tsx:79
+#: src/components/ui/pagination.tsx:83
 msgid "Go to previous page"
 msgstr "Go to previous page"
 
@@ -5350,7 +5350,7 @@ msgstr "ID"
 msgid "ID is required"
 msgstr "ID is required"
 
-#: src/components/config/engines/engine-editor.tsx:178
+#: src/components/config/engines/engine-editor.tsx:180
 msgid "Identity and type of the engine."
 msgstr "Identity and type of the engine."
 
@@ -6442,7 +6442,7 @@ msgstr "More actions for {0}"
 msgid "More filters"
 msgstr "More filters"
 
-#: src/components/ui/pagination.tsx:125
+#: src/components/ui/pagination.tsx:129
 msgid "More pages"
 msgstr "More pages"
 
@@ -6633,7 +6633,7 @@ msgstr "New Template Name"
 msgid "Next"
 msgstr "Next"
 
-#: src/components/ui/pagination.tsx:105
+#: src/components/ui/pagination.tsx:109
 msgctxt "pagination"
 msgid "Next"
 msgstr "Next"
@@ -8120,7 +8120,7 @@ msgstr "Preview Unavailable"
 msgid "Previous"
 msgstr "Previous"
 
-#: src/components/ui/pagination.tsx:86
+#: src/components/ui/pagination.tsx:90
 msgctxt "pagination"
 msgid "Previous"
 msgstr "Previous"
@@ -8521,7 +8521,7 @@ msgstr "Recording cancelled"
 msgid "Recording error"
 msgstr "Recording error"
 
-#: src/components/streamers/edit/streamer-filters-tab.tsx:30
+#: src/components/streamers/edit/streamer-filters-tab.tsx:32
 #: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:138
 msgid "Recording Filters"
 msgstr "Recording Filters"
@@ -9155,7 +9155,7 @@ msgstr "Saturday"
 msgid "Save account"
 msgstr "Save account"
 
-#: src/components/config/engines/engine-editor.tsx:268
+#: src/components/config/engines/engine-editor.tsx:273
 #: src/components/filters/FilterDialog.tsx:298
 #: src/components/notifications/channel-form.tsx:459
 #: src/components/proxies/proxy-editor-dialog.tsx:363
@@ -9587,7 +9587,7 @@ msgstr "Select the highest quality level you want to attempt capturing."
 msgid "Select the steps that must complete successfully before this step runs."
 msgstr "Select the steps that must complete successfully before this step runs."
 
-#: src/components/config/engines/engine-editor.tsx:228
+#: src/components/config/engines/engine-editor.tsx:233
 #: src/components/notifications/channel-form.tsx:412
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:176
 msgid "Select type"
@@ -9759,7 +9759,7 @@ msgstr "Set priority"
 msgid "Set to 0 to disable automatic output cleanup. Cleanup runs every 30 minutes and only includes ended sessions with no active or recently updated processing jobs."
 msgstr "Set to 0 to disable automatic output cleanup. Cleanup runs every 30 minutes and only includes ended sessions with no active or recently updated processing jobs."
 
-#: src/components/config/engines/engine-editor.tsx:326
+#: src/components/config/engines/engine-editor.tsx:331
 msgid "Set up a new download tool configuration"
 msgstr "Set up a new download tool configuration"
 
@@ -10659,7 +10659,7 @@ msgstr "The stream's segments are not marked as independently playable, so no sa
 msgid "The streaming source could not be reached through the server. Retry or choose another source."
 msgstr "The streaming source could not be reached through the server. Retry or choose another source."
 
-#: src/components/config/engines/engine-editor.tsx:253
+#: src/components/config/engines/engine-editor.tsx:258
 msgid "The underlying tool used for downloading."
 msgstr "The underlying tool used for downloading."
 

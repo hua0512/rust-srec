@@ -41,10 +41,13 @@ function PaginationItem({ ...props }: React.ComponentProps<'li'>) {
   return <li data-slot="pagination-item" {...props} />;
 }
 
+// A button rather than shadcn's `<a>`: the pages are client state with no URL
+// to link to, and an `<a>` without `href` cannot be focused or pressed with
+// the keyboard.
 type PaginationLinkProps = {
   isActive?: boolean;
 } & Pick<React.ComponentProps<typeof Button>, 'size'> &
-  React.ComponentProps<'a'>;
+  React.ComponentProps<'button'>;
 
 function PaginationLink({
   className,
@@ -53,7 +56,8 @@ function PaginationLink({
   ...props
 }: PaginationLinkProps) {
   return (
-    <a
+    <button
+      type="button"
       aria-current={isActive ? 'page' : undefined}
       data-slot="pagination-link"
       data-active={isActive}

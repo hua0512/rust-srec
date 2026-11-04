@@ -60,7 +60,7 @@ type SessionsSearch = ReturnType<typeof Route.useSearch>;
 type SessionStatus = NonNullable<SessionsSearch['status']>;
 type SessionTimeRange = NonNullable<SessionsSearch['timeRange']>;
 
-const DEFAULT_LIMIT = 50;
+const DEFAULT_LIMIT = 20;
 
 function SessionsPage() {
   const search = Route.useSearch();
@@ -112,8 +112,8 @@ function SessionsPage() {
         ? false
         : undefined;
 
-  // Sent explicitly: the server function falls back to a different page size,
-  // and the page count below must be computed from the size actually used.
+  // Sent with the request rather than left to the server function's own
+  // default, so the page count below is always computed from the size used.
   const limit = search.limit || DEFAULT_LIMIT;
 
   const query = useQuery({

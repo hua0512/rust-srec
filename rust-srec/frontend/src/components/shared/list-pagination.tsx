@@ -121,12 +121,9 @@ export function ListPagination({
         <PaginationContent className="flex-nowrap">
           <PaginationItem>
             <PaginationPrevious
-              onClick={() => !isFirst && onPageIndexChange(pageIndex - 1)}
-              aria-disabled={isFirst}
-              className={cn(
-                'h-8 px-2 text-xs sm:px-3 sm:text-sm',
-                isFirst ? 'pointer-events-none opacity-50' : 'cursor-pointer',
-              )}
+              onClick={() => onPageIndexChange(pageIndex - 1)}
+              disabled={isFirst}
+              className="h-8 cursor-pointer px-2 text-xs sm:px-3 sm:text-sm"
             />
           </PaginationItem>
 
@@ -163,12 +160,9 @@ export function ListPagination({
 
           <PaginationItem>
             <PaginationNext
-              onClick={() => !isLast && onPageIndexChange(pageIndex + 1)}
-              aria-disabled={isLast}
-              className={cn(
-                'h-8 px-2 text-xs sm:px-3 sm:text-sm',
-                isLast ? 'pointer-events-none opacity-50' : 'cursor-pointer',
-              )}
+              onClick={() => onPageIndexChange(pageIndex + 1)}
+              disabled={isLast}
+              className="h-8 cursor-pointer px-2 text-xs sm:px-3 sm:text-sm"
             />
           </PaginationItem>
         </PaginationContent>

@@ -189,8 +189,6 @@ function GlobalConfigForm({ config }: { config: GlobalConfig }) {
   });
 
   const isDirty = form.formState.isDirty;
-  // Settings only take effect once saved, so leaving with edits in place loses
-  // them silently; the guard rendered below asks first.
   const isPending = updateMutation.isPending;
 
   const onSubmit = useCallback(
@@ -202,6 +200,8 @@ function GlobalConfigForm({ config }: { config: GlobalConfig }) {
 
   return (
     <Form {...form}>
+      {/* Settings only take effect once saved, so leaving with edits in place
+          would lose them silently. */}
       <UnsavedChangesGuard when={isDirty && !isPending} />
       <form
         id="global-config-form"

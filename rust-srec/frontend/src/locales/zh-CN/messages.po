@@ -293,7 +293,7 @@ msgstr "{count} 项已覆盖"
 msgid "{displayName} Configuration"
 msgstr "{displayName} 配置"
 
-#: src/components/config/engines/engine-editor.tsx:74
+#: src/components/config/engines/engine-editor.tsx:76
 msgid "{engine} Settings"
 msgstr "{engine} 设置"
 
@@ -576,7 +576,7 @@ msgstr "正在移除的模板会在使用它的录制结束后释放该代理。
 msgid "A template can't turn this off; do that on the engine."
 msgstr "模板无法关闭此项，请在引擎中关闭。"
 
-#: src/components/config/engines/engine-editor.tsx:200
+#: src/components/config/engines/engine-editor.tsx:202
 msgid "A unique and descriptive name for this configuration."
 msgstr "为此配置提供一个唯一且易于识别的名称。"
 
@@ -793,7 +793,7 @@ msgstr "添加排除正则模式"
 msgid "Add extra argument"
 msgstr "添加额外参数"
 
-#: src/components/streamers/edit/streamer-filters-tab.tsx:47
+#: src/components/streamers/edit/streamer-filters-tab.tsx:49
 msgid "Add Filter"
 msgstr "添加过滤器"
 
@@ -1382,7 +1382,7 @@ msgstr "等待首次检查"
 msgid "Back"
 msgstr "返回"
 
-#: src/components/config/engines/engine-editor.tsx:314
+#: src/components/config/engines/engine-editor.tsx:319
 msgid "Back to engines"
 msgstr "返回引擎列表"
 
@@ -1524,7 +1524,7 @@ msgstr "Basic Auth"
 msgid "Basic details for this configuration template."
 msgstr "此配置模板的基本信息。"
 
-#: src/components/config/engines/engine-editor.tsx:175
+#: src/components/config/engines/engine-editor.tsx:177
 msgid "Basic Information"
 msgstr "基本信息"
 
@@ -2238,11 +2238,11 @@ msgstr "配置一个用于录制的下载工具。"
 msgid "Configure and launch a manual processing pipeline."
 msgstr "配置并启动手动处理管道。"
 
-#: src/components/config/engines/engine-editor.tsx:324
+#: src/components/config/engines/engine-editor.tsx:329
 msgid "Configure download engine parameters"
 msgstr "配置录制引擎参数"
 
-#: src/components/config/engines/engine-editor.tsx:96
+#: src/components/config/engines/engine-editor.tsx:98
 msgid "Configure granular options for the selected engine."
 msgstr "配置所选引擎的详细选项。"
 
@@ -2574,11 +2574,11 @@ msgstr "创建渠道"
 msgid "Create Directories"
 msgstr "创建目录"
 
-#: src/components/config/engines/engine-editor.tsx:268
+#: src/components/config/engines/engine-editor.tsx:273
 msgid "Create engine"
 msgstr "创建引擎"
 
-#: src/components/config/engines/engine-editor.tsx:320
+#: src/components/config/engines/engine-editor.tsx:325
 msgid "Create Engine"
 msgstr "创建引擎"
 
@@ -2646,7 +2646,7 @@ msgstr "创建中..."
 msgid "Creating…"
 msgstr "创建中…"
 
-#: src/components/config/engines/engine-editor.tsx:341
+#: src/components/config/engines/engine-editor.tsx:346
 msgid "Creation Mode"
 msgstr "创建模式"
 
@@ -2986,7 +2986,7 @@ msgstr "默认：杜比视界 (30000)"
 msgid "Define how this step identifies itself and connects to others."
 msgstr "定义此步骤如何标识自身以及如何连接到其他步骤。"
 
-#: src/components/streamers/edit/streamer-filters-tab.tsx:33
+#: src/components/streamers/edit/streamer-filters-tab.tsx:35
 msgid "Define rules to automatically record or skip streams based on title, time, or language."
 msgstr "根据标题、时间或语言定义自动录制或跳过的规则。"
 
@@ -3612,7 +3612,7 @@ msgstr "例如 flv, hls, dash"
 msgid "e.g. gdrive:/videos"
 msgstr "例如 gdrive:/videos"
 
-#: src/components/config/engines/engine-editor.tsx:195
+#: src/components/config/engines/engine-editor.tsx:197
 msgid "e.g. High Quality Streamlink"
 msgstr "例如 高质量 Streamlink"
 
@@ -3665,7 +3665,7 @@ msgstr "编辑账号"
 msgid "Edit channel"
 msgstr "编辑渠道"
 
-#: src/components/config/engines/engine-editor.tsx:320
+#: src/components/config/engines/engine-editor.tsx:325
 msgid "Edit Engine"
 msgstr "编辑引擎"
 
@@ -3688,7 +3688,7 @@ msgstr "编辑代理"
 msgid "Edit Workflow: {0}"
 msgstr "编辑工作流：{0}"
 
-#: src/components/config/engines/engine-editor.tsx:339
+#: src/components/config/engines/engine-editor.tsx:344
 msgid "Editing Mode"
 msgstr "编辑模式"
 
@@ -3798,7 +3798,7 @@ msgstr "引擎创建成功"
 msgid "Engine deleted"
 msgstr "引擎已删除"
 
-#: src/components/config/engines/engine-editor.tsx:190
+#: src/components/config/engines/engine-editor.tsx:192
 msgid "Engine Name"
 msgstr "引擎名称"
 
@@ -3806,7 +3806,7 @@ msgstr "引擎名称"
 msgid "Engine Overrides"
 msgstr "引擎覆盖项"
 
-#: src/components/config/engines/engine-editor.tsx:215
+#: src/components/config/engines/engine-editor.tsx:217
 msgid "Engine Type"
 msgstr "引擎类型"
 
@@ -4985,15 +4985,15 @@ msgstr "返回"
 msgid "Go Back"
 msgstr "返回"
 
-#: src/components/ui/pagination.tsx:99
+#: src/components/ui/pagination.tsx:103
 msgid "Go to next page"
 msgstr "下一页"
 
-#: src/components/shared/list-pagination.tsx:151
+#: src/components/shared/list-pagination.tsx:148
 msgid "Go to page {pageNumber}"
 msgstr "跳转到第 {pageNumber} 页"
 
-#: src/components/ui/pagination.tsx:79
+#: src/components/ui/pagination.tsx:83
 msgid "Go to previous page"
 msgstr "上一页"
 
@@ -5350,7 +5350,7 @@ msgstr "ID"
 msgid "ID is required"
 msgstr "必须填写 ID"
 
-#: src/components/config/engines/engine-editor.tsx:178
+#: src/components/config/engines/engine-editor.tsx:180
 msgid "Identity and type of the engine."
 msgstr "引擎的身份与类型。"
 
@@ -6442,7 +6442,7 @@ msgstr "{0} 的更多操作"
 msgid "More filters"
 msgstr "更多筛选"
 
-#: src/components/ui/pagination.tsx:125
+#: src/components/ui/pagination.tsx:129
 msgid "More pages"
 msgstr "更多页面"
 
@@ -6633,7 +6633,7 @@ msgstr "新模板名称"
 msgid "Next"
 msgstr "下一步"
 
-#: src/components/ui/pagination.tsx:105
+#: src/components/ui/pagination.tsx:109
 msgctxt "pagination"
 msgid "Next"
 msgstr "下一页"
@@ -8120,7 +8120,7 @@ msgstr "预览不可用"
 msgid "Previous"
 msgstr "上一页"
 
-#: src/components/ui/pagination.tsx:86
+#: src/components/ui/pagination.tsx:90
 msgctxt "pagination"
 msgid "Previous"
 msgstr "上一页"
@@ -8521,7 +8521,7 @@ msgstr "录制已取消"
 msgid "Recording error"
 msgstr "录制出错"
 
-#: src/components/streamers/edit/streamer-filters-tab.tsx:30
+#: src/components/streamers/edit/streamer-filters-tab.tsx:32
 #: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:138
 msgid "Recording Filters"
 msgstr "录制过滤器"
@@ -9155,7 +9155,7 @@ msgstr "星期六"
 msgid "Save account"
 msgstr "保存账号"
 
-#: src/components/config/engines/engine-editor.tsx:268
+#: src/components/config/engines/engine-editor.tsx:273
 #: src/components/filters/FilterDialog.tsx:298
 #: src/components/notifications/channel-form.tsx:459
 #: src/components/proxies/proxy-editor-dialog.tsx:363
@@ -9587,7 +9587,7 @@ msgstr "选择你想要尝试采集的最高质量等级。"
 msgid "Select the steps that must complete successfully before this step runs."
 msgstr "选择必须在此步骤运行前成功完成的步骤。"
 
-#: src/components/config/engines/engine-editor.tsx:228
+#: src/components/config/engines/engine-editor.tsx:233
 #: src/components/notifications/channel-form.tsx:412
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:176
 msgid "Select type"
@@ -9759,7 +9759,7 @@ msgstr "设置优先级"
 msgid "Set to 0 to disable automatic output cleanup. Cleanup runs every 30 minutes and only includes ended sessions with no active or recently updated processing jobs."
 msgstr "设为 0 可禁用自动清理输出。每 30 分钟清理一次，仅清理已结束且没有正在运行或最近更新的处理任务的会话输出。"
 
-#: src/components/config/engines/engine-editor.tsx:326
+#: src/components/config/engines/engine-editor.tsx:331
 msgid "Set up a new download tool configuration"
 msgstr "设置新的录制工具配置"
 
@@ -10057,7 +10057,7 @@ msgstr "状态"
 #: src/components/shared/unsaved-changes-guard.tsx:28
 msgctxt "unsaved-changes"
 msgid "Stay"
-msgstr "留下"
+msgstr "留在此页"
 
 #: src/components/player/playback-presets.ts:8
 msgid "Stay closer to live. Network interruptions may cause more buffering."
@@ -10659,7 +10659,7 @@ msgstr "直播流的分片未标记为可独立播放，未找到安全分割点
 msgid "The streaming source could not be reached through the server. Retry or choose another source."
 msgstr "服务器无法连接直播源。请重试或切换直播源。"
 
-#: src/components/config/engines/engine-editor.tsx:253
+#: src/components/config/engines/engine-editor.tsx:258
 msgid "The underlying tool used for downloading."
 msgstr "用于录制的底层工具。"
 
