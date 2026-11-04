@@ -262,7 +262,7 @@ function StepConfigDialogBody({
   );
 
   // Form for displaying the preset config (read-only)
-  const presetForm = useForm({ values: presetValues });
+  const presetForm = useForm({ values: presetValues, disabled: true });
 
   const [idValue, setIdValue] = useState(dagStep?.id || '');
   const [dependsOn, setDependsOn] = useState<string[]>(
@@ -442,7 +442,7 @@ function StepConfigDialogBody({
                   </div>
                 )}
                 {presetDetail && (
-                  <div className="space-y-6">
+                  <div className="space-y-6 [&_input]:pointer-events-none [&_textarea]:pointer-events-none [&_label]:pointer-events-none [&_button:not([role=tab])]:pointer-events-none [&_input]:opacity-70 [&_textarea]:opacity-70 [&_label]:opacity-70 [&_button:not([role=tab])]:opacity-70 grayscale-[0.1]">
                     <div className="flex items-center gap-2 mb-4">
                       <div className="h-8 w-1 rounded bg-primary/20" />
                       <h3 className="font-semibold text-lg tracking-tight">
@@ -450,20 +450,26 @@ function StepConfigDialogBody({
                         <Trans>Configuration</Trans>
                       </h3>
                     </div>
-                    {/* Read-only preview: `inert` keeps every control out of reach of the
-                        pointer, keyboard and assistive technology. */}
-                    <div
-                      inert
-                      className="rounded-xl border bg-card p-6 shadow-sm opacity-70 grayscale-[0.1]"
-                    >
+                    <div className="rounded-xl border bg-card p-6 shadow-sm">
                       <Form {...presetForm}>
-                        {presetProcessorDef && (
-                          <Suspense fallback={PROCESSOR_FORM_FALLBACK}>
-                            <presetProcessorDef.component
-                              control={presetForm.control}
-                            />
-                          </Suspense>
-                        )}
+                        <form
+                          className="contents"
+                          onSubmit={(event) => {
+                            // Read-only preview: its fields can still be reached with Tab,
+                            // and Enter in a lone text field would submit the form that
+                            // embeds the workflow editor.
+                            event.preventDefault();
+                            event.stopPropagation();
+                          }}
+                        >
+                          {presetProcessorDef && (
+                            <Suspense fallback={PROCESSOR_FORM_FALLBACK}>
+                              <presetProcessorDef.component
+                                control={presetForm.control}
+                              />
+                            </Suspense>
+                          )}
+                        </form>
                       </Form>
                     </div>
                   </div>
