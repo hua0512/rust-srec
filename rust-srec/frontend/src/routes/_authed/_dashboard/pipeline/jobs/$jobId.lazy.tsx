@@ -190,9 +190,10 @@ function JobDetailsPage() {
   );
 
   // The closing log rows are written as the job finishes, after the last read
-  // below. Read the loaded pages once more for a job that finishes while being
-  // watched; one that was already finished when the page opened has nothing to
-  // catch up on and is left alone.
+  // below. Read the newest page once more for a job that finishes while being
+  // watched (every earlier page is final, see `newestLogPageOffset`); one that
+  // was already finished when the page opened has nothing to catch up on and
+  // is left alone.
   const sawRunningJobRef = useRef(false);
   useEffect(() => {
     if (isJobActive) {
@@ -201,8 +202,20 @@ function JobDetailsPage() {
     }
     if (!isJobTerminal || !sawRunningJobRef.current) return;
     sawRunningJobRef.current = false;
-    void queryClient.invalidateQueries({ queryKey: logsQueryKey });
-  }, [isJobActive, isJobTerminal, logsQueryKey, queryClient]);
+    const offset = newestLogPageOffset(
+      queryClient.getQueryData<JobLogPages>(logsQueryKey),
+    );
+    if (offset === undefined) return;
+    getPipelineJobLogs({
+      data: { id: jobId, limit: LOG_PAGE_SIZE, offset },
+    }).then(
+      (page) =>
+        queryClient.setQueryData<JobLogPages>(logsQueryKey, (prev) =>
+          replaceNewestLogPage(prev, page),
+        ),
+      () => {}, // The already-loaded rows stay on screen
+    );
+  }, [isJobActive, isJobTerminal, jobId, logsQueryKey, queryClient]);
 
   // Fetch logs separately with infinite scroll. Deliberately not polled: a
   // reader who has scrolled back through a long job holds several pages, and
@@ -228,7 +241,7 @@ function JobDetailsPage() {
     enabled: !!job,
     // Log rows are only ever appended, so a page that came back full is final.
     // Nothing here has to be re-read on a focus or a reconnect; new rows arrive
-    // through the tail query, and the invalidation above still forces a read.
+    // through the tail query and the closing read above.
     staleTime: Infinity,
   });
 
@@ -804,6 +817,7 @@ function JobDetailsPage() {
                 transition={{ delay: 0.5 }}
               >
                 <JobLogViewer
+                  jobId={job.id}
                   data={logsData}
                   isLoading={isLogsLoading}
                   hasNextPage={hasNextPage}

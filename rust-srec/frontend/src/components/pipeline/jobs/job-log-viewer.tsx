@@ -4,15 +4,19 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useLayoutEffect,
   useReducer,
   useRef,
   useState,
 } from 'react';
+import { flushSync } from 'react-dom';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg, plural, t } from '@lingui/core/macro';
-import { RefreshCw, Terminal } from 'lucide-react';
+import { Copy, RefreshCw, Terminal } from 'lucide-react';
+import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { useInView } from '@/hooks/use-in-view';
 import { getDateFormatter } from '@/lib/datetime';
@@ -33,7 +37,27 @@ const ESTIMATED_ROW_PX = 24;
 const OVERSCAN_PX = 800;
 const TIME_OPTIONS: Intl.DateTimeFormatOptions = { timeStyle: 'medium' };
 
+/** The loaded rows as plain text, one `time level message` line per row. */
+function logText(logs: readonly JobLogEntry[]): string {
+  return logs
+    .map((log) => `${log.timestamp} ${log.level} ${log.message}`)
+    .join('\n');
+}
+
+/** Saves `text` as a file, for when the clipboard cannot be written. */
+function downloadText(text: string, filename: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+}
+
 interface JobLogViewerProps {
+  jobId: string;
   data: JobLogPages | undefined;
   isLoading: boolean;
   hasNextPage: boolean;
@@ -50,6 +74,7 @@ interface JobLogViewerProps {
  * viewport are mounted: a long job holds thousands of rows across its pages.
  */
 export const JobLogViewer = memo(function JobLogViewer({
+  jobId,
   data,
   isLoading,
   hasNextPage,
@@ -63,6 +88,25 @@ export const JobLogViewer = memo(function JobLogViewer({
   const logs = useMemo(() => flattenLogPages(data), [data]);
   const totalLogs = latestLogTotal(data);
   const timeFormat = getDateFormatter(i18n.locale, TIME_OPTIONS);
+
+  // Only the rows near the viewport are in the page, so the browser's find
+  // and a long selection cannot reach the rest; copying hands over every
+  // loaded row. The clipboard is unavailable outside a secure context (a
+  // plain-HTTP address on the LAN), where the text is saved as a file.
+  const handleCopy = async () => {
+    const text = logText(logs);
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(
+        i18n._(
+          msg`${plural(logs.length, { one: 'Copied # log line', other: 'Copied # log lines' })}`,
+        ),
+      );
+    } catch {
+      downloadText(text, `job-${jobId}.log`);
+      toast.info(i18n._(msg`Could not copy the log, so it was downloaded`));
+    }
+  };
 
   const { ref: loadMoreRef, inView } = useInView();
   useEffect(() => {
@@ -86,6 +130,18 @@ export const JobLogViewer = memo(function JobLogViewer({
           </span>
         </div>
         <div className="flex items-center gap-2">
+          {logs.length > 0 && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="h-6 w-6 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+              onClick={() => void handleCopy()}
+              aria-label={i18n._(msg`Copy log`)}
+              title={i18n._(msg`Copy log`)}
+            >
+              <Copy className="h-3.5 w-3.5" />
+            </Button>
+          )}
           {(errorCount ?? 0) > 0 && (
             <Badge
               variant="outline"
@@ -158,10 +214,48 @@ export const JobLogViewer = memo(function JobLogViewer({
 });
 
 /**
+ * The mounted row whose box spans the scroller's top edge, if any. Offsets are
+ * relative to the scroller, which is the rows' offset parent.
+ */
+function rowAtTop(
+  scroller: HTMLElement,
+  chunks: ReadonlyMap<number, HTMLElement>,
+): { node: HTMLElement; top: number } | null {
+  const viewTop = scroller.scrollTop;
+  for (const chunk of chunks.values()) {
+    const chunkTop = chunk.offsetTop;
+    if (chunkTop > viewTop || chunkTop + chunk.offsetHeight <= viewTop) {
+      continue;
+    }
+    const rows = chunk.children;
+    // The last row starting at or above the edge.
+    let lo = 0;
+    let hi = rows.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if ((rows[mid] as HTMLElement).offsetTop <= viewTop) lo = mid;
+      else hi = mid - 1;
+    }
+    const node = rows[lo] as HTMLElement | undefined;
+    return node ? { node, top: node.offsetTop } : null;
+  }
+  return null;
+}
+
+/** The scroll box's height; it is fixed by the `h-[500px]` class below. */
+const VIEWPORT_PX = 500;
+
+/**
  * Mounts the rows in fixed-size chunks and only the chunks near the viewport.
  * Rows wrap, so a chunk's height is only known once it has been on screen;
- * until then it is estimated, and the browser's scroll anchoring keeps the
- * visible rows in place when an estimate is replaced by the real height.
+ * until then it is estimated.
+ *
+ * Replacing an estimate with the real height, or a width change re-wrapping
+ * the rows, moves everything below the changed chunk. The list keeps the rows
+ * on screen in place itself rather than leaving it to the browser's scroll
+ * anchoring, which older WebKit (Safari, the macOS desktop app's web view)
+ * does not implement; `overflow-anchor: none` stops browsers that do from
+ * correcting a second time.
  */
 function VirtualLogList({
   logs,
@@ -172,15 +266,38 @@ function VirtualLogList({
   timeFormat: Intl.DateTimeFormat;
   children: ReactNode;
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const [scrollTop, setScrollTop] = useState(0);
-  const [viewportHeight, setViewportHeight] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(VIEWPORT_PX);
 
   // Measured chunk heights by chunk index, with the row count each was
   // measured at. Held in a ref and versioned so a burst of measurements
   // re-renders once.
   const heightsRef = useRef<{ rows: number; height: number }[]>([]);
   const [, bumpHeights] = useReducer((n: number) => n + 1, 0);
+  const viewportWidthRef = useRef<number | null>(null);
+
+  // Mounted chunk elements by chunk index.
+  const chunkNodesRef = useRef(new Map<number, HTMLDivElement>());
+  // The row at the viewport's top edge when last checked, and its offset in
+  // the scrolled content then.
+  const anchorRef = useRef<{ node: HTMLElement; top: number } | null>(null);
+
+  /**
+   * Moves the scroll position by however far the row at the top of the
+   * viewport has moved since the last check, then picks the row there now.
+   * Runs before paint, so the shift is never shown.
+   */
+  const keepAnchor = useCallback(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const anchor = anchorRef.current;
+    if (anchor?.node.isConnected) {
+      const shift = anchor.node.offsetTop - anchor.top;
+      if (shift !== 0) scroller.scrollTop += shift;
+    }
+    anchorRef.current = rowAtTop(scroller, chunkNodesRef.current);
+  }, []);
 
   const observerRef = useRef<ResizeObserver | null>(null);
   if (observerRef.current === null && typeof ResizeObserver !== 'undefined') {
@@ -189,7 +306,18 @@ function VirtualLogList({
       for (const entry of entries) {
         const target = entry.target as HTMLElement;
         if (target === scrollRef.current) {
-          setViewportHeight(target.clientHeight);
+          const { width, height } = entry.contentRect;
+          setViewportHeight(height);
+          // Rows re-wrap at a new width, so heights measured at the old one
+          // would misplace every chunk that is not mounted.
+          if (
+            viewportWidthRef.current !== null &&
+            viewportWidthRef.current !== width
+          ) {
+            heightsRef.current = [];
+            changed = true;
+          }
+          viewportWidthRef.current = width;
           continue;
         }
         const index = Number(target.dataset.chunk);
@@ -201,15 +329,19 @@ function VirtualLogList({
           changed = true;
         }
       }
+      keepAnchor();
       if (changed) bumpHeights();
     });
   }
   useEffect(() => () => observerRef.current?.disconnect(), []);
 
+  // After every commit: a chunk mounted above the viewport, or a spacer whose
+  // estimate changed, has moved the rows on screen.
+  useLayoutEffect(keepAnchor);
+
   const observeViewport = useCallback((node: HTMLDivElement | null) => {
     scrollRef.current = node;
     if (!node) return;
-    setViewportHeight(node.clientHeight);
     const observer = observerRef.current;
     observer?.observe(node);
     return () => observer?.unobserve(node);
@@ -217,9 +349,16 @@ function VirtualLogList({
 
   const observeChunk = useCallback((node: HTMLDivElement | null) => {
     if (!node) return;
+    const index = Number(node.dataset.chunk);
+    chunkNodesRef.current.set(index, node);
     const observer = observerRef.current;
     observer?.observe(node);
-    return () => observer?.unobserve(node);
+    return () => {
+      observer?.unobserve(node);
+      if (chunkNodesRef.current.get(index) === node) {
+        chunkNodesRef.current.delete(index);
+      }
+    };
   }, []);
 
   const chunkCount = Math.ceil(logs.length / LOG_CHUNK_SIZE);
@@ -257,10 +396,15 @@ function VirtualLogList({
   return (
     <div
       ref={observeViewport}
-      onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+      // Rendered synchronously: a fast scrollbar drag moves further than the
+      // overscan in one frame, and a deferred render would paint it blank.
+      onScroll={(event) => {
+        const top = event.currentTarget.scrollTop;
+        flushSync(() => setScrollTop(top));
+      }}
       // Scrollable regions need to take focus for keyboard scrolling.
       tabIndex={0}
-      className="h-[500px] w-full overflow-y-auto bg-zinc-950 [scrollbar-width:thin] [scrollbar-color:var(--color-zinc-700)_transparent] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+      className="relative h-[500px] w-full overflow-y-auto [overflow-anchor:none] bg-zinc-950 [scrollbar-width:thin] [scrollbar-color:var(--color-zinc-700)_transparent] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
     >
       <div className="p-4 font-mono text-xs">
         <div style={{ height: before }} />
