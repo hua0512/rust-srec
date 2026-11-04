@@ -49,6 +49,7 @@ import {
   CONFIG_SELECT_TRIGGER,
   ConfigFieldLabel,
 } from '@/components/config/shared/config-field';
+import { UnsavedChangesGuard } from '@/components/shared/unsaved-changes-guard';
 
 interface EngineEditorProps {
   engine?: z.infer<typeof EngineConfigSchema>;
@@ -156,6 +157,7 @@ function EngineForm({
 
   return (
     <Form {...form}>
+      <UnsavedChangesGuard when={form.formState.isDirty && !isSubmitting} />
       <form
         id="engine-form"
         onSubmit={form.handleSubmit(onSubmit)}

@@ -1,4 +1,4 @@
-import { createLazyFileRoute, useBlocker } from '@tanstack/react-router';
+import { createLazyFileRoute } from '@tanstack/react-router';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { motion } from 'motion/react';
 import { GlobalConfigFormSchema } from '@/api/schemas';
@@ -23,6 +23,7 @@ import { SettingsCardSkeleton } from '@/components/config/settings-card-skeleton
 import { containerVariants, itemVariants } from '@/lib/animation';
 import { cn } from '@/lib/utils';
 import { SaveFab } from '@/components/shared/save-fab';
+import { UnsavedChangesGuard } from '@/components/shared/unsaved-changes-guard';
 import { danmuStatisticsFormValue } from '@/components/config/shared/danmu-statistics-value';
 
 const FileConfigCard = lazy(() =>
@@ -188,18 +189,9 @@ function GlobalConfigForm({ config }: { config: GlobalConfig }) {
   });
 
   const isDirty = form.formState.isDirty;
+  // Settings only take effect once saved, so leaving with edits in place loses
+  // them silently; the guard rendered below asks first.
   const isPending = updateMutation.isPending;
-
-  // Settings only take effect once saved, so leaving with edits in place loses them silently.
-  useBlocker({
-    shouldBlockFn: () => {
-      if (!isDirty || isPending) return false;
-      return !window.confirm(
-        i18n._(msg`You have unsaved changes. Leave without saving?`),
-      );
-    },
-    enableBeforeUnload: () => isDirty && !isPending,
-  });
 
   const onSubmit = useCallback(
     (data: GlobalConfigFormValues) => {
@@ -210,6 +202,7 @@ function GlobalConfigForm({ config }: { config: GlobalConfig }) {
 
   return (
     <Form {...form}>
+      <UnsavedChangesGuard when={isDirty && !isPending} />
       <form
         id="global-config-form"
         onSubmit={form.handleSubmit(onSubmit)}

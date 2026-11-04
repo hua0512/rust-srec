@@ -28,6 +28,7 @@ import { danmuStatisticsFormValue } from '../shared/danmu-statistics-value';
 import { INHERIT_ROUTE } from '@/api/schemas/proxies';
 import type { CredentialOwner } from '@/api/schemas/credential-profiles';
 import { enginesQueryOptions } from '@/api/engines';
+import { UnsavedChangesGuard } from '@/components/shared/unsaved-changes-guard';
 
 const EditPlatformSchema = PlatformConfigFormSchema.partial();
 export type EditPlatformFormValues = z.infer<typeof EditPlatformSchema>;
@@ -122,6 +123,7 @@ export function PlatformEditor({
 
   return (
     <Form {...form}>
+      <UnsavedChangesGuard when={form.formState.isDirty && !isUpdating} />
       <form
         onSubmit={form.handleSubmit(onSubmit)}
         className="min-h-screen pb-20"

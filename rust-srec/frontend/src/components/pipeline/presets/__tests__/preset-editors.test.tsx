@@ -17,6 +17,10 @@ import { PresetEditor } from '../preset-editor';
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children }: PropsWithChildren) => <a href="#">{children}</a>,
 }));
+// The editors render outside a router here, which the navigation guard needs.
+vi.mock('@/components/shared/unsaved-changes-guard', () => ({
+  UnsavedChangesGuard: () => null,
+}));
 
 // Exercise the editors and their actual registry schemas without any backend
 // connection or process execution.

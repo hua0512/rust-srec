@@ -11,6 +11,10 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
   useNavigate: () => vi.fn(),
 }));
+// The editors render outside a router here, which the navigation guard needs.
+vi.mock('@/components/shared/unsaved-changes-guard', () => ({
+  UnsavedChangesGuard: () => null,
+}));
 vi.mock('../step-library', () => ({ StepLibrary: () => null }));
 vi.mock('../flow-editor/workflow-flow-editor', () => ({
   WorkflowFlowEditor: () => null,

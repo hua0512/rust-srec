@@ -1,6 +1,6 @@
 import { ReactNode, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { useBlocker, useNavigate } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
@@ -37,6 +37,7 @@ import { StreamerGeneralSettings } from './config/streamer-general-settings';
 import { StreamerConfiguration } from './config/streamer-configuration';
 import { StreamerTabs, StreamerTab } from './config/streamer-tabs';
 import { SaveFab } from '@/components/shared/save-fab';
+import { UnsavedChangesGuard } from '@/components/shared/unsaved-changes-guard';
 import { enginesQueryOptions } from '@/api/engines';
 
 type Streamer = NonNullable<Awaited<ReturnType<typeof getStreamer>>>;
@@ -108,15 +109,9 @@ export function StreamerEditor({
 
   // Guard against losing edits to an accidental navigation. Submitting resets `isDirty` via the
   // mutation's refetch, so a successful save does not trip this.
-  useBlocker({
-    shouldBlockFn: () => {
-      if (!isDirty || isSubmitting) return false;
-      return !window.confirm(
-        i18n._(msg`You have unsaved changes. Leave without saving?`),
-      );
-    },
-    enableBeforeUnload: () => isDirty && !isSubmitting,
-  });
+  const unsavedChangesGuard = (
+    <UnsavedChangesGuard when={isDirty && !isSubmitting} />
+  );
 
   const submit = form.handleSubmit(
     (data) => onSubmit(toPayload(data)),
@@ -199,6 +194,7 @@ export function StreamerEditor({
   if (mode === 'create' && stage === 1) {
     return (
       <Form {...form}>
+        {unsavedChangesGuard}
         <motion.div
           variants={containerVariants}
           initial="hidden"
@@ -273,6 +269,7 @@ export function StreamerEditor({
   // ── Create step 2, and the whole of edit ──
   return (
     <Form {...form}>
+      {unsavedChangesGuard}
       <motion.div
         variants={containerVariants}
         initial="hidden"
