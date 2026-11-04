@@ -188,6 +188,8 @@ function AppLoadingScreen() {
 
         <div className="text-center">
           <div className="text-2xl font-semibold tracking-tight">Rust-Srec</div>
+          {/* Not run through the catalog: on desktop this can render while the locale is
+              active with an empty catalog, which would show a message id. */}
           <div className="mt-1 text-sm text-slate-300">Starting up...</div>
         </div>
 

@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { msg } from '@lingui/core/macro';
+import { zodError, zodText } from '@/lib/zod-i18n';
 
 // --- Remux Processor ---
 export const VideoCodecSchema = z.enum([
@@ -157,7 +159,7 @@ export const CopyMoveOperationSchema = z.enum(['copy', 'move']);
 
 export const CopyMoveConfigSchema = z.object({
   operation: CopyMoveOperationSchema.default('copy'),
-  destination: z.string().min(1, 'Destination is required'),
+  destination: z.string().min(1, zodError(msg`Destination is required`)),
   time_anchor: TimeAnchorSchema.optional(),
   create_dirs: z.boolean().default(true),
   verify_integrity: z.boolean().default(true),
@@ -190,7 +192,10 @@ export const ExecuteConfigSchema = z
     command: z.string().min(1).nullable().optional(),
     program: z
       .string()
-      .refine((value) => value.trim().length > 0, 'Program is required')
+      .refine(
+        (value) => value.trim().length > 0,
+        zodError(msg`Program is required`),
+      )
       .nullable()
       .optional(),
     // Keep every argument verbatim, including empty strings and whitespace.
@@ -205,14 +210,14 @@ export const ExecuteConfigSchema = z
       ctx.addIssue({
         code: 'custom',
         path: [hasProgram ? 'program' : 'command'],
-        message: 'Choose either a command or a program',
+        message: zodText(msg`Choose either a command or a program`),
       });
     }
     if (config.args != null && !hasProgram) {
       ctx.addIssue({
         code: 'custom',
         path: ['command'],
-        message: 'Arguments require program mode',
+        message: zodText(msg`Arguments require program mode`),
       });
     }
   })

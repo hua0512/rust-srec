@@ -70,36 +70,36 @@ export function HuyaConfigFields<TFieldValues extends FieldValues>({
                 <ConfigFieldLabel accent="indigo" className="mb-3">
                   <Trans>Extraction API Mode</Trans>
                 </ConfigFieldLabel>
-                <FormControl>
-                  <Select
-                    onValueChange={field.onChange}
-                    value={field.value || 'WEB'}
-                  >
+                <Select
+                  onValueChange={field.onChange}
+                  value={field.value || 'WEB'}
+                >
+                  <FormControl>
                     <SelectTrigger className={CONFIG_INPUT}>
                       <SelectValue placeholder={i18n._(msg`Select API Mode`)} />
                     </SelectTrigger>
-                    <SelectContent className={CONFIG_SELECT_CONTENT}>
-                      <SelectItem value="WEB">
-                        <Trans>WEB</Trans>{' '}
-                        <span className="text-muted-foreground ml-2 text-xs">
-                          (<Trans>Default</Trans>)
-                        </span>
-                      </SelectItem>
-                      <SelectItem value="MP">
-                        <Trans>MP</Trans>
-                        <span className="text-muted-foreground ml-2 text-xs">
-                          (<Trans>Numeric Room IDs Only</Trans>)
-                        </span>
-                      </SelectItem>
-                      <SelectItem value="WUP">
-                        <Trans>WUP</Trans>{' '}
-                        <span className="text-muted-foreground ml-2 text-xs">
-                          (<Trans>Numeric Room IDs Only</Trans>)
-                        </span>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </FormControl>
+                  </FormControl>
+                  <SelectContent className={CONFIG_SELECT_CONTENT}>
+                    <SelectItem value="WEB">
+                      <Trans>WEB</Trans>{' '}
+                      <span className="text-muted-foreground ml-2 text-xs">
+                        (<Trans>Default</Trans>)
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="MP">
+                      <Trans>MP</Trans>
+                      <span className="text-muted-foreground ml-2 text-xs">
+                        (<Trans>Numeric Room IDs Only</Trans>)
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="WUP">
+                      <Trans>WUP</Trans>{' '}
+                      <span className="text-muted-foreground ml-2 text-xs">
+                        (<Trans>Numeric Room IDs Only</Trans>)
+                      </span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
                 <FormDescription className="text-[11px] font-medium pt-2 px-1">
                   <Trans>
                     API protocol to use for live stream extraction. WUP is the
@@ -119,30 +119,30 @@ export function HuyaConfigFields<TFieldValues extends FieldValues>({
                 <ConfigFieldLabel accent="indigo" className="mb-3">
                   <Trans>Client Type (ctype)</Trans>
                 </ConfigFieldLabel>
-                <FormControl>
-                  <Select
-                    onValueChange={field.onChange}
-                    value={field.value || 'huya_pc_exe'}
-                  >
+                <Select
+                  onValueChange={field.onChange}
+                  value={field.value || 'huya_pc_exe'}
+                >
+                  <FormControl>
                     <SelectTrigger className={CONFIG_INPUT}>
                       <SelectValue
                         placeholder={i18n._(msg`Select Client Type`)}
                       />
                     </SelectTrigger>
-                    <SelectContent className={CONFIG_SELECT_CONTENT}>
-                      {HuyaPlatformValues.map((value) => (
-                        <SelectItem key={value} value={value}>
-                          {HUYA_PLATFORM_LABELS[value]}
-                          {value === 'huya_pc_exe' && (
-                            <span className="text-muted-foreground ml-2 text-xs">
-                              (<Trans>Default</Trans>)
-                            </span>
-                          )}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </FormControl>
+                  </FormControl>
+                  <SelectContent className={CONFIG_SELECT_CONTENT}>
+                    {HuyaPlatformValues.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {HUYA_PLATFORM_LABELS[value]}
+                        {value === 'huya_pc_exe' && (
+                          <span className="text-muted-foreground ml-2 text-xs">
+                            (<Trans>Default</Trans>)
+                          </span>
+                        )}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <FormDescription className="text-[11px] font-medium pt-2 px-1">
                   <Trans>
                     Client platform type used for stream authentication signing.

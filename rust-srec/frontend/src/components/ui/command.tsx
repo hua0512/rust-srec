@@ -3,6 +3,8 @@
 import * as React from 'react';
 import { Command as CommandPrimitive } from 'cmdk';
 import { SearchIcon } from 'lucide-react';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 
 import { cn } from '@/lib/utils';
 import {
@@ -30,8 +32,8 @@ function Command({
 }
 
 function CommandDialog({
-  title = 'Command Palette',
-  description = 'Search for a command to run...',
+  title,
+  description,
   children,
   className,
   showCloseButton = true,
@@ -42,11 +44,14 @@ function CommandDialog({
   className?: string;
   showCloseButton?: boolean;
 }) {
+  const { i18n } = useLingui();
   return (
     <Dialog {...props}>
       <DialogHeader className="sr-only">
-        <DialogTitle>{title}</DialogTitle>
-        <DialogDescription>{description}</DialogDescription>
+        <DialogTitle>{title ?? i18n._(msg`Command Palette`)}</DialogTitle>
+        <DialogDescription>
+          {description ?? i18n._(msg`Search for a command to run...`)}
+        </DialogDescription>
       </DialogHeader>
       <DialogContent
         className={cn('overflow-hidden p-0', className)}

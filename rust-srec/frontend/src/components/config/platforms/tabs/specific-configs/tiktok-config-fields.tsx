@@ -55,30 +55,30 @@ export function TikTokConfigFields<TFieldValues extends FieldValues>({
                 <ConfigFieldLabel accent="indigo" className="mb-3">
                   <Trans>Extraction API Mode</Trans>
                 </ConfigFieldLabel>
-                <FormControl>
-                  <Select
-                    onValueChange={field.onChange}
-                    value={field.value || 'auto'}
-                  >
+                <Select
+                  onValueChange={field.onChange}
+                  value={field.value || 'auto'}
+                >
+                  <FormControl>
                     <SelectTrigger className={CONFIG_INPUT}>
                       <SelectValue placeholder={i18n._(msg`Select API Mode`)} />
                     </SelectTrigger>
-                    <SelectContent className={CONFIG_SELECT_CONTENT}>
-                      <SelectItem value="auto">
-                        <Trans>Auto</Trans>{' '}
-                        <span className="text-muted-foreground ml-2 text-xs">
-                          (<Trans>Default</Trans>)
-                        </span>
-                      </SelectItem>
-                      <SelectItem value="web">
-                        <Trans>Web API</Trans>
-                      </SelectItem>
-                      <SelectItem value="html">
-                        <Trans>Live page HTML</Trans>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </FormControl>
+                  </FormControl>
+                  <SelectContent className={CONFIG_SELECT_CONTENT}>
+                    <SelectItem value="auto">
+                      <Trans>Auto</Trans>{' '}
+                      <span className="text-muted-foreground ml-2 text-xs">
+                        (<Trans>Default</Trans>)
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="web">
+                      <Trans>Web API</Trans>
+                    </SelectItem>
+                    <SelectItem value="html">
+                      <Trans>Live page HTML</Trans>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
                 <FormDescription className="text-[11px] font-medium pt-2 px-1">
                   <Trans>
                     Auto tries the signature-free Web API first and falls back

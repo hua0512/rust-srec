@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useId, useMemo } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
@@ -61,6 +61,7 @@ export function ListPagination({
   className,
 }: ListPaginationProps) {
   const { i18n } = useLingui();
+  const pageSizeLabelId = useId();
   const totalPages =
     totalCount === undefined ? undefined : Math.ceil(totalCount / pageSize);
 
@@ -89,7 +90,10 @@ export function ListPagination({
     >
       {onPageSizeChange ? (
         <div className="flex shrink-0 items-center gap-2">
-          <span className="text-xs text-muted-foreground sm:text-sm">
+          <span
+            id={pageSizeLabelId}
+            className="text-xs text-muted-foreground sm:text-sm"
+          >
             <Trans>Per page:</Trans>
           </span>
           <Select
@@ -98,7 +102,10 @@ export function ListPagination({
           >
             {/* No fixed width: one narrower than the trigger's padding plus
                 chevron clips the value. */}
-            <SelectTrigger className="h-8 w-auto text-xs sm:text-sm">
+            <SelectTrigger
+              aria-labelledby={pageSizeLabelId}
+              className="h-8 w-auto text-xs sm:text-sm"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

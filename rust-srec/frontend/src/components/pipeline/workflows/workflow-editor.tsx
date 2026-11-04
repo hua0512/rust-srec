@@ -38,13 +38,14 @@ import {
   WorkflowStructurePanel,
 } from './workflow-structure-panel';
 import { UnsavedChangesGuard } from '@/components/shared/unsaved-changes-guard';
+import { zodError } from '@/lib/zod-i18n';
 
 const workflowSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
+  name: z.string().min(1, zodError(msg`Name is required`)),
   description: z.string().optional(),
   steps: z
     .array(DagStepDefinitionSchema)
-    .min(1, 'At least one step is required'),
+    .min(1, zodError(msg`At least one step is required`)),
 });
 
 type WorkflowFormData = z.infer<typeof workflowSchema>;

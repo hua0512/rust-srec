@@ -116,12 +116,14 @@ function CustomMetadataFields({ path }: { path: FieldPath<FieldValues> }) {
           <div key={row.id} className="flex gap-2 items-center group">
             <Input
               placeholder={i18n._(msg`Key`)}
+              aria-label={i18n._(msg`Key`)}
               value={row.key}
               onChange={(e) => updateRow(row.id, { key: e.target.value })}
               className="w-1/3 bg-background/50 border-border/50 focus:bg-background h-9 text-sm"
             />
             <Input
               placeholder={i18n._(msg`Value`)}
+              aria-label={i18n._(msg`Value`)}
               value={row.value}
               onChange={(e) => updateRow(row.id, { value: e.target.value })}
               className="flex-1 bg-background/50 border-border/50 focus:bg-background h-9 text-sm"

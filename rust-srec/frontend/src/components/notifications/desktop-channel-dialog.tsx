@@ -104,6 +104,7 @@ export function DesktopChannelDialog({
                 </Badge>
               </div>
               <Switch
+                aria-label={i18n._(msg`Enabled`)}
                 checked={config.enabled}
                 onCheckedChange={(enabled) =>
                   onConfigChange({ ...config, enabled })
@@ -134,7 +135,10 @@ export function DesktopChannelDialog({
                   })
                 }
               >
-                <SelectTrigger className="h-7 w-40 bg-background/40 border-border/20 text-[10px]">
+                <SelectTrigger
+                  aria-label={i18n._(msg`Minimum Priority`)}
+                  className="h-7 w-40 bg-background/40 border-border/20 text-[10px]"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

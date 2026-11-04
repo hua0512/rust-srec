@@ -379,7 +379,10 @@ export function CredentialSelectionEditor({
                 onChange({ ...value, credential_ids: [...ids, id] })
               }
             >
-              <SelectTrigger className={cn(SELECT_TRIGGER, 'border-dashed')}>
+              <SelectTrigger
+                aria-label={i18n._(msg`Add account`)}
+                className={cn(SELECT_TRIGGER, 'border-dashed')}
+              >
                 <SelectValue placeholder={i18n._(msg`Add account`)} />
               </SelectTrigger>
               <SelectContent className={CONFIG_SELECT_CONTENT}>

@@ -460,6 +460,8 @@ function PlayerPage() {
             >
               <Button
                 onClick={() => setIsAddStreamOpen(true)}
+                aria-label={i18n._(msg`Add Stream`)}
+                title={i18n._(msg`Add Stream`)}
                 size="icon"
                 className="h-16 w-16 rounded-full shadow-2xl bg-primary hover:bg-primary/90 text-primary-foreground flex items-center justify-center p-0 ring-4 ring-background/50 backdrop-blur-sm"
               >

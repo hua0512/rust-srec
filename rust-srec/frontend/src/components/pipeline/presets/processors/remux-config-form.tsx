@@ -1,5 +1,6 @@
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
 import { memo, useEffect } from 'react';
@@ -64,34 +65,44 @@ function getCodecFamily(codec: string | undefined): CodecFamily {
   return 'software';
 }
 
-const COMMON_NVENC_PRESETS = [
+/**
+ * Encoder presets. `label` is the encoder's own preset name, kept as is; `hint`
+ * describes it in the interface language.
+ */
+interface PresetOption {
+  value: string;
+  label: string;
+  hint?: MessageDescriptor;
+}
+
+const COMMON_NVENC_PRESETS: PresetOption[] = [
   { value: 'fast', label: 'Fast' },
   { value: 'medium', label: 'Medium' },
   { value: 'slow', label: 'Slow' },
 ];
 
-const P_PRESETS = [
-  { value: 'p1', label: 'P1 (Fastest)' },
+const P_PRESETS: PresetOption[] = [
+  { value: 'p1', label: 'P1', hint: msg`Fastest` },
   { value: 'p2', label: 'P2' },
   { value: 'p3', label: 'P3' },
-  { value: 'p4', label: 'P4 (Default)' },
+  { value: 'p4', label: 'P4', hint: msg`Default` },
   { value: 'p5', label: 'P5' },
   { value: 'p6', label: 'P6' },
-  { value: 'p7', label: 'P7 (Best Quality)' },
+  { value: 'p7', label: 'P7', hint: msg`Best quality` },
 ];
 
-const NVENC_LEGACY_PRESETS = [
-  { value: 'hp', label: 'HP (High Performance)' },
-  { value: 'hq', label: 'HQ (High Quality)' },
-  { value: 'bd', label: 'BD (Blu-ray Disc)' },
-  { value: 'll', label: 'LL (Low Latency)' },
-  { value: 'llhq', label: 'LLHQ (Low Latency HQ)' },
-  { value: 'llhp', label: 'LLHP (Low Latency HP)' },
+const NVENC_LEGACY_PRESETS: PresetOption[] = [
+  { value: 'hp', label: 'HP', hint: msg`High performance` },
+  { value: 'hq', label: 'HQ', hint: msg`High quality` },
+  { value: 'bd', label: 'BD', hint: msg`Blu-ray Disc` },
+  { value: 'll', label: 'LL', hint: msg`Low latency` },
+  { value: 'llhq', label: 'LLHQ', hint: msg`Low latency, high quality` },
+  { value: 'llhp', label: 'LLHP', hint: msg`Low latency, high performance` },
   { value: 'lossless', label: 'Lossless' },
   { value: 'losslesshp', label: 'Lossless HP' },
 ];
 
-const SOFTWARE_PRESETS = [
+const SOFTWARE_PRESETS: PresetOption[] = [
   { value: 'ultrafast', label: 'Ultrafast' },
   { value: 'superfast', label: 'Superfast' },
   { value: 'veryfast', label: 'Veryfast' },
@@ -145,6 +156,7 @@ function MetadataTagRows({
             <Tags className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/40 group-focus-within/input:text-primary/50 transition-colors" />
             <Input
               placeholder={i18n._(msg`Key`)}
+              aria-label={i18n._(msg`Key`)}
               value={key}
               onChange={(e) =>
                 onChange(
@@ -158,6 +170,7 @@ function MetadataTagRows({
           </div>
           <Input
             placeholder={i18n._(msg`Value`)}
+            aria-label={i18n._(msg`Value`)}
             value={tagValue}
             onChange={(e) =>
               onChange(
@@ -400,7 +413,9 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                           <SelectContent>
                             {presetOptions.map((p) => (
                               <SelectItem key={p.value} value={p.value}>
-                                {p.label}
+                                {p.hint
+                                  ? `${p.label} (${i18n._(p.hint)})`
+                                  : p.label}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -519,11 +534,19 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                         </span>
                       </div>
                       <div className="flex items-center gap-4">
-                        <span className="text-[10px] text-muted-foreground font-medium w-8 text-right">
-                          Best
+                        <span
+                          aria-hidden="true"
+                          className="text-[10px] text-muted-foreground font-medium w-8 text-right"
+                        >
+                          <Trans context="quality">Best</Trans>
                         </span>
                         <FormControl>
                           <Slider
+                            aria-label={
+                              isNvenc
+                                ? i18n._(msg`CQ (Constant Quality)`)
+                                : i18n._(msg`CRF (Constant Rate Factor)`)
+                            }
                             min={0}
                             max={cqMax}
                             step={1}
@@ -534,8 +557,11 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                             className="flex-1"
                           />
                         </FormControl>
-                        <span className="text-[10px] text-muted-foreground font-medium w-8">
-                          Worst
+                        <span
+                          aria-hidden="true"
+                          className="text-[10px] text-muted-foreground font-medium w-8"
+                        >
+                          <Trans context="quality">Worst</Trans>
                         </span>
                       </div>
                       <FormDescription className="text-[11px] text-right pt-1">

@@ -186,7 +186,9 @@ function renderFields(scope: Scope, quality?: number | null) {
     </I18nProvider>,
   );
   if (scope === 'template')
-    fireEvent.click(screen.getByRole('button', { name: 'Toggle' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: /Platform Override Settings/ }),
+    );
   return { onSave, getValues, isDirty, reset };
 }
 async function selectQuality(label: string) {

@@ -438,9 +438,14 @@ export function LogViewer() {
           {/* Filters */}
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Search
+                aria-hidden="true"
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"
+              />
               <Input
+                type="search"
                 placeholder={i18n._(msg`Search logs...`)}
+                aria-label={i18n._(msg`Search logs...`)}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9"
@@ -450,7 +455,10 @@ export function LogViewer() {
               value={filterLevel}
               onValueChange={(v) => setFilterLevel(v as FilterLevel)}
             >
-              <SelectTrigger className="w-full sm:w-35">
+              <SelectTrigger
+                aria-label={i18n._(msg`Log level`)}
+                className="w-full sm:w-35"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

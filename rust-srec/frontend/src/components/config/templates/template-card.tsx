@@ -82,7 +82,9 @@ export function TemplateCard({ template, onEdit, onClone }: TemplateCardProps) {
             template.stream_selection_config && (
               <div className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
                 <Filter className="w-3 h-3" />
-                <span>Filters</span>
+                <span>
+                  <Trans>Filters</Trans>
+                </span>
               </div>
             )
           }
@@ -119,7 +121,9 @@ export function TemplateCard({ template, onEdit, onClone }: TemplateCardProps) {
               label={<Trans>Engine</Trans>}
               value={
                 template.download_engine || (
-                  <span className="opacity-50">default</span>
+                  <span className="opacity-50">
+                    <Trans>default</Trans>
+                  </span>
                 )
               }
               mono
@@ -129,7 +133,9 @@ export function TemplateCard({ template, onEdit, onClone }: TemplateCardProps) {
               label={<Trans>Format</Trans>}
               value={
                 template.output_file_format || (
-                  <span className="opacity-50">default</span>
+                  <span className="opacity-50">
+                    <Trans>default</Trans>
+                  </span>
                 )
               }
               mono

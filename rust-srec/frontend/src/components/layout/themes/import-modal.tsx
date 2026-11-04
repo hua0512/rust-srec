@@ -9,6 +9,8 @@ import {
 } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Trans } from '@lingui/react/macro';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
 import type { ImportedTheme } from '@/types/theme-customizer';
 
 interface ImportModalProps {
@@ -35,6 +37,7 @@ export function ImportModal({
   onOpenChange,
   onImport,
 }: ImportModalProps) {
+  const { i18n } = useLingui();
   const [importText, setImportText] = React.useState('');
 
   const processImport = () => {
@@ -77,6 +80,7 @@ export function ImportModal({
         <div className="space-y-4">
           <div className="space-y-2">
             <Textarea
+              aria-label={i18n._(msg`Import Custom CSS`)}
               className="shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring max-h-[400px] min-h-[300px] font-mono text-sm text-foreground overflow-y-auto resize-none"
               placeholder={`:root {
   --background: 0 0% 100%;

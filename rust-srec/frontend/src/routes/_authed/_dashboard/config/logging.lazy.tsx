@@ -1,7 +1,7 @@
 import { createLazyFileRoute } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
-import { msg } from '@lingui/core/macro';
+import { msg, ph } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import type { I18n } from '@lingui/core';
@@ -227,8 +227,11 @@ function LoggingConfigPage() {
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
                 {availableModules.length > 0 && (
                   <Select onValueChange={handleAddModule}>
-                    <SelectTrigger className="w-full sm:w-50">
-                      <Plus className="w-4 h-4 mr-2" />
+                    <SelectTrigger
+                      aria-label={i18n._(msg`Add module...`)}
+                      className="w-full sm:w-50"
+                    >
+                      <Plus className="w-4 h-4 mr-2" aria-hidden="true" />
                       <SelectValue placeholder={i18n._(msg`Add module...`)} />
                     </SelectTrigger>
                     <SelectContent>
@@ -254,7 +257,7 @@ function LoggingConfigPage() {
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.9 }}
                   transition={{ duration: 0.2, delay: index * 0.02 }}
-                  className="group flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-border/40 bg-muted/30 hover:bg-muted/50 transition-colors"
+                  className="group/module flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl border border-border/40 bg-muted/30 hover:bg-muted/50 transition-colors"
                 >
                   {/* Module Info */}
                   <div className="flex-1 min-w-0 w-full">
@@ -287,7 +290,12 @@ function LoggingConfigPage() {
                         handleLevelChange(filter.module, level)
                       }
                     >
-                      <SelectTrigger className="w-full sm:w-32.5 h-9">
+                      <SelectTrigger
+                        aria-label={i18n._(
+                          msg`Log level for ${ph({ module: filter.module })}`,
+                        )}
+                        className="w-full sm:w-32.5 h-9"
+                      >
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -306,10 +314,13 @@ function LoggingConfigPage() {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="text-muted-foreground hover:text-destructive sm:opacity-0 sm:group-hover:opacity-100 transition-opacity h-9 w-9"
+                      className="text-muted-foreground hover:text-destructive opacity-100 md:opacity-0 md:group-hover/module:opacity-100 md:focus-visible:opacity-100 md:group-focus-within/module:opacity-100 transition-opacity h-9 w-9"
+                      aria-label={i18n._(
+                        msg`Remove ${ph({ module: filter.module })}`,
+                      )}
                       onClick={() => handleRemoveModule(filter.module)}
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-4 h-4" aria-hidden="true" />
                     </Button>
                   </div>
                 </motion.div>

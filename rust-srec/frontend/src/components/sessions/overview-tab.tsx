@@ -7,6 +7,7 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { motion } from 'motion/react';
 import { cn, getProxiedUrl } from '@/lib/utils';
+import { STAT_GRID } from '@/lib/grid';
 import { formatBytes } from '@/lib/format';
 import {
   Monitor,
@@ -137,7 +138,7 @@ export function OverviewTab({
               <StatBox
                 icon={Activity}
                 label={<Trans>Danmus</Trans>}
-                value={session.danmu_count?.toLocaleString() || '0'}
+                value={(session.danmu_count ?? 0).toLocaleString(i18n.locale)}
                 color="text-orange-500"
                 bg="bg-orange-500/10"
                 className="col-span-2 @4xl:col-span-1"
@@ -166,24 +167,28 @@ export function OverviewTab({
                       className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
-                    <motion.div
-                      whileHover={{ scale: 1.1 }}
-                      className="absolute inset-0 flex items-center justify-center"
-                      onClick={() => playableOutput && onPlay(playableOutput)}
-                    >
-                      {playableOutput ? (
-                        <button className="relative group/play cursor-pointer">
-                          <div className="absolute inset-0 bg-white/30 rounded-full blur-xl group-hover/play:bg-white/50 transition-colors" />
-                          <div className="relative h-14 w-14 md:h-20 md:w-20 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center shadow-2xl group-hover/play:scale-105 transition-transform">
+                    {playableOutput ? (
+                      <motion.button
+                        type="button"
+                        whileHover={{ scale: 1.1 }}
+                        aria-label={i18n._(msg`Play`)}
+                        className="absolute inset-0 flex items-center justify-center group/play cursor-pointer focus-visible:outline-none"
+                        onClick={() => onPlay(playableOutput)}
+                      >
+                        <span className="relative">
+                          <span className="absolute inset-0 bg-white/30 rounded-full blur-xl group-hover/play:bg-white/50 transition-colors" />
+                          <span className="relative h-14 w-14 md:h-20 md:w-20 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center shadow-2xl group-hover/play:scale-105 group-focus-visible/play:ring-4 group-focus-visible/play:ring-white/60 transition-transform">
                             <Play className="h-6 w-6 md:h-8 md:w-8 text-white fill-white translate-x-1" />
-                          </div>
-                        </button>
-                      ) : (
+                          </span>
+                        </span>
+                      </motion.button>
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center">
                         <div className="px-4 py-2 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-white/80 font-medium text-sm">
                           <Trans>Preview Unavailable</Trans>
                         </div>
-                      )}
-                    </motion.div>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div className="flex flex-col items-center gap-4 text-muted-foreground/30 p-4 text-center">
@@ -252,7 +257,7 @@ export function OverviewTab({
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className={cn(STAT_GRID, 'gap-3')}>
                 <Skeleton className="h-20 rounded-xl" />
                 <Skeleton className="h-20 rounded-xl" />
                 <Skeleton className="h-20 rounded-xl" />

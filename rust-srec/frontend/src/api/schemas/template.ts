@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { msg } from '@lingui/core/macro';
+import { zodError } from '@/lib/zod-i18n';
 import { CredentialSelectionSchema } from './credential-profiles';
 import {
   ExtractorSelectionSchema,
@@ -75,7 +77,7 @@ export const TemplateSchema = z.object({
 export type Template = z.infer<typeof TemplateSchema>;
 
 export const CreateTemplateRequestSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
+  name: z.string().min(1, zodError(msg`Name is required`)),
   // All usage fields are optional overrides
   output_folder: z.string().nullable().optional(),
   output_filename_template: z.string().nullable().optional(),

@@ -156,7 +156,7 @@ export const EventCard = memo(({ event, onViewDetails }: EventCardProps) => {
           <PayloadPreview payload={event.payload} />
         </div>
 
-        <div className="flex items-center justify-end pt-2 opacity-0 group-hover:opacity-100 translate-y-2 group-hover:translate-y-0 transition-all duration-300">
+        <div className="flex items-center justify-end pt-2 opacity-100 md:opacity-0 md:translate-y-2 md:group-hover:opacity-100 md:group-hover:translate-y-0 md:group-focus-within:opacity-100 md:group-focus-within:translate-y-0 transition-all duration-300">
           <Button
             size="sm"
             variant="ghost"

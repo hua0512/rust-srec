@@ -4,6 +4,7 @@ import type { AnyRouter } from '@tanstack/react-router';
 import { type I18n } from '@lingui/core';
 
 import { dynamicActivate, isLocaleValid } from './i18n';
+import { bindZodToI18n } from '@/lib/zod-i18n';
 
 type AdditionalOptions = {
   WrapProvider?: (props: { children: ReactNode }) => ReactNode;
@@ -55,6 +56,7 @@ export function routerWithLingui<TRouter extends AnyRouter>(
       };
     };
   } else {
+    bindZodToI18n(i18n);
     const ogHydrate = router.options.hydrate;
     router.options.hydrate = async (dehydrated: any) => {
       await ogHydrate?.(dehydrated);

@@ -180,7 +180,9 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
       <div className="flex items-center p-2 px-4 border-b bg-background gap-3 shrink-0 h-12">
         <div className="relative flex-1 group flex items-center">
           <Input
+            type="search"
             placeholder={i18n._(msg`Search comments...`)}
+            aria-label={i18n._(msg`Search comments...`)}
             className="pl-9 h-8 w-full bg-muted/20 border-border/40 focus-visible:ring-1 focus-visible:ring-primary/20 transition-shadow text-xs rounded-full"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -229,7 +231,7 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
       </div>
 
       {/* Main List */}
-      <main
+      <div
         className="flex-1 overflow-hidden relative bg-background/20"
         ref={containerRef}
       >
@@ -340,7 +342,7 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
             </div>
           </div>
         )}
-      </main>
+      </div>
 
       {/* Footer */}
       <footer className="px-4 py-2 border-t bg-muted/20 flex items-center justify-between h-8 shrink-0">

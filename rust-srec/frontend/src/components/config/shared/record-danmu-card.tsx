@@ -70,41 +70,39 @@ function RecordDanmuCardImpl<TFieldValues extends FieldValues>({
                   <Trans>Override global default.</Trans>
                 </FormDescription>
               </div>
-              <FormControl>
-                <Select
-                  value={
-                    field.value === null || field.value === undefined
-                      ? 'null'
-                      : field.value
-                        ? 'true'
-                        : 'false'
-                  }
-                  onValueChange={(v) => {
-                    if (v === 'null') field.onChange(null);
-                    else if (v === 'true') field.onChange(true);
-                    else field.onChange(false);
-                  }}
-                >
-                  <FormControl>
-                    <SelectTrigger
-                      className={cn(CONFIG_SELECT_TRIGGER, 'w-[180px]')}
-                    >
-                      <SelectValue placeholder={i18n._(msg`Select behavior`)} />
-                    </SelectTrigger>
-                  </FormControl>
-                  <SelectContent className={CONFIG_SELECT_CONTENT}>
-                    <SelectItem value="null">
-                      <Trans>Global Default</Trans>
-                    </SelectItem>
-                    <SelectItem value="true">
-                      <Trans>Enabled</Trans>
-                    </SelectItem>
-                    <SelectItem value="false">
-                      <Trans>Disabled</Trans>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </FormControl>
+              <Select
+                value={
+                  field.value === null || field.value === undefined
+                    ? 'null'
+                    : field.value
+                      ? 'true'
+                      : 'false'
+                }
+                onValueChange={(v) => {
+                  if (v === 'null') field.onChange(null);
+                  else if (v === 'true') field.onChange(true);
+                  else field.onChange(false);
+                }}
+              >
+                <FormControl>
+                  <SelectTrigger
+                    className={cn(CONFIG_SELECT_TRIGGER, 'w-[180px]')}
+                  >
+                    <SelectValue placeholder={i18n._(msg`Select behavior`)} />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent className={CONFIG_SELECT_CONTENT}>
+                  <SelectItem value="null">
+                    <Trans>Global Default</Trans>
+                  </SelectItem>
+                  <SelectItem value="true">
+                    <Trans>Enabled</Trans>
+                  </SelectItem>
+                  <SelectItem value="false">
+                    <Trans>Disabled</Trans>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </FormItem>
           )}
         />
