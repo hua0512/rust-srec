@@ -138,9 +138,6 @@ interface DownloadStoreState {
   // older than TERMINATED_TTL_MS are dropped by sweepTerminatedDownloads so
   // the map stays bounded across a long-lived connection.
   terminatedIds: Map<string, number>;
-  // Wall-clock ms of the last snapshot, meta, metrics or split change applied
-  // to each download; drives the staleness sweep in sweepStaleDownloads.
-  lastEventAtById: Map<string, number>;
   // Streamers waiting for a download slot. Keyed by streamerId so the
   // card lookup is O(1). At most one entry per streamer (the queue
   // itself dedupes by session_id, and the streamer card only renders
@@ -177,14 +174,12 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
       const previous = state.manualSplitById.get(downloadId);
       if (previous && previous.revision >= split.revision) return state;
       state.manualSplitById.set(downloadId, split);
-      state.lastEventAtById.set(downloadId, Date.now());
       return { version: state.version + 1 };
     }),
   metaById: new Map(),
   metricsById: new Map(),
   viewsById: new Map(),
   terminatedIds: new Map(),
-  lastEventAtById: new Map(),
   queuedByStreamer: new Map(),
   version: 0,
   connectionStatus: 'disconnected',
@@ -196,12 +191,9 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
       state.metricsById.clear();
       state.viewsById.clear();
       state.terminatedIds.clear();
-      state.lastEventAtById.clear();
       state.queuedByStreamer.clear();
-      const now = Date.now();
       for (const d of downloads) {
         const id = d.meta.downloadId || d.metrics.downloadId;
-        state.lastEventAtById.set(id, now);
         if (d.meta.manualSplit)
           state.manualSplitById.set(id, d.meta.manualSplit);
         state.metaById.set(id, d.meta);
@@ -246,7 +238,6 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
 
       const newMeta = { ...(existing ?? emptyMeta(id)), ...meta };
       state.metaById.set(id, newMeta);
-      state.lastEventAtById.set(id, Date.now());
 
       // Ensure metrics exists for join selectors.
       if (!state.metricsById.has(id)) {
@@ -276,12 +267,10 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
 
   upsertMetricsBatch: (batch) =>
     set((state) => {
-      const now = Date.now();
       let changed = false;
       for (const metrics of batch) {
         const id = metrics.downloadId;
         if (state.terminatedIds.has(id)) continue;
-        state.lastEventAtById.set(id, now);
 
         const existing = state.metricsById.get(id);
         const newMetrics = { ...(existing ?? emptyMetrics(id)), ...metrics };
@@ -312,7 +301,6 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
   removeDownload: (downloadId) =>
     set((state) => {
       state.manualSplitById.delete(downloadId);
-      state.lastEventAtById.delete(downloadId);
       state.terminatedIds.set(downloadId, Date.now());
       const had =
         state.metaById.delete(downloadId) ||
@@ -365,7 +353,6 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
       state.metricsById.clear();
       state.viewsById.clear();
       state.terminatedIds.clear();
-      state.lastEventAtById.clear();
       state.queuedByStreamer.clear();
       return {
         metaById: state.metaById,
@@ -399,49 +386,11 @@ export const useDownloadStore = create<DownloadStoreState>((set, get) => ({
   getQueuedForStreamer: (streamerId) => get().queuedByStreamer.get(streamerId),
 }));
 
-// A download reports progress about once a second while it receives data.
-// One not heard from for this long is taken to have ended with its terminal
-// event dropped by broadcast lag; left alone it would stay on its streamer's
-// card until the next snapshot. A download that does report again gets its
-// details back from the snapshot sent on the next connect. Same
-// retention/sweep pattern as store/uploads.ts.
-export const STALE_AFTER_MS = 2 * 60 * 1000;
-
-// Exported so tests can drive the sweep directly with a synthetic clock.
-export function sweepStaleDownloads(nowMs = Date.now()): void {
-  const {
-    lastEventAtById,
-    manualSplitById,
-    metaById,
-    metricsById,
-    viewsById,
-    version,
-  } = useDownloadStore.getState();
-  let removed = false;
-  for (const [downloadId, atMs] of lastEventAtById) {
-    if (nowMs - atMs < STALE_AFTER_MS) continue;
-    lastEventAtById.delete(downloadId);
-    manualSplitById.delete(downloadId);
-    metaById.delete(downloadId);
-    metricsById.delete(downloadId);
-    viewsById.delete(downloadId);
-    removed = true;
-  }
-  if (removed) {
-    useDownloadStore.setState({
-      metaById,
-      metricsById,
-      viewsById,
-      version: version + 1,
-    });
-  }
-}
-
 // A terminated marker only needs to outlive the server's event pipeline on
 // out-of-order meta/metrics after a terminal event; minutes later any such
 // update is long gone. Same retention/sweep pattern as store/uploads.ts.
 export const TERMINATED_TTL_MS = 2 * 60 * 1000;
-const SWEEP_INTERVAL_MS = 30 * 1000;
+const TERMINATED_SWEEP_INTERVAL_MS = 30 * 1000;
 
 // Exported so tests can drive the sweep directly with a synthetic clock.
 // No version bump: nothing renders these ids.
@@ -455,8 +404,5 @@ export function sweepTerminatedDownloads(nowMs = Date.now()): void {
 }
 
 if (typeof window !== 'undefined') {
-  setInterval(() => {
-    sweepTerminatedDownloads();
-    sweepStaleDownloads();
-  }, SWEEP_INTERVAL_MS);
+  setInterval(() => sweepTerminatedDownloads(), TERMINATED_SWEEP_INTERVAL_MS);
 }

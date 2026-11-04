@@ -1114,6 +1114,13 @@ impl DownloadManager {
         self.events.subscribe_shared()
     }
 
+    /// Broadcast an event that needs no coordination, for tests outside this
+    /// module.
+    #[cfg(test)]
+    pub(crate) fn publish_for_test(&self, event: DownloadManagerEvent) -> bool {
+        self.events.publish(event)
+    }
+
     /// Emit [`DownloadTerminalEvent::Rejected`] — the single construction
     /// point for rejection events. [`Self::preflight`] routes its circuit-
     /// breaker and output-root rejections through here, and callers that

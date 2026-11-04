@@ -235,6 +235,20 @@ async fn snapshot_jobs(
     }
 }
 
+/// The current downloads, queue and jobs as one encoded snapshot message,
+/// with downloads and queue narrowed to the connection's streamer
+/// subscription when it has one.
+async fn encode_snapshot(state: &DownloadRouteState, filter: Option<&str>) -> Bytes {
+    let mut downloads = state.download_manager.get_active_downloads();
+    let mut queued = state.download_manager.snapshot_pending();
+    if let Some(streamer_id) = filter {
+        downloads.retain(|d| d.streamer_id == streamer_id);
+        queued.retain(|q| q.streamer_id == streamer_id);
+    }
+    let jobs = snapshot_jobs(&state.pipeline_manager, &state.streamer_avatar).await;
+    Bytes::from(create_snapshot_message(downloads, queued, jobs).encode_to_vec())
+}
+
 /// Handle an established WebSocket connection.
 async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
     // debug!("New WebSocket connection established");
@@ -259,17 +273,8 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
     let mut attention_open = true;
 
     // 2. Send initial snapshot as protobuf binary
-    let downloads = download_manager.get_active_downloads();
-    let queued = download_manager.snapshot_pending();
-    let jobs = snapshot_jobs(&state.pipeline_manager, &state.streamer_avatar).await;
-    let snapshot_msg = create_snapshot_message(downloads, queued, jobs);
-    let bytes = snapshot_msg.encode_to_vec();
-
-    if sender
-        .send(Message::Binary(Bytes::from(bytes)))
-        .await
-        .is_err()
-    {
+    let bytes = encode_snapshot(&state, None).await;
+    if sender.send(Message::Binary(bytes)).await.is_err() {
         debug!("Failed to send initial snapshot, client disconnected");
         return;
     }
@@ -297,16 +302,8 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
                                          // Snapshot-on-subscribe: ensures a mid-join client gets
                                          // current state even if it missed previous delta events.
                                         if SNAPSHOT_ON_SUBSCRIBE {
-                                            let mut downloads = download_manager.get_active_downloads();
-                                            let mut queued = download_manager.snapshot_pending();
-                                            if let Some(ref streamer_id) = filter {
-                                                downloads.retain(|d| &d.streamer_id == streamer_id);
-                                                queued.retain(|q| &q.streamer_id == streamer_id);
-                                            }
-                                            let jobs = snapshot_jobs(&state.pipeline_manager, &state.streamer_avatar).await;
-                                            let snapshot_msg = create_snapshot_message(downloads, queued, jobs);
-                                            let bytes = snapshot_msg.encode_to_vec();
-                                            if sender.send(Message::Binary(Bytes::from(bytes))).await.is_err() {
+                                            let bytes = encode_snapshot(&state, filter.as_deref()).await;
+                                            if sender.send(Message::Binary(bytes)).await.is_err() {
                                                 break;
                                             }
                                         }
@@ -316,12 +313,8 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
                                         filter = None;
 
                                         if SNAPSHOT_ON_SUBSCRIBE {
-                                            let downloads = download_manager.get_active_downloads();
-                                            let queued = download_manager.snapshot_pending();
-                                            let jobs = snapshot_jobs(&state.pipeline_manager, &state.streamer_avatar).await;
-                                            let snapshot_msg = create_snapshot_message(downloads, queued, jobs);
-                                            let bytes = snapshot_msg.encode_to_vec();
-                                            if sender.send(Message::Binary(Bytes::from(bytes))).await.is_err() {
+                                            let bytes = encode_snapshot(&state, None).await;
+                                            if sender.send(Message::Binary(bytes)).await.is_err() {
                                                 break;
                                             }
                                         }
@@ -372,9 +365,16 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
                             }
                         }
                     }
-                    Err(broadcast::error::RecvError::Lagged(n)) => {
-                        warn!("Broadcast receiver lagged by {} messages", n);
-                        // Continue with next event
+                    Err(broadcast::error::RecvError::Lagged(missed)) => {
+                        // The skipped events may include a download's start or
+                        // end, which nothing repeats, so the client would show
+                        // a finished download as running (or miss a new one)
+                        // until it reconnects. A snapshot replaces its view.
+                        warn!(missed, "Download event receiver lagged; resending snapshot");
+                        let bytes = encode_snapshot(&state, filter.as_deref()).await;
+                        if sender.send(Message::Binary(bytes)).await.is_err() {
+                            break;
+                        }
                     }
                     Err(broadcast::error::RecvError::Closed) => {
                         debug!("Broadcast channel closed");
@@ -433,9 +433,9 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
                         // Lag is tolerable: progress is periodic, and a missed
-                        // terminal event is reconciled by the snapshot sent on
-                        // the next subscribe/unsubscribe or by the frontend's
-                        // staleness guard on its uploads store.
+                        // terminal event is reconciled by the next snapshot
+                        // or by the frontend's staleness guard on its uploads
+                        // store.
                         warn!("upload-status broadcast lagged by {} messages", n);
                     }
                     Err(broadcast::error::RecvError::Closed) => {
@@ -1272,6 +1272,80 @@ mod tests {
                 .encode_to_vec()
         );
         assert!(shared_event_bytes(&envelope, &Some("other".to_string())).is_none());
+    }
+
+    /// Nothing repeats a download's start or end, so a socket that falls
+    /// behind the download events must be sent a snapshot to stay correct.
+    #[tokio::test]
+    async fn lagging_socket_is_resent_a_snapshot() {
+        use std::sync::Arc;
+        use tokio_tungstenite::tungstenite::Message as Frame;
+
+        let download_manager = Arc::new(crate::downloader::DownloadManager::new());
+        let state = DownloadRouteState {
+            auth_service: None,
+            download_manager: download_manager.clone(),
+            check_history_broadcaster: crate::monitor::CheckHistoryBroadcaster::new(Arc::new(
+                |_| Bytes::new(),
+            )),
+            upload_status_broadcaster: crate::pipeline::UploadStatusBroadcaster::new(Arc::new(
+                |_| Bytes::new(),
+            )),
+            pipeline_manager: Arc::new(PipelineManager::with_repository(
+                Default::default(),
+                crate::database::test_support::job_repository().await,
+            )),
+            streamer_avatar: Arc::new(|_| None),
+            credential_blocks: Arc::new(crate::credentials::CredentialBlocks::new()),
+            credential_attention: tokio::sync::watch::channel(0).1,
+        };
+        let app = Router::new()
+            .route("/ws", get(download_progress_ws))
+            .with_state(state);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let _server = tokio_util::task::AbortOnDropHandle::new(tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        }));
+
+        let (mut socket, _) = tokio_tungstenite::connect_async(format!("ws://{address}/ws"))
+            .await
+            .unwrap();
+        let mut next_message = async || {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if let Frame::Binary(data) = socket.next().await.unwrap().unwrap() {
+                        return WsMessage::decode(data).unwrap();
+                    }
+                }
+            })
+            .await
+            .expect("socket message must arrive")
+        };
+        assert!(matches!(
+            next_message().await.payload,
+            Some(Payload::Snapshot(_))
+        ));
+
+        // The test runtime is single-threaded and nothing below yields, so the
+        // socket's receiver cannot drain while these overflow its buffer.
+        for _ in 0..1_000 {
+            download_manager.publish_for_test(DownloadManagerEvent::Progress(
+                DownloadProgressEvent::Progress {
+                    download_id: "download".to_string(),
+                    streamer_id: "streamer".to_string(),
+                    streamer_name: "Streamer".to_string(),
+                    session_id: "session".to_string(),
+                    status: crate::downloader::engine::DownloadStatus::Downloading,
+                    progress: crate::downloader::engine::DownloadProgress::default(),
+                },
+            ));
+        }
+
+        assert!(matches!(
+            next_message().await.payload,
+            Some(Payload::Snapshot(_))
+        ));
     }
 
     /// The header's upload status keeps one global uploads list, so a socket
