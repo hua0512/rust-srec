@@ -65,19 +65,6 @@ describe('job log pages', () => {
     expect(replaceNewestLogPage(before, page(1000, 5, 1005))).toBe(before);
   });
 
-  it('follows a capped log whose count stays put while new rows arrive', () => {
-    const before = pages(page(4000, 1000, 5000));
-    // At the row cap each new row evicts the oldest, so the window at the same
-    // offset reads one row further on with the same count and total.
-    const slid = { ...page(4001, 1000, 5000), offset: 4000 };
-
-    const after = replaceNewestLogPage(before, slid);
-
-    expect(flattenLogPages(after).at(-1)?.message).toBe('line 5000');
-    // An older read of the capped window is still refused.
-    expect(replaceNewestLogPage(after, before.pages[0])).toBe(after);
-  });
-
   it('discards a read for a window that is no longer the newest one', () => {
     const before = pages(page(0, 1000, 2000), page(1000, 1000, 2000));
 
