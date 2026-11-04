@@ -71,11 +71,13 @@ The proxy variables, in upper or lower case, take effect only where a global, pl
 | `JWT_AUDIENCE` | JWT audience identifier | `rust-srec-api` |
 | `SESSION_SECRET` | Frontend session encryption secret (**Required**, min 32 chars) | - |
 | `COOKIE_SECURE` | Set to `true` to force HTTPS-only cookies | (auto) |
+| `CSRF_TRUSTED_ORIGINS` | Comma-separated exact origins (`scheme://host[:port]`) the web interface accepts actions from besides its own address. Set on the frontend container | - |
 | `MIN_PASSWORD_LENGTH` | Minimum length for user passwords | `8` |
 
 The backend refuses to start without a non-empty `JWT_SECRET`. For local development only, authentication can be disabled by setting both `AUTH_DISABLED=true` and `API_BIND_ADDRESS=127.0.0.1` (or `::1`). The backend rejects this opt-out for wildcard, hostname, and non-loopback bind addresses.
 
 While authentication is disabled, only the origins in `API_CORS_ORIGINS` may call the API from a browser; the default list covers `http://localhost:15275`, `http://127.0.0.1:15275`, `http://[::1]:15275`, `tauri://localhost`, and `http://tauri.localhost`. Set the variable to override it — entries must be exact origins with no trailing path, and malformed entries are skipped with a warning at startup. Requests from any other origin are refused with `403`, as are requests whose `Host` header is neither a loopback name nor the configured bind address. With authentication enabled the variable is ignored and any origin may send requests, because every protected route still requires a bearer token.
+The web interface refuses actions sent from any page other than its own, and answers them with `Request refused: it did not come from this site`. It recognises its own pages by the address (host and port) the browser opened, which it reads from the `Host` header or, when a reverse proxy changes `Host`, from `X-Forwarded-Host`. A proxy that changes `Host` without sending `X-Forwarded-Host` makes every action fail this way; forward the original `Host` (or set `X-Forwarded-Host`), or list the address you open the web interface at in `CSRF_TRUSTED_ORIGINS`, for example `https://srec.example.com`. The proxy must also not strip the `Referer` header. The frontend container logs each refused origin once.
 
 ## Login throttling {#login-throttling}
 

@@ -89,6 +89,8 @@ services:
       - SESSION_SECRET=${SESSION_SECRET:?SESSION_SECRET is required (min 32 chars)}
       # Cookie secure flag: 'true' = always, 'false' = never, omit for auto-detection via X-Forwarded-Proto
       - COOKIE_SECURE=${COOKIE_SECURE:-}
+      # Extra exact origins (scheme://host[:port]) allowed to send actions, comma-separated; only for a proxy that rewrites Host without X-Forwarded-Host
+      - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-}
     depends_on:
       rust-srec:
         condition: service_healthy
