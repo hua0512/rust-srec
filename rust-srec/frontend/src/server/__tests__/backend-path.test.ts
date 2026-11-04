@@ -37,6 +37,8 @@ describe('backendPath', () => {
 
   it.each([
     ['an empty string', ''],
+    ['a dot segment', '.'],
+    ['a parent segment', '..'],
     ['undefined', undefined],
     ['null', null],
     ['a number', 42],
