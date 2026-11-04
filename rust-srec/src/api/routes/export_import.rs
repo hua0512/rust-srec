@@ -549,7 +549,10 @@ pub async fn import_config(
         outcome
     })
     .await
-    .map_err(|_| ApiError::internal("Configuration import task failed"))?
+    .map_err(|error| {
+        tracing::error!(error = %error, "Configuration import task failed");
+        ApiError::internal("Configuration import task failed")
+    })?
     .map_err(|error| match error {
         crate::services::config_import::ConfigurationImportError::Validation(message) => {
             ApiError::bad_request(message)
