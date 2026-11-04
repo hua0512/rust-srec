@@ -18,10 +18,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ProcessorConfigFormProps } from './common-props';
+import {
+  ProcessorConfigFormProps,
+  useProcessorFieldPath,
+} from './common-props';
+import { ProcessorFormShell, ProcessorSection } from './processor-form-layout';
 import { AssBurninConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
-import { motion } from 'motion/react';
 import { Video, Type, Settings, Trash2 } from 'lucide-react';
 import { NumberInput } from '@/components/ui/number-input';
 
@@ -30,36 +33,23 @@ type AssBurninConfig = z.infer<typeof AssBurninConfigSchema>;
 export function AssBurninConfigForm({
   control,
   pathPrefix,
-}: ProcessorConfigFormProps<AssBurninConfig>) {
+}: ProcessorConfigFormProps) {
   const { i18n } = useLingui();
-  const prefix = pathPrefix ? `${pathPrefix}.` : '';
-
-  const containerVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-  };
+  const fieldPath = useProcessorFieldPath<AssBurninConfig>(pathPrefix);
 
   return (
-    <motion.div
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-      className="w-full"
-    >
+    <ProcessorFormShell>
       <div className="space-y-6">
         {/* Encoding Settings */}
-        <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-border/40 mb-2">
-            <Video className="w-4 h-4 text-blue-500" />
-            <h3 className="font-semibold text-sm mr-auto">
-              <Trans>Encoding Settings</Trans>
-            </h3>
-          </div>
-
+        <ProcessorSection
+          icon={Video}
+          iconClassName="text-blue-500"
+          title={<Trans>Encoding Settings</Trans>}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormField
               control={control}
-              name={`${prefix}video_codec` as any}
+              name={fieldPath('video_codec')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -79,7 +69,7 @@ export function AssBurninConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}audio_codec` as any}
+              name={fieldPath('audio_codec')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -99,7 +89,7 @@ export function AssBurninConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}crf` as any}
+              name={fieldPath('crf')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -122,7 +112,7 @@ export function AssBurninConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}preset` as any}
+              name={fieldPath('preset')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -154,21 +144,18 @@ export function AssBurninConfigForm({
               )}
             />
           </div>
-        </div>
+        </ProcessorSection>
 
         {/* Subtitle Matching */}
-        <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-border/40 mb-2">
-            <Type className="w-4 h-4 text-indigo-500" />
-            <h3 className="font-semibold text-sm mr-auto">
-              <Trans>Subtitle Matching</Trans>
-            </h3>
-          </div>
-
+        <ProcessorSection
+          icon={Type}
+          iconClassName="text-indigo-500"
+          title={<Trans>Subtitle Matching</Trans>}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormField
               control={control}
-              name={`${prefix}match_strategy` as any}
+              name={fieldPath('match_strategy')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -204,7 +191,7 @@ export function AssBurninConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}require_ass` as any}
+              name={fieldPath('require_ass')}
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm bg-background/50 self-end h-11">
                   <div className="space-y-0.5">
@@ -222,21 +209,18 @@ export function AssBurninConfigForm({
               )}
             />
           </div>
-        </div>
+        </ProcessorSection>
 
         {/* Advanced Settings */}
-        <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-border/40 mb-2">
-            <Settings className="w-4 h-4 text-slate-500" />
-            <h3 className="font-semibold text-sm mr-auto">
-              <Trans>Advanced Settings</Trans>
-            </h3>
-          </div>
-
+        <ProcessorSection
+          icon={Settings}
+          iconClassName="text-slate-500"
+          title={<Trans>Advanced Settings</Trans>}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormField
               control={control}
-              name={`${prefix}ffmpeg_path` as any}
+              name={fieldPath('ffmpeg_path')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -256,7 +240,7 @@ export function AssBurninConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}fonts_dir` as any}
+              name={fieldPath('fonts_dir')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -278,7 +262,7 @@ export function AssBurninConfigForm({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormField
               control={control}
-              name={`${prefix}passthrough_inputs` as any}
+              name={fieldPath('passthrough_inputs')}
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm bg-background/50">
                   <div className="space-y-0.5">
@@ -298,7 +282,7 @@ export function AssBurninConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}exclude_ass_from_passthrough` as any}
+              name={fieldPath('exclude_ass_from_passthrough')}
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm bg-background/50">
                   <div className="space-y-0.5">
@@ -316,21 +300,18 @@ export function AssBurninConfigForm({
               )}
             />
           </div>
-        </div>
+        </ProcessorSection>
 
         {/* Cleanup Settings */}
-        <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-border/40 mb-2">
-            <Trash2 className="w-4 h-4 text-red-500" />
-            <h3 className="font-semibold text-sm mr-auto">
-              <Trans>Cleanup</Trans>
-            </h3>
-          </div>
-
+        <ProcessorSection
+          icon={Trash2}
+          iconClassName="text-red-500"
+          title={<Trans>Cleanup</Trans>}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormField
               control={control}
-              name={`${prefix}delete_source_videos_on_success` as any}
+              name={fieldPath('delete_source_videos_on_success')}
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm bg-background/50 border-red-500/20">
                   <div className="space-y-0.5">
@@ -350,7 +331,7 @@ export function AssBurninConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}delete_source_ass_on_success` as any}
+              name={fieldPath('delete_source_ass_on_success')}
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm bg-background/50 border-red-500/20">
                   <div className="space-y-0.5">
@@ -368,8 +349,8 @@ export function AssBurninConfigForm({
               )}
             />
           </div>
-        </div>
+        </ProcessorSection>
       </div>
-    </motion.div>
+    </ProcessorFormShell>
   );
 }

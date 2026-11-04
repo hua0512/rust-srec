@@ -11,10 +11,13 @@ import {
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
-import { ProcessorConfigFormProps } from './common-props';
+import {
+  ProcessorConfigFormProps,
+  useProcessorFieldPath,
+} from './common-props';
+import { ProcessorFormShell, ProcessorSection } from './processor-form-layout';
 import { ExecuteConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
-import { motion } from 'motion/react';
 import { Badge } from '@/components/ui/badge';
 import { Terminal, FolderSearch, Plus, Trash2 } from 'lucide-react';
 import { useId } from 'react';
@@ -34,46 +37,34 @@ type ExecuteConfig = z.infer<typeof ExecuteConfigSchema>;
 export function ExecuteConfigForm({
   control,
   pathPrefix,
-}: ProcessorConfigFormProps<ExecuteConfig>) {
+}: ProcessorConfigFormProps) {
   const { i18n } = useLingui();
-  const prefix = pathPrefix ? `${pathPrefix}.` : '';
+  const fieldPath = useProcessorFieldPath<ExecuteConfig>(pathPrefix);
   const { unregister, setValue, getValues, clearErrors } = useFormContext();
   const modeId = useId();
-  const program = useWatch({ control, name: `${prefix}program` as any });
+  const program = useWatch({ control, name: fieldPath('program') });
   const mode = program == null ? 'command' : 'program';
 
   const changeMode = (nextMode: string) => {
     // Radix can emit an empty value while a surrounding form is reset.
-    if (!nextMode || nextMode === mode) return;
+    if ((nextMode !== 'command' && nextMode !== 'program') || nextMode === mode)
+      return;
     // Unregister also removes defaults, so a hidden mode cannot reappear on save.
-    unregister([`${prefix}command`, `${prefix}program`, `${prefix}args`]);
-    setValue(`${prefix}${nextMode}`, '', { shouldDirty: true });
+    unregister([fieldPath('command'), fieldPath('program'), fieldPath('args')]);
+    setValue(fieldPath(nextMode), '', { shouldDirty: true });
     if (nextMode === 'program') {
-      setValue(`${prefix}args`, [], { shouldDirty: true });
+      setValue(fieldPath('args'), [], { shouldDirty: true });
     }
   };
 
-  const containerVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-  };
-
   return (
-    <motion.div
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-      className="w-full"
-    >
+    <ProcessorFormShell>
       <div className="space-y-6">
-        <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-border/40 mb-2">
-            <Terminal className="w-4 h-4 text-green-500" />
-            <h3 className="font-semibold text-sm mr-auto">
-              <Trans>Execution</Trans>
-            </h3>
-          </div>
-
+        <ProcessorSection
+          icon={Terminal}
+          iconClassName="text-green-500"
+          title={<Trans>Execution</Trans>}
+        >
           <div className="grid grid-cols-1 gap-6">
             <div className="space-y-2">
               <Label htmlFor={modeId}>
@@ -104,7 +95,7 @@ export function ExecuteConfigForm({
               <>
                 <FormField
                   control={control}
-                  name={`${prefix}program` as any}
+                  name={fieldPath('program')}
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>
@@ -132,7 +123,7 @@ export function ExecuteConfigForm({
                 />
                 <FormField
                   control={control}
-                  name={`${prefix}args` as any}
+                  name={fieldPath('args')}
                   render={({ field }) => {
                     const args: unknown[] = Array.isArray(field.value)
                       ? field.value
@@ -143,8 +134,8 @@ export function ExecuteConfigForm({
                       // Child Controllers update individual entries without
                       // rerendering this array Controller. Read the latest argv
                       // before adding/removing so recent edits are retained.
-                      const current = getValues(`${prefix}args`);
-                      clearErrors(`${prefix}args`);
+                      const current = getValues(fieldPath('args'));
+                      clearErrors(fieldPath('args'));
                       field.onChange(
                         update(Array.isArray(current) ? current : []),
                       );
@@ -181,7 +172,7 @@ export function ExecuteConfigForm({
                             <FormField
                               key={index}
                               control={control}
-                              name={`${prefix}args.${index}` as any}
+                              name={fieldPath(`args.${index}`)}
                               render={({ field: argument }) => (
                                 <FormItem>
                                   <div className="flex items-center justify-between gap-2">
@@ -230,7 +221,7 @@ export function ExecuteConfigForm({
             ) : (
               <FormField
                 control={control}
-                name={`${prefix}command` as any}
+                name={fieldPath('command')}
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -426,20 +417,19 @@ export function ExecuteConfigForm({
               </div>
             </div>
           </div>
-        </div>
+        </ProcessorSection>
 
         {/* Output Scanning Section */}
-        <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-border/40 mb-2">
-            <FolderSearch className="w-4 h-4 text-blue-500" />
-            <h3 className="font-semibold text-sm mr-auto">
-              <Trans>Output Detection</Trans>
-            </h3>
+        <ProcessorSection
+          icon={FolderSearch}
+          iconClassName="text-blue-500"
+          title={<Trans>Output Detection</Trans>}
+          actions={
             <Badge variant="outline" className="text-[10px]">
               <Trans>Optional</Trans>
             </Badge>
-          </div>
-
+          }
+        >
           <FormDescription className="text-xs text-muted-foreground">
             <Trans>
               Scan a directory for new files created by the command. Detected
@@ -450,7 +440,7 @@ export function ExecuteConfigForm({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField
               control={control}
-              name={`${prefix}scan_output_dir` as any}
+              name={fieldPath('scan_output_dir')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -476,7 +466,7 @@ export function ExecuteConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}scan_extension` as any}
+              name={fieldPath('scan_extension')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -500,8 +490,8 @@ export function ExecuteConfigForm({
               )}
             />
           </div>
-        </div>
+        </ProcessorSection>
       </div>
-    </motion.div>
+    </ProcessorFormShell>
   );
 }

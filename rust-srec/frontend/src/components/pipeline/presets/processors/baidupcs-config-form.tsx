@@ -41,7 +41,10 @@ import {
   TriangleAlert,
   UserRound,
 } from 'lucide-react';
-import { ProcessorConfigFormProps } from './common-props';
+import {
+  ProcessorConfigFormProps,
+  useProcessorFieldPath,
+} from './common-props';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
@@ -265,17 +268,17 @@ function BaiduPcsAccountCard({
 export function BaiduPcsConfigForm({
   control,
   pathPrefix,
-}: ProcessorConfigFormProps<BaiduPcsConfig>) {
+}: ProcessorConfigFormProps) {
   const { i18n } = useLingui();
-  const prefix = pathPrefix ? `${pathPrefix}.` : '';
+  const fieldPath = useProcessorFieldPath<BaiduPcsConfig>(pathPrefix);
 
   const binaryPath = useWatch({
     control,
-    name: `${prefix}binary_path` as any,
+    name: fieldPath('binary_path'),
   }) as string | undefined;
   const configDir = useWatch({
     control,
-    name: `${prefix}config_dir` as any,
+    name: fieldPath('config_dir'),
   }) as string | undefined;
 
   return (
@@ -310,7 +313,7 @@ export function BaiduPcsConfigForm({
             <CardContent className="grid gap-4 pt-4">
               <FormField
                 control={control}
-                name={`${prefix}destination_root` as any}
+                name={fieldPath('destination_root')}
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel className="inline-flex items-center gap-1.5">
@@ -353,7 +356,7 @@ export function BaiduPcsConfigForm({
 
               <FormField
                 control={control}
-                name={`${prefix}time_anchor` as any}
+                name={fieldPath('time_anchor')}
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
@@ -404,7 +407,7 @@ export function BaiduPcsConfigForm({
             <CardContent className="grid gap-4 pt-4">
               <FormField
                 control={control}
-                name={`${prefix}policy` as any}
+                name={fieldPath('policy')}
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
@@ -446,7 +449,7 @@ export function BaiduPcsConfigForm({
 
               <FormField
                 control={control}
-                name={`${prefix}norapid` as any}
+                name={fieldPath('norapid')}
                 render={({ field }) => (
                   <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 bg-background/30 p-3">
                     <div className="space-y-0.5 pr-4">
@@ -472,7 +475,7 @@ export function BaiduPcsConfigForm({
 
               <FormField
                 control={control}
-                name={`${prefix}remove_source_after_upload` as any}
+                name={fieldPath('remove_source_after_upload')}
                 render={({ field }) => (
                   <FormItem className="flex flex-row items-center justify-between rounded-lg border border-destructive/30 bg-destructive/5 p-3">
                     <div className="space-y-0.5 pr-4">
@@ -499,7 +502,7 @@ export function BaiduPcsConfigForm({
 
               <FormField
                 control={control}
-                name={`${prefix}max_retries` as any}
+                name={fieldPath('max_retries')}
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
@@ -541,7 +544,7 @@ export function BaiduPcsConfigForm({
             <CardContent className="grid gap-4 pt-4">
               <FormField
                 control={control}
-                name={`${prefix}binary_path` as any}
+                name={fieldPath('binary_path')}
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>
@@ -567,7 +570,7 @@ export function BaiduPcsConfigForm({
               />
               <FormField
                 control={control}
-                name={`${prefix}config_dir` as any}
+                name={fieldPath('config_dir')}
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel className="inline-flex items-center gap-1.5">
@@ -609,7 +612,7 @@ export function BaiduPcsConfigForm({
             <CardContent className="pt-4">
               <FormField
                 control={control}
-                name={`${prefix}args` as any}
+                name={fieldPath('args')}
                 render={({ field }) => (
                   <FormItem>
                     <FormControl>

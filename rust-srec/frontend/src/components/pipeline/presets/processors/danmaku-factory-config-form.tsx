@@ -8,7 +8,11 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
-import { ProcessorConfigFormProps } from './common-props';
+import {
+  ProcessorConfigFormProps,
+  useProcessorFieldPath,
+} from './common-props';
+import { ProcessorFormShell, ProcessorSection } from './processor-form-layout';
 import { DanmakuFactoryConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
 import { Trans } from '@lingui/react/macro';
@@ -16,7 +20,6 @@ import { ListInput } from '@/components/ui/list-input';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { Settings, Terminal, Trash2 } from 'lucide-react';
-import { motion } from 'motion/react';
 
 type DanmakuFactoryConfig = z.infer<typeof DanmakuFactoryConfigSchema>;
 
@@ -26,36 +29,23 @@ const OUTPUT_TOKEN = '{output}';
 export function DanmakuFactoryConfigForm({
   control,
   pathPrefix,
-}: ProcessorConfigFormProps<DanmakuFactoryConfig>) {
+}: ProcessorConfigFormProps) {
   const { i18n } = useLingui();
-  const prefix = pathPrefix ? `${pathPrefix}.` : '';
-
-  const containerVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-  };
+  const fieldPath = useProcessorFieldPath<DanmakuFactoryConfig>(pathPrefix);
 
   return (
-    <motion.div
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-      className="w-full"
-    >
+    <ProcessorFormShell>
       <div className="space-y-6">
         {/* Execution Settings */}
-        <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-border/40 mb-2">
-            <Terminal className="w-4 h-4 text-blue-500" />
-            <h3 className="font-semibold text-sm mr-auto">
-              <Trans>Execution Settings</Trans>
-            </h3>
-          </div>
-
+        <ProcessorSection
+          icon={Terminal}
+          iconClassName="text-blue-500"
+          title={<Trans>Execution Settings</Trans>}
+        >
           <div className="grid grid-cols-1 gap-6">
             <FormField
               control={control}
-              name={`${prefix}binary_path` as any}
+              name={fieldPath('binary_path')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -81,7 +71,7 @@ export function DanmakuFactoryConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}args` as any}
+              name={fieldPath('args')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -110,7 +100,7 @@ export function DanmakuFactoryConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}extra_args` as any}
+              name={fieldPath('extra_args')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -131,21 +121,18 @@ export function DanmakuFactoryConfigForm({
               )}
             />
           </div>
-        </div>
+        </ProcessorSection>
 
         {/* Behavior Settings */}
-        <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-border/40 mb-2">
-            <Settings className="w-4 h-4 text-orange-500" />
-            <h3 className="font-semibold text-sm mr-auto">
-              <Trans>Processing Behavior</Trans>
-            </h3>
-          </div>
-
+        <ProcessorSection
+          icon={Settings}
+          iconClassName="text-orange-500"
+          title={<Trans>Processing Behavior</Trans>}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormField
               control={control}
-              name={`${prefix}overwrite` as any}
+              name={fieldPath('overwrite')}
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm bg-background/50">
                   <div className="space-y-0.5">
@@ -168,7 +155,7 @@ export function DanmakuFactoryConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}verify_output_exists` as any}
+              name={fieldPath('verify_output_exists')}
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm bg-background/50">
                   <div className="space-y-0.5">
@@ -191,7 +178,7 @@ export function DanmakuFactoryConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}prefer_manifest` as any}
+              name={fieldPath('prefer_manifest')}
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm bg-background/50">
                   <div className="space-y-0.5">
@@ -217,7 +204,7 @@ export function DanmakuFactoryConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}passthrough_inputs` as any}
+              name={fieldPath('passthrough_inputs')}
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm bg-background/50">
                   <div className="space-y-0.5">
@@ -238,21 +225,18 @@ export function DanmakuFactoryConfigForm({
               )}
             />
           </div>
-        </div>
+        </ProcessorSection>
 
         {/* Cleanup Settings */}
-        <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-border/40 mb-2">
-            <Trash2 className="w-4 h-4 text-red-500" />
-            <h3 className="font-semibold text-sm mr-auto">
-              <Trans>Cleanup</Trans>
-            </h3>
-          </div>
-
+        <ProcessorSection
+          icon={Trash2}
+          iconClassName="text-red-500"
+          title={<Trans>Cleanup</Trans>}
+        >
           <div className="grid grid-cols-1 gap-6">
             <FormField
               control={control}
-              name={`${prefix}delete_source_xml_on_success` as any}
+              name={fieldPath('delete_source_xml_on_success')}
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm bg-background/50 border-red-500/20">
                   <div className="space-y-0.5">
@@ -275,8 +259,8 @@ export function DanmakuFactoryConfigForm({
               )}
             />
           </div>
-        </div>
+        </ProcessorSection>
       </div>
-    </motion.div>
+    </ProcessorFormShell>
   );
 }
