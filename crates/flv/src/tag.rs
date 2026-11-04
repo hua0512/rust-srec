@@ -17,7 +17,9 @@ use super::video::VideoData;
 /// An FLV Tag with a `Bytes` payload buffer.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FlvTag {
-    /// A timestamp in milliseconds
+    /// The tag timestamp in milliseconds, as the raw 32 bits of the header
+    /// (lower 24 bits plus the TimestampExtended high byte). The FLV spec
+    /// defines this field as signed; see [`FlvTag::signed_timestamp_ms`].
     pub timestamp_ms: u32,
     /// A stream id
     pub stream_id: u32,
@@ -470,6 +472,18 @@ impl FlvTag {
             data,
             class,
         }
+    }
+
+    /// The timestamp as the signed 32-bit value (SI32) the FLV spec defines.
+    ///
+    /// Sources may start slightly below zero (e.g. a stream opening on a
+    /// B-frame), which the raw `timestamp_ms` shows as a value near
+    /// `u32::MAX`. Use this where a timestamp's position relative to zero
+    /// matters, such as choosing a timeline base. To order two nearby
+    /// timestamps, compare their wrapping difference instead, which also
+    /// holds where the signed value wraps after about 24.8 days.
+    pub fn signed_timestamp_ms(&self) -> i32 {
+        self.timestamp_ms as i32
     }
 
     pub fn classification(&self) -> TagClass {
