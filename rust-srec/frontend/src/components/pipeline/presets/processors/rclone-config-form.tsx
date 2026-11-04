@@ -34,7 +34,11 @@ import {
   Timer,
   Split,
 } from 'lucide-react';
-import { ProcessorConfigFormProps } from './common-props';
+import {
+  ProcessorConfigFormProps,
+  useProcessorFieldPath,
+} from './common-props';
+import { ProcessorSubsectionHeader } from './processor-form-layout';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
@@ -44,33 +48,12 @@ import { NumberInput } from '@/components/ui/number-input';
 
 type RcloneConfig = z.infer<typeof RcloneConfigSchema>;
 
-/**
- * Subtle subsection heading inside a Card. Used to group related form
- * fields without spawning extra Cards.
- */
-function SectionHeader({
-  icon: Icon,
-  children,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center gap-2 pb-1">
-      <Icon className="h-3.5 w-3.5 text-muted-foreground/70" />
-      <h4 className="text-xs font-medium uppercase tracking-wider text-muted-foreground/80">
-        {children}
-      </h4>
-    </div>
-  );
-}
-
 export function RcloneConfigForm({
   control,
   pathPrefix,
-}: ProcessorConfigFormProps<RcloneConfig>) {
+}: ProcessorConfigFormProps) {
   const { i18n } = useLingui();
-  const prefix = pathPrefix ? `${pathPrefix}.` : '';
+  const fieldPath = useProcessorFieldPath<RcloneConfig>(pathPrefix);
 
   return (
     <Tabs defaultValue="general" className="w-full">
@@ -102,7 +85,7 @@ export function RcloneConfigForm({
           <CardContent className="grid gap-4 pt-4">
             <FormField
               control={control}
-              name={`${prefix}operation` as any}
+              name={fieldPath('operation')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
@@ -181,7 +164,7 @@ export function RcloneConfigForm({
           <CardContent className="grid gap-4 pt-4">
             <FormField
               control={control}
-              name={`${prefix}destination_root` as any}
+              name={fieldPath('destination_root')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="inline-flex items-center gap-1.5">
@@ -222,7 +205,7 @@ export function RcloneConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}time_anchor` as any}
+              name={fieldPath('time_anchor')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
@@ -262,7 +245,7 @@ export function RcloneConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}config_path` as any}
+              name={fieldPath('config_path')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
@@ -297,7 +280,7 @@ export function RcloneConfigForm({
           <CardContent className="grid gap-4 pt-4">
             <FormField
               control={control}
-              name={`${prefix}max_retries` as any}
+              name={fieldPath('max_retries')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>
@@ -334,12 +317,12 @@ export function RcloneConfigForm({
           <CardContent className="space-y-6 pt-4">
             {/* Bandwidth */}
             <div className="space-y-3">
-              <SectionHeader icon={Activity}>
+              <ProcessorSubsectionHeader icon={Activity}>
                 <Trans>Bandwidth</Trans>
-              </SectionHeader>
+              </ProcessorSubsectionHeader>
               <FormField
                 control={control}
-                name={`${prefix}bwlimit` as any}
+                name={fieldPath('bwlimit')}
                 render={({ field }) => (
                   <FormItem>
                     <div className="flex items-center gap-1.5">
@@ -396,7 +379,7 @@ export function RcloneConfigForm({
               />
               <FormField
                 control={control}
-                name={`${prefix}bwlimit_file` as any}
+                name={fieldPath('bwlimit_file')}
                 render={({ field }) => (
                   <FormItem>
                     <div className="flex items-center gap-1.5">
@@ -443,13 +426,13 @@ export function RcloneConfigForm({
 
             {/* Concurrency */}
             <div className="space-y-3 border-t border-border/30 pt-5">
-              <SectionHeader icon={Layers}>
+              <ProcessorSubsectionHeader icon={Layers}>
                 <Trans>Concurrency</Trans>
-              </SectionHeader>
+              </ProcessorSubsectionHeader>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={control}
-                  name={`${prefix}transfers` as any}
+                  name={fieldPath('transfers')}
                   render={({ field }) => (
                     <FormItem>
                       <div className="flex items-center gap-1.5">
@@ -489,7 +472,7 @@ export function RcloneConfigForm({
                 />
                 <FormField
                   control={control}
-                  name={`${prefix}checkers` as any}
+                  name={fieldPath('checkers')}
                   render={({ field }) => (
                     <FormItem>
                       <div className="flex items-center gap-1.5">
@@ -533,13 +516,13 @@ export function RcloneConfigForm({
 
             {/* Rate Limiting */}
             <div className="space-y-3 border-t border-border/30 pt-5">
-              <SectionHeader icon={Timer}>
+              <ProcessorSubsectionHeader icon={Timer}>
                 <Trans>Rate Limiting</Trans>
-              </SectionHeader>
+              </ProcessorSubsectionHeader>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={control}
-                  name={`${prefix}tpslimit` as any}
+                  name={fieldPath('tpslimit')}
                   render={({ field }) => (
                     <FormItem>
                       <div className="flex items-center gap-1.5">
@@ -584,7 +567,7 @@ export function RcloneConfigForm({
                 />
                 <FormField
                   control={control}
-                  name={`${prefix}tpslimit_burst` as any}
+                  name={fieldPath('tpslimit_burst')}
                   render={({ field }) => (
                     <FormItem>
                       <div className="flex items-center gap-1.5">
@@ -629,13 +612,13 @@ export function RcloneConfigForm({
 
             {/* Multi-Thread Copy */}
             <div className="space-y-3 border-t border-border/30 pt-5">
-              <SectionHeader icon={Split}>
+              <ProcessorSubsectionHeader icon={Split}>
                 <Trans>Multi-Thread Copy</Trans>
-              </SectionHeader>
+              </ProcessorSubsectionHeader>
               <div className="grid grid-cols-2 gap-4">
                 <FormField
                   control={control}
-                  name={`${prefix}multi_thread_streams` as any}
+                  name={fieldPath('multi_thread_streams')}
                   render={({ field }) => (
                     <FormItem>
                       <div className="flex items-center gap-1.5">
@@ -679,7 +662,7 @@ export function RcloneConfigForm({
                 />
                 <FormField
                   control={control}
-                  name={`${prefix}multi_thread_cutoff` as any}
+                  name={fieldPath('multi_thread_cutoff')}
                   render={({ field }) => (
                     <FormItem>
                       <div className="flex items-center gap-1.5">
@@ -738,7 +721,7 @@ export function RcloneConfigForm({
           <CardContent className="pt-4">
             <FormField
               control={control}
-              name={`${prefix}args` as any}
+              name={fieldPath('args')}
               render={({ field }) => (
                 <FormItem>
                   <FormControl>

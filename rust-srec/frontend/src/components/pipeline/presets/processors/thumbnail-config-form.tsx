@@ -9,10 +9,13 @@ import {
   FormDescription,
 } from '@/components/ui/form';
 import { SwitchCard } from '@/components/ui/switch-card';
-import { ProcessorConfigFormProps } from './common-props';
+import {
+  ProcessorConfigFormProps,
+  useProcessorFieldPath,
+} from './common-props';
+import { ProcessorFormShell, ProcessorSection } from './processor-form-layout';
 import { ThumbnailConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
-import { motion } from 'motion/react';
 import { Camera } from 'lucide-react';
 import { NumberInput } from '@/components/ui/number-input';
 import { useWatch } from 'react-hook-form';
@@ -22,37 +25,24 @@ type ThumbnailConfig = z.infer<typeof ThumbnailConfigSchema>;
 export function ThumbnailConfigForm({
   control,
   pathPrefix,
-}: ProcessorConfigFormProps<ThumbnailConfig>) {
-  const prefix = pathPrefix ? `${pathPrefix}.` : '';
+}: ProcessorConfigFormProps) {
+  const fieldPath = useProcessorFieldPath<ThumbnailConfig>(pathPrefix);
   const preserveResolution = useWatch({
     control,
-    name: `${prefix}preserve_resolution` as any,
+    name: fieldPath('preserve_resolution'),
   });
 
-  const containerVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-  };
-
   return (
-    <motion.div
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-      className="w-full"
-    >
-      <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
-        <div className="flex items-center gap-2 pb-2 border-b border-border/40 mb-2">
-          <Camera className="w-4 h-4 text-indigo-500" />
-          <h3 className="font-semibold text-sm mr-auto">
-            <Trans>Capture Settings</Trans>
-          </h3>
-        </div>
-
+    <ProcessorFormShell>
+      <ProcessorSection
+        icon={Camera}
+        iconClassName="text-indigo-500"
+        title={<Trans>Capture Settings</Trans>}
+      >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <FormField
             control={control}
-            name={`${prefix}preserve_resolution` as any}
+            name={fieldPath('preserve_resolution')}
             render={({ field }) => (
               <SwitchCard
                 className="md:col-span-2"
@@ -70,7 +60,7 @@ export function ThumbnailConfigForm({
 
           <FormField
             control={control}
-            name={`${prefix}timestamp_secs` as any}
+            name={fieldPath('timestamp_secs')}
             render={({ field }) => (
               <FormItem>
                 <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -96,7 +86,7 @@ export function ThumbnailConfigForm({
 
           <FormField
             control={control}
-            name={`${prefix}width` as any}
+            name={fieldPath('width')}
             render={({ field }) => (
               <FormItem>
                 <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -125,7 +115,7 @@ export function ThumbnailConfigForm({
 
           <FormField
             control={control}
-            name={`${prefix}quality` as any}
+            name={fieldPath('quality')}
             render={({ field }) => (
               <FormItem>
                 <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -149,7 +139,7 @@ export function ThumbnailConfigForm({
             )}
           />
         </div>
-      </div>
-    </motion.div>
+      </ProcessorSection>
+    </ProcessorFormShell>
   );
 }

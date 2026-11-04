@@ -6,7 +6,7 @@ import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { Loader2, Unlink, AlertTriangle, Info } from 'lucide-react';
-import { useEffect, useMemo, useState, memo, Suspense } from 'react';
+import { useMemo, useState, memo, Suspense } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DagStepDefinition, PipelineStep } from '@/api/schemas';
@@ -92,7 +92,52 @@ interface StepConfigDialogProps {
   currentStepIndex?: number;
 }
 
-export const StepConfigDialog = memo(function StepConfigDialog({
+/** A stored step or preset config, which older records keep as a JSON string. */
+function parseConfig(config: unknown): Record<string, unknown> {
+  if (!config) return {};
+  if (typeof config === 'string') {
+    try {
+      return JSON.parse(config);
+    } catch (e) {
+      console.error('Failed to parse config:', e);
+      return {};
+    }
+  }
+  return config as Record<string, unknown>;
+}
+
+/** What the edit form starts from: an inline step's config over its processor's defaults. */
+function initialFormValues(step: PipelineStep | null): Record<string, unknown> {
+  if (step?.type !== 'inline') return {};
+  return {
+    ...getProcessorDefaultConfig(getProcessorDefinition(step.processor)),
+    ...parseConfig(step.config),
+  };
+}
+
+export const StepConfigDialog = memo(function StepConfigDialog(
+  props: StepConfigDialogProps,
+) {
+  const { open, onOpenChange, dagStep } = props;
+  // Each opening, and each step object handed in while open, is a fresh editing session: the
+  // body remounts and seeds its state from `dagStep` on its first render. Closing keeps the
+  // session, so the body does not remount during the exit animation.
+  const [session, setSession] = useState({ open, dagStep, id: 0 });
+  if (session.open !== open || session.dagStep !== dagStep) {
+    const opened = open && (!session.open || session.dagStep !== dagStep);
+    setSession({ open, dagStep, id: opened ? session.id + 1 : session.id });
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-6xl! p-0 h-[90vh] flex flex-col gap-0 bg-card/95 backdrop-blur-xl border-border/50 shadow-2xl rounded-2xl overflow-hidden">
+        <StepConfigDialogBody key={session.id} {...props} />
+      </DialogContent>
+    </Dialog>
+  );
+});
+
+function StepConfigDialogBody({
   open,
   onOpenChange,
   dagStep,
@@ -119,13 +164,6 @@ export const StepConfigDialog = memo(function StepConfigDialog({
   // "Add anyway" can complete the deferred save.
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingData, setPendingData] = useState<any>(null);
-
-  // Reset detached state when dialog closes
-  useEffect(() => {
-    if (!open) {
-      setDetachedProcessor(null);
-    }
-  }, [open]);
 
   // The preset this step names. `presetDetail.processor` picks the form shown in the read-only
   // preview and the inline step that handleDetach/performSave write back, so it must be the
@@ -160,49 +198,12 @@ export const StepConfigDialog = memo(function StepConfigDialog({
     return processorDef?.schema || z.any();
   }, [processorDef]);
 
-  // 3. Compute form values
-  const formValues = useMemo(() => {
-    if (!step) return {};
-
-    const baseConfig = getProcessorDefaultConfig(processorDef) ?? {};
-
-    const getSafeConfig = (config: any) => {
-      if (!config) return {};
-      if (typeof config === 'string') {
-        try {
-          return JSON.parse(config);
-        } catch (e) {
-          console.error('Failed to parse config:', e);
-          return {};
-        }
-      }
-      return config;
-    };
-
-    if (step.type === 'inline') {
-      const finalConfig = { ...baseConfig, ...getSafeConfig(step.config) };
-      return finalConfig;
-    } else if (!isDetached) {
-      return baseConfig;
-    }
-    return {};
-  }, [step, isDetached, processorDef]);
-
-  // 4. Initialize form with default empty values
+  // 3. Seed the form from the step; detaching resets it to the preset's config.
+  const [defaultValues] = useState(() => initialFormValues(step));
   const form = useForm({
-    resolver: zodResolver(formSchema as any),
-    defaultValues: {},
+    resolver: zodResolver(formSchema),
+    defaultValues,
   });
-
-  // 5. Reset form values when dialog opens or formValues change
-  const formValuesJson = JSON.stringify(formValues);
-  useEffect(() => {
-    if (open && step) {
-      // Always reset form when dialog opens to ensure values are properly applied
-      form.reset(formValues);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, step, formValuesJson]);
 
   const performSave = (data: any) => {
     if (!dagStep || idError) return;
@@ -251,20 +252,17 @@ export const StepConfigDialog = memo(function StepConfigDialog({
     return getProcessorDefinition(presetDetail.processor);
   }, [presetDetail]);
 
-  const presetDefaults = useMemo(
-    () => getProcessorDefaultConfig(presetProcessorDef) ?? {},
-    [presetProcessorDef],
+  const presetConfig = presetDetail?.config;
+  const presetValues = useMemo(
+    () => ({
+      ...getProcessorDefaultConfig(presetProcessorDef),
+      ...parseConfig(presetConfig),
+    }),
+    [presetProcessorDef, presetConfig],
   );
 
   // Form for displaying the preset config (read-only)
-  const presetForm = useForm({
-    values: {
-      ...presetDefaults,
-      ...(typeof presetDetail?.config === 'string'
-        ? JSON.parse(presetDetail.config)
-        : presetDetail?.config || {}),
-    },
-  });
+  const presetForm = useForm({ values: presetValues, disabled: true });
 
   const [idValue, setIdValue] = useState(dagStep?.id || '');
   const [dependsOn, setDependsOn] = useState<string[]>(
@@ -283,47 +281,37 @@ export const StepConfigDialog = memo(function StepConfigDialog({
   );
   const idError = getStepIdError(allSteps, currentStepIndex, idValue);
 
-  useEffect(() => {
-    if (open && dagStep) {
-      setIdValue(dagStep.id || '');
-      setDependsOn(dagStep.depends_on || []);
-      setRetryAttempts(dagStep.retry ? String(dagStep.retry.max_attempts) : '');
-      setRetryBackoff(
-        dagStep.retry?.backoff_secs != null
-          ? String(dagStep.retry.backoff_secs)
-          : '',
-      );
-      setTimeoutSecs(
-        dagStep.timeout_secs != null ? String(dagStep.timeout_secs) : '',
-      );
-    }
-  }, [open, dagStep]);
-
   // Warn when this delete step depends on a transform step: the DAG feeds it that step's
   // produced (converted) file, so deleting would discard the result rather than the source.
   // Uses the live `dependsOn` state so the warning tracks edits made in this dialog.
-  const warningStep = dagStep
-    ? {
-        ...dagStep,
-        depends_on: dependsOn,
-        step: detachedProcessor
-          ? {
-              type: 'inline' as const,
-              processor: detachedProcessor,
-              config: {},
-            }
-          : dagStep.step,
-      }
-    : null;
-  const lookup = useReferencedPresets(
-    warningStep
-      ? [
-          ...allSteps.filter((_, index) => index !== currentStepIndex),
-          warningStep,
-        ]
-      : allSteps,
-    open,
+  const warningStep = useMemo(
+    () =>
+      dagStep
+        ? {
+            ...dagStep,
+            depends_on: dependsOn,
+            step: detachedProcessor
+              ? {
+                  type: 'inline' as const,
+                  processor: detachedProcessor,
+                  config: {},
+                }
+              : dagStep.step,
+          }
+        : null,
+    [dagStep, dependsOn, detachedProcessor],
   );
+  const lookupSteps = useMemo(
+    () =>
+      warningStep
+        ? [
+            ...allSteps.filter((_, index) => index !== currentStepIndex),
+            warningStep,
+          ]
+        : allSteps,
+    [warningStep, allSteps, currentStepIndex],
+  );
+  const lookup = useReferencedPresets(lookupSteps, open);
   const presetProcessorByName = useMemo(
     () => buildPresetProcessorMap(lookup.presets),
     [lookup.presets],
@@ -348,465 +336,451 @@ export const StepConfigDialog = memo(function StepConfigDialog({
   const handleDetach = () => {
     if (!presetDetail) return;
 
-    // Copy current preset values to the main form
-    // We use presetForm.getValues() because it already handles parsing logic
-    form.reset(presetForm.getValues());
+    // Copy the preset's stored config, not the preview form's state, into the edit form.
+    form.reset(presetValues);
 
     // Switch to "Edit" mode locally
     setDetachedProcessor(presetDetail.processor);
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl! p-0 h-[90vh] flex flex-col gap-0 bg-card/95 backdrop-blur-xl border-border/50 shadow-2xl rounded-2xl overflow-hidden">
-        {/* Custom Header */}
-        <DialogHeader className="p-6 pr-12 pb-4 border-b border-border/40 shrink-0 space-y-1">
-          <DialogTitle className="text-lg font-semibold tracking-tight">
-            {isWorkflow ? (
-              <Trans>Workflow Step</Trans>
-            ) : isPreset && !isDetached ? (
-              <Trans>Preset Step</Trans>
-            ) : (
-              <span className="flex items-center gap-2 text-left">
-                <span className="text-muted-foreground font-normal">
-                  <Trans>Configure</Trans>
-                </span>
-                <span>
-                  {(processorDef && i18n._(processorDef.label)) ||
-                    (step?.type === 'inline'
-                      ? step.processor
-                      : detachedProcessor)}
-                </span>
+    <>
+      {/* Custom Header */}
+      <DialogHeader className="p-6 pr-12 pb-4 border-b border-border/40 shrink-0 space-y-1">
+        <DialogTitle className="text-lg font-semibold tracking-tight">
+          {isWorkflow ? (
+            <Trans>Workflow Step</Trans>
+          ) : isPreset && !isDetached ? (
+            <Trans>Preset Step</Trans>
+          ) : (
+            <span className="flex items-center gap-2 text-left">
+              <span className="text-muted-foreground font-normal">
+                <Trans>Configure</Trans>
               </span>
-            )}
-          </DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground">
-            {isWorkflow ? (
-              <Trans>
-                This step is a sub-workflow:{' '}
-                <strong className="text-foreground">{workflowName}</strong>.
-              </Trans>
-            ) : isPreset && !isDetached ? (
-              <Trans>
-                This step is linked to the preset{' '}
-                <strong className="text-foreground">{presetName}</strong>.
-              </Trans>
-            ) : (
-              <Trans>Modify the parameters for this processing step.</Trans>
-            )}
-          </DialogDescription>
-        </DialogHeader>
+              <span>
+                {(processorDef && i18n._(processorDef.label)) ||
+                  (step?.type === 'inline'
+                    ? step.processor
+                    : detachedProcessor)}
+              </span>
+            </span>
+          )}
+        </DialogTitle>
+        <DialogDescription className="text-sm text-muted-foreground">
+          {isWorkflow ? (
+            <Trans>
+              This step is a sub-workflow:{' '}
+              <strong className="text-foreground">{workflowName}</strong>.
+            </Trans>
+          ) : isPreset && !isDetached ? (
+            <Trans>
+              This step is linked to the preset{' '}
+              <strong className="text-foreground">{presetName}</strong>.
+            </Trans>
+          ) : (
+            <Trans>Modify the parameters for this processing step.</Trans>
+          )}
+        </DialogDescription>
+      </DialogHeader>
 
-        {/* Surfaced above the tabs (not only in Flow & Dependencies) so a delete-after-transform
+      {/* Surfaced above the tabs (not only in Flow & Dependencies) so a delete-after-transform
             misconfiguration is visible the moment the step is opened, regardless of active tab. */}
-        {transformDependencyIds.length > 0 && (
-          <div className="px-6 pt-4 shrink-0">
-            <Alert variant="destructive" className="bg-destructive/5">
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription>
-                <Trans>
-                  This Delete step will delete the files produced by{' '}
-                  <strong className="text-foreground">
-                    {transformDepLabel}
-                  </strong>{' '}
-                  (the converted result), not your original recording. To delete
-                  the original source after converting, enable "Remove Input on
-                  Success" on the transcode step instead.
-                </Trans>
-              </AlertDescription>
-            </Alert>
-          </div>
-        )}
+      {transformDependencyIds.length > 0 && (
+        <div className="px-6 pt-4 shrink-0">
+          <Alert variant="destructive" className="bg-destructive/5">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              <Trans>
+                This Delete step will delete the files produced by{' '}
+                <strong className="text-foreground">{transformDepLabel}</strong>{' '}
+                (the converted result), not your original recording. To delete
+                the original source after converting, enable "Remove Input on
+                Success" on the transcode step instead.
+              </Trans>
+            </AlertDescription>
+          </Alert>
+        </div>
+      )}
 
-        {/* Content Body */}
-        <Tabs
-          defaultValue={isWorkflow ? 'flow' : 'config'}
-          className="flex-1 min-h-0 flex flex-col overflow-hidden"
-        >
-          <div className="px-6 pt-6 pb-2 shrink-0">
-            <TabsList className="w-full justify-start h-auto p-1 bg-muted/50 rounded-full gap-1">
-              {!isWorkflow && (
-                <TabsTrigger
-                  value="config"
-                  className="rounded-full px-4 py-2 flex-1 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all"
-                >
-                  <Trans>Step Configuration</Trans>
-                </TabsTrigger>
-              )}
+      {/* Content Body */}
+      <Tabs
+        defaultValue={isWorkflow ? 'flow' : 'config'}
+        className="flex-1 min-h-0 flex flex-col overflow-hidden"
+      >
+        <div className="px-6 pt-6 pb-2 shrink-0">
+          <TabsList className="w-full justify-start h-auto p-1 bg-muted/50 rounded-full gap-1">
+            {!isWorkflow && (
               <TabsTrigger
-                value="flow"
+                value="config"
                 className="rounded-full px-4 py-2 flex-1 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all"
               >
-                <Trans>Flow & Dependencies</Trans>
+                <Trans>Step Configuration</Trans>
               </TabsTrigger>
-            </TabsList>
-          </div>
-
-          {/* TAB 1: CONFIGURATION */}
-          <TabsContent
-            value="config"
-            className="flex-1 min-h-0 mt-0 flex flex-col data-[state=inactive]:hidden"
-          >
-            <ScrollArea
-              className="flex-1 min-h-0 bg-background/50"
-              type="always"
+            )}
+            <TabsTrigger
+              value="flow"
+              className="rounded-full px-4 py-2 flex-1 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm transition-all"
             >
-              {isPreset && !isDetached ? (
-                // PRESET VIEW
-                <div className="p-6">
-                  {isLoadingPreset && (
-                    <div className="flex items-center justify-center p-8 text-muted-foreground">
-                      <Loader2 className="h-6 w-6 animate-spin mr-2" />
-                      <Trans>Loading preset details...</Trans>
+              <Trans>Flow & Dependencies</Trans>
+            </TabsTrigger>
+          </TabsList>
+        </div>
+
+        {/* TAB 1: CONFIGURATION */}
+        <TabsContent
+          value="config"
+          className="flex-1 min-h-0 mt-0 flex flex-col data-[state=inactive]:hidden"
+        >
+          <ScrollArea className="flex-1 min-h-0 bg-background/50" type="always">
+            {isPreset && !isDetached ? (
+              // PRESET VIEW
+              <div className="p-6">
+                {isLoadingPreset && (
+                  <div className="flex items-center justify-center p-8 text-muted-foreground">
+                    <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                    <Trans>Loading preset details...</Trans>
+                  </div>
+                )}
+                {presetDetail && (
+                  <div className="space-y-6 [&_input]:pointer-events-none [&_textarea]:pointer-events-none [&_label]:pointer-events-none [&_button:not([role=tab])]:pointer-events-none [&_input]:opacity-70 [&_textarea]:opacity-70 [&_label]:opacity-70 [&_button:not([role=tab])]:opacity-70 grayscale-[0.1]">
+                    <div className="flex items-center gap-2 mb-4">
+                      <div className="h-8 w-1 rounded bg-primary/20" />
+                      <h3 className="font-semibold text-lg tracking-tight">
+                        {presetProcessorDef && i18n._(presetProcessorDef.label)}{' '}
+                        <Trans>Configuration</Trans>
+                      </h3>
                     </div>
-                  )}
-                  {presetDetail && (
-                    <div className="space-y-6 [&_input]:pointer-events-none [&_textarea]:pointer-events-none [&_label]:pointer-events-none [&_button:not([role=tab])]:pointer-events-none [&_input]:opacity-70 [&_textarea]:opacity-70 [&_label]:opacity-70 [&_button:not([role=tab])]:opacity-70 grayscale-[0.1]">
-                      <div className="flex items-center gap-2 mb-4">
-                        <div className="h-8 w-1 rounded bg-primary/20" />
-                        <h3 className="font-semibold text-lg tracking-tight">
-                          {presetProcessorDef &&
-                            i18n._(presetProcessorDef.label)}{' '}
-                          <Trans>Configuration</Trans>
-                        </h3>
-                      </div>
-                      <div className="rounded-xl border bg-card p-6 shadow-sm">
-                        <Form {...presetForm}>
-                          <form
-                            className="contents"
-                            onSubmit={(event) => {
-                              // Read-only preview: its fields can still be reached with Tab,
-                              // and Enter in a lone text field would submit the form that
-                              // embeds the workflow editor.
-                              event.preventDefault();
-                              event.stopPropagation();
-                            }}
-                          >
-                            {presetProcessorDef && (
-                              <Suspense fallback={PROCESSOR_FORM_FALLBACK}>
-                                <presetProcessorDef.component
-                                  control={presetForm.control}
-                                />
-                              </Suspense>
-                            )}
-                          </form>
-                        </Form>
-                      </div>
+                    <div className="rounded-xl border bg-card p-6 shadow-sm">
+                      <Form {...presetForm}>
+                        <form
+                          className="contents"
+                          onSubmit={(event) => {
+                            // Read-only preview: its fields can still be reached with Tab,
+                            // and Enter in a lone text field would submit the form that
+                            // embeds the workflow editor.
+                            event.preventDefault();
+                            event.stopPropagation();
+                          }}
+                        >
+                          {presetProcessorDef && (
+                            <Suspense fallback={PROCESSOR_FORM_FALLBACK}>
+                              <presetProcessorDef.component
+                                control={presetForm.control}
+                              />
+                            </Suspense>
+                          )}
+                        </form>
+                      </Form>
                     </div>
-                  )}
-                  {!isLoadingPreset && !presetDetail && isPresetError && (
-                    <Alert variant="destructive" className="bg-destructive/5">
-                      <AlertTriangle className="h-4 w-4" />
-                      <AlertDescription>
-                        <Trans>
-                          Could not load the preset{' '}
-                          <strong className="text-foreground">
-                            {presetName}
-                          </strong>
-                          . Check that the server is reachable and try again.
-                        </Trans>
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                  {/* A step naming no existing preset still runs: resolve_dag_step falls back to
+                  </div>
+                )}
+                {!isLoadingPreset && !presetDetail && isPresetError && (
+                  <Alert variant="destructive" className="bg-destructive/5">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertDescription>
+                      <Trans>
+                        Could not load the preset{' '}
+                        <strong className="text-foreground">
+                          {presetName}
+                        </strong>
+                        . Check that the server is reachable and try again.
+                      </Trans>
+                    </AlertDescription>
+                  </Alert>
+                )}
+                {/* A step naming no existing preset still runs: resolve_dag_step falls back to
                       treating the name as a processor, so this states what happens rather than
                       reporting a broken step. */}
-                  {!isLoadingPreset && !presetDetail && !isPresetError && (
-                    <Alert>
-                      <Info className="h-4 w-4" />
-                      <AlertDescription>
-                        <Trans>
-                          No preset named{' '}
-                          <strong className="text-foreground">
-                            {presetName}
-                          </strong>{' '}
-                          is defined. If a processor goes by that name, this
-                          step runs it with its default settings; otherwise the
-                          pipeline fails to start. Point the step at an existing
-                          preset to see and edit its settings here.
-                        </Trans>
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                </div>
-              ) : (
-                // EDIT VIEW
-                <div className="p-6">
-                  {processorDef ? (
-                    <Form {...form} key={formValuesJson}>
-                      <form
-                        onSubmit={(event) => {
-                          // The dialog renders through a portal, yet in the React tree it still
-                          // sits inside whatever form embeds the workflow editor. Without this,
-                          // saving a step here would also submit that surrounding form.
-                          event.stopPropagation();
-                          void form.handleSubmit(handleSubmit)(event);
-                        }}
-                        className="contents"
-                      >
-                        <Suspense fallback={PROCESSOR_FORM_FALLBACK}>
-                          <processorDef.component control={form.control} />
-                        </Suspense>
-                      </form>
-                    </Form>
-                  ) : (
-                    <div className="flex items-center justify-center text-muted-foreground p-6">
+                {!isLoadingPreset && !presetDetail && !isPresetError && (
+                  <Alert>
+                    <Info className="h-4 w-4" />
+                    <AlertDescription>
                       <Trans>
-                        No configuration form available for this processor.
+                        No preset named{' '}
+                        <strong className="text-foreground">
+                          {presetName}
+                        </strong>{' '}
+                        is defined. If a processor goes by that name, this step
+                        runs it with its default settings; otherwise the
+                        pipeline fails to start. Point the step at an existing
+                        preset to see and edit its settings here.
                       </Trans>
-                    </div>
-                  )}
-                </div>
-              )}
-            </ScrollArea>
-          </TabsContent>
-
-          {/* TAB 2: FLOW & DEPENDENCIES */}
-          <TabsContent
-            value="flow"
-            className="flex-1 min-h-0 mt-0 flex flex-col data-[state=inactive]:hidden"
-          >
-            <ScrollArea
-              className="flex-1 min-h-0 bg-background/50"
-              type="always"
-            >
-              <div className="p-6 max-w-2xl mx-auto space-y-6">
-                <div className="flex items-center gap-2 mb-6">
-                  <div className="h-8 w-1 rounded bg-blue-500/50" />
-                  <div className="text-left">
-                    <h3 className="font-semibold text-lg tracking-tight">
-                      <Trans>DAG Configuration</Trans>
-                    </h3>
-                    <p className="text-sm text-muted-foreground">
-                      <Trans>
-                        Define how this step identifies itself and connects to
-                        others.
-                      </Trans>
-                    </p>
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            ) : (
+              // EDIT VIEW
+              <div className="p-6">
+                {processorDef ? (
+                  <Form {...form}>
+                    <form
+                      onSubmit={(event) => {
+                        // The dialog renders through a portal, yet in the React tree it still
+                        // sits inside whatever form embeds the workflow editor. Without this,
+                        // saving a step here would also submit that surrounding form.
+                        event.stopPropagation();
+                        void form.handleSubmit(handleSubmit)(event);
+                      }}
+                      className="contents"
+                    >
+                      <Suspense fallback={PROCESSOR_FORM_FALLBACK}>
+                        <processorDef.component control={form.control} />
+                      </Suspense>
+                    </form>
+                  </Form>
+                ) : (
+                  <div className="flex items-center justify-center text-muted-foreground p-6">
+                    <Trans>
+                      No configuration form available for this processor.
+                    </Trans>
                   </div>
-                </div>
+                )}
+              </div>
+            )}
+          </ScrollArea>
+        </TabsContent>
 
-                <div className="space-y-6">
-                  <div className="space-y-3">
-                    <Label htmlFor="step-id" className="text-sm font-medium">
-                      <Trans>Step Identifier (Unique)</Trans>
-                    </Label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <span className="text-muted-foreground text-xs font-mono">
-                          #
-                        </span>
-                      </div>
-                      <UiInput
-                        id="step-id"
-                        aria-invalid={!!idError}
-                        aria-describedby={idError ? 'step-id-error' : undefined}
-                        value={idValue}
-                        onChange={(e) => setIdValue(e.target.value)}
-                        placeholder={i18n._(msg`e.g., process-video`)}
-                        className="pl-7 bg-background/50 font-mono text-sm"
-                      />
-                    </div>
-                    {idError && (
-                      <p
-                        id="step-id-error"
-                        role="alert"
-                        className="text-sm text-destructive"
-                      >
-                        {idError === 'empty' ? (
-                          <Trans>Step ID is required.</Trans>
-                        ) : (
-                          <Trans>Step ID must be unique.</Trans>
-                        )}
-                      </p>
-                    )}
-                    <p className="text-[10px] text-muted-foreground">
-                      <Trans>
-                        A unique ID used by other steps to reference this one.
-                      </Trans>
-                    </p>
-                  </div>
-
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium">
-                      <Trans>Depends On (Ancestors)</Trans>
-                    </Label>
-                    <div className="border border-border/40 rounded-lg bg-background/50 overflow-hidden">
-                      <div className="p-1 max-h-[300px] overflow-y-auto">
-                        {allSteps.length > 1 ? (
-                          <div className="space-y-1 p-2">
-                            {allSteps
-                              .filter((_, idx) => idx !== currentStepIndex) // Cannot depend on self
-                              .map((otherStep) => {
-                                const otherId = otherStep.id;
-                                const isDep = dependsOn.includes(otherId);
-
-                                return (
-                                  <div
-                                    key={otherId}
-                                    className={`flex items-center space-x-3 p-3 rounded-md transition-colors ${
-                                      isDep
-                                        ? 'bg-primary/10 border border-primary/20'
-                                        : 'hover:bg-muted/50 border border-transparent'
-                                    }`}
-                                  >
-                                    <Checkbox
-                                      id={`dep-${otherId}`}
-                                      checked={isDep}
-                                      onCheckedChange={(checked) => {
-                                        if (checked) {
-                                          setDependsOn([...dependsOn, otherId]);
-                                        } else {
-                                          setDependsOn(
-                                            dependsOn.filter(
-                                              (d) => d !== otherId,
-                                            ),
-                                          );
-                                        }
-                                      }}
-                                    />
-                                    <label
-                                      htmlFor={`dep-${otherId}`}
-                                      className="flex-1 cursor-pointer flex items-center justify-between"
-                                    >
-                                      <span className="font-mono text-xs font-semibold">
-                                        {otherId}
-                                      </span>
-                                      <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
-                                        {getStepName(otherStep.step)}
-                                      </span>
-                                    </label>
-                                  </div>
-                                );
-                              })}
-                          </div>
-                        ) : (
-                          <div className="p-8 text-center text-muted-foreground text-sm italic">
-                            <Trans>
-                              No other steps available to depend on.
-                            </Trans>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground">
-                      <Trans>
-                        Select the steps that must complete successfully before
-                        this step runs.
-                      </Trans>
-                    </p>
-                  </div>
-
-                  <div className="space-y-3">
-                    <Label className="text-sm font-medium">
-                      <Trans>Retries and timeout</Trans>
-                    </Label>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div className="space-y-1">
-                        <Label
-                          htmlFor="step-retry-attempts"
-                          className="text-xs text-muted-foreground"
-                        >
-                          <Trans>Attempts (including the first run)</Trans>
-                        </Label>
-                        <UiInput
-                          id="step-retry-attempts"
-                          type="number"
-                          min={1}
-                          step={1}
-                          value={retryAttempts}
-                          onChange={(e) => setRetryAttempts(e.target.value)}
-                          placeholder="1"
-                          className="bg-background/50 font-mono text-sm"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label
-                          htmlFor="step-retry-backoff"
-                          className="text-xs text-muted-foreground"
-                        >
-                          <Trans>Retry backoff (seconds)</Trans>
-                        </Label>
-                        <UiInput
-                          id="step-retry-backoff"
-                          type="number"
-                          min={0}
-                          step={1}
-                          value={retryBackoff}
-                          onChange={(e) => setRetryBackoff(e.target.value)}
-                          placeholder="60"
-                          className="bg-background/50 font-mono text-sm"
-                        />
-                      </div>
-                      <div className="space-y-1">
-                        <Label
-                          htmlFor="step-timeout"
-                          className="text-xs text-muted-foreground"
-                        >
-                          <Trans>Timeout (seconds)</Trans>
-                        </Label>
-                        <UiInput
-                          id="step-timeout"
-                          type="number"
-                          min={1}
-                          step={1}
-                          value={timeoutSecs}
-                          onChange={(e) => setTimeoutSecs(e.target.value)}
-                          placeholder={i18n._(msg`pool default`)}
-                          className="bg-background/50 font-mono text-sm"
-                        />
-                      </div>
-                    </div>
-                    <p className="text-[10px] text-muted-foreground">
-                      <Trans>
-                        Leave attempts empty or at 1 for no automatic retry; the
-                        backoff doubles after each failed attempt. Leave the
-                        timeout empty to use the worker pool default.
-                      </Trans>
-                    </p>
-                  </div>
+        {/* TAB 2: FLOW & DEPENDENCIES */}
+        <TabsContent
+          value="flow"
+          className="flex-1 min-h-0 mt-0 flex flex-col data-[state=inactive]:hidden"
+        >
+          <ScrollArea className="flex-1 min-h-0 bg-background/50" type="always">
+            <div className="p-6 max-w-2xl mx-auto space-y-6">
+              <div className="flex items-center gap-2 mb-6">
+                <div className="h-8 w-1 rounded bg-blue-500/50" />
+                <div className="text-left">
+                  <h3 className="font-semibold text-lg tracking-tight">
+                    <Trans>DAG Configuration</Trans>
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    <Trans>
+                      Define how this step identifies itself and connects to
+                      others.
+                    </Trans>
+                  </p>
                 </div>
               </div>
-            </ScrollArea>
-          </TabsContent>
-        </Tabs>
 
-        <div className="px-6">
-          <PresetLookupStatus {...lookup} />
-        </div>
-        {/* Footer Actions */}
-        <div className="p-6 pt-4 border-t bg-background/50 backdrop-blur shrink-0 flex justify-between items-center z-10">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => onOpenChange(false)}
-          >
-            <Trans>Cancel</Trans>
-          </Button>
+              <div className="space-y-6">
+                <div className="space-y-3">
+                  <Label htmlFor="step-id" className="text-sm font-medium">
+                    <Trans>Step Identifier (Unique)</Trans>
+                  </Label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <span className="text-muted-foreground text-xs font-mono">
+                        #
+                      </span>
+                    </div>
+                    <UiInput
+                      id="step-id"
+                      aria-invalid={!!idError}
+                      aria-describedby={idError ? 'step-id-error' : undefined}
+                      value={idValue}
+                      onChange={(e) => setIdValue(e.target.value)}
+                      placeholder={i18n._(msg`e.g., process-video`)}
+                      className="pl-7 bg-background/50 font-mono text-sm"
+                    />
+                  </div>
+                  {idError && (
+                    <p
+                      id="step-id-error"
+                      role="alert"
+                      className="text-sm text-destructive"
+                    >
+                      {idError === 'empty' ? (
+                        <Trans>Step ID is required.</Trans>
+                      ) : (
+                        <Trans>Step ID must be unique.</Trans>
+                      )}
+                    </p>
+                  )}
+                  <p className="text-[10px] text-muted-foreground">
+                    <Trans>
+                      A unique ID used by other steps to reference this one.
+                    </Trans>
+                  </p>
+                </div>
 
-          <div className="flex items-center gap-2">
-            {isPreset && !isDetached && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleDetach}
-                disabled={isLoadingPreset || !presetDetail}
-                className="gap-2"
-              >
-                <Unlink className="h-4 w-4" />
-                <Trans>Detach & Edit</Trans>
-              </Button>
-            )}
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">
+                    <Trans>Depends On (Ancestors)</Trans>
+                  </Label>
+                  <div className="border border-border/40 rounded-lg bg-background/50 overflow-hidden">
+                    <div className="p-1 max-h-[300px] overflow-y-auto">
+                      {allSteps.length > 1 ? (
+                        <div className="space-y-1 p-2">
+                          {allSteps
+                            .filter((_, idx) => idx !== currentStepIndex) // Cannot depend on self
+                            .map((otherStep) => {
+                              const otherId = otherStep.id;
+                              const isDep = dependsOn.includes(otherId);
+
+                              return (
+                                <div
+                                  key={otherId}
+                                  className={`flex items-center space-x-3 p-3 rounded-md transition-colors ${
+                                    isDep
+                                      ? 'bg-primary/10 border border-primary/20'
+                                      : 'hover:bg-muted/50 border border-transparent'
+                                  }`}
+                                >
+                                  <Checkbox
+                                    id={`dep-${otherId}`}
+                                    checked={isDep}
+                                    onCheckedChange={(checked) => {
+                                      if (checked) {
+                                        setDependsOn([...dependsOn, otherId]);
+                                      } else {
+                                        setDependsOn(
+                                          dependsOn.filter(
+                                            (d) => d !== otherId,
+                                          ),
+                                        );
+                                      }
+                                    }}
+                                  />
+                                  <label
+                                    htmlFor={`dep-${otherId}`}
+                                    className="flex-1 cursor-pointer flex items-center justify-between"
+                                  >
+                                    <span className="font-mono text-xs font-semibold">
+                                      {otherId}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                                      {getStepName(otherStep.step)}
+                                    </span>
+                                  </label>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      ) : (
+                        <div className="p-8 text-center text-muted-foreground text-sm italic">
+                          <Trans>No other steps available to depend on.</Trans>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    <Trans>
+                      Select the steps that must complete successfully before
+                      this step runs.
+                    </Trans>
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <Label className="text-sm font-medium">
+                    <Trans>Retries and timeout</Trans>
+                  </Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor="step-retry-attempts"
+                        className="text-xs text-muted-foreground"
+                      >
+                        <Trans>Attempts (including the first run)</Trans>
+                      </Label>
+                      <UiInput
+                        id="step-retry-attempts"
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={retryAttempts}
+                        onChange={(e) => setRetryAttempts(e.target.value)}
+                        placeholder="1"
+                        className="bg-background/50 font-mono text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor="step-retry-backoff"
+                        className="text-xs text-muted-foreground"
+                      >
+                        <Trans>Retry backoff (seconds)</Trans>
+                      </Label>
+                      <UiInput
+                        id="step-retry-backoff"
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={retryBackoff}
+                        onChange={(e) => setRetryBackoff(e.target.value)}
+                        placeholder="60"
+                        className="bg-background/50 font-mono text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor="step-timeout"
+                        className="text-xs text-muted-foreground"
+                      >
+                        <Trans>Timeout (seconds)</Trans>
+                      </Label>
+                      <UiInput
+                        id="step-timeout"
+                        type="number"
+                        min={1}
+                        step={1}
+                        value={timeoutSecs}
+                        onChange={(e) => setTimeoutSecs(e.target.value)}
+                        placeholder={i18n._(msg`pool default`)}
+                        className="bg-background/50 font-mono text-sm"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    <Trans>
+                      Leave attempts empty or at 1 for no automatic retry; the
+                      backoff doubles after each failed attempt. Leave the
+                      timeout empty to use the worker pool default.
+                    </Trans>
+                  </p>
+                </div>
+              </div>
+            </div>
+          </ScrollArea>
+        </TabsContent>
+      </Tabs>
+
+      <div className="px-6">
+        <PresetLookupStatus {...lookup} />
+      </div>
+      {/* Footer Actions */}
+      <div className="p-6 pt-4 border-t bg-background/50 backdrop-blur shrink-0 flex justify-between items-center z-10">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => onOpenChange(false)}
+        >
+          <Trans>Cancel</Trans>
+        </Button>
+
+        <div className="flex items-center gap-2">
+          {isPreset && !isDetached && (
             <Button
-              type="submit"
-              disabled={!!idError}
-              onClick={form.handleSubmit(handleSubmit)}
+              type="button"
+              variant="outline"
+              onClick={handleDetach}
+              disabled={isLoadingPreset || !presetDetail}
+              className="gap-2"
             >
-              <Trans>Save Changes</Trans>
+              <Unlink className="h-4 w-4" />
+              <Trans>Detach & Edit</Trans>
             </Button>
-          </div>
+          )}
+          <Button
+            type="submit"
+            disabled={!!idError}
+            onClick={form.handleSubmit(handleSubmit)}
+          >
+            <Trans>Save Changes</Trans>
+          </Button>
         </div>
-      </DialogContent>
+      </div>
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -852,6 +826,6 @@ export const StepConfigDialog = memo(function StepConfigDialog({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Dialog>
+    </>
   );
-});
+}

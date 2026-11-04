@@ -19,10 +19,13 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ProcessorConfigFormProps } from './common-props';
+import {
+  ProcessorConfigFormProps,
+  useProcessorFieldPath,
+} from './common-props';
+import { ProcessorFormShell, ProcessorSection } from './processor-form-layout';
 import { AudioExtractConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
-import { motion } from 'motion/react';
 import { Music, AudioWaveform, Settings2 } from 'lucide-react';
 
 type AudioExtractConfig = z.infer<typeof AudioExtractConfigSchema>;
@@ -30,22 +33,12 @@ type AudioExtractConfig = z.infer<typeof AudioExtractConfigSchema>;
 export function AudioExtractConfigForm({
   control,
   pathPrefix,
-}: ProcessorConfigFormProps<AudioExtractConfig>) {
+}: ProcessorConfigFormProps) {
   const { i18n } = useLingui();
-  const prefix = pathPrefix ? `${pathPrefix}.` : '';
-
-  const containerVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-  };
+  const fieldPath = useProcessorFieldPath<AudioExtractConfig>(pathPrefix);
 
   return (
-    <motion.div
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-      className="w-full"
-    >
+    <ProcessorFormShell>
       <Tabs defaultValue="general" className="w-full">
         <TabsList className="w-full h-auto p-1.5 bg-muted/20 rounded-xl grid grid-cols-2 gap-1.5 backdrop-blur-sm mb-6">
           <TabsTrigger
@@ -73,18 +66,15 @@ export function AudioExtractConfigForm({
             value="general"
             className="space-y-4 focus-visible:outline-none focus-visible:ring-0"
           >
-            <div className="space-y-4 p-4 rounded-xl bg-muted/10 border border-border/40">
-              <div className="flex items-center gap-2 pb-2 border-b border-border/40 mb-2">
-                <Music className="w-4 h-4 text-pink-500" />
-                <h3 className="font-semibold text-sm mr-auto">
-                  <Trans>Output Settings</Trans>
-                </h3>
-              </div>
-
+            <ProcessorSection
+              icon={Music}
+              iconClassName="text-pink-500"
+              title={<Trans>Output Settings</Trans>}
+            >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField
                   control={control}
-                  name={`${prefix}format` as any}
+                  name={fieldPath('format')}
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -118,7 +108,7 @@ export function AudioExtractConfigForm({
 
                 <FormField
                   control={control}
-                  name={`${prefix}bitrate` as any}
+                  name={fieldPath('bitrate')}
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -139,7 +129,7 @@ export function AudioExtractConfigForm({
                   )}
                 />
               </div>
-            </div>
+            </ProcessorSection>
           </TabsContent>
 
           <TabsContent
@@ -157,7 +147,7 @@ export function AudioExtractConfigForm({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <FormField
                   control={control}
-                  name={`${prefix}sample_rate` as any}
+                  name={fieldPath('sample_rate')}
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -185,7 +175,7 @@ export function AudioExtractConfigForm({
 
                 <FormField
                   control={control}
-                  name={`${prefix}channels` as any}
+                  name={fieldPath('channels')}
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -218,7 +208,7 @@ export function AudioExtractConfigForm({
             <div className="space-y-3">
               <FormField
                 control={control}
-                name={`${prefix}overwrite` as any}
+                name={fieldPath('overwrite')}
                 render={({ field }) => (
                   <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 shadow-sm bg-muted/10 transition-colors hover:bg-muted/20">
                     <div className="space-y-1">
@@ -244,6 +234,6 @@ export function AudioExtractConfigForm({
           </TabsContent>
         </div>
       </Tabs>
-    </motion.div>
+    </ProcessorFormShell>
   );
 }

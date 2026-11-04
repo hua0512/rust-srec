@@ -10,13 +10,20 @@ import {
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
-import { ProcessorConfigFormProps } from './common-props';
+import {
+  ProcessorConfigFormProps,
+  useProcessorFieldPath,
+} from './common-props';
+import { ProcessorFormShell, ProcessorSection } from './processor-form-layout';
 import { MetadataConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
 import { useEffect, useRef, useState } from 'react';
-import { useFormContext } from 'react-hook-form';
+import {
+  useFormContext,
+  type FieldPath,
+  type FieldValues,
+} from 'react-hook-form';
 import { PlusCircle, Trash2, Tags, Mic2, Settings2 } from 'lucide-react';
-import { motion } from 'motion/react';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 
@@ -57,11 +64,9 @@ function identityOf(custom: Record<string, string> | undefined): string {
  * rename mid-typing would re-key the record on every keystroke. Only rows that
  * have a name reach the form, so a half-filled row is simply not saved.
  */
-function CustomMetadataFields({ basePath }: { basePath: string }) {
+function CustomMetadataFields({ path }: { path: FieldPath<FieldValues> }) {
   const { watch, setValue } = useFormContext();
   const { i18n } = useLingui();
-  const path = (basePath ? `${basePath}.custom` : 'custom') as any;
-
   const stored = watch(path) as Record<string, string> | undefined;
   const nextId = useRef(0);
   const allocateId = () => nextId.current++;
@@ -158,36 +163,23 @@ function CustomMetadataFields({ basePath }: { basePath: string }) {
 export function MetadataConfigForm({
   control,
   pathPrefix,
-}: ProcessorConfigFormProps<MetadataConfig>) {
+}: ProcessorConfigFormProps) {
   const { i18n } = useLingui();
-  const prefix = pathPrefix ? `${pathPrefix}.` : '';
-
-  const containerVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-  };
+  const fieldPath = useProcessorFieldPath<MetadataConfig>(pathPrefix);
 
   return (
-    <motion.div
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-      className="w-full"
-    >
+    <ProcessorFormShell>
       <div className="space-y-6">
         {/* Track Info Section */}
-        <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-border/40 mb-2">
-            <Mic2 className="w-4 h-4 text-pink-500" />
-            <h3 className="font-semibold text-sm mr-auto">
-              <Trans>Track Information</Trans>
-            </h3>
-          </div>
-
+        <ProcessorSection
+          icon={Mic2}
+          iconClassName="text-pink-500"
+          title={<Trans>Track Information</Trans>}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormField
               control={control}
-              name={`${prefix}artist` as any}
+              name={fieldPath('artist')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -206,7 +198,7 @@ export function MetadataConfigForm({
             />
             <FormField
               control={control}
-              name={`${prefix}title` as any}
+              name={fieldPath('title')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -225,7 +217,7 @@ export function MetadataConfigForm({
             />
             <FormField
               control={control}
-              name={`${prefix}album` as any}
+              name={fieldPath('album')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -243,7 +235,7 @@ export function MetadataConfigForm({
             />
             <FormField
               control={control}
-              name={`${prefix}date` as any}
+              name={fieldPath('date')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -263,7 +255,7 @@ export function MetadataConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}comment` as any}
+              name={fieldPath('comment')}
               render={({ field }) => (
                 <FormItem className="col-span-1 md:col-span-2">
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -280,31 +272,26 @@ export function MetadataConfigForm({
               )}
             />
           </div>
-        </div>
+        </ProcessorSection>
 
         {/* Custom Fields Section */}
-        <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-border/40 mb-2">
-            <Tags className="w-4 h-4 text-purple-500" />
-            <h3 className="font-semibold text-sm mr-auto">
-              <Trans>Custom Tags</Trans>
-            </h3>
-          </div>
-          <CustomMetadataFields basePath={pathPrefix || ''} />
-        </div>
+        <ProcessorSection
+          icon={Tags}
+          iconClassName="text-purple-500"
+          title={<Trans>Custom Tags</Trans>}
+        >
+          <CustomMetadataFields path={fieldPath('custom')} />
+        </ProcessorSection>
 
         {/* Options Section */}
-        <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-border/40 mb-2">
-            <Settings2 className="w-4 h-4 text-gray-500" />
-            <h3 className="font-semibold text-sm mr-auto">
-              <Trans>File Operations</Trans>
-            </h3>
-          </div>
-
+        <ProcessorSection
+          icon={Settings2}
+          iconClassName="text-gray-500"
+          title={<Trans>File Operations</Trans>}
+        >
           <FormField
             control={control}
-            name={`${prefix}overwrite` as any}
+            name={fieldPath('overwrite')}
             render={({ field }) => (
               <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 shadow-sm bg-muted/10 transition-colors hover:bg-muted/20">
                 <div className="space-y-1">
@@ -327,7 +314,7 @@ export function MetadataConfigForm({
 
           <FormField
             control={control}
-            name={`${prefix}remove_input_on_success` as any}
+            name={fieldPath('remove_input_on_success')}
             render={({ field }) => (
               <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 shadow-sm bg-muted/10 transition-colors hover:bg-muted/20">
                 <div className="space-y-1">
@@ -349,8 +336,8 @@ export function MetadataConfigForm({
               </FormItem>
             )}
           />
-        </div>
+        </ProcessorSection>
       </div>
-    </motion.div>
+    </ProcessorFormShell>
   );
 }

@@ -16,7 +16,7 @@ function renderForm(custom?: Record<string, string>) {
     form = useForm<Values>({ defaultValues: { custom } });
     return (
       <Form {...form}>
-        <MetadataConfigForm control={form.control} />
+        <MetadataConfigForm control={form.control as never} />
       </Form>
     );
   }

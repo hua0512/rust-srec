@@ -17,10 +17,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { ProcessorConfigFormProps } from './common-props';
+import {
+  ProcessorConfigFormProps,
+  useProcessorFieldPath,
+} from './common-props';
+import { ProcessorFormShell, ProcessorSection } from './processor-form-layout';
 import { CompressionConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
-import { motion } from 'motion/react';
 import { Archive, Settings2 } from 'lucide-react';
 import { NumberInput } from '@/components/ui/number-input';
 
@@ -29,35 +32,22 @@ type CompressionConfig = z.infer<typeof CompressionConfigSchema>;
 export function CompressionConfigForm({
   control,
   pathPrefix,
-}: ProcessorConfigFormProps<CompressionConfig>) {
+}: ProcessorConfigFormProps) {
   const { i18n } = useLingui();
-  const prefix = pathPrefix ? `${pathPrefix}.` : '';
-
-  const containerVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-  };
+  const fieldPath = useProcessorFieldPath<CompressionConfig>(pathPrefix);
 
   return (
-    <motion.div
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-      className="w-full"
-    >
+    <ProcessorFormShell>
       <div className="space-y-6">
-        <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-border/40 mb-2">
-            <Archive className="w-4 h-4 text-orange-500" />
-            <h3 className="font-semibold text-sm mr-auto">
-              <Trans>Archive Settings</Trans>
-            </h3>
-          </div>
-
+        <ProcessorSection
+          icon={Archive}
+          iconClassName="text-orange-500"
+          title={<Trans>Archive Settings</Trans>}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormField
               control={control}
-              name={`${prefix}format` as any}
+              name={fieldPath('format')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -84,7 +74,7 @@ export function CompressionConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}compression_level` as any}
+              name={fieldPath('compression_level')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -107,7 +97,7 @@ export function CompressionConfigForm({
               )}
             />
           </div>
-        </div>
+        </ProcessorSection>
 
         <div className="space-y-4">
           <div className="flex items-center gap-2 pb-2 border-b border-border/40">
@@ -120,7 +110,7 @@ export function CompressionConfigForm({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField
               control={control}
-              name={`${prefix}preserve_paths` as any}
+              name={fieldPath('preserve_paths')}
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 p-4 shadow-sm bg-muted/10 transition-colors hover:bg-muted/20">
                   <div className="space-y-1">
@@ -143,7 +133,7 @@ export function CompressionConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}overwrite` as any}
+              name={fieldPath('overwrite')}
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 p-4 shadow-sm bg-muted/10 transition-colors hover:bg-muted/20">
                   <div className="space-y-1">
@@ -166,6 +156,6 @@ export function CompressionConfigForm({
           </div>
         </div>
       </div>
-    </motion.div>
+    </ProcessorFormShell>
   );
 }

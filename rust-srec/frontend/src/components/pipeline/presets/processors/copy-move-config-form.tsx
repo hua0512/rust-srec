@@ -16,10 +16,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { ProcessorConfigFormProps } from './common-props';
+import {
+  ProcessorConfigFormProps,
+  useProcessorFieldPath,
+} from './common-props';
+import { ProcessorFormShell, ProcessorSection } from './processor-form-layout';
 import { CopyMoveConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
-import { motion } from 'motion/react';
 import { Copy, Settings2, Terminal } from 'lucide-react';
 import { ListInput } from '@/components/ui/list-input';
 import { useLingui } from '@lingui/react';
@@ -33,35 +36,22 @@ const EXECUTION_TIME_ANCHOR = 'execution_time';
 export function CopyMoveConfigForm({
   control,
   pathPrefix,
-}: ProcessorConfigFormProps<CopyMoveConfig>) {
+}: ProcessorConfigFormProps) {
   const { i18n } = useLingui();
-  const prefix = pathPrefix ? `${pathPrefix}.` : '';
-
-  const containerVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
-  };
+  const fieldPath = useProcessorFieldPath<CopyMoveConfig>(pathPrefix);
 
   return (
-    <motion.div
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-      className="w-full"
-    >
+    <ProcessorFormShell>
       <div className="space-y-6">
-        <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-border/40 mb-2">
-            <Copy className="w-4 h-4 text-blue-500" />
-            <h3 className="font-semibold text-sm mr-auto">
-              <Trans>Operation</Trans>
-            </h3>
-          </div>
-
+        <ProcessorSection
+          icon={Copy}
+          iconClassName="text-blue-500"
+          title={<Trans>Operation</Trans>}
+        >
           <div className="grid grid-cols-1 gap-6">
             <FormField
               control={control}
-              name={`${prefix}operation` as any}
+              name={fieldPath('operation')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -94,7 +84,7 @@ export function CopyMoveConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}destination` as any}
+              name={fieldPath('destination')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -121,7 +111,7 @@ export function CopyMoveConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}time_anchor` as any}
+              name={fieldPath('time_anchor')}
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs text-muted-foreground ml-1">
@@ -166,7 +156,7 @@ export function CopyMoveConfigForm({
               )}
             />
           </div>
-        </div>
+        </ProcessorSection>
 
         <div className="space-y-4">
           <div className="flex items-center gap-2 pb-2 border-b border-border/40">
@@ -179,7 +169,7 @@ export function CopyMoveConfigForm({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FormField
               control={control}
-              name={`${prefix}create_dirs` as any}
+              name={fieldPath('create_dirs')}
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 shadow-sm bg-muted/10 transition-colors hover:bg-muted/20">
                   <div className="space-y-1">
@@ -202,7 +192,7 @@ export function CopyMoveConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}verify_integrity` as any}
+              name={fieldPath('verify_integrity')}
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 shadow-sm bg-muted/10 transition-colors hover:bg-muted/20">
                   <div className="space-y-1">
@@ -225,7 +215,7 @@ export function CopyMoveConfigForm({
 
             <FormField
               control={control}
-              name={`${prefix}overwrite` as any}
+              name={fieldPath('overwrite')}
               render={({ field }) => (
                 <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 shadow-sm bg-muted/10 transition-colors hover:bg-muted/20">
                   <div className="space-y-1">
@@ -258,7 +248,7 @@ export function CopyMoveConfigForm({
 
           <FormField
             control={control}
-            name={`${prefix}exclude_patterns` as any}
+            name={fieldPath('exclude_patterns')}
             render={({ field }) => (
               <FormItem>
                 <FormControl>
@@ -280,6 +270,6 @@ export function CopyMoveConfigForm({
           />
         </div>
       </div>
-    </motion.div>
+    </ProcessorFormShell>
   );
 }
