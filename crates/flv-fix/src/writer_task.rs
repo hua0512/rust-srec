@@ -90,7 +90,7 @@ impl FlvFormatStrategy {
         }
     }
 
-    fn calculate_duration(&self) -> u32 {
+    fn calculate_duration(&self) -> f64 {
         self.analyzer.stats.calculate_duration()
     }
 
@@ -409,7 +409,7 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
     }
 
     fn current_media_duration_secs(&self) -> f64 {
-        self.calculate_duration() as f64
+        self.calculate_duration()
     }
 
     fn close_context(&self) -> Option<SplitReason> {
@@ -523,14 +523,14 @@ mod tests {
                     Bytes::from(payload),
                 )),
                 crate::test_utils::create_video_tag(0, true),
-                crate::test_utils::create_video_tag(2_000, true),
+                crate::test_utils::create_video_tag(8_323, true),
             ],
         );
 
         let properties = read_metadata_properties(&opened_path);
         assert_eq!(
             metadata_property(&properties, "duration"),
-            &Amf0Value::Number(2.0)
+            &Amf0Value::Number(8.323)
         );
     }
 

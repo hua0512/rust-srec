@@ -86,7 +86,9 @@ impl VideoStats {
 #[derive(Debug, Clone)]
 pub struct FlvStats {
     pub file_size: u64,
-    pub duration: u32,
+    /// Media duration in seconds with millisecond precision; see
+    /// [`FlvStats::calculate_duration`].
+    pub duration: f64,
     pub has_video: bool,
     pub has_audio: bool,
     pub video_stats: Option<VideoStats>,
@@ -116,7 +118,7 @@ impl Default for FlvStats {
     fn default() -> Self {
         Self {
             file_size: 0,
-            duration: 0,
+            duration: 0.0,
             has_video: false,
             has_audio: false,
             video_stats: None,
@@ -170,14 +172,15 @@ impl FlvStats {
     /// across all media streams and calculating the difference.
     ///
     /// The calculation works as follows:
-    /// 1. Find the earliest timestamp by taking the minimum of the first keyframe timestamp
+    /// 1. Find the earliest timestamp by taking the minimum of the first video timestamp
     ///    and first audio timestamp (whichever is available)
     /// 2. Find the latest timestamp by taking the maximum of the last video and audio
     ///    timestamps based on which media types are present
     /// 3. Calculate the difference and convert from milliseconds to seconds
     ///
-    /// Returns the duration in seconds as a u32.
-    pub fn calculate_duration(&self) -> u32 {
+    /// Returns the duration in seconds, keeping the millisecond precision of the
+    /// FLV timestamps (an 8323 ms span is 8.323).
+    pub fn calculate_duration(&self) -> f64 {
         let first_video_timestamp = self
             .video_stats
             .as_ref()
@@ -204,8 +207,8 @@ impl FlvStats {
             (false, false) => self.last_timestamp, // Fallback to general timestamp
         };
 
-        // Calculate duration in seconds (timestamps are in milliseconds)
-        last_timestamp.saturating_sub(first_timestamp) / 1000
+        // Timestamps are in milliseconds; every u32 is exact in an f64.
+        f64::from(last_timestamp.saturating_sub(first_timestamp)) / 1000.0
     }
 
     pub fn is_valid(&self) -> bool {

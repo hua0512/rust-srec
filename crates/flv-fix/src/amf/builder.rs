@@ -81,7 +81,7 @@ impl OnMetaDataBuilder {
 
     /// Populates the builder with data from an `FlvStats` object.
     pub fn with_stats(mut self, stats: &FlvStats) -> Self {
-        self.data.duration = Some(stats.duration as f64);
+        self.data.duration = Some(stats.duration);
         if let Some(video_stats) = &stats.video_stats {
             if let Some(res) = &video_stats.resolution {
                 self.data.width = Some(res.width as f64);
