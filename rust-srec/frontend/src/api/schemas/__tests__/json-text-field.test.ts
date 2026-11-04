@@ -3,6 +3,8 @@ import { z } from 'zod';
 
 import { jsonTextField } from '../common';
 import { PlatformConfigSchema } from '../platform';
+import { StreamerSchema } from '../streamer';
+import { GlobalConfigSchema } from '../system';
 import { TemplateSchema } from '../template';
 
 const schema = z.object({
@@ -142,5 +144,67 @@ describe('config rows with unreadable JSON columns', () => {
       preferred_qualities: ['source'],
     });
     expect(parsed.danmu_statistics).toBeNull();
+  });
+});
+
+// Stored configs hold values the backend reads leniently. One of them used to
+// reject the whole streamers or platforms list, or blank the global config page.
+describe('stored configs the backend tolerates', () => {
+  it('reads them as the backend resolves them', () => {
+    const parsed = StreamerSchema.parse({
+      id: 'streamer-1',
+      name: 'Streamer',
+      url: 'https://example.com/live',
+      platform_config_id: 'platform-1',
+      state: 'NOT_LIVE',
+      priority: 'NORMAL',
+      enabled: true,
+      consecutive_error_count: 0,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      streamer_specific_config: {
+        extractor: 'Streamlink',
+        offline_check_count: 0,
+        offline_check_delay_ms: 10,
+        download_retry_policy: { max_retries: 5 },
+        stream_selection_config: { preferred_formats: null },
+        pipeline: {
+          name: 'p',
+          steps: [
+            {
+              id: 'remux',
+              step: { type: 'preset', name: 'remux' },
+              retry: null,
+              timeout_secs: null,
+            },
+          ],
+        },
+      },
+    });
+
+    expect(parsed.streamer_specific_config).toMatchObject({
+      extractor: 'streamlink',
+      offline_check_count: 1,
+      offline_check_delay_ms: 1000,
+      download_retry_policy: { max_retries: 5, initial_delay_ms: 1000 },
+      stream_selection_config: { preferred_formats: null },
+      pipeline: { steps: [{ id: 'remux', retry: null }] },
+    });
+
+    const platform = PlatformConfigSchema.parse({
+      id: 'platform-1',
+      name: 'Douyin',
+      extractor: ' Streamlink ',
+      download_retry_policy: '{"max_retries":5}',
+    });
+    expect(platform.extractor).toBe('streamlink');
+    expect(platform.download_retry_policy).toMatchObject({ max_retries: 5 });
+    expect(
+      TemplateSchema.parse({ id: 'template-1', name: 'T', extractor: 'ytdlp' })
+        .extractor,
+    ).toBeNull();
+    expect(GlobalConfigSchema.shape.default_extractor.parse('AUTO')).toBe(
+      'auto',
+    );
   });
 });

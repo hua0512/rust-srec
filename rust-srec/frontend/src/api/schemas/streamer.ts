@@ -8,6 +8,7 @@ import {
   DanmuStatisticsObjectSchema,
   DanmuStatisticsOverrideSchema,
   DownloadRetryPolicyObjectSchema,
+  DownloadRetryPolicyReadSchema,
   PrioritySchema,
   decodeJsonText,
 } from './common';
@@ -19,6 +20,7 @@ import {
 import {
   AllPlatformConfigsSchema,
   ExtractorSelectionSchema,
+  extractorSelectionRead,
 } from './platform-configs';
 import { ProxyRouteSchema } from './proxies';
 
@@ -158,6 +160,41 @@ export const StreamerSpecificConfigSchema = z.object({
     .optional(),
 });
 
+/**
+ * An offline-check override as the backend reads it from a streamer's config: a whole number of
+ * zero or more is raised to `min`, and anything else is ignored, so the streamer inherits.
+ */
+const offlineCheckOverrideRead = (min: number) =>
+  z
+    .preprocess(
+      (value) =>
+        typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+          ? Math.max(value, min)
+          : null,
+      z.number().int().min(min).nullable(),
+    )
+    .optional();
+
+/**
+ * A streamer's config as responses carry it. The backend stores the config as free-form JSON
+ * and, when resolving it, ignores or clamps values the write path would refuse, so one such
+ * value must not fail the whole streamer list. Requests keep the strict
+ * `StreamerSpecificConfigSchema`.
+ */
+export const StreamerSpecificConfigReadSchema =
+  StreamerSpecificConfigSchema.extend({
+    download_retry_policy: z
+      .preprocess(
+        decodeJsonText('download_retry_policy'),
+        DownloadRetryPolicyReadSchema.nullable().optional(),
+      )
+      .nullable()
+      .optional(),
+    extractor: extractorSelectionRead({ trim: false }),
+    offline_check_count: offlineCheckOverrideRead(1),
+    offline_check_delay_ms: offlineCheckOverrideRead(1000),
+  });
+
 // Form-specific schema without preprocessors for proper type inference with react-hook-form
 export const StreamerSpecificConfigFormSchema = z.object({
   credential_selection: CredentialSelectionSchema.optional(),
@@ -213,7 +250,8 @@ export const StreamerSchema = z.object({
   credential_blocked: CredentialBlockSchema.nullable().optional(),
   created_at: z.string(),
   updated_at: z.string(),
-  streamer_specific_config: StreamerSpecificConfigSchema.nullable().optional(),
+  streamer_specific_config:
+    StreamerSpecificConfigReadSchema.nullable().optional(),
 });
 export type Streamer = z.infer<typeof StreamerSchema>;
 

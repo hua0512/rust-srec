@@ -128,15 +128,13 @@ const engineSettings = <T extends z.ZodRawShape>(shape: T) =>
 function rejectBlank<T extends z.ZodType>(
   schema: T,
   message = 'Enter a value',
-): T {
-  // Typed as `schema`: the check accepts nothing `schema` would not, so its input and output
-  // types are `schema`'s.
+) {
   return z
     .unknown()
     .refine((value) => typeof value !== 'string' || value.trim() !== '', {
       message,
     })
-    .pipe(schema) as unknown as T;
+    .pipe(schema);
 }
 
 /** A required whole number inside a policy, such as a target bitrate. */
@@ -170,11 +168,11 @@ const policyInt = (min: number, max: number = Number.MAX_SAFE_INTEGER) =>
  * as an absent field, which inherits the engine's value while the form still shows "Custom".
  * Every override field may be absent.
  */
-function requireValue<T extends z.ZodType>(field: T): T {
+function requireValue(field: z.ZodType) {
   return rejectBlank(
     field,
     'Enter a value, or choose another option',
-  ).optional() as unknown as T;
+  ).optional();
 }
 
 /** The settings group a field holds, behind the wrappers that let it be unset. */

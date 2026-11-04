@@ -1,11 +1,15 @@
 import { z } from 'zod';
 import { CredentialSelectionSchema } from './credential-profiles';
-import { ExtractorSelectionSchema } from './platform-configs';
+import {
+  ExtractorSelectionSchema,
+  extractorSelectionRead,
+} from './platform-configs';
 import {
   StreamSelectionConfigObjectSchema,
   DanmuStatisticsObjectSchema,
   DanmuStatisticsOverrideSchema,
   DownloadRetryPolicyObjectSchema,
+  DownloadRetryPolicyReadSchema,
   jsonTextField,
 } from './common';
 import { ProxyRouteSchema } from './proxies';
@@ -31,7 +35,7 @@ export const TemplateSchema = z.object({
   output_filename_template: z.string().nullable().optional(),
   output_file_format: z.string().nullable().optional(),
   download_engine: z.string().nullable().optional(),
-  extractor: ExtractorSelectionSchema.nullable().optional(),
+  extractor: extractorSelectionRead({ trim: true }),
   record_danmu: z.boolean().nullable().optional(),
   platform_overrides: jsonTextField('platform_overrides', z.any()),
   engines_override: EnginesOverrideReadSchema,
@@ -48,7 +52,7 @@ export const TemplateSchema = z.object({
   ),
   download_retry_policy: jsonTextField(
     'download_retry_policy',
-    DownloadRetryPolicyObjectSchema,
+    DownloadRetryPolicyReadSchema,
   ),
   proxy_route: ProxyRouteSchema.optional(),
   pipeline: jsonTextField('pipeline', DagPipelineDefinitionSchema),

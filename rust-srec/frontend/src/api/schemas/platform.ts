@@ -5,6 +5,7 @@ import {
   DanmuStatisticsObjectSchema,
   DanmuStatisticsOverrideSchema,
   DownloadRetryPolicyObjectSchema,
+  DownloadRetryPolicyReadSchema,
   jsonTextField,
 } from './common';
 import { ProxyRouteSchema } from './proxies';
@@ -12,6 +13,7 @@ import { DagPipelineDefinitionSchema } from './pipeline';
 import {
   AllPlatformConfigsSchema,
   ExtractorSelectionSchema,
+  extractorSelectionRead,
 } from './platform-configs';
 
 // --- Platform Config ---
@@ -32,7 +34,8 @@ export const PlatformConfigSchema = z.object({
   output_folder: z.string().nullable().optional(),
   output_filename_template: z.string().nullable().optional(),
   download_engine: z.string().nullable().optional(),
-  extractor: ExtractorSelectionSchema.nullable().optional(),
+  // Lenient on read only: `PlatformConfigFormSchema` and the write schema restore the strict enum.
+  extractor: extractorSelectionRead({ trim: true }),
   output_file_format: z.string().nullable().optional(),
   min_segment_size_bytes: z.number().nullable().optional(),
   max_download_duration_secs: z.number().nullable().optional(),
@@ -49,7 +52,7 @@ export const PlatformConfigSchema = z.object({
   ),
   download_retry_policy: jsonTextField(
     'download_retry_policy',
-    DownloadRetryPolicyObjectSchema,
+    DownloadRetryPolicyReadSchema,
   ),
   /** The platform's route; absent on a write keeps the stored one. */
   proxy_route: ProxyRouteSchema.optional(),
@@ -74,6 +77,7 @@ export type PlatformConfig = z.infer<typeof PlatformConfigSchema>;
 
 // Schema for Forms (expects objects, not JSON strings)
 export const PlatformConfigFormSchema = PlatformConfigSchema.extend({
+  extractor: ExtractorSelectionSchema.nullable().optional(),
   credential_selection: CredentialSelectionSchema.optional(),
   stream_selection_config:
     StreamSelectionConfigObjectSchema.nullable().optional(),

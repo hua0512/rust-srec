@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import { DanmuStatisticsObjectSchema, jsonTextField } from './common';
-import { ExtractorSelectionSchema } from './platform-configs';
+import {
+  ExtractorSelectionSchema,
+  extractorSelectionRead,
+} from './platform-configs';
 import { DagPipelineDefinitionSchema } from './pipeline';
 import { ProxyRouteSchema } from './proxies';
 
@@ -29,7 +32,7 @@ export const GlobalConfigSchema = z.object({
   offline_check_delay_ms: z.number(),
   offline_check_count: z.number(),
   default_download_engine: z.string(),
-  default_extractor: ExtractorSelectionSchema.nullable().optional(),
+  default_extractor: extractorSelectionRead({ trim: true }),
   max_concurrent_cpu_jobs: z.number(),
   max_concurrent_io_jobs: z.number(),
   job_history_retention_days: z.number().int().min(0),
@@ -45,49 +48,17 @@ export const GlobalConfigSchema = z.object({
   queue_freshness_threshold_ms: z.number(),
   gpu_health_probe_interval_secs: z.number(),
   stream_proxy_allow_private_targets: z.boolean().default(false),
-  // Handle pipeline - backend sends JSON string, need to parse it
-  pipeline: z
-    .string()
-    .nullable()
-    .optional()
-    .transform(
-      (val): z.infer<typeof DagPipelineDefinitionSchema> | null | undefined => {
-        if (!val) return null;
-        try {
-          return JSON.parse(val);
-        } catch {
-          return null;
-        }
-      },
-    ),
-  session_complete_pipeline: z
-    .string()
-    .nullable()
-    .optional()
-    .transform(
-      (val): z.infer<typeof DagPipelineDefinitionSchema> | null | undefined => {
-        if (!val) return null;
-        try {
-          return JSON.parse(val);
-        } catch {
-          return null;
-        }
-      },
-    ),
-  paired_segment_pipeline: z
-    .string()
-    .nullable()
-    .optional()
-    .transform(
-      (val): z.infer<typeof DagPipelineDefinitionSchema> | null | undefined => {
-        if (!val) return null;
-        try {
-          return JSON.parse(val);
-        } catch {
-          return null;
-        }
-      },
-    ),
+  // JSON text the global PATCH stores verbatim and the backend ignores when it cannot read it.
+  // Saving the form never deletes a degraded value, because that PATCH treats `null` as omitted.
+  pipeline: jsonTextField('pipeline', DagPipelineDefinitionSchema),
+  session_complete_pipeline: jsonTextField(
+    'session_complete_pipeline',
+    DagPipelineDefinitionSchema,
+  ),
+  paired_segment_pipeline: jsonTextField(
+    'paired_segment_pipeline',
+    DagPipelineDefinitionSchema,
+  ),
 });
 
 // Schema for form validation - pipeline is already parsed as object
@@ -169,10 +140,10 @@ export const GlobalConfigWriteSchema = z.object({
   gpu_health_probe_interval_secs: z.number().int().min(1),
   stream_proxy_allow_private_targets: z.boolean().optional(),
 
-  // Accept any object - will be stringified by config.ts when sending to backend
-  pipeline: z.any().nullable().optional(),
-  session_complete_pipeline: z.any().nullable().optional(),
-  paired_segment_pipeline: z.any().nullable().optional(),
+  // Stringified by config.ts when sending to the backend.
+  pipeline: DagPipelineDefinitionSchema.nullable().optional(),
+  session_complete_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
+  paired_segment_pipeline: DagPipelineDefinitionSchema.nullable().optional(),
 });
 
 // Filesystem capacity. Only `disk:` components carry it; the backend omits
@@ -260,7 +231,12 @@ export type MediaOutputSummary = z.infer<typeof MediaOutputSummarySchema>;
 // NOTE: This ExtractMetadataResponse is for URL extraction, NOT media file metadata
 export const ExtractMetadataResponseSchema = z.object({
   platform: z.string().nullable().optional(),
-  valid_platform_configs: z.array(z.any()), // PlatformConfigSchema array
+  // Only each platform config's identity: the URL check reads none of it, and the full
+  // `PlatformConfigSchema` would fail that check on a row the backend still serves, such as one
+  // with an unknown extractor.
+  valid_platform_configs: z.array(
+    z.object({ id: z.string(), name: z.string() }),
+  ),
   channel_id: z.string().nullable().optional(),
 });
 export type ExtractMetadataResponse = z.infer<

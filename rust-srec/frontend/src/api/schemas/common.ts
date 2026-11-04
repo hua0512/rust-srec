@@ -80,8 +80,10 @@ export type Priority = z.infer<typeof PrioritySchema>;
 
 // --- Shared Config Objects ---
 
+// Mirrors `StreamSelectionConfig`: only `preferred_formats` is an `Option`, which the backend
+// writes as `null` when unset. The other fields reject `null` there too.
 export const StreamSelectionConfigObjectSchema = z.object({
-  preferred_formats: z.array(z.string()).optional(),
+  preferred_formats: z.array(z.string()).nullish(),
   preferred_media_formats: z.array(z.string()).optional(),
   preferred_qualities: z.array(z.string()).optional(),
   preferred_cdns: z.array(z.string()).optional(),
@@ -127,6 +129,20 @@ export const DownloadRetryPolicyObjectSchema = z.object({
   max_delay_ms: z.number(),
   backoff_multiplier: z.number(),
   use_jitter: z.boolean(),
+});
+
+/**
+ * A stored retry policy as the backend reads it: `RetryPolicy` fills every absent field with its
+ * serde default, so a partial object is a complete policy. The defaults are copied here so the
+ * form shows the values the backend applies, and the output type stays the complete policy the
+ * forms expect.
+ */
+export const DownloadRetryPolicyReadSchema = z.object({
+  max_retries: z.number().default(3),
+  initial_delay_ms: z.number().default(1000),
+  max_delay_ms: z.number().default(30000),
+  backoff_multiplier: z.number().default(2),
+  use_jitter: z.boolean().default(true),
 });
 
 // --- Pipeline Step Schemas ---

@@ -10,6 +10,7 @@ import {
   FfmpegConfigSchema,
   StreamlinkConfigSchema,
   MesioConfigSchema,
+  type EngineConfig,
 } from '../../api/schemas';
 import { z } from 'zod';
 
@@ -26,29 +27,36 @@ function normalizeConfig(engineType: string, config: Record<string, unknown>) {
   }
 }
 
-// The backend may send `config` as a JSON string or as an already-decoded object.
-function parseEngine(json: unknown) {
-  const raw = json as any;
+// The backend row: `engine_type` and `config` are stored as text, and `config` may also arrive
+// already decoded.
+const EngineRowSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  engine_type: z.string(),
+  config: z.unknown(),
+});
+
+function parseEngine(json: unknown): EngineConfig {
+  const row = EngineRowSchema.parse(json);
   const config =
-    typeof raw.config === 'string' ? JSON.parse(raw.config) : raw.config;
-  return EngineConfigSchema.parse({ ...raw, config });
+    typeof row.config === 'string' ? JSON.parse(row.config) : row.config;
+  return EngineConfigSchema.parse({ ...row, config });
 }
 
 export const listEngines = createServerFn({ method: 'GET' }).handler(
   async () => {
     const json = await fetchBackend('/engines');
-    const rawEngines = z.array(z.any()).parse(json);
+    const rows = z.array(EngineRowSchema).parse(json);
 
-    return rawEngines.map((raw: any) => {
+    return rows.flatMap((row): EngineConfig[] => {
       try {
-        return parseEngine(raw);
+        return [parseEngine(row)];
       } catch (e) {
         console.error('Failed to parse engine config:', e);
-        // Return with default config if parsing fails
-        return {
-          ...raw,
-          config: {},
-        };
+        // Keep the engine listed with default settings when only its config is unreadable. A
+        // row of a type this UI does not know is left out; the backend only writes the three.
+        const fallback = EngineConfigSchema.safeParse({ ...row, config: {} });
+        return fallback.success ? [fallback.data] : [];
       }
     });
   },
