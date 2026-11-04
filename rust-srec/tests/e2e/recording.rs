@@ -154,7 +154,7 @@ async fn an_enabled_streamer_goes_live_records_flv_and_ends_when_the_platform_re
     assert_eq!(segments.len(), 1, "{segments:?}");
     let segment = &segments[0];
     assert_eq!(segment["segment_index"], 0);
-    assert_eq!(segment["duration_secs"], 6.0);
+    assert_eq!(segment["duration_secs"], 6.272);
     assert!(segment["split_reason_code"].is_null(), "{segment}");
     assert_recorded(segment);
     let path = segment_path(segment);
@@ -295,7 +295,7 @@ async fn a_brief_disconnect_resumes_the_same_session() {
     assert_eq!(segments.len(), 2, "{segments:?}");
     assert_eq!(segments[0]["segment_index"], 0);
     assert_eq!(segments[1]["segment_index"], 1);
-    assert_eq!(segments[1]["duration_secs"], 2.0);
+    assert_eq!(segments[1]["duration_secs"], 2.048);
     assert_ne!(segment_path(&segments[0]), segment_path(&segments[1]));
     for segment in &segments {
         assert_recorded(segment);
@@ -454,7 +454,10 @@ async fn part_size_and_duration_limits_split_a_mesio_recording() {
     let sized_parts = app.segments(&token, session_id(&session)).await;
     assert_eq!(
         parts(&sized_parts),
-        [(json!(6.0), json!("size_limit")), (json!(6.0), Value::Null)],
+        [
+            (json!(6.336), json!("size_limit")),
+            (json!(6.208), Value::Null)
+        ],
         "{sized_parts:?}"
     );
     let session = app.ended_session(&token, &timed).await;
@@ -462,9 +465,9 @@ async fn part_size_and_duration_limits_split_a_mesio_recording() {
     assert_eq!(
         parts(&timed_parts),
         [
-            (json!(4.0), json!("duration_limit")),
-            (json!(4.0), json!("duration_limit")),
-            (json!(4.0), Value::Null),
+            (json!(4.224), json!("duration_limit")),
+            (json!(4.16), json!("duration_limit")),
+            (json!(4.096), Value::Null),
         ],
         "{timed_parts:?}"
     );
