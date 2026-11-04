@@ -524,10 +524,13 @@ fn is_hls_content_type(headers: &reqwest::header::HeaderMap) -> bool {
 ///
 /// The relay answers on the API origin with whatever the target returns, so
 /// an HTML, SVG or other XML page served under its own type would run as a
-/// page on that origin. Only media, image, HLS, JSON and plain-text types are
-/// kept, as the bare parsed type: forwarding the raw value would let
-/// `video/mp4;,text/html` through, since browsers use the last type in a comma
-/// list. Anything else, a missing type included, becomes an opaque download.
+/// page on that origin. Only media, image, HLS and JSON types are kept, as the
+/// bare parsed type: forwarding the raw value would let `video/mp4;,text/html`
+/// through, since browsers use the last type in a comma list. Anything else, a
+/// missing type included, becomes an opaque download. That covers `text/plain`
+/// too: the desktop app loads avatars from here cross-origin, and Chromium
+/// blocks a cross-origin `nosniff` image labelled `text/plain`, while HLS
+/// manifests are recognised by their content, not their type.
 fn relayed_content_type(value: Option<&HeaderValue>) -> HeaderValue {
     let opaque = HeaderValue::from_static("application/octet-stream");
     let Some(raw) = value.and_then(|value| value.to_str().ok()) else {
@@ -553,10 +556,7 @@ fn relayed_content_type(value: Option<&HeaderValue>) -> HeaderValue {
     let allowed = matches!(top, "video" | "audio" | "image")
         || matches!(
             media_type.as_str(),
-            "application/vnd.apple.mpegurl"
-                | "application/x-mpegurl"
-                | "application/json"
-                | "text/plain"
+            "application/vnd.apple.mpegurl" | "application/x-mpegurl" | "application/json"
         );
     if plain_subtype && allowed {
         HeaderValue::from_str(&media_type).unwrap_or(opaque)
@@ -953,8 +953,10 @@ async fn relay_upstream(
         axum::http::header::CONTENT_TYPE,
         relayed_content_type(upstream.headers().get(reqwest::header::CONTENT_TYPE)),
     );
-    // Even a kept type must never be sniffed into a page, and a page opened
-    // directly gets no scripts and an opaque origin.
+    // Even a kept type must never be sniffed into a page, and anything opened
+    // directly gets no scripts and an opaque origin. Players and images never
+    // open these URLs as a page; a media URL opened in a tab does not play,
+    // because its sandboxed origin cannot refetch it.
     out_headers.insert(
         axum::http::header::X_CONTENT_TYPE_OPTIONS,
         HeaderValue::from_static("nosniff"),

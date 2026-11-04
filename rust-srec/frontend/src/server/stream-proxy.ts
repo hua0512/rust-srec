@@ -103,8 +103,9 @@ export async function handleStreamProxyRequest(
       'Cache-Control': 'private, no-store',
       'Referrer-Policy': 'no-referrer',
       'X-Content-Type-Options': 'nosniff',
-      // Scripts off and an opaque origin, while a video opened directly in a
-      // tab can still load itself.
+      // Anything opened directly gets no scripts and an opaque origin. Players
+      // and images never open these URLs as a page; a media URL opened in a
+      // tab does not play, since its sandboxed origin is refused above.
       'Content-Security-Policy': 'sandbox',
       'Content-Type': safeContentType(response.headers.get('Content-Type')),
     });
