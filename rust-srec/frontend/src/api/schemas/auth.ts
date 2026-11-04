@@ -1,9 +1,11 @@
 import { z } from 'zod';
+import { msg } from '@lingui/core/macro';
+import { zodError } from '@/lib/zod-i18n';
 
 // --- Auth Schemas ---
 export const LoginRequestSchema = z.object({
-  username: z.string().min(1, 'Username is required'),
-  password: z.string().min(1, 'Password is required'),
+  username: z.string().min(1, zodError(msg`Username is required`)),
+  password: z.string().min(1, zodError(msg`Password is required`)),
   device_info: z.string().optional(),
 });
 
@@ -19,11 +21,17 @@ export const LoginResponseSchema = z.object({
 
 export const ChangePasswordRequestSchema = z
   .object({
-    current_password: z.string().min(1, 'Current password is required'),
-    new_password: z.string().min(8, 'Password must be at least 8 characters'),
-    confirm_password: z.string().min(1, 'Confirm password is required'),
+    current_password: z
+      .string()
+      .min(1, zodError(msg`Current password is required`)),
+    new_password: z
+      .string()
+      .min(8, zodError(msg`Password must be at least 8 characters`)),
+    confirm_password: z
+      .string()
+      .min(1, zodError(msg`Confirm password is required`)),
   })
   .refine((data) => data.new_password === data.confirm_password, {
-    message: "Passwords don't match",
+    ...zodError(msg`Passwords don't match`),
     path: ['confirm_password'],
   });

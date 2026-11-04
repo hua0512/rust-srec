@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { msg } from '@lingui/core/macro';
+import { zodError, zodText } from '@/lib/zod-i18n';
 
 /*
  * Engine settings are saved as the user set them. A field left unset is left out, so the backend
@@ -86,7 +88,7 @@ const disableableIntSetting = () =>
       return typeof val === 'number' ? val : Number(val);
     })
     .refine((val) => val == null || (Number.isInteger(val) && val >= 0), {
-      message: 'Must be a whole number of 0 or more',
+      ...zodError(msg`Must be a whole number of 0 or more`),
     })
     .optional();
 
@@ -446,7 +448,7 @@ const MesioDashFieldsSchema = z.object({
   audio_quality: optionalSetting(MesioDashAudioQualitySchema),
   audio_language: textSetting().refine(
     (val) => val === undefined || LANGUAGE_TAG.test(val),
-    { message: "Use a language tag such as 'en' or 'pt-BR'" },
+    zodError(msg`Use a language tag such as 'en' or 'pt-BR'`),
   ),
   include_video: boolSetting(),
   include_audio: boolSetting(),
@@ -468,7 +470,7 @@ function requireATrack(
   if (value.include_video === false && value.include_audio === false) {
     ctx.addIssue({
       code: 'custom',
-      message: 'Record at least one of video and audio',
+      message: zodText(msg`Record at least one of video and audio`),
       path: ['include_audio'],
     });
   }

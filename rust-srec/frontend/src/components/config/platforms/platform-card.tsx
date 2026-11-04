@@ -65,7 +65,9 @@ export function PlatformCard({ platform, onEdit }: PlatformCardProps) {
             {platform.record_danmu && (
               <div className="flex items-center gap-1 text-green-600 dark:text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded-full border border-green-500/10">
                 <Tv className="w-3 h-3" />
-                <span>Danmu</span>
+                <span>
+                  <Trans>Danmu</Trans>
+                </span>
               </div>
             )}
             {/* Only a selection that names accounts; inherit/none sign in anonymously. */}
@@ -73,7 +75,9 @@ export function PlatformCard({ platform, onEdit }: PlatformCardProps) {
               platform.credential_selection?.mode === 'pool') && (
               <div className="flex items-center gap-1 text-orange-600 dark:text-orange-400 bg-orange-500/10 px-1.5 py-0.5 rounded-full border border-orange-500/10">
                 <Cookie className="w-3 h-3" />
-                <span>Accounts</span>
+                <span>
+                  <Trans context="platform badge">Accounts</Trans>
+                </span>
               </div>
             )}
           </>

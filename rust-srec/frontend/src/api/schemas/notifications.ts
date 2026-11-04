@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { msg } from '@lingui/core/macro';
+import { zodError, zodText } from '@/lib/zod-i18n';
 
 import { TimestampMsSchema } from './pipeline';
 
@@ -54,7 +56,9 @@ export const EmailSettingsSchema = z
     ctx.addIssue({
       code: 'custom',
       path: [hasUsername ? 'password' : 'username'],
-      message: 'Set both a username and a password, or leave both empty',
+      message: zodText(
+        msg`Set both a username and a password, or leave both empty`,
+      ),
     });
   });
 
@@ -170,31 +174,31 @@ export type UpdateSubscriptionsRequest = z.infer<
 
 // Form-specific schemas for each channel type (used for runtime validation)
 export const DiscordChannelFormSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
+  name: z.string().min(1, zodError(msg`Name is required`)),
   channel_type: z.literal('Discord'),
   settings: DiscordSettingsSchema,
 });
 
 export const EmailChannelFormSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
+  name: z.string().min(1, zodError(msg`Name is required`)),
   channel_type: z.literal('Email'),
   settings: EmailSettingsSchema,
 });
 
 export const GotifyChannelFormSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
+  name: z.string().min(1, zodError(msg`Name is required`)),
   channel_type: z.literal('Gotify'),
   settings: GotifySettingsSchema,
 });
 
 export const WebhookChannelFormSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
+  name: z.string().min(1, zodError(msg`Name is required`)),
   channel_type: z.literal('Webhook'),
   settings: WebhookSettingsSchema,
 });
 
 export const TelegramChannelFormSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
+  name: z.string().min(1, zodError(msg`Name is required`)),
   channel_type: z.literal('Telegram'),
   settings: TelegramSettingsSchema,
 });

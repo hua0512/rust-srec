@@ -47,6 +47,7 @@ import {
 } from '@/components/ui/chart';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
+import { STAT_GRID } from '@/lib/grid';
 import { formatDate } from '@/lib/datetime';
 
 // ---------------------------------------------------------------------------
@@ -78,24 +79,29 @@ const CURSOR_STYLE = {
 // Ranked counts come from a bounded heavy-hitter structure: an entry that was
 // evicted and readmitted carries an overestimate bound in `error`, so its count
 // is shown as approximate rather than implying it is exact.
-const CHART_TOOLTIP = (
-  <ChartTooltipContent
-    indicator="dot"
-    className="max-w-[min(20rem,calc(100vw-2rem))] [overflow-wrap:anywhere]"
-    formatter={(value, _name, item) => {
-      const formatted = Number(value).toLocaleString();
-      const error = (item as { payload?: { error?: number } })?.payload?.error;
-      return error && error > 0 ? `≈${formatted}` : formatted;
-    }}
-  />
-);
+function rankTooltip(locale: string) {
+  return (
+    <ChartTooltipContent
+      indicator="dot"
+      className="max-w-[min(20rem,calc(100vw-2rem))] [overflow-wrap:anywhere]"
+      formatter={(value, _name, item) => {
+        const formatted = Number(value).toLocaleString(locale);
+        const error = (item as { payload?: { error?: number } })?.payload
+          ?.error;
+        return error && error > 0 ? `≈${formatted}` : formatted;
+      }}
+    />
+  );
+}
 
-const TIMELINE_TOOLTIP = (
-  <ChartTooltipContent
-    indicator="line"
-    formatter={(value) => Number(value).toLocaleString()}
-  />
-);
+function timelineTooltip(locale: string) {
+  return (
+    <ChartTooltipContent
+      indicator="line"
+      formatter={(value) => Number(value).toLocaleString(locale)}
+    />
+  );
+}
 
 /**
  * Insert zero-count buckets for gaps in the timeline.
@@ -202,7 +208,7 @@ export function DanmuStatsPanel({
     return (
       <PanelShell>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className={cn(STAT_GRID, 'gap-3')}>
             <Skeleton className="h-20 rounded-xl" />
             <Skeleton className="h-20 rounded-xl" />
             <Skeleton className="h-20 rounded-xl" />
@@ -254,6 +260,11 @@ export function DanmuStatsPanel({
 
 function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
   const { i18n } = useLingui();
+  const locale = i18n.locale;
+  const timelineTooltipContent = useMemo(
+    () => timelineTooltip(locale),
+    [locale],
+  );
   const prefersReducedMotion = usePrefersReducedMotion();
   const shouldAnimate = !prefersReducedMotion;
 
@@ -316,10 +327,10 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
   // needs simple identifiers in the template.
   const splitHint = useMemo(() => {
     if (stats.gift_count == null || stats.gift_count <= 0) return undefined;
-    const chat = (stats.chat_count ?? 0).toLocaleString();
-    const gift = stats.gift_count.toLocaleString();
+    const chat = (stats.chat_count ?? 0).toLocaleString(locale);
+    const gift = stats.gift_count.toLocaleString(locale);
     return i18n._(msg`${chat} chat · ${gift} gift`);
-  }, [i18n, stats]);
+  }, [i18n, locale, stats]);
 
   const [showAllTalkers, setShowAllTalkers] = useState(false);
   const toggleShowAllTalkers = useCallback(
@@ -439,25 +450,25 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
           {/* ── Metric grid ─────────────────────────────────────── */}
           <motion.div
             variants={containerVariants}
-            className="grid grid-cols-2 md:grid-cols-4 gap-3"
+            className={cn(STAT_GRID, 'gap-3')}
           >
             <MetricBlock
               icon={<MessageCircleMore className="h-4 w-4 text-blue-500" />}
               label={i18n._(msg`Total Danmu`)}
-              value={stats.total_danmus.toLocaleString()}
+              value={stats.total_danmus.toLocaleString(locale)}
               hint={splitHint}
               accent="bg-blue-500/10"
             />
             <MetricBlock
               icon={<Activity className="h-4 w-4 text-orange-500" />}
               label={i18n._(msg`Peak / min`)}
-              value={peakPerMinute.toLocaleString()}
+              value={peakPerMinute.toLocaleString(locale)}
               accent="bg-orange-500/10"
             />
             <MetricBlock
               icon={<Users className="h-4 w-4 text-purple-500" />}
               label={i18n._(msg`Avg / min`)}
-              value={averagePerMinute.toLocaleString()}
+              value={averagePerMinute.toLocaleString(locale)}
               accent="bg-purple-500/10"
             />
             <MetricBlock
@@ -465,7 +476,7 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
               label={i18n._(msg`Unique Chatters`)}
               value={
                 stats.unique_talkers != null
-                  ? stats.unique_talkers.toLocaleString()
+                  ? stats.unique_talkers.toLocaleString(locale)
                   : '—'
               }
               accent="bg-emerald-500/10"
@@ -510,7 +521,7 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
                 />
                 <ChartTooltip
                   cursor={CURSOR_STYLE}
-                  content={TIMELINE_TOOLTIP}
+                  content={timelineTooltipContent}
                 />
                 {averagePerMinute > 0 && (
                   <ReferenceLine
@@ -680,6 +691,9 @@ const RankBarChart = memo(function RankBarChart({
   footer,
   maxHeight,
 }: RankBarChartProps) {
+  const { i18n } = useLingui();
+  const locale = i18n.locale;
+  const tooltipContent = useMemo(() => rankTooltip(locale), [locale]);
   const fillVar = `var(--color-${dataKey})`;
   const height = data.length * rowHeight + 16;
   // One bar per row means an unbounded list becomes an unbounded SVG; the
@@ -740,7 +754,7 @@ const RankBarChart = memo(function RankBarChart({
                 tick={renderCategoryTick}
               />
               <XAxis type="number" hide />
-              <ChartTooltip cursor={false} content={CHART_TOOLTIP} />
+              <ChartTooltip cursor={false} content={tooltipContent} />
               <Bar
                 dataKey={dataKey}
                 fill={fillVar}

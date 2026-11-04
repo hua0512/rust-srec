@@ -2,6 +2,9 @@
 import { Slot } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { PanelLeftIcon } from 'lucide-react';
+import { msg } from '@lingui/core/macro';
+import { useLingui } from '@lingui/react';
+import { Trans } from '@lingui/react/macro';
 import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
@@ -256,6 +259,7 @@ function SidebarMobile({
   ...props
 }: React.ComponentProps<'div'> & { side: 'left' | 'right' }) {
   const { openMobile, setOpenMobile } = useSidebar();
+  const { i18n } = useLingui();
   const panelRef = React.useRef<HTMLDivElement>(null);
 
   // Render the drawer ahead of the first tap while the page is idle.
@@ -350,7 +354,7 @@ function SidebarMobile({
         ref={panelRef}
         role="dialog"
         aria-modal={openMobile}
-        aria-label="Sidebar"
+        aria-label={i18n._(msg`Sidebar`)}
         tabIndex={-1}
         data-sidebar="sidebar"
         data-slot="sidebar"
@@ -402,22 +406,25 @@ function SidebarTrigger({
       {...props}
     >
       <PanelLeftIcon />
-      <span className="sr-only">Toggle Sidebar</span>
+      <span className="sr-only">
+        <Trans>Toggle Sidebar</Trans>
+      </span>
     </Button>
   );
 }
 
 function SidebarRail({ className, ...props }: React.ComponentProps<'button'>) {
   const { toggleSidebar } = useSidebar();
+  const { i18n } = useLingui();
 
   return (
     <button
       data-sidebar="rail"
       data-slot="sidebar-rail"
-      aria-label="Toggle Sidebar"
+      aria-label={i18n._(msg`Toggle Sidebar`)}
       tabIndex={-1}
       onClick={toggleSidebar}
-      title="Toggle Sidebar"
+      title={i18n._(msg`Toggle Sidebar`)}
       className={cn(
         'hover:after:bg-sidebar-border absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] sm:flex',
         'in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize',

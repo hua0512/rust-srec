@@ -5,6 +5,7 @@ import {
   createRootRouteWithContext,
 } from '@tanstack/react-router';
 import { useLingui } from '@lingui/react';
+import { Trans } from '@lingui/react/macro';
 import { type I18n } from '@lingui/core';
 import { useEffect, useState } from 'react';
 
@@ -188,7 +189,9 @@ function AppLoadingScreen() {
 
         <div className="text-center">
           <div className="text-2xl font-semibold tracking-tight">Rust-Srec</div>
-          <div className="mt-1 text-sm text-slate-300">Starting up...</div>
+          <div className="mt-1 text-sm text-slate-300">
+            <Trans>Starting up...</Trans>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">

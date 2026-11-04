@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { msg } from '@lingui/core/macro';
+import { zodError } from '@/lib/zod-i18n';
 import {
   CredentialSelectionSchema,
   UnavailableReasonSchema,
@@ -257,8 +259,8 @@ export type Streamer = z.infer<typeof StreamerSchema>;
 
 // `platform_config_id` is absent by design: the backend derives it from `url`.
 export const CreateStreamerSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  url: z.url('Invalid URL'),
+  name: z.string().min(1, zodError(msg`Name is required`)),
+  url: z.url(zodError(msg`Invalid URL`)),
   template_id: z.string().nullable().optional(),
   priority: PrioritySchema.optional(),
   enabled: z.boolean(),
@@ -292,8 +294,8 @@ export const BatchStreamerRequestSchema = withUniqueIds(
 
 // Form schema without preprocessors for proper type inference with react-hook-form
 export const StreamerFormSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
-  url: z.url('Invalid URL'),
+  name: z.string().min(1, zodError(msg`Name is required`)),
+  url: z.url(zodError(msg`Invalid URL`)),
   template_id: z.string().nullable().optional(),
   priority: PrioritySchema.optional(),
   enabled: z.boolean(),
