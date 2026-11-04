@@ -2,7 +2,7 @@ import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
-import { memo, useEffect, useRef } from 'react';
+import { memo, useEffect } from 'react';
 import { useWatch, useFormContext } from 'react-hook-form';
 import {
   FormField,
@@ -229,18 +229,15 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
     }
   }, [faststartSupported, prefix, setValue]);
 
-  // Reset preset when codec family changes to avoid incompatible preset values
-  const prevCodecFamily = useRef(codecFamily);
-  useEffect(() => {
-    if (prevCodecFamily.current !== codecFamily) {
-      setValue(`${prefix}preset` as any, 'medium');
-      prevCodecFamily.current = codecFamily;
-    }
-  }, [codecFamily, prefix, setValue]);
-
-  // Handle video codec change: auto-set hwaccel to cuda for NVENC codecs
+  // Runs only when the user picks a codec. Resetting the preset from an
+  // effect instead also fired when an editor loaded a saved config into an
+  // empty form, replacing a stored NVENC preset with 'medium'.
   const handleVideoCodecChange = (newCodec: string) => {
     const family = getCodecFamily(newCodec);
+    if (family !== codecFamily) {
+      // Presets differ per codec family; drop one the new family may reject.
+      setValue(`${prefix}preset` as any, 'medium');
+    }
     if (family !== 'software' && hwaccel !== 'cuda') {
       setValue(`${prefix}hwaccel` as any, 'cuda');
     }
@@ -251,6 +248,7 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
   const handleHwaccelChange = (newHwaccel: string) => {
     if (newHwaccel !== 'cuda' && isNvenc) {
       setValue(`${prefix}video_codec` as any, 'copy');
+      setValue(`${prefix}preset` as any, 'medium');
     }
     return newHwaccel;
   };
@@ -341,6 +339,9 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                       </FormLabel>
                       <Select
                         onValueChange={(v) => {
+                          // Radix can emit '' while a reset mounts the
+                          // options (see editor/preset-meta-form.tsx).
+                          if (!v) return;
                           handleVideoCodecChange(v);
                           field.onChange(v);
                         }}
