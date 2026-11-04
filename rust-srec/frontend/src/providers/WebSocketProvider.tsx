@@ -6,7 +6,7 @@ import {
   type QueryClient,
 } from '@tanstack/react-query';
 import { fromBinary, toBinary, create } from '@bufbuild/protobuf';
-import { sessionQueryOptions } from '@/api/session';
+import { sessionPollInterval, sessionQueryOptions } from '@/api/session';
 import { useDownloadStore, type DownloadMetrics } from '@/store/downloads';
 import { useUploadStore } from '@/store/uploads';
 import type {
@@ -142,8 +142,10 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     // socket. A token is only wanted again when a dropped socket has to be
     // reopened; this poll is what supplies a usable one for that, and a
     // renewal that lands while a reconnect is waiting out its backoff is taken
-    // up straight away.
-    refetchInterval: 60_000,
+    // up straight away. It is timed to land inside the renewal window and
+    // keeps running in a hidden tab, whose sockets expire all the same.
+    refetchInterval: (query) => sessionPollInterval(query.state.data),
+    refetchIntervalInBackground: true,
   });
   const accessToken = sessionData?.token?.access_token;
 
@@ -571,6 +573,12 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     },
     onStatusChange: setConnectionStatus,
     onDisconnect: handleDisconnect,
+    // A drop at token expiry would otherwise retry with the expired token
+    // until the next scheduled check. A check inside the renewal window
+    // renews the token; a session that is still fresh is not re-fetched.
+    onUnexpectedClose: () => {
+      void queryClient.fetchQuery(sessionQueryOptions).catch(() => {});
+    },
   });
 
   const subscribe = useCallback(

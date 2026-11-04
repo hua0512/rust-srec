@@ -15,6 +15,40 @@ const SESSION_MAX_STALE_TIME_MS = 30_000;
  */
 const TOKEN_RENEWAL_BUFFER_MS = 30_000;
 
+/** Longest wait between background session checks. */
+const SESSION_POLL_MAX_MS = 60_000;
+
+/**
+ * How far into the renewal window a scheduled check lands, so that a timer
+ * firing slightly early still finds the token due for renewal.
+ */
+const SESSION_POLL_RENEWAL_LEAD_MS = 5_000;
+
+/** Shortest wait between checks, for a renewal that did not go through. */
+const SESSION_POLL_MIN_MS = 5_000;
+
+/**
+ * When the session should next be checked so the access token is renewed
+ * before it expires. Sockets are closed by the backend once the token they
+ * were opened with expires, so waiting a fixed interval could let it lapse
+ * and leave a reopened socket with nothing valid to present.
+ */
+export function sessionPollInterval(
+  session: { token: { expires_in: number } } | null | undefined,
+  now = Date.now(),
+): number {
+  const expiry = session?.token.expires_in;
+  if (expiry === undefined || !Number.isFinite(expiry)) {
+    return SESSION_POLL_MAX_MS;
+  }
+  const untilRenewal =
+    expiry - TOKEN_RENEWAL_BUFFER_MS + SESSION_POLL_RENEWAL_LEAD_MS - now;
+  return Math.max(
+    SESSION_POLL_MIN_MS,
+    Math.min(SESSION_POLL_MAX_MS, untilRenewal),
+  );
+}
+
 export const sessionQueryOptions = queryOptions({
   queryKey: ['session'],
   // Only an explicit null means unauthenticated; rejected checks must leave
