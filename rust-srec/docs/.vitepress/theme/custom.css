@@ -128,3 +128,10 @@ html {
     transition: none !important;
   }
 }
+
+/* Diagram boxes take the height computed in theme/index.ts; the renderer's
+   own fullscreen styles keep control of fullscreen views. */
+.mermaid-container:not(:fullscreen):not(.dialog-fullscreen-active) {
+    height: var(--diagram-height, auto);
+    max-height: none;
+}

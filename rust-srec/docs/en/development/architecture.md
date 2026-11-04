@@ -5,40 +5,48 @@ For contributors changing backend services. For the recording process and deploy
 ## High-level topology {#high-level-topology}
 
 ```mermaid
-flowchart TB
+flowchart LR
   subgraph Clients["Clients"]
     FE["Web UI"]
-    EXT["External API clients and automation"]
+    EXT["External API clients<br/>and automation"]
   end
 
-  subgraph Control["HTTP control plane"]
-    API["Axum API<br/>AppState / optional JWT / OpenAPI"]
-  end
+  API["Axum API<br/>AppState / optional JWT / OpenAPI"]
 
   subgraph Runtime["ServiceContainer-managed Tokio runtime"]
-    CFG["ConfigService<br/>StreamerManager"]
-    SCH["Scheduler actors"]
-    MON["StreamMonitor<br/>filters / outbox"]
-    SESS["SessionLifecycle"]
-    DL["DownloadManager<br/>queue / engines"]
-    DM["DanmuService"]
-    PL["PipelineManager<br/>DAG / workers"]
-    NOTI["NotificationService"]
-    OPS["Health / metrics / maintenance"]
+    SVC["Recording services<br/>(event routes below)"]
+    OPS["Health / metrics /<br/>maintenance"]
   end
 
-  subgraph Sources["Streaming platforms"]
-    SRC["Status APIs / media streams / chat WebSockets"]
-  end
+  SRC["Streaming platforms<br/>status APIs / media streams /<br/>chat WebSockets"]
 
   subgraph Storage["Persistence"]
-    DB[("SQLite<br/>config / sessions / jobs / notifications")]
+    DB[("SQLite<br/>config / sessions /<br/>jobs / notifications")]
     FS["Filesystem<br/>recordings / danmu / logs"]
   end
 
   FE -->|"HTTP / WebSocket"| API
   EXT -->|"HTTP / WebSocket"| API
-  API -->|"service and repository handles"| Runtime
+  API -->|"service and<br/>repository handles"| SVC
+  SRC -->|"status, media<br/>and chat data"| SVC
+  SVC <--> DB
+  SVC --> FS
+  OPS --> DB
+  OPS --> FS
+```
+
+Inside the runtime, services pass events along these routes:
+
+```mermaid
+flowchart TB
+  CFG["ConfigService<br/>StreamerManager"]
+  SCH["Scheduler actors"]
+  MON["StreamMonitor<br/>filters / outbox"]
+  SESS["SessionLifecycle"]
+  DL["DownloadManager<br/>queue / engines"]
+  DM["DanmuService"]
+  PL["PipelineManager<br/>DAG / workers"]
+  NOTI["NotificationService"]
 
   CFG -->|"config events"| SCH
   SCH -->|"scheduled checks"| MON
@@ -56,17 +64,6 @@ flowchart TB
   DL -.->|"download events"| NOTI
   SESS -.->|"session events"| NOTI
   PL -.->|"job events"| NOTI
-
-  SRC -->|"status data"| MON
-  SRC -->|"media data"| DL
-  SRC -->|"chat data"| DM
-
-  DM --> FS
-  DL --> FS
-  PL --> FS
-  Runtime <--> DB
-  OPS --> DB
-  OPS --> FS
 ```
 
 Arrows between runtime services show logical event routes. `ServiceContainer` implements that

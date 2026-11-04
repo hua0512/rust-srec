@@ -5,40 +5,48 @@
 ## 高层拓扑 {#高层拓扑}
 
 ```mermaid
-flowchart TB
+flowchart LR
   subgraph Clients["客户端"]
     FE["Web UI"]
-    EXT["外部 API 客户端与自动化"]
+    EXT["外部 API 客户端<br/>与自动化"]
   end
 
-  subgraph Control["HTTP 控制面"]
-    API["Axum API<br/>AppState / 可选 JWT / OpenAPI"]
-  end
+  API["Axum API<br/>AppState / 可选 JWT / OpenAPI"]
 
   subgraph Runtime["由 ServiceContainer 管理的 Tokio 运行时"]
-    CFG["ConfigService<br/>StreamerManager"]
-    SCH["Scheduler Actor"]
-    MON["StreamMonitor<br/>过滤 / Outbox"]
-    SESS["SessionLifecycle"]
-    DL["DownloadManager<br/>队列 / 引擎"]
-    DM["DanmuService"]
-    PL["PipelineManager<br/>DAG / Worker"]
-    NOTI["NotificationService"]
-    OPS["健康检查 / 指标 / 维护"]
+    SVC["录制服务<br/>（事件路径见下图）"]
+    OPS["健康检查 / 指标 /<br/>维护"]
   end
 
-  subgraph Sources["直播平台"]
-    SRC["状态 API / 媒体流 / 聊天 WebSocket"]
-  end
+  SRC["直播平台<br/>状态 API / 媒体流 /<br/>聊天 WebSocket"]
 
   subgraph Storage["持久化"]
-    DB[("SQLite<br/>配置 / 会话 / 作业 / 通知")]
+    DB[("SQLite<br/>配置 / 会话 /<br/>作业 / 通知")]
     FS["文件系统<br/>录制 / 弹幕 / 日志"]
   end
 
   FE -->|"HTTP / WebSocket"| API
   EXT -->|"HTTP / WebSocket"| API
-  API -->|"服务与仓储句柄"| Runtime
+  API -->|"服务与仓储句柄"| SVC
+  SRC -->|"状态、媒体<br/>与聊天数据"| SVC
+  SVC <--> DB
+  SVC --> FS
+  OPS --> DB
+  OPS --> FS
+```
+
+运行时内部，各服务沿以下路径传递事件：
+
+```mermaid
+flowchart TB
+  CFG["ConfigService<br/>StreamerManager"]
+  SCH["Scheduler Actor"]
+  MON["StreamMonitor<br/>过滤 / Outbox"]
+  SESS["SessionLifecycle"]
+  DL["DownloadManager<br/>队列 / 引擎"]
+  DM["DanmuService"]
+  PL["PipelineManager<br/>DAG / Worker"]
+  NOTI["NotificationService"]
 
   CFG -->|"配置事件"| SCH
   SCH -->|"定时探测"| MON
@@ -56,17 +64,6 @@ flowchart TB
   DL -.->|"下载事件"| NOTI
   SESS -.->|"会话事件"| NOTI
   PL -.->|"作业事件"| NOTI
-
-  SRC -->|"状态数据"| MON
-  SRC -->|"媒体数据"| DL
-  SRC -->|"聊天数据"| DM
-
-  DM --> FS
-  DL --> FS
-  PL --> FS
-  Runtime <--> DB
-  OPS --> DB
-  OPS --> FS
 ```
 
 运行时服务之间的箭头表示逻辑事件路径。`ServiceContainer` 通过广播订阅、有界队列和处理
