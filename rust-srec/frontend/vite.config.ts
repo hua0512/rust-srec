@@ -1,6 +1,5 @@
 import { defineConfig, type Plugin } from 'vite';
-import { lingui, linguiTransformerBabelPreset } from '@lingui/vite-plugin';
-import babel from '@rolldown/plugin-babel';
+import { lingui } from '@lingui/vite-plugin';
 import { devtools } from '@tanstack/devtools-vite';
 import { tanstackStart } from '@tanstack/react-start/plugin/vite';
 import tailwindcss from '@tailwindcss/vite';
@@ -40,8 +39,10 @@ export default defineConfig(() => ({
     __THEME_CACHE_ID__: JSON.stringify(computeThemeCacheId()),
   },
   plugins: [
-    lingui(),
     devtools(),
+    // After devtools(), which tags console calls with their source line and
+    // must see the code before macros are rewritten.
+    lingui({ macroTransform: true }),
     previewCacheHeaders(),
     nitro({
       // Ship .br/.gz next to each asset so the server sends them as-is instead
@@ -71,7 +72,6 @@ export default defineConfig(() => ({
       router: { routeFileIgnorePattern: '^__tests__$' },
     }),
     react(),
-    babel({ presets: [linguiTransformerBabelPreset()] }),
     // Limit oxlint to source folders (avoid linting build outputs).
     oxlintPlugin({ path: 'src' }),
   ],

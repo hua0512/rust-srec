@@ -2,8 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { defineConfig, type PluginOption } from 'vite';
-import { lingui, linguiTransformerBabelPreset } from '@lingui/vite-plugin';
-import babel from '@rolldown/plugin-babel';
+import { lingui } from '@lingui/vite-plugin';
 import { devtools } from '@tanstack/devtools-vite';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import tailwindcss from '@tailwindcss/vite';
@@ -53,8 +52,10 @@ export default defineConfig({
   },
   plugins: [
     themePrePaint(),
-    lingui(),
     devtools(),
+    // After devtools(), which tags console calls with their source line and
+    // must see the code before macros are rewritten.
+    lingui({ macroTransform: true }),
     tailwindcss(),
     tanstackRouter({
       target: 'react',
@@ -79,7 +80,6 @@ export default defineConfig({
       ],
     }),
     react(),
-    babel({ presets: [linguiTransformerBabelPreset()] }),
     // Limit oxlint to source folders (avoid linting build outputs).
     oxlintPlugin({ path: 'src' }),
   ],

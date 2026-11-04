@@ -1,11 +1,10 @@
 import path from 'node:path';
 import { defineConfig } from 'vitest/config';
-import { linguiTransformerBabelPreset } from '@lingui/vite-plugin';
-import babel from '@rolldown/plugin-babel';
+import { lingui } from '@lingui/vite-plugin';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  plugins: [react(), babel({ presets: [linguiTransformerBabelPreset()] })],
+  plugins: [react(), lingui({ macroTransform: true })],
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, './src'),
