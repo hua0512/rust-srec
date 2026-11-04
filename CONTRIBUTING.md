@@ -23,7 +23,6 @@ For a larger external contribution (new platform support, pipeline changes, DB m
 Prereqs:
 
 - Rust toolchain pinned in [rust-toolchain.toml](rust-toolchain.toml); the minimum supported version is recorded separately in [Cargo.toml](Cargo.toml)
-- `protoc` for Rust builds involving protobuf generation (CI version: [.github/actions/setup-protoc/action.yml](.github/actions/setup-protoc/action.yml))
 - Git
 
 For the web UI, desktop wrapper, or docs site:
@@ -68,6 +67,8 @@ cargo nextest run --locked --workspace --exclude rust-srec-desktop
 The backend's end-to-end suite starts the real server in-process and drives it over HTTP, without network access: `cargo nextest run --locked -p rust-srec --test e2e`. See the [backend testing rules](rust-srec/AGENTS.md#testing) for which layer a new test belongs in.
 
 Nextest does not run doctests. When examples or the APIs they exercise change, run `cargo test --locked -p <package> --doc`. Exact CI features and platform prerequisites are maintained in [.github/workflows/pr.yml](.github/workflows/pr.yml); Linux CI enables selected TLS fallback features. Follow the Windows feature restriction in [AGENTS.md](AGENTS.md#toolchain-and-command-reference).
+
+Rust code generated from the `.proto` schemas is committed, so builds need no `protoc`. After editing a schema under `rust-srec/proto/` or `crates/platforms/proto/`, regenerate its code with `UPDATE_GENERATED_PROTOS=1 cargo nextest run --locked -p <package> --lib -E 'test(generated_protos)'` (`rust-srec` or `platforms-parser`). Without the variable, the same test fails when the committed code is stale.
 
 ## Frontend (optional)
 

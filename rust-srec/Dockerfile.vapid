@@ -7,10 +7,6 @@ ARG RUST_VERSION=1.95.0
 # =============================================================================
 FROM rust:${RUST_VERSION}-bookworm AS builder
 
-RUN apt-get update && apt-get install -y \
-    protobuf-compiler \
-    && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 
 # Workspace manifests

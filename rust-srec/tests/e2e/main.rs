@@ -12,6 +12,17 @@
 
 mod support;
 
+// `api::proto` is not exported, so the socket tests compile its generated
+// modules here. Not every generated message and accessor is used.
+#[allow(dead_code)]
+#[rustfmt::skip]
+#[path = "../../src/api/proto/download_progress.rs"]
+mod download_progress;
+#[allow(dead_code)]
+#[rustfmt::skip]
+#[path = "../../src/api/proto/log_event.rs"]
+mod log_event;
+
 mod auth;
 mod backup;
 mod config;

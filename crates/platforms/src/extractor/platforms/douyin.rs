@@ -13,6 +13,7 @@ pub use danmu::{DouyinDanmuProtocol, DouyinDanmuProvider, create_douyin_danmu_pr
 pub use signature::generate_xbogus;
 
 // TODO: REXPORT DOUYIN PROTO
-pub mod douyin_proto {
-    include!(concat!(env!("OUT_DIR"), "/douyin.rs"));
-}
+// Generated from `proto/douyin.proto` by `generated_protos_are_current` in
+// the parent module.
+#[rustfmt::skip]
+pub mod douyin_proto;

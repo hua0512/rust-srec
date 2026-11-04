@@ -26,11 +26,6 @@ on:
         description: 'JSON array of binary names to extract and upload, e.g. ["mesio"]'
         required: true
         type: string
-      need_protoc:
-        description: 'Whether to install protobuf compiler'
-        required: false
-        type: boolean
-        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -74,8 +69,6 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           target: ${{ matrix.target }}
-      - uses: ./.github/actions/setup-protoc
-        if: ${{ inputs.need_protoc }}
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: binaries

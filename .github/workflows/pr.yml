@@ -39,7 +39,6 @@ jobs:
         with:
           version: "v0.19.0"
       - uses: ./.github/actions/setup-rust
-      - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-linux-deps
         with:
           packages: pkg-config libssl-dev
@@ -62,7 +61,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-rust
-      - uses: ./.github/actions/setup-protoc
       - uses: ./.github/actions/setup-linux-deps
         with:
           packages: pkg-config libssl-dev
@@ -105,7 +103,6 @@ jobs:
           version: "v0.19.0"
       - uses: ./.github/actions/setup-rust
       - uses: taiki-e/install-action@nextest
-      - uses: ./.github/actions/setup-protoc
       - uses: actions/setup-python@v7
         if: matrix.os == 'ubuntu-latest'
         with:
@@ -182,7 +179,6 @@ jobs:
               - 'rust-srec/tests/**'
               - 'rust-srec/src-tauri/**'
               - '.github/actions/setup-rust/**'
-              - '.github/actions/setup-protoc/**'
               - '.github/actions/setup-linux-deps/**'
               - '.github/workflows/pr.yml'
             frontend:
@@ -202,7 +198,6 @@ jobs:
               - 'rust-toolchain.toml'
               - '.cargo/**'
               - '.github/actions/setup-rust/**'
-              - '.github/actions/setup-protoc/**'
               - '.github/actions/setup-tauri/**'
               - '.github/workflows/pr.yml'
               - '.github/workflows/release-rust-srec.yml'
@@ -273,7 +268,6 @@ jobs:
         with:
           version: "v0.19.0"
       - uses: ./.github/actions/setup-rust
-      - uses: ./.github/actions/setup-protoc
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: pr-desktop-debug
