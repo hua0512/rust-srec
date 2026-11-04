@@ -3,6 +3,7 @@ import {
   latestLogTotal,
   newestLogPageOffset,
   replaceNewestLogPage,
+  visibleLogChunks,
   type JobLogPage,
   type JobLogPages,
 } from './job-log-pages';
@@ -74,5 +75,29 @@ describe('job log pages', () => {
 
   it('has nothing to fold into pages that were never loaded', () => {
     expect(replaceNewestLogPage(undefined, page(0, 3, 3))).toBeUndefined();
+  });
+
+  it('mounts the chunks a scroll window overlaps and keeps the rest as space', () => {
+    const heights = [100, 300, 100, 100, 100];
+
+    // Every chunk is either mounted or counted in a spacer, so the scrolled
+    // content keeps its full height and the rows land where they belong.
+    const cases: [number, number, [number, number, number, number]][] = [
+      [-50, 50, [0, 0, 0, 600]],
+      [150, 450, [1, 2, 100, 200]],
+      // A window starting exactly where a chunk ends leaves that chunk out.
+      [400, 450, [2, 2, 400, 200]],
+      // Scrolled past the end, as after the newest chunk shrank back to its
+      // measured height: the last chunk stays mounted.
+      [900, 1000, [4, 4, 600, 0]],
+    ];
+    for (const [top, bottom, [first, last, before, after]] of cases) {
+      expect(visibleLogChunks(heights, top, bottom)).toEqual({
+        first,
+        last,
+        before,
+        after,
+      });
+    }
   });
 });

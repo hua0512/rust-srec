@@ -78,3 +78,65 @@ export function replaceNewestLogPage(
   pages[lastIndex] = page;
   return { ...data, pages };
 }
+
+/** Rows the log viewer mounts, measures and skips together. */
+export const LOG_CHUNK_SIZE = 50;
+
+/**
+ * The run of chunks that overlaps `[top, bottom)` of the scrolled content,
+ * given each chunk's height in order, and the total heights of the chunks
+ * skipped before and after it. Returns at least one chunk when there are any,
+ * so a range past either end still mounts the chunk nearest to it.
+ */
+export function visibleLogChunks(
+  heights: readonly number[],
+  top: number,
+  bottom: number,
+): { first: number; last: number; before: number; after: number } {
+  let first = -1;
+  let last = -1;
+  let before = 0;
+  let after = 0;
+  let offset = 0;
+  for (let i = 0; i < heights.length; i++) {
+    const end = offset + heights[i];
+    if (first === -1 && end <= top && i < heights.length - 1) {
+      before += heights[i];
+    } else if (first === -1 || offset < bottom) {
+      if (first === -1) first = i;
+      last = i;
+    } else {
+      after += heights[i];
+    }
+    offset = end;
+  }
+  return { first, last, before, after };
+}
+
+function sameLogEntry(a: JobLogEntry | undefined, b: JobLogEntry | undefined) {
+  return (
+    a === b ||
+    (a !== undefined &&
+      b !== undefined &&
+      a.timestamp === b.timestamp &&
+      a.level === b.level &&
+      a.message === b.message)
+  );
+}
+
+/**
+ * Whether rows `start..end` read the same in both lists. A tail read replaces
+ * the newest page with freshly parsed rows, so the rows already on screen
+ * compare by value rather than by reference.
+ */
+export function sameLogRows(
+  prev: readonly JobLogEntry[],
+  next: readonly JobLogEntry[],
+  start: number,
+  end: number,
+): boolean {
+  for (let i = start; i < end; i++) {
+    if (!sameLogEntry(prev[i], next[i])) return false;
+  }
+  return true;
+}
