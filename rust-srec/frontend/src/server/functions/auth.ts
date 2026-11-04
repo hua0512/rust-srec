@@ -11,7 +11,8 @@ import {
   ChangePasswordRequestSchema,
 } from '../../api/schemas/auth';
 import { z } from 'zod';
-import ky from 'ky';
+import ky, { isHTTPError } from 'ky';
+import { BackendApiError } from '../../lib/api-error';
 
 // Dedicated ky instance for auth calls that might not need the bearer token from session (like login)
 // or need to handle session updates manually.
@@ -19,6 +20,34 @@ const authClient = ky.create({
   prefix: BASE_URL,
   timeout: 10000,
 });
+
+/**
+ * ky's HTTPError keeps the request options, so logging one prints the JSON
+ * body: the password on login, the refresh token on logout. Log its status
+ * only. Other errors (network, timeout) carry no body, so their message and
+ * cause are safe and needed to diagnose an unreachable backend.
+ */
+function describeAuthError(error: unknown): string {
+  if (isHTTPError(error)) return `HTTP ${error.response.status}`;
+  if (!(error instanceof Error)) return 'unknown error';
+  const cause = error.cause instanceof Error ? ` (${error.cause.message})` : '';
+  return `${error.name}: ${error.message}${cause}`;
+}
+
+/**
+ * The ky message names the internal backend URL; surface the backend's own
+ * message for HTTP failures and a fixed one for everything else.
+ */
+function toLoginError(error: unknown): Error {
+  if (isHTTPError(error)) {
+    return new BackendApiError(
+      error.response.status,
+      error.response.statusText,
+      error.data,
+    );
+  }
+  return new Error('Login failed');
+}
 
 function computeExpiryTimestamp(seconds?: number, fallback?: number): number {
   if (typeof seconds === 'number' && Number.isFinite(seconds)) {
@@ -56,9 +85,8 @@ export const loginFn = createServerFn({ method: 'POST' })
       }
       return sanitizeClientSession(session.data);
     } catch (error) {
-      console.error('Login failed:', error);
-      // Re-throw so the UI knows it failed
-      throw error;
+      console.error('Login failed:', describeAuthError(error));
+      throw toLoginError(error);
     }
   });
 
@@ -73,7 +101,7 @@ export const logoutFn = createServerFn({ method: 'POST' }).handler(async () => {
         json: { refresh_token: refreshToken },
       });
     } catch (e) {
-      console.error('Backend logout failed (ignoring):', e);
+      console.error('Backend logout failed (ignoring):', describeAuthError(e));
     }
   }
 

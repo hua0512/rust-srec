@@ -13,6 +13,9 @@
 - **Presets**: opening a saved remux preset or workflow step that encodes with NVIDIA (NVENC) could switch its encoder preset to Medium, and the next save kept that change. The saved preset is now kept.
 - **Workflows**: **Detach & Edit** on a preset step now always starts from the preset's saved settings. Before, a change made from the keyboard to the preset settings shown in the step, which look read-only, was copied into the step without notice.
 - **Streamers page**: one streamer whose saved settings could not be read no longer stops the whole streamers list from loading. Those settings show as not configured.
+- **Security**: a link crafted by another site could make the stream proxy show a page that acted as the signed-in user. The proxy now only passes on video, audio, images and playlists, and refuses requests from other sites.
+- **Security**: a failed sign-in no longer writes the entered password to the server log, and a failed sign-out no longer writes the sign-in token.
+- **Sign-in**: a failed sign-in now shows the server's reason instead of an internal server address.
 - **FLV recordings**: files recorded with the Mesio engine now list Mesio as their creator instead of an outdated version number, and their real data size instead of 0, so media tools show correct file details.
 - **FLV recordings**: with the Mesio engine and **Fix FLV Streams** on, when a stream restarted mid-broadcast, for example after the streamer turned on stream delay, the recording could become one very long file that players showed as 0 seconds long and that was never split by the duration limit. Recordings now keep counting time across such restarts and split as configured.
 - **FLV recordings**: with the Mesio engine and **Fix FLV Streams** on, browser players can now show the length of a recording and seek in it when the stream sent no file information.

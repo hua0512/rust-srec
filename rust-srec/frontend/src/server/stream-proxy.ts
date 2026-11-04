@@ -1,6 +1,34 @@
 import { BASE_URL } from '@/utils/env';
 import { ensureValidToken } from './tokenRefresh';
 
+const OPAQUE = 'application/octet-stream';
+
+/**
+ * The relay answers on the app origin, so an upstream page served as HTML,
+ * SVG or any XML would render with the user's session. Only media, image and
+ * plain data types are kept, as the bare parsed type: forwarding the raw
+ * header would let `video/mp4;,text/html` through, since browsers use the last
+ * type in a comma list. Everything else, including a missing type, becomes an
+ * opaque download.
+ */
+function safeContentType(value: string | null): string {
+  if (!value || value.includes(',')) return OPAQUE;
+  const type = value.split(';')[0]!.trim().toLowerCase();
+  if (type.endsWith('+xml')) return OPAQUE;
+  if (
+    /^(video|audio|image)\/[a-z0-9.+-]+$/.test(type) ||
+    [
+      'application/vnd.apple.mpegurl',
+      'application/x-mpegurl',
+      'application/json',
+      'text/plain',
+    ].includes(type)
+  ) {
+    return type;
+  }
+  return OPAQUE;
+}
+
 /**
  * Browser-facing relay. The backend owns source configuration, target/redirect
  * validation, upstream transport and HLS rewriting for both web and desktop.
@@ -8,6 +36,17 @@ import { ensureValidToken } from './tokenRefresh';
 export async function handleStreamProxyRequest(
   request: Request,
 ): Promise<Response> {
+  // Players and <img> tags load the relay from the app itself (`same-origin`)
+  // and a typed URL sends `none`; any other site, sibling subdomains included,
+  // would be borrowing the viewer's session. Plain-HTTP origins send no header.
+  const fetchSite = request.headers.get('Sec-Fetch-Site');
+  if (
+    fetchSite !== null &&
+    fetchSite !== 'same-origin' &&
+    fetchSite !== 'none'
+  ) {
+    return new Response('Forbidden', { status: 403 });
+  }
   const user = await ensureValidToken();
   if (!user) return new Response('Unauthorized', { status: 401 });
 
@@ -63,13 +102,14 @@ export async function handleStreamProxyRequest(
     const outputHeaders = new Headers({
       'Cache-Control': 'private, no-store',
       'Referrer-Policy': 'no-referrer',
+      'X-Content-Type-Options': 'nosniff',
+      // Anything opened directly gets no scripts and an opaque origin. Players
+      // and images never open these URLs as a page; a media URL opened in a
+      // tab does not play, since its sandboxed origin is refused above.
+      'Content-Security-Policy': 'sandbox',
+      'Content-Type': safeContentType(response.headers.get('Content-Type')),
     });
-    for (const name of [
-      'Content-Type',
-      'Content-Length',
-      'Content-Range',
-      'Accept-Ranges',
-    ]) {
+    for (const name of ['Content-Length', 'Content-Range', 'Accept-Ranges']) {
       const value = response.headers.get(name);
       if (value) outputHeaders.set(name, value);
     }

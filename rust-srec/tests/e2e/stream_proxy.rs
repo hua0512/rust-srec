@@ -32,8 +32,9 @@ const MANIFEST: &str = concat!(
 );
 
 /// A loopback media origin for [`LocalHttpServer::start_with`]: an HLS
-/// manifest and segment, a Range-aware media file that sets a cookie,
-/// redirect chains, and redirects to targets the proxy must refuse.
+/// manifest and segment, a Range-aware media file that sets a cookie, a page
+/// disguised as media, redirect chains, and redirects to targets the proxy
+/// must refuse.
 fn upstream_reply(address: SocketAddr, request: &ReceivedRequest) -> UpstreamResponse {
     let path = request.path.split('?').next().unwrap_or_default();
     if let Some(remaining) = path.strip_prefix("/hops/") {
@@ -57,6 +58,11 @@ fn upstream_reply(address: SocketAddr, request: &ReceivedRequest) -> UpstreamRes
         )
             .into_response(),
         "/live/seg-1.ts" => ([(header::CONTENT_TYPE, "video/mp2t")], "segment-one").into_response(),
+        "/page" => (
+            [(header::CONTENT_TYPE, "video/mp4;,text/html")],
+            "<script>alert(1)</script>",
+        )
+            .into_response(),
         "/media" => {
             let common = [
                 (header::CONTENT_TYPE, "video/mp2t"),
@@ -398,6 +404,27 @@ async fn redirects_are_rechecked_at_every_hop_and_capped_at_five() {
     let unreachable = closed.url("/live.m3u8");
     let pairs = [("url", unreachable.as_str()), ("token", &token)];
     assert_refused(&app, &pairs, BAD_GATEWAY, "Proxy request failed").await;
+
+    app.shutdown().await;
+}
+
+#[tokio::test]
+async fn relay_never_serves_an_upstream_page_as_a_document() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    let upstream = LocalHttpServer::start_with(upstream_reply).await;
+    allow_private_targets(&app, &token, true).await;
+    let page_url = upstream.url("/page");
+
+    let response = fetch(&app, &proxy_path(&[("url", &page_url), ("token", &token)]))
+        .await
+        .expect_status(StatusCode::OK);
+    assert_eq!(
+        response.headers[header::CONTENT_TYPE],
+        "application/octet-stream"
+    );
+    assert_eq!(response.headers[header::X_CONTENT_TYPE_OPTIONS], "nosniff");
+    assert_eq!(response.headers[header::CONTENT_SECURITY_POLICY], "sandbox");
 
     app.shutdown().await;
 }
