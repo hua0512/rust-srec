@@ -13,6 +13,6 @@
     "devDependencies": {
         "mermaid": "^12.3.0",
         "vitepress": "2.0.0-alpha.21",
-        "vitepress-mermaid-preview": "^0.2.1"
+        "vitepress-mermaid-renderer": "^1.2.3"
     }
 }

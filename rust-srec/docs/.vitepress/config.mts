@@ -1,5 +1,4 @@
 import { defineConfig } from "vitepress";
-import { vitepressMermaidPreview } from "vitepress-mermaid-preview";
 
 export default defineConfig({
   title: "Rust-Srec",
@@ -16,12 +15,6 @@ export default defineConfig({
     "/env.example",
     "/env.zh.example",
   ],
-
-  markdown: {
-    config: (md) => {
-      md.use(vitepressMermaidPreview);
-    },
-  },
 
   head: [
     ["link", { rel: "icon", type: "image/svg+xml", href: "/stream-rec.svg" }],
