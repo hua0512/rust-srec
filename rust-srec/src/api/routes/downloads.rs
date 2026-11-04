@@ -371,6 +371,13 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
                         // a finished download as running (or miss a new one)
                         // until it reconnects. A snapshot replaces its view.
                         warn!(missed, "Download event receiver lagged; resending snapshot");
+                        // A lagged receiver resumes at the oldest buffered
+                        // event with the buffer still full, so it would lag
+                        // again while the snapshot is built and then replay
+                        // events the snapshot already covers. A fresh
+                        // receiver, taken before the snapshot as on connect,
+                        // buffers only what happens from here on.
+                        event_rx = event_rx.resubscribe();
                         let bytes = encode_snapshot(&state, filter.as_deref()).await;
                         if sender.send(Message::Binary(bytes)).await.is_err() {
                             break;
