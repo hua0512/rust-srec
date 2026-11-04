@@ -520,6 +520,75 @@ mod test {
     }
 
     #[test]
+    fn timeline_restart_below_cached_frames_keeps_advancing_and_splits() {
+        // A reconnect that first replays a few cached frames from the old
+        // timeline, then restarts the live timeline near zero.
+        const FRAME_MS: u32 = 40;
+        const FRAMES_PER_GOP: u32 = 25;
+        const LIMIT_MS: u32 = 2_000;
+        const LIVE_FRAMES: u32 = 5 * FRAMES_PER_GOP;
+        const CACHED_START_MS: u32 = 5_000_000;
+        let common = PipelineConfig {
+            max_duration: Some(Duration::from_millis(LIMIT_MS.into())),
+            ..PipelineConfig::default()
+        };
+        let frame = |timestamp: u32, keyframe: bool| {
+            let video = if keyframe { AVC_IDR_16X16 } else { AVC_P_16X16 };
+            [
+                tag(timestamp, FlvTagType::Video, video),
+                aac_silence(timestamp),
+            ]
+        };
+        let mut input = vec![
+            FlvData::Header(FlvHeader::new(true, true)),
+            tag(0, FlvTagType::Video, AVC_CONFIG_16X16),
+            create_audio_sequence_header(0, 0x12),
+        ];
+        input.extend((0..8).flat_map(|i| frame(CACHED_START_MS + i * FRAME_MS, i == 0)));
+        input.extend(
+            (0..LIVE_FRAMES).flat_map(|i| frame(i * FRAME_MS, i.is_multiple_of(FRAMES_PER_GOP))),
+        );
+
+        let output = run_pipeline(&common, FlvPipelineConfig::default(), input);
+
+        let mut segments: Vec<Vec<&FlvTag>> = Vec::new();
+        for item in &output {
+            match item {
+                FlvData::Header(_) => segments.push(Vec::new()),
+                FlvData::Tag(tag)
+                    if tag.is_video_tag()
+                        && !tag.is_video_sequence_header()
+                        && let Some(segment) = segments.last_mut() =>
+                {
+                    segment.push(tag)
+                }
+                _ => {}
+            }
+        }
+        // The first restarted frame follows the last cached one by one frame.
+        assert_eq!(
+            segments[0][8].timestamp_ms - segments[0][7].timestamp_ms,
+            FRAME_MS
+        );
+        for (index, segment) in segments.iter().enumerate() {
+            let timestamps: Vec<u32> = segment.iter().map(|tag| tag.timestamp_ms).collect();
+            assert!(
+                timestamps.windows(2).all(|pair| pair[0] < pair[1]),
+                "segment {index} video timestamps must keep advancing: {timestamps:?}"
+            );
+        }
+        let split_count = output
+            .iter()
+            .filter(|item| matches!(item, FlvData::Split(SplitReason::DurationLimit)))
+            .count();
+        assert_eq!(
+            split_count,
+            (LIVE_FRAMES * FRAME_MS / LIMIT_MS) as usize,
+            "the duration limit must split the restarted timeline"
+        );
+    }
+
+    #[test]
     fn repair_strategy_defaults_to_relaxed_and_forwards_overrides() {
         let mut input = vec![
             FlvData::Header(FlvHeader::new(true, false)),

@@ -11,6 +11,7 @@
 ## Fixes
 
 - **FLV recordings**: files recorded with the Mesio engine now list Mesio as their creator instead of an outdated version number, and their real data size instead of 0, so media tools show correct file details.
+- **FLV recordings**: when a stream restarted mid-broadcast, for example after the streamer turned on stream delay, the recording could become one very long file that players showed as 0 seconds long and that was never split by the duration limit. Recordings now keep counting time across such restarts and split as configured.
 - **Huya**: ordinary chat messages are now recorded without a colour, so they appear white in converted subtitles and burned-in videos instead of blue. Messages Huya colours still keep their colour. Chat files recorded before this update keep the blue.
 - **Twitch**: a channel that has just gone live or just ended is now reported as offline until its stream can be played, instead of failing the live check with an error. When Twitch refuses playback, its own error message is shown.
 - **Twitch**: a channel that does not exist is now shown as not found, and a suspended channel as banned, instead of failing every live check with a data error.
