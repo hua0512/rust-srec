@@ -52,8 +52,9 @@ function downloadText(text: string, filename: string) {
   a.download = filename;
   document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
   document.body.removeChild(a);
+  // Older Safari can abort the download when the URL is revoked at once.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 interface JobLogViewerProps {
@@ -275,7 +276,6 @@ function VirtualLogList({
   // re-renders once.
   const heightsRef = useRef<{ rows: number; height: number }[]>([]);
   const [, bumpHeights] = useReducer((n: number) => n + 1, 0);
-  const viewportWidthRef = useRef<number | null>(null);
 
   // Mounted chunk elements by chunk index.
   const chunkNodesRef = useRef(new Map<number, HTMLDivElement>());
@@ -306,18 +306,7 @@ function VirtualLogList({
       for (const entry of entries) {
         const target = entry.target as HTMLElement;
         if (target === scrollRef.current) {
-          const { width, height } = entry.contentRect;
-          setViewportHeight(height);
-          // Rows re-wrap at a new width, so heights measured at the old one
-          // would misplace every chunk that is not mounted.
-          if (
-            viewportWidthRef.current !== null &&
-            viewportWidthRef.current !== width
-          ) {
-            heightsRef.current = [];
-            changed = true;
-          }
-          viewportWidthRef.current = width;
+          setViewportHeight(entry.contentRect.height);
           continue;
         }
         const index = Number(target.dataset.chunk);
