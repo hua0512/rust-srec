@@ -2,11 +2,12 @@
 
 use std::sync::{Arc, OnceLock};
 
-use parking_lot::Mutex;
-use tokio::sync::{broadcast, mpsc, oneshot};
-use tracing::debug;
+use tokio::sync::{broadcast, oneshot};
 
 use super::DownloadManagerEvent;
+use crate::utils::required_channel::{
+    Publish, RequiredChannelError, RequiredReceiver, RequiredSender, required_channel,
+};
 use crate::utils::shared_event::{SharedEvent, SharedEventSender, publish_shared};
 
 #[derive(Debug, thiserror::Error)]
@@ -132,7 +133,9 @@ impl DownloadEventPublisher {
         self.shared_tx.subscribe()
     }
 
-    pub(super) async fn shutdown_coordination(&self) -> std::result::Result<(), &'static str> {
+    pub(super) async fn shutdown_coordination(
+        &self,
+    ) -> std::result::Result<(), RequiredChannelError> {
         match &self.coordination_tx {
             Some(sender) => sender.shutdown().await,
             None => Ok(()),
@@ -140,56 +143,26 @@ impl DownloadEventPublisher {
     }
 }
 
-enum DownloadCoordinationDelivery {
-    Event {
-        event: Box<DownloadManagerEvent>,
-        acknowledgement: oneshot::Sender<std::result::Result<(), String>>,
-    },
-    Shutdown(oneshot::Sender<()>),
-}
-
 #[derive(Clone)]
-pub(crate) struct DownloadCoordinationSender {
-    state: Arc<Mutex<DownloadCoordinationState>>,
-}
-
-struct DownloadCoordinationState {
-    tx: mpsc::UnboundedSender<DownloadCoordinationDelivery>,
-    accepting: bool,
-}
+pub(crate) struct DownloadCoordinationSender(RequiredSender<DownloadCoordinationEvent, ()>);
 
 impl DownloadCoordinationSender {
     pub(super) fn publish(&self, event: DownloadManagerEvent) -> DownloadCoordinationReceipt {
         let (acknowledgement, acknowledged) = oneshot::channel();
-        let delivery = DownloadCoordinationDelivery::Event {
+        let delivery = DownloadCoordinationEvent {
             event: Box::new(event),
             acknowledgement,
         };
-        let mut state = self.state.lock();
-        if !state.accepting || state.tx.send(delivery).is_err() {
-            state.accepting = false;
-            DownloadCoordinationReceipt::Unavailable
-        } else {
-            DownloadCoordinationReceipt::Pending(acknowledged)
+        match self.0.publish(delivery) {
+            Publish::Accepted => DownloadCoordinationReceipt::Pending(acknowledged),
+            Publish::ClosedByShutdown | Publish::ConsumerGone => {
+                DownloadCoordinationReceipt::Unavailable
+            }
         }
     }
 
-    pub(super) async fn shutdown(&self) -> std::result::Result<(), &'static str> {
-        let (acknowledgement, acknowledged) = oneshot::channel();
-        {
-            let mut state = self.state.lock();
-            if !state.accepting {
-                return Err("required download coordination channel is already closed");
-            }
-            state.accepting = false;
-            state
-                .tx
-                .send(DownloadCoordinationDelivery::Shutdown(acknowledgement))
-                .map_err(|_| "required download coordination channel is closed")?;
-        }
-        acknowledged
-            .await
-            .map_err(|_| "download coordination handler stopped before acknowledging shutdown")
+    pub(super) async fn shutdown(&self) -> std::result::Result<(), RequiredChannelError> {
+        self.0.shutdown().await
     }
 
     #[cfg(test)]
@@ -201,7 +174,7 @@ impl DownloadCoordinationSender {
     }
 
     #[cfg(test)]
-    pub(crate) async fn shutdown_for_test(&self) -> std::result::Result<(), &'static str> {
+    pub(crate) async fn shutdown_for_test(&self) -> std::result::Result<(), RequiredChannelError> {
         self.shutdown().await
     }
 }
@@ -225,7 +198,7 @@ impl DownloadCoordinationReceipt {
 }
 
 pub(crate) struct DownloadCoordinationEvent {
-    event: DownloadManagerEvent,
+    event: Box<DownloadManagerEvent>,
     acknowledgement: oneshot::Sender<std::result::Result<(), String>>,
 }
 
@@ -236,47 +209,14 @@ impl DownloadCoordinationEvent {
         DownloadManagerEvent,
         oneshot::Sender<std::result::Result<(), String>>,
     ) {
-        (self.event, self.acknowledgement)
+        (*self.event, self.acknowledgement)
     }
 }
 
-pub(crate) struct DownloadCoordinationReceiver {
-    rx: mpsc::UnboundedReceiver<DownloadCoordinationDelivery>,
-}
-
-impl DownloadCoordinationReceiver {
-    pub(crate) async fn recv(
-        &mut self,
-    ) -> std::result::Result<Option<DownloadCoordinationEvent>, &'static str> {
-        match self.rx.recv().await {
-            Some(DownloadCoordinationDelivery::Event {
-                event,
-                acknowledgement,
-            }) => Ok(Some(DownloadCoordinationEvent {
-                event: *event,
-                acknowledgement,
-            })),
-            Some(DownloadCoordinationDelivery::Shutdown(acknowledgement)) => {
-                if acknowledgement.send(()).is_err() {
-                    debug!("Download coordination shutdown acknowledgement receiver was dropped");
-                }
-                Ok(None)
-            }
-            None => Err("required download coordination channel closed without shutdown"),
-        }
-    }
-}
+pub(crate) type DownloadCoordinationReceiver = RequiredReceiver<DownloadCoordinationEvent, ()>;
 
 pub(crate) fn download_coordination_channel()
 -> (DownloadCoordinationSender, DownloadCoordinationReceiver) {
-    let (tx, rx) = mpsc::unbounded_channel();
-    (
-        DownloadCoordinationSender {
-            state: Arc::new(Mutex::new(DownloadCoordinationState {
-                tx,
-                accepting: true,
-            })),
-        },
-        DownloadCoordinationReceiver { rx },
-    )
+    let (sender, receiver) = required_channel("download coordination");
+    (DownloadCoordinationSender(sender), receiver)
 }

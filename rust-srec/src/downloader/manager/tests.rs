@@ -711,7 +711,7 @@ async fn shutdown_waits_for_trailing_segment_and_emits_one_terminal_outcome() {
     let coordination_release_completion = release_completion.clone();
     let coordination_task = tokio::spawn(async move {
         while let Some(delivery) = coordination_rx
-            .recv()
+            .recv_event()
             .await
             .expect("coordination channel should close with a marker")
         {
@@ -1478,7 +1478,7 @@ async fn required_terminal_event_survives_lagged_observer() {
     tokio::pin!(publish);
 
     let delivery = tokio::select! {
-        delivery = coordination_rx.recv() => delivery
+        delivery = coordination_rx.recv_event() => delivery
             .expect("required terminal channel stays open")
             .expect("required terminal event should arrive"),
         result = &mut publish => panic!("publish returned before acknowledgement: {result:?}"),
@@ -1504,7 +1504,7 @@ async fn coordination_shutdown_rejects_events_behind_marker() {
     let late_sender = coordination_tx.clone();
     let shutdown = tokio::spawn(async move { coordination_tx.shutdown().await });
 
-    assert!(matches!(coordination_rx.recv().await, Ok(None)));
+    assert!(matches!(coordination_rx.recv_event().await, Ok(None)));
     shutdown
         .await
         .expect("shutdown task should not panic")

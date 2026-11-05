@@ -63,7 +63,7 @@ impl Fixture {
                 .await
                 .unwrap()
                 .unwrap();
-            let required = tokio::time::timeout(Duration::from_secs(2), self.required.recv())
+            let required = tokio::time::timeout(Duration::from_secs(2), self.required.recv_event())
                 .await
                 .unwrap()
                 .unwrap()
@@ -74,7 +74,7 @@ impl Fixture {
             assert_eq!(required.session_id(), sid);
         }
         assert!(self.observer.try_recv().is_err());
-        assert!(futures::poll!(Box::pin(self.required.recv())).is_pending());
+        assert!(futures::poll!(Box::pin(self.required.recv_event())).is_pending());
     }
 
     async fn start(&mut self) -> String {
@@ -308,7 +308,7 @@ async fn cancellation_before_writer_admission_leaves_lifecycle_and_hysteresis_un
         f.settled().await;
         drop(connection);
         assert!(f.observer.try_recv().is_err());
-        assert!(futures::poll!(Box::pin(f.required.recv())).is_pending());
+        assert!(futures::poll!(Box::pin(f.required.recv_event())).is_pending());
         let active: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM live_sessions WHERE end_time IS NULL")
                 .fetch_one(&f.pool)
@@ -643,7 +643,7 @@ async fn retrying_timer_stops_on_resume_shutdown_or_handle_replacement() {
         .expect("retry wait must stop without abandoning its timer task");
         drop(timers);
         assert!(f.observer.try_recv().is_err());
-        assert!(futures::poll!(Box::pin(f.required.recv())).is_pending());
+        assert!(futures::poll!(Box::pin(f.required.recv_event())).is_pending());
         let end_time: Option<i64> =
             sqlx::query_scalar("SELECT end_time FROM live_sessions WHERE id = ?")
                 .bind(&sid)

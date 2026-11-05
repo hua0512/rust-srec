@@ -56,6 +56,7 @@ use crate::session::events::SessionEventPayload;
 use crate::session::hysteresis::{HysteresisConfig, HysteresisHandle};
 use crate::session::state::{SessionState, TerminalCause};
 use crate::session::transition::{SessionTransition, SessionTransitionSender};
+use crate::utils::required_channel::Publish;
 use crate::utils::task_supervisor::{DrainedTasks, TaskSupervisor};
 
 /// Default broadcast capacity for [`SessionTransition`] subscribers.
@@ -457,7 +458,7 @@ impl SessionLifecycle {
 
     fn publish_transition(&self, transition: SessionTransition) {
         if let Some(required_tx) = &self.required_transition_tx
-            && !required_tx.publish(transition.clone())
+            && required_tx.publish(transition.clone()) != Publish::Accepted
         {
             warn!("Required session transition consumer is unavailable");
         }
