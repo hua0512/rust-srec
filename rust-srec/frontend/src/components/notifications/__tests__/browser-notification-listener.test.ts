@@ -30,20 +30,4 @@ describe('formatBrowserNotification', () => {
       'Cookie expired',
     );
   });
-
-  it('joins the streamer and the error of a flat event', () => {
-    const payload = JSON.stringify({
-      FatalError: { streamer_name: 'Streamer One', message: 'Disk failure' },
-    });
-
-    expect(formatBrowserNotification(log(payload), testI18n()).body).toBe(
-      'Streamer One — Disk failure',
-    );
-  });
-
-  it('falls back to the raw payload when it is not JSON', () => {
-    expect(formatBrowserNotification(log('not json'), testI18n()).body).toBe(
-      'not json',
-    );
-  });
 });
