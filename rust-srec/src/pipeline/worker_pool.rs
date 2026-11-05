@@ -2818,10 +2818,10 @@ mod tests {
             ));
             let mut info = JobExecutionInfo {
                 current_processor: Some("previous".to_owned()),
+                input_size_bytes: Some(123),
+                output_size_bytes: Some(456),
                 ..Default::default()
-            }
-            .with_input_size(123)
-            .with_output_size(456);
+            };
             info.items_produced
                 .push(published.to_string_lossy().into_owned());
             let mut model = JobDbModel::new_with_input("failing", "input.flv", 0, None, None, "{}");

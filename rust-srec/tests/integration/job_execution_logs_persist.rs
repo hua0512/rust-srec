@@ -70,10 +70,10 @@ async fn beginning_retry_preserves_metadata_and_never_replays_historical_log_row
         .unwrap();
     let mut info = JobExecutionInfo {
         current_processor: Some("previous".to_owned()),
+        input_size_bytes: Some(123),
+        output_size_bytes: Some(456),
         ..Default::default()
-    }
-    .with_input_size(123)
-    .with_output_size(456);
+    };
     info.logs.push_back(prior);
     info.log_lines_total = 1;
     info.items_produced.push("published.mp4".to_owned());
@@ -126,10 +126,10 @@ async fn retry_terminal_updates_preserve_history_and_extension_metadata() {
             .unwrap();
         let mut prior = JobExecutionInfo {
             current_processor: Some("previous".to_owned()),
+            input_size_bytes: Some(123),
+            output_size_bytes: Some(456),
             ..Default::default()
-        }
-        .with_input_size(123)
-        .with_output_size(456);
+        };
         prior.logs.push_back(prior_log);
         prior.log_lines_total = 1;
         prior.log_warn_count = 1;

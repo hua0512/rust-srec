@@ -470,18 +470,6 @@ impl JobExecutionInfo {
     pub fn add_log(&mut self, entry: JobLogEntry) {
         self.logs.push_back(entry);
     }
-
-    /// Set input size.
-    pub fn with_input_size(mut self, size: u64) -> Self {
-        self.input_size_bytes = Some(size);
-        self
-    }
-
-    /// Set output size.
-    pub fn with_output_size(mut self, size: u64) -> Self {
-        self.output_size_bytes = Some(size);
-        self
-    }
 }
 
 /// A job in the queue.
