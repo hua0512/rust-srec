@@ -110,8 +110,7 @@ impl ProxyService {
             crate::database::committed_writer::own_operation(self.supervisor.clone(), async move {
                 let mut tx = crate::database::begin_immediate(&pool).await?;
                 let entry = proxies::create(&mut tx, None, &name, &endpoint).await?;
-                crate::database::committed_writer::prepare_owned_commit()?;
-                tx.commit().await?;
+                crate::database::committed_writer::commit_owned(tx).await?;
                 Ok(entry)
             })
             .await?;
@@ -133,8 +132,7 @@ impl ProxyService {
         crate::database::committed_writer::own_operation(self.supervisor.clone(), async move {
             let mut tx = crate::database::begin_immediate(&pool).await?;
             let updated = proxies::update(&mut tx, &id, expected_version, update).await?;
-            crate::database::committed_writer::prepare_owned_commit()?;
-            tx.commit().await?;
+            crate::database::committed_writer::commit_owned(tx).await?;
             if updated.exit_changed {
                 // The exit is another network path now; a throttle seen on
                 // the old one says nothing about it.
@@ -165,8 +163,7 @@ impl ProxyService {
         crate::database::committed_writer::own_operation(self.supervisor.clone(), async move {
             let mut tx = crate::database::begin_immediate(&pool).await?;
             proxies::delete(&mut tx, &id, expected_version).await?;
-            crate::database::committed_writer::prepare_owned_commit()?;
-            tx.commit().await?;
+            crate::database::committed_writer::commit_owned(tx).await?;
             admission.clear_route(&RouteKey::Proxy { id: id.clone() });
             config_service.notify_proxies_changed();
             tracing::info!(proxy_id = %id, "Proxy deleted");
