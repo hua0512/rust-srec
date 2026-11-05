@@ -12,8 +12,8 @@ use crate::api::models::{
     JobExecutionInfo as ApiJobExecutionInfo, JobFilterParams, JobLogEntry as ApiJobLogEntry,
     JobResponse, JobStatus as ApiJobStatus, MediaOutputResponse, MediaOutputUploadInfo,
     PageResponse, PaginatedResponse, PaginationParams, PipelineStatsResponse,
-    StalledOperationListResponse, StalledOperationResponse,
-    StepDurationInfo as ApiStepDurationInfo, UploadRecordListResponse, UploadRecordResponse,
+    StalledOperationListResponse, StalledOperationResponse, UploadRecordListResponse,
+    UploadRecordResponse,
 };
 use crate::database::models::{JobFilters, JobStatus, OutputFilters, Pagination};
 use crate::database::time::ms_to_datetime;
@@ -1075,8 +1075,6 @@ pub(super) fn job_status_to_api_status(status: JobStatus) -> ApiJobStatus {
 fn job_to_response(job: Job, streamer_name: Option<String>) -> JobResponse {
     let execution_info = job.execution_info.map(|info| ApiJobExecutionInfo {
         current_processor: info.current_processor,
-        current_step: info.current_step,
-        total_steps: info.total_steps,
         items_produced: info.items_produced,
         input_size_bytes: info.input_size_bytes,
         output_size_bytes: info.output_size_bytes,
@@ -1092,17 +1090,6 @@ fn job_to_response(job: Job, streamer_name: Option<String>) -> JobResponse {
         log_lines_total: info.log_lines_total,
         log_warn_count: info.log_warn_count,
         log_error_count: info.log_error_count,
-        step_durations: info
-            .step_durations
-            .into_iter()
-            .map(|sd| ApiStepDurationInfo {
-                step: sd.step,
-                processor: sd.processor,
-                duration_secs: sd.duration_secs,
-                started_at: sd.started_at,
-                completed_at: sd.completed_at,
-            })
-            .collect(),
     });
 
     JobResponse {

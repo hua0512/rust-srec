@@ -3506,15 +3506,7 @@ mod tests {
             move |planned: Option<PlannedRetry>| async move {
                 let retry_after = planned.map(|planned| planned.retry_after);
                 let recorded = queue
-                    .fail_with_step_info(
-                        &job_id,
-                        "boom",
-                        retry_after,
-                        Some("noop"),
-                        None,
-                        None,
-                        &[],
-                    )
+                    .fail_with_step_info(&job_id, "boom", retry_after, Some("noop"), &[])
                     .await;
                 // The failure write itself carries the planned retry, so a
                 // reader or a restart right after it never sees one without
@@ -3835,8 +3827,6 @@ mod tests {
                                 "late failure",
                                 planned.map(|planned| planned.retry_after),
                                 Some("noop"),
-                                None,
-                                None,
                                 &[],
                             )
                             .await
@@ -3934,8 +3924,6 @@ mod tests {
                                     "upload failed",
                                     planned.map(|planned| planned.retry_after),
                                     Some("rclone"),
-                                    Some(1),
-                                    Some(1),
                                     &[],
                                 )
                                 .await
@@ -4343,8 +4331,6 @@ mod tests {
                 "boom",
                 Some(Utc::now() + chrono::Duration::seconds(30)),
                 Some("noop"),
-                None,
-                None,
                 &[],
             )
             .await
