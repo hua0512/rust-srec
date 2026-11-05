@@ -18,6 +18,7 @@ use tokio_util::time::DelayQueue;
 use tracing::{debug, info, trace, warn};
 
 use crate::credentials::{OperationDeadline, PlatformAdmission};
+use crate::database::models::StreamerDbModel;
 use crate::database::repositories::{
     ConfigRepository, FilterRepository, MonitorOutboxOps, MonitorOutboxTxOps, SessionRepository,
     SessionTxOps, StreamerRepository, StreamerTxOps,
@@ -174,6 +175,14 @@ pub struct StreamMonitor<
     credential_blocks: Arc<crate::credentials::CredentialBlocks>,
 }
 
+/// Inputs shared by both paths of one deduplicated status check.
+struct StatusCheck<'a> {
+    streamer: &'a StreamerMetadata,
+    config: &'a crate::config::MergedConfig,
+    filters: &'a [crate::domain::filter::Filter],
+    deadline: OperationDeadline,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum CredentialCheckPurpose {
     Discovery,
@@ -284,6 +293,35 @@ impl<
         state.writer.require_same_pool(&self.write_pool)?;
         retry_on_sqlite_busy(label, || {
             state.transaction(label, StatePublication::StateOnly, operation.clone())
+        })
+        .await
+    }
+
+    /// Writes one streamer's state, skipping `operation` when the streamer was
+    /// deleted or disabled. `operation` returns the last row it wrote, which is
+    /// published to the in-memory state.
+    async fn write_streamer_row<F>(
+        &self,
+        label: &'static str,
+        streamer_id: String,
+        operation: F,
+    ) -> Result<()>
+    where
+        F: for<'c> FnOnce(
+                &'c mut sqlx::SqliteConnection,
+            ) -> BoxFuture<'c, Result<Option<StreamerDbModel>>>
+            + Clone
+            + Send
+            + 'static,
+    {
+        self.write_state(label, move |tx| {
+            Box::pin(async move {
+                if !StreamerTxOps::monitor_may_write(&mut *tx, &streamer_id).await? {
+                    return Ok(StateChange::row((), None));
+                }
+                let row = operation(tx).await?;
+                Ok(StateChange::row((), row))
+            })
         })
         .await
     }
@@ -687,168 +725,26 @@ impl<
             .or_insert_with(|| Arc::new(OnceCell::new()))
             .clone();
 
-        // Clone what we need for the async closure
-        let admission = self.admission.clone();
-        let filter_store = self.filter_store.clone();
-        let config_service = self.config_service.clone();
-        let detector = self.detector.clone();
-        let execution_service = self.execution_service.get().cloned();
-        let credential_blocks = self.credential_blocks.clone();
-        let streamer_manager = self.streamer_manager.clone();
-        let streamer_id_owned = streamer.id.clone();
-        let streamer_id = streamer.id.as_str();
-        let platform_id = &streamer.platform_config_id;
-
         // get_or_try_init ensures only ONE caller executes the closure,
         // all other concurrent callers wait for the result
         let result = tokio::time::timeout_at(
             deadline.instant(),
-            cell.get_or_try_init(|| async move {
+            cell.get_or_try_init(|| async {
                 let check = async {
-                    // Load filters for this streamer
-                    let filters = filter_store.get(streamer_id).await?;
-
-                    let config = &config;
-
-                    if let Some(policy) = &config.credential_policy {
-                        let execution = execution_service.as_ref().ok_or_else(|| {
-                            Error::config("Managed credential execution is unavailable")
-                        })?;
-                        let result = execution
-                            .execute(
-                                policy,
-                                binding.as_ref(),
-                                purpose != CredentialCheckPurpose::BoundPoll,
-                                deadline,
-                                &config.proxy_route,
-                                |snapshot| {
-                                    let extras = crate::credentials::managed_authentication_extras(
-                                        streamer.platform(),
-                                        config.platform_extras.clone(),
-                                        &snapshot.material,
-                                    );
-                                    let proxy = snapshot.route.target.clone();
-                                    let filters = &filters;
-                                    let detector = &detector;
-                                    async move {
-                                        let status = detector
-                                            .check_status_with_filters(
-                                                streamer,
-                                                filters,
-                                                CheckContext {
-                                                    cookies: Some(snapshot.material.cookies),
-                                                    selection_config: Some(
-                                                        &config.stream_selection,
-                                                    ),
-                                                    platform_extras: extras,
-                                                    proxy: &proxy,
-                                                    extractor: config.extractor,
-                                                },
-                                            )
-                                            .await?;
-                                        let session_cookies = match &status {
-                                            LiveStatus::Live { media_extras, .. } => media_extras
-                                                .as_ref()
-                                                .and_then(|extras| extras.get("session_cookies"))
-                                                .filter(|cookies| !cookies.is_empty())
-                                                .cloned(),
-                                            _ => None,
-                                        };
-                                        Ok(crate::credentials::Extracted {
-                                            preserve_health: !status.is_live(),
-                                            value: status,
-                                            session_cookies,
-                                        })
-                                    }
-                                },
-                            )
-                            .await;
-                        match &result {
-                            Err(Error::CredentialUnavailable(unavailable)) => {
-                                // A check finishing after the streamer was disabled
-                                // or deleted must not leave a block nobody clears.
-                                if streamer_manager
-                                    .get_streamer(streamer_id)
-                                    .is_some_and(|current| current.is_active())
-                                {
-                                    credential_blocks.block(
-                                        streamer_id,
-                                        &policy.platform_id,
-                                        unavailable.reason,
-                                    );
-                                }
-                            }
-                            // The account changed mid-check: neither outcome is known yet.
-                            Err(Error::CredentialProfile(
-                                crate::credentials::ProfileError::SourceChanged,
-                            )) => {}
-                            // Any other outcome ends the blocked run: the attempt
-                            // reached an account, or failed for a reason unrelated to
-                            // the accounts, which the streamer's error state reports.
-                            _ => credential_blocks.clear(streamer_id),
+                    let filters = self.filter_store.get(&streamer.id).await?;
+                    let check = StatusCheck {
+                        streamer,
+                        config: &config,
+                        filters: &filters,
+                        deadline,
+                    };
+                    match &config.credential_policy {
+                        Some(policy) => {
+                            self.check_with_credentials(check, policy, binding.as_ref(), purpose)
+                                .await
                         }
-                        let result = result?;
-                        let current = config_service.get_config_for_streamer(streamer_id).await?;
-                        if current
-                            .credential_policy
-                            .as_ref()
-                            .map(|policy| &policy.generation)
-                            != Some(&policy.generation)
-                        {
-                            return Err(crate::credentials::ProfileError::SourceChanged.into());
-                        }
-                        let mut status = result.value;
-                        if let LiveStatus::Live {
-                            credential_binding,
-                            credential_snapshot,
-                            media_extras,
-                            ..
-                        } = &mut status
-                        {
-                            *credential_binding = Some(Box::new(result.snapshot.binding.clone()));
-                            *credential_snapshot = Some(Arc::new(result.snapshot));
-                            if let Some(extras) = media_extras {
-                                extras.remove("session_cookies");
-                            }
-                        }
-                        return Ok(status);
+                        None => self.check_anonymous(check).await,
                     }
-
-                    // No selection anywhere: the check runs anonymously, so no
-                    // account can block it.
-                    credential_blocks.clear(streamer_id);
-                    admission
-                        .admit(platform_id, &config.proxy_route.key, deadline)
-                        .await
-                        .map_err(|error| Error::Monitor(error.to_string()))?;
-                    // Check status with filters, cookies, selection config, and platform extras
-                    let mut status = detector
-                        .check_status_with_filters(
-                            streamer,
-                            &filters,
-                            CheckContext {
-                                cookies: None,
-                                selection_config: Some(&config.stream_selection),
-                                platform_extras: config.platform_extras.clone(),
-                                proxy: &config.proxy_route.target,
-                                extractor: config.extractor,
-                            },
-                        )
-                        .await
-                        .inspect_err(|error| {
-                            if let Error::Extractor(error) = error {
-                                admission.observe(platform_id, &config.proxy_route, error);
-                            }
-                        })?;
-                    // Without an account there is nowhere to keep a minted session.
-                    if let LiveStatus::Live {
-                        media_extras: Some(extras),
-                        ..
-                    } = &mut status
-                    {
-                        extras.remove("session_cookies");
-                    }
-                    Ok(status)
                 };
 
                 tokio::time::timeout_at(deadline.instant(), check)
@@ -856,7 +752,7 @@ impl<
                     .map_err(|_| {
                         Error::Monitor(format!(
                             "Stream monitor check timed out after {:?} (streamer_id={})",
-                            hard_timeout, streamer_id_owned
+                            hard_timeout, streamer.id
                         ))
                     })?
             }),
@@ -879,6 +775,171 @@ impl<
         // Now check result - cleanup is already scheduled
         let status = result?.clone();
 
+        Ok(status)
+    }
+
+    /// Checks the streamer with an account from its credential policy, records
+    /// whether an account was available, and binds the account to a live result.
+    async fn check_with_credentials(
+        &self,
+        check: StatusCheck<'_>,
+        policy: &crate::credentials::ResolvedCredentialPolicy,
+        binding: Option<&crate::credentials::CredentialBinding>,
+        purpose: CredentialCheckPurpose,
+    ) -> Result<LiveStatus> {
+        let StatusCheck {
+            streamer,
+            config,
+            filters,
+            deadline,
+        } = check;
+        let execution = self
+            .execution_service
+            .get()
+            .ok_or_else(|| Error::config("Managed credential execution is unavailable"))?;
+        let detector = &self.detector;
+        let result = execution
+            .execute(
+                policy,
+                binding,
+                purpose != CredentialCheckPurpose::BoundPoll,
+                deadline,
+                &config.proxy_route,
+                |snapshot| {
+                    let extras = crate::credentials::managed_authentication_extras(
+                        streamer.platform(),
+                        config.platform_extras.clone(),
+                        &snapshot.material,
+                    );
+                    let proxy = snapshot.route.target.clone();
+                    async move {
+                        let status = detector
+                            .check_status_with_filters(
+                                streamer,
+                                filters,
+                                CheckContext {
+                                    cookies: Some(snapshot.material.cookies),
+                                    selection_config: Some(&config.stream_selection),
+                                    platform_extras: extras,
+                                    proxy: &proxy,
+                                    extractor: config.extractor,
+                                },
+                            )
+                            .await?;
+                        let session_cookies = match &status {
+                            LiveStatus::Live { media_extras, .. } => media_extras
+                                .as_ref()
+                                .and_then(|extras| extras.get("session_cookies"))
+                                .filter(|cookies| !cookies.is_empty())
+                                .cloned(),
+                            _ => None,
+                        };
+                        Ok(crate::credentials::Extracted {
+                            preserve_health: !status.is_live(),
+                            value: status,
+                            session_cookies,
+                        })
+                    }
+                },
+            )
+            .await;
+        match &result {
+            Err(Error::CredentialUnavailable(unavailable)) => {
+                // A check finishing after the streamer was disabled
+                // or deleted must not leave a block nobody clears.
+                if self
+                    .streamer_manager
+                    .get_streamer(&streamer.id)
+                    .is_some_and(|current| current.is_active())
+                {
+                    self.credential_blocks.block(
+                        &streamer.id,
+                        &policy.platform_id,
+                        unavailable.reason,
+                    );
+                }
+            }
+            // The account changed mid-check: neither outcome is known yet.
+            Err(Error::CredentialProfile(crate::credentials::ProfileError::SourceChanged)) => {}
+            // Any other outcome ends the blocked run: the attempt
+            // reached an account, or failed for a reason unrelated to
+            // the accounts, which the streamer's error state reports.
+            _ => self.credential_blocks.clear(&streamer.id),
+        }
+        let result = result?;
+        let current = self
+            .config_service
+            .get_config_for_streamer(&streamer.id)
+            .await?;
+        if current
+            .credential_policy
+            .as_ref()
+            .map(|policy| &policy.generation)
+            != Some(&policy.generation)
+        {
+            return Err(crate::credentials::ProfileError::SourceChanged.into());
+        }
+        let mut status = result.value;
+        if let LiveStatus::Live {
+            credential_binding,
+            credential_snapshot,
+            media_extras,
+            ..
+        } = &mut status
+        {
+            *credential_binding = Some(Box::new(result.snapshot.binding.clone()));
+            *credential_snapshot = Some(Arc::new(result.snapshot));
+            if let Some(extras) = media_extras {
+                extras.remove("session_cookies");
+            }
+        }
+        Ok(status)
+    }
+
+    /// Checks the streamer without an account, under the platform's admission limits.
+    async fn check_anonymous(&self, check: StatusCheck<'_>) -> Result<LiveStatus> {
+        let StatusCheck {
+            streamer,
+            config,
+            filters,
+            deadline,
+        } = check;
+        let platform_id = &streamer.platform_config_id;
+        // No selection anywhere: the check runs anonymously, so no
+        // account can block it.
+        self.credential_blocks.clear(&streamer.id);
+        self.admission
+            .admit(platform_id, &config.proxy_route.key, deadline)
+            .await
+            .map_err(|error| Error::Monitor(error.to_string()))?;
+        let mut status = self
+            .detector
+            .check_status_with_filters(
+                streamer,
+                filters,
+                CheckContext {
+                    cookies: None,
+                    selection_config: Some(&config.stream_selection),
+                    platform_extras: config.platform_extras.clone(),
+                    proxy: &config.proxy_route.target,
+                    extractor: config.extractor,
+                },
+            )
+            .await
+            .inspect_err(|error| {
+                if let Error::Extractor(error) = error {
+                    self.admission
+                        .observe(platform_id, &config.proxy_route, error);
+                }
+            })?;
+        // Without an account there is nowhere to keep a minted session.
+        if let LiveStatus::Live {
+            media_extras: Some(extras),
+            ..
+        } = &mut status
+        {
+            extras.remove("session_cookies");
+        }
         Ok(status)
     }
 
@@ -1122,15 +1183,10 @@ impl<
             );
 
             let streamer = streamer.clone();
-            self.write_state("monitor clear errors", move |tx| {
+            self.write_streamer_row("monitor clear errors", streamer.id.clone(), move |tx| {
                 Box::pin(async move {
-                    let mut committed_row = None;
-                    if !StreamerTxOps::monitor_may_write(&mut *tx, &streamer.id).await? {
-                        return Ok(StateChange::row((), committed_row));
-                    }
-
                     // Clear error state: reset consecutive_error_count, disabled_until, last_error
-                    committed_row =
+                    let mut committed_row =
                         StreamerTxOps::clear_error_state_row(&mut *tx, &streamer.id).await?;
 
                     // If was TemporalDisabled, also set state back to NOT_LIVE
@@ -1139,7 +1195,7 @@ impl<
                             StreamerTxOps::set_offline_row(&mut *tx, &streamer.id).await?;
                     }
 
-                    Ok(StateChange::row((), committed_row))
+                    Ok(committed_row)
                 })
             })
             .await?;
@@ -1222,14 +1278,9 @@ impl<
         let now = chrono::Utc::now();
 
         let streamer = streamer.clone();
-        self.write_state("monitor handle_filtered", move |tx| {
+        self.write_streamer_row("monitor handle_filtered", streamer.id.clone(), move |tx| {
             Box::pin(async move {
-                let mut committed_row = None;
-                if !StreamerTxOps::monitor_may_write(&mut *tx, &streamer.id).await? {
-                    return Ok(StateChange::row((), committed_row));
-                }
-
-                committed_row =
+                let committed_row =
                     StreamerTxOps::update_state_row(&mut *tx, &streamer.id, &new_state.to_string())
                         .await?;
 
@@ -1245,7 +1296,7 @@ impl<
                 };
                 MonitorOutboxTxOps::enqueue_event(&mut *tx, &streamer.id, &event).await?;
 
-                Ok(StateChange::row((), committed_row))
+                Ok(committed_row)
             })
         })
         .await?;
@@ -1279,38 +1330,37 @@ impl<
 
         let streamer = streamer.clone();
         let reason = reason.to_owned();
-        self.write_state("monitor handle_fatal_error", move |tx| {
-            Box::pin(async move {
-                let mut committed_row = None;
-                if !StreamerTxOps::monitor_may_write(&mut *tx, &streamer.id).await? {
-                    return Ok(StateChange::row((), committed_row));
-                }
+        self.write_streamer_row(
+            "monitor handle_fatal_error",
+            streamer.id.clone(),
+            move |tx| {
+                Box::pin(async move {
+                    SessionTxOps::end_active_session(&mut *tx, &streamer.id, now).await?;
 
-                SessionTxOps::end_active_session(&mut *tx, &streamer.id, now).await?;
+                    // Update state to the fatal error state and persist the reason
+                    let committed_row = StreamerTxOps::set_fatal_error_row(
+                        &mut *tx,
+                        &streamer.id,
+                        &new_state.to_string(),
+                        &reason,
+                    )
+                    .await?;
 
-                // Update state to the fatal error state and persist the reason
-                committed_row = StreamerTxOps::set_fatal_error_row(
-                    &mut *tx,
-                    &streamer.id,
-                    &new_state.to_string(),
-                    &reason,
-                )
-                .await?;
+                    // Emit fatal error event via outbox.
+                    let event = MonitorEvent::FatalError {
+                        streamer_id: streamer.id.clone(),
+                        streamer_name: streamer.name.clone(),
+                        error_type,
+                        message: reason.to_string(),
+                        new_state,
+                        timestamp: now,
+                    };
+                    MonitorOutboxTxOps::enqueue_event(&mut *tx, &streamer.id, &event).await?;
 
-                // Emit fatal error event via outbox.
-                let event = MonitorEvent::FatalError {
-                    streamer_id: streamer.id.clone(),
-                    streamer_name: streamer.name.clone(),
-                    error_type,
-                    message: reason.to_string(),
-                    new_state,
-                    timestamp: now,
-                };
-                MonitorOutboxTxOps::enqueue_event(&mut *tx, &streamer.id, &event).await?;
-
-                Ok(StateChange::row((), committed_row))
-            })
-        })
+                    Ok(committed_row)
+                })
+            },
+        )
         .await?;
         self.notify_outbox();
 
@@ -1345,13 +1395,8 @@ impl<
         let streamer = streamer.clone();
         let error = error.to_owned();
         let manager = self.streamer_manager.clone();
-        self.write_state("monitor handle_error", move |tx| {
+        self.write_streamer_row("monitor handle_error", streamer.id.clone(), move |tx| {
             Box::pin(async move {
-                let mut committed_row = None;
-                if !StreamerTxOps::monitor_may_write(&mut *tx, &streamer.id).await? {
-                    return Ok(StateChange::row((), committed_row));
-                }
-
                 let new_error_count =
                     StreamerTxOps::increment_error_row(&mut *tx, &streamer.id, &error)
                         .await?
@@ -1360,7 +1405,7 @@ impl<
                 let disabled_until = manager
                     .disabled_until_for_error_count(new_error_count, streamer.offline_check_count);
 
-                committed_row =
+                let committed_row =
                     StreamerTxOps::set_disabled_until_row(&mut *tx, &streamer.id, disabled_until)
                         .await?;
 
@@ -1386,7 +1431,7 @@ impl<
                 };
                 MonitorOutboxTxOps::enqueue_event(&mut *tx, &streamer.id, &event).await?;
 
-                Ok(StateChange::row((), committed_row))
+                Ok(committed_row)
             })
         })
         .await?;
@@ -1436,44 +1481,46 @@ impl<
         );
 
         let streamer = streamer.clone();
-        self.write_state("monitor set_infra_blocked", move |tx| {
-            Box::pin(async move {
-                let mut committed_row = None;
-                if !StreamerTxOps::monitor_may_write(&mut *tx, &streamer.id).await? {
-                    return Ok(StateChange::row((), committed_row));
-                }
-
-                // set_disabled_until writes state = TEMPORAL_DISABLED by default. For
-                // reasons that require a different state (e.g. OutOfSpace for the
-                // gate) we override with an explicit update_state call in the same tx.
-                committed_row = StreamerTxOps::set_disabled_until_row(
-                    &mut *tx,
-                    &streamer.id,
-                    Some(disabled_until),
-                )
-                .await?;
-                if target_state != StreamerState::TemporalDisabled {
-                    committed_row = StreamerTxOps::update_state_row(
+        self.write_streamer_row(
+            "monitor set_infra_blocked",
+            streamer.id.clone(),
+            move |tx| {
+                Box::pin(async move {
+                    // set_disabled_until writes state = TEMPORAL_DISABLED by default. For
+                    // reasons that require a different state (e.g. OutOfSpace for the
+                    // gate) we override with an explicit update_state call in the same tx.
+                    let mut committed_row = StreamerTxOps::set_disabled_until_row(
                         &mut *tx,
                         &streamer.id,
-                        &target_state.to_string(),
+                        Some(disabled_until),
                     )
                     .await?;
-                }
+                    if target_state != StreamerState::TemporalDisabled {
+                        committed_row = StreamerTxOps::update_state_row(
+                            &mut *tx,
+                            &streamer.id,
+                            &target_state.to_string(),
+                        )
+                        .await?;
+                    }
 
-                // For reasons that carry a distinctive last_error marker (used later
-                // by the gate's recovery hook to filter which streamers to reset),
-                // write it now. Circuit breaker blocks leave last_error alone so any
-                // recent legitimate error text is preserved.
-                if let Some(msg) = last_error_update {
-                    committed_row =
-                        StreamerTxOps::update_last_error_row(&mut *tx, &streamer.id, Some(&msg))
-                            .await?;
-                }
+                    // For reasons that carry a distinctive last_error marker (used later
+                    // by the gate's recovery hook to filter which streamers to reset),
+                    // write it now. Circuit breaker blocks leave last_error alone so any
+                    // recent legitimate error text is preserved.
+                    if let Some(msg) = last_error_update {
+                        committed_row = StreamerTxOps::update_last_error_row(
+                            &mut *tx,
+                            &streamer.id,
+                            Some(&msg),
+                        )
+                        .await?;
+                    }
 
-                Ok(StateChange::row((), committed_row))
-            })
-        })
+                    Ok(committed_row)
+                })
+            },
+        )
         .await?;
 
         Ok(())
