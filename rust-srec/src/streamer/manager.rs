@@ -816,27 +816,6 @@ where
         self.metadata.iter().filter(|e| !e.is_deleted()).count()
     }
 
-    /// Get the number of active streamers.
-    pub fn active_count(&self) -> usize {
-        self.metadata.iter().filter(|e| e.is_active()).count()
-    }
-
-    /// Get the number of disabled streamers.
-    pub fn disabled_count(&self) -> usize {
-        self.metadata
-            .iter()
-            .filter(|e| !e.is_deleted() && e.is_disabled())
-            .count()
-    }
-
-    /// Get the number of live streamers.
-    pub fn live_count(&self) -> usize {
-        self.metadata
-            .iter()
-            .filter(|e| !e.is_deleted() && e.state == StreamerState::Live)
-            .count()
-    }
-
     /// Get a reference to the underlying metadata store.
     ///
     /// This is useful for actors that need direct read access to streamer metadata

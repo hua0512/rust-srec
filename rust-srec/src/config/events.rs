@@ -165,11 +165,6 @@ impl ConfigEventBroadcaster {
         // send() returns Err if there are no receivers, which is fine
         self.sender.send(event).unwrap_or(0)
     }
-
-    /// Get the number of active subscribers.
-    pub fn subscriber_count(&self) -> usize {
-        self.sender.receiver_count()
-    }
 }
 
 impl Default for ConfigEventBroadcaster {

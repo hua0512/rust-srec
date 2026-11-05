@@ -126,21 +126,19 @@ impl AuthConfig {
     /// - `REFRESH_TOKEN_REUSE_GRACE_SECS`: Grace window for recently rotated tokens (default: 0)
     /// - `REVOKE_ALL_ON_REFRESH_TOKEN_REUSE`: Whether to revoke all tokens on revoked-token reuse (default: true)
     /// - `MIN_PASSWORD_LENGTH`: Minimum password length (default: 8)
-    pub fn from_env() -> Self {
-        let access_token_expiration_secs = std::env::var("ACCESS_TOKEN_EXPIRATION_SECS")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(3600);
+    ///
+    /// # Errors
+    ///
+    /// Returns a configuration error when a numeric variable is set to a non-numeric value.
+    pub fn from_env() -> crate::Result<Self> {
+        let access_token_expiration_secs =
+            crate::utils::env::parse("ACCESS_TOKEN_EXPIRATION_SECS")?.unwrap_or(3600);
 
-        let refresh_token_expiration_secs = std::env::var("REFRESH_TOKEN_EXPIRATION_SECS")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(604800);
+        let refresh_token_expiration_secs =
+            crate::utils::env::parse("REFRESH_TOKEN_EXPIRATION_SECS")?.unwrap_or(604800);
 
-        let refresh_token_reuse_grace_secs = std::env::var("REFRESH_TOKEN_REUSE_GRACE_SECS")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(0);
+        let refresh_token_reuse_grace_secs =
+            crate::utils::env::parse("REFRESH_TOKEN_REUSE_GRACE_SECS")?.unwrap_or(0);
 
         let revoke_all_on_refresh_token_reuse = Self::parse_reuse_revocation(
             std::env::var("REVOKE_ALL_ON_REFRESH_TOKEN_REUSE")
@@ -148,18 +146,15 @@ impl AuthConfig {
                 .as_deref(),
         );
 
-        let min_password_length = std::env::var("MIN_PASSWORD_LENGTH")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(8);
+        let min_password_length = crate::utils::env::parse("MIN_PASSWORD_LENGTH")?.unwrap_or(8);
 
-        Self {
+        Ok(Self {
             access_token_expiration_secs,
             refresh_token_expiration_secs,
             refresh_token_reuse_grace_secs,
             revoke_all_on_refresh_token_reuse,
             min_password_length,
-        }
+        })
     }
 
     fn parse_reuse_revocation(value: Option<&str>) -> bool {

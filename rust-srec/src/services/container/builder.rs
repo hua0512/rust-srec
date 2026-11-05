@@ -64,7 +64,7 @@ impl ServiceContainer {
         Self::build(
             pool,
             write_pool,
-            ServiceContainerConfig::standard(cache_ttl, event_capacity),
+            ServiceContainerConfig::standard(cache_ttl, event_capacity)?,
         )
         .await
     }

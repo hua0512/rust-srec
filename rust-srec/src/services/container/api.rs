@@ -171,13 +171,33 @@ impl ServiceContainer {
         Ok(local_addr)
     }
 
+    /// Build the user/token/API-key backed authentication service.
+    fn database_auth_service(&self, jwt: Arc<JwtService>, auth_config: AuthConfig) -> AuthService {
+        AuthService::new(
+            Arc::new(SqlxUserRepository::new(
+                self.pool.clone(),
+                self.write_pool.clone(),
+            )),
+            Arc::new(SqlxRefreshTokenRepository::new(
+                self.pool.clone(),
+                self.write_pool.clone(),
+            )),
+            Arc::new(SqlxApiKeyRepository::new(
+                self.pool.clone(),
+                self.write_pool.clone(),
+            )),
+            jwt,
+            auth_config,
+        )
+    }
+
     /// Initialize and start the API server, returning the resolved bind address.
     ///
     /// This is required when binding to port `0` (ephemeral port), where the actual port is only
     /// known after binding.
     pub async fn start_api_server_bound(&self) -> Result<std::net::SocketAddr> {
         // Create AuthConfig from environment first (single source of truth for token expiration)
-        let auth_config = AuthConfig::from_env();
+        let auth_config = AuthConfig::from_env()?;
 
         let jwt_service =
             JwtService::from_env(auth_config.access_token_expiration_secs).map(Arc::new);
@@ -191,21 +211,7 @@ impl ServiceContainer {
 
         let auth_service = match (auth_mode, jwt_service) {
             (ApiAuthMode::Enabled, Some(jwt)) => {
-                let user_repo = Arc::new(SqlxUserRepository::new(
-                    self.pool.clone(),
-                    self.write_pool.clone(),
-                ));
-                let token_repo = Arc::new(SqlxRefreshTokenRepository::new(
-                    self.pool.clone(),
-                    self.write_pool.clone(),
-                ));
-                let api_key_repo = Arc::new(SqlxApiKeyRepository::new(
-                    self.pool.clone(),
-                    self.write_pool.clone(),
-                ));
-
-                let auth_svc =
-                    AuthService::new(user_repo, token_repo, api_key_repo, jwt, auth_config);
+                let auth_svc = self.database_auth_service(jwt, auth_config);
                 info!("AuthService initialized with user database authentication");
                 Some(Arc::new(auth_svc))
             }
@@ -236,11 +242,9 @@ impl ServiceContainer {
         &self,
         jwt_secret: String,
     ) -> Result<std::net::SocketAddr> {
-        let auth_config = AuthConfig::from_env();
+        let auth_config = AuthConfig::from_env()?;
 
-        let issuer = std::env::var("JWT_ISSUER").unwrap_or_else(|_| "rust-srec".to_string());
-        let audience =
-            std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "rust-srec-api".to_string());
+        let (issuer, audience) = crate::api::jwt::issuer_and_audience_from_env();
         let jwt_service = Arc::new(JwtService::new(
             &jwt_secret,
             &issuer,
@@ -248,26 +252,7 @@ impl ServiceContainer {
             Some(auth_config.access_token_expiration_secs),
         ));
 
-        // Create AuthService (always enabled when a JWT secret is provided)
-        let user_repo = Arc::new(SqlxUserRepository::new(
-            self.pool.clone(),
-            self.write_pool.clone(),
-        ));
-        let token_repo = Arc::new(SqlxRefreshTokenRepository::new(
-            self.pool.clone(),
-            self.write_pool.clone(),
-        ));
-        let api_key_repo = Arc::new(SqlxApiKeyRepository::new(
-            self.pool.clone(),
-            self.write_pool.clone(),
-        ));
-        let auth_svc = AuthService::new(
-            user_repo,
-            token_repo,
-            api_key_repo,
-            jwt_service,
-            auth_config,
-        );
+        let auth_svc = self.database_auth_service(jwt_service, auth_config);
         info!(
             issuer = %issuer,
             audience = %audience,

@@ -169,15 +169,6 @@ impl ConfigCache {
         self.streamer_configs.is_empty()
     }
 
-    /// Get cache statistics.
-    pub fn stats(&self) -> CacheStats {
-        CacheStats {
-            entry_count: self.len(),
-            in_flight_count: self.in_flight.len(),
-            ttl: self.ttl,
-        }
-    }
-
     // ========== Request Deduplication ==========
 
     /// Get or create an in-flight request for a streamer.
@@ -261,28 +252,12 @@ impl ConfigCache {
     pub fn has_in_flight(&self, streamer_id: &str) -> bool {
         self.in_flight.contains_key(streamer_id)
     }
-
-    /// Get the number of in-flight requests.
-    pub fn in_flight_count(&self) -> usize {
-        self.in_flight.len()
-    }
 }
 
 impl Default for ConfigCache {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Statistics about the configuration cache.
-#[derive(Debug, Clone)]
-pub struct CacheStats {
-    /// Number of entries in the cache.
-    pub entry_count: usize,
-    /// Number of in-flight requests.
-    pub in_flight_count: usize,
-    /// TTL for cache entries.
-    pub ttl: Duration,
 }
 
 #[cfg(test)]

@@ -1167,9 +1167,7 @@ async fn run_desktop_backend_init(
                 let is_visible = main.is_visible().unwrap_or(false);
                 if !is_visible {
                     center_main_window_once(&fallback_handle);
-                    let _ = main.show();
-                    let _ = main.unminimize();
-                    let _ = main.set_focus();
+                    show_main_window(&fallback_handle);
                 }
             }
 
@@ -1309,11 +1307,7 @@ pub fn run() {
     #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            show_main_window(app);
         }));
         builder = builder.plugin(tauri_plugin_notification::init());
         builder = builder.plugin(tauri_plugin_opener::init());
@@ -1438,12 +1432,8 @@ pub fn run() {
                     .handle()
                     .listen("rust-srec://frontend-ready", move |_event| {
                         log::info!("Desktop frontend signaled ready");
-                        if let Some(window) = listener_handle.get_webview_window("main") {
-                            center_main_window_once(&listener_handle);
-                            let _ = window.show();
-                            let _ = window.unminimize();
-                            let _ = window.set_focus();
-                        }
+                        center_main_window_once(&listener_handle);
+                        show_main_window(&listener_handle);
                         if let Some(window) = listener_handle.get_webview_window("splash") {
                             let _ = window.close();
                         }

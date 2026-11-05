@@ -81,14 +81,6 @@ impl StreamerState {
         )
     }
 
-    /// Check if this state allows monitoring.
-    pub fn allows_monitoring(&self) -> bool {
-        matches!(
-            self,
-            Self::NotLive | Self::Live | Self::OutOfSchedule | Self::InspectingLive
-        )
-    }
-
     /// Check if this state indicates the streamer is active (being monitored).
     pub fn is_active(&self) -> bool {
         !matches!(

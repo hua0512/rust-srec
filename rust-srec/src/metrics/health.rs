@@ -310,36 +310,18 @@ pub struct HealthChecker {
     start_time: Instant,
     /// System version.
     version: String,
-    /// Disk space warning threshold (percentage).
-    disk_warning_threshold: f64,
-    /// Disk space critical threshold (percentage).
-    disk_critical_threshold: f64,
 }
 
+/// Used-space fraction at which a disk is reported as degraded.
+const DISK_WARNING_THRESHOLD: f64 = 0.80;
+/// Used-space fraction at which a disk is reported as unhealthy.
+const DISK_CRITICAL_THRESHOLD: f64 = 0.95;
+
 impl HealthChecker {
-    /// Construct a new checker with empty probe set and a baseline
-    /// snapshot. Prefer [`HealthChecker::with_probes`] for the runtime
-    /// service container.
+    /// Construct a checker with an empty probe set and a baseline snapshot.
+    ///
+    /// Probes are registered before `start()`.
     pub fn new() -> Self {
-        Self::with_thresholds(0.80, 0.95)
-    }
-
-    /// Construct with custom disk warning/critical thresholds.
-    pub fn with_thresholds(disk_warning: f64, disk_critical: f64) -> Self {
-        Self::with_probes_and_thresholds(Vec::new(), disk_warning, disk_critical)
-    }
-
-    /// Construct with a frozen probe set and default disk thresholds.
-    pub fn with_probes(probes: Vec<Arc<dyn HealthProbe>>) -> Self {
-        Self::with_probes_and_thresholds(probes, 0.80, 0.95)
-    }
-
-    /// Construct with a frozen probe set and custom disk thresholds.
-    pub fn with_probes_and_thresholds(
-        probes: Vec<Arc<dyn HealthProbe>>,
-        disk_warning: f64,
-        disk_critical: f64,
-    ) -> Self {
         let initial = Arc::new(SystemHealth {
             status: HealthStatus::Unknown,
             components: HashMap::new(),
@@ -351,23 +333,21 @@ impl HealthChecker {
         });
         Self {
             snapshot: ArcSwap::from(initial),
-            probes: ArcSwap::from_pointee(probes),
+            probes: ArcSwap::from_pointee(Vec::new()),
             started: AtomicBool::new(false),
             start_time: Instant::now(),
             version: env!("CARGO_PKG_VERSION").to_string(),
-            disk_warning_threshold: disk_warning,
-            disk_critical_threshold: disk_critical,
         }
     }
 
     /// Disk-warning threshold used by the disk health probes.
     pub fn disk_warning_threshold(&self) -> f64 {
-        self.disk_warning_threshold
+        DISK_WARNING_THRESHOLD
     }
 
     /// Disk-critical threshold.
     pub fn disk_critical_threshold(&self) -> f64 {
-        self.disk_critical_threshold
+        DISK_CRITICAL_THRESHOLD
     }
 
     /// Register a concrete probe before [`Self::start`] freezes the
