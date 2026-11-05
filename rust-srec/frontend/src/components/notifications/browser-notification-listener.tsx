@@ -69,19 +69,19 @@ export function formatBrowserNotification(
     text(fields.message) ??
     text(fields.reason);
   const platform = text(fields.platform);
+  const path = text(fields.path);
 
   const bodyParts: string[] = [];
   if (streamer) bodyParts.push(streamer);
-  // A credential event names the platform of the failed account; a rate limit
-  // also names the paused connection.
-  if (platform && typeof fields.route === 'string') {
-    const connection =
-      fields.route === 'proxy'
-        ? (text(fields.proxy_name) ?? i18n._(msg`Saved proxy`))
-        : i18n._(fields.route === 'system' ? msg`System proxy` : msg`Direct`);
-    bodyParts.push(`${platform} · ${connection}`);
-  } else if (platform) {
-    bodyParts.push(platform);
+  // Names the platform of a failed account sign-in.
+  if (platform) bodyParts.push(platform);
+  // Names the output folder that cannot be written.
+  if (path) bodyParts.push(path);
+  // The queue event's `threshold` is not the configured alert level, so only
+  // the queue length is shown.
+  if (typeof fields.queue_depth === 'number') {
+    const queued = fields.queue_depth;
+    bodyParts.push(i18n._(msg`${queued} jobs queued`));
   }
   if (error) bodyParts.push(error);
   if (bodyParts.length === 0)

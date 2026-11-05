@@ -331,6 +331,10 @@ msgstr "{pending, plural, one {# queued upload} other {# queued uploads}}"
 msgid "{pending} queued"
 msgstr "{pending} queued"
 
+#: src/components/notifications/browser-notification-listener.tsx:84
+msgid "{queued} jobs queued"
+msgstr "{queued} jobs queued"
+
 #: src/components/credentials/account-usage.tsx:220
 msgid "{recordings, plural, one {# live recording} other {# live recordings}}"
 msgstr "{recordings, plural, one {# live recording} other {# live recordings}}"
@@ -1400,7 +1404,7 @@ msgstr "Back to templates"
 msgid "Back to workflows"
 msgstr "Back to workflows"
 
-#: src/components/sidebar/footer.tsx:40
+#: src/components/sidebar/footer.tsx:38
 msgid "Backend: {backendLabel}"
 msgstr "Backend: {backendLabel}"
 
@@ -1777,7 +1781,7 @@ msgstr "Capture Settings"
 msgid "Case Insensitive"
 msgstr "Case Insensitive"
 
-#: src/components/notifications/events/payload-preview.tsx:47
+#: src/components/notifications/events/payload-preview.tsx:46
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:224
 msgid "Category"
 msgstr "Category"
@@ -2322,7 +2326,7 @@ msgstr "Connecting"
 msgid "Connecting..."
 msgstr "Connecting..."
 
-#: src/components/notifications/events/payload-preview.tsx:54
+#: src/components/notifications/events/payload-preview.tsx:53
 #: src/components/player/player-card.tsx:264
 msgid "Connection"
 msgstr "Connection"
@@ -3349,8 +3353,7 @@ msgstr "Device Model"
 msgid "Dimensions & Filters"
 msgstr "Dimensions & Filters"
 
-#: src/components/notifications/browser-notification-listener.tsx:61
-#: src/components/notifications/events/payload-preview.tsx:59
+#: src/components/notifications/events/payload-preview.tsx:58
 #: src/components/player/player-card.tsx:288
 #: src/components/proxies/proxy-route-label.tsx:33
 msgid "Direct"
@@ -3559,8 +3562,8 @@ msgstr "Due at its next use"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:196
 #: src/components/config/engines/forms/mesio-sections.tsx:204
-#: src/components/notifications/__tests__/payload-preview.test.tsx:20
-#: src/components/notifications/events/payload-preview.tsx:83
+#: src/components/notifications/__tests__/payload-preview.test.tsx:21
+#: src/components/notifications/events/payload-preview.tsx:82
 #: src/components/pipeline/jobs/job-progress-panel.tsx:109
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:631
 #: src/components/streamers/edit/active-download-card.tsx:138
@@ -3950,7 +3953,7 @@ msgstr "Enter the new credentials in full. Token and login fields left empty are
 msgid "Enter your credentials to access your account"
 msgstr "Enter your credentials to access your account"
 
-#: src/components/notifications/events/payload-preview.tsx:35
+#: src/components/notifications/events/payload-preview.tsx:34
 #: src/components/streamers/card/use-streamer-status.tsx:133
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:95
 msgid "Error"
@@ -5653,7 +5656,7 @@ msgstr "Isolation level for tracking identifiers. Global is usually best."
 msgid "Jitter"
 msgstr "Jitter"
 
-#: src/components/notifications/events/payload-preview.tsx:30
+#: src/components/notifications/events/payload-preview.tsx:29
 msgid "Job"
 msgstr "Job"
 
@@ -7742,7 +7745,7 @@ msgstr "Paste cookies"
 msgid "Paste your CSS theme below. Include both <0>:root</0> (light mode) and <1>.dark</1> (dark mode) sections with CSS variables like <2>--primary</2>, <3>--background</3>, etc. The theme will automatically switch between light and dark modes."
 msgstr "Paste your CSS theme below. Include both <0>:root</0> (light mode) and <1>.dark</1> (dark mode) sections with CSS variables like <2>--primary</2>, <3>--background</3>, etc. The theme will automatically switch between light and dark modes."
 
-#: src/components/notifications/events/payload-preview.tsx:74
+#: src/components/notifications/events/payload-preview.tsx:73
 msgid "Path"
 msgstr "Path"
 
@@ -7770,7 +7773,7 @@ msgstr "Paused"
 msgid "Paused since"
 msgstr "Paused since"
 
-#: src/components/notifications/events/payload-preview.tsx:64
+#: src/components/notifications/events/payload-preview.tsx:63
 msgid "Paused until"
 msgstr "Paused until"
 
@@ -7953,7 +7956,7 @@ msgstr "Pipeline Structure"
 msgid "Pipeline Timeouts"
 msgstr "Pipeline Timeouts"
 
-#: src/components/notifications/events/payload-preview.tsx:49
+#: src/components/notifications/events/payload-preview.tsx:48
 #: src/components/streamers/config/streamer-identity-fields.tsx:169
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:344
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:360
@@ -8118,7 +8121,7 @@ msgstr "Port"
 msgid "Position"
 msgstr "Position"
 
-#: src/components/sidebar/footer.tsx:28
+#: src/components/sidebar/footer.tsx:26
 msgid "Powered by <0>Rust-srec</0>."
 msgstr "Powered by <0>Rust-srec</0>."
 
@@ -8568,7 +8571,7 @@ msgstr "Real-Time Logs"
 msgid "Real-time status of all system components and resources."
 msgstr "Real-time status of all system components and resources."
 
-#: src/components/notifications/events/payload-preview.tsx:42
+#: src/components/notifications/events/payload-preview.tsx:41
 #: src/components/streamers/card/use-streamer-status.tsx:304
 msgid "Reason"
 msgstr "Reason"
@@ -9350,8 +9353,7 @@ msgstr "Saved proxies that global, platform, template, streamer and account sett
 #: src/components/config/shared/proxy-route-picker.tsx:92
 #: src/components/config/shared/proxy-route-picker.tsx:182
 #: src/components/config/shared/proxy-route-picker.tsx:253
-#: src/components/notifications/browser-notification-listener.tsx:60
-#: src/components/notifications/events/payload-preview.tsx:57
+#: src/components/notifications/events/payload-preview.tsx:56
 #: src/components/proxies/proxy-route-label.tsx:68
 msgid "Saved proxy"
 msgstr "Saved proxy"
@@ -10031,8 +10033,8 @@ msgstr "Single URL"
 msgid "Sites"
 msgstr "Sites"
 
-#: src/components/notifications/__tests__/payload-preview.test.tsx:21
-#: src/components/notifications/events/payload-preview.tsx:93
+#: src/components/notifications/__tests__/payload-preview.test.tsx:22
+#: src/components/notifications/events/payload-preview.tsx:92
 #: src/components/streamers/edit/active-download-card.tsx:127
 msgid "Size"
 msgstr "Size"
@@ -10334,7 +10336,7 @@ msgstr "Stream URL"
 msgid "Stream Variant"
 msgstr "Stream Variant"
 
-#: src/components/notifications/events/payload-preview.tsx:29
+#: src/components/notifications/events/payload-preview.tsx:28
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:240
 msgid "Streamer"
 msgstr "Streamer"
@@ -10525,8 +10527,7 @@ msgstr "SYSTEM"
 msgid "System Health"
 msgstr "System Health"
 
-#: src/components/notifications/browser-notification-listener.tsx:61
-#: src/components/notifications/events/payload-preview.tsx:59
+#: src/components/notifications/events/payload-preview.tsx:58
 #: src/components/proxies/proxy-route-label.tsx:34
 msgid "System proxy"
 msgstr "System proxy"
@@ -11098,7 +11099,7 @@ msgstr "Timing & Delays"
 msgid "Tip: 1 Mbit/s ≈ 0.125M (divide bits by 8)."
 msgstr "Tip: 1 Mbit/s ≈ 0.125M (divide bits by 8)."
 
-#: src/components/notifications/events/payload-preview.tsx:45
+#: src/components/notifications/events/payload-preview.tsx:44
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:187
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:188
 msgid "Title"
@@ -11386,7 +11387,7 @@ msgstr "Type"
 msgid "Type something..."
 msgstr "Type something..."
 
-#: src/components/sidebar/footer.tsx:42
+#: src/components/sidebar/footer.tsx:40
 msgid "UI: {UI_BUILD}"
 msgstr "UI: {UI_BUILD}"
 
@@ -11753,7 +11754,7 @@ msgstr "Verify Integrity"
 msgid "Verify Output"
 msgstr "Verify Output"
 
-#: src/components/notifications/events/payload-preview.tsx:99
+#: src/components/notifications/events/payload-preview.tsx:98
 msgid "Version"
 msgstr "Version"
 

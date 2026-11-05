@@ -331,6 +331,10 @@ msgstr "{pending, plural, other {# 个上传排队中}}"
 msgid "{pending} queued"
 msgstr "{pending} 个排队中"
 
+#: src/components/notifications/browser-notification-listener.tsx:84
+msgid "{queued} jobs queued"
+msgstr "{queued} 个任务排队中"
+
 #: src/components/credentials/account-usage.tsx:220
 msgid "{recordings, plural, one {# live recording} other {# live recordings}}"
 msgstr "{recordings, plural, other {# 个录制进行中}}"
@@ -1400,7 +1404,7 @@ msgstr "返回模板列表"
 msgid "Back to workflows"
 msgstr "返回工作流列表"
 
-#: src/components/sidebar/footer.tsx:40
+#: src/components/sidebar/footer.tsx:38
 msgid "Backend: {backendLabel}"
 msgstr "后端：{backendLabel}"
 
@@ -1777,7 +1781,7 @@ msgstr "采集设置"
 msgid "Case Insensitive"
 msgstr "不区分大小写"
 
-#: src/components/notifications/events/payload-preview.tsx:47
+#: src/components/notifications/events/payload-preview.tsx:46
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:224
 msgid "Category"
 msgstr "分类"
@@ -2322,7 +2326,7 @@ msgstr "连接中"
 msgid "Connecting..."
 msgstr "连接中..."
 
-#: src/components/notifications/events/payload-preview.tsx:54
+#: src/components/notifications/events/payload-preview.tsx:53
 #: src/components/player/player-card.tsx:264
 msgid "Connection"
 msgstr "连接方式"
@@ -3349,8 +3353,7 @@ msgstr "设备机型"
 msgid "Dimensions & Filters"
 msgstr "尺寸与滤镜"
 
-#: src/components/notifications/browser-notification-listener.tsx:61
-#: src/components/notifications/events/payload-preview.tsx:59
+#: src/components/notifications/events/payload-preview.tsx:58
 #: src/components/player/player-card.tsx:288
 #: src/components/proxies/proxy-route-label.tsx:33
 msgid "Direct"
@@ -3559,8 +3562,8 @@ msgstr "下次使用时续期"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:196
 #: src/components/config/engines/forms/mesio-sections.tsx:204
-#: src/components/notifications/__tests__/payload-preview.test.tsx:20
-#: src/components/notifications/events/payload-preview.tsx:83
+#: src/components/notifications/__tests__/payload-preview.test.tsx:21
+#: src/components/notifications/events/payload-preview.tsx:82
 #: src/components/pipeline/jobs/job-progress-panel.tsx:109
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:631
 #: src/components/streamers/edit/active-download-card.tsx:138
@@ -3950,7 +3953,7 @@ msgstr "请完整填写新的凭据。留空的令牌和登录字段会被清除
 msgid "Enter your credentials to access your account"
 msgstr "输入你的凭据以登录账户"
 
-#: src/components/notifications/events/payload-preview.tsx:35
+#: src/components/notifications/events/payload-preview.tsx:34
 #: src/components/streamers/card/use-streamer-status.tsx:133
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:95
 msgid "Error"
@@ -5653,7 +5656,7 @@ msgstr "追踪标识符的隔离级别。全局通常是最佳选择。"
 msgid "Jitter"
 msgstr "抖动"
 
-#: src/components/notifications/events/payload-preview.tsx:30
+#: src/components/notifications/events/payload-preview.tsx:29
 msgid "Job"
 msgstr "任务"
 
@@ -7742,7 +7745,7 @@ msgstr "粘贴 Cookie"
 msgid "Paste your CSS theme below. Include both <0>:root</0> (light mode) and <1>.dark</1> (dark mode) sections with CSS variables like <2>--primary</2>, <3>--background</3>, etc. The theme will automatically switch between light and dark modes."
 msgstr "在下方粘贴你的 CSS 主题。请同时包含 <0>:root</0>（浅色模式）和 <1>.dark</1>（深色模式）部分，并使用 <2>--primary</2>、<3>--background</3> 等 CSS 变量。主题会在浅色和深色模式之间自动切换。"
 
-#: src/components/notifications/events/payload-preview.tsx:74
+#: src/components/notifications/events/payload-preview.tsx:73
 msgid "Path"
 msgstr "路径"
 
@@ -7770,7 +7773,7 @@ msgstr "已暂停"
 msgid "Paused since"
 msgstr "暂停开始于"
 
-#: src/components/notifications/events/payload-preview.tsx:64
+#: src/components/notifications/events/payload-preview.tsx:63
 msgid "Paused until"
 msgstr "暂停至"
 
@@ -7953,7 +7956,7 @@ msgstr "处理管道结构"
 msgid "Pipeline Timeouts"
 msgstr "流水线超时"
 
-#: src/components/notifications/events/payload-preview.tsx:49
+#: src/components/notifications/events/payload-preview.tsx:48
 #: src/components/streamers/config/streamer-identity-fields.tsx:169
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:344
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:360
@@ -8118,7 +8121,7 @@ msgstr "端口"
 msgid "Position"
 msgstr "位置"
 
-#: src/components/sidebar/footer.tsx:28
+#: src/components/sidebar/footer.tsx:26
 msgid "Powered by <0>Rust-srec</0>."
 msgstr "由 <0>Rust-srec</0> 提供支持。"
 
@@ -8568,7 +8571,7 @@ msgstr "实时日志"
 msgid "Real-time status of all system components and resources."
 msgstr "所有系统组件与资源的实时状态。"
 
-#: src/components/notifications/events/payload-preview.tsx:42
+#: src/components/notifications/events/payload-preview.tsx:41
 #: src/components/streamers/card/use-streamer-status.tsx:304
 msgid "Reason"
 msgstr "原因"
@@ -9350,8 +9353,7 @@ msgstr "全局、平台、模板、主播和账号设置可选用这些已保存
 #: src/components/config/shared/proxy-route-picker.tsx:92
 #: src/components/config/shared/proxy-route-picker.tsx:182
 #: src/components/config/shared/proxy-route-picker.tsx:253
-#: src/components/notifications/browser-notification-listener.tsx:60
-#: src/components/notifications/events/payload-preview.tsx:57
+#: src/components/notifications/events/payload-preview.tsx:56
 #: src/components/proxies/proxy-route-label.tsx:68
 msgid "Saved proxy"
 msgstr "已保存的代理"
@@ -10031,8 +10033,8 @@ msgstr "单个 URL"
 msgid "Sites"
 msgstr "网站"
 
-#: src/components/notifications/__tests__/payload-preview.test.tsx:21
-#: src/components/notifications/events/payload-preview.tsx:93
+#: src/components/notifications/__tests__/payload-preview.test.tsx:22
+#: src/components/notifications/events/payload-preview.tsx:92
 #: src/components/streamers/edit/active-download-card.tsx:127
 msgid "Size"
 msgstr "大小"
@@ -10334,7 +10336,7 @@ msgstr "直播链接"
 msgid "Stream Variant"
 msgstr "码流版本"
 
-#: src/components/notifications/events/payload-preview.tsx:29
+#: src/components/notifications/events/payload-preview.tsx:28
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:240
 msgid "Streamer"
 msgstr "主播"
@@ -10525,8 +10527,7 @@ msgstr "系统"
 msgid "System Health"
 msgstr "系统健康"
 
-#: src/components/notifications/browser-notification-listener.tsx:61
-#: src/components/notifications/events/payload-preview.tsx:59
+#: src/components/notifications/events/payload-preview.tsx:58
 #: src/components/proxies/proxy-route-label.tsx:34
 msgid "System proxy"
 msgstr "系统代理"
@@ -11098,7 +11099,7 @@ msgstr "时间与延迟"
 msgid "Tip: 1 Mbit/s ≈ 0.125M (divide bits by 8)."
 msgstr "提示：1 Mbit/s ≈ 0.125M（将比特数除以 8）。"
 
-#: src/components/notifications/events/payload-preview.tsx:45
+#: src/components/notifications/events/payload-preview.tsx:44
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:187
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:188
 msgid "Title"
@@ -11386,7 +11387,7 @@ msgstr "类型"
 msgid "Type something..."
 msgstr "输入内容..."
 
-#: src/components/sidebar/footer.tsx:42
+#: src/components/sidebar/footer.tsx:40
 msgid "UI: {UI_BUILD}"
 msgstr "界面：{UI_BUILD}"
 
@@ -11753,7 +11754,7 @@ msgstr "校验完整性"
 msgid "Verify Output"
 msgstr "验证输出"
 
-#: src/components/notifications/events/payload-preview.tsx:99
+#: src/components/notifications/events/payload-preview.tsx:98
 msgid "Version"
 msgstr "版本"
 
