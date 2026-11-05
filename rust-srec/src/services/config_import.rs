@@ -23,7 +23,7 @@ use crate::api::auth_service::MAX_USERNAME_LENGTH;
 use crate::config::ConfigService;
 use crate::config::backup::{
     ConfigExport, GlobalConfigExport, ImportMode, ImportStats, NotificationChannelExport,
-    PipelinePresetExport, PlatformExport, TemplateExport,
+    PipelinePresetExport, PlatformExport, StreamerExport, TemplateExport,
 };
 use crate::credentials::{CredentialOwner, CredentialSelection};
 #[cfg(test)]
@@ -1670,29 +1670,38 @@ fn platform_model(
 
 fn streamer_model(
     existing: Option<&StreamerDbModel>,
-    source: &crate::config::backup::StreamerExport,
+    source: &StreamerExport,
     platform_id: &str,
     template_id: Option<String>,
 ) -> StreamerDbModel {
+    let StreamerExport {
+        name,
+        url,
+        platform: _, // resolved to `platform_id` by the caller
+        template: _, // resolved to `template_id` by the caller
+        priority,
+        state,
+        avatar_url,
+        streamer_specific_config,
+        proxy_route: _, // written by the caller
+        filters: _,     // written by the caller
+    } = source;
     let mut model = existing
         .cloned()
-        .unwrap_or_else(|| StreamerDbModel::new(&source.name, &source.url, platform_id));
-    model.name = source.name.clone();
-    model.url = source.url.clone();
+        .unwrap_or_else(|| StreamerDbModel::new(name, url, platform_id));
+    model.name = name.clone();
+    model.url = url.clone();
     model.platform_config_id = platform_id.to_string();
     model.template_config_id = template_id;
-    model.state = imported_state(existing, &source.state);
+    model.state = imported_state(existing, state);
     if clears_error_tracking(existing, &model.state) {
         model.consecutive_error_count = Some(0);
         model.disabled_until = None;
         model.last_error = None;
     }
-    model.priority = source.priority.to_ascii_uppercase();
-    model.avatar = source
-        .avatar_url
-        .clone()
-        .filter(|value| !value.trim().is_empty());
-    model.streamer_specific_config = source.streamer_specific_config.clone().map(db_json);
+    model.priority = priority.to_ascii_uppercase();
+    model.avatar = avatar_url.clone().filter(|value| !value.trim().is_empty());
+    model.streamer_specific_config = streamer_specific_config.clone().map(db_json);
     model.updated_at = crate::database::time::now_ms();
     model
 }
