@@ -61,6 +61,8 @@ export function OutputCard({
 }: OutputCardProps) {
   const { i18n } = useLingui();
   const { copy, copied } = useCopyToClipboard();
+  // Separate instance so copying the directory doesn't mark Copy Path as copied.
+  const { copy: copyDirectory } = useCopyToClipboard();
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Client-side time for hydration-safe relative time
@@ -214,7 +216,10 @@ export function OutputCard({
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() =>
-                void copy(directory, i18n._(msg`Directory path copied`))
+                void copyDirectory(
+                  directory,
+                  i18n._(msg`Directory path copied`),
+                )
               }
             >
               <FolderOpen className="mr-2 h-4 w-4" />{' '}
