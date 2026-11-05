@@ -2540,7 +2540,7 @@ impl JobQueue {
         }
         let _ = self
             .depth
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
                 Some(current.saturating_sub(by))
             });
     }

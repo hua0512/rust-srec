@@ -964,10 +964,10 @@ impl DagRepository for TestDagRepository {
     async fn get_dag(&self, id: &str) -> Result<DagExecutionDbModel> {
         let remaining = self
             .reads_before_dags_vanish
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
                 Some(remaining.saturating_sub(1))
             })
-            .expect("fetch_update closure always returns Some");
+            .expect("try_update closure always returns Some");
         if remaining == 0 {
             return Err(crate::Error::not_found("DAG execution", id));
         }
