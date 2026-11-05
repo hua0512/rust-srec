@@ -43,23 +43,12 @@ export const JobLogEntrySchema = z.object({
   message: z.string(),
 });
 
-export const StepDurationInfoSchema = z.object({
-  step: z.number(),
-  processor: z.string(),
-  duration_secs: z.number(),
-  started_at: z.string(),
-  completed_at: z.string(),
-});
-
 export const JobExecutionInfoSchema = z.object({
   current_processor: z.string().nullable().optional(),
-  current_step: z.number().nullable().optional(),
-  total_steps: z.number().nullable().optional(),
   items_produced: z.array(z.string()),
   input_size_bytes: z.number().nullable().optional(),
   output_size_bytes: z.number().nullable().optional(),
   logs: z.array(JobLogEntrySchema),
-  step_durations: z.array(StepDurationInfoSchema).default([]),
   log_lines_total: z.number().default(0),
   log_warn_count: z.number().default(0),
   log_error_count: z.number().default(0),

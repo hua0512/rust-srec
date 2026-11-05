@@ -23,6 +23,7 @@ const FFMPEG_SECTIONS: readonly SectionSpec[] = [
         label: msg`Binary Path`,
         description: msg`Absolute path or 'ffmpeg' if in PATH`,
         fallback: 'ffmpeg',
+        fallbackLabel: 'FFMPEG_PATH or ffmpeg',
       },
       {
         kind: 'text',
