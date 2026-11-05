@@ -37,7 +37,6 @@ import { ArrowLeft, AlertCircle } from 'lucide-react';
 import { getMediaDownloadUrl, getMediaUrl, isSameOriginUrl } from '@/lib/url';
 import { isTauriRuntime, revealItemInDir } from '@/utils/tauri';
 import { findDanmuOutput, resolvePlayerMediaType } from '@/lib/media';
-import { formatDuration } from '@/lib/format';
 import { isNotFoundError } from '@/lib/api-error';
 import type { MediaOutput } from '@/api/schemas/system';
 import type { SessionSegment } from '@/api/schemas/session';
@@ -139,11 +138,6 @@ function SessionDetailPage() {
   const { sessionId } = Route.useParams();
   const { user } = Route.useRouteContext();
   const [playingOutput, setPlayingOutput] = useState<MediaOutput | null>(null);
-
-  const [now, setNow] = useState<Date | null>(null);
-  useEffect(() => {
-    setNow(new Date());
-  }, []);
 
   const {
     data: session,
@@ -340,14 +334,6 @@ function SessionDetailPage() {
     );
   }
 
-  const duration = session.duration_secs
-    ? formatDuration(session.duration_secs)
-    : session.start_time && now
-      ? formatDuration(
-          (now.getTime() - new Date(session.start_time).getTime()) / 1000,
-        )
-      : '-';
-
   return (
     <div className="relative min-h-screen bg-background overflow-hidden selection:bg-primary/20">
       <div className="fixed inset-0 pointer-events-none">
@@ -427,7 +413,6 @@ function SessionDetailPage() {
           >
             <OverviewTab
               session={session}
-              duration={duration}
               outputs={outputs}
               onPlay={setPlayingOutput}
               token={user?.token?.access_token}
