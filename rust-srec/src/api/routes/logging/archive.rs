@@ -53,8 +53,7 @@ impl LogArchiveService {
             )?;
             Ok::<_, ApiError>((files, permit))
         })
-        .await
-        .map_err(ApiError::from)??;
+        .await??;
         Ok(Body::from_stream(ArchiveStream::new(files, permit)))
     }
 }
@@ -160,8 +159,7 @@ fn build_archive_zip(
         // Snapshot each file's scanned length so a growing active log cannot extend the
         // export indefinitely. ZIP64 remains enabled even for initially small log files.
         let mut input = input.take(file.size_bytes);
-        zip.start_file(&file.filename, options)
-            .map_err(ApiError::from)?;
+        zip.start_file(&file.filename, options)?;
         while input.limit() > 0 {
             if cancellation.is_cancelled() {
                 return Err(ApiError::internal("Log archive download cancelled"));
@@ -174,11 +172,11 @@ fn build_archive_zip(
                     "Log file was truncated during archive download",
                 ));
             }
-            zip.write_all(&buffer[..read]).map_err(ApiError::from)?;
+            zip.write_all(&buffer[..read])?;
         }
     }
 
-    let mut output = zip.finish().map_err(ApiError::from)?.into_inner();
+    let mut output = zip.finish()?.into_inner();
     output.flush().map_err(ApiError::from)
 }
 

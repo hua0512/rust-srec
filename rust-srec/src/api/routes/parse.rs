@@ -252,9 +252,8 @@ async fn parse_one(
         {
             return extract_managed(state, principal, config, None, deadline).await;
         }
-        let extractor_config =
-            resolve_extractor_config_for_url(state, &request.url, request.cookies.clone()).await;
-        let route = resolve_route_for_url(state, &request.url).await?;
+        let (extractor_config, route) =
+            resolve_url_config(state, &request.url, request.cookies.clone()).await?;
         let extractor_factory = extractor_factory_for_proxy(&route.target)?;
         admit_parse(state, &extractor_config, &route, deadline).await?;
         let platform_id = extractor_config.platform_id.clone();
@@ -311,13 +310,11 @@ async fn managed_config(
         let config = state
             .config_service
             .get_config_for_streamer(&streamer.id)
-            .await
-            .map_err(ApiError::from)?;
+            .await?;
         let platform = state
             .config_service
             .get_platform_config(&streamer.platform_config_id)
-            .await
-            .map_err(ApiError::from)?;
+            .await?;
         (
             CredentialOwner::Streamer {
                 streamer_id: streamer.id.clone(),
@@ -347,16 +344,14 @@ async fn managed_config(
         let matches = state
             .config_service
             .list_platform_configs()
-            .await
-            .map_err(ApiError::from)?
+            .await?
             .into_iter()
             .filter(|row| row.platform_name.eq_ignore_ascii_case(name))
             .collect::<Vec<_>>();
         let selections: std::collections::HashMap<String, CredentialSelection> = state
             .config_service
             .list_credential_selections()
-            .await
-            .map_err(ApiError::from)?
+            .await?
             .into_iter()
             .filter(|stored| matches!(stored.owner, CredentialOwner::Platform { .. }))
             .map(|stored| (stored.platform_id, stored.selection))
@@ -386,8 +381,7 @@ async fn managed_config(
             .map(|selection| {
                 ResolvedCredentialPolicy::new(platform.id.clone(), owner.clone(), selection.clone())
             })
-            .transpose()
-            .map_err(ApiError::from)?;
+            .transpose()?;
         if requested_profile.is_none() && configured.is_none() {
             return Ok(None);
         }
@@ -395,8 +389,7 @@ async fn managed_config(
             .platform_specific_config
             .as_deref()
             .map(serde_json::from_str)
-            .transpose()
-            .map_err(ApiError::from)?;
+            .transpose()?;
         let extractor = platform
             .extractor
             .as_deref()
@@ -420,8 +413,7 @@ async fn managed_config(
             .execution
             .repository()
             .accessible(&owner, &platform_id)
-            .await
-            .map_err(ApiError::from)?
+            .await?
             .iter()
             .any(|profile| profile.id == id)
         {
@@ -435,8 +427,7 @@ async fn managed_config(
             CredentialSelection::Fixed {
                 credential_id: id.to_owned(),
             },
-        )
-        .map_err(ApiError::from)?
+        )?
     } else if let Some(policy) = configured {
         policy
     } else {
@@ -537,8 +528,7 @@ async fn extract_managed(
                 }
             },
         )
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
     let is_live = extraction.value.is_live;
     let danmu = LiveDanmuTarget::resolve(
         &config.source.url,
@@ -602,8 +592,7 @@ pub(crate) async fn validate_playback(
             .execution
             .repository()
             .health(profile_id)
-            .await
-            .map_err(ApiError::from)?
+            .await?
             .is_some_and(|health| {
                 health.validity == crate::credentials::CredentialValidity::Invalid
             })
@@ -737,86 +726,10 @@ pub async fn parse_url_batch(
         responses.push(
             parse_one(&state, request, &principal)
                 .await
-                .unwrap_or_else(|error| ParseUrlResponse {
-                    playback: None,
-                    success: false,
-                    is_live: false,
-                    media_info: None,
-                    error: Some(error.message),
-                    danmu_handle: None,
-                }),
+                .unwrap_or_else(|error| ParseUrlResponse::failure(error.message)),
         );
     }
     Ok((super::private_response_headers(), Json(responses)))
-}
-
-/// Resolve authentication and platform-specific extractor configuration for a URL.
-///
-/// Unmanaged requests: explicit request cookies, if any, are the only
-/// authentication. Streamer configuration supplies extractor settings when the
-/// URL is already registered; otherwise the matching platform configuration.
-async fn resolve_extractor_config_for_url(
-    state: &ParseRouteState,
-    url: &str,
-    explicit_cookies: Option<String>,
-) -> ResolvedExtractorConfig {
-    let mut resolved = ResolvedExtractorConfig {
-        platform_id: None,
-        cookies: explicit_cookies,
-        platform_extras: None,
-        extractor: ExtractorSelection::default(),
-    };
-    let config_service = &state.config_service;
-
-    // A streamer marked deleted still owns its url until the reaper removes the
-    // row, but its configuration is no longer the user's; resolve as if the url
-    // belonged to no streamer.
-    if let Some(streamer) = state
-        .streamer_manager
-        .get_streamer_by_url(url)
-        .filter(|streamer| !streamer.is_deleted())
-    {
-        resolved.platform_id = Some(streamer.platform_config_id.clone());
-        match config_service.get_config_for_streamer(&streamer.id).await {
-            Ok(config) => {
-                // The resolver already removed account fields from these extras.
-                resolved.platform_extras = config.platform_extras.clone();
-                resolved.extractor = config.extractor;
-                return resolved;
-            }
-            Err(error) => {
-                warn!(
-                    %error,
-                    streamer_id = %streamer.id,
-                    "Failed to get streamer config while parsing URL"
-                );
-            }
-        }
-    }
-
-    use crate::domain::value_objects::StreamerUrl;
-
-    if let Ok(streamer_url) = StreamerUrl::new(url)
-        && let Some(platform_name) = streamer_url.platform()
-        && let Ok(platform_configs) = config_service.list_platform_configs().await
-        && let Some(platform_config) = platform_configs
-            .into_iter()
-            .find(|config| config.platform_name.eq_ignore_ascii_case(platform_name))
-    {
-        resolved.platform_id = Some(platform_config.id.clone());
-        resolved.platform_extras = platform_config
-            .platform_specific_config
-            .as_deref()
-            .and_then(|config| serde_json::from_str::<serde_json::Value>(config).ok())
-            .map(|extras| {
-                crate::credentials::isolate_platform_authentication_extras(
-                    &platform_config.platform_name,
-                    extras,
-                )
-            });
-    }
-
-    resolved
 }
 
 #[utoipa::path(
@@ -856,11 +769,9 @@ async fn resolve_one(
     deadline: OperationDeadline,
 ) -> ApiResult<Json<crate::api::models::ResolveUrlResponse>> {
     if request.url.is_empty() {
-        return Ok(Json(crate::api::models::ResolveUrlResponse {
-            success: false,
-            stream_info: None,
-            error: Some("URL cannot be empty".to_string()),
-        }));
+        return Ok(Json(crate::api::models::ResolveUrlResponse::failure(
+            "URL cannot be empty",
+        )));
     }
 
     // Deserialize stream_info from Value to StreamInfo
@@ -868,18 +779,15 @@ async fn resolve_one(
         match serde_json::from_value(request.stream_info) {
             Ok(info) => info,
             Err(e) => {
-                return Ok(Json(crate::api::models::ResolveUrlResponse {
-                    success: false,
-                    stream_info: None,
-                    error: Some(format!("Invalid stream_info: {}", e)),
-                }));
+                return Ok(Json(crate::api::models::ResolveUrlResponse::failure(
+                    format!("Invalid stream_info: {}", e),
+                )));
             }
         };
 
-    let route = resolve_route_for_url(state, &request.url).await?;
+    let (extractor_config, route) =
+        resolve_url_config(state, &request.url, request.cookies.clone()).await?;
     let extractor_factory = extractor_factory_for_proxy(&route.target)?;
-    let extractor_config =
-        resolve_extractor_config_for_url(state, &request.url, request.cookies.clone()).await;
     admit_parse(state, &extractor_config, &route, deadline).await?;
 
     let platform_id = extractor_config.platform_id.clone();
@@ -891,11 +799,9 @@ async fn resolve_one(
     ) {
         Ok(ext) => ext,
         Err(e) => {
-            return Ok(Json(crate::api::models::ResolveUrlResponse {
-                success: false,
-                stream_info: None,
-                error: Some(format!("Failed to create extractor: {}", e)),
-            }));
+            return Ok(Json(crate::api::models::ResolveUrlResponse::failure(
+                format!("Failed to create extractor: {}", e),
+            )));
         }
     };
 
@@ -907,19 +813,15 @@ async fn resolve_one(
                 stream_info: Some(val),
                 error: None,
             })),
-            Err(e) => Ok(Json(crate::api::models::ResolveUrlResponse {
-                success: false,
-                stream_info: None,
-                error: Some(format!("Failed to serialize updated stream info: {}", e)),
-            })),
+            Err(e) => Ok(Json(crate::api::models::ResolveUrlResponse::failure(
+                format!("Failed to serialize updated stream info: {}", e),
+            ))),
         },
         Err(e) => {
             observe_parse_error(state, platform_id.as_deref(), &route, &e);
-            Ok(Json(crate::api::models::ResolveUrlResponse {
-                success: false,
-                stream_info: None,
-                error: Some(format!("Failed to resolve URL: {}", e)),
-            }))
+            Ok(Json(crate::api::models::ResolveUrlResponse::failure(
+                format!("Failed to resolve URL: {}", e),
+            )))
         }
     }
 }
@@ -936,14 +838,7 @@ async fn process_parse_request(
 ) -> ParseUrlResponse {
     // Validate URL
     if url.is_empty() {
-        return ParseUrlResponse {
-            playback: None,
-            success: false,
-            is_live: false,
-            media_info: None,
-            error: Some("URL cannot be empty".to_string()),
-            danmu_handle: None,
-        };
+        return ParseUrlResponse::failure("URL cannot be empty");
     }
 
     debug!("Parsing URL: {}", url);
@@ -958,25 +853,11 @@ async fn process_parse_request(
         Ok(ext) => ext,
         Err(platforms_parser::extractor::error::ExtractorError::UnsupportedExtractor) => {
             warn!("Unsupported platform for URL: {}", url);
-            return ParseUrlResponse {
-                playback: None,
-                success: false,
-                is_live: false,
-                media_info: None,
-                error: Some("Unsupported platform".to_string()),
-                danmu_handle: None,
-            };
+            return ParseUrlResponse::failure("Unsupported platform");
         }
         Err(e) => {
             warn!("Failed to create extractor for URL {}: {}", url, e);
-            return ParseUrlResponse {
-                playback: None,
-                success: false,
-                is_live: false,
-                media_info: None,
-                error: Some(format!("Failed to create extractor: {}", e)),
-                danmu_handle: None,
-            };
+            return ParseUrlResponse::failure(format!("Failed to create extractor: {}", e));
         }
     };
 
@@ -995,14 +876,10 @@ async fn process_parse_request(
                 Ok(v) => v,
                 Err(e) => {
                     warn!("Failed to serialize media info: {}", e);
-                    return ParseUrlResponse {
-                        playback: None,
-                        success: false,
-                        is_live: false,
-                        media_info: None,
-                        error: Some(format!("Failed to serialize media info: {}", e)),
-                        danmu_handle: None,
-                    };
+                    return ParseUrlResponse::failure(format!(
+                        "Failed to serialize media info: {}",
+                        e
+                    ));
                 }
             };
 
@@ -1042,14 +919,7 @@ async fn process_parse_request(
                 _ => format!("Extraction failed: {}", e),
             };
 
-            ParseUrlResponse {
-                playback: None,
-                success: false,
-                is_live: false,
-                media_info: None,
-                error: Some(error_message),
-                danmu_handle: None,
-            }
+            ParseUrlResponse::failure(error_message)
         }
     }
 }
@@ -1061,27 +931,46 @@ fn extractor_factory_for_proxy(
     Ok(ExtractorFactory::new(client).with_proxy(proxy.clone()))
 }
 
-/// The route requests for `url` take: a registered streamer's, else the
-/// route of the platform the URL belongs to, else the global route. A route
-/// that cannot be resolved fails the request rather than connecting directly.
-pub(super) async fn resolve_route_for_url(
+/// What configures a URL.
+enum UrlOwner {
+    /// A registered streamer and its merged configuration.
+    Streamer {
+        platform_id: String,
+        config: std::sync::Arc<crate::config::MergedConfig>,
+    },
+    /// The stored platform the URL belongs to, if any.
+    Platform(Option<Box<crate::database::models::PlatformConfigDbModel>>),
+}
+
+/// The owner of `url` and the route requests for it take: a registered
+/// streamer's, else the route of the platform the URL belongs to, else the
+/// global route. A route that cannot be resolved fails the request rather
+/// than connecting directly.
+async fn resolve_url_owner(
     state: &ParseRouteState,
     url: &str,
-) -> ApiResult<crate::proxies::ResolvedRoute> {
+) -> ApiResult<(UrlOwner, crate::proxies::ResolvedRoute)> {
     let config_service = &state.config_service;
+
+    // A streamer marked deleted still owns its url until the reaper removes the
+    // row, but its configuration is no longer the user's; resolve as if the url
+    // belonged to no streamer.
     if let Some(streamer) = state
         .streamer_manager
         .get_streamer_by_url(url)
         .filter(|streamer| !streamer.is_deleted())
     {
-        return Ok(config_service
-            .get_config_for_streamer(&streamer.id)
-            .await?
-            .proxy_route
-            .clone());
+        let config = config_service.get_config_for_streamer(&streamer.id).await?;
+        let route = config.proxy_route.clone();
+        let owner = UrlOwner::Streamer {
+            platform_id: streamer.platform_config_id.clone(),
+            config,
+        };
+        return Ok((owner, route));
     }
+
     use crate::domain::value_objects::StreamerUrl;
-    let platform_id = match StreamerUrl::new(url)
+    let platform = match StreamerUrl::new(url)
         .ok()
         .and_then(|url| url.platform().map(str::to_owned))
     {
@@ -1089,13 +978,72 @@ pub(super) async fn resolve_route_for_url(
             .list_platform_configs()
             .await?
             .into_iter()
-            .find(|config| config.platform_name.eq_ignore_ascii_case(&platform_name))
-            .map(|config| config.id),
+            .find(|config| config.platform_name.eq_ignore_ascii_case(&platform_name)),
         None => None,
     };
-    Ok(config_service
-        .resolve_scope_route(platform_id.as_deref())
-        .await?)
+    let route = config_service
+        .resolve_scope_route(platform.as_ref().map(|platform| platform.id.as_str()))
+        .await?;
+    Ok((UrlOwner::Platform(platform.map(Box::new)), route))
+}
+
+/// Resolve the extractor configuration and route for an unmanaged request.
+///
+/// Explicit request cookies, if any, are the only authentication. A registered
+/// streamer supplies the extractor settings; otherwise the matching platform
+/// configuration.
+async fn resolve_url_config(
+    state: &ParseRouteState,
+    url: &str,
+    explicit_cookies: Option<String>,
+) -> ApiResult<(ResolvedExtractorConfig, crate::proxies::ResolvedRoute)> {
+    let (owner, route) = resolve_url_owner(state, url).await?;
+    let extractor_config = match owner {
+        UrlOwner::Streamer {
+            platform_id,
+            config,
+        } => ResolvedExtractorConfig {
+            platform_id: Some(platform_id),
+            cookies: explicit_cookies,
+            // The resolver already removed account fields from these extras.
+            platform_extras: config.platform_extras.clone(),
+            extractor: config.extractor,
+        },
+        UrlOwner::Platform(platform) => {
+            let platform_extras = platform.as_ref().and_then(|platform| {
+                let raw = platform.platform_specific_config.as_deref()?;
+                match serde_json::from_str(raw) {
+                    Ok(extras) => Some(crate::credentials::isolate_platform_authentication_extras(
+                        &platform.platform_name,
+                        extras,
+                    )),
+                    Err(error) => {
+                        warn!(
+                            %error,
+                            platform_id = %platform.id,
+                            "Ignoring invalid platform extras while parsing URL"
+                        );
+                        None
+                    }
+                }
+            });
+            ResolvedExtractorConfig {
+                platform_id: platform.map(|platform| platform.id),
+                cookies: explicit_cookies,
+                platform_extras,
+                extractor: ExtractorSelection::default(),
+            }
+        }
+    };
+    Ok((extractor_config, route))
+}
+
+/// The route requests for `url` take; see [`resolve_url_owner`].
+pub(super) async fn resolve_route_for_url(
+    state: &ParseRouteState,
+    url: &str,
+) -> ApiResult<crate::proxies::ResolvedRoute> {
+    Ok(resolve_url_owner(state, url).await?.1)
 }
 
 #[cfg(test)]

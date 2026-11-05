@@ -22,6 +22,7 @@ use axum::{
 };
 
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::models::PaginationParams;
 use crate::api::server::AppState;
 
 #[derive(Clone)]
@@ -110,30 +111,6 @@ pub struct PresetFilterParams {
     pub search: Option<String>,
 }
 
-/// Pagination parameters for preset list.
-#[derive(Debug, Clone, serde::Deserialize, utoipa::IntoParams)]
-pub struct PresetPaginationParams {
-    /// Number of items to return (default: 20, max: 100).
-    #[serde(default = "default_limit")]
-    pub limit: u32,
-    /// Number of items to skip.
-    #[serde(default)]
-    pub offset: u32,
-}
-
-fn default_limit() -> u32 {
-    20
-}
-
-impl Default for PresetPaginationParams {
-    fn default() -> Self {
-        Self {
-            limit: default_limit(),
-            offset: 0,
-        }
-    }
-}
-
 /// Response for preset list with categories and pagination.
 #[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct PresetListResponse {
@@ -153,7 +130,7 @@ pub struct PresetListResponse {
     get,
     path = "/api/job/presets",
     tag = "job",
-    params(PresetFilterParams, PresetPaginationParams),
+    params(PresetFilterParams, PaginationParams),
     responses(
         (status = 200, description = "List of job presets", body = PresetListResponse)
     ),
@@ -162,7 +139,7 @@ pub struct PresetListResponse {
 pub async fn list_presets(
     State(state): State<JobPresetRouteState>,
     Query(filters): Query<PresetFilterParams>,
-    Query(pagination): Query<PresetPaginationParams>,
+    Query(pagination): Query<PaginationParams>,
 ) -> ApiResult<Json<PresetListResponse>> {
     let pipeline_manager = &state.pipeline_manager;
 
@@ -173,19 +150,15 @@ pub async fn list_presets(
         search: filters.search,
     };
 
-    let effective_limit = pagination.limit.min(100);
+    let effective_limit = pagination.effective_limit();
     let db_pagination =
         crate::database::models::Pagination::new(effective_limit, pagination.offset);
 
     let (presets, total) = pipeline_manager
         .list_presets_filtered(&db_filters, &db_pagination)
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
-    let categories = pipeline_manager
-        .list_preset_categories()
-        .await
-        .map_err(ApiError::from)?;
+    let categories = pipeline_manager.list_preset_categories().await?;
 
     Ok(Json(PresetListResponse {
         presets,
@@ -215,8 +188,7 @@ pub async fn get_preset(
 
     let preset = pipeline_manager
         .get_preset(&id)
-        .await
-        .map_err(ApiError::from)?
+        .await?
         .ok_or_else(|| ApiError::not_found(format!("Job preset {} not found", id)))?;
 
     Ok(Json(preset))
@@ -256,21 +228,14 @@ pub async fn create_preset(
         .map_err(|e| ApiError::bad_request(e.to_string()))?;
 
     // Check for duplicate name
-    if pipeline_manager
-        .name_exists(&preset.name, None)
-        .await
-        .map_err(ApiError::from)?
-    {
+    if pipeline_manager.name_exists(&preset.name, None).await? {
         return Err(ApiError::conflict(format!(
             "A preset with name '{}' already exists",
             preset.name
         )));
     }
 
-    pipeline_manager
-        .create_preset(&preset)
-        .await
-        .map_err(ApiError::from)?;
+    pipeline_manager.create_preset(&preset).await?;
 
     Ok((StatusCode::CREATED, Json(preset)))
 }
@@ -298,8 +263,7 @@ pub async fn update_preset(
     // Check if preset exists
     let existing = pipeline_manager
         .get_preset(&id)
-        .await
-        .map_err(ApiError::from)?
+        .await?
         .ok_or_else(|| ApiError::not_found(format!("Job preset {} not found", id)))?;
 
     let preset = crate::database::models::JobPreset {
@@ -321,8 +285,7 @@ pub async fn update_preset(
     // Check for duplicate name (excluding current preset)
     if pipeline_manager
         .name_exists(&preset.name, Some(&id))
-        .await
-        .map_err(ApiError::from)?
+        .await?
     {
         return Err(ApiError::conflict(format!(
             "A preset with name '{}' already exists",
@@ -330,10 +293,7 @@ pub async fn update_preset(
         )));
     }
 
-    pipeline_manager
-        .update_preset(&preset)
-        .await
-        .map_err(ApiError::from)?;
+    pipeline_manager.update_preset(&preset).await?;
 
     Ok(Json(preset))
 }
@@ -354,10 +314,7 @@ pub async fn delete_preset(
 ) -> ApiResult<Json<()>> {
     let pipeline_manager = &state.pipeline_manager;
 
-    pipeline_manager
-        .delete_preset(&id)
-        .await
-        .map_err(ApiError::from)?;
+    pipeline_manager.delete_preset(&id).await?;
     Ok(Json(()))
 }
 
@@ -380,10 +337,7 @@ pub async fn clone_preset(
 ) -> ApiResult<(StatusCode, Json<crate::database::models::JobPreset>)> {
     let pipeline_manager = &state.pipeline_manager;
 
-    let cloned = pipeline_manager
-        .clone_preset(&id, payload.new_name)
-        .await
-        .map_err(ApiError::from)?;
+    let cloned = pipeline_manager.clone_preset(&id, payload.new_name).await?;
 
     Ok((StatusCode::CREATED, Json(cloned)))
 }

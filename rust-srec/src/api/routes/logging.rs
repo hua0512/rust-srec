@@ -246,13 +246,13 @@ fn scan_log_files_matching(
     include: impl Fn(&LogFileInternal) -> bool,
     max_files: usize,
 ) -> Result<Vec<LogFileInternal>, ApiError> {
-    let entries = std::fs::read_dir(log_dir).map_err(ApiError::from)?;
+    let entries = std::fs::read_dir(log_dir)?;
 
     let mut out = Vec::new();
     for entry in entries {
-        let entry = entry.map_err(ApiError::from)?;
+        let entry = entry?;
         let path = entry.path();
-        if !entry.file_type().map_err(ApiError::from)?.is_file() {
+        if !entry.file_type()?.is_file() {
             continue;
         }
 
@@ -348,7 +348,7 @@ fn list_log_lines(
     let mut remaining = limit + 1; // collect one extra to know has_more
 
     for file in files {
-        let fh = std::fs::File::open(&file.path).map_err(ApiError::from)?;
+        let fh = std::fs::File::open(&file.path)?;
         let mut reader = BufReader::new(fh);
 
         let mut line = String::new();
@@ -356,7 +356,7 @@ fn list_log_lines(
 
         loop {
             line.clear();
-            let n = reader.read_line(&mut line).map_err(ApiError::from)?;
+            let n = reader.read_line(&mut line)?;
             if n == 0 {
                 break;
             }
@@ -538,8 +538,7 @@ pub async fn list_log_files(
             offset,
         })
     })
-    .await
-    .map_err(ApiError::from)??;
+    .await??;
 
     Ok(Json(result))
 }
@@ -620,8 +619,7 @@ pub async fn list_log_entries(
 
         list_log_lines(files, offset, limit, contains.as_deref())
     })
-    .await
-    .map_err(ApiError::from)??;
+    .await??;
 
     Ok(Json(result))
 }
@@ -657,8 +655,7 @@ pub async fn download_logs_archive(
     );
     response_headers.insert(
         header::CONTENT_DISPOSITION,
-        HeaderValue::from_str(&format!("attachment; filename=\"{filename}\""))
-            .map_err(ApiError::from)?,
+        HeaderValue::from_str(&format!("attachment; filename=\"{filename}\""))?,
     );
 
     Ok((response_headers, body))
@@ -721,17 +718,12 @@ pub async fn update_logging_config(
         .set_filter(&request.filter)
         .map_err(|e| ApiError::bad_request(e.to_string()))?;
 
-    let mut global_config = state
-        .config_service
-        .get_global_config()
-        .await
-        .map_err(ApiError::from)?;
+    let mut global_config = state.config_service.get_global_config().await?;
     global_config.log_filter_directive = request.filter.clone();
     state
         .config_service
         .update_global_config(&global_config)
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     let modules: Vec<ModuleInfo> = available_modules()
         .into_iter()

@@ -183,8 +183,7 @@ async fn streamer_response(
         .credential_selections_for(&crate::credentials::CredentialOwner::Streamer {
             streamer_id: metadata.id.clone(),
         })
-        .await
-        .map_err(ApiError::from)?
+        .await?
         .into_iter()
         .next()
         .map(|stored| stored.selection);
@@ -256,10 +255,7 @@ async fn resolve_platform_for_url(
         return Ok(None);
     };
 
-    let configs = config_service
-        .list_platform_configs()
-        .await
-        .map_err(ApiError::from)?;
+    let configs = config_service.list_platform_configs().await?;
 
     let config = find_platform_config(configs, &name).ok_or_else(|| {
         ApiError::validation(format!("No platform configuration exists for '{name}'"))
@@ -363,10 +359,7 @@ pub async fn create_streamer(
     };
 
     // Create streamer using manager
-    streamer_manager
-        .create_streamer(metadata.clone())
-        .await
-        .map_err(ApiError::from)?;
+    streamer_manager.create_streamer(metadata.clone()).await?;
 
     Ok((
         StatusCode::CREATED,
@@ -518,7 +511,7 @@ pub async fn list_streamers(
 
     // Apply pagination
     let offset = pagination.offset as usize;
-    let effective_limit = pagination.limit.min(100);
+    let effective_limit = pagination.effective_limit();
     let limit = effective_limit as usize;
     let page: Vec<_> = streamers.into_iter().skip(offset).take(limit).collect();
     // Writes validate selections and routes, so only the page's own rows are
@@ -528,8 +521,7 @@ pub async fn list_streamers(
         state
             .config_service
             .selections_of_streamers(&page_ids)
-            .await
-            .map_err(ApiError::from)?
+            .await?
             .into_iter()
             .filter_map(|stored| match stored.owner {
                 crate::credentials::CredentialOwner::Streamer { streamer_id } => {
@@ -593,10 +585,7 @@ pub async fn batch_streamers(
     } = &request.action
     {
         let config_service = &state.config_service;
-        config_service
-            .get_template_config(template_id)
-            .await
-            .map_err(ApiError::from)?;
+        config_service.get_template_config(template_id).await?;
     }
 
     let requested = request.ids.len();
@@ -838,8 +827,7 @@ pub async fn update_streamer(
                 }
             }),
         })
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     Ok(Json(streamer_response(&state, &metadata).await?))
 }
@@ -911,10 +899,7 @@ pub async fn clear_error(
     live_streamer(streamer_manager, &id)?;
 
     // Clear error state (resets consecutive_error_count and disabled_until)
-    streamer_manager
-        .clear_error_state(&id)
-        .await
-        .map_err(ApiError::from)?;
+    streamer_manager.clear_error_state(&id).await?;
 
     // Get updated metadata
     let metadata = streamer_manager
@@ -949,8 +934,7 @@ pub async fn update_priority(
     // Update priority
     streamer_manager
         .update_priority(&id, request.priority)
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     // Get updated metadata
     let metadata = streamer_manager
@@ -1068,14 +1052,7 @@ pub async fn extract_metadata(
     // listing every config so the caller can still show what exists.
     let (platform, configs) = match resolved {
         Some(ResolvedPlatform { name, config }) => (Some(name), vec![config]),
-        None => (
-            None,
-            state
-                .config_service
-                .list_platform_configs()
-                .await
-                .map_err(ApiError::from)?,
-        ),
+        None => (None, state.config_service.list_platform_configs().await?),
     };
 
     Ok(Json(ExtractMetadataResponse {
@@ -1132,8 +1109,7 @@ pub async fn get_check_history(
     let rows = state
         .streamer_check_history_repository
         .list_recent(&id, limit)
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     // Repository returns newest-first; reverse so the client renders
     // left → right = past → now without re-sorting.

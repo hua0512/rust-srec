@@ -104,7 +104,7 @@ use axum::{
 };
 use std::sync::Arc;
 
-use crate::api::models::{JobResponse, JobStatus as ApiJobStatus};
+use crate::api::models::JobResponse;
 use crate::api::server::AppState;
 use crate::database::models::job::DagPipelineDefinition;
 use crate::database::repositories::{
@@ -376,30 +376,6 @@ pub struct PipelinePresetFilterParams {
     pub search: Option<String>,
 }
 
-/// Pagination parameters for pipeline preset list.
-#[derive(Debug, Clone, serde::Deserialize, utoipa::IntoParams)]
-pub struct PipelinePresetPaginationParams {
-    /// Number of items to return (default: 20, max: 100).
-    #[serde(default = "default_preset_limit")]
-    pub limit: u32,
-    /// Number of items to skip.
-    #[serde(default)]
-    pub offset: u32,
-}
-
-fn default_preset_limit() -> u32 {
-    20
-}
-
-impl Default for PipelinePresetPaginationParams {
-    fn default() -> Self {
-        Self {
-            limit: default_preset_limit(),
-            offset: 0,
-        }
-    }
-}
-
 /// Response for pipeline preset list with pagination.
 #[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 pub struct PipelinePresetListResponse {
@@ -538,7 +514,7 @@ pub struct DagStepStatusResponse {
     /// Status of the step's job; null while the step has no job. A PROCESSING
     /// step whose job is PENDING is queued, and one whose job is FAILED waits
     /// for its automatic retry when `retry_after` is set.
-    pub job_status: Option<ApiJobStatus>,
+    pub job_status: Option<crate::database::models::JobStatus>,
     /// When the job's latest attempt started, in epoch milliseconds.
     pub started_at: Option<i64>,
     /// When a step waiting for its automatic retry runs again, in epoch
@@ -670,30 +646,6 @@ pub struct DagFilterParams {
     /// Case-insensitive substring of the DAG's ID, name, session ID, streamer
     /// ID, or streamer name.
     pub search: Option<String>,
-}
-
-/// Pagination parameters for DAG list.
-#[derive(Debug, Clone, serde::Deserialize, utoipa::IntoParams)]
-pub struct DagPaginationParams {
-    /// Number of items to return (default: 20, max: 100).
-    #[serde(default = "default_dag_limit")]
-    pub limit: u32,
-    /// Number of items to skip.
-    #[serde(default)]
-    pub offset: u32,
-}
-
-fn default_dag_limit() -> u32 {
-    20
-}
-
-impl Default for DagPaginationParams {
-    fn default() -> Self {
-        Self {
-            limit: default_dag_limit(),
-            offset: 0,
-        }
-    }
 }
 
 /// Response for DAG list with pagination.

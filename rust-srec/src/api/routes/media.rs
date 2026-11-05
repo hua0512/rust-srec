@@ -138,10 +138,7 @@ pub async fn get_media_content(
     let session_repo = &state.session_repository;
 
     // Query media output to get file path
-    let media = session_repo
-        .get_media_output(&id)
-        .await
-        .map_err(ApiError::from)?;
+    let media = session_repo.get_media_output(&id).await?;
 
     let path = normalize_media_path(&media.file_path);
 

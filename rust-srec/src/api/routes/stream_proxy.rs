@@ -67,6 +67,39 @@ impl FromRef<AppState> for StreamProxyState {
     }
 }
 
+impl StreamProxyState {
+    /// The current `stream_proxy_allow_private_targets` setting. Fails closed:
+    /// a config read error must not widen the target policy.
+    async fn allow_private_targets(&self) -> bool {
+        match &self.config_service {
+            Some(config_service) => config_service
+                .get_cached_global_config()
+                .await
+                .map(|config| config.stream_proxy_allow_private_targets)
+                .unwrap_or(false),
+            None => self.allow_private_targets,
+        }
+    }
+}
+
+/// Headers that describe the client-to-proxy hop rather than the upstream
+/// request, so a caller-supplied value is never forwarded.
+fn is_hop_by_hop(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "connection"
+            | "content-length"
+            | "host"
+            | "keep-alive"
+            | "proxy-authenticate"
+            | "proxy-authorization"
+            | "te"
+            | "trailer"
+            | "transfer-encoding"
+            | "upgrade"
+    )
+}
+
 fn stream_proxy_client(
     allow_private_targets: bool,
     upstream_proxy: &ProxyTarget,
@@ -671,15 +704,7 @@ pub async fn stream_proxy_get(
         query.token.as_deref()
     };
 
-    // Fail closed: a config read error must not widen the target policy.
-    let allow_private_targets = match &state.config_service {
-        Some(config_service) => config_service
-            .get_cached_global_config()
-            .await
-            .map(|config| config.stream_proxy_allow_private_targets)
-            .unwrap_or(false),
-        None => state.allow_private_targets,
-    };
+    let allow_private_targets = state.allow_private_targets().await;
 
     // Validated by fetch_upstream, which checks the initial target and every
     // redirect hop with validate_target_url before fetching it.
@@ -707,20 +732,7 @@ pub async fn stream_proxy_get(
     );
 
     for (k, v) in custom_headers {
-        let lower = k.to_ascii_lowercase();
-        if matches!(
-            lower.as_str(),
-            "connection"
-                | "content-length"
-                | "host"
-                | "keep-alive"
-                | "proxy-authenticate"
-                | "proxy-authorization"
-                | "te"
-                | "trailer"
-                | "transfer-encoding"
-                | "upgrade"
-        ) {
+        if is_hop_by_hop(&k) {
             continue;
         }
         if k.len() > 256 || v.len() > 16_384 {
@@ -792,14 +804,7 @@ async fn managed_stream_proxy(
     let data = super::parse::validate_playback(config, handle, principal).await?;
     let target = managed_target(&data, stream, url)?;
     let headers = managed_media_headers(&data, stream, incoming)?;
-    let allow_private = match &state.config_service {
-        Some(service) => service
-            .get_cached_global_config()
-            .await
-            .map(|config| config.stream_proxy_allow_private_targets)
-            .unwrap_or(false),
-        None => state.allow_private_targets,
-    };
+    let allow_private = state.allow_private_targets().await;
     // Media leaves through the route its URL was extracted on: platforms may
     // sign stream URLs for that address.
     let client = stream_proxy_client(allow_private, &data.snapshot.route.target)?;
@@ -919,19 +924,7 @@ fn managed_media_headers(
             cookie_updates.push(value);
             continue;
         }
-        if matches!(
-            name.to_ascii_lowercase().as_str(),
-            "connection"
-                | "content-length"
-                | "host"
-                | "keep-alive"
-                | "proxy-authenticate"
-                | "proxy-authorization"
-                | "te"
-                | "trailer"
-                | "transfer-encoding"
-                | "upgrade"
-        ) {
+        if is_hop_by_hop(name) {
             continue;
         }
         if name.len() > 256 || value.len() > 16_384 {

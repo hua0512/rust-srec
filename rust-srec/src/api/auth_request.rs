@@ -82,8 +82,7 @@ pub(crate) async fn authorize_request(
     };
     let principal = service
         .authorize_credential(request_credential(headers, query)?, false)
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
     enforce_access(&principal, policy)?;
     Ok(Some(principal))
 }
@@ -98,10 +97,7 @@ pub(crate) async fn revalidate(
     };
     let principal =
         principal.ok_or_else(|| ApiError::unauthorized("Credential identity is missing"))?;
-    let current = service
-        .revalidate_principal(principal)
-        .await
-        .map_err(ApiError::from)?;
+    let current = service.revalidate_principal(principal).await?;
     enforce_access(&current, policy)
 }
 

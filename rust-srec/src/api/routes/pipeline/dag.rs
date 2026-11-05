@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use axum::{
     Json,
@@ -6,6 +7,7 @@ use axum::{
 };
 
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::models::PaginationParams;
 use crate::database::models::dag_progress_percent;
 use crate::database::models::job::{
     DagExecutionStatus, DagPipelineDefinition, DagStepStatus, JobStatus, PipelineStep,
@@ -13,14 +15,21 @@ use crate::database::models::job::{
 use crate::database::repositories::DagListFilter;
 use crate::pipeline::DagScheduler;
 
-use super::jobs::job_status_to_api_status;
 use super::{
     BatchDagAction, BatchDagItemResult, BatchDagRequest, BatchDagResponse, DagCancelResponse,
     DagFilterParams, DagGraphEdge, DagGraphNode, DagGraphResponse, DagListItem, DagListResponse,
-    DagListStatsResponse, DagPaginationParams, DagRetryResponse, DagStatsResponse,
-    DagStatusResponse, DagStepStatusResponse, PipelineRouteState, ValidateDagRequest,
-    ValidateDagResponse,
+    DagListStatsResponse, DagRetryResponse, DagStatsResponse, DagStatusResponse,
+    DagStepStatusResponse, PipelineRouteState, ValidateDagRequest, ValidateDagResponse,
 };
+
+impl PipelineRouteState {
+    /// The DAG scheduler, or 503 when DAG support isn't configured.
+    fn dag_scheduler(&self) -> ApiResult<&Arc<DagScheduler>> {
+        self.pipeline_manager
+            .dag_scheduler()
+            .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))
+    }
+}
 
 /// Maximum number of DAG IDs accepted by `POST /api/pipeline/dags/batch`.
 pub(super) const MAX_DAG_BATCH_SIZE: usize = 100;
@@ -71,24 +80,14 @@ pub async fn get_dag_status(
     State(state): State<PipelineRouteState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<DagStatusResponse>> {
-    let pipeline_manager = &state.pipeline_manager;
-
-    let dag_scheduler = pipeline_manager
-        .dag_scheduler()
-        .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
+    let dag_scheduler = state.dag_scheduler()?;
 
     // The same status the DAG list shows, so opening a listed DAG agrees with
     // it. One read: a DAG finishing between two reads would otherwise show as
     // finished with the step counts from before.
-    let (dag, display_status) = dag_scheduler
-        .get_dag_with_display_status(&dag_id)
-        .await
-        .map_err(ApiError::from)?;
+    let (dag, display_status) = dag_scheduler.get_dag_with_display_status(&dag_id).await?;
 
-    let steps = dag_scheduler
-        .get_dag_steps_with_jobs(&dag_id)
-        .await
-        .map_err(ApiError::from)?;
+    let steps = dag_scheduler.get_dag_steps_with_jobs(&dag_id).await?;
     let dag_status = dag.get_status();
 
     // Get DAG definition for step processor info
@@ -133,7 +132,7 @@ pub async fn get_dag_status(
                 step_id: step.step_id.clone(),
                 status: step.status.clone(),
                 job_id: step.job_id.clone(),
-                job_status: job_status.map(job_status_to_api_status),
+                job_status,
                 started_at: row.job_started_at,
                 retry_after,
                 progress,
@@ -192,23 +191,13 @@ pub async fn get_dag_graph(
     State(state): State<PipelineRouteState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<DagGraphResponse>> {
-    let pipeline_manager = &state.pipeline_manager;
-
-    let dag_scheduler = pipeline_manager
-        .dag_scheduler()
-        .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
+    let dag_scheduler = state.dag_scheduler()?;
 
     // Get DAG execution
-    let dag = dag_scheduler
-        .get_dag_status(&dag_id)
-        .await
-        .map_err(ApiError::from)?;
+    let dag = dag_scheduler.get_dag_status(&dag_id).await?;
 
     // Get all steps
-    let steps = dag_scheduler
-        .get_dag_steps(&dag_id)
-        .await
-        .map_err(ApiError::from)?;
+    let steps = dag_scheduler.get_dag_steps(&dag_id).await?;
 
     // Get DAG definition for step processor info
     let dag_def = dag.get_dag_definition();
@@ -296,14 +285,8 @@ pub async fn retry_dag(
 /// Kept separate from the handler so a batch item reports exactly the error the
 /// single-DAG endpoint would have produced for the same ID.
 async fn retry_dag_inner(state: &PipelineRouteState, dag_id: &str) -> ApiResult<DagRetryResponse> {
-    if state.pipeline_manager.dag_scheduler().is_none() {
-        return Err(ApiError::service_unavailable("DAG scheduler not available"));
-    }
-    let result = state
-        .pipeline_manager
-        .retry_dag(dag_id)
-        .await
-        .map_err(ApiError::from)?;
+    state.dag_scheduler()?;
+    let result = state.pipeline_manager.retry_dag(dag_id).await?;
     Ok(DagRetryResponse {
         dag_id: result.dag_id,
         retried_steps: result.retried_steps,
@@ -319,10 +302,7 @@ async fn running_step_percents(
     dag_scheduler: &DagScheduler,
     dag_ids: &[&str],
 ) -> ApiResult<HashMap<String, Vec<f32>>> {
-    let running = dag_scheduler
-        .list_running_step_jobs(dag_ids)
-        .await
-        .map_err(ApiError::from)?;
+    let running = dag_scheduler.list_running_step_jobs(dag_ids).await?;
     let mut percents: HashMap<String, Vec<f32>> = HashMap::new();
     for (dag_id, job_id) in running {
         if let Some(percent) = dag_scheduler
@@ -339,7 +319,7 @@ async fn running_step_percents(
     get,
     path = "/api/pipeline/dags",
     tag = "pipeline",
-    params(DagFilterParams, DagPaginationParams),
+    params(DagFilterParams, PaginationParams),
     responses(
         (status = 200, description = "List of DAG executions", body = DagListResponse)
     ),
@@ -348,15 +328,11 @@ async fn running_step_percents(
 pub async fn list_dags(
     State(state): State<PipelineRouteState>,
     Query(filters): Query<DagFilterParams>,
-    Query(pagination): Query<DagPaginationParams>,
+    Query(pagination): Query<PaginationParams>,
 ) -> ApiResult<Json<DagListResponse>> {
-    let pipeline_manager = &state.pipeline_manager;
+    let dag_scheduler = state.dag_scheduler()?;
 
-    let dag_scheduler = pipeline_manager
-        .dag_scheduler()
-        .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
-
-    let effective_limit = pagination.limit.min(100);
+    let effective_limit = pagination.effective_limit();
 
     // Filter by display status so the list agrees with `GET /api/pipeline/dags/stats`.
     let status_filter = filters
@@ -376,13 +352,9 @@ pub async fn list_dags(
 
     let dags = dag_scheduler
         .list_dag_summaries(&filter, effective_limit, pagination.offset)
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
-    let total = dag_scheduler
-        .count_dags_by_display_status(&filter)
-        .await
-        .map_err(ApiError::from)?;
+    let total = dag_scheduler.count_dags_by_display_status(&filter).await?;
 
     // A DAG displayed as PENDING has no running job, so only PROCESSING ones
     // can have running steps.
@@ -472,15 +444,9 @@ pub async fn list_dags(
 pub async fn get_dag_list_stats(
     State(state): State<PipelineRouteState>,
 ) -> ApiResult<Json<DagListStatsResponse>> {
-    let dag_scheduler = state
-        .pipeline_manager
-        .dag_scheduler()
-        .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
+    let dag_scheduler = state.dag_scheduler()?;
 
-    let counts = dag_scheduler
-        .get_dag_display_counts()
-        .await
-        .map_err(ApiError::from)?;
+    let counts = dag_scheduler.get_dag_display_counts().await?;
 
     Ok(Json(DagListStatsResponse {
         pending_count: counts.pending,
@@ -506,18 +472,14 @@ pub async fn retry_all_failed_dags(
 ) -> ApiResult<Json<serde_json::Value>> {
     let pipeline_manager = &state.pipeline_manager;
 
-    let dag_scheduler = pipeline_manager
-        .dag_scheduler()
-        .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
+    let dag_scheduler = state.dag_scheduler()?;
 
     let failed_dags = dag_scheduler
         .list_dags(Some("FAILED"), None, 1000, 0)
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
     let cancelled_dags = dag_scheduler
         .list_dags(Some("CANCELLED"), None, 1000, 0)
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     let dags: Vec<_> = failed_dags.into_iter().chain(cancelled_dags).collect();
 
@@ -574,10 +536,7 @@ pub async fn batch_dags(
 
     // Without a scheduler every item would fail identically, so fail the request once
     // instead of returning N copies of the same 503 in `results`.
-    state
-        .pipeline_manager
-        .dag_scheduler()
-        .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
+    state.dag_scheduler()?;
 
     let pipeline_manager = &state.pipeline_manager;
     let action = request.action;
@@ -592,19 +551,13 @@ pub async fn batch_dags(
         let result: ApiResult<()> = async {
             match action {
                 BatchDagAction::Cancel => {
-                    pipeline_manager
-                        .cancel_dag(&id)
-                        .await
-                        .map_err(ApiError::from)?;
+                    pipeline_manager.cancel_dag(&id).await?;
                 }
                 BatchDagAction::Retry => {
                     retry_dag_inner(&state, &id).await?;
                 }
                 BatchDagAction::Delete => {
-                    pipeline_manager
-                        .delete_dag(&id)
-                        .await
-                        .map_err(ApiError::from)?;
+                    pipeline_manager.delete_dag(&id).await?;
                 }
             }
             Ok(())
@@ -660,14 +613,9 @@ pub async fn cancel_dag(
     let pipeline_manager = &state.pipeline_manager;
 
     // Preserve service-unavailable semantics if DAG support isn't configured.
-    pipeline_manager
-        .dag_scheduler()
-        .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
+    state.dag_scheduler()?;
 
-    let cancelled_steps = pipeline_manager
-        .cancel_dag(&dag_id)
-        .await
-        .map_err(ApiError::from)?;
+    let cancelled_steps = pipeline_manager.cancel_dag(&dag_id).await?;
 
     let message = if cancelled_steps == 0 {
         format!("DAG '{}' cancelled (no active steps to cancel)", dag_id)
@@ -704,16 +652,11 @@ pub async fn delete_dag(
     let pipeline_manager = &state.pipeline_manager;
 
     // Preserve service-unavailable semantics if DAG support isn't configured.
-    pipeline_manager
-        .dag_scheduler()
-        .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
+    state.dag_scheduler()?;
 
     // Goes through the manager so a DAG that is still running is cancelled, and the pipeline
     // coordinator notified, before its rows are removed.
-    pipeline_manager
-        .delete_dag(&dag_id)
-        .await
-        .map_err(ApiError::from)?;
+    pipeline_manager.delete_dag(&dag_id).await?;
 
     Ok(Json(serde_json::json!({
         "dag_id": dag_id,
@@ -736,24 +679,14 @@ pub async fn get_dag_stats(
     State(state): State<PipelineRouteState>,
     Path(dag_id): Path<String>,
 ) -> ApiResult<Json<DagStatsResponse>> {
-    let pipeline_manager = &state.pipeline_manager;
-
-    let dag_scheduler = pipeline_manager
-        .dag_scheduler()
-        .ok_or_else(|| ApiError::service_unavailable("DAG scheduler not available"))?;
+    let dag_scheduler = state.dag_scheduler()?;
 
     // Read the display status first so an unknown DAG is a 404; its step
     // counts alone would all be zero. As in `list_dags`, only a DAG displayed
     // as PROCESSING has a running job, so only its running steps are read.
-    let display_status = dag_scheduler
-        .get_dag_display_status(&dag_id)
-        .await
-        .map_err(ApiError::from)?;
+    let display_status = dag_scheduler.get_dag_display_status(&dag_id).await?;
 
-    let stats = dag_scheduler
-        .get_dag_stats(&dag_id)
-        .await
-        .map_err(ApiError::from)?;
+    let stats = dag_scheduler.get_dag_stats(&dag_id).await?;
 
     let total = stats.total();
     let running_percents = if display_status == DagExecutionStatus::Processing {
@@ -964,8 +897,7 @@ pub async fn validate_dag(
         let analysis = state
             .pipeline_manager
             .analyze_dag_definition(dag.clone())
-            .await
-            .map_err(ApiError::from)?;
+            .await?;
         errors.extend(analysis.errors);
         warnings.extend(analysis.warnings);
     }

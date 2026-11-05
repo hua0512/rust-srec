@@ -138,10 +138,7 @@ pub async fn request_manual_split(
         AccessPolicy::Full,
     )
     .await?;
-    let split = state
-        .download_manager
-        .request_manual_split(&download_id)
-        .map_err(ApiError::from)?;
+    let split = state.download_manager.request_manual_split(&download_id)?;
     Ok((
         StatusCode::ACCEPTED,
         axum::Json(ManualSplitResponse {

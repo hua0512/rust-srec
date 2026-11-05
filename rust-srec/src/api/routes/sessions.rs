@@ -85,17 +85,13 @@ pub async fn list_session_segments(
 ) -> ApiResult<Json<PageResponse<SessionSegmentResponse>>> {
     let session_repository = state.session_repository.clone();
 
-    session_repository
-        .get_session(&id)
-        .await
-        .map_err(ApiError::from)?;
+    session_repository.get_session(&id).await?;
 
-    let effective_limit = pagination.limit.min(100);
+    let effective_limit = pagination.effective_limit();
     let db_pagination = Pagination::new(effective_limit, pagination.offset);
     let segments = session_repository
         .list_session_segments_page(&id, &db_pagination)
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     let items = segments
         .into_iter()
@@ -209,14 +205,13 @@ pub async fn list_sessions(
         include_empty: filters.include_empty,
     };
 
-    let effective_limit = pagination.limit.min(100);
+    let effective_limit = pagination.effective_limit();
     let db_pagination = Pagination::new(effective_limit, pagination.offset);
 
     // Call SessionRepository.list_sessions_filtered
     let (sessions, total) = session_repository
         .list_sessions_filtered(&db_filters, &db_pagination)
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     let session_ids: Vec<String> = sessions.iter().map(|session| session.id.clone()).collect();
     // Sessions whose streamer was deleted carry no id to look up; their label
@@ -234,8 +229,7 @@ pub async fn list_sessions(
         streamer_repository.get_streamers_by_ids(&streamer_ids),
         session_repository.summarize_session_outputs(&session_ids),
         session_repository.get_danmu_counts_for_sessions(&session_ids),
-    )
-    .map_err(ApiError::from)?;
+    )?;
 
     let streamer_map: std::collections::HashMap<_, _> =
         streamers.into_iter().map(|s| (s.id.clone(), s)).collect();
@@ -368,10 +362,7 @@ pub async fn get_session(
     let streamer_repository = &state.streamer_repository;
 
     // Get session by ID
-    let session = session_repository
-        .get_session(&id)
-        .await
-        .map_err(ApiError::from)?;
+    let session = session_repository.get_session(&id).await?;
 
     // Get output count
     let output_count = match session_repository.get_output_count(&id).await {
@@ -498,15 +489,11 @@ pub async fn get_session_danmu_statistics(
     let session_repository = &state.session_repository;
 
     // Ensure session exists so missing stats can cleanly map to 404.
-    let session = session_repository
-        .get_session(&id)
-        .await
-        .map_err(ApiError::from)?;
+    let session = session_repository.get_session(&id).await?;
 
     let stats = session_repository
         .get_danmu_statistics(&id)
-        .await
-        .map_err(ApiError::from)?
+        .await?
         .ok_or_else(|| {
             ApiError::not_found(format!("DanmuStatistics with id '{}' not found", id))
         })?;
@@ -515,8 +502,7 @@ pub async fn get_session_danmu_statistics(
         .danmu_rate_timeseries
         .as_deref()
         .map(serde_json::from_str::<Vec<DanmuRateEntry>>)
-        .transpose()
-        .map_err(ApiError::from)?
+        .transpose()?
         .unwrap_or_default()
         .into_iter()
         .map(|point| DanmuRatePoint {
@@ -549,8 +535,7 @@ pub async fn get_session_danmu_statistics(
         .top_gifts
         .as_deref()
         .map(serde_json::from_str::<Vec<GiftTallyEntry>>)
-        .transpose()
-        .map_err(ApiError::from)?
+        .transpose()?
         .unwrap_or_default()
         .into_iter()
         .map(|entry| DanmuGiftTally {
@@ -565,8 +550,7 @@ pub async fn get_session_danmu_statistics(
         .word_frequency
         .as_deref()
         .map(serde_json::from_str::<Vec<WordFrequencyEntry>>)
-        .transpose()
-        .map_err(ApiError::from)?
+        .transpose()?
         .unwrap_or_default()
         .into_iter()
         .map(|entry| DanmuWordFrequency {
@@ -669,16 +653,10 @@ pub async fn delete_session(
     let session_repository = &state.session_repository;
 
     // Check if session exists
-    session_repository
-        .get_session(&id)
-        .await
-        .map_err(ApiError::from)?;
+    session_repository.get_session(&id).await?;
 
     // Foreign-key cascades remove the session's media outputs and danmu statistics.
-    session_repository
-        .delete_session(&id)
-        .await
-        .map_err(ApiError::from)?;
+    session_repository.delete_session(&id).await?;
 
     Ok(())
 }
@@ -758,8 +736,7 @@ pub async fn delete_sessions_batch(
     // Delete sessions in batch
     let deleted = session_repository
         .delete_sessions_batch(&request.ids)
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     Ok(Json(BatchDeleteResponse { deleted }))
 }
