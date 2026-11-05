@@ -1,4 +1,3 @@
-import { QueryClient } from '@tanstack/react-query';
 import type { AnyRouter } from '@tanstack/react-router';
 import type { I18n } from '@lingui/core';
 
@@ -7,6 +6,8 @@ import {
   registerPasswordChangeRedirect,
   redirectToChangePasswordOnError,
 } from '../password-change-redirect';
+import { testSession } from '@/test/session';
+import { newQueryClient } from '@/test/render';
 
 const toastWarning = vi.hoisted(() => vi.fn());
 
@@ -25,26 +26,10 @@ function passwordChangeRequiredError() {
   });
 }
 
-function session(overrides: Record<string, unknown> = {}) {
-  return {
-    username: 'user',
-    token: {
-      access_token: 'access-token',
-      expires_in: Date.now() + 10 * 60_000,
-      refresh_expires_in: Date.now() + 60 * 60_000,
-    },
-    roles: [],
-    mustChangePassword: false,
-    ...overrides,
-  };
-}
-
 /** Records the order in which the session and the router are refreshed. */
 function harness(pathname = '/dashboard') {
   const calls: string[] = [];
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+  const queryClient = newQueryClient();
   const invalidateQueries = vi
     .spyOn(queryClient, 'invalidateQueries')
     .mockImplementation(async () => {
@@ -103,7 +88,7 @@ describe('redirectToChangePasswordOnError', () => {
   it('marks a session cached before the requirement was raised as stale', async () => {
     const { queryClient, invalidateQueries } = harness();
     invalidateQueries.mockRestore();
-    queryClient.setQueryData(sessionQueryOptions.queryKey, session());
+    queryClient.setQueryData(sessionQueryOptions.queryKey, testSession());
 
     redirectToChangePasswordOnError(passwordChangeRequiredError());
     await settle();

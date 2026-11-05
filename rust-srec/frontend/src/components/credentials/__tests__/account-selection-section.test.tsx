@@ -18,9 +18,10 @@ import {
   streamerOwner,
   templateOwner,
 } from './credential-test-utils';
+import { optionNames } from '@/test/render';
 
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
+vi.mock('@tanstack/react-router', async () => ({
+  Link: (await import('@/test/router')).MockLink,
 }));
 
 vi.mock('@/server/functions/credential-profiles');
@@ -183,22 +184,13 @@ it('points to platform settings when there are no accounts to select', async () 
 });
 
 it('a Streamlink streamer picks one account and never a pool', async () => {
-  // Radix Select scrolls the open option list into view; jsdom lacks it.
-  HTMLElement.prototype.scrollIntoView = vi.fn();
   renderSection('streamlink', streamerOwner);
   fireEvent.click(await screen.findByRole('button', { name: 'Change' }));
-  fireEvent.keyDown(screen.getAllByRole('combobox')[0], { key: 'ArrowDown' });
-  expect(
-    await screen.findByRole('option', { name: "Inherit (the site's account)" }),
-  ).toBeInTheDocument();
-  expect(
-    screen.getByRole('option', { name: 'No authentication' }),
-  ).toBeInTheDocument();
-  expect(
-    screen.getByRole('option', { name: 'Fixed account' }),
-  ).toBeInTheDocument();
-  for (const name of ['Primary and backups', 'Round-robin pool'])
-    expect(screen.queryByRole('option', { name })).not.toBeInTheDocument();
+  expect(await optionNames(screen.getAllByRole('combobox')[0])).toEqual([
+    "Inherit (the site's account)",
+    'No authentication',
+    'Fixed account',
+  ]);
 });
 
 it.each<[string, CredentialSelection, string]>([

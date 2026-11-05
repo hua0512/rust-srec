@@ -13,15 +13,13 @@ import {
 } from '../proxy-route-picker';
 import {
   backendError,
-  chooseOption,
-  optionNames,
-  renderWithProviders,
   savedProxy,
   socksProxy,
 } from '@/components/proxies/__tests__/proxy-test-utils';
+import { chooseOption, optionNames, renderWithProviders } from '@/test/render';
 
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
+vi.mock('@tanstack/react-router', async () => ({
+  Link: (await import('@/test/router')).MockLink,
 }));
 vi.mock('@/server/functions/proxies');
 

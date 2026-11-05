@@ -1,6 +1,4 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 import { useForm } from 'react-hook-form';
 
 import { Form } from '@/components/ui/form';
@@ -8,6 +6,7 @@ import {
   SharedConfigEditor,
   type SharedConfigPaths,
 } from '../shared-config-editor';
+import { renderWithProviders } from '@/test/render';
 
 type Values = Record<string, unknown>;
 
@@ -37,11 +36,7 @@ function renderDanmuTab(
       </Form>
     );
   }
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <Harness />
-    </I18nProvider>,
-  );
+  renderWithProviders(<Harness />);
 }
 
 describe('SharedConfigEditor danmu tab', () => {

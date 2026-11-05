@@ -1,6 +1,4 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import type { ComponentType } from 'react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 
@@ -8,6 +6,7 @@ import { Form } from '@/components/ui/form';
 import { CronFilterForm } from '../CronFilterForm';
 import { TimeBasedFilterForm } from '../TimeBasedFilterForm';
 import { TimezoneField } from '../TimezoneField';
+import { renderWithProviders } from '@/test/render';
 
 type Values = { config: Record<string, unknown> };
 
@@ -23,22 +22,9 @@ function renderForm(Component: ComponentType, config: Values['config']) {
     );
   }
 
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <Harness />
-    </I18nProvider>,
-  );
+  renderWithProviders(<Harness />);
   return { values: () => form.getValues('config') };
 }
-
-beforeAll(() => {
-  HTMLElement.prototype.scrollIntoView = vi.fn();
-  globalThis.ResizeObserver ??= class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  } as unknown as typeof ResizeObserver;
-});
 
 const timezoneInput = () => screen.getByRole('textbox', { name: 'Timezone' });
 

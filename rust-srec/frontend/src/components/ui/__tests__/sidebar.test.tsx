@@ -1,20 +1,17 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 
 import { Sidebar, SidebarProvider, SidebarTrigger } from '../sidebar';
+import { renderWithProviders } from '@/test/render';
 
 function renderMobileSidebar() {
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <SidebarProvider>
-        <Sidebar>
-          <a href="/dashboard">Dashboard</a>
-          <a href="/streamers">Streamers</a>
-        </Sidebar>
-        <SidebarTrigger />
-      </SidebarProvider>
-    </I18nProvider>,
+  renderWithProviders(
+    <SidebarProvider>
+      <Sidebar>
+        <a href="/dashboard">Dashboard</a>
+        <a href="/streamers">Streamers</a>
+      </Sidebar>
+      <SidebarTrigger />
+    </SidebarProvider>,
   );
   const trigger = screen.getByRole('button', { name: 'Toggle Sidebar' });
   const drawer = () =>

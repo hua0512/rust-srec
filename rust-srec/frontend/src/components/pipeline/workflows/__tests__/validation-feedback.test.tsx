@@ -1,16 +1,16 @@
-import { setupI18n } from '@lingui/core';
 import { toast } from 'sonner';
 import {
   type DagValidationResult,
   reportValidation,
   validateBeforeSave,
 } from '../validation-feedback';
+import { testI18n } from '@/test/render';
 
 vi.mock('sonner', () => ({
   toast: { error: vi.fn(), warning: vi.fn(), success: vi.fn() },
 }));
 
-const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
+const i18n = testI18n();
 const clean: DagValidationResult = {
   valid: true,
   errors: [],

@@ -1,6 +1,4 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { useForm, type Path, type UseFormReturn } from 'react-hook-form';
 
 import type { DagStepDefinition } from '@/api/schemas';
@@ -23,6 +21,7 @@ vi.mock('@/components/pipeline/workflows/pipeline-workflow-editor', () => ({
 }));
 
 import { PipelineTabsSection } from '../pipeline-tabs-section';
+import { renderWithProviders } from '@/test/render';
 
 type Values = {
   pipeline: unknown;
@@ -48,7 +47,6 @@ function renderSection({
   names: PipelineNames;
   dagNames?: { perSegment?: string; paired?: string; session?: string };
 }) {
-  const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
   let form!: UseFormReturn<Values>;
 
   function Harness() {
@@ -58,11 +56,7 @@ function renderSection({
     );
   }
 
-  render(
-    <I18nProvider i18n={i18n}>
-      <Harness />
-    </I18nProvider>,
-  );
+  renderWithProviders(<Harness />);
 
   return { value: () => form.getValues('pipeline') };
 }
@@ -75,12 +69,6 @@ const ALL_NAMES: PipelineNames = {
 
 beforeAll(() => {
   // Pressing a tab also opens its Radix tooltip, which measures its content;
-  // jsdom does not provide ResizeObserver.
-  globalThis.ResizeObserver ??= class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  } as unknown as typeof ResizeObserver;
 });
 
 describe('PipelineTabsSection', () => {

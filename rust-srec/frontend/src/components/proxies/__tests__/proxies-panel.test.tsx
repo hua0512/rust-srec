@@ -15,15 +15,11 @@ import {
   updateProxy,
 } from '@/server/functions/proxies';
 import { ProxiesPanel } from '../proxies-panel';
-import {
-  backendError,
-  renderWithProviders,
-  savedProxy,
-  socksProxy,
-} from './proxy-test-utils';
+import { backendError, savedProxy, socksProxy } from './proxy-test-utils';
+import { renderWithProviders } from '@/test/render';
 
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
+vi.mock('@tanstack/react-router', async () => ({
+  Link: (await import('@/test/router')).MockLink,
 }));
 vi.mock('@/server/functions/proxies');
 
@@ -39,7 +35,6 @@ const noReferences = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  HTMLElement.prototype.scrollIntoView = vi.fn();
   vi.mocked(listProxies).mockResolvedValue([office, socksProxy]);
   vi.mocked(getSystemProxy).mockResolvedValue({
     detected: true,

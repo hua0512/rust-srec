@@ -1,12 +1,11 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
 
 import { Form } from '@/components/ui/form';
 import { MetadataConfigSchema } from '../../processor-schemas';
 import { MetadataConfigForm } from '../metadata-config-form';
+import { renderWithProviders } from '@/test/render';
 
 type Values = z.infer<typeof MetadataConfigSchema>;
 
@@ -20,11 +19,7 @@ function renderForm(custom?: Record<string, string>) {
       </Form>
     );
   }
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <Harness />
-    </I18nProvider>,
-  );
+  renderWithProviders(<Harness />);
   return {
     stored: () => form.getValues('custom') as Record<string, string>,
     form: () => form,

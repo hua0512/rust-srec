@@ -1,46 +1,18 @@
-import type { ReactNode } from 'react';
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import {
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CredentialAttentionIndicator } from '../credential-attention-indicator';
 import type { CredentialAttention } from '@/api/schemas/credential-profiles';
 import { listCredentialAttention } from '@/server/functions/credential-profiles';
+import { renderWithProviders } from '@/test/render';
 
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({
-    children,
-    to,
-    params,
-    className,
-  }: {
-    children: ReactNode;
-    to: string;
-    params?: { platformId: string };
-    className?: string;
-  }) => (
-    <a
-      href={to.replace('$platformId', params?.platformId ?? '')}
-      className={className}
-    >
-      {children}
-    </a>
-  ),
+vi.mock('@tanstack/react-router', async () => ({
+  Link: (await import('@/test/router')).MockLink,
 }));
 
 vi.mock('@/server/functions/credential-profiles', () => ({
   listCredentialAttention: vi.fn(),
 }));
-
-const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
 
 function account(
   id: string,
@@ -67,13 +39,7 @@ function account(
 
 function renderIndicator(accounts: CredentialAttention[]) {
   vi.mocked(listCredentialAttention).mockResolvedValue(accounts);
-  return render(
-    <QueryClientProvider client={new QueryClient()}>
-      <I18nProvider i18n={i18n}>
-        <CredentialAttentionIndicator />
-      </I18nProvider>
-    </QueryClientProvider>,
-  );
+  return renderWithProviders(<CredentialAttentionIndicator />);
 }
 
 describe('CredentialAttentionIndicator', () => {

@@ -1,13 +1,5 @@
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from '@testing-library/react';
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, cleanup, fireEvent, screen } from '@testing-library/react';
+import { QueryClient } from '@tanstack/react-query';
 import { create, toBinary } from '@bufbuild/protobuf';
 
 import {
@@ -17,6 +9,9 @@ import {
   WsMessageSchema,
 } from '@/api/proto/gen/log_event_pb.js';
 import { LogViewer } from '../log-viewer';
+import { renderWithProviders } from '@/test/render';
+import { MockWebSocket } from '@/test/mock-websocket';
+import { testSession } from '@/test/session';
 
 const FLUSH_WINDOW_MS = 50;
 const MAX_LOG_ENTRIES = 500;
@@ -29,86 +24,27 @@ vi.mock('@tanstack/react-router', () => ({
   useRouteContext: () => routeContext,
 }));
 
-class MockWebSocket {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSING = 2;
-  static readonly CLOSED = 3;
-  static instances: MockWebSocket[] = [];
-
-  readonly url: string;
-  readyState = MockWebSocket.CONNECTING;
-  binaryType: BinaryType = 'blob';
-  onopen: ((event: Event) => void) | null = null;
-  onmessage: ((event: MessageEvent) => void) | null = null;
-  onclose: ((event: CloseEvent) => void) | null = null;
-  onerror: ((event: Event) => void) | null = null;
-  send = vi.fn();
-
-  constructor(url: string | URL) {
-    this.url = url.toString();
-    MockWebSocket.instances.push(this);
-  }
-
-  close() {
-    this.readyState = MockWebSocket.CLOSED;
-  }
-
-  emitOpen() {
-    this.readyState = MockWebSocket.OPEN;
-    this.onopen?.(new Event('open'));
-  }
-
-  emitLog(index: number) {
-    const message = create(WsMessageSchema, {
-      eventType: EventType.LOG,
-      payload: {
-        case: 'log',
-        value: create(LogEventSchema, {
-          timestampMs: BigInt(1_700_000_000_000 + index),
-          level: LogLevel.INFO,
-          target: 'test',
-          message: `log-${index}`,
-        }),
-      },
-    });
-    const bytes = toBinary(WsMessageSchema, message);
-    this.onmessage?.(
-      new MessageEvent('message', {
-        data: bytes.buffer.slice(
-          bytes.byteOffset,
-          bytes.byteOffset + bytes.byteLength,
-        ),
+function emitLog(socket: MockWebSocket, index: number) {
+  const message = create(WsMessageSchema, {
+    eventType: EventType.LOG,
+    payload: {
+      case: 'log',
+      value: create(LogEventSchema, {
+        timestampMs: BigInt(1_700_000_000_000 + index),
+        level: LogLevel.INFO,
+        target: 'test',
+        message: `log-${index}`,
       }),
-    );
-  }
-}
-
-function sessionWithToken(accessToken: string) {
-  return {
-    username: 'user',
-    token: {
-      access_token: accessToken,
-      expires_in: Date.now() + 60 * 60_000,
-      refresh_expires_in: Date.now() + 24 * 60 * 60_000,
     },
-    roles: [],
-    mustChangePassword: false,
-  };
+  });
+  socket.emitBinary(toBinary(WsMessageSchema, message));
 }
 
 function renderViewer() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity } },
   });
-  const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
-  const utils = render(
-    <QueryClientProvider client={queryClient}>
-      <I18nProvider i18n={i18n}>
-        <LogViewer />
-      </I18nProvider>
-    </QueryClientProvider>,
-  );
+  const utils = renderWithProviders(<LogViewer />, { client: queryClient });
   const socket = MockWebSocket.instances[0];
   act(() => socket.emitOpen());
   return { ...utils, socket };
@@ -122,7 +58,7 @@ function renderedRowCount(container: HTMLElement): number {
 
 function emitLogs(socket: MockWebSocket, count: number, offset = 0) {
   act(() => {
-    for (let i = 0; i < count; i++) socket.emitLog(offset + i);
+    for (let i = 0; i < count; i++) emitLog(socket, offset + i);
   });
 }
 
@@ -136,7 +72,7 @@ describe('LogViewer', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     MockWebSocket.instances = [];
-    routeContext.user = sessionWithToken('token-a');
+    routeContext.user = testSession({ accessToken: 'token-a' });
     vi.stubGlobal('WebSocket', MockWebSocket);
   });
 

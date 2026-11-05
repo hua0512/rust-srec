@@ -24,9 +24,10 @@ import {
   renderCredentials,
 } from './credential-test-utils';
 import { getSystemProxy, listProxies } from '@/server/functions/proxies';
+import { chooseOption } from '@/test/render';
 
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
+vi.mock('@tanstack/react-router', async () => ({
+  Link: (await import('@/test/router')).MockLink,
 }));
 
 vi.mock('@/server/functions/credential-profiles');
@@ -515,12 +516,8 @@ const officeProxy = {
 };
 
 /** Opens the proxy select and picks `option`. */
-async function chooseProxy(option: RegExp) {
-  HTMLElement.prototype.scrollIntoView = vi.fn();
-  const trigger = screen.getByLabelText('Proxy');
-  act(() => trigger.focus());
-  fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-  fireEvent.click(await screen.findByRole('option', { name: option }));
+function chooseProxy(option: RegExp) {
+  return chooseOption(screen.getByLabelText('Proxy'), option);
 }
 
 /** Opens a new account with a label, routed through the saved proxy. */

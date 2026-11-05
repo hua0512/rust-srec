@@ -1,10 +1,9 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 
 import { Form } from '@/components/ui/form';
 import { PlatformSpecificTab } from '../../platform-specific-tab';
+import { renderWithProviders, chooseOption } from '@/test/render';
 
 type Values = { platform_specific_config: Record<string, unknown> };
 
@@ -27,11 +26,7 @@ function renderFields(
       </Form>
     );
   }
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <Harness />
-    </I18nProvider>,
-  );
+  renderWithProviders(<Harness />);
   return {
     stored: () => form.getValues('platform_specific_config'),
   };
@@ -41,15 +36,6 @@ const cdnInput = () =>
   screen.getByLabelText('Preferred CDN') as HTMLInputElement;
 const retriesInput = () =>
   screen.getByLabelText('API Request Retries') as HTMLInputElement;
-
-beforeAll(() => {
-  HTMLElement.prototype.scrollIntoView = vi.fn();
-  globalThis.ResizeObserver ??= class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  } as unknown as typeof ResizeObserver;
-});
 
 describe('Douyu configuration', () => {
   it('leaves the fields empty when nothing is set and names the fallback', () => {
@@ -133,32 +119,29 @@ describe('Douyu configuration', () => {
     expect(stored().codec).toBeUndefined();
   });
 
-  it('changes method and codec and restores inheritance', () => {
+  it('changes method and codec and restores inheritance', async () => {
     const { stored } = renderFields(
       { api_mode: 'app', codec: 'avc' },
       { inherited: true },
     );
     const method = screen.getByLabelText('Extraction Method');
     expect(method).toHaveTextContent('Android App');
-    fireEvent.keyDown(method, { key: 'ArrowDown' });
-    fireEvent.click(screen.getByRole('option', { name: 'Web (deprecated)' }));
+    await chooseOption(method, 'Web (deprecated)');
     expect(stored().api_mode).toBe('web');
 
     const codec = screen.getByLabelText('Preferred Video Codec');
     expect(codec).toHaveTextContent('AVC (H.264)');
-    fireEvent.keyDown(codec, { key: 'ArrowDown' });
-    fireEvent.click(screen.getByRole('option', { name: 'HEVC (H.265)' }));
+    await chooseOption(codec, 'HEVC (H.265)');
     expect(stored().codec).toBe('hevc');
 
     for (const trigger of [method, codec]) {
-      fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-      fireEvent.click(screen.getByRole('option', { name: 'Inherited' }));
+      await chooseOption(trigger, 'Inherited');
     }
     expect(stored().api_mode).toBeNull();
     expect(stored().codec).toBeNull();
   });
 
-  it('saves device options and can clear them to inherit', () => {
+  it('saves device options and can clear them to inherit', async () => {
     const { stored } = renderFields({}, { inherited: true });
     for (const [label, key, value] of [
       ['Device Model', 'device_name', 'OnePlus 12'],
@@ -172,13 +155,9 @@ describe('Douyu configuration', () => {
       expect(stored()[key]).toBeNull();
     }
     const source = screen.getByLabelText('Device ID source');
-    fireEvent.keyDown(source, { key: 'ArrowDown' });
-    fireEvent.click(
-      screen.getByRole('option', { name: 'Server registration' }),
-    );
+    await chooseOption(source, 'Server registration');
     expect(stored().device_id_mode).toBe('server');
-    fireEvent.keyDown(source, { key: 'ArrowDown' });
-    fireEvent.click(screen.getByRole('option', { name: 'Inherited' }));
+    await chooseOption(source, 'Inherited');
     expect(stored().device_id_mode).toBeNull();
   });
 });

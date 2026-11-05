@@ -1,23 +1,8 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { useForm } from 'react-hook-form';
 import { Form } from '@/components/ui/form';
 import { OutputRetentionFields } from '../output-retention-fields';
-
-beforeAll(() => {
-  // Radix measures tooltip content; jsdom does not provide ResizeObserver.
-  vi.stubGlobal(
-    'ResizeObserver',
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
-});
-
-afterAll(() => vi.unstubAllGlobals());
+import { renderWithProviders, chooseOption } from '@/test/render';
 
 function renderFields(days = 0, deleteFiles = false) {
   let values = () => ({
@@ -38,11 +23,7 @@ function renderFields(days = 0, deleteFiles = false) {
       </Form>
     );
   }
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <Harness />
-    </I18nProvider>,
-  );
+  renderWithProviders(<Harness />);
   return { values: () => values() };
 }
 
@@ -83,10 +64,7 @@ describe('output retention settings', () => {
     });
     const select = screen.getByRole('combobox');
     expect(select).toBeEnabled();
-    fireEvent.keyDown(select, { key: 'ArrowDown' });
-    fireEvent.click(
-      screen.getByRole('option', { name: 'Delete records and files' }),
-    );
+    await chooseOption(select, 'Delete records and files');
     expect(values()).toEqual({
       output_retention_days: 14,
       output_retention_delete_files: true,
@@ -98,10 +76,7 @@ describe('output retention settings', () => {
       /Permanently deletes tracked output files/,
     );
     fireEvent.keyDown(document.body, { key: 'Escape' });
-    fireEvent.keyDown(select, { key: 'ArrowDown' });
-    fireEvent.click(
-      screen.getByRole('option', { name: 'Delete records only' }),
-    );
+    await chooseOption(select, 'Delete records only');
     expect(values().output_retention_delete_files).toBe(false);
   });
 

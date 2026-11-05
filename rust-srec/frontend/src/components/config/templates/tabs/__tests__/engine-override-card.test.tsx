@@ -1,10 +1,9 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 
 import { Form } from '@/components/ui/form';
 import { EngineOverrideCard } from '../engine-override-card';
+import { renderWithProviders } from '@/test/render';
 
 type Values = { engines_override?: Record<string, unknown> };
 
@@ -25,11 +24,7 @@ function renderCard(onRemove: () => void) {
     );
   }
 
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <Harness />
-    </I18nProvider>,
-  );
+  renderWithProviders(<Harness />);
 }
 
 describe('engine override card', () => {

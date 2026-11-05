@@ -1,9 +1,5 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
 import type { ReactNode } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render } from '@testing-library/react';
 import {
   getCredentialCapabilities,
   getEffectiveCredentialSelection,
@@ -14,6 +10,7 @@ import type {
   CredentialProfileDetail,
   PlatformCredentialCapabilities,
 } from '@/api/schemas/credential-profiles';
+import { renderWithProviders } from '@/test/render';
 
 export const profile = {
   id: 'account-a',
@@ -101,20 +98,6 @@ function InForm({ children }: { children: ReactNode }) {
   return <FormProvider {...form}>{children}</FormProvider>;
 }
 
-export function newQueryClient() {
-  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
-}
-
-export function renderCredentials(
-  ui: ReactNode,
-  client: QueryClient = newQueryClient(),
-) {
-  render(
-    <QueryClientProvider client={client}>
-      <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-        <InForm>{ui}</InForm>
-      </I18nProvider>
-    </QueryClientProvider>,
-  );
-  return client;
+export function renderCredentials(ui: ReactNode) {
+  return renderWithProviders(<InForm>{ui}</InForm>);
 }

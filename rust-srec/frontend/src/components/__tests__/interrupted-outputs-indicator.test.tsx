@@ -1,8 +1,4 @@
-import type { ReactNode } from 'react';
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { toast } from 'sonner';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -14,23 +10,10 @@ import {
   deleteInterruptedOutput,
   listInterruptedOutputs,
 } from '@/server/functions/pipeline';
+import { renderWithProviders } from '@/test/render';
 
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({
-    children,
-    to,
-    params,
-    className,
-  }: {
-    children: ReactNode;
-    to: string;
-    params?: { jobId: string };
-    className?: string;
-  }) => (
-    <a href={to.replace('$jobId', params?.jobId ?? '')} className={className}>
-      {children}
-    </a>
-  ),
+vi.mock('@tanstack/react-router', async () => ({
+  Link: (await import('@/test/router')).MockLink,
 }));
 
 vi.mock('@/server/functions/pipeline', () => ({
@@ -40,8 +23,6 @@ vi.mock('@/server/functions/pipeline', () => ({
 }));
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
-
-const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
 
 function output(
   id: string,
@@ -65,13 +46,7 @@ function renderIndicator(outputs: InterruptedOutput[]) {
     outputs,
     total_size_bytes: outputs.reduce((sum, o) => sum + (o.size_bytes ?? 0), 0),
   });
-  return render(
-    <QueryClientProvider client={new QueryClient()}>
-      <I18nProvider i18n={i18n}>
-        <InterruptedOutputsIndicator />
-      </I18nProvider>
-    </QueryClientProvider>,
-  );
+  return renderWithProviders(<InterruptedOutputsIndicator />);
 }
 
 describe('InterruptedOutputsIndicator', () => {

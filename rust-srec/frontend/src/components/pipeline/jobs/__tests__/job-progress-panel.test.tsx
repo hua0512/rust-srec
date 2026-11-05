@@ -1,13 +1,10 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { act, render, screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 
 import { JobSchema } from '@/api/schemas/pipeline';
 import { JobProgressSnapshotSchema } from '@/api/schemas/session';
 import { JobProgressPanel } from '../job-progress-panel';
-
-const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
+import { renderWithProviders } from '@/test/render';
 
 afterEach(() => {
   vi.useRealTimers();
@@ -29,16 +26,14 @@ function renderRunningJob(snapshot: Record<string, unknown>) {
     created_at: now,
     started_at: now,
   });
-  render(
-    <I18nProvider i18n={i18n}>
-      <JobProgressPanel
-        job={job}
-        snapshot={JobProgressSnapshotSchema.parse({
-          updated_at: now,
-          ...snapshot,
-        })}
-      />
-    </I18nProvider>,
+  renderWithProviders(
+    <JobProgressPanel
+      job={job}
+      snapshot={JobProgressSnapshotSchema.parse({
+        updated_at: now,
+        ...snapshot,
+      })}
+    />,
   );
 }
 
@@ -108,11 +103,7 @@ it('counts up the queue wait while the job is queued', () => {
     status: 'PENDING',
     created_at: new Date(Date.now() - 90_000).toISOString(),
   });
-  render(
-    <I18nProvider i18n={i18n}>
-      <JobProgressPanel job={job} />
-    </I18nProvider>,
-  );
+  renderWithProviders(<JobProgressPanel job={job} />);
   expect(screen.getByText('1m 30s')).toBeInTheDocument();
 
   act(() => {

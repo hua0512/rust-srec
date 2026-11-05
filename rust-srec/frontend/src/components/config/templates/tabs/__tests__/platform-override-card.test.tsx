@@ -1,12 +1,10 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { useForm } from 'react-hook-form';
 
 import { Form } from '@/components/ui/form';
 import type { TemplateFormValues } from '../../template-editor';
 import { PlatformOverrideCard } from '../platform-override-card';
+import { renderWithProviders } from '@/test/render';
 
 function renderCard() {
   function Harness() {
@@ -23,13 +21,7 @@ function renderCard() {
       </Form>
     );
   }
-  render(
-    <QueryClientProvider client={new QueryClient()}>
-      <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-        <Harness />
-      </I18nProvider>
-    </QueryClientProvider>,
-  );
+  renderWithProviders(<Harness />);
 }
 
 describe('PlatformOverrideCard', () => {

@@ -1,25 +1,13 @@
-import type { ReactNode } from 'react';
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 
 import { ProcessingJobsIndicator } from '../processing-jobs-indicator';
 import { useUploadStore, type JobView } from '@/store/uploads';
+import { renderWithProviders } from '@/test/render';
 
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({
-    children,
-    to,
-    params,
-  }: {
-    children: ReactNode;
-    to: string;
-    params?: { jobId: string };
-  }) => <a href={to.replace('$jobId', params?.jobId ?? '')}>{children}</a>,
+vi.mock('@tanstack/react-router', async () => ({
+  Link: (await import('@/test/router')).MockLink,
 }));
-
-const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
 
 function createJob(overrides: Partial<JobView>): JobView {
   return {
@@ -52,11 +40,7 @@ it('lists each running job with its step and progress, linked to the job', () =>
   useUploadStore.setState({
     jobsByJobId: new Map(jobs.map((job) => [job.jobId, job])),
   });
-  render(
-    <I18nProvider i18n={i18n}>
-      <ProcessingJobsIndicator />
-    </I18nProvider>,
-  );
+  renderWithProviders(<ProcessingJobsIndicator />);
 
   fireEvent.click(screen.getByRole('button', { name: '2 jobs in progress' }));
 

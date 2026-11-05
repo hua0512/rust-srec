@@ -1,18 +1,13 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 
 import { ConnectionStatusIndicator } from '../connection-status-indicator';
 import { useDownloadStore, type ConnectionStatus } from '@/store/downloads';
+import { renderWithProviders } from '@/test/render';
 
 function renderIndicator(status: ConnectionStatus) {
   useDownloadStore.setState({ connectionStatus: status });
 
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <ConnectionStatusIndicator />
-    </I18nProvider>,
-  );
+  renderWithProviders(<ConnectionStatusIndicator />);
 }
 
 describe('connection status indicator', () => {

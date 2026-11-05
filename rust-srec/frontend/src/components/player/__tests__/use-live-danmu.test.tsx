@@ -4,37 +4,9 @@ import { sessionQueryOptions } from '@/api/session';
 import type { ClientSessionData } from '@/utils/session';
 import type { LiveDanmuItem } from '../danmu-overlay';
 import { useLiveDanmu } from '../use-live-danmu';
+import { MockWebSocket } from '@/test/mock-websocket';
 
 vi.mock('@/server/functions/auth', () => ({ checkAuthFn: vi.fn() }));
-
-class MockWebSocket {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSED = 3;
-  static instances: MockWebSocket[] = [];
-
-  readonly url: string;
-  readyState = MockWebSocket.CONNECTING;
-  binaryType: BinaryType = 'blob';
-  onopen: ((event: Event) => void) | null = null;
-  onmessage: ((event: MessageEvent) => void) | null = null;
-  onclose: ((event: CloseEvent) => void) | null = null;
-  onerror: ((event: Event) => void) | null = null;
-
-  constructor(url: string | URL) {
-    this.url = url.toString();
-    MockWebSocket.instances.push(this);
-  }
-
-  close() {
-    this.readyState = MockWebSocket.CLOSED;
-  }
-
-  emitClose(code: number) {
-    this.readyState = MockWebSocket.CLOSED;
-    this.onclose?.(new CloseEvent('close', { code }));
-  }
-}
 
 function Harness({
   handle,

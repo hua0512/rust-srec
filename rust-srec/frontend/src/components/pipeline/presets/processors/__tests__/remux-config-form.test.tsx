@@ -1,10 +1,9 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { act, render } from '@testing-library/react';
+import { act } from '@testing-library/react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 
 import { Form } from '@/components/ui/form';
 import { RemuxConfigForm } from '../remux-config-form';
+import { renderWithProviders } from '@/test/render';
 
 it('keeps a saved NVENC preset when an editor loads it into an empty form', () => {
   let form!: UseFormReturn<Record<string, unknown>>;
@@ -18,11 +17,7 @@ it('keeps a saved NVENC preset when an editor loads it into an empty form', () =
       </Form>
     );
   }
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <Harness />
-    </I18nProvider>,
-  );
+  renderWithProviders(<Harness />);
 
   act(() =>
     form.reset({ video_codec: 'hevcnvenc', hwaccel: 'cuda', preset: 'p7' }),

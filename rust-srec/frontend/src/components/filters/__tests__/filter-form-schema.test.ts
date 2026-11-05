@@ -1,10 +1,7 @@
-import { setupI18n } from '@lingui/core';
-
 import { getFilterFormSchema } from '../FilterDialog';
+import { testI18n } from '@/test/render';
 
-const schema = getFilterFormSchema(
-  setupI18n({ locale: 'en', messages: { en: {} } }),
-);
+const schema = getFilterFormSchema(testI18n());
 
 function timeBased(config: Record<string, unknown>) {
   return {

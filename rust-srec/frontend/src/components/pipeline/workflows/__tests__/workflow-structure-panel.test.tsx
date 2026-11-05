@@ -1,10 +1,8 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import type { DagStepDefinition } from '@/api/schemas';
 import { useWorkflowSteps } from '../use-workflow-steps';
 import { WorkflowStructurePanel } from '../workflow-structure-panel';
+import { renderWithProviders } from '@/test/render';
 
 vi.mock('../flow-editor/workflow-flow-editor', () => ({
   WorkflowFlowEditor: () => <div>graph view</div>,
@@ -27,7 +25,6 @@ vi.mock('@/server/functions/pipeline', () => ({
   }),
 }));
 
-const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
 const steps: DagStepDefinition[] = [
   { id: 'first', depends_on: [], step: { type: 'workflow', name: 'prepare' } },
 ];
@@ -54,22 +51,10 @@ function renderPanel(
   variant: 'standalone' | 'embedded',
   libraryTrigger?: React.ReactNode,
 ) {
-  return render(
-    <I18nProvider i18n={i18n}>
-      <QueryClientProvider client={new QueryClient()}>
-        <Panel variant={variant} libraryTrigger={libraryTrigger} />
-      </QueryClientProvider>
-    </I18nProvider>,
+  return renderWithProviders(
+    <Panel variant={variant} libraryTrigger={libraryTrigger} />,
   );
 }
-
-beforeAll(() => {
-  globalThis.ResizeObserver ??= class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  } as unknown as typeof ResizeObserver;
-});
 
 describe.each(['standalone', 'embedded'] as const)(
   '%s workflow structure panel',

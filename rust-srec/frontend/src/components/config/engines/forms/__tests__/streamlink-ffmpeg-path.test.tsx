@@ -1,6 +1,4 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 
 import {
@@ -10,17 +8,12 @@ import {
 import { Form } from '@/components/ui/form';
 import { EngineOverrideCard } from '../../../templates/tabs/engine-override-card';
 import { StreamlinkForm } from '../streamlink-form';
+import { renderWithProviders } from '@/test/render';
 
 type Values = {
   config?: Record<string, unknown>;
   engines_override?: Record<string, Record<string, unknown>>;
 };
-
-beforeAll(() => {
-  HTMLElement.prototype.scrollIntoView = vi.fn();
-  HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
-  HTMLElement.prototype.releasePointerCapture = vi.fn();
-});
 
 function renderEngine(config: Record<string, unknown>) {
   let form!: UseFormReturn<Values>;
@@ -32,11 +25,7 @@ function renderEngine(config: Record<string, unknown>) {
       </Form>
     );
   }
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <Harness />
-    </I18nProvider>,
-  );
+  renderWithProviders(<Harness />);
   return () =>
     JSON.parse(
       JSON.stringify(StreamlinkConfigSchema.parse(form.getValues('config'))),
@@ -64,11 +53,7 @@ function renderOverride(
       </Form>
     );
   }
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <Harness />
-    </I18nProvider>,
-  );
+  renderWithProviders(<Harness />);
   return () =>
     JSON.parse(
       JSON.stringify(

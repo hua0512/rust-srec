@@ -51,4 +51,13 @@ if (typeof window !== 'undefined') {
       dispatchEvent: vi.fn(),
     })),
   });
+
+  // Radix scrolls the highlighted option into view and measures popovers and
+  // scroll areas through APIs jsdom does not implement.
+  HTMLElement.prototype.scrollIntoView = () => {};
+  globalThis.ResizeObserver ??= class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
 }

@@ -2,18 +2,15 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
   screen,
   waitFor,
 } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
 import type { ReactNode } from 'react';
 import { toast } from 'sonner';
 import { useDownloadStore } from '@/store/downloads';
 import { requestLosslessCut } from '@/server/functions/downloads';
 import { useLosslessCutItem } from './lossless-cut-action';
+import { renderWithProviders } from '@/test/render';
 
 vi.mock('@/server/functions/downloads', () => ({
   requestLosslessCut: vi.fn(),
@@ -56,18 +53,10 @@ function Harness({
 }
 
 function mount() {
-  const queryClient = new QueryClient({
-    defaultOptions: { mutations: { retry: false } },
-  });
-  const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
   const tree = (open: boolean, downloadId: string | undefined) => (
-    <QueryClientProvider client={queryClient}>
-      <I18nProvider i18n={i18n}>
-        <Harness downloadId={downloadId} open={open} />
-      </I18nProvider>
-    </QueryClientProvider>
+    <Harness downloadId={downloadId} open={open} />
   );
-  const view = render(tree(true, 'download-1'));
+  const view = renderWithProviders(tree(true, 'download-1'));
   return {
     close: () => view.rerender(tree(false, 'download-1')),
     switchTo: (downloadId: string | undefined) =>

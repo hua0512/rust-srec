@@ -1,18 +1,11 @@
-import type { ReactNode } from 'react';
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { toast } from 'sonner';
 
 import { useCopyToClipboard } from '../use-copy-to-clipboard';
+import { providersWrapper } from '@/test/render';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
-
-const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
-const wrapper = ({ children }: { children: ReactNode }) => (
-  <I18nProvider i18n={i18n}>{children}</I18nProvider>
-);
 
 describe('useCopyToClipboard', () => {
   afterEach(() => {
@@ -26,7 +19,9 @@ describe('useCopyToClipboard', () => {
     vi.stubGlobal('navigator', {
       clipboard: { writeText: () => Promise.reject(new Error('denied')) },
     });
-    const { result } = renderHook(() => useCopyToClipboard(), { wrapper });
+    const { result } = renderHook(() => useCopyToClipboard(), {
+      wrapper: providersWrapper(),
+    });
 
     let copied: boolean | undefined;
     await act(async () => {

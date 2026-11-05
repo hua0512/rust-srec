@@ -1,10 +1,9 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import type { z } from 'zod';
 
 import { FilterSchema } from '@/api/schemas';
 import { FilterCard } from '../FilterCard';
+import { renderWithProviders } from '@/test/render';
 
 describe.each(['TIME_BASED', 'CRON'] as const)(
   '%s card timezone',
@@ -37,12 +36,8 @@ describe.each(['TIME_BASED', 'CRON'] as const)(
         const onEdit = vi.fn();
         const before = structuredClone(filter);
 
-        render(
-          <I18nProvider
-            i18n={setupI18n({ locale: 'en', messages: { en: {} } })}
-          >
-            <FilterCard filter={filter} onEdit={onEdit} onDelete={vi.fn()} />
-          </I18nProvider>,
+        renderWithProviders(
+          <FilterCard filter={filter} onEdit={onEdit} onDelete={vi.fn()} />,
         );
 
         expect(screen.getByText(`Timezone: ${label}`)).toBeVisible();

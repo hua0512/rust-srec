@@ -1,12 +1,11 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { useState } from 'react';
 
 import {
   ImportModeRadioGroup,
   type ImportMode,
 } from '../import-mode-radio-group';
+import { renderWithProviders } from '@/test/render';
 
 function renderGroup() {
   function Harness() {
@@ -14,11 +13,7 @@ function renderGroup() {
     return <ImportModeRadioGroup value={mode} onValueChange={setMode} />;
   }
 
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <Harness />
-    </I18nProvider>,
-  );
+  renderWithProviders(<Harness />);
 }
 
 const merge = () => screen.getByRole('radio', { name: /Merge Changes/ });

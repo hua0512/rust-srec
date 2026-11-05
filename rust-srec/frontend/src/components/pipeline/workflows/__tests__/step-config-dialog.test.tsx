@@ -1,17 +1,9 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import {
-  act,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { queryKeys } from '@/api/query-keys';
 import { DagStepDefinition } from '@/api/schemas';
 import { StepConfigDialog } from '../step-config-dialog';
 import { StepsList } from '../steps-list';
+import { renderWithProviders } from '@/test/render';
 
 // Stands in for `/api/job/presets`: `search` is a substring of name AND description ordered by
 // name, `name` is an exact match. `delete_source` mentions "thumbnail" in its description and
@@ -85,41 +77,23 @@ vi.mock('@/server/functions/job', () => ({
   listJobPresets: (args: any) => listJobPresets(args),
 }));
 
-const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
-
 function renderDialog(
   step: DagStepDefinition,
   onSave = vi.fn(),
   allSteps = [step],
 ) {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  render(
-    <I18nProvider i18n={i18n}>
-      <QueryClientProvider client={client}>
-        <StepConfigDialog
-          open
-          onOpenChange={() => {}}
-          dagStep={step}
-          onSave={onSave}
-          allSteps={allSteps}
-          currentStepIndex={allSteps.indexOf(step)}
-        />
-      </QueryClientProvider>
-    </I18nProvider>,
+  const { client } = renderWithProviders(
+    <StepConfigDialog
+      open
+      onOpenChange={() => {}}
+      dagStep={step}
+      onSave={onSave}
+      allSteps={allSteps}
+      currentStepIndex={allSteps.indexOf(step)}
+    />,
   );
   return { onSave, client };
 }
-
-beforeAll(() => {
-  // Radix's ScrollArea observes its viewport; jsdom has no ResizeObserver.
-  globalThis.ResizeObserver ??= class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  } as unknown as typeof ResizeObserver;
-});
 
 beforeEach(() => {
   listJobPresets.mockClear();
@@ -144,18 +118,8 @@ describe('workflow preset warnings', () => {
       depends_on: [],
       step: { type: 'inline', processor: 'thumbnail', config: {} },
     };
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    render(
-      <I18nProvider i18n={i18n}>
-        <QueryClientProvider client={client}>
-          <StepsList
-            steps={[transform, deletion, inline]}
-            onReorder={() => {}}
-          />
-        </QueryClientProvider>
-      </I18nProvider>,
+    renderWithProviders(
+      <StepsList steps={[transform, deletion, inline]} onReorder={() => {}} />,
     );
     await screen.findByTitle(/This Delete step deletes the converted result/i);
     expect(screen.getByText('Inline: thumbnail')).toBeInTheDocument();

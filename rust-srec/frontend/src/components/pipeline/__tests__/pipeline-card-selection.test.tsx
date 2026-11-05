@@ -1,22 +1,13 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { fireEvent, render, screen } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { fireEvent, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PipelineSummaryCard } from '../jobs/pipeline-summary-card';
 import { OutputCard } from '../outputs/output-card';
+import { renderWithProviders } from '@/test/render';
 
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
+vi.mock('@tanstack/react-router', async () => ({
+  Link: (await import('@/test/router')).MockLink,
 }));
-
-const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
-
-// Both cards call `useLingui` for their labels, so every render needs a provider.
-function Wrapper({ children }: { children: ReactNode }) {
-  return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
-}
 
 const pipeline = {
   id: 'dag-1',
@@ -55,7 +46,7 @@ describe('PipelineSummaryCard selection mode', () => {
   });
 
   it('toggles selection with pointer and keyboard instead of navigating', () => {
-    const { rerender } = render(
+    const { rerender } = renderWithProviders(
       <PipelineSummaryCard
         pipeline={pipeline}
         onViewDetails={onViewDetails}
@@ -63,7 +54,6 @@ describe('PipelineSummaryCard selection mode', () => {
         isSelected={false}
         onSelectChange={onSelectChange}
       />,
-      { wrapper: Wrapper },
     );
 
     const card = screen.getByRole('checkbox');
@@ -91,13 +81,12 @@ describe('PipelineSummaryCard selection mode', () => {
   });
 
   it('navigates on click when selection mode is off', () => {
-    const { container } = render(
+    const { container } = renderWithProviders(
       <PipelineSummaryCard
         pipeline={pipeline}
         onViewDetails={onViewDetails}
         onSelectChange={onSelectChange}
       />,
-      { wrapper: Wrapper },
     );
 
     expect(screen.queryByRole('checkbox')).toBeNull();
@@ -115,14 +104,13 @@ describe('OutputCard selection mode', () => {
   });
 
   it('toggles selection with pointer and keyboard input', () => {
-    const { rerender } = render(
+    const { rerender } = renderWithProviders(
       <OutputCard
         output={output}
         selectionMode
         isSelected={false}
         onSelectChange={onSelectChange}
       />,
-      { wrapper: Wrapper },
     );
 
     const card = screen.getByRole('checkbox');
@@ -145,7 +133,7 @@ describe('OutputCard selection mode', () => {
   });
 
   it('exposes no checkbox role outside selection mode', () => {
-    render(<OutputCard output={output} />, { wrapper: Wrapper });
+    renderWithProviders(<OutputCard output={output} />);
     expect(screen.queryByRole('checkbox')).toBeNull();
   });
 });
