@@ -90,7 +90,7 @@ Email is sent immediately for each event; a `batch_window_secs` field in saved e
 
 ## Critical Storage Events
 
-- `out_of_space` is sent when a disk holding recordings or the database reaches 95% used. It is sent once per low-space episode: another one follows only after usage has dropped below 80% and then reached 95% again.
+- `out_of_space` is sent when a disk holding recordings or the database reaches 95% used. It is sent once for each recordings folder or database folder on that disk; another one follows only after usage has dropped below 80% and then reached 95% again, or after a restart while the disk is still that full.
 - `output_path_inaccessible` means the [output-root write gate](../development/architecture.md#output-root-write-gate) has blocked new recording work because a tracked root cannot be written.
 
 Freeing genuine disk exhaustion can recover automatically after the next probe. A stale Docker bind mount may require a container restart; see [Storage and Capacity](../operations/storage.md).

@@ -155,6 +155,34 @@ pub(super) fn sqlite_file_path_from_url(url: &str) -> Option<std::path::PathBuf>
         return None;
     }
 
-    let normalized = path_part.strip_prefix("///").unwrap_or(path_part);
+    // Matches sqlx: `sqlite://` introduces the path, so `sqlite:///app/data/x.db`
+    // is the absolute `/app/data/x.db` and `sqlite://x.db` is relative.
+    let normalized = path_part.strip_prefix("//").unwrap_or(path_part);
     Some(std::path::PathBuf::from(normalized))
+}
+
+#[cfg(test)]
+mod sqlite_path_tests {
+    use std::path::PathBuf;
+
+    use super::sqlite_file_path_from_url;
+
+    /// The default Docker URL names an absolute path; reading it as relative
+    /// made the database disk probe watch the wrong filesystem.
+    #[test]
+    fn reads_paths_the_way_sqlx_does() {
+        assert_eq!(
+            sqlite_file_path_from_url("sqlite:///app/data/rust-srec.db?mode=rwc"),
+            Some(PathBuf::from("/app/data/rust-srec.db"))
+        );
+        assert_eq!(
+            sqlite_file_path_from_url("sqlite://data/srec.db"),
+            Some(PathBuf::from("data/srec.db"))
+        );
+        assert_eq!(
+            sqlite_file_path_from_url("sqlite:srec.db"),
+            Some(PathBuf::from("srec.db"))
+        );
+        assert_eq!(sqlite_file_path_from_url("sqlite::memory:"), None);
+    }
 }

@@ -114,20 +114,12 @@ impl DiskSpaceProbe {
         })
     }
 
-    /// Fire-and-forget, like the GPU and output-root notifications: delivery
-    /// must not hold up the health refresh loop.
-    fn spawn_notification(&self, event: NotificationEvent) {
-        let weak = self.notification_service.clone();
-        let path = self.display_path.clone();
-        tokio::spawn(async move {
-            let Some(service) = weak.upgrade() else {
-                debug!("NotificationService dropped before OutOfSpace notification could fire");
-                return;
-            };
-            if let Err(e) = service.notify(event).await {
-                warn!(error = %e, path, "Failed to dispatch OutOfSpace notification (non-fatal)");
-            }
-        });
+    /// Queues the notification without waiting, like the output-root gate: the
+    /// service's bounded dispatch queue keeps delivery off the health refresh loop.
+    fn send_notification(&self, event: NotificationEvent) {
+        if let Some(service) = self.notification_service.upgrade() {
+            service.dispatch_notification(event);
+        }
     }
 }
 
@@ -154,7 +146,7 @@ impl HealthProbe for DiskSpaceProbe {
             Some(disk) => {
                 if let Some(event) = self.out_of_space_event(disk.available_space, disk.total_space)
                 {
-                    self.spawn_notification(event);
+                    self.send_notification(event);
                 }
                 HealthChecker::check_disk_space_with_thresholds(
                     &self.display_path,
@@ -831,7 +823,12 @@ impl ServiceContainer {
         if let Ok(database_url) = std::env::var("DATABASE_URL")
             && let Some(db_file) = sqlite_file_path_from_url(&database_url)
         {
-            let db_dir = db_file.parent().unwrap_or(db_file.as_path()).to_path_buf();
+            // A bare file name such as `sqlite:srec.db` has an empty parent: the
+            // working directory.
+            let db_dir = match db_file.parent() {
+                Some(parent) if !parent.as_os_str().is_empty() => parent.to_path_buf(),
+                _ => PathBuf::from("."),
+            };
             let db_dir_str = db_dir.to_string_lossy().to_string();
             let db_dir_path = if db_dir.is_absolute() {
                 db_dir
@@ -1017,6 +1014,36 @@ mod tests {
         assert!(
             probe.out_of_space_event(0, 0).is_none(),
             "an unreadable disk is not out of space"
+        );
+    }
+
+    /// The probe itself must hand the event to the notification service, not
+    /// only decide that one is due.
+    #[tokio::test]
+    async fn disk_probe_sends_out_of_space_to_the_notification_service() {
+        let service = Arc::new(NotificationService::new());
+        let mut events = service.subscribe();
+        let probe = DiskSpaceProbe::new(
+            "/rec".to_string(),
+            std::path::PathBuf::from("/rec"),
+            0.80,
+            0.95,
+            Arc::downgrade(&service),
+        );
+
+        probe.probe(snapshot_with_disk("/", 4, 100)).await;
+
+        let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+            .await
+            .expect("the probe should send a notification")
+            .expect("the notification channel should stay open");
+        assert!(
+            matches!(
+                &event,
+                NotificationEvent::OutOfSpace { path, available_bytes: 4, threshold_bytes: 5, .. }
+                    if path == "/rec"
+            ),
+            "unexpected event: {event:?}"
         );
     }
 }

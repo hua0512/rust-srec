@@ -4,13 +4,14 @@
 
 ## New features
 
-- **Notifications**: a new low-disk-space notification is sent when a disk holding recordings or the database reaches 95% used. It names the folder and how much space is left, and is sent once until usage drops below 80% again. It was listed among the events you could subscribe to but was never sent before. See [Notifications](https://docs.srec.rs/en/concepts/notifications#critical-storage-events).
+- **Notifications**: a new low-disk-space notification is sent when a disk holding recordings or the database reaches 95% used. It names the folder and how much space is left, and is sent once for each recordings or database folder on that disk until usage drops below 80% again. It was listed among the events you could subscribe to but was never sent before. See [Notifications](https://docs.srec.rs/en/concepts/notifications#critical-storage-events).
 - **Session page**: recorded chat now plays over the video when you watch a recording, timed to the picture. A **Danmu settings** panel in the player hides message types, sets opacity, font size, speed and how much of the picture the chat covers, merges repeated messages, pauses a message under the mouse, shows where the chat is busiest above the progress bar, and blocks words or users. Settings are remembered, and large chat files load without freezing the page. See [Record chat](../guides/danmu.md#watch-a-recording-with-its-chat).
 - **Player page**: live streams now show their chat over the picture as it arrives, with the same show/hide button and **Danmu settings**. Each player in the grid shows its own stream's chat, and a hidden chat is not downloaded. See [Watch a live stream with its chat](../guides/danmu.md#watch-a-live-stream-with-its-chat).
 - **Twitch**: new **Allow H.265 (HEVC)** and **Allow AV1** platform settings let you record the higher qualities some channels stream only in those codecs. Both are off by default, so recordings stay H.264 unless you turn them on. See [Twitch](https://docs.srec.rs/en/platforms/twitch).
 
 ## Fixes
 
+- **System Health**: with the default Docker setup, the free space reported for the database folder came from the container's own storage instead of the mounted data folder, and the folder was shown as `app/data`. It now reports the data folder's disk, as `/app/data`.
 - **Presets**: opening a saved remux preset or workflow step that encodes with NVIDIA (NVENC) could switch its encoder preset to Medium, and the next save kept that change. The saved preset is now kept.
 - **Presets**: the preset editor now names each processor and shows its icon the same way as the workflow editor and the job pages.
 - **Presets**: after you undo your edits to a saved preset, **Save Changes** now goes away again. Before, it stayed for most processors as if something had changed.
