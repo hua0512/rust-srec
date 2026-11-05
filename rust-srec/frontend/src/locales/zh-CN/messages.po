@@ -307,7 +307,6 @@ msgid "{first} and {others} more"
 msgstr "{first} 等 {others} 个文件"
 
 #: src/components/health/storage-usage-card.tsx:133
-#: src/components/notifications/browser-notification-listener.tsx:83
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:270
 msgid "{free} free"
 msgstr "剩余 {free}"
@@ -332,9 +331,9 @@ msgstr "{pending, plural, other {# 个上传排队中}}"
 msgid "{pending} queued"
 msgstr "{pending} 个排队中"
 
-#: src/components/notifications/browser-notification-listener.tsx:91
-msgid "{queued} jobs queued, limit {limit}"
-msgstr "{queued} 个任务排队中，上限 {limit}"
+#: src/components/notifications/browser-notification-listener.tsx:84
+msgid "{queued} jobs queued"
+msgstr "{queued} 个任务排队中"
 
 #: src/components/credentials/account-usage.tsx:220
 msgid "{recordings, plural, one {# live recording} other {# live recordings}}"

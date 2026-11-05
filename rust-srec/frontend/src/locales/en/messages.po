@@ -307,7 +307,6 @@ msgid "{first} and {others} more"
 msgstr "{first} and {others} more"
 
 #: src/components/health/storage-usage-card.tsx:133
-#: src/components/notifications/browser-notification-listener.tsx:83
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:270
 msgid "{free} free"
 msgstr "{free} free"
@@ -332,9 +331,9 @@ msgstr "{pending, plural, one {# queued upload} other {# queued uploads}}"
 msgid "{pending} queued"
 msgstr "{pending} queued"
 
-#: src/components/notifications/browser-notification-listener.tsx:91
-msgid "{queued} jobs queued, limit {limit}"
-msgstr "{queued} jobs queued, limit {limit}"
+#: src/components/notifications/browser-notification-listener.tsx:84
+msgid "{queued} jobs queued"
+msgstr "{queued} jobs queued"
 
 #: src/components/credentials/account-usage.tsx:220
 msgid "{recordings, plural, one {# live recording} other {# live recordings}}"
