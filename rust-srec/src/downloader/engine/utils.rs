@@ -19,7 +19,7 @@ mod version_probe;
 #[cfg(test)]
 pub(super) mod recording_contracts;
 #[cfg(test)]
-pub(super) mod test_support;
+pub(crate) mod test_support;
 
 pub use disk_full::output_io_error_kind;
 pub use ffmpeg_parser::{

@@ -87,6 +87,20 @@ pub fn sanitize_filename_for_template(input: &str) -> String {
     sanitize_filename(input).replace('%', "%%")
 }
 
+/// Longest `{title}` value, in bytes. A file name is limited to 255 bytes, and
+/// the rest of a recording template (streamer, date, time, sequence) must still
+/// fit so that each segment keeps its own name.
+const MAX_TEMPLATE_TITLE_BYTES: usize = 150;
+
+/// [`sanitize_filename_for_template`] for a stream title, shortened on a
+/// character boundary to `MAX_TEMPLATE_TITLE_BYTES` before escaping, so a
+/// `%%` pair is never split.
+pub fn sanitize_title_for_template(title: &str) -> String {
+    let title = sanitize_filename(title);
+    let cut = title.floor_char_boundary(MAX_TEMPLATE_TITLE_BYTES);
+    title[..cut].replace('%', "%%")
+}
+
 /// Expand placeholders in a path template.
 ///
 /// This function handles both curly-brace placeholders (e.g., `{streamer}`) and
@@ -230,6 +244,29 @@ mod tests {
                 sanitize_filename_for_template(name)
             )),
             format!("root/{name}")
+        );
+    }
+
+    #[test]
+    fn a_long_title_leaves_the_time_parts_of_a_recording_name() {
+        let template = format!(
+            "{}-%Y%m%d-%H%M%S",
+            sanitize_title_for_template(&"直播%".repeat(100))
+        );
+        let name = pipeline_common::expand_filename_template(&template, Some(1));
+        // `-YYYYmmdd-HHMMSS` must survive so that segments get distinct names.
+        let suffix = name
+            .as_bytes()
+            .rsplitn(3, |&b| b == b'-')
+            .collect::<Vec<_>>();
+        assert!(
+            suffix.len() == 3
+                && suffix[0].len() == 6
+                && suffix[1].len() == 8
+                && suffix[..2]
+                    .iter()
+                    .all(|part| part.iter().all(u8::is_ascii_digit)),
+            "{name}"
         );
     }
 

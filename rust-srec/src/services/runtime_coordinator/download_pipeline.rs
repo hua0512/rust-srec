@@ -10,7 +10,7 @@ use crate::danmu::CollectionSpec;
 use crate::database::repositories::SessionRepository;
 use crate::domain::{Priority, StreamerState};
 use crate::downloader::{DownloadConfig, DownloadProtocol};
-use crate::utils::filename::sanitize_filename_for_template;
+use crate::utils::filename::{sanitize_filename_for_template, sanitize_title_for_template};
 
 use super::RuntimeCoordinator;
 
@@ -259,7 +259,7 @@ pub(super) async fn run_live_download_pipeline(
 
     // Sanitize names for filename usage.
     let sanitized_streamer = sanitize_filename_for_template(&streamer_name);
-    let sanitized_title = sanitize_filename_for_template(&title);
+    let sanitized_title = sanitize_title_for_template(&title);
     let platform = streamer_metadata
         .as_ref()
         .map_or("unknown", |s| s.platform());
