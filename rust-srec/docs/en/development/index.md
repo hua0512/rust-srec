@@ -1,7 +1,8 @@
 # Development
 
-Implementation contracts for contributors changing the recorder. Start with the runtime architecture, then follow the subsystem you are modifying.
+Implementation contracts for contributors changing the recorder. Set up your [development environment](setup.md) first, then start with the runtime architecture and follow the subsystem you are modifying.
 
+- [Development Environment](setup.md)
 - [Runtime Architecture](architecture.md)
 - [Configuration Resolution](configuration.md)
 - [Pipeline Contracts](pipeline.md)

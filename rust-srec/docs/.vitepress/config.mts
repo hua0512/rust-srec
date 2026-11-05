@@ -132,6 +132,7 @@ export default defineConfig({
             {
               text: "Development",
               items: [
+                { text: "Development Environment", link: "/en/development/setup" },
                 { text: "Runtime Architecture", link: "/en/development/architecture" },
                 { text: "Configuration Resolution", link: "/en/development/configuration" },
                 { text: "Pipeline Contracts", link: "/en/development/pipeline" },
@@ -281,6 +282,7 @@ export default defineConfig({
             {
               text: "开发",
               items: [
+                { text: "开发环境", link: "/zh/development/setup" },
                 { text: "运行时架构", link: "/zh/development/architecture" },
                 { text: "配置解析", link: "/zh/development/configuration" },
                 { text: "管道执行约定", link: "/zh/development/pipeline" },

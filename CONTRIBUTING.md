@@ -20,15 +20,10 @@ For a larger external contribution (new platform support, pipeline changes, DB m
 
 ## Development setup
 
-Prereqs:
+See [Development Environment](https://docs.srec.rs/en/development/setup) for the per-OS prerequisites (Linux, Windows, macOS), external tools for tool-gated tests, and optional build speed-ups. In short:
 
-- Rust toolchain pinned in [rust-toolchain.toml](rust-toolchain.toml); the minimum supported version is recorded separately in [Cargo.toml](Cargo.toml)
-- Git
-
-For the web UI, desktop wrapper, or docs site:
-
-- Node.js from [.nvmrc](.nvmrc)
-- pnpm from the relevant `package.json` `packageManager` field
+- Git and Rust via rustup; the toolchain is pinned in [rust-toolchain.toml](rust-toolchain.toml) and the minimum supported version is recorded separately in [Cargo.toml](Cargo.toml)
+- For the web UI, desktop wrapper, or docs site: Node.js from [.nvmrc](.nvmrc) and pnpm from the relevant `package.json` `packageManager` field
 
 ## Common commands (repo root)
 

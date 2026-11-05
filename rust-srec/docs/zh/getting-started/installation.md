@@ -108,26 +108,27 @@ curl http://localhost:12555/api/health/live
 
 ### 环境要求
 
-- Stable 渠道的 Rust 1.95 或更高版本。这是工作区 `Cargo.toml` 中声明的 `rust-version`，版本低于它 Cargo 会直接拒绝构建。
-- Git、CMake 3.12 或更高版本，以及 C/C++ 编译器。
+- [rustup](https://rustup.rs/)。仓库在 `rust-toolchain.toml` 中固定了工具链，首次执行 `cargo` 命令时 rustup 会自动安装并选用它。若使用其他方式安装的 Rust，版本须不低于 1.95，即工作区 `Cargo.toml` 中声明的 `rust-version`。
+- Git 和 C/C++ 编译器。不需要 CMake 或 `protoc`。
 - 运行前端时需要 Node.js 26，以及 `rust-srec/frontend/package.json` 声明的 pnpm 版本。
-- 至少 2 GB 空闲磁盘空间用于依赖和构建产物。
+- 数 GB 空闲磁盘空间用于依赖和构建产物。
 
 按操作系统安装原生构建工具：
 
 ```bash
 # Debian 或 Ubuntu
-sudo apt-get install git cmake build-essential
+sudo apt-get install git build-essential
 
 # Fedora 或 RHEL
-sudo dnf install git cmake gcc g++
+sudo dnf install git gcc gcc-c++
 
 # macOS
 xcode-select --install
-brew install cmake
 ```
 
-Windows 请安装带 C++ 工作负载的 [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) 和 [CMake](https://cmake.org/download/)。原生编译失败时可核对 [aws-lc-rs 要求](https://aws.github.io/aws-lc-rs/requirements/index.html)。
+Windows 请安装 [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) 并勾选 **使用 C++ 的桌面开发** 工作负载，然后以默认的 MSVC 主机安装 Rust。请使用默认 feature 构建；在 Windows 上 `--all-features` 需要额外的 OpenSSL 构建工具。
+
+桌面应用、依赖外部工具的测试及其他贡献者环境配置，请参阅[开发环境](../development/setup.md)。
 
 ### 构建并配置后端
 
