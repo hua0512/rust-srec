@@ -1172,6 +1172,44 @@ async fn copy_move_refuses_to_overwrite_an_existing_destination() {
     app.shutdown().await;
 }
 
+/// Metadata embedding refuses an output that is its input spelled another
+/// way, before running ffmpeg, so the input is neither overwritten nor
+/// removed afterwards.
+#[tokio::test]
+async fn metadata_refuses_an_output_that_is_its_input_under_another_spelling() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    let source = app.write_output_file("recordings/clip.mp4", "recording");
+    app.write_output_file("recordings/sub/other.txt", "");
+    let same_file = joined(&app.output_path("recordings/sub"), "../clip.mp4");
+
+    let (_, refused) = run_pipeline(
+        &app,
+        &token,
+        std::slice::from_ref(&source),
+        definition(
+            "metadata in place",
+            vec![inline(
+                "tag",
+                "metadata",
+                json!({ "output_path": same_file, "remove_input_on_success": true }),
+                &[],
+            )],
+        ),
+    )
+    .await;
+    assert_eq!(refused["status"], "FAILED", "{refused}");
+    let failure = job(&app, &token, &step_job_id(&refused, "tag")).await;
+    let error = failure["error_message"].as_str().unwrap_or_default();
+    assert!(
+        error.contains("output_path must be different from input_path"),
+        "{failure}"
+    );
+    assert_eq!(read_file(&source), "recording");
+
+    app.shutdown().await;
+}
+
 #[tokio::test]
 async fn a_delete_step_removes_the_previous_steps_outputs_and_keeps_the_source() {
     let app = TestApp::start().await;
@@ -1208,7 +1246,10 @@ async fn a_delete_step_removes_the_previous_steps_outputs_and_keeps_the_source()
         "recording".len(),
         "{removed}"
     );
-    assert_eq!(removed["execution_info"]["output_size_bytes"], 0, "{removed}");
+    assert_eq!(
+        removed["execution_info"]["output_size_bytes"], 0,
+        "{removed}"
+    );
     assert!(!Path::new(&copy).exists(), "the copy should be deleted");
     assert_eq!(read_file(&source), "recording");
 
