@@ -476,24 +476,20 @@ impl<
         &self,
         session_id: &str,
     ) -> Result<Option<crate::credentials::CredentialBinding>> {
-        let raw: Option<String> = sqlx::query_scalar(
-            "SELECT credential_binding FROM live_sessions WHERE id = ? AND end_time IS NULL",
-        )
-        .bind(session_id)
-        .fetch_optional(&self.write_pool)
-        .await?
-        .flatten();
-        Ok(raw.as_deref().map(serde_json::from_str).transpose()?)
+        self.session_lifecycle
+            .repository()
+            .active_session_credential_binding(session_id)
+            .await
     }
 
     pub(crate) async fn retiring_credential_session(
         &self,
         streamer_id: &str,
     ) -> Result<Option<(String, crate::credentials::CredentialBinding)>> {
-        let row: Option<(String, String)> = sqlx::query_as("SELECT s.id, s.credential_binding FROM live_sessions s JOIN retirement_credential_profiles r ON r.profile_id = json_extract(s.credential_binding, '$.identity.profile_id') WHERE s.streamer_id = ? AND s.end_time IS NULL").bind(streamer_id).fetch_optional(&self.write_pool).await?;
-        row.map(|(id, raw)| serde_json::from_str(&raw).map(|binding| (id, binding)))
-            .transpose()
-            .map_err(Into::into)
+        self.session_lifecycle
+            .repository()
+            .retiring_credential_session(streamer_id)
+            .await
     }
 
     pub(crate) async fn validate_download_binding(
@@ -700,20 +696,26 @@ impl<
         let deadline = OperationDeadline::new(hard_timeout);
 
         let (config, active) = tokio::time::timeout_at(deadline.instant(), async {
-            let config = self.config_service.get_config_for_streamer(&streamer.id).await?;
-            let active: Option<(String, Option<String>)> = sqlx::query_as("SELECT id, credential_binding FROM live_sessions WHERE streamer_id = ? AND end_time IS NULL").bind(&streamer.id).fetch_optional(&self.write_pool).await?;
+            let config = self
+                .config_service
+                .get_config_for_streamer(&streamer.id)
+                .await?;
+            let active = self
+                .session_lifecycle
+                .repository()
+                .active_streamer_session_binding(&streamer.id)
+                .await?;
             Ok::<_, Error>((config, active))
-        }).await.map_err(|_| Error::Monitor("Credential context deadline exceeded".into()))??;
-        let binding = active
-            .as_ref()
-            .and_then(|(_, raw)| raw.as_deref())
-            .map(serde_json::from_str::<crate::credentials::CredentialBinding>)
-            .transpose()?;
+        })
+        .await
+        .map_err(|_| Error::Monitor("Credential context deadline exceeded".into()))??;
+        let (active_session_id, binding) = active.unzip();
+        let binding = binding.flatten();
         let key = CredentialCheckKey::new(
             &streamer.id,
             requested_purpose,
             config.credential_policy.as_ref(),
-            active.map(|(id, _)| id),
+            active_session_id,
             binding.as_ref(),
         );
         let purpose = key.purpose;

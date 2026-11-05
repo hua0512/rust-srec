@@ -428,8 +428,7 @@ impl CredentialLoginSessions {
         };
         sqlx::query("UPDATE credential_login_sessions SET state = 'completed', provider_auth_code = '', result_profile_id = ?, result_version = ?, completed_at = ?, expires_at = ? WHERE id = ?")
             .bind(&profile.id).bind(profile.version).bind(now).bind(now + RECEIPT_TTL_MS).bind(login_id).execute(&mut *tx).await?;
-        crate::database::committed_writer::prepare_owned_commit()?;
-        tx.commit().await?;
+        crate::database::committed_writer::commit_owned(tx).await?;
         self.profiles.publish_material(profile.owner());
         Ok(CredentialLoginReceipt {
             status: "completed".into(),

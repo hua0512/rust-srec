@@ -6,7 +6,6 @@
 //! - Supports actor spawning and removal
 //! - Provides actor lookup and enumeration
 
-use std::any::Any;
 use std::collections::HashMap;
 use std::panic::AssertUnwindSafe;
 use std::time::Duration;
@@ -15,6 +14,8 @@ use futures::FutureExt;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
+
+use crate::utils::task_supervisor::panic_payload_message;
 
 use super::handle::{ActorHandle, ActorStopSignal};
 use super::messages::StreamerMessage;
@@ -191,7 +192,7 @@ impl ActorRegistry {
                 Ok(result) => result,
                 Err(payload) => Err(ActorError::recoverable(format!(
                     "Actor panicked: {}",
-                    panic_payload_message(payload.as_ref())
+                    panic_payload_message(payload.as_ref()).unwrap_or("unknown panic payload")
                 ))),
             };
             ActorTaskResult::streamer(id, generation, result)
@@ -478,18 +479,6 @@ fn remove_if_current<M>(
     }
 
     true
-}
-
-/// Render a `catch_unwind` payload, covering the `&'static str` and `String`
-/// shapes produced by `panic!`; anything else has no printable message.
-fn panic_payload_message(payload: &(dyn Any + Send)) -> String {
-    if let Some(message) = payload.downcast_ref::<&'static str>() {
-        (*message).to_string()
-    } else if let Some(message) = payload.downcast_ref::<String>() {
-        message.clone()
-    } else {
-        "unknown panic payload".to_string()
-    }
 }
 
 /// Error type for registry operations.
