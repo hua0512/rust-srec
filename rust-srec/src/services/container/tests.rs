@@ -121,8 +121,7 @@ impl DownloadEngine for ShutdownFlushEngine {
                 index: 0,
                 started_at: Some(started_at),
                 completed_at: Utc::now(),
-                split_reason_code: None,
-                split_reason_details_json: None,
+                split_reason: None,
             }))
             .await
             .map_err(|error| {

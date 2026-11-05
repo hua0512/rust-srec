@@ -8,9 +8,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 
 use chrono::{DateTime, Utc};
 use futures::StreamExt;
-use pipeline_common::{
-    PipelineError, PipelineSender, SplitReason, WriterCallbacks, WriterError, WriterStats,
-};
+use pipeline_common::{PipelineError, PipelineSender, WriterCallbacks, WriterError, WriterStats};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -85,15 +83,6 @@ pub(super) fn setup_writer_callbacks(
                 None
             };
 
-            let (split_reason_code, split_reason_details_json) = if let Some(reason) = split_reason
-            {
-                (
-                    Some(split_reason_code(reason).to_string()),
-                    split_reason_details_json(reason),
-                )
-            } else {
-                (None, None)
-            };
             let event = SegmentEvent::SegmentCompleted(SegmentInfo {
                 path: event_path,
                 duration_secs,
@@ -101,8 +90,7 @@ pub(super) fn setup_writer_callbacks(
                 index: sequence,
                 started_at,
                 completed_at: Utc::now(),
-                split_reason_code,
-                split_reason_details_json,
+                split_reason: split_reason.cloned(),
             });
             if let Err(error) = event_tx_complete.blocking_send(event) {
                 debug!(%error, "segment-complete event receiver closed");
@@ -127,73 +115,6 @@ pub(super) fn setup_writer_callbacks(
             }
         }
     });
-}
-
-fn split_reason_code(reason: &SplitReason) -> &'static str {
-    match reason {
-        SplitReason::Manual { .. } => "manual",
-        SplitReason::VideoCodecChange { .. } => "video_codec_change",
-        SplitReason::AudioCodecChange { .. } => "audio_codec_change",
-        SplitReason::SizeLimit => "size_limit",
-        SplitReason::DurationLimit => "duration_limit",
-        SplitReason::HeaderReceived => "header_received",
-        SplitReason::ResolutionChange { .. } => "resolution_change",
-        SplitReason::StreamStructureChange { .. } => "stream_structure_change",
-        SplitReason::Discontinuity => "discontinuity",
-        SplitReason::EndOfStream => "end_of_stream",
-    }
-}
-
-fn split_reason_details_json(reason: &SplitReason) -> Option<String> {
-    let details = match reason {
-        SplitReason::Manual { request_id } => serde_json::json!({ "request_id": request_id }),
-        SplitReason::VideoCodecChange { from, to } => serde_json::json!({
-            "from": {
-                "codec": from.codec.clone(),
-                "profile": from.profile,
-                "level": from.level,
-                "width": from.width,
-                "height": from.height,
-                "signature": from.signature,
-            },
-            "to": {
-                "codec": to.codec.clone(),
-                "profile": to.profile,
-                "level": to.level,
-                "width": to.width,
-                "height": to.height,
-                "signature": to.signature,
-            },
-        }),
-        SplitReason::AudioCodecChange { from, to } => serde_json::json!({
-            "from": {
-                "codec": from.codec.clone(),
-                "sample_rate": from.sample_rate,
-                "channels": from.channels,
-                "signature": from.signature,
-            },
-            "to": {
-                "codec": to.codec.clone(),
-                "sample_rate": to.sample_rate,
-                "channels": to.channels,
-                "signature": to.signature,
-            },
-        }),
-        SplitReason::ResolutionChange { from, to } => serde_json::json!({
-            "from": { "width": from.0, "height": from.1 },
-            "to": { "width": to.0, "height": to.1 },
-        }),
-        SplitReason::StreamStructureChange { description } => {
-            serde_json::json!({ "description": description })
-        }
-        SplitReason::SizeLimit
-        | SplitReason::DurationLimit
-        | SplitReason::HeaderReceived
-        | SplitReason::Discontinuity
-        | SplitReason::EndOfStream => return None,
-    };
-
-    serde_json::to_string(&details).ok()
 }
 
 // ---------------------------------------------------------------------------

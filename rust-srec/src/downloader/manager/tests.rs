@@ -2,6 +2,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use pipeline_common::SplitReason;
 
 use crate::downloader::SegmentInfo;
 use crate::downloader::engine::{EngineStartError, IoErrorKindSer, SegmentEvent};
@@ -121,8 +122,7 @@ fn completed_segment(path: std::path::PathBuf, index: u32) -> SegmentEvent {
         index,
         started_at: None,
         completed_at: Utc::now(),
-        split_reason_code: None,
-        split_reason_details_json: None,
+        split_reason: None,
     })
 }
 
@@ -150,8 +150,7 @@ async fn manual_cut_completes_after_both_segment_events_in_either_order() {
         };
         let mut closed = completed_segment(directory.path().join("0.flv"), 0);
         if let SegmentEvent::SegmentCompleted(info) = &mut closed {
-            info.split_reason_code = Some("manual".into());
-            info.split_reason_details_json = Some(r#"{"request_id":1}"#.into());
+            info.split_reason = Some(SplitReason::Manual { request_id: 1 });
         }
         let tail = if external_order {
             vec![started(1), closed]
@@ -634,8 +633,7 @@ async fn segment_completed_after_stop_keeps_session_index() {
             index: 0,
             started_at: None,
             completed_at: Utc::now(),
-            split_reason_code: None,
-            split_reason_details_json: None,
+            split_reason: None,
         })],
     );
 

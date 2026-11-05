@@ -158,8 +158,7 @@ impl SegmentTracker {
             index: active.index,
             started_at: Some(active.started_at),
             completed_at: wall,
-            split_reason_code: None,
-            split_reason_details_json: None,
+            split_reason: None,
         }))
     }
 

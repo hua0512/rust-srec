@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 use chrono::{DateTime, Utc};
+use pipeline_common::SplitReason;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
 use tracing::warn;
@@ -205,8 +206,7 @@ struct Group {
     bytes: u64,
     started_at: DateTime<Utc>,
     ended_at: DateTime<Utc>,
-    reason: Option<&'static str>,
-    request_id: Option<u64>,
+    reason: Option<SplitReason>,
     published: bool,
 }
 
@@ -258,7 +258,6 @@ impl Group {
             started_at,
             ended_at: started_at,
             reason: None,
-            request_id: None,
             published: false,
         };
         tokio::fs::write(&group.manifest, b"ffconcat version 1.0\n")
@@ -359,20 +358,19 @@ async fn ingest(
                     } else {
                         handle.manual_split.begin()
                     };
-                    current.reason = if request.is_some() {
-                        Some("manual")
+                    current.reason = if let Some(request_id) = request {
+                        Some(SplitReason::Manual { request_id })
                     } else if config.max_segment_duration_secs > 0
                         && current.duration() >= config.max_segment_duration_secs as f64
                     {
-                        Some("duration_limit")
+                        Some(SplitReason::DurationLimit)
                     } else if config.max_segment_size_bytes > 0
                         && current.bytes >= config.max_segment_size_bytes
                     {
-                        Some("size_limit")
+                        Some(SplitReason::SizeLimit)
                     } else {
                         None
                     };
-                    current.request_id = request;
                     if current.reason.is_some()
                         && let Some(finished) = group.take()
                     {
@@ -577,10 +575,7 @@ async fn finalize_groups(
                 size_bytes: size,
                 started_at: Some(group.started_at),
                 completed_at: group.ended_at,
-                split_reason_code: group.reason.map(str::to_owned),
-                split_reason_details_json: group
-                    .request_id
-                    .map(|id| serde_json::json!({"request_id": id}).to_string()),
+                split_reason: group.reason.clone(),
             }),
         )
         .await?;
