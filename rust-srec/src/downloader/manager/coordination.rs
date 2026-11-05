@@ -188,7 +188,7 @@ impl DownloadCoordinationReceipt {
     pub(super) async fn wait(self) -> std::result::Result<(), String> {
         match self {
             Self::Pending(acknowledged) => acknowledged.await.map_err(|_| {
-                "download coordination handler stopped before acknowledging event".to_string()
+                "download coordination consumer stopped before acknowledging event".to_string()
             })?,
             Self::Unavailable => {
                 Err("required download coordination channel is closed".to_string())

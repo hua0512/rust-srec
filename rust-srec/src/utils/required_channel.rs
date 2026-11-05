@@ -141,3 +141,30 @@ pub(crate) fn required_channel<E, A>(
         RequiredReceiver { name, rx },
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn shutdown_drains_prior_events_and_rejects_later_ones() {
+        let (sender, mut receiver) = required_channel::<u32, ()>("test");
+        let late_sender = sender.clone();
+        assert_eq!(sender.publish(1), Publish::Accepted);
+        assert_eq!(sender.publish(2), Publish::Accepted);
+
+        let shutdown = tokio::spawn(async move { sender.shutdown().await });
+        assert!(matches!(receiver.recv_event().await, Ok(Some(1))));
+        assert!(matches!(receiver.recv_event().await, Ok(Some(2))));
+        assert!(matches!(receiver.recv_event().await, Ok(None)));
+        shutdown
+            .await
+            .expect("shutdown task should not panic")
+            .expect("shutdown marker should be acknowledged");
+        assert_eq!(
+            late_sender.publish(3),
+            Publish::ClosedByShutdown,
+            "an event must not be admitted behind the shutdown marker"
+        );
+    }
+}
