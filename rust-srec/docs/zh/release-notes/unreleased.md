@@ -31,7 +31,7 @@
 - **录制**：FFmpeg 引擎的**可执行文件路径**留空时，录制直播现在也使用 `FFMPEG_PATH` 环境变量指定的 FFmpeg。此前即使处理任务使用了 `FFMPEG_PATH`，这类引擎仍会运行系统路径中的 `ffmpeg`。参见[环境变量](https://docs.srec.rs/zh/reference/environment)。
 - **网页界面**：服务器未响应的请求现在会在 15 秒后报错（平台检测、连接测试和备份等较慢的操作会等待更久），页面不再一直等待。关闭或刷新标签页时，也会停止服务器仍在为该页面处理的请求。
 - **服务器**：`API_PORT`、`ACCESS_TOKEN_EXPIRATION_SECS`、`REFRESH_TOKEN_EXPIRATION_SECS`、`REFRESH_TOKEN_REUSE_GRACE_SECS` 或 `MIN_PASSWORD_LENGTH` 的值无效时（例如输错或端口超过 65535），服务器现在会在启动时停止，并提示是哪个变量有误。此前无效值会被忽略并悄悄使用默认值，服务器可能监听在其他端口，或按与配置不同的时长保留登录状态。未设置或留空的变量仍使用默认值。参见[环境变量](https://docs.srec.rs/zh/reference/environment)。
-- **API**：请求体格式有误（例如 JSON 无效、字段类型错误或缺少 `Content-Type: application/json` 请求头），或查询参数、地址中的值无效时，现在会返回与其他 API 错误相同的 JSON 错误响应，并带有 `INVALID_JSON`、`INVALID_REQUEST_BODY`、`UNSUPPORTED_MEDIA_TYPE`、`INVALID_QUERY` 或 `INVALID_PATH` 等 `code`。此前返回的是纯文本。状态码不变。
+- **API**：请求体格式有误（例如 JSON 无效、字段类型错误或缺少 `Content-Type: application/json` 请求头），或查询参数、URL 路径中的值无效时，现在会返回与其他 API 错误相同的 JSON 错误响应，并带有 `INVALID_JSON`、`INVALID_REQUEST_BODY`、`UNSUPPORTED_MEDIA_TYPE`、`INVALID_QUERY` 或 `INVALID_PATH` 等 `code`。此前返回的是纯文本。状态码不变。
 - **登录**：登录失败时现在会显示服务器给出的原因，而不是内部服务器地址。
 - **会话页面**：现在可以通过页码翻到所有会话。此前页数按每页 50 个会话计算，而每页实际只显示 20 个，超出最后一个页码的会话无法从列表中找到。
 - **会话页面**：列表加载失败时会提示失败并提供**重试**，不再显示为没有任何录像。搜索或筛选没有匹配结果时，会提示没有符合条件的会话并提供**清除筛选**。

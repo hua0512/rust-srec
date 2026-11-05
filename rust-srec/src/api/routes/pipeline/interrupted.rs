@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use axum::{
     Json,
-    extract::{FromRef, Path as RoutePath, State},
+    extract::{FromRef, State},
 };
 use chrono::{DateTime, Utc};
 use tracing::warn;
@@ -20,7 +20,7 @@ use tracing::warn;
 use super::dag::validate_batch_ids;
 use super::{BatchDagItemResult, BatchDeleteOutputsResponse};
 use crate::api::error::{ApiError, ApiResult};
-use crate::api::extract::{ApiJson, ApiQuery};
+use crate::api::extract::{ApiJson, ApiPath, ApiQuery};
 use crate::api::server::AppState;
 use crate::database::repositories::StagedOutputRepository;
 use crate::database::time::ms_to_datetime;
@@ -361,7 +361,7 @@ async fn settle(state: &InterruptedOutputRouteState, id: &str, keep_file: bool) 
 )]
 pub async fn delete_interrupted_output(
     State(state): State<InterruptedOutputRouteState>,
-    RoutePath(id): RoutePath<String>,
+    ApiPath(id): ApiPath<String>,
     ApiQuery(params): ApiQuery<DeleteInterruptedOutputParams>,
 ) -> ApiResult<Json<DeleteInterruptedOutputResponse>> {
     let file_deleted = settle(&state, &id, params.keep_file).await?;
@@ -569,7 +569,7 @@ mod tests {
         // Keeping a file does not touch the file system.
         let kept = delete_interrupted_output(
             State(state),
-            RoutePath(id),
+            ApiPath(id),
             ApiQuery(DeleteInterruptedOutputParams { keep_file: true }),
         )
         .await
