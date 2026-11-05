@@ -98,7 +98,13 @@ const MAX_TEMPLATE_TITLE_BYTES: usize = 150;
 pub fn sanitize_title_for_template(title: &str) -> String {
     let title = sanitize_filename(title);
     let cut = title.floor_char_boundary(MAX_TEMPLATE_TITLE_BYTES);
-    title[..cut].replace('%', "%%")
+    // The cut can expose a trailing space or dot, which Windows strips from
+    // folder names.
+    let shortened = title[..cut].trim_end_matches([' ', '.']);
+    if shortened.is_empty() {
+        return "unnamed".to_string();
+    }
+    shortened.replace('%', "%%")
 }
 
 /// Expand placeholders in a path template.
@@ -253,19 +259,16 @@ mod tests {
             "{}-%Y%m%d-%H%M%S",
             sanitize_title_for_template(&"直播%".repeat(100))
         );
-        let name = pipeline_common::expand_filename_template(&template, Some(1));
+        let name = pipeline_common::expand_filename_template(&template, None);
         // `-YYYYmmdd-HHMMSS` must survive so that segments get distinct names.
-        let suffix = name
-            .as_bytes()
-            .rsplitn(3, |&b| b == b'-')
-            .collect::<Vec<_>>();
+        assert!(!name.ends_with("..."), "{name}");
+        let time = &name.as_bytes()[name.len() - 16..];
         assert!(
-            suffix.len() == 3
-                && suffix[0].len() == 6
-                && suffix[1].len() == 8
-                && suffix[..2]
-                    .iter()
-                    .all(|part| part.iter().all(u8::is_ascii_digit)),
+            time.iter().enumerate().all(|(i, b)| if i == 0 || i == 9 {
+                *b == b'-'
+            } else {
+                b.is_ascii_digit()
+            }),
             "{name}"
         );
     }
