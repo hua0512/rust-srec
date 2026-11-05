@@ -12,7 +12,6 @@ use futures::FutureExt;
 use parking_lot::Mutex;
 use tokio::sync::{Notify, mpsc};
 use tokio::task::JoinSet;
-use tokio::time::timeout_at;
 use tracing::{debug, error, info, warn};
 
 use crate::Result;
@@ -26,7 +25,7 @@ use crate::downloader::output_root_gate::OutputRootGate;
 use crate::downloader::queue::SlotGuard;
 use crate::downloader::resilience::EngineKey;
 use crate::utils::failure_samples::FailureSamples;
-use crate::utils::task_supervisor::DrainedTasks;
+use crate::utils::task_supervisor::{DrainedTasks, panic_payload_message};
 
 use super::{
     ActiveDownload, AttemptPhase, DownloadManager, DownloadManagerEvent, DownloadProgressEvent,
@@ -173,23 +172,15 @@ impl AttemptSupervisor {
         let mut failures = Vec::new();
         let mut overruns = Vec::new();
         let mut deadline_exceeded_download_ids = Vec::new();
-        while !tasks.is_empty() {
-            match timeout_at(deadline, tasks.join_next()).await {
-                Ok(Some(Ok(report))) => {
-                    debug!(download_id = %report.download_id, "Recording attempt joined");
-                    if let Err(error) = report.outcome {
-                        failures.push(format!(
-                            "download {} failed during shutdown: {error}",
-                            report.download_id
-                        ));
-                    }
-                }
-                Ok(Some(Err(error))) => {
-                    warn!(%error, "Recording attempt task failed while joining");
-                    failures.push(error.to_string());
-                }
-                Ok(None) => break,
-                Err(_) => {
+        // The manager requested cancellation before entering this join.
+        // Aborting the outer attempt past the deadline would detach engine
+        // children, including Mesio's non-abortable blocking writer, so the
+        // join continues and producer quiescence remains a real precondition
+        // for closing the database.
+        tasks
+            .join_with_grace(
+                deadline,
+                |_| {
                     deadline_exceeded_download_ids = self
                         .running
                         .iter()
@@ -199,33 +190,33 @@ impl AttemptSupervisor {
                     overruns.push(format!(
                         "graceful attempt deadline exceeded; awaiting structured cleanup for downloads: {deadline_exceeded_download_ids:?}"
                     ));
-
-                    // The manager requested cancellation before entering this
-                    // join. Aborting the outer attempt here would detach engine
-                    // children, including Mesio's non-abortable blocking writer.
-                    // Continue joining so producer quiescence remains a real
-                    // precondition for closing the database.
-                    while let Some(result) = tasks.join_next().await {
-                        match result {
-                            Ok(report) => {
-                                debug!(download_id = %report.download_id, "Recording attempt joined after graceful deadline");
-                                if let Err(error) = report.outcome {
-                                    failures.push(format!(
-                                        "download {} failed during containment: {error}",
-                                        report.download_id
-                                    ));
-                                }
-                            }
-                            Err(error) => {
-                                warn!(%error, "Recording attempt task failed during containment");
-                                failures.push(error.to_string());
-                            }
+                },
+                |result, contained| match result {
+                    Ok(report) => {
+                        if contained {
+                            debug!(download_id = %report.download_id, "Recording attempt joined after graceful deadline");
+                        } else {
+                            debug!(download_id = %report.download_id, "Recording attempt joined");
+                        }
+                        if let Err(error) = report.outcome {
+                            let phase = if contained { "containment" } else { "shutdown" };
+                            failures.push(format!(
+                                "download {} failed during {phase}: {error}",
+                                report.download_id
+                            ));
                         }
                     }
-                    break;
-                }
-            }
-        }
+                    Err(error) => {
+                        if contained {
+                            warn!(%error, "Recording attempt task failed during containment");
+                        } else {
+                            warn!(%error, "Recording attempt task failed while joining");
+                        }
+                        failures.push(error.to_string());
+                    }
+                },
+            )
+            .await;
 
         AttemptShutdownReport {
             runtime_failures,
@@ -255,26 +246,14 @@ impl AttemptSupervisor {
             .collect::<Vec<_>>();
         download_ids.sort();
 
-        let mut tasks = DrainedTasks::take_from(&self.tasks);
-        tasks.abort_all();
-        while !tasks.is_empty() {
-            match timeout_at(deadline, tasks.join_next()).await {
-                Ok(Some(Ok(report))) => {
-                    debug!(download_id = %report.download_id, "Recording attempt stopped after abort");
-                }
-                Ok(Some(Err(error))) if error.is_cancelled() => {}
-                Ok(Some(Err(error))) => {
-                    warn!(%error, "Recording attempt failed while being aborted");
-                }
-                Ok(None) => break,
-                Err(_) => {
-                    warn!(
-                        unfinished = tasks.len(),
-                        "Aborted recording attempts did not settle before the reap deadline"
-                    );
-                    break;
-                }
-            }
+        let unfinished = DrainedTasks::take_from(&self.tasks)
+            .abort_and_reap(deadline)
+            .await;
+        if unfinished > 0 {
+            warn!(
+                unfinished,
+                "Aborted recording attempts did not settle before the reap deadline"
+            );
         }
 
         download_ids
@@ -331,14 +310,10 @@ fn panic_message(
     fallback: &str,
     managed_credentials: bool,
 ) -> String {
-    let message = if let Some(message) = payload.downcast_ref::<&str>() {
-        message
-    } else if let Some(message) = payload.downcast_ref::<String>() {
-        message.as_str()
-    } else {
-        fallback
-    };
-    sanitize_engine_message(message, managed_credentials)
+    sanitize_engine_message(
+        panic_payload_message(payload).unwrap_or(fallback),
+        managed_credentials,
+    )
 }
 
 fn choose_attempt_terminal(

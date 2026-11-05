@@ -275,32 +275,24 @@ impl SessionLifecycle {
             );
         }
         let mut forced_timer_count = 0;
-        let mut graceful_deadline_exceeded = false;
-        loop {
-            let result = if graceful_deadline_exceeded {
-                tasks.join_next().await
-            } else {
-                match tokio::time::timeout_at(deadline, tasks.join_next()).await {
-                    Ok(result) => result,
-                    Err(_) => {
-                        forced_timer_count = tasks.len();
-                        overruns.push(format!(
-                            "graceful hysteresis timer deadline exceeded; drained {forced_timer_count} cancelled timers to completion"
+        tasks
+            .join_with_grace(
+                deadline,
+                |unfinished| {
+                    forced_timer_count = unfinished;
+                    overruns.push(format!(
+                        "graceful hysteresis timer deadline exceeded; drained {forced_timer_count} cancelled timers to completion"
+                    ));
+                },
+                |result, _| {
+                    if let Err(error) = result {
+                        failures.push(format!(
+                            "hysteresis timer task failed during shutdown: {error}"
                         ));
-                        graceful_deadline_exceeded = true;
-                        continue;
                     }
-                }
-            };
-
-            match result {
-                Some(Ok(())) => {}
-                Some(Err(error)) => failures.push(format!(
-                    "hysteresis timer task failed during shutdown: {error}"
-                )),
-                None => break,
-            }
-        }
+                },
+            )
+            .await;
         if !self
             .eviction_tasks
             .shutdown(deadline.saturating_duration_since(tokio::time::Instant::now()))
@@ -342,19 +334,12 @@ impl SessionLifecycle {
 
         let mut tasks = DrainedTasks::take_from(&self.hysteresis_tasks);
         let aborted = tasks.len();
-        tasks.abort_all();
-        while !tasks.is_empty() {
-            match tokio::time::timeout_at(deadline, tasks.join_next()).await {
-                Ok(Some(_)) => {}
-                Ok(None) => break,
-                Err(_) => {
-                    warn!(
-                        unfinished = tasks.len(),
-                        "Aborted hysteresis timers did not settle before the reap deadline"
-                    );
-                    break;
-                }
-            }
+        let unfinished = tasks.abort_and_reap(deadline).await;
+        if unfinished > 0 {
+            warn!(
+                unfinished,
+                "Aborted hysteresis timers did not settle before the reap deadline"
+            );
         }
 
         self.eviction_tasks.abort_all(deadline).await;

@@ -10,7 +10,7 @@ use std::time::Duration;
 use futures::FutureExt;
 use parking_lot::Mutex;
 use tokio::sync::watch;
-use tokio::task::JoinSet;
+use tokio::task::{JoinError, JoinSet};
 use tokio::time::{Instant, timeout_at};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, warn};
@@ -57,6 +57,57 @@ impl<'slot, T: 'static> DrainedTasks<'slot, T> {
         Self {
             slot,
             tasks: Some(tasks),
+        }
+    }
+}
+
+impl<T: 'static> DrainedTasks<'_, T> {
+    /// Joins every task, passing each join result to `on_result` together
+    /// with whether `deadline` had already passed.
+    ///
+    /// When `deadline` passes with tasks still running, `on_overrun` runs once
+    /// with the number of unfinished tasks and joining continues without a
+    /// deadline: the tasks are never aborted, so work they own (a blocking
+    /// writer, a database commit) is contained to completion rather than
+    /// detached. Returns `true` when every task settled before `deadline`.
+    pub(crate) async fn join_with_grace(
+        &mut self,
+        deadline: Instant,
+        on_overrun: impl FnOnce(usize),
+        mut on_result: impl FnMut(Result<T, JoinError>, bool),
+    ) -> bool {
+        loop {
+            match timeout_at(deadline, self.join_next()).await {
+                Ok(Some(result)) => on_result(result, false),
+                Ok(None) => return true,
+                Err(_) => {
+                    on_overrun(self.len());
+                    while let Some(result) = self.join_next().await {
+                        on_result(result, true);
+                    }
+                    return false;
+                }
+            }
+        }
+    }
+
+    /// Aborts every task and joins the aborted tasks until `deadline`, so their
+    /// futures are dropped (killing any `kill_on_drop` child) before this
+    /// returns. Tasks still unsettled at `deadline` stay in the set, which the
+    /// guard returns to its slot.
+    ///
+    /// Returns the number of tasks that did not settle by `deadline`.
+    pub(crate) async fn abort_and_reap(&mut self, deadline: Instant) -> usize {
+        self.abort_all();
+        loop {
+            match timeout_at(deadline, self.join_next()).await {
+                Ok(Some(Err(error))) if !error.is_cancelled() => {
+                    warn!(%error, "Task failed while being aborted");
+                }
+                Ok(Some(_)) => {}
+                Ok(None) => return 0,
+                Err(_) => return self.len(),
+            }
         }
     }
 }
@@ -252,7 +303,9 @@ impl TaskSupervisor {
                 }),
                 Err(payload) => Some(RuntimeFailure {
                     task: name,
-                    error: panic_message(payload),
+                    error: panic_payload_message(&*payload)
+                        .unwrap_or("task panicked with a non-string payload")
+                        .to_string(),
                 }),
             };
 
@@ -314,38 +367,29 @@ impl TaskSupervisor {
         self.cancellation_token.cancel();
 
         let mut tasks = DrainedTasks::take_from(&self.tasks);
-        let deadline = Instant::now() + timeout;
-
-        while !tasks.is_empty() {
-            match timeout_at(deadline, tasks.join_next()).await {
-                Ok(Some(Ok(name))) => debug!(task = name, "Background task stopped"),
-                Ok(Some(Err(error))) => {
-                    warn!(error = %error, "Background task failed while shutting down")
-                }
-                Ok(None) => break,
-                Err(_) => {
-                    let unfinished = tasks.len();
+        tasks
+            .join_with_grace(
+                Instant::now() + timeout,
+                |unfinished| {
                     warn!(
                         unfinished,
                         "Background task grace period exceeded; awaiting containment"
                     );
-                    while let Some(result) = tasks.join_next().await {
-                        match result {
-                            Ok(name) => {
-                                debug!(task = name, "Background task stopped during containment")
-                            }
-                            Err(error) => warn!(
-                                error = %error,
-                                "Background task failed during containment"
-                            ),
-                        }
+                },
+                |result, contained| match (result, contained) {
+                    (Ok(name), false) => debug!(task = name, "Background task stopped"),
+                    (Ok(name), true) => {
+                        debug!(task = name, "Background task stopped during containment")
                     }
-                    return false;
-                }
-            }
-        }
-
-        true
+                    (Err(error), false) => {
+                        warn!(error = %error, "Background task failed while shutting down")
+                    }
+                    (Err(error), true) => {
+                        warn!(error = %error, "Background task failed during containment")
+                    }
+                },
+            )
+            .await
     }
 
     /// Aborts every owned task instead of waiting for it to exit, then joins
@@ -365,38 +409,25 @@ impl TaskSupervisor {
 
         let mut tasks = DrainedTasks::take_from(&self.tasks);
         let aborted = tasks.len();
-        tasks.abort_all();
-
-        while !tasks.is_empty() {
-            match timeout_at(deadline, tasks.join_next()).await {
-                Ok(Some(Ok(name))) => debug!(task = name, "Background task stopped after abort"),
-                Ok(Some(Err(error))) if error.is_cancelled() => {}
-                Ok(Some(Err(error))) => {
-                    warn!(error = %error, "Background task failed while being aborted")
-                }
-                Ok(None) => break,
-                Err(_) => {
-                    warn!(
-                        unfinished = tasks.len(),
-                        "Aborted background tasks did not settle before the reap deadline"
-                    );
-                    break;
-                }
-            }
+        let unfinished = tasks.abort_and_reap(deadline).await;
+        if unfinished > 0 {
+            warn!(
+                unfinished,
+                "Aborted background tasks did not settle before the reap deadline"
+            );
         }
 
         aborted
     }
 }
 
-fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
-    if let Some(message) = payload.downcast_ref::<&str>() {
-        (*message).to_string()
-    } else if let Some(message) = payload.downcast_ref::<String>() {
-        message.clone()
-    } else {
-        "task panicked with a non-string payload".to_string()
-    }
+/// The message of a `&str` or `String` panic payload, the two types `panic!`
+/// produces.
+pub(crate) fn panic_payload_message(payload: &(dyn std::any::Any + Send)) -> Option<&str> {
+    payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
 }
 
 #[cfg(test)]
