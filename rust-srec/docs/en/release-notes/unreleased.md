@@ -79,4 +79,4 @@
 - **Browser notifications**: when a notification cannot be delivered, the server log now records only the push service's address, not the full subscription address that identifies your browser.
 - **Metadata** and **Remux** steps: when **Delete source file after successful processing** cannot delete a file, the job log now shows the warning once instead of twice.
 - **Desktop app**: saving the **Desktop Notifications** settings no longer briefly removes the settings file, so the settings can no longer be reset to their defaults while they are being saved.
-- **Backup & Restore**: a backup now keeps the **Stream lookup** choice of each platform and template, such as **Always use Streamlink**, and the global default. Before, restoring a backup on a new install set them all back to the default, so streams were looked up the automatic way again.
+- **Backup & Restore**: a backup now keeps the **Stream lookup** choice of each platform and template, such as **Always use Streamlink**. Before, restoring a backup on a new install set them all back to the default, so streams were looked up the automatic way again.
