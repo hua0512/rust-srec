@@ -12,7 +12,6 @@ use tokio::process::Command;
 use tracing::{debug, warn};
 
 use super::outputs::{OutputBatch, output_size};
-use super::paths::remux_comparison_key as comparison_key;
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
 use crate::Result;
 
@@ -247,14 +246,7 @@ impl MetadataProcessor {
             output_override.filter(|s| !s.is_empty()),
         );
 
-        // Compare resolved paths: a different spelling of the input (relative,
-        // `..`, symlink, case on Windows/macOS) would otherwise be published
-        // over the input and then deleted with it.
-        if super::paths::spelling_equal(
-            &comparison_key(input_path).await,
-            &comparison_key(&output_path).await,
-            super::paths::CasePolicy::WindowsAndMacOs,
-        ) {
+        if Path::new(input_path) == Path::new(&output_path) {
             return Err(crate::Error::PipelineError(format!(
                 "metadata: output_path must be different from input_path (input: {}, output: {})",
                 input_path, output_path

@@ -77,5 +77,4 @@
 - **Job page**: completed jobs now show their input and output sizes. Before, those fields stayed empty.
 - **Browser notifications**: when a notification cannot be delivered, the server log now records only the push service's address, not the full subscription address that identifies your browser.
 - **Metadata** and **Remux** steps: when **Delete source file after successful processing** cannot delete a file, the job log now shows the warning once instead of twice.
-- **Metadata** steps: an output path that points to the input file under a different spelling, for example through `..`, is now refused. Before, the step could write over the recording and then delete it.
 - **Desktop app**: saving the **Desktop Notifications** settings no longer briefly removes the settings file, so the settings can no longer be reset to their defaults while they are being saved.
