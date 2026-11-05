@@ -4,6 +4,7 @@ import { resolveUrl } from '@/server/functions/parse';
 import { ManagedStreamSchema } from '@/api/schemas/system';
 import { isDesktopBuild } from '@/utils/desktop';
 import { BASE_URL } from '@/utils/env';
+import { streamProxyUrl, type StreamProxyTarget } from '@/lib/url';
 import { getDesktopAccessToken } from '@/utils/session';
 import { MpegtsPlaybackController } from './mpegts-playback';
 import { hlsPlaybackConfig, type PlaybackPreset } from './playback-presets';
@@ -75,12 +76,10 @@ export interface UsePlayerPlaybackOptions {
   mediaFileSizeBytes?: number;
 }
 
-export interface BuildPlaybackUrlOptions extends PlaybackSource {
+export interface BuildPlaybackUrlOptions
+  extends PlaybackSource, StreamProxyTarget {
   sourceUrl?: string;
   connectionMode?: ConnectionMode;
-  desktopBuild: boolean;
-  desktopToken: string | null;
-  baseUrl: string;
 }
 
 function getArtplayerType(mediaType: PlayerMediaType): ArtplayerMediaType {
@@ -108,41 +107,36 @@ function getArtplayerType(mediaType: PlayerMediaType): ArtplayerMediaType {
 export function buildPlaybackUrl({
   url,
   headers,
-  desktopBuild,
-  desktopToken,
-  baseUrl,
   connectionMode = 'auto',
   sourceUrl,
   playback,
+  ...target
 }: BuildPlaybackUrlOptions): string {
+  let query: URLSearchParams;
   if (playback) {
     // Account headers stay server-side behind the handle; only the media URL
     // travels with it.
-    const query = new URLSearchParams({
+    query = new URLSearchParams({
       url,
       playback_handle: playback.handle,
       stream: String(playback.stream),
     });
-    if (!desktopBuild) return `/stream-proxy?${query}`;
-    if (!desktopToken) throw new PlaybackConfigurationError('session');
-    query.set('token', desktopToken);
-    return `${baseUrl.replace(/\/$/, '')}/stream-proxy?${query}`;
-  }
-  const hasHeaders = Object.keys(headers ?? {}).length > 0;
-  if (connectionMode === 'direct' && hasHeaders) {
-    throw new PlaybackConfigurationError('headers');
-  }
-  if (effectiveConnection(connectionMode, headers) === 'direct') return url;
+  } else {
+    const hasHeaders = Object.keys(headers ?? {}).length > 0;
+    if (connectionMode === 'direct' && hasHeaders) {
+      throw new PlaybackConfigurationError('headers');
+    }
+    if (effectiveConnection(connectionMode, headers) === 'direct') return url;
 
-  const query = new URLSearchParams({
-    url,
-    headers: JSON.stringify(headers ?? {}),
-  });
-  if (sourceUrl) query.set('source_url', sourceUrl);
-  if (!desktopBuild) return `/stream-proxy?${query}`;
-  if (!desktopToken) throw new PlaybackConfigurationError('session');
-
-  return `${baseUrl.replace(/\/$/, '')}/stream-proxy?${query}&token=${encodeURIComponent(desktopToken)}`;
+    query = new URLSearchParams({
+      url,
+      headers: JSON.stringify(headers ?? {}),
+    });
+    if (sourceUrl) query.set('source_url', sourceUrl);
+  }
+  const proxied = streamProxyUrl(query, target);
+  if (proxied === null) throw new PlaybackConfigurationError('session');
+  return proxied;
 }
 
 function matchesRequest(

@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import { listEvents } from '@/server/functions/notifications';
 import { getLastSeenCriticalMs } from '@/lib/notification-state';
 
@@ -8,7 +9,7 @@ import { getLastSeenCriticalMs } from '@/lib/notification-state';
  */
 export function useNotificationDot() {
   const { data: hasCriticalDot, isPending } = useQuery({
-    queryKey: ['notification-critical-dot'],
+    queryKey: queryKeys.notifications.criticalDot(),
     queryFn: async () => {
       if (typeof window === 'undefined') return false;
 

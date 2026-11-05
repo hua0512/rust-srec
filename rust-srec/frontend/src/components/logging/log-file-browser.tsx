@@ -9,6 +9,7 @@ import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import type { DateRange } from 'react-day-picker';
+import { queryKeys } from '@/api/query-keys';
 import { listLogFiles, getLogsDownloadUrl } from '@/server/functions/logging';
 import type { LogFileInfo } from '@/api/schemas/logging';
 import { Button } from '@/components/ui/button';
@@ -44,6 +45,7 @@ import { cn } from '@/lib/utils';
 import { formatBytes } from '@/lib/format';
 import { formatDate } from '@/lib/datetime';
 import { BASE_URL } from '@/utils/env';
+import { joinUrlPath } from '@/lib/url';
 
 const FULL_DATE: Intl.DateTimeFormatOptions = {
   year: 'numeric',
@@ -65,8 +67,10 @@ const SHORT_DATE: Intl.DateTimeFormatOptions = {
 async function startArchiveDownload(from?: string, to?: string) {
   const { token } = await getLogsDownloadUrl();
 
-  const base = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
-  const url = new URL(`${base}/logging/archive`, window.location.origin);
+  const url = new URL(
+    joinUrlPath(BASE_URL, '/logging/archive'),
+    window.location.origin,
+  );
   url.searchParams.set('token', token);
   if (from) url.searchParams.set('from', from);
   if (to) url.searchParams.set('to', to);
@@ -92,7 +96,7 @@ export function LogFileBrowser() {
   const toDate = dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : undefined;
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['logging', 'files', fromDate, toDate],
+    queryKey: queryKeys.logging.files(fromDate, toDate),
     queryFn: () =>
       listLogFiles({
         data: {

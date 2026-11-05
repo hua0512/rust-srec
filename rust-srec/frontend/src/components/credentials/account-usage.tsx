@@ -4,8 +4,13 @@ import { msg, plural, t } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import type { MessageDescriptor } from '@lingui/core';
 import { Radio } from 'lucide-react';
-import { formatRelativeTime, formatShortRelativeTime } from '@/lib/date-utils';
-import { formatPlatformName } from '@/lib/format';
+import {
+  formatDate,
+  formatRelativeTime,
+  formatShortRelativeTime,
+  NUMERIC_DATE_TIME,
+} from '@/lib/datetime';
+import { formatPlatformName } from '@/lib/platform';
 import { cn } from '@/lib/utils';
 import type {
   CredentialHealthReason,
@@ -258,7 +263,7 @@ function When({ time }: { time: number }) {
   return (
     <time
       dateTime={new Date(time).toISOString()}
-      title={new Date(time).toLocaleString(i18n.locale)}
+      title={formatDate(i18n.locale, time, NUMERIC_DATE_TIME)}
     >
       {formatRelativeTime(time, i18n.locale)}
     </time>

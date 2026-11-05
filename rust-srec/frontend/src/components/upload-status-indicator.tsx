@@ -9,6 +9,7 @@ import { useLingui } from '@lingui/react';
 import { useShallow } from 'zustand/react/shallow';
 import { toast } from 'sonner';
 
+import { queryKeys } from '@/api/query-keys';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { StreamerAvatar } from '@/components/shared/streamer-avatar';
 import { Button } from '@/components/ui/button';
@@ -19,7 +20,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Progress } from '@/components/ui/progress';
-import { formatLocalizedDuration } from '@/lib/date-utils';
+import { formatLocalizedDuration } from '@/lib/datetime';
 import { formatSpeed } from '@/lib/format';
 import { describeJobProgress } from '@/lib/job-progress';
 import { activeUploadsLabel, uploaderLabel } from '@/lib/upload-format';
@@ -492,7 +493,9 @@ function CancelUploadDialog({
     mutationFn: (id: string) => cancelActivePipelineJob({ data: id }),
     onSuccess: (_, id) => {
       toast.success(i18n._(msg`Upload cancelled`));
-      void queryClient.invalidateQueries({ queryKey: ['pipeline', 'job', id] });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.pipeline.jobs.detail(id),
+      });
     },
     onError: () => toast.error(i18n._(msg`Failed to cancel upload`)),
   });

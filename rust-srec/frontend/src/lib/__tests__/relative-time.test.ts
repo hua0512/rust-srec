@@ -1,4 +1,4 @@
-import { formatShortRelativeTime } from '../date-utils';
+import { formatShortRelativeTime } from '../datetime';
 
 describe('formatShortRelativeTime', () => {
   const now = Date.UTC(2026, 0, 15, 12);

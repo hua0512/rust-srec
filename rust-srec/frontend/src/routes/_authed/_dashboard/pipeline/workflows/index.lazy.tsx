@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
 import { useCallback } from 'react';
+import { queryKeys } from '@/api/query-keys';
 import {
   listPipelinePresets,
   deletePipelinePreset,
@@ -53,7 +54,11 @@ function WorkflowsPage() {
   const currentPage = search.page ?? 0;
 
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['pipeline', 'workflows', debouncedSearch, pageSize, currentPage],
+    queryKey: queryKeys.pipeline.workflows.list({
+      search: debouncedSearch,
+      pageSize,
+      page: currentPage,
+    }),
     queryFn: () =>
       listPipelinePresets({
         data: {
@@ -79,7 +84,7 @@ function WorkflowsPage() {
     onSuccess: () => {
       toast.success(i18n._(msg`Workflow deleted successfully`));
       void queryClient.invalidateQueries({
-        queryKey: ['pipeline', 'workflows'],
+        queryKey: queryKeys.pipeline.workflows.all,
       });
     },
     onError: (error) =>

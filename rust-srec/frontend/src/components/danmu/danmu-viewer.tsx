@@ -13,6 +13,7 @@ import {
   User,
 } from 'lucide-react';
 import { formatDuration } from '@/lib/format';
+import { formatDate } from '@/lib/datetime';
 import { ListPanelEmpty } from '@/components/shared/list-panel';
 import { Card } from '@/components/ui/card';
 import {
@@ -57,6 +58,14 @@ function filterModeLabel(i18n: I18n, mode: FilterMode): string {
 export function formatDanmuOffset(seconds: number): string {
   return formatDuration(seconds, { nullValue: '0s' });
 }
+
+const COMMENT_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
+  month: 'short',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+};
 
 export function DanmuViewer({ url, title }: DanmuViewerProps) {
   const { i18n } = useLingui();
@@ -324,15 +333,10 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
                               variant="secondary"
                               className="text-[9px] h-5 tabular-nums font-mono px-1.5 bg-muted transition-all"
                             >
-                              {new Date(comment.timestampMs).toLocaleString(
-                                [],
-                                {
-                                  month: 'short',
-                                  day: 'numeric',
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                  second: '2-digit',
-                                },
+                              {formatDate(
+                                i18n.locale,
+                                comment.timestampMs,
+                                COMMENT_TIME_OPTIONS,
                               )}
                             </Badge>
                           </div>

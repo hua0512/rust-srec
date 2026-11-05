@@ -6,7 +6,7 @@ import {
   THEME_CSS_CACHE_KEY,
   USER_THEME_STYLE_ID,
 } from '@/lib/theme-script';
-import { shadcnThemePresets } from '@/utils/shadcn-ui-theme-presets';
+import { shadcnThemePresets } from '@/config/shadcn-ui-theme-presets';
 import {
   DEFAULT_SETTINGS,
   STORAGE_KEY_SETTINGS,

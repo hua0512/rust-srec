@@ -1,3 +1,4 @@
+import { queryKeys } from '@/api/query-keys';
 import {
   Dialog,
   DialogContent,
@@ -170,7 +171,7 @@ export function FilterDialog({
     onSuccess: () => {
       toast.success(i18n._(msg`Filter created successfully`));
       void queryClient.invalidateQueries({
-        queryKey: ['streamers', streamerId, 'filters'],
+        queryKey: queryKeys.streamers.filters(streamerId),
       });
       onOpenChange(false);
     },
@@ -185,7 +186,7 @@ export function FilterDialog({
     onSuccess: () => {
       toast.success(i18n._(msg`Filter updated successfully`));
       void queryClient.invalidateQueries({
-        queryKey: ['streamers', streamerId, 'filters'],
+        queryKey: queryKeys.streamers.filters(streamerId),
       });
       onOpenChange(false);
     },

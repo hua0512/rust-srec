@@ -6,6 +6,7 @@ import {
   type QueryClient,
 } from '@tanstack/react-query';
 import { fromBinary } from '@bufbuild/protobuf';
+import { queryKeys } from '@/api/query-keys';
 import { sessionPollInterval, sessionQueryOptions } from '@/api/session';
 import { useDownloadStore, type DownloadMetrics } from '@/store/downloads';
 import { useUploadStore } from '@/store/uploads';
@@ -79,7 +80,7 @@ export async function handleUploadTerminal(
     actions.removeUpload(terminal.jobId);
   }
   await queryClient.invalidateQueries({
-    queryKey: ['pipeline', 'job', terminal.jobId, 'uploads'],
+    queryKey: queryKeys.pipeline.jobs.uploads(terminal.jobId),
   });
 }
 
@@ -108,10 +109,8 @@ export function applyCredentialBlock(
       ? { ...streamer, credential_blocked: block }
       : streamer;
 
-  // Only the paginated lists under ['streamers'] hold streamers; other
-  // entries under that prefix (a streamer's filters) are left untouched.
   for (const [queryKey, data] of queryClient.getQueriesData<unknown>({
-    queryKey: ['streamers'],
+    queryKey: queryKeys.streamers.lists(),
   })) {
     const items = (data as { items?: unknown } | undefined)?.items;
     if (
@@ -125,7 +124,7 @@ export function applyCredentialBlock(
       items: (items as Streamer[]).map(patch),
     });
   }
-  const detailKey = ['streamer', wire.streamerId];
+  const detailKey = queryKeys.streamers.detail(wire.streamerId);
   const detail = queryClient.getQueryData<Streamer>(detailKey);
   if (detail) queryClient.setQueryData(detailKey, patch(detail));
 }
@@ -178,10 +177,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const setPendingUploads = useUploadStore((state) => state.setPendingCount);
   const clearAllUploads = useUploadStore((state) => state.clearAll);
 
-  // Query cache used for the check-history strip's React Query state.
-  // The component subscribes to ['streamer', streamerId, 'check-history', N];
-  // we mutate every matching entry on each WS event so multiple open
-  // strips for the same streamer (different slot counts) all stay live.
+  // Every open check-history strip of a streamer, whatever its slot count,
+  // is patched in place on each WS event.
   const queryClient = useQueryClient();
 
   // Progress ticks waiting for the next flush, in arrival order.
@@ -248,8 +245,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           timers.delete(sessionId);
           const refetchType = document.hidden ? 'none' : 'active';
           for (const queryKey of [
-            ['sessions', sessionId, 'segments'],
-            ['pipeline', 'outputs', sessionId],
+            queryKeys.sessions.segments(sessionId),
+            queryKeys.pipeline.outputs.forSession(sessionId),
           ]) {
             void queryClient.invalidateQueries({ queryKey, refetchType });
           }
@@ -626,11 +623,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
         // Checks recorded and streamer state changes while the socket was
         // down were never announced either.
         void queryClient.invalidateQueries({
-          predicate: (query) =>
-            query.queryKey[0] === 'streamer' &&
-            query.queryKey[2] === 'check-history',
+          queryKey: queryKeys.streamers.all,
         });
-        void queryClient.invalidateQueries({ queryKey: ['streamers'] });
       }
       hasConnectedRef.current = true;
     },
@@ -735,19 +729,7 @@ function appendCheckHistoryEntry(
 ) {
   type CacheShape = { items: StreamerCheckHistoryEntry[] };
   queryClient.setQueriesData<CacheShape>(
-    {
-      // Match every limit variant for this streamer.
-      // queryKey: ['streamer', streamerId, 'check-history', limit]
-      predicate: (query) => {
-        const key = query.queryKey;
-        return (
-          Array.isArray(key) &&
-          key[0] === 'streamer' &&
-          key[1] === streamerId &&
-          key[2] === 'check-history'
-        );
-      },
-    },
+    { queryKey: queryKeys.streamers.checkHistories(streamerId) },
     (prev) => {
       // No cache yet (the strip hasn't mounted) — let the initial fetch
       // populate it; the same row will be in the REST response anyway.

@@ -24,8 +24,7 @@ import { StatusInfoTooltip } from '@/components/shared/status-info-tooltip';
 import type { QueuedEntry } from '@/store/downloads';
 import { useHydrated } from '@/hooks/use-hydrated';
 import type { MonitoringState, StopState } from './recovery-state';
-import { formatDate } from '@/lib/datetime';
-import { formatRelativeTime } from '@/lib/date-utils';
+import { formatDate, formatRelativeTime } from '@/lib/datetime';
 
 /** Badge label for a streamer whose checks found no usable account. */
 function blockLabel(reason: UnavailableReason): ReactNode {

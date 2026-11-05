@@ -8,6 +8,7 @@ import {
   screen,
   waitFor,
 } from '@testing-library/react';
+import { queryKeys } from '@/api/query-keys';
 import { DagStepDefinition } from '@/api/schemas';
 import { StepConfigDialog } from '../step-config-dialog';
 import { StepsList } from '../steps-list';
@@ -366,7 +367,7 @@ describe('StepConfigDialog preset steps', () => {
     available = PRESETS.filter((p) => p.name !== 'thumbnail');
     await act(async () => {
       await client.refetchQueries({
-        queryKey: ['job', 'presets', 'detail', 'thumbnail'],
+        queryKey: queryKeys.jobPresets.byName('thumbnail'),
       });
       // react-query notifies its observers on a microtask; yield so the re-render lands inside
       // this act() rather than after the click below.

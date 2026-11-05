@@ -1,7 +1,7 @@
 import { createServerFn } from '@/server/createServerFn';
-import { parseInput } from '../validate';
+import { validateWith } from '../validate';
 import { fetchBackend } from '../api';
-import { withQuery, setPagination } from '../backend-path';
+import { PageSchema, withQuery, setPagination } from '../backend-path';
 import {
   LoggingConfigResponseSchema,
   UpdateLogFilterRequestSchema,
@@ -28,9 +28,7 @@ const UpdateLoggingFilterSchema = UpdateLogFilterRequestSchema.extend({
 
 /** Update logging filter directive */
 export const updateLoggingFilter = createServerFn({ method: 'POST' })
-  .validator((data: z.infer<typeof UpdateLogFilterRequestSchema>) =>
-    parseInput(UpdateLoggingFilterSchema, data),
-  )
+  .validator(validateWith(UpdateLoggingFilterSchema))
   .handler(async ({ data }) => {
     const json = await fetchBackend('/logging', {
       method: 'PUT',
@@ -41,25 +39,14 @@ export const updateLoggingFilter = createServerFn({ method: 'POST' })
 
 // --- Log Files ---
 
-const LogFileFiltersSchema = z.object({
+const LogFileFiltersSchema = PageSchema.extend({
   from: z.string().optional(),
   to: z.string().optional(),
-  limit: z.number().optional(),
-  offset: z.number().optional(),
 });
 
 /** List log files with optional date range filtering */
 export const listLogFiles = createServerFn({ method: 'GET' })
-  .validator(
-    (
-      data: {
-        from?: string;
-        to?: string;
-        limit?: number;
-        offset?: number;
-      } = {},
-    ) => parseInput(LogFileFiltersSchema, data),
-  )
+  .validator(validateWith(LogFileFiltersSchema.default({})))
   .handler(async ({ data }) => {
     const params = new URLSearchParams();
     if (data.from) params.set('from', data.from);

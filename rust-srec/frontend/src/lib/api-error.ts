@@ -4,16 +4,25 @@ export class BackendApiError extends Error {
   constructor(
     public status: number,
     public statusText: string,
-    public body: any,
+    public body: unknown,
   ) {
     // Extract detailed message from body if available
-    const detail =
-      typeof body === 'object' && body !== null
-        ? body.message || body.detail || body.error || JSON.stringify(body)
-        : typeof body === 'string' && body.length > 0
+    let detail: unknown;
+    if (typeof body === 'object' && body !== null) {
+      const fields = body as {
+        message?: unknown;
+        detail?: unknown;
+        error?: unknown;
+      };
+      detail =
+        fields.message || fields.detail || fields.error || JSON.stringify(body);
+    } else {
+      detail =
+        typeof body === 'string' && body.length > 0
           ? body
           : `${status} ${statusText}`;
-    super(detail);
+    }
+    super(String(detail));
     this.name = 'BackendApiError';
   }
 }
@@ -79,7 +88,7 @@ export function isLoginFailedError(error: unknown): boolean {
 // Body code the backend attaches to 403 responses on every authenticated
 // endpoint while the account's must_change_password flag is set (only
 // /auth/change-password and /auth/logout-all are exempt).
-export const PASSWORD_CHANGE_REQUIRED_CODE = 'PASSWORD_CHANGE_REQUIRED';
+const PASSWORD_CHANGE_REQUIRED_CODE = 'PASSWORD_CHANGE_REQUIRED';
 
 export function hasPasswordChangeRequiredCode(body: unknown): boolean {
   return hasErrorCode(body, PASSWORD_CHANGE_REQUIRED_CODE);

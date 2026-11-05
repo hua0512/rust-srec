@@ -1,5 +1,6 @@
 import { QueryClient } from '@tanstack/react-query';
 
+import { queryKeys } from '@/api/query-keys';
 import { UploadTerminalStatus } from '@/api/proto/gen/download_progress_pb.js';
 import {
   applyCredentialBlock,
@@ -20,8 +21,8 @@ function terminal(status: UploadTerminalStatus) {
 describe('handleUploadTerminal', () => {
   it('removes the live upload and invalidates only its durable records', async () => {
     const queryClient = new QueryClient();
-    const targetKey = ['pipeline', 'job', 'job-1', 'uploads'] as const;
-    const otherKey = ['pipeline', 'job', 'job-2', 'uploads'] as const;
+    const targetKey = queryKeys.pipeline.jobs.uploads('job-1');
+    const otherKey = queryKeys.pipeline.jobs.uploads('job-2');
     queryClient.setQueryData(targetKey, { items: [] });
     queryClient.setQueryData(otherKey, { items: [] });
     const removeUpload = vi.fn();
@@ -77,9 +78,10 @@ describe('applyCredentialBlock', () => {
 
   it('patches the streamer in every cached list and its own page', () => {
     const queryClient = new QueryClient();
-    const listKey = ['streamers', 1, 24];
-    const dashboardKey = ['streamers', 'active'];
-    const filtersKey = ['streamers', 'blocked', 'filters'];
+    const listKey = queryKeys.streamers.list({ page: 1 });
+    const dashboardKey = queryKeys.streamers.list({ state: 'LIVE' });
+    const filtersKey = queryKeys.streamers.filters('blocked');
+    const detailKey = queryKeys.streamers.detail('blocked');
     const filters = [{ id: 'filter' }];
     queryClient.setQueryData(listKey, {
       items: [streamer('blocked'), streamer('other')],
@@ -87,7 +89,7 @@ describe('applyCredentialBlock', () => {
     });
     queryClient.setQueryData(dashboardKey, { items: [streamer('other')] });
     queryClient.setQueryData(filtersKey, filters);
-    queryClient.setQueryData(['streamer', 'blocked'], streamer('blocked'));
+    queryClient.setQueryData(detailKey, streamer('blocked'));
     const dashboardBefore = queryClient.getQueryData(dashboardKey);
 
     applyCredentialBlock(queryClient, {
@@ -113,10 +115,8 @@ describe('applyCredentialBlock', () => {
       null,
     ]);
     expect(
-      queryClient.getQueryData<{ credential_blocked: unknown }>([
-        'streamer',
-        'blocked',
-      ])?.credential_blocked,
+      queryClient.getQueryData<{ credential_blocked: unknown }>(detailKey)
+        ?.credential_blocked,
     ).toEqual(block);
     // Lists without the streamer and non-list entries are left alone.
     expect(queryClient.getQueryData(dashboardKey)).toBe(dashboardBefore);

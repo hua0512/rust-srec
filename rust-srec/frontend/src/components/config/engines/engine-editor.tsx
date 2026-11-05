@@ -6,6 +6,7 @@ import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { motion } from 'motion/react';
+import { queryKeys } from '@/api/query-keys';
 import {
   Form,
   FormControl,
@@ -127,7 +128,7 @@ function EngineForm({
     mutationFn: (data: z.infer<typeof CreateEngineRequestSchema>) =>
       createEngine({ data }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['engines'] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.engines.all });
       onSuccess();
     },
     onError: (error: Error) => {
@@ -139,10 +140,7 @@ function EngineForm({
     mutationFn: (data: z.infer<typeof UpdateEngineRequestSchema>) =>
       updateEngine({ data: { id: engineId!, data } }),
     onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['engines'] }),
-        queryClient.invalidateQueries({ queryKey: ['engine', engineId] }),
-      ]);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.engines.all });
       onSuccess();
     },
   });

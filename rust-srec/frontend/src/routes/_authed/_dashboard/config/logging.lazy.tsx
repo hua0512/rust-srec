@@ -5,6 +5,7 @@ import { msg, ph } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import type { I18n } from '@lingui/core';
+import { queryKeys } from '@/api/query-keys';
 import { getLoggingConfig, updateLoggingFilter } from '@/server/functions';
 import {
   parseFilterDirective,
@@ -92,7 +93,7 @@ function LoggingConfigPage() {
   const [isDirty, setIsDirty] = useState(false);
 
   const { data: config, isLoading } = useQuery({
-    queryKey: ['logging', 'config'],
+    queryKey: queryKeys.logging.config(),
     queryFn: () => getLoggingConfig(),
   });
 
@@ -114,7 +115,9 @@ function LoggingConfigPage() {
     mutationFn: (filter: string) => updateLoggingFilter({ data: { filter } }),
     onSuccess: () => {
       toast.success(i18n._(msg`Logging configuration updated`));
-      void queryClient.invalidateQueries({ queryKey: ['logging', 'config'] });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.logging.config(),
+      });
       setIsDirty(false);
     },
     onError: (error) => {

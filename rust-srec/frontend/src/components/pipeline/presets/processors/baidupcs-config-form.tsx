@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useWatch } from 'react-hook-form';
 import { toast } from 'sonner';
+import { queryKeys } from '@/api/query-keys';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -73,11 +74,10 @@ function BaiduPcsAccountCard({
   };
 
   const statusQuery = useQuery({
-    queryKey: [
-      'baidupcs-status',
+    queryKey: queryKeys.baiduPcs.status(
       overrides.binary_path ?? '',
       overrides.config_dir ?? '',
-    ],
+    ),
     queryFn: () => getBaiduPcsStatus({ data: overrides }),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
@@ -91,7 +91,7 @@ function BaiduPcsAccountCard({
       } else {
         toast.error(result.message || i18n._(msg`Baidu Netdisk logout failed`));
       }
-      void queryClient.invalidateQueries({ queryKey: ['baidupcs-status'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.baiduPcs.all });
     },
     onError: (error) => {
       toast.error(

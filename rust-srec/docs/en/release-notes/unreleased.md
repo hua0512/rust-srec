@@ -66,3 +66,7 @@
 - **Session page**: a session that has ended no longer shows a green live dot on the streamer's picture, and a session that is still recording counts its duration up instead of showing the length it had when the page was opened.
 - **Workflows**: searching the step library while typing with an input method, such as pinyin, no longer searches with the unfinished text.
 - **Logging and streamer pages**: when the log file list or a streamer's status check history fails to load, the page now shows the error with a **Retry** button instead of an empty area.
+- **Streamer page**: opening a streamer's page shortly after enabling, disabling or batch-editing it from the streamers list now shows the change, and an open streamer page catches up when the connection to the server comes back.
+- **Workflows**: the step library now lists workflows created or changed moments before, instead of the list it showed earlier.
+- **Session page**: chat message times in the danmu list now follow the app language instead of the browser's.
+- **Backup & Restore**: the size of the file chosen for import is shown in a fitting unit (KB, MB) instead of always in KB.

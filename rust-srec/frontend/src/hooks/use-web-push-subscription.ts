@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
+import { queryKeys } from '@/api/query-keys';
 import {
   getWebPushPublicKey,
   listWebPushSubscriptions,
@@ -63,7 +64,7 @@ export function useWebPushSubscription({ enabled }: { enabled: boolean }) {
   }, [enabled]);
 
   const keyQuery = useQuery({
-    queryKey: ['web-push', 'public-key'],
+    queryKey: queryKeys.webPushPublicKey,
     queryFn: () => getWebPushPublicKey(),
     retry: false,
     enabled: supported,

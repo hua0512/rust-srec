@@ -27,7 +27,8 @@ import {
 } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { containerVariants, itemVariants } from '@/lib/animation';
-import { extractMetadata, getPlatformConfig } from '@/server/functions';
+import { extractMetadata } from '@/server/functions';
+import { platformConfigQueryOptions } from '@/api/platform-configs';
 import { templatesQueryOptions } from '@/api/templates';
 import { useStreamerForm, StreamerPayload } from '@/hooks/use-streamer-form';
 import { getStreamer } from '@/server/functions';
@@ -93,8 +94,7 @@ export function StreamerEditor({
   // stored selection belongs to, even while an edited URL points elsewhere.
   const platformConfigId = streamer?.platform_config_id;
   const { data: platformConfig } = useQuery({
-    queryKey: ['config', 'platform', platformConfigId],
-    queryFn: () => getPlatformConfig({ data: platformConfigId ?? '' }),
+    ...platformConfigQueryOptions(platformConfigId ?? ''),
     enabled: Boolean(platformConfigId),
   });
   const credentialPlatform = useMemo(

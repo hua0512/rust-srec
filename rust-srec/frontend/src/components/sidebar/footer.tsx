@@ -1,6 +1,6 @@
 import { Trans } from '@lingui/react/macro';
 import { useQuery } from '@tanstack/react-query';
-import { getSystemHealth } from '@/server/functions/system';
+import { systemHealthQueryOptions } from '@/api/dashboard';
 
 const UI_BUILD =
   typeof import.meta.env.VITE_UI_BUILD === 'string' &&
@@ -10,8 +10,7 @@ const UI_BUILD =
 
 export function Footer() {
   const { data: backendVersion } = useQuery({
-    queryKey: ['health'],
-    queryFn: () => getSystemHealth(),
+    ...systemHealthQueryOptions,
     select: (health) => health.version,
     staleTime: 5 * 60 * 1000,
     retry: false,

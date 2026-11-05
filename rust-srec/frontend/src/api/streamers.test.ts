@@ -18,18 +18,17 @@ describe('streamersListQueryOptions', () => {
   });
 
   it('keys the first page with the defaults the page shows', () => {
-    expect(streamersListQueryOptions({}).queryKey).toEqual([
-      'streamers',
-      1,
-      24,
-      '',
-      'all',
-      'all',
-      'all',
-      'all',
-      [],
-      'default',
-    ]);
+    expect(streamersListQueryOptions({}).queryKey).toEqual(
+      streamersListQueryOptions({
+        page: 1,
+        size: 24,
+        q: '',
+        platform: 'all',
+        template: 'all',
+        state: 'all',
+        exceptional: [],
+      }).queryKey,
+    );
   });
 
   it('keys equal search params identically, so the page finds the loader entry', () => {

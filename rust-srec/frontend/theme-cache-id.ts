@@ -17,7 +17,7 @@ const dir = path.dirname(fileURLToPath(import.meta.url));
 export function computeThemeCacheId(): string {
   const hash = createHash('sha256');
   for (const rel of [
-    'src/utils/shadcn-ui-theme-presets.ts',
+    'src/config/shadcn-ui-theme-presets.ts',
     'src/components/providers/theme-settings-sync.tsx',
   ]) {
     hash.update(readFileSync(path.resolve(dir, rel)));

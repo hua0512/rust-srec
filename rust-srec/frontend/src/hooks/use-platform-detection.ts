@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import { extractMetadata } from '@/server/functions';
 
 /** Matches the debounce used by `components/shared/search-input.tsx`. */
@@ -29,7 +30,7 @@ export function usePlatformDetection(url: string | undefined) {
   const enabled = /^https?:\/\/\S+$/.test(debouncedUrl.trim());
 
   const { data, isFetching, isError } = useQuery({
-    queryKey: ['platform-detection', debouncedUrl],
+    queryKey: queryKeys.platformDetection(debouncedUrl),
     queryFn: () => extractMetadata({ data: debouncedUrl.trim() }),
     enabled,
     retry: false,

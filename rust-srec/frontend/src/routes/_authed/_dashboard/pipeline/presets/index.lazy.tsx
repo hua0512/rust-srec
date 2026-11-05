@@ -8,6 +8,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { z } from 'zod';
 import { useState, useMemo, useRef, useCallback } from 'react';
+import { queryKeys } from '@/api/query-keys';
 import {
   listJobPresets,
   deleteJobPreset,
@@ -83,14 +84,12 @@ function PresetsPage() {
 
   // Server-side filtered query with pagination
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: [
-      'job',
-      'presets',
-      selectedCategory,
-      debouncedSearch,
+    queryKey: queryKeys.jobPresets.list({
+      category: selectedCategory,
+      search: debouncedSearch,
       pageSize,
-      currentPage,
-    ],
+      page: currentPage,
+    }),
     queryFn: () =>
       listJobPresets({
         data: {
@@ -125,7 +124,9 @@ function PresetsPage() {
     mutationFn: deleteJobPreset,
     onSuccess: () => {
       toast.success(i18n._(msg`Preset deleted successfully`));
-      void queryClient.invalidateQueries({ queryKey: ['job', 'presets'] });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.jobPresets.all,
+      });
     },
     onError: (error) =>
       toast.error(i18n._(msg`Failed to delete preset: ${error.message}`)),
@@ -135,7 +136,9 @@ function PresetsPage() {
     mutationFn: cloneJobPreset,
     onSuccess: (cloned) => {
       toast.success(i18n._(msg`Preset cloned successfully`));
-      void queryClient.invalidateQueries({ queryKey: ['job', 'presets'] });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.jobPresets.all,
+      });
       setCloneDialogOpen(false);
       setPresetToClone(null);
       setCloneName('');

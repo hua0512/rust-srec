@@ -5,6 +5,7 @@ import {
   keepPreviousData,
   useQueryClient,
 } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import { listSessions, deleteSessions } from '@/server/functions/sessions';
 import { SessionList } from '@/components/sessions/session-list';
 import { startOfDay, subDays } from 'date-fns';
@@ -115,16 +116,15 @@ function SessionsPage() {
   const limit = search.limit || DEFAULT_LIMIT;
 
   const query = useQuery({
-    queryKey: [
-      'sessions',
-      search.page,
+    queryKey: queryKeys.sessions.list({
+      page: search.page,
       limit,
-      search.streamer_id,
-      search.search,
-      activeOnly,
+      streamer_id: search.streamer_id,
+      search: search.search,
+      active_only: activeOnly,
       from_date,
       to_date,
-    ],
+    }),
     queryFn: () =>
       listSessions({
         data: {
@@ -239,7 +239,7 @@ function SessionsPage() {
         ),
       );
       exitSelectionMode();
-      void queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.sessions.all });
     },
     onError: (error) => {
       console.error('Failed to delete sessions:', error);

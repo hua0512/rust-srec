@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { queryOptions, useQueries, useQuery } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import type { DagStepDefinition } from '@/api/schemas';
 import { listJobPresets } from '@/server/functions/job';
 import {
@@ -22,7 +23,7 @@ export function findPresetByName<T extends { name: string }>(
 
 function presetByNameOptions(name: string | null, enabled: boolean) {
   return queryOptions({
-    queryKey: ['job', 'presets', 'detail', name],
+    queryKey: queryKeys.jobPresets.byName(name),
     queryFn: () =>
       listJobPresets({ data: { name: name || undefined, limit: 1 } }),
     enabled: enabled && !!name,

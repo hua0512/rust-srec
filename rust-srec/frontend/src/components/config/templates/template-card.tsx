@@ -1,3 +1,4 @@
+import { queryKeys } from '@/api/query-keys';
 import { CardContent } from '@/components/ui/card';
 import {
   DropdownMenu,
@@ -58,7 +59,7 @@ export function TemplateCard({ template, onEdit, onClone }: TemplateCardProps) {
   const deleteMutation = useMutation({
     mutationFn: () => deleteTemplate({ data: template.id }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['templates'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.templates.all });
       toast.success(i18n._(msg`Deleted template "${template.name}"`));
       setShowDeleteAlert(false);
     },

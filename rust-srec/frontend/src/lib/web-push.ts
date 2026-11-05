@@ -32,6 +32,10 @@ export async function subscribePush(
   });
 }
 
-export function subscriptionToJson(subscription: PushSubscription): any {
-  return subscription.toJSON();
+export function subscriptionToJson(subscription: PushSubscription) {
+  const { keys } = subscription.toJSON();
+  return {
+    endpoint: subscription.endpoint,
+    keys: { p256dh: keys?.p256dh ?? '', auth: keys?.auth ?? '' },
+  };
 }

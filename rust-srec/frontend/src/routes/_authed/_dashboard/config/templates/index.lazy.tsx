@@ -1,6 +1,7 @@
 import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
+import { queryKeys } from '@/api/query-keys';
 import { cloneTemplate } from '@/server/functions';
 import { templatesQueryOptions } from '@/api/templates';
 import { Trans } from '@lingui/react/macro';
@@ -64,7 +65,7 @@ function TemplatesConfigPage() {
     mutationFn: cloneTemplate,
     onSuccess: (cloned) => {
       toast.success(i18n._(msg`Template cloned successfully`));
-      void queryClient.invalidateQueries({ queryKey: ['templates'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.templates.all });
       setCloneDialogOpen(false);
       setTemplateToClone(null);
       setCloneName('');

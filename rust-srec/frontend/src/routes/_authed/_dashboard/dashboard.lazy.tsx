@@ -29,7 +29,7 @@ import {
 import { cn } from '@/lib/utils';
 import { CARD_GRID, STAT_GRID } from '@/lib/grid';
 import { Button } from '@/components/ui/button';
-import { formatRelativeTime, formatLocalizedDuration } from '@/lib/date-utils';
+import { formatRelativeTime, formatLocalizedDuration } from '@/lib/datetime';
 import { formatBytes } from '@/lib/format';
 import { getHealthStatusMeta } from '@/lib/health-status';
 import type { ComponentHealth } from '@/api/schemas/system';

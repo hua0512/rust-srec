@@ -7,9 +7,10 @@ import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
 import { Filter as FilterIcon } from 'lucide-react';
 
+import { queryKeys } from '@/api/query-keys';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDownloadStore } from '@/store/downloads';
-import { getPlatformFromUrl } from '@/lib/utils';
+import { getPlatformFromUrl } from '@/lib/platform';
 import {
   deleteFilter,
   getStreamer,
@@ -45,16 +46,16 @@ function EditStreamerPage() {
   const queryClient = useQueryClient();
 
   const { data: streamer, isLoading } = useQuery({
-    queryKey: ['streamer', id],
+    queryKey: queryKeys.streamers.detail(id),
     queryFn: () => getStreamer({ data: id }),
   });
   const { data: sessions, isLoading: isLoadingSessions } = useQuery({
-    queryKey: ['sessions', { streamer_id: id }],
+    queryKey: queryKeys.sessions.list({ streamer_id: id }),
     queryFn: () => listSessions({ data: { streamer_id: id } }),
     enabled: !!id,
   });
   const { data: filters, isLoading: isFiltersLoading } = useQuery({
-    queryKey: ['streamers', id, 'filters'],
+    queryKey: queryKeys.streamers.filters(id),
     queryFn: () => listFilters({ data: id }),
   });
 
@@ -69,8 +70,7 @@ function EditStreamerPage() {
       updateStreamer({ data: { id, data } }),
     onSuccess: () => {
       toast.success(i18n._(msg`Streamer updated successfully`));
-      void queryClient.invalidateQueries({ queryKey: ['streamers'] });
-      void queryClient.invalidateQueries({ queryKey: ['streamer', id] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.streamers.all });
       // The form also saves the account selection, and a changed URL can
       // move the streamer to another platform.
       void invalidateCredentialQueries(queryClient);
@@ -87,7 +87,7 @@ function EditStreamerPage() {
     onSuccess: () => {
       toast.success(i18n._(msg`Filter deleted successfully`));
       void queryClient.invalidateQueries({
-        queryKey: ['streamers', id, 'filters'],
+        queryKey: queryKeys.streamers.filters(id),
       });
     },
     onError: (error) => {

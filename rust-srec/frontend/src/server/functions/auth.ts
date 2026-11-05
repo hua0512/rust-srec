@@ -1,5 +1,5 @@
 import { createServerFn } from '@/server/createServerFn';
-import { parseInput } from '../validate';
+import { validateWith } from '../validate';
 import { fetchBackend } from '../api';
 import { BASE_URL } from '../../utils/env';
 import { ensureValidToken } from '../tokenRefresh';
@@ -10,7 +10,6 @@ import {
   LoginResponseSchema,
   ChangePasswordRequestSchema,
 } from '../../api/schemas/auth';
-import { z } from 'zod';
 import ky, { isHTTPError } from 'ky';
 import { BackendApiError, LOGIN_FAILED_CODE } from '../../lib/api-error';
 
@@ -58,9 +57,7 @@ function computeExpiryTimestamp(seconds?: number, fallback?: number): number {
 }
 
 export const loginFn = createServerFn({ method: 'POST' })
-  .validator((data: z.infer<typeof LoginRequestSchema>) =>
-    parseInput(LoginRequestSchema, data),
-  )
+  .validator(validateWith(LoginRequestSchema))
   .handler(async ({ data }) => {
     try {
       const json = await authClient.post('auth/login', { json: data }).json();
@@ -111,9 +108,7 @@ export const logoutFn = createServerFn({ method: 'POST' }).handler(async () => {
 });
 
 export const changePassword = createServerFn({ method: 'POST' })
-  .validator((data: z.infer<typeof ChangePasswordRequestSchema>) =>
-    parseInput(ChangePasswordRequestSchema, data),
-  )
+  .validator(validateWith(ChangePasswordRequestSchema))
   .handler(async ({ data }) => {
     // changePassword requires authentication, so we use fetchBackend
     // which injects the current token.

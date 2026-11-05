@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { formatBytes } from '@/lib/format';
-import { formatRelativeTime } from '@/lib/date-utils';
+import { formatRelativeTime } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
 import {
   batchDeleteInterruptedOutputs,

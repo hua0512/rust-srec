@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import { formatDate, NUMERIC_DATE_TIME } from '@/lib/datetime';
+import { queryKeys } from '@/api/query-keys';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { msg } from '@lingui/core/macro';
@@ -30,7 +32,8 @@ import {
   ConfigFieldLabel,
 } from '@/components/config/shared/config-field';
 import { containerVariants, itemVariants } from '@/lib/animation';
-import { getApiEndpointUrl } from '@/utils/env';
+import { getBaseUrl } from '@/utils/env';
+import { joinUrlPath } from '@/lib/url';
 import {
   Dialog,
   DialogContent,
@@ -87,7 +90,7 @@ function keyStatus(key: ApiKey): 'active' | 'revoked' | 'expired' {
 
 function formatMs(ms: number | null | undefined, locale: string) {
   if (!ms) return null;
-  return new Date(ms).toLocaleString(locale);
+  return formatDate(locale, ms, NUMERIC_DATE_TIME);
 }
 
 function ApiKeysPage() {
@@ -100,7 +103,7 @@ function ApiKeysPage() {
     error,
     refetch,
   } = useQuery({
-    queryKey: ['auth', 'api-keys'],
+    queryKey: queryKeys.apiKeys,
     queryFn: () => listApiKeys(),
   });
 
@@ -111,7 +114,7 @@ function ApiKeysPage() {
     mutationFn: (id: string) => revokeApiKey({ data: id }),
     onSuccess: () => {
       toast.success(i18n._(msg`API key revoked`));
-      void queryClient.invalidateQueries({ queryKey: ['auth', 'api-keys'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys });
     },
     onError: (error) => {
       toast.error(error.message || i18n._(msg`Failed to revoke API key`));
@@ -288,7 +291,7 @@ function ApiKeysPage() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={() =>
-          void queryClient.invalidateQueries({ queryKey: ['auth', 'api-keys'] })
+          void queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys })
         }
       />
 
@@ -521,7 +524,10 @@ function McpQuickStart() {
   // and the hydrating render show an empty URL and the address follows.
   const hydrated = useHydrated();
   const mcpUrl = hydrated
-    ? new URL(getApiEndpointUrl('/mcp'), window.location.origin).toString()
+    ? new URL(
+        joinUrlPath(getBaseUrl(), '/mcp'),
+        window.location.origin,
+      ).toString()
     : '';
 
   const configSnippet = useMemo(

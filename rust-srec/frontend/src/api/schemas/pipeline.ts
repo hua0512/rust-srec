@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { JobProgressSnapshotSchema } from './session';
+import { paginated } from './common';
 
 /**
  * Epoch milliseconds as the backend serialises them: a number, a numeric
@@ -49,7 +50,6 @@ export const StepDurationInfoSchema = z.object({
   started_at: z.string(),
   completed_at: z.string(),
 });
-export type StepDurationInfo = z.infer<typeof StepDurationInfoSchema>;
 
 export const JobExecutionInfoSchema = z.object({
   current_processor: z.string().nullable().optional(),
@@ -64,7 +64,6 @@ export const JobExecutionInfoSchema = z.object({
   log_warn_count: z.number().default(0),
   log_error_count: z.number().default(0),
 });
-export type JobExecutionInfo = z.infer<typeof JobExecutionInfoSchema>;
 
 export const JobStatusSchema = z.enum([
   'PENDING',
@@ -73,7 +72,6 @@ export const JobStatusSchema = z.enum([
   'FAILED',
   'CANCELLED',
 ]);
-export type JobStatus = z.infer<typeof JobStatusSchema>;
 
 export const JobSchema = z.object({
   id: z.string(),
@@ -125,13 +123,7 @@ export const StalledOperationListSchema = z.object({
   items: z.array(StalledOperationSchema),
 });
 
-export const JobLogsResponseSchema = z.object({
-  items: z.array(JobLogEntrySchema),
-  total: z.number(),
-  limit: z.number(),
-  offset: z.number(),
-});
-export type JobLogsResponse = z.infer<typeof JobLogsResponseSchema>;
+export const JobLogsResponseSchema = paginated(JobLogEntrySchema);
 
 // Durable per-file upload result (upload_records row) from
 // GET /pipeline/jobs/{id}/uploads.
@@ -160,7 +152,6 @@ export type UploadRecord = z.infer<typeof UploadRecordSchema>;
 export const UploadRecordListSchema = z.object({
   items: z.array(UploadRecordSchema),
 });
-export type UploadRecordList = z.infer<typeof UploadRecordListSchema>;
 
 export const JobPresetSchema = z.object({
   id: z.string(),
@@ -192,7 +183,6 @@ export const VALID_CATEGORIES = [
   'custom', // Custom execute commands
   'metadata', // Metadata operations
 ] as const;
-export type PresetCategory = (typeof VALID_CATEGORIES)[number];
 
 // --- DAG Pipeline Schemas ---
 
@@ -253,7 +243,6 @@ export const DagExecutionSchema = z.object({
   updated_at: TimestampMsSchema,
   completed_at: TimestampMsSchema.nullable().optional(),
 });
-export type DagExecution = z.infer<typeof DagExecutionSchema>;
 
 export const DagSummarySchema = z.object({
   id: z.string(),
@@ -277,7 +266,6 @@ export const DagListResponseSchema = z.object({
   limit: z.number(),
   offset: z.number(),
 });
-export type DagListResponse = z.infer<typeof DagListResponseSchema>;
 
 export const StepRetryPolicySchema = z.object({
   // Attempts in total, including the first run; 1 means no retry.
@@ -286,7 +274,6 @@ export const StepRetryPolicySchema = z.object({
   // defaults it when omitted.
   backoff_secs: z.number().int().min(0).optional(),
 });
-export type StepRetryPolicy = z.infer<typeof StepRetryPolicySchema>;
 
 export const DagStepDefinitionSchema = z.object({
   id: z.string(),
@@ -323,15 +310,9 @@ export const CreatePipelinePresetRequestSchema = z.object({
   description: z.string().nullable().optional(),
   dag: DagPipelineDefinitionSchema,
 });
-export type CreatePipelinePresetRequest = z.infer<
-  typeof CreatePipelinePresetRequestSchema
->;
 
 export const UpdatePipelinePresetRequestSchema =
   CreatePipelinePresetRequestSchema;
-export type UpdatePipelinePresetRequest = z.infer<
-  typeof UpdatePipelinePresetRequestSchema
->;
 
 export const PipelinePresetListResponseSchema = z.object({
   presets: z.array(PipelinePresetSchema),
@@ -339,9 +320,6 @@ export const PipelinePresetListResponseSchema = z.object({
   limit: z.number(),
   offset: z.number(),
 });
-export type PipelinePresetListResponse = z.infer<
-  typeof PipelinePresetListResponseSchema
->;
 
 // Batch endpoints share one item-result shape across DAGs and media outputs: the
 // backend applies items sequentially without rolling back, so a request can be
@@ -352,7 +330,6 @@ export const BatchItemResultSchema = z.object({
   code: z.string().optional(),
   error: z.string().optional(),
 });
-export type BatchItemResult = z.infer<typeof BatchItemResultSchema>;
 
 export const BatchResponseSchema = z.object({
   requested: z.number(),
@@ -400,7 +377,6 @@ export const BatchDagRequestSchema = withUniqueIds(
   }),
   'Pipeline IDs must be unique',
 );
-export type BatchDagRequest = z.infer<typeof BatchDagRequestSchema>;
 
 export const BatchDeleteOutputsRequestSchema = withUniqueIds(
   z.object({
@@ -409,16 +385,12 @@ export const BatchDeleteOutputsRequestSchema = withUniqueIds(
   }),
   'Output IDs must be unique',
 );
-export type BatchDeleteOutputsRequest = z.infer<
-  typeof BatchDeleteOutputsRequestSchema
->;
 
 export const DeleteOutputResponseSchema = z.object({
   id: z.string(),
   file_deleted: z.boolean(),
   message: z.string(),
 });
-export type DeleteOutputResponse = z.infer<typeof DeleteOutputResponseSchema>;
 
 // A partial temporary file an interrupted job may have left next to its
 // destination. `exists` is null when the folder is unavailable, the file
@@ -453,6 +425,3 @@ export const BatchDeleteInterruptedOutputsRequestSchema = withUniqueIds(
   }),
   'Interrupted output IDs must be unique',
 );
-export type BatchDeleteInterruptedOutputsRequest = z.infer<
-  typeof BatchDeleteInterruptedOutputsRequestSchema
->;

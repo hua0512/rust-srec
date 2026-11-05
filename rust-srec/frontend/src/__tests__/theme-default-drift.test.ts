@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { shadcnThemePresets } from '@/utils/shadcn-ui-theme-presets';
+import { shadcnThemePresets } from '@/config/shadcn-ui-theme-presets';
 
 // vitest's root is the frontend package dir (where vitest.config.ts lives).
 const css = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8');

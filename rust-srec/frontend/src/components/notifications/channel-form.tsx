@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useForm, useWatch, Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { queryKeys } from '@/api/query-keys';
 import {
   ChannelType,
   NotificationChannel,
@@ -176,14 +177,12 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
   // and the type select is disabled there anyway.
   useEffect(() => {
     if (isEditing || !selectedType) return;
-    const defaults = DEFAULT_SETTINGS[selectedType];
-    if (!defaults) return;
     // `reset` rather than `setValue`: replacing the whole `settings` subtree has to re-register
     // the new type's fields, which is what makes their controlled inputs read the new values.
     form.reset({
       name: form.getValues('name'),
       channel_type: selectedType,
-      settings: defaults as never,
+      settings: DEFAULT_SETTINGS[selectedType] as never,
     });
   }, [selectedType, isEditing, form]);
 
@@ -218,7 +217,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
     onSuccess: () => {
       toast.success(i18n._(msg`Channel created`));
       void queryClient.invalidateQueries({
-        queryKey: ['notification-channels'],
+        queryKey: queryKeys.notifications.channels(),
       });
       onOpenChange(false);
     },
@@ -232,7 +231,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
     onSuccess: () => {
       toast.success(i18n._(msg`Channel updated`));
       void queryClient.invalidateQueries({
-        queryKey: ['notification-channels'],
+        queryKey: queryKeys.notifications.channels(),
       });
       onOpenChange(false);
     },

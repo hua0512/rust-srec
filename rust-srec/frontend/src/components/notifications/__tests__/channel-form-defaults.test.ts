@@ -2,18 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '../channel-form';
 import { EmailSettingsSchema } from '@/api/schemas/notifications';
 
-/**
- * The type select offers a channel type only when `DEFAULT_SETTINGS` can re-seed `settings` for
- * it: the re-seed effect in `ChannelForm` bails on a missing entry, which leaves the previous
- * type's keys in place and every input of the newly selected type blank.
- */
-const SELECTABLE_TYPES = ['Webhook', 'Telegram', 'Gotify', 'Email'] as const;
-
 describe('channel form defaults', () => {
-  it.each(SELECTABLE_TYPES)('has seed settings for %s', (type) => {
-    expect(DEFAULT_SETTINGS[type]).toBeDefined();
-  });
-
   it('seeds Email with the keys EmailChannelSettings requires', () => {
     // `smtp_host`, `from_address` and `to_addresses` are the user's to fill in, so the seed is
     // intentionally invalid until then; the rest must already round-trip.

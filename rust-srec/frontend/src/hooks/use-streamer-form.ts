@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { errorMessage } from '@/lib/api-error';
 import {
   CreateStreamerSchema,
   StreamerFormSchema,
@@ -110,9 +111,9 @@ export function useStreamerForm({ streamer }: UseStreamerFormOptions = {}) {
       } else {
         toast.error(i18n._(msg`Failed to extract name from URL`));
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to autofill name:', error);
-      toast.error(error.message || i18n._(msg`Failed to autofill name`));
+      toast.error(errorMessage(error, i18n._(msg`Failed to autofill name`)));
     } finally {
       setIsAutofilling(false);
     }

@@ -1,5 +1,6 @@
 import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import { createTemplate } from '@/server/functions';
 import { toast } from 'sonner';
 import { useLingui } from '@lingui/react';
@@ -27,7 +28,7 @@ function CreateTemplatePage() {
     },
     onSuccess: () => {
       toast.success(i18n._(msg`Template created successfully`));
-      void queryClient.invalidateQueries({ queryKey: ['templates'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.templates.all });
       void navigate({ to: '/config/templates' });
     },
     onError: (error) =>

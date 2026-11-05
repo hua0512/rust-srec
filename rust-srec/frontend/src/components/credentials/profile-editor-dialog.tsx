@@ -37,7 +37,7 @@ import {
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { truncateChars } from '@/lib/char-count';
-import { formatPlatformName } from '@/lib/format';
+import { formatPlatformName } from '@/lib/platform';
 import {
   createCredentialProfile,
   updateCredentialProfile,

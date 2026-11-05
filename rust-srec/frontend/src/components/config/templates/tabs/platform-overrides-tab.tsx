@@ -1,7 +1,7 @@
 import { useWatch } from 'react-hook-form';
 import type { UseFormReturn } from 'react-hook-form';
 import { useQuery } from '@tanstack/react-query';
-import { listPlatformConfigs } from '@/server/functions';
+import { platformConfigsQueryOptions } from '@/api/platform-configs';
 import { Button } from '@/components/ui/button';
 import { Plus, LayoutGrid } from 'lucide-react';
 import {
@@ -20,7 +20,7 @@ import {
 import { useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 
-import { formatPlatformName } from '@/lib/format';
+import { formatPlatformName } from '@/lib/platform';
 import { PlatformOverrideCard } from './platform-override-card';
 import {
   Card,
@@ -45,11 +45,7 @@ export function PlatformOverridesTab({
   const { i18n } = useLingui();
   const [open, setOpen] = useState(false);
 
-  // Let's use `listPlatforms` which returns `PlatformConfigSchema[]`.
-  const { data: platforms = [] } = useQuery({
-    queryKey: ['config', 'platforms'],
-    queryFn: () => listPlatformConfigs(),
-  });
+  const { data: platforms = [] } = useQuery(platformConfigsQueryOptions);
 
   // A field-level subscription: adding or removing an override re-renders this tab, not the
   // component that owns `useForm`.

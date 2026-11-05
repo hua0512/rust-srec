@@ -9,6 +9,7 @@ import { setupI18n } from '@lingui/core';
 import { I18nProvider } from '@lingui/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
+import { queryKeys } from '@/api/query-keys';
 import { LogViewer } from '@/components/logging/log-viewer';
 import { useDownloadStore } from '@/store/downloads';
 import { useUploadStore } from '@/store/uploads';
@@ -86,7 +87,7 @@ function createQueryClient() {
 
 async function rotateToken(queryClient: QueryClient) {
   await act(async () => {
-    queryClient.setQueryData(['session'], sessionWithToken('token-b'));
+    queryClient.setQueryData(queryKeys.session, sessionWithToken('token-b'));
     await vi.advanceTimersByTimeAsync(0);
   });
 }

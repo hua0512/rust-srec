@@ -1,5 +1,5 @@
 import { createServerFn } from '@/server/createServerFn';
-import { parseInput } from '../validate';
+import { validateWith } from '../validate';
 import { fetchBackend } from '../api';
 import { backendPath, PathIdSchema } from '../backend-path';
 import { z } from 'zod';
@@ -23,7 +23,6 @@ export const CreateApiKeyResponseSchema = z.object({
   api_key: z.string(),
   key: ApiKeySchema,
 });
-export type CreateApiKeyResponse = z.infer<typeof CreateApiKeyResponseSchema>;
 
 const CreateApiKeyInputSchema = z.object({
   name: z.string().min(1).max(100),
@@ -39,9 +38,7 @@ export const listApiKeys = createServerFn({ method: 'GET' }).handler(
 );
 
 export const createApiKey = createServerFn({ method: 'POST' })
-  .validator((data: z.infer<typeof CreateApiKeyInputSchema>) =>
-    parseInput(CreateApiKeyInputSchema, data),
-  )
+  .validator(validateWith(CreateApiKeyInputSchema))
   .handler(async ({ data }) => {
     const json = await fetchBackend('/auth/api-keys', {
       method: 'POST',
@@ -51,7 +48,7 @@ export const createApiKey = createServerFn({ method: 'POST' })
   });
 
 export const revokeApiKey = createServerFn({ method: 'POST' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data: id }) => {
     await fetchBackend(backendPath`/auth/api-keys/${id}`, { method: 'DELETE' });
   });

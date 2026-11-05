@@ -1,8 +1,9 @@
 import { createServerFn } from '@/server/createServerFn';
-import { parseInput } from '../validate';
+import { parseInput, validateWith } from '../validate';
 import { fetchBackend } from '../api';
 import {
   backendPath,
+  PageSchema,
   PathIdSchema,
   withQuery,
   setPagination,
@@ -19,27 +20,13 @@ const PresetListResponseSchema = z.object({
   offset: z.number(),
 });
 
-export type PresetListResponse = z.infer<typeof PresetListResponseSchema>;
-
-// Filter parameters for job presets
-export interface JobPresetFilters {
-  category?: string;
-  processor?: string;
-  // Exact preset name; matches at most one preset. `search` is a substring match over both name
-  // and description, so it cannot be used to resolve a preset referenced by name.
-  name?: string;
-  search?: string;
-  limit?: number;
-  offset?: number;
-}
-
-const JobPresetFiltersSchema = z.object({
+const JobPresetFiltersSchema = PageSchema.extend({
   category: z.string().optional(),
   processor: z.string().optional(),
+  // Exact preset name; matches at most one preset. `search` is a substring match over both name
+  // and description, so it cannot be used to resolve a preset referenced by name.
   name: z.string().optional(),
   search: z.string().optional(),
-  limit: z.number().optional(),
-  offset: z.number().optional(),
 });
 
 /** Body shared by the preset create and update endpoints. */
@@ -52,19 +39,8 @@ const JobPresetWriteSchema = z.object({
   config: z.record(z.string(), z.unknown()),
 });
 
-interface JobPresetWriteInput {
-  id: string;
-  name: string;
-  description?: string;
-  category?: string;
-  processor: string;
-  config: Record<string, unknown>;
-}
-
 export const listJobPresets = createServerFn({ method: 'GET' })
-  .validator((d: JobPresetFilters = {}) =>
-    parseInput(JobPresetFiltersSchema, d),
-  )
+  .validator(validateWith(JobPresetFiltersSchema.default({})))
   .handler(async ({ data }) => {
     const params = new URLSearchParams();
     if (data.category) params.set('category', data.category);
@@ -78,14 +54,14 @@ export const listJobPresets = createServerFn({ method: 'GET' })
   });
 
 export const getJobPreset = createServerFn({ method: 'GET' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/job/presets/${id}`);
     return JobPresetSchema.parse(json);
   });
 
 export const createJobPreset = createServerFn({ method: 'POST' })
-  .validator((d: JobPresetWriteInput) => parseInput(JobPresetWriteSchema, d))
+  .validator(validateWith(JobPresetWriteSchema))
   .handler(async ({ data }) => {
     // Stringify config before sending to backend
     const payload = {
@@ -100,7 +76,7 @@ export const createJobPreset = createServerFn({ method: 'POST' })
   });
 
 export const updateJobPreset = createServerFn({ method: 'POST' })
-  .validator((d: JobPresetWriteInput) => parseInput(JobPresetWriteSchema, d))
+  .validator(validateWith(JobPresetWriteSchema))
   .handler(async ({ data }) => {
     const { id, ...rest } = data;
     // Stringify config before sending to backend
@@ -116,7 +92,7 @@ export const updateJobPreset = createServerFn({ method: 'POST' })
   });
 
 export const deleteJobPreset = createServerFn({ method: 'POST' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data: id }) => {
     await fetchBackend(backendPath`/job/presets/${id}`, { method: 'DELETE' });
   });

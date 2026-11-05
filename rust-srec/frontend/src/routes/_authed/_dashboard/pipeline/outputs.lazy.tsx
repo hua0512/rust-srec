@@ -7,6 +7,7 @@ import {
   keepPreviousData,
 } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
+import { queryKeys } from '@/api/query-keys';
 import {
   listPipelineOutputs,
   getPipelineOutputSummary,
@@ -78,14 +79,12 @@ function PipelineOutputsPage() {
     error,
     refetch,
   } = useQuery({
-    queryKey: [
-      'pipeline',
-      'outputs',
-      selectedFormat,
-      debouncedSearch,
+    queryKey: queryKeys.pipeline.outputs.list({
+      fileType: selectedFormat,
+      search: debouncedSearch,
       pageSize,
-      currentPage,
-    ],
+      page: currentPage,
+    }),
     queryFn: () =>
       listPipelineOutputs({
         data: {
@@ -102,7 +101,7 @@ function PipelineOutputsPage() {
   // Deliberately not keyed on the selected type: the endpoint reports every
   // type, so switching tabs reuses this result instead of refetching.
   const { data: summary } = useQuery({
-    queryKey: ['pipeline', 'outputs', 'summary', debouncedSearch],
+    queryKey: queryKeys.pipeline.outputs.summary(debouncedSearch),
     queryFn: () =>
       getPipelineOutputSummary({
         data: { search: debouncedSearch || undefined },
@@ -164,8 +163,10 @@ function PipelineOutputsPage() {
   // Deleting an output decrements its session's total size, so the sessions
   // list has to be refetched alongside this page.
   const invalidateOutputs = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['pipeline', 'outputs'] });
-    void queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.pipeline.outputs.all,
+    });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.sessions.all });
   }, [queryClient]);
 
   const deleteMutation = useMutation({

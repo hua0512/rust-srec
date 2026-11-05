@@ -1,5 +1,6 @@
 import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import { createJobPreset } from '@/server/functions/job';
 import { toast } from 'sonner';
 import { msg } from '@lingui/core/macro';
@@ -25,7 +26,9 @@ function CreatePresetPage() {
     mutationFn: createJobPreset,
     onSuccess: () => {
       toast.success(i18n._(msg`Preset created successfully`));
-      void queryClient.invalidateQueries({ queryKey: ['job', 'presets'] });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.jobPresets.all,
+      });
       void navigate({ to: '/pipeline/presets' });
     },
     onError: (error) =>

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { createServerFn } from '@/server/createServerFn';
 import { fetchBackend } from '../api';
 import { backendPath, PathIdSchema } from '../backend-path';
-import { parseInput } from '../validate';
+import { validateWith } from '../validate';
 
 const SplitResponseSchema = z.object({
   request_id: z.string().regex(/^\d+$/),
@@ -10,7 +10,7 @@ const SplitResponseSchema = z.object({
 });
 
 export const requestLosslessCut = createServerFn({ method: 'POST' })
-  .validator((downloadId: string) => parseInput(PathIdSchema, downloadId))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data: downloadId }) => {
     const response = await fetchBackend(
       backendPath`/downloads/${downloadId}/split`,

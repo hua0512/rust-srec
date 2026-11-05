@@ -27,8 +27,7 @@ import type { SessionDanmuStatistics, SessionSchema } from '@/api/schemas';
 import type { MediaOutput } from '@/api/schemas/system';
 import { StatTile } from '@/components/shared/stat-tile';
 import { Skeleton } from '@/components/ui/skeleton';
-import { formatDate } from '@/lib/datetime';
-import { formatLocalizedDuration } from '@/lib/date-utils';
+import { formatDate, formatLocalizedDuration } from '@/lib/datetime';
 
 const DanmuStatsPanel = React.lazy(() =>
   import('./danmu-stats-panel').then((module) => ({

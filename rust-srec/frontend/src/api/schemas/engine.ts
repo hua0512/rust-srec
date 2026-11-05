@@ -246,9 +246,7 @@ const ffmpegShape = {
 };
 
 export const FfmpegConfigSchema = engineSettings(ffmpegShape);
-export type FfmpegConfig = z.infer<typeof FfmpegConfigSchema>;
 export const FfmpegConfigOverrideSchema = overrideSettings(ffmpegShape);
-export type FfmpegConfigOverride = z.infer<typeof FfmpegConfigOverrideSchema>;
 
 const streamlinkShape = {
   enable_lossless_cutting: boolSetting(),
@@ -263,11 +261,7 @@ const streamlinkShape = {
 };
 
 export const StreamlinkConfigSchema = engineSettings(streamlinkShape);
-export type StreamlinkConfig = z.infer<typeof StreamlinkConfigSchema>;
 export const StreamlinkConfigOverrideSchema = overrideSettings(streamlinkShape);
-export type StreamlinkConfigOverride = z.infer<
-  typeof StreamlinkConfigOverrideSchema
->;
 
 // --- Mesio HLS ---
 
@@ -424,21 +418,18 @@ const MesioDashVideoQualitySchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('max_height'), height: policyInt(1, U32_MAX) }),
   z.object({ type: z.literal('closest_bandwidth'), bandwidth: policyInt(1) }),
 ]);
-export type MesioDashVideoQuality = z.infer<typeof MesioDashVideoQualitySchema>;
 
 const MesioDashAudioQualitySchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('highest') }),
   z.object({ type: z.literal('lowest') }),
   z.object({ type: z.literal('closest_bandwidth'), bandwidth: policyInt(1) }),
 ]);
-export type MesioDashAudioQuality = z.infer<typeof MesioDashAudioQualitySchema>;
 
 const MesioDashLiveStartSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('auto') }),
   z.object({ type: z.literal('live_edge') }),
   z.object({ type: z.literal('delay'), delay_ms: policyInt(0) }),
 ]);
-export type MesioDashLiveStart = z.infer<typeof MesioDashLiveStartSchema>;
 
 const MesioDashFieldsSchema = z.object({
   video_quality: optionalSetting(MesioDashVideoQualitySchema),
@@ -547,7 +538,6 @@ const mesioShape = {
 export const MesioConfigSchema = engineSettings(mesioShape);
 export type MesioConfig = z.infer<typeof MesioConfigSchema>;
 export const MesioConfigOverrideSchema = overrideSettings(mesioShape);
-export type MesioConfigOverride = z.infer<typeof MesioConfigOverrideSchema>;
 
 const ENGINE_SHAPES = {
   FFMPEG: ffmpegShape,
@@ -596,7 +586,6 @@ export const EngineConfigOverrideSchema = z.union([
   StreamlinkConfigOverrideSchema,
   MesioConfigOverrideSchema,
 ]);
-export type EngineConfigOverride = z.infer<typeof EngineConfigOverrideSchema>;
 
 // --- Engine Configuration with Discriminated Union ---
 // Provides complete type safety based on engine_type
@@ -659,7 +648,6 @@ export const CreateEngineRequestSchema = z
   .superRefine((data, ctx) => {
     refineEngineConfig(ctx, data.engine_type, data.config);
   });
-export type CreateEngineRequest = z.infer<typeof CreateEngineRequestSchema>;
 
 export const UpdateEngineRequestSchema = z
   .object({
@@ -676,11 +664,9 @@ export const UpdateEngineRequestSchema = z
       refineEngineConfig(ctx, data.engine_type, data.config);
     }
   });
-export type UpdateEngineRequest = z.infer<typeof UpdateEngineRequestSchema>;
 
 // --- Test Response Schema ---
 export const EngineTestResponseSchema = z.object({
   available: z.boolean(),
   version: z.string().optional(),
 });
-export type EngineTestResponse = z.infer<typeof EngineTestResponseSchema>;

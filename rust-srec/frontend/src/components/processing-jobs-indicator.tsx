@@ -11,7 +11,7 @@ import { Progress } from '@/components/ui/progress';
 import { StreamerAvatar } from '@/components/shared/streamer-avatar';
 import { displayName, ROW_AVATAR } from '@/components/upload-status-indicator';
 import { useNow } from '@/hooks/use-now';
-import { formatLocalizedDuration } from '@/lib/date-utils';
+import { formatLocalizedDuration } from '@/lib/datetime';
 import { describeJobProgress, jobTypeLabel } from '@/lib/job-progress';
 import { cn } from '@/lib/utils';
 import { useUploadStore, type JobView } from '@/store/uploads';

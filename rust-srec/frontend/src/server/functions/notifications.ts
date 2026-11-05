@@ -1,8 +1,9 @@
 import { createServerFn } from '@/server/createServerFn';
-import { parseInput } from '../validate';
+import { parseInput, validateWith } from '../validate';
 import { fetchBackend, PLATFORM_BACKEND_TIMEOUT_MS } from '../api';
 import {
   backendPath,
+  PageSchema,
   PathIdSchema,
   withQuery,
   setPagination,
@@ -48,9 +49,7 @@ export const listChannels = createServerFn({ method: 'GET' }).handler(
 );
 
 export const createChannel = createServerFn({ method: 'POST' })
-  .validator((data: z.input<typeof CreateChannelSchema>) =>
-    parseInput(CreateChannelSchema, data),
-  )
+  .validator(validateWith(CreateChannelSchema))
   .handler(async ({ data }) => {
     const json = await fetchBackend('/notifications/channels', {
       method: 'POST',
@@ -78,7 +77,7 @@ export const updateChannel = createServerFn({ method: 'POST' })
   });
 
 export const deleteChannel = createServerFn({ method: 'POST' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data: id }) => {
     await fetchBackend(backendPath`/notifications/channels/${id}`, {
       method: 'DELETE',
@@ -86,7 +85,7 @@ export const deleteChannel = createServerFn({ method: 'POST' })
   });
 
 export const getSubscriptions = createServerFn({ method: 'GET' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(
       backendPath`/notifications/channels/${id}/subscriptions`,
@@ -111,7 +110,7 @@ export const updateSubscriptions = createServerFn({ method: 'POST' })
   });
 
 export const testChannel = createServerFn({ method: 'POST' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data: id }) => {
     await fetchBackend(backendPath`/notifications/channels/${id}/test`, {
       method: 'POST',
@@ -119,9 +118,7 @@ export const testChannel = createServerFn({ method: 'POST' })
     });
   });
 
-const EventFiltersSchema = z.object({
-  limit: z.number().optional(),
-  offset: z.number().optional(),
+const EventFiltersSchema = PageSchema.extend({
   event_type: z.string().optional(),
   streamer_id: z.string().optional(),
   search: z.string().optional(),
@@ -129,18 +126,7 @@ const EventFiltersSchema = z.object({
 });
 
 export const listEvents = createServerFn({ method: 'GET' })
-  .validator(
-    (
-      q: {
-        limit?: number;
-        offset?: number;
-        event_type?: string;
-        streamer_id?: string;
-        search?: string;
-        priority?: string;
-      } = {},
-    ) => parseInput(EventFiltersSchema, q),
-  )
+  .validator(validateWith(EventFiltersSchema.default({})))
   .handler(async ({ data }) => {
     const params = new URLSearchParams();
     setPagination(params, data);
@@ -187,12 +173,7 @@ const SubscribeWebPushSchema = z.object({
 });
 
 export const subscribeWebPush = createServerFn({ method: 'POST' })
-  .validator(
-    (d: {
-      subscription: z.infer<typeof WebPushSubscriptionJsonSchema>;
-      min_priority?: number;
-    }) => parseInput(SubscribeWebPushSchema, d),
-  )
+  .validator(validateWith(SubscribeWebPushSchema))
   .handler(async ({ data }) => {
     const json = await fetchBackend('/notifications/web-push/subscribe', {
       method: 'POST',
@@ -202,9 +183,7 @@ export const subscribeWebPush = createServerFn({ method: 'POST' })
   });
 
 export const unsubscribeWebPush = createServerFn({ method: 'POST' })
-  .validator((d: { endpoint: string }) =>
-    parseInput(z.object({ endpoint: z.string().min(1) }), d),
-  )
+  .validator(validateWith(z.object({ endpoint: z.string().min(1) })))
   .handler(async ({ data }) => {
     await fetchBackend('/notifications/web-push/unsubscribe', {
       method: 'POST',

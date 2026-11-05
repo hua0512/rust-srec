@@ -1,6 +1,7 @@
 import { memo, useState } from 'react';
 import { Link, useRouter } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import { deleteSession } from '@/server/functions/sessions';
 import { toast } from 'sonner';
 import {
@@ -77,7 +78,9 @@ export const SessionCard = memo(
       try {
         await deleteSession({ data: session.id });
         toast.success(i18n._(msg`Session deleted successfully`));
-        void queryClient.invalidateQueries({ queryKey: ['sessions'] });
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.sessions.all,
+        });
         void router.invalidate();
       } catch (error) {
         console.error('Failed to delete session:', error);

@@ -14,6 +14,7 @@ import { Trans } from '@lingui/react/macro';
 import { msg, plural, t } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { motion, AnimatePresence } from 'motion/react';
+import { queryKeys } from '@/api/query-keys';
 import { useInView } from '@/hooks/use-in-view';
 
 import { Button } from '@/components/ui/button';
@@ -83,7 +84,10 @@ export const StepLibrary = memo(function StepLibrary({
     isFetchingNextPage: isFetchingNextPresets,
     isLoading: isLoadingPresets,
   } = useInfiniteQuery({
-    queryKey: ['job', 'presets', search, selectedCategory],
+    queryKey: queryKeys.jobPresets.infinite({
+      search,
+      category: selectedCategory,
+    }),
     queryFn: ({ pageParam }) =>
       listJobPresets({
         data: {
@@ -109,7 +113,7 @@ export const StepLibrary = memo(function StepLibrary({
     isFetchingNextPage: isFetchingNextWorkflows,
     isLoading: isLoadingWorkflows,
   } = useInfiniteQuery({
-    queryKey: ['pipeline', 'presets', search],
+    queryKey: queryKeys.pipeline.workflows.infinite({ search }),
     queryFn: ({ pageParam }) =>
       listPipelinePresets({
         data: {

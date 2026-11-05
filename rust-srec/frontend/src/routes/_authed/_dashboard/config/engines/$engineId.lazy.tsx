@@ -1,4 +1,5 @@
 import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
+import { queryKeys } from '@/api/query-keys';
 import { EngineEditor } from '@/components/config/engines/engine-editor';
 import { useQuery } from '@tanstack/react-query';
 import { getEngine } from '@/server/functions';
@@ -25,7 +26,7 @@ function EditEnginePage() {
     isLoading,
     error,
   } = useQuery({
-    queryKey: ['engine', engineId],
+    queryKey: queryKeys.engines.detail(engineId),
     queryFn: () => getEngine({ data: engineId }),
   });
 

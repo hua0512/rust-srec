@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { Link, createLazyFileRoute } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import { getDagExecution, retryDagSteps, cancelDag } from '@/server/functions';
 import { DagGraphView } from '@/components/pipeline/dag-graph-view';
 import {
@@ -62,7 +63,7 @@ function PipelineExecutionPage() {
     isLoading,
     error,
   } = useQuery({
-    queryKey: ['pipeline', 'executions', pipelineId, 'status'],
+    queryKey: queryKeys.pipeline.dags.detail(pipelineId),
     queryFn: () => getDagExecution({ data: pipelineId }),
     // A pipeline that does not exist will not appear on a retry, and the
     // default backoff would hold the page on skeletons for several seconds
@@ -86,7 +87,7 @@ function PipelineExecutionPage() {
     onSuccess: () => {
       toast.success(i18n._(msg`Failed steps retry initiated`));
       void queryClient.invalidateQueries({
-        queryKey: ['pipeline', 'executions', pipelineId],
+        queryKey: queryKeys.pipeline.dags.detail(pipelineId),
       });
     },
     onError: () => toast.error(i18n._(msg`Failed to retry steps`)),
@@ -104,9 +105,11 @@ function PipelineExecutionPage() {
         ),
       );
       void queryClient.invalidateQueries({
-        queryKey: ['pipeline', 'executions', pipelineId],
+        queryKey: queryKeys.pipeline.dags.detail(pipelineId),
       });
-      void queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.pipeline.stats(),
+      });
     },
     onError: () => toast.error(i18n._(msg`Failed to cancel pipeline`)),
   });

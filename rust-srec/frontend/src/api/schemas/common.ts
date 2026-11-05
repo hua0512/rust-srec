@@ -73,6 +73,16 @@ export function decodeJsonText(field: string) {
 }
 
 // --- Priority Enum ---
+/** One page of a list endpoint: its items and the window and total they come from. */
+export function paginated<Item extends z.ZodType>(item: Item) {
+  return z.object({
+    items: z.array(item),
+    total: z.number(),
+    limit: z.number(),
+    offset: z.number(),
+  });
+}
+
 export const PrioritySchema = z
   .enum(['HIGH', 'NORMAL', 'LOW'])
   .default('NORMAL');

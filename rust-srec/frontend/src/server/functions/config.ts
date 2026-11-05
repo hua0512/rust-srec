@@ -1,14 +1,14 @@
 import { createServerFn } from '@/server/createServerFn';
-import { parseInput } from '../validate';
+import { parseInput, validateWith } from '../validate';
 import { fetchBackend, LONG_BACKEND_TIMEOUT_MS } from '../api';
 import { backendPath, PathIdSchema } from '../backend-path';
 import {
+  paginated,
   GlobalConfigSchema,
   GlobalConfigWriteSchema,
   PlatformConfigSchema,
   TemplateSchema,
   CreateTemplateRequestSchema,
-  UpdateTemplateRequestSchema,
 } from '../../api/schemas';
 import { z } from 'zod';
 import { CredentialSelectionSchema } from '@/api/schemas/credential-profiles';
@@ -23,7 +23,7 @@ export const getGlobalConfig = createServerFn({ method: 'GET' }).handler(
 );
 
 // Helper to stringify complex objects for backend (which expects Option<String>)
-const jsonToString = z.any().transform((val) => {
+const jsonToString = z.unknown().transform((val) => {
   if (typeof val === 'string') return val;
   if (typeof val === 'object' && val !== null) return JSON.stringify(val);
   return val;
@@ -38,9 +38,7 @@ const GlobalConfigUpdateSchema = GlobalConfigWriteSchema.extend({
 });
 
 export const updateGlobalConfig = createServerFn({ method: 'POST' })
-  .validator((data: z.infer<typeof GlobalConfigWriteSchema>) =>
-    parseInput(GlobalConfigUpdateSchema, data),
-  )
+  .validator(validateWith(GlobalConfigUpdateSchema))
   .handler(async ({ data }) => {
     // The backend answers with the stored config, which can differ from the request: it skips
     // `null` fields and clamps some values.
@@ -60,7 +58,7 @@ export const listPlatformConfigs = createServerFn({ method: 'GET' }).handler(
 );
 
 export const getPlatformConfig = createServerFn({ method: 'GET' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/config/platforms/${id}`);
     return PlatformConfigSchema.parse(json);
@@ -68,7 +66,8 @@ export const getPlatformConfig = createServerFn({ method: 'GET' })
 
 // Helper to convert empty strings to null
 const emptyStringToNull = z
-  .union([z.string(), z.null(), z.undefined()])
+  .string()
+  .nullish()
   .transform((val) => (val === '' ? null : val));
 
 // Write-side shape shared by platform configs and templates, which carry the
@@ -99,10 +98,7 @@ const PlatformConfigWriteSchema = PlatformConfigSchema.partial().extend({
 
 export const updatePlatformConfig = createServerFn({ method: 'POST' })
   .validator(
-    (d: {
-      id: string;
-      data: Partial<z.infer<typeof PlatformConfigSchema>>;
-    }) => ({
+    (d: { id: string; data: z.input<typeof PlatformConfigWriteSchema> }) => ({
       id: parseInput(PathIdSchema, d.id),
       data: parseInput(PlatformConfigWriteSchema, d.data),
     }),
@@ -119,19 +115,12 @@ export const updatePlatformConfig = createServerFn({ method: 'POST' })
 export const listTemplates = createServerFn({ method: 'GET' }).handler(
   async () => {
     const json = await fetchBackend('/templates');
-    const PaginatedTemplatesSchema = z.object({
-      items: z.array(TemplateSchema),
-      total: z.number(),
-      limit: z.number(),
-      offset: z.number(),
-    });
-    const response = PaginatedTemplatesSchema.parse(json);
-    return response.items;
+    return paginated(TemplateSchema).parse(json).items;
   },
 );
 
 export const getTemplate = createServerFn({ method: 'GET' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/templates/${id}`);
     return TemplateSchema.parse(json);
@@ -142,9 +131,7 @@ const TemplateWriteSchema = CreateTemplateRequestSchema.extend(
 );
 
 export const createTemplate = createServerFn({ method: 'POST' })
-  .validator((data: z.input<typeof CreateTemplateRequestSchema>) =>
-    parseInput(TemplateWriteSchema, data),
-  )
+  .validator(validateWith(TemplateWriteSchema))
   .handler(async ({ data }) => {
     const json = await fetchBackend('/templates', {
       method: 'POST',
@@ -155,7 +142,7 @@ export const createTemplate = createServerFn({ method: 'POST' })
 
 export const updateTemplate = createServerFn({ method: 'POST' })
   .validator(
-    (d: { id: string; data: z.input<typeof UpdateTemplateRequestSchema> }) => ({
+    (d: { id: string; data: z.input<typeof TemplateWriteSchema> }) => ({
       id: parseInput(PathIdSchema, d.id),
       data: parseInput(TemplateWriteSchema, d.data),
     }),
@@ -169,7 +156,7 @@ export const updateTemplate = createServerFn({ method: 'POST' })
   });
 
 export const deleteTemplate = createServerFn({ method: 'POST' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data: id }) => {
     await fetchBackend(backendPath`/templates/${id}`, { method: 'DELETE' });
   });
@@ -199,14 +186,12 @@ export const exportConfig = createServerFn({ method: 'GET' }).handler(
 );
 
 const ImportConfigSchema = z.object({
-  config: z.any(),
+  config: z.unknown(),
   mode: z.enum(['merge', 'replace']),
 });
 
 export const importConfig = createServerFn({ method: 'POST' })
-  .validator((data: { config: any; mode: 'merge' | 'replace' }) =>
-    parseInput(ImportConfigSchema, data),
-  )
+  .validator(validateWith(ImportConfigSchema))
   .handler(async ({ data }) => {
     return await fetchBackend('/config/backup/import', {
       method: 'POST',

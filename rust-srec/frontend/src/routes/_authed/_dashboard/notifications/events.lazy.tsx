@@ -22,6 +22,7 @@ import {
   Circle,
 } from 'lucide-react';
 
+import { queryKeys } from '@/api/query-keys';
 import { JsonViewer, prettyJson } from '@/components/shared/json-viewer';
 import {
   EventCard,
@@ -99,7 +100,7 @@ function NotificationEventsPage() {
   }, []);
 
   const { data: eventTypes } = useQuery({
-    queryKey: ['notification-event-types'],
+    queryKey: queryKeys.notifications.eventTypes(),
     queryFn: () => listEventTypes(),
   });
 
@@ -123,7 +124,7 @@ function NotificationEventsPage() {
     refetch,
     isRefetching,
   } = useQuery({
-    queryKey: ['notification-events', query],
+    queryKey: queryKeys.notifications.events(query),
     queryFn: () => listEvents({ data: query }),
     refetchInterval: 15000,
   });
@@ -161,7 +162,7 @@ function NotificationEventsPage() {
     setLastSeenCriticalMs(now);
     setLastSeenMs(now);
     void queryClient.invalidateQueries({
-      queryKey: ['notification-critical-dot'],
+      queryKey: queryKeys.notifications.criticalDot(),
     });
     toast.success(i18n._(msg`Marked all as read`));
   }, [i18n, queryClient]);

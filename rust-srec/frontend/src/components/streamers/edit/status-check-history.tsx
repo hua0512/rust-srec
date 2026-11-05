@@ -5,6 +5,7 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 
+import { queryKeys } from '@/api/query-keys';
 import { cn } from '@/lib/utils';
 import {
   Tooltip,
@@ -18,8 +19,7 @@ import {
   getStreamerCheckHistory,
   type StreamerCheckHistoryEntry,
 } from '@/server/functions/streamers';
-import { formatDate } from '@/lib/datetime';
-import { formatShortRelativeTime } from '@/lib/date-utils';
+import { formatDate, formatShortRelativeTime } from '@/lib/datetime';
 import { formatBitrate } from '@/lib/format';
 
 /**
@@ -53,7 +53,7 @@ export const StatusCheckHistory = memo(function StatusCheckHistory({
   const { isConnected } = useWebSocket();
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['streamer', streamerId, 'check-history', slots],
+    queryKey: queryKeys.streamers.checkHistory(streamerId, slots),
     queryFn: () =>
       getStreamerCheckHistory({ data: { id: streamerId, limit: slots } }),
     refetchInterval: REFETCH_MS,

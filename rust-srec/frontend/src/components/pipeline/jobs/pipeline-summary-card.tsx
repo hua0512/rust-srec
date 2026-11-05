@@ -42,7 +42,7 @@ import {
   CardMetaFooter,
   DecoratedCard,
 } from '@/components/shared/decorated-card';
-import { formatRelativeTime } from '@/lib/date-utils';
+import { formatRelativeTime } from '@/lib/datetime';
 import {
   getStatusConfig,
   getStatusLabel,

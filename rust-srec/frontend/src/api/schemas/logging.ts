@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { paginated } from './common';
 
 // --- Logging Configuration Schemas ---
 
@@ -7,22 +8,17 @@ export const LogModuleInfoSchema = z.object({
   name: z.string(),
   description: z.string(),
 });
-export type LogModuleInfo = z.infer<typeof LogModuleInfoSchema>;
 
 /** Logging configuration response from API */
 export const LoggingConfigResponseSchema = z.object({
   filter: z.string(),
   available_modules: z.array(LogModuleInfoSchema),
 });
-export type LoggingConfigResponse = z.infer<typeof LoggingConfigResponseSchema>;
 
 /** Request to update logging filter */
 export const UpdateLogFilterRequestSchema = z.object({
   filter: z.string(),
 });
-export type UpdateLogFilterRequest = z.infer<
-  typeof UpdateLogFilterRequestSchema
->;
 
 /** Log levels available for configuration */
 export const LOG_LEVELS = [
@@ -76,17 +72,10 @@ export const LogFileInfoSchema = z.object({
 export type LogFileInfo = z.infer<typeof LogFileInfoSchema>;
 
 /** Log files list response */
-export const LogFilesResponseSchema = z.object({
-  items: z.array(LogFileInfoSchema),
-  total: z.number(),
-  limit: z.number(),
-  offset: z.number(),
-});
-export type LogFilesResponse = z.infer<typeof LogFilesResponseSchema>;
+export const LogFilesResponseSchema = paginated(LogFileInfoSchema);
 
 /** Archive token response */
 export const ArchiveTokenResponseSchema = z.object({
   token: z.string(),
   expires_at: z.string(),
 });
-export type ArchiveTokenResponse = z.infer<typeof ArchiveTokenResponseSchema>;

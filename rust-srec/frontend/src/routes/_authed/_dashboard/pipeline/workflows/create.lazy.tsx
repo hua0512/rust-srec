@@ -1,5 +1,6 @@
 import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import { createPipelinePreset } from '@/server/functions/pipeline';
 import { toast } from 'sonner';
 import { msg } from '@lingui/core/macro';
@@ -25,7 +26,7 @@ function CreateWorkflowPage() {
     onSuccess: () => {
       toast.success(i18n._(msg`Workflow created successfully`));
       void queryClient.invalidateQueries({
-        queryKey: ['pipeline', 'workflows'],
+        queryKey: queryKeys.pipeline.workflows.all,
       });
       void navigate({ to: '/pipeline/workflows' });
     },

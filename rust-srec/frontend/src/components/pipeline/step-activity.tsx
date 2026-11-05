@@ -7,7 +7,7 @@ import type { DagStep } from '@/api/schemas';
 import { RetryCountdown } from '@/components/pipeline/retry-countdown';
 import { stepDisplayStatus } from '@/components/pipeline/status-config';
 import { useNow } from '@/hooks/use-now';
-import { formatLocalizedDuration } from '@/lib/date-utils';
+import { formatLocalizedDuration } from '@/lib/datetime';
 import { describeJobProgress, snapshotProgress } from '@/lib/job-progress';
 
 /**

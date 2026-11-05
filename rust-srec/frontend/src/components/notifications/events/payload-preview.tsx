@@ -2,6 +2,7 @@ import { memo } from 'react';
 import type { MessageDescriptor } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
+import { formatDate } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
 import { formatBytes, formatDuration } from '@/lib/format';
 
@@ -61,7 +62,11 @@ export const PayloadPreview = memo(({ payload }: { payload: string }) => {
     if (inner.retry_at)
       fields.push({
         label: msg`Paused until`,
-        value: new Date(inner.retry_at).toLocaleTimeString(i18n.locale),
+        value: formatDate(i18n.locale, inner.retry_at, {
+          hour: 'numeric',
+          minute: 'numeric',
+          second: 'numeric',
+        }),
       });
 
     if (inner.output_path || inner.path) {
