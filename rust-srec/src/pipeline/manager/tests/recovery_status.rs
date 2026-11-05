@@ -117,7 +117,7 @@ async fn recovery_confirmation_includes_video_segments_beyond_the_old_cap() {
     assert!(report.complete);
     manager
         .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::ConfigureSession {
+        .apply_event(PipelineCoordinationEvent::ConfigureSession {
             session_id: "long-session".to_owned(),
             streamer_id: "streamer".to_owned(),
             danmu_enabled: false,
@@ -130,16 +130,17 @@ async fn recovery_confirmation_includes_video_segments_beyond_the_old_cap() {
         });
     manager
         .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::SessionEnded {
+        .apply_event(PipelineCoordinationEvent::SessionEnded {
             session_id: "long-session".to_owned(),
             streamer_id: "streamer".to_owned(),
             should_run_session_complete: true,
         });
-    let commands = manager.pipeline_coordinator.apply_event_inline(
-        PipelineCoordinationEvent::SessionEndPersisted {
-            session_id: "long-session".to_owned(),
-        },
-    );
+    let commands =
+        manager
+            .pipeline_coordinator
+            .apply_event(PipelineCoordinationEvent::SessionEndPersisted {
+                session_id: "long-session".to_owned(),
+            });
     let [PipelineCommand::CreateSessionCompleteDag { outputs, .. }] = commands.as_slice() else {
         panic!("expected one session completion command");
     };

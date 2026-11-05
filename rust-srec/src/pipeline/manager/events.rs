@@ -102,27 +102,24 @@ where
                     .await;
                 }
 
-                let mut commands = self
-                    .pipeline_coordinator
-                    .apply_event(PipelineCoordinationEvent::ConfigureSession {
+                let mut commands = self.pipeline_coordinator.apply_event(
+                    PipelineCoordinationEvent::ConfigureSession {
                         session_id: session_id.clone(),
                         streamer_id: streamer_id.clone(),
                         danmu_enabled,
                         segment_pipeline: pipeline_config,
                         paired_segment_pipeline: paired_segment_pipeline.filter(|_| danmu_enabled),
                         session_complete_pipeline,
-                    })
-                    .await;
-                commands.extend(
-                    self.pipeline_coordinator
-                        .apply_event(PipelineCoordinationEvent::VideoSegmentCompleted {
-                            session_id,
-                            streamer_id,
-                            segment_index,
-                            path: PathBuf::from(segment_path),
-                        })
-                        .await,
+                    },
                 );
+                commands.extend(self.pipeline_coordinator.apply_event(
+                    PipelineCoordinationEvent::VideoSegmentCompleted {
+                        session_id,
+                        streamer_id,
+                        segment_index,
+                        path: PathBuf::from(segment_path),
+                    },
+                ));
                 self.execute_pipeline_commands(commands).await;
             }
             DownloadManagerEvent::Terminal(_) => {
@@ -183,8 +180,8 @@ where
         };
         if let Some(config) = config {
             commands.extend(
-                self.pipeline_coordinator
-                    .apply_event(PipelineCoordinationEvent::ConfigureSession {
+                self.pipeline_coordinator.apply_event(
+                    PipelineCoordinationEvent::ConfigureSession {
                         session_id: session_id.clone(),
                         streamer_id: streamer_id.clone(),
                         danmu_enabled: config.record_danmu,
@@ -194,20 +191,18 @@ where
                             .clone()
                             .filter(|_| config.record_danmu),
                         session_complete_pipeline: config.session_complete_pipeline.clone(),
-                    })
-                    .await,
+                    },
+                ),
             );
         }
 
-        commands.extend(
-            self.pipeline_coordinator
-                .apply_event(PipelineCoordinationEvent::SessionEnded {
-                    session_id: session_id.clone(),
-                    streamer_id,
-                    should_run_session_complete,
-                })
-                .await,
-        );
+        commands.extend(self.pipeline_coordinator.apply_event(
+            PipelineCoordinationEvent::SessionEnded {
+                session_id: session_id.clone(),
+                streamer_id,
+                should_run_session_complete,
+            },
+        ));
 
         if should_run_session_complete {
             // `SessionLifecycle::end_session_only` / `end_for_disable` /
@@ -218,13 +213,11 @@ where
             // so by the time we read this transition the row is already
             // persisted. Apply `SessionEndPersisted` directly instead of
             // re-reading `sessions.end_time`.
-            commands.extend(
-                self.pipeline_coordinator
-                    .apply_event(PipelineCoordinationEvent::SessionEndPersisted {
-                        session_id: session_id.clone(),
-                    })
-                    .await,
-            );
+            commands.extend(self.pipeline_coordinator.apply_event(
+                PipelineCoordinationEvent::SessionEndPersisted {
+                    session_id: session_id.clone(),
+                },
+            ));
         } else {
             debug!(
                 session_id = %session_id,
@@ -261,8 +254,8 @@ where
                     && let Ok(config) = config_service.get_config_for_streamer(&streamer_id).await
                 {
                     commands.extend(
-                        self.pipeline_coordinator
-                            .apply_event(PipelineCoordinationEvent::ConfigureSession {
+                        self.pipeline_coordinator.apply_event(
+                            PipelineCoordinationEvent::ConfigureSession {
                                 session_id: session_id.clone(),
                                 streamer_id: streamer_id.clone(),
                                 danmu_enabled: config.record_danmu,
@@ -272,18 +265,16 @@ where
                                     .clone()
                                     .filter(|_| config.record_danmu),
                                 session_complete_pipeline: config.session_complete_pipeline.clone(),
-                            })
-                            .await,
+                            },
+                        ),
                     );
                 }
-                commands.extend(
-                    self.pipeline_coordinator
-                        .apply_event(PipelineCoordinationEvent::DanmuCollectionStarted {
-                            session_id,
-                            streamer_id,
-                        })
-                        .await,
-                );
+                commands.extend(self.pipeline_coordinator.apply_event(
+                    PipelineCoordinationEvent::DanmuCollectionStarted {
+                        session_id,
+                        streamer_id,
+                    },
+                ));
                 self.execute_pipeline_commands(commands).await;
             }
             DanmuEvent::Control {
@@ -347,8 +338,7 @@ where
             DanmuEvent::CollectionStopped { session_id, .. } => {
                 let commands = self
                     .pipeline_coordinator
-                    .apply_event(PipelineCoordinationEvent::DanmuCollectionStopped { session_id })
-                    .await;
+                    .apply_event(PipelineCoordinationEvent::DanmuCollectionStopped { session_id });
                 self.execute_pipeline_commands(commands).await;
             }
             DanmuEvent::SegmentCompleted {
@@ -408,27 +398,24 @@ where
                     .map(|c| c.record_danmu)
                     .unwrap_or(false);
 
-                let mut commands = self
-                    .pipeline_coordinator
-                    .apply_event(PipelineCoordinationEvent::ConfigureSession {
+                let mut commands = self.pipeline_coordinator.apply_event(
+                    PipelineCoordinationEvent::ConfigureSession {
                         session_id: session_id.clone(),
                         streamer_id: streamer_id.clone(),
                         danmu_enabled,
                         segment_pipeline: pipeline_config,
                         paired_segment_pipeline: paired_segment_pipeline.filter(|_| danmu_enabled),
                         session_complete_pipeline,
-                    })
-                    .await;
-                commands.extend(
-                    self.pipeline_coordinator
-                        .apply_event(PipelineCoordinationEvent::DanmuSegmentCompleted {
-                            session_id,
-                            streamer_id,
-                            segment_index,
-                            path: output_path,
-                        })
-                        .await,
+                    },
                 );
+                commands.extend(self.pipeline_coordinator.apply_event(
+                    PipelineCoordinationEvent::DanmuSegmentCompleted {
+                        session_id,
+                        streamer_id,
+                        segment_index,
+                        path: output_path,
+                    },
+                ));
                 self.execute_pipeline_commands(commands).await;
             }
             _ => {}

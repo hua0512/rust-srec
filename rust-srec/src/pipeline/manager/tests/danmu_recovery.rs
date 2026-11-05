@@ -211,7 +211,7 @@ async fn danmu_recovery_stops_ended_collection_even_when_paths_cannot_be_matched
         ));
         // Recovery can run after collection activity has already reached the reducer.
         // Unmatched artifacts must still release that known collection-completion gate.
-        manager.pipeline_coordinator.apply_event_inline(
+        manager.pipeline_coordinator.apply_event(
             PipelineCoordinationEvent::DanmuCollectionStarted {
                 session_id: SESSION.to_owned(),
                 streamer_id: STREAMER.to_owned(),

@@ -67,13 +67,6 @@ where
             "DAG completion handler"
         });
 
-        let coordinator = self.pipeline_coordinator.clone();
-        let coordinator_token = self.cancellation_token.clone();
-        runtime.tasks.spawn(async move {
-            coordinator.start(coordinator_token).await;
-            "pipeline coordinator"
-        });
-
         let retry_manager = Arc::downgrade(&self);
         let retry_token = self.cancellation_token.clone();
         runtime.tasks.spawn(async move {
@@ -106,8 +99,7 @@ where
                         let now = std::time::Instant::now();
                         cleanup_manager
                             .pipeline_coordinator
-                            .cleanup_stale(SESSION_COMPLETE_TTL_SECS)
-                            .await;
+                            .cleanup_stale(SESSION_COMPLETE_TTL_SECS);
 
                         cleanup_manager.dag_segment_contexts.retain(|dag_id, ctx| {
                             if now.duration_since(ctx.created_at).as_secs() > SESSION_COMPLETE_TTL_SECS {
