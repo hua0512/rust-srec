@@ -33,7 +33,7 @@ msgid "\"{0}\" will be removed. Streamers using it fall back to the default engi
 msgstr "将删除“{0}”。正在使用它的主播会回退到默认引擎。"
 
 #. placeholder {0}: revokeTarget?.name
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:299
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:300
 msgid "\"{0}\" will stop working immediately. This cannot be undone."
 msgstr "“{0}”将立即失效。此操作无法撤销。"
 
@@ -473,7 +473,7 @@ msgstr "0:v:0"
 msgid "1 (best) - 31 (worst)"
 msgstr "1（最佳）- 31（最差）"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:487
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:488
 msgid "1 year"
 msgstr "1 年"
 
@@ -508,7 +508,7 @@ msgctxt "danmu area"
 msgid "3/4"
 msgstr "3/4 屏"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:481
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:482
 msgid "30 days"
 msgstr "30 天"
 
@@ -528,11 +528,11 @@ msgstr "4K (20000)"
 msgid "587"
 msgstr "587"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:478
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:479
 msgid "7 days"
 msgstr "7 天"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:484
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:485
 msgid "90 days"
 msgstr "90 天"
 
@@ -592,12 +592,12 @@ msgstr "绝对路径，或在 PATH 中时填写“streamlink”"
 msgid "Accept Invalid Certificates"
 msgstr "接受无效证书"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:184
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:185
 msgid "Access"
 msgstr "权限"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:438
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:445
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:439
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:446
 msgid "Access level"
 msgstr "权限级别"
 
@@ -683,7 +683,7 @@ msgstr "操作"
 msgid "Actions"
 msgstr "操作"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:228
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:229
 #: src/routes/_authed/_dashboard/config/language.lazy.tsx:113
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:271
 msgid "Active"
@@ -1084,20 +1084,20 @@ msgstr "任意语言"
 msgid "Any priority"
 msgstr "任意优先级"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:362
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:363
 msgid "API key copied to clipboard"
 msgstr "API 密钥已复制到剪贴板"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:375
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:376
 msgid "API key created"
 msgstr "API 密钥已创建"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:112
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:113
 msgid "API key revoked"
 msgstr "API 密钥已吊销"
 
 #: src/components/sidebar/user-menu.tsx:119
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:129
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:130
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:74
 msgid "API Keys"
 msgstr "API 密钥"
@@ -1396,6 +1396,7 @@ msgid "Back"
 msgstr "返回"
 
 #: src/components/config/engines/engine-editor.tsx:319
+#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:50
 msgid "Back to engines"
 msgstr "返回引擎列表"
 
@@ -1675,7 +1676,7 @@ msgstr "面包屑导航"
 msgid "Break"
 msgstr "中断"
 
-#: src/components/logging/log-file-browser.tsx:160
+#: src/components/logging/log-file-browser.tsx:158
 msgid "Browse and download application log files. Filter by date range or download all."
 msgstr "浏览和下载应用程序日志文件。按日期范围筛选或下载全部。"
 
@@ -1759,7 +1760,7 @@ msgstr "缓存与进度"
 #: src/components/proxies/proxy-editor-dialog.tsx:360
 #: src/components/shared/confirm-dialog.tsx:54
 #: src/components/streamers/streamer-editor.tsx:240
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:495
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:496
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:233
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:174
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:366
@@ -2041,7 +2042,7 @@ msgstr "清理"
 msgid "Clear"
 msgstr "清空"
 
-#: src/components/logging/log-file-browser.tsx:218
+#: src/components/logging/log-file-browser.tsx:216
 msgid "Clear date range"
 msgstr "清除日期范围"
 
@@ -2266,7 +2267,7 @@ msgstr "配置路径（可选）"
 msgid "Configuration"
 msgstr "配置"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:552
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:547
 msgid "Configuration copied to clipboard"
 msgstr "配置已复制到剪贴板"
 
@@ -2351,7 +2352,7 @@ msgstr "必须填写确认密码"
 msgid "Confirmed via backstop timer."
 msgstr "等待恢复超时后确认。"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:556
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:551
 msgid "Connect an AI assistant (MCP)"
 msgstr "连接 AI 助手（MCP）"
 
@@ -2474,7 +2475,7 @@ msgstr "复制/移动"
 msgid "Copy address"
 msgstr "复制地址"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:394
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:395
 msgid "Copy API key"
 msgstr "复制 API 密钥"
 
@@ -2507,7 +2508,7 @@ msgstr "复制 JSON"
 msgid "Copy log"
 msgstr "复制日志"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:584
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:579
 msgid "Copy MCP configuration"
 msgstr "复制 MCP 配置"
 
@@ -2523,7 +2524,7 @@ msgstr "将文件复制到其他位置，保留原始文件。"
 msgid "Copy the full Cookie header from a logged-in Baidu Netdisk page (browser DevTools, Network tab). It must include BDUSS and STOKEN entries."
 msgstr "在已登录的百度网盘页面中（浏览器开发者工具的 Network 标签）复制完整的 Cookie 请求头，其中必须包含 BDUSS 和 STOKEN。"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:379
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:380
 msgid "Copy this key now. For security reasons it is shown only once and cannot be recovered later."
 msgstr "请立即复制此密钥。出于安全考虑，它只显示一次，之后无法找回。"
 
@@ -2604,7 +2605,7 @@ msgid "CQ (Constant Quality)"
 msgstr "CQ (恒定质量)"
 
 #: src/components/config/templates/template-editor.tsx:209
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:504
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:505
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:127
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:394
 msgid "Create"
@@ -2629,8 +2630,8 @@ msgstr "创建模板以定义可复用的录制配置。"
 msgid "Create a ZIP archive of the file. Good for bundling with metadata."
 msgstr "为文件创建 ZIP 压缩包，适合与元数据一起打包。"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:145
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:413
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:146
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:414
 msgid "Create API key"
 msgstr "创建 API 密钥"
 
@@ -2712,7 +2713,7 @@ msgstr "已创建"
 msgid "Creating..."
 msgstr "创建中..."
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:502
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:503
 msgid "Creating…"
 msgstr "创建中…"
 
@@ -2981,7 +2982,7 @@ msgstr "日期"
 msgid "Date placeholder anchor"
 msgstr "日期占位符锚点"
 
-#: src/components/logging/log-file-browser.tsx:257
+#: src/components/logging/log-file-browser.tsx:255
 msgid "Date range:"
 msgstr "日期范围："
 
@@ -3498,7 +3499,7 @@ msgstr "显示区域"
 msgid "Dolby Vision (30000)"
 msgstr "杜比视界 (30000)"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:405
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:406
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:162
 msgid "Done"
 msgstr "已完成"
@@ -3531,7 +3532,7 @@ msgid "Download"
 msgstr "下载"
 
 #. placeholder {0}: file.filename
-#: src/components/logging/log-file-browser.tsx:338
+#: src/components/logging/log-file-browser.tsx:334
 msgid "Download {0}"
 msgstr "下载 {0}"
 
@@ -3539,7 +3540,7 @@ msgstr "下载 {0}"
 msgid "Download activity looks healthy"
 msgstr "下载活动看起来正常"
 
-#: src/components/logging/log-file-browser.tsx:235
+#: src/components/logging/log-file-browser.tsx:233
 msgid "Download All"
 msgstr "下载全部"
 
@@ -3592,11 +3593,11 @@ msgid "Downloading"
 msgstr "下载中"
 
 #. placeholder {0}: file.filename
-#: src/components/logging/log-file-browser.tsx:133
+#: src/components/logging/log-file-browser.tsx:131
 msgid "Downloading {0}"
 msgstr "正在下载 {0}"
 
-#: src/components/logging/log-file-browser.tsx:119
+#: src/components/logging/log-file-browser.tsx:117
 msgid "Downloading..."
 msgstr "下载中..."
 
@@ -3683,7 +3684,7 @@ msgstr "例如 aliyun, akamaized"
 msgid "e.g. cdn-to-avoid"
 msgstr "例如 黑名单CDN"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:432
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:433
 msgid "e.g. Claude assistant"
 msgstr "例如：Claude 助手"
 
@@ -3861,7 +3862,7 @@ msgstr "已结束"
 msgid "ENDED"
 msgstr "已结束"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:569
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:564
 msgid "Endpoint"
 msgstr "端点"
 
@@ -3890,7 +3891,7 @@ msgstr "引擎已删除"
 msgid "Engine Name"
 msgstr "引擎名称"
 
-#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:55
+#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:47
 msgid "Engine not found"
 msgstr "未找到引擎"
 
@@ -3902,7 +3903,7 @@ msgstr "引擎覆盖项"
 msgid "Engine Type"
 msgstr "引擎类型"
 
-#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:68
+#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:61
 msgid "Engine updated successfully"
 msgstr "引擎更新成功"
 
@@ -3987,7 +3988,6 @@ msgstr "输入你的凭据以登录账户"
 
 #: src/components/notifications/events/payload-preview.tsx:34
 #: src/components/streamers/card/use-streamer-status.tsx:134
-#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:49
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:93
 msgid "Error"
 msgstr "错误"
@@ -3997,6 +3997,10 @@ msgstr "错误"
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:603
 msgid "Error Details"
 msgstr "错误详情"
+
+#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:45
+msgid "Error loading engine"
+msgstr "加载引擎失败"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:208
 msgid "Error Loading Job"
@@ -4141,13 +4145,13 @@ msgstr "实验性"
 msgid "Expert mode: Edit the raw platform-specific configuration directly."
 msgstr "专家模式：直接编辑原始的平台特定配置。"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:241
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:242
 msgid "Expired"
 msgstr "已过期"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:193
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:464
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:468
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:194
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:465
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:469
 msgid "Expires"
 msgstr "过期时间"
 
@@ -4284,7 +4288,7 @@ msgstr "克隆预设失败：{0}"
 msgid "Failed to clone template: {0}"
 msgstr "克隆模板失败：{0}"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:345
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:346
 msgid "Failed to create API key"
 msgstr "创建 API 密钥失败"
 
@@ -4379,11 +4383,11 @@ msgid "Failed to disable Web Push"
 msgstr "禁用 Web 推送失败"
 
 #: src/components/logging/__tests__/log-file-browser.test.tsx:33
-#: src/components/logging/log-file-browser.tsx:135
+#: src/components/logging/log-file-browser.tsx:133
 msgid "Failed to download file"
 msgstr "下载文件失败"
 
-#: src/components/logging/log-file-browser.tsx:122
+#: src/components/logging/log-file-browser.tsx:120
 msgid "Failed to download logs"
 msgstr "下载日志失败"
 
@@ -4407,7 +4411,7 @@ msgstr "导入配置失败"
 msgid "Failed to load active recordings"
 msgstr "加载正在录制的主播失败"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:151
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:152
 msgid "Failed to load API keys"
 msgstr "加载 API 密钥失败"
 
@@ -4423,11 +4427,6 @@ msgstr "内容加载失败"
 msgid "Failed to load danmu statistics."
 msgstr "加载弹幕统计失败。"
 
-#. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:53
-msgid "Failed to load engine: {0}"
-msgstr "加载引擎失败：{0}"
-
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:385
 msgid "Failed to load events"
 msgstr "加载事件失败"
@@ -4436,7 +4435,7 @@ msgstr "加载事件失败"
 msgid "Failed to load jobs"
 msgstr "加载任务失败"
 
-#: src/components/logging/log-file-browser.tsx:290
+#: src/components/logging/log-file-browser.tsx:288
 msgid "Failed to load log files"
 msgstr "加载日志文件失败"
 
@@ -4516,7 +4515,7 @@ msgstr "无法重试步骤"
 msgid "Failed to retry workflow"
 msgstr "重试工作流失败"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:116
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:117
 msgid "Failed to revoke API key"
 msgstr "吊销 API 密钥失败"
 
@@ -4701,7 +4700,7 @@ msgstr "文件大小阈值（--multi-thread-cutoff）。"
 msgid "Filename Template"
 msgstr "文件名模板"
 
-#: src/components/logging/log-file-browser.tsx:155
+#: src/components/logging/log-file-browser.tsx:153
 msgid "files"
 msgstr "文件"
 
@@ -4967,11 +4966,11 @@ msgctxt "danmu area"
 msgid "Full"
 msgstr "全屏"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:214
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:215
 msgid "Full access"
 msgstr "完全访问"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:457
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:458
 msgid "Full access — all data and configuration"
 msgstr "完全访问 — 所有数据和配置"
 
@@ -5828,7 +5827,7 @@ msgstr "避免解密阻塞其他下载。"
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:119
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:158
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:159
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:181
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:182
 msgid "Key"
 msgstr "键"
 
@@ -5894,7 +5893,7 @@ msgid "Last refreshed"
 msgstr "最近刷新"
 
 #: src/components/credentials/account-usage.tsx:355
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:190
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:191
 msgid "Last used"
 msgstr "最近使用"
 
@@ -6076,7 +6075,7 @@ msgstr "本地归档"
 msgid "Local generation"
 msgstr "本地生成"
 
-#: src/components/logging/log-file-browser.tsx:152
+#: src/components/logging/log-file-browser.tsx:150
 msgid "Log Files"
 msgstr "日志文件"
 
@@ -6166,7 +6165,7 @@ msgstr "登录失效"
 msgid "Logs"
 msgstr "日志"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:131
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:132
 msgid "Long-lived credentials for programmatic access to the REST API and the built-in MCP server. Read-only keys can inspect recording sessions and non-sensitive status; configuration and operational records require full access."
 msgstr "用于通过 REST API 和内置 MCP 服务器进行编程访问的长期凭据。只读密钥可以查看录制会话和非敏感状态；配置和运维记录需要完全访问权限。"
 
@@ -6699,9 +6698,9 @@ msgstr "我的模板"
 #: src/components/pipeline/workflows/workflow-editor.tsx:206
 #: src/components/proxies/proxy-editor-dialog.tsx:233
 #: src/components/streamers/config/streamer-identity-fields.tsx:97
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:178
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:425
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:429
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:179
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:426
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:430
 msgid "Name"
 msgstr "名称"
 
@@ -6772,9 +6771,9 @@ msgstr "网络与内容"
 msgid "Network & System"
 msgstr "网络与系统"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:248
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:255
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:475
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:249
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:256
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:476
 msgid "Never"
 msgstr "永不"
 
@@ -6850,7 +6849,7 @@ msgstr "暂无正在录制"
 msgid "No answer within 10 seconds"
 msgstr "10 秒内无响应"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:166
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:167
 msgid "No API keys yet. Create one to let scripts or AI assistants access this server."
 msgstr "还没有 API 密钥。创建一个以便脚本或 AI 助手访问此服务器。"
 
@@ -6949,7 +6948,7 @@ msgstr "未设置关键字"
 msgid "No limit"
 msgstr "不限"
 
-#: src/components/logging/log-file-browser.tsx:298
+#: src/components/logging/log-file-browser.tsx:295
 msgid "No log files found"
 msgstr "未找到日志文件"
 
@@ -8608,15 +8607,15 @@ msgstr "读取缓冲区大小（字节）"
 msgid "Read Timeout (ms)"
 msgstr "读取超时 (ms)"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:218
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:219
 msgid "Read-only"
 msgstr "只读"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:452
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:453
 msgid "Read-only — sessions and non-sensitive status"
 msgstr "只读 — 会话和非敏感状态"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:594
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:589
 msgid "Read-only keys can inspect sessions, danmu, pipeline totals, and notification events. Configuration and other sensitive tools require a full-access key."
 msgstr "只读密钥可以查看会话、弹幕、处理管道汇总和通知事件。配置及其他敏感工具需要完全访问密钥。"
 
@@ -9243,19 +9242,19 @@ msgstr "处理管道步骤可复用的处理器配置"
 msgid "Review recorded streams and manage archives"
 msgstr "查看录制内容并管理归档"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:304
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:305
 msgid "Revoke"
 msgstr "吊销"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:266
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:267
 msgid "Revoke API key"
 msgstr "吊销 API 密钥"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:297
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:298
 msgid "Revoke API key?"
 msgstr "吊销 API 密钥？"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:233
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:234
 msgid "Revoked"
 msgstr "已吊销"
 
@@ -9730,7 +9729,7 @@ msgstr "选择当前页"
 msgid "Select date anchor"
 msgstr "选择日期锚点"
 
-#: src/components/logging/log-file-browser.tsx:189
+#: src/components/logging/log-file-browser.tsx:187
 msgid "Select date range"
 msgstr "选择日期范围"
 
@@ -10273,7 +10272,7 @@ msgstr "已启动"
 msgid "State"
 msgstr "状态"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:187
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:188
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:514
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:292
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:399
@@ -10813,7 +10812,7 @@ msgstr "文件将在下一个安全分割点分割。"
 msgid "The full event payload as JSON."
 msgstr "以 JSON 格式显示的完整事件数据。"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:416
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:417
 msgid "The key inherits your account's permissions, limited by the access level you pick here."
 msgstr "密钥继承你账户的权限，并受此处选择的权限级别限制。"
 
@@ -11012,7 +11011,7 @@ msgstr "此代理已在别处被修改。请关闭编辑器后重新打开。"
 msgid "This removes {countLabel} from the recording's file list. This action cannot be undone."
 msgstr "这会从录制的文件列表中移除 {countLabel}。此操作无法撤销。"
 
-#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:558
+#: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:553
 msgid "This server exposes a built-in MCP endpoint (streamable HTTP). Add it to Claude, Cursor, or any MCP client with an API key to let the assistant inspect recordings, analyze danmu, and manage configuration."
 msgstr "此服务器提供内置的 MCP 端点（streamable HTTP）。使用 API 密钥将其添加到 Claude、Cursor 或任何 MCP 客户端，让助手查看录制、分析弹幕并管理配置。"
 
@@ -11282,7 +11281,7 @@ msgstr "总弹幕数"
 msgid "Total Size"
 msgstr "总大小"
 
-#: src/components/logging/log-file-browser.tsx:249
+#: src/components/logging/log-file-browser.tsx:247
 msgid "Total size:"
 msgstr "总大小："
 
@@ -11411,7 +11410,7 @@ msgstr "当视频和弹幕可用时触发"
 msgid "Trimming & Time"
 msgstr "裁剪与时间"
 
-#: src/components/logging/log-file-browser.tsx:302
+#: src/components/logging/log-file-browser.tsx:298
 msgid "Try adjusting the date range"
 msgstr "尝试调整日期范围"
 

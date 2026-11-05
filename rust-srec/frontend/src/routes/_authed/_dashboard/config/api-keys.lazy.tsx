@@ -1,9 +1,10 @@
 import { createLazyFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
-import { useMemo, useState, useSyncExternalStore } from 'react';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
+import { useHydrated } from '@/hooks/use-hydrated';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
@@ -512,22 +513,16 @@ function CreateApiKeyDialog({
   );
 }
 
-const subscribeNever = () => () => {};
-const getMcpUrl = () =>
-  new URL(getApiEndpointUrl('/mcp'), window.location.origin).toString();
-const getServerMcpUrl = () => '';
-
 function McpQuickStart() {
   const { i18n } = useLingui();
   const { copy, copied } = useCopyToClipboard();
 
   // Only the browser knows the address it reached the app on, so the server
   // and the hydrating render show an empty URL and the address follows.
-  const mcpUrl = useSyncExternalStore(
-    subscribeNever,
-    getMcpUrl,
-    getServerMcpUrl,
-  );
+  const hydrated = useHydrated();
+  const mcpUrl = hydrated
+    ? new URL(getApiEndpointUrl('/mcp'), window.location.origin).toString()
+    : '';
 
   const configSnippet = useMemo(
     () =>

@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ListPanelEmpty } from '@/components/shared/list-panel';
 import { QueryError } from '@/components/shared/query-error';
 import {
   Popover,
@@ -38,6 +39,7 @@ import {
   X,
   Loader2,
 } from 'lucide-react';
+import { errorMessage } from '@/lib/api-error';
 import { cn } from '@/lib/utils';
 import { formatBytes } from '@/lib/format';
 import { formatDate } from '@/lib/datetime';
@@ -53,10 +55,6 @@ const SHORT_DATE: Intl.DateTimeFormatOptions = {
   month: 'short',
   day: '2-digit',
 };
-
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback;
-}
 
 /**
  * Streams the log archive for a date range to disk via a token-authenticated
@@ -292,17 +290,15 @@ export function LogFileBrowser() {
               onRetry={() => void refetch()}
             />
           ) : data?.items?.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <FileText className="h-12 w-12 text-muted-foreground/30 mb-4" />
-              <p className="text-muted-foreground">
-                <Trans>No log files found</Trans>
-              </p>
-              {dateRange?.from && (
-                <p className="text-sm text-muted-foreground/60 mt-1">
+            <ListPanelEmpty
+              icon={FileText}
+              title={<Trans>No log files found</Trans>}
+              help={
+                dateRange?.from ? (
                   <Trans>Try adjusting the date range</Trans>
-                </p>
-              )}
-            </div>
+                ) : undefined
+              }
+            />
           ) : (
             data?.items?.map((file, index) => (
               <motion.div

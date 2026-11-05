@@ -6,9 +6,8 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Trans } from '@lingui/react/macro';
-import { AlertCircle } from 'lucide-react';
+import { DetailLoadError } from '@/components/shared/detail-page';
 
 export const Route = createLazyFileRoute(
   '/_authed/_dashboard/config/engines/$engineId',
@@ -42,21 +41,15 @@ function EditEnginePage() {
 
   if (error || !engine) {
     return (
-      <div className="max-w-5xl mx-auto p-4 sm:p-6 lg:p-8">
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>
-            <Trans>Error</Trans>
-          </AlertTitle>
-          <AlertDescription>
-            {error ? (
-              <Trans>Failed to load engine: {error.message}</Trans>
-            ) : (
-              <Trans>Engine not found</Trans>
-            )}
-          </AlertDescription>
-        </Alert>
-      </div>
+      <DetailLoadError
+        title={<Trans>Error loading engine</Trans>}
+        error={error}
+        notFound={<Trans>Engine not found</Trans>}
+        back={{
+          to: '/config/engines',
+          label: <Trans>Back to engines</Trans>,
+        }}
+      />
     );
   }
 
