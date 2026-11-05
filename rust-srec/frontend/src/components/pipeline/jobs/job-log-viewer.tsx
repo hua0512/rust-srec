@@ -117,7 +117,7 @@ export const JobLogViewer = memo(function JobLogViewer({
   }, [inView, hasNextPage, fetchNextPage]);
 
   return (
-    <Card className="border-border/40 bg-zinc-950 shadow-2xl overflow-hidden rounded-xl">
+    <Card className="gap-0 py-0 border-border/40 bg-zinc-950 shadow-2xl overflow-hidden rounded-xl">
       <div className="flex items-center justify-between px-4 py-3 bg-zinc-900/80 border-b border-zinc-800 backdrop-blur-md">
         <div className="flex items-center gap-3">
           <div className="flex gap-1.5">
