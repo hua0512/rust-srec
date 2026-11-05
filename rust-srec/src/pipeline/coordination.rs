@@ -8,6 +8,7 @@ use std::time::Instant;
 use parking_lot::Mutex;
 use tracing::{debug, info, trace, warn};
 
+use crate::database::models::DagSegmentSource;
 use crate::database::models::job::DagPipelineDefinition;
 use crate::pipeline::manifest::ManifestSegment;
 
@@ -16,6 +17,28 @@ use crate::pipeline::manifest::ManifestSegment;
 pub enum SourceType {
     Video,
     Danmu,
+}
+
+impl SourceType {
+    pub fn segment_source(self) -> DagSegmentSource {
+        match self {
+            Self::Video => DagSegmentSource::Video,
+            Self::Danmu => DagSegmentSource::Danmu,
+        }
+    }
+}
+
+// Lives beside `SourceType` so both conversions are in one place without the
+// database model depending on the pipeline.
+impl DagSegmentSource {
+    /// The per-source segment DAG kind, or `None` for paired and session-complete DAGs.
+    pub fn source_type(self) -> Option<SourceType> {
+        match self {
+            Self::Video => Some(SourceType::Video),
+            Self::Danmu => Some(SourceType::Danmu),
+            Self::Paired | Self::SessionComplete => None,
+        }
+    }
 }
 
 fn dedup_paths_preserve_order(paths: Vec<PathBuf>) -> Vec<PathBuf> {

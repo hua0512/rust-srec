@@ -429,7 +429,10 @@ where
         }
 
         for dag in &coordination_dags {
-            let Some(source) = dag.get_segment_source().and_then(segment_source_type) else {
+            let Some(source) = dag
+                .get_segment_source()
+                .and_then(DagSegmentSource::source_type)
+            else {
                 continue;
             };
             if !matches!(
@@ -456,7 +459,10 @@ where
         // `recover_source_artifact` can distinguish a missing DAG from one
         // that already completed, failed, or remains in flight.
         for dag in &coordination_dags {
-            let Some(source) = dag.get_segment_source().and_then(segment_source_type) else {
+            let Some(source) = dag
+                .get_segment_source()
+                .and_then(DagSegmentSource::source_type)
+            else {
                 continue;
             };
             let Some(segment_index) = dag_segment_index(dag) else {
@@ -728,7 +734,7 @@ pub(super) fn dag_segment_index(dag: &DagExecutionDbModel) -> Option<u32> {
             dag_id = %dag.id,
             session_id = ?dag.session_id,
             segment_source = ?dag.segment_source,
-            "Skipping recovered DAG without segment_index"
+            "DAG without segment_index"
         );
         return None;
     };
@@ -741,7 +747,7 @@ pub(super) fn dag_segment_index(dag: &DagExecutionDbModel) -> Option<u32> {
                 session_id = ?dag.session_id,
                 segment_source = ?dag.segment_source,
                 segment_index = %raw_index,
-                "Skipping recovered DAG with invalid segment_index"
+                "DAG with invalid segment_index"
             );
             None
         }

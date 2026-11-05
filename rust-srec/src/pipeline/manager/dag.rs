@@ -772,7 +772,7 @@ where
                 before_root_jobs,
                 Some(DagExecutionMetadata {
                     segment_index: Some(segment_index),
-                    segment_source: Some(source.into()),
+                    segment_source: Some(source.segment_source()),
                     manifest: None,
                 }),
             )
