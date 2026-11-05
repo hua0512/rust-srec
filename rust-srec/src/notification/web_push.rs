@@ -9,6 +9,7 @@ use chrono::Utc;
 use dashmap::DashMap;
 use futures::stream::{self, StreamExt};
 use hkdf::Hkdf;
+use mesio::redact::redact_url_for_log;
 use p256::ecdh::EphemeralSecret;
 use p256::ecdsa::SigningKey;
 use p256::ecdsa::signature::Signer;
@@ -331,7 +332,7 @@ impl WebPushService {
                         .await
                     {
                         tracing::warn!(
-                            endpoint = %sub.endpoint,
+                            endpoint = %redact_url_for_log(&sub.endpoint),
                             error = %e,
                             "Web push delivery failed"
                         );
@@ -388,7 +389,7 @@ impl WebPushService {
             .body(body.clone())
             .send()
             .await
-            .map_err(|e| Error::Other(format!("Web push request failed: {}", e)))?;
+            .map_err(|e| Error::Other(format!("Web push request failed: {}", e.without_url())))?;
 
         let status = response.status();
         if status.as_u16() == 429
@@ -407,7 +408,9 @@ impl WebPushService {
                 .body(body)
                 .send()
                 .await
-                .map_err(|e| Error::Other(format!("Web push request failed: {}", e)))?;
+                .map_err(|e| {
+                    Error::Other(format!("Web push request failed: {}", e.without_url()))
+                })?;
         }
 
         let status = response.status();
@@ -416,7 +419,7 @@ impl WebPushService {
                 && let Err(e) = self.clear_backoff(&sub.endpoint).await
             {
                 tracing::warn!(
-                    endpoint = %sub.endpoint,
+                    endpoint = %redact_url_for_log(&sub.endpoint),
                     error = %e,
                     "Failed to clear web push backoff after successful delivery"
                 );
@@ -434,7 +437,7 @@ impl WebPushService {
                 .await
             {
                 tracing::warn!(
-                    endpoint = %sub.endpoint,
+                    endpoint = %redact_url_for_log(&sub.endpoint),
                     error = %e,
                     "Failed to persist web push throttling state"
                 );
@@ -450,7 +453,7 @@ impl WebPushService {
         if status.as_u16() == 404 || status.as_u16() == 410 {
             self.delete_subscription_by_endpoint(&sub.endpoint).await?;
             tracing::info!(
-                endpoint = %sub.endpoint,
+                endpoint = %redact_url_for_log(&sub.endpoint),
                 status = %status,
                 "Deleted stale web push subscription"
             );

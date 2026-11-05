@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use tokio::process::Command;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use super::outputs::{OutputBatch, output_size};
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
@@ -439,7 +439,7 @@ impl Processor for MetadataProcessor {
                             "Removed input file: {input_path}"
                         ))),
                     Err(error) => {
-                        ctx.warn(format!("Failed to remove input file after metadata embedding {input_path}: {error}"));
+                        warn!(path = %input_path, %error, "Failed to remove metadata input");
                         output
                             .logs
                             .push(crate::pipeline::job_queue::JobLogEntry::warn(format!(

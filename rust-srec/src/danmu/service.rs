@@ -1207,14 +1207,9 @@ fn release_streamer_slot(
     streamer_id: &str,
     session_id: &str,
 ) {
-    // `is_some_and` consumes the guard, so the read is released before `remove`
-    // touches the same shard.
-    let owns_slot = sessions_by_streamer
-        .get(streamer_id)
-        .is_some_and(|sid| sid.value() == session_id);
-    if owns_slot {
-        sessions_by_streamer.remove(streamer_id);
-    }
+    // One shard lock covers the check and the removal, so a collector that
+    // claims the slot in between cannot lose it.
+    sessions_by_streamer.remove_if(streamer_id, |_, sid| sid == session_id);
 }
 
 /// Remove a session's collection state along with its streamer reverse-index

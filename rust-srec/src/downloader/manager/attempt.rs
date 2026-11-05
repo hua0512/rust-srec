@@ -324,6 +324,23 @@ impl Drop for AttemptFinalizer {
     }
 }
 
+/// Panic payloads may carry engine output, so they get the same sanitizing
+/// as engine error messages.
+fn panic_message(
+    payload: &(dyn std::any::Any + Send),
+    fallback: &str,
+    managed_credentials: bool,
+) -> String {
+    let message = if let Some(message) = payload.downcast_ref::<&str>() {
+        message
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.as_str()
+    } else {
+        fallback
+    };
+    sanitize_engine_message(message, managed_credentials)
+}
+
 fn choose_attempt_terminal(
     phase: &Mutex<AttemptPhase>,
     mut natural: DownloadTerminalEvent,
@@ -456,14 +473,11 @@ impl DownloadManager {
                     (error.kind, message)
                 }
                 Err(payload) => {
-                    let message = if let Some(message) = payload.downcast_ref::<&str>() {
-                        (*message).to_string()
-                    } else if let Some(message) = payload.downcast_ref::<String>() {
-                        message.clone()
-                    } else {
-                        "engine panicked with a non-string payload".to_string()
-                    };
-                    let message = sanitize_engine_message(&message, managed_credentials);
+                    let message = panic_message(
+                        &*payload,
+                        "engine panicked with a non-string payload",
+                        managed_credentials,
+                    );
                     error!(%message, "Download engine panicked");
                     (DownloadFailureKind::Other, message)
                 }
@@ -960,13 +974,11 @@ impl DownloadManager {
                 engine_result = &mut engine_task => {
                     if let Err(payload) = &engine_result {
                         attempt_cancel_handle.cancel();
-                        let message = if let Some(message) = payload.downcast_ref::<&str>() {
-                            (*message).to_string()
-                        } else if let Some(message) = payload.downcast_ref::<String>() {
-                            message.clone()
-                        } else {
-                            "engine wrapper panicked with a non-string payload".to_string()
-                        };
+                        let message = panic_message(
+                            &**payload,
+                            "engine wrapper panicked with a non-string payload",
+                            managed_credentials,
+                        );
                         if let Err(send_error) = attempt_cancel_handle
                             .event_tx
                             .send(SegmentEvent::DownloadFailed {
@@ -984,14 +996,11 @@ impl DownloadManager {
             };
             let mut lifecycle_errors = std::mem::take(&mut *lifecycle_errors.lock()).into_report();
             if let Err(payload) = engine_result {
-                let error = if let Some(message) = payload.downcast_ref::<&str>() {
-                    (*message).to_string()
-                } else if let Some(message) = payload.downcast_ref::<String>() {
-                    message.clone()
-                } else {
-                    "engine wrapper panicked with a non-string payload".to_string()
-                };
-                let error = sanitize_engine_message(&error, managed_credentials);
+                let error = panic_message(
+                    &*payload,
+                    "engine wrapper panicked with a non-string payload",
+                    managed_credentials,
+                );
                 error!(
                     download_id = %attempt_download_id,
                     %error,
@@ -1003,14 +1012,11 @@ impl DownloadManager {
             let terminal = match translator_result {
                 Ok(terminal) => terminal,
                 Err(payload) => {
-                    let error = if let Some(message) = payload.downcast_ref::<&str>() {
-                        (*message).to_string()
-                    } else if let Some(message) = payload.downcast_ref::<String>() {
-                        message.clone()
-                    } else {
-                        "download event translator panicked with a non-string payload".to_string()
-                    };
-                    let error = sanitize_engine_message(&error, managed_credentials);
+                    let error = panic_message(
+                        &*payload,
+                        "download event translator panicked with a non-string payload",
+                        managed_credentials,
+                    );
                     error!(
                         download_id = %attempt_download_id,
                         %error,

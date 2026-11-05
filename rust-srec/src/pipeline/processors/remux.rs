@@ -847,7 +847,6 @@ impl Processor for RemuxProcessor {
                 let input_path = input_path_string.as_str();
                 if let Err(e) = tokio::fs::remove_file(input_path).await {
                     warn!(path = input_path, error = %e, "Failed to remove remux input");
-                    ctx.warn(format!("Failed to remove input file {}: {}", input_path, e));
                     output.logs.push(create_log_entry(
                         crate::pipeline::job_queue::LogLevel::Warn,
                         format!("Failed to remove input file {}: {}", input_path, e),

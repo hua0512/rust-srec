@@ -170,6 +170,8 @@ async fn retry_terminal_updates_preserve_history_and_extension_metadata() {
                         metadata: None,
                         uploads: vec![],
                         logs: vec![JobLogEntry::info("retry completed")],
+                        input_size_bytes: None,
+                        output_size_bytes: None,
                     },
                 )
                 .await
@@ -452,6 +454,8 @@ async fn completion_snapshot_does_not_replay_streamed_logs_after_ring_trimming()
                 metadata: None,
                 uploads: vec![],
                 logs: vec![retained_warning, batch.last().unwrap().clone(), final_entry],
+                input_size_bytes: None,
+                output_size_bytes: None,
             },
         )
         .await

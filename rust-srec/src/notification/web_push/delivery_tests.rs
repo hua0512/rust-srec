@@ -113,6 +113,37 @@ fn event() -> NotificationEvent {
     }
 }
 
+/// A failed delivery logs the push service origin, never the subscription
+/// endpoint path, which identifies the subscriber.
+#[tokio::test]
+async fn failed_delivery_logs_only_the_push_service_origin() {
+    let Fixture {
+        service,
+        endpoint,
+        _server,
+        ..
+    } = Fixture::new().await;
+    // Stopping the server leaves the endpoint refusing connections.
+    drop(_server);
+    let path = Url::parse(&endpoint).unwrap().path().to_owned();
+    let origin = endpoint.strip_suffix(&path).unwrap().to_owned();
+
+    let captured = crate::downloader::engine::utils::test_support::CapturedLog::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_writer(captured.clone())
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    tokio::time::timeout(Duration::from_secs(10), service.send_event(&event(), None))
+        .await
+        .expect("delivery to a refused connection must finish");
+
+    let log = captured.contents();
+    assert!(log.contains("Web push delivery failed"), "{log}");
+    assert!(log.contains(&origin), "{log}");
+    assert!(!log.contains(&path), "{log}");
+}
+
 #[tokio::test]
 async fn stale_http_responses_delete_rows_and_invalidate_warm_cache() {
     tokio::time::timeout(Duration::from_secs(15), async {

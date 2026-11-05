@@ -56,9 +56,9 @@ impl RetryPolicy {
         let delay_ms = base_delay.min(self.max_delay_ms as f64) as u64;
 
         if self.use_jitter {
-            // Add up to 25% jitter
+            // Add up to 25% jitter, still bounded by `max_delay_ms`.
             let jitter = (delay_ms as f64 * 0.25 * rand::random::<f64>()) as u64;
-            Duration::from_millis(delay_ms + jitter)
+            Duration::from_millis(delay_ms.saturating_add(jitter).min(self.max_delay_ms))
         } else {
             Duration::from_millis(delay_ms)
         }
@@ -110,5 +110,13 @@ mod tests {
 
         // After a few attempts, should be capped at max
         assert_eq!(policy.delay_for_attempt(5), Duration::from_millis(5000));
+
+        let jittered = RetryPolicy {
+            use_jitter: true,
+            ..policy
+        };
+        for _ in 0..100 {
+            assert!(jittered.delay_for_attempt(5) <= Duration::from_millis(5000));
+        }
     }
 }

@@ -144,6 +144,8 @@ fn expand_template_internal(
 }
 
 const DEFAULT_FILENAME: &str = "output";
+const MAX_FILENAME_STEM_BYTES: usize = 200;
+const TRUNCATION_MARKER: &str = "...";
 
 /// Sanitize a string for use as a filename
 pub fn sanitize_filename(input: &str) -> String {
@@ -170,10 +172,13 @@ pub fn sanitize_filename(input: &str) -> String {
     if result.is_empty() {
         DEFAULT_FILENAME.to_string()
     } else {
-        // Truncate to reasonable length if too long
-        if result.len() > 200 {
-            let mut truncated = result.chars().take(200).collect::<String>();
-            truncated.push_str("...");
+        // Filesystems limit a name to 255 bytes, not characters. Capping the
+        // stem at MAX_FILENAME_STEM_BYTES leaves room for the extension and a
+        // collision suffix that callers append.
+        if result.len() > MAX_FILENAME_STEM_BYTES {
+            let cut = result.floor_char_boundary(MAX_FILENAME_STEM_BYTES - TRUNCATION_MARKER.len());
+            let mut truncated = result[..cut].to_string();
+            truncated.push_str(TRUNCATION_MARKER);
             truncated
         } else {
             result
@@ -237,6 +242,22 @@ mod tests {
             expanded_now == before_ref || expanded_now == after_ref,
             "unreferenced={expanded_now}, before_ref={before_ref}, after_ref={after_ref}"
         );
+    }
+
+    #[test]
+    fn long_names_are_capped_by_bytes() {
+        let fits = "直".repeat(66);
+        assert_eq!(sanitize_filename(&fits), fits);
+
+        for input in ["直".repeat(100), "直播".repeat(200), "a".repeat(300)] {
+            let name = sanitize_filename(&input);
+            assert!(
+                name.len() <= MAX_FILENAME_STEM_BYTES,
+                "{} bytes",
+                name.len()
+            );
+            assert!(name.ends_with(TRUNCATION_MARKER));
+        }
     }
 
     fn current_unix_ms() -> i64 {

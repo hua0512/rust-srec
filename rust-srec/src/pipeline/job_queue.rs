@@ -763,6 +763,10 @@ pub struct JobResult {
     pub uploads: Vec<UploadResultItem>,
     /// Execution logs.
     pub logs: Vec<JobLogEntry>,
+    /// Input size from `ProcessorOutput`; recorded in the job's execution info when set.
+    pub input_size_bytes: Option<u64>,
+    /// Output size from `ProcessorOutput`; recorded in the job's execution info when set.
+    pub output_size_bytes: Option<u64>,
 }
 
 /// One in-flight job, as reported by [`JobQueue::list_active_jobs`]. Feeds
@@ -1621,51 +1625,63 @@ impl JobQueue {
             return Ok(false);
         }
 
-        // The COMPLETED row above is the recovery boundary for DAG jobs. Execution logs and
-        // their summary are auxiliary observability writes and cannot make a processor rerun.
-        if !result.logs.is_empty() {
+        // The COMPLETED row above is the recovery boundary for DAG jobs. Execution logs, their
+        // summary and the size figures are auxiliary observability writes and cannot make a
+        // processor rerun.
+        let new_logs = if result.logs.is_empty() {
+            Vec::new()
+        } else {
             match self
                 .persist_logs_to_db(job_id, &result.logs, LogPersistence::Snapshot)
                 .await
             {
-                Ok(new_logs) => {
-                    let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
-                        db_job.execution_info.as_deref(),
-                        JsonContext::JobField {
-                            job_id: &db_job.id,
-                            field: "execution_info",
-                        },
-                        "Invalid execution_info JSON; resetting to defaults",
+                Ok(new_logs) => new_logs,
+                Err(error) => {
+                    warn!(
+                        job_id = %job_id,
+                        error = %error,
+                        "Failed to persist completed job execution logs"
                     );
-                    update_log_summary(&mut exec_info, &new_logs);
-                    extend_logs_capped(&mut exec_info, &new_logs);
-                    match serde_json::to_string(&exec_info) {
-                        Ok(execution_info) => {
-                            if let Err(error) = repo
-                                .update_job_execution_info(job_id, &execution_info)
-                                .await
-                            {
-                                warn!(
-                                    job_id = %job_id,
-                                    error = %error,
-                                    "Failed to persist completed job log summary"
-                                );
-                            }
-                        }
-                        Err(error) => {
-                            warn!(
-                                job_id = %job_id,
-                                error = %error,
-                                "Failed to serialize completed job log summary"
-                            );
-                        }
+                    Vec::new()
+                }
+            }
+        };
+        let has_sizes = result.input_size_bytes.is_some() || result.output_size_bytes.is_some();
+        if !new_logs.is_empty() || has_sizes {
+            let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
+                db_job.execution_info.as_deref(),
+                JsonContext::JobField {
+                    job_id: &db_job.id,
+                    field: "execution_info",
+                },
+                "Invalid execution_info JSON; resetting to defaults",
+            );
+            update_log_summary(&mut exec_info, &new_logs);
+            extend_logs_capped(&mut exec_info, &new_logs);
+            if result.input_size_bytes.is_some() {
+                exec_info.input_size_bytes = result.input_size_bytes;
+            }
+            if result.output_size_bytes.is_some() {
+                exec_info.output_size_bytes = result.output_size_bytes;
+            }
+            match serde_json::to_string(&exec_info) {
+                Ok(execution_info) => {
+                    if let Err(error) = repo
+                        .update_job_execution_info(job_id, &execution_info)
+                        .await
+                    {
+                        warn!(
+                            job_id = %job_id,
+                            error = %error,
+                            "Failed to persist completed job execution info"
+                        );
                     }
                 }
                 Err(error) => {
                     warn!(
                         job_id = %job_id,
                         error = %error,
-                        "Failed to persist completed job execution logs"
+                        "Failed to serialize completed job execution info"
                     );
                 }
             }
@@ -3661,6 +3677,8 @@ mod tests {
                     metadata: None,
                     uploads: uploads.clone(),
                     logs: vec![],
+                    input_size_bytes: None,
+                    output_size_bytes: None,
                 },
             )
             .await
@@ -3685,6 +3703,8 @@ mod tests {
                     metadata: None,
                     uploads,
                     logs: vec![],
+                    input_size_bytes: None,
+                    output_size_bytes: None,
                 },
             )
             .await
@@ -3804,6 +3824,8 @@ mod tests {
                     metadata: None,
                     uploads: vec![],
                     logs: vec![],
+                    input_size_bytes: None,
+                    output_size_bytes: None,
                 },
             )
             .await

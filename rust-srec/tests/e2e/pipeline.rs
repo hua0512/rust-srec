@@ -1201,6 +1201,17 @@ async fn a_delete_step_removes_the_previous_steps_outputs_and_keeps_the_source()
     assert_eq!(settled["status"], "COMPLETED", "{settled}");
     assert_eq!(step(&settled, "copy")["outputs"], json!([copy]));
     assert_eq!(step(&settled, "remove")["outputs"], json!([]));
+    // The job page shows the sizes the step reported.
+    let removed = job(&app, &token, &step_job_id(&settled, "remove")).await;
+    assert_eq!(
+        removed["execution_info"]["input_size_bytes"],
+        "recording".len(),
+        "{removed}"
+    );
+    assert_eq!(
+        removed["execution_info"]["output_size_bytes"], 0,
+        "{removed}"
+    );
     assert!(!Path::new(&copy).exists(), "the copy should be deleted");
     assert_eq!(read_file(&source), "recording");
 
