@@ -16,19 +16,40 @@ import {
   setLastNotifiedCriticalMs,
 } from '@/lib/notification-state';
 
-function safeParseJson(input: string): unknown {
+type PayloadFields = Record<string, unknown>;
+
+function isRecord(value: unknown): value is PayloadFields {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function text(value: unknown): string | undefined {
+  return typeof value === 'string' && value !== '' ? value : undefined;
+}
+
+/**
+ * The fields of a stored event, or `null` when the payload is not a JSON object.
+ * The backend stores its externally tagged event, `{ Variant: { ...fields } }`;
+ * credential events nest their fields one level deeper, under `event`.
+ */
+function payloadFields(payload: string): PayloadFields | null {
+  let parsed: unknown;
   try {
-    return JSON.parse(input);
+    parsed = JSON.parse(payload);
   } catch {
     return null;
   }
+  if (!isRecord(parsed)) return null;
+  const [variant] = Object.keys(parsed);
+  const body = variant ? parsed[variant] : undefined;
+  if (!isRecord(body)) return {};
+  return variant === 'Credential' && isRecord(body.event) ? body.event : body;
 }
 
 /**
  * Takes `i18n` rather than reading it from context: this runs from the polling effect below,
  * outside any component render, so `useLingui` is not available at the call site.
  */
-function formatBrowserNotification(
+export function formatBrowserNotification(
   log: NotificationEventLog,
   i18n: I18n,
 ): {
@@ -36,32 +57,33 @@ function formatBrowserNotification(
   body?: string;
 } {
   const baseTitle = `rust-srec: ${log.event_type}`;
-  const parsed = safeParseJson(log.payload);
-  if (!parsed || typeof parsed !== 'object') {
+  const fields = payloadFields(log.payload);
+  if (!fields) {
     return { title: baseTitle, body: log.payload?.slice(0, 200) };
   }
 
-  const variant = Object.keys(parsed)[0];
-  const inner = variant ? (parsed as any)[variant] : null;
-  const streamer = inner?.streamer_name ?? inner?.streamer ?? inner?.streamerId;
+  const streamer = text(fields.streamer_name);
   const error =
-    inner?.error_message ??
-    inner?.error ??
-    inner?.message ??
-    inner?.reason ??
-    inner?.errorMessage;
+    text(fields.error_message) ??
+    text(fields.error) ??
+    text(fields.message) ??
+    text(fields.reason);
+  const platform = text(fields.platform);
 
   const bodyParts: string[] = [];
-  if (streamer) bodyParts.push(String(streamer));
-  // A rate limit names the platform and the paused connection.
-  if (typeof inner?.route === 'string' && inner.platform) {
+  if (streamer) bodyParts.push(streamer);
+  // A credential event names the platform of the failed account; a rate limit
+  // also names the paused connection.
+  if (platform && typeof fields.route === 'string') {
     const connection =
-      inner.route === 'proxy'
-        ? (inner.proxy_name ?? i18n._(msg`Saved proxy`))
-        : i18n._(inner.route === 'system' ? msg`System proxy` : msg`Direct`);
-    bodyParts.push(`${inner.platform} · ${connection}`);
+      fields.route === 'proxy'
+        ? (text(fields.proxy_name) ?? i18n._(msg`Saved proxy`))
+        : i18n._(fields.route === 'system' ? msg`System proxy` : msg`Direct`);
+    bodyParts.push(`${platform} · ${connection}`);
+  } else if (platform) {
+    bodyParts.push(platform);
   }
-  if (error) bodyParts.push(String(error));
+  if (error) bodyParts.push(error);
   if (bodyParts.length === 0)
     bodyParts.push(i18n._(priorityLabel(log.priority)));
 

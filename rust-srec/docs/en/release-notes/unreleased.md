@@ -39,6 +39,7 @@
 - **Unsaved changes**: leaving the template, platform, engine, preset or workflow editor with unsaved edits now asks before discarding them. Global settings and the streamer editor, which already asked, now ask in an in-app dialog.
 - **Live updates**: download, upload and check progress no longer stops for a while when your sign-in renews, including in a tab left in the background.
 - **Browser notifications**: critical-event notifications now appear while the app's tab is in the background, instead of only once you return to it.
+- **Browser notifications**: a notification for an account sign-in that is no longer valid, or that needs you to sign in again, now names the platform and says why, instead of only "Critical".
 - **Streamer cards**: a recording that ended while the app's live connection had fallen behind no longer stays shown as recording, and check history and streamer status catch up as soon as the connection to the server comes back instead of staying out of date for several minutes.
 - **Session page**: a session that is still recording now shows each new segment when it finishes, keeps its duration and size up to date, and shows when it ends, without reloading the page.
 - **Job page**: a running job's page shows progress as it is reported and asks the server for updates far less often.
