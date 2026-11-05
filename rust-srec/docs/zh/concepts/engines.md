@@ -13,7 +13,7 @@ Streamlink 也可作为**提取器**，在下载前解析直播 URL。提取器�
 |    MPEG-DASH 下载    | ✅ <br/>(多线程；独立的视频和音频合并为一个文件) |      取决于所安装的 FFmpeg      |      取决于所安装的 Streamlink      |
 | 录制时长统计 | ✅ <br/>(不支持原始数据模式) |                   ✅                    |                   ✅                    |
 |  下载码率统计  |                  ✅                   | ✅ <br/>(不支持 -f segmentation) | ✅ <br/>(不支持 -f segmentation) |
-|    按大小分段     | ✅ <br/>(不支持原始数据模式) | ✅ <br/>(不支持 -f segmentation) |                   ✅                    |
+|    按大小分段     | ✅ <br/>(不支持原始数据模式) | ✅ <br/>(不支持 -f segmentation) | ✅ <br/>(不支持 -f segmentation) |
 |  按时长分段   | ✅ <br/>(不支持原始数据模式) |                   ✅                    |                   ✅                    |
 |     下载格式      |        FLV, M3U8, MPD, TS, M4S        |         支持其他格式          |         支持其他格式          |
 |    FLV 一致性修复      |             ✅ (推荐)                 |                   ❌                    |                   ❌                    |

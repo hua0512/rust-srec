@@ -13,7 +13,7 @@ Streamlink can also be an **extractor**, which resolves the stream URL before do
 |  MPEG-DASH Download   | ✅ <br/>(Multithreaded; separate video and audio merged into one file) |   Depends on the installed FFmpeg   |   Depends on the installed Streamlink   |
 | Recording Duration Stats | ✅ <br/>(Raw data mode not supported) |                   ✅                    |                   ✅                    |
 |  Download Bitrate Stats  |                  ✅                   | ✅ <br/>(-f segmentation not supported) | ✅ <br/>(-f segmentation not supported) |
-|    Size Segmentation     | ✅ <br/>(Raw data mode not supported) | ✅ <br/>(-f segmentation not supported) |                   ✅                    |
+|    Size Segmentation     | ✅ <br/>(Raw data mode not supported) | ✅ <br/>(-f segmentation not supported) | ✅ <br/>(-f segmentation not supported) |
 |  Duration Segmentation   | ✅ <br/>(Raw data mode not supported) |                   ✅                    |                   ✅                    |
 |     Download Format      |        FLV, M3U8, MPD, TS, M4S        |         Supports other formats          |         Supports other formats          |
 |    FLV Consistency Fix   |           ✅ (Recommended)            |                   ❌                    |                   ❌                    |

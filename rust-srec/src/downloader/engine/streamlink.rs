@@ -776,6 +776,7 @@ impl StreamlinkEngine {
         let cancellation_token = handle.cancellation_token.clone();
         let started_instant = Instant::now();
         let process_stop_budget = stop_budget.clone();
+        let process_streamer_id = config.streamer_id.clone();
 
         // 2. Spawn a waiter task for both processes.
         //
@@ -887,7 +888,8 @@ impl StreamlinkEngine {
                         },
                     };
 
-                    let size_limited = matches!(ffmpeg_outcome, StreamlinkPipelineExit::Ffmpeg(Some(0)))
+                    let size_limited = streamlink_confirmed
+                        && matches!(ffmpeg_outcome, StreamlinkPipelineExit::Ffmpeg(Some(0)))
                         && part_size_limit_reached(part_size_limit.as_ref()).await;
                     let outcome = if size_limited {
                         ffmpeg_outcome
@@ -911,16 +913,25 @@ impl StreamlinkEngine {
                     Ok(status) if status.success() => {
                         #[cfg(test)]
                         if let Some(fixture) = &shutdown_fixture { fixture.settling_after_ffmpeg_exit(); }
-                        let (settlement, streamlink_cleanup) = settle_streamlink_after_ffmpeg_exit(
-                            &mut streamlink,
-                            STREAMLINK_SETTLE_TIMEOUT, &budget).await;
-                        let mut outcome = if part_size_limit_reached(part_size_limit.as_ref()).await {
-                            info!("FFmpeg reached the part size limit; ending this part");
-                            StreamlinkPipelineExit::Ffmpeg(Some(0))
+                        // At the size limit Streamlink is still producing and has
+                        // nothing left to finish, so it is stopped without a grace wait.
+                        let (mut outcome, streamlink_cleanup) = if part_size_limit_reached(part_size_limit.as_ref()).await {
+                            info!(streamer_id = %process_streamer_id, "FFmpeg reached the part size limit; ending this part");
+                            let cleanup = terminate_and_reap(
+                                &mut streamlink,
+                                "streamlink",
+                                PROCESS_CLEANUP_TIMEOUT, &budget).await;
+                            (StreamlinkPipelineExit::Ffmpeg(Some(0)), cleanup.map(|_| ()))
                         } else {
-                            clean_ffmpeg_exit_outcome(
-                                &settlement,
-                                process_pipe_failure.lock().clone(),
+                            let (settlement, streamlink_cleanup) = settle_streamlink_after_ffmpeg_exit(
+                                &mut streamlink,
+                                STREAMLINK_SETTLE_TIMEOUT, &budget).await;
+                            (
+                                clean_ffmpeg_exit_outcome(
+                                    &settlement,
+                                    process_pipe_failure.lock().clone(),
+                                ),
+                                streamlink_cleanup,
                             )
                         };
                         let streamlink_confirmed = match streamlink_cleanup {
@@ -1347,17 +1358,23 @@ mod tests {
                 }
             }
             let terminal = terminal.expect("terminal event");
-            assert_eq!(
-                matches!(
-                    terminal,
-                    SegmentEvent::DownloadCompleted {
-                        engine_signal: EngineEndSignal::SubprocessExitZero,
-                        ..
-                    }
-                ),
-                reached,
-                "limit {limit}: {terminal:?}"
-            );
+            if reached {
+                assert!(
+                    matches!(
+                        terminal,
+                        SegmentEvent::DownloadCompleted {
+                            engine_signal: EngineEndSignal::SubprocessExitZero,
+                            ..
+                        }
+                    ),
+                    "limit {limit}: {terminal:?}"
+                );
+            } else {
+                assert!(
+                    matches!(terminal, SegmentEvent::DownloadFailed { .. }),
+                    "limit {limit}: {terminal:?}"
+                );
+            }
         }
     }
 

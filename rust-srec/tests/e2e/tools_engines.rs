@@ -167,8 +167,9 @@ async fn the_streamlink_engine_records_a_live_hls_room_with_the_platform_headers
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires Streamlink, ffmpeg and ffprobe"]
 async fn the_streamlink_engine_starts_a_new_part_at_the_part_size_limit() {
-    // An ended playlist is read from its first segment: about 115 KB of FLV,
-    // well past the limit, so every connection stops at it.
+    // Each connection re-reads the ended 30-segment playlist from its first
+    // segment: about 115 KB of FLV in total, one segment being ~5 KB, well
+    // past the limit, so every connection stops at it.
     let origin = HlsOrigin::start(30).await;
     origin.end();
     let fake = FakePlatform::start().await;
