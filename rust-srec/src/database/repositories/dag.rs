@@ -166,8 +166,9 @@ pub trait DagRepository: Send + Sync {
     ///
     /// This prepares the DAG state so that when retried jobs complete, downstream steps
     /// can be scheduled again:
-    /// - DAG: status -> PROCESSING, clear error/completed_at, recompute failed_steps
-    /// - Steps: CANCELLED -> BLOCKED, FAILED -> PROCESSING (preserves job_id)
+    /// - DAG: status -> PROCESSING, clear error/completed_at, failed_steps -> 0
+    /// - Steps: FAILED -> PROCESSING; CANCELLED -> PROCESSING when the step has a
+    ///   job, BLOCKED otherwise (job_id is preserved)
     async fn reset_dag_for_retry(&self, dag_id: &str) -> Result<()>;
 
     // ========================================================================
@@ -350,6 +351,76 @@ impl SqlxDagRepository {
 
             tx.commit().await?;
             Ok(StepCompletion { step: completed_step, dag, ready_steps })
+        })
+        .await
+    }
+
+    /// Settle a non-terminal DAG as `status` and cancel every step that has
+    /// not settled, running ones included. Running steps keep their job_id for
+    /// observability; the returned job IDs let the caller cancel those jobs.
+    async fn terminate_dag(
+        &self,
+        dag_id: &str,
+        error: &str,
+        status: DagExecutionStatus,
+        label: &'static str,
+    ) -> Result<Vec<String>> {
+        retry_on_sqlite_busy(label, || async {
+            let mut tx = begin_immediate(&self.write_pool).await?;
+            let now = crate::database::time::now_ms();
+
+            let current: Option<String> =
+                sqlx::query_scalar("SELECT status FROM dag_execution WHERE id = ?")
+                    .bind(dag_id)
+                    .fetch_optional(&mut *tx)
+                    .await?;
+            if current
+                .as_deref()
+                .is_some_and(|status| matches!(status, "COMPLETED" | "FAILED" | "CANCELLED"))
+            {
+                tx.commit().await?;
+                return Ok(Vec::new());
+            }
+
+            let processing_job_ids: Vec<String> = sqlx::query_scalar(
+                r#"
+                SELECT job_id FROM dag_step_execution
+                WHERE dag_id = ? AND status = 'PROCESSING' AND job_id IS NOT NULL
+                "#,
+            )
+            .bind(dag_id)
+            .fetch_all(&mut *tx)
+            .await?;
+
+            sqlx::query(
+                r#"
+                UPDATE dag_step_execution
+                SET status = 'CANCELLED', updated_at = ?
+                WHERE dag_id = ? AND status IN ('BLOCKED', 'PENDING', 'PROCESSING')
+                "#,
+            )
+            .bind(now)
+            .bind(dag_id)
+            .execute(&mut *tx)
+            .await?;
+
+            sqlx::query(
+                r#"
+                UPDATE dag_execution
+                SET status = ?, completed_at = ?, updated_at = ?, error = ?
+                WHERE id = ? AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED')
+                "#,
+            )
+            .bind(status.as_str())
+            .bind(now)
+            .bind(now)
+            .bind(error)
+            .bind(dag_id)
+            .execute(&mut *tx)
+            .await?;
+
+            tx.commit().await?;
+            Ok(processing_job_ids)
         })
         .await
     }
@@ -1216,151 +1287,22 @@ impl DagRepository for SqlxDagRepository {
     }
 
     async fn fail_dag_and_cancel_steps(&self, dag_id: &str, error: &str) -> Result<Vec<String>> {
-        retry_on_sqlite_busy("fail_dag_and_cancel_steps", || async {
-            let mut tx = begin_immediate(&self.write_pool).await?;
-            let now = crate::database::time::now_ms();
-
-            let status: Option<String> =
-                sqlx::query_scalar("SELECT status FROM dag_execution WHERE id = ?")
-                    .bind(dag_id)
-                    .fetch_optional(&mut *tx)
-                    .await?;
-            if status
-                .as_deref()
-                .is_some_and(|status| matches!(status, "COMPLETED" | "FAILED" | "CANCELLED"))
-            {
-                tx.commit().await?;
-                return Ok(Vec::new());
-            }
-
-            // 1. Get job IDs of processing steps (for cancellation)
-            let processing_job_ids: Vec<String> = sqlx::query_scalar(
-                r#"
-                SELECT job_id FROM dag_step_execution
-                WHERE dag_id = ? AND status = 'PROCESSING' AND job_id IS NOT NULL
-                "#,
-            )
-            .bind(dag_id)
-            .fetch_all(&mut *tx)
-            .await?;
-
-            // 2. Cancel all BLOCKED and PENDING steps
-            sqlx::query(
-                r#"
-                UPDATE dag_step_execution
-                SET status = 'CANCELLED', updated_at = ?
-                WHERE dag_id = ? AND status IN ('BLOCKED', 'PENDING')
-                "#,
-            )
-            .bind(now)
-            .bind(dag_id)
-            .execute(&mut *tx)
-            .await?;
-
-            // 2b. Mark in-flight steps as CANCELLED too (fail-fast). We keep the job_id for
-            // observability and for best-effort cancellation by the caller.
-            sqlx::query(
-                r#"
-                UPDATE dag_step_execution
-                SET status = 'CANCELLED', updated_at = ?
-                WHERE dag_id = ? AND status = 'PROCESSING'
-                "#,
-            )
-            .bind(now)
-            .bind(dag_id)
-            .execute(&mut *tx)
-            .await?;
-
-            // 3. Mark the DAG as FAILED
-            sqlx::query(
-                r#"
-                UPDATE dag_execution
-                SET status = 'FAILED', completed_at = ?, updated_at = ?, error = ?
-                WHERE id = ? AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED')
-                "#,
-            )
-            .bind(now)
-            .bind(now)
-            .bind(error)
-            .bind(dag_id)
-            .execute(&mut *tx)
-            .await?;
-
-            tx.commit().await?;
-            Ok(processing_job_ids)
-        })
+        self.terminate_dag(
+            dag_id,
+            error,
+            DagExecutionStatus::Failed,
+            "fail_dag_and_cancel_steps",
+        )
         .await
     }
 
     async fn cancel_dag_and_cancel_steps(&self, dag_id: &str, error: &str) -> Result<Vec<String>> {
-        retry_on_sqlite_busy("cancel_dag_and_cancel_steps", || async {
-            let mut tx = begin_immediate(&self.write_pool).await?;
-            let now = crate::database::time::now_ms();
-
-            let status: Option<String> =
-                sqlx::query_scalar("SELECT status FROM dag_execution WHERE id = ?")
-                    .bind(dag_id)
-                    .fetch_optional(&mut *tx)
-                    .await?;
-            if status
-                .as_deref()
-                .is_some_and(|status| matches!(status, "COMPLETED" | "FAILED" | "CANCELLED"))
-            {
-                tx.commit().await?;
-                return Ok(Vec::new());
-            }
-
-            let processing_job_ids: Vec<String> = sqlx::query_scalar(
-                r#"
-                SELECT job_id FROM dag_step_execution
-                WHERE dag_id = ? AND status = 'PROCESSING' AND job_id IS NOT NULL
-                "#,
-            )
-            .bind(dag_id)
-            .fetch_all(&mut *tx)
-            .await?;
-
-            sqlx::query(
-                r#"
-                UPDATE dag_step_execution
-                SET status = 'CANCELLED', updated_at = ?
-                WHERE dag_id = ? AND status IN ('BLOCKED', 'PENDING')
-                "#,
-            )
-            .bind(now)
-            .bind(dag_id)
-            .execute(&mut *tx)
-            .await?;
-
-            sqlx::query(
-                r#"
-                UPDATE dag_step_execution
-                SET status = 'CANCELLED', updated_at = ?
-                WHERE dag_id = ? AND status = 'PROCESSING'
-                "#,
-            )
-            .bind(now)
-            .bind(dag_id)
-            .execute(&mut *tx)
-            .await?;
-
-            sqlx::query(
-                r#"
-                UPDATE dag_execution
-                SET status = 'CANCELLED', completed_at = ?, updated_at = ?, error = ?
-                WHERE id = ? AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED')
-                "#,
-            )
-            .bind(now)
-            .bind(now)
-            .bind(error)
-            .bind(dag_id)
-            .execute(&mut *tx)
-            .await?;
-
-            tx.commit().await?;
-            Ok(processing_job_ids)
-        })
+        self.terminate_dag(
+            dag_id,
+            error,
+            DagExecutionStatus::Cancelled,
+            "cancel_dag_and_cancel_steps",
+        )
         .await
     }
 
@@ -1405,16 +1347,11 @@ impl DagRepository for SqlxDagRepository {
                     completed_at = NULL,
                     updated_at = ?,
                     error = NULL,
-                    failed_steps = (
-                        SELECT COUNT(*)
-                        FROM dag_step_execution
-                        WHERE dag_id = ? AND status = 'FAILED'
-                    )
+                    failed_steps = 0
                 WHERE id = ?
                 "#,
             )
             .bind(now)
-            .bind(dag_id)
             .bind(dag_id)
             .execute(&mut *tx)
             .await?;
@@ -1465,28 +1402,17 @@ impl DagRepository for SqlxDagRepository {
     }
 
     async fn list_running_step_jobs(&self, dag_ids: &[&str]) -> Result<Vec<(String, String)>> {
-        let mut running = Vec::new();
-        for dag_ids in dag_ids.chunks(super::LOOKUP_BATCH_SIZE) {
-            let mut query = QueryBuilder::<Sqlite>::new(
-                "SELECT step.dag_id, job.id \
-                 FROM dag_step_execution AS step \
-                 JOIN job ON job.id = step.job_id \
-                 WHERE step.status = 'PROCESSING' AND job.status = 'PROCESSING' \
-                   AND step.dag_id IN (",
-            );
-            let mut separated = query.separated(", ");
-            for dag_id in dag_ids {
-                separated.push_bind(*dag_id);
-            }
-            separated.push_unseparated(")");
-            running.extend(
-                query
-                    .build_query_as::<(String, String)>()
-                    .fetch_all(&self.pool)
-                    .await?,
-            );
-        }
-        Ok(running)
+        super::fetch_in_chunks(
+            &self.pool,
+            "SELECT step.dag_id, job.id \
+             FROM dag_step_execution AS step \
+             JOIN job ON job.id = step.job_id \
+             WHERE step.status = 'PROCESSING' AND job.status = 'PROCESSING' \
+               AND step.dag_id IN (",
+            dag_ids,
+            ")",
+        )
+        .await
     }
 
     async fn list_ready_steps(&self, dag_id: &str) -> Result<Vec<ReadyStep>> {

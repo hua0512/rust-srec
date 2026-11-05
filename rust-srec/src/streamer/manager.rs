@@ -966,28 +966,6 @@ mod tests {
             Ok(self.streamers.lock().unwrap().clone())
         }
 
-        async fn list_streamers_by_state(&self, state: &str) -> Result<Vec<StreamerDbModel>> {
-            Ok(self
-                .streamers
-                .lock()
-                .unwrap()
-                .iter()
-                .filter(|s| s.state == state)
-                .cloned()
-                .collect())
-        }
-
-        async fn list_streamers_by_priority(&self, priority: &str) -> Result<Vec<StreamerDbModel>> {
-            Ok(self
-                .streamers
-                .lock()
-                .unwrap()
-                .iter()
-                .filter(|s| s.priority == priority)
-                .cloned()
-                .collect())
-        }
-
         async fn create_streamer(&self, streamer: &StreamerDbModel) -> Result<()> {
             self.streamers.lock().unwrap().push(streamer.clone());
             Ok(())
@@ -1039,26 +1017,8 @@ mod tests {
             Ok(())
         }
 
-        async fn increment_error_count(&self, _id: &str) -> Result<i32> {
-            Ok(1)
-        }
-
-        async fn reset_error_count(&self, _id: &str) -> Result<()> {
-            Ok(())
-        }
-
         async fn set_disabled_until(&self, _id: &str, _until: Option<i64>) -> Result<()> {
             Ok(())
-        }
-
-        async fn update_last_live_time(&self, id: &str, time: i64) -> Result<()> {
-            let mut streamers = self.streamers.lock().unwrap();
-            if let Some(s) = streamers.iter_mut().find(|s| s.id == id) {
-                s.last_live_time = Some(time);
-                Ok(())
-            } else {
-                Err(crate::Error::not_found("Streamer", id))
-            }
         }
 
         async fn update_avatar(&self, id: &str, avatar_url: Option<&str>) -> Result<()> {

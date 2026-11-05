@@ -85,31 +85,3 @@ async fn output_delete_rolls_back_when_session_size_update_fails() {
         2048
     );
 }
-
-#[tokio::test]
-async fn concurrent_error_increments_return_their_own_committed_value() {
-    let (_dir, read, write) = pools().await;
-    let streamer = streamer(&read, &write).await;
-    let repo = SqlxStreamerRepository::new(read.clone(), write);
-    let held_read = read.acquire().await.unwrap();
-    let (first, second) = tokio::time::timeout(Duration::from_secs(3), async {
-        tokio::join!(
-            repo.increment_error_count(&streamer.id),
-            repo.increment_error_count(&streamer.id)
-        )
-    })
-    .await
-    .unwrap();
-    let mut counts = [first.unwrap(), second.unwrap()];
-    counts.sort();
-    assert_eq!(counts, [1, 2]);
-    assert!(repo.increment_error_count("missing").await.is_err());
-    drop(held_read);
-    assert_eq!(
-        repo.get_streamer(&streamer.id)
-            .await
-            .unwrap()
-            .consecutive_error_count,
-        Some(2)
-    );
-}

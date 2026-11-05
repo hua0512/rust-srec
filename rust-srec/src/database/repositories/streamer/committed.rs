@@ -11,10 +11,7 @@ pub(super) enum Mutation {
     Update(StreamerDbModel),
     State(String),
     Priority(String),
-    IncrementErrors,
-    ResetErrors,
     DisabledUntil(Option<i64>),
-    LastLive(i64),
     Avatar(Option<String>),
     MarkDeleted(i64),
     DeleteMarked,
@@ -76,14 +73,7 @@ async fn write_with_publication(
             }
             Mutation::State(state) => row!("UPDATE streamers SET state = ? WHERE id = ? RETURNING *", state),
             Mutation::Priority(priority) => row!("UPDATE streamers SET priority = ? WHERE id = ? RETURNING *", priority),
-            Mutation::IncrementErrors => {
-                let row = row!("UPDATE streamers SET consecutive_error_count = COALESCE(consecutive_error_count, 0) + 1 WHERE id = ? RETURNING *");
-                if row.is_none() { return Err(Error::not_found("Streamer", &id)); }
-                row
-            }
-            Mutation::ResetErrors => row!("UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL WHERE id = ? RETURNING *"),
             Mutation::DisabledUntil(until) => row!("UPDATE streamers SET disabled_until = ? WHERE id = ? RETURNING *", until),
-            Mutation::LastLive(time) => row!("UPDATE streamers SET last_live_time = ? WHERE id = ? RETURNING *", time),
             Mutation::Avatar(avatar) => row!("UPDATE streamers SET avatar = ? WHERE id = ? RETURNING *", avatar),
             Mutation::MarkDeleted(time) => row!("UPDATE streamers SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL RETURNING *", time),
             Mutation::DeleteMarked => {

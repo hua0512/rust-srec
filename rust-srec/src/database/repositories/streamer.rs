@@ -61,18 +61,13 @@ pub trait StreamerRepository: Send + Sync {
     /// is what makes `StreamerMetadata::is_active` false after a restart, so no
     /// actor is spawned for a streamer the reaper is still retiring.
     async fn list_all_streamers(&self) -> Result<Vec<StreamerDbModel>>;
-    async fn list_streamers_by_state(&self, state: &str) -> Result<Vec<StreamerDbModel>>;
-    async fn list_streamers_by_priority(&self, priority: &str) -> Result<Vec<StreamerDbModel>>;
     async fn list_streamers_by_platform(&self, platform_id: &str) -> Result<Vec<StreamerDbModel>>;
     async fn list_streamers_by_template(&self, template_id: &str) -> Result<Vec<StreamerDbModel>>;
     async fn create_streamer(&self, streamer: &StreamerDbModel) -> Result<()>;
     async fn update_streamer(&self, streamer: &StreamerDbModel) -> Result<()>;
     async fn update_streamer_state(&self, id: &str, state: &str) -> Result<()>;
     async fn update_streamer_priority(&self, id: &str, priority: &str) -> Result<()>;
-    async fn increment_error_count(&self, id: &str) -> Result<i32>;
-    async fn reset_error_count(&self, id: &str) -> Result<()>;
     async fn set_disabled_until(&self, id: &str, until: Option<i64>) -> Result<()>;
-    async fn update_last_live_time(&self, id: &str, time: i64) -> Result<()>;
     async fn update_avatar(&self, id: &str, avatar_url: Option<&str>) -> Result<()>;
 
     /// Stamp `streamers.deleted_at` so every runtime owner stands down.
@@ -254,25 +249,13 @@ impl StreamerRepository for SqlxStreamerRepository {
             return Ok(Vec::new());
         }
 
-        let mut streamers = Vec::new();
-        let ids = super::unique_lookup_ids(ids);
-        for ids in ids.chunks(super::LOOKUP_BATCH_SIZE) {
-            let mut builder =
-                sqlx::QueryBuilder::<sqlx::Sqlite>::new("SELECT * FROM streamers WHERE id IN (");
-            let mut separated = builder.separated(", ");
-            for id in ids {
-                separated.push_bind(*id);
-            }
-            separated.push_unseparated(")");
-
-            streamers.extend(
-                builder
-                    .build_query_as::<StreamerDbModel>()
-                    .fetch_all(&self.pool)
-                    .await?,
-            );
-        }
-        Ok(streamers)
+        super::fetch_in_chunks(
+            &self.pool,
+            "SELECT * FROM streamers WHERE id IN (",
+            &super::unique_lookup_ids(ids),
+            ")",
+        )
+        .await
     }
 
     async fn get_streamer_by_url(&self, url: &str) -> Result<StreamerDbModel> {
@@ -287,26 +270,6 @@ impl StreamerRepository for SqlxStreamerRepository {
         let streamers = sqlx::query_as::<_, StreamerDbModel>(
             "SELECT * FROM streamers WHERE deleted_at IS NULL ORDER BY priority DESC, name",
         )
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(streamers)
-    }
-
-    async fn list_streamers_by_state(&self, state: &str) -> Result<Vec<StreamerDbModel>> {
-        let streamers = sqlx::query_as::<_, StreamerDbModel>(
-            "SELECT * FROM streamers WHERE state = ? AND deleted_at IS NULL ORDER BY priority DESC, name",
-        )
-        .bind(state)
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(streamers)
-    }
-
-    async fn list_streamers_by_priority(&self, priority: &str) -> Result<Vec<StreamerDbModel>> {
-        let streamers = sqlx::query_as::<_, StreamerDbModel>(
-            "SELECT * FROM streamers WHERE priority = ? AND deleted_at IS NULL ORDER BY name",
-        )
-        .bind(priority)
         .fetch_all(&self.pool)
         .await?;
         Ok(streamers)
@@ -419,47 +382,6 @@ impl StreamerRepository for SqlxStreamerRepository {
         Ok(())
     }
 
-    async fn increment_error_count(&self, id: &str) -> Result<i32> {
-        if let Some(store) = self.mutation_owner()? {
-            return committed::write(
-                store.clone(),
-                id.to_owned(),
-                committed::Mutation::IncrementErrors,
-            )
-            .await
-            .map(|row| row.and_then(|row| row.consecutive_error_count).unwrap_or(0));
-        }
-
-        let count = sqlx::query_scalar(
-            "UPDATE streamers SET consecutive_error_count = COALESCE(consecutive_error_count, 0) + 1 WHERE id = ? RETURNING consecutive_error_count",
-        )
-        .bind(id)
-        .fetch_one(&self.write_pool)
-        .await?;
-
-        Ok(count)
-    }
-
-    async fn reset_error_count(&self, id: &str) -> Result<()> {
-        if let Some(store) = self.mutation_owner()? {
-            return committed::write(
-                store.clone(),
-                id.to_owned(),
-                committed::Mutation::ResetErrors,
-            )
-            .await
-            .map(|_| ());
-        }
-
-        sqlx::query(
-            "UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL WHERE id = ?",
-        )
-        .bind(id)
-        .execute(&self.write_pool)
-        .await?;
-        Ok(())
-    }
-
     async fn set_disabled_until(&self, id: &str, until: Option<i64>) -> Result<()> {
         if let Some(store) = self.mutation_owner()? {
             return committed::write(
@@ -473,25 +395,6 @@ impl StreamerRepository for SqlxStreamerRepository {
 
         sqlx::query("UPDATE streamers SET disabled_until = ? WHERE id = ?")
             .bind(until)
-            .bind(id)
-            .execute(&self.write_pool)
-            .await?;
-        Ok(())
-    }
-
-    async fn update_last_live_time(&self, id: &str, time: i64) -> Result<()> {
-        if let Some(store) = self.mutation_owner()? {
-            return committed::write(
-                store.clone(),
-                id.to_owned(),
-                committed::Mutation::LastLive(time),
-            )
-            .await
-            .map(|_| ());
-        }
-
-        sqlx::query("UPDATE streamers SET last_live_time = ? WHERE id = ?")
-            .bind(time)
             .bind(id)
             .execute(&self.write_pool)
             .await?;
