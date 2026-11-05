@@ -6,23 +6,21 @@
 //! byte-range pagination so multi-megabyte chat logs cannot blow up the
 //! model context.
 
+use axum::Json;
 use axum::extract::{FromRef, State};
 use rmcp::{
-    ErrorData, RoleServer,
-    handler::server::wrapper::Parameters,
-    model::{CallToolResult, ContentBlock},
-    schemars,
-    service::RequestContext,
-    tool, tool_router,
+    ErrorData, RoleServer, handler::server::wrapper::Parameters, model::CallToolResult, schemars,
+    service::RequestContext, tool, tool_router,
 };
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 use super::config_tools::{IdParams, PageParams};
-use super::{SrecMcpServer, api_error_result, tool_json, tool_unit};
-use crate::api::error::ApiError;
+use super::{SrecMcpServer, tool_json, tool_unit};
+use crate::api::error::{ApiError, ApiResult};
 use crate::api::extract::{ApiPath, ApiQuery};
 use crate::api::models::SessionFilterParams;
 use crate::api::routes::sessions::{self, SessionRouteState};
+use crate::api::server::AppState;
 use crate::database::models::MediaFileType;
 
 /// Default / maximum byte window served by `session_read_danmu` per call.
@@ -74,6 +72,74 @@ pub struct ReadDanmuParams {
     /// Maximum bytes to return (default 65536, max 262144). Must be positive
     /// and large enough for the next complete UTF-8 character (up to 4 bytes).
     pub max_bytes: Option<u64>,
+}
+
+async fn list_danmu_files(
+    state: &AppState,
+    session_id: &str,
+) -> ApiResult<Json<serde_json::Value>> {
+    let files: Vec<serde_json::Value> = state
+        .session_repository
+        .get_media_outputs_for_session(session_id)
+        .await?
+        .into_iter()
+        .filter(|output| output.file_type == MediaFileType::DanmuXml.as_str())
+        .map(|output| {
+            serde_json::json!({
+                "media_output_id": output.id,
+                "file_path": output.file_path,
+                "size_bytes": output.size_bytes,
+                "created_at": output.created_at,
+            })
+        })
+        .collect();
+    Ok(Json(serde_json::json!({ "files": files })))
+}
+
+async fn read_danmu(
+    state: &AppState,
+    params: ReadDanmuParams,
+) -> ApiResult<Json<serde_json::Value>> {
+    let output = state
+        .session_repository
+        .get_media_output(&params.media_output_id)
+        .await?;
+    if output.file_type != MediaFileType::DanmuXml.as_str() {
+        return Err(ApiError::bad_request(format!(
+            "Media output '{}' is {} content, not DANMU_XML",
+            output.id, output.file_type
+        )));
+    }
+
+    let offset = params.offset_bytes.unwrap_or(0);
+    let max_bytes = params
+        .max_bytes
+        .unwrap_or(DANMU_READ_DEFAULT_BYTES)
+        .min(DANMU_READ_MAX_BYTES);
+
+    let mut file = tokio::fs::File::open(&output.file_path)
+        .await
+        .map_err(|error| {
+            ApiError::not_found(format!(
+                "Danmu file '{}' is not readable: {error}",
+                output.file_path
+            ))
+        })?;
+    let file_size = file
+        .metadata()
+        .await
+        .map_err(|error| ApiError::internal(format!("Failed to stat danmu file: {error}")))?
+        .len();
+    let (text, next_offset) = read_danmu_window(&mut file, file_size, offset, max_bytes).await?;
+
+    Ok(Json(serde_json::json!({
+        "media_output_id": output.id,
+        "file_size_bytes": file_size,
+        "offset_bytes": offset,
+        "returned_bytes": text.len(),
+        "next_offset": next_offset,
+        "content": text,
+    })))
 }
 
 async fn read_danmu_window(
@@ -232,32 +298,7 @@ impl SrecMcpServer {
         &self,
         Parameters(params): Parameters<SessionIdParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let outputs = match self
-            .app_state
-            .session_repository
-            .get_media_outputs_for_session(&params.session_id)
-            .await
-        {
-            Ok(outputs) => outputs,
-            Err(error) => return Ok(api_error_result(ApiError::from(error))),
-        };
-
-        let files: Vec<serde_json::Value> = outputs
-            .into_iter()
-            .filter(|output| output.file_type == MediaFileType::DanmuXml.as_str())
-            .map(|output| {
-                serde_json::json!({
-                    "media_output_id": output.id,
-                    "file_path": output.file_path,
-                    "size_bytes": output.size_bytes,
-                    "created_at": output.created_at,
-                })
-            })
-            .collect();
-
-        Ok(CallToolResult::success(vec![ContentBlock::json(
-            serde_json::json!({ "files": files }),
-        )?]))
+        tool_json(list_danmu_files(&self.app_state, &params.session_id).await)
     }
 
     #[tool(
@@ -268,63 +309,7 @@ impl SrecMcpServer {
         &self,
         Parameters(params): Parameters<ReadDanmuParams>,
     ) -> Result<CallToolResult, ErrorData> {
-        let output = match self
-            .app_state
-            .session_repository
-            .get_media_output(&params.media_output_id)
-            .await
-        {
-            Ok(output) => output,
-            Err(error) => return Ok(api_error_result(ApiError::from(error))),
-        };
-
-        if output.file_type != MediaFileType::DanmuXml.as_str() {
-            return Ok(api_error_result(ApiError::bad_request(format!(
-                "Media output '{}' is {} content, not DANMU_XML",
-                output.id, output.file_type
-            ))));
-        }
-
-        let offset = params.offset_bytes.unwrap_or(0);
-        let max_bytes = params
-            .max_bytes
-            .unwrap_or(DANMU_READ_DEFAULT_BYTES)
-            .min(DANMU_READ_MAX_BYTES);
-
-        let mut file = match tokio::fs::File::open(&output.file_path).await {
-            Ok(file) => file,
-            Err(error) => {
-                return Ok(api_error_result(ApiError::not_found(format!(
-                    "Danmu file '{}' is not readable: {error}",
-                    output.file_path
-                ))));
-            }
-        };
-        let file_size = match file.metadata().await {
-            Ok(metadata) => metadata.len(),
-            Err(error) => {
-                return Ok(api_error_result(ApiError::internal(format!(
-                    "Failed to stat danmu file: {error}"
-                ))));
-            }
-        };
-
-        let (text, next_offset) =
-            match read_danmu_window(&mut file, file_size, offset, max_bytes).await {
-                Ok(page) => page,
-                Err(error) => return Ok(api_error_result(error)),
-            };
-
-        Ok(CallToolResult::success(vec![ContentBlock::json(
-            serde_json::json!({
-                "media_output_id": output.id,
-                "file_size_bytes": file_size,
-                "offset_bytes": offset,
-                "returned_bytes": text.len(),
-                "next_offset": next_offset,
-                "content": text,
-            }),
-        )?]))
+        tool_json(read_danmu(&self.app_state, params).await)
     }
 
     #[tool(

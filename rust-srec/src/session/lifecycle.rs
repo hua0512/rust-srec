@@ -479,10 +479,6 @@ impl SessionLifecycle {
         let _ = self.transition_tx.send(transition);
     }
 
-    pub fn subscriber_count(&self) -> usize {
-        self.transition_tx.receiver_count()
-    }
-
     /// Best-effort write of an audit row for an in-memory transition that
     /// has no surrounding DB tx (`hysteresis_entered`, `session_resumed`).
     /// A failure logs and continues — the audit log must never block the

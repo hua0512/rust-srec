@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
-use tokio::sync::{broadcast, mpsc, watch};
+use tokio::sync::{broadcast, mpsc};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
@@ -49,12 +49,11 @@ pub(crate) enum SchedulerCommand {
     },
 }
 
-/// Scheduler state and control available to consumers that do not own the
+/// Scheduler control available to consumers that do not own the
 /// `Scheduler` itself - which, once `ServiceContainer::start_scheduler` has moved
 /// it into its task, is all of them.
 #[derive(Clone)]
 pub struct SchedulerHandle {
-    stats_rx: watch::Receiver<super::actor::SupervisorStats>,
     command_tx: mpsc::Sender<SchedulerCommand>,
     /// True between `Scheduler::run` taking the command receiver and returning.
     ///
@@ -66,10 +65,6 @@ pub struct SchedulerHandle {
 }
 
 impl SchedulerHandle {
-    pub fn stats(&self) -> super::actor::SupervisorStats {
-        self.stats_rx.borrow().clone()
-    }
-
     /// Ask the scheduler's event loop to remove `streamer_id`'s actor and return
     /// the receipt for its task.
     ///
@@ -181,8 +176,6 @@ pub struct Scheduler<R: StreamerRepository + Send + Sync + 'static> {
     cancellation_token: CancellationToken,
     /// Supervisor for managing actor lifecycle.
     supervisor: Supervisor,
-    /// Latest supervisor snapshot for read-only runtime consumers.
-    stats_tx: watch::Sender<super::actor::SupervisorStats>,
     /// Sender cloned into every `SchedulerHandle`; kept here so `handle()` can
     /// be called at any point before `run` takes the receiver.
     command_tx: mpsc::Sender<SchedulerCommand>,
@@ -234,7 +227,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         );
         let feedback = super::feedback::SchedulerFeedback::new();
         supervisor.set_feedback(feedback.clone());
-        let (stats_tx, _) = watch::channel(supervisor.stats());
         let (command_tx, command_rx) = mpsc::channel(SCHEDULER_COMMAND_CAPACITY);
 
         Self {
@@ -245,7 +237,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             config_resolver,
             cancellation_token,
             supervisor,
-            stats_tx,
             command_tx,
             command_rx: Some(command_rx),
             loop_running: Arc::new(AtomicBool::new(false)),
@@ -340,17 +331,12 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         self.cancellation_token.clone()
     }
 
-    /// Create a cheap read-only handle for scheduler diagnostics.
+    /// Create a cheap handle for sending commands to the running event loop.
     pub fn handle(&self) -> SchedulerHandle {
         SchedulerHandle {
-            stats_rx: self.stats_tx.subscribe(),
             command_tx: self.command_tx.clone(),
             loop_running: self.loop_running.clone(),
         }
-    }
-
-    fn publish_stats(&self) {
-        self.stats_tx.send_replace(self.supervisor.stats());
     }
 
     /// Connect recording lifecycle ownership and the lossy progress observer.
@@ -413,7 +399,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         // Initial actor spawning for all active streamers
         self.queue_reconciliation();
         self.pump_configuration();
-        self.publish_stats();
 
         info!(
             "Scheduler started with {} streamer actors",
@@ -535,7 +520,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             self.feedback
                 .update_registry_targets(self.supervisor.registry(), None);
             self.pump_configuration();
-            self.publish_stats();
         }
 
         self.loop_running.store(false, Ordering::Release);
@@ -545,7 +529,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
 
         // Graceful shutdown
         let report = self.shutdown().await;
-        self.publish_stats();
         info!(
             "Scheduler stopped: {} graceful, {} forced",
             report.graceful_stops, report.forced_terminations
@@ -786,11 +769,6 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         self.feedback.retire(streamer_id);
         self.supervisor.remove_streamer_awaitable(streamer_id)
     }
-
-    /// Get supervisor statistics.
-    pub fn stats(&self) -> super::actor::SupervisorStats {
-        self.supervisor.stats()
-    }
 }
 
 #[cfg(test)]
@@ -870,9 +848,7 @@ mod tests {
     async fn removal_once_running(handle: &SchedulerHandle, streamer_id: &str) -> ActorRemoval {
         tokio::time::timeout(Duration::from_secs(5), async {
             loop {
-                if handle.stats().streamer_count > 0
-                    && let Some(removal) = handle.remove_streamer_awaitable(streamer_id).await
-                {
+                if let Some(removal) = handle.remove_streamer_awaitable(streamer_id).await {
                     return removal;
                 }
                 tokio::task::yield_now().await;
@@ -888,6 +864,11 @@ mod tests {
     #[tokio::test]
     async fn scheduler_handle_gets_a_removal_receipt_from_the_event_loop() {
         let mut scheduler = scheduler_with_streamers(&["test-1"]).await;
+        // Spawn the actor before the loop starts: a removal answered before
+        // the loop's own reconciliation spawned it would find nothing.
+        scheduler.queue_reconciliation();
+        scheduler.drain_configuration().await;
+        assert!(scheduler.supervisor.registry().has_streamer("test-1"));
         let handle = scheduler.handle();
         let token = scheduler.cancellation_token.clone();
         let runner = tokio::spawn(async move { scheduler.run().await });

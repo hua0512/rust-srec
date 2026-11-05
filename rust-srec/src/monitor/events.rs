@@ -183,11 +183,6 @@ impl MonitorEventBroadcaster {
     ) -> Result<usize, Box<broadcast::error::SendError<MonitorEvent>>> {
         self.sender.send(event).map_err(Box::new)
     }
-
-    /// Get the number of active subscribers.
-    pub fn subscriber_count(&self) -> usize {
-        self.sender.receiver_count()
-    }
 }
 
 impl Default for MonitorEventBroadcaster {

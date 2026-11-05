@@ -491,15 +491,6 @@ impl Supervisor {
         self.cancellation_token.is_cancelled()
     }
 
-    /// Get statistics about the supervisor.
-    pub fn stats(&self) -> SupervisorStats {
-        SupervisorStats {
-            streamer_count: self.registry.streamer_count(),
-            pending_restarts: self.pending_restarts.len(),
-            restart_stats: self.restart_tracker.stats(),
-        }
-    }
-
     /// Update cached restart configuration for a streamer actor.
     ///
     /// Since metadata is stored in the shared metadata_store, we only need
@@ -565,17 +556,6 @@ pub struct ShutdownReport {
     pub forced_terminations: usize,
     /// Number of Stop messages that failed to send.
     pub stop_message_failures: usize,
-}
-
-/// Statistics about the supervisor.
-#[derive(Debug, Clone)]
-pub struct SupervisorStats {
-    /// Number of streamer actors.
-    pub streamer_count: usize,
-    /// Number of pending restarts.
-    pub pending_restarts: usize,
-    /// Restart tracker statistics.
-    pub restart_stats: super::restart_tracker::RestartTrackerStats,
 }
 
 #[cfg(test)]
@@ -970,7 +950,7 @@ mod tests {
             TaskCompletionAction::Stopped { .. }
         ));
         assert!(supervisor.pending_restarts.is_empty());
-        assert_eq!(supervisor.restart_tracker.total_restarts("removed"), 0);
+        assert_eq!(supervisor.restart_tracker.recent_failures("removed"), 0);
         token.cancel();
     }
 

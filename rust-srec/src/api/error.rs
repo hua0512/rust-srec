@@ -45,10 +45,10 @@ pub struct ApiError {
 
 impl ApiError {
     /// Create a new API error.
-    pub fn new(status: StatusCode, code: impl Into<String>, message: impl Into<String>) -> Self {
+    pub fn new(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
         Self {
             status,
-            code: code.into(),
+            code: code.to_owned(),
             message: message.into(),
             details: None,
             retry_after_secs: None,
