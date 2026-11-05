@@ -31,6 +31,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { exportConfig, importConfig } from '@/server/functions';
 import { invalidateCredentialQueries } from '@/api/credential-profiles';
+import { invalidateProxyQueries } from '@/api/proxies';
 import {
   ImportModeRadioGroup,
   type ImportMode,
@@ -170,14 +171,28 @@ export function BackupRestoreCard() {
     },
     onSuccess: (result: ImportResult) => {
       setImportResult(result);
-      // Invalidate all relevant queries to refresh UI
-      void queryClient.invalidateQueries({ queryKey: ['config'] });
-      void queryClient.invalidateQueries({ queryKey: ['streamers'] });
-      void queryClient.invalidateQueries({ queryKey: ['templates'] });
-      void queryClient.invalidateQueries({ queryKey: ['engines'] });
-      void queryClient.invalidateQueries({ queryKey: ['notifications'] });
-      // Imports write accounts without announcing them on the live
-      // connection, so the accounts views refetch here.
+      // One root per kind of record an import can write, lists and details
+      // alike. Imports are not announced on the live connection, so this is
+      // the only refresh these views get.
+      for (const queryKey of [
+        ['config'],
+        ['streamers'],
+        ['streamer'],
+        ['templates'],
+        ['template'],
+        ['engines'],
+        ['engine'],
+        ['notification-channels'],
+        ['subscriptions'],
+        ['job', 'presets'],
+        ['job', 'preset'],
+        ['pipeline', 'presets'],
+        ['pipeline', 'workflows'],
+        ['pipeline', 'workflow'],
+      ]) {
+        void queryClient.invalidateQueries({ queryKey });
+      }
+      void invalidateProxyQueries(queryClient);
       void invalidateCredentialQueries(queryClient);
 
       toast.success(i18n._(msg`Configuration imported successfully`));
