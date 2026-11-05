@@ -217,8 +217,9 @@ impl SessionLifecycleRepository {
     }
 
     /// Run a streamer-state write through the committed store so the changed
-    /// row is published to the cache. Without a bound store (repository-only
-    /// tests), the same operation runs in a plain `BEGIN IMMEDIATE`.
+    /// row is published to the cache. Without a bound store, as in
+    /// repository-only tests, the same operation runs in a plain
+    /// `BEGIN IMMEDIATE`.
     async fn state_transaction<T, F>(&self, label: &'static str, operation: F) -> Result<T>
     where
         T: Send + 'static,
