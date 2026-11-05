@@ -69,19 +69,13 @@ export function PresetCard({
     ? getCategoryName(preset.category, i18n)
     : null;
 
-  let configObj: any = {};
-  try {
-    configObj =
-      typeof preset.config === 'string'
-        ? JSON.parse(preset.config)
-        : preset.config;
-  } catch {}
+  const config: Record<string, unknown> = preset.config ?? {};
 
   const description = DEFAULT_JOB_PRESET_DESCRIPTIONS[preset.id]
     ? i18n._(DEFAULT_JOB_PRESET_DESCRIPTIONS[preset.id])
     : preset.description;
 
-  const configKeys = Object.keys(configObj).filter(
+  const configKeys = Object.keys(config).filter(
     (k) => k !== 'overwrite' && k !== 'create_dirs',
   );
 
@@ -162,9 +156,9 @@ export function PresetCard({
               {configKeys.slice(0, 4).map((key) => (
                 <CardField
                   key={key}
-                  title={`${key}: ${formatConfigValue(configObj[key])}`}
+                  title={`${key}: ${formatConfigValue(config[key])}`}
                   label={key}
-                  value={formatConfigValue(configObj[key])}
+                  value={formatConfigValue(config[key])}
                 />
               ))}
             </div>

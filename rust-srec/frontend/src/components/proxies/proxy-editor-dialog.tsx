@@ -36,7 +36,7 @@ const SCHEMES = ['http', 'https', 'socks5', 'socks5h'];
  * The address as saved: a bare `host:port` is an http proxy, as browsers and
  * most tools read it.
  */
-export function normalizeProxyUrl(input: string): string {
+function normalizeProxyUrl(input: string): string {
   const trimmed = input.trim();
   if (!trimmed || trimmed.includes('://')) return trimmed;
   return `http://${trimmed}`;

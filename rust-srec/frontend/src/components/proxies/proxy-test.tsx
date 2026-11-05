@@ -31,7 +31,7 @@ export type ProxyTestEndpoint = Omit<TestProxy, 'platform' | 'target_url'>;
 
 const CUSTOM = 'custom';
 
-export const PROBE_ERRORS: Record<ProbeErrorKind, MessageDescriptor> = {
+const PROBE_ERRORS: Record<ProbeErrorKind, MessageDescriptor> = {
   proxy_authentication_required: msg`The proxy rejected the login`,
   connect_failed: msg`Could not connect through the proxy`,
   timeout: msg`No answer within 10 seconds`,

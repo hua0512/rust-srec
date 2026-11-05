@@ -1,6 +1,7 @@
 import { msg } from '@lingui/core/macro';
+import type { I18n, MessageDescriptor } from '@lingui/core';
 
-export const DEFAULT_JOB_PRESET_NAMES: Record<string, any> = {
+export const DEFAULT_JOB_PRESET_NAMES: Record<string, MessageDescriptor> = {
   'preset-default-remux': msg`Remux`,
   'preset-default-remux-mkv': msg`Remux to MKV`,
   'preset-default-compress-fast': msg`Fast Compression`,
@@ -40,7 +41,7 @@ export const DEFAULT_JOB_PRESET_NAMES: Record<string, any> = {
   'preset-nvenc-av1-hq': msg`NVENC AV1 High Quality`,
 };
 
-export const PRESET_CATEGORY_NAMES: Record<string, any> = {
+export const PRESET_CATEGORY_NAMES: Record<string, MessageDescriptor> = {
   remux: msg`Remux`,
   compression: msg`Compression`,
   thumbnail: msg`Thumbnail`,
@@ -55,7 +56,10 @@ export const PRESET_CATEGORY_NAMES: Record<string, any> = {
   subtitle: msg`Subtitle`,
 };
 
-export const DEFAULT_JOB_PRESET_DESCRIPTIONS: Record<string, any> = {
+export const DEFAULT_JOB_PRESET_DESCRIPTIONS: Record<
+  string,
+  MessageDescriptor
+> = {
   'preset-default-remux': msg`Remux to MP4 without re-encoding. Fast and lossless - just changes the container format.`,
   'preset-default-remux-mkv': msg`Remux to MKV without re-encoding. Matroska supports more codecs and features.`,
   'preset-default-compress-fast': msg`Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size.`,
@@ -95,7 +99,7 @@ export const DEFAULT_JOB_PRESET_DESCRIPTIONS: Record<string, any> = {
   'preset-nvenc-av1-hq': msg`High quality GPU-accelerated AV1 encoding using NVIDIA NVENC (CQ 24). Best compression ratio, requires RTX 4000+.`,
 };
 
-const DEFAULT_PIPELINE_PRESET_NAMES: Record<string, any> = {
+const DEFAULT_PIPELINE_PRESET_NAMES: Record<string, MessageDescriptor> = {
   'pipeline-standard': msg`Standard`,
   'pipeline-archive': msg`Archive to Cloud`,
   'pipeline-hq-archive': msg`High Quality Archive`,
@@ -113,23 +117,24 @@ const DEFAULT_PIPELINE_PRESET_NAMES: Record<string, any> = {
   'pipeline-nvenc-hq-archive': msg`GPU HQ Archive`,
 };
 
-const DEFAULT_PIPELINE_PRESET_DESCRIPTIONS: Record<string, any> = {
-  'pipeline-standard': msg`Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview.`,
-  'pipeline-archive': msg`Compress video for storage, upload to cloud, then delete local file to save space.`,
-  'pipeline-hq-archive': msg`Maximum quality compression with HEVC, then upload to cloud storage.`,
-  'pipeline-podcast': msg`Extract high-quality audio for podcast distribution and upload.`,
-  'pipeline-quick-share': msg`Fast encoding for quick sharing on social media or messaging.`,
-  'pipeline-space-saver': msg`Maximum compression to minimize storage usage, then delete original.`,
-  'pipeline-full': msg`Complete workflow: Remux, generate thumbnail, add metadata, and upload.`,
-  'pipeline-full-single-pass': msg`Remux to MP4 with recording title, streamer, and date, generate a thumbnail, and upload both without a separate metadata pass.`,
-  'pipeline-local-archive': msg`Process locally: Remux to MP4, generate thumbnail, move to archive folder.`,
-  'pipeline-multimedia-archive': msg`Full multimedia processing: Remux video, extract audio and thumbnail in parallel, then upload all.`,
-  'pipeline-preview-gallery': msg`Generate multiple preview images at different timestamps for a gallery view.`,
-  'pipeline-dual-format': msg`Process video and extract podcast audio in parallel, then upload both.`,
-  'pipeline-stream-archive': msg`Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files.`,
-  'pipeline-nvenc-standard': msg`GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation.`,
-  'pipeline-nvenc-hq-archive': msg`GPU-accelerated high quality archive: NVENC HEVC encoding, thumbnail, and cloud upload.`,
-};
+const DEFAULT_PIPELINE_PRESET_DESCRIPTIONS: Record<string, MessageDescriptor> =
+  {
+    'pipeline-standard': msg`Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview.`,
+    'pipeline-archive': msg`Compress video for storage, upload to cloud, then delete local file to save space.`,
+    'pipeline-hq-archive': msg`Maximum quality compression with HEVC, then upload to cloud storage.`,
+    'pipeline-podcast': msg`Extract high-quality audio for podcast distribution and upload.`,
+    'pipeline-quick-share': msg`Fast encoding for quick sharing on social media or messaging.`,
+    'pipeline-space-saver': msg`Maximum compression to minimize storage usage, then delete original.`,
+    'pipeline-full': msg`Complete workflow: Remux, generate thumbnail, add metadata, and upload.`,
+    'pipeline-full-single-pass': msg`Remux to MP4 with recording title, streamer, and date, generate a thumbnail, and upload both without a separate metadata pass.`,
+    'pipeline-local-archive': msg`Process locally: Remux to MP4, generate thumbnail, move to archive folder.`,
+    'pipeline-multimedia-archive': msg`Full multimedia processing: Remux video, extract audio and thumbnail in parallel, then upload all.`,
+    'pipeline-preview-gallery': msg`Generate multiple preview images at different timestamps for a gallery view.`,
+    'pipeline-dual-format': msg`Process video and extract podcast audio in parallel, then upload both.`,
+    'pipeline-stream-archive': msg`Default workflow: Remux to MP4 (deletes original), generate native-resolution thumbnail, upload both to cloud and delete local files.`,
+    'pipeline-nvenc-standard': msg`GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation.`,
+    'pipeline-nvenc-hq-archive': msg`GPU-accelerated high quality archive: NVENC HEVC encoding, thumbnail, and cloud upload.`,
+  };
 
 export function isDefaultPreset(id: string): boolean {
   return (
@@ -145,7 +150,7 @@ export function isDefaultPreset(id: string): boolean {
  */
 export function getJobPresetName(
   preset: { id: string; name: string },
-  i18n: any,
+  i18n: I18n,
 ): string {
   if (DEFAULT_JOB_PRESET_NAMES[preset.id]) {
     return i18n._(DEFAULT_JOB_PRESET_NAMES[preset.id]);
@@ -160,7 +165,7 @@ export function getJobPresetName(
  */
 export function getJobPresetDescription(
   preset: { id: string; description?: string | null },
-  i18n: any,
+  i18n: I18n,
 ): string {
   if (DEFAULT_JOB_PRESET_DESCRIPTIONS[preset.id]) {
     return i18n._(DEFAULT_JOB_PRESET_DESCRIPTIONS[preset.id]);
@@ -175,7 +180,7 @@ export function getJobPresetDescription(
  */
 export function getPipelinePresetName(
   workflow: { id: string; name: string },
-  i18n: any,
+  i18n: I18n,
 ): string {
   if (DEFAULT_PIPELINE_PRESET_NAMES[workflow.id]) {
     return i18n._(DEFAULT_PIPELINE_PRESET_NAMES[workflow.id]);
@@ -190,7 +195,7 @@ export function getPipelinePresetName(
  */
 export function getPipelinePresetDescription(
   workflow: { id: string; description?: string | null },
-  i18n: any,
+  i18n: I18n,
 ): string {
   if (DEFAULT_PIPELINE_PRESET_DESCRIPTIONS[workflow.id]) {
     return i18n._(DEFAULT_PIPELINE_PRESET_DESCRIPTIONS[workflow.id]);
@@ -203,7 +208,7 @@ export function getPipelinePresetDescription(
  * @param category
  * @param i18n
  */
-export function getCategoryName(category: string, i18n: any): string {
+export function getCategoryName(category: string, i18n: I18n): string {
   if (PRESET_CATEGORY_NAMES[category]) {
     return i18n._(PRESET_CATEGORY_NAMES[category]);
   }

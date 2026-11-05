@@ -5,7 +5,10 @@ import { toast } from 'sonner';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
-import { PresetEditor } from '@/components/pipeline/presets/preset-editor';
+import {
+  PresetEditor,
+  type PresetFormValues,
+} from '@/components/pipeline/presets/preset-editor';
 
 export const Route = createLazyFileRoute(
   '/_authed/_dashboard/pipeline/presets/create',
@@ -29,7 +32,7 @@ function CreatePresetPage() {
       toast.error(i18n._(msg`Failed to create preset: ${error.message}`)),
   });
 
-  const onSubmit = (data: any) => {
+  const onSubmit = (data: PresetFormValues) => {
     createMutation.mutate({ data });
   };
 

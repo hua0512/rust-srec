@@ -210,56 +210,32 @@ function SelectionSentence({
   selection: CredentialSelection;
   accounts: CredentialProfileDetail[];
 }) {
-  switch (selection.mode) {
-    case 'inherit':
-    case 'none':
-      return <Trans>No account — records signed out</Trans>;
-    case 'fixed': {
-      const names = (
-        <SummaryNames
-          ids={[selection.credential_id]}
-          accounts={accounts}
-          separator="then"
-        />
-      );
-      return (
-        <Trans>
-          <span className="text-muted-foreground">Recording uses</span> {names}
-        </Trans>
-      );
-    }
-    default: {
-      if (selection.strategy === 'round_robin') {
-        const names = (
-          <SummaryNames
-            ids={selection.credential_ids}
-            accounts={accounts}
-            separator="and"
-          />
-        );
-        return (
-          <Trans>
-            <span className="text-muted-foreground">
-              Recording rotates between
-            </span>{' '}
-            {names}
-          </Trans>
-        );
-      }
-      const names = (
-        <SummaryNames
-          ids={selection.credential_ids}
-          accounts={accounts}
-          separator="then"
-        />
-      );
-      return (
-        <Trans>
-          <span className="text-muted-foreground">Recording uses</span> {names}
-        </Trans>
-      );
-    }
+  if (selection.mode === 'inherit' || selection.mode === 'none') {
+    return <Trans>No account — records signed out</Trans>;
   }
+  const rotates =
+    selection.mode === 'pool' && selection.strategy === 'round_robin';
+  const names = (
+    <SummaryNames
+      ids={
+        selection.mode === 'fixed'
+          ? [selection.credential_id]
+          : selection.credential_ids
+      }
+      accounts={accounts}
+      separator={rotates ? 'and' : 'then'}
+    />
+  );
+  return rotates ? (
+    <Trans>
+      <span className="text-muted-foreground">Recording rotates between</span>{' '}
+      {names}
+    </Trans>
+  ) : (
+    <Trans>
+      <span className="text-muted-foreground">Recording uses</span> {names}
+    </Trans>
+  );
 }
 
 /** How a pool behaves when an account fails; nothing for other modes. */

@@ -177,7 +177,7 @@ export function PresetMetaForm({
                     <div className="relative">
                       <Input
                         {...field}
-                        placeholder="e.g. remux-h264"
+                        placeholder={i18n._(msg`e.g. remux-h264`)}
                         disabled={!!initialData}
                         className="h-11 pl-9 bg-muted/30 border-muted-foreground/20 focus:bg-background transition-all font-mono text-sm"
                       />

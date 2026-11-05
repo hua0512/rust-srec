@@ -18,7 +18,7 @@ import { FeatureSwitch, type FieldSpec } from './setting-sections';
  * the output format half of that gate lives in the recording configuration,
  * not in engine settings, so it can only be described here.
  */
-export type LosslessCuttingArgsField = 'output_args' | 'extra_args';
+type LosslessCuttingArgsField = 'output_args' | 'extra_args';
 
 export const LOSSLESS_CUTTING: FieldSpec & { kind: 'switch' } = {
   kind: 'switch',
