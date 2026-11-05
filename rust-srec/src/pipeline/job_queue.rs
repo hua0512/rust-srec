@@ -1121,10 +1121,36 @@ impl JobQueue {
 
     /// Persist a disjoint batch, including repeated entries. Callers must not resubmit a
     /// successful batch; after an error the same batch can be retried.
+    ///
+    /// The batch is also counted into the job's log summary, because the result snapshot
+    /// skips entries already persisted here. A failed summary write is logged rather than
+    /// returned: the rows are stored, and a retry would insert them again.
     pub async fn append_log_entry(&self, job_id: &str, logs: &[JobLogEntry]) -> Result<()> {
-        self.persist_logs_to_db(job_id, logs, LogPersistence::Append)
+        let new_logs = self
+            .persist_logs_to_db(job_id, logs, LogPersistence::Append)
             .await?;
+        if !new_logs.is_empty()
+            && let Err(error) = self.add_to_log_summary(job_id, &new_logs).await
+        {
+            warn!(job_id, %error, "Failed to update the job's log summary");
+        }
         Ok(())
+    }
+
+    async fn add_to_log_summary(&self, job_id: &str, logs: &[JobLogEntry]) -> Result<()> {
+        let repo = &self.job_repository;
+        let stored = repo.get_job_execution_info(job_id).await?;
+        let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
+            stored.as_deref(),
+            JsonContext::JobField {
+                job_id,
+                field: "execution_info",
+            },
+            "Invalid execution_info JSON; resetting to defaults",
+        );
+        update_log_summary(&mut exec_info, logs);
+        repo.update_job_execution_info(job_id, &serde_json::to_string(&exec_info)?)
+            .await
     }
 
     /// Persist the logs a processor returned with its result and fold them into
