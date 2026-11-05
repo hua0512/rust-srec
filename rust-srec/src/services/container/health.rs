@@ -1,5 +1,6 @@
 use std::borrow::Cow;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -16,6 +17,7 @@ use crate::downloader::{DownloadManager, OutputRootGate};
 use crate::metrics::{
     ComponentHealth, DiskUsage, HealthChecker, HealthProbe, SystemMetricsSnapshot,
 };
+use crate::notification::{NotificationEvent, NotificationService};
 use crate::pipeline::PipelineManager;
 
 use super::{ServiceContainer, sqlite_file_path_from_url, static_root_prefix};
@@ -60,6 +62,12 @@ struct DiskSpaceProbe {
     lookup_path: std::path::PathBuf,
     warning_threshold: f64,
     critical_threshold: f64,
+    notification_service: Weak<NotificationService>,
+    /// Set once an out-of-space notification was sent for the current low-space
+    /// episode. Cleared only when usage drops below the warning threshold, so a
+    /// disk hovering around the critical threshold notifies once rather than on
+    /// every crossing.
+    out_of_space_notified: AtomicBool,
 }
 
 impl DiskSpaceProbe {
@@ -68,6 +76,7 @@ impl DiskSpaceProbe {
         lookup_path: std::path::PathBuf,
         warning_threshold: f64,
         critical_threshold: f64,
+        notification_service: Weak<NotificationService>,
     ) -> Self {
         Self {
             component_name: format!("disk:{}", display_path),
@@ -75,7 +84,50 @@ impl DiskSpaceProbe {
             lookup_path,
             warning_threshold,
             critical_threshold,
+            notification_service,
+            out_of_space_notified: AtomicBool::new(false),
         }
+    }
+
+    /// The notification to send for this reading, if any: one when usage
+    /// reaches the critical threshold, and no other until usage has dropped
+    /// below the warning threshold.
+    fn out_of_space_event(&self, available: u64, total: u64) -> Option<NotificationEvent> {
+        if total == 0 {
+            return None;
+        }
+        let used_ratio = 1.0 - (available as f64 / total as f64);
+        if used_ratio < self.warning_threshold {
+            self.out_of_space_notified.store(false, Ordering::Relaxed);
+            return None;
+        }
+        if used_ratio < self.critical_threshold
+            || self.out_of_space_notified.swap(true, Ordering::Relaxed)
+        {
+            return None;
+        }
+        Some(NotificationEvent::OutOfSpace {
+            path: self.display_path.clone(),
+            available_bytes: available,
+            threshold_bytes: (total as f64 * (1.0 - self.critical_threshold)) as u64,
+            timestamp: chrono::Utc::now(),
+        })
+    }
+
+    /// Fire-and-forget, like the GPU and output-root notifications: delivery
+    /// must not hold up the health refresh loop.
+    fn spawn_notification(&self, event: NotificationEvent) {
+        let weak = self.notification_service.clone();
+        let path = self.display_path.clone();
+        tokio::spawn(async move {
+            let Some(service) = weak.upgrade() else {
+                debug!("NotificationService dropped before OutOfSpace notification could fire");
+                return;
+            };
+            if let Err(e) = service.notify(event).await {
+                warn!(error = %e, path, "Failed to dispatch OutOfSpace notification (non-fatal)");
+            }
+        });
     }
 }
 
@@ -99,19 +151,25 @@ impl HealthProbe for DiskSpaceProbe {
             // included: `check_disk_space_with_thresholds` leaves `message`
             // empty below the warning threshold, so this is the only place
             // free space is reported while nothing is wrong.
-            Some(disk) => HealthChecker::check_disk_space_with_thresholds(
-                &self.display_path,
-                disk.available_space,
-                disk.total_space,
-                self.warning_threshold,
-                self.critical_threshold,
-            )
-            .with_disk(DiskUsage::new(
-                &self.display_path,
-                disk.mount_point.to_string_lossy(),
-                disk.available_space,
-                disk.total_space,
-            )),
+            Some(disk) => {
+                if let Some(event) = self.out_of_space_event(disk.available_space, disk.total_space)
+                {
+                    self.spawn_notification(event);
+                }
+                HealthChecker::check_disk_space_with_thresholds(
+                    &self.display_path,
+                    disk.available_space,
+                    disk.total_space,
+                    self.warning_threshold,
+                    self.critical_threshold,
+                )
+                .with_disk(DiskUsage::new(
+                    &self.display_path,
+                    disk.mount_point.to_string_lossy(),
+                    disk.available_space,
+                    disk.total_space,
+                ))
+            }
             None => ComponentHealth {
                 name: self.component_name.clone(),
                 status: crate::metrics::HealthStatus::Unknown,
@@ -749,6 +807,7 @@ impl ServiceContainer {
                     output_dir_path,
                     disk_warning_threshold,
                     disk_critical_threshold,
+                    Arc::downgrade(&self.notification_service),
                 )));
         } else {
             for root in output_roots {
@@ -764,6 +823,7 @@ impl ServiceContainer {
                         lookup_path,
                         disk_warning_threshold,
                         disk_critical_threshold,
+                        Arc::downgrade(&self.notification_service),
                     )));
             }
         }
@@ -786,6 +846,7 @@ impl ServiceContainer {
                     db_dir_path,
                     disk_warning_threshold,
                     disk_critical_threshold,
+                    Arc::downgrade(&self.notification_service),
                 )));
         }
 
@@ -888,6 +949,7 @@ mod tests {
             std::path::PathBuf::from("/rec/huya"),
             0.80,
             0.95,
+            Weak::new(),
         );
         let health = probe
             .probe(snapshot_with_disk(
@@ -917,10 +979,44 @@ mod tests {
             std::path::PathBuf::from("/rec"),
             0.80,
             0.95,
+            Weak::new(),
         );
         let health = probe.probe(SystemMetricsSnapshot::empty()).await;
 
         assert_eq!(health.status, HealthStatus::Unknown);
         assert!(health.disk.is_none());
+    }
+
+    /// Exactly one notification per low-space episode: a disk that hovers around
+    /// the critical threshold must not notify on every 30 s probe, and a disk that
+    /// recovered and filled again must notify again.
+    #[test]
+    fn out_of_space_notifies_once_until_usage_drops_below_warning() {
+        let probe = DiskSpaceProbe::new(
+            "/rec".to_string(),
+            std::path::PathBuf::from("/rec"),
+            0.80,
+            0.95,
+            Weak::new(),
+        );
+        let total = 100;
+        // Free space for a given percentage used.
+        let notifies = |used: u64| probe.out_of_space_event(total - used, total).is_some();
+
+        assert!(!notifies(90), "warning level alone does not notify");
+        assert!(notifies(96), "reaching the critical threshold notifies");
+        assert!(!notifies(97), "still critical: already notified");
+        assert!(
+            !notifies(90),
+            "back to warning level: still the same episode"
+        );
+        assert!(!notifies(96), "critical again within the same episode");
+        assert!(!notifies(70), "recovered below warning");
+        assert!(notifies(96), "a new episode notifies again");
+
+        assert!(
+            probe.out_of_space_event(0, 0).is_none(),
+            "an unreadable disk is not out of space"
+        );
     }
 }
