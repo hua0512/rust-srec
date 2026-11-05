@@ -368,6 +368,7 @@ export function BaiduPcsConfigForm({
             <FlagFormField
               fieldName={fieldPath('remove_source_after_upload')}
               title={<Trans>Delete local files after upload</Trans>}
+              className="border-destructive/30 bg-destructive/5"
               description={
                 <Trans>
                   Removes each local file once its upload (or skip) is
