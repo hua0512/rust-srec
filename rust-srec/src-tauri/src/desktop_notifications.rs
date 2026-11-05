@@ -208,9 +208,8 @@ pub fn persist_desktop_notifications_config(
     let json = serde_json::to_string_pretty(cfg)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
     std::fs::write(&tmp_path, json)?;
-    if config_path.exists() {
-        let _ = std::fs::remove_file(&config_path);
-    }
+    // `rename` replaces an existing file on every platform, so a concurrent
+    // load always finds either the old or the new config.
     std::fs::rename(&tmp_path, &config_path)?;
     Ok(())
 }
