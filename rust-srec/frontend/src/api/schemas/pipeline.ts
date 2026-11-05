@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { JobProgressSnapshotSchema } from './session';
+import { paginated } from './common';
 
 /**
  * Epoch milliseconds as the backend serialises them: a number, a numeric
@@ -125,12 +126,7 @@ export const StalledOperationListSchema = z.object({
   items: z.array(StalledOperationSchema),
 });
 
-export const JobLogsResponseSchema = z.object({
-  items: z.array(JobLogEntrySchema),
-  total: z.number(),
-  limit: z.number(),
-  offset: z.number(),
-});
+export const JobLogsResponseSchema = paginated(JobLogEntrySchema);
 export type JobLogsResponse = z.infer<typeof JobLogsResponseSchema>;
 
 // Durable per-file upload result (upload_records row) from

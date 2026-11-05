@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { paginated } from './common';
 
 // --- Logging Configuration Schemas ---
 
@@ -76,12 +77,7 @@ export const LogFileInfoSchema = z.object({
 export type LogFileInfo = z.infer<typeof LogFileInfoSchema>;
 
 /** Log files list response */
-export const LogFilesResponseSchema = z.object({
-  items: z.array(LogFileInfoSchema),
-  total: z.number(),
-  limit: z.number(),
-  offset: z.number(),
-});
+export const LogFilesResponseSchema = paginated(LogFileInfoSchema);
 export type LogFilesResponse = z.infer<typeof LogFilesResponseSchema>;
 
 /** Archive token response */

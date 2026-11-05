@@ -1,8 +1,9 @@
 import { createServerFn } from '@/server/createServerFn';
-import { parseInput } from '../validate';
+import { parseInput, validateWith } from '../validate';
 import { fetchBackend, LONG_BACKEND_TIMEOUT_MS } from '../api';
 import { backendPath, PathIdSchema, withQuery } from '../backend-path';
 import {
+  paginated,
   StreamerSchema,
   CreateStreamerSchema,
   UpdateStreamerSchema,
@@ -13,7 +14,6 @@ import {
 } from '../../api/schemas';
 import { z } from 'zod';
 import { removeEmpty } from '@/lib/format';
-import type { BatchStreamerAction } from '@/api/schemas';
 import { StreamerCheckHistoryEntrySchema } from '@/api/schemas/check-history';
 
 export {
@@ -43,22 +43,7 @@ const StreamerUpdateSchema = UpdateStreamerSchema.extend({
 });
 
 export const listStreamers = createServerFn({ method: 'GET' })
-  .validator(
-    (
-      d: {
-        page?: number;
-        limit?: number;
-        search?: string;
-        platform?: string;
-        template?: string;
-        templateUnassigned?: boolean;
-        state?: string;
-        priority?: 'HIGH' | 'NORMAL' | 'LOW';
-        sortBy?: 'name' | 'priority' | 'state' | 'updated_at';
-        sortDir?: 'asc' | 'desc';
-      } = {},
-    ) => parseInput(StreamerFiltersSchema, d),
-  )
+  .validator(validateWith(StreamerFiltersSchema.default({})))
   .handler(async ({ data }) => {
     // Backend endpoint expects query params with offset-based pagination
     const params = new URLSearchParams();
@@ -80,19 +65,11 @@ export const listStreamers = createServerFn({ method: 'GET' })
 
     const json = await fetchBackend(withQuery('/streamers', params));
 
-    const PaginatedStreamerSchema = z.object({
-      items: z.array(StreamerSchema),
-      total: z.number(),
-      limit: z.number(),
-      offset: z.number(),
-    });
-    return PaginatedStreamerSchema.parse(json);
+    return paginated(StreamerSchema).parse(json);
   });
 
 export const batchUpdateStreamers = createServerFn({ method: 'POST' })
-  .validator((data: { ids: string[]; action: BatchStreamerAction }) =>
-    parseInput(BatchStreamerRequestSchema, data),
-  )
+  .validator(validateWith(BatchStreamerRequestSchema))
   .handler(async ({ data }) => {
     const json = await fetchBackend('/streamers/batch', {
       method: 'POST',
@@ -102,16 +79,14 @@ export const batchUpdateStreamers = createServerFn({ method: 'POST' })
   });
 
 export const getStreamer = createServerFn({ method: 'GET' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/streamers/${id}`);
     return StreamerSchema.parse(json);
   });
 
 export const createStreamer = createServerFn({ method: 'POST' })
-  .validator((data: z.infer<typeof CreateStreamerSchema>) =>
-    parseInput(CreateStreamerSchema, data),
-  )
+  .validator(validateWith(CreateStreamerSchema))
   .handler(async ({ data }) => {
     const payload = {
       ...data,
@@ -128,7 +103,7 @@ export const createStreamer = createServerFn({ method: 'POST' })
 
 export const updateStreamer = createServerFn({ method: 'POST' })
   .validator(
-    (d: { id: string; data: z.infer<typeof UpdateStreamerSchema> }) => ({
+    (d: { id: string; data: z.input<typeof StreamerUpdateSchema> }) => ({
       id: parseInput(PathIdSchema, d.id),
       data: parseInput(StreamerUpdateSchema, d.data),
     }),
@@ -148,7 +123,7 @@ export const updateStreamer = createServerFn({ method: 'POST' })
   });
 
 export const deleteStreamer = createServerFn({ method: 'POST' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data: id }) => {
     // Stopping a live recording can take the backend about half a minute.
     await fetchBackend(backendPath`/streamers/${id}`, {
@@ -158,7 +133,7 @@ export const deleteStreamer = createServerFn({ method: 'POST' })
   });
 
 export const extractMetadata = createServerFn({ method: 'POST' })
-  .validator((url: string) => parseInput(z.url(), url))
+  .validator(validateWith(z.url()))
   .handler(async ({ data: url }) => {
     const json = await fetchBackend('/streamers/extract-metadata', {
       method: 'POST',

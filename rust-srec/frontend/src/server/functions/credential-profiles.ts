@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { createServerFn } from '@/server/createServerFn';
-import { parseInput } from '../validate';
+import { validateWith } from '../validate';
 import { fetchBackend, PLATFORM_BACKEND_TIMEOUT_MS } from '../api';
 import { backendPath, PathIdSchema, withQuery } from '../backend-path';
 import {
@@ -22,9 +22,7 @@ const ScopeQuerySchema = z.object({
   platform_id: PathIdSchema,
 });
 export const getEffectiveCredentialSelection = createServerFn({ method: 'GET' })
-  .validator((input: z.infer<typeof ScopeQuerySchema>) =>
-    parseInput(ScopeQuerySchema, input),
-  )
+  .validator(validateWith(ScopeQuerySchema))
   .handler(async ({ data }) =>
     EffectiveCredentialSelectionSchema.parse(
       await fetchBackend(
@@ -35,9 +33,7 @@ export const getEffectiveCredentialSelection = createServerFn({ method: 'GET' })
 const PlatformQuerySchema = z.object({ platform_id: PathIdSchema });
 /** Lists a platform's accounts, which every scope on the platform shares. */
 export const listCredentialProfiles = createServerFn({ method: 'GET' })
-  .validator((input: z.infer<typeof PlatformQuerySchema>) =>
-    parseInput(PlatformQuerySchema, input),
-  )
+  .validator(validateWith(PlatformQuerySchema))
   .handler(async ({ data }) => {
     const result = await fetchBackend(
       withQuery('/credentials/profiles', new URLSearchParams(data)),
@@ -54,9 +50,7 @@ export const listCredentialAttention = createServerFn({
 );
 /** What the platform's accounts accept and support. */
 export const getCredentialCapabilities = createServerFn({ method: 'GET' })
-  .validator((input: z.infer<typeof PlatformQuerySchema>) =>
-    parseInput(PlatformQuerySchema, input),
-  )
+  .validator(validateWith(PlatformQuerySchema))
   .handler(async ({ data }) =>
     PlatformCredentialCapabilitiesSchema.parse(
       await fetchBackend(
@@ -65,9 +59,7 @@ export const getCredentialCapabilities = createServerFn({ method: 'GET' })
     ),
   );
 export const createCredentialProfile = createServerFn({ method: 'POST' })
-  .validator((input: z.infer<typeof CredentialProfileCreateSchema>) =>
-    parseInput(CredentialProfileCreateSchema, input),
-  )
+  .validator(validateWith(CredentialProfileCreateSchema))
   .handler(async ({ data }) =>
     CredentialProfileSummarySchema.parse(
       await fetchBackend('/credentials/profiles', {
@@ -77,9 +69,7 @@ export const createCredentialProfile = createServerFn({ method: 'POST' })
     ),
   );
 export const updateCredentialProfile = createServerFn({ method: 'POST' })
-  .validator((input: z.infer<typeof CredentialProfileUpdateSchema>) =>
-    parseInput(CredentialProfileUpdateSchema, input),
-  )
+  .validator(validateWith(CredentialProfileUpdateSchema))
   .handler(async ({ data: { id, ...body } }) =>
     CredentialProfileSummarySchema.parse(
       await fetchBackend(backendPath`/credentials/profiles/${id}`, {
@@ -93,9 +83,7 @@ const DeleteSchema = z.object({
   expected_version: z.number().int().positive(),
 });
 export const deleteCredentialProfile = createServerFn({ method: 'POST' })
-  .validator((input: z.infer<typeof DeleteSchema>) =>
-    parseInput(DeleteSchema, input),
-  )
+  .validator(validateWith(DeleteSchema))
   .handler(async ({ data: { id, expected_version } }) => {
     await fetchBackend(backendPath`/credentials/profiles/${id}`, {
       method: 'DELETE',
@@ -103,7 +91,7 @@ export const deleteCredentialProfile = createServerFn({ method: 'POST' })
     });
   });
 export const validateCredentialProfile = createServerFn({ method: 'POST' })
-  .validator((input: string) => parseInput(PathIdSchema, input))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data }) =>
     CredentialProfileDetailSchema.parse(
       await fetchBackend(backendPath`/credentials/profiles/${data}/validate`, {
@@ -113,7 +101,7 @@ export const validateCredentialProfile = createServerFn({ method: 'POST' })
     ),
   );
 export const refreshCredentialProfile = createServerFn({ method: 'POST' })
-  .validator((input: string) => parseInput(PathIdSchema, input))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data }) =>
     CredentialProfileDetailSchema.parse(
       await fetchBackend(backendPath`/credentials/profiles/${data}/refresh`, {
@@ -124,9 +112,7 @@ export const refreshCredentialProfile = createServerFn({ method: 'POST' })
   );
 
 export const generateCredentialLogin = createServerFn({ method: 'POST' })
-  .validator((input: z.infer<typeof CredentialLoginTargetSchema>) =>
-    parseInput(CredentialLoginTargetSchema, input),
-  )
+  .validator(validateWith(CredentialLoginTargetSchema))
   .handler(async ({ data }) =>
     CredentialLoginGeneratedSchema.parse(
       await fetchBackend('/credentials/login-sessions', {
@@ -137,7 +123,7 @@ export const generateCredentialLogin = createServerFn({ method: 'POST' })
     ),
   );
 export const pollCredentialLogin = createServerFn({ method: 'POST' })
-  .validator((input: string) => parseInput(PathIdSchema, input))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data }) =>
     CredentialLoginReceiptSchema.parse(
       await fetchBackend(

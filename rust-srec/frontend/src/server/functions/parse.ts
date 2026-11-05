@@ -1,6 +1,6 @@
 import { fetchBackend, PLATFORM_BACKEND_TIMEOUT_MS } from '../api';
 import { createServerFn } from '@/server/createServerFn';
-import { parseInput } from '../validate';
+import { validateWith } from '../validate';
 import {
   ParseUrlRequestSchema,
   ParseUrlResponseSchema,
@@ -15,7 +15,7 @@ import { z } from 'zod';
  * Parse a single URL to extract media info
  */
 export const parseUrl = createServerFn({ method: 'POST' })
-  .validator((data: ParseUrlRequest) => parseInput(ParseUrlRequestSchema, data))
+  .validator(validateWith(ParseUrlRequestSchema))
   .handler(async ({ data }: { data: ParseUrlRequest }) => {
     const json = await fetchBackend('/parse', {
       method: 'POST',
@@ -26,7 +26,7 @@ export const parseUrl = createServerFn({ method: 'POST' })
   });
 
 export const renewPlayback = createServerFn({ method: 'POST' })
-  .validator((handle: string) => parseInput(z.string().min(1), handle))
+  .validator(validateWith(z.string().min(1)))
   .handler(async ({ data }) =>
     ParseUrlResponseSchema.parse(
       await fetchBackend('/parse/playback/renew', {
@@ -41,9 +41,7 @@ export const renewPlayback = createServerFn({ method: 'POST' })
  * Parse multiple URLs in batch
  */
 export const parseUrlBatch = createServerFn({ method: 'POST' })
-  .validator((data: ParseUrlRequest[]) =>
-    parseInput(z.array(ParseUrlRequestSchema), data),
-  )
+  .validator(validateWith(z.array(ParseUrlRequestSchema)))
   .handler(async ({ data }: { data: ParseUrlRequest[] }) => {
     const json = await fetchBackend('/parse/batch', {
       method: 'POST',
@@ -57,9 +55,7 @@ export const parseUrlBatch = createServerFn({ method: 'POST' })
  * Resolve the true URL for a stream
  */
 export const resolveUrl = createServerFn({ method: 'POST' })
-  .validator((data: ResolveUrlRequest) =>
-    parseInput(ResolveUrlRequestSchema, data),
-  )
+  .validator(validateWith(ResolveUrlRequestSchema))
   .handler(async ({ data }: { data: ResolveUrlRequest }) => {
     const json = await fetchBackend('/parse/resolve', {
       method: 'POST',

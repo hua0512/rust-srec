@@ -1,5 +1,5 @@
 import { createServerFn } from '@/server/createServerFn';
-import { parseInput } from '../validate';
+import { parseInput, validateWith } from '../validate';
 import { fetchBackend, LONG_BACKEND_TIMEOUT_MS } from '../api';
 import { backendPath, PathIdSchema } from '../backend-path';
 import {
@@ -63,14 +63,14 @@ export const listEngines = createServerFn({ method: 'GET' }).handler(
 );
 
 export const getEngine = createServerFn({ method: 'GET' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/engines/${id}`);
     return parseEngine(json);
   });
 
 export const createEngine = createServerFn({ method: 'POST' })
-  .validator((data: z.infer<typeof CreateEngineRequestSchema>) => {
+  .validator((data: z.input<typeof CreateEngineRequestSchema>) => {
     const parsed = parseInput(CreateEngineRequestSchema, data);
     return {
       ...parsed,
@@ -89,7 +89,7 @@ export const createEngine = createServerFn({ method: 'POST' })
 
 export const updateEngine = createServerFn({ method: 'POST' })
   .validator(
-    (d: { id: string; data: z.infer<typeof UpdateEngineRequestSchema> }) => ({
+    (d: { id: string; data: z.input<typeof UpdateEngineRequestSchema> }) => ({
       id: parseInput(PathIdSchema, d.id),
       data: (() => {
         const parsed = parseInput(UpdateEngineRequestSchema, d.data);
@@ -114,13 +114,13 @@ export const updateEngine = createServerFn({ method: 'POST' })
   });
 
 export const deleteEngine = createServerFn({ method: 'POST' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data: id }) => {
     await fetchBackend(backendPath`/engines/${id}`, { method: 'DELETE' });
   });
 
 export const testEngine = createServerFn({ method: 'POST' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/engines/${id}/test`, {
       timeoutMs: LONG_BACKEND_TIMEOUT_MS,

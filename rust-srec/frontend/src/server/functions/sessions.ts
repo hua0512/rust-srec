@@ -1,25 +1,22 @@
 import { createServerFn } from '@/server/createServerFn';
-import { parseInput } from '../validate';
+import { validateWith } from '../validate';
 import { fetchBackend, LONG_BACKEND_TIMEOUT_MS } from '../api';
 import {
   backendPath,
   PathIdSchema,
+  PageSchema,
   withQuery,
   setPagination,
 } from '../backend-path';
 import {
+  paginated,
   SessionDanmuStatisticsSchema,
   SessionSchema,
   SessionSegmentSchema,
 } from '../../api/schemas';
 import { z } from 'zod';
 
-const PaginatedSessionSchema = z.object({
-  items: z.array(SessionSchema),
-  total: z.number(),
-  limit: z.number(),
-  offset: z.number(),
-});
+const PaginatedSessionSchema = paginated(SessionSchema);
 
 const SessionFiltersSchema = z.object({
   page: z.number().optional(),
@@ -32,19 +29,7 @@ const SessionFiltersSchema = z.object({
 });
 
 export const listSessions = createServerFn({ method: 'GET' })
-  .validator(
-    (
-      d: {
-        page?: number;
-        limit?: number;
-        streamer_id?: string;
-        active_only?: boolean;
-        from_date?: string;
-        to_date?: string;
-        search?: string;
-      } = {},
-    ) => parseInput(SessionFiltersSchema, d),
-  )
+  .validator(validateWith(SessionFiltersSchema.default({})))
   .handler(async ({ data }) => {
     const params = new URLSearchParams();
     const page = data.page || 1;
@@ -67,14 +52,14 @@ export const listSessions = createServerFn({ method: 'GET' })
   });
 
 export const getSession = createServerFn({ method: 'GET' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(backendPath`/sessions/${id}`);
     return SessionSchema.parse(json);
   });
 
 export const getSessionDanmuStatistics = createServerFn({ method: 'GET' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data: id }) => {
     const json = await fetchBackend(
       backendPath`/sessions/${id}/danmu-statistics`,
@@ -83,7 +68,7 @@ export const getSessionDanmuStatistics = createServerFn({ method: 'GET' })
   });
 
 export const deleteSession = createServerFn({ method: 'POST' })
-  .validator((id: string) => parseInput(PathIdSchema, id))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data: id }) => {
     await fetchBackend(backendPath`/sessions/${id}`, {
       method: 'DELETE',
@@ -91,9 +76,7 @@ export const deleteSession = createServerFn({ method: 'POST' })
   });
 
 export const deleteSessions = createServerFn({ method: 'POST' })
-  .validator((ids: string[]) =>
-    parseInput(z.array(z.string().min(1)).min(1), ids),
-  )
+  .validator(validateWith(z.array(z.string().min(1)).min(1)))
   .handler(async ({ data: ids }) => {
     const json = await fetchBackend('/sessions/batch-delete', {
       method: 'POST',
@@ -104,11 +87,7 @@ export const deleteSessions = createServerFn({ method: 'POST' })
   });
 
 export const listSessionSegments = createServerFn({ method: 'GET' })
-  .validator((d: { session_id: string; limit?: number; offset?: number }) => ({
-    session_id: parseInput(PathIdSchema, d.session_id),
-    limit: parseInput(z.number().optional(), d.limit),
-    offset: parseInput(z.number().optional(), d.offset),
-  }))
+  .validator(validateWith(PageSchema.extend({ session_id: PathIdSchema })))
   .handler(async ({ data }) => {
     const params = new URLSearchParams();
     setPagination(params, data);

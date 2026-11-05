@@ -33,3 +33,12 @@ export function parseInput<T extends z.ZodType>(
   if (result.success) return result.data;
   throw new Error(summarize(result.error));
 }
+
+/**
+ * A server-function validator for `schema`. Callers pass what the schema
+ * accepts (`z.input`, before defaults and transforms) and the handler gets
+ * what it produces.
+ */
+export function validateWith<T extends z.ZodType>(schema: T) {
+  return (input: z.input<T>): z.output<T> => parseInput(schema, input);
+}

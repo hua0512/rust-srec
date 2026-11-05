@@ -1,5 +1,5 @@
 import { createServerFn } from '@/server/createServerFn';
-import { parseInput } from '../validate';
+import { parseInput, validateWith } from '../validate';
 import { fetchBackend } from '../api';
 import { backendPath, PathIdSchema } from '../backend-path';
 import {
@@ -10,7 +10,7 @@ import {
 import { z } from 'zod';
 
 export const listFilters = createServerFn({ method: 'GET' })
-  .validator((streamerId: string) => parseInput(PathIdSchema, streamerId))
+  .validator(validateWith(PathIdSchema))
   .handler(async ({ data: streamerId }) => {
     const json = await fetchBackend(
       backendPath`/streamers/${streamerId}/filters`,
@@ -22,7 +22,7 @@ export const createFilter = createServerFn({ method: 'POST' })
   .validator(
     (d: {
       streamerId: string;
-      data: z.infer<typeof CreateFilterRequestSchema>;
+      data: z.input<typeof CreateFilterRequestSchema>;
     }) => ({
       streamerId: parseInput(PathIdSchema, d.streamerId),
       data: parseInput(CreateFilterRequestSchema, d.data),
@@ -44,7 +44,7 @@ export const updateFilter = createServerFn({ method: 'POST' })
     (d: {
       streamerId: string;
       filterId: string;
-      data: z.infer<typeof UpdateFilterRequestSchema>;
+      data: z.input<typeof UpdateFilterRequestSchema>;
     }) => ({
       streamerId: parseInput(PathIdSchema, d.streamerId),
       filterId: parseInput(PathIdSchema, d.filterId),

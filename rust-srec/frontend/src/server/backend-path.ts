@@ -93,6 +93,12 @@ export function withQuery(path: string, params: URLSearchParams): string {
   return query ? `${path}?${query}` : path;
 }
 
+/** The optional `limit` / `offset` a paginated server function accepts. */
+export const PageSchema = z.object({
+  limit: z.number().optional(),
+  offset: z.number().optional(),
+});
+
 /** Sets whichever of `limit` / `offset` the caller supplied. */
 export function setPagination(
   params: URLSearchParams,
