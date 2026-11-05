@@ -6,7 +6,6 @@
 
 use flv::data::FlvData;
 use flv_fix::{FlvPipeline, FlvPipelineConfig, FlvWriter, FlvWriterConfig};
-use mesio::flv::FlvProtocolConfig;
 use mesio::{DownloadError, DownloadRequest, MesioConfig, MesioDownloader, ProtocolSelection};
 use pipeline_common::{
     ChannelSpec, PipelineError, PipelineProvider, ProtocolWriter, StreamerContext, spawn_pipeline,
@@ -31,8 +30,6 @@ pub(super) struct FlvDownloader {
     handle: Arc<DownloadHandle>,
     /// Engine-specific configuration.
     engine_config: MesioEngineConfig,
-    /// Base FLV configuration from the engine.
-    flv_config: Option<FlvProtocolConfig>,
 }
 
 impl FlvDownloader {
@@ -41,23 +38,17 @@ impl FlvDownloader {
     /// # Arguments
     /// * `handle` - The download attempt to record.
     /// * `engine_config` - Mesio engine-specific configuration.
-    /// * `flv_config` - Optional base FLV configuration from the engine.
-    pub(super) fn new(
-        handle: Arc<DownloadHandle>,
-        engine_config: MesioEngineConfig,
-        flv_config: Option<FlvProtocolConfig>,
-    ) -> Self {
+    pub(super) fn new(handle: Arc<DownloadHandle>, engine_config: MesioEngineConfig) -> Self {
         Self {
             handle,
             engine_config,
-            flv_config,
         }
     }
 
     /// Create a MesioDownloader with the configured settings.
     fn create_downloader(&self, token: CancellationToken) -> MesioDownloader {
         let config = self.handle.config_snapshot();
-        let flv_config = build_flv_config(&config, self.flv_config.clone());
+        let flv_config = build_flv_config(&config, &self.engine_config);
 
         MesioDownloader::new(MesioConfig {
             hls: mesio::hls::HlsConfig::default(),
@@ -219,7 +210,7 @@ mod tests {
 
         let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<SegmentEvent>(32);
         let handle = DownloadHandle::new("download", EngineType::Mesio, config, event_tx);
-        let downloader = FlvDownloader::new(Arc::new(handle), MesioEngineConfig::default(), None);
+        let downloader = FlvDownloader::new(Arc::new(handle), MesioEngineConfig::default());
 
         let header = FlvData::Header(FlvHeader::new(true, true));
         let tag = FlvData::Tag(FlvTag::new(

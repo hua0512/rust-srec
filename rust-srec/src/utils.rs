@@ -14,6 +14,7 @@ pub(crate) mod required_channel;
 pub(crate) mod shared_event;
 pub(crate) mod task_supervisor;
 pub mod text;
+pub(crate) mod tools;
 pub mod url;
 
 pub(crate) fn configure_ffmpeg_locale(command: &mut Command) {

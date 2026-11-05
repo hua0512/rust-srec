@@ -150,11 +150,7 @@ impl AssBurnInProcessor {
     }
 
     fn resolve_ffmpeg_path(config: &AssBurnInConfig) -> String {
-        config
-            .ffmpeg_path
-            .clone()
-            .or_else(|| std::env::var("FFMPEG_PATH").ok())
-            .unwrap_or_else(|| "ffmpeg".to_string())
+        crate::utils::tools::resolve(config.ffmpeg_path.as_deref(), "FFMPEG_PATH", "ffmpeg")
     }
 
     fn escape_filter_path(value: &str) -> String {
@@ -599,41 +595,25 @@ impl Processor for AssBurnInProcessor {
         let mut removed_video_count = 0usize;
         let mut failed_remove_video_count = 0usize;
         if config.delete_source_videos_on_success {
-            for video in &succeeded_inputs {
-                match tokio::fs::remove_file(video).await {
-                    Ok(()) => {
-                        deleted_paths.insert(video.clone());
-                        removed_video_count = removed_video_count.saturating_add(1);
-                    }
-                    Err(e) => {
-                        failed_remove_video_count = failed_remove_video_count.saturating_add(1);
-                        let msg = format!("Failed to remove source video {}: {}", video, e);
-                        logs.push(JobLogEntry::warn(msg));
-                    }
-                }
-            }
+            let summary =
+                super::utils::remove_sources(&succeeded_inputs, "source video", ctx).await;
+            removed_video_count = summary.removed.len();
+            failed_remove_video_count = summary.failed.len();
+            deleted_paths.extend(summary.removed);
         }
 
         let mut removed_ass_count = 0usize;
         let mut failed_remove_ass_count = 0usize;
         if config.delete_source_ass_on_success {
-            let mut unique = HashSet::<String>::new();
-            for ass in &matched_ass_for_succeeded {
-                if !unique.insert(ass.clone()) {
-                    continue;
-                }
-                match tokio::fs::remove_file(ass).await {
-                    Ok(()) => {
-                        deleted_paths.insert(ass.clone());
-                        removed_ass_count = removed_ass_count.saturating_add(1);
-                    }
-                    Err(e) => {
-                        failed_remove_ass_count = failed_remove_ass_count.saturating_add(1);
-                        let msg = format!("Failed to remove source ass {}: {}", ass, e);
-                        logs.push(JobLogEntry::warn(msg));
-                    }
-                }
-            }
+            let mut seen = HashSet::new();
+            let unique: Vec<&String> = matched_ass_for_succeeded
+                .iter()
+                .filter(|ass| seen.insert(*ass))
+                .collect();
+            let summary = super::utils::remove_sources(unique, "source ass", ctx).await;
+            removed_ass_count = summary.removed.len();
+            failed_remove_ass_count = summary.failed.len();
+            deleted_paths.extend(summary.removed);
         }
 
         // Outputs for chaining: pass the inputs through when configured; otherwise

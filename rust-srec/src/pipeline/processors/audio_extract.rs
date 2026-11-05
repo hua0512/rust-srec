@@ -117,7 +117,7 @@ impl AudioExtractProcessor {
     /// Create a new audio extraction processor.
     pub fn new() -> Self {
         Self {
-            ffmpeg_path: std::env::var("FFMPEG_PATH").unwrap_or_else(|_| "ffmpeg".to_string()),
+            ffmpeg_path: crate::utils::tools::resolve(None, "FFMPEG_PATH", "ffmpeg"),
         }
     }
 
@@ -238,7 +238,7 @@ impl AudioExtractProcessor {
 
     /// The first audio stream of the file, or `None` when it has none, using ffprobe.
     async fn probe_audio_codec(&self, input_path: &str) -> Result<Option<AudioStream>> {
-        let ffprobe_path = std::env::var("FFPROBE_PATH").unwrap_or_else(|_| "ffprobe".to_string());
+        let ffprobe_path = crate::utils::tools::resolve(None, "FFPROBE_PATH", "ffprobe");
 
         let mut cmd = process_utils::tokio_command(&ffprobe_path);
         cmd.args([

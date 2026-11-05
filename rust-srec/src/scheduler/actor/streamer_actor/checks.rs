@@ -202,7 +202,7 @@ impl StreamerActor {
                 }
 
                 // Record the error in state
-                let error_result = CheckResult::failure(&e.message);
+                let error_result = CheckResult::failure();
                 self.state
                     .record_check(error_result, &self.config, self.get_error_count());
 

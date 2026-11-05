@@ -313,7 +313,6 @@ fn convert_live_status_to_check_result(status: &LiveStatus) -> CheckResult {
             stream_url: None,
             title: Some(title.clone()),
             checked_at: chrono::Utc::now(),
-            error: None,
             next_check_hint: *next_check_hint,
         },
         LiveStatus::Offline => CheckResult::success(StreamerState::NotLive),
@@ -327,7 +326,6 @@ fn convert_live_status_to_check_result(status: &LiveStatus) -> CheckResult {
                 stream_url: None,
                 title: Some(title.clone()),
                 checked_at: chrono::Utc::now(),
-                error: None,
                 next_check_hint,
             }
         }
@@ -345,7 +343,6 @@ fn convert_live_status_to_check_result(status: &LiveStatus) -> CheckResult {
             stream_url: None,
             title: None,
             checked_at: chrono::Utc::now(),
-            error: status.fatal_error_description().map(str::to_owned),
             next_check_hint: None,
         },
     }

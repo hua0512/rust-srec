@@ -180,6 +180,36 @@ impl<R: Read> Read for CancelProgressReader<R> {
     }
 }
 
+fn input_not_found(input_path: &str) -> crate::Error {
+    crate::Error::PipelineError(format!("Input file does not exist: {input_path}"))
+}
+
+/// Sum of the input file sizes, the byte total for progress reports.
+fn total_input_size(inputs: &[String]) -> Result<u64> {
+    let mut total: u64 = 0;
+    for input_path in inputs {
+        let metadata = std::fs::metadata(input_path).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                input_not_found(input_path)
+            } else {
+                crate::Error::io_path("reading input metadata", Path::new(input_path), e)
+            }
+        })?;
+        total = total.saturating_add(metadata.len());
+    }
+    Ok(total)
+}
+
+fn open_input(input_path: &str) -> Result<File> {
+    File::open(input_path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            input_not_found(input_path)
+        } else {
+            crate::Error::io_path("opening input file", Path::new(input_path), e)
+        }
+    })
+}
+
 fn archive_entry_name(input_path: &str, preserve_paths: bool) -> Result<String> {
     let path = Path::new(input_path);
     if !preserve_paths {
@@ -271,9 +301,8 @@ impl CompressionProcessor {
         cancel: CancellationToken,
         started: Instant,
     ) -> Result<(u64, u64)> {
-        let file = File::create(output_path).map_err(|e| {
-            crate::Error::PipelineError(format!("Failed to create ZIP archive: {}", e))
-        })?;
+        let file = File::create(output_path)
+            .map_err(|e| crate::Error::io_path("creating ZIP archive", output_path, e))?;
 
         let file = BufWriter::new(file);
         let mut zip = ZipWriter::new(file);
@@ -296,23 +325,7 @@ impl CompressionProcessor {
                 .compression_level(Some(config.compression_level as i64))
         };
 
-        let mut total_input_size: u64 = 0;
-        for input_path in inputs {
-            let metadata = std::fs::metadata(input_path).map_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    crate::Error::PipelineError(format!(
-                        "Input file does not exist: {}",
-                        input_path
-                    ))
-                } else {
-                    crate::Error::PipelineError(format!(
-                        "Failed to get input metadata {}: {}",
-                        input_path, e
-                    ))
-                }
-            })?;
-            total_input_size = total_input_size.saturating_add(metadata.len());
-        }
+        let total_input_size = total_input_size(inputs)?;
 
         let mut bytes_done: u64 = 0;
 
@@ -326,19 +339,7 @@ impl CompressionProcessor {
             let archive_name = archive_entry_name(input_path, config.preserve_paths)?;
             debug!("Adding to ZIP: {} as {}", input_path, archive_name);
 
-            let file = File::open(input_path).map_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    crate::Error::PipelineError(format!(
-                        "Input file does not exist: {}",
-                        input_path
-                    ))
-                } else {
-                    crate::Error::PipelineError(format!(
-                        "Failed to open input file {}: {}",
-                        input_path, e
-                    ))
-                }
-            })?;
+            let file = open_input(input_path)?;
 
             let mut reader = CancelProgressReader::new(
                 BufReader::new(file),
@@ -385,9 +386,8 @@ impl CompressionProcessor {
         cancel: CancellationToken,
         started: Instant,
     ) -> Result<(u64, u64)> {
-        let file = File::create(output_path).map_err(|e| {
-            crate::Error::PipelineError(format!("Failed to create tar.gz archive: {}", e))
-        })?;
+        let file = File::create(output_path)
+            .map_err(|e| crate::Error::io_path("creating tar.gz archive", output_path, e))?;
 
         // Map compression level (0-9) to flate2 Compression
         let compression = match config.compression_level {
@@ -400,23 +400,7 @@ impl CompressionProcessor {
         let encoder = GzEncoder::new(file, compression);
         let mut tar = TarBuilder::new(encoder);
 
-        let mut total_input_size: u64 = 0;
-        for input_path in inputs {
-            let metadata = std::fs::metadata(input_path).map_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    crate::Error::PipelineError(format!(
-                        "Input file does not exist: {}",
-                        input_path
-                    ))
-                } else {
-                    crate::Error::PipelineError(format!(
-                        "Failed to get input metadata {}: {}",
-                        input_path, e
-                    ))
-                }
-            })?;
-            total_input_size = total_input_size.saturating_add(metadata.len());
-        }
+        let total_input_size = total_input_size(inputs)?;
 
         let mut bytes_done: u64 = 0;
 
@@ -430,22 +414,9 @@ impl CompressionProcessor {
             let archive_name = archive_entry_name(input_path, config.preserve_paths)?;
             debug!("Adding to tar.gz: {} as {}", input_path, archive_name);
 
-            let mut file = File::open(input_path).map_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    crate::Error::PipelineError(format!(
-                        "Input file does not exist: {}",
-                        input_path
-                    ))
-                } else {
-                    crate::Error::PipelineError(format!(
-                        "Failed to open input file {}: {}",
-                        input_path, e
-                    ))
-                }
-            })?;
-
+            let mut file = open_input(input_path)?;
             let metadata = file.metadata().map_err(|e| {
-                crate::Error::PipelineError(format!("Failed to get file metadata: {}", e))
+                crate::Error::io_path("reading input metadata", Path::new(input_path), e)
             })?;
 
             let mut header = tar::Header::new_gnu();
@@ -482,14 +453,14 @@ impl CompressionProcessor {
         }
 
         // Finish the tar archive and get the gzip encoder back
-        let encoder = tar.into_inner().map_err(|e| {
-            crate::Error::PipelineError(format!("Failed to finalize tar archive: {}", e))
-        })?;
+        let encoder = tar
+            .into_inner()
+            .map_err(|e| crate::Error::io_path("finalizing tar archive", output_path, e))?;
 
         // Finish gzip compression
-        encoder.finish().map_err(|e| {
-            crate::Error::PipelineError(format!("Failed to finalize gzip compression: {}", e))
-        })?;
+        encoder
+            .finish()
+            .map_err(|e| crate::Error::io_path("finalizing gzip compression", output_path, e))?;
 
         // Get output file size
         let output_size = std::fs::metadata(output_path).map(|m| m.len()).unwrap_or(0);

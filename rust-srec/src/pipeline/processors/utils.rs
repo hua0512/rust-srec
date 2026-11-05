@@ -1,6 +1,6 @@
 //! Utility functions for processors.
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::ops::Range;
 use std::path::Path;
 use std::process::Stdio;
@@ -134,6 +134,72 @@ pub fn parse_config_or_default<T: DeserializeOwned + Default>(
             T::default()
         }
     }
+}
+
+/// Parse a processor config that must be valid when present, so a malformed
+/// config fails the job instead of silently running with defaults.
+/// `label` names the processor in the error, e.g. "rclone".
+pub(super) fn parse_config_strict<T: DeserializeOwned + Default>(
+    raw: Option<&str>,
+    label: &str,
+) -> crate::Result<T> {
+    match raw {
+        Some(raw) => serde_json::from_str(raw)
+            .map_err(|e| crate::Error::Validation(format!("Invalid {label} config JSON: {e}"))),
+        None => Ok(T::default()),
+    }
+}
+
+/// Fail with a validation error naming the first input that does not exist.
+pub(super) async fn ensure_inputs_exist(inputs: &[String]) -> crate::Result<()> {
+    for input_path in inputs {
+        if !try_exists(Path::new(input_path)).await? {
+            return Err(crate::Error::Validation(format!(
+                "Input file does not exist: {input_path}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Outcome of [`remove_sources`].
+#[derive(Debug, Default)]
+pub(super) struct RemovalSummary {
+    /// Paths that were removed or were already absent.
+    pub removed: HashSet<String>,
+    /// The subset of `removed` that was already absent.
+    pub absent: HashSet<String>,
+    /// The logged message for each path that could not be removed.
+    pub failed: Vec<String>,
+}
+
+/// Best-effort removal of source files after their outputs were published.
+/// A path that is already absent counts as removed. Each failure is logged
+/// once to tracing and once to the job log, as "Failed to remove {what} {path}".
+pub(super) async fn remove_sources<'a>(
+    paths: impl IntoIterator<Item = &'a String>,
+    what: &str,
+    ctx: &ProcessorContext,
+) -> RemovalSummary {
+    let mut summary = RemovalSummary::default();
+    for path in paths {
+        match tokio::fs::remove_file(path).await {
+            Ok(()) => {
+                summary.removed.insert(path.clone());
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                summary.removed.insert(path.clone());
+                summary.absent.insert(path.clone());
+            }
+            Err(error) => {
+                warn!(path = %path, %error, "Failed to remove {what}");
+                let msg = format!("Failed to remove {what} {path}: {error}");
+                ctx.warn(msg.clone());
+                summary.failed.push(msg);
+            }
+        }
+    }
+    summary
 }
 
 /// Get the lowercase extension from a path.

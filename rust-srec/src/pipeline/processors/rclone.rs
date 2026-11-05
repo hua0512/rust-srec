@@ -20,7 +20,6 @@ use super::traits::{
 use super::utils::CommandOutput;
 use crate::Result;
 use crate::pipeline::progress::ProgressKind;
-use crate::utils::filename::expand_placeholders_at;
 
 /// Rclone operation type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -213,6 +212,22 @@ impl RemoteDirGate {
 
 const DEFAULT_ATTEMPTS: u32 = 3;
 
+/// Transfer flags for `run_rclone_with_progress`, which parses each stderr
+/// line as a `--use-json-log` object and turns entries carrying `stats` into
+/// progress snapshots. `--stats-log-level NOTICE` must not be filtered by the
+/// main `--log-level`, or the periodic stats never reach stderr.
+/// `--stats-one-line` only shrinks the human `msg` embedded in each stats object.
+const JSON_STATS_ARGS: [&str; 8] = [
+    "--use-json-log",
+    "--log-level",
+    "NOTICE",
+    "--stats-log-level",
+    "NOTICE",
+    "--stats",
+    "1s",
+    "--stats-one-line",
+];
+
 /// Processor for interacting with Rclone.
 pub struct RcloneProcessor {
     /// Path to rclone binary.
@@ -262,7 +277,7 @@ impl RcloneProcessor {
     /// Create a new rclone processor.
     pub fn new() -> Self {
         Self::with_command_runner(
-            std::env::var("RCLONE_PATH").unwrap_or_else(|_| "rclone".to_string()),
+            crate::utils::tools::resolve(None, "RCLONE_PATH", "rclone"),
             Arc::new(ProcessRcloneCommandRunner),
         )
     }
@@ -701,25 +716,8 @@ impl RcloneProcessor {
                 cmd.arg("--config").arg(cfg);
             }
 
-            // `run_rclone_with_progress` parses each stderr line as a
-            // `--use-json-log` object; entries carrying `stats` become
-            // progress snapshots. `--stats-log-level NOTICE` must not be
-            // filtered by the main `--log-level`, or the periodic stats
-            // never reach stderr. `--stats-one-line` only shrinks the human
-            // `msg` embedded in each stats object.
-            cmd.args([
-                "--use-json-log",
-                "--log-level",
-                "NOTICE",
-                "--stats-log-level",
-                "NOTICE",
-                "--stats",
-                "1s",
-                "--stats-one-line",
-                cmd_op,
-                input_path,
-                remote_destination,
-            ]);
+            cmd.args(JSON_STATS_ARGS);
+            cmd.args([cmd_op, input_path, remote_destination]);
 
             // Throughput flags first, so any duplicates in `extra_args` win.
             cmd.args(*throughput);
@@ -922,17 +920,8 @@ impl RcloneProcessor {
                 cmd.arg("--config").arg(cfg);
             }
 
-            // Same stderr contract as `process_single`: JSON log lines with
-            // stats at NOTICE so `run_rclone_with_progress` receives them.
+            cmd.args(JSON_STATS_ARGS);
             cmd.args([
-                "--use-json-log",
-                "--log-level",
-                "NOTICE",
-                "--stats-log-level",
-                "NOTICE",
-                "--stats",
-                "1s",
-                "--stats-one-line",
                 "--files-from",
                 &files_from_path_str,
                 cmd_op,
@@ -1122,15 +1111,8 @@ impl RcloneProcessor {
         );
 
         // Expand placeholders in destination path using reference timestamp
-        let expanded = expand_placeholders_at(
-            &remote_destination_raw,
-            &input.streamer_id,
-            &input.session_id,
-            input.streamer_name.as_deref(),
-            input.session_title.as_deref(),
-            input.platform.as_deref(),
-            Some(reference_timestamp_ms),
-        );
+        let expanded =
+            input.expand_placeholders(&remote_destination_raw, Some(reference_timestamp_ms));
 
         tracing::debug!(
             template = %Self::loggable_destination(&remote_destination_raw),
@@ -1180,28 +1162,13 @@ impl Processor for RcloneProcessor {
             ));
         }
 
-        let config: RcloneConfig = match input.config.as_deref() {
-            Some(s) => serde_json::from_str(s).map_err(|e| {
-                crate::Error::Validation(format!("Invalid rclone config JSON: {e}"))
-            })?,
-            None => RcloneConfig::default(),
-        };
+        let config: RcloneConfig =
+            super::utils::parse_config_strict(input.config.as_deref(), "rclone")?;
 
         // Only persisted retries may begin with sources consumed by an earlier
         // execution. Validate the entire initial batch before transferring any file.
         if !matches!(config.operation, RcloneOperation::Move) || !ctx.is_retry {
-            for input_path in &input.inputs {
-                let path = Path::new(input_path);
-                let exists = tokio::fs::try_exists(path)
-                    .await
-                    .map_err(|error| crate::Error::io_path("try_exists", path, error))?;
-                if !exists {
-                    return Err(crate::Error::Validation(format!(
-                        "Input file does not exist: {}",
-                        input_path
-                    )));
-                }
-            }
+            super::utils::ensure_inputs_exist(&input.inputs).await?;
         }
 
         let remote_destination = Self::determine_remote_destination(input, &config);

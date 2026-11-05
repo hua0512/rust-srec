@@ -31,7 +31,6 @@ use crate::pipeline::job_queue::JobLogEntry;
 use crate::pipeline::progress::{
     JobProgressSnapshot, ProgressKind, ProgressReporter, progress_file_name,
 };
-use crate::utils::filename::{expand_placeholders, expand_placeholders_at};
 use crate::utils::text::format_bytes;
 
 mod native;
@@ -349,12 +348,8 @@ impl Processor for CopyMoveProcessor {
         // anyway — but with a misleading "No destination directory specified"
         // error that hides the actual parse problem (e.g. a misspelled
         // `time_anchor` variant).
-        let config: CopyMoveConfig = match input.config.as_deref() {
-            Some(s) => serde_json::from_str(s).map_err(|e| {
-                crate::Error::Validation(format!("Invalid copy/move config JSON: {e}"))
-            })?,
-            None => CopyMoveConfig::default(),
-        };
+        let config: CopyMoveConfig =
+            super::utils::parse_config_strict(input.config.as_deref(), "copy/move")?;
 
         if input.inputs.is_empty() {
             return Err(crate::Error::PipelineError(
@@ -369,28 +364,13 @@ impl Processor for CopyMoveProcessor {
             )
         })?;
 
-        // Expand placeholders in destination path. `time_anchor: None`
-        // uses the local time at execution via `expand_placeholders`.
-        let dest_dir = if let Some(anchor) = config.time_anchor {
-            expand_placeholders_at(
-                dest_template,
-                &input.streamer_id,
-                &input.session_id,
-                input.streamer_name.as_deref(),
-                input.session_title.as_deref(),
-                input.platform.as_deref(),
-                Some(anchor.reference_time(input).timestamp_millis()),
-            )
-        } else {
-            expand_placeholders(
-                dest_template,
-                &input.streamer_id,
-                &input.session_id,
-                input.streamer_name.as_deref(),
-                input.session_title.as_deref(),
-                input.platform.as_deref(),
-            )
-        };
+        // `time_anchor: None` expands time tokens with the local time at execution.
+        let dest_dir = input.expand_placeholders(
+            dest_template,
+            config
+                .time_anchor
+                .map(|anchor| anchor.reference_time(input).timestamp_millis()),
+        );
 
         debug!(
             template = %dest_template,
