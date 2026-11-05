@@ -374,7 +374,7 @@ impl RemuxProcessor {
     /// Create a new remux processor.
     pub fn new() -> Self {
         Self {
-            ffmpeg_path: std::env::var("FFMPEG_PATH").unwrap_or_else(|_| "ffmpeg".to_string()),
+            ffmpeg_path: crate::utils::tools::resolve(None, "FFMPEG_PATH", "ffmpeg"),
         }
     }
 
@@ -824,6 +824,7 @@ impl Processor for RemuxProcessor {
             }
 
             // Only remove inputs that were actually remuxed. Skipped inputs should never be removed.
+            let mut to_remove = Vec::with_capacity(output.succeeded_inputs.len());
             for input_path in &output.succeeded_inputs {
                 let input_key = comparison_key(input_path).await;
                 if output_keys.iter().any(|output_key| {
@@ -841,22 +842,16 @@ impl Processor for RemuxProcessor {
                     continue;
                 }
 
-                let input_path_string = make_absolute(input_path).await;
-                let input_path = input_path_string.as_str();
-                if let Err(e) = tokio::fs::remove_file(input_path).await {
-                    warn!(path = input_path, error = %e, "Failed to remove remux input");
-                    output.logs.push(JobLogEntry::warn(format!(
-                        "Failed to remove input file {}: {}",
-                        input_path, e
-                    )));
-                } else {
-                    removed_inputs += 1;
-                    info!("Removed input file after successful remux: {}", input_path);
-                    output.logs.push(JobLogEntry::info(format!(
-                        "Removed input file: {}",
-                        input_path
-                    )));
-                }
+                to_remove.push(make_absolute(input_path).await);
+            }
+
+            let summary = super::utils::remove_sources(&to_remove, "input file", ctx).await;
+            removed_inputs = summary.removed.len();
+            for input_path in to_remove.iter().filter(|p| summary.removed.contains(*p)) {
+                info!("Removed input file after successful remux: {}", input_path);
+                output.logs.push(JobLogEntry::info(format!(
+                    "Removed input file: {input_path}"
+                )));
             }
         }
 

@@ -103,11 +103,11 @@ impl DanmakuFactoryProcessor {
     }
 
     fn resolve_binary_path(config: &DanmakuFactoryConfig) -> String {
-        config
-            .binary_path
-            .clone()
-            .or_else(|| std::env::var("DANMAKU_FACTORY_PATH").ok())
-            .unwrap_or_else(|| "DanmakuFactory".to_string())
+        crate::utils::tools::resolve(
+            config.binary_path.as_deref(),
+            "DANMAKU_FACTORY_PATH",
+            "DanmakuFactory",
+        )
     }
 
     fn substitute_args(template: &[String], input: &str, output: &str) -> Vec<String> {
@@ -396,20 +396,10 @@ impl Processor for DanmakuFactoryProcessor {
         let mut removed_xml_count = 0usize;
         let mut failed_remove_xml_count = 0usize;
         if config.delete_source_xml_on_success {
-            for xml_path in &converted_xml {
-                match tokio::fs::remove_file(xml_path).await {
-                    Ok(()) => {
-                        removed_xml_count = removed_xml_count.saturating_add(1);
-                    }
-                    Err(e) => {
-                        failed_remove_xml_count = failed_remove_xml_count.saturating_add(1);
-                        let msg = format!("Failed to remove source XML {}: {}", xml_path, e);
-                        warn!("{}", msg);
-                        delete_warnings.push(msg.clone());
-                        logs.push(JobLogEntry::warn(msg));
-                    }
-                }
-            }
+            let summary = super::utils::remove_sources(&converted_xml, "source XML", ctx).await;
+            removed_xml_count = summary.removed.len();
+            failed_remove_xml_count = summary.failed.len();
+            delete_warnings.extend(summary.failed);
         }
 
         let duration = start.elapsed().as_secs_f64().max(duration_secs);

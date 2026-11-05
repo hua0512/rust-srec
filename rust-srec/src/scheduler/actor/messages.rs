@@ -295,8 +295,6 @@ pub struct CheckResult {
     pub title: Option<String>,
     /// Timestamp of the check.
     pub checked_at: DateTime<Utc>,
-    /// Error message if check failed.
-    pub error: Option<String>,
     /// Hint for when to check next (used for smart wake).
     pub next_check_hint: Option<DateTime<Utc>>,
 }
@@ -309,19 +307,17 @@ impl CheckResult {
             stream_url: None,
             title: None,
             checked_at: Utc::now(),
-            error: None,
             next_check_hint: None,
         }
     }
 
     /// Create a failed check result.
-    pub fn failure(error: impl Into<String>) -> Self {
+    pub fn failure() -> Self {
         Self {
             state: StreamerState::Error,
             stream_url: None,
             title: None,
             checked_at: Utc::now(),
-            error: Some(error.into()),
             next_check_hint: None,
         }
     }

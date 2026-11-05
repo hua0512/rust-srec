@@ -61,7 +61,7 @@ impl ThumbnailProcessor {
     /// Create a new thumbnail processor.
     pub fn new() -> Self {
         Self {
-            ffmpeg_path: std::env::var("FFMPEG_PATH").unwrap_or_else(|_| "ffmpeg".to_string()),
+            ffmpeg_path: crate::utils::tools::resolve(None, "FFMPEG_PATH", "ffmpeg"),
         }
     }
 

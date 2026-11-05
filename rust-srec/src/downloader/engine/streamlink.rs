@@ -82,11 +82,8 @@ impl StreamlinkEngine {
     }
 
     fn with_version(config: StreamlinkEngineConfig, version: EngineVersion) -> Self {
-        let ffmpeg_path = config
-            .ffmpeg_path
-            .clone()
-            .or_else(|| std::env::var("FFMPEG_PATH").ok())
-            .unwrap_or_else(|| "ffmpeg".to_string());
+        let ffmpeg_path =
+            crate::utils::tools::resolve(config.ffmpeg_path.as_deref(), "FFMPEG_PATH", "ffmpeg");
 
         Self {
             config,

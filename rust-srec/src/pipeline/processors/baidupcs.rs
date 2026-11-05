@@ -19,7 +19,7 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tokio::process::Command;
 use tokio::time::MissedTickBehavior;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 use super::traits::{
     Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, TimeAnchor,
@@ -31,7 +31,6 @@ use crate::pipeline::job_queue::JobLogEntry;
 use crate::pipeline::progress::{
     JobPhase, JobProgressSnapshot, ProgressKind, ProgressReporter, progress_file_name,
 };
-use crate::utils::filename::expand_placeholders_at;
 
 // Output markers printed by BaiduPCS-Go (hardcoded constants in its
 // source, not localized). `parse_upload_outcomes` resolves per-file
@@ -871,15 +870,7 @@ impl BaiduPcsProcessor {
         };
 
         let reference_timestamp_ms = config.time_anchor.reference_time(input).timestamp_millis();
-        let expanded = expand_placeholders_at(
-            &raw,
-            &input.streamer_id,
-            &input.session_id,
-            input.streamer_name.as_deref(),
-            input.session_title.as_deref(),
-            input.platform.as_deref(),
-            Some(reference_timestamp_ms),
-        );
+        let expanded = input.expand_placeholders(&raw, Some(reference_timestamp_ms));
         Self::normalize_remote_dir(&expanded)
     }
 
@@ -998,12 +989,8 @@ impl Processor for BaiduPcsProcessor {
             ));
         }
 
-        let config: BaiduPcsConfig = match input.config.as_deref() {
-            Some(raw) => serde_json::from_str(raw).map_err(|e| {
-                crate::Error::Validation(format!("Invalid baidupcs config JSON: {e}"))
-            })?,
-            None => BaiduPcsConfig::default(),
-        };
+        let config: BaiduPcsConfig =
+            super::utils::parse_config_strict(input.config.as_deref(), "baidupcs")?;
 
         let binary_path = config
             .binary_path
@@ -1018,17 +1005,7 @@ impl Processor for BaiduPcsProcessor {
         let (mut pending, resumed) = if config.remove_source_after_upload && ctx.is_retry {
             super::inputs::partition_absent_inputs(&input.inputs).await
         } else {
-            for input_path in &input.inputs {
-                let path = Path::new(input_path);
-                let exists = tokio::fs::try_exists(path)
-                    .await
-                    .map_err(|error| crate::Error::io_path("try_exists", path, error))?;
-                if !exists {
-                    return Err(crate::Error::Validation(format!(
-                        "Input file does not exist: {input_path}"
-                    )));
-                }
-            }
+            super::utils::ensure_inputs_exist(&input.inputs).await?;
             (input.inputs.clone(), Vec::new())
         };
 
@@ -1380,23 +1357,13 @@ impl Processor for BaiduPcsProcessor {
 
         let mut removed: HashSet<String> = resumed.iter().cloned().collect();
         if config.remove_source_after_upload {
-            for path in completed.keys() {
-                if removed.contains(path) {
-                    continue;
-                }
-                match tokio::fs::remove_file(path).await {
-                    Ok(()) => {
-                        removed.insert(path.clone());
-                    }
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                        removed.insert(path.clone());
-                    }
-                    Err(e) => {
-                        warn!(path = %path, error = %e, "Failed to remove uploaded source");
-                        ctx.warn(format!("Failed to remove uploaded source {path}: {e}"));
-                    }
-                }
-            }
+            let pending_removal: Vec<&String> = completed
+                .keys()
+                .filter(|path| !removed.contains(*path))
+                .collect();
+            let summary =
+                super::utils::remove_sources(pending_removal, "uploaded source", ctx).await;
+            removed.extend(summary.removed);
         }
 
         let uploads = Self::upload_results(

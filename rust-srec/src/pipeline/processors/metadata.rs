@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 use tokio::process::Command;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use super::outputs::{OutputBatch, output_size};
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
@@ -93,7 +93,7 @@ impl MetadataProcessor {
     /// Create a new metadata processor.
     pub fn new() -> Self {
         Self {
-            ffmpeg_path: std::env::var("FFMPEG_PATH").unwrap_or_else(|_| "ffmpeg".to_string()),
+            ffmpeg_path: crate::utils::tools::resolve(None, "FFMPEG_PATH", "ffmpeg"),
         }
     }
 
@@ -429,21 +429,15 @@ impl Processor for MetadataProcessor {
 
         // Source deletion is only allowed after every output has been published.
         if config.remove_input_on_success {
+            let summary =
+                super::utils::remove_sources(&output.succeeded_inputs, "input file", ctx).await;
             for input_path in &output.succeeded_inputs {
-                match tokio::fs::remove_file(input_path).await {
-                    Ok(()) => output
+                if summary.removed.contains(input_path) {
+                    output
                         .logs
                         .push(crate::pipeline::job_queue::JobLogEntry::info(format!(
                             "Removed input file: {input_path}"
-                        ))),
-                    Err(error) => {
-                        warn!(path = %input_path, %error, "Failed to remove metadata input");
-                        output
-                            .logs
-                            .push(crate::pipeline::job_queue::JobLogEntry::warn(format!(
-                                "Failed to remove input file {input_path}: {error}"
-                            )));
-                    }
+                        )));
                 }
             }
         }

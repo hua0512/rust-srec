@@ -14,7 +14,7 @@ use mesio::{
     DashConfig, DashProtocolBuilder, DownloadError, DownloaderConfig, FlvProtocolBuilder,
     HlsProtocolBuilder,
 };
-use reqwest::header::{HeaderName, HeaderValue};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use tracing::debug;
 
 use crate::database::models::engine::{
@@ -28,18 +28,15 @@ use crate::proxies::{ProxyEndpoint, ProxyTarget};
 /// Build HLS configuration from rust-srec DownloadConfig using HlsProtocolBuilder.
 ///
 /// Maps headers, cookies, and proxy settings from the download configuration
-/// to the mesio HlsConfig structure using the builder pattern.
+/// to the mesio HlsConfig structure using the builder pattern. Only the
+/// download's own headers are sent, never mesio's default request headers.
 pub fn build_hls_config(
     config: &DownloadConfig,
-    base_config: Option<mesio::hls::HlsConfig>,
     engine_config: &MesioEngineConfig,
 ) -> mesio::hls::HlsConfig {
-    let builder = HlsProtocolBuilder::new().with_config(|c| {
-        if let Some(base) = base_config {
-            *c = base;
-        }
-        apply_network(&mut c.base, config);
-    });
+    let builder = HlsProtocolBuilder::new()
+        .headers(HeaderMap::new())
+        .with_config(|c| apply_network(&mut c.base, config));
 
     let builder = apply_hls_engine_overrides(builder, engine_config);
 
@@ -318,15 +315,11 @@ fn map_http_version(version: &MesioHttpVersionPreference) -> mesio::config::Http
 /// as [`DownloadError::Configuration`].
 pub fn build_dash_config(
     config: &DownloadConfig,
-    base_config: Option<DashConfig>,
     engine_config: &MesioEngineConfig,
 ) -> Result<DashConfig, DownloadError> {
-    let mut builder = DashProtocolBuilder::new().with_config(|c| {
-        if let Some(base) = base_config {
-            *c = base;
-        }
-        apply_network(&mut c.base, config);
-    });
+    let mut builder = DashProtocolBuilder::new()
+        .headers(HeaderMap::new())
+        .with_config(|c| apply_network(&mut c.base, config));
 
     if let Some(ref dash) = engine_config.dash {
         builder = apply_dash_engine_overrides(builder, dash)?;
@@ -436,19 +429,16 @@ fn map_dash_live_start(live_start: MesioDashLiveStart) -> LiveStartPolicy {
 
 /// Build FLV configuration from rust-srec DownloadConfig using FlvProtocolBuilder.
 ///
-/// Maps headers, cookies, and proxy settings from the download configuration
-/// to the mesio FlvProtocolConfig structure using the builder pattern.
+/// Maps headers, cookies, and proxy settings like [`build_hls_config`] and
+/// applies the engine's buffer size.
 pub fn build_flv_config(
     config: &DownloadConfig,
-    base_config: Option<FlvProtocolConfig>,
+    engine_config: &MesioEngineConfig,
 ) -> FlvProtocolConfig {
     FlvProtocolBuilder::new()
-        .with_config(|c| {
-            if let Some(base) = base_config {
-                *c = base;
-            }
-            apply_network(&mut c.base, config);
-        })
+        .headers(HeaderMap::new())
+        .buffer_size(engine_config.buffer_size)
+        .with_config(|c| apply_network(&mut c.base, config))
         .get_config()
 }
 
@@ -536,7 +526,7 @@ mod tests {
             ("X-Custom-Header".to_string(), "custom-value".to_string()),
         ];
 
-        let hls_config = build_hls_config(&config, None, &MesioEngineConfig::default());
+        let hls_config = build_hls_config(&config, &MesioEngineConfig::default());
 
         // Check custom headers are mapped
         assert_eq!(
@@ -558,11 +548,21 @@ mod tests {
     }
 
     #[test]
+    fn flv_downloads_use_the_configured_buffer_size() {
+        let engine_config = MesioEngineConfig {
+            buffer_size: 256 * 1024,
+            ..MesioEngineConfig::default()
+        };
+        let flv_config = build_flv_config(&create_test_download_config(), &engine_config);
+        assert_eq!(flv_config.buffer_size, 256 * 1024);
+    }
+
+    #[test]
     fn test_build_hls_config_with_cookies() {
         let mut config = create_test_download_config();
         config.cookies = Some("session=abc123; token=xyz789".to_string());
 
-        let hls_config = build_hls_config(&config, None, &MesioEngineConfig::default());
+        let hls_config = build_hls_config(&config, &MesioEngineConfig::default());
 
         // Check cookies are mapped to Cookie header
         assert_eq!(
@@ -581,7 +581,7 @@ mod tests {
         config.proxy =
             ProxyTarget::Explicit(ProxyEndpoint::new("http://proxy.example.com:8080", None));
 
-        let hls_config = build_hls_config(&config, None, &MesioEngineConfig::default());
+        let hls_config = build_hls_config(&config, &MesioEngineConfig::default());
 
         // Check proxy is configured
         assert!(hls_config.base.proxy.is_some());
@@ -701,7 +701,7 @@ mod tests {
         )
         .unwrap();
 
-        let hls_config = build_hls_config(&config, None, &engine_config);
+        let hls_config = build_hls_config(&config, &engine_config);
         // Structured overrides take precedence over shortcuts.
         assert_eq!(hls_config.scheduler_config.download_concurrency, 9);
         assert_eq!(
@@ -790,7 +790,7 @@ mod tests {
         config.proxy =
             ProxyTarget::Explicit(ProxyEndpoint::new("socks5://proxy.example.com:1080", None));
 
-        let dash = build_dash_config(&config, None, &MesioEngineConfig::default()).unwrap();
+        let dash = build_dash_config(&config, &MesioEngineConfig::default()).unwrap();
 
         let header = |name| {
             dash.base
@@ -811,7 +811,6 @@ mod tests {
 
         let direct = build_dash_config(
             &create_test_download_config(),
-            None,
             &MesioEngineConfig::default(),
         )
         .unwrap();
@@ -837,7 +836,7 @@ mod tests {
             "live_start": { "type": "delay", "delay_ms": 6000 }
         }));
 
-        let dash = build_dash_config(&config, None, &engine_config).unwrap();
+        let dash = build_dash_config(&config, &engine_config).unwrap();
 
         assert_eq!(dash.selection.video, VideoSelection::MaxHeight(720));
         assert_eq!(dash.selection.audio, AudioSelection::Lowest);
@@ -865,7 +864,7 @@ mod tests {
             "video_quality": { "type": "closest_bandwidth", "bandwidth": 3000000 },
             "live_start": { "type": "live_edge" }
         }));
-        let dash = build_dash_config(&config, None, &edge).unwrap();
+        let dash = build_dash_config(&config, &edge).unwrap();
         assert_eq!(
             dash.selection.video,
             VideoSelection::ClosestBandwidth(3_000_000)
@@ -889,7 +888,7 @@ mod tests {
             serde_json::json!({ "audio_language": "english please" }),
             serde_json::json!({ "audio_language": "toolongsubtag" }),
         ] {
-            let result = build_dash_config(&config, None, &dash_engine_config(dash.clone()));
+            let result = build_dash_config(&config, &dash_engine_config(dash.clone()));
             assert!(
                 matches!(result, Err(DownloadError::Configuration { .. })),
                 "{dash}"

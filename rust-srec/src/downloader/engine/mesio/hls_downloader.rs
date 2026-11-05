@@ -217,8 +217,6 @@ pub(super) struct HlsDownloader {
     handle: Arc<DownloadHandle>,
     /// Engine-specific configuration.
     engine_config: MesioEngineConfig,
-    /// Base HLS configuration from the engine.
-    hls_config: Option<mesio::hls::HlsConfig>,
 }
 
 impl HlsDownloader {
@@ -227,23 +225,17 @@ impl HlsDownloader {
     /// # Arguments
     /// * `handle` - The download attempt to record.
     /// * `engine_config` - Mesio engine-specific configuration.
-    /// * `hls_config` - Optional base HLS configuration from the engine.
-    pub(super) fn new(
-        handle: Arc<DownloadHandle>,
-        engine_config: MesioEngineConfig,
-        hls_config: Option<mesio::hls::HlsConfig>,
-    ) -> Self {
+    pub(super) fn new(handle: Arc<DownloadHandle>, engine_config: MesioEngineConfig) -> Self {
         Self {
             handle,
             engine_config,
-            hls_config,
         }
     }
 
     /// Create a MesioDownloader with the configured settings.
     fn create_downloader(&self, token: CancellationToken) -> MesioDownloader {
         let config = self.handle.config_snapshot();
-        let hls_config = build_hls_config(&config, self.hls_config.clone(), &self.engine_config);
+        let hls_config = build_hls_config(&config, &self.engine_config);
 
         MesioDownloader::new(MesioConfig {
             hls: hls_config,
@@ -668,7 +660,7 @@ mod tests {
 
         let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<SegmentEvent>(32);
         let handle = DownloadHandle::new("download", EngineType::Mesio, config, event_tx);
-        let downloader = HlsDownloader::new(Arc::new(handle), MesioEngineConfig::default(), None);
+        let downloader = HlsDownloader::new(Arc::new(handle), MesioEngineConfig::default());
 
         let first_segment = HlsData::ts(
             MediaSegment {
@@ -801,7 +793,7 @@ mod tests {
         let (event_tx, mut event_rx) = mpsc::channel::<SegmentEvent>(64);
         let mut handle = DownloadHandle::new("download", EngineType::Mesio, config, event_tx);
         handle.cancellation_token = parent.clone();
-        let downloader = HlsDownloader::new(Arc::new(handle), MesioEngineConfig::default(), None);
+        let downloader = HlsDownloader::new(Arc::new(handle), MesioEngineConfig::default());
         let result = timeout(
             Duration::from_secs(10),
             downloader.download(

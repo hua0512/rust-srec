@@ -13,12 +13,7 @@
 //! `WriterState`, eliminating the need for duplicate tracking in the engine.
 
 use async_trait::async_trait;
-use axum::http::HeaderMap;
-use mesio::flv::FlvProtocolConfig;
-use mesio::{
-    DashConfig, DashProtocolBuilder, FlvProtocolBuilder, HlsProtocolBuilder, MesioDownloader,
-    ProtocolType,
-};
+use mesio::{MesioDownloader, ProtocolType};
 use std::sync::Arc;
 use tracing::{debug, error, info};
 
@@ -44,12 +39,6 @@ use crate::downloader::engine::utils::sanitize_engine_message;
 pub struct MesioEngine {
     /// Engine configuration.
     config: MesioEngineConfig,
-    /// Default HLS configuration.
-    hls_config: Option<mesio::hls::HlsConfig>,
-    /// Default FLV configuration.
-    flv_config: Option<FlvProtocolConfig>,
-    /// Default DASH configuration.
-    dash_config: Option<DashConfig>,
 }
 
 impl MesioEngine {
@@ -60,29 +49,7 @@ impl MesioEngine {
 
     /// Create with a custom configuration.
     pub fn with_config(config: MesioEngineConfig) -> Self {
-        let buffer_size = config.buffer_size;
-        Self {
-            config,
-            hls_config: Some(
-                HlsProtocolBuilder::new()
-                    // override default headers
-                    .headers(HeaderMap::new())
-                    .get_config(),
-            ),
-            flv_config: Some(
-                FlvProtocolBuilder::new()
-                    // override default headers
-                    .headers(HeaderMap::new())
-                    .buffer_size(buffer_size)
-                    .get_config(),
-            ),
-            dash_config: Some(
-                DashProtocolBuilder::new()
-                    // override default headers
-                    .headers(HeaderMap::new())
-                    .get_config(),
-            ),
-        }
+        Self { config }
     }
 
     /// The protocol to record `config` with.
@@ -158,24 +125,18 @@ impl DownloadEngine for MesioEngine {
 
         // Delegate to appropriate downloader based on protocol type
         let download_result = match protocol_type {
-            ProtocolType::Hls => {
-                HlsDownloader::new(handle, self.config.clone(), self.hls_config.clone())
-                    .run()
-                    .await
-                    .map(|_| ())
-            }
-            ProtocolType::Dash => {
-                DashDownloader::new(handle, self.config.clone(), self.dash_config.clone())
-                    .run()
-                    .await
-                    .map(|_| ())
-            }
-            ProtocolType::Flv => {
-                FlvDownloader::new(handle, self.config.clone(), self.flv_config.clone())
-                    .run()
-                    .await
-                    .map(|_| ())
-            }
+            ProtocolType::Hls => HlsDownloader::new(handle, self.config.clone())
+                .run()
+                .await
+                .map(|_| ()),
+            ProtocolType::Dash => DashDownloader::new(handle, self.config.clone())
+                .run()
+                .await
+                .map(|_| ()),
+            ProtocolType::Flv => FlvDownloader::new(handle, self.config.clone())
+                .run()
+                .await
+                .map(|_| ()),
             _ => {
                 let error_msg = format!("Unsupported protocol type: {:?}", protocol_type);
                 error!("{}", error_msg);
@@ -278,17 +239,5 @@ mod tests {
         );
         let error = resolve("https://cdn.example/clip.mp4").unwrap_err();
         assert_eq!(error.kind, DownloadFailureKind::Configuration);
-    }
-
-    #[test]
-    fn flv_downloads_use_the_configured_buffer_size() {
-        let engine = MesioEngine::with_config(MesioEngineConfig {
-            buffer_size: 256 * 1024,
-            ..MesioEngineConfig::default()
-        });
-        assert_eq!(
-            engine.flv_config.as_ref().map(|config| config.buffer_size),
-            Some(256 * 1024)
-        );
     }
 }

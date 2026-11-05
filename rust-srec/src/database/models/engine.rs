@@ -115,7 +115,7 @@ pub struct FfmpegEngineConfig {
 }
 
 fn default_ffmpeg_path() -> String {
-    std::env::var("FFMPEG_PATH").unwrap_or_else(|_| "ffmpeg".to_string())
+    crate::utils::tools::resolve(None, "FFMPEG_PATH", "ffmpeg")
 }
 
 fn default_timeout() -> u32 {

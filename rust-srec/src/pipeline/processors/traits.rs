@@ -128,6 +128,25 @@ impl ProcessorInput {
         }
     }
 
+    /// Expand `template` with this job's streamer and session metadata. Time
+    /// tokens use `reference_timestamp_ms` (Unix epoch milliseconds), or the
+    /// current local time when it is `None`.
+    pub fn expand_placeholders(
+        &self,
+        template: &str,
+        reference_timestamp_ms: Option<i64>,
+    ) -> String {
+        crate::utils::filename::expand_placeholders_at(
+            template,
+            &self.streamer_id,
+            &self.session_id,
+            self.streamer_name.as_deref(),
+            self.session_title.as_deref(),
+            self.platform.as_deref(),
+            reference_timestamp_ms,
+        )
+    }
+
     /// Set the configuration.
     pub fn with_config(mut self, config: impl Into<String>) -> Self {
         self.config = Some(config.into());

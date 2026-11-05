@@ -8,7 +8,7 @@
 use futures::StreamExt;
 use mesio::flv::FlvProtocolConfig;
 use mesio::{
-    DashConfig, DownloadError, DownloadEvent, DownloadEventStream, DownloadRequest, MesioConfig,
+    DownloadError, DownloadEvent, DownloadEventStream, DownloadRequest, MesioConfig,
     MesioDownloader, ProtocolSelection,
 };
 use std::sync::Arc;
@@ -33,8 +33,6 @@ pub(super) struct DashDownloader {
     handle: Arc<DownloadHandle>,
     /// Engine-specific configuration.
     engine_config: MesioEngineConfig,
-    /// Base DASH configuration from the engine.
-    dash_config: Option<DashConfig>,
 }
 
 impl DashDownloader {
@@ -43,16 +41,10 @@ impl DashDownloader {
     /// # Arguments
     /// * `handle` - The download attempt to record.
     /// * `engine_config` - Mesio engine-specific configuration.
-    /// * `dash_config` - Optional base DASH configuration from the engine.
-    pub(super) fn new(
-        handle: Arc<DownloadHandle>,
-        engine_config: MesioEngineConfig,
-        dash_config: Option<DashConfig>,
-    ) -> Self {
+    pub(super) fn new(handle: Arc<DownloadHandle>, engine_config: MesioEngineConfig) -> Self {
         Self {
             handle,
             engine_config,
-            dash_config,
         }
     }
 
@@ -63,13 +55,12 @@ impl DashDownloader {
         let token = self.handle.cancellation_token.child_token();
         let config = self.handle.config_snapshot();
 
-        let dash_config = build_dash_config(&config, self.dash_config.clone(), &self.engine_config)
-            .map_err(|e| {
-                EngineStartError::new(
-                    classify_download_error(&e),
-                    format!("Invalid DASH configuration: {e}"),
-                )
-            })?;
+        let dash_config = build_dash_config(&config, &self.engine_config).map_err(|e| {
+            EngineStartError::new(
+                classify_download_error(&e),
+                format!("Invalid DASH configuration: {e}"),
+            )
+        })?;
         let downloader = MesioDownloader::new(MesioConfig {
             hls: Default::default(),
             flv: FlvProtocolConfig::default(),
@@ -110,7 +101,7 @@ impl DashDownloader {
             config.managed_credentials,
         ));
 
-        HlsDownloader::new(self.handle, self.engine_config, None)
+        HlsDownloader::new(self.handle, self.engine_config)
             .record(
                 SegmentedProtocol::Dash,
                 token,
@@ -286,7 +277,7 @@ mod tests {
             config,
             event_tx,
         ));
-        let downloader = DashDownloader::new(handle.clone(), MesioEngineConfig::default(), None);
+        let downloader = DashDownloader::new(handle.clone(), MesioEngineConfig::default());
 
         let stats = timeout(Duration::from_secs(30), downloader.run())
             .await
