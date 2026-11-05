@@ -7,6 +7,7 @@ import type { NotificationEventLog } from '@/api/schemas/notifications';
 import { useLingui } from '@lingui/react';
 import type { I18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
+import { formatBytes } from '@/lib/format';
 import { priorityLabel } from '@/lib/priority';
 import {
   getBrowserNotificationsEnabled,
@@ -69,19 +70,25 @@ export function formatBrowserNotification(
     text(fields.message) ??
     text(fields.reason);
   const platform = text(fields.platform);
+  const path = text(fields.path);
 
   const bodyParts: string[] = [];
   if (streamer) bodyParts.push(streamer);
-  // A credential event names the platform of the failed account; a rate limit
-  // also names the paused connection.
-  if (platform && typeof fields.route === 'string') {
-    const connection =
-      fields.route === 'proxy'
-        ? (text(fields.proxy_name) ?? i18n._(msg`Saved proxy`))
-        : i18n._(fields.route === 'system' ? msg`System proxy` : msg`Direct`);
-    bodyParts.push(`${platform} · ${connection}`);
-  } else if (platform) {
-    bodyParts.push(platform);
+  // Names the platform of a failed account sign-in.
+  if (platform) bodyParts.push(platform);
+  // Names the folder that ran out of space or cannot be written.
+  if (path) bodyParts.push(path);
+  if (typeof fields.available_bytes === 'number') {
+    const free = formatBytes(fields.available_bytes, { decimals: 1 });
+    bodyParts.push(i18n._(msg`${free} free`));
+  }
+  if (
+    typeof fields.queue_depth === 'number' &&
+    typeof fields.threshold === 'number'
+  ) {
+    const queued = fields.queue_depth;
+    const limit = fields.threshold;
+    bodyParts.push(i18n._(msg`${queued} jobs queued, limit ${limit}`));
   }
   if (error) bodyParts.push(error);
   if (bodyParts.length === 0)
