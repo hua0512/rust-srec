@@ -583,7 +583,7 @@ async fn real_ffmpeg_manual_cut_preserves_video_frames_and_audio_packets() {
         assert!(requested);
         assert_eq!(starts.len(), expected_segments as usize);
         assert_eq!(files.len(), expected_segments as usize);
-        assert_eq!(files[0].split_reason_code.as_deref(), Some("manual"));
+        assert_eq!(files[0].split_reason_code(), Some("manual"));
         assert_eq!(starts[0].1, 0);
         assert_eq!(starts[1].1, 1);
         for (index, file) in files.iter().enumerate() {
@@ -751,8 +751,7 @@ async fn manual_cut_finalizer_failure_stops_acquisition_and_keeps_recovery_files
                         size_bytes: 22,
                         started_at: Some(Utc::now()),
                         completed_at: Utc::now(),
-                        split_reason_code: None,
-                        split_reason_details_json: None,
+                        split_reason: None,
                     }),
                 )
                 .await?;
@@ -1163,8 +1162,7 @@ fn chunk_info(path: PathBuf, index: u32) -> SegmentInfo {
         size_bytes: 10,
         started_at: Some(Utc::now()),
         completed_at: Utc::now(),
-        split_reason_code: None,
-        split_reason_details_json: None,
+        split_reason: None,
     }
 }
 
@@ -1484,8 +1482,7 @@ async fn first_group_with_backlog(backlog: usize) -> (Group, pipeline_common::Ma
 #[tokio::test]
 async fn manual_cut_waits_while_finalization_is_backlogged() {
     let (group, split) = first_group_with_backlog(MANUAL_CUT_BACKLOG).await;
-    assert_eq!(group.reason, Some("duration_limit"));
-    assert_eq!(group.request_id, None);
+    assert_eq!(group.reason, Some(SplitReason::DurationLimit));
     assert_eq!(split.status, pipeline_common::ManualSplitStatus::Expired);
     assert_eq!(
         split.expiry_reason,
@@ -1493,6 +1490,10 @@ async fn manual_cut_waits_while_finalization_is_backlogged() {
     );
 
     let (group, split) = first_group_with_backlog(MANUAL_CUT_BACKLOG - 1).await;
-    assert_eq!(group.reason, Some("manual"));
-    assert_eq!(group.request_id, Some(split.request_id));
+    assert_eq!(
+        group.reason,
+        Some(SplitReason::Manual {
+            request_id: split.request_id
+        })
+    );
 }

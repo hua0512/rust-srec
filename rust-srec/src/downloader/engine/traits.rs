@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use parking_lot::RwLock;
+use pipeline_common::SplitReason;
 use pipeline_common::config::PipelineConfig;
 use platforms_parser::proxy::ProxyTarget;
 use serde::{Deserialize, Serialize};
@@ -340,8 +341,97 @@ pub struct SegmentInfo {
     pub started_at: Option<DateTime<Utc>>,
     /// Timestamp when segment was completed.
     pub completed_at: DateTime<Utc>,
-    pub split_reason_code: Option<String>,
-    pub split_reason_details_json: Option<String>,
+    /// Why the writer closed this segment, if it was split rather than ended.
+    pub split_reason: Option<SplitReason>,
+}
+
+impl SegmentInfo {
+    /// Code persisted as the segment's `split_reason_code`.
+    pub(crate) fn split_reason_code(&self) -> Option<&'static str> {
+        self.split_reason.as_ref().map(split_reason_code)
+    }
+
+    /// Details persisted as the segment's `split_reason_details_json`.
+    pub(crate) fn split_reason_details_json(&self) -> Option<String> {
+        self.split_reason
+            .as_ref()
+            .and_then(split_reason_details_json)
+    }
+
+    /// The manual cut request this segment's split fulfils.
+    pub(crate) fn manual_request_id(&self) -> Option<u64> {
+        match self.split_reason {
+            Some(SplitReason::Manual { request_id }) => Some(request_id),
+            _ => None,
+        }
+    }
+}
+
+fn split_reason_code(reason: &SplitReason) -> &'static str {
+    match reason {
+        SplitReason::Manual { .. } => "manual",
+        SplitReason::VideoCodecChange { .. } => "video_codec_change",
+        SplitReason::AudioCodecChange { .. } => "audio_codec_change",
+        SplitReason::SizeLimit => "size_limit",
+        SplitReason::DurationLimit => "duration_limit",
+        SplitReason::HeaderReceived => "header_received",
+        SplitReason::ResolutionChange { .. } => "resolution_change",
+        SplitReason::StreamStructureChange { .. } => "stream_structure_change",
+        SplitReason::Discontinuity => "discontinuity",
+        SplitReason::EndOfStream => "end_of_stream",
+    }
+}
+
+fn split_reason_details_json(reason: &SplitReason) -> Option<String> {
+    let details = match reason {
+        SplitReason::Manual { request_id } => serde_json::json!({ "request_id": request_id }),
+        SplitReason::VideoCodecChange { from, to } => serde_json::json!({
+            "from": {
+                "codec": from.codec.clone(),
+                "profile": from.profile,
+                "level": from.level,
+                "width": from.width,
+                "height": from.height,
+                "signature": from.signature,
+            },
+            "to": {
+                "codec": to.codec.clone(),
+                "profile": to.profile,
+                "level": to.level,
+                "width": to.width,
+                "height": to.height,
+                "signature": to.signature,
+            },
+        }),
+        SplitReason::AudioCodecChange { from, to } => serde_json::json!({
+            "from": {
+                "codec": from.codec.clone(),
+                "sample_rate": from.sample_rate,
+                "channels": from.channels,
+                "signature": from.signature,
+            },
+            "to": {
+                "codec": to.codec.clone(),
+                "sample_rate": to.sample_rate,
+                "channels": to.channels,
+                "signature": to.signature,
+            },
+        }),
+        SplitReason::ResolutionChange { from, to } => serde_json::json!({
+            "from": { "width": from.0, "height": from.1 },
+            "to": { "width": to.0, "height": to.1 },
+        }),
+        SplitReason::StreamStructureChange { description } => {
+            serde_json::json!({ "description": description })
+        }
+        SplitReason::SizeLimit
+        | SplitReason::DurationLimit
+        | SplitReason::HeaderReceived
+        | SplitReason::Discontinuity
+        | SplitReason::EndOfStream => return None,
+    };
+
+    serde_json::to_string(&details).ok()
 }
 
 /// Serializable subset of [`std::io::ErrorKind`] used by the output-root write gate.

@@ -276,32 +276,24 @@ impl SessionLifecycle {
             );
         }
         let mut forced_timer_count = 0;
-        let mut graceful_deadline_exceeded = false;
-        loop {
-            let result = if graceful_deadline_exceeded {
-                tasks.join_next().await
-            } else {
-                match tokio::time::timeout_at(deadline, tasks.join_next()).await {
-                    Ok(result) => result,
-                    Err(_) => {
-                        forced_timer_count = tasks.len();
-                        overruns.push(format!(
-                            "graceful hysteresis timer deadline exceeded; drained {forced_timer_count} cancelled timers to completion"
+        tasks
+            .join_with_grace(
+                deadline,
+                |unfinished| {
+                    forced_timer_count = unfinished;
+                    overruns.push(format!(
+                        "graceful hysteresis timer deadline exceeded; drained {forced_timer_count} cancelled timers to completion"
+                    ));
+                },
+                |result, _| {
+                    if let Err(error) = result {
+                        failures.push(format!(
+                            "hysteresis timer task failed during shutdown: {error}"
                         ));
-                        graceful_deadline_exceeded = true;
-                        continue;
                     }
-                }
-            };
-
-            match result {
-                Some(Ok(())) => {}
-                Some(Err(error)) => failures.push(format!(
-                    "hysteresis timer task failed during shutdown: {error}"
-                )),
-                None => break,
-            }
-        }
+                },
+            )
+            .await;
         if !self
             .eviction_tasks
             .shutdown(deadline.saturating_duration_since(tokio::time::Instant::now()))
@@ -343,19 +335,12 @@ impl SessionLifecycle {
 
         let mut tasks = DrainedTasks::take_from(&self.hysteresis_tasks);
         let aborted = tasks.len();
-        tasks.abort_all();
-        while !tasks.is_empty() {
-            match tokio::time::timeout_at(deadline, tasks.join_next()).await {
-                Ok(Some(_)) => {}
-                Ok(None) => break,
-                Err(_) => {
-                    warn!(
-                        unfinished = tasks.len(),
-                        "Aborted hysteresis timers did not settle before the reap deadline"
-                    );
-                    break;
-                }
-            }
+        let unfinished = tasks.abort_and_reap(deadline, "Hysteresis timer").await;
+        if unfinished > 0 {
+            warn!(
+                unfinished,
+                "Aborted hysteresis timers did not settle before the reap deadline"
+            );
         }
 
         self.eviction_tasks.abort_all(deadline).await;
@@ -397,6 +382,27 @@ impl SessionLifecycle {
             .clone()
             .lock_owned()
             .await
+    }
+
+    /// Runs an externally triggered mutation: admitted against shutdown,
+    /// serialized on `streamer_id`'s stripe, and owned by `operation_tasks`
+    /// so it still completes if the caller stops awaiting it. `operation` is
+    /// not polled until both are held.
+    async fn run_operation<T>(
+        &self,
+        streamer_id: &str,
+        operation: impl std::future::Future<Output = Result<T>> + Send + 'static,
+    ) -> Result<T>
+    where
+        T: Send + 'static,
+    {
+        let admission = self.begin_operation().await?;
+        let stripe = self.lock_streamer(streamer_id).await;
+        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
+            let (_admission, _stripe) = (admission, stripe);
+            operation.await
+        })
+        .await
     }
 
     pub(crate) fn with_required_transition_sender(
@@ -662,16 +668,13 @@ impl SessionLifecycle {
         streamer_id: &str,
         binding: crate::credentials::CredentialBinding,
     ) -> Result<crate::credentials::CredentialBinding> {
-        let operation = self.begin_operation().await?;
-        let stripe = self.lock_streamer(streamer_id).await;
         let lifecycle = self.clone();
         let session_id = session_id.to_owned();
-        let streamer_id = streamer_id.to_owned();
-        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
-            let (_operation, _stripe) = (operation, stripe);
+        let owned_streamer_id = streamer_id.to_owned();
+        self.run_operation(streamer_id, async move {
             let binding = lifecycle
                 .repo
-                .commit_credential_binding(session_id.clone(), streamer_id.clone(), binding)
+                .commit_credential_binding(session_id.clone(), owned_streamer_id.clone(), binding)
                 .await?;
             if !lifecycle.sessions.contains_key(&session_id)
                 && let Some(started_at) = lifecycle
@@ -681,9 +684,13 @@ impl SessionLifecycle {
             {
                 lifecycle.sessions.insert(
                     session_id.clone(),
-                    SessionState::recording(streamer_id.clone(), session_id.clone(), started_at),
+                    SessionState::recording(
+                        owned_streamer_id.clone(),
+                        session_id.clone(),
+                        started_at,
+                    ),
                 );
-                lifecycle.set_current_session(&streamer_id, &session_id);
+                lifecycle.set_current_session(&owned_streamer_id, &session_id);
             }
             Ok(binding)
         })
@@ -697,24 +704,21 @@ impl SessionLifecycle {
         streamer_name: &str,
         binding: crate::credentials::CredentialBinding,
     ) -> Result<()> {
-        let operation = self.begin_operation().await?;
-        let stripe = self.lock_streamer(streamer_id).await;
         let lifecycle = self.clone();
         let session_id = session_id.to_owned();
-        let streamer_id = streamer_id.to_owned();
+        let owned_streamer_id = streamer_id.to_owned();
         let streamer_name = streamer_name.to_owned();
-        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
-            let (_operation, _stripe) = (operation, stripe);
+        self.run_operation(streamer_id, async move {
             if lifecycle
                 .repo
                 .credential_binding_is_retiring(&session_id, &binding)
                 .await?
                 && lifecycle
-                    .current_session_id_for_streamer(&streamer_id)
+                    .current_session_id_for_streamer(&owned_streamer_id)
                     .is_none_or(|current| current == session_id)
             {
                 lifecycle
-                    .end_for_disable_inner(&streamer_id, &streamer_name)
+                    .end_for_disable_inner(&owned_streamer_id, &streamer_name)
                     .await?;
             }
             Ok(())
@@ -743,8 +747,6 @@ impl SessionLifecycle {
         &self,
         args: LiveDetectedArgs<'_>,
     ) -> Result<StartSessionOutcome> {
-        let operation = self.begin_operation().await?;
-        let stripe = self.lock_streamer(args.streamer_id).await;
         let owned = StartSessionInputs {
             credential_binding: args.credential_binding.cloned(),
             streamer_id: args.streamer_id.into(),
@@ -760,8 +762,7 @@ impl SessionLifecycle {
             now: args.now,
         };
         let lifecycle = self.clone();
-        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
-            let (_operation, _stripe) = (operation, stripe);
+        self.run_operation(args.streamer_id, async move {
             lifecycle.on_live_detected_inner(owned).await
         })
         .await
@@ -771,8 +772,6 @@ impl SessionLifecycle {
         &self,
         args: OfflineDetectedArgs<'_>,
     ) -> Result<EndSessionOutcome> {
-        let operation = self.begin_operation().await?;
-        let stripe = self.lock_streamer(args.streamer_id).await;
         let (id, name, session) = (
             args.streamer_id.to_owned(),
             args.streamer_name.to_owned(),
@@ -785,8 +784,7 @@ impl SessionLifecycle {
             args.now,
         );
         let lifecycle = self.clone();
-        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
-            let (_operation, _stripe) = (operation, stripe);
+        self.run_operation(args.streamer_id, async move {
             lifecycle
                 .on_offline_detected_inner(OfflineDetectedArgs {
                     streamer_id: &id,
@@ -806,13 +804,10 @@ impl SessionLifecycle {
         self: &Arc<Self>,
         event: &DownloadTerminalEvent,
     ) -> Result<()> {
-        let operation = self.begin_operation().await?;
-        let stripe = self.lock_streamer(event.streamer_id()).await;
         let lifecycle = self.clone();
-        let event = event.clone();
-        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
-            let (_operation, _stripe) = (operation, stripe);
-            lifecycle.on_download_terminal_inner(&event).await
+        let owned = event.clone();
+        self.run_operation(event.streamer_id(), async move {
+            lifecycle.on_download_terminal_inner(&owned).await
         })
         .await
     }
@@ -822,12 +817,9 @@ impl SessionLifecycle {
         streamer_id: &str,
         streamer_name: &str,
     ) -> Result<Option<String>> {
-        let operation = self.begin_operation().await?;
-        let stripe = self.lock_streamer(streamer_id).await;
         let lifecycle = self.clone();
         let (id, name) = (streamer_id.to_owned(), streamer_name.to_owned());
-        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
-            let (_operation, _stripe) = (operation, stripe);
+        self.run_operation(streamer_id, async move {
             lifecycle.end_for_disable_inner(&id, &name).await
         })
         .await
@@ -839,12 +831,9 @@ impl SessionLifecycle {
         streamer_name: &str,
         old_state: StreamerState,
     ) -> Result<Option<String>> {
-        let operation = self.begin_operation().await?;
-        let stripe = self.lock_streamer(streamer_id).await;
         let lifecycle = self.clone();
         let (id, name) = (streamer_id.to_owned(), streamer_name.to_owned());
-        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
-            let (_operation, _stripe) = (operation, stripe);
+        self.run_operation(streamer_id, async move {
             lifecycle
                 .end_for_out_of_schedule_inner(&id, &name, old_state)
                 .await

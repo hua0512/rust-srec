@@ -838,36 +838,27 @@ impl DanmuService {
             );
         }
         let mut forced_session_ids = Vec::new();
-        let mut graceful_deadline_exceeded = false;
-        while !tasks.is_empty() {
-            let result = if graceful_deadline_exceeded {
-                tasks.join_next().await
-            } else {
-                match tokio::time::timeout_at(deadline, tasks.join_next()).await {
-                    Ok(result) => result,
-                    Err(_) => {
-                        forced_session_ids = self.active_sessions();
-                        forced_session_ids.sort();
-                        overruns.push(format!(
-                            "graceful collection deadline exceeded; drained cancelled sessions to completion: {forced_session_ids:?}"
-                        ));
-                        graceful_deadline_exceeded = true;
-                        continue;
+        tasks
+            .join_with_grace(
+                deadline,
+                |_| {
+                    forced_session_ids = self.active_sessions();
+                    forced_session_ids.sort();
+                    overruns.push(format!(
+                        "graceful collection deadline exceeded; drained cancelled sessions to completion: {forced_session_ids:?}"
+                    ));
+                },
+                |result, _| match result {
+                    Ok(report) => append_collection_report(&mut runtime_failures, report),
+                    // A task that cannot be joined panicked or was aborted, so this
+                    // shutdown cannot show its collection reached a final flush.
+                    Err(error) => {
+                        warn!(%error, "Danmu collection task failed while joining");
+                        shutdown_failures.push(error.to_string());
                     }
-                }
-            };
-
-            match result {
-                Some(Ok(report)) => append_collection_report(&mut runtime_failures, report),
-                // A task that cannot be joined panicked or was aborted, so this
-                // shutdown cannot show its collection reached a final flush.
-                Some(Err(error)) => {
-                    warn!(%error, "Danmu collection task failed while joining");
-                    shutdown_failures.push(error.to_string());
-                }
-                None => break,
-            }
-        }
+                },
+            )
+            .await;
 
         DanmuShutdownReport {
             runtime_failures: runtime_failures.into_report(),
@@ -893,20 +884,14 @@ impl DanmuService {
         let mut session_ids = self.active_sessions();
         session_ids.sort();
 
-        let mut tasks = DrainedTasks::take_from(&self.collection_tasks);
-        tasks.abort_all();
-        while !tasks.is_empty() {
-            match tokio::time::timeout_at(deadline, tasks.join_next()).await {
-                Ok(Some(Ok(_))) | Ok(Some(Err(_))) => {}
-                Ok(None) => break,
-                Err(_) => {
-                    warn!(
-                        unfinished = tasks.len(),
-                        "Aborted danmu collections did not settle before the reap deadline"
-                    );
-                    break;
-                }
-            }
+        let unfinished = DrainedTasks::take_from(&self.collection_tasks)
+            .abort_and_reap(deadline, "Danmu collection")
+            .await;
+        if unfinished > 0 {
+            warn!(
+                unfinished,
+                "Aborted danmu collections did not settle before the reap deadline"
+            );
         }
 
         session_ids

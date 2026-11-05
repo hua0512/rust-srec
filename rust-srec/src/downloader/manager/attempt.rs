@@ -3,16 +3,17 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
+use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
+use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use futures::FutureExt;
 use parking_lot::Mutex;
 use tokio::sync::{Notify, mpsc};
 use tokio::task::JoinSet;
-use tokio::time::timeout_at;
 use tracing::{debug, error, info, warn};
 
 use crate::Result;
@@ -20,17 +21,20 @@ use crate::downloader::SegmentInfo;
 use crate::downloader::engine::utils::sanitize_engine_message;
 use crate::downloader::engine::{
     DownloadConfig, DownloadEngine, DownloadFailureKind, DownloadHandle, DownloadProgress,
-    DownloadStatus, EngineType, SegmentEvent,
+    DownloadProtocol, DownloadStatus, EngineType, IoErrorKindSer, SegmentEvent,
 };
 use crate::downloader::output_root_gate::OutputRootGate;
 use crate::downloader::queue::SlotGuard;
-use crate::downloader::resilience::EngineKey;
+use crate::downloader::resilience::{CircuitBreaker, EngineKey};
+use crate::scheduler::feedback::FeedbackPermit;
 use crate::utils::failure_samples::FailureSamples;
-use crate::utils::task_supervisor::DrainedTasks;
+use crate::utils::task_supervisor::{DrainedTasks, panic_payload_message};
 
+use super::coordination::DownloadEventPublisher;
 use super::{
-    ActiveDownload, AttemptPhase, DownloadManager, DownloadManagerEvent, DownloadProgressEvent,
-    DownloadStopCause, DownloadTerminalEvent, resolve_segment_path,
+    ActiveDownload, AttemptPhase, CredentialDiagnostic, DownloadManager, DownloadManagerEvent,
+    DownloadProgressEvent, DownloadStopCause, DownloadTerminalEvent, EngineEndSignal,
+    resolve_segment_path,
 };
 
 /// Completion signal shared by stop callers and the attempt finalizer.
@@ -173,23 +177,15 @@ impl AttemptSupervisor {
         let mut failures = Vec::new();
         let mut overruns = Vec::new();
         let mut deadline_exceeded_download_ids = Vec::new();
-        while !tasks.is_empty() {
-            match timeout_at(deadline, tasks.join_next()).await {
-                Ok(Some(Ok(report))) => {
-                    debug!(download_id = %report.download_id, "Recording attempt joined");
-                    if let Err(error) = report.outcome {
-                        failures.push(format!(
-                            "download {} failed during shutdown: {error}",
-                            report.download_id
-                        ));
-                    }
-                }
-                Ok(Some(Err(error))) => {
-                    warn!(%error, "Recording attempt task failed while joining");
-                    failures.push(error.to_string());
-                }
-                Ok(None) => break,
-                Err(_) => {
+        // The manager requested cancellation before entering this join.
+        // Aborting the outer attempt past the deadline would detach engine
+        // children, including Mesio's non-abortable blocking writer, so the
+        // join continues and producer quiescence remains a real precondition
+        // for closing the database.
+        tasks
+            .join_with_grace(
+                deadline,
+                |_| {
                     deadline_exceeded_download_ids = self
                         .running
                         .iter()
@@ -199,33 +195,33 @@ impl AttemptSupervisor {
                     overruns.push(format!(
                         "graceful attempt deadline exceeded; awaiting structured cleanup for downloads: {deadline_exceeded_download_ids:?}"
                     ));
-
-                    // The manager requested cancellation before entering this
-                    // join. Aborting the outer attempt here would detach engine
-                    // children, including Mesio's non-abortable blocking writer.
-                    // Continue joining so producer quiescence remains a real
-                    // precondition for closing the database.
-                    while let Some(result) = tasks.join_next().await {
-                        match result {
-                            Ok(report) => {
-                                debug!(download_id = %report.download_id, "Recording attempt joined after graceful deadline");
-                                if let Err(error) = report.outcome {
-                                    failures.push(format!(
-                                        "download {} failed during containment: {error}",
-                                        report.download_id
-                                    ));
-                                }
-                            }
-                            Err(error) => {
-                                warn!(%error, "Recording attempt task failed during containment");
-                                failures.push(error.to_string());
-                            }
+                },
+                |result, contained| match result {
+                    Ok(report) => {
+                        if contained {
+                            debug!(download_id = %report.download_id, "Recording attempt joined after graceful deadline");
+                        } else {
+                            debug!(download_id = %report.download_id, "Recording attempt joined");
+                        }
+                        if let Err(error) = report.outcome {
+                            let phase = if contained { "containment" } else { "shutdown" };
+                            failures.push(format!(
+                                "download {} failed during {phase}: {error}",
+                                report.download_id
+                            ));
                         }
                     }
-                    break;
-                }
-            }
-        }
+                    Err(error) => {
+                        if contained {
+                            warn!(%error, "Recording attempt task failed during containment");
+                        } else {
+                            warn!(%error, "Recording attempt task failed while joining");
+                        }
+                        failures.push(error.to_string());
+                    }
+                },
+            )
+            .await;
 
         AttemptShutdownReport {
             runtime_failures,
@@ -255,26 +251,14 @@ impl AttemptSupervisor {
             .collect::<Vec<_>>();
         download_ids.sort();
 
-        let mut tasks = DrainedTasks::take_from(&self.tasks);
-        tasks.abort_all();
-        while !tasks.is_empty() {
-            match timeout_at(deadline, tasks.join_next()).await {
-                Ok(Some(Ok(report))) => {
-                    debug!(download_id = %report.download_id, "Recording attempt stopped after abort");
-                }
-                Ok(Some(Err(error))) if error.is_cancelled() => {}
-                Ok(Some(Err(error))) => {
-                    warn!(%error, "Recording attempt failed while being aborted");
-                }
-                Ok(None) => break,
-                Err(_) => {
-                    warn!(
-                        unfinished = tasks.len(),
-                        "Aborted recording attempts did not settle before the reap deadline"
-                    );
-                    break;
-                }
-            }
+        let unfinished = DrainedTasks::take_from(&self.tasks)
+            .abort_and_reap(deadline, "Recording attempt")
+            .await;
+        if unfinished > 0 {
+            warn!(
+                unfinished,
+                "Aborted recording attempts did not settle before the reap deadline"
+            );
         }
 
         download_ids
@@ -331,23 +315,57 @@ fn panic_message(
     fallback: &str,
     managed_credentials: bool,
 ) -> String {
-    let message = if let Some(message) = payload.downcast_ref::<&str>() {
-        message
-    } else if let Some(message) = payload.downcast_ref::<String>() {
-        message.as_str()
-    } else {
-        fallback
-    };
-    sanitize_engine_message(message, managed_credentials)
+    sanitize_engine_message(
+        panic_payload_message(payload).unwrap_or(fallback),
+        managed_credentials,
+    )
+}
+
+/// Identity of one recording attempt, carried by every event it publishes.
+struct AttemptIdentity {
+    download_id: String,
+    streamer_id: String,
+    streamer_name: String,
+    session_id: String,
+    engine_type: EngineType,
+    protocol: DownloadProtocol,
+}
+
+impl AttemptIdentity {
+    fn failed(
+        &self,
+        kind: DownloadFailureKind,
+        error: String,
+        recoverable: bool,
+    ) -> DownloadTerminalEvent {
+        DownloadTerminalEvent::Failed {
+            download_id: self.download_id.clone(),
+            streamer_id: self.streamer_id.clone(),
+            streamer_name: self.streamer_name.clone(),
+            session_id: self.session_id.clone(),
+            engine_type: self.engine_type,
+            protocol: self.protocol,
+            kind,
+            error,
+            recoverable,
+        }
+    }
+
+    fn cancelled(&self, cause: DownloadStopCause) -> DownloadTerminalEvent {
+        DownloadTerminalEvent::Cancelled {
+            download_id: self.download_id.clone(),
+            streamer_id: self.streamer_id.clone(),
+            streamer_name: self.streamer_name.clone(),
+            session_id: self.session_id.clone(),
+            cause,
+        }
+    }
 }
 
 fn choose_attempt_terminal(
     phase: &Mutex<AttemptPhase>,
     mut natural: DownloadTerminalEvent,
-    download_id: &str,
-    streamer_id: &str,
-    streamer_name: &str,
-    session_id: &str,
+    id: &AttemptIdentity,
 ) -> DownloadTerminalEvent {
     let stop_cause = {
         let mut phase = phase.lock();
@@ -357,25 +375,649 @@ fn choose_attempt_terminal(
     };
 
     match (stop_cause, &mut natural) {
-        (Some(DownloadStopCause::Shutdown), _) => DownloadTerminalEvent::Cancelled {
-            download_id: download_id.to_string(),
-            streamer_id: streamer_id.to_string(),
-            streamer_name: streamer_name.to_string(),
-            session_id: session_id.to_string(),
-            cause: DownloadStopCause::Shutdown,
-        },
+        (Some(DownloadStopCause::Shutdown), _) => id.cancelled(DownloadStopCause::Shutdown),
         (Some(cause), DownloadTerminalEvent::Completed { stop_cause, .. }) => {
             *stop_cause = Some(cause);
             natural
         }
-        (Some(cause), _) => DownloadTerminalEvent::Cancelled {
-            download_id: download_id.to_string(),
-            streamer_id: streamer_id.to_string(),
-            streamer_name: streamer_name.to_string(),
-            session_id: session_id.to_string(),
-            cause,
-        },
+        (Some(cause), _) => id.cancelled(cause),
         (None, _) => natural,
+    }
+}
+
+/// Runs the engine and, if it returns without queuing a terminal event,
+/// queues a fallback failure so the translator can finish.
+async fn run_engine(
+    engine: Arc<dyn DownloadEngine>,
+    handle: Arc<DownloadHandle>,
+    managed_credentials: bool,
+) {
+    let outcome = AssertUnwindSafe(engine.run(handle.clone()))
+        .catch_unwind()
+        .await;
+    let (kind, message) = match outcome {
+        Ok(Ok(())) => (
+            DownloadFailureKind::Other,
+            "engine returned without a terminal event".to_string(),
+        ),
+        Ok(Err(error)) => {
+            let message = sanitize_engine_message(&error.message, managed_credentials);
+            error!(kind = ?error.kind, %message, "Download engine failed");
+            (error.kind, message)
+        }
+        Err(payload) => {
+            let message = panic_message(
+                &*payload,
+                "engine panicked with a non-string payload",
+                managed_credentials,
+            );
+            error!(%message, "Download engine panicked");
+            (DownloadFailureKind::Other, message)
+        }
+    };
+
+    // Every production engine queues its terminal event before run()
+    // returns. This fallback is therefore observed only when an engine
+    // violates that contract or fails before it can publish a terminal.
+    if let Err(send_error) = handle
+        .event_tx
+        .send(SegmentEvent::DownloadFailed { kind, message })
+        .await
+    {
+        debug!(%send_error, "Engine fallback terminal was not needed");
+    }
+}
+
+const PROGRESS_MIN_INTERVAL: Duration = Duration::from_millis(250);
+
+/// Turns an engine's [`SegmentEvent`]s into manager events until the engine
+/// reports a terminal, keeping the active-download snapshot current.
+struct SegmentTranslator {
+    id: Arc<AttemptIdentity>,
+    events: DownloadEventPublisher,
+    active_downloads: Arc<DashMap<String, ActiveDownload>>,
+    phase: Arc<Mutex<AttemptPhase>>,
+    handle: Arc<DownloadHandle>,
+    session_segment_indices: Arc<DashMap<String, u32>>,
+    output_root_gate: Option<Arc<OutputRootGate>>,
+    circuit_breaker: Arc<CircuitBreaker>,
+    /// Non-fatal required-event failures observed mid-run. The attempt task
+    /// folds these into its outcome after both siblings settle, so a lost
+    /// segment row still surfaces without ending the recording that produced it.
+    lifecycle_errors: Arc<Mutex<FailureSamples>>,
+    managed_credentials: bool,
+    may_diagnose: bool,
+    /// Completions publish immediately so the cut result precedes the next
+    /// segment event; the watch branch then sees the same revision. Revisions
+    /// only grow, so anything not newer was already sent.
+    published_split_revision: u64,
+    pending_cut_completion: Option<(u32, u64)>,
+    last_started_sequence: Option<u32>,
+    last_progress_emit: Instant,
+    engine_to_session: HashMap<u32, u32>,
+    engine_segment_paths: HashMap<u32, String>,
+    output_failure_recorded: bool,
+}
+
+impl SegmentTranslator {
+    async fn run(
+        mut self,
+        mut segment_rx: mpsc::Receiver<SegmentEvent>,
+        mut split_updates: pipeline_common::ManualSplitUpdates,
+    ) -> DownloadTerminalEvent {
+        let mut split_expiration = tokio::time::interval(Duration::from_secs(1));
+        split_expiration.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+        let natural_terminal = loop {
+            let next = tokio::select! {
+                event = segment_rx.recv() => event,
+                _ = split_expiration.tick() => {
+                    self.handle.manual_split.expire();
+                    continue;
+                }
+                update = split_updates.changed() => {
+                    if let Ok(state) = update { self.publish_split(state); }
+                    continue;
+                }
+            };
+            let Some(event) = next else {
+                break self.id.failed(
+                    DownloadFailureKind::Other,
+                    "download engine event channel closed without a terminal event".to_string(),
+                    true,
+                );
+            };
+
+            let terminal = match event {
+                SegmentEvent::SegmentCompleted(info) => {
+                    self.on_segment_completed(info).await;
+                    None
+                }
+                SegmentEvent::Progress(progress) => {
+                    self.on_progress(progress);
+                    None
+                }
+                SegmentEvent::DownloadCompleted {
+                    total_bytes,
+                    total_duration_secs,
+                    total_segments,
+                    engine_signal,
+                } => Some(self.on_download_completed(
+                    total_bytes,
+                    total_duration_secs,
+                    total_segments,
+                    engine_signal,
+                )),
+                SegmentEvent::OutputIoError {
+                    output_dir,
+                    io_kind,
+                    detail,
+                } => {
+                    self.on_output_io_error(&output_dir, io_kind, &detail);
+                    None
+                }
+                SegmentEvent::DownloadFailed { kind, message } => {
+                    Some(self.on_download_failed(kind, &message))
+                }
+                SegmentEvent::SegmentStarted {
+                    path,
+                    sequence,
+                    started_at,
+                } => self.on_segment_started(&path, sequence, started_at).await,
+            };
+            if let Some(terminal) = terminal {
+                break terminal;
+            }
+        };
+
+        self.handle.manual_split.close(matches!(
+            natural_terminal,
+            DownloadTerminalEvent::Failed { .. }
+        ));
+        self.publish_split(self.handle.manual_split.snapshot());
+
+        // Circuit-breaker health is read from the engine's own outcome, not
+        // from the terminal `choose_attempt_terminal` publishes. A stop
+        // racing a genuine engine failure is still a failure of this engine
+        // against this CDN, and rewriting it to `Cancelled` for the session
+        // must not also hide it from the retry backoff.
+        match &natural_terminal {
+            DownloadTerminalEvent::Completed { .. } => self.circuit_breaker.record_success(),
+            DownloadTerminalEvent::Failed { kind, .. } if kind.affects_circuit_breaker() => {
+                self.circuit_breaker.record_failure();
+            }
+            DownloadTerminalEvent::Failed { .. }
+            | DownloadTerminalEvent::Cancelled { .. }
+            | DownloadTerminalEvent::Rejected { .. } => {}
+        }
+        if let DownloadTerminalEvent::Failed { kind, error, .. } = &natural_terminal {
+            // `choose_attempt_terminal` may replace this with `Cancelled`,
+            // which carries neither field, so log them before they are lost.
+            warn!(
+                download_id = %self.id.download_id,
+                ?kind,
+                %error,
+                "Engine reported a failure while an attempt outcome was being chosen"
+            );
+        }
+
+        if self.may_diagnose
+            && matches!(&natural_terminal, DownloadTerminalEvent::Failed { kind, engine_type, .. } if kind.requests_credential_diagnostic(*engine_type))
+        {
+            // Keep stop requests effective during the bounded diagnostic.
+            // The finalizer chooses the terminal after diagnostic work settles.
+            natural_terminal
+        } else {
+            choose_attempt_terminal(&self.phase, natural_terminal, &self.id)
+        }
+    }
+
+    fn publish_split(&mut self, state: pipeline_common::ManualSplitSnapshot) {
+        if self.published_split_revision >= state.revision {
+            return;
+        }
+        self.published_split_revision = state.revision;
+        self.events.publish(DownloadManagerEvent::Progress(
+            DownloadProgressEvent::ManualSplitChanged {
+                download_id: self.id.download_id.clone(),
+                streamer_id: self.id.streamer_id.clone(),
+                streamer_name: self.id.streamer_name.clone(),
+                session_id: self.id.session_id.clone(),
+                state,
+            },
+        ));
+    }
+
+    fn session_segment_index(&mut self, engine_index: u32) -> u32 {
+        *self
+            .engine_to_session
+            .entry(engine_index)
+            .or_insert_with(|| {
+                DownloadManager::allocate_next_session_segment_index(
+                    &self.session_segment_indices,
+                    &self.id.session_id,
+                )
+            })
+    }
+
+    fn progress_event(&self, progress: DownloadProgress) -> DownloadManagerEvent {
+        DownloadManagerEvent::Progress(DownloadProgressEvent::Progress {
+            download_id: self.id.download_id.clone(),
+            streamer_id: self.id.streamer_id.clone(),
+            streamer_name: self.id.streamer_name.clone(),
+            session_id: self.id.session_id.clone(),
+            status: if self.phase.lock().is_stop_requested() {
+                DownloadStatus::Cancelled
+            } else {
+                DownloadStatus::Downloading
+            },
+            progress,
+        })
+    }
+
+    /// Publishes the latest stored progress, so the last throttled sample is
+    /// not lost when the attempt ends.
+    fn publish_last_progress(&self) {
+        if let Some(download) = self.active_downloads.get(&self.id.download_id) {
+            self.events
+                .publish(self.progress_event(download.progress.clone()));
+        }
+    }
+
+    async fn on_segment_completed(&mut self, info: SegmentInfo) {
+        let manual_request = info.manual_request_id();
+        let split_reason_code = info.split_reason_code().map(str::to_owned);
+        let split_reason_details_json = info.split_reason_details_json();
+        let SegmentInfo {
+            path,
+            duration_secs,
+            size_bytes,
+            index,
+            started_at: info_started_at,
+            completed_at,
+            ..
+        } = info;
+        let segment_path = self
+            .engine_segment_paths
+            .remove(&index)
+            .unwrap_or_else(|| resolve_segment_path(&path));
+        let started_at = info_started_at.or_else(|| {
+            self.active_downloads
+                .get(&self.id.download_id)
+                .and_then(|download| {
+                    if download.current_engine_segment_index == Some(index) {
+                        download.current_segment_started_at
+                    } else {
+                        None
+                    }
+                })
+        });
+        let segment_index = self.session_segment_index(index);
+
+        let completed_event =
+            DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentCompleted {
+                download_id: self.id.download_id.clone(),
+                streamer_id: self.id.streamer_id.clone(),
+                streamer_name: self.id.streamer_name.clone(),
+                session_id: self.id.session_id.clone(),
+                segment_path: segment_path.clone(),
+                segment_index,
+                started_at,
+                completed_at,
+                duration_secs,
+                size_bytes,
+                split_reason_code,
+                split_reason_details_json,
+            });
+        if let Err(delivery_error) = self.events.publish_and_wait(completed_event).await {
+            // The segment file is already closed on disk; only its row is
+            // missing. Ending the recording here would turn one lost row into
+            // a lost stream, so the failure is carried to the attempt outcome
+            // (`AttemptShutdownReport::failures`) and the engine keeps writing
+            // the next segment.
+            error!(
+                download_id = %self.id.download_id,
+                %delivery_error,
+                "Required segment completion could not be applied; recording continues"
+            );
+            self.lifecycle_errors.lock().push(format!(
+                "required segment completion could not be applied: {delivery_error}"
+            ));
+            if let Some(request_id) = manual_request {
+                self.handle.manual_split.fail(request_id);
+            }
+        } else if let Some(request_id) = manual_request {
+            // External remuxers finalize the old file after the next logical
+            // segment starts; native writers close first.
+            if self
+                .last_started_sequence
+                .is_some_and(|started| started > index)
+            {
+                self.handle.manual_split.complete(request_id);
+                self.publish_split(self.handle.manual_split.snapshot());
+            } else {
+                self.pending_cut_completion = Some((index, request_id));
+            }
+        }
+
+        if let Some(mut download) = self.active_downloads.get_mut(&self.id.download_id) {
+            download.output_path = Some(segment_path);
+            if download.current_engine_segment_index == Some(index) {
+                download.current_engine_segment_index = None;
+                download.current_segment_index = None;
+                download.current_segment_path = None;
+                download.current_segment_started_at = None;
+            }
+        }
+        debug!(
+            download_id = %self.id.download_id,
+            path = %path.display(),
+            "Segment completed"
+        );
+    }
+
+    fn on_progress(&mut self, progress: DownloadProgress) {
+        if self.last_progress_emit.elapsed() < PROGRESS_MIN_INTERVAL {
+            if let Some(mut download) = self.active_downloads.get_mut(&self.id.download_id) {
+                download.progress = progress;
+                if !self.phase.lock().is_stop_requested() {
+                    download.status = DownloadStatus::Downloading;
+                }
+            }
+        } else {
+            self.last_progress_emit = Instant::now();
+            if let Some(mut download) = self.active_downloads.get_mut(&self.id.download_id) {
+                download.progress = progress.clone();
+                if !self.phase.lock().is_stop_requested() {
+                    download.status = DownloadStatus::Downloading;
+                }
+            }
+
+            self.events.publish(self.progress_event(progress));
+        }
+    }
+
+    fn on_download_completed(
+        &self,
+        total_bytes: u64,
+        total_duration_secs: f64,
+        total_segments: u32,
+        engine_signal: EngineEndSignal,
+    ) -> DownloadTerminalEvent {
+        self.publish_last_progress();
+
+        let output_path = self
+            .active_downloads
+            .get(&self.id.download_id)
+            .and_then(|download| download.output_path.clone());
+        DownloadTerminalEvent::Completed {
+            download_id: self.id.download_id.clone(),
+            streamer_id: self.id.streamer_id.clone(),
+            streamer_name: self.id.streamer_name.clone(),
+            session_id: self.id.session_id.clone(),
+            total_bytes,
+            total_duration_secs,
+            total_segments,
+            file_path: output_path,
+            engine_signal,
+            stop_cause: None,
+        }
+    }
+
+    fn on_output_io_error(&mut self, output_dir: &Path, io_kind: IoErrorKindSer, detail: &str) {
+        let detail = sanitize_engine_message(detail, self.managed_credentials);
+        if let Some(gate) = self.output_root_gate.as_ref() {
+            let synthetic_io_err = std::io::Error::new(io_kind.to_io_kind(), detail);
+            gate.record_failure(output_dir, &synthetic_io_err);
+            self.output_failure_recorded = true;
+        } else {
+            debug!(
+                "Output I/O event received without an output-root gate; retaining circuit-breaker backpressure"
+            );
+        }
+    }
+
+    fn on_download_failed(
+        &self,
+        kind: DownloadFailureKind,
+        message: &str,
+    ) -> DownloadTerminalEvent {
+        let message = sanitize_engine_message(message, self.managed_credentials);
+        // An engine must not bypass both storage gating and the breaker,
+        // including early failures delivered by the engine fallback.
+        let kind = if matches!(kind, DownloadFailureKind::OutputRootUnavailable { .. })
+            && !self.output_failure_recorded
+        {
+            DownloadFailureKind::Io
+        } else {
+            kind
+        };
+        self.publish_last_progress();
+
+        let recoverable = kind.is_recoverable();
+        self.id.failed(kind, message, recoverable)
+    }
+
+    async fn on_segment_started(
+        &mut self,
+        path: &Path,
+        sequence: u32,
+        started_at: DateTime<Utc>,
+    ) -> Option<DownloadTerminalEvent> {
+        let segment_path = resolve_segment_path(path);
+        self.engine_segment_paths
+            .insert(sequence, segment_path.clone());
+        let segment_index = self.session_segment_index(sequence);
+
+        if let Some(mut download) = self.active_downloads.get_mut(&self.id.download_id) {
+            download.current_engine_segment_index = Some(sequence);
+            download.current_segment_index = Some(segment_index);
+            download.current_segment_path = Some(segment_path.clone());
+            download.current_segment_started_at = Some(started_at);
+        }
+
+        let started_event = DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
+            download_id: self.id.download_id.clone(),
+            streamer_id: self.id.streamer_id.clone(),
+            streamer_name: self.id.streamer_name.clone(),
+            session_id: self.id.session_id.clone(),
+            segment_path,
+            segment_index,
+            started_at,
+        });
+        if let Err(delivery_error) = self.events.publish_and_wait(started_event).await {
+            error!(
+                download_id = %self.id.download_id,
+                %delivery_error,
+                "Required segment start could not be applied"
+            );
+            self.handle.cancel();
+            return Some(self.id.failed(
+                DownloadFailureKind::Other,
+                format!("required segment start could not be applied: {delivery_error}"),
+                true,
+            ));
+        }
+
+        if let Some((previous_sequence, request_id)) = self.pending_cut_completion
+            && previous_sequence.checked_add(1) == Some(sequence)
+        {
+            self.handle.manual_split.complete(request_id);
+            self.pending_cut_completion = None;
+            self.publish_split(self.handle.manual_split.snapshot());
+        }
+        self.last_started_sequence = Some(sequence);
+
+        debug!(
+            download_id = %self.id.download_id,
+            path = %path.display(),
+            engine_segment_index = sequence,
+            segment_index,
+            "Segment started"
+        );
+        None
+    }
+}
+
+/// The supervised body of one recording attempt: owns the engine and
+/// translator siblings, then publishes the chosen terminal.
+struct AttemptTask {
+    id: Arc<AttemptIdentity>,
+    handle: Arc<DownloadHandle>,
+    phase: Arc<Mutex<AttemptPhase>>,
+    events: DownloadEventPublisher,
+    finalizer: AttemptFinalizer,
+    lifecycle_errors: Arc<Mutex<FailureSamples>>,
+    credential_diagnostic: Option<CredentialDiagnostic>,
+    terminal_feedback: Option<FeedbackPermit>,
+    managed_credentials: bool,
+}
+
+impl AttemptTask {
+    async fn run(
+        self,
+        engine: impl Future<Output = ()>,
+        translator: impl Future<Output = DownloadTerminalEvent>,
+    ) -> std::result::Result<(), String> {
+        let Self {
+            id,
+            handle,
+            phase,
+            events,
+            mut finalizer,
+            lifecycle_errors,
+            credential_diagnostic,
+            terminal_feedback,
+            managed_credentials,
+        } = self;
+        let mut engine_task = Box::pin(AssertUnwindSafe(engine).catch_unwind());
+        let mut translator_task = Box::pin(AssertUnwindSafe(translator).catch_unwind());
+
+        // The attempt owns both siblings directly. A translator panic
+        // cancels the engine before awaiting its cleanup; an engine wrapper
+        // panic publishes a fallback failure so the translator can finish.
+        let (engine_result, translator_result) = tokio::select! {
+            translator_result = &mut translator_task => {
+                if translator_result.is_err() {
+                    handle.cancel();
+                }
+                let engine_result = engine_task.await;
+                (engine_result, translator_result)
+            }
+            engine_result = &mut engine_task => {
+                if let Err(payload) = &engine_result {
+                    handle.cancel();
+                    let message = panic_message(
+                        &**payload,
+                        "engine wrapper panicked with a non-string payload",
+                        managed_credentials,
+                    );
+                    if let Err(send_error) = handle
+                        .event_tx
+                        .send(SegmentEvent::DownloadFailed {
+                            kind: DownloadFailureKind::Other,
+                            message,
+                        })
+                        .await
+                    {
+                        debug!(%send_error, "Engine wrapper panic fallback was not delivered");
+                    }
+                }
+                let translator_result = translator_task.await;
+                (engine_result, translator_result)
+            }
+        };
+        let mut lifecycle_errors = std::mem::take(&mut *lifecycle_errors.lock()).into_report();
+        if let Err(payload) = engine_result {
+            let error = panic_message(
+                &*payload,
+                "engine wrapper panicked with a non-string payload",
+                managed_credentials,
+            );
+            error!(
+                download_id = %id.download_id,
+                %error,
+                "Engine task failed"
+            );
+            lifecycle_errors.push(format!("engine task failed: {error}"));
+        }
+
+        let mut terminal = match translator_result {
+            Ok(terminal) => terminal,
+            Err(payload) => {
+                let error = panic_message(
+                    &*payload,
+                    "download event translator panicked with a non-string payload",
+                    managed_credentials,
+                );
+                error!(
+                    download_id = %id.download_id,
+                    %error,
+                    "Download event translator failed"
+                );
+                let message = format!("download event translator failed: {error}");
+                lifecycle_errors.push(message.clone());
+                choose_attempt_terminal(
+                    &phase,
+                    id.failed(DownloadFailureKind::Other, message, true),
+                    &id,
+                )
+            }
+        };
+
+        if let DownloadTerminalEvent::Failed {
+            kind, engine_type, ..
+        } = &terminal
+            && kind.requests_credential_diagnostic(*engine_type)
+            && !matches!(*phase.lock(), AttemptPhase::TerminalChosen)
+            && let Some(diagnostic) = credential_diagnostic
+        {
+            let replacement = tokio::select! {
+                biased;
+                _ = handle.cancellation_token.cancelled() => None,
+                result = diagnostic(terminal.clone()) => result,
+            };
+            if let Some(replacement) = replacement
+                && let DownloadTerminalEvent::Failed {
+                    kind,
+                    recoverable,
+                    error,
+                    ..
+                } = &mut terminal
+            {
+                *kind = replacement;
+                *recoverable = true;
+                *error = if replacement == DownloadFailureKind::CredentialUnavailable {
+                    "Recording awaits available credentials"
+                } else {
+                    "Bound media renewed after engine failure"
+                }
+                .to_string();
+            }
+            terminal = choose_attempt_terminal(&phase, terminal, &id);
+        }
+        let terminal_event = DownloadManagerEvent::Terminal(terminal);
+        if let Err(delivery_error) = events.coordinate_and_wait(&terminal_event).await {
+            error!(
+                download_id = %id.download_id,
+                %delivery_error,
+                "Required terminal outcome could not be applied"
+            );
+            lifecycle_errors.push(format!(
+                "required terminal outcome could not be applied: {delivery_error}"
+            ));
+        }
+
+        finalizer.release_active();
+        events.observe_reserved(terminal_event, terminal_feedback);
+        let outcome = if lifecycle_errors.is_empty() {
+            Ok(())
+        } else {
+            Err(lifecycle_errors.join("; "))
+        };
+        finalizer.set_outcome(outcome.clone());
+        debug!(download_id = %id.download_id, "Recording attempt finished");
+        outcome
     }
 }
 
@@ -407,7 +1049,7 @@ impl DownloadManager {
         );
 
         let download_id = uuid::Uuid::new_v4().to_string();
-        let (segment_tx, mut segment_rx) = mpsc::channel::<SegmentEvent>(32);
+        let (segment_tx, segment_rx) = mpsc::channel::<SegmentEvent>(32);
         let handle = Arc::new(DownloadHandle::new(
             download_id.clone(),
             engine_type,
@@ -431,691 +1073,63 @@ impl DownloadManager {
             slot: Some(active_slot),
         };
 
-        let streamer_id = config.streamer_id.clone();
-        let streamer_name = config.streamer_name.clone();
-        let session_id = config.session_id.clone();
-        let protocol = config.protocol;
+        let id = Arc::new(AttemptIdentity {
+            download_id: download_id.clone(),
+            streamer_id: config.streamer_id.clone(),
+            streamer_name: config.streamer_name.clone(),
+            session_id: config.session_id.clone(),
+            engine_type,
+            protocol: config.protocol,
+        });
         let cdn_host = crate::utils::url::extract_host(&config.url).unwrap_or_default();
-
-        let active_downloads = self.active_downloads.clone();
-        let session_segment_indices = self.session_segment_indices.clone();
-        let circuit_breakers_ref = self.circuit_breakers.get(&engine_key);
-        let output_root_gate_ref: Option<Arc<OutputRootGate>> =
-            self.output_root_gate.get().cloned();
-        let events = self.events.clone();
-
-        let attempt_download_id = download_id.clone();
-        let attempt_active_downloads = active_downloads.clone();
-        let attempt_completion = completion.clone();
-        let terminal_events = events.clone();
-        let terminal_streamer_id = streamer_id.clone();
-        let terminal_streamer_name = streamer_name.clone();
-        let terminal_session_id = session_id.clone();
-        let terminal_phase = phase.clone();
         let credential_diagnostic = self.credential_diagnostic.get().cloned();
-        let diagnostic_cancel = handle.cancellation_token.clone();
         let managed_credentials = config.managed_credentials;
-        let may_diagnose = credential_diagnostic.is_some() && config.managed_credentials;
-
-        let engine_handle = handle.clone();
-        let engine_future = async move {
-            let outcome = AssertUnwindSafe(engine.run(engine_handle.clone()))
-                .catch_unwind()
-                .await;
-            let (kind, message) = match outcome {
-                Ok(Ok(())) => (
-                    DownloadFailureKind::Other,
-                    "engine returned without a terminal event".to_string(),
-                ),
-                Ok(Err(error)) => {
-                    let message = sanitize_engine_message(&error.message, managed_credentials);
-                    error!(kind = ?error.kind, %message, "Download engine failed");
-                    (error.kind, message)
-                }
-                Err(payload) => {
-                    let message = panic_message(
-                        &*payload,
-                        "engine panicked with a non-string payload",
-                        managed_credentials,
-                    );
-                    error!(%message, "Download engine panicked");
-                    (DownloadFailureKind::Other, message)
-                }
-            };
-
-            // Every production engine queues its terminal event before run()
-            // returns. This fallback is therefore observed only when an engine
-            // violates that contract or fails before it can publish a terminal.
-            if let Err(send_error) = engine_handle
-                .event_tx
-                .send(SegmentEvent::DownloadFailed { kind, message })
-                .await
-            {
-                debug!(%send_error, "Engine fallback terminal was not needed");
-            }
-        };
-
-        let translator_download_id = download_id.clone();
-        let translator_streamer_id = streamer_id.clone();
-        let translator_streamer_name = streamer_name.clone();
-        let translator_session_id = session_id.clone();
-        let translator_events = events.clone();
-        let translator_active_downloads = active_downloads.clone();
-        let translator_phase = phase.clone();
-        let translator_handle = handle.clone();
-        // Non-fatal required-event failures the translator observes mid-run.
-        // The attempt task folds these into its outcome after both siblings
-        // settle, so a lost segment row still surfaces without ending the
-        // recording that produced it.
         let lifecycle_errors = Arc::new(Mutex::new(FailureSamples::default()));
-        let translator_lifecycle_errors = Arc::clone(&lifecycle_errors);
-        let mut split_updates = handle.manual_split.updates();
-        let translator_future = async move {
-            let mut split_expiration = tokio::time::interval(Duration::from_secs(1));
-            split_expiration.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-            let mut pending_cut_completion: Option<(u32, u64)> = None;
-            let mut last_started_sequence: Option<u32> = None;
-            // Completions publish immediately so the cut result precedes the
-            // next segment event; the watch branch then sees the same revision.
-            // Revisions only grow, so anything not newer was already sent.
-            let published_split_revision = AtomicU64::new(0);
-            let publish_split = |state: pipeline_common::ManualSplitSnapshot| {
-                if published_split_revision.fetch_max(state.revision, Ordering::AcqRel)
-                    >= state.revision
-                {
-                    return;
-                }
-                translator_events.publish(DownloadManagerEvent::Progress(
-                    DownloadProgressEvent::ManualSplitChanged {
-                        download_id: translator_download_id.clone(),
-                        streamer_id: translator_streamer_id.clone(),
-                        streamer_name: translator_streamer_name.clone(),
-                        session_id: translator_session_id.clone(),
-                        state,
-                    },
-                ));
-            };
-            const PROGRESS_MIN_INTERVAL: Duration = Duration::from_millis(250);
-            let mut last_progress_emit = Instant::now()
+
+        let engine_future = run_engine(engine, handle.clone(), managed_credentials);
+        let translator = SegmentTranslator {
+            id: id.clone(),
+            events: self.events.clone(),
+            active_downloads: self.active_downloads.clone(),
+            phase: phase.clone(),
+            handle: handle.clone(),
+            session_segment_indices: self.session_segment_indices.clone(),
+            output_root_gate: self.output_root_gate.get().cloned(),
+            circuit_breaker: self.circuit_breakers.get(&engine_key),
+            lifecycle_errors: lifecycle_errors.clone(),
+            managed_credentials,
+            may_diagnose: credential_diagnostic.is_some() && managed_credentials,
+            published_split_revision: 0,
+            pending_cut_completion: None,
+            last_started_sequence: None,
+            last_progress_emit: Instant::now()
                 .checked_sub(PROGRESS_MIN_INTERVAL)
-                .unwrap_or_else(Instant::now);
-            let mut engine_to_session: HashMap<u32, u32> = HashMap::new();
-            let mut engine_segment_paths: HashMap<u32, String> = HashMap::new();
-            let mut output_failure_recorded = false;
-
-            let natural_terminal = loop {
-                let next = tokio::select! {
-                    event = segment_rx.recv() => event,
-                    _ = split_expiration.tick() => {
-                        translator_handle.manual_split.expire();
-                        continue;
-                    }
-                    update = split_updates.changed() => {
-                        if let Ok(state) = update { publish_split(state); }
-                        continue;
-                    }
-                };
-                let Some(event) = next else {
-                    break DownloadTerminalEvent::Failed {
-                        download_id: translator_download_id.clone(),
-                        streamer_id: translator_streamer_id.clone(),
-                        streamer_name: translator_streamer_name.clone(),
-                        session_id: translator_session_id.clone(),
-                        engine_type,
-                        protocol,
-                        kind: DownloadFailureKind::Other,
-                        error: "download engine event channel closed without a terminal event"
-                            .to_string(),
-                        recoverable: true,
-                    };
-                };
-
-                match event {
-                    SegmentEvent::SegmentCompleted(info) => {
-                        let manual_request = if info.split_reason_code.as_deref() == Some("manual")
-                        {
-                            info.split_reason_details_json
-                                .as_deref()
-                                .and_then(|details| {
-                                    serde_json::from_str::<serde_json::Value>(details).ok()
-                                })
-                                .and_then(|details| {
-                                    details.get("request_id").and_then(|id| id.as_u64())
-                                })
-                        } else {
-                            None
-                        };
-                        let SegmentInfo {
-                            path,
-                            duration_secs,
-                            size_bytes,
-                            index,
-                            started_at: info_started_at,
-                            completed_at,
-                            split_reason_code,
-                            split_reason_details_json,
-                            ..
-                        } = info;
-                        let segment_path = engine_segment_paths
-                            .remove(&index)
-                            .unwrap_or_else(|| resolve_segment_path(&path));
-                        let started_at = info_started_at.or_else(|| {
-                            translator_active_downloads
-                                .get(&translator_download_id)
-                                .and_then(|download| {
-                                    if download.current_engine_segment_index == Some(index) {
-                                        download.current_segment_started_at
-                                    } else {
-                                        None
-                                    }
-                                })
-                        });
-                        let segment_index = *engine_to_session.entry(index).or_insert_with(|| {
-                            Self::allocate_next_session_segment_index(
-                                &session_segment_indices,
-                                &translator_session_id,
-                            )
-                        });
-
-                        let completed_event = DownloadManagerEvent::Progress(
-                            DownloadProgressEvent::SegmentCompleted {
-                                download_id: translator_download_id.clone(),
-                                streamer_id: translator_streamer_id.clone(),
-                                streamer_name: translator_streamer_name.clone(),
-                                session_id: translator_session_id.clone(),
-                                segment_path: segment_path.clone(),
-                                segment_index,
-                                started_at,
-                                completed_at,
-                                duration_secs,
-                                size_bytes,
-                                split_reason_code,
-                                split_reason_details_json,
-                            },
-                        );
-                        if let Err(delivery_error) =
-                            translator_events.publish_and_wait(completed_event).await
-                        {
-                            // The segment file is already closed on disk; only
-                            // its row is missing. Ending the recording here
-                            // would turn one lost row into a lost stream, so
-                            // the failure is carried to the attempt outcome
-                            // (`AttemptShutdownReport::failures`) and the
-                            // engine keeps writing the next segment.
-                            error!(
-                                download_id = %translator_download_id,
-                                %delivery_error,
-                                "Required segment completion could not be applied; recording continues"
-                            );
-                            translator_lifecycle_errors.lock().push(format!(
-                                "required segment completion could not be applied: {delivery_error}"
-                            ));
-                            if let Some(request_id) = manual_request {
-                                translator_handle.manual_split.fail(request_id);
-                            }
-                        } else if let Some(request_id) = manual_request {
-                            // External remuxers finalize the old file after the
-                            // next logical segment starts; native writers close first.
-                            if last_started_sequence.is_some_and(|started| started > index) {
-                                translator_handle.manual_split.complete(request_id);
-                                publish_split(translator_handle.manual_split.snapshot());
-                            } else {
-                                pending_cut_completion = Some((index, request_id));
-                            }
-                        }
-
-                        if let Some(mut download) =
-                            translator_active_downloads.get_mut(&translator_download_id)
-                        {
-                            download.output_path = Some(segment_path);
-                            if download.current_engine_segment_index == Some(index) {
-                                download.current_engine_segment_index = None;
-                                download.current_segment_index = None;
-                                download.current_segment_path = None;
-                                download.current_segment_started_at = None;
-                            }
-                        }
-                        debug!(
-                            download_id = %translator_download_id,
-                            path = %path.display(),
-                            "Segment completed"
-                        );
-                    }
-                    SegmentEvent::Progress(progress) => {
-                        if last_progress_emit.elapsed() < PROGRESS_MIN_INTERVAL {
-                            if let Some(mut download) =
-                                translator_active_downloads.get_mut(&translator_download_id)
-                            {
-                                download.progress = progress;
-                                if !translator_phase.lock().is_stop_requested() {
-                                    download.status = DownloadStatus::Downloading;
-                                }
-                            }
-                        } else {
-                            last_progress_emit = Instant::now();
-                            if let Some(mut download) =
-                                translator_active_downloads.get_mut(&translator_download_id)
-                            {
-                                download.progress = progress.clone();
-                                if !translator_phase.lock().is_stop_requested() {
-                                    download.status = DownloadStatus::Downloading;
-                                }
-                            }
-
-                            translator_events.publish(DownloadManagerEvent::Progress(
-                                DownloadProgressEvent::Progress {
-                                    download_id: translator_download_id.clone(),
-                                    streamer_id: translator_streamer_id.clone(),
-                                    streamer_name: translator_streamer_name.clone(),
-                                    session_id: translator_session_id.clone(),
-                                    status: if translator_phase.lock().is_stop_requested() {
-                                        DownloadStatus::Cancelled
-                                    } else {
-                                        DownloadStatus::Downloading
-                                    },
-                                    progress,
-                                },
-                            ));
-                        }
-                    }
-                    SegmentEvent::DownloadCompleted {
-                        total_bytes,
-                        total_duration_secs,
-                        total_segments,
-                        engine_signal,
-                    } => {
-                        if let Some(download) =
-                            translator_active_downloads.get(&translator_download_id)
-                        {
-                            translator_events.publish(DownloadManagerEvent::Progress(
-                                DownloadProgressEvent::Progress {
-                                    download_id: translator_download_id.clone(),
-                                    streamer_id: translator_streamer_id.clone(),
-                                    streamer_name: translator_streamer_name.clone(),
-                                    session_id: translator_session_id.clone(),
-                                    status: if translator_phase.lock().is_stop_requested() {
-                                        DownloadStatus::Cancelled
-                                    } else {
-                                        DownloadStatus::Downloading
-                                    },
-                                    progress: download.progress.clone(),
-                                },
-                            ));
-                        }
-
-                        let output_path = translator_active_downloads
-                            .get(&translator_download_id)
-                            .and_then(|download| download.output_path.clone());
-                        break DownloadTerminalEvent::Completed {
-                            download_id: translator_download_id.clone(),
-                            streamer_id: translator_streamer_id.clone(),
-                            streamer_name: translator_streamer_name.clone(),
-                            session_id: translator_session_id.clone(),
-                            total_bytes,
-                            total_duration_secs,
-                            total_segments,
-                            file_path: output_path,
-                            engine_signal,
-                            stop_cause: None,
-                        };
-                    }
-                    SegmentEvent::OutputIoError {
-                        output_dir,
-                        io_kind,
-                        detail,
-                    } => {
-                        let detail = sanitize_engine_message(&detail, managed_credentials);
-                        if let Some(gate) = output_root_gate_ref.as_ref() {
-                            let synthetic_io_err =
-                                std::io::Error::new(io_kind.to_io_kind(), detail);
-                            gate.record_failure(&output_dir, &synthetic_io_err);
-                            output_failure_recorded = true;
-                        } else {
-                            debug!(
-                                "Output I/O event received without an output-root gate; retaining circuit-breaker backpressure"
-                            );
-                        }
-                    }
-                    SegmentEvent::DownloadFailed { kind, message } => {
-                        let message = sanitize_engine_message(&message, managed_credentials);
-                        // An engine must not bypass both storage gating and the breaker,
-                        // including early failures delivered by the engine fallback.
-                        let kind =
-                            if matches!(kind, DownloadFailureKind::OutputRootUnavailable { .. })
-                                && !output_failure_recorded
-                            {
-                                DownloadFailureKind::Io
-                            } else {
-                                kind
-                            };
-                        if let Some(download) =
-                            translator_active_downloads.get(&translator_download_id)
-                        {
-                            translator_events.publish(DownloadManagerEvent::Progress(
-                                DownloadProgressEvent::Progress {
-                                    download_id: translator_download_id.clone(),
-                                    streamer_id: translator_streamer_id.clone(),
-                                    streamer_name: translator_streamer_name.clone(),
-                                    session_id: translator_session_id.clone(),
-                                    status: if translator_phase.lock().is_stop_requested() {
-                                        DownloadStatus::Cancelled
-                                    } else {
-                                        DownloadStatus::Downloading
-                                    },
-                                    progress: download.progress.clone(),
-                                },
-                            ));
-                        }
-
-                        let recoverable = kind.is_recoverable();
-                        break DownloadTerminalEvent::Failed {
-                            download_id: translator_download_id.clone(),
-                            streamer_id: translator_streamer_id.clone(),
-                            streamer_name: translator_streamer_name.clone(),
-                            session_id: translator_session_id.clone(),
-                            engine_type,
-                            protocol,
-                            kind,
-                            error: message,
-                            recoverable,
-                        };
-                    }
-                    SegmentEvent::SegmentStarted {
-                        path,
-                        sequence,
-                        started_at,
-                    } => {
-                        let segment_path = resolve_segment_path(&path);
-                        engine_segment_paths.insert(sequence, segment_path.clone());
-                        let segment_index =
-                            *engine_to_session.entry(sequence).or_insert_with(|| {
-                                Self::allocate_next_session_segment_index(
-                                    &session_segment_indices,
-                                    &translator_session_id,
-                                )
-                            });
-
-                        if let Some(mut download) =
-                            translator_active_downloads.get_mut(&translator_download_id)
-                        {
-                            download.current_engine_segment_index = Some(sequence);
-                            download.current_segment_index = Some(segment_index);
-                            download.current_segment_path = Some(segment_path.clone());
-                            download.current_segment_started_at = Some(started_at);
-                        }
-
-                        let started_event =
-                            DownloadManagerEvent::Progress(DownloadProgressEvent::SegmentStarted {
-                                download_id: translator_download_id.clone(),
-                                streamer_id: translator_streamer_id.clone(),
-                                streamer_name: translator_streamer_name.clone(),
-                                session_id: translator_session_id.clone(),
-                                segment_path,
-                                segment_index,
-                                started_at,
-                            });
-                        if let Err(delivery_error) =
-                            translator_events.publish_and_wait(started_event).await
-                        {
-                            error!(
-                                download_id = %translator_download_id,
-                                %delivery_error,
-                                "Required segment start could not be applied"
-                            );
-                            translator_handle.cancel();
-                            break DownloadTerminalEvent::Failed {
-                                download_id: translator_download_id.clone(),
-                                streamer_id: translator_streamer_id.clone(),
-                                streamer_name: translator_streamer_name.clone(),
-                                session_id: translator_session_id.clone(),
-                                engine_type,
-                                protocol,
-                                kind: DownloadFailureKind::Other,
-                                error: format!(
-                                    "required segment start could not be applied: {delivery_error}"
-                                ),
-                                recoverable: true,
-                            };
-                        }
-
-                        if let Some((previous_sequence, request_id)) = pending_cut_completion
-                            && previous_sequence.checked_add(1) == Some(sequence)
-                        {
-                            translator_handle.manual_split.complete(request_id);
-                            pending_cut_completion = None;
-                            publish_split(translator_handle.manual_split.snapshot());
-                        }
-                        last_started_sequence = Some(sequence);
-
-                        debug!(
-                            download_id = %translator_download_id,
-                            path = %path.display(),
-                            engine_segment_index = sequence,
-                            segment_index,
-                            "Segment started"
-                        );
-                    }
-                }
-            };
-
-            translator_handle.manual_split.close(matches!(
-                natural_terminal,
-                DownloadTerminalEvent::Failed { .. }
-            ));
-            publish_split(translator_handle.manual_split.snapshot());
-
-            // Circuit-breaker health is read from the engine's own outcome, not
-            // from the terminal `choose_attempt_terminal` publishes. A stop
-            // racing a genuine engine failure is still a failure of this engine
-            // against this CDN, and rewriting it to `Cancelled` for the session
-            // must not also hide it from the retry backoff.
-            match &natural_terminal {
-                DownloadTerminalEvent::Completed { .. } => circuit_breakers_ref.record_success(),
-                DownloadTerminalEvent::Failed { kind, .. } if kind.affects_circuit_breaker() => {
-                    circuit_breakers_ref.record_failure();
-                }
-                DownloadTerminalEvent::Failed { .. }
-                | DownloadTerminalEvent::Cancelled { .. }
-                | DownloadTerminalEvent::Rejected { .. } => {}
-            }
-            if let DownloadTerminalEvent::Failed { kind, error, .. } = &natural_terminal {
-                // `choose_attempt_terminal` may replace this with `Cancelled`,
-                // which carries neither field, so log them before they are lost.
-                warn!(
-                    download_id = %translator_download_id,
-                    ?kind,
-                    %error,
-                    "Engine reported a failure while an attempt outcome was being chosen"
-                );
-            }
-
-            if may_diagnose
-                && matches!(&natural_terminal, DownloadTerminalEvent::Failed { kind, engine_type, .. } if kind.requests_credential_diagnostic(*engine_type))
-            {
-                // Keep stop requests effective during the bounded diagnostic.
-                // The finalizer chooses the terminal after diagnostic work settles.
-                natural_terminal
-            } else {
-                choose_attempt_terminal(
-                    &translator_phase,
-                    natural_terminal,
-                    &translator_download_id,
-                    &translator_streamer_id,
-                    &translator_streamer_name,
-                    &translator_session_id,
-                )
-            }
+                .unwrap_or_else(Instant::now),
+            engine_to_session: HashMap::new(),
+            engine_segment_paths: HashMap::new(),
+            output_failure_recorded: false,
         };
+        let translator_future = translator.run(segment_rx, handle.manual_split.updates());
 
-        let finalizer = AttemptFinalizer {
-            download_id: attempt_download_id.clone(),
-            active_downloads: attempt_active_downloads,
-            completion: attempt_completion,
-            outcome: None,
-            active_released: false,
+        let attempt = AttemptTask {
+            id: id.clone(),
+            handle,
+            phase,
+            events: self.events.clone(),
+            finalizer: AttemptFinalizer {
+                download_id: download_id.clone(),
+                active_downloads: self.active_downloads.clone(),
+                completion,
+                outcome: None,
+                active_released: false,
+            },
+            lifecycle_errors,
+            credential_diagnostic,
+            terminal_feedback,
+            managed_credentials,
         };
-        let attempt_cancel_handle = handle.clone();
-        let attempt_task = async move {
-            let mut finalizer = finalizer;
-            let mut engine_task = Box::pin(AssertUnwindSafe(engine_future).catch_unwind());
-            let mut translator_task = Box::pin(AssertUnwindSafe(translator_future).catch_unwind());
+        let attempt_task = attempt.run(engine_future, translator_future);
 
-            // The attempt owns both siblings directly. A translator panic
-            // cancels the engine before awaiting its cleanup; an engine wrapper
-            // panic publishes a fallback failure so the translator can finish.
-            let (engine_result, translator_result) = tokio::select! {
-                translator_result = &mut translator_task => {
-                    if translator_result.is_err() {
-                        attempt_cancel_handle.cancel();
-                    }
-                    let engine_result = engine_task.await;
-                    (engine_result, translator_result)
-                }
-                engine_result = &mut engine_task => {
-                    if let Err(payload) = &engine_result {
-                        attempt_cancel_handle.cancel();
-                        let message = panic_message(
-                            &**payload,
-                            "engine wrapper panicked with a non-string payload",
-                            managed_credentials,
-                        );
-                        if let Err(send_error) = attempt_cancel_handle
-                            .event_tx
-                            .send(SegmentEvent::DownloadFailed {
-                                kind: DownloadFailureKind::Other,
-                                message,
-                            })
-                            .await
-                        {
-                            debug!(%send_error, "Engine wrapper panic fallback was not delivered");
-                        }
-                    }
-                    let translator_result = translator_task.await;
-                    (engine_result, translator_result)
-                }
-            };
-            let mut lifecycle_errors = std::mem::take(&mut *lifecycle_errors.lock()).into_report();
-            if let Err(payload) = engine_result {
-                let error = panic_message(
-                    &*payload,
-                    "engine wrapper panicked with a non-string payload",
-                    managed_credentials,
-                );
-                error!(
-                    download_id = %attempt_download_id,
-                    %error,
-                    "Engine task failed"
-                );
-                lifecycle_errors.push(format!("engine task failed: {error}"));
-            }
-
-            let terminal = match translator_result {
-                Ok(terminal) => terminal,
-                Err(payload) => {
-                    let error = panic_message(
-                        &*payload,
-                        "download event translator panicked with a non-string payload",
-                        managed_credentials,
-                    );
-                    error!(
-                        download_id = %attempt_download_id,
-                        %error,
-                        "Download event translator failed"
-                    );
-                    let message = format!("download event translator failed: {error}");
-                    lifecycle_errors.push(message.clone());
-                    choose_attempt_terminal(
-                        &terminal_phase,
-                        DownloadTerminalEvent::Failed {
-                            download_id: attempt_download_id.clone(),
-                            streamer_id: terminal_streamer_id.clone(),
-                            streamer_name: terminal_streamer_name.clone(),
-                            session_id: terminal_session_id.clone(),
-                            engine_type,
-                            protocol,
-                            kind: DownloadFailureKind::Other,
-                            error: message,
-                            recoverable: true,
-                        },
-                        &attempt_download_id,
-                        &terminal_streamer_id,
-                        &terminal_streamer_name,
-                        &terminal_session_id,
-                    )
-                }
-            };
-
-            let mut terminal = terminal;
-            if let DownloadTerminalEvent::Failed {
-                kind, engine_type, ..
-            } = &terminal
-                && kind.requests_credential_diagnostic(*engine_type)
-                && !matches!(*terminal_phase.lock(), AttemptPhase::TerminalChosen)
-                && let Some(diagnostic) = credential_diagnostic
-            {
-                let replacement = tokio::select! {
-                    biased;
-                    _ = diagnostic_cancel.cancelled() => None,
-                    result = diagnostic(terminal.clone()) => result,
-                };
-                if let Some(replacement) = replacement
-                    && let DownloadTerminalEvent::Failed {
-                        kind,
-                        recoverable,
-                        error,
-                        ..
-                    } = &mut terminal
-                {
-                    *kind = replacement;
-                    *recoverable = true;
-                    *error = if replacement == DownloadFailureKind::CredentialUnavailable {
-                        "Recording awaits available credentials"
-                    } else {
-                        "Bound media renewed after engine failure"
-                    }
-                    .to_string();
-                }
-                terminal = choose_attempt_terminal(
-                    &terminal_phase,
-                    terminal,
-                    &attempt_download_id,
-                    &terminal_streamer_id,
-                    &terminal_streamer_name,
-                    &terminal_session_id,
-                );
-            }
-            let terminal_event = DownloadManagerEvent::Terminal(terminal);
-            if let Err(delivery_error) = terminal_events.coordinate_and_wait(&terminal_event).await
-            {
-                error!(
-                    download_id = %attempt_download_id,
-                    %delivery_error,
-                    "Required terminal outcome could not be applied"
-                );
-                lifecycle_errors.push(format!(
-                    "required terminal outcome could not be applied: {delivery_error}"
-                ));
-            }
-
-            finalizer.release_active();
-            terminal_events.observe_reserved(terminal_event, terminal_feedback);
-            let outcome = if lifecycle_errors.is_empty() {
-                Ok(())
-            } else {
-                Err(lifecycle_errors.join("; "))
-            };
-            finalizer.set_outcome(outcome.clone());
-            debug!(download_id = %attempt_download_id, "Recording attempt finished");
-            outcome
-        };
-
-        let admitted_active_downloads = self.active_downloads.clone();
-        let admitted_download_id = download_id.clone();
-        let started_events = self.events.clone();
-        let started_download_id = download_id.clone();
-        let started_streamer_id = streamer_id.clone();
-        let started_streamer_name = streamer_name.clone();
-        let started_session_id = session_id.clone();
         let started_url = if config.managed_credentials {
             String::new()
         } else {
@@ -1123,14 +1137,15 @@ impl DownloadManager {
         };
         let admitted = self.attempts.spawn(
             download_id.clone(),
-            move || {
-                admitted_active_downloads.insert(admitted_download_id, active_download);
-                started_events.observe_reserved(
+            || {
+                self.active_downloads
+                    .insert(download_id.clone(), active_download);
+                self.events.observe_reserved(
                     DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
-                        download_id: started_download_id,
-                        streamer_id: started_streamer_id,
-                        streamer_name: started_streamer_name,
-                        session_id: started_session_id,
+                        download_id: id.download_id.clone(),
+                        streamer_id: id.streamer_id.clone(),
+                        streamer_name: id.streamer_name.clone(),
+                        session_id: id.session_id.clone(),
                         engine_type,
                         cdn_host,
                         download_url: started_url,
@@ -1149,7 +1164,7 @@ impl DownloadManager {
 
         info!(
             download_id,
-            streamer_id,
+            streamer_id = id.streamer_id.as_str(),
             engine = %engine_type,
             "Starting download"
         );
