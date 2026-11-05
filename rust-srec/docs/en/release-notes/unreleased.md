@@ -73,3 +73,9 @@
 - **Workflows**: the step library now lists workflows created or changed moments before, instead of the list it showed earlier.
 - **Session page**: chat message times in the danmu list now follow the app language instead of the browser's.
 - **Backup & Restore**: the size of the file chosen for import is shown in a fitting unit (KB, MB) instead of always in KB.
+- **Recordings**: a long stream title in Chinese, Japanese or another language written with multi-byte characters no longer makes the file name too long for the disk, which could stop the recording from being saved. Such names are now shortened to fit.
+- **Job page**: completed jobs now show their input and output sizes. Before, those fields stayed empty.
+- **Browser notifications**: when a notification cannot be delivered, the server log now records only the push service's address, not the full subscription address that identifies your browser.
+- **Metadata** and **Remux** steps: when **Delete source file after successful processing** cannot delete a file, the job log now shows the warning once instead of twice.
+- **Metadata** steps: an output path that points to the input file under a different spelling, for example through `..`, is now refused. Before, the step could write over the recording and then delete it.
+- **Desktop app**: saving the **Desktop Notifications** settings no longer briefly removes the settings file, so the settings can no longer be reset to their defaults while they are being saved.
