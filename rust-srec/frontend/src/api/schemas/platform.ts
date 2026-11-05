@@ -73,8 +73,6 @@ export const PlatformConfigSchema = z.object({
   offline_check_delay_ms: z.number().int().min(1000).nullable().optional(),
 });
 
-export type PlatformConfig = z.infer<typeof PlatformConfigSchema>;
-
 // Schema for Forms (expects objects, not JSON strings)
 export const PlatformConfigFormSchema = PlatformConfigSchema.extend({
   extractor: ExtractorSelectionSchema.nullable().optional(),

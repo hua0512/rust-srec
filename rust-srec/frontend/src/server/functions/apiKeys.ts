@@ -23,7 +23,6 @@ export const CreateApiKeyResponseSchema = z.object({
   api_key: z.string(),
   key: ApiKeySchema,
 });
-export type CreateApiKeyResponse = z.infer<typeof CreateApiKeyResponseSchema>;
 
 const CreateApiKeyInputSchema = z.object({
   name: z.string().min(1).max(100),

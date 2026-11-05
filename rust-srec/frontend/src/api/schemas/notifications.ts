@@ -128,14 +128,10 @@ export const CreateChannelRequestSchema = z.object({
   settings: z.string(),
 });
 
-export type CreateChannelRequest = z.infer<typeof CreateChannelRequestSchema>;
-
 export const UpdateChannelRequestSchema = z.object({
   name: z.string().min(1),
   settings: z.string(),
 });
-
-export type UpdateChannelRequest = z.infer<typeof UpdateChannelRequestSchema>;
 
 export const NotificationEventTypeInfoSchema = z.object({
   event_type: z.string(),
@@ -166,14 +162,6 @@ export const WebPushSubscriptionSchema = z.object({
   updated_at: TimestampMsSchema,
 });
 export type WebPushSubscription = z.infer<typeof WebPushSubscriptionSchema>;
-
-const UpdateSubscriptionsRequestSchema = z.object({
-  events: z.array(z.string()),
-});
-
-export type UpdateSubscriptionsRequest = z.infer<
-  typeof UpdateSubscriptionsRequestSchema
->;
 
 // Form-specific schemas for each channel type (used for runtime validation)
 const DiscordChannelFormSchema = z.object({

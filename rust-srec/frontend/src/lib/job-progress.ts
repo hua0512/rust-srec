@@ -12,7 +12,7 @@ import { formatUploadBytes } from '@/lib/upload-format';
 import type { JobView, UploadProgressInput, UploadView } from '@/store/uploads';
 
 /** A media position in milliseconds as "01:02:03". */
-export function formatTimecode(ms: number): string {
+function formatTimecode(ms: number): string {
   const secs = Math.max(0, Math.floor(ms / 1000));
   return [Math.floor(secs / 3600), Math.floor(secs / 60) % 60, secs % 60]
     .map((part) => String(part).padStart(2, '0'))

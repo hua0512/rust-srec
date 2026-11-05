@@ -196,7 +196,6 @@ export const MediaOutputUploadInfoSchema = z.object({
   status: z.enum(['COMPLETED', 'FAILED', 'SKIPPED']),
   completed_at: z.string().nullable().optional(),
 });
-export type MediaOutputUploadInfo = z.infer<typeof MediaOutputUploadInfoSchema>;
 
 export const MediaOutputSchema = z.object({
   id: z.string(),
@@ -226,7 +225,6 @@ export const MediaOutputSummarySchema = z.object({
     )
     .default([]),
 });
-export type MediaOutputSummary = z.infer<typeof MediaOutputSummarySchema>;
 
 // NOTE: This ExtractMetadataResponse is for URL extraction, NOT media file metadata
 export const ExtractMetadataResponseSchema = z.object({
@@ -308,4 +306,3 @@ export const ResolveUrlResponseSchema = z.object({
   stream_info: z.any().optional(),
   error: z.string().nullable().optional(),
 });
-export type ResolveUrlResponse = z.infer<typeof ResolveUrlResponseSchema>;

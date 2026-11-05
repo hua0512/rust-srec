@@ -14,7 +14,7 @@ import { isDesktopBuild } from '../utils/desktop';
 export { BackendApiError };
 
 /** Default bound on one backend request; the retry after a refresh gets its own. */
-export const BACKEND_TIMEOUT_MS = 15_000;
+const BACKEND_TIMEOUT_MS = 15_000;
 
 /**
  * For calls that run external tools or move many rows or files: engine and

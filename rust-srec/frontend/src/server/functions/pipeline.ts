@@ -43,10 +43,6 @@ const CreatePipelineJobRequestSchema = z.object({
   dag: DagPipelineDefinitionSchema,
 });
 
-export type CreatePipelineJobRequest = z.infer<
-  typeof CreatePipelineJobRequestSchema
->;
-
 /** Offset pagination shared by the list endpoints. */
 const JobLogFiltersSchema = PageSchema.extend({ id: PathIdSchema });
 
