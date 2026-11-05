@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { msg } from '@lingui/core/macro';
 import { zodError, zodText } from '@/lib/zod-i18n';
 
+import { jsonTextField } from './common';
 import { TimestampMsSchema } from './pipeline';
 
 const ChannelTypeSchema = z.enum([
@@ -21,6 +22,9 @@ const NotificationLocaleSchema = z
   .enum(['', 'en', 'zh-CN'])
   .default('')
   .catch('');
+
+/** Request timeout of an HTTP channel. The backend clamps anything longer to 300 s. */
+const ChannelTimeoutSchema = z.number().int().positive().max(300).default(30);
 
 // Settings schemas
 const DiscordSettingsSchema = z.object({
@@ -75,6 +79,7 @@ const WebhookAuthSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('Header'), name: z.string(), value: z.string() }),
 ]);
+export type WebhookAuth = z.infer<typeof WebhookAuthSchema>;
 
 const WebhookSettingsSchema = z.object({
   url: z.url(),
@@ -84,7 +89,7 @@ const WebhookSettingsSchema = z.object({
   min_priority: z.number().int().min(0).max(10).default(2),
   locale: NotificationLocaleSchema,
   enabled: z.boolean().default(true),
-  timeout_secs: z.number().int().positive().default(30),
+  timeout_secs: ChannelTimeoutSchema,
 });
 
 const TelegramSettingsSchema = z.object({
@@ -102,14 +107,17 @@ const GotifySettingsSchema = z.object({
   min_priority: z.number().int().min(0).max(10).default(5),
   locale: NotificationLocaleSchema,
   enabled: z.boolean().default(true),
-  timeout_secs: z.number().int().positive().default(30),
+  timeout_secs: ChannelTimeoutSchema,
 });
 
 export const NotificationChannelSchema = z.object({
   id: z.uuid(),
   name: z.string().min(1),
   channel_type: ChannelTypeSchema,
-  settings: z.string(),
+  settings: jsonTextField(
+    'notification channel settings',
+    z.record(z.string(), z.json()),
+  ),
 });
 
 export type NotificationChannel = z.infer<typeof NotificationChannelSchema>;

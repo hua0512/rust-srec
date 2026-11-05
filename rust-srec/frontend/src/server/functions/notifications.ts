@@ -48,7 +48,7 @@ export const listChannels = createServerFn({ method: 'GET' }).handler(
 );
 
 export const createChannel = createServerFn({ method: 'POST' })
-  .validator((data: z.infer<typeof CreateChannelRequestSchema>) =>
+  .validator((data: z.input<typeof CreateChannelSchema>) =>
     parseInput(CreateChannelSchema, data),
   )
   .handler(async ({ data }) => {
@@ -61,7 +61,7 @@ export const createChannel = createServerFn({ method: 'POST' })
 
 export const updateChannel = createServerFn({ method: 'POST' })
   .validator(
-    (d: { id: string; data: z.infer<typeof UpdateChannelRequestSchema> }) => ({
+    (d: { id: string; data: z.input<typeof UpdateChannelSchema> }) => ({
       id: parseInput(PathIdSchema, d.id),
       data: parseInput(UpdateChannelSchema, d.data),
     }),

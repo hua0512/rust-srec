@@ -24,6 +24,7 @@ import { NotificationChannel } from '@/api/schemas';
 import { Trans } from '@lingui/react/macro';
 import { msg, plural, t } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
+import type { I18n } from '@lingui/core';
 import { priorityLabel } from '@/lib/priority';
 import { eventTypeLabel } from '@/lib/notification-event-types';
 import {
@@ -138,7 +139,7 @@ const getEventIcon = (eventType: string) => {
   }
 };
 
-const getEventDescription = (eventType: string, i18n: any) => {
+const getEventDescription = (eventType: string, i18n: I18n) => {
   switch (eventType) {
     case 'stream_online':
       return i18n._(msg`Receive a notification when a streamer goes live.`);
@@ -247,7 +248,7 @@ export function SubscriptionManager({
       });
       onOpenChange(false);
     },
-    onError: (err: any) => {
+    onError: (err) => {
       toast.error(err.message || i18n._(msg`Failed to update subscriptions`));
     },
   });

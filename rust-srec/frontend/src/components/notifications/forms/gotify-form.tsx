@@ -7,19 +7,19 @@ import {
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
-import { Globe, KeyRound, Timer } from 'lucide-react';
+import { Globe, KeyRound } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
 import { IconInput } from '@/components/ui/icon-input';
 import {
   ChannelEnabledField,
   MinPriorityField,
   ChannelLocaleField,
+  ChannelTimeoutField,
 } from './channel-delivery-fields';
 import {
   CONFIG_INPUT,
   ConfigFieldLabel,
 } from '@/components/config/shared/config-field';
-import { NumberInput } from '@/components/ui/number-input';
 
 export function GotifyForm() {
   const { i18n } = useLingui();
@@ -38,7 +38,7 @@ export function GotifyForm() {
             <FormControl>
               <IconInput
                 icon={Globe}
-                placeholder={i18n._(msg`https://gotify.example.com`)}
+                placeholder="https://gotify.example.com"
                 className={CONFIG_INPUT}
                 {...field}
               />
@@ -71,28 +71,7 @@ export function GotifyForm() {
       <div className="grid items-start gap-4 pt-2 sm:grid-cols-2">
         <MinPriorityField />
         <ChannelLocaleField />
-        <FormField
-          control={form.control}
-          name="settings.timeout_secs"
-          render={({ field }) => (
-            <FormItem className="space-y-2">
-              <ConfigFieldLabel>
-                <Trans>Timeout (s)</Trans>
-              </ConfigFieldLabel>
-              <FormControl>
-                <NumberInput
-                  field={field}
-                  icon={Timer}
-                  min={1}
-                  max={300}
-                  placeholder="30"
-                  className={CONFIG_INPUT}
-                />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
+        <ChannelTimeoutField />
       </div>
       <ChannelEnabledField />
     </div>

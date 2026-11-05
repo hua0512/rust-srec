@@ -3,7 +3,6 @@ import {
   FormField,
   FormItem,
   FormMessage,
-  FormDescription,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import {
@@ -39,16 +38,24 @@ import {
   ChannelEnabledField,
   MinPriorityField,
   ChannelLocaleField,
+  ChannelTimeoutField,
 } from './channel-delivery-fields';
 import {
-  CONFIG_DESCRIPTION,
   CONFIG_SELECT_CONTENT,
   CONFIG_SELECT_TRIGGER,
   ConfigFieldLabel,
   CONFIG_INPUT,
 } from '@/components/config/shared/config-field';
-import { NumberInput } from '@/components/ui/number-input';
 import { useRowKeys } from '@/hooks/use-row-keys';
+import type { WebhookAuth, WebhookAuthType } from '@/api/schemas';
+
+/** Starting value of `settings.auth` for each authentication type, with its fields empty. */
+export const AUTH_DEFAULTS: Record<WebhookAuthType, WebhookAuth> = {
+  None: { type: 'None' },
+  Bearer: { type: 'Bearer', token: '' },
+  Basic: { type: 'Basic', username: '', password: '' },
+  Header: { type: 'Header', name: '', value: '' },
+};
 
 export const WebhookForm = memo(function WebhookForm() {
   const { i18n } = useLingui();
@@ -86,7 +93,7 @@ export const WebhookForm = memo(function WebhookForm() {
                   <IconInput
                     className={CONFIG_INPUT}
                     icon={Globe}
-                    placeholder={i18n._(msg`https://api.example.com/webhook`)}
+                    placeholder="https://api.example.com/webhook"
                     {...field}
                   />
                 </FormControl>
@@ -135,29 +142,7 @@ export const WebhookForm = memo(function WebhookForm() {
         <CardContent className="grid items-start gap-4 md:grid-cols-2">
           <MinPriorityField />
           <ChannelLocaleField />
-          <FormField
-            control={form.control}
-            name="settings.timeout_secs"
-            render={({ field }) => (
-              <FormItem className="space-y-2">
-                <ConfigFieldLabel>
-                  <Trans>Timeout (seconds)</Trans>
-                </ConfigFieldLabel>
-                <FormControl>
-                  <NumberInput
-                    field={field}
-                    className={CONFIG_INPUT}
-                    min={1}
-                    placeholder="30"
-                  />
-                </FormControl>
-                <FormDescription className={CONFIG_DESCRIPTION}>
-                  <Trans>Request timeout duration</Trans>
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          <ChannelTimeoutField />
         </CardContent>
       </Card>
 
@@ -180,27 +165,12 @@ export const WebhookForm = memo(function WebhookForm() {
                 </ConfigFieldLabel>
                 <Select
                   onValueChange={(value) => {
-                    const form_ctx = form as any;
-                    if (value === 'None') {
-                      form_ctx.setValue('settings.auth', { type: 'None' });
-                    } else if (value === 'Bearer') {
-                      form_ctx.setValue('settings.auth', {
-                        type: 'Bearer',
-                        token: '',
-                      });
-                    } else if (value === 'Basic') {
-                      form_ctx.setValue('settings.auth', {
-                        type: 'Basic',
-                        username: '',
-                        password: '',
-                      });
-                    } else if (value === 'Header') {
-                      form_ctx.setValue('settings.auth', {
-                        type: 'Header',
-                        name: '',
-                        value: '',
-                      });
-                    }
+                    // Radix can emit '' while a reset mounts the options.
+                    if (!(value in AUTH_DEFAULTS)) return;
+                    form.setValue(
+                      'settings.auth',
+                      AUTH_DEFAULTS[value as WebhookAuthType],
+                    );
                   }}
                   value={field.value}
                 >
@@ -251,7 +221,7 @@ export const WebhookForm = memo(function WebhookForm() {
                           className={CONFIG_INPUT}
                           icon={Key}
                           type="password"
-                          placeholder={i18n._(msg`ey...`)}
+                          placeholder="ey..."
                           {...field}
                         />
                       </FormControl>
@@ -337,7 +307,7 @@ export const WebhookForm = memo(function WebhookForm() {
                           <IconInput
                             className={CONFIG_INPUT}
                             icon={Type}
-                            placeholder={i18n._(msg`X-Auth-Key`)}
+                            placeholder="X-Auth-Key"
                             {...field}
                           />
                         </FormControl>
@@ -403,7 +373,7 @@ export const WebhookForm = memo(function WebhookForm() {
                 <Trans>No custom headers configured</Trans>
               </div>
             )}
-            {headers.map((_: any, index: number) => (
+            {headers.map((_: unknown, index: number) => (
               <div
                 key={rowKeys.keyAt(index)}
                 className="flex gap-2 items-start group"
@@ -450,7 +420,9 @@ export const WebhookForm = memo(function WebhookForm() {
                     const currentHeaders = form.getValues('settings.headers');
                     form.setValue(
                       'settings.headers',
-                      currentHeaders.filter((_: any, i: number) => i !== index),
+                      currentHeaders.filter(
+                        (_: unknown, i: number) => i !== index,
+                      ),
                     );
                   }}
                   aria-label={i18n._(msg`Remove header`)}

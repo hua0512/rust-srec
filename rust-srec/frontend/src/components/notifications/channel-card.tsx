@@ -73,14 +73,11 @@ export function ChannelCard({
     CHANNEL_COLORS[channel.channel_type] ||
     'bg-primary/10 text-primary border-primary/20';
 
-  let configObj: any = {};
-  try {
-    if (typeof channel.settings === 'string') {
-      configObj = JSON.parse(channel.settings);
-    } else {
-      configObj = channel.settings;
-    }
-  } catch {}
+  const settings = channel.settings ?? {};
+  const text = (key: string) => {
+    const value = settings[key];
+    return typeof value === 'string' && value ? value : '...';
+  };
 
   const renderConfigDetails = () => {
     switch (channel.channel_type) {
@@ -88,14 +85,20 @@ export function ChannelCard({
         return (
           <CardField
             label={<Trans>Webhook URL</Trans>}
-            value={configObj.webhook_url || '...'}
+            value={text('webhook_url')}
           />
         );
       case 'Email':
         return (
           <CardField
             label={<Trans>To</Trans>}
-            value={(configObj.to_addresses || []).join(', ')}
+            value={
+              Array.isArray(settings.to_addresses)
+                ? settings.to_addresses
+                    .filter((address) => typeof address === 'string')
+                    .join(', ')
+                : ''
+            }
           />
         );
       case 'Telegram':
@@ -104,31 +107,23 @@ export function ChannelCard({
             <CardField
               label={<Trans>Bot Token</Trans>}
               value={
-                configObj.bot_token
-                  ? `${configObj.bot_token.slice(0, 6)}${'*'.repeat(20)}`
+                typeof settings.bot_token === 'string' && settings.bot_token
+                  ? `${settings.bot_token.slice(0, 6)}${'*'.repeat(20)}`
                   : '...'
               }
             />
-            <CardField
-              label={<Trans>Chat ID</Trans>}
-              value={configObj.chat_id || '...'}
-            />
+            <CardField label={<Trans>Chat ID</Trans>} value={text('chat_id')} />
           </>
         );
       case 'Gotify':
         return (
           <CardField
             label={<Trans>Server URL</Trans>}
-            value={configObj.server_url || '...'}
+            value={text('server_url')}
           />
         );
       case 'Webhook':
-        return (
-          <CardField
-            label={<Trans>URL</Trans>}
-            value={configObj.url || '...'}
-          />
-        );
+        return <CardField label={<Trans>URL</Trans>} value={text('url')} />;
       default:
         return null;
     }
