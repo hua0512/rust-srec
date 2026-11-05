@@ -809,13 +809,6 @@ where
             .unwrap_or(false)
     }
 
-    // ========== Statistics ==========
-
-    /// Get the total number of streamers, excluding ones marked deleted.
-    pub fn count(&self) -> usize {
-        self.metadata.iter().filter(|e| !e.is_deleted()).count()
-    }
-
     /// Get a reference to the underlying metadata store.
     ///
     /// This is useful for actors that need direct read access to streamer metadata

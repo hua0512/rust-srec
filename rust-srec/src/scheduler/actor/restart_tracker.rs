@@ -213,41 +213,12 @@ impl RestartTracker {
             .get(actor_id)
             .is_none_or(|history| history.consecutive_failures < 10)
     }
-
-    /// Get statistics for all tracked actors.
-    pub fn stats(&self) -> RestartTrackerStats {
-        let now = Instant::now();
-        let total_actors = self.history.len();
-        let actors_with_failures = self
-            .history
-            .values()
-            .filter(|h| h.recent_failures(now, self.config.failure_window) > 0)
-            .count();
-        let total_restarts: u64 = self.history.values().map(|h| h.total_restarts).sum();
-
-        RestartTrackerStats {
-            total_actors,
-            actors_with_failures,
-            total_restarts,
-        }
-    }
 }
 
 impl Default for RestartTracker {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Statistics from the restart tracker.
-#[derive(Debug, Clone)]
-pub struct RestartTrackerStats {
-    /// Total number of tracked actors.
-    pub total_actors: usize,
-    /// Number of actors with recent failures.
-    pub actors_with_failures: usize,
-    /// Total restart count across all actors.
-    pub total_restarts: u64,
 }
 
 #[cfg(test)]

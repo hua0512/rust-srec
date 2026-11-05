@@ -26,8 +26,8 @@ pub use monitor_adapter::{CheckError, MonitorStatusChecker, NoOpStatusChecker, S
 pub use registry::{
     ActorRegistry, ActorRemoval, ActorRemovalOutcome, ActorTaskResult, RegistryError,
 };
-pub use restart_tracker::{RestartTracker, RestartTrackerConfig, RestartTrackerStats};
+pub use restart_tracker::{RestartTracker, RestartTrackerConfig};
 pub use streamer_actor::{ActorError, ActorOutcome, ActorResult, StreamerActor};
 pub use supervisor::{
-    ShutdownReport, SpawnError, Supervisor, SupervisorConfig, SupervisorStats, TaskCompletionAction,
+    ShutdownReport, SpawnError, Supervisor, SupervisorConfig, TaskCompletionAction,
 };

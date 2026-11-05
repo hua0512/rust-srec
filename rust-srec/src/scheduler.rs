@@ -20,10 +20,9 @@ mod service;
 // Actor model exports (primary API)
 pub use actor::{
     ActorError, ActorHandle, ActorMetadata, ActorOutcome, ActorRegistry, ActorResult,
-    ActorTaskResult, CheckResult, RegistryError, RestartTracker, RestartTrackerConfig,
-    RestartTrackerStats, SendError, ShutdownReport, SpawnError, StreamerActor, StreamerActorState,
-    StreamerConfig, StreamerMessage, Supervisor, SupervisorConfig, SupervisorStats,
-    TaskCompletionAction,
+    ActorTaskResult, CheckResult, RegistryError, RestartTracker, RestartTrackerConfig, SendError,
+    ShutdownReport, SpawnError, StreamerActor, StreamerActorState, StreamerConfig, StreamerMessage,
+    Supervisor, SupervisorConfig, TaskCompletionAction,
 };
 
 // Scheduler service

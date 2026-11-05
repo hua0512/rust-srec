@@ -48,7 +48,6 @@ use std::sync::atomic::{
     AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering as AtomicOrdering,
 };
 
-use chrono::Utc;
 use dashmap::DashMap;
 use dashmap::mapref::entry::Entry;
 use parking_lot::Mutex;
@@ -56,6 +55,7 @@ use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 use super::engine::EngineType;
+use crate::database::time::now_ms;
 
 /// Priority tier for a queued or active download.
 ///
@@ -733,10 +733,6 @@ impl DownloadQueue {
         self.release(priority);
         self.session_reservations.remove(session_id);
     }
-}
-
-fn now_ms() -> i64 {
-    Utc::now().timestamp_millis()
 }
 
 struct SessionReservation {

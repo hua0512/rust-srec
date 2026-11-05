@@ -339,7 +339,7 @@ async fn actor_creation_and_every_config_scope_resolve_four_layers_without_metad
     }));
     assert_eq!(scheduler.process_pending_restarts().await, 0);
     assert!(!scheduler.supervisor.registry().has_streamer(&row.id));
-    assert_eq!(scheduler.supervisor.stats().pending_restarts, 1);
+    assert!(scheduler.supervisor.has_pending_streamer_restart(&row.id));
     sqlx::query("UPDATE template_config SET offline_check_count = 12, offline_check_delay_ms = 120000 WHERE id = 'timing-template'").execute(&pool).await.unwrap();
     scheduler
         .supervisor
@@ -375,7 +375,7 @@ async fn actor_creation_and_every_config_scope_resolve_four_layers_without_metad
         "failed resolution defers the restart instead of using captured stale timing"
     );
     assert!(!scheduler.supervisor.registry().has_streamer(&row.id));
-    assert_eq!(scheduler.supervisor.stats().pending_restarts, 1);
+    assert!(scheduler.supervisor.has_pending_streamer_restart(&row.id));
     scheduler
         .supervisor
         .defer_streamer_restart(&row.id, Duration::ZERO);
