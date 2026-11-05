@@ -6,6 +6,8 @@ import { withBase } from 'vitepress'
 
 你可以在 <a :href="withBase('/env.zh.example')" download=".env.example">.env</a> 文件中配置以下环境变量。
 
+数值类变量的值无效时（例如 `API_PORT=80800`），服务器会在启动时报错并停止，错误信息会注明是哪个变量。未设置或留空的变量使用默认值。
+
 ## 通用 {#通用}
 | 变量 | 说明 | 默认值 |
 |------|------|--------|

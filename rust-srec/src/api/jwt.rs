@@ -55,6 +55,13 @@ pub struct JwtService {
 
 use tracing::info;
 
+/// Token issuer and audience from `JWT_ISSUER` / `JWT_AUDIENCE`, with their defaults.
+pub(crate) fn issuer_and_audience_from_env() -> (String, String) {
+    let issuer = std::env::var("JWT_ISSUER").unwrap_or_else(|_| "rust-srec".to_string());
+    let audience = std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "rust-srec-api".to_string());
+    (issuer, audience)
+}
+
 impl JwtService {
     /// Create a new JWT service.
     ///
@@ -85,9 +92,7 @@ impl JwtService {
         let secret = std::env::var("JWT_SECRET")
             .ok()
             .filter(|value| !value.trim().is_empty())?;
-        let issuer = std::env::var("JWT_ISSUER").unwrap_or_else(|_| "rust-srec".to_string());
-        let audience =
-            std::env::var("JWT_AUDIENCE").unwrap_or_else(|_| "rust-srec-api".to_string());
+        let (issuer, audience) = issuer_and_audience_from_env();
 
         info!(
             "JWT service initialized (issuer: {}, audience: {}, expiration: {}s)",

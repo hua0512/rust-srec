@@ -188,11 +188,6 @@ where
         self.broadcaster.subscribe()
     }
 
-    /// Get the number of active subscribers.
-    pub fn subscriber_count(&self) -> usize {
-        self.broadcaster.subscriber_count()
-    }
-
     // ========== Global Config ==========
 
     /// Get the global configuration.
@@ -707,23 +702,6 @@ where
     pub(crate) fn notify_import_committed(&self) {
         self.invalidate_import_caches();
         self.broadcaster.publish(ConfigUpdateEvent::GlobalUpdated);
-    }
-
-    /// Invalidate cached configs for all streamers on a platform.
-    pub async fn invalidate_platform(&self, platform_id: &str) -> Result<()> {
-        self.invalidate_streamers_by_platform(platform_id).await
-    }
-
-    /// Invalidate cached configs for all streamers using a template.
-    pub async fn invalidate_template(&self, template_id: &str) -> Result<()> {
-        self.invalidate_streamers_by_template(template_id).await
-    }
-
-    // ========== Cache Management ==========
-
-    /// Get cache statistics.
-    pub fn cache_stats(&self) -> super::cache::CacheStats {
-        self.cache.stats()
     }
 
     // ========== Private Helpers ==========

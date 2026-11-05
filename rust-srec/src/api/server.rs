@@ -45,12 +45,16 @@ impl Default for ApiServerConfig {
 }
 
 impl ApiServerConfig {
-    /// Load API server config from environment variables, falling back to defaults.
+    /// Load API server config from environment variables; unset variables keep their defaults.
     ///
     /// Supported env vars:
     /// - `API_BIND_ADDRESS` (e.g. "0.0.0.0")
     /// - `API_PORT` (e.g. "8080")
-    pub fn from_env_or_default() -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns a configuration error when `API_PORT` is set to something other than a port number.
+    pub fn from_env() -> crate::Result<Self> {
         let mut config = Self::default();
 
         if let Ok(bind_address) = std::env::var("API_BIND_ADDRESS")
@@ -59,13 +63,11 @@ impl ApiServerConfig {
             config.bind_address = bind_address;
         }
 
-        if let Ok(port) = std::env::var("API_PORT")
-            && let Ok(parsed) = port.parse::<u16>()
-        {
-            config.port = parsed;
+        if let Some(port) = crate::utils::env::parse("API_PORT")? {
+            config.port = port;
         }
 
-        config
+        Ok(config)
     }
 }
 

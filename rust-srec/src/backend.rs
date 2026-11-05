@@ -15,5 +15,5 @@ pub use crate::panic_hook::install as install_panic_hook;
 pub use crate::pipeline::PipelineManagerConfig;
 pub use crate::runtime::RuntimeLease;
 pub use crate::server::run as run_server;
-pub use crate::services::{ServiceContainer, ServiceContainerConfig, ServiceStats};
+pub use crate::services::{ServiceContainer, ServiceContainerConfig};
 pub use crate::utils::http_client::install_rustls_provider;

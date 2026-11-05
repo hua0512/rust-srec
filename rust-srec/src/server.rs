@@ -11,8 +11,8 @@ use crate::backend::{
     install_panic_hook, install_rustls_provider, run_migrations,
 };
 use crate::runtime::{
-    RuntimeTermination, WorkerShutdownReason, is_worker_process, supervise_current_executable,
-    wait_for_worker_start, worker_shutdown_schedule,
+    RuntimeTermination, WorkerShutdownReason, database_url_from_env, is_worker_process,
+    supervise_current_executable, wait_for_worker_start, worker_shutdown_schedule,
 };
 use crate::services::container::ServiceShutdownSchedule;
 
@@ -107,8 +107,7 @@ async fn run_worker() -> anyhow::Result<()> {
         );
     }
 
-    let database_url =
-        std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:srec.db?mode=rwc".to_string());
+    let database_url = database_url_from_env();
     info!("Connecting to database: {}", database_url);
     let output_dir = std::env::var("OUTPUT_DIR").ok();
     let (pool, write_pool) = initialize_database(&database_url, output_dir.as_deref()).await?;

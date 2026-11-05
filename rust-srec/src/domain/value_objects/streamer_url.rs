@@ -32,11 +32,6 @@ impl StreamerUrl {
         Ok(Self(Self::normalize(&url)))
     }
 
-    /// Create a StreamerUrl without validation (for trusted sources like DB).
-    pub fn from_trusted(url: impl Into<String>) -> Self {
-        Self(url.into())
-    }
-
     /// Get the URL as a string slice.
     pub fn as_str(&self) -> &str {
         &self.0

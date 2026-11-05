@@ -41,7 +41,7 @@ async fn runtime_throttle_preserves_live_limits_and_queue_ownership() {
             .await
             .unwrap();
         let mut options =
-            ServiceContainerConfig::standard(DEFAULT_CACHE_TTL, DEFAULT_EVENT_CAPACITY);
+            ServiceContainerConfig::standard(DEFAULT_CACHE_TTL, DEFAULT_EVENT_CAPACITY).unwrap();
         options.download_config.high_priority_extra_slots = 1;
         options.pipeline_config.throttle = ThrottleConfig {
             enabled: true,
