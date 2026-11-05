@@ -24,8 +24,10 @@ export function routerWithQueryHydration<TRouter extends AnyRouter>(
     });
   } else {
     const ogHydrate = router.options.hydrate;
-    router.options.hydrate = async (dehydrated: any) => {
-      const state = dehydrated?.queryClientState as DehydratedState | undefined;
+    router.options.hydrate = async (
+      dehydrated: { queryClientState?: DehydratedState } | undefined,
+    ) => {
+      const state = dehydrated?.queryClientState;
       if (state) hydrate(queryClient, state);
       await ogHydrate?.(dehydrated);
     };

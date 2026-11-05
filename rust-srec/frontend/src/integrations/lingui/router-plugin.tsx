@@ -58,7 +58,9 @@ export function routerWithLingui<TRouter extends AnyRouter>(
   } else {
     bindZodToI18n(i18n);
     const ogHydrate = router.options.hydrate;
-    router.options.hydrate = async (dehydrated: any) => {
+    router.options.hydrate = async (dehydrated: {
+      dehydratedI18n?: { locale: string };
+    }) => {
       await ogHydrate?.(dehydrated);
 
       if (dehydrated.dehydratedI18n) {

@@ -134,18 +134,23 @@ export function dirname(path: string): string {
 }
 
 /**
- * Remove null and undefined values from an object or array recursively
+ * Remove null and undefined values from an object or array recursively. The
+ * result is typed as the input, whose nullable fields it leaves absent.
  */
-export function removeEmpty(obj: any): any {
+export function removeEmpty<T>(obj: T): T {
+  return removeEmptyValues(obj) as T;
+}
+
+function removeEmptyValues(obj: unknown): unknown {
   if (Array.isArray(obj)) {
     return obj
-      .map((v) => removeEmpty(v))
+      .map((v) => removeEmptyValues(v))
       .filter((v) => v !== null && v !== undefined);
   }
   if (obj !== null && typeof obj === 'object') {
     return Object.fromEntries(
       Object.entries(obj)
-        .map(([k, v]) => [k, removeEmpty(v)])
+        .map(([k, v]) => [k, removeEmptyValues(v)])
         .filter(([, v]) => v !== null && v !== undefined),
     );
   }

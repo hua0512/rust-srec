@@ -15,6 +15,16 @@ import { BASE_URL } from '../utils/env';
 import { joinUrlPath } from '../lib/url';
 import { ACCOUNT_DISABLED_CODE } from '../lib/api-error';
 
+/** The fields read from a `/auth/refresh` body, which is not validated. */
+type RefreshResponseBody = {
+  access_token?: unknown;
+  refresh_token?: string;
+  expires_in?: unknown;
+  refresh_expires_in?: unknown;
+  roles?: string[];
+  must_change_password?: boolean;
+};
+
 type RefreshOutcome = {
   accessToken: string;
   refreshToken: string;
@@ -387,9 +397,9 @@ async function performRefresh({
     };
   }
 
-  let json: any;
+  let json: RefreshResponseBody | null;
   try {
-    json = await response.json();
+    json = (await response.json()) as RefreshResponseBody | null;
   } catch (error) {
     console.error('[TokenRefresh] Refresh response was not JSON:', error);
     return rotatedOrTransient(refreshToken);
