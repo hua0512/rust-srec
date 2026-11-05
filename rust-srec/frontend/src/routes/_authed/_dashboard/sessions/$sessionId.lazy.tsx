@@ -74,6 +74,10 @@ const LIVE_SESSION_POLL_MS = 30_000;
  */
 const LIVE_SESSION_FALLBACK_POLL_MS = 120_000;
 
+// Stable fallbacks so the timeline memo doesn't rebuild while a query has no data.
+const NO_OUTPUTS: Awaited<ReturnType<typeof listAllSessionOutputs>> = [];
+const NO_SEGMENTS: Awaited<ReturnType<typeof listAllSessionSegments>> = [];
+
 /**
  * Ask the browser to save `href` without leaving the page. `filename` only
  * applies to a same-origin URL; elsewhere the response's own
@@ -220,7 +224,7 @@ function SessionDetailPage() {
         : 30_000,
   });
 
-  const outputs = outputsData || [];
+  const outputs = outputsData ?? NO_OUTPUTS;
   const playingDanmu =
     playingOutput && playingOutput.format === 'VIDEO'
       ? findDanmuOutput(playingOutput, outputs)
@@ -232,7 +236,7 @@ function SessionDetailPage() {
       ) || undefined
     : undefined;
   const dags = dagsData?.dags || [];
-  const segments = segmentsData || [];
+  const segments = segmentsData ?? NO_SEGMENTS;
 
   const { i18n } = useLingui();
   const accessToken = user?.token?.access_token;

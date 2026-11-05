@@ -52,7 +52,7 @@ export const StreamAvatarInfo = ({
           <div
             className={cn(
               'flex items-center gap-1 px-1.5 py-0.5 rounded-md border',
-              getPlatformColor(platform),
+              platform === 'other' ? 'bg-muted/40' : getPlatformColor(platform),
             )}
           >
             <PlatformIcon className="h-3 w-3" />
