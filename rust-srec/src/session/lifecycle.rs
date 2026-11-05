@@ -383,6 +383,27 @@ impl SessionLifecycle {
             .await
     }
 
+    /// Runs an externally triggered mutation: admitted against shutdown,
+    /// serialized on `streamer_id`'s stripe, and owned by `operation_tasks`
+    /// so it still completes if the caller stops awaiting it. `operation` is
+    /// not polled until both are held.
+    async fn run_operation<T>(
+        &self,
+        streamer_id: &str,
+        operation: impl std::future::Future<Output = Result<T>> + Send + 'static,
+    ) -> Result<T>
+    where
+        T: Send + 'static,
+    {
+        let admission = self.begin_operation().await?;
+        let stripe = self.lock_streamer(streamer_id).await;
+        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
+            let (_admission, _stripe) = (admission, stripe);
+            operation.await
+        })
+        .await
+    }
+
     pub(crate) fn with_required_transition_sender(
         mut self,
         sender: SessionTransitionSender,
@@ -646,13 +667,11 @@ impl SessionLifecycle {
         streamer_id: &str,
         binding: crate::credentials::CredentialBinding,
     ) -> Result<crate::credentials::CredentialBinding> {
-        let operation = self.begin_operation().await?;
-        let stripe = self.lock_streamer(streamer_id).await;
         let lifecycle = self.clone();
         let session_id = session_id.to_owned();
+        let stripe_key = streamer_id;
         let streamer_id = streamer_id.to_owned();
-        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
-            let (_operation, _stripe) = (operation, stripe);
+        self.run_operation(stripe_key, async move {
             let binding = lifecycle
                 .repo
                 .commit_credential_binding(session_id.clone(), streamer_id.clone(), binding)
@@ -681,14 +700,12 @@ impl SessionLifecycle {
         streamer_name: &str,
         binding: crate::credentials::CredentialBinding,
     ) -> Result<()> {
-        let operation = self.begin_operation().await?;
-        let stripe = self.lock_streamer(streamer_id).await;
         let lifecycle = self.clone();
         let session_id = session_id.to_owned();
+        let stripe_key = streamer_id;
         let streamer_id = streamer_id.to_owned();
         let streamer_name = streamer_name.to_owned();
-        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
-            let (_operation, _stripe) = (operation, stripe);
+        self.run_operation(stripe_key, async move {
             if lifecycle
                 .repo
                 .credential_binding_is_retiring(&session_id, &binding)
@@ -727,8 +744,6 @@ impl SessionLifecycle {
         &self,
         args: LiveDetectedArgs<'_>,
     ) -> Result<StartSessionOutcome> {
-        let operation = self.begin_operation().await?;
-        let stripe = self.lock_streamer(args.streamer_id).await;
         let owned = StartSessionInputs {
             credential_binding: args.credential_binding.cloned(),
             streamer_id: args.streamer_id.into(),
@@ -744,8 +759,7 @@ impl SessionLifecycle {
             now: args.now,
         };
         let lifecycle = self.clone();
-        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
-            let (_operation, _stripe) = (operation, stripe);
+        self.run_operation(args.streamer_id, async move {
             lifecycle.on_live_detected_inner(owned).await
         })
         .await
@@ -755,8 +769,6 @@ impl SessionLifecycle {
         &self,
         args: OfflineDetectedArgs<'_>,
     ) -> Result<EndSessionOutcome> {
-        let operation = self.begin_operation().await?;
-        let stripe = self.lock_streamer(args.streamer_id).await;
         let (id, name, session) = (
             args.streamer_id.to_owned(),
             args.streamer_name.to_owned(),
@@ -769,8 +781,7 @@ impl SessionLifecycle {
             args.now,
         );
         let lifecycle = self.clone();
-        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
-            let (_operation, _stripe) = (operation, stripe);
+        self.run_operation(args.streamer_id, async move {
             lifecycle
                 .on_offline_detected_inner(OfflineDetectedArgs {
                     streamer_id: &id,
@@ -790,13 +801,10 @@ impl SessionLifecycle {
         self: &Arc<Self>,
         event: &DownloadTerminalEvent,
     ) -> Result<()> {
-        let operation = self.begin_operation().await?;
-        let stripe = self.lock_streamer(event.streamer_id()).await;
         let lifecycle = self.clone();
-        let event = event.clone();
-        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
-            let (_operation, _stripe) = (operation, stripe);
-            lifecycle.on_download_terminal_inner(&event).await
+        let owned = event.clone();
+        self.run_operation(event.streamer_id(), async move {
+            lifecycle.on_download_terminal_inner(&owned).await
         })
         .await
     }
@@ -806,12 +814,9 @@ impl SessionLifecycle {
         streamer_id: &str,
         streamer_name: &str,
     ) -> Result<Option<String>> {
-        let operation = self.begin_operation().await?;
-        let stripe = self.lock_streamer(streamer_id).await;
         let lifecycle = self.clone();
         let (id, name) = (streamer_id.to_owned(), streamer_name.to_owned());
-        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
-            let (_operation, _stripe) = (operation, stripe);
+        self.run_operation(streamer_id, async move {
             lifecycle.end_for_disable_inner(&id, &name).await
         })
         .await
@@ -823,12 +828,9 @@ impl SessionLifecycle {
         streamer_name: &str,
         old_state: StreamerState,
     ) -> Result<Option<String>> {
-        let operation = self.begin_operation().await?;
-        let stripe = self.lock_streamer(streamer_id).await;
         let lifecycle = self.clone();
         let (id, name) = (streamer_id.to_owned(), streamer_name.to_owned());
-        crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
-            let (_operation, _stripe) = (operation, stripe);
+        self.run_operation(streamer_id, async move {
             lifecycle
                 .end_for_out_of_schedule_inner(&id, &name, old_state)
                 .await
