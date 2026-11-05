@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
-use pipeline_common::expand_filename_template;
 use process_utils::ContainedChild;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::time::{Duration, Instant};
@@ -160,68 +159,13 @@ impl StreamlinkEngine {
 
     /// Build ffmpeg command arguments for remuxing.
     fn build_ffmpeg_args(&self, config: &DownloadConfig) -> Vec<String> {
-        let mut args = Vec::new();
-
-        // Input from stdin
-        args.extend([
+        let mut args = vec![
             "-y".to_string(),
             "-hide_banner".to_string(),
             "-i".to_string(),
             "pipe:0".to_string(),
-        ]);
-
-        // Copy streams without re-encoding
-        args.extend(["-c".to_string(), "copy".to_string()]);
-
-        // Segment options if splitting is enabled
-        if config.max_segment_duration_secs > 0 {
-            args.extend([
-                "-f".to_string(),
-                "segment".to_string(),
-                "-segment_time".to_string(),
-                config.max_segment_duration_secs.to_string(),
-                "-reset_timestamps".to_string(),
-                "1".to_string(),
-                "-strftime".to_string(),
-                "1".to_string(), // Enable strftime expansion for %Y, %m, %d, etc. in filename
-            ]);
-        }
-
-        // The stderr reader requires info-level segment announcements and stats.
-        args.extend([
-            "-loglevel".to_string(),
-            "info".to_string(),
-            "-stats".to_string(),
-        ]);
-
-        // The directory has already been expanded; only the basename is a template.
-        let output_directory = if config.max_segment_duration_secs > 0 {
-            PathBuf::from(config.output_dir.to_string_lossy().replace('%', "%%"))
-        } else {
-            config.output_dir.clone()
-        };
-        let output_path = output_directory.join(format!(
-            "{}.{}",
-            config.filename_template, config.output_format
-        ));
-
-        if config.max_segment_duration_secs > 0 {
-            // Use segment pattern with strftime enabled by -strftime 1 flag
-            // Convert backslashes to forward slashes for FFmpeg compatibility on Windows
-            let pattern_str = output_path.to_string_lossy().replace('\\', "/");
-            args.push(pattern_str);
-        } else {
-            // Non-segment mode: manually expand strftime patterns
-            // FFmpeg doesn't support -strftime flag in non-segment mode
-            let expanded_template = expand_filename_template(&config.filename_template, None);
-            let final_path = config
-                .output_dir
-                .join(format!("{}.{}", expanded_template, config.output_format));
-            // Convert backslashes to forward slashes for FFmpeg compatibility on Windows
-            let path_str = final_path.to_string_lossy().replace('\\', "/");
-            args.push(path_str);
-        }
-
+        ];
+        super::ffmpeg::append_output_args(&mut args, config, &[]);
         args
     }
 
@@ -375,6 +319,24 @@ fn clean_ffmpeg_exit_outcome(
             message: "FFmpeg exited before Streamlink completed".to_string(),
         },
     }
+}
+
+/// Whether FFmpeg stopped at the part size limit given to it with `-fs`.
+///
+/// At the limit FFmpeg finalizes its output and exits with status 0 while
+/// Streamlink is still writing, so the pipe breaks and Streamlink either keeps
+/// running or fails on the closed pipe. That is the end of a complete part,
+/// reported like the FFmpeg engine's, not a broken pipeline. An output file at
+/// least as large as the limit tells it apart from any other early exit.
+/// `limit` is `None` without a limit or when segmenting by time, where FFmpeg
+/// does not enforce it.
+async fn part_size_limit_reached(limit: Option<&(PathBuf, u64)>) -> bool {
+    let Some((path, bytes)) = limit else {
+        return false;
+    };
+    tokio::fs::metadata(path)
+        .await
+        .is_ok_and(|metadata| metadata.len() >= *bytes)
 }
 
 fn append_cleanup_result(message: &mut String, result: std::result::Result<Option<i32>, String>) {
@@ -658,6 +620,10 @@ impl StreamlinkEngine {
         } else {
             ffmpeg_args.last().map(|s| PathBuf::from(s.clone()))
         };
+        let part_size_limit = single_output_path
+            .clone()
+            .filter(|_| config.max_segment_size_bytes > 0)
+            .map(|path| (path, config.max_segment_size_bytes));
 
         info!(
             "Starting streamlink download for streamer {} with args: {:?}",
@@ -921,7 +887,11 @@ impl StreamlinkEngine {
                         },
                     };
 
-                    let outcome = if let Some(mut failure) = streamlink_failure {
+                    let size_limited = matches!(ffmpeg_outcome, StreamlinkPipelineExit::Ffmpeg(Some(0)))
+                        && part_size_limit_reached(part_size_limit.as_ref()).await;
+                    let outcome = if size_limited {
+                        ffmpeg_outcome
+                    } else if let Some(mut failure) = streamlink_failure {
                         if let Some(secondary_error) = ffmpeg_outcome.failure_summary() {
                             failure = failure.with_secondary_error(secondary_error);
                         }
@@ -944,10 +914,15 @@ impl StreamlinkEngine {
                         let (settlement, streamlink_cleanup) = settle_streamlink_after_ffmpeg_exit(
                             &mut streamlink,
                             STREAMLINK_SETTLE_TIMEOUT, &budget).await;
-                        let mut outcome = clean_ffmpeg_exit_outcome(
-                            &settlement,
-                            process_pipe_failure.lock().clone(),
-                        );
+                        let mut outcome = if part_size_limit_reached(part_size_limit.as_ref()).await {
+                            info!("FFmpeg reached the part size limit; ending this part");
+                            StreamlinkPipelineExit::Ffmpeg(Some(0))
+                        } else {
+                            clean_ffmpeg_exit_outcome(
+                                &settlement,
+                                process_pipe_failure.lock().clone(),
+                            )
+                        };
                         let streamlink_confirmed = match streamlink_cleanup {
                             Ok(()) => true,
                             Err(cleanup_error) => {
@@ -1296,6 +1271,93 @@ mod tests {
                     "root/50%d/name%Y%n.ts"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn remux_applies_the_part_size_limit_and_mp4_faststart() {
+        let engine = StreamlinkEngine::with_version(
+            StreamlinkEngineConfig::default(),
+            EngineVersion::settled(None),
+        );
+        let config = DownloadConfig::new("https://invalid.test/live", "out", "id", "Name", "s")
+            .with_output_format("mp4")
+            .with_max_segment_size(4096);
+        let args = engine.build_ffmpeg_args(&config);
+        let has_pair = |option: &str, value: &str| {
+            args.windows(2)
+                .any(|pair| pair[0] == option && pair[1] == value)
+        };
+        assert!(has_pair("-fs", "4096"), "{args:?}");
+        assert!(has_pair("-movflags", "+faststart"), "{args:?}");
+    }
+
+    /// FFmpeg stops at `-fs` with status 0 while Streamlink keeps writing into
+    /// the closed pipe. That ends a complete part; any other early zero exit
+    /// still fails the download.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn part_size_limit_stop_completes_the_part() {
+        use super::super::utils::test_support::script;
+        use crate::downloader::{EngineEndSignal, SegmentEvent};
+        for (limit, reached) in [(4096, true), (1 << 20, false)] {
+            let dir = tempfile::tempdir().unwrap();
+            let streamlink = script(
+                dir.path(),
+                "streamlink",
+                "while printf data; do :; done\nexit 1\n",
+            );
+            let ffmpeg = script(
+                dir.path(),
+                "ffmpeg",
+                "for arg; do out=$arg; done\nhead -c 4096 > \"$out\"\nexit 0\n",
+            );
+            let engine = StreamlinkEngine {
+                config: StreamlinkEngineConfig {
+                    binary_path: streamlink,
+                    ..Default::default()
+                },
+                ffmpeg_path: ffmpeg,
+                version: EngineVersion::settled(None),
+                fixture: None,
+                shutdown_fixture: None,
+            };
+            let config =
+                DownloadConfig::new("https://invalid.test/live", dir.path(), "id", "Name", "s")
+                    .with_output_format("ts")
+                    .with_max_segment_size(limit);
+            let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+            let handle = Arc::new(DownloadHandle::new(
+                "size-limit",
+                EngineType::Streamlink,
+                config,
+                tx,
+            ));
+            tokio::time::timeout(Duration::from_secs(10), engine.run(handle))
+                .await
+                .unwrap()
+                .unwrap();
+            let mut terminal = None;
+            while let Ok(event) = rx.try_recv() {
+                if matches!(
+                    event,
+                    SegmentEvent::DownloadCompleted { .. } | SegmentEvent::DownloadFailed { .. }
+                ) {
+                    terminal = Some(event);
+                }
+            }
+            let terminal = terminal.expect("terminal event");
+            assert_eq!(
+                matches!(
+                    terminal,
+                    SegmentEvent::DownloadCompleted {
+                        engine_signal: EngineEndSignal::SubprocessExitZero,
+                        ..
+                    }
+                ),
+                reached,
+                "limit {limit}: {terminal:?}"
+            );
         }
     }
 
