@@ -16,7 +16,7 @@ import { useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { Card, CardHeader, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { formatPlatformName } from '@/lib/format';
+import { formatPlatformName } from '@/lib/platform';
 import { PlatformSpecificTab } from '../../platforms/tabs/platform-specific-tab';
 import {
   SharedConfigEditor,

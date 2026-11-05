@@ -3,7 +3,7 @@ import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { KeyRound, LayoutTemplate } from 'lucide-react';
-import { formatPlatformName } from '@/lib/format';
+import { formatPlatformName } from '@/lib/platform';
 import { cn } from '@/lib/utils';
 import type { ProxyReferences } from '@/api/schemas/proxies';
 import { NameList } from '@/components/shared/list-panel';

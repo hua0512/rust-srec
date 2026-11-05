@@ -20,7 +20,7 @@ import {
 import { useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 
-import { formatPlatformName } from '@/lib/format';
+import { formatPlatformName } from '@/lib/platform';
 import { PlatformOverrideCard } from './platform-override-card';
 import {
   Card,

@@ -35,7 +35,7 @@ import { TwitcastingConfigFields } from './specific-configs/twitcasting-config-f
 import { SoopConfigFields } from './specific-configs/soop-config-fields';
 import { BigoConfigFields } from './specific-configs/bigo-config-fields';
 import { configPath } from '@/components/config/shared/form-path';
-import { formatPlatformName } from '@/lib/format';
+import { formatPlatformName } from '@/lib/platform';
 
 const PLATFORM_SCHEMAS: Record<string, z.ZodType> = {
   huya: HuyaConfigSchema,

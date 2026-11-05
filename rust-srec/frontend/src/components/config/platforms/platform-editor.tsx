@@ -16,12 +16,12 @@ import {
 } from '@/api/schemas';
 import { GeneralTab } from './tabs/general-tab';
 import { PlatformSpecificTab } from './tabs/platform-specific-tab';
-import {
-  getPlatformIcon,
-  getPlatformColor,
-} from '@/components/pipeline/constants';
 import { cn } from '@/lib/utils';
-import { formatPlatformName } from '@/lib/format';
+import {
+  getPlatformColor,
+  getPlatformIcon,
+} from '@/components/pipeline/constants';
+import { formatPlatformName } from '@/lib/platform';
 import { SharedConfigEditor } from '../shared-config-editor';
 import type { ProxyRouteInherit } from '../shared/proxy-route-picker';
 import { danmuStatisticsFormValue } from '../shared/danmu-statistics-value';

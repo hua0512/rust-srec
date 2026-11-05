@@ -9,12 +9,12 @@ import { Trans } from '@lingui/react/macro';
 import { Cookie, Tv, Edit, Clock, Download } from 'lucide-react';
 import { PlatformConfigSchema } from '@/api/schemas';
 import { z } from 'zod';
-import {
-  getPlatformIcon,
-  getPlatformColor,
-} from '@/components/pipeline/constants';
 import { cn } from '@/lib/utils';
-import { formatPlatformName } from '@/lib/format';
+import {
+  getPlatformColor,
+  getPlatformIcon,
+} from '@/components/pipeline/constants';
+import { formatPlatformName } from '@/lib/platform';
 import { CardField } from '@/components/shared/card-field';
 import {
   CardDecoration,

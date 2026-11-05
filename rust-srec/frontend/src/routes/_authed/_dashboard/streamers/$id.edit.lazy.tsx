@@ -10,7 +10,7 @@ import { Filter as FilterIcon } from 'lucide-react';
 import { queryKeys } from '@/api/query-keys';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useDownloadStore } from '@/store/downloads';
-import { getPlatformFromUrl } from '@/lib/utils';
+import { getPlatformFromUrl } from '@/lib/platform';
 import {
   deleteFilter,
   getStreamer,

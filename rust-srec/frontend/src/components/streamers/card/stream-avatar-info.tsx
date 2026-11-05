@@ -8,16 +8,16 @@ import {
 } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
 import { ExternalLink, AlertTriangle, Activity } from 'lucide-react';
-import { cn, getPlatformFromUrl } from '@/lib/utils';
-import { formatPlatformName } from '@/lib/format';
-import { Trans } from '@lingui/react/macro';
-import { z } from 'zod';
-import { StreamerSchema } from '@/api/schemas';
-import { StatusInfoTooltip } from '@/components/shared/status-info-tooltip';
+import { cn } from '@/lib/utils';
 import {
   getPlatformColor,
   getPlatformIcon,
 } from '@/components/pipeline/constants';
+import { formatPlatformName, getPlatformFromUrl } from '@/lib/platform';
+import { Trans } from '@lingui/react/macro';
+import { z } from 'zod';
+import { StreamerSchema } from '@/api/schemas';
+import { StatusInfoTooltip } from '@/components/shared/status-info-tooltip';
 
 interface StreamAvatarInfoProps {
   streamer: z.infer<typeof StreamerSchema>;

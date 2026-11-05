@@ -5,7 +5,7 @@ import { useLingui } from '@lingui/react';
 import type { MessageDescriptor } from '@lingui/core';
 import { Radio } from 'lucide-react';
 import { formatRelativeTime, formatShortRelativeTime } from '@/lib/date-utils';
-import { formatPlatformName } from '@/lib/format';
+import { formatPlatformName } from '@/lib/platform';
 import { cn } from '@/lib/utils';
 import type {
   CredentialHealthReason,

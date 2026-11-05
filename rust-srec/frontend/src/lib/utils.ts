@@ -4,33 +4,10 @@ import { twMerge } from 'tailwind-merge';
 import { BASE_URL } from '../utils/env';
 import { getDesktopAccessToken } from '../utils/session';
 import { isDesktopBuild } from '../utils/desktop';
+import { getPlatformFromUrl } from './platform';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
-}
-
-export function getPlatformFromUrl(url: string) {
-  if (url.includes('twitch.tv')) return 'twitch';
-  if (url.includes('youtube.com') || url.includes('youtu.be')) return 'youtube';
-  if (url.includes('douyin')) return 'douyin';
-  if (url.includes('huya')) return 'huya';
-  if (url.includes('douyu')) return 'douyu';
-  if (url.includes('bilibili') || url.includes('hdslb.com')) return 'bilibili';
-  if (url.includes('acfun')) return 'acfun';
-  if (url.includes('tiktok.com')) return 'tiktok';
-  if (url.includes('pandalive.co.kr')) return 'pandatv';
-  if (url.includes('picarto.tv')) return 'picarto';
-  if (url.includes('xhslink.com')) return 'redbook';
-  if (url.includes('twitcasting.tv')) return 'twitcasting';
-  if (url.includes('weibo.com')) return 'weibo';
-  if (
-    url.includes('sooplive.co.kr') ||
-    url.includes('sooplive.com') ||
-    url.includes('afreecatv.com')
-  )
-    return 'soop';
-  if (url.includes('bigo.tv')) return 'bigo';
-  return 'other';
 }
 
 export function getProxiedUrl(url: string | null | undefined) {
