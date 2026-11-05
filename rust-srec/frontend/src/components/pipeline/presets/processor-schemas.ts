@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { zodError, zodText } from '@/lib/zod-i18n';
 
 // --- Remux Processor ---
@@ -41,6 +42,28 @@ const PresetSchema = z.enum([
   'lossless',
   'losslesshp',
 ]);
+
+/**
+ * Encoder presets. `label` is the encoder's own preset name, kept as is; `hint`
+ * describes it in the interface language.
+ */
+export interface PresetOption {
+  value: z.infer<typeof PresetSchema>;
+  label: string;
+  hint?: MessageDescriptor;
+}
+
+export const SOFTWARE_PRESETS: PresetOption[] = [
+  { value: 'ultrafast', label: 'Ultrafast' },
+  { value: 'superfast', label: 'Superfast' },
+  { value: 'veryfast', label: 'Veryfast' },
+  { value: 'faster', label: 'Faster' },
+  { value: 'fast', label: 'Fast' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'slow', label: 'Slow' },
+  { value: 'slower', label: 'Slower' },
+  { value: 'veryslow', label: 'Veryslow' },
+];
 
 export const RemuxConfigSchema = z.object({
   video_codec: VideoCodecSchema.default('copy'),

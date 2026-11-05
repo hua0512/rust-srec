@@ -13,8 +13,7 @@ import {
   ProcessorSelectField,
   ProcessorTextField,
 } from './processor-form-layout';
-import { SOFTWARE_PRESETS } from './remux-config-form';
-import { AssBurninConfigSchema } from '../processor-schemas';
+import { AssBurninConfigSchema, SOFTWARE_PRESETS } from '../processor-schemas';
 import { z } from 'zod';
 import { Video, Type, Settings, Trash2 } from 'lucide-react';
 

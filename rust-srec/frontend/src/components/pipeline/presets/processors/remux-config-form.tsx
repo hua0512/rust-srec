@@ -1,6 +1,5 @@
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
-import type { MessageDescriptor } from '@lingui/core';
 import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
 import { memo, type ReactNode } from 'react';
@@ -48,7 +47,11 @@ import {
   ProcessorTabTrigger,
   ProcessorTextField,
 } from './processor-form-layout';
-import { RemuxConfigSchema } from '../processor-schemas';
+import {
+  RemuxConfigSchema,
+  SOFTWARE_PRESETS,
+  type PresetOption,
+} from '../processor-schemas';
 import { z } from 'zod';
 import { InputWithUnit } from '@/components/ui/input-with-unit';
 import {
@@ -84,16 +87,6 @@ function getCodecFamily(codec: string | undefined): CodecFamily {
   return 'software';
 }
 
-/**
- * Encoder presets. `label` is the encoder's own preset name, kept as is; `hint`
- * describes it in the interface language.
- */
-interface PresetOption {
-  value: string;
-  label: string;
-  hint?: MessageDescriptor;
-}
-
 const COMMON_NVENC_PRESETS: PresetOption[] = [
   { value: 'fast', label: 'Fast' },
   { value: 'medium', label: 'Medium' },
@@ -119,18 +112,6 @@ const NVENC_LEGACY_PRESETS: PresetOption[] = [
   { value: 'llhp', label: 'LLHP', hint: msg`Low latency, high performance` },
   { value: 'lossless', label: 'Lossless' },
   { value: 'losslesshp', label: 'Lossless HP' },
-];
-
-export const SOFTWARE_PRESETS: PresetOption[] = [
-  { value: 'ultrafast', label: 'Ultrafast' },
-  { value: 'superfast', label: 'Superfast' },
-  { value: 'veryfast', label: 'Veryfast' },
-  { value: 'faster', label: 'Faster' },
-  { value: 'fast', label: 'Fast' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'slow', label: 'Slow' },
-  { value: 'slower', label: 'Slower' },
-  { value: 'veryslow', label: 'Veryslow' },
 ];
 
 function getPresetsForCodecFamily(family: CodecFamily) {
