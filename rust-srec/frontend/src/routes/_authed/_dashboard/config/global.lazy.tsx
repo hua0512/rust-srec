@@ -187,7 +187,7 @@ function GlobalConfigForm({ config }: { config: GlobalConfig }) {
     mutationFn: (data: GlobalConfigFormValues) => updateGlobalConfig({ data }),
     onSuccess: (saved) => {
       toast.success(i18n._(msg`Settings updated successfully`));
-      queryClient.setQueryData(['config', 'global'], saved);
+      queryClient.setQueryData(queryKeys.config.global(), saved);
       // Reset explicitly rather than through `values`: a save that leaves the stored config as it
       // was hands `values` an equal object, which react-hook-form ignores, and the form would stay
       // dirty after a successful save.
