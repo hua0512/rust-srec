@@ -71,6 +71,37 @@ fn literal_substring_pattern(search: &str) -> String {
     pattern
 }
 
+/// Remove `key` from a stored JSON-object document, rewriting `raw` only when
+/// the key was present. Text that is not a JSON object is left as written.
+pub(crate) fn take_key(raw: &mut Option<String>, key: &str) -> Option<serde_json::Value> {
+    let mut document: serde_json::Value = serde_json::from_str(raw.as_deref()?).ok()?;
+    let value = document.as_object_mut()?.remove(key)?;
+    *raw = Some(document.to_string());
+    Some(value)
+}
+
+/// Replace `key` in a JSON-object document for a reader: any value the
+/// document carries is dropped, and `value`, when present, is inserted. A
+/// missing or null document becomes an object only when there is a value.
+pub(crate) fn inject_key(
+    document: Option<serde_json::Value>,
+    key: &str,
+    value: Option<serde_json::Value>,
+) -> Option<serde_json::Value> {
+    let mut document = document.filter(|document| !document.is_null());
+    if let Some(fields) = document.as_mut().and_then(serde_json::Value::as_object_mut) {
+        fields.remove(key);
+    }
+    let Some(value) = value else {
+        return document;
+    };
+    let mut document = document.unwrap_or_else(|| serde_json::Value::Object(Default::default()));
+    if let Some(fields) = document.as_object_mut() {
+        fields.insert(key.to_owned(), value);
+    }
+    Some(document)
+}
+
 /// Stay below SQLite's historical 999-parameter limit while bounding each lookup.
 pub(crate) const LOOKUP_BATCH_SIZE: usize = 500;
 

@@ -24,6 +24,7 @@ use tracing::{info, warn};
 use crate::Result;
 use crate::config::backup::{BackupRoute, ConfigExport, ProxyExport};
 use crate::database::repositories::proxies::{self, LEGACY_KEY, RouteOwner};
+use crate::database::repositories::take_key;
 use crate::proxies::legacy::{self, LegacyMapping, LegacyRoute, Namer};
 use crate::proxies::{ProxyEndpoint, name_key};
 
@@ -79,7 +80,7 @@ fn object(raw: Option<&str>) -> Option<Value> {
 
 /// Removes `proxy_config` from a JSON object document, returning its value
 /// when the key was present.
-fn take_key(document: &mut Value) -> Option<Value> {
+fn remove_legacy_key(document: &mut Value) -> Option<Value> {
     document
         .as_object_mut()
         .and_then(|fields| fields.remove(LEGACY_KEY))
@@ -90,7 +91,7 @@ fn strip_override_keys(overrides: &mut Value) -> bool {
     let mut changed = false;
     if let Some(entries) = overrides.as_object_mut() {
         for entry in entries.values_mut() {
-            changed |= take_key(entry).is_some();
+            changed |= remove_legacy_key(entry).is_some();
         }
     }
     changed
@@ -180,15 +181,12 @@ async fn convert_database(
     )
     .fetch_all(&mut *connection)
     .await?;
-    for (id, name, raw, deleted) in streamers {
-        let Some(mut document) = object(raw.as_deref()) else {
-            continue;
-        };
-        let Some(value) = take_key(&mut document) else {
+    for (id, name, mut raw, deleted) in streamers {
+        let Some(value) = take_key(&mut raw, LEGACY_KEY) else {
             continue;
         };
         sqlx::query("UPDATE streamers SET streamer_specific_config = ? WHERE id = ?")
-            .bind(document.to_string())
+            .bind(raw)
             .bind(&id)
             .execute(&mut *connection)
             .await?;
@@ -307,7 +305,7 @@ pub(crate) fn upgrade_bundle(
             .as_mut()
             .and_then(|document| {
                 let mut value = crate::config::backup::unwrap_json_value(document.clone());
-                let raw = take_key(&mut value)?;
+                let raw = remove_legacy_key(&mut value)?;
                 *document = value;
                 Some(raw)
             });
