@@ -22,7 +22,8 @@ use crate::database::repositories::user::import_user as persist_user;
 use crate::api::auth_service::MAX_USERNAME_LENGTH;
 use crate::config::ConfigService;
 use crate::config::backup::{
-    ConfigExport, ImportMode, ImportStats, NotificationChannelExport, PipelinePresetExport,
+    ConfigExport, GlobalConfigExport, ImportMode, ImportStats, NotificationChannelExport,
+    PipelinePresetExport, PlatformExport, TemplateExport,
 };
 use crate::credentials::{CredentialOwner, CredentialSelection};
 #[cfg(test)]
@@ -1477,102 +1478,193 @@ async fn delete_unimported_templates(
     Ok(())
 }
 
+// The models below destructure their bundle entry without `..`, so a field
+// added to the bundle does not compile until it is imported or skipped on
+// purpose.
+
 fn global_model(existing: &GlobalConfigDbModel, config: &ConfigExport) -> GlobalConfigDbModel {
-    let source = &config.global_config;
+    let GlobalConfigExport {
+        output_folder,
+        output_filename_template,
+        output_file_format,
+        min_segment_size_bytes,
+        max_download_duration_secs,
+        max_part_size_bytes,
+        record_danmu,
+        danmu_statistics,
+        max_concurrent_downloads,
+        max_concurrent_uploads,
+        streamer_check_delay_ms,
+        proxy_config: _, // converted to a route before import
+        proxy_route: _,  // written by the caller
+        offline_check_delay_ms,
+        offline_check_count,
+        default_download_engine,
+        default_extractor,
+        max_concurrent_cpu_jobs,
+        max_concurrent_io_jobs,
+        job_history_retention_days,
+        notification_event_log_retention_days,
+        output_retention_days,
+        output_retention_delete_files,
+        pipeline,
+        session_complete_pipeline,
+        paired_segment_pipeline,
+        log_filter_directive,
+        auto_thumbnail,
+        pipeline_cpu_job_timeout_secs,
+        pipeline_io_job_timeout_secs,
+        pipeline_execute_timeout_secs,
+        queue_freshness_threshold_ms,
+        gpu_health_probe_interval_secs,
+        stream_proxy_allow_private_targets,
+    } = &config.global_config;
     let mut model = existing.clone();
-    model.output_folder = source.output_folder.clone();
-    model.output_filename_template = source.output_filename_template.clone();
-    model.output_file_format = source.output_file_format.clone();
-    model.min_segment_size_bytes = source.min_segment_size_bytes;
-    model.max_download_duration_secs = source.max_download_duration_secs;
-    model.max_part_size_bytes = source.max_part_size_bytes;
-    model.record_danmu = source.record_danmu;
-    model.danmu_statistics = source.danmu_statistics.clone();
-    model.max_concurrent_downloads = source.max_concurrent_downloads;
-    model.max_concurrent_uploads = source.max_concurrent_uploads;
-    model.streamer_check_delay_ms = source.streamer_check_delay_ms;
-    model.offline_check_delay_ms = source.offline_check_delay_ms;
-    model.offline_check_count = source.offline_check_count;
-    model.default_download_engine = source.default_download_engine.clone();
-    model.default_extractor = source.default_extractor.clone();
-    model.max_concurrent_cpu_jobs = source.max_concurrent_cpu_jobs;
-    model.max_concurrent_io_jobs = source.max_concurrent_io_jobs;
-    model.job_history_retention_days = source.job_history_retention_days;
-    model.notification_event_log_retention_days = source.notification_event_log_retention_days;
-    model.output_retention_days = source.output_retention_days;
-    model.output_retention_delete_files = source.output_retention_delete_files;
-    model.pipeline = source.pipeline.clone().map(db_json);
-    model.session_complete_pipeline = source.session_complete_pipeline.clone().map(db_json);
-    model.paired_segment_pipeline = source.paired_segment_pipeline.clone().map(db_json);
-    if let Some(log_filter) = &source.log_filter_directive {
+    model.output_folder = output_folder.clone();
+    model.output_filename_template = output_filename_template.clone();
+    model.output_file_format = output_file_format.clone();
+    model.min_segment_size_bytes = *min_segment_size_bytes;
+    model.max_download_duration_secs = *max_download_duration_secs;
+    model.max_part_size_bytes = *max_part_size_bytes;
+    model.record_danmu = *record_danmu;
+    model.danmu_statistics = danmu_statistics.clone();
+    model.max_concurrent_downloads = *max_concurrent_downloads;
+    model.max_concurrent_uploads = *max_concurrent_uploads;
+    model.streamer_check_delay_ms = *streamer_check_delay_ms;
+    model.offline_check_delay_ms = *offline_check_delay_ms;
+    model.offline_check_count = *offline_check_count;
+    model.default_download_engine = default_download_engine.clone();
+    model.default_extractor = default_extractor.clone();
+    model.max_concurrent_cpu_jobs = *max_concurrent_cpu_jobs;
+    model.max_concurrent_io_jobs = *max_concurrent_io_jobs;
+    model.job_history_retention_days = *job_history_retention_days;
+    model.notification_event_log_retention_days = *notification_event_log_retention_days;
+    model.output_retention_days = *output_retention_days;
+    model.output_retention_delete_files = *output_retention_delete_files;
+    model.pipeline = pipeline.clone().map(db_json);
+    model.session_complete_pipeline = session_complete_pipeline.clone().map(db_json);
+    model.paired_segment_pipeline = paired_segment_pipeline.clone().map(db_json);
+    if let Some(log_filter) = log_filter_directive {
         model.log_filter_directive = log_filter.clone();
     }
-    model.auto_thumbnail = source.auto_thumbnail;
-    model.pipeline_cpu_job_timeout_secs = source.pipeline_cpu_job_timeout_secs;
-    model.pipeline_io_job_timeout_secs = source.pipeline_io_job_timeout_secs;
-    model.pipeline_execute_timeout_secs = source.pipeline_execute_timeout_secs;
-    model.queue_freshness_threshold_ms = source.queue_freshness_threshold_ms;
-    model.gpu_health_probe_interval_secs = source.gpu_health_probe_interval_secs;
-    model.stream_proxy_allow_private_targets = source.stream_proxy_allow_private_targets;
+    model.auto_thumbnail = *auto_thumbnail;
+    model.pipeline_cpu_job_timeout_secs = *pipeline_cpu_job_timeout_secs;
+    model.pipeline_io_job_timeout_secs = *pipeline_io_job_timeout_secs;
+    model.pipeline_execute_timeout_secs = *pipeline_execute_timeout_secs;
+    model.queue_freshness_threshold_ms = *queue_freshness_threshold_ms;
+    model.gpu_health_probe_interval_secs = *gpu_health_probe_interval_secs;
+    model.stream_proxy_allow_private_targets = *stream_proxy_allow_private_targets;
     model
 }
 
 fn template_model(
     existing: Option<&TemplateConfigDbModel>,
-    source: &crate::config::backup::TemplateExport,
+    source: &TemplateExport,
 ) -> TemplateConfigDbModel {
+    let TemplateExport {
+        name,
+        output_folder,
+        output_filename_template,
+        cookies: _, // converted to credential selections before import
+        output_file_format,
+        min_segment_size_bytes,
+        max_download_duration_secs,
+        max_part_size_bytes,
+        record_danmu,
+        danmu_statistics,
+        platform_overrides,
+        download_retry_policy,
+        download_engine,
+        extractor,
+        engines_override,
+        proxy_config: _, // converted to a route before import
+        proxy_route: _,  // written by the caller
+        stream_selection_config,
+        pipeline,
+        session_complete_pipeline,
+        paired_segment_pipeline,
+        offline_check_count,
+        offline_check_delay_ms,
+    } = source;
     let mut model = existing
         .cloned()
-        .unwrap_or_else(|| TemplateConfigDbModel::new(&source.name));
-    model.name = source.name.clone();
-    model.output_folder = source.output_folder.clone();
-    model.output_filename_template = source.output_filename_template.clone();
-    model.output_file_format = source.output_file_format.clone();
-    model.min_segment_size_bytes = source.min_segment_size_bytes;
-    model.max_download_duration_secs = source.max_download_duration_secs;
-    model.max_part_size_bytes = source.max_part_size_bytes;
-    model.record_danmu = source.record_danmu;
-    model.danmu_statistics = source.danmu_statistics.clone();
-    model.platform_overrides = source.platform_overrides.clone().map(db_json);
-    model.download_retry_policy = source.download_retry_policy.clone().map(db_json);
-    model.download_engine = source.download_engine.clone();
-    model.extractor = source.extractor.clone();
-    model.engines_override = source.engines_override.clone().map(db_json);
-    model.stream_selection_config = source.stream_selection_config.clone().map(db_json);
-    model.pipeline = source.pipeline.clone().map(db_json);
-    model.session_complete_pipeline = source.session_complete_pipeline.clone().map(db_json);
-    model.paired_segment_pipeline = source.paired_segment_pipeline.clone().map(db_json);
-    model.offline_check_count = source.offline_check_count;
-    model.offline_check_delay_ms = source.offline_check_delay_ms;
+        .unwrap_or_else(|| TemplateConfigDbModel::new(name));
+    model.name = name.clone();
+    model.output_folder = output_folder.clone();
+    model.output_filename_template = output_filename_template.clone();
+    model.output_file_format = output_file_format.clone();
+    model.min_segment_size_bytes = *min_segment_size_bytes;
+    model.max_download_duration_secs = *max_download_duration_secs;
+    model.max_part_size_bytes = *max_part_size_bytes;
+    model.record_danmu = *record_danmu;
+    model.danmu_statistics = danmu_statistics.clone();
+    model.platform_overrides = platform_overrides.clone().map(db_json);
+    model.download_retry_policy = download_retry_policy.clone().map(db_json);
+    model.download_engine = download_engine.clone();
+    model.extractor = extractor.clone();
+    model.engines_override = engines_override.clone().map(db_json);
+    model.stream_selection_config = stream_selection_config.clone().map(db_json);
+    model.pipeline = pipeline.clone().map(db_json);
+    model.session_complete_pipeline = session_complete_pipeline.clone().map(db_json);
+    model.paired_segment_pipeline = paired_segment_pipeline.clone().map(db_json);
+    model.offline_check_count = *offline_check_count;
+    model.offline_check_delay_ms = *offline_check_delay_ms;
     model.updated_at = Utc::now();
     model
 }
 
 fn platform_model(
     existing: &PlatformConfigDbModel,
-    source: &crate::config::backup::PlatformExport,
+    source: &PlatformExport,
 ) -> PlatformConfigDbModel {
+    let PlatformExport {
+        platform_name: _, // the caller matched `existing` by name
+        fetch_delay_ms,
+        download_delay_ms,
+        cookies: _,              // converted to credential selections before import
+        credential_selection: _, // written by the caller
+        platform_specific_config,
+        proxy_config: _, // converted to a route before import
+        proxy_route: _,  // written by the caller
+        record_danmu,
+        danmu_statistics,
+        output_folder,
+        output_filename_template,
+        download_engine,
+        extractor,
+        stream_selection_config,
+        output_file_format,
+        min_segment_size_bytes,
+        max_download_duration_secs,
+        max_part_size_bytes,
+        download_retry_policy,
+        pipeline,
+        session_complete_pipeline,
+        paired_segment_pipeline,
+        offline_check_count,
+        offline_check_delay_ms,
+    } = source;
     let mut model = existing.clone();
-    model.fetch_delay_ms = source.fetch_delay_ms;
-    model.download_delay_ms = source.download_delay_ms;
-    model.platform_specific_config = source.platform_specific_config.clone().map(db_json);
-    model.record_danmu = source.record_danmu;
-    model.danmu_statistics = source.danmu_statistics.clone();
-    model.output_folder = source.output_folder.clone();
-    model.output_filename_template = source.output_filename_template.clone();
-    model.download_engine = source.download_engine.clone();
-    model.extractor = source.extractor.clone();
-    model.stream_selection_config = source.stream_selection_config.clone().map(db_json);
-    model.output_file_format = source.output_file_format.clone();
-    model.min_segment_size_bytes = source.min_segment_size_bytes;
-    model.max_download_duration_secs = source.max_download_duration_secs;
-    model.max_part_size_bytes = source.max_part_size_bytes;
-    model.download_retry_policy = source.download_retry_policy.clone().map(db_json);
-    model.pipeline = source.pipeline.clone().map(db_json);
-    model.session_complete_pipeline = source.session_complete_pipeline.clone().map(db_json);
-    model.paired_segment_pipeline = source.paired_segment_pipeline.clone().map(db_json);
-    model.offline_check_count = source.offline_check_count;
-    model.offline_check_delay_ms = source.offline_check_delay_ms;
+    model.fetch_delay_ms = *fetch_delay_ms;
+    model.download_delay_ms = *download_delay_ms;
+    model.platform_specific_config = platform_specific_config.clone().map(db_json);
+    model.record_danmu = *record_danmu;
+    model.danmu_statistics = danmu_statistics.clone();
+    model.output_folder = output_folder.clone();
+    model.output_filename_template = output_filename_template.clone();
+    model.download_engine = download_engine.clone();
+    model.extractor = extractor.clone();
+    model.stream_selection_config = stream_selection_config.clone().map(db_json);
+    model.output_file_format = output_file_format.clone();
+    model.min_segment_size_bytes = *min_segment_size_bytes;
+    model.max_download_duration_secs = *max_download_duration_secs;
+    model.max_part_size_bytes = *max_part_size_bytes;
+    model.download_retry_policy = download_retry_policy.clone().map(db_json);
+    model.pipeline = pipeline.clone().map(db_json);
+    model.session_complete_pipeline = session_complete_pipeline.clone().map(db_json);
+    model.paired_segment_pipeline = paired_segment_pipeline.clone().map(db_json);
+    model.offline_check_count = *offline_check_count;
+    model.offline_check_delay_ms = *offline_check_delay_ms;
     model
 }
 
@@ -1928,7 +2020,7 @@ mod tests {
     mod proxies;
     mod timezone_import;
     use super::*;
-    use crate::config::backup::{GlobalConfigExport, UserExport};
+    use crate::config::backup::UserExport;
     use crate::database::{init_pool_with_size, run_migrations};
 
     #[tokio::test]
