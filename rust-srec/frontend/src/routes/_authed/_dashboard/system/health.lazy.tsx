@@ -38,8 +38,7 @@ import { type I18n } from '@lingui/core';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { containerVariants, itemVariants } from '@/lib/animation';
-import { formatDate } from '@/lib/datetime';
-import { formatRelativeTime } from '@/lib/date-utils';
+import { formatDate, formatRelativeTime } from '@/lib/datetime';
 import { STAT_GRID } from '@/lib/grid';
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/system/health')({

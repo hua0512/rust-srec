@@ -19,8 +19,7 @@ import {
   getStreamerCheckHistory,
   type StreamerCheckHistoryEntry,
 } from '@/server/functions/streamers';
-import { formatDate } from '@/lib/datetime';
-import { formatShortRelativeTime } from '@/lib/date-utils';
+import { formatDate, formatShortRelativeTime } from '@/lib/datetime';
 import { formatBitrate } from '@/lib/format';
 
 /**

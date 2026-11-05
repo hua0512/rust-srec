@@ -11,7 +11,7 @@ import type { CredentialAttention } from '@/api/schemas/credential-profiles';
 import { HeaderIndicator } from '@/components/header-indicator';
 import { getPlatformIcon } from '@/components/pipeline/constants';
 import { formatPlatformName } from '@/lib/platform';
-import { formatRelativeTime } from '@/lib/date-utils';
+import { formatRelativeTime } from '@/lib/datetime';
 
 /** Accounts grouped by platform, in the server's platform order. */
 function groupByPlatform(accounts: CredentialAttention[]) {

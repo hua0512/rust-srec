@@ -2,7 +2,7 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 
 import { useNow } from '@/hooks/use-now';
-import { formatLocalizedDuration } from '@/lib/date-utils';
+import { formatLocalizedDuration } from '@/lib/datetime';
 
 /**
  * The time left until a scheduled automatic retry at `retryAt` (epoch

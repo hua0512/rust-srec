@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import { formatDate, NUMERIC_DATE_TIME } from '@/lib/datetime';
 import { queryKeys } from '@/api/query-keys';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { useHydrated } from '@/hooks/use-hydrated';
@@ -89,7 +90,7 @@ function keyStatus(key: ApiKey): 'active' | 'revoked' | 'expired' {
 
 function formatMs(ms: number | null | undefined, locale: string) {
   if (!ms) return null;
-  return new Date(ms).toLocaleString(locale);
+  return formatDate(locale, ms, NUMERIC_DATE_TIME);
 }
 
 function ApiKeysPage() {

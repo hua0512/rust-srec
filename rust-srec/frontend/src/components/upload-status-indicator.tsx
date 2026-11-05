@@ -20,7 +20,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Progress } from '@/components/ui/progress';
-import { formatLocalizedDuration } from '@/lib/date-utils';
+import { formatLocalizedDuration } from '@/lib/datetime';
 import { formatSpeed } from '@/lib/format';
 import { describeJobProgress } from '@/lib/job-progress';
 import { activeUploadsLabel, uploaderLabel } from '@/lib/upload-format';

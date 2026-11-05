@@ -8,6 +8,7 @@ import { motion } from 'motion/react';
 import { msg, plural, t } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
+import { formatDate } from '@/lib/datetime';
 import {
   EventType,
   LogLevel,
@@ -80,16 +81,13 @@ const FILTER_LEVEL_FLOOR: Record<FilterLevel, LogLevel> = {
   error: LogLevel.ERROR,
 };
 
-function formatTime(timestampMs: bigint): string {
-  const date = new Date(Number(timestampMs));
-  return date.toLocaleTimeString('en-US', {
-    hour12: false,
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    fractionalSecondDigits: 3,
-  });
-}
+const LOG_TIME_OPTIONS: Intl.DateTimeFormatOptions = {
+  hour12: false,
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  fractionalSecondDigits: 3,
+};
 
 /** Keeps the newest entries once the list is over its cap. */
 function capToLimit(entries: DisplayLogEvent[]): DisplayLogEvent[] {
@@ -109,6 +107,7 @@ const LogRow = memo(function LogRow({
   log: DisplayLogEvent;
   animate: boolean;
 }) {
+  const { i18n } = useLingui();
   const level = fromProtoLogLevel(log.level);
   const style = logLevelStyle(level);
   return (
@@ -122,7 +121,7 @@ const LogRow = memo(function LogRow({
       )}
     >
       <span className="text-muted-foreground shrink-0 w-21.25">
-        {formatTime(log.timestampMs)}
+        {formatDate(i18n.locale, Number(log.timestampMs), LOG_TIME_OPTIONS)}
       </span>
       <Badge
         variant="outline"

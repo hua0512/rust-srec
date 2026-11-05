@@ -9,7 +9,7 @@ import { EventIcon } from './event-icon';
 import { PayloadPreview } from './payload-preview';
 import { priorityLabel } from '@/lib/priority';
 import { eventTypeLabel } from '@/lib/notification-event-types';
-import { formatRelativeTime } from '@/lib/date-utils';
+import { formatRelativeTime } from '@/lib/datetime';
 
 const getPriorityStyles = (priority: number) => {
   if (priority >= 10) {

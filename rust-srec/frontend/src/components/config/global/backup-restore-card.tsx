@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { SettingsCard } from '../settings-card';
+import { formatBytes } from '@/lib/format';
 import { queryKeys } from '@/api/query-keys';
 import { Button } from '@/components/ui/button';
 import {
@@ -489,7 +490,7 @@ export function BackupRestoreCard() {
                           JSON
                         </Badge>
                         <span className="text-xs text-muted-foreground">
-                          {(selectedFile.size / 1024).toFixed(1)} KB
+                          {formatBytes(selectedFile.size)}
                         </span>
                       </div>
                     </div>

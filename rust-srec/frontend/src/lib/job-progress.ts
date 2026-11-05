@@ -6,7 +6,7 @@ import {
   PROCESSOR_META,
   resolveProcessorType,
 } from '@/components/pipeline/constants';
-import { formatLocalizedDuration } from '@/lib/date-utils';
+import { formatLocalizedDuration } from '@/lib/datetime';
 import { formatSpeed } from '@/lib/format';
 import { formatUploadBytes } from '@/lib/upload-format';
 import type { JobView, UploadProgressInput, UploadView } from '@/store/uploads';

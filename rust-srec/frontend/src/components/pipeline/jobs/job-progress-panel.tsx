@@ -5,7 +5,7 @@ import { useLingui } from '@lingui/react';
 import type { Job } from '@/api/schemas/pipeline';
 import type { JobProgressSnapshot } from '@/api/schemas/session';
 import { Progress } from '@/components/ui/progress';
-import { formatLocalizedDuration } from '@/lib/date-utils';
+import { formatLocalizedDuration } from '@/lib/datetime';
 import { describeJobProgress, snapshotProgress } from '@/lib/job-progress';
 
 // A running job whose progress has not moved for this long is flagged.
