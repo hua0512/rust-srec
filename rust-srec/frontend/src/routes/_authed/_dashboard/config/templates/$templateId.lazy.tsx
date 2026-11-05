@@ -11,6 +11,7 @@ import {
   TemplateFormValues,
 } from '@/components/config/templates/template-editor';
 import { Skeleton } from '@/components/ui/skeleton';
+import { DetailLoadError } from '@/components/shared/detail-page';
 import { SettingsCardSkeleton } from '@/components/config/settings-card-skeleton';
 
 export const Route = createLazyFileRoute(
@@ -72,14 +73,15 @@ function EditTemplatePage() {
 
   if (error || !template) {
     return (
-      <div className="flex flex-col items-center justify-center p-20 text-center">
-        <h3 className="text-xl font-bold text-destructive">
-          <Trans>Error loading template</Trans>
-        </h3>
-        <p className="text-muted-foreground mt-2">
-          {error?.message || i18n._(msg`Template not found`)}
-        </p>
-      </div>
+      <DetailLoadError
+        title={<Trans>Error loading template</Trans>}
+        error={error}
+        notFound={<Trans>Template not found</Trans>}
+        back={{
+          to: '/config/templates',
+          label: <Trans>Back to templates</Trans>,
+        }}
+      />
     );
   }
 

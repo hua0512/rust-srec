@@ -215,7 +215,7 @@ export function DanmuStatsPanel({
             <Skeleton className="h-20 rounded-xl" />
           </div>
           <Skeleton className="h-56 rounded-xl" />
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2">
             <Skeleton className="h-44 rounded-xl" />
             <Skeleton className="h-44 rounded-xl" />
           </div>
@@ -560,7 +560,7 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
           {/* ── Rank charts ─────────────────────────────────────── */}
           <motion.div
             variants={containerVariants}
-            className="grid grid-cols-1 gap-4 md:grid-cols-2"
+            className="grid grid-cols-1 gap-4 @2xl:grid-cols-2"
           >
             <RankBarChart
               icon={<Users className="h-3.5 w-3.5 text-purple-500" />}
@@ -619,7 +619,7 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
           {hasGiftData && (
             <motion.div
               variants={containerVariants}
-              className="grid grid-cols-1 gap-4 md:grid-cols-2"
+              className="grid grid-cols-1 gap-4 @2xl:grid-cols-2"
             >
               <RankBarChart
                 icon={<Gift className="h-3.5 w-3.5 text-pink-500" />}

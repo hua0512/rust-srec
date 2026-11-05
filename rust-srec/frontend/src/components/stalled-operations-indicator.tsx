@@ -12,7 +12,7 @@ import { HeaderIndicator } from '@/components/header-indicator';
 import { formatDuration } from '@/lib/format';
 import { jobTypeLabel } from '@/lib/job-progress';
 
-export function stalledOperationsLabel(count: number, i18n: I18n) {
+function stalledOperationsLabel(count: number, i18n: I18n) {
   return t(i18n)`${plural(count, {
     one: '# file operation is not responding',
     other: '# file operations are not responding',

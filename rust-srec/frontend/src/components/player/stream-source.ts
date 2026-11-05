@@ -211,7 +211,7 @@ export function selectStreamLevel(
  * Whether the player may open `stream` without the user choosing it: not an
  * opt-in stream, and not DASH, which the player cannot play.
  */
-export function isAutoSelectable(stream: StreamOption) {
+function isAutoSelectable(stream: StreamOption) {
   return (
     !stream.optIn &&
     resolvePlayerMediaType(stream.format, stream.url) !== 'dash'

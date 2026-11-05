@@ -11,6 +11,7 @@ import {
   EditPlatformFormValues,
 } from '@/components/config/platforms/platform-editor';
 import { Skeleton } from '@/components/ui/skeleton';
+import { DetailLoadError } from '@/components/shared/detail-page';
 import { SettingsCardSkeleton } from '@/components/config/settings-card-skeleton';
 
 export const Route = createLazyFileRoute(
@@ -35,11 +36,17 @@ function EditPlatformPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (data: EditPlatformFormValues) =>
+    mutationFn: ({
+      values,
+      name,
+    }: {
+      values: EditPlatformFormValues;
+      name: string;
+    }) =>
       updatePlatformConfig({
         data: {
           id: platformId,
-          data: { ...data, id: platformId, name: platform!.name },
+          data: { ...values, id: platformId, name },
         },
       }),
     onSuccess: () => {
@@ -56,10 +63,6 @@ function EditPlatformPage() {
     onError: (error) =>
       toast.error(i18n._(msg`Failed to update platform: ${error.message}`)),
   });
-
-  const onSubmit = (data: EditPlatformFormValues) => {
-    updateMutation.mutate(data);
-  };
 
   if (isLoading) {
     return (
@@ -78,21 +81,24 @@ function EditPlatformPage() {
 
   if (error || !platform) {
     return (
-      <div className="flex flex-col items-center justify-center p-20 text-center">
-        <h3 className="text-xl font-bold text-destructive">
-          <Trans>Error loading platform</Trans>
-        </h3>
-        <p className="text-muted-foreground mt-2">
-          {error?.message || i18n._(msg`Platform not found`)}
-        </p>
-      </div>
+      <DetailLoadError
+        title={<Trans>Error loading platform</Trans>}
+        error={error}
+        notFound={<Trans>Platform not found</Trans>}
+        back={{
+          to: '/config/platforms',
+          label: <Trans>Back to platforms</Trans>,
+        }}
+      />
     );
   }
 
   return (
     <PlatformEditor
       platform={platform}
-      onSubmit={onSubmit}
+      onSubmit={(values) =>
+        updateMutation.mutate({ values, name: platform.name })
+      }
       isUpdating={updateMutation.isPending}
     />
   );

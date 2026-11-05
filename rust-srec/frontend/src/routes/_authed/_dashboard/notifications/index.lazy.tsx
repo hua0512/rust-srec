@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState, useSyncExternalStore } from 'react';
 import { createLazyFileRoute } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -6,10 +6,6 @@ import {
   deleteChannel,
   testChannel,
   listEventTypes,
-  getWebPushPublicKey,
-  subscribeWebPush,
-  unsubscribeWebPush,
-  listWebPushSubscriptions,
 } from '@/server/functions/notifications';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -25,7 +21,7 @@ import { ChannelForm } from '@/components/notifications/channel-form';
 import { SubscriptionManager } from '@/components/notifications/subscription-manager';
 import { BrowserChannelDialog } from '@/components/notifications/browser-channel-dialog';
 import { DesktopChannelDialog } from '@/components/notifications/desktop-channel-dialog';
-import { NotificationChannel, WebPushSubscription } from '@/api/schemas';
+import { NotificationChannel } from '@/api/schemas';
 import { motion, AnimatePresence } from 'motion/react';
 import { Badge } from '@/components/ui/badge';
 import { Link } from '@tanstack/react-router';
@@ -34,23 +30,14 @@ import { containerVariants, itemVariants } from '@/lib/animation';
 import { minPriorityLabel } from '@/lib/priority';
 import { useNotificationDot } from '@/hooks/use-notification-dot';
 import { isTauriRuntime } from '@/utils/tauri';
+import { useDesktopNotificationConfig } from '@/hooks/use-desktop-notification-config';
+import { useWebPushSubscription } from '@/hooks/use-web-push-subscription';
 import {
   getBrowserNotificationsEnabled,
+  onNotificationStateChanged,
   setBrowserNotificationsEnabled,
 } from '@/lib/notification-state';
-import {
-  isWebPushSupported,
-  registerWebPushServiceWorker,
-  subscribePush,
-  subscriptionToJson,
-} from '@/lib/web-push';
-import {
-  initDesktopNotificationsBridge,
-  readInitialDesktopNotificationsConfig,
-  setDesktopNotificationsConfig,
-  testDesktopNotifications,
-  type DesktopNotificationConfig,
-} from '@/desktop/desktop-notifications';
+import { testDesktopNotifications } from '@/desktop/desktop-notifications';
 import { CARD_GRID } from '@/lib/grid';
 import { CardField } from '@/components/shared/card-field';
 import {
@@ -77,102 +64,30 @@ function NotificationsPage() {
     null,
   );
 
-  const [webPushSupported, setWebPushSupported] = useState(false);
-  const [webPushPermission, setWebPushPermission] =
-    useState<NotificationPermission>('default');
-  const [webPushEnabled, setWebPushEnabled] = useState(false);
-  const [webPushMinPriority, setWebPushMinPriority] = useState(10);
+  const webPush = useWebPushSubscription({ enabled: !isDesktop });
 
   const [isBrowserDialogOpen, setIsBrowserDialogOpen] = useState(false);
-  const [browserNotificationsEnabled, setBrowserNotificationsEnabledState] =
-    useState(false);
+  const browserNotificationsEnabled = useSyncExternalStore(
+    onNotificationStateChanged,
+    getBrowserNotificationsEnabled,
+    () => false,
+  );
 
   const [isDesktopDialogOpen, setIsDesktopDialogOpen] = useState(false);
   const openInternalChannelSettings = () =>
     isDesktop ? setIsDesktopDialogOpen(true) : setIsBrowserDialogOpen(true);
 
-  const defaultDesktopConfig: DesktopNotificationConfig = {
-    enabled: true,
-    minPriority: 5,
-    // Empty => no desktop notifications until events are selected.
-    eventTypes: [],
-  };
-
-  const [desktopNotificationsConfig, setDesktopNotificationsConfigState] =
-    useState<DesktopNotificationConfig | null>(() =>
-      isDesktop
-        ? (readInitialDesktopNotificationsConfig() ?? defaultDesktopConfig)
-        : null,
-    );
+  const [desktopNotificationsConfig, updateDesktopNotificationsConfig] =
+    useDesktopNotificationConfig(isDesktop);
 
   const { hasCriticalDot } = useNotificationDot();
 
-  useEffect(() => {
-    setBrowserNotificationsEnabledState(getBrowserNotificationsEnabled());
-  }, []);
-
   const handleBrowserNotificationsToggle = (enabled: boolean) => {
     setBrowserNotificationsEnabled(enabled);
-    setBrowserNotificationsEnabledState(enabled);
     if (enabled) {
       toast.success(i18n._(msg`Live polling notifications enabled`));
     }
   };
-
-  useEffect(() => {
-    if (isDesktop) return;
-    const supported = isWebPushSupported();
-    setWebPushSupported(supported);
-    if (!supported) return;
-
-    setWebPushPermission(Notification.permission);
-
-    void (async () => {
-      try {
-        const reg = await registerWebPushServiceWorker();
-        const sub = await reg.pushManager.getSubscription();
-        setWebPushEnabled(!!sub);
-
-        if (sub) {
-          // If we have a local subscription, sync its state from the backend
-          const subs = await listWebPushSubscriptions();
-          const serverSub = subs.find(
-            (s: WebPushSubscription) => s.endpoint === sub.endpoint,
-          );
-          if (serverSub) {
-            setWebPushMinPriority(serverSub.min_priority);
-          }
-        }
-      } catch {
-        // ignore
-      }
-    })();
-  }, [isDesktop]);
-
-  useEffect(() => {
-    if (!isDesktop) return;
-    let alive = true;
-    let unlisten: (() => void) | null = null;
-
-    void (async () => {
-      const nextUnlisten = await initDesktopNotificationsBridge((cfg) => {
-        if (!alive) return;
-        setDesktopNotificationsConfigState(cfg);
-      });
-
-      if (!alive) {
-        nextUnlisten();
-        return;
-      }
-
-      unlisten = nextUnlisten;
-    })();
-
-    return () => {
-      alive = false;
-      if (unlisten) unlisten();
-    };
-  }, [isDesktop]);
 
   const { data: channels, isLoading } = useQuery({
     queryKey: ['notification-channels'],
@@ -185,100 +100,6 @@ function NotificationsPage() {
     enabled: isDesktop,
   });
 
-  const webPushKeyQuery = useQuery({
-    queryKey: ['web-push', 'public-key'],
-    queryFn: () => getWebPushPublicKey(),
-    retry: false,
-    enabled: webPushSupported,
-  });
-
-  const handleWebPushPriorityChange = async (priority: number) => {
-    setWebPushMinPriority(priority);
-
-    // If already enabled, update the subscription on the server
-    if (webPushEnabled) {
-      try {
-        const reg = await registerWebPushServiceWorker();
-        const sub = await reg.pushManager.getSubscription();
-        if (sub) {
-          await subscribeWebPush({
-            data: {
-              subscription: subscriptionToJson(sub),
-              min_priority: priority,
-            },
-          });
-          toast.success(i18n._(msg`Web Push priority updated`));
-        }
-      } catch (e: any) {
-        toast.error(e?.message || i18n._(msg`Failed to update priority`));
-      }
-    }
-  };
-
-  const toggleWebPush = async (checked: boolean) => {
-    if (!webPushSupported) {
-      toast.error(i18n._(msg`Web Push is not supported in this browser`));
-      return;
-    }
-
-    if (webPushKeyQuery.isError) {
-      toast.error(i18n._(msg`Web Push is not configured on the server`));
-      return;
-    }
-
-    if (!checked) {
-      try {
-        const reg = await registerWebPushServiceWorker();
-        const sub = await reg.pushManager.getSubscription();
-        if (sub) {
-          await unsubscribeWebPush({ data: { endpoint: sub.endpoint } });
-          await sub.unsubscribe();
-        }
-        setWebPushEnabled(false);
-        toast.message(i18n._(msg`Web Push disabled for this browser`));
-      } catch (e: any) {
-        toast.error(e?.message || i18n._(msg`Failed to disable Web Push`));
-      }
-      return;
-    }
-
-    // Enabling: permission required.
-    let permission: NotificationPermission = Notification.permission;
-    if (permission !== 'granted') {
-      try {
-        permission = await Notification.requestPermission();
-      } catch {
-        permission = Notification.permission;
-      }
-    }
-    setWebPushPermission(permission);
-    if (permission !== 'granted') {
-      toast.error(i18n._(msg`Notification permission not granted`));
-      return;
-    }
-
-    try {
-      const { public_key } = await getWebPushPublicKey();
-      const reg = await registerWebPushServiceWorker();
-      let sub = await reg.pushManager.getSubscription();
-      if (!sub) {
-        sub = await subscribePush(reg, public_key);
-      }
-
-      await subscribeWebPush({
-        data: {
-          subscription: subscriptionToJson(sub),
-          min_priority: webPushMinPriority,
-        },
-      });
-
-      setWebPushEnabled(true);
-      toast.success(i18n._(msg`Web Push enabled for this browser`));
-    } catch (e: any) {
-      toast.error(e?.message || i18n._(msg`Failed to enable Web Push`));
-    }
-  };
-
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteChannel({ data: id }),
     onSuccess: () => {
@@ -287,7 +108,7 @@ function NotificationsPage() {
         queryKey: ['notification-channels'],
       });
     },
-    onError: (err: any) => {
+    onError: (err) => {
       toast.error(err.message || i18n._(msg`Failed to delete channel`));
     },
   });
@@ -297,7 +118,7 @@ function NotificationsPage() {
     onSuccess: () => {
       toast.success(i18n._(msg`Test notification sent`));
     },
-    onError: (err: any) => {
+    onError: (err) => {
       toast.error(err.message || i18n._(msg`Failed to send test notification`));
     },
   });
@@ -325,14 +146,6 @@ function NotificationsPage() {
     setIsFormOpen(true);
   };
 
-  const webPushStatusText = useMemo(() => {
-    if (!webPushSupported) return i18n._(msg`Not supported in this browser`);
-    if (webPushKeyQuery.isError) return i18n._(msg`Server not configured`);
-    if (webPushPermission === 'denied') return i18n._(msg`Blocked by browser`);
-    if (webPushPermission === 'granted') return i18n._(msg`Ready`);
-    return i18n._(msg`Permission required`);
-  }, [i18n, webPushKeyQuery.isError, webPushPermission, webPushSupported]);
-
   const desktopMinPriorityLabel = i18n._(
     minPriorityLabel(desktopNotificationsConfig?.minPriority ?? 5),
   );
@@ -346,7 +159,7 @@ function NotificationsPage() {
 
   const internalActive = isDesktop
     ? !!desktopNotificationsConfig?.enabled
-    : browserNotificationsEnabled || webPushEnabled;
+    : browserNotificationsEnabled || webPush.subscribed;
 
   return (
     <motion.div
@@ -510,7 +323,7 @@ function NotificationsPage() {
                           <CardField
                             label={<Trans>Web Push</Trans>}
                             value={
-                              webPushEnabled
+                              webPush.subscribed
                                 ? i18n._(msg`Enabled`)
                                 : i18n._(msg`Disabled`)
                             }
@@ -553,13 +366,13 @@ function NotificationsPage() {
       <BrowserChannelDialog
         open={!isDesktop && isBrowserDialogOpen}
         onOpenChange={setIsBrowserDialogOpen}
-        webPushSupported={webPushSupported}
-        webPushEnabled={webPushEnabled}
-        webPushPermission={webPushPermission}
-        webPushStatusText={webPushStatusText}
-        webPushMinPriority={webPushMinPriority}
-        onWebPushToggle={toggleWebPush}
-        onWebPushPriorityChange={handleWebPushPriorityChange}
+        webPushSupported={webPush.supported}
+        webPushEnabled={webPush.subscribed}
+        webPushPermission={webPush.permission}
+        webPushStatusText={webPush.statusText}
+        webPushMinPriority={webPush.minPriority}
+        onWebPushToggle={webPush.toggle}
+        onWebPushPriorityChange={webPush.changePriority}
         browserNotificationsEnabled={browserNotificationsEnabled}
         onBrowserNotificationsToggle={handleBrowserNotificationsToggle}
       />
@@ -578,10 +391,7 @@ function NotificationsPage() {
               });
             });
           }}
-          onConfigChange={(next) => {
-            setDesktopNotificationsConfigState(next);
-            void setDesktopNotificationsConfig(next);
-          }}
+          onConfigChange={updateDesktopNotificationsConfig}
         />
       )}
 

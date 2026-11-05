@@ -8,8 +8,8 @@ import { cn } from '@/lib/utils';
 import { Trans } from '@lingui/react/macro';
 
 /**
- * Where a floating action sits. Exported so the non-save floating actions — the sessions
- * selection bar and the jobs retry-all button — anchor to the same corner rather than each
+ * Where a floating action sits. Exported so the non-save floating actions — the list pages'
+ * create buttons and the jobs retry-all button — anchor to the same corner rather than each
  * repeating the offsets and drifting apart.
  */
 export const FAB_ANCHOR = 'fixed bottom-6 right-6 z-50';

@@ -1,4 +1,3 @@
-import { deleteStreamer, updateStreamer } from '@/server/functions';
 import { CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DashboardCard } from '@/components/dashboard/dashboard-card';
@@ -21,13 +20,12 @@ import {
   Link,
   type LinkProps,
 } from '@tanstack/react-router';
-import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import {
   liveStreamersQueryOptions,
   pipelineStatsQueryOptions,
   systemHealthQueryOptions,
 } from '@/api/dashboard';
-import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { CARD_GRID, STAT_GRID } from '@/lib/grid';
 import { Button } from '@/components/ui/button';
@@ -35,7 +33,9 @@ import { formatRelativeTime, formatLocalizedDuration } from '@/lib/date-utils';
 import { formatBytes } from '@/lib/format';
 import { getHealthStatusMeta } from '@/lib/health-status';
 import type { ComponentHealth } from '@/api/schemas/system';
-import { useCallback, useMemo, memo, useState, useEffect } from 'react';
+import { useMemo, memo } from 'react';
+import { useHydrated } from '@/hooks/use-hydrated';
+import { useStreamerMutations } from '@/hooks/use-streamer-mutations';
 
 const SKELETON_COUNT = 4;
 const GRID_4 = cn(STAT_GRID, 'gap-4 md:gap-6');
@@ -87,12 +87,9 @@ export const Route = createLazyFileRoute('/_authed/_dashboard/dashboard')({
 });
 
 function Dashboard() {
-  const queryClient = useQueryClient();
-
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  // Relative times wait for hydration, so they never differ from the server's
+  // render.
+  const mounted = useHydrated();
 
   // Three summaries on one screen, so they share the same relaxed interval the
   // other overview pages use. Anything that moves second by second — download
@@ -133,43 +130,7 @@ function Dashboard() {
 
   const activeStreamers = useMemo(() => streamers?.items || [], [streamers]);
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteStreamer({ data: id }),
-    onSuccess: () => {
-      toast.success(i18n._(msg`Streamer deleted`));
-      void queryClient.invalidateQueries({ queryKey: ['streamers'] });
-    },
-    onError: (error) => {
-      toast.error(error.message || i18n._(msg`Failed to delete streamer`));
-    },
-  });
-
-  const toggleMutation = useMutation({
-    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
-      updateStreamer({ data: { id, data: { enabled } } }),
-    onSuccess: () => {
-      toast.success(i18n._(msg`Streamer updated`));
-      void queryClient.invalidateQueries({ queryKey: ['streamers'] });
-    },
-    onError: (error) =>
-      toast.error(error.message || i18n._(msg`Failed to update streamer`)),
-  });
-
-  // `mutate` is stable while the mutation result object is not, so the
-  // memoized cards keep their props across polls.
-  const deleteMutate = deleteMutation.mutate;
-  const toggleMutate = toggleMutation.mutate;
-
-  // StreamerCard's menu asks for confirmation before calling this.
-  const handleDelete = useCallback(
-    (id: string) => deleteMutate(id),
-    [deleteMutate],
-  );
-
-  const handleToggle = useCallback(
-    (id: string, enabled: boolean) => toggleMutate({ id, enabled }),
-    [toggleMutate],
-  );
+  const { handleDelete, handleToggle } = useStreamerMutations();
 
   const dbComponent = useMemo(
     () => health?.components.find((c) => c.name === 'database'),

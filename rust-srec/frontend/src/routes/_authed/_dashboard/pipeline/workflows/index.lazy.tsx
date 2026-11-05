@@ -23,12 +23,13 @@ import { WorkflowCard } from '@/components/pipeline/workflows/workflow-card';
 import { SearchInput } from '@/components/shared/search-input';
 import { useUpdateSearch } from '@/hooks/use-update-search';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { DashboardHeader } from '@/components/shared/dashboard-header';
 import { containerVariants, itemVariants } from '@/lib/animation';
 import { ListPagination } from '@/components/shared/list-pagination';
+import { PageEmptyState } from '@/components/shared/list-panel';
+import { CreateFab } from '@/components/shared/page-actions';
+import { QueryError } from '@/components/shared/query-error';
 import { CARD_GRID } from '@/lib/grid';
 import { cn } from '@/lib/utils';
 
@@ -51,7 +52,7 @@ function WorkflowsPage() {
   const pageSize = search.size ?? 24;
   const currentPage = search.page ?? 0;
 
-  const { data, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['pipeline', 'workflows', debouncedSearch, pageSize, currentPage],
     queryFn: () =>
       listPipelinePresets({
@@ -100,22 +101,6 @@ function WorkflowsPage() {
     void navigate({ to: '/pipeline/workflows/create' });
   };
 
-  if (isError) {
-    return (
-      <div className="space-y-8 p-6 md:p-10 max-w-7xl mx-auto">
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>
-            <Trans>Error</Trans>
-          </AlertTitle>
-          <AlertDescription>
-            <Trans>Failed to load workflows: {error.message}</Trans>
-          </AlertDescription>
-        </Alert>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen space-y-6">
       {/* Header */}
@@ -149,7 +134,14 @@ function WorkflowsPage() {
 
       <div className="p-4 md:px-8 pb-20 w-full">
         <AnimatePresence mode="wait">
-          {isLoading ? (
+          {isError && !data ? (
+            <QueryError
+              key="error"
+              title={<Trans>Failed to load workflows</Trans>}
+              error={error}
+              onRetry={() => void refetch()}
+            />
+          ) : isLoading ? (
             <motion.div
               key="loading"
               initial={false}
@@ -196,41 +188,35 @@ function WorkflowsPage() {
               ))}
             </motion.div>
           ) : (
-            <motion.div
+            <PageEmptyState
               key="empty"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="flex flex-col items-center justify-center py-32 text-center space-y-6 border-2 border-dashed border-muted-foreground/20 rounded-2xl bg-muted/5 backdrop-blur-sm shadow-sm"
-            >
-              <div className="p-6 bg-primary/5 rounded-full ring-1 ring-primary/10">
-                <Workflow className="h-16 w-16 text-primary/60" />
-              </div>
-              <div className="space-y-2 max-w-md">
-                <h3 className="font-semibold text-2xl tracking-tight">
-                  {debouncedSearch ? (
-                    <Trans>No workflows found</Trans>
-                  ) : (
-                    <Trans>No workflows yet</Trans>
-                  )}
-                </h3>
-                <p className="text-muted-foreground">
-                  {debouncedSearch ? (
-                    <Trans>Try adjusting your search.</Trans>
-                  ) : (
-                    <Trans>
-                      Create your first workflow to define a sequence of
-                      processing steps for your recordings.
-                    </Trans>
-                  )}
-                </p>
-              </div>
-              {!debouncedSearch && (
-                <Button onClick={handleCreate} size="lg" className="mt-4">
-                  <Plus className="mr-2 h-5 w-5" />
-                  <Trans>Create Workflow</Trans>
-                </Button>
-              )}
-            </motion.div>
+              icon={Workflow}
+              title={
+                debouncedSearch ? (
+                  <Trans>No workflows found</Trans>
+                ) : (
+                  <Trans>No workflows yet</Trans>
+                )
+              }
+              help={
+                debouncedSearch ? (
+                  <Trans>Try adjusting your search.</Trans>
+                ) : (
+                  <Trans>
+                    Create your first workflow to define a sequence of
+                    processing steps for your recordings.
+                  </Trans>
+                )
+              }
+              action={
+                !debouncedSearch && (
+                  <Button onClick={handleCreate} size="lg">
+                    <Plus className="mr-2 h-5 w-5" />
+                    <Trans>Create Workflow</Trans>
+                  </Button>
+                )
+              }
+            />
           )}
         </AnimatePresence>
 
@@ -242,24 +228,10 @@ function WorkflowsPage() {
           onPageSizeChange={(size) => updateSearch({ size, page: undefined })}
         />
 
-        {/* Floating Action Button */}
-        <motion.div
-          className="fixed bottom-8 right-8 z-50"
-          initial={{ scale: 0.93, rotate: 90, opacity: 0 }}
-          animate={{ scale: 1, rotate: 0, opacity: 1 }}
-          whileHover={{ scale: 1.1 }}
-          whileTap={{ scale: 0.9 }}
-        >
-          <Button
-            onClick={handleCreate}
-            aria-label={i18n._(msg`Create Workflow`)}
-            title={i18n._(msg`Create Workflow`)}
-            size="icon"
-            className="h-14 w-14 rounded-full shadow-2xl bg-primary hover:bg-primary/90 text-primary-foreground flex items-center justify-center p-0"
-          >
-            <Plus className="h-6 w-6" />
-          </Button>
-        </motion.div>
+        <CreateFab
+          label={i18n._(msg`Create Workflow`)}
+          onClick={handleCreate}
+        />
       </div>
     </div>
   );

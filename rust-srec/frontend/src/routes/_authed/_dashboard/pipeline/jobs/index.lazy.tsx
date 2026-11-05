@@ -22,7 +22,6 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg, plural } from '@lingui/core/macro';
 import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { isDagAlreadyTerminalError } from '@/lib/api-error';
@@ -37,7 +36,6 @@ import {
   AlertCircle,
   Timer,
   ListTodo,
-  ListChecks,
   Plus,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -51,6 +49,10 @@ import {
   useBatchSelection,
 } from '@/hooks/use-batch-selection';
 import { ListPagination } from '@/components/shared/list-pagination';
+import { PageEmptyState } from '@/components/shared/list-panel';
+import { FilterChip } from '@/components/shared/filter-pill';
+import { SelectModeButton } from '@/components/shared/page-actions';
+import { QueryError } from '@/components/shared/query-error';
 import { formatDuration } from '@/lib/format';
 import { CARD_GRID } from '@/lib/grid';
 
@@ -121,6 +123,7 @@ function PipelineJobsPage() {
     isLoading: isPipelinesLoading,
     isError,
     error,
+    refetch,
   } = useQuery({
     queryKey: [
       'pipeline',
@@ -343,22 +346,6 @@ function PipelineJobsPage() {
     [retryAllFailedMutation],
   );
 
-  if (isError) {
-    return (
-      <div className="space-y-8 p-6 md:p-10 max-w-7xl mx-auto">
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>
-            <Trans>Error</Trans>
-          </AlertTitle>
-          <AlertDescription>
-            <Trans>Failed to load jobs: {error.message}</Trans>
-          </AlertDescription>
-        </Alert>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen space-y-6">
       <DashboardHeader
@@ -389,21 +376,11 @@ function PipelineJobsPage() {
                   })}`,
                 )}
               </Badge>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={toggleSelectionMode}
-                aria-pressed={selectionMode}
-                aria-label={i18n._(msg`Select pipelines`)}
-                className={cn(
-                  'h-9 gap-2 whitespace-nowrap rounded-full px-3',
-                  selectionMode &&
-                    'border-primary/50 bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary',
-                )}
-              >
-                <ListChecks className="h-4 w-4" />
-                <Trans>Select</Trans>
-              </Button>
+              <SelectModeButton
+                selectionMode={selectionMode}
+                onToggle={toggleSelectionMode}
+                label={i18n._(msg`Select pipelines`)}
+              />
               <Button
                 className="h-9 gap-2 whitespace-nowrap"
                 variant="default"
@@ -467,21 +444,14 @@ function PipelineJobsPage() {
         {/* Status Filter */}
         <div className="-mx-4 md:mx-0">
           <nav className="flex items-center gap-1.5 px-4 md:px-0 overflow-x-auto no-scrollbar pt-1 pb-1 flex-1">
-            {STATUS_FILTERS.map(({ value, label, icon: Icon }) => (
-              <button
+            {STATUS_FILTERS.map(({ value, label, icon }) => (
+              <FilterChip
                 key={label}
-                type="button"
-                aria-pressed={selectedStatus === value}
+                icon={icon}
+                label={label}
+                isActive={selectedStatus === value}
                 onClick={() => handleStatusChange(value)}
-                className={`relative px-3.5 py-1.5 text-xs sm:text-sm font-medium rounded-full transition-all duration-200 flex items-center gap-1.5 shrink-0 shadow-sm ring-1 ${
-                  selectedStatus === value
-                    ? 'bg-primary text-primary-foreground ring-primary'
-                    : 'text-muted-foreground hover:text-foreground bg-background hover:bg-muted ring-border/50'
-                }`}
-              >
-                <Icon className="h-4 w-4" />
-                <span className="relative z-10 whitespace-nowrap">{label}</span>
-              </button>
+              />
             ))}
           </nav>
         </div>
@@ -489,7 +459,14 @@ function PipelineJobsPage() {
 
       <div className="p-4 md:px-8 pb-20 w-full">
         <AnimatePresence mode="wait">
-          {isPipelinesLoading ? (
+          {isError && !pipelinesData ? (
+            <QueryError
+              key="error"
+              title={<Trans>Failed to load jobs</Trans>}
+              error={error}
+              onRetry={() => void refetch()}
+            />
+          ) : isPipelinesLoading ? (
             <LoadingSkeleton />
           ) : pipelines.length > 0 ? (
             <motion.div
@@ -515,34 +492,26 @@ function PipelineJobsPage() {
               ))}
             </motion.div>
           ) : (
-            <motion.div
+            <PageEmptyState
               key="empty"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="flex flex-col items-center justify-center py-32 text-center space-y-6 border-2 border-dashed border-muted-foreground/20 rounded-2xl bg-muted/5 backdrop-blur-sm shadow-sm"
-            >
-              <div className="p-6 bg-primary/5 rounded-full ring-1 ring-primary/10">
-                <ListTodo className="h-16 w-16 text-primary/60" />
-              </div>
-              <div className="space-y-2 max-w-md">
-                <h3 className="font-semibold text-2xl tracking-tight">
-                  {q || selectedStatus ? (
-                    <Trans>No jobs found</Trans>
-                  ) : (
-                    <Trans>No pipeline jobs yet</Trans>
-                  )}
-                </h3>
-                <p className="text-muted-foreground">
-                  {q || selectedStatus ? (
-                    <Trans>Try adjusting your search or filters.</Trans>
-                  ) : (
-                    <Trans>
-                      Jobs will appear here when recordings are processed.
-                    </Trans>
-                  )}
-                </p>
-              </div>
-            </motion.div>
+              icon={ListTodo}
+              title={
+                q || selectedStatus ? (
+                  <Trans>No jobs found</Trans>
+                ) : (
+                  <Trans>No pipeline jobs yet</Trans>
+                )
+              }
+              help={
+                q || selectedStatus ? (
+                  <Trans>Try adjusting your search or filters.</Trans>
+                ) : (
+                  <Trans>
+                    Jobs will appear here when recordings are processed.
+                  </Trans>
+                )
+              }
+            />
           )}
         </AnimatePresence>
 

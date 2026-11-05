@@ -118,8 +118,8 @@ function CreatePipelineJobPage() {
       });
       void navigate({ to: '/pipeline/jobs' });
     },
-    onError: (error: any) => {
-      toast.error(error?.message || i18n._(msg`Failed to create pipeline job`));
+    onError: (error) => {
+      toast.error(error.message || i18n._(msg`Failed to create pipeline job`));
     },
   });
 

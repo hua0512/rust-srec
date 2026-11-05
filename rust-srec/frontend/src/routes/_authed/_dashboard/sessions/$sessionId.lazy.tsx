@@ -1,5 +1,11 @@
-import React, { useState, useEffect, useRef, Suspense } from 'react';
-import { Link, createLazyFileRoute } from '@tanstack/react-router';
+import React, {
+  useCallback,
+  useState,
+  useEffect,
+  useRef,
+  Suspense,
+} from 'react';
+import { createLazyFileRoute } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getSession,
@@ -10,14 +16,6 @@ import {
   listPipelines,
   listPipelineOutputs,
 } from '@/server/functions/pipeline';
-import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -33,7 +31,6 @@ import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
-import { ArrowLeft, AlertCircle } from 'lucide-react';
 import { getMediaDownloadUrl, getMediaUrl, isSameOriginUrl } from '@/lib/url';
 import { isTauriRuntime, revealItemInDir } from '@/utils/tauri';
 import { findDanmuOutput, resolvePlayerMediaType } from '@/lib/media';
@@ -47,6 +44,10 @@ import { JobsTab } from '@/components/sessions/jobs-tab';
 import { DanmuViewer } from '@/components/danmu/danmu-viewer';
 
 import { TimelineTab } from '@/components/sessions/timeline-tab';
+import {
+  AmbientBackground,
+  DetailLoadError,
+} from '@/components/shared/detail-page';
 
 export const Route = createLazyFileRoute(
   '/_authed/_dashboard/sessions/$sessionId',
@@ -234,6 +235,7 @@ function SessionDetailPage() {
   const segments = segmentsData || [];
 
   const { i18n } = useLingui();
+  const accessToken = user?.token?.access_token;
 
   // In the desktop build the recording is already on this machine, so it is
   // pointed at in the file manager rather than copied anywhere.
@@ -242,48 +244,55 @@ function SessionDetailPage() {
   // the anchor below streams straight to disk, and the media token travels in
   // its query string — the backend accepts it there, so no Authorization header
   // is involved.
-  const handleDownload = (output: MediaOutput) => {
-    const filename = output.file_path.split(/[/\\]/).pop() || 'video';
+  // Stable across renders so the memoised rows of a long recordings list are
+  // not all redrawn whenever the page polls.
+  const handleDownload = useCallback(
+    (output: MediaOutput) => {
+      const filename = output.file_path.split(/[/\\]/).pop() || 'video';
 
-    if (isTauriRuntime()) {
-      revealItemInDir(output.file_path).catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        toast.error(i18n._(msg`Could not show the file: ${message}`));
-      });
-      return;
-    }
+      if (isTauriRuntime()) {
+        revealItemInDir(output.file_path).catch((error: unknown) => {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          toast.error(i18n._(msg`Could not show the file: ${message}`));
+        });
+        return;
+      }
 
-    const url = getMediaDownloadUrl(output.id, user?.token?.access_token);
-    if (!url) {
-      toast.error(i18n._(msg`Invalid download URL`));
-      return;
-    }
+      const url = getMediaDownloadUrl(output.id, accessToken);
+      if (!url) {
+        toast.error(i18n._(msg`Invalid download URL`));
+        return;
+      }
 
-    if (isSameOriginUrl(url)) {
-      saveAs(url, filename);
-      toast.success(i18n._(msg`Download started`));
-      return;
-    }
-
-    // Cross-origin the anchor's `download` attribute is ignored, so the click
-    // is a top-level navigation: the attachment header makes the browser save
-    // the reply, but an error reply (expired token, file gone) would replace
-    // the page with its JSON body. A HEAD request settles that first.
-    toast.promise(
-      async () => {
-        const response = await fetch(url, { method: 'HEAD' });
-        if (!response.ok) {
-          throw new Error(`${response.status} ${response.statusText}`);
-        }
+      if (isSameOriginUrl(url)) {
         saveAs(url, filename);
-      },
-      {
-        loading: i18n._(msg`Preparing download...`),
-        success: i18n._(msg`Download started`),
-        error: (error: Error) => i18n._(msg`Download failed: ${error.message}`),
-      },
-    );
-  };
+        toast.success(i18n._(msg`Download started`));
+        return;
+      }
+
+      // Cross-origin the anchor's `download` attribute is ignored, so the click
+      // is a top-level navigation: the attachment header makes the browser save
+      // the reply, but an error reply (expired token, file gone) would replace
+      // the page with its JSON body. A HEAD request settles that first.
+      toast.promise(
+        async () => {
+          const response = await fetch(url, { method: 'HEAD' });
+          if (!response.ok) {
+            throw new Error(`${response.status} ${response.statusText}`);
+          }
+          saveAs(url, filename);
+        },
+        {
+          loading: i18n._(msg`Preparing download...`),
+          success: i18n._(msg`Download started`),
+          error: (error: Error) =>
+            i18n._(msg`Download failed: ${error.message}`),
+        },
+      );
+    },
+    [i18n, accessToken],
+  );
 
   if (isSessionLoading) {
     return (
@@ -308,52 +317,18 @@ function SessionDetailPage() {
 
   if (isError || !session) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6 bg-background">
-        <Card className="max-w-md w-full border-destructive/20 bg-destructive/5 backdrop-blur-sm">
-          <CardHeader className="text-center pb-2">
-            <div className="mx-auto p-3 rounded-full bg-destructive/10 w-fit mb-2">
-              <AlertCircle className="h-6 w-6 text-destructive" />
-            </div>
-            <CardTitle className="text-xl text-destructive">
-              <Trans>Error Loading Session</Trans>
-            </CardTitle>
-            <CardDescription>
-              {error?.message || i18n._(msg`Session not found`)}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center pb-6">
-            <Button variant="outline" asChild>
-              <Link to="/sessions">
-                <ArrowLeft className="mr-2 h-4 w-4" />{' '}
-                <Trans>Back to Sessions</Trans>
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+      <DetailLoadError
+        title={<Trans>Error Loading Session</Trans>}
+        error={error}
+        notFound={<Trans>Session not found</Trans>}
+        back={{ to: '/sessions', label: <Trans>Back to Sessions</Trans> }}
+      />
     );
   }
 
   return (
     <div className="relative min-h-screen bg-background overflow-hidden selection:bg-primary/20">
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-0 -mt-20 -ml-20 w-125 h-125 bg-primary/5 rounded-full blur-[120px]" />
-        <div className="absolute bottom-0 right-0 -mb-40 -mr-20 w-150 h-150 bg-blue-500/5 rounded-full blur-[120px]" />
-        <div
-          className="absolute inset-0 opacity-[0.03]"
-          style={{
-            backgroundImage: `radial-gradient(#000 1px, transparent 1px)`,
-            backgroundSize: '24px 24px',
-          }}
-        />
-        <div
-          className="absolute inset-0 opacity-[0.03] dark:invert"
-          style={{
-            backgroundImage: `radial-gradient(#fff 1px, transparent 1px)`,
-            backgroundSize: '24px 24px',
-          }}
-        />
-      </div>
+      <AmbientBackground />
 
       <div className="relative z-10 w-full px-4 py-6 pb-32 md:px-12 lg:px-16 xl:px-24">
         <SessionHeader session={session} />

@@ -11,9 +11,10 @@ import { TemplateCard } from '@/components/config/templates/template-card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { AlertCircle, Plus, LayoutTemplate } from 'lucide-react';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Plus, LayoutTemplate } from 'lucide-react';
 import { SearchInput } from '@/components/shared/search-input';
+import { PageEmptyState } from '@/components/shared/list-panel';
+import { QueryError } from '@/components/shared/query-error';
 import { useUpdateSearch } from '@/hooks/use-update-search';
 import { useState, useMemo } from 'react';
 import { Link } from '@tanstack/react-router';
@@ -52,7 +53,12 @@ function TemplatesConfigPage() {
   > | null>(null);
   const [cloneName, setCloneName] = useState('');
 
-  const { data: templates, isLoading, error } = useQuery(templatesQueryOptions);
+  const {
+    data: templates,
+    isLoading,
+    error,
+    refetch,
+  } = useQuery(templatesQueryOptions);
 
   const cloneMutation = useMutation({
     mutationFn: cloneTemplate,
@@ -99,20 +105,6 @@ function TemplatesConfigPage() {
     }
   };
 
-  if (error) {
-    return (
-      <Alert variant="destructive">
-        <AlertCircle className="h-4 w-4" />
-        <AlertTitle>
-          <Trans>Error</Trans>
-        </AlertTitle>
-        <AlertDescription>
-          <Trans>Failed to load templates: {(error as Error).message}</Trans>
-        </AlertDescription>
-      </Alert>
-    );
-  }
-
   return (
     <div className="space-y-6">
       {/* Search Bar and Create Button */}
@@ -138,7 +130,14 @@ function TemplatesConfigPage() {
       </div>
 
       <AnimatePresence mode="wait">
-        {isLoading ? (
+        {error && !templates ? (
+          <QueryError
+            key="error"
+            title={<Trans>Failed to load templates</Trans>}
+            error={error}
+            onRetry={() => void refetch()}
+          />
+        ) : isLoading ? (
           <motion.div
             key="loading"
             initial={false}
@@ -170,43 +169,36 @@ function TemplatesConfigPage() {
             ))}
           </motion.div>
         ) : (
-          <motion.div
+          <PageEmptyState
             key="empty"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="flex flex-col items-center justify-center py-32 text-center space-y-6 border-2 border-dashed border-muted-foreground/20 rounded-2xl bg-muted/5 backdrop-blur-sm shadow-sm"
-          >
-            <div className="p-6 bg-primary/5 rounded-full ring-1 ring-primary/10">
-              <LayoutTemplate className="h-16 w-16 text-primary/60" />
-            </div>
-            <div className="space-y-2 max-w-md">
-              <h3 className="font-semibold text-2xl tracking-tight">
-                {debouncedSearch ? (
-                  <Trans>No templates found</Trans>
-                ) : (
-                  <Trans>No templates yet</Trans>
-                )}
-              </h3>
-              <p className="text-muted-foreground">
-                {debouncedSearch ? (
-                  <Trans>Try adjusting your search.</Trans>
-                ) : (
-                  <Trans>
-                    Create a template to define reusable download
-                    configurations.
-                  </Trans>
-                )}
-              </p>
-            </div>
-            {!debouncedSearch && (
-              <Link to="/config/templates/create">
-                <Button className="gap-2">
-                  <Plus className="w-4 h-4" />
-                  <Trans>Create Template</Trans>
-                </Button>
-              </Link>
-            )}
-          </motion.div>
+            icon={LayoutTemplate}
+            title={
+              debouncedSearch ? (
+                <Trans>No templates found</Trans>
+              ) : (
+                <Trans>No templates yet</Trans>
+              )
+            }
+            help={
+              debouncedSearch ? (
+                <Trans>Try adjusting your search.</Trans>
+              ) : (
+                <Trans>
+                  Create a template to define reusable download configurations.
+                </Trans>
+              )
+            }
+            action={
+              !debouncedSearch && (
+                <Link to="/config/templates/create">
+                  <Button className="gap-2">
+                    <Plus className="w-4 h-4" />
+                    <Trans>Create Template</Trans>
+                  </Button>
+                </Link>
+              )
+            }
+          />
         )}
       </AnimatePresence>
 

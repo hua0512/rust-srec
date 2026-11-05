@@ -11,6 +11,7 @@ import { useLingui } from '@lingui/react';
 import { WorkflowEditor } from '@/components/pipeline/workflows/workflow-editor';
 import { validateBeforeSave } from '@/components/pipeline/workflows/validation-feedback';
 import { Skeleton } from '@/components/ui/skeleton';
+import { DetailLoadError } from '@/components/shared/detail-page';
 import type { DagStepDefinition } from '@/api/schemas';
 
 export const Route = createLazyFileRoute(
@@ -84,14 +85,15 @@ function EditWorkflowPage() {
 
   if (error || !workflow) {
     return (
-      <div className="flex flex-col items-center justify-center p-20 text-center">
-        <h3 className="text-xl font-bold text-destructive">
-          <Trans>Error loading workflow</Trans>
-        </h3>
-        <p className="text-muted-foreground mt-2">
-          {error?.message || i18n._(msg`Workflow not found`)}
-        </p>
-      </div>
+      <DetailLoadError
+        title={<Trans>Error loading workflow</Trans>}
+        error={error}
+        notFound={<Trans>Workflow not found</Trans>}
+        back={{
+          to: '/pipeline/workflows',
+          label: <Trans>Back to workflows</Trans>,
+        }}
+      />
     );
   }
 

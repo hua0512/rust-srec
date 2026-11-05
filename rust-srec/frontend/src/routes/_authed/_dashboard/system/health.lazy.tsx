@@ -19,7 +19,8 @@ import {
 import { HealthStatusBadge } from '@/components/health/health-status-badge';
 import { StorageUsageCard } from '@/components/health/storage-usage-card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useState, useEffect, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
+import { useHydrated } from '@/hooks/use-hydrated';
 import {
   Activity,
   Cpu,
@@ -48,11 +49,9 @@ export const Route = createLazyFileRoute('/_authed/_dashboard/system/health')({
 function SystemHealthPage() {
   const { i18n } = useLingui();
 
-  // Client-side time to avoid hydration mismatch
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  // Relative times wait for hydration, so they never differ from the server's
+  // render.
+  const mounted = useHydrated();
 
   const {
     data: health,
