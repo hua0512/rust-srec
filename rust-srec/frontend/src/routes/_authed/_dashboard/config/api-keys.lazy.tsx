@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import { queryKeys } from '@/api/query-keys';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { msg } from '@lingui/core/macro';
@@ -100,7 +101,7 @@ function ApiKeysPage() {
     error,
     refetch,
   } = useQuery({
-    queryKey: ['auth', 'api-keys'],
+    queryKey: queryKeys.apiKeys,
     queryFn: () => listApiKeys(),
   });
 
@@ -111,7 +112,7 @@ function ApiKeysPage() {
     mutationFn: (id: string) => revokeApiKey({ data: id }),
     onSuccess: () => {
       toast.success(i18n._(msg`API key revoked`));
-      void queryClient.invalidateQueries({ queryKey: ['auth', 'api-keys'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys });
     },
     onError: (error) => {
       toast.error(error.message || i18n._(msg`Failed to revoke API key`));
@@ -288,7 +289,7 @@ function ApiKeysPage() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={() =>
-          void queryClient.invalidateQueries({ queryKey: ['auth', 'api-keys'] })
+          void queryClient.invalidateQueries({ queryKey: queryKeys.apiKeys })
         }
       />
 

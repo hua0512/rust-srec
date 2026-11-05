@@ -9,6 +9,7 @@ import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import type { DateRange } from 'react-day-picker';
+import { queryKeys } from '@/api/query-keys';
 import { listLogFiles, getLogsDownloadUrl } from '@/server/functions/logging';
 import type { LogFileInfo } from '@/api/schemas/logging';
 import { Button } from '@/components/ui/button';
@@ -92,7 +93,7 @@ export function LogFileBrowser() {
   const toDate = dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : undefined;
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['logging', 'files', fromDate, toDate],
+    queryKey: queryKeys.logging.files(fromDate, toDate),
     queryFn: () =>
       listLogFiles({
         data: {

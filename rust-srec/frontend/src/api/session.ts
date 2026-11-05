@@ -1,4 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import { checkAuthFn } from '@/server/functions/auth';
 
 /**
@@ -56,7 +57,7 @@ export function sessionPollInterval(
 }
 
 export const sessionQueryOptions = queryOptions({
-  queryKey: ['session'],
+  queryKey: queryKeys.session,
   // Only an explicit null means unauthenticated; rejected checks must leave
   // React Query's last known session intact for retry.
   queryFn: () => checkAuthFn(),

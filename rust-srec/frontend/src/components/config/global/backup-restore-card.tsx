@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { SettingsCard } from '../settings-card';
+import { queryKeys } from '@/api/query-keys';
 import { Button } from '@/components/ui/button';
 import {
   Download,
@@ -175,20 +176,13 @@ export function BackupRestoreCard() {
       // alike. Imports are not announced on the live connection, so this is
       // the only refresh these views get.
       for (const queryKey of [
-        ['config'],
-        ['streamers'],
-        ['streamer'],
-        ['templates'],
-        ['template'],
-        ['engines'],
-        ['engine'],
-        ['notification-channels'],
-        ['subscriptions'],
-        ['job', 'presets'],
-        ['job', 'preset'],
-        ['pipeline', 'presets'],
-        ['pipeline', 'workflows'],
-        ['pipeline', 'workflow'],
+        queryKeys.config.all,
+        queryKeys.streamers.all,
+        queryKeys.templates.all,
+        queryKeys.engines.all,
+        queryKeys.notifications.all,
+        queryKeys.jobPresets.all,
+        queryKeys.pipeline.workflows.all,
       ]) {
         void queryClient.invalidateQueries({ queryKey });
       }

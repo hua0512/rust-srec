@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { queryKeys } from '@/api/query-keys';
 import {
   Dialog,
   DialogContent,
@@ -87,7 +88,9 @@ export function BaiduPcsLoginDialog({
             i18n._(msg`Credentials could not be stored for automatic re-login`),
           );
         }
-        void queryClient.invalidateQueries({ queryKey: ['baidupcs-status'] });
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.baiduPcs.all,
+        });
         onOpenChange(false);
       } else {
         toast.error(result.message || i18n._(msg`Baidu Netdisk login failed`));

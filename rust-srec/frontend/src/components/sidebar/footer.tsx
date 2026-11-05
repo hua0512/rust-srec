@@ -1,5 +1,6 @@
 import { Trans } from '@lingui/react/macro';
 import { useQuery } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import { getSystemHealth } from '@/server/functions/system';
 
 const UI_BUILD =
@@ -10,7 +11,7 @@ const UI_BUILD =
 
 export function Footer() {
   const { data: backendVersion } = useQuery({
-    queryKey: ['health'],
+    queryKey: queryKeys.health,
     queryFn: () => getSystemHealth(),
     select: (health) => health.version,
     staleTime: 5 * 60 * 1000,

@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import {
   getSubscriptions,
   updateSubscriptions,
@@ -207,14 +208,14 @@ export function SubscriptionManager({
 
   // Fetch event types (available options)
   const { data: eventTypes, isLoading: isLoadingTypes } = useQuery({
-    queryKey: ['notification-event-types'],
+    queryKey: queryKeys.notifications.eventTypes(),
     queryFn: () => listEventTypes(),
     staleTime: Infinity,
   });
 
   // Fetch current subscriptions for the channel
   const { data: currentSubs, isLoading: isLoadingSubs } = useQuery({
-    queryKey: ['subscriptions', channel?.id],
+    queryKey: queryKeys.notifications.subscriptions(channel?.id),
     queryFn: () => getSubscriptions({ data: channel!.id }),
     enabled: !!channel && open,
   });
@@ -244,7 +245,7 @@ export function SubscriptionManager({
     onSuccess: () => {
       toast.success(i18n._(msg`Subscriptions updated`));
       void queryClient.invalidateQueries({
-        queryKey: ['subscriptions', channel?.id],
+        queryKey: queryKeys.notifications.subscriptions(channel?.id),
       });
       onOpenChange(false);
     },

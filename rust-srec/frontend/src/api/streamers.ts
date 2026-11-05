@@ -1,4 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import { listStreamers } from '@/server/functions/streamers';
 import type { Priority } from '@/api/schemas/common';
 
@@ -42,8 +43,7 @@ export function streamersListQueryOptions(search: StreamersListSearch) {
   const sortOption = search.sort ?? 'default';
 
   return queryOptions({
-    queryKey: [
-      'streamers',
+    queryKey: queryKeys.streamers.list({
       page,
       pageSize,
       searchText,
@@ -53,7 +53,7 @@ export function streamersListQueryOptions(search: StreamersListSearch) {
       priorityFilter,
       exceptionalStates,
       sortOption,
-    ],
+    }),
     queryFn: () => {
       const platform = platformFilter === 'all' ? undefined : platformFilter;
       const template =

@@ -1,5 +1,6 @@
 import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import { getJobPreset, updateJobPreset } from '@/server/functions/job';
 import { toast } from 'sonner';
 import { msg } from '@lingui/core/macro';
@@ -29,7 +30,7 @@ function EditPresetPage() {
     isLoading,
     error,
   } = useQuery({
-    queryKey: ['job', 'preset', presetId],
+    queryKey: queryKeys.jobPresets.detail(presetId),
     queryFn: () => getJobPreset({ data: presetId }),
   });
 
@@ -37,9 +38,8 @@ function EditPresetPage() {
     mutationFn: updateJobPreset,
     onSuccess: () => {
       toast.success(i18n._(msg`Preset updated successfully`));
-      void queryClient.invalidateQueries({ queryKey: ['job', 'presets'] });
       void queryClient.invalidateQueries({
-        queryKey: ['job', 'preset', presetId],
+        queryKey: queryKeys.jobPresets.all,
       });
       void navigate({ to: '/pipeline/presets' });
     },

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, createLazyFileRoute } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import {
   getPipelineJob,
   getPipelineJobProgress,
@@ -83,7 +84,7 @@ function JobDetailsPage() {
     isError,
     error,
   } = useQuery({
-    queryKey: ['pipeline', 'job', jobId],
+    queryKey: queryKeys.pipeline.jobs.detail(jobId),
     queryFn: () => getPipelineJob({ data: jobId }),
     refetchInterval: (query) => {
       const data = query.state.data;
@@ -127,7 +128,7 @@ function JobDetailsPage() {
   useEffect(() => {
     if (hadLiveViewRef.current && !hasLiveView && isConnected) {
       void queryClient.invalidateQueries({
-        queryKey: ['pipeline', 'job', jobId],
+        queryKey: queryKeys.pipeline.jobs.detail(jobId),
         exact: true,
       });
     }
@@ -135,7 +136,7 @@ function JobDetailsPage() {
   }, [hasLiveView, isConnected, jobId, queryClient]);
 
   const { data: polledSnapshot } = useQuery({
-    queryKey: ['pipeline', 'job', jobId, 'progress'],
+    queryKey: queryKeys.pipeline.jobs.progress(jobId),
     queryFn: () => getPipelineJobProgress({ data: { id: jobId } }),
     enabled: jobStatus === 'PROCESSING' && !showLiveProgress,
     refetchInterval: 1000,
@@ -146,7 +147,7 @@ function JobDetailsPage() {
   // Durable per-file upload results. Records land when the job reaches a
   // terminal state, so refetch while active and settle once terminal.
   const { data: uploadsData } = useQuery({
-    queryKey: ['pipeline', 'job', jobId, 'uploads'],
+    queryKey: queryKeys.pipeline.jobs.uploads(jobId),
     queryFn: () => getPipelineJobUploads({ data: { id: jobId } }),
     refetchInterval: isJobActive ? 5000 : false,
     enabled: !!job,
@@ -161,7 +162,7 @@ function JobDetailsPage() {
   useEffect(() => {
     if (!isJobTerminal) return;
     void queryClient.invalidateQueries({
-      queryKey: ['pipeline', 'job', jobId, 'uploads'],
+      queryKey: queryKeys.pipeline.jobs.uploads(jobId),
     });
   }, [isJobTerminal, jobId, queryClient]);
 

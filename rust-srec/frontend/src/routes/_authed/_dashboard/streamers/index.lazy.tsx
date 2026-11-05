@@ -6,7 +6,9 @@ import {
 } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
 import { useMemo, useCallback } from 'react';
-import { listPlatformConfigs, batchUpdateStreamers } from '@/server/functions';
+import { queryKeys } from '@/api/query-keys';
+import { batchUpdateStreamers } from '@/server/functions';
+import { platformConfigsQueryOptions } from '@/api/platform-configs';
 import type { BatchStreamerAction } from '@/api/schemas';
 import { templatesQueryOptions } from '@/api/templates';
 import {
@@ -185,8 +187,7 @@ function StreamersPage() {
 
   // Fetch Platforms
   const { data: platforms = [] } = useQuery({
-    queryKey: ['config', 'platforms'],
-    queryFn: () => listPlatformConfigs(),
+    ...platformConfigsQueryOptions,
     staleTime: 60000,
   });
 
@@ -259,7 +260,7 @@ function StreamersPage() {
       action: BatchStreamerAction;
     }) => batchUpdateStreamers({ data: { ids, action } }),
     invalidate: () =>
-      void queryClient.invalidateQueries({ queryKey: ['streamers'] }),
+      void queryClient.invalidateQueries({ queryKey: queryKeys.streamers.all }),
     selection: { setSelectedIds, exitSelectionMode },
     successMessage: (succeeded) =>
       i18n._(

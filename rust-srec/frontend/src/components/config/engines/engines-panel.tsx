@@ -17,6 +17,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { z } from 'zod';
+import { queryKeys } from '@/api/query-keys';
 import { EngineConfigSchema } from '@/api/schemas';
 import { enginesQueryOptions } from '@/api/engines';
 import { testEngine, deleteEngine } from '@/server/functions';
@@ -110,7 +111,7 @@ function EngineRow({ engine }: { engine: Engine }) {
   // react-query rather than a bare effect also dedupes the probe and keeps the result cached
   // while navigating between config pages.
   const { data, isPending, isError } = useQuery({
-    queryKey: ['engine-test', engine.id, engine.config],
+    queryKey: queryKeys.engines.test(engine.id, engine.config),
     queryFn: () => testEngine({ data: engine.id }),
     retry: false,
     staleTime: 60_000,
@@ -127,7 +128,7 @@ function EngineRow({ engine }: { engine: Engine }) {
   const remove = useMutation({
     mutationFn: (id: string) => deleteEngine({ data: id }),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['engines'] });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.engines.all });
       toast.success(i18n._(msg`Engine deleted`));
     },
     onError: (error: Error) => {

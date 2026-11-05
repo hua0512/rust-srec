@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useForm, useWatch, Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { queryKeys } from '@/api/query-keys';
 import {
   ChannelType,
   NotificationChannel,
@@ -216,7 +217,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
     onSuccess: () => {
       toast.success(i18n._(msg`Channel created`));
       void queryClient.invalidateQueries({
-        queryKey: ['notification-channels'],
+        queryKey: queryKeys.notifications.channels(),
       });
       onOpenChange(false);
     },
@@ -230,7 +231,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
     onSuccess: () => {
       toast.success(i18n._(msg`Channel updated`));
       void queryClient.invalidateQueries({
-        queryKey: ['notification-channels'],
+        queryKey: queryKeys.notifications.channels(),
       });
       onOpenChange(false);
     },

@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
+import { queryKeys } from '@/api/query-keys';
 import { deleteStreamer, updateStreamer } from '@/server/functions';
 
 /**
@@ -18,7 +19,7 @@ export function useStreamerMutations() {
     mutationFn: (id: string) => deleteStreamer({ data: id }),
     onSuccess: () => {
       toast.success(i18n._(msg`Streamer deleted`));
-      void queryClient.invalidateQueries({ queryKey: ['streamers'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.streamers.all });
     },
     onError: (error) =>
       toast.error(error.message || i18n._(msg`Failed to delete streamer`)),
@@ -29,7 +30,7 @@ export function useStreamerMutations() {
       updateStreamer({ data: { id, data: { enabled } } }),
     onSuccess: () => {
       toast.success(i18n._(msg`Streamer updated`));
-      void queryClient.invalidateQueries({ queryKey: ['streamers'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.streamers.all });
     },
     onError: (error) =>
       toast.error(error.message || i18n._(msg`Failed to update streamer`)),

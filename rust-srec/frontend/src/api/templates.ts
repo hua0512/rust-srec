@@ -1,4 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import { listTemplates } from '@/server/functions';
 
 /**
@@ -18,7 +19,7 @@ const TEMPLATES_STALE_TIME_MS = 60_000;
  * empty until an unrelated refetch happens to run.
  */
 export const templatesQueryOptions = queryOptions({
-  queryKey: ['templates'],
+  queryKey: queryKeys.templates.list(),
   queryFn: () => listTemplates(),
   staleTime: TEMPLATES_STALE_TIME_MS,
 });

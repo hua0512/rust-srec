@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
+import { queryKeys } from '@/api/query-keys';
 import {
   cancelActivePipelineJob,
   deletePipelineJob,
@@ -20,7 +21,7 @@ export function useJobActions(jobId: string) {
   // gets its closing rows from the terminal-state read in `useJobLogs`.
   const invalidateJob = () =>
     queryClient.invalidateQueries({
-      queryKey: ['pipeline', 'job', jobId],
+      queryKey: queryKeys.pipeline.jobs.detail(jobId),
       exact: true,
     });
 
@@ -46,7 +47,7 @@ export function useJobActions(jobId: string) {
       toast.success(i18n._(msg`Workflow retry initiated`));
       void invalidateJob();
       void queryClient.invalidateQueries({
-        queryKey: ['pipeline', 'executions', result.dag_id],
+        queryKey: queryKeys.pipeline.dags.detail(result.dag_id),
       });
     },
     onError: (error) =>
@@ -73,10 +74,8 @@ export function useJobActions(jobId: string) {
       toast.success(i18n._(msg`Job deleted`));
       // Lists and workflow views that showed the job.
       for (const queryKey of [
-        ['pipeline', 'pipelines'],
-        ['pipeline', 'stats'],
-        ['pipeline', 'executions'],
-        ['pipeline', 'dags'],
+        queryKeys.pipeline.dags.all,
+        queryKeys.pipeline.stats(),
       ]) {
         void queryClient.invalidateQueries({ queryKey });
       }
@@ -84,7 +83,9 @@ export function useJobActions(jobId: string) {
       // this page has unmounted; dropped earlier, its observers would read
       // the deleted job again.
       void navigate({ to: '/pipeline/jobs' }).then(() =>
-        queryClient.removeQueries({ queryKey: ['pipeline', 'job', jobId] }),
+        queryClient.removeQueries({
+          queryKey: queryKeys.pipeline.jobs.detail(jobId),
+        }),
       );
     },
     onError: () => toast.error(i18n._(msg`Failed to delete job`)),

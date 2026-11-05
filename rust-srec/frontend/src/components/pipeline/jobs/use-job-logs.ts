@@ -4,6 +4,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import { getPipelineJobLogs } from '@/server/functions/pipeline';
 import {
   newestLogPageOffset,
@@ -34,7 +35,7 @@ export function useJobLogs({
   const queryClient = useQueryClient();
 
   const logsQueryKey = useMemo(
-    () => ['pipeline', 'job', jobId, 'logs'],
+    () => queryKeys.pipeline.jobs.logs(jobId),
     [jobId],
   );
 
@@ -110,7 +111,7 @@ export function useJobLogs({
   // refreshes the total that decides whether another page follows.
   const tailOffset = newestLogPageOffset(logsQuery.data);
   const { data: logTailPage } = useQuery({
-    queryKey: ['pipeline', 'job', jobId, 'logs', 'tail', tailOffset],
+    queryKey: queryKeys.pipeline.jobs.logTail(jobId, tailOffset),
     queryFn: () =>
       getPipelineJobLogs({
         data: { id: jobId, limit: LOG_PAGE_SIZE, offset: tailOffset ?? 0 },

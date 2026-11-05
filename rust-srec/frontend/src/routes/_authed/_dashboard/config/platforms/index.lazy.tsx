@@ -1,7 +1,7 @@
 import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
-import { listPlatformConfigs } from '@/server/functions';
+import { platformConfigsQueryOptions } from '@/api/platform-configs';
 import { CardSkeleton } from '@/components/shared/card-skeleton';
 import { PlatformCard } from '@/components/config/platforms/platform-card';
 import { Badge } from '@/components/ui/badge';
@@ -36,10 +36,7 @@ function PlatformsConfigPage() {
     isLoading,
     error,
     refetch,
-  } = useQuery({
-    queryKey: ['config', 'platforms'],
-    queryFn: () => listPlatformConfigs(),
-  });
+  } = useQuery(platformConfigsQueryOptions);
 
   // Filter platforms by search
   const filteredPlatforms = useMemo(() => {

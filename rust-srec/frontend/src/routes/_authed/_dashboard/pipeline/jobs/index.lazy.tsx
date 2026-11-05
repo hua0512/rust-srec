@@ -7,8 +7,9 @@ import {
   keepPreviousData,
 } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
+import { queryKeys } from '@/api/query-keys';
+import { pipelineStatsQueryOptions } from '@/api/dashboard';
 import {
-  getPipelineStats,
   listPipelines,
   cancelDag,
   deletePipeline,
@@ -111,8 +112,7 @@ function PipelineJobsPage() {
   );
 
   const { data: stats, isLoading: isStatsLoading } = useQuery({
-    queryKey: ['pipeline', 'stats'],
-    queryFn: () => getPipelineStats(),
+    ...pipelineStatsQueryOptions,
     refetchInterval: 10000, // Reduced from 5s to 10s
     staleTime: 5000, // Data stays fresh for 5s
     refetchIntervalInBackground: false, // Pause polling when tab is hidden
@@ -125,14 +125,12 @@ function PipelineJobsPage() {
     error,
     refetch,
   } = useQuery({
-    queryKey: [
-      'pipeline',
-      'pipelines',
-      selectedStatus,
-      q,
+    queryKey: queryKeys.pipeline.dags.list({
+      status: selectedStatus,
+      search: q,
       pageSize,
-      currentPage,
-    ],
+      page: currentPage,
+    }),
     queryFn: () =>
       listPipelines({
         data: {
@@ -208,9 +206,11 @@ function PipelineJobsPage() {
         ),
       );
       void queryClient.invalidateQueries({
-        queryKey: ['pipeline', 'pipelines'],
+        queryKey: queryKeys.pipeline.dags.lists(),
       });
-      void queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.pipeline.stats(),
+      });
     },
     onError: (error) => {
       // A pipeline that finished between render and click is not a failure —
@@ -218,7 +218,7 @@ function PipelineJobsPage() {
       if (isDagAlreadyTerminalError(error)) {
         toast.info(i18n._(msg`Pipeline is already completed or cancelled`));
         void queryClient.invalidateQueries({
-          queryKey: ['pipeline', 'pipelines'],
+          queryKey: queryKeys.pipeline.dags.lists(),
         });
       } else {
         toast.error(i18n._(msg`Failed to cancel pipeline`));
@@ -231,9 +231,11 @@ function PipelineJobsPage() {
     onSuccess: () => {
       toast.success(i18n._(msg`Pipeline deleted successfully`));
       void queryClient.invalidateQueries({
-        queryKey: ['pipeline', 'pipelines'],
+        queryKey: queryKeys.pipeline.dags.lists(),
       });
-      void queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.pipeline.stats(),
+      });
     },
     onError: () => toast.error(i18n._(msg`Failed to delete pipeline`)),
   });
@@ -254,9 +256,11 @@ function PipelineJobsPage() {
         );
       }
       void queryClient.invalidateQueries({
-        queryKey: ['pipeline', 'pipelines'],
+        queryKey: queryKeys.pipeline.dags.lists(),
       });
-      void queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.pipeline.stats(),
+      });
     },
     onError: () =>
       toast.error(i18n._(msg`Failed to retry all failed pipelines`)),
@@ -267,9 +271,11 @@ function PipelineJobsPage() {
       batchPipelines({ data: { ids, action } }),
     invalidate: () => {
       void queryClient.invalidateQueries({
-        queryKey: ['pipeline', 'pipelines'],
+        queryKey: queryKeys.pipeline.dags.lists(),
       });
-      void queryClient.invalidateQueries({ queryKey: ['pipeline', 'stats'] });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.pipeline.stats(),
+      });
     },
     selection: { setSelectedIds, exitSelectionMode },
     successMessage: (succeeded) =>

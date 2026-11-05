@@ -1,4 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import { listStalledOperations } from '@/server/functions/pipeline';
 
 /**
@@ -7,7 +8,7 @@ import { listStalledOperations } from '@/server/functions/pipeline';
  * stops or resumes answering, which no live event reports.
  */
 export const stalledOperationsQueryOptions = queryOptions({
-  queryKey: ['pipeline', 'stalled-operations'],
+  queryKey: queryKeys.pipeline.stalledOperations(),
   queryFn: () => listStalledOperations(),
   refetchInterval: 15_000,
   staleTime: 10_000,

@@ -1,5 +1,6 @@
 import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import {
   getPipelinePreset,
   updatePipelinePreset,
@@ -31,7 +32,7 @@ function EditWorkflowPage() {
     isLoading,
     error,
   } = useQuery({
-    queryKey: ['pipeline', 'workflow', workflowId],
+    queryKey: queryKeys.pipeline.workflows.detail(workflowId),
     queryFn: () => getPipelinePreset({ data: workflowId }),
   });
 
@@ -40,10 +41,7 @@ function EditWorkflowPage() {
     onSuccess: () => {
       toast.success(i18n._(msg`Workflow updated successfully`));
       void queryClient.invalidateQueries({
-        queryKey: ['pipeline', 'workflows'],
-      });
-      void queryClient.invalidateQueries({
-        queryKey: ['pipeline', 'workflow', workflowId],
+        queryKey: queryKeys.pipeline.workflows.all,
       });
       void navigate({ to: '/pipeline/workflows' });
     },

@@ -1,6 +1,7 @@
 import { useMemo, useState, useSyncExternalStore } from 'react';
 import { createLazyFileRoute } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import {
   listChannels,
   deleteChannel,
@@ -90,12 +91,12 @@ function NotificationsPage() {
   };
 
   const { data: channels, isLoading } = useQuery({
-    queryKey: ['notification-channels'],
+    queryKey: queryKeys.notifications.channels(),
     queryFn: () => listChannels(),
   });
 
   const { data: desktopEventTypes = [] } = useQuery({
-    queryKey: ['notification-event-types'],
+    queryKey: queryKeys.notifications.eventTypes(),
     queryFn: () => listEventTypes(),
     enabled: isDesktop,
   });
@@ -105,7 +106,7 @@ function NotificationsPage() {
     onSuccess: () => {
       toast.success(i18n._(msg`Channel deleted`));
       void queryClient.invalidateQueries({
-        queryKey: ['notification-channels'],
+        queryKey: queryKeys.notifications.channels(),
       });
     },
     onError: (err) => {

@@ -20,6 +20,7 @@ import {
   Info,
 } from 'lucide-react';
 
+import { queryKeys } from '@/api/query-keys';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -89,12 +90,12 @@ function CreatePipelineJobPage() {
   });
 
   const { data: sessionsData } = useQuery({
-    queryKey: ['sessions', 'list', { limit: 100 }],
+    queryKey: queryKeys.sessions.list({ limit: 100 }),
     queryFn: () => listSessions({ data: { limit: 100 } }),
   });
 
   const { data: streamersData } = useQuery({
-    queryKey: ['streamers', 'list', { limit: 100 }],
+    queryKey: queryKeys.streamers.list({ limit: 100 }),
     queryFn: () => listStreamers({ data: { limit: 100 } }),
   });
 
@@ -114,7 +115,7 @@ function CreatePipelineJobPage() {
     onSuccess: () => {
       toast.success(i18n._(msg`Pipeline job created successfully`));
       void queryClient.invalidateQueries({
-        queryKey: ['pipeline', 'pipelines'],
+        queryKey: queryKeys.pipeline.dags.lists(),
       });
       void navigate({ to: '/pipeline/jobs' });
     },

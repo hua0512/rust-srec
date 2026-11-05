@@ -1,4 +1,5 @@
 import { queryOptions } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import { getSystemHealth } from '@/server/functions/system';
 import { getPipelineStats } from '@/server/functions/pipeline';
 import { listStreamers } from '@/server/functions/streamers';
@@ -7,16 +8,16 @@ import { listStreamers } from '@/server/functions/streamers';
 // page finds the entries the loader filled.
 
 export const systemHealthQueryOptions = queryOptions({
-  queryKey: ['health'],
+  queryKey: queryKeys.health,
   queryFn: () => getSystemHealth(),
 });
 
 export const pipelineStatsQueryOptions = queryOptions({
-  queryKey: ['pipeline', 'stats'],
+  queryKey: queryKeys.pipeline.stats(),
   queryFn: () => getPipelineStats(),
 });
 
 export const liveStreamersQueryOptions = queryOptions({
-  queryKey: ['streamers', 'active'],
+  queryKey: queryKeys.streamers.list({ limit: 100, state: 'LIVE' }),
   queryFn: () => listStreamers({ data: { limit: 100, state: 'LIVE' } }),
 });

@@ -1,7 +1,9 @@
 import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import { invalidateCredentialQueries } from '@/api/credential-profiles';
-import { getPlatformConfig, updatePlatformConfig } from '@/server/functions';
+import { updatePlatformConfig } from '@/server/functions';
+import { platformConfigQueryOptions } from '@/api/platform-configs';
 import { toast } from 'sonner';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
@@ -30,10 +32,7 @@ function EditPlatformPage() {
     data: platform,
     isLoading,
     error,
-  } = useQuery({
-    queryKey: ['config', 'platform', platformId],
-    queryFn: () => getPlatformConfig({ data: platformId }),
-  });
+  } = useQuery(platformConfigQueryOptions(platformId));
 
   const updateMutation = useMutation({
     mutationFn: ({
@@ -51,9 +50,8 @@ function EditPlatformPage() {
       }),
     onSuccess: () => {
       toast.success(i18n._(msg`Platform configuration updated successfully`));
-      void queryClient.invalidateQueries({ queryKey: ['config', 'platforms'] });
       void queryClient.invalidateQueries({
-        queryKey: ['config', 'platform', platformId],
+        queryKey: queryKeys.platformConfigs.all,
       });
       // The form also saves the platform's account selection, which every
       // scope on the platform inherits.

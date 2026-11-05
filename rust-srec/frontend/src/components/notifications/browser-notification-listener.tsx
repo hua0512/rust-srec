@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import { listEvents } from '@/server/functions/notifications';
 import type { NotificationEventLog } from '@/api/schemas/notifications';
 import { useLingui } from '@lingui/react';
@@ -89,7 +90,7 @@ export function BrowserNotificationListener() {
   const shouldPoll = isSupported && enabled && permission === 'granted';
 
   const { data: events } = useQuery({
-    queryKey: ['notification-events', 'browser', 'critical'],
+    queryKey: queryKeys.notifications.browserCriticalEvents(),
     queryFn: () =>
       listEvents({ data: { limit: 50, offset: 0, priority: '10' } }),
     enabled: shouldPoll,

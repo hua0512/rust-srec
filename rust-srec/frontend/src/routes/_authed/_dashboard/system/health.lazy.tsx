@@ -1,6 +1,6 @@
 import { createLazyFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { getSystemHealth } from '@/server/functions';
+import { systemHealthQueryOptions } from '@/api/dashboard';
 import {
   Card,
   CardContent,
@@ -60,8 +60,7 @@ function SystemHealthPage() {
     isRefetching,
     error,
   } = useQuery({
-    queryKey: ['health'],
-    queryFn: () => getSystemHealth(),
+    ...systemHealthQueryOptions,
     refetchInterval: 10000,
   });
 

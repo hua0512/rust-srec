@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import { createLazyFileRoute } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { queryKeys } from '@/api/query-keys';
 import {
   getSession,
   getSessionDanmuStatistics,
@@ -150,7 +151,7 @@ function SessionDetailPage() {
     isError,
     error,
   } = useQuery({
-    queryKey: ['sessions', sessionId],
+    queryKey: queryKeys.sessions.detail(sessionId),
     queryFn: () => getSession({ data: sessionId }),
     // A recording session gains duration, size and finally its end time
     // while it is open; the page follows it until it ends.
@@ -167,7 +168,7 @@ function SessionDetailPage() {
   const isSessionLive = Boolean(session) && !session?.end_time;
   const queryClient = useQueryClient();
   const danmuStatsQuery = useQuery({
-    queryKey: ['sessions', sessionId, 'danmu-statistics'],
+    queryKey: queryKeys.sessions.danmuStatistics(sessionId),
     queryFn: () => getSessionDanmuStatistics({ data: sessionId }),
     enabled: Boolean(sessionId),
     staleTime: 30000,
@@ -178,13 +179,13 @@ function SessionDetailPage() {
   const isDanmuStatsUnavailable = isNotFoundError(danmuStatsQuery.error);
 
   const { data: outputsData, isLoading: isOutputsLoading } = useQuery({
-    queryKey: ['pipeline', 'outputs', sessionId],
+    queryKey: queryKeys.pipeline.outputs.forSession(sessionId),
     queryFn: () => listAllSessionOutputs(sessionId),
     refetchInterval: isSessionLive ? LIVE_SESSION_FALLBACK_POLL_MS : false,
   });
 
   const { data: segmentsData, isLoading: isSegmentsLoading } = useQuery({
-    queryKey: ['sessions', sessionId, 'segments'],
+    queryKey: queryKeys.sessions.segments(sessionId),
     queryFn: () => listAllSessionSegments(sessionId),
     enabled: Boolean(sessionId),
     refetchInterval: isSessionLive ? LIVE_SESSION_FALLBACK_POLL_MS : false,
@@ -202,16 +203,16 @@ function SessionDetailPage() {
     if (!session || !sawLiveSessionRef.current) return;
     sawLiveSessionRef.current = false;
     for (const queryKey of [
-      ['sessions', sessionId, 'segments'],
-      ['sessions', sessionId, 'danmu-statistics'],
-      ['pipeline', 'outputs', sessionId],
+      queryKeys.sessions.segments(sessionId),
+      queryKeys.sessions.danmuStatistics(sessionId),
+      queryKeys.pipeline.outputs.forSession(sessionId),
     ]) {
       void queryClient.invalidateQueries({ queryKey });
     }
   }, [isSessionLive, session, sessionId, queryClient]);
 
   const { data: dagsData, isLoading: isDagsLoading } = useQuery({
-    queryKey: ['pipeline', 'dags', sessionId],
+    queryKey: queryKeys.pipeline.dags.list({ session_id: sessionId }),
     queryFn: () => listPipelines({ data: { session_id: sessionId } }),
     // Follows unfinished workflows closely. New ones keep appearing while the
     // session records and after it ends (the session's final workflows start
