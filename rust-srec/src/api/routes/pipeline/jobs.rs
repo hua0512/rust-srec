@@ -1,13 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
-use axum::{
-    Json,
-    extract::{Path, Query, State},
-    http::StatusCode,
-};
+use axum::{Json, extract::State, http::StatusCode};
 use tracing::debug;
 
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::extract::{ApiJson, ApiPath, ApiQuery};
 use crate::api::models::{
     JobExecutionInfo as ApiJobExecutionInfo, JobFilterParams, JobLogEntry as ApiJobLogEntry,
     JobResponse, MediaOutputResponse, MediaOutputUploadInfo, PageResponse, PaginatedResponse,
@@ -66,8 +63,8 @@ use super::{
 )]
 pub async fn list_jobs(
     State(state): State<PipelineRouteState>,
-    Query(pagination): Query<PaginationParams>,
-    Query(filters): Query<JobFilterParams>,
+    ApiQuery(pagination): ApiQuery<PaginationParams>,
+    ApiQuery(filters): ApiQuery<JobFilterParams>,
 ) -> ApiResult<Json<PaginatedResponse<JobResponse>>> {
     let pipeline_manager = &state.pipeline_manager;
     let db_filters = job_filters(filters);
@@ -97,8 +94,8 @@ pub async fn list_jobs(
 )]
 pub async fn list_jobs_page(
     State(state): State<PipelineRouteState>,
-    Query(pagination): Query<PaginationParams>,
-    Query(filters): Query<JobFilterParams>,
+    ApiQuery(pagination): ApiQuery<PaginationParams>,
+    ApiQuery(filters): ApiQuery<JobFilterParams>,
 ) -> ApiResult<Json<PageResponse<JobResponse>>> {
     let pipeline_manager = &state.pipeline_manager;
 
@@ -132,8 +129,8 @@ pub async fn list_jobs_page(
 )]
 pub async fn list_job_logs(
     State(state): State<PipelineRouteState>,
-    Path(id): Path<String>,
-    Query(pagination): Query<PaginationParams>,
+    ApiPath(id): ApiPath<String>,
+    ApiQuery(pagination): ApiQuery<PaginationParams>,
 ) -> ApiResult<Json<PaginatedResponse<ApiJobLogEntry>>> {
     let pipeline_manager = &state.pipeline_manager;
 
@@ -171,7 +168,7 @@ pub async fn list_job_logs(
 )]
 pub async fn get_job_progress(
     State(state): State<PipelineRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<JobProgressSnapshot>> {
     let pipeline_manager = &state.pipeline_manager;
 
@@ -199,7 +196,7 @@ pub async fn get_job_progress(
 )]
 pub async fn list_job_uploads(
     State(state): State<UploadRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<UploadRecordListResponse>> {
     let records = state.upload_record_repository.list_by_job(&id).await?;
 
@@ -272,7 +269,7 @@ pub async fn list_job_uploads(
 )]
 pub async fn get_job(
     State(state): State<PipelineRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<JobResponse>> {
     // Get pipeline manager from state
     let pipeline_manager = &state.pipeline_manager;
@@ -359,7 +356,7 @@ pub async fn get_job(
 )]
 pub async fn retry_job(
     State(state): State<PipelineRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<JobResponse>> {
     // Get pipeline manager from state
     let pipeline_manager = &state.pipeline_manager;
@@ -426,7 +423,7 @@ pub async fn retry_job(
 )]
 pub async fn cancel_job(
     State(state): State<PipelineRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let pipeline_manager = &state.pipeline_manager;
 
@@ -452,7 +449,7 @@ pub async fn cancel_job(
 )]
 pub async fn delete_job(
     State(state): State<PipelineRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let pipeline_manager = &state.pipeline_manager;
 
@@ -483,7 +480,7 @@ pub async fn delete_job(
 )]
 pub async fn cancel_pipeline(
     State(state): State<PipelineRouteState>,
-    Path(pipeline_id): Path<String>,
+    ApiPath(pipeline_id): ApiPath<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
     // Get pipeline manager from state
     let pipeline_manager = &state.pipeline_manager;
@@ -515,8 +512,8 @@ pub async fn cancel_pipeline(
 )]
 pub async fn list_outputs(
     State(state): State<OutputRouteState>,
-    Query(pagination): Query<PaginationParams>,
-    Query(filters): Query<OutputFilterParams>,
+    ApiQuery(pagination): ApiQuery<PaginationParams>,
+    ApiQuery(filters): ApiQuery<OutputFilterParams>,
 ) -> ApiResult<Json<PaginatedResponse<MediaOutputResponse>>> {
     // Convert API filter params to database filter types
     let db_filters = OutputFilters {
@@ -660,7 +657,7 @@ pub async fn list_outputs(
 )]
 pub async fn summarize_outputs(
     State(state): State<OutputRouteState>,
-    Query(filters): Query<OutputFilterParams>,
+    ApiQuery(filters): ApiQuery<OutputFilterParams>,
 ) -> ApiResult<Json<MediaOutputSummaryResponse>> {
     // `file_type` is deliberately dropped: a caller filtering on one type still
     // needs every type's count to render its type picker. `total_count` and
@@ -749,8 +746,8 @@ async fn delete_output_inner(
 )]
 pub async fn delete_output(
     State(state): State<OutputRouteState>,
-    Path(id): Path<String>,
-    Query(params): Query<DeleteOutputParams>,
+    ApiPath(id): ApiPath<String>,
+    ApiQuery(params): ApiQuery<DeleteOutputParams>,
 ) -> ApiResult<Json<DeleteOutputResponse>> {
     let file_deleted = delete_output_inner(&state, &id, params.delete_file).await?;
 
@@ -786,7 +783,7 @@ pub async fn delete_output(
 )]
 pub async fn batch_delete_outputs(
     State(state): State<OutputRouteState>,
-    Json(request): Json<BatchDeleteOutputsRequest>,
+    ApiJson(request): ApiJson<BatchDeleteOutputsRequest>,
 ) -> ApiResult<Json<BatchDeleteOutputsResponse>> {
     validate_batch_ids(&request.ids, "output")?;
 
@@ -936,7 +933,7 @@ fn stalled_operation_response(operation: StalledOperation) -> StalledOperationRe
 )]
 pub async fn create_pipeline(
     State(state): State<PipelineRouteState>,
-    Json(request): Json<CreatePipelineRequest>,
+    ApiJson(request): ApiJson<CreatePipelineRequest>,
 ) -> ApiResult<(StatusCode, Json<CreatePipelineResponse>)> {
     // Get pipeline manager from state
     let pipeline_manager = &state.pipeline_manager;

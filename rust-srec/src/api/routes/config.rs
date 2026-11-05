@@ -2,12 +2,13 @@
 
 use axum::{
     Json, Router,
-    extract::{FromRef, Path, State},
+    extract::{FromRef, State},
     routing::{get, patch, put},
 };
 use tracing::debug;
 
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::extract::{ApiJson, ApiPath};
 use crate::api::models::{GlobalConfigResponse, PlatformConfigResponse, UpdateGlobalConfigRequest};
 use crate::api::server::AppState;
 use crate::database::models::{GlobalConfigDbModel, PlatformConfigDbModel, RetentionDays};
@@ -343,7 +344,7 @@ pub async fn get_global_config(
 )]
 pub async fn update_global_config(
     State(state): State<ConfigRouteState>,
-    Json(request): Json<UpdateGlobalConfigRequest>,
+    ApiJson(request): ApiJson<UpdateGlobalConfigRequest>,
 ) -> ApiResult<Json<GlobalConfigResponse>> {
     validate_global_config_request(&request)?;
 
@@ -496,7 +497,7 @@ pub async fn list_platform_configs(
 )]
 pub async fn get_platform_config(
     State(state): State<ConfigRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<PlatformConfigResponse>> {
     let config_service = &state.config_service;
 
@@ -598,8 +599,8 @@ fn platform_config_fields_present(request: &PlatformConfigResponse) -> Vec<&'sta
 )]
 pub async fn replace_platform_config(
     State(state): State<ConfigRouteState>,
-    Path(id): Path<String>,
-    Json(request): Json<PlatformConfigResponse>,
+    ApiPath(id): ApiPath<String>,
+    ApiJson(request): ApiJson<PlatformConfigResponse>,
 ) -> ApiResult<Json<PlatformConfigResponse>> {
     tracing::info!(
         platform_id = %id,
@@ -700,7 +701,7 @@ mod tests {
     use std::sync::Arc;
 
     use axum::Json;
-    use axum::extract::{Path, State};
+    use axum::extract::State;
     use axum::http::StatusCode;
     use serde_json::{Value, json};
 
@@ -708,6 +709,7 @@ mod tests {
         ConfigRouteState, replace_platform_config, update_global_config,
         validate_global_config_request,
     };
+    use crate::api::extract::{ApiJson, ApiPath};
     use crate::api::models::{PlatformConfigResponse, UpdateGlobalConfigRequest};
     use crate::config::ConfigService;
     use crate::database;
@@ -753,9 +755,10 @@ mod tests {
                 Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone())),
             )),
         };
-        let error = super::get_platform_config(State(state.clone()), Path("missing".to_string()))
-            .await
-            .unwrap_err();
+        let error =
+            super::get_platform_config(State(state.clone()), ApiPath("missing".to_string()))
+                .await
+                .unwrap_err();
         assert_eq!(error.status, StatusCode::NOT_FOUND);
         sqlx::query("DROP TABLE platform_config")
             .execute(&pool)
@@ -765,7 +768,7 @@ mod tests {
             .execute(&pool)
             .await
             .unwrap();
-        let error = super::get_platform_config(State(state), Path("missing".to_string()))
+        let error = super::get_platform_config(State(state), ApiPath("missing".to_string()))
             .await
             .unwrap_err();
         assert_eq!(error.status, StatusCode::INTERNAL_SERVER_ERROR);
@@ -892,7 +895,7 @@ mod tests {
         let (_dir, state) = config_state().await;
         let Json(response) = update_global_config(
             State(state.clone()),
-            Json(global_request(json!({
+            ApiJson(global_request(json!({
                 "default_extractor": "streamlink",
                 "output_retention_days": 14,
                 "output_retention_delete_files": true
@@ -925,7 +928,7 @@ mod tests {
             "gpu_health_probe_interval_secs": -1,
             "queue_freshness_threshold_ms": -1
         }));
-        let Json(response) = update_global_config(State(state.clone()), Json(request))
+        let Json(response) = update_global_config(State(state.clone()), ApiJson(request))
             .await
             .unwrap();
         assert_eq!(response.max_concurrent_cpu_jobs, 0);
@@ -982,7 +985,7 @@ mod tests {
 
         let Json(response) = update_global_config(
             State(state.clone()),
-            Json(global_request(json!({
+            ApiJson(global_request(json!({
                 "pipeline_cpu_job_timeout_secs": 12,
                 "pipeline_io_job_timeout_secs": 13,
                 "pipeline_execute_timeout_secs": 14,
@@ -1024,8 +1027,8 @@ mod tests {
         missing.id = "missing".to_string();
         let error = replace_platform_config(
             State(state.clone()),
-            Path(missing.id.clone()),
-            Json(missing),
+            ApiPath(missing.id.clone()),
+            ApiJson(missing),
         )
         .await
         .expect_err("missing platform must fail");
@@ -1049,8 +1052,8 @@ mod tests {
             value["output_folder"] = json!("/changed");
             let error = replace_platform_config(
                 State(state.clone()),
-                Path(before.id.clone()),
-                Json(serde_json::from_value(value).unwrap()),
+                ApiPath(before.id.clone()),
+                ApiJson(serde_json::from_value(value).unwrap()),
             )
             .await
             .expect_err("overflow must not be stored");

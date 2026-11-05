@@ -155,8 +155,8 @@ async fn editor_patch_retries_without_restoring_a_concurrently_changed_timezone(
         editor_config["end_time"] = json!("19:00");
         let update = tokio::spawn(update_filter(
             State(editor_state),
-            Path(("timezone-owner".into(), original.id.clone())),
-            Json(UpdateFilterRequest {
+            ApiPath(("timezone-owner".into(), original.id.clone())),
+            ApiJson(UpdateFilterRequest {
                 filter_type: Some("TIME_BASED".into()),
                 config: Some(editor_config),
             }),
@@ -168,8 +168,8 @@ async fn editor_patch_retries_without_restoring_a_concurrently_changed_timezone(
         changed_zone["timezone"] = json!("Europe/Madrid");
         let Json(concurrent_response) = update_filter(
             State(state.clone()),
-            Path(("timezone-owner".into(), original.id.clone())),
-            Json(UpdateFilterRequest {
+            ApiPath(("timezone-owner".into(), original.id.clone())),
+            ApiJson(UpdateFilterRequest {
                 filter_type: None,
                 config: Some(changed_zone),
             }),
@@ -216,8 +216,8 @@ async fn editor_patch_returns_conflict_after_three_changes_without_events_or_cac
         editor_config["end_time"] = json!("19:00");
         let update = tokio::spawn(update_filter(
             State(state.clone()),
-            Path(("timezone-owner".into(), original.id.clone())),
-            Json(UpdateFilterRequest {
+            ApiPath(("timezone-owner".into(), original.id.clone())),
+            ApiJson(UpdateFilterRequest {
                 filter_type: None,
                 config: Some(editor_config),
             }),
@@ -273,8 +273,8 @@ async fn editor_patch_rechecks_ownership_after_a_concurrent_reassignment() {
         let mut events = state.config_service.subscribe();
         let update = tokio::spawn(update_filter(
             State(state.clone()),
-            Path(("timezone-owner".into(), original.id.clone())),
-            Json(UpdateFilterRequest {
+            ApiPath(("timezone-owner".into(), original.id.clone())),
+            ApiJson(UpdateFilterRequest {
                 filter_type: None,
                 config: Some(schedule()),
             }),
@@ -319,8 +319,8 @@ async fn editor_patch_rechecks_type_before_preserving_timezone_on_retry() {
         let mut events = state.config_service.subscribe();
         let update = tokio::spawn(update_filter(
             State(state.clone()),
-            Path(("timezone-owner".into(), original.id.clone())),
-            Json(UpdateFilterRequest {
+            ApiPath(("timezone-owner".into(), original.id.clone())),
+            ApiJson(UpdateFilterRequest {
                 filter_type: Some("TIME_BASED".into()),
                 config: Some(schedule()),
             }),

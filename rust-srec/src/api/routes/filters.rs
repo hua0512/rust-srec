@@ -2,13 +2,14 @@
 
 use axum::{
     Json, Router,
-    extract::{FromRef, Path, State},
+    extract::{FromRef, State},
     http::StatusCode,
     routing::{delete, get, patch, post},
 };
 use serde_json::Value;
 
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::extract::{ApiJson, ApiPath};
 use crate::api::models::{CreateFilterRequest, FilterResponse, UpdateFilterRequest};
 use crate::api::server::AppState;
 use crate::database::models::{
@@ -166,7 +167,7 @@ fn preserve_omitted_timezone(
 )]
 pub async fn list_filters(
     State(state): State<FilterRouteState>,
-    Path(streamer_id): Path<String>,
+    ApiPath(streamer_id): ApiPath<String>,
 ) -> ApiResult<Json<Vec<FilterResponse>>> {
     let filter_repo = &state.filter_repository;
 
@@ -191,8 +192,8 @@ pub async fn list_filters(
 )]
 pub async fn create_filter(
     State(state): State<FilterRouteState>,
-    Path(streamer_id): Path<String>,
-    Json(request): Json<CreateFilterRequest>,
+    ApiPath(streamer_id): ApiPath<String>,
+    ApiJson(request): ApiJson<CreateFilterRequest>,
 ) -> ApiResult<(StatusCode, Json<FilterResponse>)> {
     let filter_repo = &state.filter_repository;
 
@@ -238,7 +239,7 @@ pub async fn create_filter(
 )]
 pub async fn get_filter(
     State(state): State<FilterRouteState>,
-    Path((streamer_id, id)): Path<(String, String)>,
+    ApiPath((streamer_id, id)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<FilterResponse>> {
     let filter_repo = &state.filter_repository;
 
@@ -273,8 +274,8 @@ pub async fn get_filter(
 )]
 pub async fn update_filter(
     State(state): State<FilterRouteState>,
-    Path((streamer_id, id)): Path<(String, String)>,
-    Json(request): Json<UpdateFilterRequest>,
+    ApiPath((streamer_id, id)): ApiPath<(String, String)>,
+    ApiJson(request): ApiJson<UpdateFilterRequest>,
 ) -> ApiResult<Json<FilterResponse>> {
     let filter_repo = &state.filter_repository;
 
@@ -346,7 +347,7 @@ pub async fn update_filter(
 )]
 pub async fn delete_filter(
     State(state): State<FilterRouteState>,
-    Path((streamer_id, id)): Path<(String, String)>,
+    ApiPath((streamer_id, id)): ApiPath<(String, String)>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let filter_repo = &state.filter_repository;
 

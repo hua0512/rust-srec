@@ -4,13 +4,14 @@ use std::collections::HashMap;
 
 use axum::{
     Extension, Json, Router,
-    extract::{FromRef, Path, Query, State},
+    extract::{FromRef, State},
     http::HeaderMap,
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::api::extract::{ApiJson, ApiPath, ApiQuery};
 use crate::api::{
     auth_service::AuthPrincipal,
     error::{ApiError, ApiResult},
@@ -257,7 +258,7 @@ pub struct PlatformCredentialCapabilities {
 #[utoipa::path(get, path = "/api/credentials/capabilities", tag = "credentials", params(PlatformProfilesQuery), responses((status = 200, body = PlatformCredentialCapabilities)), security(("bearer_auth" = [])))]
 pub async fn get_capabilities(
     State(state): State<CredentialProfileRouteState>,
-    Query(query): Query<PlatformProfilesQuery>,
+    ApiQuery(query): ApiQuery<PlatformProfilesQuery>,
 ) -> ApiResult<Json<PlatformCredentialCapabilities>> {
     if query.platform_id.trim().is_empty() {
         return Err(ApiError::validation("platform ID is required"));
@@ -285,7 +286,7 @@ pub async fn list_attention(
 #[utoipa::path(get, path = "/api/credentials/selection", tag = "credentials", params(ProfileScopeQuery), responses((status = 200, body = EffectiveCredentialSelection)), security(("bearer_auth" = [])))]
 pub async fn get_selection(
     State(state): State<CredentialProfileRouteState>,
-    Query(query): Query<ProfileScopeQuery>,
+    ApiQuery(query): ApiQuery<ProfileScopeQuery>,
 ) -> ApiResult<Json<EffectiveCredentialSelection>> {
     let owner = query.owner()?;
     // Ownership validation also rejects retired targets, without selecting a candidate.
@@ -344,7 +345,7 @@ pub async fn get_selection(
 #[utoipa::path(get, path = "/api/credentials/profiles", tag = "credentials", params(PlatformProfilesQuery), responses((status = 200, body = Vec<ProfileDetail>)), security(("bearer_auth" = [])))]
 pub async fn list_profiles(
     State(state): State<CredentialProfileRouteState>,
-    Query(query): Query<PlatformProfilesQuery>,
+    ApiQuery(query): ApiQuery<PlatformProfilesQuery>,
 ) -> ApiResult<Json<Vec<ProfileDetail>>> {
     if query.platform_id.trim().is_empty() {
         return Err(ApiError::validation("platform ID is required"));
@@ -362,7 +363,7 @@ pub async fn list_profiles(
 #[utoipa::path(get, path = "/api/credentials/profiles/{id}", tag = "credentials", params(("id" = String, Path)), responses((status = 200, body = ProfileDetail)), security(("bearer_auth" = [])))]
 pub async fn get_profile(
     State(state): State<CredentialProfileRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<ProfileDetail>> {
     Ok(Json(detail(&state, &id).await?))
 }
@@ -379,7 +380,7 @@ async fn mutation<T: Send + 'static>(
 #[utoipa::path(post, path = "/api/credentials/profiles", tag = "credentials", request_body = CreateProfileRequest, responses((status = 200, body = CredentialProfileSummary)), security(("bearer_auth" = [])))]
 pub async fn create_profile(
     State(state): State<CredentialProfileRouteState>,
-    Json(body): Json<CreateProfileRequest>,
+    ApiJson(body): ApiJson<CreateProfileRequest>,
 ) -> ApiResult<Json<CredentialProfileSummary>> {
     mutation(async move {
         let record = state
@@ -401,8 +402,8 @@ pub async fn create_profile(
 #[utoipa::path(patch, path = "/api/credentials/profiles/{id}", tag = "credentials", params(("id" = String, Path)), request_body = UpdateProfileRequest, responses((status = 200, body = CredentialProfileSummary)), security(("bearer_auth" = [])))]
 pub async fn update_profile(
     State(state): State<CredentialProfileRouteState>,
-    Path(id): Path<String>,
-    Json(body): Json<UpdateProfileRequest>,
+    ApiPath(id): ApiPath<String>,
+    ApiJson(body): ApiJson<UpdateProfileRequest>,
 ) -> ApiResult<Json<CredentialProfileSummary>> {
     mutation(async move {
         let record = state
@@ -427,8 +428,8 @@ pub async fn update_profile(
 #[utoipa::path(delete, path = "/api/credentials/profiles/{id}", tag = "credentials", params(("id" = String, Path)), request_body = DeleteProfileRequest, responses((status = 200)), security(("bearer_auth" = [])))]
 pub async fn delete_profile(
     State(state): State<CredentialProfileRouteState>,
-    Path(id): Path<String>,
-    Json(body): Json<DeleteProfileRequest>,
+    ApiPath(id): ApiPath<String>,
+    ApiJson(body): ApiJson<DeleteProfileRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
     mutation(async move {
         state
@@ -443,7 +444,7 @@ pub async fn delete_profile(
 #[utoipa::path(post, path = "/api/credentials/profiles/{id}/validate", tag = "credentials", params(("id" = String, Path)), responses((status = 200, body = ProfileDetail)), security(("bearer_auth" = [])))]
 pub async fn validate_profile(
     State(state): State<CredentialProfileRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<ProfileDetail>> {
     mutation(async move {
         state
@@ -458,7 +459,7 @@ pub async fn validate_profile(
 #[utoipa::path(post, path = "/api/credentials/profiles/{id}/refresh", tag = "credentials", params(("id" = String, Path)), responses((status = 200, body = ProfileDetail)), security(("bearer_auth" = [])))]
 pub async fn refresh_profile(
     State(state): State<CredentialProfileRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<ProfileDetail>> {
     mutation(async move {
         state
@@ -474,7 +475,7 @@ pub async fn refresh_profile(
 pub async fn generate_login(
     State(state): State<CredentialProfileRouteState>,
     identity: Option<Extension<AuthPrincipal>>,
-    Json(target): Json<CredentialLoginTarget>,
+    ApiJson(target): ApiJson<CredentialLoginTarget>,
 ) -> ApiResult<(HeaderMap, Json<CredentialLoginGenerated>)> {
     let principal = super::request_principal(state.auth_service.is_some(), identity)?;
     let generated = state
@@ -488,7 +489,7 @@ pub async fn generate_login(
 pub async fn poll_login(
     State(state): State<CredentialProfileRouteState>,
     identity: Option<Extension<AuthPrincipal>>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<(HeaderMap, Json<CredentialLoginReceipt>)> {
     let principal = super::request_principal(state.auth_service.is_some(), identity)?;
     mutation(async move {

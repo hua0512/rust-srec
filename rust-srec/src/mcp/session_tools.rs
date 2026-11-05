@@ -6,7 +6,7 @@
 //! byte-range pagination so multi-megabyte chat logs cannot blow up the
 //! model context.
 
-use axum::extract::{FromRef, Path, Query, State};
+use axum::extract::{FromRef, State};
 use rmcp::{
     ErrorData, RoleServer,
     handler::server::wrapper::Parameters,
@@ -20,6 +20,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use super::config_tools::{IdParams, PageParams};
 use super::{SrecMcpServer, api_error_result, tool_json, tool_unit};
 use crate::api::error::ApiError;
+use crate::api::extract::{ApiPath, ApiQuery};
 use crate::api::models::SessionFilterParams;
 use crate::api::routes::sessions::{self, SessionRouteState};
 use crate::database::models::MediaFileType;
@@ -174,7 +175,9 @@ impl SrecMcpServer {
             search: params.search,
             include_empty: None,
         };
-        tool_json(sessions::list_sessions(State(state), Query(pagination), Query(filters)).await)
+        tool_json(
+            sessions::list_sessions(State(state), ApiQuery(pagination), ApiQuery(filters)).await,
+        )
     }
 
     #[tool(
@@ -186,7 +189,7 @@ impl SrecMcpServer {
         Parameters(params): Parameters<IdParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let state = SessionRouteState::from_ref(&self.app_state);
-        tool_json(sessions::get_session(State(state), Path(params.id)).await)
+        tool_json(sessions::get_session(State(state), ApiPath(params.id)).await)
     }
 
     #[tool(
@@ -204,7 +207,8 @@ impl SrecMcpServer {
         }
         .to_pagination();
         tool_json(
-            sessions::list_session_segments(State(state), Path(params.id), Query(pagination)).await,
+            sessions::list_session_segments(State(state), ApiPath(params.id), ApiQuery(pagination))
+                .await,
         )
     }
 
@@ -217,7 +221,7 @@ impl SrecMcpServer {
         Parameters(params): Parameters<IdParams>,
     ) -> Result<CallToolResult, ErrorData> {
         let state = SessionRouteState::from_ref(&self.app_state);
-        tool_json(sessions::get_session_danmu_statistics(State(state), Path(params.id)).await)
+        tool_json(sessions::get_session_danmu_statistics(State(state), ApiPath(params.id)).await)
     }
 
     #[tool(
@@ -335,7 +339,7 @@ impl SrecMcpServer {
         self.require_write(&context)?;
         let state = SessionRouteState::from_ref(&self.app_state);
         tool_unit(
-            sessions::delete_session(State(state), Path(params.id)).await,
+            sessions::delete_session(State(state), ApiPath(params.id)).await,
             "Session deleted",
         )
     }

@@ -4,12 +4,13 @@
 
 use axum::{
     Json, Router,
-    extract::{FromRef, Path, State},
+    extract::{FromRef, State},
     http::StatusCode,
     routing::get,
 };
 
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::extract::{ApiJson, ApiPath};
 use crate::api::server::AppState;
 use crate::database::models::{
     EngineConfigurationDbModel, EngineType, FfmpegEngineConfig, MesioEngineConfig,
@@ -119,7 +120,7 @@ pub async fn list_engines(
 )]
 pub async fn get_engine(
     State(state): State<EngineRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<EngineConfigurationDbModel>> {
     let config_service = &state.config_service;
 
@@ -141,7 +142,7 @@ pub async fn get_engine(
 )]
 pub async fn create_engine(
     State(state): State<EngineRouteState>,
-    Json(request): Json<CreateEngineRequest>,
+    ApiJson(request): ApiJson<CreateEngineRequest>,
 ) -> ApiResult<(StatusCode, Json<EngineConfigurationDbModel>)> {
     let config_service = &state.config_service;
 
@@ -171,8 +172,8 @@ pub async fn create_engine(
 )]
 pub async fn update_engine(
     State(state): State<EngineRouteState>,
-    Path(id): Path<String>,
-    Json(request): Json<UpdateEngineRequest>,
+    ApiPath(id): ApiPath<String>,
+    ApiJson(request): ApiJson<UpdateEngineRequest>,
 ) -> ApiResult<Json<EngineConfigurationDbModel>> {
     let config_service = &state.config_service;
 
@@ -219,7 +220,7 @@ pub async fn update_engine(
 )]
 pub async fn delete_engine(
     State(state): State<EngineRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<()> {
     let config_service = &state.config_service;
 
@@ -244,7 +245,7 @@ pub async fn delete_engine(
 )]
 pub async fn test_engine(
     State(state): State<EngineRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<EngineTestResponse>> {
     let config_service = &state.config_service;
 
@@ -299,13 +300,13 @@ mod tests {
         };
         for status in [StatusCode::NOT_FOUND, StatusCode::INTERNAL_SERVER_ERROR] {
             let errors = [
-                get_engine(State(state.clone()), Path("missing".to_string()))
+                get_engine(State(state.clone()), ApiPath("missing".to_string()))
                     .await
                     .unwrap_err(),
                 update_engine(
                     State(state.clone()),
-                    Path("missing".to_string()),
-                    Json(UpdateEngineRequest {
+                    ApiPath("missing".to_string()),
+                    ApiJson(UpdateEngineRequest {
                         name: None,
                         engine_type: None,
                         config: None,
@@ -313,10 +314,10 @@ mod tests {
                 )
                 .await
                 .unwrap_err(),
-                delete_engine(State(state.clone()), Path("missing".to_string()))
+                delete_engine(State(state.clone()), ApiPath("missing".to_string()))
                     .await
                     .unwrap_err(),
-                test_engine(State(state.clone()), Path("missing".to_string()))
+                test_engine(State(state.clone()), ApiPath("missing".to_string()))
                     .await
                     .unwrap_err(),
             ];

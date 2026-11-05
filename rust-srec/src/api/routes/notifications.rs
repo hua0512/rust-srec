@@ -1,6 +1,6 @@
 use axum::{
     Json, Router,
-    extract::{FromRef, Path, Query, State},
+    extract::{FromRef, State},
     http::StatusCode,
     routing::{get, post},
 };
@@ -8,6 +8,7 @@ use base64::Engine as _;
 use url::Url;
 
 use crate::api::error::ApiError;
+use crate::api::extract::{ApiJson, ApiPath, ApiQuery};
 use crate::api::jwt::Claims;
 use crate::api::server::AppState;
 use crate::database::models::notification::{
@@ -220,7 +221,7 @@ pub async fn list_web_push_subscriptions(
 pub async fn subscribe_web_push(
     State(state): State<NotificationRouteState>,
     axum::Extension(claims): axum::Extension<Claims>,
-    Json(req): Json<SubscribeWebPushRequest>,
+    ApiJson(req): ApiJson<SubscribeWebPushRequest>,
 ) -> Result<Json<WebPushSubscriptionResponse>, ApiError> {
     let service = state
         .web_push_service
@@ -314,7 +315,7 @@ pub async fn subscribe_web_push(
 pub async fn unsubscribe_web_push(
     State(state): State<NotificationRouteState>,
     axum::Extension(claims): axum::Extension<Claims>,
-    Json(req): Json<UnsubscribeWebPushRequest>,
+    ApiJson(req): ApiJson<UnsubscribeWebPushRequest>,
 ) -> Result<StatusCode, ApiError> {
     let service = state
         .web_push_service
@@ -349,7 +350,7 @@ pub async fn unsubscribe_web_push(
 )]
 pub async fn list_events(
     State(state): State<NotificationRouteState>,
-    Query(q): Query<ListEventsQuery>,
+    ApiQuery(q): ApiQuery<ListEventsQuery>,
 ) -> Result<Json<Vec<NotificationEventLogDbModel>>, ApiError> {
     let repo = &state.notification_repository;
 
@@ -430,7 +431,7 @@ pub async fn list_channels(
 )]
 pub async fn get_channel(
     State(state): State<NotificationRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> Result<Json<NotificationChannelDbModel>, ApiError> {
     let repo = &state.notification_repository;
 
@@ -450,7 +451,7 @@ pub async fn get_channel(
 )]
 pub async fn create_channel(
     State(state): State<NotificationRouteState>,
-    Json(req): Json<CreateChannelRequest>,
+    ApiJson(req): ApiJson<CreateChannelRequest>,
 ) -> Result<(StatusCode, Json<NotificationChannelDbModel>), ApiError> {
     let repo = &state.notification_repository;
     let service = &state.notification_service;
@@ -486,8 +487,8 @@ pub async fn create_channel(
 )]
 pub async fn update_channel(
     State(state): State<NotificationRouteState>,
-    Path(id): Path<String>,
-    Json(req): Json<UpdateChannelRequest>,
+    ApiPath(id): ApiPath<String>,
+    ApiJson(req): ApiJson<UpdateChannelRequest>,
 ) -> Result<Json<NotificationChannelDbModel>, ApiError> {
     let repo = &state.notification_repository;
     let service = &state.notification_service;
@@ -521,7 +522,7 @@ pub async fn update_channel(
 )]
 pub async fn delete_channel(
     State(state): State<NotificationRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> Result<StatusCode, ApiError> {
     let repo = &state.notification_repository;
     let service = &state.notification_service;
@@ -548,7 +549,7 @@ pub async fn delete_channel(
 )]
 pub async fn get_subscriptions(
     State(state): State<NotificationRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> Result<Json<Vec<String>>, ApiError> {
     let repo = &state.notification_repository;
 
@@ -569,8 +570,8 @@ pub async fn get_subscriptions(
 )]
 pub async fn update_subscriptions(
     State(state): State<NotificationRouteState>,
-    Path(id): Path<String>,
-    Json(req): Json<UpdateSubscriptionsRequest>,
+    ApiPath(id): ApiPath<String>,
+    ApiJson(req): ApiJson<UpdateSubscriptionsRequest>,
 ) -> Result<Json<Vec<String>>, ApiError> {
     let repo = &state.notification_repository;
     let service = &state.notification_service;
@@ -616,7 +617,7 @@ pub async fn update_subscriptions(
 )]
 pub async fn test_channel(
     State(state): State<NotificationRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> Result<StatusCode, ApiError> {
     let service = &state.notification_service;
 

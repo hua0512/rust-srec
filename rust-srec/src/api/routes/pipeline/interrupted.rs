@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use axum::{
     Json,
-    extract::{FromRef, Path as RoutePath, Query, State},
+    extract::{FromRef, State},
 };
 use chrono::{DateTime, Utc};
 use tracing::warn;
@@ -20,6 +20,7 @@ use tracing::warn;
 use super::dag::validate_batch_ids;
 use super::{BatchDagItemResult, BatchDeleteOutputsResponse};
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::extract::{ApiJson, ApiPath, ApiQuery};
 use crate::api::server::AppState;
 use crate::database::repositories::StagedOutputRepository;
 use crate::database::time::ms_to_datetime;
@@ -79,6 +80,7 @@ impl InterruptedOutputRouteState {
 
 /// Query parameters for listing interrupted outputs.
 #[derive(Debug, Clone, Default, serde::Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct InterruptedOutputListParams {
     /// Only list files left by this job.
     pub job_id: Option<String>,
@@ -114,6 +116,7 @@ pub struct InterruptedOutputListResponse {
 
 /// Query parameters for settling one interrupted output.
 #[derive(Debug, Clone, Default, serde::Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct DeleteInterruptedOutputParams {
     /// Forget the entry but leave the file on disk.
     #[serde(default)]
@@ -249,7 +252,7 @@ async fn remove_unless_stuck(
 )]
 pub async fn list_interrupted_outputs(
     State(state): State<InterruptedOutputRouteState>,
-    Query(params): Query<InterruptedOutputListParams>,
+    ApiQuery(params): ApiQuery<InterruptedOutputListParams>,
 ) -> ApiResult<Json<InterruptedOutputListResponse>> {
     let Some(repository) = &state.staged_outputs else {
         return Ok(Json(InterruptedOutputListResponse {
@@ -358,8 +361,8 @@ async fn settle(state: &InterruptedOutputRouteState, id: &str, keep_file: bool) 
 )]
 pub async fn delete_interrupted_output(
     State(state): State<InterruptedOutputRouteState>,
-    RoutePath(id): RoutePath<String>,
-    Query(params): Query<DeleteInterruptedOutputParams>,
+    ApiPath(id): ApiPath<String>,
+    ApiQuery(params): ApiQuery<DeleteInterruptedOutputParams>,
 ) -> ApiResult<Json<DeleteInterruptedOutputResponse>> {
     let file_deleted = settle(&state, &id, params.keep_file).await?;
     Ok(Json(DeleteInterruptedOutputResponse { id, file_deleted }))
@@ -380,7 +383,7 @@ pub async fn delete_interrupted_output(
 )]
 pub async fn batch_delete_interrupted_outputs(
     State(state): State<InterruptedOutputRouteState>,
-    Json(request): Json<BatchDeleteInterruptedOutputsRequest>,
+    ApiJson(request): ApiJson<BatchDeleteInterruptedOutputsRequest>,
 ) -> ApiResult<Json<BatchDeleteOutputsResponse>> {
     validate_batch_ids(&request.ids, "interrupted output")?;
 
@@ -548,7 +551,7 @@ mod tests {
 
         let response = batch_delete_interrupted_outputs(
             State(state.clone()),
-            Json(BatchDeleteInterruptedOutputsRequest {
+            ApiJson(BatchDeleteInterruptedOutputsRequest {
                 ids: vec![id.clone()],
                 keep_files: false,
             }),
@@ -566,8 +569,8 @@ mod tests {
         // Keeping a file does not touch the file system.
         let kept = delete_interrupted_output(
             State(state),
-            RoutePath(id),
-            Query(DeleteInterruptedOutputParams { keep_file: true }),
+            ApiPath(id),
+            ApiQuery(DeleteInterruptedOutputParams { keep_file: true }),
         )
         .await
         .unwrap();

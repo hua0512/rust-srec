@@ -8,7 +8,7 @@ use std::time::Duration;
 use axum::{
     Router,
     extract::{
-        FromRef, Query, State,
+        FromRef, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     response::IntoResponse,
@@ -30,6 +30,7 @@ const HEARTBEAT_INTERVAL_SECS: u64 = 30;
 const SNAPSHOT_ON_SUBSCRIBE: bool = true;
 
 use crate::api::error::ApiError;
+use crate::api::extract::{ApiPath, ApiQuery};
 use crate::api::proto::SnapshotJobs;
 use crate::api::proto::{
     ClientMessage, DownloadCancelled, DownloadCompleted, DownloadFailed, DownloadRejected,
@@ -125,7 +126,7 @@ pub struct ManualSplitResponse {
 )]
 pub async fn request_manual_split(
     State(state): State<DownloadRouteState>,
-    axum::extract::Path(download_id): axum::extract::Path<String>,
+    ApiPath(download_id): ApiPath<String>,
     headers: axum::http::HeaderMap,
 ) -> Result<(axum::http::StatusCode, axum::Json<ManualSplitResponse>), ApiError> {
     use crate::api::auth_request::{AccessPolicy, authorize_request};
@@ -173,7 +174,7 @@ pub async fn request_manual_split(
 async fn download_progress_ws(
     ws: WebSocketUpgrade,
     State(state): State<DownloadRouteState>,
-    Query(auth): Query<WsAuthParams>,
+    ApiQuery(auth): ApiQuery<WsAuthParams>,
     headers: axum::http::HeaderMap,
 ) -> Result<impl IntoResponse, ApiError> {
     use crate::api::auth_request::{AccessPolicy, authorize_request, run_authenticated_session};

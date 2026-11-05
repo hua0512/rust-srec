@@ -3,7 +3,7 @@
 use std::fmt::Write as _;
 
 use axum::Router;
-use axum::extract::{FromRef, Path, Query, Request, State};
+use axum::extract::{FromRef, Request, State};
 use axum::http::HeaderValue;
 use axum::http::header::{CONTENT_DISPOSITION, CONTENT_SECURITY_POLICY, X_CONTENT_TYPE_OPTIONS};
 use axum::response::{IntoResponse, Response};
@@ -11,6 +11,7 @@ use axum::routing::get;
 use tower_http::services::ServeFile;
 
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::extract::{ApiPath, ApiQuery};
 use crate::api::server::AppState;
 
 #[derive(Clone)]
@@ -122,8 +123,8 @@ pub(crate) use crate::utils::fs::normalize_media_path;
 )]
 pub async fn get_media_content(
     State(state): State<MediaRouteState>,
-    Path(id): Path<String>,
-    Query(query): Query<MediaContentQuery>,
+    ApiPath(id): ApiPath<String>,
+    ApiQuery(query): ApiQuery<MediaContentQuery>,
     req: Request,
 ) -> ApiResult<Response> {
     let headers = req.headers();

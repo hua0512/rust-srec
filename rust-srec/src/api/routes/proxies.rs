@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::{FromRef, Path, Query, State},
+    extract::{FromRef, State},
     http::StatusCode,
     routing::{get, post},
 };
@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::extract::{ApiJson, ApiPath, ApiQuery};
 use crate::api::server::AppState;
 use crate::database::repositories::proxies::ProxyUpdate;
 use crate::proxies::{
@@ -243,7 +244,7 @@ pub async fn list_proxies(
 )]
 pub async fn get_proxy(
     State(state): State<ProxyRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<ProxyDetailResponse>> {
     let (entry, references) = state.proxies.get(&id).await?;
     Ok(Json(ProxyDetailResponse {
@@ -266,7 +267,7 @@ pub async fn get_proxy(
 )]
 pub async fn create_proxy(
     State(state): State<ProxyRouteState>,
-    Json(request): Json<CreateProxyRequest>,
+    ApiJson(request): ApiJson<CreateProxyRequest>,
 ) -> ApiResult<(StatusCode, Json<ProxyResponse>)> {
     let endpoint = ProxyEndpoint {
         url: request.url,
@@ -292,8 +293,8 @@ pub async fn create_proxy(
 )]
 pub async fn update_proxy(
     State(state): State<ProxyRouteState>,
-    Path(id): Path<String>,
-    Json(request): Json<UpdateProxyRequest>,
+    ApiPath(id): ApiPath<String>,
+    ApiJson(request): ApiJson<UpdateProxyRequest>,
 ) -> ApiResult<Json<ProxyResponse>> {
     let entry = state
         .proxies
@@ -325,8 +326,8 @@ pub async fn update_proxy(
 )]
 pub async fn delete_proxy(
     State(state): State<ProxyRouteState>,
-    Path(id): Path<String>,
-    Query(query): Query<DeleteProxyQuery>,
+    ApiPath(id): ApiPath<String>,
+    ApiQuery(query): ApiQuery<DeleteProxyQuery>,
 ) -> ApiResult<StatusCode> {
     state.proxies.delete(&id, query.expected_version).await?;
     Ok(StatusCode::NO_CONTENT)
@@ -357,7 +358,7 @@ pub async fn system_proxy() -> Json<SystemProxySummary> {
 )]
 pub async fn effective_route(
     State(state): State<ProxyRouteState>,
-    Query(query): Query<EffectiveRouteQuery>,
+    ApiQuery(query): ApiQuery<EffectiveRouteQuery>,
 ) -> ApiResult<Json<EffectiveRouteResponse>> {
     let id = || {
         query
@@ -400,7 +401,7 @@ pub async fn effective_route(
 )]
 pub async fn test_proxy(
     State(state): State<ProxyRouteState>,
-    Json(request): Json<TestProxyRequest>,
+    ApiJson(request): ApiJson<TestProxyRequest>,
 ) -> ApiResult<Json<ProbeOutcome>> {
     let target = match (&request.platform, &request.target_url) {
         (Some(platform), None) => crate::proxies::platform_homepage(platform)

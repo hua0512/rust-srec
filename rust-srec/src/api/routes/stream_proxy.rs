@@ -6,7 +6,7 @@
 //! support.
 
 use axum::Router;
-use axum::extract::{FromRef, Query, Request, State};
+use axum::extract::{FromRef, Request, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -22,6 +22,7 @@ use super::parse::{ParseRouteState, resolve_route_for_url};
 use crate::api::auth_service::AuthService;
 use crate::api::cors::CorsPolicy;
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::extract::ApiQuery;
 use crate::api::server::AppState;
 use crate::proxies::{ProxyTarget, SystemProxy};
 use crate::utils::http_client::ClientCache;
@@ -668,7 +669,7 @@ where
 
 pub async fn stream_proxy_get(
     State(state): State<StreamProxyState>,
-    Query(query): Query<StreamProxyQuery>,
+    ApiQuery(query): ApiQuery<StreamProxyQuery>,
     req: Request,
 ) -> ApiResult<Response> {
     let headers_in = req.headers();

@@ -4,12 +4,13 @@ use std::collections::HashMap;
 
 use axum::{
     Json, Router,
-    extract::{FromRef, Path, Query, State},
+    extract::{FromRef, State},
     http::StatusCode,
     routing::{delete, get, post, put},
 };
 
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::extract::{ApiJson, ApiPath, ApiQuery};
 use crate::api::models::{
     CreateTemplateRequest, PaginatedResponse, PaginationParams, TemplateResponse,
     UpdateTemplateRequest,
@@ -216,7 +217,7 @@ fn validate_offline_check_overrides(
 )]
 pub async fn create_template(
     State(state): State<TemplateRouteState>,
-    Json(request): Json<CreateTemplateRequest>,
+    ApiJson(request): ApiJson<CreateTemplateRequest>,
 ) -> ApiResult<(StatusCode, Json<TemplateResponse>)> {
     // Validate name
     if request.name.is_empty() {
@@ -260,7 +261,7 @@ pub async fn create_template(
 )]
 pub async fn list_templates(
     State(state): State<TemplateRouteState>,
-    Query(pagination): Query<PaginationParams>,
+    ApiQuery(pagination): ApiQuery<PaginationParams>,
 ) -> ApiResult<Json<PaginatedResponse<TemplateResponse>>> {
     // Get config service from state
     let config_service = &state.config_service;
@@ -323,7 +324,7 @@ pub async fn list_templates(
 )]
 pub async fn get_template(
     State(state): State<TemplateRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<TemplateResponse>> {
     // Get config service from state
     let config_service = &state.config_service;
@@ -361,8 +362,8 @@ pub async fn get_template(
 )]
 pub async fn update_template(
     State(state): State<TemplateRouteState>,
-    Path(id): Path<String>,
-    Json(request): Json<UpdateTemplateRequest>,
+    ApiPath(id): ApiPath<String>,
+    ApiJson(request): ApiJson<UpdateTemplateRequest>,
 ) -> ApiResult<Json<TemplateResponse>> {
     validate_offline_check_overrides(request.offline_check_count, request.offline_check_delay_ms)?;
     super::config::reject_proxy_config(request.proxy_config.as_ref())?;
@@ -423,7 +424,7 @@ pub async fn update_template(
 )]
 pub async fn delete_template(
     State(state): State<TemplateRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
     // Get config service from state
     let config_service = &state.config_service;
@@ -478,8 +479,8 @@ pub async fn delete_template(
 )]
 pub async fn clone_template(
     State(state): State<TemplateRouteState>,
-    Path(id): Path<String>,
-    Json(request): Json<CloneTemplateRequest>,
+    ApiPath(id): ApiPath<String>,
+    ApiJson(request): ApiJson<CloneTemplateRequest>,
 ) -> ApiResult<(StatusCode, Json<TemplateResponse>)> {
     // Validate new name
     if request.new_name.is_empty() {
@@ -551,23 +552,23 @@ mod tests {
         };
         for status in [StatusCode::NOT_FOUND, StatusCode::INTERNAL_SERVER_ERROR] {
             let errors = [
-                get_template(State(state.clone()), Path("missing".to_string()))
+                get_template(State(state.clone()), ApiPath("missing".to_string()))
                     .await
                     .unwrap_err(),
                 update_template(
                     State(state.clone()),
-                    Path("missing".to_string()),
-                    Json(serde_json::from_value(serde_json::json!({})).unwrap()),
+                    ApiPath("missing".to_string()),
+                    ApiJson(serde_json::from_value(serde_json::json!({})).unwrap()),
                 )
                 .await
                 .unwrap_err(),
-                delete_template(State(state.clone()), Path("missing".to_string()))
+                delete_template(State(state.clone()), ApiPath("missing".to_string()))
                     .await
                     .unwrap_err(),
                 clone_template(
                     State(state.clone()),
-                    Path("missing".to_string()),
-                    Json(CloneTemplateRequest {
+                    ApiPath("missing".to_string()),
+                    ApiJson(CloneTemplateRequest {
                         new_name: "cloned".to_string(),
                     }),
                 )

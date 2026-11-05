@@ -1908,3 +1908,56 @@ async fn saved_proxy_login_limits_count_characters() {
 
     app.shutdown().await;
 }
+
+#[tokio::test]
+async fn malformed_requests_get_the_json_error_body_with_their_status() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+
+    for (content_type, body, status, code) in [
+        (
+            "application/json",
+            r#"{"name":"#,
+            StatusCode::BAD_REQUEST,
+            "INVALID_JSON",
+        ),
+        (
+            "application/json",
+            r#"{"name": 42}"#,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "INVALID_REQUEST_BODY",
+        ),
+        (
+            "text/plain",
+            r#"{"name": "Plain"}"#,
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "UNSUPPORTED_MEDIA_TYPE",
+        ),
+    ] {
+        let response = app
+            .client()
+            .post(app.url("/api/templates"))
+            .bearer_auth(&token)
+            .header(reqwest::header::CONTENT_TYPE, content_type)
+            .body(body)
+            .send()
+            .await
+            .expect("send the request");
+        let refused = TestApp::read(response).await;
+        refused.assert_error(status, code);
+        assert!(
+            refused.body["message"]
+                .as_str()
+                .is_some_and(|message| !message.is_empty()),
+            "{}",
+            refused.text
+        );
+    }
+    assert_eq!(total(&app, &token, "/api/templates").await, 0);
+
+    app.get("/api/templates?limit=many", &token)
+        .await
+        .assert_error(StatusCode::BAD_REQUEST, "INVALID_QUERY");
+
+    app.shutdown().await;
+}

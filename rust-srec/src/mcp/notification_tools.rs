@@ -3,7 +3,7 @@
 //! Thin wrappers over the `api::routes::notifications` handlers.
 
 use axum::Json;
-use axum::extract::{FromRef, Path, Query, State};
+use axum::extract::{FromRef, State};
 use rmcp::{
     ErrorData, RoleServer, handler::server::wrapper::Parameters, model::CallToolResult, schemars,
     service::RequestContext, tool, tool_router,
@@ -11,6 +11,7 @@ use rmcp::{
 
 use super::config_tools::IdParams;
 use super::{SrecMcpServer, tool_json, tool_status};
+use crate::api::extract::{ApiJson, ApiPath, ApiQuery};
 use crate::api::routes::notifications::{
     self, CreateChannelRequest, ListEventsQuery, NotificationRouteState, UpdateChannelRequest,
     UpdateSubscriptionsRequest,
@@ -98,7 +99,7 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_full_access(&context)?;
         let state = NotificationRouteState::from_ref(&self.app_state);
-        tool_json(notifications::get_channel(State(state), Path(params.id)).await)
+        tool_json(notifications::get_channel(State(state), ApiPath(params.id)).await)
     }
 
     #[tool(
@@ -129,7 +130,7 @@ impl SrecMcpServer {
         };
         let state = NotificationRouteState::from_ref(&self.app_state);
         tool_json(
-            notifications::create_channel(State(state), Json(request))
+            notifications::create_channel(State(state), ApiJson(request))
                 .await
                 .map(|(_, body)| body),
         )
@@ -150,7 +151,9 @@ impl SrecMcpServer {
             settings: params.settings,
         };
         let state = NotificationRouteState::from_ref(&self.app_state);
-        tool_json(notifications::update_channel(State(state), Path(params.id), Json(request)).await)
+        tool_json(
+            notifications::update_channel(State(state), ApiPath(params.id), ApiJson(request)).await,
+        )
     }
 
     #[tool(
@@ -165,7 +168,7 @@ impl SrecMcpServer {
         self.require_write(&context)?;
         let state = NotificationRouteState::from_ref(&self.app_state);
         tool_status(
-            notifications::delete_channel(State(state), Path(params.id)).await,
+            notifications::delete_channel(State(state), ApiPath(params.id)).await,
             "Notification channel deleted",
         )
     }
@@ -182,7 +185,7 @@ impl SrecMcpServer {
         self.require_write(&context)?;
         let state = NotificationRouteState::from_ref(&self.app_state);
         tool_status(
-            notifications::test_channel(State(state), Path(params.id)).await,
+            notifications::test_channel(State(state), ApiPath(params.id)).await,
             "Test notification sent",
         )
     }
@@ -198,7 +201,7 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_full_access(&context)?;
         let state = NotificationRouteState::from_ref(&self.app_state);
-        tool_json(notifications::get_subscriptions(State(state), Path(params.id)).await)
+        tool_json(notifications::get_subscriptions(State(state), ApiPath(params.id)).await)
     }
 
     #[tool(
@@ -216,7 +219,8 @@ impl SrecMcpServer {
         };
         let state = NotificationRouteState::from_ref(&self.app_state);
         tool_json(
-            notifications::update_subscriptions(State(state), Path(params.id), Json(request)).await,
+            notifications::update_subscriptions(State(state), ApiPath(params.id), ApiJson(request))
+                .await,
         )
     }
 
@@ -237,6 +241,6 @@ impl SrecMcpServer {
             search: params.search,
             priority: params.priority,
         };
-        tool_json(notifications::list_events(State(state), Query(query)).await)
+        tool_json(notifications::list_events(State(state), ApiQuery(query)).await)
     }
 }

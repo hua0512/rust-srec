@@ -5,11 +5,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Json;
-use axum::extract::{FromRef, Path, State};
+use axum::extract::{FromRef, State};
 use axum::response::IntoResponse;
 use serde_json::{Value, json};
 
 use super::ServiceContainer;
+use crate::api::extract::{ApiJson, ApiPath};
 use crate::api::routes::{config, export_import, streamers, templates};
 use crate::api::server::{ApiServices, AppState};
 use crate::config::backup::{ConfigExport, ImportMode};
@@ -106,8 +107,8 @@ impl Fixture {
     async fn update_streamer(&self, id: &str, request: Value) -> Value {
         let Json(response) = streamers::update_streamer(
             State(streamers::StreamerRouteState::from_ref(&self.state)),
-            Path(id.to_owned()),
-            Json(serde_json::from_value(request).unwrap()),
+            ApiPath(id.to_owned()),
+            ApiJson(serde_json::from_value(request).unwrap()),
         )
         .await
         .unwrap();
@@ -117,8 +118,8 @@ impl Fixture {
     async fn update_template(&self, id: &str, request: Value) -> Value {
         let Json(response) = templates::update_template(
             State(templates::TemplateRouteState::from_ref(&self.state)),
-            Path(id.to_owned()),
-            Json(serde_json::from_value(request).unwrap()),
+            ApiPath(id.to_owned()),
+            ApiJson(serde_json::from_value(request).unwrap()),
         )
         .await
         .unwrap();
@@ -127,13 +128,14 @@ impl Fixture {
 
     async fn replace_platform(&self, id: &str, selection: Option<Value>) -> Value {
         let state = config::ConfigRouteState::from_ref(&self.state);
-        let Json(current) = config::get_platform_config(State(state.clone()), Path(id.to_owned()))
-            .await
-            .unwrap();
+        let Json(current) =
+            config::get_platform_config(State(state.clone()), ApiPath(id.to_owned()))
+                .await
+                .unwrap();
         let mut request = current;
         request.credential_selection = selection.map(|selection| selection.to_string());
         let Json(response) =
-            config::replace_platform_config(State(state), Path(id.to_owned()), Json(request))
+            config::replace_platform_config(State(state), ApiPath(id.to_owned()), ApiJson(request))
                 .await
                 .unwrap();
         serde_json::to_value(response).unwrap()
@@ -183,7 +185,7 @@ async fn selection_changes_through_the_api_reach_the_next_resolution() {
 
         let (_, Json(created)) = streamers::create_streamer(
             State(streamers::StreamerRouteState::from_ref(&f.state)),
-            Json(
+            ApiJson(
                 serde_json::from_value(json!({
                     "name": "Selected",
                     "url": "https://www.huya.com/1001",
@@ -239,7 +241,7 @@ async fn selection_changes_through_the_api_reach_the_next_resolution() {
         // A template selection for the platform outranks the platform's.
         let (_, Json(template)) = templates::create_template(
             State(templates::TemplateRouteState::from_ref(&f.state)),
-            Json(
+            ApiJson(
                 serde_json::from_value(json!({
                     "name": "Selecting",
                     "platform_overrides": {"huya": {"credential_selection": {"mode": "fixed", "credential_id": a}}}
@@ -289,7 +291,7 @@ async fn backups_carry_selections_through_replace_and_merge_imports() {
             .await;
         let (_, Json(template)) = templates::create_template(
             State(templates::TemplateRouteState::from_ref(&f.state)),
-            Json(
+            ApiJson(
                 serde_json::from_value(json!({
                     "name": "Backed up",
                     "platform_overrides": {"huya": {"credential_selection": {"mode": "pool", "credential_ids": [b, a]}, "quality": 1}}
@@ -301,7 +303,7 @@ async fn backups_carry_selections_through_replace_and_merge_imports() {
         .unwrap();
         let (_, Json(streamer)) = streamers::create_streamer(
             State(streamers::StreamerRouteState::from_ref(&f.state)),
-            Json(
+            ApiJson(
                 serde_json::from_value(json!({
                     "name": "Backed up",
                     "url": "https://www.huya.com/1002",

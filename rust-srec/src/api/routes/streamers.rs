@@ -4,12 +4,13 @@ use std::collections::HashSet;
 
 use axum::{
     Json, Router,
-    extract::{FromRef, Path, Query, State},
+    extract::{FromRef, State},
     http::StatusCode,
     routing::{delete, get, patch, post, put},
 };
 
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::extract::{ApiJson, ApiPath, ApiQuery};
 use crate::api::models::{
     BatchStreamerAction, BatchStreamerItemResult, BatchStreamerRequest, BatchStreamerResponse,
     CreateStreamerRequest, ExtractMetadataRequest, ExtractMetadataResponse, PaginatedResponse,
@@ -313,7 +314,7 @@ fn find_platform_config(
 )]
 pub async fn create_streamer(
     State(state): State<StreamerRouteState>,
-    Json(request): Json<CreateStreamerRequest>,
+    ApiJson(request): ApiJson<CreateStreamerRequest>,
 ) -> ApiResult<(StatusCode, Json<StreamerResponse>)> {
     // Validate URL format
     let url = StreamerUrl::new(&request.url).map_err(|e| ApiError::validation(e.to_string()))?;
@@ -399,8 +400,8 @@ pub async fn create_streamer(
 )]
 pub async fn list_streamers(
     State(state): State<StreamerRouteState>,
-    Query(pagination): Query<PaginationParams>,
-    Query(filters): Query<StreamerFilterParams>,
+    ApiQuery(pagination): ApiQuery<PaginationParams>,
+    ApiQuery(filters): ApiQuery<StreamerFilterParams>,
 ) -> ApiResult<Json<PaginatedResponse<StreamerResponse>>> {
     // Get streamer manager from state
     let streamer_manager = &state.streamer_manager;
@@ -594,7 +595,7 @@ pub async fn list_streamers(
 )]
 pub async fn batch_streamers(
     State(state): State<StreamerRouteState>,
-    Json(request): Json<BatchStreamerRequest>,
+    ApiJson(request): ApiJson<BatchStreamerRequest>,
 ) -> ApiResult<Json<BatchStreamerResponse>> {
     validate_batch_ids(&request.ids)?;
 
@@ -732,7 +733,7 @@ pub async fn batch_streamers(
 )]
 pub async fn get_streamer(
     State(state): State<StreamerRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<StreamerResponse>> {
     // Get streamer manager from state
     let streamer_manager = &state.streamer_manager;
@@ -758,8 +759,8 @@ pub async fn get_streamer(
 )]
 pub async fn update_streamer(
     State(state): State<StreamerRouteState>,
-    Path(id): Path<String>,
-    Json(request): Json<UpdateStreamerRequest>,
+    ApiPath(id): ApiPath<String>,
+    ApiJson(request): ApiJson<UpdateStreamerRequest>,
 ) -> ApiResult<Json<StreamerResponse>> {
     // Get streamer manager from state
     let streamer_manager = &state.streamer_manager;
@@ -865,7 +866,7 @@ pub async fn update_streamer(
 )]
 pub async fn delete_streamer(
     State(state): State<StreamerRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
     live_streamer(&state.streamer_manager, &id)?;
     // `false` means another caller already owns this streamer's retirement,
@@ -911,7 +912,7 @@ async fn delete_streamer_through_runtime(state: &StreamerRouteState, id: &str) -
 )]
 pub async fn clear_error(
     State(state): State<StreamerRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<StreamerResponse>> {
     // Get streamer manager from state
     let streamer_manager = &state.streamer_manager;
@@ -943,8 +944,8 @@ pub async fn clear_error(
 )]
 pub async fn update_priority(
     State(state): State<StreamerRouteState>,
-    Path(id): Path<String>,
-    Json(request): Json<UpdatePriorityRequest>,
+    ApiPath(id): ApiPath<String>,
+    ApiJson(request): ApiJson<UpdatePriorityRequest>,
 ) -> ApiResult<Json<StreamerResponse>> {
     // Get streamer manager from state
     let streamer_manager = &state.streamer_manager;
@@ -1061,7 +1062,7 @@ mod tests {
 )]
 pub async fn extract_metadata(
     State(state): State<StreamerRouteState>,
-    Json(request): Json<ExtractMetadataRequest>,
+    ApiJson(request): ApiJson<ExtractMetadataRequest>,
 ) -> ApiResult<Json<ExtractMetadataResponse>> {
     let url = StreamerUrl::new(&request.url).map_err(|e| ApiError::validation(e.to_string()))?;
     let channel_id = url.channel_id();
@@ -1092,6 +1093,7 @@ const CHECK_HISTORY_MAX_LIMIT: i64 = crate::database::repositories::KEEP_PER_STR
 
 /// Query parameters for `GET /api/streamers/{id}/check-history`.
 #[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct CheckHistoryParams {
     /// Maximum rows to return. Defaults to 60. Server-clamped to the writer's
     /// per-streamer retention cap.
@@ -1114,8 +1116,8 @@ pub struct CheckHistoryParams {
 )]
 pub async fn get_check_history(
     State(state): State<StreamerRouteState>,
-    Path(id): Path<String>,
-    Query(params): Query<CheckHistoryParams>,
+    ApiPath(id): ApiPath<String>,
+    ApiQuery(params): ApiQuery<CheckHistoryParams>,
 ) -> ApiResult<Json<StreamerCheckHistoryResponse>> {
     // Confirm the streamer exists so a 404 is unambiguous (vs. "no rows yet"
     // for a brand-new streamer, which we want to render as an empty strip).
