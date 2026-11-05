@@ -72,13 +72,16 @@ export function formatBrowserNotification(
 
   const bodyParts: string[] = [];
   if (streamer) bodyParts.push(streamer);
-  // A rate limit names the platform and the paused connection.
-  if (typeof fields.route === 'string' && platform) {
+  // A credential event names the platform of the failed account; a rate limit
+  // also names the paused connection.
+  if (platform && typeof fields.route === 'string') {
     const connection =
       fields.route === 'proxy'
         ? (text(fields.proxy_name) ?? i18n._(msg`Saved proxy`))
         : i18n._(fields.route === 'system' ? msg`System proxy` : msg`Direct`);
     bodyParts.push(`${platform} · ${connection}`);
+  } else if (platform) {
+    bodyParts.push(platform);
   }
   if (error) bodyParts.push(error);
   if (bodyParts.length === 0)

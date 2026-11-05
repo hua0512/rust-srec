@@ -15,7 +15,7 @@ function log(payload: string): NotificationEventLog {
 }
 
 describe('formatBrowserNotification', () => {
-  it('shows the reason of a credential event, whose fields sit under `event`', () => {
+  it('shows the platform and reason of a credential event, whose fields sit under `event`', () => {
     const payload = JSON.stringify({
       Credential: {
         event: {
@@ -27,7 +27,7 @@ describe('formatBrowserNotification', () => {
     });
 
     expect(formatBrowserNotification(log(payload), testI18n()).body).toBe(
-      'Cookie expired',
+      'bilibili — Cookie expired',
     );
   });
 });
