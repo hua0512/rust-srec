@@ -34,7 +34,8 @@ export function renderWithProviders(
   return { ...render(ui, { wrapper: providersWrapper(client) }), client };
 }
 
-function openSelect(trigger: HTMLElement) {
+/** Opens a Radix select by keyboard. */
+export function openSelect(trigger: HTMLElement) {
   // Opening by keyboard from the focused trigger lets Radix restore focus to
   // it, which keeps the list open.
   act(() => trigger.focus());

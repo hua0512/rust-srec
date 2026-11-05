@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 
 import { PayloadPreview } from '../events/payload-preview';
+import { testI18n } from '@/test/render';
 
 const payload = JSON.stringify({
   DownloadCompleted: {
@@ -26,7 +27,7 @@ function renderWith(i18n: ReturnType<typeof setupI18n>, children: ReactNode) {
 
 describe('PayloadPreview', () => {
   it('formats duration and size with the shared helpers', () => {
-    const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
+    const i18n = testI18n();
     renderWith(i18n, <PayloadPreview payload={payload} />);
 
     expect(screen.getByText('1h 2m')).toBeInTheDocument();
@@ -52,7 +53,7 @@ describe('PayloadPreview', () => {
   });
 
   it('reads any event variant, not only a hand-listed set', () => {
-    const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
+    const i18n = testI18n();
     renderWith(
       i18n,
       <PayloadPreview
@@ -71,7 +72,7 @@ describe('PayloadPreview', () => {
   });
 
   it('falls back to the message when an event has no error field', () => {
-    const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
+    const i18n = testI18n();
     renderWith(
       i18n,
       <PayloadPreview
@@ -89,7 +90,7 @@ describe('PayloadPreview', () => {
   });
 
   it('unwraps credential events nested under `event`', () => {
-    const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
+    const i18n = testI18n();
     renderWith(
       i18n,
       <PayloadPreview
@@ -110,7 +111,7 @@ describe('PayloadPreview', () => {
   });
 
   it('shows why a download was rejected', () => {
-    const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
+    const i18n = testI18n();
     renderWith(
       i18n,
       <PayloadPreview
@@ -132,7 +133,7 @@ describe('PayloadPreview', () => {
   });
 
   it('shows why credentials became invalid', () => {
-    const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
+    const i18n = testI18n();
     renderWith(
       i18n,
       <PayloadPreview

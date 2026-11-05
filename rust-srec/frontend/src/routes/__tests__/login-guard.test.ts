@@ -1,7 +1,9 @@
-import { QueryClient } from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
 import { isRedirect } from '@tanstack/react-router';
 
+import { sessionQueryOptions } from '@/api/session';
 import { Route } from '../_public/login';
+import { newQueryClient } from '@/test/render';
 import { testSession } from '@/test/session';
 
 const checkAuthFnMock = vi.hoisted(() => vi.fn());
@@ -36,7 +38,7 @@ describe('/login guard', () => {
   it('sends a signed-in visitor to the dashboard', async () => {
     checkAuthFnMock.mockResolvedValue(testSession());
 
-    await expect(redirectTarget(runGuard(new QueryClient()))).resolves.toBe(
+    await expect(redirectTarget(runGuard(newQueryClient()))).resolves.toBe(
       '/dashboard',
     );
   });
@@ -47,7 +49,18 @@ describe('/login guard', () => {
     );
 
     await expect(
-      redirectTarget(runGuard(new QueryClient())),
+      redirectTarget(runGuard(newQueryClient())),
     ).resolves.toBeUndefined();
+  });
+
+  it('re-checks instead of trusting a cached signed-out result', async () => {
+    const queryClient = newQueryClient();
+    queryClient.setQueryData(sessionQueryOptions.queryKey, null);
+    checkAuthFnMock.mockResolvedValue(testSession());
+
+    await expect(redirectTarget(runGuard(queryClient))).resolves.toBe(
+      '/dashboard',
+    );
+    expect(checkAuthFnMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -16,7 +16,12 @@ import {
   savedProxy,
   socksProxy,
 } from '@/components/proxies/__tests__/proxy-test-utils';
-import { chooseOption, optionNames, renderWithProviders } from '@/test/render';
+import {
+  chooseOption,
+  openSelect,
+  optionNames,
+  renderWithProviders,
+} from '@/test/render';
 
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/router')).MockLink,
@@ -66,15 +71,18 @@ const trigger = () => screen.getByRole('combobox');
 
 it('the global route offers no Inherit', async () => {
   renderWithProviders(<Harness initial={{ kind: 'direct' }} />);
-  await waitFor(() => expect(listProxies).toHaveBeenCalled());
-  const names = await optionNames(trigger());
-  expect(names).toEqual([
-    'DirectNo proxy',
-    'System proxyhttp://127.0.0.1:3128',
-    'Officeproxy.example:8080',
-    'Tunnel10.0.0.2:1080',
-    'Add proxy…',
-  ]);
+  openSelect(trigger());
+  await waitFor(() =>
+    expect(
+      screen.getAllByRole('option').map((option) => option.textContent),
+    ).toEqual([
+      'DirectNo proxy',
+      'System proxyhttp://127.0.0.1:3128',
+      'Officeproxy.example:8080',
+      'Tunnel10.0.0.2:1080',
+      'Add proxy…',
+    ]),
+  );
 });
 
 it('labels Inherit with the route the next scope out resolves to', async () => {

@@ -5,14 +5,14 @@ import {
   render,
   screen,
 } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { queryKeys } from '@/api/query-keys';
 import { LogViewer } from '@/components/logging/log-viewer';
 import { useDownloadStore } from '@/store/downloads';
 import { useUploadStore } from '@/store/uploads';
 import { WebSocketProvider } from '../WebSocketProvider';
-import { renderWithProviders } from '@/test/render';
+import { newQueryClient, renderWithProviders } from '@/test/render';
 import { MockWebSocket } from '@/test/mock-websocket';
 import { testSession } from '@/test/session';
 
@@ -29,14 +29,6 @@ const checkAuthFnMock = vi.hoisted(() => vi.fn());
 vi.mock('@/server/functions/auth', () => ({
   checkAuthFn: checkAuthFnMock,
 }));
-
-function createQueryClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: { retry: false, staleTime: Infinity },
-    },
-  });
-}
 
 async function rotateToken(queryClient: QueryClient) {
   await act(async () => {
@@ -113,7 +105,7 @@ describe('WebSocket lifecycle ownership', () => {
   });
 
   it('keeps the provider socket open across a token rotation', async () => {
-    const queryClient = createQueryClient();
+    const queryClient = newQueryClient();
     render(
       <QueryClientProvider client={queryClient}>
         <WebSocketProvider>
@@ -138,7 +130,7 @@ describe('WebSocket lifecycle ownership', () => {
   });
 
   it('keeps live transfers on screen across a token rotation', async () => {
-    const queryClient = createQueryClient();
+    const queryClient = newQueryClient();
     render(
       <QueryClientProvider client={queryClient}>
         <WebSocketProvider>
@@ -157,7 +149,7 @@ describe('WebSocket lifecycle ownership', () => {
   });
 
   it('reopens the provider socket with the renewed token after it drops', async () => {
-    const queryClient = createQueryClient();
+    const queryClient = newQueryClient();
     render(
       <QueryClientProvider client={queryClient}>
         <WebSocketProvider>
@@ -194,7 +186,7 @@ describe('WebSocket lifecycle ownership', () => {
       accessToken: 'token-a',
       expiresInMs: 10_000,
     });
-    const queryClient = createQueryClient();
+    const queryClient = newQueryClient();
     render(
       <QueryClientProvider client={queryClient}>
         <WebSocketProvider>
@@ -222,7 +214,7 @@ describe('WebSocket lifecycle ownership', () => {
   });
 
   it('keeps the log socket open across a token rotation and reopens it once after a drop', async () => {
-    const queryClient = createQueryClient();
+    const queryClient = newQueryClient();
     renderWithProviders(<LogViewer />, { client: queryClient });
 
     const firstSocket = MockWebSocket.instances[0];
@@ -248,7 +240,7 @@ describe('WebSocket lifecycle ownership', () => {
   });
 
   it('keeps the log socket open when pausing the viewer', async () => {
-    const queryClient = createQueryClient();
+    const queryClient = newQueryClient();
     renderWithProviders(<LogViewer />, { client: queryClient });
 
     fireEvent.click(screen.getByRole('button', { name: 'Pause' }));

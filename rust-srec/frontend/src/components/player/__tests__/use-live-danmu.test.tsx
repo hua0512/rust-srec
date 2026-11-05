@@ -1,10 +1,11 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, render } from '@testing-library/react';
 import { sessionQueryOptions } from '@/api/session';
-import type { ClientSessionData } from '@/utils/session';
 import type { LiveDanmuItem } from '../danmu-overlay';
 import { useLiveDanmu } from '../use-live-danmu';
 import { MockWebSocket } from '@/test/mock-websocket';
+import { newQueryClient } from '@/test/render';
+import { testSession } from '@/test/session';
 
 vi.mock('@/server/functions/auth', () => ({ checkAuthFn: vi.fn() }));
 
@@ -22,18 +23,11 @@ function Harness({
 }
 
 function renderWithSession(handle: string) {
-  const queryClient = new QueryClient();
-  const session: ClientSessionData = {
-    username: 'user',
-    token: {
-      access_token: 'token',
-      expires_in: Date.now() + 10 * 60_000,
-      refresh_expires_in: Date.now() + 60 * 60_000,
-    },
-    roles: [],
-    mustChangePassword: false,
-  };
-  queryClient.setQueryData(sessionQueryOptions.queryKey, session);
+  const queryClient = newQueryClient();
+  queryClient.setQueryData(
+    sessionQueryOptions.queryKey,
+    testSession({ accessToken: 'token' }),
+  );
   const onItems = vi.fn();
   const onExpired = vi.fn();
   const view = render(

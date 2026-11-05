@@ -1,5 +1,4 @@
 import { act, cleanup, fireEvent, screen } from '@testing-library/react';
-import { QueryClient } from '@tanstack/react-query';
 import { create, toBinary } from '@bufbuild/protobuf';
 
 import {
@@ -45,10 +44,7 @@ function emitLog(
 }
 
 function renderViewer() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
-  });
-  const utils = renderWithProviders(<LogViewer />, { client: queryClient });
+  const utils = renderWithProviders(<LogViewer />);
   const socket = MockWebSocket.instances[0];
   act(() => socket.emitOpen());
   return { ...utils, socket };

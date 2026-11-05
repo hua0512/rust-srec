@@ -1,5 +1,5 @@
 import { act, cleanup, render } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { create, toBinary } from '@bufbuild/protobuf';
 
 import {
@@ -12,6 +12,7 @@ import { useDownloadStore } from '@/store/downloads';
 import { useUploadStore } from '@/store/uploads';
 import { PROGRESS_FLUSH_MS, WebSocketProvider } from '../WebSocketProvider';
 import { MockWebSocket } from '@/test/mock-websocket';
+import { newQueryClient } from '@/test/render';
 
 const routeContext = vi.hoisted(() => ({
   user: null as unknown,
@@ -59,11 +60,8 @@ function bytesOf(downloadId: string) {
 }
 
 function renderProvider() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
-  });
   render(
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={newQueryClient()}>
       <WebSocketProvider>
         <div>child</div>
       </WebSocketProvider>
