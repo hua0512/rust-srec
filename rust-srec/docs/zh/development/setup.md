@@ -145,6 +145,7 @@ irm https://huacnlee.github.io/cargo/install.ps1 | iex
 安装前请注意：
 
 - 它会替换 `~/.cargo/bin/cargo`，并把 rustup 代理保留为 `cargo.rustup`，因此 `rust-toolchain.toml` 和 `cargo +toolchain` 仍然有效。如果已安装 nightly 工具链，安装脚本还会为其添加 Cranelift 组件。
+- 只有当 `~/.cargo/bin` 在 `PATH` 中排在最前时才会生效。发行版打包的 rustup（例如 Arch 的 `rustup` 软件包）会把 `cargo` 放在 `/usr/bin`，并且可能不把 `~/.cargo/bin` 加入 `PATH`。可以用 `cargo --version` 检查：启用该分支时输出中会出现 `huacnlee/cargo`。
 - 它每天最多在后台自动更新一次。设置 `CARGO_FORK_AUTO_UPDATE=0` 可关闭自动更新。
 - 它会忽略 `CARGO_TARGET_DIR`、`--target-dir` 和 `build.target-dir`，并给出警告。中间构建产物存放在 `~/.cargo/targets`，最终二进制文件仍出现在各工作树的 `./target` 中。对本工作区而言该缓存会增长到数十 GB，请把 `~/.cargo/targets` 放在空间充足的磁盘上。
 - 上游在 Windows 上的使用少于 Linux 和 macOS。

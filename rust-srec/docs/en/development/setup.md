@@ -145,6 +145,7 @@ irm https://huacnlee.github.io/cargo/install.ps1 | iex
 Before installing, note:
 
 - It replaces `~/.cargo/bin/cargo` and keeps the rustup proxy as `cargo.rustup`, so `rust-toolchain.toml` and `cargo +toolchain` keep working. If a nightly toolchain is installed, the script also adds the Cranelift component to it.
+- It only takes effect when `~/.cargo/bin` comes first on `PATH`. A distribution-packaged rustup (for example Arch's `rustup` package) puts `cargo` in `/usr/bin` and may leave `~/.cargo/bin` off `PATH`. Check with `cargo --version`, which names `huacnlee/cargo` when the fork is active.
 - It updates itself in the background at most once a day. Set `CARGO_FORK_AUTO_UPDATE=0` to turn this off.
 - It ignores `CARGO_TARGET_DIR`, `--target-dir` and `build.target-dir`, with a warning. Intermediate build output goes to `~/.cargo/targets`, while final binaries still appear in each worktree's `./target`. This cache grows to tens of gigabytes for this workspace, so put `~/.cargo/targets` on a drive with enough space.
 - Upstream has seen less use on Windows than on Linux and macOS.
