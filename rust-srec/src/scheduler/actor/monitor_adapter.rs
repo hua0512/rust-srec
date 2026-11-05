@@ -274,8 +274,14 @@ fn check_record_from_live_status(
                 title: title.clone(),
                 category: category.clone(),
             },
-            // Offline; fatal statuses are mapped above.
-            _ => CheckOutcome::Offline,
+            LiveStatus::Offline => CheckOutcome::Offline,
+            // Mapped above.
+            LiveStatus::NotFound
+            | LiveStatus::Banned
+            | LiveStatus::AgeRestricted
+            | LiveStatus::RegionLocked
+            | LiveStatus::Private
+            | LiveStatus::UnsupportedPlatform => CheckOutcome::Offline,
         }
     };
 

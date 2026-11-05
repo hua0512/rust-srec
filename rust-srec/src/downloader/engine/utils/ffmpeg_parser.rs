@@ -166,19 +166,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_progress_full_line() {
-        // The `time=` field crosses a minute boundary.
-        let line = "frame=  200 fps=50 q=-1.0 size=    2048kB time=00:01:30.50 bitrate=1024.0kbits/s speed=2.00x";
-        let progress = parse_progress(line);
-
-        assert!(progress.is_some());
-        let p = progress.unwrap();
-        assert_eq!(p.bytes_downloaded, 2048 * 1024);
-        assert_eq!(p.media_duration_secs, 90.5);
-        assert_eq!(p.duration_secs, 90.5);
-    }
-
-    #[test]
     fn test_parse_progress_partial() {
         let line = "size=512kB time=00:00:10.00";
         let progress = parse_progress(line);

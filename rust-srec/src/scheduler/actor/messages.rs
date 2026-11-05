@@ -32,16 +32,6 @@ pub enum StreamerMessage {
     CheckStatus,
     /// Update configuration.
     ConfigUpdate(StreamerConfig),
-    /// Notify that a download has started for this streamer.
-    ///
-    /// This allows external download orchestration to pause status checks
-    /// even if the actor hasn't just observed a `Live` check result.
-    DownloadStarted {
-        /// Download identifier.
-        download_id: String,
-        /// Download session identifier.
-        session_id: String,
-    },
     /// Lightweight download heartbeat.
     ///
     /// Sent periodically while a download is active so the actor can distinguish

@@ -453,8 +453,8 @@ pub fn build_flv_config(
 }
 
 /// Applies the download's headers, cookies and route to a mesio base config.
-/// Only an explicit proxy is kept; a direct route also turns off the
-/// environment's proxy.
+/// An explicit proxy replaces the environment's proxy; a direct route turns
+/// it off.
 fn apply_network(base: &mut DownloaderConfig, config: &DownloadConfig) {
     let cookie = config.cookies.as_deref().map(|cookies| ("Cookie", cookies));
     let headers = config

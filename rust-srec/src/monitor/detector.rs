@@ -160,7 +160,7 @@ impl LiveStatus {
             LiveStatus::RegionLocked => Some("Content is region-locked"),
             LiveStatus::Private => Some("Content is private"),
             LiveStatus::UnsupportedPlatform => Some("Platform is not supported"),
-            _ => None,
+            LiveStatus::Live { .. } | LiveStatus::Offline | LiveStatus::Filtered { .. } => None,
         }
     }
 
@@ -177,7 +177,7 @@ impl LiveStatus {
             LiveStatus::RegionLocked => Some(FatalErrorType::RegionLocked),
             LiveStatus::Private => Some(FatalErrorType::Private),
             LiveStatus::UnsupportedPlatform => Some(FatalErrorType::UnsupportedPlatform),
-            _ => None,
+            LiveStatus::Live { .. } | LiveStatus::Offline | LiveStatus::Filtered { .. } => None,
         }
     }
 }
