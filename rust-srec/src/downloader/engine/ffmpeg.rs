@@ -93,6 +93,78 @@ fn append_faststart_option(
     }
 }
 
+/// Appends everything after the input: stream copy, `output_args`, the part
+/// size limit, time segmenting, faststart, the logging the event reader
+/// depends on, and the output path, which stays the last argument.
+pub(super) fn append_output_args(
+    args: &mut Vec<String>,
+    config: &DownloadConfig,
+    output_args: &[String],
+) {
+    args.extend(["-c".to_string(), "copy".to_string()]);
+    args.extend(output_args.iter().cloned());
+
+    // FFmpeg measures this limit on the output file, and the segment muxer
+    // has none of its own, so it never triggers when segmenting by time.
+    if config.max_segment_size_bytes > 0 {
+        args.extend(["-fs".to_string(), config.max_segment_size_bytes.to_string()]);
+    }
+
+    let segment_mode = config.max_segment_duration_secs > 0;
+
+    // Segment options if splitting is enabled
+    if segment_mode {
+        args.extend([
+            "-f".to_string(),
+            "segment".to_string(),
+            "-segment_time".to_string(),
+            config.max_segment_duration_secs.to_string(),
+            "-reset_timestamps".to_string(),
+            "1".to_string(),
+            "-strftime".to_string(),
+            "1".to_string(), // Enable strftime expansion for %Y, %m, %d, etc. in filename
+        ]);
+    }
+
+    append_faststart_option(args, output_args, &config.output_format, segment_mode);
+
+    // Segment-open messages and progress records are an engine contract.
+    // FFmpeg uses the final global options, overriding user -v/-loglevel/-nostats.
+    args.extend([
+        "-loglevel".to_string(),
+        "info".to_string(),
+        "-stats".to_string(),
+    ]);
+
+    // Output path
+    let output_directory = if segment_mode {
+        PathBuf::from(config.output_dir.to_string_lossy().replace('%', "%%"))
+    } else {
+        config.output_dir.clone()
+    };
+    let output_path = output_directory.join(format!(
+        "{}.{}",
+        config.filename_template, config.output_format
+    ));
+
+    if segment_mode {
+        // Convert backslashes to forward slashes for FFmpeg compatibility on Windows
+        // FFmpeg's segment muxer interprets backslashes as escape sequences
+        let pattern_str = output_path.to_string_lossy().replace('\\', "/");
+        args.push(pattern_str);
+    } else {
+        // Non-segment mode: manually expand strftime patterns
+        // FFmpeg doesn't support -strftime flag in non-segment mode
+        let expanded_template = expand_filename_template(&config.filename_template, None);
+        let final_path = config
+            .output_dir
+            .join(format!("{}.{}", expanded_template, config.output_format));
+        // Convert backslashes to forward slashes for FFmpeg compatibility on Windows
+        let path_str = final_path.to_string_lossy().replace('\\', "/");
+        args.push(path_str);
+    }
+}
+
 /// FFmpeg-based download engine.
 pub struct FfmpegEngine {
     /// Engine configuration.
@@ -177,77 +249,7 @@ impl FfmpegEngine {
         // 5. Input URL
         args.extend(["-i".to_string(), config.url.clone()]);
 
-        // 6. Output options
-        args.extend(["-c".to_string(), "copy".to_string()]); // Copy streams without re-encoding
-
-        // 7. Extra output arguments from config
-        args.extend(self.config.output_args.clone());
-
-        // 8. File size limit if configured
-        // After that size download will be stopped
-        if config.max_segment_size_bytes > 0 {
-            args.extend(["-fs".to_string(), config.max_segment_size_bytes.to_string()]);
-        }
-
-        let segment_mode = config.max_segment_duration_secs > 0;
-
-        // Segment options if splitting is enabled
-        if segment_mode {
-            args.extend([
-                "-f".to_string(),
-                "segment".to_string(),
-                "-segment_time".to_string(),
-                config.max_segment_duration_secs.to_string(),
-                "-reset_timestamps".to_string(),
-                "1".to_string(),
-                "-strftime".to_string(),
-                "1".to_string(), // Enable strftime expansion for %Y, %m, %d, etc. in filename
-            ]);
-        }
-
-        append_faststart_option(
-            &mut args,
-            &self.config.output_args,
-            &config.output_format,
-            segment_mode,
-        );
-
-        // Segment-open messages and progress records are an engine contract.
-        // FFmpeg uses the final global options, overriding user -v/-loglevel/-nostats.
-        args.extend([
-            "-loglevel".to_string(),
-            "info".to_string(),
-            "-stats".to_string(),
-        ]);
-
-        // Output path
-        let output_directory = if segment_mode {
-            PathBuf::from(config.output_dir.to_string_lossy().replace('%', "%%"))
-        } else {
-            config.output_dir.clone()
-        };
-        let output_path = output_directory.join(format!(
-            "{}.{}",
-            config.filename_template, config.output_format
-        ));
-
-        if segment_mode {
-            // Convert backslashes to forward slashes for FFmpeg compatibility on Windows
-            // FFmpeg's segment muxer interprets backslashes as escape sequences
-            let pattern_str = output_path.to_string_lossy().replace('\\', "/");
-            args.push(pattern_str);
-        } else {
-            // Non-segment mode: manually expand strftime patterns
-            // FFmpeg doesn't support -strftime flag in non-segment mode
-            let expanded_template = expand_filename_template(&config.filename_template, None);
-            let final_path = config
-                .output_dir
-                .join(format!("{}.{}", expanded_template, config.output_format));
-            // Convert backslashes to forward slashes for FFmpeg compatibility on Windows
-            let path_str = final_path.to_string_lossy().replace('\\', "/");
-            args.push(path_str);
-        }
-
+        append_output_args(&mut args, config, &self.config.output_args);
         args
     }
 }

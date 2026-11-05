@@ -162,6 +162,75 @@ async fn the_streamlink_engine_records_a_live_hls_room_with_the_platform_headers
     app.shutdown().await;
 }
 
+/// A Streamlink recording that reaches the max part size ends that part as
+/// complete and goes on recording into a new part.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires Streamlink, ffmpeg and ffprobe"]
+async fn the_streamlink_engine_starts_a_new_part_at_the_part_size_limit() {
+    // Each connection re-reads the ended 30-segment playlist from its first
+    // segment: about 115 KB of FLV in total, one segment being ~5 KB, well
+    // past the limit, so every connection stops at it.
+    let origin = HlsOrigin::start(30).await;
+    origin.end();
+    let fake = FakePlatform::start().await;
+    let room = fake.room("sized");
+    room.set_live(room.live("Sized").stream(json!({
+        "url": origin.playlist_url(),
+        "format": "hls",
+        "media": "ts",
+        "quality": "origin",
+        "bitrate": 16_000,
+    })));
+    let app = TestApp::start_with(Seed::live()).await;
+    let token = app.admin_token().await;
+    let limit = 40_000;
+    let id = id_of(
+        &app.create_enabled_streamer(
+            &token,
+            json!({
+                "name": "Sized",
+                "url": room.url(),
+                "streamer_specific_config": {
+                    "download_engine": "default-streamlink",
+                    "stream_selection_config": { "preferred_formats": ["hls"] },
+                    "max_part_size_bytes": limit,
+                },
+            }),
+        )
+        .await,
+    );
+
+    eventually(WAIT, "a second connection", || async {
+        (origin.segment_requests(0).len() >= 2).then_some(())
+    })
+    .await;
+    room.set_offline();
+
+    let session = app.ended_session(&token, &id).await;
+    let events = session["events"].as_array().expect("session events");
+    assert_eq!(
+        events[1]["payload"]["kind"], "hysteresis_entered",
+        "{session}"
+    );
+    assert_eq!(
+        events[1]["payload"]["cause"],
+        json!({ "type": "completed" }),
+        "{session}"
+    );
+    let segments = app.segments(&token, id_of(&session).as_str()).await;
+    assert!(segments.len() >= 2, "{segments:?}");
+    // The first part is a playable file cut at the limit, well short of the
+    // 30-second playlist.
+    let first = stored_path(&segments[0]);
+    assert!(std::fs::metadata(&first).unwrap().len() >= limit, "{first}");
+    assert_eq!(&std::fs::read(&first).unwrap()[..3], b"FLV", "{first}");
+    let duration = duration_secs(&probe(&first).await);
+    assert!(duration > 0.0 && duration < 20.0, "{duration} s: {first}");
+    assert_eq!(app.dead_end().attempts(), []);
+
+    app.shutdown().await;
+}
+
 /// Create an enabled streamer for `url`, which no built-in platform claims,
 /// and return its id once it belongs to the Streamlink pseudo-platform.
 async fn monitor_through_streamlink(url: &str) -> (TestApp, String, String) {
