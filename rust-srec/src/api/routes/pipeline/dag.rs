@@ -473,10 +473,10 @@ pub async fn retry_all_failed_dags(
     let dag_scheduler = state.dag_scheduler()?;
 
     let failed_dags = dag_scheduler
-        .list_dags(Some("FAILED"), None, 1000, 0)
+        .list_dags(Some(DagExecutionStatus::Failed), None, 1000, 0)
         .await?;
     let cancelled_dags = dag_scheduler
-        .list_dags(Some("CANCELLED"), None, 1000, 0)
+        .list_dags(Some(DagExecutionStatus::Cancelled), None, 1000, 0)
         .await?;
 
     let dags: Vec<_> = failed_dags.into_iter().chain(cancelled_dags).collect();

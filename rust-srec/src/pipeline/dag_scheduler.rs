@@ -1644,7 +1644,7 @@ impl DagScheduler {
     /// List DAG executions with optional status and session_id filters.
     pub async fn list_dags(
         &self,
-        status: Option<&str>,
+        status: Option<DagExecutionStatus>,
         session_id: Option<&str>,
         limit: u32,
         offset: u32,
@@ -1655,7 +1655,11 @@ impl DagScheduler {
     }
 
     /// Count DAG executions with optional status and session_id filters.
-    pub async fn count_dags(&self, status: Option<&str>, session_id: Option<&str>) -> Result<u64> {
+    pub async fn count_dags(
+        &self,
+        status: Option<DagExecutionStatus>,
+        session_id: Option<&str>,
+    ) -> Result<u64> {
         self.dag_repository.count_dags(status, session_id).await
     }
 

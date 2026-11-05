@@ -1036,7 +1036,6 @@ fn job_to_response(job: Job, streamer_name: Option<String>) -> JobResponse {
             Some(job.outputs)
         },
         error_message: job.error,
-        progress: None,
         created_at: job.created_at,
         started_at: job.started_at,
         completed_at: job.completed_at,

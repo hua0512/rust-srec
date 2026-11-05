@@ -639,12 +639,7 @@ where
 
         loop {
             match dag_repo
-                .list_dags(
-                    status.map(|status| status.as_str()),
-                    session_id,
-                    COORDINATOR_RECOVERY_PAGE_LIMIT,
-                    offset,
-                )
+                .list_dags(status, session_id, COORDINATOR_RECOVERY_PAGE_LIMIT, offset)
                 .await
             {
                 Ok(page) => {

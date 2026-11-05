@@ -735,7 +735,7 @@ impl DagRepository for TestDagRepositoryForRetry {
 
     async fn list_dags(
         &self,
-        _status: Option<&str>,
+        _status: Option<DagExecutionStatus>,
         _session_id: Option<&str>,
         _limit: u32,
         _offset: u32,
@@ -743,7 +743,11 @@ impl DagRepository for TestDagRepositoryForRetry {
         unimplemented!("not needed for these tests")
     }
 
-    async fn count_dags(&self, _status: Option<&str>, _session_id: Option<&str>) -> Result<u64> {
+    async fn count_dags(
+        &self,
+        _status: Option<DagExecutionStatus>,
+        _session_id: Option<&str>,
+    ) -> Result<u64> {
         unimplemented!("not needed for these tests")
     }
 
@@ -944,7 +948,7 @@ impl DagRepository for TestDagRepository {
 
     async fn list_dags(
         &self,
-        status: Option<&str>,
+        status: Option<DagExecutionStatus>,
         session_id: Option<&str>,
         limit: u32,
         offset: u32,
@@ -954,7 +958,7 @@ impl DagRepository for TestDagRepository {
             .lock()
             .expect("lock poisoned")
             .values()
-            .filter(|dag| status.is_none_or(|status| dag.status == status))
+            .filter(|dag| status.is_none_or(|status| dag.status == status.as_str()))
             .filter(|dag| {
                 session_id.is_none_or(|session_id| dag.session_id.as_deref() == Some(session_id))
             })
@@ -969,13 +973,17 @@ impl DagRepository for TestDagRepository {
             .collect())
     }
 
-    async fn count_dags(&self, status: Option<&str>, session_id: Option<&str>) -> Result<u64> {
+    async fn count_dags(
+        &self,
+        status: Option<DagExecutionStatus>,
+        session_id: Option<&str>,
+    ) -> Result<u64> {
         Ok(self
             .dags
             .lock()
             .expect("lock poisoned")
             .values()
-            .filter(|dag| status.is_none_or(|status| dag.status == status))
+            .filter(|dag| status.is_none_or(|status| dag.status == status.as_str()))
             .filter(|dag| {
                 session_id.is_none_or(|session_id| dag.session_id.as_deref() == Some(session_id))
             })

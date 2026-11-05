@@ -1340,12 +1340,10 @@ async fn compression_stores_entries_without_roots_drive_prefixes_or_parent_compo
 // Jobs
 // ---------------------------------------------------------------------------
 
-/// Only a running job with a progress report carries `progress`; every
-/// other job, whatever its status, reports it as null in its detail and in
-/// both job lists, rather than omitting it or showing a stale value. Only a
-/// job that has finished can be deleted.
+/// Jobs of every status appear in both job lists, and only a job that has
+/// finished can be deleted.
 #[tokio::test]
-async fn jobs_without_live_progress_report_null_progress_and_only_finished_ones_can_be_deleted() {
+async fn only_finished_jobs_can_be_deleted() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
     let statuses = ["PENDING", "PROCESSING", "COMPLETED", "FAILED", "CANCELLED"];
@@ -1354,15 +1352,11 @@ async fn jobs_without_live_progress_report_null_progress_and_only_finished_ones_
         seed_standalone_job(&app, &id(status), status, 0).await;
         let detail = job(&app, &token, &id(status)).await;
         assert_eq!(detail["status"], status);
-        assert_eq!(detail.get("progress"), Some(&Value::Null), "{detail}");
     }
     for path in ["/api/pipeline/jobs", "/api/pipeline/jobs/page"] {
         let page = app.get_ok(path, &token).await;
         let items = page["items"].as_array().expect("items");
         assert_eq!(items.len(), statuses.len(), "{path}: {page}");
-        for item in items {
-            assert_eq!(item.get("progress"), Some(&Value::Null), "{path}: {item}");
-        }
     }
 
     for status in statuses {

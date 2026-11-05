@@ -75,7 +75,6 @@ export const JobSchema = z.object({
   input_path: z.array(z.string()),
   output_path: z.array(z.string()).nullish(),
   error_message: z.string().nullable().optional(),
-  progress: z.number().nullable().optional(),
   created_at: z.string(),
   started_at: z.string().nullable().optional(),
   completed_at: z.string().nullable().optional(),
