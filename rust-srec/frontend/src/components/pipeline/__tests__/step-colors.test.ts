@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { VALID_CATEGORIES, VALID_PROCESSORS } from '@/api/schemas';
+import { VALID_CATEGORIES } from '@/api/schemas';
 import {
   DEFAULT_STEP_COLOR,
+  PROCESSOR_META,
   STEP_COLORS,
   getStepBadgeColor,
   getStepColor,
@@ -79,7 +80,7 @@ describe('step colours', () => {
     },
   );
 
-  it.each([...VALID_PROCESSORS])(
+  it.each(Object.keys(PROCESSOR_META))(
     'resolves a tint for the %s processor',
     (name) => {
       expect(getStepBadgeColor(name)).not.toBe(DEFAULT_STEP_COLOR.badge);

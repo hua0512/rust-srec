@@ -1,11 +1,6 @@
-import { VALID_PROCESSORS } from '@/api/schemas';
 import { getProcessorDefinition } from '../registry';
 
 describe('getProcessorDefinition', () => {
-  it.each(VALID_PROCESSORS)('has a definition for %s', (processor) => {
-    expect(getProcessorDefinition(processor)).toBeDefined();
-  });
-
   it.each([
     ['transcode', 'remux'],
     ['convert', 'remux'],

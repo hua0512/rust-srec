@@ -47,7 +47,7 @@ import { MetadataConfigForm } from './metadata-config-form';
 import { ExecuteConfigForm } from './execute-config-form';
 
 import { ProcessorConfigFormProps } from './common-props';
-import { msg } from '@lingui/core/macro';
+import { PROCESSOR_META, type ProcessorType } from '../../constants';
 import { type MessageDescriptor } from '@lingui/core';
 
 interface ProcessorDefinition {
@@ -56,66 +56,66 @@ interface ProcessorDefinition {
   label: MessageDescriptor;
 }
 
-const PROCESSOR_REGISTRY: Record<string, ProcessorDefinition> = {
+const PROCESSOR_REGISTRY: Record<ProcessorType, ProcessorDefinition> = {
   remux: {
+    ...PROCESSOR_META.remux,
     schema: RemuxConfigSchema,
     component: RemuxConfigForm,
-    label: msg`Remux / Transcode`,
-  },
-  rclone: {
-    schema: RcloneConfigSchema,
-    component: RcloneConfigForm,
-    label: msg`Rclone Transfer`,
-  },
-  baidupcs: {
-    schema: BaiduPcsConfigSchema,
-    component: BaiduPcsConfigForm,
-    label: msg`Baidu Netdisk Upload`,
   },
   thumbnail: {
+    ...PROCESSOR_META.thumbnail,
     schema: ThumbnailConfigSchema,
     component: ThumbnailConfigForm,
-    label: msg`Thumbnail Generator`,
   },
   audio_extract: {
+    ...PROCESSOR_META.audio_extract,
     schema: AudioExtractConfigSchema,
     component: AudioExtractConfigForm,
-    label: msg`Audio Extraction`,
   },
   compression: {
+    ...PROCESSOR_META.compression,
     schema: CompressionConfigSchema,
     component: CompressionConfigForm,
-    label: msg`Compression / Archive`,
-  },
-  delete: {
-    schema: DeleteConfigSchema,
-    component: DeleteConfigForm,
-    label: msg`Delete File`,
-  },
-  metadata: {
-    schema: MetadataConfigSchema,
-    component: MetadataConfigForm,
-    label: msg`Metadata Editor`,
-  },
-  execute: {
-    schema: ExecuteConfigSchema,
-    component: ExecuteConfigForm,
-    label: msg`Execute Command`,
-  },
-  danmaku_factory: {
-    schema: DanmakuFactoryConfigSchema,
-    component: DanmakuFactoryConfigForm,
-    label: msg`Danmaku to ASS`,
-  },
-  ass_burnin: {
-    schema: AssBurninConfigSchema,
-    component: AssBurninConfigForm,
-    label: msg`ASS Burn-in`,
   },
   copy_move: {
+    ...PROCESSOR_META.copy_move,
     schema: CopyMoveConfigSchema,
     component: CopyMoveConfigForm,
-    label: msg`Copy / Move`,
+  },
+  delete: {
+    ...PROCESSOR_META.delete,
+    schema: DeleteConfigSchema,
+    component: DeleteConfigForm,
+  },
+  metadata: {
+    ...PROCESSOR_META.metadata,
+    schema: MetadataConfigSchema,
+    component: MetadataConfigForm,
+  },
+  rclone: {
+    ...PROCESSOR_META.rclone,
+    schema: RcloneConfigSchema,
+    component: RcloneConfigForm,
+  },
+  baidupcs: {
+    ...PROCESSOR_META.baidupcs,
+    schema: BaiduPcsConfigSchema,
+    component: BaiduPcsConfigForm,
+  },
+  execute: {
+    ...PROCESSOR_META.execute,
+    schema: ExecuteConfigSchema,
+    component: ExecuteConfigForm,
+  },
+  danmaku_factory: {
+    ...PROCESSOR_META.danmaku_factory,
+    schema: DanmakuFactoryConfigSchema,
+    component: DanmakuFactoryConfigForm,
+  },
+  ass_burnin: {
+    ...PROCESSOR_META.ass_burnin,
+    schema: AssBurninConfigSchema,
+    component: AssBurninConfigForm,
   },
 };
 
@@ -124,7 +124,7 @@ const PROCESSOR_REGISTRY: Record<string, ProcessorDefinition> = {
  * `job_types()` under `rust-srec/src/pipeline/processors`). Steps created
  * through the API or an import may use them.
  */
-const PROCESSOR_ALIASES: Record<string, string> = {
+const PROCESSOR_ALIASES: Record<string, ProcessorType> = {
   transcode: 'remux',
   convert: 'remux',
   upload: 'rclone',
@@ -143,10 +143,9 @@ const PROCESSOR_ALIASES: Record<string, string> = {
 export const getProcessorDefinition = (
   processorName: string,
 ): ProcessorDefinition | undefined => {
-  return (
-    PROCESSOR_REGISTRY[processorName] ??
-    PROCESSOR_REGISTRY[PROCESSOR_ALIASES[processorName]]
-  );
+  const registry: Partial<Record<string, ProcessorDefinition>> =
+    PROCESSOR_REGISTRY;
+  return registry[processorName] ?? registry[PROCESSOR_ALIASES[processorName]];
 };
 
 /**

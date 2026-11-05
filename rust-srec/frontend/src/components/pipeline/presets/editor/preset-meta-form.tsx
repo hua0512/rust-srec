@@ -24,22 +24,7 @@ import {
 } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Link } from '@tanstack/react-router';
-import {
-  ArrowLeft,
-  Film,
-  Image as ImageIcon,
-  Music,
-  FileArchive,
-  Copy,
-  Trash,
-  Tags,
-  Upload,
-  CloudUpload,
-  Terminal,
-  Settings2,
-  FileText,
-  Type,
-} from 'lucide-react';
+import { ArrowLeft, Settings2 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { motion } from 'motion/react';
@@ -51,6 +36,7 @@ import {
 import { useLingui } from '@lingui/react';
 import type { JobPreset } from '@/api/schemas';
 import type { PresetFormValues } from '../preset-editor';
+import { PROCESSOR_META } from '../../constants';
 
 interface PresetMetaFormProps {
   form: UseFormReturn<PresetFormValues>;
@@ -60,32 +46,10 @@ interface PresetMetaFormProps {
   isUpdating: boolean;
 }
 
-const PROCESSOR_OPTIONS = [
-  { id: 'remux', label: <Trans>Remux / Transcode</Trans>, icon: Film },
-  { id: 'thumbnail', label: <Trans>Thumbnail</Trans>, icon: ImageIcon },
-  { id: 'audio_extract', label: <Trans>Audio Extract</Trans>, icon: Music },
-  { id: 'compression', label: <Trans>Compression</Trans>, icon: FileArchive },
-  { id: 'copy_move', label: <Trans>Copy / Move</Trans>, icon: Copy },
-  { id: 'delete', label: <Trans>Delete</Trans>, icon: Trash },
-  { id: 'metadata', label: <Trans>Metadata</Trans>, icon: Tags },
-  {
-    id: 'rclone',
-    label: <Trans>Rclone</Trans>,
-    icon: Upload,
-  },
-  {
-    id: 'baidupcs',
-    label: <Trans>Baidu Netdisk</Trans>,
-    icon: CloudUpload,
-  },
-  { id: 'execute', label: <Trans>Execute Command</Trans>, icon: Terminal },
-  {
-    id: 'danmaku_factory',
-    label: <Trans>Danmaku to ASS</Trans>,
-    icon: FileText,
-  },
-  { id: 'ass_burnin', label: <Trans>ASS Burn-in</Trans>, icon: Type },
-];
+const PROCESSOR_OPTIONS = Object.entries(PROCESSOR_META).map(([id, meta]) => ({
+  id,
+  ...meta,
+}));
 
 export function PresetMetaForm({
   form,
@@ -170,7 +134,7 @@ export function PresetMetaForm({
                         </div>
                         {selectedOption ? (
                           <span className="text-sm">
-                            {selectedOption.label}
+                            {i18n._(selectedOption.label)}
                           </span>
                         ) : (
                           <SelectValue placeholder={i18n._(msg`Select type`)} />
@@ -183,7 +147,7 @@ export function PresetMetaForm({
                       <SelectItem key={option.id} value={option.id}>
                         <div className="flex items-center gap-2">
                           <option.icon className="w-4 h-4 text-muted-foreground" />
-                          <span>{option.label}</span>
+                          <span>{i18n._(option.label)}</span>
                         </div>
                       </SelectItem>
                     ))}

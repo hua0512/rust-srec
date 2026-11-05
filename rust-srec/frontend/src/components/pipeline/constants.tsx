@@ -29,6 +29,34 @@ import {
   SiYoutube,
 } from '@icons-pack/react-simple-icons';
 import React from 'react';
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
+
+/**
+ * Display name and icon of each processor the backend runs, in the order the preset editor
+ * lists them. The processor registry and the step icons read from here so every page names a
+ * processor the same way; it lives outside the registry so that pages needing only an icon
+ * don't pull in the config forms.
+ */
+export const PROCESSOR_META = {
+  remux: { label: msg`Remux / Transcode`, icon: FileVideo },
+  thumbnail: { label: msg`Thumbnail Generator`, icon: ImageIcon },
+  audio_extract: { label: msg`Audio Extraction`, icon: Scissors },
+  compression: { label: msg`Compression / Archive`, icon: Archive },
+  copy_move: { label: msg`Copy / Move`, icon: Copy },
+  delete: { label: msg`Delete File`, icon: Trash },
+  metadata: { label: msg`Metadata Editor`, icon: Tag },
+  rclone: { label: msg`Rclone Transfer`, icon: Cloud },
+  baidupcs: { label: msg`Baidu Netdisk Upload`, icon: CloudUpload },
+  execute: { label: msg`Execute Command`, icon: Terminal },
+  danmaku_factory: { label: msg`Danmaku to ASS`, icon: Type },
+  ass_burnin: { label: msg`ASS Burn-in`, icon: Flame },
+} satisfies Record<
+  string,
+  { label: MessageDescriptor; icon: React.ElementType }
+>;
+
+export type ProcessorType = keyof typeof PROCESSOR_META;
 
 /**
  * Keyed by processor name, preset category, and the leading segment of the
@@ -36,27 +64,18 @@ import React from 'react';
  * which is what a workflow step stores when it references a preset.
  */
 const STEP_ICONS: Record<string, React.ElementType> = {
-  remux: FileVideo,
-  thumbnail: ImageIcon,
+  ...Object.fromEntries(
+    Object.entries(PROCESSOR_META).map(([name, meta]) => [name, meta.icon]),
+  ),
   upload: Upload,
-  rclone: Cloud,
-  baidupcs: CloudUpload,
-  execute: Terminal,
-  copy_move: Copy,
   copy: Copy,
   move: Copy,
-  audio_extract: Scissors,
   audio: Scissors,
-  compression: Archive,
   compress: Archive,
   nvenc: Archive,
   archive: Archive,
-  delete: Trash,
-  metadata: Tag,
   add_metadata: Tag,
-  danmaku_factory: Type,
   danmu: Type,
-  ass_burnin: Flame,
   subtitle: Flame,
   custom: Terminal,
 };

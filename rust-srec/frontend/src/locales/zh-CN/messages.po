@@ -1204,7 +1204,7 @@ msgstr "参数 {number}"
 msgid "Arguments"
 msgstr "参数列表"
 
-#: src/components/pipeline/presets/processor-schemas.ts:220
+#: src/components/pipeline/presets/processor-schemas.ts:213
 msgid "Arguments require program mode"
 msgstr "只有程序模式才能设置参数"
 
@@ -1213,8 +1213,7 @@ msgstr "只有程序模式才能设置参数"
 msgid "Artist"
 msgstr "艺术家"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:87
-#: src/components/pipeline/presets/processors/registry.ts:113
+#: src/components/pipeline/constants.tsx:53
 msgid "ASS Burn-in"
 msgstr "ASS 硬字幕"
 
@@ -1270,11 +1269,7 @@ msgstr "音频编码"
 msgid "Audio codec change"
 msgstr "音频编码变化"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:66
-msgid "Audio Extract"
-msgstr "提取音频"
-
-#: src/components/pipeline/presets/processors/registry.ts:83
+#: src/components/pipeline/constants.tsx:44
 msgid "Audio Extraction"
 msgstr "音频提取"
 
@@ -1419,7 +1414,7 @@ msgstr "返回处理任务列表"
 msgid "Back to platforms"
 msgstr "返回平台列表"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:133
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:97
 #: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:81
 msgid "Back to presets"
 msgstr "返回预设列表"
@@ -1468,10 +1463,6 @@ msgstr "备份与恢复"
 msgid "Backward Jump Threshold (ms)"
 msgstr "回跳阈值（毫秒）"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:78
-msgid "Baidu Netdisk"
-msgstr "百度网盘"
-
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:126
 msgid "Baidu Netdisk Account"
 msgstr "百度网盘账号"
@@ -1498,7 +1489,7 @@ msgstr "百度网盘退出登录失败"
 msgid "Baidu Netdisk re-login failed"
 msgstr "百度网盘重新登录失败"
 
-#: src/components/pipeline/presets/processors/registry.ts:73
+#: src/components/pipeline/constants.tsx:50
 msgid "Baidu Netdisk Upload"
 msgstr "百度网盘上传"
 
@@ -1828,7 +1819,7 @@ msgid "Case Insensitive"
 msgstr "不区分大小写"
 
 #: src/components/notifications/events/payload-preview.tsx:46
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:254
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:218
 msgid "Category"
 msgstr "分类"
 
@@ -1997,7 +1988,7 @@ msgstr "请选择单个平台以管理其账号。"
 msgid "Choose an account or raw cookies, not both"
 msgstr "请选择账号或手动 Cookie，不能同时使用"
 
-#: src/components/pipeline/presets/processor-schemas.ts:213
+#: src/components/pipeline/presets/processor-schemas.ts:206
 msgid "Choose either a command or a program"
 msgstr "请选择命令或程序其中之一"
 
@@ -2210,11 +2201,10 @@ msgid "Compress video for storage, upload to cloud, then delete local file to sa
 msgstr "压缩视频用于存档，上传到云端，然后删除本地文件以节省空间。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:45
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:67
 msgid "Compression"
 msgstr "压缩"
 
-#: src/components/pipeline/presets/processors/registry.ts:88
+#: src/components/pipeline/constants.tsx:45
 msgid "Compression / Archive"
 msgstr "压缩/归档"
 
@@ -2466,8 +2456,7 @@ msgstr "复制（直通）"
 msgid "Copy (Stream Copy)"
 msgstr "复制（流复制）"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:68
-#: src/components/pipeline/presets/processors/registry.ts:118
+#: src/components/pipeline/constants.tsx:46
 msgid "Copy / Move"
 msgstr "复制/移动"
 
@@ -2899,8 +2888,7 @@ msgstr "DAG 图"
 msgid "Danmaku"
 msgstr "弹幕"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:84
-#: src/components/pipeline/presets/processors/registry.ts:108
+#: src/components/pipeline/constants.tsx:52
 msgid "Danmaku to ASS"
 msgstr "弹幕转 ASS"
 
@@ -3106,7 +3094,6 @@ msgstr "用于确认主播确实已下播的复查之间的间隔。"
 #: src/components/pipeline/outputs/delete-outputs-dialog.tsx:106
 #: src/components/pipeline/outputs/output-batch-action-bar.tsx:62
 #: src/components/pipeline/outputs/output-card.tsx:239
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:69
 #: src/components/pipeline/presets/preset-card.tsx:118
 #: src/components/pipeline/presets/preset-card.tsx:141
 #: src/components/pipeline/workflows/workflow-card.tsx:85
@@ -3145,7 +3132,7 @@ msgstr "删除渠道？"
 msgid "Delete every partial file?"
 msgstr "删除所有残留文件？"
 
-#: src/components/pipeline/presets/processors/registry.ts:93
+#: src/components/pipeline/constants.tsx:47
 msgid "Delete File"
 msgstr "删除文件"
 
@@ -3316,12 +3303,12 @@ msgstr "依赖于（前辈节点）"
 msgid "Describe what this workflow does..."
 msgstr "描述此工作流的用途..."
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:294
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:258
 #: src/components/pipeline/workflows/workflow-editor.tsx:226
 msgid "Description"
 msgstr "描述"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:303
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:267
 msgid "Description is managed by the system"
 msgstr "描述由系统管理"
 
@@ -3362,7 +3349,7 @@ msgstr "目标文件夹"
 msgid "Destination Folder help"
 msgstr "目标文件夹说明"
 
-#: src/components/pipeline/presets/processor-schemas.ts:162
+#: src/components/pipeline/presets/processor-schemas.ts:155
 msgid "Destination is required"
 msgstr "必须填写目标文件夹"
 
@@ -3712,7 +3699,7 @@ msgstr "例如 mp4"
 msgid "e.g. My Favorite Streamer"
 msgstr "例如 我喜欢的主播"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:235
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:199
 msgid "e.g. Remux to H.264"
 msgstr "例如：重封装为 H.264"
 
@@ -4090,9 +4077,8 @@ msgstr "在内置列表之外，额外从高频词图表中排除的词。每行
 msgid "Execute"
 msgstr "执行"
 
+#: src/components/pipeline/constants.tsx:51
 #: src/components/pipeline/presets/default-presets-i18n.ts:24
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:81
-#: src/components/pipeline/presets/processors/registry.ts:103
 msgid "Execute Command"
 msgstr "执行命令"
 
@@ -5454,7 +5440,7 @@ msgstr "https://twitch.tv/..."
 msgid "Icon"
 msgstr "图标"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:204
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:168
 msgid "ID"
 msgstr "ID"
 
@@ -6468,11 +6454,10 @@ msgid "Messages"
 msgstr "消息数"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:53
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:70
 msgid "Metadata"
 msgstr "元数据"
 
-#: src/components/pipeline/presets/processors/registry.ts:98
+#: src/components/pipeline/constants.tsx:48
 msgid "Metadata Editor"
 msgstr "元数据编辑器"
 
@@ -6694,7 +6679,7 @@ msgstr "我的模板"
 
 #: src/components/config/engines/forms/setting-fields.tsx:969
 #: src/components/notifications/channel-form.tsx:381
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:230
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:194
 #: src/components/pipeline/workflows/workflow-editor.tsx:206
 #: src/components/proxies/proxy-editor-dialog.tsx:233
 #: src/components/streamers/config/streamer-identity-fields.tsx:97
@@ -6712,13 +6697,13 @@ msgstr "名称 A-Z"
 msgid "Name autofilled successfully"
 msgstr "名称自动填充成功"
 
-#: src/api/schemas/engine.ts:638
-#: src/api/schemas/engine.ts:681
-#: src/api/schemas/notifications.ts:177
-#: src/api/schemas/notifications.ts:183
-#: src/api/schemas/notifications.ts:189
-#: src/api/schemas/notifications.ts:195
-#: src/api/schemas/notifications.ts:201
+#: src/api/schemas/engine.ts:655
+#: src/api/schemas/engine.ts:668
+#: src/api/schemas/notifications.ts:172
+#: src/api/schemas/notifications.ts:178
+#: src/api/schemas/notifications.ts:184
+#: src/api/schemas/notifications.ts:190
+#: src/api/schemas/notifications.ts:196
 #: src/api/schemas/streamer.ts:262
 #: src/api/schemas/streamer.ts:297
 #: src/api/schemas/template.ts:80
@@ -7492,7 +7477,7 @@ msgstr "操作类型"
 msgid "Optional"
 msgstr "可选"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:304
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:268
 msgid "Optional description for this preset"
 msgstr "此预设的可选描述"
 
@@ -8269,7 +8254,7 @@ msgstr "预设创建成功"
 msgid "Preset deleted successfully"
 msgstr "预设删除成功"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:139
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:103
 msgid "Preset Details"
 msgstr "预设详情"
 
@@ -8416,7 +8401,7 @@ msgstr "处理节点"
 msgid "Processing steps that have run for more than 10 seconds."
 msgstr "已运行超过 10 秒的处理步骤。"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:158
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:122
 msgid "Processor"
 msgstr "处理器"
 
@@ -8437,7 +8422,7 @@ msgstr "程序"
 msgid "Program and arguments"
 msgstr "程序和参数"
 
-#: src/components/pipeline/presets/processor-schemas.ts:197
+#: src/components/pipeline/presets/processor-schemas.ts:190
 msgid "Program is required"
 msgstr "必须填写程序"
 
@@ -8574,10 +8559,6 @@ msgstr "比例"
 msgid "Raw JSON Editor"
 msgstr "原始 JSON 编辑器"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:73
-msgid "Rclone"
-msgstr "Rclone"
-
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:597
 msgid "rclone default: 1"
 msgstr "rclone 默认值：1"
@@ -8591,7 +8572,7 @@ msgstr "rclone 默认值：4"
 msgid "rclone default: 8"
 msgstr "rclone 默认值：8"
 
-#: src/components/pipeline/presets/processors/registry.ts:68
+#: src/components/pipeline/constants.tsx:49
 msgid "Rclone Transfer"
 msgstr "Rclone 传输"
 
@@ -8677,7 +8658,7 @@ msgstr "推荐"
 msgid "Reconnect to request a cut."
 msgstr "重新连接后才能请求分段。"
 
-#: src/api/schemas/engine.ts:473
+#: src/api/schemas/engine.ts:470
 msgid "Record at least one of video and audio"
 msgstr "视频和音频至少录制一项"
 
@@ -8939,8 +8920,7 @@ msgstr "移除可能导致播放器卡顿的冗余头部。"
 msgid "Remux"
 msgstr "重封装"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:64
-#: src/components/pipeline/presets/processors/registry.ts:63
+#: src/components/pipeline/constants.tsx:42
 msgid "Remux / Transcode"
 msgstr "重封装/转码"
 
@@ -9705,7 +9685,7 @@ msgstr "请至少选择一天。"
 msgid "Select behavior"
 msgstr "选择行为"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:269
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:233
 msgid "Select category"
 msgstr "选择类别"
 
@@ -9809,7 +9789,7 @@ msgstr "选择必须在此步骤运行前成功完成的步骤。"
 
 #: src/components/config/engines/engine-editor.tsx:233
 #: src/components/notifications/channel-form.tsx:412
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:176
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:140
 msgid "Select type"
 msgstr "选择类型"
 
@@ -10963,7 +10943,7 @@ msgstr "此过滤器仅在时间线上突出显示的窗口期间激活。如果
 msgid "This filter's settings could not be read."
 msgstr "无法读取该过滤器的设置。"
 
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:313
+#: src/components/pipeline/presets/editor/preset-meta-form.tsx:277
 msgid "This is a default preset. Description cannot be modified."
 msgstr "这是默认预设，描述无法修改。"
 
@@ -11092,12 +11072,11 @@ msgstr "吞吐量"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:8
 #: src/components/pipeline/presets/default-presets-i18n.ts:46
-#: src/components/pipeline/presets/editor/preset-meta-form.tsx:65
 #: src/lib/media-file-type.ts:46
 msgid "Thumbnail"
 msgstr "缩略图"
 
-#: src/components/pipeline/presets/processors/registry.ts:78
+#: src/components/pipeline/constants.tsx:43
 msgid "Thumbnail Generator"
 msgstr "缩略图生成器"
 
@@ -11690,7 +11669,7 @@ msgstr "改用“{conflictName}”"
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "使用 <0>-movflags +faststart</0>"
 
-#: src/api/schemas/engine.ts:451
+#: src/api/schemas/engine.ts:448
 msgid "Use a language tag such as 'en' or 'pt-BR'"
 msgstr "请使用语言标签，例如 'en' 或 'pt-BR'"
 
