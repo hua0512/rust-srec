@@ -47,7 +47,11 @@ import { MetadataConfigForm } from './metadata-config-form';
 import { ExecuteConfigForm } from './execute-config-form';
 
 import { ProcessorConfigFormProps } from './common-props';
-import { PROCESSOR_META, type ProcessorType } from '../../constants';
+import {
+  PROCESSOR_META,
+  resolveProcessorType,
+  type ProcessorType,
+} from '../../constants';
 import { type MessageDescriptor } from '@lingui/core';
 
 interface ProcessorDefinition {
@@ -119,33 +123,11 @@ const PROCESSOR_REGISTRY: Record<ProcessorType, ProcessorDefinition> = {
   },
 };
 
-/**
- * Alternate names the backend also accepts for a processor (each processor's
- * `job_types()` under `rust-srec/src/pipeline/processors`). Steps created
- * through the API or an import may use them.
- */
-const PROCESSOR_ALIASES: Record<string, ProcessorType> = {
-  transcode: 'remux',
-  convert: 'remux',
-  upload: 'rclone',
-  extract_audio: 'audio_extract',
-  compress: 'compression',
-  archive: 'compression',
-  cleanup: 'delete',
-  embed_metadata: 'metadata',
-  command: 'execute',
-  danmu_to_ass: 'danmaku_factory',
-  danmu: 'danmaku_factory',
-  burn_ass: 'ass_burnin',
-  burn_subtitles: 'ass_burnin',
-};
-
 export const getProcessorDefinition = (
   processorName: string,
 ): ProcessorDefinition | undefined => {
-  const registry: Partial<Record<string, ProcessorDefinition>> =
-    PROCESSOR_REGISTRY;
-  return registry[processorName] ?? registry[PROCESSOR_ALIASES[processorName]];
+  const type = resolveProcessorType(processorName);
+  return type ? PROCESSOR_REGISTRY[type] : undefined;
 };
 
 /**

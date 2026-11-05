@@ -35,8 +35,8 @@ import type { MessageDescriptor } from '@lingui/core';
 /**
  * Display name and icon of each processor the backend runs, in the order the preset editor
  * lists them. The processor registry and the step icons read from here so every page names a
- * processor the same way; it lives outside the registry so that pages needing only an icon
- * don't pull in the config forms.
+ * processor the same way. This module must not import the registry: the app shell names jobs
+ * through it, and the registry would bring the config forms into every page.
  */
 export const PROCESSOR_META = {
   remux: { label: msg`Remux / Transcode`, icon: FileVideo },
@@ -57,6 +57,35 @@ export const PROCESSOR_META = {
 >;
 
 export type ProcessorType = keyof typeof PROCESSOR_META;
+
+/**
+ * Alternate names the backend also accepts for a processor (each processor's
+ * `job_types()` under `rust-srec/src/pipeline/processors`). Steps created
+ * through the API or an import may use them.
+ */
+const PROCESSOR_ALIASES: Record<string, ProcessorType> = {
+  transcode: 'remux',
+  convert: 'remux',
+  upload: 'rclone',
+  extract_audio: 'audio_extract',
+  compress: 'compression',
+  archive: 'compression',
+  cleanup: 'delete',
+  embed_metadata: 'metadata',
+  command: 'execute',
+  danmu_to_ass: 'danmaku_factory',
+  danmu: 'danmaku_factory',
+  burn_ass: 'ass_burnin',
+  burn_subtitles: 'ass_burnin',
+};
+
+/** The processor `name` refers to, by its own name or one of its aliases. */
+export function resolveProcessorType(name: string): ProcessorType | undefined {
+  if (Object.hasOwn(PROCESSOR_META, name)) return name as ProcessorType;
+  return Object.hasOwn(PROCESSOR_ALIASES, name)
+    ? PROCESSOR_ALIASES[name]
+    : undefined;
+}
 
 /**
  * Keyed by processor name, preset category, and the leading segment of the
