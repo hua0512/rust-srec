@@ -29,9 +29,9 @@ const eventTypes = [
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(listEventTypes).mockResolvedValue(eventTypes as any);
-  vi.mocked(getSubscriptions).mockResolvedValue(['stream_online'] as any);
-  vi.mocked(updateSubscriptions).mockResolvedValue(undefined as any);
+  vi.mocked(listEventTypes).mockResolvedValue(eventTypes);
+  vi.mocked(getSubscriptions).mockResolvedValue(['stream_online']);
+  vi.mocked(updateSubscriptions).mockResolvedValue([]);
 });
 
 async function renderManager() {
@@ -73,7 +73,7 @@ describe('SubscriptionManager', () => {
     vi.mocked(getSubscriptions).mockResolvedValue([
       'stream_online',
       'config_updated',
-    ] as any);
+    ]);
     await renderManager();
 
     expect(screen.getByText('1 selected')).toBeInTheDocument();

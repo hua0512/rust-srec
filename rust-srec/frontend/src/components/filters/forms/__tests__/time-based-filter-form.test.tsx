@@ -30,7 +30,7 @@ function renderForm(config?: Record<string, unknown>) {
 
   renderWithProviders(<Harness />);
 
-  return { values: () => form.getValues('config') as Record<string, any> };
+  return { values: () => form.getValues('config') as Record<string, unknown> };
 }
 
 /**

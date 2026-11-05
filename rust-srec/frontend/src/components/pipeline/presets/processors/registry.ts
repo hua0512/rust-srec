@@ -55,7 +55,7 @@ import {
 import { type MessageDescriptor } from '@lingui/core';
 
 interface ProcessorDefinition {
-  schema: z.ZodType<any>;
+  schema: z.ZodType;
   component: ComponentType<ProcessorConfigFormProps>;
   label: MessageDescriptor;
 }

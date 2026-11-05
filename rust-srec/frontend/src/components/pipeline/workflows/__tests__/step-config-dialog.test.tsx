@@ -74,7 +74,8 @@ const listJobPresets = vi.fn(
 );
 
 vi.mock('@/server/functions/job', () => ({
-  listJobPresets: (args: any) => listJobPresets(args),
+  listJobPresets: (args: Parameters<typeof listJobPresets>[0]) =>
+    listJobPresets(args),
 }));
 
 function renderDialog(

@@ -1,4 +1,4 @@
-import { useForm } from 'react-hook-form';
+import { useForm, type FieldValues } from 'react-hook-form';
 
 import { Form } from '@/components/ui/form';
 import { ExecuteConfigForm } from '../execute-config-form';
@@ -6,7 +6,7 @@ import { renderWithProviders } from '@/test/render';
 
 function renderForm() {
   function Harness() {
-    const form = useForm<any>({
+    const form = useForm<FieldValues>({
       defaultValues: { command: 'ffmpeg -i {input} -c copy {output}' },
     });
     return (

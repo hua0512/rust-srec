@@ -15,8 +15,7 @@ export const PayloadPreview = memo(({ payload }: { payload: string }) => {
     // Credential events nest one level deeper, under `event`.
     const variant = Object.keys(parsed)[0];
     const body = variant ? parsed[variant] : undefined;
-    const inner =
-      (variant === 'Credential' ? body?.event : body) ?? ({} as any);
+    const inner = (variant === 'Credential' ? body?.event : body) ?? {};
     const fields: {
       label: MessageDescriptor;
       value: string | number;

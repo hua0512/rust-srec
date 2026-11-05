@@ -23,7 +23,7 @@ type FlagFormFieldProps = {
    * than the one line `description` has room for, so the row stays a row.
    */
   info?: React.ReactNode;
-  checked?: (value: any) => boolean;
+  checked?: (value: unknown) => boolean;
   onChange?: (value: boolean) => void;
   showExperimentalBadge?: boolean;
   className?: string;
