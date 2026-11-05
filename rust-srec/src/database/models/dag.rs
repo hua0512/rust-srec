@@ -30,7 +30,7 @@ pub struct DagExecutionDbModel {
     pub session_id: Option<String>,
     /// Segment index when this DAG is tied to a specific session segment.
     pub segment_index: Option<i64>,
-    /// Coordination discriminator ("video", "danmu", "paired", or "session_complete").
+    /// Coordination discriminator; see [`DagSegmentSource`] for the stored spellings.
     pub segment_source: Option<String>,
     /// Unix epoch milliseconds (UTC) when the DAG was created.
     pub created_at: i64,
@@ -106,9 +106,48 @@ impl DagExecutionDbModel {
         DagExecutionStatus::parse(&self.status)
     }
 
+    /// Get the coordination discriminator, or `None` for an untagged or unrecognised value.
+    pub fn get_segment_source(&self) -> Option<DagSegmentSource> {
+        self.segment_source
+            .as_deref()
+            .and_then(DagSegmentSource::parse)
+    }
+
     /// Check if the DAG is complete (all steps finished or failed).
     pub fn is_complete(&self) -> bool {
         self.completed_steps + self.failed_steps >= self.total_steps
+    }
+}
+
+/// Which pipeline coordination role a DAG execution plays, stored in
+/// `dag_execution.segment_source`. Session repository queries match the
+/// `session_complete` spelling in SQL, so the stored strings must not change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DagSegmentSource {
+    Video,
+    Danmu,
+    Paired,
+    SessionComplete,
+}
+
+impl DagSegmentSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Video => "video",
+            Self::Danmu => "danmu",
+            Self::Paired => "paired",
+            Self::SessionComplete => "session_complete",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "video" => Some(Self::Video),
+            "danmu" => Some(Self::Danmu),
+            "paired" => Some(Self::Paired),
+            "session_complete" => Some(Self::SessionComplete),
+            _ => None,
+        }
     }
 }
 

@@ -39,7 +39,7 @@ use crate::database::models::job::{
     DagExecutionStatus, DagPipelineDefinition, DagStep, PipelineStep,
 };
 use crate::database::models::{
-    JobFilters, MediaFileType, MediaOutputDbModel, Pagination, SessionFilters,
+    DagSegmentSource, JobFilters, MediaFileType, MediaOutputDbModel, Pagination, SessionFilters,
     SessionSegmentLifecycle, SessionSegmentSplitReason, TitleEntry,
 };
 use crate::database::repositories::config::{ConfigRepository, SqlxConfigRepository};

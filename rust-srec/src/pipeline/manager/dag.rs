@@ -3,6 +3,45 @@ use crate::pipeline::manifest::ManifestScope;
 use chrono::{DateTime, Utc};
 use std::collections::HashSet;
 
+/// The coordinator entity a finished DAG settles.
+enum CompletionTarget {
+    Segment {
+        session_id: String,
+        /// Needed only to apply a success.
+        streamer_id: Option<String>,
+        segment_index: u32,
+        source: SourceType,
+    },
+    Paired {
+        session_id: String,
+    },
+}
+
+impl CompletionTarget {
+    fn session_id(&self) -> &str {
+        match self {
+            Self::Segment { session_id, .. } | Self::Paired { session_id } => session_id,
+        }
+    }
+}
+
+/// Track `ctx` under the DAG id once it is assigned, and untrack it if
+/// publication rolls back, so a completion can find the context it settles.
+fn track_dag_context<C>(contexts: &Arc<DashMap<String, C>>, ctx: C) -> BeforeRootJobsHook
+where
+    C: std::fmt::Debug + Send + Sync + 'static,
+{
+    let contexts = Arc::clone(contexts);
+    Box::new(move |dag_id: &str| {
+        debug!(dag_id = %dag_id, context = ?ctx, "Tracking DAG completion context");
+        contexts.insert(dag_id.to_string(), ctx);
+        let dag_id = dag_id.to_string();
+        Box::new(move || {
+            let _ = contexts.remove(&dag_id);
+        }) as PublicationRollback
+    })
+}
+
 impl<CR, SR> PipelineManager<CR, SR>
 where
     CR: ConfigRepository + Send + Sync + 'static,
@@ -37,111 +76,23 @@ where
             return;
         }
 
-        if let Some((_, ctx)) = self.dag_segment_contexts.remove(&dag_id) {
-            if let Some(session_id) = completion.session_id.as_deref()
-                && session_id != ctx.session_id
-            {
-                warn!(
-                    dag_id = %completion.dag_id,
-                    completion_session_id = %session_id,
-                    context_session_id = %ctx.session_id,
-                    "DAG completion session_id mismatch"
-                );
-            }
-
-            let commands = if completion.succeeded {
-                let leaf_outputs: Vec<PathBuf> = completion
-                    .leaf_outputs
-                    .into_iter()
-                    .map(PathBuf::from)
-                    .collect();
-
-                debug!(
-                    dag_id = %dag_id,
-                    session_id = %ctx.session_id,
-                    streamer_id = %ctx.streamer_id,
-                    segment_index = %ctx.segment_index,
-                    source = ?ctx.source,
-                    leaf_outputs = %leaf_outputs.len(),
-                    "Processing successful DAG completion with segment context"
-                );
-                self.pipeline_coordinator.apply_event(
-                    PipelineCoordinationEvent::SegmentDagCompleted {
-                        session_id: ctx.session_id.clone(),
-                        streamer_id: ctx.streamer_id.clone(),
-                        segment_index: ctx.segment_index,
-                        source: ctx.source,
-                        outputs: leaf_outputs,
-                    },
+        let handled = match self.completion_target(&completion).await {
+            Some(target) => {
+                self.emit_completion(
+                    &dag_id,
+                    target,
+                    completion.succeeded,
+                    completion.leaf_outputs,
                 )
-            } else {
-                warn!(
-                    dag_id = %dag_id,
-                    session_id = %ctx.session_id,
-                    streamer_id = %ctx.streamer_id,
-                    segment_index = %ctx.segment_index,
-                    source = ?ctx.source,
-                    "DAG failed for segment context"
-                );
-                self.pipeline_coordinator
-                    .apply_event(PipelineCoordinationEvent::SegmentDagFailed {
-                        session_id: ctx.session_id.clone(),
-                        segment_index: ctx.segment_index,
-                        source: ctx.source,
-                    })
-            };
-
-            self.execute_pipeline_commands(commands).await;
-            return;
-        }
-
-        if let Some((_, ctx)) = self.paired_dag_contexts.remove(&dag_id) {
-            if let Some(session_id) = completion.session_id.as_deref()
-                && session_id != ctx.session_id
-            {
-                warn!(
-                    dag_id = %completion.dag_id,
-                    completion_session_id = %session_id,
-                    context_session_id = %ctx.session_id,
-                    "Paired DAG completion session_id mismatch"
-                );
+                .await
             }
-
-            let commands = if completion.succeeded {
-                trace!(
-                    dag_id = %completion.dag_id,
-                    session_id = %ctx.session_id,
-                    streamer_id = %ctx.streamer_id,
-                    segment_index = %ctx.segment_index,
-                    "Paired-segment DAG completed"
-                );
-                self.pipeline_coordinator.apply_event(
-                    PipelineCoordinationEvent::PairedDagCompleted {
-                        session_id: ctx.session_id.clone(),
-                    },
-                )
-            } else {
-                trace!(
-                    dag_id = %completion.dag_id,
-                    session_id = %ctx.session_id,
-                    streamer_id = %ctx.streamer_id,
-                    segment_index = %ctx.segment_index,
-                    "Paired-segment DAG failed"
-                );
-                self.pipeline_coordinator
-                    .apply_event(PipelineCoordinationEvent::PairedDagFailed {
-                        session_id: ctx.session_id.clone(),
-                    })
-            };
-
-            self.execute_pipeline_commands(commands).await;
+            None => false,
+        };
+        if handled {
             return;
         }
 
-        if self.handle_dag_completion_without_context(completion).await {
-            return;
-        }
-
+        // Forgetting an unapplied completion lets a later delivery of it retry.
         let _ = self.handled_dag_completions.remove(&dag_id);
         debug!(
             dag_id = %dag_id,
@@ -149,13 +100,43 @@ where
         );
     }
 
-    pub(super) async fn handle_dag_completion_without_context(
-        &self,
-        completion: DagCompletionInfo,
-    ) -> bool {
-        let Some(session_id) = completion.session_id.as_deref() else {
-            return false;
+    /// Resolve what a completion settles: the context tracked when the DAG was
+    /// created, or, once that is gone (restart or TTL cleanup), the DAG row's
+    /// segment metadata.
+    async fn completion_target(&self, completion: &DagCompletionInfo) -> Option<CompletionTarget> {
+        let target = if let Some((_, ctx)) = self.dag_segment_contexts.remove(&completion.dag_id) {
+            CompletionTarget::Segment {
+                session_id: ctx.session_id,
+                streamer_id: Some(ctx.streamer_id),
+                segment_index: ctx.segment_index,
+                source: ctx.source,
+            }
+        } else if let Some((_, ctx)) = self.paired_dag_contexts.remove(&completion.dag_id) {
+            CompletionTarget::Paired {
+                session_id: ctx.session_id,
+            }
+        } else {
+            return self.completion_target_from_dag_row(completion).await;
         };
+
+        if let Some(session_id) = completion.session_id.as_deref()
+            && session_id != target.session_id()
+        {
+            warn!(
+                dag_id = %completion.dag_id,
+                completion_session_id = %session_id,
+                context_session_id = %target.session_id(),
+                "DAG completion session_id mismatch"
+            );
+        }
+        Some(target)
+    }
+
+    async fn completion_target_from_dag_row(
+        &self,
+        completion: &DagCompletionInfo,
+    ) -> Option<CompletionTarget> {
+        let session_id = completion.session_id.as_deref()?;
 
         let Some(repo) = &self.dag_repository else {
             trace!(
@@ -163,7 +144,7 @@ where
                 session_id = %session_id,
                 "DAG repository not configured; cannot recover completion context"
             );
-            return false;
+            return None;
         };
 
         let dag = match repo.get_dag(&completion.dag_id).await {
@@ -174,7 +155,7 @@ where
                     error = %e,
                     "Failed to load DAG execution for completion recovery"
                 );
-                return false;
+                return None;
             }
         };
 
@@ -189,122 +170,116 @@ where
             );
         }
 
-        let Some(segment_source) = dag.segment_source.as_deref() else {
+        let Some(segment_source) = dag.get_segment_source() else {
             trace!(
                 dag_id = %completion.dag_id,
                 session_id = %session_id,
-                "DAG completion has no segment metadata; ignoring"
+                segment_source = ?dag.segment_source,
+                "DAG completion has no coordination segment metadata; ignoring"
             );
-            return false;
+            return None;
         };
 
-        match segment_source {
-            "video" | "danmu" => {
-                let Some(raw_index) = dag.segment_index else {
-                    warn!(
-                        dag_id = %completion.dag_id,
-                        session_id = %session_id,
-                        segment_source = %segment_source,
-                        "DAG completion missing segment_index metadata"
-                    );
-                    return false;
-                };
-                let Ok(segment_index) = u32::try_from(raw_index) else {
-                    warn!(
-                        dag_id = %completion.dag_id,
-                        session_id = %session_id,
-                        segment_source = %segment_source,
-                        segment_index = %raw_index,
-                        "DAG completion has invalid segment_index metadata"
-                    );
-                    return false;
-                };
+        let session_id = session_id.to_string();
+        let source = match segment_source {
+            DagSegmentSource::Video => SourceType::Video,
+            DagSegmentSource::Danmu => SourceType::Danmu,
+            DagSegmentSource::Paired => return Some(CompletionTarget::Paired { session_id }),
+            DagSegmentSource::SessionComplete => {
+                trace!(
+                    dag_id = %completion.dag_id,
+                    session_id = %session_id,
+                    "Session-complete DAG completion has no segment to settle; ignoring"
+                );
+                return None;
+            }
+        };
+        let segment_index = super::recovery::dag_segment_index(&dag)?;
+        Some(CompletionTarget::Segment {
+            session_id,
+            streamer_id: dag.streamer_id.or_else(|| completion.streamer_id.clone()),
+            segment_index,
+            source,
+        })
+    }
 
-                let source = match segment_source {
-                    "video" => SourceType::Video,
-                    "danmu" => SourceType::Danmu,
-                    _ => unreachable!("match guards ensure only video/danmu"),
-                };
-
-                let commands = if completion.succeeded {
-                    let leaf_outputs: Vec<PathBuf> = completion
-                        .leaf_outputs
-                        .into_iter()
-                        .map(PathBuf::from)
-                        .collect();
-
-                    let streamer_id = dag.streamer_id.clone().or(completion.streamer_id.clone());
+    /// Apply a resolved completion to the coordinator and run the resulting
+    /// commands. Returns false, leaving the completion unapplied, only when a
+    /// successful segment DAG has no streamer to attribute its outputs to; a
+    /// failure needs no streamer and is always applied.
+    async fn emit_completion(
+        &self,
+        dag_id: &str,
+        target: CompletionTarget,
+        succeeded: bool,
+        leaf_outputs: Vec<String>,
+    ) -> bool {
+        let event = match target {
+            CompletionTarget::Segment {
+                session_id,
+                streamer_id,
+                segment_index,
+                source,
+            } => {
+                if succeeded {
                     let Some(streamer_id) = streamer_id else {
                         warn!(
-                            dag_id = %completion.dag_id,
+                            dag_id = %dag_id,
                             session_id = %session_id,
                             segment_index = %segment_index,
-                            segment_source = %segment_source,
+                            source = ?source,
                             "Missing streamer_id for recovered segment DAG completion"
                         );
                         return false;
                     };
-
-                    self.pipeline_coordinator.apply_event(
-                        PipelineCoordinationEvent::SegmentDagCompleted {
-                            session_id: session_id.to_string(),
-                            streamer_id,
-                            segment_index,
-                            source,
-                            outputs: leaf_outputs,
-                        },
-                    )
-                } else {
-                    self.pipeline_coordinator.apply_event(
-                        PipelineCoordinationEvent::SegmentDagFailed {
-                            session_id: session_id.to_string(),
-                            segment_index,
-                            source,
-                        },
-                    )
-                };
-
-                self.execute_pipeline_commands(commands).await;
-                true
-            }
-            "paired" => {
-                let commands = if completion.succeeded {
-                    trace!(
-                        dag_id = %completion.dag_id,
+                    let outputs: Vec<PathBuf> =
+                        leaf_outputs.into_iter().map(PathBuf::from).collect();
+                    debug!(
+                        dag_id = %dag_id,
                         session_id = %session_id,
-                        "Paired-segment DAG completed (recovered context)"
+                        streamer_id = %streamer_id,
+                        segment_index = %segment_index,
+                        source = ?source,
+                        leaf_outputs = %outputs.len(),
+                        "Processing successful segment DAG completion"
                     );
-                    self.pipeline_coordinator.apply_event(
-                        PipelineCoordinationEvent::PairedDagCompleted {
-                            session_id: session_id.to_string(),
-                        },
-                    )
+                    PipelineCoordinationEvent::SegmentDagCompleted {
+                        session_id,
+                        streamer_id,
+                        segment_index,
+                        source,
+                        outputs,
+                    }
                 } else {
-                    trace!(
-                        dag_id = %completion.dag_id,
+                    warn!(
+                        dag_id = %dag_id,
                         session_id = %session_id,
-                        "Paired-segment DAG failed (recovered context)"
+                        streamer_id = ?streamer_id,
+                        segment_index = %segment_index,
+                        source = ?source,
+                        "Segment DAG failed"
                     );
-                    self.pipeline_coordinator.apply_event(
-                        PipelineCoordinationEvent::PairedDagFailed {
-                            session_id: session_id.to_string(),
-                        },
-                    )
-                };
+                    PipelineCoordinationEvent::SegmentDagFailed {
+                        session_id,
+                        segment_index,
+                        source,
+                    }
+                }
+            }
+            CompletionTarget::Paired { session_id } => {
+                if succeeded {
+                    trace!(dag_id = %dag_id, session_id = %session_id, "Paired-segment DAG completed");
+                    PipelineCoordinationEvent::PairedDagCompleted { session_id }
+                } else {
+                    trace!(dag_id = %dag_id, session_id = %session_id, "Paired-segment DAG failed");
+                    PipelineCoordinationEvent::PairedDagFailed { session_id }
+                }
+            }
+        };
 
-                self.execute_pipeline_commands(commands).await;
-                true
-            }
-            other => {
-                trace!(
-                    dag_id = %completion.dag_id,
-                    session_id = %session_id,
-                    segment_source = %other,
-                    "Unknown DAG segment_source; ignoring"
-                );
-                false
-            }
-        }
+        let commands = self.pipeline_coordinator.apply_event(event);
+        self.execute_pipeline_commands(commands).await;
+        true
     }
 
     /// Record that `session_id` needs no further session-complete dispatch, so
@@ -395,7 +370,7 @@ where
                 None,
                 Some(DagExecutionMetadata {
                     segment_index: None,
-                    segment_source: Some("session_complete".to_string()),
+                    segment_source: Some(DagSegmentSource::SessionComplete),
                     manifest: Some(manifest),
                 }),
             )
@@ -490,27 +465,15 @@ where
             );
         }
 
-        let contexts = self.paired_dag_contexts.clone();
-        let ctx = PairedDagContext {
-            session_id: outputs.session_id.clone(),
-            streamer_id: outputs.streamer_id.clone(),
-            segment_index: outputs.segment_index,
-            created_at: std::time::Instant::now(),
-        };
-        let before_root_jobs = Some(Box::new(move |dag_id: &str| {
-            debug!(
-                dag_id = %dag_id,
-                session_id = %ctx.session_id,
-                streamer_id = %ctx.streamer_id,
-                segment_index = %ctx.segment_index,
-                "Tracking paired-segment DAG context"
-            );
-            contexts.insert(dag_id.to_string(), ctx);
-            let dag_id = dag_id.to_string();
-            Box::new(move || {
-                let _ = contexts.remove(&dag_id);
-            }) as PublicationRollback
-        }) as BeforeRootJobsHook);
+        let before_root_jobs = Some(track_dag_context(
+            &self.paired_dag_contexts,
+            PairedDagContext {
+                session_id: outputs.session_id.clone(),
+                streamer_id: outputs.streamer_id.clone(),
+                segment_index: outputs.segment_index,
+                created_at: std::time::Instant::now(),
+            },
+        ));
 
         if let Err(e) = self
             .create_dag_pipeline_internal(
@@ -521,7 +484,7 @@ where
                 before_root_jobs,
                 Some(DagExecutionMetadata {
                     segment_index: Some(outputs.segment_index),
-                    segment_source: Some("paired".to_string()),
+                    segment_source: Some(DagSegmentSource::Paired),
                     manifest: Some(manifest),
                 }),
             )
@@ -789,29 +752,16 @@ where
             );
         }
 
-        let contexts = self.dag_segment_contexts.clone();
-        let ctx = SegmentDagContext {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.clone(),
-            segment_index,
-            source,
-            created_at: std::time::Instant::now(),
-        };
-        let before_root_jobs = Some(Box::new(move |dag_id: &str| {
-            debug!(
-                dag_id = %dag_id,
-                session_id = %ctx.session_id,
-                streamer_id = %ctx.streamer_id,
-                segment_index = %ctx.segment_index,
-                source = ?ctx.source,
-                "Tracking per-segment DAG context"
-            );
-            contexts.insert(dag_id.to_string(), ctx);
-            let dag_id = dag_id.to_string();
-            Box::new(move || {
-                let _ = contexts.remove(&dag_id);
-            }) as PublicationRollback
-        }) as BeforeRootJobsHook);
+        let before_root_jobs = Some(track_dag_context(
+            &self.dag_segment_contexts,
+            SegmentDagContext {
+                session_id: session_id.clone(),
+                streamer_id: streamer_id.clone(),
+                segment_index,
+                source,
+                created_at: std::time::Instant::now(),
+            },
+        ));
 
         if let Err(e) = self
             .create_dag_pipeline_internal(
@@ -822,7 +772,7 @@ where
                 before_root_jobs,
                 Some(DagExecutionMetadata {
                     segment_index: Some(segment_index),
-                    segment_source: Some(source.as_segment_source().to_string()),
+                    segment_source: Some(source.segment_source()),
                     manifest: None,
                 }),
             )
