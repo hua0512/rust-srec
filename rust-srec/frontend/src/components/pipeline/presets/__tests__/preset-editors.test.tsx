@@ -343,3 +343,45 @@ describe.each<Editor>(['preset', 'workflow'])(
     });
   },
 );
+
+describe('Preset editor', () => {
+  // A saved config holds only what was set: optional fields left blank are absent.
+  it.each<[string, Record<string, unknown>]>([
+    ['remux', { video_codec: 'copy', audio_codec: 'copy' }],
+    ['rclone', {}],
+    ['baidupcs', {}],
+    ['thumbnail', {}],
+    ['audio_extract', {}],
+    ['compression', {}],
+    ['copy_move', { destination: '/archive' }],
+    ['delete', {}],
+    ['metadata', {}],
+    ['execute', { command: 'true' }],
+    ['danmaku_factory', {}],
+    ['ass_burnin', {}],
+  ])(
+    'has no unsaved changes once an edit to a saved %s preset is undone',
+    async (processor, config) => {
+      renderEditor('preset', config, processor);
+      const name = await screen.findByRole('textbox', { name: 'Name' });
+      // The processor form's fields register once its lazily loaded module renders.
+      await waitFor(() =>
+        expect(
+          document.querySelector('[data-slot="skeleton"]'),
+        ).not.toBeInTheDocument(),
+      );
+
+      fireEvent.change(name, { target: { value: 'Edited' } });
+      expect(
+        screen.getByRole('button', { name: 'Save Changes' }),
+      ).toBeInTheDocument();
+      fireEvent.change(name, { target: { value: `${processor} example` } });
+
+      await waitFor(() =>
+        expect(
+          screen.queryByRole('button', { name: 'Save Changes' }),
+        ).not.toBeInTheDocument(),
+      );
+    },
+  );
+});

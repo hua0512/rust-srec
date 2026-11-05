@@ -149,13 +149,43 @@ export const getProcessorDefinition = (
 };
 
 /**
- * The config a processor runs with when nothing is set: every schema default
- * applied to an empty object. `undefined` without a definition or when the
- * schema cannot be satisfied without user input.
+ * What a processor config form starts from: `config` over the schema defaults, with every other
+ * key of the schema present as `undefined`.
+ *
+ * The config inputs register their fields, and react-hook-form writes each one into the form
+ * values. A key the starting value lacks is then a new `undefined` key, and since react-hook-form
+ * compares key counts, the form stays changed after an edit is undone. A field that cannot be
+ * filled without input, such as a required destination, starts `undefined` as well.
+ */
+export function getProcessorFormValues(
+  definition: ProcessorDefinition | null | undefined,
+  config?: unknown,
+): Record<string, unknown> {
+  const schema =
+    definition?.schema instanceof z.ZodPipe
+      ? definition.schema.in
+      : definition?.schema;
+  const seeded: Record<string, unknown> = {};
+  if (schema instanceof z.ZodObject) {
+    for (const [key, field] of Object.entries(schema.shape)) {
+      const result = field.safeParse(undefined);
+      seeded[key] = result.success ? result.data : undefined;
+    }
+  }
+  return config !== null && typeof config === 'object' && !Array.isArray(config)
+    ? { ...seeded, ...config }
+    : seeded;
+}
+
+/**
+ * The config a processor runs with when nothing is set, as {@link getProcessorFormValues}
+ * seeds it. `undefined` without a definition or when the schema cannot be satisfied without
+ * user input.
  */
 export function getProcessorDefaultConfig(
   definition: ProcessorDefinition | null | undefined,
 ): Record<string, unknown> | undefined {
-  const result = definition?.schema.safeParse({});
-  return result?.success ? result.data : undefined;
+  return definition?.schema.safeParse({}).success
+    ? getProcessorFormValues(definition)
+    : undefined;
 }

@@ -37,6 +37,10 @@ import { useLingui } from '@lingui/react';
 import type { JobPreset } from '@/api/schemas';
 import type { PresetFormValues } from '../preset-editor';
 import { PROCESSOR_META } from '../../constants';
+import {
+  getProcessorDefinition,
+  getProcessorFormValues,
+} from '../processors/registry';
 
 interface PresetMetaFormProps {
   form: UseFormReturn<PresetFormValues>;
@@ -72,8 +76,10 @@ export function PresetMetaForm({
     if (!value) return;
 
     form.setValue('processor', value);
-    // Reset config when processor type changes to avoid stale config from previous type
-    form.setValue('config', {});
+    form.setValue(
+      'config',
+      getProcessorFormValues(getProcessorDefinition(value)),
+    );
   };
 
   return (

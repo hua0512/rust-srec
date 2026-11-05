@@ -11,8 +11,8 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DagStepDefinition, PipelineStep } from '@/api/schemas';
 import {
-  getProcessorDefaultConfig,
   getProcessorDefinition,
+  getProcessorFormValues,
 } from '@/components/pipeline/presets/processors/registry';
 import {
   buildPresetProcessorMap,
@@ -109,10 +109,10 @@ function parseConfig(config: unknown): Record<string, unknown> {
 /** What the edit form starts from: an inline step's config over its processor's defaults. */
 function initialFormValues(step: PipelineStep | null): Record<string, unknown> {
   if (step?.type !== 'inline') return {};
-  return {
-    ...getProcessorDefaultConfig(getProcessorDefinition(step.processor)),
-    ...parseConfig(step.config),
-  };
+  return getProcessorFormValues(
+    getProcessorDefinition(step.processor),
+    parseConfig(step.config),
+  );
 }
 
 export const StepConfigDialog = memo(function StepConfigDialog(
@@ -254,10 +254,7 @@ function StepConfigDialogBody({
 
   const presetConfig = presetDetail?.config;
   const presetValues = useMemo(
-    () => ({
-      ...getProcessorDefaultConfig(presetProcessorDef),
-      ...parseConfig(presetConfig),
-    }),
+    () => getProcessorFormValues(presetProcessorDef, parseConfig(presetConfig)),
     [presetProcessorDef, presetConfig],
   );
 
