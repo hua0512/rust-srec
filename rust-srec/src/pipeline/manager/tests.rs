@@ -451,15 +451,7 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
             .ok_or_else(|| crate::Error::not_found("Job", id))
     }
 
-    async fn list_pending_jobs(&self, _job_type: &str) -> Result<Vec<JobDbModel>> {
-        unimplemented!("not needed for these tests")
-    }
-
     async fn list_jobs_by_status(&self, _status: JobStatus) -> Result<Vec<JobDbModel>> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn list_recent_jobs(&self, _limit: i32) -> Result<Vec<JobDbModel>> {
         unimplemented!("not needed for these tests")
     }
 
@@ -606,10 +598,6 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
     /// test here asserts on stored logs.
     async fn add_execution_logs(&self, _logs: &[JobExecutionLogDbModel]) -> Result<()> {
         Ok(())
-    }
-
-    async fn get_execution_logs(&self, _job_id: &str) -> Result<Vec<JobExecutionLogDbModel>> {
-        unimplemented!("not needed for these tests")
     }
 
     async fn list_execution_logs(
@@ -835,10 +823,6 @@ impl DagRepository for TestDagRepositoryForRetry {
     }
 
     async fn update_step(&self, _step: &DagStepExecutionDbModel) -> Result<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn update_step_status(&self, _id: &str, _status: &str) -> Result<()> {
         unimplemented!("not needed for these tests")
     }
 
@@ -1106,10 +1090,6 @@ impl DagRepository for TestDagRepository {
     }
 
     async fn update_step(&self, _step: &DagStepExecutionDbModel) -> Result<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn update_step_status(&self, _id: &str, _status: &str) -> Result<()> {
         unimplemented!("not needed for these tests")
     }
 

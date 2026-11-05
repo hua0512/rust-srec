@@ -779,11 +779,6 @@ impl WorkerPool {
     pub fn stalled_operations(&self, min_age: std::time::Duration) -> Vec<StalledOperation> {
         self.lingering.older_than(min_age)
     }
-
-    /// Check if the pool is running.
-    pub fn is_running(&self) -> bool {
-        !self.cancellation_token.is_cancelled()
-    }
 }
 
 /// Everything a worker task needs to run the jobs it claims.

@@ -100,9 +100,7 @@ fn push_job_filters(query: &mut QueryBuilder<Sqlite>, filters: &JobFilters) {
 #[async_trait]
 pub trait JobRepository: Send + Sync {
     async fn get_job(&self, id: &str) -> Result<JobDbModel>;
-    async fn list_pending_jobs(&self, job_type: &str) -> Result<Vec<JobDbModel>>;
     async fn list_jobs_by_status(&self, status: JobStatus) -> Result<Vec<JobDbModel>>;
-    async fn list_recent_jobs(&self, limit: i32) -> Result<Vec<JobDbModel>>;
     async fn create_job(&self, job: &JobDbModel) -> Result<()>;
     async fn update_job_status(&self, id: &str, status: JobStatus) -> Result<()>;
     /// Mark a job as FAILED and set error/completed_at, recording in the same
@@ -160,7 +158,6 @@ pub trait JobRepository: Send + Sync {
     async fn add_execution_log(&self, log: &JobExecutionLogDbModel) -> Result<()>;
     /// Add multiple execution logs in one transaction.
     async fn add_execution_logs(&self, logs: &[JobExecutionLogDbModel]) -> Result<()>;
-    async fn get_execution_logs(&self, job_id: &str) -> Result<Vec<JobExecutionLogDbModel>>;
     /// List execution logs with pagination, returning (logs, total_count).
     async fn list_execution_logs(
         &self,
@@ -237,17 +234,6 @@ impl JobRepository for SqlxJobRepository {
             .ok_or_else(|| Error::not_found("Job", id))
     }
 
-    async fn list_pending_jobs(&self, job_type: &str) -> Result<Vec<JobDbModel>> {
-        let jobs = sqlx::query_as::<_, JobDbModel>(
-            "SELECT * FROM job WHERE status = ? AND job_type = ? ORDER BY created_at",
-        )
-        .bind(JobStatus::Pending.as_str())
-        .bind(job_type)
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(jobs)
-    }
-
     async fn list_jobs_by_status(&self, status: JobStatus) -> Result<Vec<JobDbModel>> {
         let jobs = sqlx::query_as::<_, JobDbModel>(
             "SELECT * FROM job WHERE status = ? ORDER BY created_at DESC",
@@ -255,15 +241,6 @@ impl JobRepository for SqlxJobRepository {
         .bind(status.as_str())
         .fetch_all(&self.pool)
         .await?;
-        Ok(jobs)
-    }
-
-    async fn list_recent_jobs(&self, limit: i32) -> Result<Vec<JobDbModel>> {
-        let jobs =
-            sqlx::query_as::<_, JobDbModel>("SELECT * FROM job ORDER BY created_at DESC LIMIT ?")
-                .bind(limit)
-                .fetch_all(&self.pool)
-                .await?;
         Ok(jobs)
     }
 
@@ -739,16 +716,6 @@ impl JobRepository for SqlxJobRepository {
             Ok(())
         })
         .await
-    }
-
-    async fn get_execution_logs(&self, job_id: &str) -> Result<Vec<JobExecutionLogDbModel>> {
-        let logs = sqlx::query_as::<_, JobExecutionLogDbModel>(
-            "SELECT id, job_id, entry, created_at, level, message FROM job_execution_logs WHERE job_id = ? ORDER BY created_at",
-        )
-        .bind(job_id)
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(logs)
     }
 
     async fn list_execution_logs(

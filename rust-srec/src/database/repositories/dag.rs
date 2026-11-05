@@ -119,9 +119,6 @@ pub trait DagRepository: Send + Sync {
     /// Update a step execution.
     async fn update_step(&self, step: &DagStepExecutionDbModel) -> Result<()>;
 
-    /// Update step status.
-    async fn update_step_status(&self, id: &str, status: &str) -> Result<()>;
-
     /// Update step status and job ID.
     async fn update_step_status_with_job(&self, id: &str, status: &str, job_id: &str)
     -> Result<()>;
@@ -969,20 +966,6 @@ impl DagRepository for SqlxDagRepository {
             .bind(&step.id)
             .execute(&self.write_pool)
             .await?;
-            Ok(())
-        })
-        .await
-    }
-
-    async fn update_step_status(&self, id: &str, status: &str) -> Result<()> {
-        retry_on_sqlite_busy("update_step_status", || async {
-            let now = crate::database::time::now_ms();
-            sqlx::query("UPDATE dag_step_execution SET status = ?, updated_at = ? WHERE id = ?")
-                .bind(status)
-                .bind(now)
-                .bind(id)
-                .execute(&self.write_pool)
-                .await?;
             Ok(())
         })
         .await

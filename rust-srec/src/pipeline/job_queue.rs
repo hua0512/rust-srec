@@ -640,12 +640,6 @@ impl Job {
         self
     }
 
-    /// Set the DAG step execution ID.
-    pub fn with_dag_step_execution_id(mut self, dag_step_execution_id: impl Into<String>) -> Self {
-        self.dag_step_execution_id = Some(dag_step_execution_id.into());
-        self
-    }
-
     /// Set the streamer name.
     pub fn with_streamer_name(mut self, name: impl Into<String>) -> Self {
         self.streamer_name = Some(name.into());
@@ -668,11 +662,6 @@ impl Job {
     pub fn with_session_start(mut self, session_start: DateTime<Utc>) -> Self {
         self.session_start = Some(session_start);
         self
-    }
-
-    /// Check if this job is part of a DAG pipeline.
-    pub fn is_dag_job(&self) -> bool {
-        self.dag_step_execution_id.is_some()
     }
 }
 
@@ -1491,11 +1480,6 @@ impl JobQueue {
     /// Count pending jobs, optionally filtered by job types.
     pub async fn count_pending_jobs(&self, job_types: Option<&[String]>) -> Result<u64> {
         self.job_repository.count_pending_jobs(job_types).await
-    }
-
-    /// Wait for a job to become available.
-    pub async fn wait_for_job(&self) {
-        self.notify.notified().await;
     }
 
     /// Mark a job as completed.
@@ -2468,16 +2452,6 @@ impl JobQueue {
         } else {
             QueueDepthStatus::Normal
         }
-    }
-
-    /// Check if the queue is at warning level.
-    pub fn is_warning(&self) -> bool {
-        self.depth() >= self.config.warning_threshold
-    }
-
-    /// Check if the queue is at critical level.
-    pub fn is_critical(&self) -> bool {
-        self.depth() >= self.config.critical_threshold
     }
 
     /// Get a notifier for new jobs.

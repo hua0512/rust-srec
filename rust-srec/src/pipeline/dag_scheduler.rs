@@ -1910,23 +1910,9 @@ mod tests {
             unimplemented!("not needed for these tests")
         }
 
-        async fn list_pending_jobs(
-            &self,
-            _job_type: &str,
-        ) -> Result<Vec<crate::database::models::JobDbModel>> {
-            unimplemented!("not needed for these tests")
-        }
-
         async fn list_jobs_by_status(
             &self,
             _status: JobStatus,
-        ) -> Result<Vec<crate::database::models::JobDbModel>> {
-            unimplemented!("not needed for these tests")
-        }
-
-        async fn list_recent_jobs(
-            &self,
-            _limit: i32,
         ) -> Result<Vec<crate::database::models::JobDbModel>> {
             unimplemented!("not needed for these tests")
         }
@@ -2010,13 +1996,6 @@ mod tests {
             &self,
             _logs: &[crate::database::models::JobExecutionLogDbModel],
         ) -> Result<()> {
-            unimplemented!("not needed for these tests")
-        }
-
-        async fn get_execution_logs(
-            &self,
-            _job_id: &str,
-        ) -> Result<Vec<crate::database::models::JobExecutionLogDbModel>> {
             unimplemented!("not needed for these tests")
         }
 
