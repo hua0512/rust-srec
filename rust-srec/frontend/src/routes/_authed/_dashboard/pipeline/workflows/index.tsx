@@ -6,7 +6,7 @@ import { searchParamsValidator } from '@/lib/search-params';
 // so they survive navigation into workflows/$workflowId and reloads.
 const validateSearch = searchParamsValidator({
   q: z.string().optional(),
-  page: z.number().int().min(0).optional(),
+  page: z.number().int().min(1).optional(),
   size: z.number().int().positive().optional(),
 });
 

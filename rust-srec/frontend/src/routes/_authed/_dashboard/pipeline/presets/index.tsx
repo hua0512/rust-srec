@@ -7,7 +7,7 @@ import { searchParamsValidator } from '@/lib/search-params';
 const validateSearch = searchParamsValidator({
   category: z.string().optional(),
   q: z.string().optional(),
-  page: z.number().int().min(0).optional(),
+  page: z.number().int().min(1).optional(),
   size: z.number().int().positive().optional(),
 });
 

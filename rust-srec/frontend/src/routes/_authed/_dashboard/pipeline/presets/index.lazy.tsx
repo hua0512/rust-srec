@@ -65,7 +65,8 @@ function PresetsPage() {
   const selectedCategory = search.category ?? null;
   const debouncedSearch = search.q ?? '';
   const pageSize = search.size ?? 24;
-  const currentPage = search.page ?? 0;
+  // The URL counts pages from 1; the pager counts them from 0.
+  const currentPage = (search.page ?? 1) - 1;
 
   const [cloneDialogOpen, setCloneDialogOpen] = useState(false);
   const [presetToClone, setPresetToClone] = useState<z.infer<
@@ -116,7 +117,8 @@ function PresetsPage() {
   }, [data?.categories]);
 
   const handlePageIndexChange = useCallback(
-    (index: number) => updateSearch({ page: index || undefined }),
+    (index: number) =>
+      updateSearch({ page: index > 0 ? index + 1 : undefined }),
     [updateSearch],
   );
 
