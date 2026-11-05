@@ -4,7 +4,7 @@ import { zodError, zodText } from '@/lib/zod-i18n';
 
 import { TimestampMsSchema } from './pipeline';
 
-export const ChannelTypeSchema = z.enum([
+const ChannelTypeSchema = z.enum([
   'Discord',
   'Email',
   'Gotify',
@@ -17,13 +17,13 @@ export type ChannelType = z.infer<typeof ChannelTypeSchema>;
  * Language a channel renders its notifications in. Empty means "follow the server", which is
  * what the backend's `parse_channel_locale` normalizes to no override.
  */
-export const NotificationLocaleSchema = z
+const NotificationLocaleSchema = z
   .enum(['', 'en', 'zh-CN'])
   .default('')
   .catch('');
 
 // Settings schemas
-export const DiscordSettingsSchema = z.object({
+const DiscordSettingsSchema = z.object({
   webhook_url: z.url(),
   username: z.string().optional(),
   avatar_url: z.url().optional(),
@@ -62,15 +62,10 @@ export const EmailSettingsSchema = z
     });
   });
 
-export const WebhookAuthTypeSchema = z.enum([
-  'None',
-  'Bearer',
-  'Basic',
-  'Header',
-]);
+const WebhookAuthTypeSchema = z.enum(['None', 'Bearer', 'Basic', 'Header']);
 export type WebhookAuthType = z.infer<typeof WebhookAuthTypeSchema>;
 
-export const WebhookAuthSchema = z.discriminatedUnion('type', [
+const WebhookAuthSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('None') }),
   z.object({ type: z.literal('Bearer'), token: z.string() }),
   z.object({
@@ -81,7 +76,7 @@ export const WebhookAuthSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('Header'), name: z.string(), value: z.string() }),
 ]);
 
-export const WebhookSettingsSchema = z.object({
+const WebhookSettingsSchema = z.object({
   url: z.url(),
   headers: z.array(z.tuple([z.string(), z.string()])).optional(),
   method: z.string().default('POST'),
@@ -92,7 +87,7 @@ export const WebhookSettingsSchema = z.object({
   timeout_secs: z.number().int().positive().default(30),
 });
 
-export const TelegramSettingsSchema = z.object({
+const TelegramSettingsSchema = z.object({
   bot_token: z.string().min(1),
   chat_id: z.string().min(1),
   parse_mode: z.enum(['HTML', 'Markdown', 'MarkdownV2']).default('HTML'),
@@ -101,7 +96,7 @@ export const TelegramSettingsSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
-export const GotifySettingsSchema = z.object({
+const GotifySettingsSchema = z.object({
   server_url: z.string().url(),
   app_token: z.string().min(1),
   min_priority: z.number().int().min(0).max(10).default(5),
@@ -164,7 +159,7 @@ export const WebPushSubscriptionSchema = z.object({
 });
 export type WebPushSubscription = z.infer<typeof WebPushSubscriptionSchema>;
 
-export const UpdateSubscriptionsRequestSchema = z.object({
+const UpdateSubscriptionsRequestSchema = z.object({
   events: z.array(z.string()),
 });
 
@@ -173,31 +168,31 @@ export type UpdateSubscriptionsRequest = z.infer<
 >;
 
 // Form-specific schemas for each channel type (used for runtime validation)
-export const DiscordChannelFormSchema = z.object({
+const DiscordChannelFormSchema = z.object({
   name: z.string().min(1, zodError(msg`Name is required`)),
   channel_type: z.literal('Discord'),
   settings: DiscordSettingsSchema,
 });
 
-export const EmailChannelFormSchema = z.object({
+const EmailChannelFormSchema = z.object({
   name: z.string().min(1, zodError(msg`Name is required`)),
   channel_type: z.literal('Email'),
   settings: EmailSettingsSchema,
 });
 
-export const GotifyChannelFormSchema = z.object({
+const GotifyChannelFormSchema = z.object({
   name: z.string().min(1, zodError(msg`Name is required`)),
   channel_type: z.literal('Gotify'),
   settings: GotifySettingsSchema,
 });
 
-export const WebhookChannelFormSchema = z.object({
+const WebhookChannelFormSchema = z.object({
   name: z.string().min(1, zodError(msg`Name is required`)),
   channel_type: z.literal('Webhook'),
   settings: WebhookSettingsSchema,
 });
 
-export const TelegramChannelFormSchema = z.object({
+const TelegramChannelFormSchema = z.object({
   name: z.string().min(1, zodError(msg`Name is required`)),
   channel_type: z.literal('Telegram'),
   settings: TelegramSettingsSchema,

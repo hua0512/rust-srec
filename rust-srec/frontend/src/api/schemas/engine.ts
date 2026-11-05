@@ -271,7 +271,7 @@ export type StreamlinkConfigOverride = z.infer<
 
 // --- Mesio HLS ---
 
-export const MesioHttpVersionPreferenceSchema = z.enum([
+const MesioHttpVersionPreferenceSchema = z.enum([
   'auto',
   'http2_only',
   'http1_only',
@@ -294,27 +294,24 @@ const MesioDownloaderBaseSchema = group({
   pool_idle_timeout_ms: intSetting(0),
 });
 
-export const MesioHlsVariantSelectionPolicySchema = z.discriminatedUnion(
-  'type',
-  [
-    z.object({ type: z.literal('highest_bitrate') }),
-    z.object({ type: z.literal('lowest_bitrate') }),
-    z.object({
-      type: z.literal('closest_to_bitrate'),
-      target_bitrate: policyInt(0),
-    }),
-    z.object({ type: z.literal('audio_only') }),
-    z.object({ type: z.literal('video_only') }),
-    z.object({
-      type: z.literal('matching_resolution'),
-      width: policyInt(0, U32_MAX),
-      height: policyInt(0, U32_MAX),
-    }),
-    z.object({ type: z.literal('custom'), value: z.string() }),
-  ],
-);
+const MesioHlsVariantSelectionPolicySchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('highest_bitrate') }),
+  z.object({ type: z.literal('lowest_bitrate') }),
+  z.object({
+    type: z.literal('closest_to_bitrate'),
+    target_bitrate: policyInt(0),
+  }),
+  z.object({ type: z.literal('audio_only') }),
+  z.object({ type: z.literal('video_only') }),
+  z.object({
+    type: z.literal('matching_resolution'),
+    width: policyInt(0, U32_MAX),
+    height: policyInt(0, U32_MAX),
+  }),
+  z.object({ type: z.literal('custom'), value: z.string() }),
+]);
 
-export const MesioGapSkipStrategySchema = z.discriminatedUnion('type', [
+const MesioGapSkipStrategySchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('wait_indefinitely') }),
   z.object({ type: z.literal('skip_after_count'), count: policyInt(0) }),
   z.object({
@@ -328,7 +325,7 @@ export const MesioGapSkipStrategySchema = z.discriminatedUnion('type', [
   }),
 ]);
 
-export const MesioHlsConfigSchema = group({
+const MesioHlsConfigSchema = group({
   base: optionalSetting(MesioDownloaderBaseSchema),
   playlist_config: optionalSetting(
     group({
@@ -421,7 +418,7 @@ export const MESIO_DASH_DEFAULTS = {
 /** Language tag shape the backend accepts: 1–8 letters or digits per subtag, joined by '-'. */
 const LANGUAGE_TAG = /^[A-Za-z0-9]{1,8}(?:-[A-Za-z0-9]{1,8})*$/;
 
-export const MesioDashVideoQualitySchema = z.discriminatedUnion('type', [
+const MesioDashVideoQualitySchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('highest') }),
   z.object({ type: z.literal('lowest') }),
   z.object({ type: z.literal('max_height'), height: policyInt(1, U32_MAX) }),
@@ -429,14 +426,14 @@ export const MesioDashVideoQualitySchema = z.discriminatedUnion('type', [
 ]);
 export type MesioDashVideoQuality = z.infer<typeof MesioDashVideoQualitySchema>;
 
-export const MesioDashAudioQualitySchema = z.discriminatedUnion('type', [
+const MesioDashAudioQualitySchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('highest') }),
   z.object({ type: z.literal('lowest') }),
   z.object({ type: z.literal('closest_bandwidth'), bandwidth: policyInt(1) }),
 ]);
 export type MesioDashAudioQuality = z.infer<typeof MesioDashAudioQualitySchema>;
 
-export const MesioDashLiveStartSchema = z.discriminatedUnion('type', [
+const MesioDashLiveStartSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('auto') }),
   z.object({ type: z.literal('live_edge') }),
   z.object({ type: z.literal('delay'), delay_ms: policyInt(0) }),
@@ -476,7 +473,7 @@ function requireATrack(
   }
 }
 
-export const MesioDashConfigSchema = MesioDashFieldsSchema.catchall(
+const MesioDashConfigSchema = MesioDashFieldsSchema.catchall(
   z.json(),
 ).superRefine(requireATrack);
 
@@ -627,12 +624,32 @@ export const EngineConfigSchema = z.discriminatedUnion('engine_type', [
 export type EngineConfig = z.infer<typeof EngineConfigSchema>;
 
 // --- Engine Type Enum ---
-export const EngineTypeSchema = z.enum(['FFMPEG', 'STREAMLINK', 'MESIO']);
+const EngineTypeSchema = z.enum(['FFMPEG', 'STREAMLINK', 'MESIO']);
 export type EngineType = z.infer<typeof EngineTypeSchema>;
 
-// --- Create Request Schema ---
-// Uses superRefine for config validation based on engine_type
-// This provides react-hook-form compatibility while maintaining runtime validation
+const ENGINE_CONFIG_SCHEMAS: Record<EngineType, z.ZodType> = {
+  FFMPEG: FfmpegConfigSchema,
+  STREAMLINK: StreamlinkConfigSchema,
+  MESIO: MesioConfigSchema,
+};
+
+/**
+ * Validates `config` against the settings schema of `engineType`, reporting issues under
+ * `config`. Done in `superRefine` rather than a discriminated union so react-hook-form can keep
+ * `config` as a plain record.
+ */
+function refineEngineConfig(
+  ctx: z.RefinementCtx,
+  engineType: EngineType,
+  config: Record<string, unknown>,
+) {
+  const result = ENGINE_CONFIG_SCHEMAS[engineType].safeParse(config);
+  if (result.success) return;
+  for (const issue of result.error.issues) {
+    ctx.addIssue({ ...issue, path: ['config', ...issue.path] });
+  }
+}
+
 export const CreateEngineRequestSchema = z
   .object({
     name: z.string().min(1, zodError(msg`Name is required`)),
@@ -640,40 +657,10 @@ export const CreateEngineRequestSchema = z
     config: z.record(z.string(), z.unknown()),
   })
   .superRefine((data, ctx) => {
-    const { engine_type, config } = data;
-
-    let result;
-    switch (engine_type) {
-      case 'FFMPEG':
-        result = FfmpegConfigSchema.safeParse(config);
-        break;
-      case 'STREAMLINK':
-        result = StreamlinkConfigSchema.safeParse(config);
-        break;
-      case 'MESIO':
-        result = MesioConfigSchema.safeParse(config);
-        break;
-      default:
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `Unknown engine type: ${String(engine_type)}`,
-          path: ['engine_type'],
-        });
-        return;
-    }
-
-    if (!result.success) {
-      result.error.issues.forEach((issue) => {
-        ctx.addIssue({
-          ...issue,
-          path: ['config', ...issue.path],
-        });
-      });
-    }
+    refineEngineConfig(ctx, data.engine_type, data.config);
   });
 export type CreateEngineRequest = z.infer<typeof CreateEngineRequestSchema>;
 
-// --- Update Request Schema ---
 export const UpdateEngineRequestSchema = z
   .object({
     name: z
@@ -685,28 +672,8 @@ export const UpdateEngineRequestSchema = z
     version: z.string().optional(),
   })
   .superRefine((data, ctx) => {
-    if (!data.engine_type || !data.config) return;
-
-    let result;
-    switch (data.engine_type) {
-      case 'FFMPEG':
-        result = FfmpegConfigSchema.safeParse(data.config);
-        break;
-      case 'STREAMLINK':
-        result = StreamlinkConfigSchema.safeParse(data.config);
-        break;
-      case 'MESIO':
-        result = MesioConfigSchema.safeParse(data.config);
-        break;
-    }
-
-    if (result && !result.success) {
-      result.error.issues.forEach((issue) => {
-        ctx.addIssue({
-          ...issue,
-          path: ['config', ...issue.path],
-        });
-      });
+    if (data.engine_type && data.config) {
+      refineEngineConfig(ctx, data.engine_type, data.config);
     }
   });
 export type UpdateEngineRequest = z.infer<typeof UpdateEngineRequestSchema>;

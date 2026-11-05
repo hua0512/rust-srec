@@ -3,7 +3,7 @@ import { msg } from '@lingui/core/macro';
 import { zodError, zodText } from '@/lib/zod-i18n';
 
 // --- Remux Processor ---
-export const VideoCodecSchema = z.enum([
+const VideoCodecSchema = z.enum([
   'copy',
   'h264',
   'h265',
@@ -14,15 +14,8 @@ export const VideoCodecSchema = z.enum([
   'hevcnvenc',
   'av1nvenc',
 ]);
-export const AudioCodecSchema = z.enum([
-  'copy',
-  'aac',
-  'mp3',
-  'opus',
-  'flac',
-  'none',
-]);
-export const PresetSchema = z.enum([
+const AudioCodecSchema = z.enum(['copy', 'aac', 'mp3', 'opus', 'flac', 'none']);
+const PresetSchema = z.enum([
   'ultrafast',
   'superfast',
   'veryfast',
@@ -76,8 +69,8 @@ export const RemuxConfigSchema = z.object({
 });
 
 // --- Rclone Processor ---
-export const RcloneOperationSchema = z.enum(['copy', 'move', 'sync']);
-export const TimeAnchorSchema = z.enum(['job_created', 'session_start']);
+const RcloneOperationSchema = z.enum(['copy', 'move', 'sync']);
+const TimeAnchorSchema = z.enum(['job_created', 'session_start']);
 
 export const RcloneConfigSchema = z.object({
   // Attempts per transfer and destination `mkdir`; see `RcloneConfig` in
@@ -103,7 +96,7 @@ export const RcloneConfigSchema = z.object({
 });
 
 // --- BaiduPCS-Go Processor ---
-export const BaiduPcsPolicySchema = z.enum(['skip', 'overwrite', 'rsync']);
+const BaiduPcsPolicySchema = z.enum(['skip', 'overwrite', 'rsync']);
 
 // Mirrors `BaiduPcsConfig` in `src/pipeline/processors/baidupcs.rs`;
 // defaults must match the Rust `Default` impl so a fresh form round-trips
@@ -132,7 +125,7 @@ export const ThumbnailConfigSchema = z.object({
 });
 
 // --- Audio Extract Processor ---
-export const AudioFormatSchema = z.enum(['mp3', 'aac', 'flac', 'opus']);
+const AudioFormatSchema = z.enum(['mp3', 'aac', 'flac', 'opus']);
 
 export const AudioExtractConfigSchema = z.object({
   format: AudioFormatSchema.optional(), // If null -> copy
@@ -144,7 +137,7 @@ export const AudioExtractConfigSchema = z.object({
 });
 
 // --- Compression Processor ---
-export const ArchiveFormatSchema = z.enum(['zip', 'targz']);
+const ArchiveFormatSchema = z.enum(['zip', 'targz']);
 
 export const CompressionConfigSchema = z.object({
   format: ArchiveFormatSchema.default('zip'),
@@ -155,7 +148,7 @@ export const CompressionConfigSchema = z.object({
 });
 
 // --- Copy/Move Processor ---
-export const CopyMoveOperationSchema = z.enum(['copy', 'move']);
+const CopyMoveOperationSchema = z.enum(['copy', 'move']);
 
 export const CopyMoveConfigSchema = z.object({
   operation: CopyMoveOperationSchema.default('copy'),
@@ -243,7 +236,7 @@ export const DanmakuFactoryConfigSchema = z.object({
 });
 
 // --- ASS Burn-in Processor ---
-export const AssMatchStrategySchema = z.enum(['manifest', 'stem']);
+const AssMatchStrategySchema = z.enum(['manifest', 'stem']);
 
 export const AssBurninConfigSchema = z.object({
   ffmpeg_path: z.string().optional(),
