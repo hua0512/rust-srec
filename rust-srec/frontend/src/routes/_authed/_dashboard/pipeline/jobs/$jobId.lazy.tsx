@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useRef } from 'react';
-import { Link, createLazyFileRoute } from '@tanstack/react-router';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, createLazyFileRoute, useNavigate } from '@tanstack/react-router';
 import {
   useQuery,
   useMutation,
@@ -19,10 +19,9 @@ import {
 import type { Job } from '@/api/schemas/pipeline';
 import type { JobProgressSnapshot } from '@/api/schemas/session';
 import {
-  flattenLogPages,
-  latestLogTotal,
   newestLogPageOffset,
   replaceNewestLogPage,
+  sameLogRows,
   type JobLogPages,
 } from '@/lib/job-log-pages';
 import { hasReportedProgress, liveProgressSnapshot } from '@/lib/job-progress';
@@ -31,8 +30,10 @@ import { useUploadStore } from '@/store/uploads';
 import { JobProgressPanel } from '@/components/pipeline/jobs/job-progress-panel';
 import { JobInterruptedOutputsCard } from '@/components/pipeline/jobs/job-interrupted-outputs-card';
 import { JobUploadsCard } from '@/components/pipeline/jobs/job-uploads-card';
+import { JobLogViewer } from '@/components/pipeline/jobs/job-log-viewer';
 import { StalledOperationBanner } from '@/components/pipeline/jobs/stalled-operation-banner';
 import { RetryCountdown } from '@/components/pipeline/retry-countdown';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -43,17 +44,16 @@ import {
 } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
-import { msg, t, plural } from '@lingui/core/macro';
+import { msg } from '@lingui/core/macro';
 import { toast } from 'sonner';
 import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
 import { motion } from 'motion/react';
-import { useInView } from '@/hooks/use-in-view';
 import { cn } from '@/lib/utils';
+import { formatBytes } from '@/lib/format';
 import {
   getStatusConfig,
   getStatusLabel,
@@ -61,8 +61,6 @@ import {
 import {
   AlertCircle,
   ArrowLeft,
-  Terminal,
-  RefreshCw,
   RotateCcw,
   Workflow,
   Box,
@@ -193,9 +191,10 @@ function JobDetailsPage() {
   );
 
   // The closing log rows are written as the job finishes, after the last read
-  // below. Read the loaded pages once more for a job that finishes while being
-  // watched; one that was already finished when the page opened has nothing to
-  // catch up on and is left alone.
+  // below. Read the newest page once more for a job that finishes while being
+  // watched (every earlier page is final, see `newestLogPageOffset`); one that
+  // was already finished when the page opened has nothing to catch up on and
+  // is left alone.
   const sawRunningJobRef = useRef(false);
   useEffect(() => {
     if (isJobActive) {
@@ -204,8 +203,37 @@ function JobDetailsPage() {
     }
     if (!isJobTerminal || !sawRunningJobRef.current) return;
     sawRunningJobRef.current = false;
-    void queryClient.invalidateQueries({ queryKey: logsQueryKey });
-  }, [isJobActive, isJobTerminal, logsQueryKey, queryClient]);
+    const offset = newestLogPageOffset(
+      queryClient.getQueryData<JobLogPages>(logsQueryKey),
+    );
+    if (offset === undefined) return;
+    getPipelineJobLogs({
+      data: { id: jobId, limit: LOG_PAGE_SIZE, offset },
+    }).then(
+      (page) => {
+        const prev = queryClient.getQueryData<JobLogPages>(logsQueryKey);
+        const next = replaceNewestLogPage(prev, page);
+        const held = prev?.pages.at(-1)?.items ?? [];
+        // A capped log keeps its count while its rows move on, so the read
+        // is refused even though it differs; every page has shifted then,
+        // and only a full re-read lines them up.
+        if (
+          next === prev &&
+          !sameLogRows(
+            held,
+            page.items,
+            0,
+            Math.max(held.length, page.items.length),
+          )
+        ) {
+          void queryClient.invalidateQueries({ queryKey: logsQueryKey });
+          return;
+        }
+        queryClient.setQueryData<JobLogPages>(logsQueryKey, next);
+      },
+      () => {}, // The already-loaded rows stay on screen
+    );
+  }, [isJobActive, isJobTerminal, jobId, logsQueryKey, queryClient]);
 
   // Fetch logs separately with infinite scroll. Deliberately not polled: a
   // reader who has scrolled back through a long job holds several pages, and
@@ -231,7 +259,7 @@ function JobDetailsPage() {
     enabled: !!job,
     // Log rows are only ever appended, so a page that came back full is final.
     // Nothing here has to be re-read on a focus or a reconnect; new rows arrive
-    // through the tail query, and the invalidation above still forces a read.
+    // through the tail query and the closing read above.
     staleTime: Infinity,
   });
 
@@ -257,24 +285,23 @@ function JobDetailsPage() {
     );
   }, [logTailPage, logsQueryKey, queryClient]);
 
-  const logs = flattenLogPages(logsData);
-  const totalLogs = latestLogTotal(logsData);
+  // Retrying or cancelling changes the job, not the rows already logged: a
+  // retried job appends to them through the tail read, and a cancelled one
+  // gets its closing rows from the terminal-state read above.
+  const invalidateJob = () =>
+    queryClient.invalidateQueries({
+      queryKey: ['pipeline', 'job', jobId],
+      exact: true,
+    });
 
-  const { ref: loadMoreRef, inView } = useInView();
-
-  useEffect(() => {
-    if (inView && hasNextPage) {
-      void fetchNextPage();
-    }
-  }, [inView, hasNextPage, fetchNextPage]);
+  const navigate = useNavigate();
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   const retryMutation = useMutation({
     mutationFn: (id: string) => retryPipelineJob({ data: id }),
     onSuccess: () => {
       toast.success(i18n._(msg`Job retry initiated`));
-      void queryClient.invalidateQueries({
-        queryKey: ['pipeline', 'job', jobId],
-      });
+      void invalidateJob();
     },
     onError: (error) =>
       toast.error(i18n._(msg`Failed to retry job`), {
@@ -288,9 +315,7 @@ function JobDetailsPage() {
     mutationFn: (pipelineId: string) => retryDagSteps({ data: pipelineId }),
     onSuccess: (result) => {
       toast.success(i18n._(msg`Workflow retry initiated`));
-      void queryClient.invalidateQueries({
-        queryKey: ['pipeline', 'job', jobId],
-      });
+      void invalidateJob();
       void queryClient.invalidateQueries({
         queryKey: ['pipeline', 'executions', result.dag_id],
       });
@@ -305,9 +330,7 @@ function JobDetailsPage() {
     mutationFn: (id: string) => cancelActivePipelineJob({ data: id }),
     onSuccess: () => {
       toast.success(i18n._(msg`Job cancelled`));
-      void queryClient.invalidateQueries({
-        queryKey: ['pipeline', 'job', jobId],
-      });
+      void invalidateJob();
     },
     onError: (error) =>
       toast.error(i18n._(msg`Failed to cancel job`), {
@@ -319,8 +342,21 @@ function JobDetailsPage() {
     mutationFn: (id: string) => deletePipelineJob({ data: id }),
     onSuccess: () => {
       toast.success(i18n._(msg`Job deleted`));
-      // Redirect to jobs list on deletion since the job no longer exists
-      window.history.back();
+      // Lists and workflow views that showed the job.
+      for (const queryKey of [
+        ['pipeline', 'pipelines'],
+        ['pipeline', 'stats'],
+        ['pipeline', 'executions'],
+        ['pipeline', 'dags'],
+      ]) {
+        void queryClient.invalidateQueries({ queryKey });
+      }
+      // The job's own queries can no longer be read. They are dropped once
+      // this page has unmounted; dropped earlier, its observers would read
+      // the deleted job again.
+      void navigate({ to: '/pipeline/jobs' }).then(() =>
+        queryClient.removeQueries({ queryKey: ['pipeline', 'job', jobId] }),
+      );
     },
     onError: () => toast.error(i18n._(msg`Failed to delete job`)),
   });
@@ -335,9 +371,11 @@ function JobDetailsPage() {
             <Skeleton className="h-4 w-32" />
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Skeleton className="h-[200px] md:col-span-2 rounded-2xl" />
-          <Skeleton className="h-[200px] rounded-2xl" />
+        <div className="@container">
+          <div className="grid grid-cols-1 @3xl:grid-cols-3 gap-6">
+            <Skeleton className="h-[200px] @3xl:col-span-2 rounded-2xl" />
+            <Skeleton className="h-[200px] rounded-2xl" />
+          </div>
         </div>
         <Skeleton className="h-[400px] rounded-2xl" />
       </div>
@@ -360,8 +398,11 @@ function JobDetailsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex justify-center pb-6">
-            <Button variant="outline" onClick={() => window.history.back()}>
-              <ArrowLeft className="mr-2 h-4 w-4" /> <Trans>Go Back</Trans>
+            <Button variant="outline" asChild>
+              <Link to="/pipeline/jobs">
+                <ArrowLeft className="mr-2 h-4 w-4" />{' '}
+                <Trans>Back to Jobs</Trans>
+              </Link>
             </Button>
           </CardContent>
         </Card>
@@ -377,6 +418,12 @@ function JobDetailsPage() {
   // Workflow steps are retried through their workflow, so the job's own retry
   // endpoint is only offered for standalone jobs.
   const workflowRetryId = job.belongs_to_workflow ? job.pipeline_id : null;
+  const inputSize = job.execution_info?.input_size_bytes
+    ? formatBytes(job.execution_info.input_size_bytes, { decimals: 1 })
+    : null;
+  const outputSize = job.execution_info?.output_size_bytes
+    ? formatBytes(job.execution_info.output_size_bytes, { decimals: 1 })
+    : null;
 
   return (
     <div className="relative min-h-screen bg-background overflow-hidden selection:bg-primary/20">
@@ -451,7 +498,7 @@ function JobDetailsPage() {
                   <JobAttempt job={job} />
                   <span className="opacity-40">•</span>
                   <span className="font-mono text-xs opacity-70 selection:bg-muted select-all break-all">
-                    ID: {job.id}
+                    <Trans>ID: {jobId}</Trans>
                   </span>
                 </div>
               </div>
@@ -516,22 +563,24 @@ function JobDetailsPage() {
                 <Button
                   variant="destructive"
                   className="shadow-lg shadow-destructive/20 hover:shadow-destructive/40 transition-all"
-                  onClick={() => {
-                    if (
-                      confirm(
-                        i18n._(
-                          msg`Are you sure you want to delete this job? This will permanently remove it from your list.`,
-                        ),
-                      )
-                    ) {
-                      deleteMutation.mutate(job.id);
-                    }
-                  }}
+                  onClick={() => setConfirmDeleteOpen(true)}
                   disabled={deleteMutation.isPending}
                 >
                   <Trash2 className="mr-2 h-4 w-4" /> <Trans>Delete Job</Trans>
                 </Button>
               )}
+              <ConfirmDialog
+                open={confirmDeleteOpen}
+                onOpenChange={setConfirmDeleteOpen}
+                title={<Trans>Delete this job?</Trans>}
+                description={
+                  <Trans>
+                    This permanently removes the job and its logs. This cannot
+                    be undone.
+                  </Trans>
+                }
+                onConfirm={() => deleteMutation.mutate(job.id)}
+              />
             </motion.div>
           </div>
         </div>
@@ -583,30 +632,20 @@ function JobDetailsPage() {
                   <InfoGroup
                     label={i18n._(msg`Resources`)}
                     value={
-                      <div className="flex gap-2">
-                        {job.execution_info?.input_size_bytes && (
-                          <Badge variant="secondary" className="text-[10px]">
-                            In:{' '}
-                            {(
-                              job.execution_info.input_size_bytes /
-                              1024 /
-                              1024
-                            ).toFixed(1)}{' '}
-                            <Trans>MB</Trans>
-                          </Badge>
-                        )}
-                        {job.execution_info?.output_size_bytes && (
-                          <Badge variant="secondary" className="text-[10px]">
-                            Out:{' '}
-                            {(
-                              job.execution_info.output_size_bytes /
-                              1024 /
-                              1024
-                            ).toFixed(1)}{' '}
-                            <Trans>MB</Trans>
-                          </Badge>
-                        )}
-                      </div>
+                      inputSize || outputSize ? (
+                        <div className="flex flex-wrap gap-2">
+                          {inputSize ? (
+                            <Badge variant="secondary" className="text-[10px]">
+                              <Trans>In: {inputSize}</Trans>
+                            </Badge>
+                          ) : null}
+                          {outputSize ? (
+                            <Badge variant="secondary" className="text-[10px]">
+                              <Trans>Out: {outputSize}</Trans>
+                            </Badge>
+                          ) : null}
+                        </div>
+                      ) : null
                     }
                     icon={<HardDrive className="h-4 w-4" />}
                   />
@@ -795,123 +834,17 @@ function JobDetailsPage() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.5 }}
               >
-                <Card className="border-border/40 bg-zinc-950 shadow-2xl overflow-hidden rounded-xl">
-                  <div className="flex items-center justify-between px-4 py-3 bg-zinc-900/80 border-b border-zinc-800 backdrop-blur-md">
-                    <div className="flex items-center gap-3">
-                      <div className="flex gap-1.5">
-                        <div className="w-3 h-3 rounded-full bg-red-500/20 border border-red-500/50" />
-                        <div className="w-3 h-3 rounded-full bg-yellow-500/20 border border-yellow-500/50" />
-                        <div className="w-3 h-3 rounded-full bg-green-500/20 border border-green-500/50" />
-                      </div>
-                      <div className="h-4 w-px bg-zinc-700 mx-1" />
-                      <span className="text-zinc-400 text-xs font-mono font-medium flex items-center gap-2">
-                        <Terminal className="h-3.5 w-3.5" /> execution-logs.log
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {(job.execution_info.log_error_count ?? 0) > 0 && (
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] border-red-500/30 text-red-400 bg-red-500/10 hover:bg-red-500/20 transition-colors"
-                        >
-                          {t(
-                            i18n,
-                          )`${plural(job.execution_info.log_error_count, { one: '# Error', other: '# Errors' })}`}
-                        </Badge>
-                      )}
-                      {(job.execution_info.log_warn_count ?? 0) > 0 && (
-                        <Badge
-                          variant="outline"
-                          className="text-[10px] border-yellow-500/30 text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20 transition-colors"
-                        >
-                          {t(
-                            i18n,
-                          )`${plural(job.execution_info.log_warn_count, { one: '# Warning', other: '# Warnings' })}`}
-                        </Badge>
-                      )}
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] border-zinc-700 text-zinc-500 bg-zinc-900"
-                      >
-                        {job.execution_info.log_lines_total ? (
-                          t(
-                            i18n,
-                          )`${plural(job.execution_info.log_lines_total, { one: '# Line', other: '# Lines' })}`
-                        ) : (
-                          <>
-                            {i18n._(msg`Total`)} {totalLogs}
-                          </>
-                        )}
-                      </Badge>
-                    </div>
-                  </div>
-
-                  <div className="relative">
-                    <ScrollArea className="h-[500px] w-full bg-zinc-950">
-                      <div className="p-4 font-mono text-xs space-y-1">
-                        {isLogsLoading && logs.length === 0 ? (
-                          <div className="flex flex-col items-center justify-center h-[200px] text-zinc-700 space-y-2">
-                            <RefreshCw className="h-6 w-6 animate-spin opacity-50" />
-                            <p>
-                              <Trans>Loading logs...</Trans>
-                            </p>
-                          </div>
-                        ) : logs.length > 0 ? (
-                          <>
-                            {logs.map((log, i) => (
-                              <div
-                                key={i}
-                                className="flex gap-4 hover:bg-zinc-900/50 -mx-2 px-2 py-0.5 rounded transition-colors group"
-                              >
-                                <span className="text-zinc-600 shrink-0 select-none w-20 group-hover:text-zinc-500 transition-colors">
-                                  {formatDate(i18n.locale, log.timestamp, {
-                                    timeStyle: 'medium',
-                                  })}
-                                </span>
-                                <span
-                                  className={cn(
-                                    'break-all',
-                                    log.level === 'ERROR'
-                                      ? 'text-red-400 font-bold'
-                                      : log.level === 'WARN'
-                                        ? 'text-yellow-400'
-                                        : 'text-zinc-300',
-                                  )}
-                                >
-                                  {log.message}
-                                </span>
-                              </div>
-                            ))}
-                            {hasNextPage && (
-                              <div
-                                ref={loadMoreRef}
-                                className="pt-2 flex justify-center py-4"
-                              >
-                                {isFetchingNextPage ? (
-                                  <div className="flex items-center gap-2 text-muted-foreground text-xs">
-                                    <RefreshCw className="h-3 w-3 animate-spin" />
-                                    <Trans>Loading older logs...</Trans>
-                                  </div>
-                                ) : (
-                                  <div className="h-8" />
-                                )}
-                              </div>
-                            )}
-                          </>
-                        ) : (
-                          <div className="flex flex-col items-center justify-center h-[200px] text-zinc-700">
-                            <Terminal className="h-10 w-10 mb-3 opacity-20" />
-                            <p>
-                              <Trans>
-                                No logs available for this execution.
-                              </Trans>
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </ScrollArea>
-                  </div>
-                </Card>
+                <JobLogViewer
+                  jobId={job.id}
+                  data={logsData}
+                  isLoading={isLogsLoading}
+                  hasNextPage={hasNextPage}
+                  isFetchingNextPage={isFetchingNextPage}
+                  fetchNextPage={fetchNextPage}
+                  errorCount={job.execution_info.log_error_count}
+                  warnCount={job.execution_info.log_warn_count}
+                  linesTotal={job.execution_info.log_lines_total}
+                />
               </motion.div>
             )}
           </div>

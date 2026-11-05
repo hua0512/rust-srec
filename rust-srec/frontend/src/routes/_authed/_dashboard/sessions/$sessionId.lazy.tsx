@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, Suspense } from 'react';
-import { createLazyFileRoute } from '@tanstack/react-router';
+import { Link, createLazyFileRoute } from '@tanstack/react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getSession,
@@ -23,6 +23,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -292,7 +293,8 @@ function SessionDetailPage() {
 
   if (isSessionLoading) {
     return (
-      <div className="min-h-screen p-4 md:p-10 max-w-7xl mx-auto space-y-8 bg-background">
+      // Mirrors the overview tab, whose columns follow its own width.
+      <div className="@container min-h-screen w-full px-4 py-6 pb-32 md:px-12 lg:px-16 xl:px-24 space-y-8 bg-background">
         <div className="flex flex-col md:flex-row items-center gap-6">
           <Skeleton className="h-16 w-16 rounded-xl" />
           <div className="space-y-2">
@@ -300,11 +302,12 @@ function SessionDetailPage() {
             <Skeleton className="h-4 w-32" />
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Skeleton className="h-50 md:col-span-2 rounded-xl md:rounded-2xl" />
-          <Skeleton className="h-50 rounded-xl md:rounded-2xl" />
+        <Skeleton className="h-12 w-full max-w-md rounded-full" />
+        <Skeleton className="h-40 rounded-xl md:rounded-2xl" />
+        <div className="grid grid-cols-1 @4xl:grid-cols-3 gap-8">
+          <Skeleton className="h-100 @4xl:col-span-2 rounded-xl md:rounded-2xl" />
+          <Skeleton className="h-100 rounded-xl md:rounded-2xl" />
         </div>
-        <Skeleton className="h-100 rounded-xl md:rounded-2xl" />
       </div>
     );
   }
@@ -325,8 +328,11 @@ function SessionDetailPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex justify-center pb-6">
-            <Button variant="outline" onClick={() => window.history.back()}>
-              <ArrowLeft className="mr-2 h-4 w-4" /> <Trans>Go Back</Trans>
+            <Button variant="outline" asChild>
+              <Link to="/sessions">
+                <ArrowLeft className="mr-2 h-4 w-4" />{' '}
+                <Trans>Back to Sessions</Trans>
+              </Link>
             </Button>
           </CardContent>
         </Card>
@@ -477,6 +483,9 @@ function SessionDetailPage() {
             <DialogTitle>
               <Trans>Media Player</Trans>
             </DialogTitle>
+            <DialogDescription>
+              {playingOutput?.file_path.split(/[/\\]/).pop()}
+            </DialogDescription>
           </DialogHeader>
           <div
             className={
