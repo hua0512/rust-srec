@@ -10,6 +10,7 @@ import { Badge } from './badge';
 import { Switch } from './switch';
 import { SETTING_ROW_CLASS } from './switch-card';
 import { Trans } from '@lingui/react/macro';
+import { cn } from '@/lib/utils';
 
 type FlagFormFieldProps = {
   controlPrefix?: string;
@@ -25,6 +26,7 @@ type FlagFormFieldProps = {
   checked?: (value: any) => boolean;
   onChange?: (value: boolean) => void;
   showExperimentalBadge?: boolean;
+  className?: string;
   children?: React.ReactNode;
 };
 
@@ -38,13 +40,14 @@ export function FlagFormField({
   checked,
   onChange,
   showExperimentalBadge,
+  className,
   children,
 }: FlagFormFieldProps) {
   return (
     <FormField
       name={controlPrefix ? `${controlPrefix}.${fieldName}` : fieldName}
       render={({ field }) => (
-        <FormItem className={SETTING_ROW_CLASS}>
+        <FormItem className={cn(SETTING_ROW_CLASS, className)}>
           <div className="min-w-0 space-y-1">
             <FormLabel>
               <div className={'flex flex-row items-center gap-x-2'}>

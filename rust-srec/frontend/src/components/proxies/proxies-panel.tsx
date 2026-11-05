@@ -35,7 +35,7 @@ import { ProxyRow } from './proxy-row';
 import { ProxyTestPanel } from './proxy-test';
 
 /** The proxy the server's environment sets, as the header's last line. */
-export function SystemProxyLine() {
+function SystemProxyLine() {
   const system = useQuery(systemProxyQueryOptions).data;
   if (!system) return null;
   const url = system.url ?? '';

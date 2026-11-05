@@ -1,4 +1,4 @@
-import { useForm } from 'react-hook-form';
+import { useForm, type Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { motion } from 'motion/react';
@@ -70,7 +70,7 @@ export function WorkflowEditor({
   const initialSteps = initialData?.dag?.steps || [];
 
   const form = useForm<WorkflowFormData>({
-    resolver: zodResolver(workflowSchema) as any,
+    resolver: zodResolver(workflowSchema) as Resolver<WorkflowFormData>,
     defaultValues: {
       name: initialData?.name || '',
       description: initialData?.description || '',

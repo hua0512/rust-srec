@@ -47,7 +47,11 @@ import { MetadataConfigForm } from './metadata-config-form';
 import { ExecuteConfigForm } from './execute-config-form';
 
 import { ProcessorConfigFormProps } from './common-props';
-import { msg } from '@lingui/core/macro';
+import {
+  PROCESSOR_META,
+  resolveProcessorType,
+  type ProcessorType,
+} from '../../constants';
 import { type MessageDescriptor } from '@lingui/core';
 
 interface ProcessorDefinition {
@@ -56,107 +60,114 @@ interface ProcessorDefinition {
   label: MessageDescriptor;
 }
 
-const PROCESSOR_REGISTRY: Record<string, ProcessorDefinition> = {
+const PROCESSOR_REGISTRY: Record<ProcessorType, ProcessorDefinition> = {
   remux: {
+    ...PROCESSOR_META.remux,
     schema: RemuxConfigSchema,
     component: RemuxConfigForm,
-    label: msg`Remux / Transcode`,
-  },
-  rclone: {
-    schema: RcloneConfigSchema,
-    component: RcloneConfigForm,
-    label: msg`Rclone Transfer`,
-  },
-  baidupcs: {
-    schema: BaiduPcsConfigSchema,
-    component: BaiduPcsConfigForm,
-    label: msg`Baidu Netdisk Upload`,
   },
   thumbnail: {
+    ...PROCESSOR_META.thumbnail,
     schema: ThumbnailConfigSchema,
     component: ThumbnailConfigForm,
-    label: msg`Thumbnail Generator`,
   },
   audio_extract: {
+    ...PROCESSOR_META.audio_extract,
     schema: AudioExtractConfigSchema,
     component: AudioExtractConfigForm,
-    label: msg`Audio Extraction`,
   },
   compression: {
+    ...PROCESSOR_META.compression,
     schema: CompressionConfigSchema,
     component: CompressionConfigForm,
-    label: msg`Compression / Archive`,
-  },
-  delete: {
-    schema: DeleteConfigSchema,
-    component: DeleteConfigForm,
-    label: msg`Delete File`,
-  },
-  metadata: {
-    schema: MetadataConfigSchema,
-    component: MetadataConfigForm,
-    label: msg`Metadata Editor`,
-  },
-  execute: {
-    schema: ExecuteConfigSchema,
-    component: ExecuteConfigForm,
-    label: msg`Execute Command`,
-  },
-  danmaku_factory: {
-    schema: DanmakuFactoryConfigSchema,
-    component: DanmakuFactoryConfigForm,
-    label: msg`Danmaku to ASS`,
-  },
-  ass_burnin: {
-    schema: AssBurninConfigSchema,
-    component: AssBurninConfigForm,
-    label: msg`ASS Burn-in`,
   },
   copy_move: {
+    ...PROCESSOR_META.copy_move,
     schema: CopyMoveConfigSchema,
     component: CopyMoveConfigForm,
-    label: msg`Copy / Move`,
   },
-};
-
-/**
- * Alternate names the backend also accepts for a processor (each processor's
- * `job_types()` under `rust-srec/src/pipeline/processors`). Steps created
- * through the API or an import may use them.
- */
-const PROCESSOR_ALIASES: Record<string, string> = {
-  transcode: 'remux',
-  convert: 'remux',
-  upload: 'rclone',
-  extract_audio: 'audio_extract',
-  compress: 'compression',
-  archive: 'compression',
-  cleanup: 'delete',
-  embed_metadata: 'metadata',
-  command: 'execute',
-  danmu_to_ass: 'danmaku_factory',
-  danmu: 'danmaku_factory',
-  burn_ass: 'ass_burnin',
-  burn_subtitles: 'ass_burnin',
+  delete: {
+    ...PROCESSOR_META.delete,
+    schema: DeleteConfigSchema,
+    component: DeleteConfigForm,
+  },
+  metadata: {
+    ...PROCESSOR_META.metadata,
+    schema: MetadataConfigSchema,
+    component: MetadataConfigForm,
+  },
+  rclone: {
+    ...PROCESSOR_META.rclone,
+    schema: RcloneConfigSchema,
+    component: RcloneConfigForm,
+  },
+  baidupcs: {
+    ...PROCESSOR_META.baidupcs,
+    schema: BaiduPcsConfigSchema,
+    component: BaiduPcsConfigForm,
+  },
+  execute: {
+    ...PROCESSOR_META.execute,
+    schema: ExecuteConfigSchema,
+    component: ExecuteConfigForm,
+  },
+  danmaku_factory: {
+    ...PROCESSOR_META.danmaku_factory,
+    schema: DanmakuFactoryConfigSchema,
+    component: DanmakuFactoryConfigForm,
+  },
+  ass_burnin: {
+    ...PROCESSOR_META.ass_burnin,
+    schema: AssBurninConfigSchema,
+    component: AssBurninConfigForm,
+  },
 };
 
 export const getProcessorDefinition = (
   processorName: string,
 ): ProcessorDefinition | undefined => {
-  return (
-    PROCESSOR_REGISTRY[processorName] ??
-    PROCESSOR_REGISTRY[PROCESSOR_ALIASES[processorName]]
-  );
+  const type = resolveProcessorType(processorName);
+  return type ? PROCESSOR_REGISTRY[type] : undefined;
 };
 
 /**
- * The config a processor runs with when nothing is set: every schema default
- * applied to an empty object. `undefined` without a definition or when the
- * schema cannot be satisfied without user input.
+ * What a processor config form starts from: `config` over the schema defaults, with every other
+ * key of the schema present as `undefined`.
+ *
+ * The config inputs register their fields, and react-hook-form writes each one into the form
+ * values. A key the starting value lacks is then a new `undefined` key, and since react-hook-form
+ * compares key counts, the form stays changed after an edit is undone. A field that cannot be
+ * filled without input, such as a required destination, starts `undefined` as well.
+ */
+export function getProcessorFormValues(
+  definition: ProcessorDefinition | null | undefined,
+  config?: unknown,
+): Record<string, unknown> {
+  const schema =
+    definition?.schema instanceof z.ZodPipe
+      ? definition.schema.in
+      : definition?.schema;
+  const seeded: Record<string, unknown> = {};
+  if (schema instanceof z.ZodObject) {
+    for (const [key, field] of Object.entries(schema.shape)) {
+      const result = field.safeParse(undefined);
+      seeded[key] = result.success ? result.data : undefined;
+    }
+  }
+  return config !== null && typeof config === 'object' && !Array.isArray(config)
+    ? { ...seeded, ...config }
+    : seeded;
+}
+
+/**
+ * The config a processor runs with when nothing is set, as {@link getProcessorFormValues}
+ * seeds it. `undefined` without a definition or when the schema cannot be satisfied without
+ * user input.
  */
 export function getProcessorDefaultConfig(
   definition: ProcessorDefinition | null | undefined,
 ): Record<string, unknown> | undefined {
-  const result = definition?.schema.safeParse({});
-  return result?.success ? result.data : undefined;
+  return definition?.schema.safeParse({}).success
+    ? getProcessorFormValues(definition)
+    : undefined;
 }

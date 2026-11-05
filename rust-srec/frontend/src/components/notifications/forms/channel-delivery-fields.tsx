@@ -41,10 +41,13 @@ const NOTIFICATION_LOCALE_OPTIONS = locales.map((locale) => ({
 const FOLLOW_SERVER_LOCALE = '__server__';
 import {
   CONFIG_DESCRIPTION,
+  CONFIG_INPUT,
   CONFIG_SELECT_CONTENT,
   CONFIG_SELECT_TRIGGER,
   ConfigFieldLabel,
 } from '@/components/config/shared/config-field';
+import { NumberInput } from '@/components/ui/number-input';
+import { Timer } from 'lucide-react';
 
 /**
  * Delivery controls common to every notification channel.
@@ -159,6 +162,39 @@ export function ChannelLocaleField({
               </Trans>
             </FormDescription>
           )}
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
+/** Request timeout of the channels that deliver over HTTP. */
+export function ChannelTimeoutField() {
+  const form = useFormContext();
+
+  return (
+    <FormField
+      control={form.control}
+      name="settings.timeout_secs"
+      render={({ field }) => (
+        <FormItem className="space-y-2">
+          <ConfigFieldLabel>
+            <Trans>Timeout (seconds)</Trans>
+          </ConfigFieldLabel>
+          <FormControl>
+            <NumberInput
+              field={field}
+              icon={Timer}
+              min={1}
+              max={300}
+              placeholder="30"
+              className={CONFIG_INPUT}
+            />
+          </FormControl>
+          <FormDescription className={CONFIG_DESCRIPTION}>
+            <Trans>Request timeout duration</Trans>
+          </FormDescription>
           <FormMessage />
         </FormItem>
       )}

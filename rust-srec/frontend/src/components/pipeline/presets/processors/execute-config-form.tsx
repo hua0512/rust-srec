@@ -10,12 +10,16 @@ import {
   FormDescription,
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
-import { Input } from '@/components/ui/input';
+import { ConfigFieldLabel } from '@/components/config/shared/config-field';
 import {
   ProcessorConfigFormProps,
   useProcessorFieldPath,
 } from './common-props';
-import { ProcessorFormShell, ProcessorSection } from './processor-form-layout';
+import {
+  ProcessorFormShell,
+  ProcessorSection,
+  ProcessorTextField,
+} from './processor-form-layout';
 import { ExecuteConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
 import { Badge } from '@/components/ui/badge';
@@ -93,33 +97,19 @@ export function ExecuteConfigForm({
 
             {mode === 'program' ? (
               <>
-                <FormField
+                <ProcessorTextField
                   control={control}
                   name={fieldPath('program')}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>
-                        <Trans>Program</Trans>
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="ffmpeg"
-                          className="font-mono"
-                          {...field}
-                          value={field.value ?? ''}
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        <Trans>
-                          Fixed executable name or path on the server.
-                          Placeholders are expanded only in arguments. On
-                          Windows servers, use shell command mode for .bat or
-                          .cmd files.
-                        </Trans>
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  label={<Trans>Program</Trans>}
+                  description={
+                    <Trans>
+                      Fixed executable name or path on the server. Placeholders
+                      are expanded only in arguments. On Windows servers, use
+                      shell command mode for .bat or .cmd files.
+                    </Trans>
+                  }
+                  placeholder="ffmpeg"
+                  className="font-mono"
                 />
                 <FormField
                   control={control}
@@ -224,9 +214,9 @@ export function ExecuteConfigForm({
                 name={fieldPath('command')}
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel className="text-xs text-muted-foreground ml-1">
+                    <ConfigFieldLabel>
                       <Trans>Command</Trans>
-                    </FormLabel>
+                    </ConfigFieldLabel>
                     <FormControl>
                       <Textarea
                         placeholder="ffmpeg -nostdin -n -i {input} -c copy {output}"
@@ -438,56 +428,29 @@ export function ExecuteConfigForm({
           </FormDescription>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FormField
+            <ProcessorTextField
               control={control}
               name={fieldPath('scan_output_dir')}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs text-muted-foreground ml-1">
-                    <Trans>Scan Directory</Trans>
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder={i18n._(msg`e.g. /output/processed/`)}
-                      className="font-mono bg-background/50 border-border/50 focus:bg-background rounded-lg text-sm"
-                      {...field}
-                      value={field.value ?? ''}
-                    />
-                  </FormControl>
-                  <FormDescription className="text-xs">
-                    <Trans>
-                      Directory to scan for new files after command execution
-                    </Trans>
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
+              label={<Trans>Scan Directory</Trans>}
+              description={
+                <Trans>
+                  Directory to scan for new files after command execution
+                </Trans>
+              }
+              placeholder={i18n._(msg`e.g. /output/processed/`)}
+              className="font-mono text-sm"
             />
-
-            <FormField
+            <ProcessorTextField
               control={control}
               name={fieldPath('scan_extension')}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs text-muted-foreground ml-1">
-                    <Trans>File Extension Filter</Trans>
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder={i18n._(msg`e.g. mp4`)}
-                      className="font-mono bg-background/50 border-border/50 focus:bg-background rounded-lg text-sm"
-                      {...field}
-                      value={field.value ?? ''}
-                    />
-                  </FormControl>
-                  <FormDescription className="text-xs">
-                    <Trans>
-                      Only include files with this extension (without dot)
-                    </Trans>
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
+              label={<Trans>File Extension Filter</Trans>}
+              description={
+                <Trans>
+                  Only include files with this extension (without dot)
+                </Trans>
+              }
+              placeholder={i18n._(msg`e.g. mp4`)}
+              className="font-mono text-sm"
             />
           </div>
         </ProcessorSection>

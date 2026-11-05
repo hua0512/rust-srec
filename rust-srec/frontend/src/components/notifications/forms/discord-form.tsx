@@ -34,7 +34,7 @@ export function DiscordForm() {
             <FormControl>
               <IconInput
                 icon={Globe}
-                placeholder={i18n._(msg`https://discord.com/api/webhooks/...`)}
+                placeholder="https://discord.com/api/webhooks/..."
                 className={CONFIG_INPUT}
                 {...field}
               />
@@ -74,7 +74,7 @@ export function DiscordForm() {
               </ConfigFieldLabel>
               <FormControl>
                 <Input
-                  placeholder={i18n._(msg`https://...`)}
+                  placeholder="https://..."
                   {...field}
                   className={CONFIG_INPUT}
                 />

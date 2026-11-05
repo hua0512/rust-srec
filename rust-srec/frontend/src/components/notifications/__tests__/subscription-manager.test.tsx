@@ -21,7 +21,7 @@ const channel: NotificationChannel = {
   id: '11111111-1111-1111-1111-111111111111',
   name: 'Ops',
   channel_type: 'Webhook',
-  settings: '{}',
+  settings: {},
 };
 
 const eventTypes = [

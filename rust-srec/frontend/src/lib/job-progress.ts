@@ -2,7 +2,10 @@ import type { I18n, MessageDescriptor } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 
 import type { JobPhase, JobProgressSnapshot } from '@/api/schemas/session';
-import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
+import {
+  PROCESSOR_META,
+  resolveProcessorType,
+} from '@/components/pipeline/constants';
 import { formatLocalizedDuration } from '@/lib/date-utils';
 import { formatSpeed } from '@/lib/format';
 import { formatUploadBytes } from '@/lib/upload-format';
@@ -18,8 +21,8 @@ export function formatTimecode(ms: number): string {
 
 /** The job type's display name, as the job pages show it. */
 export function jobTypeLabel(jobType: string, i18n: I18n): string {
-  const definition = getProcessorDefinition(jobType);
-  return definition ? i18n._(definition.label) : jobType.replace(/_/g, ' ');
+  const type = resolveProcessorType(jobType);
+  return type ? i18n._(PROCESSOR_META[type].label) : jobType.replace(/_/g, ' ');
 }
 
 // The store's live progress, or a job page snapshot with plain numbers for

@@ -2,33 +2,14 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useWatch } from 'react-hook-form';
 import { toast } from 'sonner';
-import {
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-  FormDescription,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Switch } from '@/components/ui/switch';
+import { FlagFormField } from '@/components/ui/flag-form-field';
 import { Skeleton } from '@/components/ui/skeleton';
 import { type BaiduPcsConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
-import { ListInput } from '@/components/ui/list-input';
-import { Card, CardContent } from '@/components/ui/card';
-import { CardHeaderWithIcon } from '@/components/ui/card-header-with-icon';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import {
   Cloud,
   CloudUpload,
@@ -53,9 +34,22 @@ import { PLACEHOLDER_TOKENS } from '../../constants';
 import { formatBytes } from '@/lib/format';
 import { getBaiduPcsStatus, baiduPcsLogout } from '@/server/functions/baidupcs';
 import { BaiduPcsLoginDialog } from './baidupcs-login-dialog';
-import { NumberInput } from '@/components/ui/number-input';
+import {
+  ProcessorListField,
+  ProcessorNumberField,
+  ProcessorSection,
+  ProcessorSelectField,
+  ProcessorTextField,
+  TimeAnchorField,
+} from './processor-form-layout';
 
 type BaiduPcsConfig = z.infer<typeof BaiduPcsConfigSchema>;
+
+const POLICIES = [
+  { value: 'skip', label: <Trans>Skip existing files (default)</Trans> },
+  { value: 'overwrite', label: <Trans>Overwrite existing files</Trans> },
+  { value: 'rsync', label: <Trans>Overwrite only when size changed</Trans> },
+];
 
 /**
  * Live BaiduPCS-Go binary + login-session status with login/logout actions.
@@ -120,14 +114,11 @@ function BaiduPcsAccountCard({
       : null;
 
   return (
-    <Card className="border-border/50 bg-muted/10 shadow-sm">
-      <CardHeaderWithIcon
-        icon={UserRound}
-        title={<Trans>Baidu Netdisk Account</Trans>}
-        className="border-b border-border/10 bg-muted/5"
-        iconBgClassName="p-1.5 bg-background/50 border border-border/20 shadow-sm"
-        iconClassName="h-4 w-4"
-      >
+    <ProcessorSection
+      icon={UserRound}
+      iconClassName="text-primary"
+      title={<Trans>Baidu Netdisk Account</Trans>}
+      actions={
         <Button
           type="button"
           variant="ghost"
@@ -141,119 +132,118 @@ function BaiduPcsAccountCard({
             className={`h-4 w-4 ${statusQuery.isFetching ? 'animate-spin' : ''}`}
           />
         </Button>
-      </CardHeaderWithIcon>
-      <CardContent className="space-y-3 pt-4">
-        {statusQuery.isPending ? (
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-2/3" />
-            <Skeleton className="h-4 w-1/2" />
-          </div>
-        ) : statusQuery.isError ? (
+      }
+    >
+      {statusQuery.isPending ? (
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-2/3" />
+          <Skeleton className="h-4 w-1/2" />
+        </div>
+      ) : statusQuery.isError ? (
+        <p className="flex items-start gap-2 text-sm text-destructive">
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <Trans>Failed to query BaiduPCS-Go status.</Trans>
+        </p>
+      ) : !status?.binary_ok ? (
+        <div className="space-y-2">
           <p className="flex items-start gap-2 text-sm text-destructive">
             <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-            <Trans>Failed to query BaiduPCS-Go status.</Trans>
+            <Trans>
+              BaiduPCS-Go binary not available at{' '}
+              <code className="rounded bg-muted px-1 font-mono text-xs">
+                {status?.resolved_binary_path}
+              </code>
+              . Install it or set the binary path in the Advanced tab.
+            </Trans>
           </p>
-        ) : !status?.binary_ok ? (
-          <div className="space-y-2">
-            <p className="flex items-start gap-2 text-sm text-destructive">
-              <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
-              <Trans>
-                BaiduPCS-Go binary not available at{' '}
-                <code className="rounded bg-muted px-1 font-mono text-xs">
-                  {status?.resolved_binary_path}
-                </code>
-                . Install it or set the binary path in the Advanced tab.
-              </Trans>
+          {status?.detail && (
+            <p className="break-all font-mono text-xs text-muted-foreground">
+              {status.detail}
             </p>
-            {status?.detail && (
-              <p className="break-all font-mono text-xs text-muted-foreground">
-                {status.detail}
-              </p>
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center gap-2">
+            {status.version && (
+              <Badge variant="outline" className="font-mono text-xs">
+                {status.version}
+              </Badge>
+            )}
+            {status.logged_in ? (
+              <>
+                <Badge className="bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/15">
+                  <Trans>Logged in</Trans>
+                </Badge>
+                <span className="text-sm font-medium">{status.username}</span>
+                {status.uid != null && (
+                  <span className="text-xs text-muted-foreground">
+                    UID {status.uid}
+                  </span>
+                )}
+              </>
+            ) : (
+              <Badge variant="secondary">
+                <Trans>Not logged in</Trans>
+              </Badge>
+            )}
+            {status.has_stored_credentials && (
+              <Badge
+                variant="outline"
+                className="border-sky-500/30 text-sky-500"
+              >
+                <Trans>Auto re-login</Trans>
+              </Badge>
             )}
           </div>
-        ) : (
-          <>
-            <div className="flex flex-wrap items-center gap-2">
-              {status.version && (
-                <Badge variant="outline" className="font-mono text-xs">
-                  {status.version}
-                </Badge>
-              )}
-              {status.logged_in ? (
-                <>
-                  <Badge className="bg-emerald-500/15 text-emerald-500 hover:bg-emerald-500/15">
-                    <Trans>Logged in</Trans>
-                  </Badge>
-                  <span className="text-sm font-medium">{status.username}</span>
-                  {status.uid != null && (
-                    <span className="text-xs text-muted-foreground">
-                      UID {status.uid}
-                    </span>
-                  )}
-                </>
-              ) : (
-                <Badge variant="secondary">
-                  <Trans>Not logged in</Trans>
-                </Badge>
-              )}
-              {status.has_stored_credentials && (
-                <Badge
-                  variant="outline"
-                  className="border-sky-500/30 text-sky-500"
-                >
-                  <Trans>Auto re-login</Trans>
-                </Badge>
-              )}
-            </div>
 
-            {status.logged_in && quotaPercent != null && (
-              <div className="space-y-1.5">
-                <Progress value={quotaPercent} className="h-2" />
-                <p className="text-xs text-muted-foreground">
-                  <Trans>
-                    {formatBytes(status.quota_used_bytes)} of{' '}
-                    {formatBytes(status.quota_total_bytes)} used
-                  </Trans>
-                </p>
-              </div>
-            )}
-
-            {!status.logged_in && status.detail && (
-              <p className="break-all font-mono text-xs text-muted-foreground">
-                {status.detail}
+          {status.logged_in && quotaPercent != null && (
+            <div className="space-y-1.5">
+              <Progress value={quotaPercent} className="h-2" />
+              <p className="text-xs text-muted-foreground">
+                <Trans>
+                  {formatBytes(status.quota_used_bytes)} of{' '}
+                  {formatBytes(status.quota_total_bytes)} used
+                </Trans>
               </p>
-            )}
-
-            <div className="flex gap-2 pt-1">
-              {status.logged_in ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => logoutMutation.mutate()}
-                  disabled={logoutMutation.isPending}
-                >
-                  {logoutMutation.isPending ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <LogOut className="mr-2 h-4 w-4" />
-                  )}
-                  <Trans>Log out</Trans>
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => setLoginOpen(true)}
-                >
-                  <LogIn className="mr-2 h-4 w-4" />
-                  <Trans>Log in</Trans>
-                </Button>
-              )}
             </div>
-          </>
-        )}
-      </CardContent>
+          )}
+
+          {!status.logged_in && status.detail && (
+            <p className="break-all font-mono text-xs text-muted-foreground">
+              {status.detail}
+            </p>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            {status.logged_in ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => logoutMutation.mutate()}
+                disabled={logoutMutation.isPending}
+              >
+                {logoutMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <LogOut className="mr-2 h-4 w-4" />
+                )}
+                <Trans>Log out</Trans>
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setLoginOpen(true)}
+              >
+                <LogIn className="mr-2 h-4 w-4" />
+                <Trans>Log in</Trans>
+              </Button>
+            )}
+          </div>
+        </>
+      )}
 
       <BaiduPcsLoginDialog
         open={loginOpen}
@@ -261,7 +251,7 @@ function BaiduPcsAccountCard({
         binaryPath={overrides.binary_path}
         configDir={overrides.config_dir}
       />
-    </Card>
+    </ProcessorSection>
   );
 }
 
@@ -302,335 +292,161 @@ export function BaiduPcsConfigForm({
         </TabsList>
 
         <TabsContent value="general" className="space-y-4">
-          <Card className="border-border/50 bg-muted/10 shadow-sm">
-            <CardHeaderWithIcon
-              icon={Cloud}
-              title={<Trans>Destination</Trans>}
-              className="border-b border-border/10 bg-muted/5"
-              iconBgClassName="p-1.5 bg-background/50 border border-border/20 shadow-sm"
-              iconClassName="h-4 w-4"
+          <ProcessorSection
+            icon={Cloud}
+            iconClassName="text-primary"
+            title={<Trans>Destination</Trans>}
+          >
+            <ProcessorTextField
+              control={control}
+              name={fieldPath('destination_root')}
+              label={<Trans>Destination Folder</Trans>}
+              hint={
+                <FieldHint label={i18n._(msg`Destination Folder help`)}>
+                  <p>
+                    <Trans>
+                      Netdisk folder path. Supports placeholders:{' '}
+                      {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d.
+                    </Trans>
+                  </p>
+                  <p>
+                    <Trans>
+                      Missing folders are created by BaiduPCS-Go during upload.
+                    </Trans>
+                  </p>
+                </FieldHint>
+              }
+              description={
+                <Trans>
+                  Baidu Netdisk folder the files are uploaded into. Defaults to
+                  the netdisk root when empty.
+                </Trans>
+              }
+              placeholder={i18n._(msg`e.g. /rust-srec/{streamer}/%Y-%m`)}
+              className="font-mono text-sm"
             />
-            <CardContent className="grid gap-4 pt-4">
-              <FormField
-                control={control}
-                name={fieldPath('destination_root')}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="inline-flex items-center gap-1.5">
-                      <Trans>Destination Folder</Trans>
-                      <FieldHint label={i18n._(msg`Destination Folder help`)}>
-                        <p>
-                          <Trans>
-                            Netdisk folder path. Supports placeholders:{' '}
-                            {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d.
-                          </Trans>
-                        </p>
-                        <p>
-                          <Trans>
-                            Missing folders are created by BaiduPCS-Go during
-                            upload.
-                          </Trans>
-                        </p>
-                      </FieldHint>
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder={i18n._(
-                          msg`e.g. /rust-srec/{streamer}/%Y-%m`,
-                        )}
-                        {...field}
-                        value={field.value ?? ''}
-                        className="h-11 bg-background/50 font-mono text-sm"
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      <Trans>
-                        Baidu Netdisk folder the files are uploaded into.
-                        Defaults to the netdisk root when empty.
-                      </Trans>
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={control}
-                name={fieldPath('time_anchor')}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <Trans>Date placeholder anchor</Trans>
-                    </FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      value={field.value ?? 'job_created'}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="h-11 bg-background/50">
-                          <SelectValue
-                            placeholder={i18n._(msg`Select date anchor`)}
-                          />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="job_created">
-                          <Trans>Job creation time (default)</Trans>
-                        </SelectItem>
-                        <SelectItem value="session_start">
-                          <Trans>Stream start time</Trans>
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      <Trans>
-                        Use stream start time to keep a midnight-crossing stream
-                        in one dated folder and group all segments of a session
-                        together.
-                      </Trans>
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/50 bg-muted/10 shadow-sm">
-            <CardHeaderWithIcon
-              icon={CloudUpload}
-              title={<Trans>Upload Behavior</Trans>}
-              className="border-b border-border/10 bg-muted/5"
-              iconBgClassName="p-1.5 bg-background/50 border border-border/20 shadow-sm"
-              iconClassName="h-4 w-4"
+            <TimeAnchorField
+              control={control}
+              name={fieldPath('time_anchor')}
+              description={
+                <Trans>
+                  Use stream start time to keep a midnight-crossing stream in
+                  one dated folder and group all segments of a session together.
+                </Trans>
+              }
             />
-            <CardContent className="grid gap-4 pt-4">
-              <FormField
-                control={control}
-                name={fieldPath('policy')}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <Trans>Same-name policy</Trans>
-                    </FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      value={field.value ?? 'skip'}
-                    >
-                      <FormControl>
-                        <SelectTrigger className="h-11 bg-background/50">
-                          <SelectValue
-                            placeholder={i18n._(msg`Select policy`)}
-                          />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="skip">
-                          <Trans>Skip existing files (default)</Trans>
-                        </SelectItem>
-                        <SelectItem value="overwrite">
-                          <Trans>Overwrite existing files</Trans>
-                        </SelectItem>
-                        <SelectItem value="rsync">
-                          <Trans>Overwrite only when size changed</Trans>
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      <Trans>
-                        How files that already exist at the destination are
-                        handled (--policy). Skip also makes job retries cheap.
-                      </Trans>
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+          </ProcessorSection>
 
-              <FormField
-                control={control}
-                name={fieldPath('norapid')}
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/40 bg-background/30 p-3">
-                    <div className="space-y-0.5 pr-4">
-                      <FormLabel>
-                        <Trans>Disable rapid upload</Trans>
-                      </FormLabel>
-                      <FormDescription>
-                        <Trans>
-                          Skips the rapid-upload (秒传) hash check before
-                          transferring (--norapid).
-                        </Trans>
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch
-                        checked={field.value ?? false}
-                        onCheckedChange={field.onChange}
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={control}
-                name={fieldPath('remove_source_after_upload')}
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between rounded-lg border border-destructive/30 bg-destructive/5 p-3">
-                    <div className="space-y-0.5 pr-4">
-                      <FormLabel>
-                        <Trans>Delete local files after upload</Trans>
-                      </FormLabel>
-                      <FormDescription>
-                        <Trans>
-                          Removes each local file once its upload (or skip) is
-                          confirmed. The local copy is gone afterwards — keep
-                          this off unless Netdisk is the final destination.
-                        </Trans>
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch
-                        checked={field.value ?? false}
-                        onCheckedChange={field.onChange}
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={control}
-                name={fieldPath('max_retries')}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <Trans>Max Attempts</Trans>
-                    </FormLabel>
-                    <FormControl>
-                      <NumberInput
-                        field={field}
-                        min={1}
-                        max={10}
-                        step={1}
-                        placeholder="3"
-                        className="bg-background/50"
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      <Trans>
-                        Upload attempts per job before failing. Retries only
-                        re-send files without a confirmed result.
-                      </Trans>
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </CardContent>
-          </Card>
+          <ProcessorSection
+            icon={CloudUpload}
+            iconClassName="text-primary"
+            title={<Trans>Upload Behavior</Trans>}
+          >
+            <ProcessorSelectField
+              control={control}
+              name={fieldPath('policy')}
+              label={<Trans>Same-name policy</Trans>}
+              placeholder={i18n._(msg`Select policy`)}
+              description={
+                <Trans>
+                  How files that already exist at the destination are handled
+                  (--policy). Skip also makes job retries cheap.
+                </Trans>
+              }
+              options={POLICIES}
+            />
+            <FlagFormField
+              fieldName={fieldPath('norapid')}
+              title={<Trans>Disable rapid upload</Trans>}
+              description={
+                <Trans>
+                  Skips the rapid-upload (秒传) hash check before transferring
+                  (--norapid).
+                </Trans>
+              }
+            />
+            <FlagFormField
+              fieldName={fieldPath('remove_source_after_upload')}
+              title={<Trans>Delete local files after upload</Trans>}
+              className="border-destructive/30 bg-destructive/5"
+              description={
+                <Trans>
+                  Removes each local file once its upload (or skip) is
+                  confirmed. The local copy is gone afterwards — keep this off
+                  unless Netdisk is the final destination.
+                </Trans>
+              }
+            />
+            <ProcessorNumberField
+              control={control}
+              name={fieldPath('max_retries')}
+              label={<Trans>Max Attempts</Trans>}
+              description={
+                <Trans>
+                  Upload attempts per job before failing. Retries only re-send
+                  files without a confirmed result.
+                </Trans>
+              }
+              min={1}
+              max={10}
+              step={1}
+              placeholder="3"
+            />
+          </ProcessorSection>
         </TabsContent>
 
         <TabsContent value="advanced" className="space-y-4">
-          <Card className="border-border/50 bg-muted/10 shadow-sm">
-            <CardHeaderWithIcon
-              icon={Settings2}
-              title={<Trans>Tool Location</Trans>}
-              className="border-b border-border/10 bg-muted/5"
-              iconBgClassName="p-1.5 bg-background/50 border border-border/20 shadow-sm"
-              iconClassName="h-4 w-4"
+          <ProcessorSection
+            icon={Settings2}
+            iconClassName="text-primary"
+            title={<Trans>Tool Location</Trans>}
+          >
+            <ProcessorTextField
+              control={control}
+              name={fieldPath('binary_path')}
+              label={<Trans>BaiduPCS-Go Executable (Optional)</Trans>}
+              description={
+                <Trans>
+                  Falls back to the BAIDUPCS_PATH environment variable, then
+                  PATH lookup.
+                </Trans>
+              }
+              placeholder="BaiduPCS-Go"
+              className="font-mono text-sm"
             />
-            <CardContent className="grid gap-4 pt-4">
-              <FormField
-                control={control}
-                name={fieldPath('binary_path')}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      <Trans>BaiduPCS-Go Executable (Optional)</Trans>
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder={i18n._(msg`BaiduPCS-Go`)}
-                        {...field}
-                        value={field.value ?? ''}
-                        className="bg-background/50 font-mono text-sm"
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      <Trans>
-                        Falls back to the BAIDUPCS_PATH environment variable,
-                        then PATH lookup.
-                      </Trans>
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={control}
-                name={fieldPath('config_dir')}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel className="inline-flex items-center gap-1.5">
-                      <Trans>Config Directory (Optional)</Trans>
-                      <FieldHint label={i18n._(msg`Config Directory help`)}>
-                        <p>
-                          <Trans>
-                            Directory holding BaiduPCS-Go's login session
-                            (BAIDUPCS_GO_CONFIG_DIR). Logging in via the account
-                            card above stores the session in the same directory
-                            configured here.
-                          </Trans>
-                        </p>
-                      </FieldHint>
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder={i18n._(msg`e.g. /app/config/BaiduPCS-Go`)}
-                        {...field}
-                        value={field.value ?? ''}
-                        className="bg-background/50 font-mono text-sm"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </CardContent>
-          </Card>
+            <ProcessorTextField
+              control={control}
+              name={fieldPath('config_dir')}
+              label={<Trans>Config Directory (Optional)</Trans>}
+              hint={
+                <FieldHint label={i18n._(msg`Config Directory help`)}>
+                  <p>
+                    <Trans>
+                      Directory holding BaiduPCS-Go's login session
+                      (BAIDUPCS_GO_CONFIG_DIR). Logging in via the account card
+                      above stores the session in the same directory configured
+                      here.
+                    </Trans>
+                  </p>
+                </FieldHint>
+              }
+              placeholder={i18n._(msg`e.g. /app/config/BaiduPCS-Go`)}
+              className="font-mono text-sm"
+            />
+          </ProcessorSection>
 
-          <Card className="border-border/50 bg-muted/10 shadow-sm">
-            <CardHeaderWithIcon
-              icon={Terminal}
-              title={<Trans>Extra Arguments</Trans>}
-              className="border-b border-border/10 bg-muted/5"
-              iconBgClassName="p-1.5 bg-background/50 border border-border/20 shadow-sm"
-              iconClassName="h-4 w-4"
+          <ProcessorSection
+            icon={Terminal}
+            iconClassName="text-primary"
+            title={<Trans>Extra Arguments</Trans>}
+          >
+            <ProcessorListField
+              control={control}
+              name={fieldPath('args')}
+              description={<Trans>Double click to edit items.</Trans>}
+              placeholder={i18n._(msg`Add BaiduPCS-Go argument`)}
             />
-            <CardContent className="pt-4">
-              <FormField
-                control={control}
-                name={fieldPath('args')}
-                render={({ field }) => (
-                  <FormItem>
-                    <FormControl>
-                      <ListInput
-                        value={field.value || []}
-                        onChange={field.onChange}
-                        placeholder={i18n._(msg`Add BaiduPCS-Go argument`)}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      <Trans>Double click to edit items.</Trans>
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </CardContent>
-          </Card>
+          </ProcessorSection>
         </TabsContent>
       </Tabs>
     </div>

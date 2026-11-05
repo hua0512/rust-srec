@@ -29,6 +29,63 @@ import {
   SiYoutube,
 } from '@icons-pack/react-simple-icons';
 import React from 'react';
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
+
+/**
+ * Display name and icon of each processor the backend runs, in the order the preset editor
+ * lists them. The processor registry and the step icons read from here so every page names a
+ * processor the same way. This module must not import the registry: the app shell names jobs
+ * through it, and the registry would bring the config forms into every page.
+ */
+export const PROCESSOR_META = {
+  remux: { label: msg`Remux / Transcode`, icon: FileVideo },
+  thumbnail: { label: msg`Thumbnail Generator`, icon: ImageIcon },
+  audio_extract: { label: msg`Audio Extraction`, icon: Scissors },
+  compression: { label: msg`Compression / Archive`, icon: Archive },
+  copy_move: { label: msg`Copy / Move`, icon: Copy },
+  delete: { label: msg`Delete File`, icon: Trash },
+  metadata: { label: msg`Metadata Editor`, icon: Tag },
+  rclone: { label: msg`Rclone Transfer`, icon: Cloud },
+  baidupcs: { label: msg`Baidu Netdisk Upload`, icon: CloudUpload },
+  execute: { label: msg`Execute Command`, icon: Terminal },
+  danmaku_factory: { label: msg`Danmaku to ASS`, icon: Type },
+  ass_burnin: { label: msg`ASS Burn-in`, icon: Flame },
+} satisfies Record<
+  string,
+  { label: MessageDescriptor; icon: React.ElementType }
+>;
+
+export type ProcessorType = keyof typeof PROCESSOR_META;
+
+/**
+ * Alternate names the backend also accepts for a processor (each processor's
+ * `job_types()` under `rust-srec/src/pipeline/processors`). Steps created
+ * through the API or an import may use them.
+ */
+const PROCESSOR_ALIASES: Record<string, ProcessorType> = {
+  transcode: 'remux',
+  convert: 'remux',
+  upload: 'rclone',
+  extract_audio: 'audio_extract',
+  compress: 'compression',
+  archive: 'compression',
+  cleanup: 'delete',
+  embed_metadata: 'metadata',
+  command: 'execute',
+  danmu_to_ass: 'danmaku_factory',
+  danmu: 'danmaku_factory',
+  burn_ass: 'ass_burnin',
+  burn_subtitles: 'ass_burnin',
+};
+
+/** The processor `name` refers to, by its own name or one of its aliases. */
+export function resolveProcessorType(name: string): ProcessorType | undefined {
+  if (Object.hasOwn(PROCESSOR_META, name)) return name as ProcessorType;
+  return Object.hasOwn(PROCESSOR_ALIASES, name)
+    ? PROCESSOR_ALIASES[name]
+    : undefined;
+}
 
 /**
  * Keyed by processor name, preset category, and the leading segment of the
@@ -36,27 +93,18 @@ import React from 'react';
  * which is what a workflow step stores when it references a preset.
  */
 const STEP_ICONS: Record<string, React.ElementType> = {
-  remux: FileVideo,
-  thumbnail: ImageIcon,
+  ...Object.fromEntries(
+    Object.entries(PROCESSOR_META).map(([name, meta]) => [name, meta.icon]),
+  ),
   upload: Upload,
-  rclone: Cloud,
-  baidupcs: CloudUpload,
-  execute: Terminal,
-  copy_move: Copy,
   copy: Copy,
   move: Copy,
-  audio_extract: Scissors,
   audio: Scissors,
-  compression: Archive,
   compress: Archive,
   nvenc: Archive,
   archive: Archive,
-  delete: Trash,
-  metadata: Tag,
   add_metadata: Tag,
-  danmaku_factory: Type,
   danmu: Type,
-  ass_burnin: Flame,
   subtitle: Flame,
   custom: Terminal,
 };

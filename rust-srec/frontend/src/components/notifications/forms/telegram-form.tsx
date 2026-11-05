@@ -47,7 +47,7 @@ export function TelegramForm() {
               <IconInput
                 icon={KeyRound}
                 type="password"
-                placeholder={i18n._(msg`123456:ABC-DEF...`)}
+                placeholder="123456:ABC-DEF..."
                 className={CONFIG_INPUT}
                 {...field}
               />
@@ -67,7 +67,7 @@ export function TelegramForm() {
             <FormControl>
               <IconInput
                 icon={Hash}
-                placeholder={i18n._(msg`-1001234567890`)}
+                placeholder="-1001234567890"
                 className={CONFIG_INPUT}
                 {...field}
               />

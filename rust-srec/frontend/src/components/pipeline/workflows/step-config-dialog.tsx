@@ -11,8 +11,8 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { DagStepDefinition, PipelineStep } from '@/api/schemas';
 import {
-  getProcessorDefaultConfig,
   getProcessorDefinition,
+  getProcessorFormValues,
 } from '@/components/pipeline/presets/processors/registry';
 import {
   buildPresetProcessorMap,
@@ -109,10 +109,10 @@ function parseConfig(config: unknown): Record<string, unknown> {
 /** What the edit form starts from: an inline step's config over its processor's defaults. */
 function initialFormValues(step: PipelineStep | null): Record<string, unknown> {
   if (step?.type !== 'inline') return {};
-  return {
-    ...getProcessorDefaultConfig(getProcessorDefinition(step.processor)),
-    ...parseConfig(step.config),
-  };
+  return getProcessorFormValues(
+    getProcessorDefinition(step.processor),
+    parseConfig(step.config),
+  );
 }
 
 export const StepConfigDialog = memo(function StepConfigDialog(
@@ -163,7 +163,10 @@ function StepConfigDialogBody({
   // Holds the validated form data while the delete-after-transform confirmation is shown, so
   // "Add anyway" can complete the deferred save.
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [pendingData, setPendingData] = useState<any>(null);
+  const [pendingData, setPendingData] = useState<Record<
+    string,
+    unknown
+  > | null>(null);
 
   // The preset this step names. `presetDetail.processor` picks the form shown in the read-only
   // preview and the inline step that handleDetach/performSave write back, so it must be the
@@ -205,7 +208,7 @@ function StepConfigDialogBody({
     defaultValues,
   });
 
-  const performSave = (data: any) => {
+  const performSave = (data: Record<string, unknown>) => {
     if (!dagStep || idError) return;
 
     let finalStepContent: PipelineStep;
@@ -234,7 +237,7 @@ function StepConfigDialogBody({
     onOpenChange(false);
   };
 
-  const handleSubmit = (data: any) => {
+  const handleSubmit = (data: Record<string, unknown>) => {
     if (idError) return;
     // Block saving a delete step wired after a transform until the user confirms. The dialog
     // alert and canvas badge explain why; "Add anyway" in the confirmation runs performSave.
@@ -254,10 +257,7 @@ function StepConfigDialogBody({
 
   const presetConfig = presetDetail?.config;
   const presetValues = useMemo(
-    () => ({
-      ...getProcessorDefaultConfig(presetProcessorDef),
-      ...parseConfig(presetConfig),
-    }),
+    () => getProcessorFormValues(presetProcessorDef, parseConfig(presetConfig)),
     [presetProcessorDef, presetConfig],
   );
 

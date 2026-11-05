@@ -4,11 +4,10 @@ import {
   FormDescription,
   FormField,
   FormItem,
-  FormLabel,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import { Trans } from '@lingui/react/macro';
+import { FlagFormField } from '@/components/ui/flag-form-field';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Lock, Shield } from 'lucide-react';
@@ -73,31 +72,17 @@ export function BigoConfigFields<TFieldValues extends FieldValues>({
         </ConfigSectionHeading>
 
         <div className="grid gap-6">
-          <FormField
-            control={form.control}
-            name={configPath<TFieldValues>(fieldName, 'mint_token')}
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 bg-background/40 px-4 py-3">
-                <div className="space-y-1 pr-4">
-                  <FormLabel className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    <Trans>Mint Integrity Token</Trans>
-                  </FormLabel>
-                  <FormDescription className="text-[11px] font-medium text-muted-foreground/80">
-                    <Trans>
-                      Send a website-style integrity token with studio requests.
-                      Enabled by default; disable only if minting fails in your
-                      network.
-                    </Trans>
-                  </FormDescription>
-                </div>
-                <FormControl>
-                  <Switch
-                    checked={field.value !== false && field.value !== 'false'}
-                    onCheckedChange={field.onChange}
-                  />
-                </FormControl>
-              </FormItem>
-            )}
+          <FlagFormField
+            fieldName={configPath<TFieldValues>(fieldName, 'mint_token')}
+            title={<Trans>Mint Integrity Token</Trans>}
+            description={
+              <Trans>
+                Send a website-style integrity token with studio requests.
+                Enabled by default; disable only if minting fails in your
+                network.
+              </Trans>
+            }
+            checked={(value) => value !== false && value !== 'false'}
           />
         </div>
       </section>

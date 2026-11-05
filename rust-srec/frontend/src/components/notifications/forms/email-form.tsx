@@ -44,7 +44,7 @@ export function EmailForm() {
                 <FormControl>
                   <IconInput
                     icon={Globe}
-                    placeholder={i18n._(msg`smtp.gmail.com`)}
+                    placeholder="smtp.gmail.com"
                     className={CONFIG_INPUT}
                     {...field}
                   />
@@ -66,7 +66,7 @@ export function EmailForm() {
                 <NumberInput
                   field={field}
                   icon={Hash}
-                  placeholder={i18n._(msg`587`)}
+                  placeholder="587"
                   className={CONFIG_INPUT}
                 />
               </FormControl>
@@ -131,7 +131,7 @@ export function EmailForm() {
             <FormControl>
               <IconInput
                 icon={Mail}
-                placeholder={i18n._(msg`notifier@example.com`)}
+                placeholder="notifier@example.com"
                 className={CONFIG_INPUT}
                 {...field}
               />

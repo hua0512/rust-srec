@@ -127,7 +127,7 @@ function normalized(value: unknown): string {
  * Whether a field holds something other than its default. In an override, any value the field
  * holds counts: an unset field inherits the engine's value, and a `null` resets it.
  */
-export function isChanged(
+function isChanged(
   config: unknown,
   field: FieldSpec,
   isOverride: boolean,
@@ -138,7 +138,7 @@ export function isChanged(
   return normalized(value) !== normalized(field.fallback);
 }
 
-export function changedCount(
+function changedCount(
   config: unknown,
   fields: readonly FieldSpec[],
   isOverride: boolean,

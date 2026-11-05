@@ -2,25 +2,23 @@ import { Trans } from '@lingui/react/macro';
 import {
   FormField,
   FormItem,
-  FormLabel,
   FormControl,
   FormMessage,
   FormDescription,
 } from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
+import { FlagFormField } from '@/components/ui/flag-form-field';
+import { CONFIG_DESCRIPTION } from '@/components/config/shared/config-field';
 import {
   ProcessorConfigFormProps,
   useProcessorFieldPath,
 } from './common-props';
-import { ProcessorFormShell, ProcessorSection } from './processor-form-layout';
+import {
+  ProcessorFormShell,
+  ProcessorSection,
+  ProcessorSelectField,
+  ProcessorTextField,
+  TimeAnchorField,
+} from './processor-form-layout';
 import { CopyMoveConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
 import { Copy, Settings2, Terminal } from 'lucide-react';
@@ -31,7 +29,10 @@ import { PLACEHOLDER_TOKENS } from '../../constants';
 
 type CopyMoveConfig = z.infer<typeof CopyMoveConfigSchema>;
 
-const EXECUTION_TIME_ANCHOR = 'execution_time';
+const OPERATIONS = [
+  { value: 'copy', label: <Trans>Copy Files</Trans> },
+  { value: 'move', label: <Trans>Move Files</Trans> },
+];
 
 export function CopyMoveConfigForm({
   control,
@@ -49,203 +50,72 @@ export function CopyMoveConfigForm({
           title={<Trans>Operation</Trans>}
         >
           <div className="grid grid-cols-1 gap-6">
-            <FormField
+            <ProcessorSelectField
               control={control}
               name={fieldPath('operation')}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs text-muted-foreground ml-1">
-                    <Trans>Operation Type</Trans>
-                  </FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    value={field.value || 'copy'}
-                  >
-                    <FormControl>
-                      <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">
-                        <SelectValue
-                          placeholder={i18n._(msg`Select operation`)}
-                        />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="copy">
-                        <Trans>Copy Files</Trans>
-                      </SelectItem>
-                      <SelectItem value="move">
-                        <Trans>Move Files</Trans>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
+              label={<Trans>Operation Type</Trans>}
+              placeholder={i18n._(msg`Select operation`)}
+              options={OPERATIONS}
             />
-
-            <FormField
+            <ProcessorTextField
               control={control}
               name={fieldPath('destination')}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs text-muted-foreground ml-1">
-                    <Trans>Destination Directory</Trans>
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
-                      {...field}
-                      value={field.value ?? ''}
-                      placeholder="/path/to/destination/{platform}/{streamer}/%Y-%m-%d"
-                    />
-                  </FormControl>
-                  <FormDescription className="text-[11px] ml-1">
-                    <Trans>
-                      Supports placeholders: {PLACEHOLDER_TOKENS} and time
-                      tokens like %Y/%m/%d.
-                    </Trans>
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
+              label={<Trans>Destination Directory</Trans>}
+              description={
+                <Trans>
+                  Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens
+                  like %Y/%m/%d.
+                </Trans>
+              }
+              placeholder="/path/to/destination/{platform}/{streamer}/%Y-%m-%d"
+              className="font-mono text-sm"
             />
-
-            <FormField
+            <TimeAnchorField
               control={control}
               name={fieldPath('time_anchor')}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs text-muted-foreground ml-1">
-                    <Trans>Date placeholder anchor</Trans>
-                  </FormLabel>
-                  <Select
-                    onValueChange={(value) =>
-                      field.onChange(
-                        value === EXECUTION_TIME_ANCHOR ? undefined : value,
-                      )
-                    }
-                    value={field.value ?? EXECUTION_TIME_ANCHOR}
-                  >
-                    <FormControl>
-                      <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">
-                        <SelectValue
-                          placeholder={i18n._(msg`Select date anchor`)}
-                        />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value={EXECUTION_TIME_ANCHOR}>
-                        <Trans>Execution time (default)</Trans>
-                      </SelectItem>
-                      <SelectItem value="job_created">
-                        <Trans>Job creation time</Trans>
-                      </SelectItem>
-                      <SelectItem value="session_start">
-                        <Trans>Stream start time</Trans>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormDescription className="text-[11px] ml-1">
-                    <Trans>
-                      Use stream start time to keep a midnight-crossing stream
-                      in one dated folder. Execution time preserves the existing
-                      copy/move behavior.
-                    </Trans>
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
+              executionTime
+              description={
+                <Trans>
+                  Use stream start time to keep a midnight-crossing stream in
+                  one dated folder. Execution time preserves the existing
+                  copy/move behavior.
+                </Trans>
+              }
             />
           </div>
         </ProcessorSection>
 
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-border/40">
-            <Settings2 className="w-4 h-4 text-gray-500" />
-            <h3 className="font-semibold text-sm mr-auto">
-              <Trans>Options</Trans>
-            </h3>
-          </div>
-
+        <ProcessorSection
+          icon={Settings2}
+          iconClassName="text-gray-500"
+          title={<Trans>Options</Trans>}
+        >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FormField
-              control={control}
-              name={fieldPath('create_dirs')}
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 shadow-sm bg-muted/10 transition-colors hover:bg-muted/20">
-                  <div className="space-y-1">
-                    <FormLabel className="text-sm font-medium">
-                      <Trans>Create Directories</Trans>
-                    </FormLabel>
-                    <FormDescription className="text-xs">
-                      <Trans>Create missing folders</Trans>
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value ?? true}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
+            <FlagFormField
+              fieldName={fieldPath('create_dirs')}
+              title={<Trans>Create Directories</Trans>}
+              description={<Trans>Create missing folders</Trans>}
             />
-
-            <FormField
-              control={control}
-              name={fieldPath('verify_integrity')}
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 shadow-sm bg-muted/10 transition-colors hover:bg-muted/20">
-                  <div className="space-y-1">
-                    <FormLabel className="text-sm font-medium">
-                      <Trans>Verify Integrity</Trans>
-                    </FormLabel>
-                    <FormDescription className="text-xs">
-                      <Trans>Check size after copy</Trans>
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value ?? true}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
+            <FlagFormField
+              fieldName={fieldPath('verify_integrity')}
+              title={<Trans>Verify Integrity</Trans>}
+              description={<Trans>Check size after copy</Trans>}
             />
-
-            <FormField
-              control={control}
-              name={fieldPath('overwrite')}
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 shadow-sm bg-muted/10 transition-colors hover:bg-muted/20">
-                  <div className="space-y-1">
-                    <FormLabel className="text-sm font-medium">
-                      <Trans>Overwrite Existing</Trans>
-                    </FormLabel>
-                    <FormDescription className="text-xs">
-                      <Trans>Replace destination files if they exist</Trans>
-                    </FormDescription>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={field.value ?? false}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
+            <FlagFormField
+              fieldName={fieldPath('overwrite')}
+              title={<Trans>Overwrite Existing</Trans>}
+              description={
+                <Trans>Replace destination files if they exist</Trans>
+              }
             />
           </div>
-        </div>
+        </ProcessorSection>
 
-        <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
-          <div className="flex items-center gap-2 pb-2 border-b border-border/40">
-            <Terminal className="w-4 h-4 text-orange-500" />
-            <h3 className="font-semibold text-sm mr-auto">
-              <Trans>Exclude Patterns</Trans>
-            </h3>
-          </div>
-
+        <ProcessorSection
+          icon={Terminal}
+          iconClassName="text-orange-500"
+          title={<Trans>Exclude Patterns</Trans>}
+        >
           <FormField
             control={control}
             name={fieldPath('exclude_patterns')}
@@ -258,7 +128,7 @@ export function CopyMoveConfigForm({
                     placeholder={i18n._(msg`Add exclude regex pattern`)}
                   />
                 </FormControl>
-                <FormDescription className="text-[11px] ml-1">
+                <FormDescription className={CONFIG_DESCRIPTION}>
                   <Trans>
                     Regex patterns to exclude files. Matched against full path
                     and filename.
@@ -268,7 +138,7 @@ export function CopyMoveConfigForm({
               </FormItem>
             )}
           />
-        </div>
+        </ProcessorSection>
       </div>
     </ProcessorFormShell>
   );

@@ -4,9 +4,7 @@ import {
   FormDescription,
   FormField,
   FormItem,
-  FormLabel,
 } from '@/components/ui/form';
-import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -15,6 +13,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Trans } from '@lingui/react/macro';
+import { FlagFormField } from '@/components/ui/flag-form-field';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Zap, Activity } from 'lucide-react';
@@ -162,30 +161,19 @@ export function HuyaConfigFields<TFieldValues extends FieldValues>({
         </ConfigSectionHeading>
 
         <div className="grid gap-6">
-          <FormField
-            control={form.control}
-            name={configPath<TFieldValues>(fieldName, 'force_origin_quality')}
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-center justify-between rounded-2xl border bg-muted/5 p-5 transition-all hover:bg-muted/10 border-border/50">
-                <div className="space-y-1.5 pr-4">
-                  <FormLabel className="text-sm font-bold text-foreground">
-                    <Trans>Force Origin Quality</Trans>
-                  </FormLabel>
-                  <FormDescription className="text-xs leading-relaxed font-medium">
-                    <Trans>
-                      Force requesting the highest origin quality available
-                      (Direct stream).
-                    </Trans>
-                  </FormDescription>
-                </div>
-                <FormControl>
-                  <Switch
-                    checked={!!field.value}
-                    onCheckedChange={field.onChange}
-                  />
-                </FormControl>
-              </FormItem>
+          <FlagFormField
+            fieldName={configPath<TFieldValues>(
+              fieldName,
+              'force_origin_quality',
             )}
+            title={<Trans>Force Origin Quality</Trans>}
+            description={
+              <Trans>
+                Force requesting the highest origin quality available (Direct
+                stream).
+              </Trans>
+            }
+            checked={(value) => !!value}
           />
         </div>
       </section>

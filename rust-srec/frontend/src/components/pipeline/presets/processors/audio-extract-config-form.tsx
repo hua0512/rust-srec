@@ -1,34 +1,32 @@
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
-import {
-  FormField,
-  FormItem,
-  FormLabel,
-  FormControl,
-  FormMessage,
-  FormDescription,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { FlagFormField } from '@/components/ui/flag-form-field';
+import { Tabs, TabsContent, TabsList } from '@/components/ui/tabs';
 import {
   ProcessorConfigFormProps,
   useProcessorFieldPath,
 } from './common-props';
-import { ProcessorFormShell, ProcessorSection } from './processor-form-layout';
+import {
+  ProcessorFormShell,
+  ProcessorNumberField,
+  ProcessorSection,
+  ProcessorSelectField,
+  ProcessorTabTrigger,
+  ProcessorTextField,
+} from './processor-form-layout';
 import { AudioExtractConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
 import { Music, AudioWaveform, Settings2 } from 'lucide-react';
 
 type AudioExtractConfig = z.infer<typeof AudioExtractConfigSchema>;
+
+const AUDIO_FORMATS = [
+  { value: 'mp3', label: 'MP3' },
+  { value: 'aac', label: 'AAC' },
+  { value: 'flac', label: 'FLAC' },
+  { value: 'opus', label: 'Opus' },
+];
 
 export function AudioExtractConfigForm({
   control,
@@ -41,24 +39,12 @@ export function AudioExtractConfigForm({
     <ProcessorFormShell>
       <Tabs defaultValue="general" className="w-full">
         <TabsList className="w-full h-auto p-1.5 bg-muted/20 rounded-xl grid grid-cols-2 gap-1.5 backdrop-blur-sm mb-6">
-          <TabsTrigger
-            value="general"
-            className="flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 h-auto py-2.5 rounded-lg data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all duration-300 relative overflow-hidden group"
-          >
-            <Settings2 className="w-4 h-4 shrink-0 transition-transform duration-300 group-data-[state=active]:scale-110" />
-            <span className="text-xs font-medium hidden sm:inline">
-              <Trans>General</Trans>
-            </span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="advanced"
-            className="flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 h-auto py-2.5 rounded-lg data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all duration-300 relative overflow-hidden group"
-          >
-            <AudioWaveform className="w-4 h-4 shrink-0 transition-transform duration-300 group-data-[state=active]:scale-110" />
-            <span className="text-xs font-medium hidden sm:inline">
-              <Trans>Advanced</Trans>
-            </span>
-          </TabsTrigger>
+          <ProcessorTabTrigger value="general" icon={Settings2}>
+            <Trans>General</Trans>
+          </ProcessorTabTrigger>
+          <ProcessorTabTrigger value="advanced" icon={AudioWaveform}>
+            <Trans>Advanced</Trans>
+          </ProcessorTabTrigger>
         </TabsList>
 
         <div className="space-y-4">
@@ -72,61 +58,21 @@ export function AudioExtractConfigForm({
               title={<Trans>Output Settings</Trans>}
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <FormField
+                <ProcessorSelectField
                   control={control}
                   name={fieldPath('format')}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs text-muted-foreground ml-1">
-                        <Trans>Format</Trans>
-                      </FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        value={field.value ?? ''}
-                      >
-                        <FormControl>
-                          <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">
-                            <SelectValue
-                              placeholder={i18n._(msg`Copy (Stream Copy)`)}
-                            />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="mp3">MP3</SelectItem>
-                          <SelectItem value="aac">AAC</SelectItem>
-                          <SelectItem value="flac">FLAC</SelectItem>
-                          <SelectItem value="opus">Opus</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormDescription className="text-[11px] ml-1">
-                        <Trans>Leave empty for stream copy</Trans>
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  label={<Trans>Format</Trans>}
+                  placeholder={i18n._(msg`Copy (Stream Copy)`)}
+                  description={<Trans>Leave empty for stream copy</Trans>}
+                  options={AUDIO_FORMATS}
                 />
-
-                <FormField
+                <ProcessorTextField
                   control={control}
                   name={fieldPath('bitrate')}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs text-muted-foreground ml-1">
-                        <Trans>Bitrate</Trans>
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
-                          placeholder={i18n._(msg`128k`)}
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormDescription className="text-[11px] ml-1">
-                        <Trans>e.g. 128k, 320k</Trans>
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  label={<Trans>Bitrate</Trans>}
+                  description={<Trans>e.g. 128k, 320k</Trans>}
+                  placeholder="128k"
+                  className="font-mono text-sm"
                 />
               </div>
             </ProcessorSection>
@@ -136,101 +82,38 @@ export function AudioExtractConfigForm({
             value="advanced"
             className="space-y-6 focus-visible:outline-none focus-visible:ring-0"
           >
-            <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
-              <div className="flex items-center gap-2 pb-2 border-b border-border/40">
-                <AudioWaveform className="w-4 h-4 text-indigo-500" />
-                <h3 className="font-semibold text-sm mr-auto">
-                  <Trans>Audio Properties</Trans>
-                </h3>
-              </div>
-
+            <ProcessorSection
+              icon={AudioWaveform}
+              iconClassName="text-indigo-500"
+              title={<Trans>Audio Properties</Trans>}
+            >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <FormField
+                <ProcessorNumberField
                   control={control}
                   name={fieldPath('sample_rate')}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs text-muted-foreground ml-1">
-                        <Trans>Sample Rate (Hz)</Trans>
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
-                          type="number"
-                          placeholder={i18n._(msg`44100`)}
-                          {...field}
-                          onChange={(e) =>
-                            field.onChange(
-                              e.target.value
-                                ? parseInt(e.target.value)
-                                : undefined,
-                            )
-                          }
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  label={<Trans>Sample Rate (Hz)</Trans>}
+                  step={1}
+                  placeholder="44100"
                 />
-
-                <FormField
+                <ProcessorNumberField
                   control={control}
                   name={fieldPath('channels')}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs text-muted-foreground ml-1">
-                        <Trans>Channels</Trans>
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
-                          type="number"
-                          min={1}
-                          max={8}
-                          placeholder={i18n._(msg`2`)}
-                          {...field}
-                          onChange={(e) =>
-                            field.onChange(
-                              e.target.value
-                                ? parseInt(e.target.value)
-                                : undefined,
-                            )
-                          }
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  label={<Trans>Channels</Trans>}
+                  min={1}
+                  max={8}
+                  step={1}
+                  placeholder="2"
                 />
               </div>
-            </div>
+            </ProcessorSection>
 
-            <div className="space-y-3">
-              <FormField
-                control={control}
-                name={fieldPath('overwrite')}
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 shadow-sm bg-muted/10 transition-colors hover:bg-muted/20">
-                    <div className="space-y-1">
-                      <FormLabel className="text-sm font-medium">
-                        <Trans>Overwrite Files</Trans>
-                      </FormLabel>
-                      <FormDescription className="text-xs">
-                        <Trans>
-                          Replace output files if they already exist
-                        </Trans>
-                      </FormDescription>
-                    </div>
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-            </div>
+            <FlagFormField
+              fieldName={fieldPath('overwrite')}
+              title={<Trans>Overwrite Files</Trans>}
+              description={
+                <Trans>Replace output files if they already exist</Trans>
+              }
+            />
           </TabsContent>
         </div>
       </Tabs>

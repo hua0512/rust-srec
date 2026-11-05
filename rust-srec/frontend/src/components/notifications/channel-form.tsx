@@ -6,6 +6,8 @@ import {
   NotificationChannel,
   ChannelFormSchema,
   ChannelFormData,
+  type WebhookAuth,
+  type WebhookAuthType,
 } from '@/api/schemas';
 import {
   Dialog,
@@ -41,7 +43,7 @@ import { DiscordForm } from './forms/discord-form';
 import { EmailForm } from './forms/email-form';
 import { GotifyForm } from './forms/gotify-form';
 import { TelegramForm } from './forms/telegram-form';
-import { WebhookForm } from './forms/webhook-form';
+import { AUTH_DEFAULTS, WebhookForm } from './forms/webhook-form';
 import { removeEmpty } from '@/lib/format';
 import {
   CONFIG_INPUT,
@@ -58,16 +60,22 @@ interface ChannelFormProps {
   onOpenChange: (open: boolean) => void;
 }
 
-// Use the discriminated union schema from API schemas
-
 /**
  * Starting settings for each channel type, matching the defaults on the schemas in
  * `api/schemas/notifications.ts`.
  *
  * The form holds one `settings` object shared by every type, so switching type has to re-seed it;
- * otherwise the previous type's keys linger and the new type's own fields come up empty.
+ * otherwise the previous type's keys linger and the new type's own fields come up empty. An edited
+ * channel's stored settings are laid over these too, so a key it was saved without still starts
+ * with its default.
  */
-export const DEFAULT_SETTINGS: Record<string, Record<string, unknown>> = {
+export const DEFAULT_SETTINGS: Record<ChannelType, Record<string, unknown>> = {
+  Discord: {
+    webhook_url: '',
+    min_priority: 5,
+    locale: '',
+    enabled: true,
+  },
   Webhook: {
     url: '',
     method: 'POST',
@@ -111,6 +119,40 @@ export const DEFAULT_SETTINGS: Record<string, Record<string, unknown>> = {
   },
 };
 
+/** What the channel endpoints receive; `settings` is sent as the object, not JSON text. */
+interface ChannelPayload {
+  name: string;
+  channel_type: ChannelType;
+  settings: Record<string, unknown>;
+}
+
+/** A stored webhook `auth`, with every field of its type present so the inputs start filled. */
+function webhookFormAuth(auth: unknown): WebhookAuth {
+  const type =
+    auth !== null && typeof auth === 'object' && 'type' in auth
+      ? auth.type
+      : undefined;
+  if (typeof type !== 'string' || !(type in AUTH_DEFAULTS)) {
+    return AUTH_DEFAULTS.None;
+  }
+  return {
+    ...AUTH_DEFAULTS[type as WebhookAuthType],
+    ...(auth as object),
+  } as WebhookAuth;
+}
+
+/** Stored webhook headers, a name -> value map, as the editable rows of the form. */
+function webhookFormHeaders(headers: unknown): [string, string][] {
+  if (Array.isArray(headers)) return headers;
+  if (headers !== null && typeof headers === 'object') {
+    return Object.entries(headers).map(([name, value]) => [
+      name,
+      String(value),
+    ]);
+  }
+  return [];
+}
+
 export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
   const { i18n } = useLingui();
   const queryClient = useQueryClient();
@@ -148,117 +190,20 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
   // Load channel data when editing
   useEffect(() => {
     if (channel && open) {
-      let settings: any = channel.settings;
-      try {
-        if (typeof settings === 'string') {
-          settings = JSON.parse(settings);
-        }
-      } catch (e) {
-        console.error('Failed to parse settings', e);
+      const stored = channel.settings ?? {};
+      const settings: Record<string, unknown> = {
+        ...DEFAULT_SETTINGS[channel.channel_type],
+        ...stored,
+      };
+      if (channel.channel_type === 'Webhook') {
+        settings.auth = webhookFormAuth(stored.auth);
+        settings.headers = webhookFormHeaders(stored.headers);
       }
-
-      // Map the API response to form structure based on channel type
-      if (channel.channel_type === 'Discord') {
-        form.reset({
-          name: channel.name,
-          channel_type: 'Discord',
-          settings: {
-            webhook_url: settings.webhook_url || '',
-            username: settings.username,
-            avatar_url: settings.avatar_url,
-            min_priority: settings.min_priority ?? 5,
-            locale: settings.locale ?? '',
-            enabled: settings.enabled !== false,
-          },
-        });
-      } else if (channel.channel_type === 'Email') {
-        form.reset({
-          name: channel.name,
-          channel_type: 'Email',
-          settings: {
-            smtp_host: settings.smtp_host || '',
-            smtp_port: settings.smtp_port || 587,
-            username: settings.username || '',
-            password: settings.password || '',
-            from_address: settings.from_address || '',
-            to_addresses: settings.to_addresses || [],
-            use_tls: settings.use_tls ?? true,
-            min_priority: settings.min_priority ?? 8,
-            locale: settings.locale ?? '',
-            enabled: settings.enabled !== false,
-          },
-        });
-      } else if (channel.channel_type === 'Telegram') {
-        form.reset({
-          name: channel.name,
-          channel_type: 'Telegram',
-          settings: {
-            bot_token: settings.bot_token || '',
-            chat_id: settings.chat_id || '',
-            parse_mode: settings.parse_mode || 'HTML',
-            min_priority: settings.min_priority ?? 5,
-            locale: settings.locale ?? '',
-            enabled: settings.enabled !== false,
-          },
-        });
-      } else if (channel.channel_type === 'Gotify') {
-        form.reset({
-          name: channel.name,
-          channel_type: 'Gotify',
-          settings: {
-            server_url: settings.server_url || '',
-            app_token: settings.app_token || '',
-            min_priority: settings.min_priority ?? 5,
-            locale: settings.locale ?? '',
-            enabled: settings.enabled !== false,
-            timeout_secs: settings.timeout_secs || 30,
-          },
-        });
-      } else if (channel.channel_type === 'Webhook') {
-        // Map auth to discriminated union format
-        let auth: any = { type: 'None' };
-        if (settings.auth) {
-          if (settings.auth.type === 'Bearer') {
-            auth = { type: 'Bearer', token: settings.auth.token || '' };
-          } else if (settings.auth.type === 'Basic') {
-            auth = {
-              type: 'Basic',
-              username: settings.auth.username || '',
-              password: settings.auth.password || '',
-            };
-          } else if (settings.auth.type === 'Header') {
-            auth = {
-              type: 'Header',
-              name: settings.auth.name || '',
-              value: settings.auth.value || '',
-            };
-          }
-        }
-
-        let headers: [string, string][] = [];
-        if (settings.headers) {
-          if (Array.isArray(settings.headers)) {
-            headers = settings.headers;
-          } else if (typeof settings.headers === 'object') {
-            headers = Object.entries(settings.headers);
-          }
-        }
-
-        form.reset({
-          name: channel.name,
-          channel_type: 'Webhook',
-          settings: {
-            url: settings.url || '',
-            method: settings.method || 'POST',
-            auth,
-            min_priority: settings.min_priority ?? 2,
-            locale: settings.locale ?? '',
-            enabled: settings.enabled !== false,
-            timeout_secs: settings.timeout_secs || 30,
-            headers,
-          },
-        });
-      }
+      form.reset({
+        name: channel.name,
+        channel_type: channel.channel_type,
+        settings: settings as never,
+      });
     } else if (!channel && open) {
       form.reset({
         name: '',
@@ -269,7 +214,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
   }, [channel, open, form]);
 
   const createMutation = useMutation({
-    mutationFn: (data: any) => createChannel({ data }),
+    mutationFn: (data: ChannelPayload) => createChannel({ data }),
     onSuccess: () => {
       toast.success(i18n._(msg`Channel created`));
       void queryClient.invalidateQueries({
@@ -277,13 +222,13 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
       });
       onOpenChange(false);
     },
-    onError: (err: any) =>
+    onError: (err) =>
       toast.error(err.message || i18n._(msg`Failed to create channel`)),
   });
 
   const updateMutation = useMutation({
-    mutationFn: (data: any) =>
-      updateChannel({ data: { id: channel!.id, data } }),
+    mutationFn: ({ name, settings }: ChannelPayload) =>
+      updateChannel({ data: { id: channel!.id, data: { name, settings } } }),
     onSuccess: () => {
       toast.success(i18n._(msg`Channel updated`));
       void queryClient.invalidateQueries({
@@ -291,41 +236,28 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
       });
       onOpenChange(false);
     },
-    onError: (err: any) =>
+    onError: (err) =>
       toast.error(err.message || i18n._(msg`Failed to update channel`)),
   });
 
   const onSubmit = (data: ChannelFormData) => {
-    let finalSettings: any = { ...data.settings };
-
-    // Transform headers array to object for Webhook
+    let settings: Record<string, unknown> = data.settings;
     if (data.channel_type === 'Webhook') {
-      const settings = data.settings;
-      // Transform headers array to object
-      const headersMap: Record<string, string> = {};
-      if (settings.headers && Array.isArray(settings.headers)) {
-        settings.headers.forEach(([key, value]: any) => {
-          if (key) {
-            headersMap[key] = value;
-          }
-        });
-      }
-
-      // Handle auth: if type is 'None', send null to backend
-      const auth = settings.auth?.type === 'None' ? null : settings.auth;
-
-      finalSettings = {
-        ...settings,
-        headers: headersMap,
-        auth,
+      const { headers, auth } = data.settings;
+      settings = {
+        ...data.settings,
+        // The backend keeps headers as a name -> value map; rows without a name are dropped.
+        headers: Object.fromEntries((headers ?? []).filter(([name]) => name)),
+        // No authentication is sent as `null`, which `removeEmpty` then leaves out.
+        auth: auth?.type === 'None' ? null : auth,
       };
     }
 
-    const payload = removeEmpty({
+    const payload: ChannelPayload = {
       name: data.name,
-      channel_type: data.channel_type as ChannelType,
-      settings: finalSettings,
-    });
+      channel_type: data.channel_type,
+      settings: removeEmpty(settings),
+    };
 
     if (isEditing) {
       updateMutation.mutate(payload);
@@ -363,7 +295,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
 
         <Form {...form}>
           <form
-            onSubmit={form.handleSubmit(onSubmit as any)}
+            onSubmit={form.handleSubmit(onSubmit)}
             className="flex min-h-0 flex-1 flex-col"
           >
             <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-6">
@@ -418,9 +350,9 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
                             <SelectItem value="Telegram">Telegram</SelectItem>
                             <SelectItem value="Gotify">Gotify</SelectItem>
                             <SelectItem value="Email">Email</SelectItem>
-                            {/* Disabled rather than selectable-then-rejected: selecting a type
-                              with no `DEFAULT_SETTINGS` entry leaves the previous type's keys in
-                              `settings`, so its own inputs come up blank. */}
+                            {/* Not offered for new channels yet. An existing Discord channel,
+                              such as one imported or created through the API, still opens here
+                              with its type shown. */}
                             <SelectItem value="Discord" disabled>
                               Discord <ComingSoon />
                             </SelectItem>

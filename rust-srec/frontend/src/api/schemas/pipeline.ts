@@ -180,23 +180,6 @@ export const JobPresetSchema = z.object({
 });
 export type JobPreset = z.infer<typeof JobPresetSchema>;
 
-// Valid processor types for presets
-export const VALID_PROCESSORS = [
-  'remux',
-  'rclone',
-  'baidupcs',
-  'thumbnail',
-  'execute',
-  'audio_extract',
-  'compression',
-  'copy_move',
-  'delete',
-  'metadata',
-  'danmaku_factory',
-  'ass_burnin',
-] as const;
-export type ProcessorType = (typeof VALID_PROCESSORS)[number];
-
 export const VALID_CATEGORIES = [
   'remux', // Container format conversion (no re-encoding)
   'compression', // Re-encoding/transcoding

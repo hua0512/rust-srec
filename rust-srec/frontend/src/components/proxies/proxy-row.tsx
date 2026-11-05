@@ -58,7 +58,7 @@ function schemeStyle(scheme: string) {
 }
 
 /** A proxy's scheme as an icon on its tint. Decorative: the row names it. */
-export function ProxyAvatar({ scheme }: { scheme: string }) {
+function ProxyAvatar({ scheme }: { scheme: string }) {
   const { icon: Icon, tone } = schemeStyle(scheme);
   return (
     <span
@@ -73,7 +73,7 @@ export function ProxyAvatar({ scheme }: { scheme: string }) {
   );
 }
 
-export interface ProxyRowActions {
+interface ProxyRowActions {
   onEdit: () => void;
   onTest: () => void;
   onDelete: () => void;

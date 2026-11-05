@@ -1,10 +1,14 @@
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
-import type { MessageDescriptor } from '@lingui/core';
 import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
-import { memo, useEffect } from 'react';
-import { useWatch, useFormContext } from 'react-hook-form';
+import { memo, type ReactNode } from 'react';
+import {
+  useWatch,
+  useFormContext,
+  type FieldPath,
+  type FieldValues,
+} from 'react-hook-form';
 import {
   FormField,
   FormItem,
@@ -22,14 +26,32 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { ListInput } from '@/components/ui/list-input';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { SETTING_ROW_CLASS } from '@/components/ui/switch-card';
+import { FlagFormField } from '@/components/ui/flag-form-field';
+import { Tabs, TabsContent, TabsList } from '@/components/ui/tabs';
+import {
+  CONFIG_SELECT_CONTENT,
+  CONFIG_SELECT_TRIGGER,
+  ConfigFieldLabel,
+} from '@/components/config/shared/config-field';
 import {
   ProcessorConfigFormProps,
   useProcessorFieldPath,
 } from './common-props';
-import { ProcessorFormShell, ProcessorSection } from './processor-form-layout';
-import { RemuxConfigSchema } from '../processor-schemas';
+import {
+  ProcessorFormShell,
+  ProcessorListField,
+  ProcessorNumberField,
+  ProcessorSection,
+  ProcessorSelectField,
+  ProcessorTabTrigger,
+  ProcessorTextField,
+} from './processor-form-layout';
+import {
+  RemuxConfigSchema,
+  SOFTWARE_PRESETS,
+  type PresetOption,
+} from '../processor-schemas';
 import { z } from 'zod';
 import { InputWithUnit } from '@/components/ui/input-with-unit';
 import {
@@ -46,10 +68,10 @@ import {
   Plus,
   Trash2,
   Tags,
+  type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { NumberInput } from '@/components/ui/number-input';
 import { useRowKeys } from '@/hooks/use-row-keys';
 
 type RemuxConfig = z.infer<typeof RemuxConfigSchema>;
@@ -63,16 +85,6 @@ function getCodecFamily(codec: string | undefined): CodecFamily {
   if (NVENC_CODECS.includes(codec as (typeof NVENC_CODECS)[number]))
     return 'nvenc';
   return 'software';
-}
-
-/**
- * Encoder presets. `label` is the encoder's own preset name, kept as is; `hint`
- * describes it in the interface language.
- */
-interface PresetOption {
-  value: string;
-  label: string;
-  hint?: MessageDescriptor;
 }
 
 const COMMON_NVENC_PRESETS: PresetOption[] = [
@@ -100,18 +112,6 @@ const NVENC_LEGACY_PRESETS: PresetOption[] = [
   { value: 'llhp', label: 'LLHP', hint: msg`Low latency, high performance` },
   { value: 'lossless', label: 'Lossless' },
   { value: 'losslesshp', label: 'Lossless HP' },
-];
-
-const SOFTWARE_PRESETS: PresetOption[] = [
-  { value: 'ultrafast', label: 'Ultrafast' },
-  { value: 'superfast', label: 'Superfast' },
-  { value: 'veryfast', label: 'Veryfast' },
-  { value: 'faster', label: 'Faster' },
-  { value: 'fast', label: 'Fast' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'slow', label: 'Slow' },
-  { value: 'slower', label: 'Slower' },
-  { value: 'veryslow', label: 'Veryslow' },
 ];
 
 function getPresetsForCodecFamily(family: CodecFamily) {
@@ -200,6 +200,57 @@ function MetadataTagRows({
   );
 }
 
+const REMUX_TABS = [
+  { value: 'general', icon: Settings2, label: <Trans>General</Trans> },
+  { value: 'format', icon: Box, label: <Trans>Format</Trans> },
+  { value: 'video', icon: Film, label: <Trans>Video</Trans> },
+  { value: 'audio', icon: Music, label: <Trans>Audio</Trans> },
+  { value: 'advanced', icon: Sliders, label: <Trans>Advanced</Trans> },
+];
+
+const AUDIO_CODECS = [
+  { value: 'copy', label: <Trans>Copy (Passthrough)</Trans> },
+  { value: 'aac', label: 'AAC' },
+  { value: 'mp3', label: 'MP3' },
+  { value: 'opus', label: 'Opus' },
+  { value: 'flac', label: 'FLAC' },
+  { value: 'none', label: <Trans>None (Strip Audio)</Trans> },
+];
+
+/** Start, duration and end of the trimmed range; clearing one stores 0. */
+function TrimTimeField({
+  control,
+  name,
+  icon,
+  label,
+}: {
+  control: ProcessorConfigFormProps['control'];
+  name: FieldPath<FieldValues>;
+  icon: LucideIcon;
+  label: ReactNode;
+}) {
+  return (
+    <FormField
+      control={control}
+      name={name}
+      render={({ field }) => (
+        <FormItem>
+          <ConfigFieldLabel icon={icon}>{label}</ConfigFieldLabel>
+          <FormControl>
+            <InputWithUnit
+              unitType="duration"
+              value={field.value}
+              onChange={(val: number | null) => field.onChange(val ?? 0)}
+              className="bg-background/50"
+            />
+          </FormControl>
+          <FormMessage />
+        </FormItem>
+      )}
+    />
+  );
+}
+
 export const RemuxConfigForm = memo(function RemuxConfigForm({
   control,
   pathPrefix,
@@ -236,14 +287,10 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
   const cqMax = codecFamily === 'av1nvenc' ? 63 : 51;
   const presetOptions = getPresetsForCodecFamily(codecFamily);
 
+  // The backend adds `-movflags +faststart` only for these containers, so for any other format
+  // the switch shows off and is locked while the stored choice is kept for a later switch back.
   const faststartSupported =
     !format || ['mp4', 'mov', 'm4v'].includes(format.toLowerCase());
-
-  useEffect(() => {
-    if (!faststartSupported) {
-      setValue(fieldPath('faststart'), false);
-    }
-  }, [faststartSupported, fieldPath, setValue]);
 
   // Runs only when the user picks a codec. Resetting the preset from an
   // effect instead also fired when an editor loaded a saved config into an
@@ -273,51 +320,15 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
     <ProcessorFormShell>
       <Tabs defaultValue="general" className="w-full">
         <TabsList className="w-full h-auto p-1.5 bg-muted/20 rounded-xl flex flex-wrap gap-1.5 backdrop-blur-sm mb-6">
-          <TabsTrigger
-            value="general"
-            className="flex-1 min-w-[100px] flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 h-auto py-2.5 rounded-lg data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all duration-300 relative overflow-hidden group"
-          >
-            <Settings2 className="w-4 h-4 shrink-0 transition-transform duration-300 group-data-[state=active]:scale-110" />
-            <span className="text-xs font-medium hidden sm:inline">
-              <Trans>General</Trans>
-            </span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="format"
-            className="flex-1 min-w-[100px] flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 h-auto py-2.5 rounded-lg data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all duration-300 relative overflow-hidden group"
-          >
-            <Box className="w-4 h-4 shrink-0 transition-transform duration-300 group-data-[state=active]:scale-110" />
-            <span className="text-xs font-medium hidden sm:inline">
-              <Trans>Format</Trans>
-            </span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="video"
-            className="flex-1 min-w-[100px] flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 h-auto py-2.5 rounded-lg data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all duration-300 relative overflow-hidden group"
-          >
-            <Film className="w-4 h-4 shrink-0 transition-transform duration-300 group-data-[state=active]:scale-110" />
-            <span className="text-xs font-medium hidden sm:inline">
-              <Trans>Video</Trans>
-            </span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="audio"
-            className="flex-1 min-w-[100px] flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 h-auto py-2.5 rounded-lg data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all duration-300 relative overflow-hidden group"
-          >
-            <Music className="w-4 h-4 shrink-0 transition-transform duration-300 group-data-[state=active]:scale-110" />
-            <span className="text-xs font-medium hidden sm:inline">
-              <Trans>Audio</Trans>
-            </span>
-          </TabsTrigger>
-          <TabsTrigger
-            value="advanced"
-            className="flex-1 min-w-[100px] flex flex-col sm:flex-row items-center justify-center gap-1.5 sm:gap-2 h-auto py-2.5 rounded-lg data-[state=active]:bg-background data-[state=active]:text-primary data-[state=active]:shadow-sm transition-all duration-300 relative overflow-hidden group"
-          >
-            <Sliders className="w-4 h-4 shrink-0 transition-transform duration-300 group-data-[state=active]:scale-110" />
-            <span className="text-xs font-medium hidden sm:inline">
-              <Trans>Advanced</Trans>
-            </span>
-          </TabsTrigger>
+          {REMUX_TABS.map((tab) => (
+            <ProcessorTabTrigger
+              key={tab.value}
+              value={tab.value}
+              icon={tab.icon}
+            >
+              {tab.label}
+            </ProcessorTabTrigger>
+          ))}
         </TabsList>
 
         <div className="space-y-4">
@@ -326,7 +337,6 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
             className="space-y-4 focus-visible:outline-none focus-visible:ring-0"
           >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Video Section */}
               <ProcessorSection
                 icon={Film}
                 iconClassName="text-purple-500"
@@ -337,9 +347,9 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                   name={fieldPath('video_codec')}
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel className="text-xs text-muted-foreground ml-1">
+                      <ConfigFieldLabel>
                         <Trans>Video Codec</Trans>
-                      </FormLabel>
+                      </ConfigFieldLabel>
                       <Select
                         onValueChange={(v) => {
                           // Radix can emit '' while a reset mounts the
@@ -348,16 +358,16 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                           handleVideoCodecChange(v);
                           field.onChange(v);
                         }}
-                        value={field.value || 'copy'}
+                        value={field.value ?? ''}
                       >
                         <FormControl>
-                          <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">
+                          <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
                             <SelectValue
                               placeholder={i18n._(msg`Select codec`)}
                             />
                           </SelectTrigger>
                         </FormControl>
-                        <SelectContent>
+                        <SelectContent className={CONFIG_SELECT_CONTENT}>
                           <SelectItem value="copy">
                             <Trans>Copy (Passthrough)</Trans>
                           </SelectItem>
@@ -391,10 +401,10 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                     name={fieldPath('preset')}
                     render={({ field }) => (
                       <FormItem>
-                        <div className="flex justify-between items-center mb-1">
-                          <FormLabel className="text-xs text-muted-foreground ml-1">
+                        <div className="flex justify-between items-center">
+                          <ConfigFieldLabel>
                             <Trans>Encoding Preset</Trans>
-                          </FormLabel>
+                          </ConfigFieldLabel>
                           <span className="text-[10px] text-muted-foreground/70 uppercase tracking-wider">
                             {field.value || 'medium'}
                           </span>
@@ -404,13 +414,13 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                           value={field.value || 'medium'}
                         >
                           <FormControl>
-                            <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">
+                            <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
                               <SelectValue
                                 placeholder={i18n._(msg`Select preset`)}
                               />
                             </SelectTrigger>
                           </FormControl>
-                          <SelectContent>
+                          <SelectContent className={CONFIG_SELECT_CONTENT}>
                             {presetOptions.map((p) => (
                               <SelectItem key={p.value} value={p.value}>
                                 {p.hint
@@ -427,48 +437,18 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                 )}
               </ProcessorSection>
 
-              {/* Audio & Container Section */}
               <div className="space-y-4">
                 <ProcessorSection
                   icon={Music}
                   iconClassName="text-pink-500"
                   title={<Trans>Audio Settings</Trans>}
                 >
-                  <FormField
+                  <ProcessorSelectField
                     control={control}
                     name={fieldPath('audio_codec')}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs text-muted-foreground ml-1">
-                          <Trans>Audio Codec</Trans>
-                        </FormLabel>
-                        <Select
-                          onValueChange={field.onChange}
-                          value={field.value || 'copy'}
-                        >
-                          <FormControl>
-                            <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">
-                              <SelectValue
-                                placeholder={i18n._(msg`Select codec`)}
-                              />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="copy">
-                              <Trans>Copy (Passthrough)</Trans>
-                            </SelectItem>
-                            <SelectItem value="aac">AAC</SelectItem>
-                            <SelectItem value="mp3">MP3</SelectItem>
-                            <SelectItem value="opus">Opus</SelectItem>
-                            <SelectItem value="flac">FLAC</SelectItem>
-                            <SelectItem value="none">
-                              <Trans>None (Strip Audio)</Trans>
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                    label={<Trans>Audio Codec</Trans>}
+                    placeholder={i18n._(msg`Select codec`)}
+                    options={AUDIO_CODECS}
                   />
                 </ProcessorSection>
 
@@ -477,25 +457,11 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                   iconClassName="text-blue-500"
                   title={<Trans>Container</Trans>}
                 >
-                  <FormField
+                  <ProcessorTextField
                     control={control}
                     name={fieldPath('format')}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs text-muted-foreground ml-1">
-                          <Trans>Output Format</Trans>
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg"
-                            placeholder="mp4"
-                            {...field}
-                            value={field.value ?? ''}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                    label={<Trans>Output Format</Trans>}
+                    placeholder="mp4"
                   />
                 </ProcessorSection>
               </div>
@@ -506,29 +472,25 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
             value="format"
             className="space-y-6 focus-visible:outline-none focus-visible:ring-0"
           >
-            {/* Quality Section */}
             {!isVideoCopy && (
-              <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
-                <div className="flex items-center gap-2 pb-2 border-b border-border/40">
-                  <Layers className="w-4 h-4 text-emerald-500" />
-                  <h3 className="font-semibold text-sm mr-auto">
-                    <Trans>Quality Control</Trans>
-                  </h3>
-                </div>
-
+              <ProcessorSection
+                icon={Layers}
+                iconClassName="text-emerald-500"
+                title={<Trans>Quality Control</Trans>}
+              >
                 <FormField
                   control={control}
                   name={fieldPath('crf')}
                   render={({ field }) => (
                     <FormItem>
                       <div className="flex justify-between items-end mb-2">
-                        <FormLabel className="text-xs text-muted-foreground ml-1">
+                        <ConfigFieldLabel>
                           {isNvenc ? (
                             <Trans>CQ (Constant Quality)</Trans>
                           ) : (
                             <Trans>CRF (Constant Rate Factor)</Trans>
                           )}
-                        </FormLabel>
+                        </ConfigFieldLabel>
                         <span className="font-mono text-sm font-medium bg-background px-2 py-0.5 rounded border border-border/50">
                           {field.value ?? 23}
                         </span>
@@ -571,66 +533,36 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                     </FormItem>
                   )}
                 />
-              </div>
+              </ProcessorSection>
             )}
 
-            {/* Bitrate Control */}
             {(!isVideoCopy || !isAudioCopy) && (
-              <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
-                <div className="flex items-center gap-2 pb-2 border-border/40">
-                  <Sliders className="w-4 h-4 text-cyan-500" />
-                  <h3 className="font-semibold text-sm mr-auto">
-                    <Trans>Target Bitrate</Trans>
-                  </h3>
-                </div>
+              <ProcessorSection
+                icon={Sliders}
+                iconClassName="text-cyan-500"
+                title={<Trans>Target Bitrate</Trans>}
+              >
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {!isVideoCopy && (
-                    <FormField
+                    <ProcessorTextField
                       control={control}
                       name={fieldPath('video_bitrate')}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-xs text-muted-foreground ml-1">
-                            <Trans>Video Bitrate</Trans>
-                          </FormLabel>
-                          <FormControl>
-                            <Input
-                              className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
-                              placeholder="e.g. 5000k"
-                              {...field}
-                              value={field.value ?? ''}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
+                      label={<Trans>Video Bitrate</Trans>}
+                      placeholder={i18n._(msg`e.g. 5000k`)}
+                      className="font-mono text-sm"
                     />
                   )}
-
                   {!isAudioCopy && (
-                    <FormField
+                    <ProcessorTextField
                       control={control}
                       name={fieldPath('audio_bitrate')}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel className="text-xs text-muted-foreground ml-1">
-                            <Trans>Audio Bitrate</Trans>
-                          </FormLabel>
-                          <FormControl>
-                            <Input
-                              className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
-                              placeholder="e.g. 192k"
-                              {...field}
-                              value={field.value ?? ''}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
+                      label={<Trans>Audio Bitrate</Trans>}
+                      placeholder={i18n._(msg`e.g. 192k`)}
+                      className="font-mono text-sm"
                     />
                   )}
                 </div>
-              </div>
+              </ProcessorSection>
             )}
           </TabsContent>
 
@@ -638,180 +570,80 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
             value="video"
             className="space-y-6 focus-visible:outline-none focus-visible:ring-0"
           >
-            {/* Dimensions & Filters */}
             {!isVideoCopy && (
-              <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
-                <div className="flex items-center gap-2 pb-2 border-b border-border/40">
-                  <Box className="w-4 h-4 text-orange-500" />
-                  <h3 className="font-semibold text-sm mr-auto">
-                    <Trans>Dimensions & Filters</Trans>
-                  </h3>
-                </div>
+              <ProcessorSection
+                icon={Box}
+                iconClassName="text-orange-500"
+                title={<Trans>Dimensions & Filters</Trans>}
+              >
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <FormField
+                  <ProcessorTextField
                     control={control}
                     name={fieldPath('resolution')}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs text-muted-foreground ml-1">
-                          <Trans>Resolution (Scale)</Trans>
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
-                            placeholder="e.g. 1920:1080"
-                            {...field}
-                            value={field.value ?? ''}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                    label={<Trans>Resolution (Scale)</Trans>}
+                    placeholder={i18n._(msg`e.g. 1920:1080`)}
+                    className="font-mono text-sm"
                   />
-
-                  <FormField
+                  <ProcessorNumberField
                     control={control}
                     name={fieldPath('fps')}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel className="text-xs text-muted-foreground ml-1">
-                          <Trans>Framerate (FPS)</Trans>
-                        </FormLabel>
-                        <FormControl>
-                          <NumberInput
-                            field={field}
-                            className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-sm"
-                            placeholder="e.g. 60"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                    label={<Trans>Framerate (FPS)</Trans>}
+                    placeholder={i18n._(msg`e.g. 60`)}
+                    className="font-mono text-sm"
                   />
-
-                  <FormField
-                    control={control}
-                    name={fieldPath('video_filter')}
-                    render={({ field }) => (
-                      <FormItem className="col-span-1 md:col-span-2">
-                        <FormLabel className="text-xs text-muted-foreground ml-1">
-                          <Trans>FFmpeg Video Filter</Trans>
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-xs"
-                            placeholder="e.g. hflip,noise=alls=20:allf=t+u"
-                            {...field}
-                            value={field.value ?? ''}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <div className="md:col-span-2">
+                    <ProcessorTextField
+                      control={control}
+                      name={fieldPath('video_filter')}
+                      label={<Trans>FFmpeg Video Filter</Trans>}
+                      placeholder={i18n._(
+                        msg`e.g. hflip,noise=alls=20:allf=t+u`,
+                      )}
+                      className="font-mono text-xs"
+                    />
+                  </div>
                 </div>
-              </div>
+              </ProcessorSection>
             )}
 
-            {/* Trimming Timeline */}
-            <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-4">
-              <div className="flex items-center gap-2 pb-2 border-b border-border/40">
-                <Timer className="w-4 h-4 text-indigo-500" />
-                <h3 className="font-semibold text-sm mr-auto">
-                  <Trans>Trimming & Time</Trans>
-                </h3>
-              </div>
+            <ProcessorSection
+              icon={Timer}
+              iconClassName="text-indigo-500"
+              title={<Trans>Trimming & Time</Trans>}
+            >
               <div className="flex flex-col md:flex-row gap-4 items-end">
-                <div className="flex-1 w-full relative">
-                  <div className="absolute left-3 top-9 bottom-0 w-px bg-border/50 md:hidden"></div>
-                  <FormField
+                <div className="flex-1 w-full">
+                  <TrimTimeField
                     control={control}
                     name={fieldPath('start_time')}
-                    render={({ field }) => (
-                      <FormItem>
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <Play className="w-3.5 h-3.5 text-muted-foreground" />
-                          <FormLabel className="text-xs text-muted-foreground">
-                            <Trans>Start Time</Trans>
-                          </FormLabel>
-                        </div>
-                        <FormControl>
-                          <InputWithUnit
-                            unitType="duration"
-                            value={field.value}
-                            onChange={(val: number | null) =>
-                              field.onChange(val ?? 0)
-                            }
-                            className="bg-background/50"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                    icon={Play}
+                    label={<Trans>Start Time</Trans>}
                   />
                 </div>
                 <div className="hidden md:flex h-11 items-center pb-2 text-muted-foreground/30">
                   <span className="text-xl">→</span>
                 </div>
                 <div className="flex-1 w-full">
-                  <FormField
+                  <TrimTimeField
                     control={control}
                     name={fieldPath('duration')}
-                    render={({ field }) => (
-                      <FormItem>
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <Timer className="w-3.5 h-3.5 text-muted-foreground" />
-                          <FormLabel className="text-xs text-muted-foreground">
-                            <Trans>Duration</Trans>
-                          </FormLabel>
-                        </div>
-                        <FormControl>
-                          <InputWithUnit
-                            unitType="duration"
-                            value={field.value}
-                            onChange={(val: number | null) =>
-                              field.onChange(val ?? 0)
-                            }
-                            className="bg-background/50"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                    icon={Timer}
+                    label={<Trans>Duration</Trans>}
                   />
                 </div>
                 <div className="hidden md:flex h-11 items-center pb-2 text-muted-foreground/30">
                   <span className="text-xl">→</span>
                 </div>
                 <div className="flex-1 w-full">
-                  <FormField
+                  <TrimTimeField
                     control={control}
                     name={fieldPath('end_time')}
-                    render={({ field }) => (
-                      <FormItem>
-                        <div className="flex items-center gap-2 mb-1.5">
-                          <Square className="w-3.5 h-3.5 text-muted-foreground" />
-                          <FormLabel className="text-xs text-muted-foreground">
-                            <Trans>End Time</Trans>
-                          </FormLabel>
-                        </div>
-                        <FormControl>
-                          <InputWithUnit
-                            unitType="duration"
-                            value={field.value}
-                            onChange={(val: number | null) =>
-                              field.onChange(val ?? 0)
-                            }
-                            className="bg-background/50"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                    icon={Square}
+                    label={<Trans>End Time</Trans>}
                   />
                 </div>
               </div>
-            </div>
+            </ProcessorSection>
           </TabsContent>
 
           <TabsContent
@@ -824,25 +656,12 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                 iconClassName="text-pink-500"
                 title={<Trans>Audio Processing</Trans>}
               >
-                <FormField
+                <ProcessorTextField
                   control={control}
                   name={fieldPath('audio_filter')}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs text-muted-foreground ml-1">
-                        <Trans>FFmpeg Audio Filter (-af)</Trans>
-                      </FormLabel>
-                      <FormControl>
-                        <Input
-                          className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg font-mono text-xs"
-                          placeholder="e.g. volume=0.5"
-                          {...field}
-                          value={field.value ?? ''}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  label={<Trans>FFmpeg Audio Filter (-af)</Trans>}
+                  placeholder={i18n._(msg`e.g. volume=0.5`)}
+                  className="font-mono text-xs"
                 />
               </ProcessorSection>
             )}
@@ -853,7 +672,6 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
             className="space-y-6 focus-visible:outline-none focus-visible:ring-0"
           >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Hardware Accel & Flags */}
               <div className="space-y-4">
                 <ProcessorSection
                   icon={Settings2}
@@ -865,9 +683,9 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                     name={fieldPath('hwaccel')}
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel className="text-xs text-muted-foreground ml-1">
+                        <ConfigFieldLabel>
                           <Trans>Hardware Acceleration</Trans>
-                        </FormLabel>
+                        </ConfigFieldLabel>
                         <Select
                           onValueChange={(v) => {
                             handleHwaccelChange(v);
@@ -876,11 +694,11 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                           value={field.value ?? ''}
                         >
                           <FormControl>
-                            <SelectTrigger className="h-11 bg-background/50 border-border/50 focus:bg-background transition-colors rounded-lg">
+                            <SelectTrigger className={CONFIG_SELECT_TRIGGER}>
                               <SelectValue placeholder={i18n._(msg`None`)} />
                             </SelectTrigger>
                           </FormControl>
-                          <SelectContent>
+                          <SelectContent className={CONFIG_SELECT_CONTENT}>
                             <SelectItem value="none">None</SelectItem>
                             <SelectItem value="cuda">CUDA (NVIDIA)</SelectItem>
                             <SelectItem value="vaapi">
@@ -904,17 +722,15 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                     render={({ field }) => (
                       <FormItem
                         className={cn(
-                          'flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 shadow-sm bg-muted/10 transition-colors',
-                          faststartSupported
-                            ? 'hover:bg-muted/20'
-                            : 'opacity-50',
+                          SETTING_ROW_CLASS,
+                          !faststartSupported && 'opacity-50',
                         )}
                       >
-                        <div className="space-y-1">
-                          <FormLabel className="text-sm font-medium">
+                        <div className="min-w-0 space-y-1">
+                          <FormLabel>
                             <Trans>Web Optimize</Trans>
                           </FormLabel>
-                          <FormDescription className="text-xs">
+                          <FormDescription className="text-xs leading-relaxed">
                             <Trans>
                               Use <code>-movflags +faststart</code>
                             </Trans>
@@ -927,7 +743,8 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                         </div>
                         <FormControl>
                           <Switch
-                            checked={field.value}
+                            className="shrink-0"
+                            checked={faststartSupported && field.value}
                             onCheckedChange={field.onChange}
                             disabled={!faststartSupported}
                           />
@@ -935,172 +752,74 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                       </FormItem>
                     )}
                   />
-                  <FormField
-                    control={control}
-                    name={fieldPath('overwrite')}
-                    render={({ field }) => (
-                      <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 shadow-sm bg-muted/10 transition-colors hover:bg-muted/20">
-                        <div className="space-y-1">
-                          <FormLabel className="text-sm font-medium">
-                            <Trans>Overwrite Files</Trans>
-                          </FormLabel>
-                          <FormDescription className="text-xs">
-                            <Trans>Force overwrite if output exists</Trans>
-                          </FormDescription>
-                        </div>
-                        <FormControl>
-                          <Switch
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
+                  <FlagFormField
+                    fieldName={fieldPath('overwrite')}
+                    title={<Trans>Overwrite Files</Trans>}
+                    description={
+                      <Trans>Force overwrite if output exists</Trans>
+                    }
                   />
-                  <FormField
-                    control={control}
-                    name={fieldPath('remove_input_on_success')}
-                    render={({ field }) => (
-                      <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 shadow-sm bg-muted/10 transition-colors hover:bg-muted/20">
-                        <div className="space-y-1">
-                          <FormLabel className="text-sm font-medium">
-                            <Trans>Remove Input on Success</Trans>
-                          </FormLabel>
-                          <FormDescription className="text-xs">
-                            <Trans>
-                              Delete original file after successful remux
-                            </Trans>
-                          </FormDescription>
-                        </div>
-                        <FormControl>
-                          <Switch
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                          />
-                        </FormControl>
-                      </FormItem>
-                    )}
+                  <FlagFormField
+                    fieldName={fieldPath('remove_input_on_success')}
+                    title={<Trans>Remove Input on Success</Trans>}
+                    description={
+                      <Trans>Delete original file after successful remux</Trans>
+                    }
                   />
                 </div>
               </div>
 
-              {/* Custom Flags */}
               <ProcessorSection
                 icon={Sliders}
                 iconClassName="text-amber-500"
                 title={<Trans>Custom Flags</Trans>}
               >
-                <FormField
+                <ProcessorListField
                   control={control}
                   name={fieldPath('input_options')}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs text-muted-foreground ml-1">
-                        <Trans>Input Options (-i flags)</Trans>
-                      </FormLabel>
-                      <FormControl>
-                        <ListInput
-                          value={field.value || []}
-                          onChange={field.onChange}
-                          placeholder={i18n._(msg`--flag value`)}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  label={<Trans>Input Options (-i flags)</Trans>}
+                  placeholder={i18n._(msg`--flag value`)}
                 />
-
-                <FormField
+                <ProcessorListField
                   control={control}
                   name={fieldPath('output_options')}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs text-muted-foreground ml-1">
-                        <Trans>Output Options</Trans>
-                      </FormLabel>
-                      <FormControl>
-                        <ListInput
-                          value={field.value || []}
-                          onChange={field.onChange}
-                          placeholder={i18n._(msg`--flag value`)}
-                        />
-                      </FormControl>
-                      <FormDescription className="text-xs">
-                        <Trans>Appended before output filename</Trans>
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  label={<Trans>Output Options</Trans>}
+                  description={<Trans>Appended before output filename</Trans>}
+                  placeholder={i18n._(msg`--flag value`)}
                 />
               </ProcessorSection>
 
-              {/* Stream & Metadata */}
-              <div className="p-4 rounded-xl bg-muted/10 border border-border/40 space-y-6">
-                <div className="flex items-center gap-2 pb-2 border-b border-border/40">
-                  <Layers className="w-4 h-4 text-blue-500" />
-                  <h3 className="font-semibold text-sm mr-auto">
-                    <Trans>Streams & Metadata</Trans>
-                  </h3>
-                </div>
-
-                <FormField
+              <ProcessorSection
+                icon={Layers}
+                iconClassName="text-blue-500"
+                title={<Trans>Streams & Metadata</Trans>}
+              >
+                <ProcessorListField
                   control={control}
                   name={fieldPath('map_streams')}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel className="text-xs text-muted-foreground ml-1">
-                        <Trans>Stream Mapping (-map)</Trans>
-                      </FormLabel>
-                      <FormControl>
-                        <ListInput
-                          value={field.value || []}
-                          onChange={field.onChange}
-                          placeholder={i18n._(msg`0:v:0`)}
-                        />
-                      </FormControl>
-                      <FormDescription className="text-xs">
-                        <Trans>e.g. 0:v:0, 0:a:0</Trans>
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  label={<Trans>Stream Mapping (-map)</Trans>}
+                  description={<Trans>e.g. 0:v:0, 0:a:0</Trans>}
+                  placeholder="0:v:0"
                 />
-
-                <FormField
-                  control={control}
-                  name={fieldPath('include_recording_metadata')}
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 shadow-sm bg-muted/10">
-                      <div className="space-y-1">
-                        <FormLabel className="text-sm font-medium">
-                          <Trans>Include Recording Metadata</Trans>
-                        </FormLabel>
-                        <FormDescription className="text-xs">
-                          <Trans>
-                            Add the recorded title, streamer, and UTC recording
-                            date during remux. Tags below override these values.
-                          </Trans>
-                        </FormDescription>
-                      </div>
-                      <FormControl>
-                        <Switch
-                          checked={field.value ?? false}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
+                <FlagFormField
+                  fieldName={fieldPath('include_recording_metadata')}
+                  title={<Trans>Include Recording Metadata</Trans>}
+                  description={
+                    <Trans>
+                      Add the recorded title, streamer, and UTC recording date
+                      during remux. Tags below override these values.
+                    </Trans>
+                  }
                 />
-
                 <FormField
                   control={control}
                   name={fieldPath('metadata')}
                   render={({ field }) => (
                     <FormItem>
                       <div className="flex items-center justify-between mb-2">
-                        <FormLabel className="text-xs text-muted-foreground ml-1">
+                        <ConfigFieldLabel>
                           <Trans>Metadata Tags</Trans>
-                        </FormLabel>
+                        </ConfigFieldLabel>
                         <Button
                           type="button"
                           variant="ghost"
@@ -1123,7 +842,7 @@ export const RemuxConfigForm = memo(function RemuxConfigForm({
                     </FormItem>
                   )}
                 />
-              </div>
+              </ProcessorSection>
             </div>
           </TabsContent>
         </div>

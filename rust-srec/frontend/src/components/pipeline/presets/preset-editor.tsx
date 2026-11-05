@@ -10,7 +10,10 @@ import { toast } from 'sonner';
 import { PresetMetaForm } from './editor/preset-meta-form';
 import { PresetConfigForm } from './editor/preset-config-form';
 import { PresetSaveFab } from './editor/preset-save-fab';
-import { getProcessorDefinition } from './processors/registry';
+import {
+  getProcessorDefinition,
+  getProcessorFormValues,
+} from './processors/registry';
 import { UnsavedChangesGuard } from '@/components/shared/unsaved-changes-guard';
 
 const BasePresetFormSchema = z.object({
@@ -60,7 +63,7 @@ export function PresetEditor({
       description: '',
       category: '',
       processor: 'remux',
-      config: {},
+      config: getProcessorFormValues(getProcessorDefinition('remux')),
     },
   });
   useEffect(() => {
@@ -71,7 +74,10 @@ export function PresetEditor({
         description: initialData.description || '',
         category: initialData.category || '',
         processor: initialData.processor,
-        config: initialData.config,
+        config: getProcessorFormValues(
+          getProcessorDefinition(initialData.processor),
+          initialData.config,
+        ),
       });
     }
   }, [initialData, form]);
@@ -92,7 +98,7 @@ export function PresetEditor({
           const fieldPath = issue.path.length
             ? (`config.${issue.path.join('.')}` as const)
             : ('config' as const);
-          form.setError(fieldPath as any, {
+          form.setError(fieldPath, {
             type: 'manual',
             message: issue.message,
           });
