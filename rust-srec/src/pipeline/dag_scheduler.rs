@@ -14,7 +14,8 @@ use tracing::{debug, error, info, warn};
 
 use crate::database::models::{
     DagExecutionDbModel, DagExecutionListSummary, DagExecutionStatus, DagPipelineDefinition,
-    DagStepExecutionDbModel, DagStepStatus, DagStepWithJob, JobDbModel, PipelineStep, ReadyStep,
+    DagSegmentSource, DagStepExecutionDbModel, DagStepStatus, DagStepWithJob, JobDbModel,
+    PipelineStep, ReadyStep,
 };
 use crate::database::repositories::{DagListFilter, DagRepository, JobRepository};
 use crate::pipeline::job_queue::{JobStateMeta, job_state_json, parse_job_state};
@@ -30,7 +31,7 @@ pub(crate) type BeforeRootJobsHook = Box<dyn FnOnce(&str) -> PublicationRollback
 #[derive(Debug, Clone, Default)]
 pub struct DagExecutionMetadata {
     pub segment_index: Option<u32>,
-    pub segment_source: Option<String>,
+    pub segment_source: Option<DagSegmentSource>,
     /// Per-segment video/danmu pairing of a paired-segment or session-complete
     /// pipeline; also copied into every step job.
     pub manifest: Option<PipelineInputManifest>,
@@ -412,7 +413,9 @@ impl DagScheduler {
         dag_exec.status = DagExecutionStatus::Processing.as_str().to_string();
         if let Some(meta) = metadata {
             dag_exec.segment_index = meta.segment_index.map(i64::from);
-            dag_exec.segment_source = meta.segment_source;
+            dag_exec.segment_source = meta
+                .segment_source
+                .map(|source| source.as_str().to_string());
             if let Some(manifest) = meta.manifest {
                 dag_exec.input_manifest = Some(serde_json::to_string(&manifest)?);
                 context.manifest = Some(Arc::new(manifest));
@@ -2421,7 +2424,7 @@ mod tests {
                 },
                 Some(DagExecutionMetadata {
                     segment_index: Some(4),
-                    segment_source: Some("paired".to_string()),
+                    segment_source: Some(DagSegmentSource::Paired),
                     manifest: Some(manifest.clone()),
                 }),
                 None,

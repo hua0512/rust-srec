@@ -18,15 +18,6 @@ pub enum SourceType {
     Danmu,
 }
 
-impl SourceType {
-    pub fn as_segment_source(self) -> &'static str {
-        match self {
-            Self::Video => "video",
-            Self::Danmu => "danmu",
-        }
-    }
-}
-
 fn dedup_paths_preserve_order(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     use std::collections::HashSet;
 

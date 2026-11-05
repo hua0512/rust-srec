@@ -39,7 +39,7 @@ use crate::database::models::job::{
     DagExecutionStatus, DagPipelineDefinition, DagStep, PipelineStep,
 };
 use crate::database::models::{
-    JobFilters, MediaFileType, MediaOutputDbModel, Pagination, SessionFilters,
+    DagSegmentSource, JobFilters, MediaFileType, MediaOutputDbModel, Pagination, SessionFilters,
     SessionSegmentLifecycle, SessionSegmentSplitReason, TitleEntry,
 };
 use crate::database::repositories::config::{ConfigRepository, SqlxConfigRepository};
@@ -75,6 +75,24 @@ struct PairedDagContext {
     streamer_id: String,
     segment_index: u32,
     created_at: std::time::Instant,
+}
+
+impl From<SourceType> for DagSegmentSource {
+    fn from(source: SourceType) -> Self {
+        match source {
+            SourceType::Video => Self::Video,
+            SourceType::Danmu => Self::Danmu,
+        }
+    }
+}
+
+/// The per-source segment DAG kind, or `None` for paired and session-complete DAGs.
+fn segment_source_type(source: DagSegmentSource) -> Option<SourceType> {
+    match source {
+        DagSegmentSource::Video => Some(SourceType::Video),
+        DagSegmentSource::Danmu => Some(SourceType::Danmu),
+        DagSegmentSource::Paired | DagSegmentSource::SessionComplete => None,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
