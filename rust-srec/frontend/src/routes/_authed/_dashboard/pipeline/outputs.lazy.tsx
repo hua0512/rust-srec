@@ -63,7 +63,8 @@ function PipelineOutputsPage() {
   const selectedFormat = search.format ?? null;
   const debouncedSearch = search.q ?? '';
   const pageSize = search.size ?? 24;
-  const currentPage = search.page ?? 0;
+  // The URL counts pages from 1; the pager counts them from 0.
+  const currentPage = (search.page ?? 1) - 1;
 
   // Reset page when the type changes: the previous offset almost never lands on
   // a valid page of the narrower result set.
@@ -228,7 +229,8 @@ function PipelineOutputsPage() {
   );
 
   const handlePageIndexChange = useCallback(
-    (index: number) => updateSearch({ page: index || undefined }),
+    (index: number) =>
+      updateSearch({ page: index > 0 ? index + 1 : undefined }),
     [updateSearch],
   );
 

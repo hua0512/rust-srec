@@ -72,7 +72,8 @@ function PipelineJobsPage() {
 
   // Derive state from URL params with defaults
   const selectedStatus = status ?? null;
-  const currentPage = page ?? 0;
+  // The URL counts pages from 1; the pager counts them from 0.
+  const currentPage = (page ?? 1) - 1;
   const pageSize = size ?? 24;
 
   // Memoize STATUS_FILTERS to prevent recreation on every render
@@ -190,7 +191,8 @@ function PipelineJobsPage() {
   }, [pipelines, selectedIds]);
 
   const handlePageIndexChange = useCallback(
-    (index: number) => updateSearch({ page: index || undefined }),
+    (index: number) =>
+      updateSearch({ page: index > 0 ? index + 1 : undefined }),
     [updateSearch],
   );
 

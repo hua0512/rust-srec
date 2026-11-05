@@ -16,7 +16,7 @@ const validateSearch = searchParamsValidator({
     .string()
     .optional()
     .transform((value) => value?.toUpperCase()),
-  page: z.number().int().min(0).optional(),
+  page: z.number().int().min(1).optional(),
   size: z.number().int().positive().optional(),
 });
 

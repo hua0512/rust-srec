@@ -51,7 +51,8 @@ function WorkflowsPage() {
   // workflows/$workflowId and reloads.
   const debouncedSearch = search.q ?? '';
   const pageSize = search.size ?? 24;
-  const currentPage = search.page ?? 0;
+  // The URL counts pages from 1; the pager counts them from 0.
+  const currentPage = (search.page ?? 1) - 1;
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: queryKeys.pipeline.workflows.list({
@@ -75,7 +76,8 @@ function WorkflowsPage() {
   const totalCount = data?.total ?? 0;
 
   const handlePageIndexChange = useCallback(
-    (index: number) => updateSearch({ page: index || undefined }),
+    (index: number) =>
+      updateSearch({ page: index > 0 ? index + 1 : undefined }),
     [updateSearch],
   );
 
