@@ -447,14 +447,14 @@ impl SessionLifecycle {
         Self::new(repo, classifier, DEFAULT_TRANSITION_CHANNEL_CAPACITY)
     }
 
-    /// Note a successful per-segment completion for the streamer so the
-    /// classifier's consecutive-failure counter resets. Called from the
-    /// download-event subscription on [`crate::downloader::DownloadProgressEvent::
-    /// SegmentCompleted`].
     pub(crate) fn repository(&self) -> &SessionLifecycleRepository {
         &self.repo
     }
 
+    /// Note a successful per-segment completion for the streamer so the
+    /// classifier's consecutive-failure counter resets. Called from the
+    /// download-event subscription on [`crate::downloader::DownloadProgressEvent::
+    /// SegmentCompleted`].
     pub fn on_segment_completed(&self, streamer_id: &str) {
         self.classifier.note_successful_segment(streamer_id);
     }
