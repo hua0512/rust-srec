@@ -296,7 +296,7 @@ pub struct StreamerFilterParams {
 }
 
 /// Sort field for the streamer list. Any other value uses the default order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum StreamerSortBy {
     Name,
@@ -312,11 +312,10 @@ pub enum StreamerSortBy {
 
 /// Sort direction. `desc` matches case-insensitively; any other value sorts
 /// ascending.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, utoipa::ToSchema)]
 #[serde(from = "String")]
 #[schema(rename_all = "lowercase")]
 pub enum SortDirection {
-    #[default]
     Asc,
     Desc,
 }

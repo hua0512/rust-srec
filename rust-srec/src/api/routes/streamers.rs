@@ -482,11 +482,10 @@ pub async fn list_streamers(
         };
         let ordering = if desc { ordering.reverse() } else { ordering };
         // Ties always break ascending.
-        let ordering = match sort_by {
-            StreamerSortBy::Priority | StreamerSortBy::State => {
-                ordering.then_with(|| a.name.cmp(&b.name))
-            }
-            _ => ordering,
+        let ordering = if matches!(sort_by, StreamerSortBy::Priority | StreamerSortBy::State) {
+            ordering.then_with(|| a.name.cmp(&b.name))
+        } else {
+            ordering
         };
         ordering.then_with(|| a.id.cmp(&b.id))
     });
