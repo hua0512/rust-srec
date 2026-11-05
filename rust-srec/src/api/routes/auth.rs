@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use axum::{
     Json, Router,
-    extract::{FromRef, Path, State},
+    extract::{FromRef, State},
     http::StatusCode,
     routing::{delete, get, post},
 };
@@ -16,6 +16,7 @@ use crate::api::auth_service::{
     AuthPrincipal, AuthResponse, AuthService, CredentialKind, SessionInfo,
 };
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::extract::{ApiJson, ApiPath};
 use crate::api::jwt::Claims;
 use crate::api::middleware::AuthLayer;
 use crate::api::rate_limit::ClientIp;
@@ -229,7 +230,7 @@ where
 pub async fn login(
     State(state): State<AuthRouteState>,
     ClientIp(client_ip): ClientIp,
-    Json(request): Json<LoginRequest>,
+    ApiJson(request): ApiJson<LoginRequest>,
 ) -> ApiResult<Json<LoginResponse>> {
     let auth_service = state
         .auth_service
@@ -261,7 +262,7 @@ pub async fn login(
 )]
 pub async fn refresh(
     State(state): State<AuthRouteState>,
-    Json(request): Json<RefreshRequest>,
+    ApiJson(request): ApiJson<RefreshRequest>,
 ) -> ApiResult<Json<LoginResponse>> {
     let auth_service = state
         .auth_service
@@ -287,7 +288,7 @@ pub async fn refresh(
 pub async fn logout(
     State(state): State<AuthRouteState>,
     headers: axum::http::HeaderMap,
-    Json(request): Json<LogoutRequest>,
+    ApiJson(request): ApiJson<LogoutRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let auth_service = state
         .auth_service
@@ -358,7 +359,7 @@ pub async fn logout_all(
 pub async fn change_password(
     State(state): State<AuthRouteState>,
     axum::Extension(claims): axum::Extension<Claims>,
-    Json(request): Json<ChangePasswordRequest>,
+    ApiJson(request): ApiJson<ChangePasswordRequest>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let auth_service = state
         .auth_service
@@ -465,7 +466,7 @@ pub async fn list_api_keys(
 pub async fn create_api_key(
     State(state): State<AuthRouteState>,
     principal: Option<axum::Extension<AuthPrincipal>>,
-    Json(request): Json<CreateApiKeyRequest>,
+    ApiJson(request): ApiJson<CreateApiKeyRequest>,
 ) -> ApiResult<Json<CreateApiKeyResponse>> {
     let auth_service = state
         .auth_service
@@ -521,7 +522,7 @@ pub async fn create_api_key(
 pub async fn revoke_api_key(
     State(state): State<AuthRouteState>,
     principal: Option<axum::Extension<AuthPrincipal>>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let auth_service = state
         .auth_service

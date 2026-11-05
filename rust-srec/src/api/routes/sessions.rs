@@ -12,11 +12,12 @@
 
 use axum::{
     Json, Router,
-    extract::{FromRef, Path, Query, State},
+    extract::{FromRef, State},
     routing::{get, post},
 };
 
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::extract::{ApiJson, ApiPath, ApiQuery};
 use crate::api::models::{
     DanmuGiftTally, DanmuRatePoint, DanmuTopTalker, DanmuWordFrequency, PageResponse,
     PaginatedResponse, PaginationParams, SessionDanmuStatisticsResponse, SessionEventResponse,
@@ -80,8 +81,8 @@ pub fn router() -> Router<AppState> {
 )]
 pub async fn list_session_segments(
     State(state): State<SessionRouteState>,
-    Path(id): Path<String>,
-    Query(pagination): Query<PaginationParams>,
+    ApiPath(id): ApiPath<String>,
+    ApiQuery(pagination): ApiQuery<PaginationParams>,
 ) -> ApiResult<Json<PageResponse<SessionSegmentResponse>>> {
     let session_repository = state.session_repository.clone();
 
@@ -187,8 +188,8 @@ pub async fn list_session_segments(
 )]
 pub async fn list_sessions(
     State(state): State<SessionRouteState>,
-    Query(pagination): Query<PaginationParams>,
-    Query(filters): Query<SessionFilterParams>,
+    ApiQuery(pagination): ApiQuery<PaginationParams>,
+    ApiQuery(filters): ApiQuery<SessionFilterParams>,
 ) -> ApiResult<Json<PaginatedResponse<SessionResponse>>> {
     // Get session repository from state
     let session_repository = &state.session_repository;
@@ -354,7 +355,7 @@ pub async fn list_sessions(
 )]
 pub async fn get_session(
     State(state): State<SessionRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<SessionResponse>> {
     // Get session repository from state
     let session_repository = &state.session_repository;
@@ -484,7 +485,7 @@ fn map_session_events(events: Vec<SessionEvent>) -> Vec<SessionEventResponse> {
 )]
 pub async fn get_session_danmu_statistics(
     State(state): State<SessionRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<SessionDanmuStatisticsResponse>> {
     let session_repository = &state.session_repository;
 
@@ -647,7 +648,7 @@ fn parse_titles(titles_json: &Option<String>) -> (Vec<TitleChange>, String) {
 )]
 pub async fn delete_session(
     State(state): State<SessionRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<()> {
     // Get session repository from state
     let session_repository = &state.session_repository;
@@ -727,7 +728,7 @@ fn validate_session_delete_batch(ids: &[String]) -> ApiResult<()> {
 )]
 pub async fn delete_sessions_batch(
     State(state): State<SessionRouteState>,
-    Json(request): Json<BatchDeleteRequest>,
+    ApiJson(request): ApiJson<BatchDeleteRequest>,
 ) -> ApiResult<Json<BatchDeleteResponse>> {
     validate_session_delete_batch(&request.ids)?;
     // Get session repository from state
@@ -773,7 +774,7 @@ mod tests {
         ids.push("kept".to_string());
         let error = delete_sessions_batch(
             State(state.clone()),
-            Json(BatchDeleteRequest { ids: ids.clone() }),
+            ApiJson(BatchDeleteRequest { ids: ids.clone() }),
         )
         .await
         .unwrap_err();
@@ -786,12 +787,12 @@ mod tests {
         assert_eq!(remaining, 1);
         ids.remove(0);
         let Json(response) =
-            delete_sessions_batch(State(state.clone()), Json(BatchDeleteRequest { ids }))
+            delete_sessions_batch(State(state.clone()), ApiJson(BatchDeleteRequest { ids }))
                 .await
                 .unwrap();
         assert_eq!(response.deleted, 1);
         let Json(response) =
-            delete_sessions_batch(State(state), Json(BatchDeleteRequest { ids: vec![] }))
+            delete_sessions_batch(State(state), ApiJson(BatchDeleteRequest { ids: vec![] }))
                 .await
                 .unwrap();
         assert_eq!(response.deleted, 0);

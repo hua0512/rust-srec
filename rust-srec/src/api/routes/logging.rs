@@ -6,7 +6,7 @@
 use axum::{
     Json, Router,
     extract::{
-        FromRef, Query, State,
+        FromRef, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::header,
@@ -32,6 +32,7 @@ use crate::api::auth_request::{
 };
 use crate::api::auth_service::AuthPrincipal;
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::extract::{ApiJson, ApiQuery};
 use crate::api::proto::log_event::{self, EventType, LogLevel};
 use crate::api::server::AppState;
 use crate::api::server::LoggingArchiveGrant;
@@ -87,6 +88,7 @@ pub struct WsAuthParams {
 }
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct ListLogFilesQuery {
     /// Inclusive start date in YYYY-MM-DD.
     pub from: Option<String>,
@@ -97,6 +99,7 @@ pub struct ListLogFilesQuery {
 }
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct ArchiveQuery {
     /// Single-use download token issued by `/api/logging/archive-token`.
     pub token: String,
@@ -129,6 +132,7 @@ pub struct ArchiveTokenResponse {
 }
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct ListLogEntriesQuery {
     /// Optional specific log file name (e.g. rust-srec.log.2026-01-23 or rust-srec.log)
     pub file: Option<String>,
@@ -504,7 +508,7 @@ async fn consume_download_token(
 )]
 pub async fn list_log_files(
     State(state): State<LoggingRouteState>,
-    Query(query): Query<ListLogFilesQuery>,
+    ApiQuery(query): ApiQuery<ListLogFilesQuery>,
     headers: HeaderMap,
 ) -> ApiResult<Json<LogFilesResponse>> {
     authorize_headers(&state, &headers).await?;
@@ -584,7 +588,7 @@ pub async fn get_archive_token(
 )]
 pub async fn list_log_entries(
     State(state): State<LoggingRouteState>,
-    Query(query): Query<ListLogEntriesQuery>,
+    ApiQuery(query): ApiQuery<ListLogEntriesQuery>,
     headers: HeaderMap,
 ) -> ApiResult<Json<LogEntriesResponse>> {
     authorize_headers(&state, &headers).await?;
@@ -638,7 +642,7 @@ pub async fn list_log_entries(
 )]
 pub async fn download_logs_archive(
     State(state): State<ArchiveRouteState>,
-    Query(query): Query<ArchiveQuery>,
+    ApiQuery(query): ApiQuery<ArchiveQuery>,
 ) -> Result<impl IntoResponse, ApiError> {
     consume_download_token(&state.tokens, &query.token, state.auth_service.as_ref()).await?;
 
@@ -707,7 +711,7 @@ pub async fn get_logging_config(
 pub async fn update_logging_config(
     State(state): State<LoggingRouteState>,
     headers: HeaderMap,
-    Json(request): Json<UpdateLogFilterRequest>,
+    ApiJson(request): ApiJson<UpdateLogFilterRequest>,
 ) -> ApiResult<Json<LoggingConfigResponse>> {
     authorize_headers(&state, &headers).await?;
 
@@ -743,7 +747,7 @@ pub async fn update_logging_config(
 async fn logging_stream_ws(
     ws: WebSocketUpgrade,
     State(state): State<LoggingRouteState>,
-    Query(auth): Query<WsAuthParams>,
+    ApiQuery(auth): ApiQuery<WsAuthParams>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, ApiError> {
     let principal = authorize_request(

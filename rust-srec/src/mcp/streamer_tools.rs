@@ -2,8 +2,7 @@
 //!
 //! Thin wrappers over the `api::routes::{streamers,filters}` handlers.
 
-use axum::Json;
-use axum::extract::{FromRef, Path, Query, State};
+use axum::extract::{FromRef, State};
 use rmcp::{
     ErrorData, RoleServer, handler::server::wrapper::Parameters, model::CallToolResult, schemars,
     service::RequestContext, tool, tool_router,
@@ -11,6 +10,7 @@ use rmcp::{
 
 use super::config_tools::{IdParams, PageParams};
 use super::{SrecMcpServer, invalid_json_param, tool_json};
+use crate::api::extract::{ApiJson, ApiPath, ApiQuery};
 use crate::api::models::{
     CreateFilterRequest, CreateStreamerRequest, StreamerFilterParams, UpdateFilterRequest,
     UpdateStreamerRequest,
@@ -135,7 +135,9 @@ impl SrecMcpServer {
             sort_dir: None,
             search: params.search,
         };
-        tool_json(streamers::list_streamers(State(state), Query(pagination), Query(filters)).await)
+        tool_json(
+            streamers::list_streamers(State(state), ApiQuery(pagination), ApiQuery(filters)).await,
+        )
     }
 
     #[tool(
@@ -149,7 +151,7 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_full_access(&context)?;
         let state = StreamerRouteState::from_ref(&self.app_state);
-        tool_json(streamers::get_streamer(State(state), Path(params.id)).await)
+        tool_json(streamers::get_streamer(State(state), ApiPath(params.id)).await)
     }
 
     #[tool(
@@ -172,7 +174,7 @@ impl SrecMcpServer {
         };
         let state = StreamerRouteState::from_ref(&self.app_state);
         tool_json(
-            streamers::create_streamer(State(state), Json(request))
+            streamers::create_streamer(State(state), ApiJson(request))
                 .await
                 .map(|(_, body)| body),
         )
@@ -191,7 +193,9 @@ impl SrecMcpServer {
         let request: UpdateStreamerRequest = serde_json::from_value(params.updates)
             .map_err(|error| invalid_json_param("updates", error))?;
         let state = StreamerRouteState::from_ref(&self.app_state);
-        tool_json(streamers::update_streamer(State(state), Path(params.id), Json(request)).await)
+        tool_json(
+            streamers::update_streamer(State(state), ApiPath(params.id), ApiJson(request)).await,
+        )
     }
 
     #[tool(
@@ -205,7 +209,7 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_write(&context)?;
         let state = StreamerRouteState::from_ref(&self.app_state);
-        tool_json(streamers::delete_streamer(State(state), Path(params.id)).await)
+        tool_json(streamers::delete_streamer(State(state), ApiPath(params.id)).await)
     }
 
     #[tool(
@@ -219,7 +223,7 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_write(&context)?;
         let state = StreamerRouteState::from_ref(&self.app_state);
-        tool_json(streamers::clear_error(State(state), Path(params.id)).await)
+        tool_json(streamers::clear_error(State(state), ApiPath(params.id)).await)
     }
 
     #[tool(
@@ -236,8 +240,8 @@ impl SrecMcpServer {
         tool_json(
             streamers::get_check_history(
                 State(state),
-                Path(params.id),
-                Query(CheckHistoryParams {
+                ApiPath(params.id),
+                ApiQuery(CheckHistoryParams {
                     limit: params.limit,
                 }),
             )
@@ -256,7 +260,7 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_full_access(&context)?;
         let state = FilterRouteState::from_ref(&self.app_state);
-        tool_json(filters::list_filters(State(state), Path(params.streamer_id)).await)
+        tool_json(filters::list_filters(State(state), ApiPath(params.streamer_id)).await)
     }
 
     #[tool(
@@ -276,7 +280,7 @@ impl SrecMcpServer {
         };
         let state = FilterRouteState::from_ref(&self.app_state);
         tool_json(
-            filters::create_filter(State(state), Path(params.streamer_id), Json(request))
+            filters::create_filter(State(state), ApiPath(params.streamer_id), ApiJson(request))
                 .await
                 .map(|(_, body)| body),
         )
@@ -300,8 +304,8 @@ impl SrecMcpServer {
         tool_json(
             filters::update_filter(
                 State(state),
-                Path((params.streamer_id, params.filter_id)),
-                Json(request),
+                ApiPath((params.streamer_id, params.filter_id)),
+                ApiJson(request),
             )
             .await,
         )
@@ -319,8 +323,11 @@ impl SrecMcpServer {
         self.require_write(&context)?;
         let state = FilterRouteState::from_ref(&self.app_state);
         tool_json(
-            filters::delete_filter(State(state), Path((params.streamer_id, params.filter_id)))
-                .await,
+            filters::delete_filter(
+                State(state),
+                ApiPath((params.streamer_id, params.filter_id)),
+            )
+            .await,
         )
     }
 }

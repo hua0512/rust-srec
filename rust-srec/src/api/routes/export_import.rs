@@ -13,6 +13,7 @@ use chrono::Utc;
 use std::collections::HashMap;
 
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::extract::ApiJson;
 use crate::api::server::AppState;
 use crate::config::backup::{
     BackupRoute, ConfigExport, EXPORT_SCHEMA_VERSION, EngineExport, FilterExport,
@@ -593,7 +594,7 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
 )]
 pub async fn import_config(
     State(state): State<AppState>,
-    Json(request): Json<ImportRequest>,
+    ApiJson(request): ApiJson<ImportRequest>,
 ) -> ApiResult<Json<ImportResult>> {
     let import_service = state.configuration_import_service.clone();
     let auth_service = state.auth_service.clone();

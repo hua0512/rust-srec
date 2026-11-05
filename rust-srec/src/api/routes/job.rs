@@ -16,12 +16,13 @@
 
 use axum::{
     Json, Router,
-    extract::{FromRef, Path, Query, State},
+    extract::{FromRef, State},
     http::StatusCode,
     routing::{get, post},
 };
 
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::extract::{ApiJson, ApiPath, ApiQuery};
 use crate::api::models::PaginationParams;
 use crate::api::server::AppState;
 
@@ -99,6 +100,7 @@ pub struct ClonePresetRequest {
 
 /// Query parameters for filtering presets.
 #[derive(Debug, Clone, serde::Deserialize, Default, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct PresetFilterParams {
     /// Filter by category.
     pub category: Option<String>,
@@ -138,8 +140,8 @@ pub struct PresetListResponse {
 )]
 pub async fn list_presets(
     State(state): State<JobPresetRouteState>,
-    Query(filters): Query<PresetFilterParams>,
-    Query(pagination): Query<PaginationParams>,
+    ApiQuery(filters): ApiQuery<PresetFilterParams>,
+    ApiQuery(pagination): ApiQuery<PaginationParams>,
 ) -> ApiResult<Json<PresetListResponse>> {
     let pipeline_manager = &state.pipeline_manager;
 
@@ -182,7 +184,7 @@ pub async fn list_presets(
 )]
 pub async fn get_preset(
     State(state): State<JobPresetRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<crate::database::models::JobPreset>> {
     let pipeline_manager = &state.pipeline_manager;
 
@@ -207,7 +209,7 @@ pub async fn get_preset(
 )]
 pub async fn create_preset(
     State(state): State<JobPresetRouteState>,
-    Json(payload): Json<CreatePresetRequest>,
+    ApiJson(payload): ApiJson<CreatePresetRequest>,
 ) -> ApiResult<(StatusCode, Json<crate::database::models::JobPreset>)> {
     let pipeline_manager = &state.pipeline_manager;
 
@@ -255,8 +257,8 @@ pub async fn create_preset(
 )]
 pub async fn update_preset(
     State(state): State<JobPresetRouteState>,
-    Path(id): Path<String>,
-    Json(payload): Json<UpdatePresetRequest>,
+    ApiPath(id): ApiPath<String>,
+    ApiJson(payload): ApiJson<UpdatePresetRequest>,
 ) -> ApiResult<Json<crate::database::models::JobPreset>> {
     let pipeline_manager = &state.pipeline_manager;
 
@@ -310,7 +312,7 @@ pub async fn update_preset(
 )]
 pub async fn delete_preset(
     State(state): State<JobPresetRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<()>> {
     let pipeline_manager = &state.pipeline_manager;
 
@@ -332,8 +334,8 @@ pub async fn delete_preset(
 )]
 pub async fn clone_preset(
     State(state): State<JobPresetRouteState>,
-    Path(id): Path<String>,
-    Json(payload): Json<ClonePresetRequest>,
+    ApiPath(id): ApiPath<String>,
+    ApiJson(payload): ApiJson<ClonePresetRequest>,
 ) -> ApiResult<(StatusCode, Json<crate::database::models::JobPreset>)> {
     let pipeline_manager = &state.pipeline_manager;
 

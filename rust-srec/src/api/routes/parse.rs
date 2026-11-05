@@ -2,7 +2,7 @@
 
 use axum::{
     Extension, Json, Router,
-    extract::{FromRef, Query, State, ws::WebSocketUpgrade},
+    extract::{FromRef, State, ws::WebSocketUpgrade},
     http::HeaderMap,
     response::IntoResponse,
     routing::{get, post},
@@ -14,6 +14,7 @@ use tracing::{debug, warn};
 
 use crate::api::auth_service::AuthPrincipal;
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::extract::{ApiJson, ApiQuery};
 use crate::api::models::{ParseUrlRequest, ParseUrlResponse};
 use crate::api::server::AppState;
 use crate::credentials::OperationDeadline;
@@ -107,7 +108,7 @@ pub struct LiveDanmuQuery {
 async fn live_danmu_ws(
     ws: WebSocketUpgrade,
     State(state): State<LiveDanmuRouteState>,
-    Query(query): Query<LiveDanmuQuery>,
+    ApiQuery(query): ApiQuery<LiveDanmuQuery>,
     headers: HeaderMap,
 ) -> ApiResult<impl IntoResponse> {
     use crate::api::auth_request::{AccessPolicy, authorize_request, run_authenticated_session};
@@ -226,7 +227,7 @@ fn validate_parse_batch_size(count: usize) -> ApiResult<()> {
 pub async fn parse_url(
     State(state): State<ParseRouteState>,
     identity: Option<Extension<AuthPrincipal>>,
-    Json(request): Json<ParseUrlRequest>,
+    ApiJson(request): ApiJson<ParseUrlRequest>,
 ) -> ApiResult<(HeaderMap, Json<ParseUrlResponse>)> {
     let principal = super::request_principal(state.auth_enabled, identity)?;
     parse_one(&state, request, &principal)
@@ -652,7 +653,7 @@ pub struct RenewPlaybackRequest {
 pub async fn renew_playback(
     State(state): State<ParseRouteState>,
     identity: Option<Extension<AuthPrincipal>>,
-    Json(request): Json<RenewPlaybackRequest>,
+    ApiJson(request): ApiJson<RenewPlaybackRequest>,
 ) -> ApiResult<(HeaderMap, Json<ParseUrlResponse>)> {
     let principal = super::request_principal(state.auth_enabled, identity)?;
     let deadline = OperationDeadline::default();
@@ -717,7 +718,7 @@ fn observe_parse_error(
 pub async fn parse_url_batch(
     State(state): State<ParseRouteState>,
     identity: Option<Extension<AuthPrincipal>>,
-    Json(requests): Json<Vec<ParseUrlRequest>>,
+    ApiJson(requests): ApiJson<Vec<ParseUrlRequest>>,
 ) -> ApiResult<(HeaderMap, Json<Vec<ParseUrlResponse>>)> {
     validate_parse_batch_size(requests.len())?;
     let principal = super::request_principal(state.auth_enabled, identity)?;
@@ -744,7 +745,7 @@ pub async fn parse_url_batch(
 )]
 pub async fn resolve_url(
     State(state): State<ParseRouteState>,
-    Json(request): Json<crate::api::models::ResolveUrlRequest>,
+    ApiJson(request): ApiJson<crate::api::models::ResolveUrlRequest>,
 ) -> ApiResult<(HeaderMap, Json<crate::api::models::ResolveUrlResponse>)> {
     let deadline = OperationDeadline::default();
     let response = tokio::time::timeout_at(deadline.instant(), async {
@@ -1338,7 +1339,7 @@ mod tests {
         let mut response = Box::pin(parse_url_batch(
             State(state),
             None,
-            Json(vec![request; MAX_PARSE_BATCH_SIZE + 1]),
+            ApiJson(vec![request; MAX_PARSE_BATCH_SIZE + 1]),
         ));
         match futures::poll!(response.as_mut()) {
             std::task::Poll::Ready(Err(error)) => {

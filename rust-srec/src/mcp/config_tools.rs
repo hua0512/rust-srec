@@ -2,14 +2,14 @@
 //!
 //! Thin wrappers over the `api::routes::{config,templates,engines}` handlers.
 
-use axum::Json;
-use axum::extract::{FromRef, Path, Query, State};
+use axum::extract::{FromRef, State};
 use rmcp::{
     ErrorData, RoleServer, handler::server::wrapper::Parameters, model::CallToolResult, schemars,
     service::RequestContext, tool, tool_router,
 };
 
 use super::{SrecMcpServer, invalid_json_param, tool_json};
+use crate::api::extract::{ApiJson, ApiPath, ApiQuery};
 use crate::api::models::{
     CreateTemplateRequest, PaginationParams, UpdateGlobalConfigRequest, UpdateTemplateRequest,
 };
@@ -119,7 +119,7 @@ impl SrecMcpServer {
         let request: UpdateGlobalConfigRequest = serde_json::from_value(params.updates)
             .map_err(|error| invalid_json_param("updates", error))?;
         let state = ConfigRouteState::from_ref(&self.app_state);
-        tool_json(config::update_global_config(State(state), Json(request)).await)
+        tool_json(config::update_global_config(State(state), ApiJson(request)).await)
     }
 
     #[tool(
@@ -146,7 +146,7 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_full_access(&context)?;
         let state = ConfigRouteState::from_ref(&self.app_state);
-        tool_json(config::get_platform_config(State(state), Path(params.id)).await)
+        tool_json(config::get_platform_config(State(state), ApiPath(params.id)).await)
     }
 
     #[tool(
@@ -173,7 +173,8 @@ impl SrecMcpServer {
                 .map_err(|error| invalid_json_param("config", error))?;
         let state = ConfigRouteState::from_ref(&self.app_state);
         tool_json(
-            config::replace_platform_config(State(state), Path(params.id), Json(request)).await,
+            config::replace_platform_config(State(state), ApiPath(params.id), ApiJson(request))
+                .await,
         )
     }
 
@@ -201,7 +202,7 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_full_access(&context)?;
         let state = TemplateRouteState::from_ref(&self.app_state);
-        tool_json(templates::list_templates(State(state), Query(params.to_pagination())).await)
+        tool_json(templates::list_templates(State(state), ApiQuery(params.to_pagination())).await)
     }
 
     #[tool(
@@ -215,7 +216,7 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_full_access(&context)?;
         let state = TemplateRouteState::from_ref(&self.app_state);
-        tool_json(templates::get_template(State(state), Path(params.id)).await)
+        tool_json(templates::get_template(State(state), ApiPath(params.id)).await)
     }
 
     #[tool(
@@ -232,7 +233,7 @@ impl SrecMcpServer {
             .map_err(|error| invalid_json_param("template", error))?;
         let state = TemplateRouteState::from_ref(&self.app_state);
         tool_json(
-            templates::create_template(State(state), Json(request))
+            templates::create_template(State(state), ApiJson(request))
                 .await
                 .map(|(_, body)| body),
         )
@@ -251,7 +252,9 @@ impl SrecMcpServer {
         let request: UpdateTemplateRequest = serde_json::from_value(params.updates)
             .map_err(|error| invalid_json_param("updates", error))?;
         let state = TemplateRouteState::from_ref(&self.app_state);
-        tool_json(templates::update_template(State(state), Path(params.id), Json(request)).await)
+        tool_json(
+            templates::update_template(State(state), ApiPath(params.id), ApiJson(request)).await,
+        )
     }
 
     #[tool(
@@ -265,7 +268,7 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_write(&context)?;
         let state = TemplateRouteState::from_ref(&self.app_state);
-        tool_json(templates::delete_template(State(state), Path(params.id)).await)
+        tool_json(templates::delete_template(State(state), ApiPath(params.id)).await)
     }
 
     #[tool(
@@ -292,7 +295,7 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_full_access(&context)?;
         let state = EngineRouteState::from_ref(&self.app_state);
-        tool_json(engines::get_engine(State(state), Path(params.id)).await)
+        tool_json(engines::get_engine(State(state), ApiPath(params.id)).await)
     }
 
     #[tool(
@@ -306,6 +309,8 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_write(&context)?;
         let state = EngineRouteState::from_ref(&self.app_state);
-        tool_json(engines::update_engine(State(state), Path(params.id), Json(params.updates)).await)
+        tool_json(
+            engines::update_engine(State(state), ApiPath(params.id), ApiJson(params.updates)).await,
+        )
     }
 }

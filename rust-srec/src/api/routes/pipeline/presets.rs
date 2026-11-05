@@ -1,12 +1,9 @@
 use std::collections::HashSet;
 
-use axum::{
-    Json,
-    extract::{Path, Query, State},
-    http::StatusCode,
-};
+use axum::{Json, extract::State, http::StatusCode};
 
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::extract::{ApiJson, ApiPath, ApiQuery};
 use crate::api::models::PaginationParams;
 use crate::database::models::{Pagination, PipelineStep};
 
@@ -28,8 +25,8 @@ use super::{
 )]
 pub async fn list_pipeline_presets(
     State(state): State<PresetRouteState>,
-    Query(filters): Query<PipelinePresetFilterParams>,
-    Query(pagination): Query<PaginationParams>,
+    ApiQuery(filters): ApiQuery<PipelinePresetFilterParams>,
+    ApiQuery(pagination): ApiQuery<PaginationParams>,
 ) -> ApiResult<Json<PipelinePresetListResponse>> {
     let preset_repo = &state.pipeline_preset_repository;
 
@@ -70,7 +67,7 @@ pub async fn list_pipeline_presets(
 )]
 pub async fn get_pipeline_preset_by_id(
     State(state): State<PresetRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<PipelinePresetResponse>> {
     let preset_repo = &state.pipeline_preset_repository;
 
@@ -95,7 +92,7 @@ pub async fn get_pipeline_preset_by_id(
 )]
 pub async fn create_pipeline_preset(
     State(state): State<PresetRouteState>,
-    Json(payload): Json<CreatePipelinePresetRequest>,
+    ApiJson(payload): ApiJson<CreatePipelinePresetRequest>,
 ) -> ApiResult<(StatusCode, Json<PipelinePresetResponse>)> {
     let preset_repo = &state.pipeline_preset_repository;
 
@@ -135,8 +132,8 @@ pub async fn create_pipeline_preset(
 )]
 pub async fn update_pipeline_preset(
     State(state): State<PresetRouteState>,
-    Path(id): Path<String>,
-    Json(payload): Json<UpdatePipelinePresetRequest>,
+    ApiPath(id): ApiPath<String>,
+    ApiJson(payload): ApiJson<UpdatePipelinePresetRequest>,
 ) -> ApiResult<Json<PipelinePresetResponse>> {
     let preset_repo = &state.pipeline_preset_repository;
 
@@ -201,7 +198,7 @@ async fn reject_unrunnable_definition(
 )]
 pub async fn delete_pipeline_preset(
     State(state): State<PresetRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<()>> {
     let preset_repo = &state.pipeline_preset_repository;
 
@@ -223,7 +220,7 @@ pub async fn delete_pipeline_preset(
 )]
 pub async fn preview_pipeline_preset(
     State(state): State<PresetRouteState>,
-    Path(id): Path<String>,
+    ApiPath(id): ApiPath<String>,
 ) -> ApiResult<Json<PresetPreviewResponse>> {
     let preset_repo = &state.pipeline_preset_repository;
 

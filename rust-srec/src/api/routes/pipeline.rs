@@ -371,6 +371,7 @@ pub struct UpdatePipelinePresetRequest {
 
 /// Query parameters for filtering pipeline presets.
 #[derive(Debug, Clone, serde::Deserialize, Default, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct PipelinePresetFilterParams {
     /// Literal substring of name or description; ASCII case-insensitive.
     pub search: Option<String>,
@@ -426,6 +427,7 @@ impl From<crate::database::models::PipelinePreset> for PipelinePresetResponse {
 /// GET /api/pipeline/outputs?session_id=session-123&streamer_id=streamer-456
 /// ```
 #[derive(Debug, Clone, serde::Deserialize, Default, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct OutputFilterParams {
     /// Filter by session ID.
     pub session_id: Option<String>,
@@ -637,6 +639,7 @@ pub struct PresetPreviewJob {
 
 /// Query parameters for filtering DAG executions.
 #[derive(Debug, Clone, serde::Deserialize, Default, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct DagFilterParams {
     /// Filter by DAG status (PENDING, PROCESSING, COMPLETED, FAILED, CANCELLED).
     /// A DAG that is not finished is PENDING until one of its jobs is running.
@@ -826,6 +829,7 @@ pub struct DeleteOutputResponse {
 
 /// Query parameters for deleting a media output.
 #[derive(Debug, Clone, Default, serde::Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct DeleteOutputParams {
     /// Whether to also remove the output's file from disk.
     #[serde(default)]

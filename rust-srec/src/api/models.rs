@@ -41,6 +41,7 @@ use crate::utils::json::deserialize_field_present_nullable;
 /// GET /api/pipeline/jobs?limit=50&offset=100
 /// ```
 #[derive(Debug, Clone, Deserialize, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct PaginationParams {
     /// Number of items to return (default: 20, max: 100)
     #[serde(default = "default_limit")]
@@ -270,6 +271,7 @@ pub struct StreamerResponse {
 
 /// Filter parameters for listing streamers.
 #[derive(Debug, Clone, Deserialize, Default, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct StreamerFilterParams {
     /// Filter by platform
     pub platform: Option<String>,
@@ -764,6 +766,7 @@ impl From<crate::pipeline::JobLogEntry> for JobLogEntry {
 /// GET /api/pipeline/jobs?status=failed&streamer_id=streamer-123&from_date=2025-01-01T00:00:00Z
 /// ```
 #[derive(Debug, Clone, Deserialize, Default, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct JobFilterParams {
     /// Filter by status
     pub status: Option<JobStatus>,
@@ -1174,6 +1177,7 @@ pub struct TitleChange {
 /// GET /api/sessions?from_date=2025-01-01T00:00:00Z&to_date=2025-12-31T23:59:59Z
 /// ```
 #[derive(Debug, Clone, Deserialize, Default, utoipa::IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct SessionFilterParams {
     /// Filter by streamer ID
     pub streamer_id: Option<String>,

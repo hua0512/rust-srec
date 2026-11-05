@@ -13,6 +13,7 @@ use axum::{Json, Router, routing::post};
 use std::time::Duration;
 
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::extract::ApiJson;
 use crate::api::server::AppState;
 use crate::baidupcs;
 
@@ -126,7 +127,7 @@ fn non_empty(value: Option<&str>) -> Option<&str> {
     security(("bearer_auth" = []))
 )]
 pub async fn baidupcs_status(
-    Json(request): Json<BaiduPcsToolRequest>,
+    ApiJson(request): ApiJson<BaiduPcsToolRequest>,
 ) -> ApiResult<Json<BaiduPcsStatusResponse>> {
     let binary_path = baidupcs::resolve_binary_path(request.binary_path.as_deref());
     let config_dir = non_empty(request.config_dir.as_deref());
@@ -226,7 +227,7 @@ pub async fn baidupcs_status(
 )]
 #[tracing::instrument(skip_all)]
 pub async fn baidupcs_login(
-    Json(request): Json<BaiduPcsLoginRequest>,
+    ApiJson(request): ApiJson<BaiduPcsLoginRequest>,
 ) -> ApiResult<Json<BaiduPcsLoginResponse>> {
     let binary_path = baidupcs::resolve_binary_path(request.binary_path.as_deref());
     let config_dir = non_empty(request.config_dir.as_deref());
@@ -327,7 +328,7 @@ pub async fn baidupcs_login(
     security(("bearer_auth" = []))
 )]
 pub async fn baidupcs_logout(
-    Json(request): Json<BaiduPcsToolRequest>,
+    ApiJson(request): ApiJson<BaiduPcsToolRequest>,
 ) -> ApiResult<Json<BaiduPcsLogoutResponse>> {
     let binary_path = baidupcs::resolve_binary_path(request.binary_path.as_deref());
     let config_dir = non_empty(request.config_dir.as_deref());

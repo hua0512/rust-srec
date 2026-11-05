@@ -1,12 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use axum::{
-    Json,
-    extract::{Path, Query, State},
-};
+use axum::{Json, extract::State};
 
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::extract::{ApiJson, ApiPath, ApiQuery};
 use crate::api::models::PaginationParams;
 use crate::database::models::dag_progress_percent;
 use crate::database::models::job::{
@@ -78,7 +76,7 @@ pub(super) fn validate_batch_ids(ids: &[String], entity: &str) -> ApiResult<()> 
 )]
 pub async fn get_dag_status(
     State(state): State<PipelineRouteState>,
-    Path(dag_id): Path<String>,
+    ApiPath(dag_id): ApiPath<String>,
 ) -> ApiResult<Json<DagStatusResponse>> {
     let dag_scheduler = state.dag_scheduler()?;
 
@@ -189,7 +187,7 @@ pub async fn get_dag_status(
 )]
 pub async fn get_dag_graph(
     State(state): State<PipelineRouteState>,
-    Path(dag_id): Path<String>,
+    ApiPath(dag_id): ApiPath<String>,
 ) -> ApiResult<Json<DagGraphResponse>> {
     let dag_scheduler = state.dag_scheduler()?;
 
@@ -275,7 +273,7 @@ pub async fn get_dag_graph(
 )]
 pub async fn retry_dag(
     State(state): State<PipelineRouteState>,
-    Path(dag_id): Path<String>,
+    ApiPath(dag_id): ApiPath<String>,
 ) -> ApiResult<Json<DagRetryResponse>> {
     retry_dag_inner(&state, &dag_id).await.map(Json)
 }
@@ -327,8 +325,8 @@ async fn running_step_percents(
 )]
 pub async fn list_dags(
     State(state): State<PipelineRouteState>,
-    Query(filters): Query<DagFilterParams>,
-    Query(pagination): Query<PaginationParams>,
+    ApiQuery(filters): ApiQuery<DagFilterParams>,
+    ApiQuery(pagination): ApiQuery<PaginationParams>,
 ) -> ApiResult<Json<DagListResponse>> {
     let dag_scheduler = state.dag_scheduler()?;
 
@@ -530,7 +528,7 @@ pub async fn retry_all_failed_dags(
 )]
 pub async fn batch_dags(
     State(state): State<PipelineRouteState>,
-    Json(request): Json<BatchDagRequest>,
+    ApiJson(request): ApiJson<BatchDagRequest>,
 ) -> ApiResult<Json<BatchDagResponse>> {
     validate_batch_ids(&request.ids, "DAG")?;
 
@@ -608,7 +606,7 @@ pub async fn batch_dags(
 )]
 pub async fn cancel_dag(
     State(state): State<PipelineRouteState>,
-    Path(dag_id): Path<String>,
+    ApiPath(dag_id): ApiPath<String>,
 ) -> ApiResult<Json<DagCancelResponse>> {
     let pipeline_manager = &state.pipeline_manager;
 
@@ -647,7 +645,7 @@ pub async fn cancel_dag(
 )]
 pub async fn delete_dag(
     State(state): State<PipelineRouteState>,
-    Path(dag_id): Path<String>,
+    ApiPath(dag_id): ApiPath<String>,
 ) -> ApiResult<Json<serde_json::Value>> {
     let pipeline_manager = &state.pipeline_manager;
 
@@ -677,7 +675,7 @@ pub async fn delete_dag(
 )]
 pub async fn get_dag_stats(
     State(state): State<PipelineRouteState>,
-    Path(dag_id): Path<String>,
+    ApiPath(dag_id): ApiPath<String>,
 ) -> ApiResult<Json<DagStatsResponse>> {
     let dag_scheduler = state.dag_scheduler()?;
 
@@ -725,7 +723,7 @@ pub async fn get_dag_stats(
 )]
 pub async fn validate_dag(
     State(state): State<PipelineRouteState>,
-    Json(request): Json<ValidateDagRequest>,
+    ApiJson(request): ApiJson<ValidateDagRequest>,
 ) -> ApiResult<Json<ValidateDagResponse>> {
     let dag = &request.dag;
     let mut errors: Vec<String> = Vec::new();

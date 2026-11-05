@@ -5,7 +5,6 @@
 //! re-validates a JWT bearer header (it lives on the public router) while
 //! MCP requests were already authenticated by `AuthLayer::mcp`.
 
-use axum::Json;
 use axum::extract::{FromRef, State};
 use rmcp::{
     ErrorData, RoleServer,
@@ -17,6 +16,7 @@ use rmcp::{
 };
 
 use super::{SrecMcpServer, tool_json};
+use crate::api::extract::ApiJson;
 use crate::api::models::{ComponentHealth, HealthResponse, ParseUrlRequest};
 use crate::api::routes::parse::{self, ParseRouteState};
 
@@ -93,7 +93,7 @@ impl SrecMcpServer {
             .cloned()
             .map(axum::Extension);
         tool_json(
-            parse::parse_url(State(state), identity, Json(request))
+            parse::parse_url(State(state), identity, ApiJson(request))
                 .await
                 .map(|(_, json)| json),
         )

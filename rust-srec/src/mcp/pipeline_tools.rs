@@ -4,7 +4,7 @@
 //! Thin wrappers over the `api::routes::pipeline` and `api::routes::job`
 //! handlers.
 
-use axum::extract::{FromRef, Path, Query, State};
+use axum::extract::{FromRef, State};
 use rmcp::{
     ErrorData, RoleServer, handler::server::wrapper::Parameters, model::CallToolResult, schemars,
     service::RequestContext, tool, tool_router,
@@ -12,6 +12,7 @@ use rmcp::{
 
 use super::config_tools::{IdParams, PageParams};
 use super::{SrecMcpServer, tool_json};
+use crate::api::extract::{ApiPath, ApiQuery};
 use crate::api::models::JobFilterParams;
 use crate::api::routes::job::{self, JobPresetRouteState, PresetFilterParams};
 use crate::api::routes::pipeline::{
@@ -142,7 +143,7 @@ impl SrecMcpServer {
             to_date: None,
             search: params.search,
         };
-        tool_json(jobs::list_jobs(State(state), Query(pagination), Query(filters)).await)
+        tool_json(jobs::list_jobs(State(state), ApiQuery(pagination), ApiQuery(filters)).await)
     }
 
     #[tool(
@@ -156,7 +157,7 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_full_access(&context)?;
         let state = PipelineRouteState::from_ref(&self.app_state);
-        tool_json(jobs::get_job(State(state), Path(params.id)).await)
+        tool_json(jobs::get_job(State(state), ApiPath(params.id)).await)
     }
 
     #[tool(
@@ -175,7 +176,7 @@ impl SrecMcpServer {
             offset: params.offset,
         }
         .to_pagination();
-        tool_json(jobs::list_job_logs(State(state), Path(params.id), Query(pagination)).await)
+        tool_json(jobs::list_job_logs(State(state), ApiPath(params.id), ApiQuery(pagination)).await)
     }
 
     #[tool(
@@ -189,7 +190,7 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_write(&context)?;
         let state = PipelineRouteState::from_ref(&self.app_state);
-        tool_json(jobs::retry_job(State(state), Path(params.id)).await)
+        tool_json(jobs::retry_job(State(state), ApiPath(params.id)).await)
     }
 
     #[tool(
@@ -203,7 +204,7 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_write(&context)?;
         let state = PipelineRouteState::from_ref(&self.app_state);
-        tool_json(jobs::cancel_job(State(state), Path(params.id)).await)
+        tool_json(jobs::cancel_job(State(state), ApiPath(params.id)).await)
     }
 
     #[tool(
@@ -217,7 +218,7 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_write(&context)?;
         let state = PipelineRouteState::from_ref(&self.app_state);
-        tool_json(jobs::delete_job(State(state), Path(params.id)).await)
+        tool_json(jobs::delete_job(State(state), ApiPath(params.id)).await)
     }
 
     #[tool(
@@ -241,7 +242,7 @@ impl SrecMcpServer {
             offset: params.offset,
         }
         .to_pagination();
-        tool_json(dag::list_dags(State(state), Query(filters), Query(pagination)).await)
+        tool_json(dag::list_dags(State(state), ApiQuery(filters), ApiQuery(pagination)).await)
     }
 
     #[tool(
@@ -255,7 +256,7 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_full_access(&context)?;
         let state = PipelineRouteState::from_ref(&self.app_state);
-        tool_json(dag::get_dag_status(State(state), Path(params.dag_id)).await)
+        tool_json(dag::get_dag_status(State(state), ApiPath(params.dag_id)).await)
     }
 
     #[tool(
@@ -269,7 +270,7 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_full_access(&context)?;
         let state = PipelineRouteState::from_ref(&self.app_state);
-        tool_json(dag::get_dag_graph(State(state), Path(params.dag_id)).await)
+        tool_json(dag::get_dag_graph(State(state), ApiPath(params.dag_id)).await)
     }
 
     #[tool(
@@ -283,7 +284,7 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_write(&context)?;
         let state = PipelineRouteState::from_ref(&self.app_state);
-        tool_json(dag::retry_dag(State(state), Path(params.dag_id)).await)
+        tool_json(dag::retry_dag(State(state), ApiPath(params.dag_id)).await)
     }
 
     #[tool(
@@ -297,7 +298,7 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_write(&context)?;
         let state = PipelineRouteState::from_ref(&self.app_state);
-        tool_json(dag::cancel_dag(State(state), Path(params.dag_id)).await)
+        tool_json(dag::cancel_dag(State(state), ApiPath(params.dag_id)).await)
     }
 
     #[tool(
@@ -320,7 +321,8 @@ impl SrecMcpServer {
         }
         .to_pagination();
         tool_json(
-            presets::list_pipeline_presets(State(state), Query(filters), Query(pagination)).await,
+            presets::list_pipeline_presets(State(state), ApiQuery(filters), ApiQuery(pagination))
+                .await,
         )
     }
 
@@ -335,7 +337,7 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_full_access(&context)?;
         let state = PresetRouteState::from_ref(&self.app_state);
-        tool_json(presets::get_pipeline_preset_by_id(State(state), Path(params.id)).await)
+        tool_json(presets::get_pipeline_preset_by_id(State(state), ApiPath(params.id)).await)
     }
 
     #[tool(
@@ -360,7 +362,7 @@ impl SrecMcpServer {
             offset: params.offset,
         }
         .to_pagination();
-        tool_json(job::list_presets(State(state), Query(filters), Query(pagination)).await)
+        tool_json(job::list_presets(State(state), ApiQuery(filters), ApiQuery(pagination)).await)
     }
 
     #[tool(
@@ -374,6 +376,6 @@ impl SrecMcpServer {
     ) -> Result<CallToolResult, ErrorData> {
         self.require_full_access(&context)?;
         let state = JobPresetRouteState::from_ref(&self.app_state);
-        tool_json(job::get_preset(State(state), Path(params.id)).await)
+        tool_json(job::get_preset(State(state), ApiPath(params.id)).await)
     }
 }
