@@ -27,6 +27,13 @@
 
 pub use rust_i18n::t;
 
+// `rust_i18n::i18n!` reads `locales/` at compile time without telling rustc,
+// so a locale edit would otherwise leave stale translations in the build.
+// Including each file registers it as a compile input. Every file in
+// `locales/` must be listed here.
+const _: &str = include_str!("../locales/en.yml");
+const _: &str = include_str!("../locales/zh-CN.yml");
+
 /// Localize a message and return it as an owned `String`.
 ///
 /// Wraps [`rust_i18n::t!`] and unwraps the returned `Cow<'static, str>` via

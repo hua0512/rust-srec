@@ -511,10 +511,25 @@ mod tests {
     }
 
     /// A pool migrated up to, excluding, `version`, plus the full migrator to
-    /// apply the rest. Panics unless at least one migration remains.
+    /// apply the rest. Panics unless at least one migration remains, or when
+    /// the embedded migrations differ from the files in `migrations/`.
     async fn pool_migrated_before(version: i64) -> (DbPool, sqlx::migrate::Migrator) {
         let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
         let full = sqlx::migrate!("./migrations");
+        // `migrate!` registers only the migrations that existed when the crate
+        // was compiled, so adding a file does not trigger a rebuild on its own.
+        let migrations_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/migrations");
+        let migration_files = std::fs::read_dir(migrations_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "sql"))
+            .count();
+        assert_eq!(
+            full.migrations.len(),
+            migration_files,
+            "the build embeds a different migration set than {migrations_dir}; \
+             touch a file under rust-srec/src to rebuild"
+        );
         let mut prefix = sqlx::migrate!("./migrations");
         prefix.migrations = full
             .migrations
