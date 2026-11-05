@@ -1,18 +1,12 @@
 import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
 import {
   useQuery,
-  useMutation,
   useQueryClient,
   keepPreviousData,
 } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
 import { useMemo, useCallback } from 'react';
-import {
-  deleteStreamer,
-  updateStreamer,
-  listPlatformConfigs,
-  batchUpdateStreamers,
-} from '@/server/functions';
+import { listPlatformConfigs, batchUpdateStreamers } from '@/server/functions';
 import type { BatchStreamerAction } from '@/api/schemas';
 import { templatesQueryOptions } from '@/api/templates';
 import {
@@ -35,7 +29,6 @@ import {
   RotateCcw,
   ListChecks,
 } from 'lucide-react';
-import { toast } from 'sonner';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg, plural } from '@lingui/core/macro';
@@ -47,6 +40,10 @@ import {
   useBatchSelection,
 } from '@/hooks/use-batch-selection';
 import { ListPagination } from '@/components/shared/list-pagination';
+import { PageEmptyState } from '@/components/shared/list-panel';
+import { CreateFab } from '@/components/shared/page-actions';
+import { QueryError } from '@/components/shared/query-error';
+import { useStreamerMutations } from '@/hooks/use-streamer-mutations';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { DashboardHeader } from '@/components/shared/dashboard-header';
@@ -201,6 +198,7 @@ function StreamersPage() {
     isLoading,
     isError,
     error,
+    refetch,
   } = useQuery({
     ...streamersListQueryOptions(search),
     placeholderData: keepPreviousData,
@@ -250,27 +248,7 @@ function StreamersPage() {
     [updateSearch],
   );
 
-  // Mutations
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => deleteStreamer({ data: id }),
-    onSuccess: () => {
-      toast.success(i18n._(msg`Streamer deleted`));
-      void queryClient.invalidateQueries({ queryKey: ['streamers'] });
-    },
-    onError: (error: any) =>
-      toast.error(error.message || i18n._(msg`Failed to delete streamer`)),
-  });
-
-  const toggleMutation = useMutation({
-    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
-      updateStreamer({ data: { id, data: { enabled } } }),
-    onSuccess: () => {
-      toast.success(i18n._(msg`Streamer updated`));
-      void queryClient.invalidateQueries({ queryKey: ['streamers'] });
-    },
-    onError: (error: any) =>
-      toast.error(error.message || i18n._(msg`Failed to update streamer`)),
-  });
+  const { handleDelete, handleToggle } = useStreamerMutations();
 
   const batchMutation = useBatchActionMutation({
     mutationFn: ({
@@ -307,33 +285,6 @@ function StreamersPage() {
     },
     [selectedIds, batchMutation],
   );
-
-  // Depend on the stable `mutate` reference (React Query returns a fresh
-  // result object every render, so depending on the mutation object would
-  // recreate these callbacks each render and defeat StreamerCard's memo).
-  const deleteMutate = deleteMutation.mutate;
-  const toggleMutate = toggleMutation.mutate;
-
-  // StreamerCard's menu asks for confirmation before calling this.
-  const handleDelete = useCallback(
-    (id: string) => deleteMutate(id),
-    [deleteMutate],
-  );
-
-  const handleToggle = useCallback(
-    (id: string, enabled: boolean) => toggleMutate({ id, enabled }),
-    [toggleMutate],
-  );
-
-  if (isError) {
-    return (
-      <div className="p-8 text-center text-destructive">
-        <p>
-          <Trans>Error loading streamers: {(error as any).message}</Trans>
-        </p>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen space-y-6">
@@ -664,7 +615,14 @@ function StreamersPage() {
             rendered, or loaded while hovering the link) shows at once rather
             than fading in from invisible; later swaps still animate. */}
         <AnimatePresence mode="wait" initial={false}>
-          {isLoading ? (
+          {isError && !streamersData ? (
+            <QueryError
+              key="error"
+              title={<Trans>Failed to load streamers</Trans>}
+              error={error}
+              onRetry={() => void refetch()}
+            />
+          ) : isLoading ? (
             <motion.div
               key="loading"
               initial={false}
@@ -711,34 +669,26 @@ function StreamersPage() {
               ))}
             </motion.div>
           ) : (
-            <motion.div
+            <PageEmptyState
               key="empty"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="flex flex-col items-center justify-center py-24 text-center space-y-6 border-2 border-dashed border-muted-foreground/20 rounded-2xl bg-muted/5"
-            >
-              <div className="p-6 bg-muted/10 rounded-full ring-1 ring-border/50">
-                <Users className="h-12 w-12 text-muted-foreground/50" />
-              </div>
-              <div className="space-y-2">
-                <h3 className="font-semibold text-xl">
-                  <Trans>No streamers found</Trans>
-                </h3>
-                <p className="text-muted-foreground max-w-sm mx-auto">
-                  <Trans>
-                    Try adjusting your search or filters, or add a new streamer
-                    to start monitoring.
-                  </Trans>
-                </p>
-              </div>
-              <Button
-                onClick={() => navigate({ to: '/streamers/new' })}
-                size="lg"
-              >
-                <Plus className="mr-2 h-5 w-5" />
-                <Trans>Add Streamer</Trans>
-              </Button>
-            </motion.div>
+              icon={Users}
+              title={<Trans>No streamers found</Trans>}
+              help={
+                <Trans>
+                  Try adjusting your search or filters, or add a new streamer to
+                  start monitoring.
+                </Trans>
+              }
+              action={
+                <Button
+                  onClick={() => navigate({ to: '/streamers/new' })}
+                  size="lg"
+                >
+                  <Plus className="mr-2 h-5 w-5" />
+                  <Trans>Add Streamer</Trans>
+                </Button>
+              }
+            />
           )}
         </AnimatePresence>
 
@@ -753,24 +703,10 @@ function StreamersPage() {
 
         <AnimatePresence>
           {!selectionMode && (
-            <motion.div
-              className="fixed bottom-8 right-8 z-50"
-              initial={{ scale: 0.93, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.93, opacity: 0 }}
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-            >
-              <Button
-                onClick={() => navigate({ to: '/streamers/new' })}
-                aria-label={i18n._(msg`Add Streamer`)}
-                title={i18n._(msg`Add Streamer`)}
-                size="icon"
-                className="h-14 w-14 rounded-full shadow-2xl bg-primary hover:bg-primary/90 text-primary-foreground flex items-center justify-center p-0"
-              >
-                <Plus className="h-6 w-6" />
-              </Button>
-            </motion.div>
+            <CreateFab
+              label={i18n._(msg`Add Streamer`)}
+              onClick={() => navigate({ to: '/streamers/new' })}
+            />
           )}
         </AnimatePresence>
       </div>

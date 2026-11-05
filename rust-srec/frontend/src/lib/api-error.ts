@@ -134,3 +134,8 @@ export function isDagAlreadyTerminalError(error: unknown): boolean {
   const { body } = error as Partial<BackendApiError>;
   return hasErrorCode(body, DAG_ALREADY_TERMINAL_CODE);
 }
+
+/** The message of a thrown error, or `fallback` when it carries none. */
+export function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
+}

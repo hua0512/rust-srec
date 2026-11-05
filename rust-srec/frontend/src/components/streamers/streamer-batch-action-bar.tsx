@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Gauge, LayoutTemplate, Pause, Play, Trash2 } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
@@ -14,17 +15,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import {
   Tooltip,
   TooltipContent,
@@ -56,6 +47,7 @@ export function StreamerBatchActionBar({
 }: StreamerBatchActionBarProps) {
   const { i18n } = useLingui();
   const commandsDisabled = selectedCount === 0 || isPending;
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   return (
     <BatchActionBar
@@ -188,50 +180,35 @@ export function StreamerBatchActionBar({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <AlertDialog>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                disabled={commandsDisabled}
-                className="rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive"
-                aria-label={i18n._(msg`Delete selected`)}
-              >
-                <Trash2 />
-              </Button>
-            </AlertDialogTrigger>
-          </TooltipTrigger>
-          <TooltipContent side="top">
-            <Trans>Delete selected</Trans>
-          </TooltipContent>
-        </Tooltip>
-        <AlertDialogContent className="rounded-2xl">
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              <Trans>Delete selected streamers?</Trans>
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              <Trans>
-                This will permanently delete {selectedCount} streamers. This
-                action cannot be undone.
-              </Trans>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel className="rounded-full">
-              <Trans>Cancel</Trans>
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => onAction({ type: 'delete' })}
-              className="rounded-full bg-destructive text-white hover:bg-destructive/90"
-            >
-              <Trans>Delete</Trans>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            disabled={commandsDisabled}
+            onClick={() => setDeleteOpen(true)}
+            className="rounded-full text-destructive hover:bg-destructive/10 hover:text-destructive"
+            aria-label={i18n._(msg`Delete selected`)}
+          >
+            <Trash2 />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="top">
+          <Trans>Delete selected</Trans>
+        </TooltipContent>
+      </Tooltip>
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title={<Trans>Delete selected streamers?</Trans>}
+        description={
+          <Trans>
+            This will permanently delete {selectedCount} streamers. This action
+            cannot be undone.
+          </Trans>
+        }
+        onConfirm={() => onAction({ type: 'delete' })}
+      />
     </BatchActionBar>
   );
 }

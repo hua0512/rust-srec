@@ -21,7 +21,7 @@ import {
 import { clampPageIndex, getPaginationPages } from '@/lib/pagination';
 import { cn } from '@/lib/utils';
 
-export const LIST_PAGE_SIZES = [12, 24, 48, 96] as const;
+const LIST_PAGE_SIZES = [12, 24, 48, 96] as const;
 
 interface ListPaginationProps {
   /** Zero-based index of the page on screen. */

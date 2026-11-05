@@ -128,7 +128,15 @@ export function PlayerCard({
   );
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [refreshFailed, setRefreshFailed] = useState(false);
+  // Keyed by the source it failed for, so a new source starts without the
+  // previous one's failure.
+  const [failedSource, setFailedSource] = useState<{
+    url: string;
+    streamData: unknown;
+  } | null>(null);
+  const refreshFailed =
+    failedSource?.url === url && failedSource.streamData === streamData;
+  const markRefreshFailed = () => setFailedSource({ url, streamData });
   const automaticRenewal = useRef(false);
   /** The renewal in flight, shared so only one runs at a time. */
   const renewal = useRef<Promise<void> | null>(null);
@@ -176,9 +184,6 @@ export function PlayerCard({
     return renewal.current;
   };
   useEffect(() => {
-    setRefreshFailed(false);
-  }, [url, streamData]);
-  useEffect(() => {
     if (playbackStatus === 'playing') automaticRenewal.current = false;
     if (
       !onRefreshSource ||
@@ -195,7 +200,7 @@ export function PlayerCard({
     )
       return;
     automaticRenewal.current = true;
-    void renew(onRefreshSource).catch(() => setRefreshFailed(true));
+    void renew(onRefreshSource).catch(() => markRefreshFailed());
   }, [playbackStatus, playbackError, streamData, onRefreshSource]);
   const error = refreshFailed ? 'resolution' : playbackError;
   const status = refreshing ? 'resolving' : error ? 'error' : playbackStatus;
@@ -212,16 +217,16 @@ export function PlayerCard({
       ? 'stream'
       : settingsTab;
   const retry = () => {
-    setRefreshFailed(false);
+    setFailedSource(null);
     reload();
   };
   const refreshSource = async () => {
     if (!onRefreshSource || refreshing) return;
-    setRefreshFailed(false);
+    setFailedSource(null);
     try {
       await renew(onRefreshSource);
     } catch {
-      setRefreshFailed(true);
+      markRefreshFailed();
     }
   };
   // The chat's handle is renewed with the stream, so a successful renewal
@@ -236,7 +241,7 @@ export function PlayerCard({
       }
     : undefined;
   const chooseConnection = (mode: ConnectionMode) => {
-    setRefreshFailed(false);
+    setFailedSource(null);
     setConnectionMode(mode);
   };
   let sourceLabel = '';

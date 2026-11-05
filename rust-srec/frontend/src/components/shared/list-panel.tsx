@@ -3,6 +3,7 @@ import { plural, t } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import type { UseQueryResult } from '@tanstack/react-query';
 import { AlertCircle, ChevronDown } from 'lucide-react';
+import { motion } from 'motion/react';
 import { Callout } from '@/components/shared/callout';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -51,7 +52,7 @@ export function ListPanel({
 }
 
 /** Placeholder rows shaped like a list row while the list loads. */
-export function ListPanelSkeleton() {
+function ListPanelSkeleton() {
   return (
     <ul aria-hidden="true" className="divide-y divide-border/50">
       {[0, 1].map((index) => (
@@ -68,27 +69,57 @@ export function ListPanelSkeleton() {
   );
 }
 
+interface EmptyStateProps {
+  icon: ElementType;
+  title: ReactNode;
+  help?: ReactNode;
+  action?: ReactNode;
+}
+
 /** What an empty list shows in place of its rows. */
 export function ListPanelEmpty({
   icon: Icon,
   title,
   help,
   action,
-}: {
-  icon: ElementType;
-  title: ReactNode;
-  help: ReactNode;
-  action?: ReactNode;
-}) {
+}: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center gap-1 px-4 py-8 text-center">
       <div className="mb-2 rounded-full bg-muted/60 p-3">
         <Icon className="size-5 text-muted-foreground" />
       </div>
       <p className="text-sm font-medium">{title}</p>
-      <p className="max-w-sm text-xs text-muted-foreground">{help}</p>
+      {help && <p className="max-w-sm text-xs text-muted-foreground">{help}</p>}
       {action && <div className="mt-3">{action}</div>}
     </div>
+  );
+}
+
+/**
+ * What a list page shows in place of its grid when nothing matches or nothing
+ * exists yet. Inside an `AnimatePresence` the caller gives it a `key`.
+ */
+export function PageEmptyState({
+  icon: Icon,
+  title,
+  help,
+  action,
+}: EmptyStateProps) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="flex flex-col items-center justify-center space-y-6 rounded-2xl border-2 border-dashed border-muted-foreground/20 bg-muted/5 px-4 py-32 text-center shadow-sm backdrop-blur-sm"
+    >
+      <div className="rounded-full bg-primary/5 p-6 ring-1 ring-primary/10">
+        <Icon className="h-16 w-16 text-primary/60" />
+      </div>
+      <div className="max-w-md space-y-2">
+        <h3 className="text-2xl font-semibold tracking-tight">{title}</h3>
+        {help && <p className="text-muted-foreground">{help}</p>}
+      </div>
+      {action}
+    </motion.div>
   );
 }
 

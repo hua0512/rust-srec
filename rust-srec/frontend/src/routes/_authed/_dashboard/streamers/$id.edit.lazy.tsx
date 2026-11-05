@@ -76,7 +76,7 @@ function EditStreamerPage() {
       void invalidateCredentialQueries(queryClient);
       void navigate({ to: '/streamers' });
     },
-    onError: (error: any) => {
+    onError: (error) => {
       toast.error(error.message || i18n._(msg`Failed to update streamer`));
     },
   });
@@ -90,7 +90,7 @@ function EditStreamerPage() {
         queryKey: ['streamers', id, 'filters'],
       });
     },
-    onError: (error: any) => {
+    onError: (error) => {
       toast.error(error.message || i18n._(msg`Failed to delete filter`));
     },
   });

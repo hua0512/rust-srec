@@ -40,7 +40,7 @@ const ICON_SETTINGS = `<svg ${ICON_ATTRS}><path d="M21 4h-7"/><path d="M10 4H3"/
  * thread. Yields `null` while loading, and also when the file is missing or
  * unreadable: the video then simply plays without danmu.
  */
-export function useDanmuTrack(url: string | undefined): DanmuTrack | null {
+function useDanmuTrack(url: string | undefined): DanmuTrack | null {
   const [loaded, setLoaded] = useState<{
     url: string;
     track: DanmuTrack;

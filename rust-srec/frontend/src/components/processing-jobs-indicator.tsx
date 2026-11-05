@@ -8,10 +8,8 @@ import { useShallow } from 'zustand/react/shallow';
 import { HeaderIndicator } from '@/components/header-indicator';
 import { JobProgressDetails } from '@/components/job-progress-details';
 import { Progress } from '@/components/ui/progress';
-import {
-  displayName,
-  StreamerAvatar,
-} from '@/components/upload-status-indicator';
+import { StreamerAvatar } from '@/components/shared/streamer-avatar';
+import { displayName, ROW_AVATAR } from '@/components/upload-status-indicator';
 import { useNow } from '@/hooks/use-now';
 import { formatLocalizedDuration } from '@/lib/date-utils';
 import { describeJobProgress, jobTypeLabel } from '@/lib/job-progress';
@@ -93,7 +91,12 @@ function JobRow({
       onClick={onNavigate}
       className="flex items-center gap-3 px-4 py-2 hover:bg-accent/60"
     >
-      <StreamerAvatar upload={job} name={name} />
+      <StreamerAvatar
+        src={job.streamerAvatar}
+        name={name}
+        className={ROW_AVATAR}
+        fallbackClassName="text-[10px]"
+      />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-3">
           <span

@@ -35,6 +35,7 @@ import {
 } from 'recharts';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { containerVariants, itemVariants } from '@/lib/animation';
+import { StatTile } from '@/components/shared/stat-tile';
 
 import type { SessionDanmuStatistics } from '@/api/schemas';
 import { Button } from '@/components/ui/button';
@@ -215,7 +216,7 @@ export function DanmuStatsPanel({
             <Skeleton className="h-20 rounded-xl" />
           </div>
           <Skeleton className="h-56 rounded-xl" />
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 @2xl:grid-cols-2">
             <Skeleton className="h-44 rounded-xl" />
             <Skeleton className="h-44 rounded-xl" />
           </div>
@@ -452,26 +453,26 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
             variants={containerVariants}
             className={cn(STAT_GRID, 'gap-3')}
           >
-            <MetricBlock
+            <StatTile
               icon={<MessageCircleMore className="h-4 w-4 text-blue-500" />}
               label={i18n._(msg`Total Danmu`)}
               value={stats.total_danmus.toLocaleString(locale)}
               hint={splitHint}
               accent="bg-blue-500/10"
             />
-            <MetricBlock
+            <StatTile
               icon={<Activity className="h-4 w-4 text-orange-500" />}
               label={i18n._(msg`Peak / min`)}
               value={peakPerMinute.toLocaleString(locale)}
               accent="bg-orange-500/10"
             />
-            <MetricBlock
+            <StatTile
               icon={<Users className="h-4 w-4 text-purple-500" />}
               label={i18n._(msg`Avg / min`)}
               value={averagePerMinute.toLocaleString(locale)}
               accent="bg-purple-500/10"
             />
-            <MetricBlock
+            <StatTile
               icon={<UsersRound className="h-4 w-4 text-emerald-500" />}
               label={i18n._(msg`Unique Chatters`)}
               value={
@@ -560,7 +561,7 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
           {/* ── Rank charts ─────────────────────────────────────── */}
           <motion.div
             variants={containerVariants}
-            className="grid grid-cols-1 gap-4 md:grid-cols-2"
+            className="grid grid-cols-1 gap-4 @2xl:grid-cols-2"
           >
             <RankBarChart
               icon={<Users className="h-3.5 w-3.5 text-purple-500" />}
@@ -619,7 +620,7 @@ function DanmuStatsPanelInner({ stats }: { stats: SessionDanmuStatistics }) {
           {hasGiftData && (
             <motion.div
               variants={containerVariants}
-              className="grid grid-cols-1 gap-4 md:grid-cols-2"
+              className="grid grid-cols-1 gap-4 @2xl:grid-cols-2"
             >
               <RankBarChart
                 icon={<Gift className="h-3.5 w-3.5 text-pink-500" />}
@@ -772,52 +773,3 @@ const RankBarChart = memo(function RankBarChart({
     </motion.div>
   );
 });
-
-// ---------------------------------------------------------------------------
-// MetricBlock
-// ---------------------------------------------------------------------------
-
-interface MetricBlockProps {
-  icon: ReactNode;
-  label: string;
-  value: string;
-  accent: string;
-  hint?: string;
-}
-
-function MetricBlock({ icon, label, value, accent, hint }: MetricBlockProps) {
-  return (
-    <motion.div
-      variants={itemVariants}
-      className="group relative overflow-hidden rounded-xl border border-border/50 bg-background/40 p-3 hover:bg-background/60 hover:border-border transition-colors"
-    >
-      <div
-        className={cn(
-          'absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300',
-          accent,
-        )}
-      />
-      <div className="relative">
-        <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-          <div
-            className={cn(
-              'h-6 w-6 rounded-md flex items-center justify-center shrink-0',
-              accent,
-            )}
-          >
-            {icon}
-          </div>
-          {label}
-        </div>
-        <p className="font-mono text-lg font-bold tracking-tight text-foreground">
-          {value}
-        </p>
-        {hint && (
-          <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-            {hint}
-          </p>
-        )}
-      </div>
-    </motion.div>
-  );
-}

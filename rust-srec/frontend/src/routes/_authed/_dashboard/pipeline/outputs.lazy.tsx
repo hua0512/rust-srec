@@ -1,4 +1,4 @@
-import { useCallback, useMemo, type ReactNode } from 'react';
+import { useCallback, useMemo } from 'react';
 import { createLazyFileRoute } from '@tanstack/react-router';
 import {
   useQuery,
@@ -23,25 +23,20 @@ import { Badge } from '@/components/ui/badge';
 import { SearchInput } from '@/components/shared/search-input';
 import { useUpdateSearch } from '@/hooks/use-update-search';
 import { DashboardHeader } from '@/components/shared/dashboard-header';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { containerVariants, itemVariants } from '@/lib/animation';
-import {
-  FileVideo,
-  AlertCircle,
-  Film,
-  ListChecks,
-  Layers,
-  type LucideIcon,
-} from 'lucide-react';
+import { FileVideo, Film, Layers } from 'lucide-react';
 import { OutputCard } from '@/components/pipeline/outputs/output-card';
 import { OutputBatchActionBar } from '@/components/pipeline/outputs/output-batch-action-bar';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
   useBatchActionMutation,
   useBatchSelection,
 } from '@/hooks/use-batch-selection';
 import { ListPagination } from '@/components/shared/list-pagination';
+import { PageEmptyState } from '@/components/shared/list-panel';
+import { FilterChip } from '@/components/shared/filter-pill';
+import { SelectModeButton } from '@/components/shared/page-actions';
+import { QueryError } from '@/components/shared/query-error';
 import {
   MEDIA_FILE_TYPE_ORDER,
   getMediaFileTypeMeta,
@@ -55,44 +50,6 @@ export const Route = createLazyFileRoute(
 )({
   component: PipelineOutputsPage,
 });
-
-/**
- * One pill in the file-type filter row, matching the pipeline jobs status
- * filter. `count` arrives pre-formatted and is omitted while the outputs
- * summary is still loading, so the pill never briefly claims zero.
- */
-function TypeFilterPill({
-  icon: Icon,
-  label,
-  count,
-  isActive,
-  onClick,
-}: {
-  icon: LucideIcon;
-  label: ReactNode;
-  count?: string;
-  isActive: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      aria-pressed={isActive}
-      className={cn(
-        'relative flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs sm:text-sm font-medium shadow-sm ring-1 transition-all duration-200',
-        isActive
-          ? 'bg-primary text-primary-foreground ring-primary'
-          : 'bg-background text-muted-foreground ring-border/50 hover:bg-muted hover:text-foreground',
-      )}
-    >
-      <Icon className="h-4 w-4" />
-      <span className="whitespace-nowrap">{label}</span>
-      {count !== undefined && (
-        <span className="tabular-nums opacity-70">{count}</span>
-      )}
-    </button>
-  );
-}
 
 function PipelineOutputsPage() {
   const { i18n } = useLingui();
@@ -119,6 +76,7 @@ function PipelineOutputsPage() {
     isPlaceholderData,
     isError,
     error,
+    refetch,
   } = useQuery({
     queryKey: [
       'pipeline',
@@ -273,22 +231,6 @@ function PipelineOutputsPage() {
     [updateSearch],
   );
 
-  if (isError) {
-    return (
-      <div className="space-y-8 p-6 md:p-10 max-w-7xl mx-auto">
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>
-            <Trans>Error</Trans>
-          </AlertTitle>
-          <AlertDescription>
-            <Trans>Failed to load outputs: {error.message}</Trans>
-          </AlertDescription>
-        </Alert>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen space-y-6">
       {/* Header */}
@@ -327,26 +269,16 @@ function PipelineOutputsPage() {
                 {formatBytes(filteredSize)}
               </Badge>
             )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={toggleSelectionMode}
-              aria-pressed={selectionMode}
-              aria-label={i18n._(msg`Select outputs`)}
-              className={cn(
-                'h-9 gap-2 whitespace-nowrap rounded-full px-3',
-                selectionMode &&
-                  'border-primary/50 bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary',
-              )}
-            >
-              <ListChecks className="h-4 w-4" />
-              <Trans>Select</Trans>
-            </Button>
+            <SelectModeButton
+              selectionMode={selectionMode}
+              onToggle={toggleSelectionMode}
+              label={i18n._(msg`Select outputs`)}
+            />
           </>
         }
       >
         <nav className="flex items-center gap-1.5">
-          <TypeFilterPill
+          <FilterChip
             icon={Layers}
             label={<Trans>All</Trans>}
             count={
@@ -360,7 +292,7 @@ function PipelineOutputsPage() {
             const meta = getMediaFileTypeMeta(fileType);
             const count = countsByType.get(fileType)?.count;
             return (
-              <TypeFilterPill
+              <FilterChip
                 key={fileType}
                 icon={meta.icon}
                 label={i18n._(meta.label)}
@@ -377,7 +309,14 @@ function PipelineOutputsPage() {
 
       <div className="p-4 md:px-8 pb-20 w-full">
         <AnimatePresence mode="wait">
-          {isLoading ? (
+          {isError && !outputsData ? (
+            <QueryError
+              key="error"
+              title={<Trans>Failed to load outputs</Trans>}
+              error={error}
+              onRetry={() => void refetch()}
+            />
+          ) : isLoading ? (
             <motion.div
               key="loading"
               initial={false}
@@ -432,35 +371,26 @@ function PipelineOutputsPage() {
               ))}
             </motion.div>
           ) : (
-            <motion.div
+            <PageEmptyState
               key="empty"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="flex flex-col items-center justify-center py-32 text-center space-y-6 border-2 border-dashed border-muted-foreground/20 rounded-2xl bg-muted/5 backdrop-blur-sm shadow-sm"
-            >
-              <div className="p-6 bg-primary/5 rounded-full ring-1 ring-primary/10">
-                <FileVideo className="h-16 w-16 text-primary/60" />
-              </div>
-              <div className="space-y-2 max-w-md">
-                <h3 className="font-semibold text-2xl tracking-tight">
-                  {debouncedSearch || selectedFormat ? (
-                    <Trans>No outputs found</Trans>
-                  ) : (
-                    <Trans>No media outputs yet</Trans>
-                  )}
-                </h3>
-                <p className="text-muted-foreground">
-                  {debouncedSearch || selectedFormat ? (
-                    <Trans>Try adjusting your search or filters.</Trans>
-                  ) : (
-                    <Trans>
-                      Media outputs will appear here when pipeline jobs
-                      complete.
-                    </Trans>
-                  )}
-                </p>
-              </div>
-            </motion.div>
+              icon={FileVideo}
+              title={
+                debouncedSearch || selectedFormat ? (
+                  <Trans>No outputs found</Trans>
+                ) : (
+                  <Trans>No media outputs yet</Trans>
+                )
+              }
+              help={
+                debouncedSearch || selectedFormat ? (
+                  <Trans>Try adjusting your search or filters.</Trans>
+                ) : (
+                  <Trans>
+                    Media outputs will appear here when pipeline jobs complete.
+                  </Trans>
+                )
+              }
+            />
           )}
         </AnimatePresence>
 

@@ -7,6 +7,7 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { PresetEditor } from '@/components/pipeline/presets/preset-editor';
 import { Skeleton } from '@/components/ui/skeleton';
+import { DetailLoadError } from '@/components/shared/detail-page';
 
 export const Route = createLazyFileRoute(
   '/_authed/_dashboard/pipeline/presets/$presetId',
@@ -54,12 +55,15 @@ function EditPresetPage() {
           <Skeleton className="h-10 w-1/3" />
           <Skeleton className="h-6 w-1/2" />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
-          <div className="md:col-span-4">
-            <Skeleton className="h-[400px] w-full rounded-xl" />
-          </div>
-          <div className="md:col-span-8">
-            <Skeleton className="h-[600px] w-full rounded-xl" />
+        {/* Mirrors the editor's columns, which follow its own width. */}
+        <div className="@container">
+          <div className="grid grid-cols-1 @3xl:grid-cols-12 gap-6 @3xl:gap-8">
+            <div className="@3xl:col-span-4">
+              <Skeleton className="h-[400px] w-full rounded-xl" />
+            </div>
+            <div className="@3xl:col-span-8">
+              <Skeleton className="h-[600px] w-full rounded-xl" />
+            </div>
           </div>
         </div>
       </div>
@@ -68,14 +72,15 @@ function EditPresetPage() {
 
   if (error || !preset) {
     return (
-      <div className="flex flex-col items-center justify-center p-20 text-center">
-        <h3 className="text-xl font-bold text-destructive">
-          <Trans>Error loading preset</Trans>
-        </h3>
-        <p className="text-muted-foreground mt-2">
-          {error?.message || i18n._(msg`Preset not found`)}
-        </p>
-      </div>
+      <DetailLoadError
+        title={<Trans>Error loading preset</Trans>}
+        error={error}
+        notFound={<Trans>Preset not found</Trans>}
+        back={{
+          to: '/pipeline/presets',
+          label: <Trans>Back to presets</Trans>,
+        }}
+      />
     );
   }
 

@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { StreamerSchema } from '../../api/schemas';
 import { z } from 'zod';
 import { CardHeader } from '../ui/card';
@@ -15,7 +15,11 @@ import { useDownloadStore } from '@/store/downloads';
 import { useUploadStore } from '@/store/uploads';
 import { Check } from 'lucide-react';
 import { UploadIndicator } from './card/upload-indicator';
-import { hasStrongRecoverySignal } from './card/recovery-state';
+import {
+  hasStrongRecoverySignal,
+  monitoringState,
+} from './card/recovery-state';
+import { useHydrated } from '@/hooks/use-hydrated';
 
 interface StreamerCardProps {
   streamer: z.infer<typeof StreamerSchema>;
@@ -59,10 +63,21 @@ export const StreamerCard = memo(
       (state) => state.getActiveUploadsByStreamer(streamer.id).length > 0,
     );
 
+    const hydrated = useHydrated();
+    const monitoring = useMemo(
+      () =>
+        monitoringState(
+          streamer,
+          hasRecoverySignal,
+          hydrated ? new Date() : null,
+        ),
+      [streamer, hasRecoverySignal, hydrated],
+    );
+
     const status = useStreamerStatus(
       streamer,
+      monitoring,
       activeDownloadId !== undefined,
-      hasRecoverySignal,
       queuedEntry,
     );
 
@@ -132,7 +147,14 @@ export const StreamerCard = memo(
 
               <StreamAvatarInfo
                 streamer={streamer}
-                hasRecoverySignal={hasRecoverySignal}
+                // The status badge already explains a paused, recovering,
+                // stopped or missing streamer's failures.
+                showErrorCount={
+                  !monitoring.isTemporarilyPaused &&
+                  !monitoring.isRecovering &&
+                  !monitoring.stopState &&
+                  streamer.state !== 'NOT_FOUND'
+                }
               />
 
               {/* Download progress indicator */}

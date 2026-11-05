@@ -1,9 +1,10 @@
 import { createLazyFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
-import { useMemo, useState, useSyncExternalStore } from 'react';
+import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
+import { useHydrated } from '@/hooks/use-hydrated';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
@@ -20,6 +21,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SettingsCard } from '@/components/config/settings-card';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { QueryError } from '@/components/shared/query-error';
 import {
   CONFIG_INPUT,
@@ -37,16 +39,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -121,7 +113,7 @@ function ApiKeysPage() {
       toast.success(i18n._(msg`API key revoked`));
       void queryClient.invalidateQueries({ queryKey: ['auth', 'api-keys'] });
     },
-    onError: (error: any) => {
+    onError: (error) => {
       toast.error(error.message || i18n._(msg`Failed to revoke API key`));
     },
   });
@@ -300,38 +292,21 @@ function ApiKeysPage() {
         }
       />
 
-      <AlertDialog
+      <ConfirmDialog
         open={revokeTarget !== null}
         onOpenChange={(open) => !open && setRevokeTarget(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              <Trans>Revoke API key?</Trans>
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              <Trans>
-                "{revokeTarget?.name}" will stop working immediately. This
-                cannot be undone.
-              </Trans>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>
-              <Trans>Cancel</Trans>
-            </AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => {
-                if (revokeTarget) revokeMutation.mutate(revokeTarget.id);
-                setRevokeTarget(null);
-              }}
-            >
-              <Trans>Revoke</Trans>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title={<Trans>Revoke API key?</Trans>}
+        description={
+          <Trans>
+            "{revokeTarget?.name}" will stop working immediately. This cannot be
+            undone.
+          </Trans>
+        }
+        confirmLabel={<Trans>Revoke</Trans>}
+        onConfirm={() => {
+          if (revokeTarget) revokeMutation.mutate(revokeTarget.id);
+        }}
+      />
     </motion.div>
   );
 }
@@ -367,7 +342,7 @@ function CreateApiKeyDialog({
       setCreatedKey(response.api_key);
       onCreated();
     },
-    onError: (error: any) => {
+    onError: (error) => {
       toast.error(error.message || i18n._(msg`Failed to create API key`));
     },
   });
@@ -538,22 +513,16 @@ function CreateApiKeyDialog({
   );
 }
 
-const subscribeNever = () => () => {};
-const getMcpUrl = () =>
-  new URL(getApiEndpointUrl('/mcp'), window.location.origin).toString();
-const getServerMcpUrl = () => '';
-
 function McpQuickStart() {
   const { i18n } = useLingui();
   const { copy, copied } = useCopyToClipboard();
 
   // Only the browser knows the address it reached the app on, so the server
   // and the hydrating render show an empty URL and the address follows.
-  const mcpUrl = useSyncExternalStore(
-    subscribeNever,
-    getMcpUrl,
-    getServerMcpUrl,
-  );
+  const hydrated = useHydrated();
+  const mcpUrl = hydrated
+    ? new URL(getApiEndpointUrl('/mcp'), window.location.origin).toString()
+    : '';
 
   const configSnippet = useMemo(
     () =>

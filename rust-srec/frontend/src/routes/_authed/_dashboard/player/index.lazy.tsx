@@ -31,6 +31,8 @@ import { msg } from '@lingui/core/macro';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
+import { AmbientBackground } from '@/components/shared/detail-page';
+import { CreateFab } from '@/components/shared/page-actions';
 import {
   selectInitialStream,
   renewalNeedsNewParse,
@@ -64,27 +66,39 @@ interface PlayerInstance {
   volume: number;
 }
 
+/** What a parse was asked with, kept so the source can be parsed again. */
+interface ParseRequest {
+  cookies?: string;
+  credential_id?: string;
+}
+
+function makePlayer(
+  id: string,
+  title: string,
+  request: ParseRequest,
+  response: ParseUrlResponse,
+  currentStream: StreamOption,
+): PlayerInstance {
+  return {
+    id,
+    currentStream,
+    title,
+    headers: request.cookies ? { Cookie: request.cookies } : undefined,
+    credentialId: request.credential_id,
+    response,
+    muted: false,
+    volume: 0.5,
+  };
+}
+
 function PlayerPage() {
   const { i18n } = useLingui();
   const [players, setPlayers] = useState<PlayerInstance[]>([]);
   const [isImmersive, setIsImmersive] = useState(false);
   const [isAddStreamOpen, setIsAddStreamOpen] = useState(false);
-  const [isParsing, setIsParsing] = useState(false);
 
   const { url } = Route.useSearch();
   const autoPlayProcessed = useRef<string | null>(null);
-
-  // Auto-play from URL parameter
-  useEffect(() => {
-    if (
-      url &&
-      !players.some((p) => p.title === url) &&
-      autoPlayProcessed.current !== url
-    ) {
-      autoPlayProcessed.current = url;
-      parseSingleMutation.mutate({ url });
-    }
-  }, [url]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -95,13 +109,7 @@ function PlayerPage() {
   }, []);
 
   const parseSingleMutation = useMutation({
-    mutationFn: (data: {
-      url: string;
-      cookies?: string;
-      credential_id?: string;
-    }) => parseUrl({ data }),
-    onMutate: () => setIsParsing(true),
-    onSettled: () => setIsParsing(false),
+    mutationFn: (data: ParseRequest & { url: string }) => parseUrl({ data }),
     onSuccess: (response, variables) => {
       if (players.some((p) => p.title === variables.url)) {
         toast.warning(i18n._(msg`This stream is already active`));
@@ -111,18 +119,13 @@ function PlayerPage() {
       if (response.success && parsedMedia(response)) {
         const firstStream = selectInitialStream(parsedMedia(response));
         if (firstStream) {
-          const newPlayer: PlayerInstance = {
-            id: Date.now().toString(),
-            currentStream: firstStream,
-            title: variables.url,
-            headers: variables.cookies
-              ? { Cookie: variables.cookies }
-              : undefined,
-            credentialId: variables.credential_id,
+          const newPlayer = makePlayer(
+            Date.now().toString(),
+            variables.url,
+            variables,
             response,
-            muted: false,
-            volume: 0.5,
-          };
+            firstStream,
+          );
           setPlayers((prev) => [...prev, newPlayer]);
           toast.success(i18n._(msg`Stream parsed successfully`));
         } else {
@@ -142,11 +145,7 @@ function PlayerPage() {
   });
 
   const parseBatchMutation = useMutation({
-    mutationFn: (data: {
-      urls: string[];
-      cookies?: string;
-      credential_id?: string;
-    }) => {
+    mutationFn: (data: ParseRequest & { urls: string[] }) => {
       const requests = data.urls.map((url) => ({
         url,
         cookies: data.cookies,
@@ -154,8 +153,6 @@ function PlayerPage() {
       }));
       return parseUrlBatch({ data: requests });
     },
-    onMutate: () => setIsParsing(true),
-    onSettled: () => setIsParsing(false),
     onSuccess: (responses, variables) => {
       const newPlayers: PlayerInstance[] = [];
       let skippedCount = 0;
@@ -176,18 +173,15 @@ function PlayerPage() {
         if (response.success && parsedMedia(response)) {
           const firstStream = selectInitialStream(parsedMedia(response));
           if (firstStream) {
-            newPlayers.push({
-              id: `${Date.now()}-${index}`,
-              currentStream: firstStream,
-              title: url || `Stream ${index + 1}`,
-              headers: variables.cookies
-                ? { Cookie: variables.cookies }
-                : undefined,
-              credentialId: variables.credential_id,
-              response,
-              muted: false,
-              volume: 0.5,
-            });
+            newPlayers.push(
+              makePlayer(
+                `${Date.now()}-${index}`,
+                url || `Stream ${index + 1}`,
+                variables,
+                response,
+                firstStream,
+              ),
+            );
           }
         }
       });
@@ -215,6 +209,19 @@ function PlayerPage() {
       );
     },
   });
+
+  // Auto-play from URL parameter
+  const parseSingle = parseSingleMutation.mutate;
+  useEffect(() => {
+    if (
+      url &&
+      !players.some((p) => p.title === url) &&
+      autoPlayProcessed.current !== url
+    ) {
+      autoPlayProcessed.current = url;
+      parseSingle({ url });
+    }
+  }, [url, players, parseSingle]);
 
   const handleRemovePlayer = useCallback((id: string) => {
     setPlayers((prev) => prev.filter((p) => p.id !== id));
@@ -285,7 +292,8 @@ function PlayerPage() {
     [],
   );
 
-  const isLoading = isParsing;
+  const isLoading =
+    parseSingleMutation.isPending || parseBatchMutation.isPending;
 
   const playerGrid = (
     <motion.div
@@ -336,11 +344,7 @@ function PlayerPage() {
 
   return (
     <div className="relative min-h-screen overflow-x-hidden selection:bg-primary/20">
-      {/* Background Decoration */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 right-0 -mt-20 -mr-20 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[120px]" />
-        <div className="absolute bottom-0 left-0 -mb-40 -ml-20 w-[600px] h-[600px] bg-blue-500/5 rounded-full blur-[120px]" />
-      </div>
+      <AmbientBackground />
 
       <div className="relative z-10 full-width px-6 py-8 pb-32">
         {/* Header */}
@@ -450,24 +454,10 @@ function PlayerPage() {
         {/* FAB */}
         <AnimatePresence>
           {!isImmersive && players.length > 0 && (
-            <motion.div
-              initial={{ scale: 0.93, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.93, opacity: 0 }}
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              className="fixed bottom-8 right-8 z-50"
-            >
-              <Button
-                onClick={() => setIsAddStreamOpen(true)}
-                aria-label={i18n._(msg`Add Stream`)}
-                title={i18n._(msg`Add Stream`)}
-                size="icon"
-                className="h-16 w-16 rounded-full shadow-2xl bg-primary hover:bg-primary/90 text-primary-foreground flex items-center justify-center p-0 ring-4 ring-background/50 backdrop-blur-sm"
-              >
-                <Plus className="h-8 w-8" />
-              </Button>
-            </motion.div>
+            <CreateFab
+              label={i18n._(msg`Add Stream`)}
+              onClick={() => setIsAddStreamOpen(true)}
+            />
           )}
         </AnimatePresence>
 

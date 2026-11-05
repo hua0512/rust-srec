@@ -138,7 +138,7 @@ export function StreamerEditor({
         return;
       }
       setStage(2);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Failed to extract metadata:', error);
       toast.error(i18n._(msg`Failed to check this link. Please try again.`));
     } finally {

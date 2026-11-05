@@ -14,13 +14,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Progress } from '@/components/ui/progress';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
-  ArrowLeft,
   RefreshCw,
   CheckCircle2,
   XCircle,
-  AlertCircle,
   Calendar,
   ArrowRight,
   StopCircle,
@@ -38,6 +35,11 @@ import { cn } from '@/lib/utils';
 import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
 import { type DagStep } from '@/api/schemas';
 import { isNotFoundError } from '@/lib/api-error';
+import {
+  AmbientBackground,
+  BackLink,
+  DetailLoadError,
+} from '@/components/shared/detail-page';
 import {
   getStatusConfig,
   getStatusLabel,
@@ -129,28 +131,15 @@ function PipelineExecutionPage() {
   // reached before any check that only tests for missing data.
   if (error || !dag) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6">
-        <Alert
-          variant="destructive"
-          className="max-w-lg shadow-2xl bg-background/95 backdrop-blur-xl border-destructive/20"
-        >
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>
-            <Trans>Error Loading Pipeline</Trans>
-          </AlertTitle>
-          <AlertDescription>
-            {error?.message || i18n._(msg`Pipeline not found`)}
-          </AlertDescription>
-          <Button
-            variant="outline"
-            className="mt-4 w-full"
-            onClick={() => window.history.back()}
-          >
-            <ArrowLeft className="mr-2 h-4 w-4" />{' '}
-            <Trans>Return Previous Page</Trans>
-          </Button>
-        </Alert>
-      </div>
+      <DetailLoadError
+        title={<Trans>Error Loading Pipeline</Trans>}
+        error={error}
+        notFound={<Trans>Pipeline not found</Trans>}
+        back={{
+          to: '/pipeline/jobs',
+          label: <Trans>Back to Pipeline Jobs</Trans>,
+        }}
+      />
     );
   }
 
@@ -162,34 +151,15 @@ function PipelineExecutionPage() {
 
   return (
     <div className="relative min-h-screen overflow-hidden selection:bg-primary/20">
-      {/* Background Decoration */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-0 right-0 -mt-20 -mr-20 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[120px]" />
-        <div className="absolute top-1/2 left-0 -translate-y-1/2 -ml-20 w-[400px] h-[400px] bg-purple-500/5 rounded-full blur-[100px]" />
-        <div className="absolute bottom-0 right-1/4 -mb-40 w-[600px] h-[600px] bg-blue-500/5 rounded-full blur-[120px]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(120,119,198,0.05),rgba(255,255,255,0))]" />
-      </div>
+      <AmbientBackground />
 
       <div className="@container relative z-10 max-w-7xl mx-auto px-4 sm:px-6 py-8 pb-32">
         {/* Navigation & Header */}
         <div className="flex flex-col gap-6 sm:gap-8 mb-8 sm:mb-12">
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="flex items-center gap-2"
-          >
-            <Button
-              variant="ghost"
-              size="sm"
-              asChild
-              className="group text-muted-foreground hover:text-foreground hover:bg-transparent px-0"
-            >
-              <Link to="/pipeline/jobs" className="flex items-center">
-                <ArrowLeft className="mr-2 h-4 w-4 transition-transform group-hover:-translate-x-1" />
-                <Trans>Back to Pipeline Jobs</Trans>
-              </Link>
-            </Button>
-          </motion.div>
+          <BackLink
+            to="/pipeline/jobs"
+            label={<Trans>Back to Pipeline Jobs</Trans>}
+          />
 
           <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
             <motion.div

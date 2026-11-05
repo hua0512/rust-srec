@@ -23,7 +23,13 @@ import {
 } from 'lucide-react';
 
 import { JsonViewer, prettyJson } from '@/components/shared/json-viewer';
-import { EventCard } from '@/components/notifications/events/event-card';
+import {
+  EventCard,
+  type NotificationEvent,
+} from '@/components/notifications/events/event-card';
+import { FILTER_PILL_GROUP, FilterPill } from '@/components/shared/filter-pill';
+import { PageEmptyState } from '@/components/shared/list-panel';
+import { QueryError } from '@/components/shared/query-error';
 
 import { listEvents, listEventTypes } from '@/server/functions/notifications';
 import { Button } from '@/components/ui/button';
@@ -66,8 +72,6 @@ export const Route = createLazyFileRoute(
 )({
   component: NotificationEventsPage,
 });
-
-// Redundant local components removed, now imported from components.
 
 function NotificationEventsPage() {
   const { i18n } = useLingui();
@@ -246,7 +250,7 @@ function NotificationEventsPage() {
   );
 
   const handleViewDetails = useCallback(
-    (event: any) => {
+    (event: NotificationEvent) => {
       setSelectedPayload({
         title: `${i18n._(eventTypeLabel(event.event_type))} (${i18n._(priorityLabel(event.priority))})`,
         payload: event.payload,
@@ -257,41 +261,6 @@ function NotificationEventsPage() {
 
   const hasMore = (events?.length ?? 0) >= limit;
   const hasPrev = page > 1;
-
-  if (error) {
-    return (
-      <div className="p-4 md:p-8 space-y-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 rounded-xl bg-linear-to-br from-primary/20 to-primary/5 ring-1 ring-primary/10">
-            <Bell className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-xl font-semibold tracking-tight">
-              <Trans>Notification Events</Trans>
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              <Trans>Recent notification events persisted by the backend</Trans>
-            </p>
-          </div>
-        </div>
-
-        <div className="rounded-xl border p-4 text-sm">
-          <div className="font-medium">
-            <Trans>Failed to load events</Trans>
-          </div>
-          <div className="text-muted-foreground">
-            {(error as any)?.message || i18n._(msg`Unknown error`)}
-          </div>
-          <div className="mt-3">
-            <Button variant="outline" onClick={() => refetch()}>
-              <RefreshCw className="mr-2 h-4 w-4" />
-              <Trans>Try Again</Trans>
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen space-y-6 bg-linear-to-br from-background via-background to-muted/20">
@@ -312,35 +281,18 @@ function NotificationEventsPage() {
 
             <div className="h-6 w-px bg-border/50 mx-1 shrink-0" />
 
-            <div className="flex items-center bg-muted/30 p-1 rounded-full border border-border/50 shrink-0">
-              {priorityFilters.map((filter) => {
-                const Icon = filter.icon;
-                const isActive = priority === filter.value;
-                return (
-                  <button
-                    key={filter.value}
-                    type="button"
-                    aria-pressed={isActive}
-                    onClick={() => handleSetPriority(filter.value)}
-                    className={cn(
-                      'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200',
-                      isActive
-                        ? 'bg-background text-foreground shadow-sm ring-1 ring-border/50'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
-                    )}
-                  >
-                    <Icon
-                      className={cn(
-                        'h-3 w-3',
-                        isActive
-                          ? filter.color || 'text-primary'
-                          : 'text-muted-foreground',
-                      )}
-                    />
-                    <span>{filter.label}</span>
-                  </button>
-                );
-              })}
+            <div className={FILTER_PILL_GROUP}>
+              {priorityFilters.map((filter) => (
+                <FilterPill
+                  key={filter.value}
+                  icon={filter.icon}
+                  activeIconClassName={filter.color}
+                  isActive={priority === filter.value}
+                  onClick={() => handleSetPriority(filter.value)}
+                >
+                  {filter.label}
+                </FilterPill>
+              ))}
             </div>
 
             <div className="h-6 w-px bg-border/50 mx-1 shrink-0" />
@@ -427,7 +379,14 @@ function NotificationEventsPage() {
 
       <div className="p-4 md:px-8 pb-20 space-y-4">
         <AnimatePresence mode="wait">
-          {isLoading ? (
+          {error && !rawEvents ? (
+            <QueryError
+              key="error"
+              title={<Trans>Failed to load events</Trans>}
+              error={error}
+              onRetry={() => void refetch()}
+            />
+          ) : isLoading ? (
             <motion.div
               key="loading"
               initial={false}
@@ -444,24 +403,12 @@ function NotificationEventsPage() {
               ))}
             </motion.div>
           ) : (events ?? []).length === 0 ? (
-            <motion.div
+            <PageEmptyState
               key="empty"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="flex flex-col items-center justify-center py-20 text-center space-y-4 border-2 border-dashed rounded-3xl bg-muted/5"
-            >
-              <div className="p-4 bg-muted/20 rounded-full">
-                <Bell className="h-10 w-10 text-muted-foreground/40" />
-              </div>
-              <div className="space-y-1">
-                <h3 className="font-medium text-lg">
-                  <Trans>No events found</Trans>
-                </h3>
-                <p className="text-sm text-muted-foreground">
-                  <Trans>Try adjusting your filters or limit</Trans>
-                </p>
-              </div>
-            </motion.div>
+              icon={Bell}
+              title={<Trans>No events found</Trans>}
+              help={<Trans>Try adjusting your filters or limit</Trans>}
+            />
           ) : (
             <motion.div
               key="list"

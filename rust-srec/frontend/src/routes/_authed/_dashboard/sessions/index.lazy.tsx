@@ -16,8 +16,6 @@ import {
   CheckCircle2,
   CalendarDays,
   X,
-  CheckSquare,
-  Trash2,
   LayoutGrid,
   RefreshCcw,
   SearchX,
@@ -26,10 +24,12 @@ import { Trans } from '@lingui/react/macro';
 import { msg, plural } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { ListPagination } from '@/components/shared/list-pagination';
-import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { PageEmptyState } from '@/components/shared/list-panel';
+import { SelectModeButton } from '@/components/shared/page-actions';
+import { SessionBatchActionBar } from '@/components/sessions/session-batch-action-bar';
 import { QueryError } from '@/components/shared/query-error';
 import { cn } from '@/lib/utils';
-import { FAB_ANCHOR } from '@/components/shared/save-fab';
+import { FILTER_PILL_GROUP, FilterPill } from '@/components/shared/filter-pill';
 import {
   Popover,
   PopoverContent,
@@ -37,7 +37,7 @@ import {
 } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { Button } from '@/components/ui/button';
-import { motion, AnimatePresence } from 'motion/react';
+import { AnimatePresence } from 'motion/react';
 import { DashboardHeader } from '@/components/shared/dashboard-header';
 import { SearchInput } from '@/components/shared/search-input';
 import { useUpdateSearch } from '@/hooks/use-update-search';
@@ -67,7 +67,6 @@ function SessionsPage() {
   const queryClient = useQueryClient();
   const { i18n } = useLingui();
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
-  const [confirmBatchDelete, setConfirmBatchDelete] = useState(false);
 
   // Calculate dates based on timeRange or use custom dates
   const { from_date, to_date } = useMemo(() => {
@@ -208,6 +207,7 @@ function SessionsPage() {
   const {
     selectionMode,
     selectedIds,
+    allPageSelected,
     handleSelectionChange,
     selectPage,
     clearSelection,
@@ -247,8 +247,6 @@ function SessionsPage() {
     },
   });
 
-  const selectedCount = selectedIds.size;
-
   return (
     <div className="min-h-screen space-y-6 bg-gradient-to-br from-background via-background to-muted/20">
       {/* Header */}
@@ -271,66 +269,45 @@ function SessionsPage() {
             <div className="hidden sm:block h-6 w-px bg-border/50 mx-1 shrink-0" />
 
             {/* Status Pills */}
-            <div className="flex items-center bg-muted/30 p-1 rounded-full border border-border/50 shrink-0">
-              {statusFilters.map((filter) => {
-                const Icon = filter.icon;
-                const isActive = currentStatus === filter.value;
-                return (
-                  <button
-                    key={filter.value}
-                    type="button"
-                    aria-pressed={isActive}
-                    onClick={() =>
-                      updateSearch({ status: filter.value, page: undefined })
-                    }
-                    className={cn(
-                      'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200',
-                      isActive
-                        ? 'bg-background text-foreground shadow-sm ring-1 ring-border/50'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
-                    )}
-                  >
-                    <Icon
-                      className={cn(
-                        'h-3 w-3',
-                        isActive ? 'text-primary' : 'text-muted-foreground',
-                      )}
-                    />
-                    <span>{filter.label}</span>
-                  </button>
-                );
-              })}
+            <div className={FILTER_PILL_GROUP}>
+              {statusFilters.map((filter) => (
+                <FilterPill
+                  key={filter.value}
+                  icon={filter.icon}
+                  isActive={currentStatus === filter.value}
+                  onClick={() =>
+                    updateSearch({ status: filter.value, page: undefined })
+                  }
+                >
+                  {filter.label}
+                </FilterPill>
+              ))}
             </div>
 
             {/* Time Range: wider than a phone, so it scrolls rather than widening the page. */}
-            <div className="flex max-w-full items-center overflow-x-auto no-scrollbar bg-muted/30 p-1 rounded-full border border-border/50 shrink-0 [&>*]:shrink-0">
+            <div
+              className={cn(
+                FILTER_PILL_GROUP,
+                'max-w-full overflow-x-auto no-scrollbar [&>*]:shrink-0',
+              )}
+            >
               <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                {/* A popover trigger reports its state through aria-expanded
+                    rather than aria-pressed. */}
                 <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className={cn(
-                      'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200',
-                      currentTimeRange === 'custom' || dateRange?.from
-                        ? 'bg-background text-foreground shadow-sm ring-1 ring-border/50'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
-                    )}
+                  <FilterPill
+                    icon={CalendarDays}
+                    aria-pressed={undefined}
+                    isActive={
+                      currentTimeRange === 'custom' || Boolean(dateRange.from)
+                    }
                   >
-                    <CalendarDays
-                      className={cn(
-                        'h-3 w-3',
-                        currentTimeRange === 'custom' || dateRange?.from
-                          ? 'text-primary'
-                          : 'text-muted-foreground',
-                      )}
-                    />
-                    <span>
-                      {dateRange?.from
-                        ? dateRange.to
-                          ? `${formatDate(i18n.locale, dateRange.from, SHORT_DATE)} - ${formatDate(i18n.locale, dateRange.to, SHORT_DATE)} `
-                          : formatDate(i18n.locale, dateRange.from, SHORT_DATE)
-                        : i18n._(msg`Custom`)}
-                    </span>
-                  </button>
+                    {dateRange.from
+                      ? dateRange.to
+                        ? `${formatDate(i18n.locale, dateRange.from, SHORT_DATE)} - ${formatDate(i18n.locale, dateRange.to, SHORT_DATE)}`
+                        : formatDate(i18n.locale, dateRange.from, SHORT_DATE)
+                      : i18n._(msg`Custom`)}
+                  </FilterPill>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="end">
                   <Calendar
@@ -363,32 +340,22 @@ function SessionsPage() {
                 </PopoverContent>
               </Popover>
 
-              {timeFilters.map((filter) => {
-                const isActive = currentTimeRange === filter.value;
-                return (
-                  <button
-                    key={filter.value}
-                    type="button"
-                    aria-pressed={isActive}
-                    onClick={() =>
-                      updateSearch({
-                        timeRange: filter.value,
-                        from: undefined,
-                        to: undefined,
-                        page: undefined,
-                      })
-                    }
-                    className={cn(
-                      'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 whitespace-nowrap',
-                      isActive
-                        ? 'bg-background text-foreground shadow-sm ring-1 ring-border/50'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50',
-                    )}
-                  >
-                    <span>{filter.label}</span>
-                  </button>
-                );
-              })}
+              {timeFilters.map((filter) => (
+                <FilterPill
+                  key={filter.value}
+                  isActive={currentTimeRange === filter.value}
+                  onClick={() =>
+                    updateSearch({
+                      timeRange: filter.value,
+                      from: undefined,
+                      to: undefined,
+                      page: undefined,
+                    })
+                  }
+                >
+                  {filter.label}
+                </FilterPill>
+              ))}
             </div>
 
             {hasActiveFilters && (
@@ -403,130 +370,15 @@ function SessionsPage() {
                 <X className="h-4 w-4" />
               </Button>
             )}
+
+            <SelectModeButton
+              selectionMode={selectionMode}
+              onToggle={toggleSelectionMode}
+              label={i18n._(msg`Select sessions`)}
+            />
           </>
         }
       />
-
-      {/* Selection FAB */}
-      <div className={cn(FAB_ANCHOR, 'flex flex-col items-end gap-3')}>
-        {/* Expanded action bar — shown when selection mode is active */}
-        <AnimatePresence>
-          {selectionMode && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.8, y: 20 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-              className="flex items-center gap-1.5 rounded-full border border-border/50 bg-card/95 backdrop-blur-xl shadow-[0_8px_40px_rgba(0,0,0,0.2)] p-1.5"
-            >
-              {/* Count badge */}
-              <motion.div
-                key={selectedIds.size}
-                initial={{ scale: 0.8 }}
-                animate={{ scale: 1 }}
-                className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-primary/10 border border-primary/20"
-              >
-                <motion.span
-                  key={selectedIds.size}
-                  initial={{ y: -8, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  className="text-sm font-bold tabular-nums text-primary"
-                >
-                  {selectedIds.size}
-                </motion.span>
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-primary/70 hidden sm:inline">
-                  <Trans>Selected</Trans>
-                </span>
-              </motion.div>
-
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={selectPage}
-                className="h-8 px-3 text-xs font-medium rounded-full hover:bg-muted/80 text-muted-foreground"
-              >
-                <Trans>All</Trans>
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={clearSelection}
-                disabled={selectedIds.size === 0}
-                className="h-8 px-3 text-xs font-medium rounded-full hover:bg-muted/80 text-muted-foreground"
-              >
-                <Trans>None</Trans>
-              </Button>
-
-              <div className="h-5 w-px bg-border/50" />
-
-              <motion.div whileTap={{ scale: 0.92 }}>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => setConfirmBatchDelete(true)}
-                  disabled={
-                    selectedCount === 0 || batchDeleteMutation.isPending
-                  }
-                  className="h-9 px-4 rounded-full text-xs font-semibold gap-1.5 disabled:opacity-40"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">
-                    <Trans>Delete</Trans>
-                  </span>
-                </Button>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* FAB toggle button */}
-        <motion.button
-          type="button"
-          onClick={toggleSelectionMode}
-          aria-label={
-            selectionMode
-              ? i18n._(msg`Exit selection mode`)
-              : i18n._(msg`Select sessions`)
-          }
-          title={
-            selectionMode
-              ? i18n._(msg`Exit selection mode`)
-              : i18n._(msg`Select sessions`)
-          }
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.9 }}
-          className={cn(
-            'h-14 w-14 rounded-full flex items-center justify-center shadow-lg transition-colors duration-300 border',
-            selectionMode
-              ? 'bg-primary text-primary-foreground border-primary/50 shadow-primary/25'
-              : 'bg-card text-muted-foreground border-border/50 hover:text-foreground shadow-black/15',
-          )}
-        >
-          <AnimatePresence mode="wait" initial={false}>
-            {selectionMode ? (
-              <motion.div
-                key="close"
-                initial={{ rotate: -90, opacity: 0 }}
-                animate={{ rotate: 0, opacity: 1 }}
-                exit={{ rotate: 90, opacity: 0 }}
-                transition={{ duration: 0.2 }}
-              >
-                <X className="h-5 w-5" />
-              </motion.div>
-            ) : (
-              <motion.div
-                key="select"
-                initial={{ rotate: 90, opacity: 0 }}
-                animate={{ rotate: 0, opacity: 1 }}
-                exit={{ rotate: -90, opacity: 0 }}
-                transition={{ duration: 0.2 }}
-              >
-                <CheckSquare className="h-5 w-5" />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.button>
-      </div>
 
       <div className="p-4 md:px-8 space-y-6 pb-20">
         {query.isError && !query.data ? (
@@ -588,58 +440,36 @@ function SessionsPage() {
             onSelectionChange={handleSelectionChange}
           />
         ) : hasActiveFilters ? (
-          <motion.div
-            key="no-results"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="flex flex-col items-center justify-center py-32 text-center space-y-6 border-2 border-dashed border-muted-foreground/20 rounded-2xl bg-muted/5 backdrop-blur-sm shadow-sm"
-          >
-            <div className="p-6 bg-primary/5 rounded-full ring-1 ring-primary/10">
-              <SearchX className="h-16 w-16 text-primary/60" />
-            </div>
-            <div className="space-y-2 max-w-md">
-              <h3 className="font-semibold text-2xl tracking-tight">
-                <Trans>No sessions found</Trans>
-              </h3>
-              <p className="text-muted-foreground">
-                <Trans>No sessions match the current search or filters.</Trans>
-              </p>
-            </div>
-            <Button variant="outline" onClick={clearFilters} className="mt-4">
-              <X className="mr-2 h-4 w-4" />
-              <Trans>Clear filters</Trans>
-            </Button>
-          </motion.div>
+          <PageEmptyState
+            icon={SearchX}
+            title={<Trans>No sessions found</Trans>}
+            help={
+              <Trans>No sessions match the current search or filters.</Trans>
+            }
+            action={
+              <Button variant="outline" onClick={clearFilters}>
+                <X className="mr-2 h-4 w-4" />
+                <Trans>Clear filters</Trans>
+              </Button>
+            }
+          />
         ) : (
-          <motion.div
-            key="empty"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="flex flex-col items-center justify-center py-32 text-center space-y-6 border-2 border-dashed border-muted-foreground/20 rounded-2xl bg-muted/5 backdrop-blur-sm shadow-sm"
-          >
-            <div className="p-6 bg-primary/5 rounded-full ring-1 ring-primary/10">
-              <LayoutGrid className="h-16 w-16 text-primary/60" />
-            </div>
-            <div className="space-y-2 max-w-md">
-              <h3 className="font-semibold text-2xl tracking-tight">
-                <Trans>No Archives Found</Trans>
-              </h3>
-              <p className="text-muted-foreground">
-                <Trans>
-                  Your digital library is currently empty. Start recording to
-                  populate your sessions here.
-                </Trans>
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              onClick={() => query.refetch()}
-              className="mt-4"
-            >
-              <RefreshCcw className="mr-2 h-4 w-4" />
-              <Trans>Refresh</Trans>
-            </Button>
-          </motion.div>
+          <PageEmptyState
+            icon={LayoutGrid}
+            title={<Trans>No Archives Found</Trans>}
+            help={
+              <Trans>
+                Your digital library is currently empty. Start recording to
+                populate your sessions here.
+              </Trans>
+            }
+            action={
+              <Button variant="outline" onClick={() => void query.refetch()}>
+                <RefreshCcw className="mr-2 h-4 w-4" />
+                <Trans>Refresh</Trans>
+              </Button>
+            }
+          />
         )}
 
         <ListPagination
@@ -650,19 +480,20 @@ function SessionsPage() {
         />
       </div>
 
-      <ConfirmDialog
-        open={confirmBatchDelete}
-        onOpenChange={setConfirmBatchDelete}
-        title={<Trans>Delete sessions</Trans>}
-        description={i18n._(
-          msg`${plural(selectedCount, {
-            one: 'Are you sure you want to delete # session? This action cannot be undone.',
-            other:
-              'Are you sure you want to delete # sessions? This action cannot be undone.',
-          })}`,
+      <AnimatePresence>
+        {selectionMode && (
+          <SessionBatchActionBar
+            selectedCount={selectedIds.size}
+            pageCount={pageIds.length}
+            allPageSelected={allPageSelected}
+            isPending={batchDeleteMutation.isPending}
+            onSelectPage={selectPage}
+            onClearSelection={clearSelection}
+            onDelete={() => batchDeleteMutation.mutate(Array.from(selectedIds))}
+            onExit={toggleSelectionMode}
+          />
         )}
-        onConfirm={() => batchDeleteMutation.mutate(Array.from(selectedIds))}
-      />
+      </AnimatePresence>
     </div>
   );
 }

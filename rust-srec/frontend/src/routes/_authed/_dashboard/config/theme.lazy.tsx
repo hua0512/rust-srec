@@ -103,7 +103,7 @@ function ConfigTheme() {
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.4 }}
-            className="flex-1 space-y-8 max-w-2xl w-full mx-auto"
+            className="@container flex-1 space-y-8 max-w-2xl w-full mx-auto"
           >
             <div className="flex items-center justify-between gap-4">
               <div>
@@ -259,7 +259,7 @@ function ConfigTheme() {
                 description={<Trans>Fine tune brand and surface colors.</Trans>}
                 icon={Palette}
               >
-                <div className="grid sm:grid-cols-2 gap-4">
+                <div className="grid @md:grid-cols-2 gap-4">
                   {baseColors.map((color) => (
                     <ColorPicker
                       key={color.cssVar}
@@ -282,7 +282,7 @@ function ConfigTheme() {
                 }
                 icon={Layout}
               >
-                <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                <div className="grid grid-cols-3 @md:grid-cols-6 gap-2">
                   {radiusOptions.map((option) => (
                     <button
                       key={option.value}

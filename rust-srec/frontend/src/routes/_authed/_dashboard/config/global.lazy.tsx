@@ -69,8 +69,9 @@ const PipelineConfigCard = lazy(() =>
  * page previously carried — each differing only by an animation delay.
  *
  * `skeletonRows` describes each card's field rows per section at this page's two-column width,
- * where the cards' `@md:grid-cols-2` grids put two fields on one row. Keep it in step with the
- * card when fields are added, or the placeholder stops matching what replaces it.
+ * where each card is wide enough for its `@md:grid-cols-2` grids to put two fields on one
+ * row. Keep it in step with the card when fields are added, or the placeholder stops matching
+ * what replaces it.
  */
 const SECTIONS: {
   Card: ComponentType;
@@ -101,6 +102,12 @@ const SECTIONS: {
   },
 ];
 
+/**
+ * Two columns only once the page itself is wide enough for two cards side by side, whatever
+ * the viewport: the app sidebar and the settings nav take a share a breakpoint cannot see.
+ */
+const SECTION_GRID = 'grid gap-6 @5xl:grid-cols-2 @5xl:gap-8';
+
 export const Route = createLazyFileRoute('/_authed/_dashboard/config/global')({
   component: GlobalConfigPage,
 });
@@ -128,15 +135,17 @@ function GlobalConfigPage() {
 
   if (isLoading || !config) {
     return (
-      <div className="grid gap-6 pb-32 lg:gap-8 lg:grid-cols-2">
-        {SECTIONS.map((section, i) => (
-          <div
-            key={i}
-            className={cn('min-w-0', section.wide && 'lg:col-span-2')}
-          >
-            <CardSkeleton {...section} />
-          </div>
-        ))}
+      <div className="@container pb-32">
+        <div className={SECTION_GRID}>
+          {SECTIONS.map((section, i) => (
+            <div
+              key={i}
+              className={cn('min-w-0', section.wide && '@5xl:col-span-2')}
+            >
+              <CardSkeleton {...section} />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -183,7 +192,7 @@ function GlobalConfigForm({ config }: { config: GlobalConfig }) {
       // dirty after a successful save.
       form.reset(toFormValues(saved));
     },
-    onError: (error: any) => {
+    onError: (error) => {
       toast.error(error.message || i18n._(msg`Failed to update settings`));
     },
   });
@@ -206,10 +215,10 @@ function GlobalConfigForm({ config }: { config: GlobalConfig }) {
       <form
         id="global-config-form"
         onSubmit={form.handleSubmit(onSubmit)}
-        className="pb-32"
+        className="@container pb-32"
       >
         <motion.div
-          className="grid gap-6 lg:gap-8 lg:grid-cols-2"
+          className={SECTION_GRID}
           variants={containerVariants}
           initial="hidden"
           animate="visible"
@@ -218,7 +227,7 @@ function GlobalConfigForm({ config }: { config: GlobalConfig }) {
             <motion.div
               key={i}
               variants={itemVariants}
-              className={cn('min-w-0', section.wide && 'lg:col-span-2')}
+              className={cn('min-w-0', section.wide && '@5xl:col-span-2')}
             >
               <Suspense fallback={<CardSkeleton {...section} />}>
                 <section.Card />

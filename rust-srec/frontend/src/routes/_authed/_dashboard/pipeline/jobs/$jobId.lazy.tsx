@@ -1,32 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, createLazyFileRoute, useNavigate } from '@tanstack/react-router';
-import {
-  useQuery,
-  useMutation,
-  useQueryClient,
-  useInfiniteQuery,
-} from '@tanstack/react-query';
+import { Link, createLazyFileRoute } from '@tanstack/react-router';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   getPipelineJob,
-  getPipelineJobLogs,
   getPipelineJobProgress,
   getPipelineJobUploads,
-  retryPipelineJob,
-  retryDagSteps,
-  cancelActivePipelineJob,
-  deletePipelineJob,
 } from '@/server/functions/pipeline';
 import type { Job } from '@/api/schemas/pipeline';
 import type { JobProgressSnapshot } from '@/api/schemas/session';
-import {
-  newestLogPageOffset,
-  replaceNewestLogPage,
-  sameLogRows,
-  type JobLogPages,
-} from '@/lib/job-log-pages';
 import { hasReportedProgress, liveProgressSnapshot } from '@/lib/job-progress';
 import { useWebSocket } from '@/providers/WebSocketContext';
 import { useUploadStore } from '@/store/uploads';
+import { useJobActions } from '@/components/pipeline/jobs/use-job-actions';
+import { useJobLogs } from '@/components/pipeline/jobs/use-job-logs';
 import { JobProgressPanel } from '@/components/pipeline/jobs/job-progress-panel';
 import { JobInterruptedOutputsCard } from '@/components/pipeline/jobs/job-interrupted-outputs-card';
 import { JobUploadsCard } from '@/components/pipeline/jobs/job-uploads-card';
@@ -34,14 +20,13 @@ import { JobLogViewer } from '@/components/pipeline/jobs/job-log-viewer';
 import { StalledOperationBanner } from '@/components/pipeline/jobs/stalled-operation-banner';
 import { RetryCountdown } from '@/components/pipeline/retry-countdown';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
-import { Button } from '@/components/ui/button';
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-  CardDescription,
-} from '@/components/ui/card';
+  AmbientBackground,
+  BackLink,
+  DetailLoadError,
+} from '@/components/shared/detail-page';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -49,7 +34,6 @@ import { Separator } from '@/components/ui/separator';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
-import { toast } from 'sonner';
 import { getProcessorDefinition } from '@/components/pipeline/presets/processors/registry';
 import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
@@ -60,7 +44,6 @@ import {
 } from '@/components/pipeline/status-config';
 import {
   AlertCircle,
-  ArrowLeft,
   RotateCcw,
   Workflow,
   Box,
@@ -88,9 +71,6 @@ import { formatDate } from '@/lib/datetime';
  * immediate read, so this only has to catch status changes.
  */
 const ACTIVE_JOB_POLL_MS = 3_000;
-
-/** Matches the backend's page cap for `/pipeline/jobs/{id}/logs`. */
-const LOG_PAGE_SIZE = 1000;
 
 function JobDetailsPage() {
   const { jobId } = Route.useParams();
@@ -185,181 +165,21 @@ function JobDetailsPage() {
     });
   }, [isJobTerminal, jobId, queryClient]);
 
-  const logsQueryKey = useMemo(
-    () => ['pipeline', 'job', jobId, 'logs'],
-    [jobId],
-  );
-
-  // The closing log rows are written as the job finishes, after the last read
-  // below. Read the newest page once more for a job that finishes while being
-  // watched (every earlier page is final, see `newestLogPageOffset`); one that
-  // was already finished when the page opened has nothing to catch up on and
-  // is left alone.
-  const sawRunningJobRef = useRef(false);
-  useEffect(() => {
-    if (isJobActive) {
-      sawRunningJobRef.current = true;
-      return;
-    }
-    if (!isJobTerminal || !sawRunningJobRef.current) return;
-    sawRunningJobRef.current = false;
-    const offset = newestLogPageOffset(
-      queryClient.getQueryData<JobLogPages>(logsQueryKey),
-    );
-    if (offset === undefined) return;
-    getPipelineJobLogs({
-      data: { id: jobId, limit: LOG_PAGE_SIZE, offset },
-    }).then(
-      (page) => {
-        const prev = queryClient.getQueryData<JobLogPages>(logsQueryKey);
-        const next = replaceNewestLogPage(prev, page);
-        const held = prev?.pages.at(-1)?.items ?? [];
-        // A capped log keeps its count while its rows move on, so the read
-        // is refused even though it differs; every page has shifted then,
-        // and only a full re-read lines them up.
-        if (
-          next === prev &&
-          !sameLogRows(
-            held,
-            page.items,
-            0,
-            Math.max(held.length, page.items.length),
-          )
-        ) {
-          void queryClient.invalidateQueries({ queryKey: logsQueryKey });
-          return;
-        }
-        queryClient.setQueryData<JobLogPages>(logsQueryKey, next);
-      },
-      () => {}, // The already-loaded rows stay on screen
-    );
-  }, [isJobActive, isJobTerminal, jobId, logsQueryKey, queryClient]);
-
-  // Fetch logs separately with infinite scroll. Deliberately not polled: a
-  // reader who has scrolled back through a long job holds several pages, and
-  // refreshing all of them on a timer re-reads thousands of rows that cannot
-  // have changed. The tail query below keeps the live end current instead.
   const {
     data: logsData,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
     isLoading: isLogsLoading,
-  } = useInfiniteQuery({
-    queryKey: logsQueryKey,
-    queryFn: ({ pageParam }) =>
-      getPipelineJobLogs({
-        data: { id: jobId, limit: LOG_PAGE_SIZE, offset: pageParam },
-      }),
-    initialPageParam: 0,
-    getNextPageParam: (lastPage) => {
-      const nextOffset = lastPage.offset + lastPage.limit;
-      return nextOffset < lastPage.total ? nextOffset : undefined;
-    },
-    enabled: !!job,
-    // Log rows are only ever appended, so a page that came back full is final.
-    // Nothing here has to be re-read on a focus or a reconnect; new rows arrive
-    // through the tail query and the closing read above.
-    staleTime: Infinity,
-  });
+  } = useJobLogs({ jobId, enabled: !!job, isJobActive, isJobTerminal });
 
-  // One request per tick, always for the page a running job is still appending
-  // to. Writing it back into the pages above both shows the new rows and
-  // refreshes the total that decides whether another page follows.
-  const tailOffset = newestLogPageOffset(logsData);
-  const { data: logTailPage } = useQuery({
-    queryKey: ['pipeline', 'job', jobId, 'logs', 'tail', tailOffset],
-    queryFn: () =>
-      getPipelineJobLogs({
-        data: { id: jobId, limit: LOG_PAGE_SIZE, offset: tailOffset ?? 0 },
-      }),
-    enabled: isJobActive && tailOffset !== undefined,
-    refetchInterval: 2000,
-    throwOnError: false, // The already-loaded rows stay on screen
-  });
-
-  useEffect(() => {
-    if (!logTailPage) return;
-    queryClient.setQueryData<JobLogPages>(logsQueryKey, (prev) =>
-      replaceNewestLogPage(prev, logTailPage),
-    );
-  }, [logTailPage, logsQueryKey, queryClient]);
-
-  // Retrying or cancelling changes the job, not the rows already logged: a
-  // retried job appends to them through the tail read, and a cancelled one
-  // gets its closing rows from the terminal-state read above.
-  const invalidateJob = () =>
-    queryClient.invalidateQueries({
-      queryKey: ['pipeline', 'job', jobId],
-      exact: true,
-    });
-
-  const navigate = useNavigate();
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-
-  const retryMutation = useMutation({
-    mutationFn: (id: string) => retryPipelineJob({ data: id }),
-    onSuccess: () => {
-      toast.success(i18n._(msg`Job retry initiated`));
-      void invalidateJob();
-    },
-    onError: (error) =>
-      toast.error(i18n._(msg`Failed to retry job`), {
-        description: error.message,
-      }),
-  });
-
-  // A workflow step cannot be retried on its own: the backend restarts it together
-  // with the branches that were cancelled alongside it.
-  const retryWorkflowMutation = useMutation({
-    mutationFn: (pipelineId: string) => retryDagSteps({ data: pipelineId }),
-    onSuccess: (result) => {
-      toast.success(i18n._(msg`Workflow retry initiated`));
-      void invalidateJob();
-      void queryClient.invalidateQueries({
-        queryKey: ['pipeline', 'executions', result.dag_id],
-      });
-    },
-    onError: (error) =>
-      toast.error(i18n._(msg`Failed to retry workflow`), {
-        description: error.message,
-      }),
-  });
-
-  const cancelMutation = useMutation({
-    mutationFn: (id: string) => cancelActivePipelineJob({ data: id }),
-    onSuccess: () => {
-      toast.success(i18n._(msg`Job cancelled`));
-      void invalidateJob();
-    },
-    onError: (error) =>
-      toast.error(i18n._(msg`Failed to cancel job`), {
-        description: error.message,
-      }),
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => deletePipelineJob({ data: id }),
-    onSuccess: () => {
-      toast.success(i18n._(msg`Job deleted`));
-      // Lists and workflow views that showed the job.
-      for (const queryKey of [
-        ['pipeline', 'pipelines'],
-        ['pipeline', 'stats'],
-        ['pipeline', 'executions'],
-        ['pipeline', 'dags'],
-      ]) {
-        void queryClient.invalidateQueries({ queryKey });
-      }
-      // The job's own queries can no longer be read. They are dropped once
-      // this page has unmounted; dropped earlier, its observers would read
-      // the deleted job again.
-      void navigate({ to: '/pipeline/jobs' }).then(() =>
-        queryClient.removeQueries({ queryKey: ['pipeline', 'job', jobId] }),
-      );
-    },
-    onError: () => toast.error(i18n._(msg`Failed to delete job`)),
-  });
+  const {
+    retryMutation,
+    retryWorkflowMutation,
+    cancelMutation,
+    deleteMutation,
+  } = useJobActions(jobId);
 
   if (isLoading) {
     return (
@@ -384,29 +204,12 @@ function JobDetailsPage() {
 
   if (isError || !job) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-6">
-        <Card className="max-w-md w-full border-destructive/20 bg-destructive/5 backdrop-blur-sm">
-          <CardHeader className="text-center pb-2">
-            <div className="mx-auto p-3 rounded-full bg-destructive/10 w-fit mb-2">
-              <AlertCircle className="h-6 w-6 text-destructive" />
-            </div>
-            <CardTitle className="text-xl text-destructive">
-              <Trans>Error Loading Job</Trans>
-            </CardTitle>
-            <CardDescription>
-              {error?.message || i18n._(msg`Job not found`)}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex justify-center pb-6">
-            <Button variant="outline" asChild>
-              <Link to="/pipeline/jobs">
-                <ArrowLeft className="mr-2 h-4 w-4" />{' '}
-                <Trans>Back to Jobs</Trans>
-              </Link>
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
+      <DetailLoadError
+        title={<Trans>Error Loading Job</Trans>}
+        error={error}
+        notFound={<Trans>Job not found</Trans>}
+        back={{ to: '/pipeline/jobs', label: <Trans>Back to Jobs</Trans> }}
+      />
     );
   }
 
@@ -427,32 +230,13 @@ function JobDetailsPage() {
 
   return (
     <div className="relative min-h-screen bg-background overflow-hidden selection:bg-primary/20">
-      {/* Ambient Background */}
-      <div className="fixed inset-0 pointer-events-none">
-        <div className="absolute top-0 left-0 -mt-20 -ml-20 w-[500px] h-[500px] bg-primary/5 rounded-full blur-[120px]" />
-        <div className="absolute bottom-0 right-0 -mb-40 -mr-20 w-[600px] h-[600px] bg-blue-500/5 rounded-full blur-[120px]" />
-      </div>
+      <AmbientBackground />
       {/* Columns follow this page's own width, which the app sidebar narrows without the
           viewport breakpoints noticing. */}
       <div className="@container relative z-10 max-w-7xl mx-auto px-6 py-8 pb-32">
         {/* Header */}
         <div className="flex flex-col gap-8 mb-10">
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-          >
-            <Button
-              variant="ghost"
-              size="sm"
-              asChild
-              className="group text-muted-foreground hover:text-foreground hover:bg-transparent px-0"
-            >
-              <Link to="/pipeline/jobs" className="flex items-center">
-                <ArrowLeft className="mr-2 h-4 w-4 transition-transform group-hover:-translate-x-1" />
-                <Trans>Back to Jobs</Trans>
-              </Link>
-            </Button>
-          </motion.div>
+          <BackLink to="/pipeline/jobs" label={<Trans>Back to Jobs</Trans>} />
 
           <div className="flex flex-wrap items-start justify-between gap-6">
             <motion.div

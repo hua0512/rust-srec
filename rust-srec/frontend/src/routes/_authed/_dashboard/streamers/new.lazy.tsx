@@ -23,7 +23,7 @@ function NewStreamerPage() {
       void queryClient.invalidateQueries({ queryKey: ['streamers'] });
       void navigate({ to: '/streamers' });
     },
-    onError: (error: any) => {
+    onError: (error) => {
       toast.error(error.message || i18n._(msg`Failed to create streamer`));
     },
   });

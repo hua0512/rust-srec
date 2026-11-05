@@ -32,12 +32,41 @@ export interface StreamOption {
   optIn?: boolean;
 }
 
+/**
+ * The fields read from an unmanaged parse's `media_info`, which each extractor
+ * shapes on its own; none of them is guaranteed.
+ */
+type ExtraValue = string | number | boolean | null | undefined;
+
+interface RawStream {
+  url?: string;
+  src?: string;
+  quality?: string;
+  resolution?: string;
+  cdn?: string;
+  server?: string;
+  format?: string;
+  stream_format?: string;
+  bitrate?: number;
+  bandwidth?: number;
+  codec?: unknown;
+  media_format?: unknown;
+  fps?: unknown;
+  headers?: Record<string, string>;
+  extras?: Record<string, ExtraValue>;
+  format_opt_in?: unknown;
+}
+
+interface RawMediaInfo extends RawStream {
+  streams?: unknown;
+}
+
 // Helper function to extract all stream options from media_info
-export function extractStreams(mediaInfo: any): StreamOption[] {
+export function extractStreams(rawMediaInfo: unknown): StreamOption[] {
   const streams: StreamOption[] = [];
 
-  if (!mediaInfo) return streams;
-  const managed = ManagedPlaybackSchema.safeParse(mediaInfo);
+  if (!rawMediaInfo) return streams;
+  const managed = ManagedPlaybackSchema.safeParse(rawMediaInfo);
   if (managed.success)
     return managed.data.streams.map((stream, index) => ({
       url: stream.url,
@@ -50,14 +79,19 @@ export function extractStreams(mediaInfo: any): StreamOption[] {
       fps: stream.fps ?? undefined,
       optIn: stream.format_opt_in === true,
     }));
-  if (typeof mediaInfo === 'string')
+  if (typeof rawMediaInfo === 'string')
     return [
-      { url: mediaInfo, format: resolvePlayerMediaType(undefined, mediaInfo) },
+      {
+        url: rawMediaInfo,
+        format: resolvePlayerMediaType(undefined, rawMediaInfo),
+      },
     ];
+  if (typeof rawMediaInfo !== 'object') return streams;
+  const mediaInfo = rawMediaInfo as RawMediaInfo;
 
   // Handle different possible structures
   if (Array.isArray(mediaInfo.streams)) {
-    mediaInfo.streams.forEach((stream: any) => {
+    (mediaInfo.streams as RawStream[]).forEach((stream) => {
       const extras = stringifyValues({ ...mediaInfo.extras, ...stream.extras });
       streams.push({
         url: stream.url || stream.src || '',
@@ -118,7 +152,9 @@ export function extractStreams(mediaInfo: any): StreamOption[] {
   });
 }
 
-function stringifyValues(obj: Record<string, any>): Record<string, string> {
+function stringifyValues(
+  obj: Record<string, ExtraValue>,
+): Record<string, string> {
   const result: Record<string, string> = {};
   for (const key in obj) {
     if (obj[key] !== undefined && obj[key] !== null) {
@@ -211,7 +247,7 @@ export function selectStreamLevel(
  * Whether the player may open `stream` without the user choosing it: not an
  * opt-in stream, and not DASH, which the player cannot play.
  */
-export function isAutoSelectable(stream: StreamOption) {
+function isAutoSelectable(stream: StreamOption) {
   return (
     !stream.optIn &&
     resolvePlayerMediaType(stream.format, stream.url) !== 'dash'

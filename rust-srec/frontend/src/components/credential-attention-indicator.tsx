@@ -36,7 +36,7 @@ function groupByPlatform(accounts: CredentialAttention[]) {
 }
 
 /** The header's summary: "need login" when that is all they need. */
-export function attentionLabel(accounts: CredentialAttention[], i18n: I18n) {
+function attentionLabel(accounts: CredentialAttention[], i18n: I18n) {
   const count = accounts.length;
   return accounts.every((account) => account.reason === 'login_required')
     ? t(

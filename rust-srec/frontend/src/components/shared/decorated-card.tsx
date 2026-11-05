@@ -17,7 +17,7 @@ const ACCENTS = {
   },
 } as const;
 
-export type CardAccent = keyof typeof ACCENTS;
+type CardAccent = keyof typeof ACCENTS;
 
 interface CardDecorationProps {
   accent?: CardAccent;

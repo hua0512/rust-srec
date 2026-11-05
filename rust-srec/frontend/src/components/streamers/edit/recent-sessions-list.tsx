@@ -3,12 +3,15 @@ import { FileVideo, Calendar, Clock, HardDrive } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
+import { ListPanelEmpty } from '@/components/shared/list-panel';
 import { useLingui } from '@lingui/react';
 import { formatDate } from '@/lib/datetime';
 import { formatBytes, formatDuration } from '@/lib/format';
+import type { z } from 'zod';
+import type { SessionSchema } from '@/api/schemas';
 
 interface RecentSessionsListProps {
-  sessions: any[];
+  sessions: z.infer<typeof SessionSchema>[];
   isLoading: boolean;
 }
 
@@ -19,15 +22,12 @@ export const RecentSessionsList = memo(function RecentSessionsList({
   const { i18n } = useLingui();
   const recentSessions = useMemo(
     () =>
-      sessions
-        ? [...sessions]
-            .sort(
-              (a: any, b: any) =>
-                new Date(b.start_time).getTime() -
-                new Date(a.start_time).getTime(),
-            )
-            .slice(0, 5)
-        : [],
+      [...sessions]
+        .sort(
+          (a, b) =>
+            new Date(b.start_time).getTime() - new Date(a.start_time).getTime(),
+        )
+        .slice(0, 5),
     [sessions],
   );
 
@@ -108,9 +108,10 @@ export const RecentSessionsList = memo(function RecentSessionsList({
           ))}
         </div>
       ) : (
-        <div className="text-sm text-muted-foreground py-4 text-center">
-          <Trans>No recent sessions found.</Trans>
-        </div>
+        <ListPanelEmpty
+          icon={FileVideo}
+          title={<Trans>No recent sessions found.</Trans>}
+        />
       )}
     </div>
   );

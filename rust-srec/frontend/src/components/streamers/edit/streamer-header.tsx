@@ -5,9 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
+import type { Streamer } from '@/api/schemas/streamer';
 
 interface StreamerHeaderProps {
-  streamer: any;
+  streamer: Pick<Streamer, 'id' | 'name' | 'url'>;
   isRecording: boolean;
   isLive: boolean;
   platform: string;
@@ -50,7 +51,7 @@ export const StreamerHeader = memo(function StreamerHeader({
         <div className="space-y-1 min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2 md:gap-3">
             <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground truncate">
-              {streamer?.name}
+              {streamer.name}
             </h1>
             <Badge
               variant="outline"
@@ -75,10 +76,10 @@ export const StreamerHeader = memo(function StreamerHeader({
             </span>
             <span className="hidden sm:inline">•</span>
             <span className="font-mono text-xs opacity-70 hidden sm:inline">
-              ID: {streamer?.id}
+              ID: {streamer.id}
             </span>
             <div className="flex items-center gap-1 text-xs font-mono bg-muted/30 px-2 py-0.5 rounded-md max-w-full sm:ml-2 overflow-hidden">
-              <span className="truncate">{streamer?.url}</span>
+              <span className="truncate">{streamer.url}</span>
             </div>
           </div>
         </div>

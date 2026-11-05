@@ -34,11 +34,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  Bug,
-  Info,
-  AlertTriangle,
   Terminal,
-  XCircle,
   Pause,
   Play,
   Trash2,
@@ -49,6 +45,11 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthedWebSocket } from '@/hooks/use-authed-websocket';
+import {
+  LogLevelIcon,
+  fromProtoLogLevel,
+  logLevelStyle,
+} from '@/components/logging/log-level-style';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 
 const MAX_LOG_ENTRIES = 500;
@@ -63,81 +64,8 @@ const MAX_LOG_ENTRIES = 500;
  */
 const LOG_FLUSH_INTERVAL_MS = 50;
 
-/** Get human-readable log level name */
-function getLogLevelName(level: LogLevel): string {
-  switch (level) {
-    case LogLevel.TRACE:
-      return 'TRACE';
-    case LogLevel.DEBUG:
-      return 'DEBUG';
-    case LogLevel.INFO:
-      return 'INFO';
-    case LogLevel.WARN:
-      return 'WARN';
-    case LogLevel.ERROR:
-      return 'ERROR';
-    default:
-      return 'UNKNOWN';
-  }
-}
-
 interface DisplayLogEvent extends LogEvent {
   id: number;
-}
-
-/** Get log level icon component */
-function getLevelIcon(level: LogLevel) {
-  const iconClass = 'w-3.5 h-3.5 shrink-0';
-  switch (level) {
-    case LogLevel.TRACE:
-      return <Terminal className={cn(iconClass, 'text-slate-400')} />;
-    case LogLevel.DEBUG:
-      return <Bug className={cn(iconClass, 'text-blue-400')} />;
-    case LogLevel.INFO:
-      return <Info className={cn(iconClass, 'text-emerald-400')} />;
-    case LogLevel.WARN:
-      return <AlertTriangle className={cn(iconClass, 'text-amber-400')} />;
-    case LogLevel.ERROR:
-      return <XCircle className={cn(iconClass, 'text-rose-400')} />;
-    default:
-      return <Terminal className={cn(iconClass, 'text-muted-foreground')} />;
-  }
-}
-
-/** Get log level background color classes */
-function getLevelBgColor(level: LogLevel): string {
-  switch (level) {
-    case LogLevel.TRACE:
-      return 'bg-slate-500/5 hover:bg-slate-500/10';
-    case LogLevel.DEBUG:
-      return 'bg-blue-500/5 hover:bg-blue-500/10';
-    case LogLevel.INFO:
-      return 'bg-emerald-500/5 hover:bg-emerald-500/10';
-    case LogLevel.WARN:
-      return 'bg-amber-500/5 hover:bg-amber-500/10';
-    case LogLevel.ERROR:
-      return 'bg-rose-500/5 hover:bg-rose-500/10';
-    default:
-      return 'hover:bg-muted/50';
-  }
-}
-
-/** Get log level badge color classes */
-function getLevelBadgeColor(level: LogLevel): string {
-  switch (level) {
-    case LogLevel.TRACE:
-      return 'bg-slate-500/10 text-slate-400 border-slate-500/20';
-    case LogLevel.DEBUG:
-      return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
-    case LogLevel.INFO:
-      return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
-    case LogLevel.WARN:
-      return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
-    case LogLevel.ERROR:
-      return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
-    default:
-      return 'bg-muted/50 text-muted-foreground border-muted';
-  }
 }
 
 type FilterLevel = 'all' | 'trace' | 'debug' | 'info' | 'warn' | 'error';
@@ -181,6 +109,8 @@ const LogRow = memo(function LogRow({
   log: DisplayLogEvent;
   animate: boolean;
 }) {
+  const level = fromProtoLogLevel(log.level);
+  const style = logLevelStyle(level);
   return (
     <motion.div
       initial={animate ? { opacity: 0, x: -10 } : false}
@@ -188,7 +118,7 @@ const LogRow = memo(function LogRow({
       transition={{ duration: 0.1 }}
       className={cn(
         'flex items-start gap-2 px-3 py-1.5 border-b border-border/20 transition-colors',
-        getLevelBgColor(log.level),
+        style.rowClassName,
       )}
     >
       <span className="text-muted-foreground shrink-0 w-21.25">
@@ -198,11 +128,11 @@ const LogRow = memo(function LogRow({
         variant="outline"
         className={cn(
           'text-[9px] uppercase font-medium shrink-0 px-1.5 py-0',
-          getLevelBadgeColor(log.level),
+          style.badgeClassName,
         )}
       >
-        {getLevelIcon(log.level)}
-        <span className="ml-1">{getLogLevelName(log.level)}</span>
+        <LogLevelIcon level={level} />
+        <span className="ml-1">{level ?? 'unknown'}</span>
       </Badge>
       <span className="text-primary/80 shrink-0 max-w-37.5 truncate">
         {log.target}
