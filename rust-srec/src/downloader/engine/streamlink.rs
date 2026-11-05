@@ -387,6 +387,35 @@ enum ChildWait {
     Stopped(Instant),
 }
 
+/// Stops the processes started so far, concurrently, and returns the startup
+/// failure with any cleanup errors appended.
+async fn fail_start(
+    kind: DownloadFailureKind,
+    mut message: String,
+    streamlink: &mut ContainedChild,
+    ffmpeg: Option<&mut ContainedChild>,
+    stop_budget: &StopBudget,
+) -> EngineStartError {
+    let streamlink_stop = terminate_and_reap(
+        streamlink,
+        "streamlink",
+        PROCESS_CLEANUP_TIMEOUT,
+        stop_budget,
+    );
+    match ffmpeg {
+        Some(ffmpeg) => {
+            let (streamlink_cleanup, ffmpeg_cleanup) = tokio::join!(
+                streamlink_stop,
+                terminate_and_reap(ffmpeg, "ffmpeg", PROCESS_CLEANUP_TIMEOUT, stop_budget),
+            );
+            append_cleanup_result(&mut message, streamlink_cleanup);
+            append_cleanup_result(&mut message, ffmpeg_cleanup);
+        }
+        None => append_cleanup_result(&mut message, streamlink_stop.await),
+    }
+    EngineStartError::new(kind, message)
+}
+
 async fn wait_for_peer(
     child: &mut ContainedChild,
     timeout: Duration,
@@ -657,35 +686,27 @@ impl StreamlinkEngine {
         let mut streamlink_stdout = match streamlink.take_stdout() {
             Some(stdout) => stdout,
             None => {
-                let mut message = "Failed to capture streamlink stdout".to_string();
-                append_cleanup_result(
-                    &mut message,
-                    terminate_and_reap(
-                        &mut streamlink,
-                        "streamlink",
-                        PROCESS_CLEANUP_TIMEOUT,
-                        &stop_budget,
-                    )
-                    .await,
-                );
-                return Err(EngineStartError::new(DownloadFailureKind::Other, message));
+                return Err(fail_start(
+                    DownloadFailureKind::Other,
+                    "Failed to capture streamlink stdout".to_string(),
+                    &mut streamlink,
+                    None,
+                    &stop_budget,
+                )
+                .await);
             }
         };
         let streamlink_stderr = match streamlink.take_stderr() {
             Some(stderr) => stderr,
             None => {
-                let mut message = "Failed to capture streamlink stderr".to_string();
-                append_cleanup_result(
-                    &mut message,
-                    terminate_and_reap(
-                        &mut streamlink,
-                        "streamlink",
-                        PROCESS_CLEANUP_TIMEOUT,
-                        &stop_budget,
-                    )
-                    .await,
-                );
-                return Err(EngineStartError::new(DownloadFailureKind::Other, message));
+                return Err(fail_start(
+                    DownloadFailureKind::Other,
+                    "Failed to capture streamlink stderr".to_string(),
+                    &mut streamlink,
+                    None,
+                    &stop_budget,
+                )
+                .await);
             }
         };
 
@@ -708,68 +729,41 @@ impl StreamlinkEngine {
         let mut ffmpeg = match ContainedChild::spawn(&mut ffmpeg_command) {
             Ok(ffmpeg) => ffmpeg,
             Err(error) => {
-                let mut message = format!("Failed to spawn ffmpeg: {error}");
-                append_cleanup_result(
-                    &mut message,
-                    terminate_and_reap(
-                        &mut streamlink,
-                        "streamlink",
-                        PROCESS_CLEANUP_TIMEOUT,
-                        &stop_budget,
-                    )
-                    .await,
-                );
-                return Err(EngineStartError::new(
+                return Err(fail_start(
                     DownloadFailureKind::Configuration,
-                    message,
-                ));
+                    format!("Failed to spawn ffmpeg: {error}"),
+                    &mut streamlink,
+                    None,
+                    &stop_budget,
+                )
+                .await);
             }
         };
 
         let mut ffmpeg_stdin = match ffmpeg.take_stdin() {
             Some(stdin) => stdin,
             None => {
-                let mut message = "Failed to capture ffmpeg stdin".to_string();
-                let (streamlink_cleanup, ffmpeg_cleanup) = tokio::join!(
-                    terminate_and_reap(
-                        &mut streamlink,
-                        "streamlink",
-                        PROCESS_CLEANUP_TIMEOUT,
-                        &stop_budget
-                    ),
-                    terminate_and_reap(
-                        &mut ffmpeg,
-                        "ffmpeg",
-                        PROCESS_CLEANUP_TIMEOUT,
-                        &stop_budget
-                    ),
-                );
-                append_cleanup_result(&mut message, streamlink_cleanup);
-                append_cleanup_result(&mut message, ffmpeg_cleanup);
-                return Err(EngineStartError::new(DownloadFailureKind::Other, message));
+                return Err(fail_start(
+                    DownloadFailureKind::Other,
+                    "Failed to capture ffmpeg stdin".to_string(),
+                    &mut streamlink,
+                    Some(&mut ffmpeg),
+                    &stop_budget,
+                )
+                .await);
             }
         };
         let ffmpeg_stderr = match ffmpeg.take_stderr() {
             Some(stderr) => stderr,
             None => {
-                let mut message = "Failed to capture ffmpeg stderr".to_string();
-                let (streamlink_cleanup, ffmpeg_cleanup) = tokio::join!(
-                    terminate_and_reap(
-                        &mut streamlink,
-                        "streamlink",
-                        PROCESS_CLEANUP_TIMEOUT,
-                        &stop_budget
-                    ),
-                    terminate_and_reap(
-                        &mut ffmpeg,
-                        "ffmpeg",
-                        PROCESS_CLEANUP_TIMEOUT,
-                        &stop_budget
-                    ),
-                );
-                append_cleanup_result(&mut message, streamlink_cleanup);
-                append_cleanup_result(&mut message, ffmpeg_cleanup);
-                return Err(EngineStartError::new(DownloadFailureKind::Other, message));
+                return Err(fail_start(
+                    DownloadFailureKind::Other,
+                    "Failed to capture ffmpeg stderr".to_string(),
+                    &mut streamlink,
+                    Some(&mut ffmpeg),
+                    &stop_budget,
+                )
+                .await);
             }
         };
 

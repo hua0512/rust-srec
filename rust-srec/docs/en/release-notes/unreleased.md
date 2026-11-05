@@ -28,6 +28,7 @@
 - **Security**: a recorded file opened straight from the server, such as a chat XML file, can no longer run scripts as the web interface.
 - **Security**: when a stream is played with a platform account, more kinds of platform error pages and account data are now refused instead of being passed on to the player.
 - **Docker**: the web container's access log no longer records the sign-in token included in playback, download and live update links.
+- **Recording**: the `FFMPEG_PATH` environment variable now also chooses the FFmpeg that records streams with the built-in FFmpeg engine, or with an FFmpeg engine whose settings name no program path. Before, recording ran `ffmpeg` from the system path even though processing used `FFMPEG_PATH`. See [Environment variables](https://docs.srec.rs/en/reference/environment).
 - **Web interface**: a request the server does not answer now fails with an error after 15 seconds, or later for slow actions such as platform checks, connection tests and backups, instead of leaving the page waiting. Closing or reloading the tab also stops the requests the server was still working on for it.
 - **Sign-in**: a failed sign-in now shows the server's reason instead of an internal server address.
 - **Sessions page**: every session can now be reached through the page numbers. Before, the page count assumed 50 sessions per page while each page showed 20, so the sessions beyond the last page number could not be reached from the list.

@@ -4,14 +4,17 @@
 //! the configuration structures used by the mesio crate for HLS, DASH and
 //! FLV protocol handling.
 
+use std::str::FromStr;
 use std::time::Duration;
 
 use mesio::dash::{AudioSelection, LiveStartPolicy, VideoSelection};
 use mesio::flv::FlvProtocolConfig;
 use mesio::proxy::{ProxyAuth, ProxyConfig, ProxyType};
 use mesio::{
-    DashConfig, DashProtocolBuilder, DownloadError, FlvProtocolBuilder, HlsProtocolBuilder,
+    DashConfig, DashProtocolBuilder, DownloadError, DownloaderConfig, FlvProtocolBuilder,
+    HlsProtocolBuilder,
 };
+use reqwest::header::{HeaderName, HeaderValue};
 use tracing::debug;
 
 use crate::database::models::engine::{
@@ -31,29 +34,12 @@ pub fn build_hls_config(
     base_config: Option<mesio::hls::HlsConfig>,
     engine_config: &MesioEngineConfig,
 ) -> mesio::hls::HlsConfig {
-    let mut builder = if let Some(base) = base_config {
-        HlsProtocolBuilder::new().with_config(|c| *c = base)
-    } else {
-        HlsProtocolBuilder::new()
-    };
-
-    // Map headers
-    for (key, value) in &config.headers {
-        debug!("Adding header: {}", key);
-        builder = builder.add_header(key, value);
-    }
-
-    // Map cookies as a Cookie header
-    if let Some(ref cookies) = config.cookies {
-        builder = builder.add_header("Cookie", cookies);
-    }
-
-    // A direct route turns off the environment's proxy too.
-    builder = match &config.proxy {
-        ProxyTarget::Explicit(endpoint) => builder.proxy(mesio_proxy(endpoint)),
-        ProxyTarget::System => builder.use_system_proxy(true),
-        ProxyTarget::Direct => builder.use_system_proxy(false),
-    };
+    let builder = HlsProtocolBuilder::new().with_config(|c| {
+        if let Some(base) = base_config {
+            *c = base;
+        }
+        apply_network(&mut c.base, config);
+    });
 
     let builder = apply_hls_engine_overrides(builder, engine_config);
 
@@ -335,27 +321,12 @@ pub fn build_dash_config(
     base_config: Option<DashConfig>,
     engine_config: &MesioEngineConfig,
 ) -> Result<DashConfig, DownloadError> {
-    let mut builder = if let Some(base) = base_config {
-        DashProtocolBuilder::new().with_config(|c| *c = base)
-    } else {
-        DashProtocolBuilder::new()
-    };
-
-    for (key, value) in &config.headers {
-        debug!("Adding header: {}", key);
-        builder = builder.add_header(key, value);
-    }
-
-    if let Some(ref cookies) = config.cookies {
-        builder = builder.add_header("Cookie", cookies);
-    }
-
-    // A direct route turns off the environment's proxy too.
-    builder = match &config.proxy {
-        ProxyTarget::Explicit(endpoint) => builder.proxy(mesio_proxy(endpoint)),
-        ProxyTarget::System => builder.use_system_proxy(true),
-        ProxyTarget::Direct => builder.use_system_proxy(false),
-    };
+    let mut builder = DashProtocolBuilder::new().with_config(|c| {
+        if let Some(base) = base_config {
+            *c = base;
+        }
+        apply_network(&mut c.base, config);
+    });
 
     if let Some(ref dash) = engine_config.dash {
         builder = apply_dash_engine_overrides(builder, dash)?;
@@ -471,35 +442,38 @@ pub fn build_flv_config(
     config: &DownloadConfig,
     base_config: Option<FlvProtocolConfig>,
 ) -> FlvProtocolConfig {
-    let mut builder = if let Some(base) = base_config {
-        FlvProtocolBuilder::new().with_config(|c| *c = base)
-    } else {
-        FlvProtocolBuilder::new()
-    };
+    FlvProtocolBuilder::new()
+        .with_config(|c| {
+            if let Some(base) = base_config {
+                *c = base;
+            }
+            apply_network(&mut c.base, config);
+        })
+        .get_config()
+}
 
-    // Map headers
-    for (key, value) in &config.headers {
+/// Applies the download's headers, cookies and route to a mesio base config.
+/// Only an explicit proxy is kept; a direct route also turns off the
+/// environment's proxy.
+fn apply_network(base: &mut DownloaderConfig, config: &DownloadConfig) {
+    let cookie = config.cookies.as_deref().map(|cookies| ("Cookie", cookies));
+    let headers = config
+        .headers
+        .iter()
+        .map(|(key, value)| (key.as_str(), value.as_str()))
+        .chain(cookie);
+    for (key, value) in headers {
         debug!("Adding header: {}", key);
-        builder = builder.add_header(key, value);
+        if let (Ok(name), Ok(value)) = (HeaderName::from_str(key), HeaderValue::from_str(value)) {
+            base.headers.insert(name, value);
+        }
     }
 
-    // Map cookies as a Cookie header
-    if let Some(ref cookies) = config.cookies {
-        builder = builder.add_header("Cookie", cookies);
-    }
-
-    // A direct route turns off the environment's proxy too.
-    let (proxy, use_system_proxy) = match &config.proxy {
+    (base.proxy, base.use_system_proxy) = match &config.proxy {
         ProxyTarget::Explicit(endpoint) => (Some(mesio_proxy(endpoint)), false),
         ProxyTarget::System => (None, true),
         ProxyTarget::Direct => (None, false),
     };
-    builder = builder.with_config(|cfg| {
-        cfg.base.proxy = proxy;
-        cfg.base.use_system_proxy = use_system_proxy;
-    });
-
-    builder.get_config()
 }
 
 /// Mesio's form of a proxy: the address, the protocol spoken to the proxy,
@@ -529,8 +503,6 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
 
-    use pipeline_common::config::PipelineConfig;
-
     use crate::downloader::DownloadProtocol;
 
     fn create_test_download_config() -> DownloadConfig {
@@ -552,9 +524,6 @@ mod tests {
             initial_segment_index: 0,
             protocol: DownloadProtocol::Hls,
             enable_processing: false,
-            pipeline_config: None,
-            hls_pipeline_config: None,
-            flv_pipeline_config: None,
             engines_override: None,
         }
     }
@@ -669,7 +638,7 @@ mod tests {
 
     /// Mesio splits parts by the pipeline config, so the part limits must reach it.
     #[test]
-    fn build_pipeline_config_carries_part_limits_and_prefers_an_explicit_config() {
+    fn build_pipeline_config_carries_part_limits() {
         let mut config = create_test_download_config();
         let unlimited = config.build_pipeline_config();
         assert_eq!((unlimited.max_file_size, unlimited.max_duration), (0, None));
@@ -679,22 +648,6 @@ mod tests {
         let limited = config.build_pipeline_config();
         assert_eq!(limited.max_file_size, 100 * 1024 * 1024);
         assert_eq!(limited.max_duration, Some(Duration::from_secs(3600)));
-
-        config.pipeline_config = Some(
-            PipelineConfig::builder()
-                .max_file_size(500_000_000)
-                .channel_size(128)
-                .build(),
-        );
-        let explicit = config.build_pipeline_config();
-        assert_eq!(
-            (
-                explicit.max_file_size,
-                explicit.max_duration,
-                explicit.channel_size
-            ),
-            (500_000_000, None, 128)
-        );
     }
 
     #[test]

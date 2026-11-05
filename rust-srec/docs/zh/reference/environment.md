@@ -117,7 +117,7 @@ import { withBase } from 'vitepress'
 ## 外部工具 {#外部工具}
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `FFMPEG_PATH` | 流水线处理器使用的 FFmpeg 程序；Streamlink 引擎配置未指定 FFmpeg 路径时也使用它。FFmpeg 下载引擎则使用其引擎配置中的程序路径。 | `ffmpeg` |
+| `FFMPEG_PATH` | 流水线处理器使用的 FFmpeg 程序；Streamlink 引擎配置未指定 FFmpeg 路径时，以及 FFmpeg 下载引擎配置未指定程序路径时，也使用它。 | `ffmpeg` |
 | `FFPROBE_PATH` | `audio_extract` 处理器使用的 FFprobe 程序 | `ffprobe` |
 | `STREAMLINK_PATH` | 添加主播时用于检查 Streamlink 能否处理该地址的 Streamlink 程序。录制使用 Streamlink 引擎配置中的程序路径。 | `streamlink` |
 | `RCLONE_PATH` | `rclone` 处理器使用的 rclone 程序 | `rclone` |

@@ -117,7 +117,7 @@ The heuristic groups deep paths under broader keys: `/var/lib/rust-srec/output` 
 ## External tools {#external-tools}
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `FFMPEG_PATH` | FFmpeg binary used by pipeline processors, and by the Streamlink engine when its configuration names no FFmpeg path. The FFmpeg download engine uses the binary path in its engine configuration instead. | `ffmpeg` |
+| `FFMPEG_PATH` | FFmpeg binary used by pipeline processors, by the Streamlink engine when its configuration names no FFmpeg path, and by the FFmpeg download engine when its configuration names no binary path. | `ffmpeg` |
 | `FFPROBE_PATH` | FFprobe binary used by the `audio_extract` processor | `ffprobe` |
 | `STREAMLINK_PATH` | Streamlink binary used to check whether Streamlink can handle a URL when adding a streamer. Recording uses the binary path in the Streamlink engine configuration. | `streamlink` |
 | `RCLONE_PATH` | rclone binary used by the `rclone` processor | `rclone` |

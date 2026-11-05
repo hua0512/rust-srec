@@ -4,6 +4,7 @@ use crate::database::models::StreamerDbModel;
 use crate::database::repositories::{
     SqlxConfigRepository, SqlxFilterRepository, SqlxSessionRepository, SqlxStreamerRepository,
 };
+use crate::scheduler::actor::DownloadEndPolicy;
 
 fn assert_config(
     scheduler: &Scheduler<SqlxStreamerRepository>,

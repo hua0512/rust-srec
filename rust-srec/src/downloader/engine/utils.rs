@@ -22,10 +22,7 @@ pub(super) mod recording_contracts;
 pub(crate) mod test_support;
 
 pub use disk_full::output_io_error_kind;
-pub use ffmpeg_parser::{
-    is_segment_start, parse_bitrate, parse_opened_path, parse_progress, parse_size, parse_speed,
-    parse_time, parse_time_field,
-};
+pub(crate) use ffmpeg_parser::{is_segment_start, parse_opened_path, parse_progress};
 pub(crate) use ffmpeg_tracker::{FfmpegEvents, FfmpegSource, RecordingExit};
 pub use files::ensure_output_dir;
 pub use output_record_reader::OutputRecordReader;

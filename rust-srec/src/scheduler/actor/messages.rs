@@ -335,11 +335,6 @@ impl CheckResult {
             next_check_hint: None,
         }
     }
-
-    /// Check if this result indicates an error.
-    pub fn is_error(&self) -> bool {
-        self.error.is_some() || self.state.is_error()
-    }
 }
 
 /// Encapsulates offline grace period (hysteresis) logic.

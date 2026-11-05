@@ -142,38 +142,11 @@ impl LiveStatus {
         matches!(self, LiveStatus::Offline)
     }
 
-    /// Check if the status was filtered.
-    pub fn is_filtered(&self) -> bool {
-        matches!(self, LiveStatus::Filtered { .. })
-    }
-
-    /// Check if the status indicates a fatal error.
-    pub fn is_fatal_error(&self) -> bool {
-        matches!(
-            self,
-            LiveStatus::NotFound
-                | LiveStatus::Banned
-                | LiveStatus::AgeRestricted
-                | LiveStatus::RegionLocked
-                | LiveStatus::Private
-                | LiveStatus::UnsupportedPlatform
-        )
-    }
-
     /// Get the stream title if live.
     pub fn title(&self) -> Option<&str> {
         match self {
             LiveStatus::Live { title, .. } => Some(title),
             LiveStatus::Filtered { title, .. } => Some(title),
-            _ => None,
-        }
-    }
-
-    /// Get the stream category if available.
-    pub fn category(&self) -> Option<&str> {
-        match self {
-            LiveStatus::Live { category, .. } => category.as_deref(),
-            LiveStatus::Filtered { category, .. } => category.as_deref(),
             _ => None,
         }
     }

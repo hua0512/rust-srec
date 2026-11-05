@@ -926,6 +926,8 @@ impl<
             ));
         }
 
+        // Both are set for every fatal status.
+        let fatal = (status.fatal_kind(), status.fatal_error_description());
         match status {
             LiveStatus::Live {
                 credential_binding,
@@ -960,58 +962,19 @@ impl<
             LiveStatus::Offline => {
                 self.handle_offline(streamer).await?;
             }
-            LiveStatus::Filtered {
-                reason,
-                title,
-                category,
-            } => {
-                self.handle_filtered(streamer, reason, title, category)
-                    .await?;
+            LiveStatus::Filtered { reason, .. } => {
+                self.handle_filtered(streamer, reason).await?;
             }
             // Fatal errors - stop monitoring until manually cleared
-            LiveStatus::NotFound => {
-                self.handle_fatal_error(
-                    streamer,
-                    FatalErrorType::NotFound,
-                    "Streamer not found on platform",
-                )
-                .await?;
-            }
-            LiveStatus::Banned => {
-                self.handle_fatal_error(
-                    streamer,
-                    FatalErrorType::Banned,
-                    "Streamer is banned on platform",
-                )
-                .await?;
-            }
-            LiveStatus::AgeRestricted => {
-                self.handle_fatal_error(
-                    streamer,
-                    FatalErrorType::AgeRestricted,
-                    "Content is age-restricted",
-                )
-                .await?;
-            }
-            LiveStatus::RegionLocked => {
-                self.handle_fatal_error(
-                    streamer,
-                    FatalErrorType::RegionLocked,
-                    "Content is region-locked",
-                )
-                .await?;
-            }
-            LiveStatus::Private => {
-                self.handle_fatal_error(streamer, FatalErrorType::Private, "Content is private")
-                    .await?;
-            }
-            LiveStatus::UnsupportedPlatform => {
-                self.handle_fatal_error(
-                    streamer,
-                    FatalErrorType::UnsupportedPlatform,
-                    "Platform is not supported",
-                )
-                .await?;
+            LiveStatus::NotFound
+            | LiveStatus::Banned
+            | LiveStatus::AgeRestricted
+            | LiveStatus::RegionLocked
+            | LiveStatus::Private
+            | LiveStatus::UnsupportedPlatform => {
+                if let (Some(kind), Some(reason)) = fatal {
+                    self.handle_fatal_error(streamer, kind, reason).await?;
+                }
             }
         }
 
@@ -1190,8 +1153,6 @@ impl<
         &self,
         streamer: &StreamerMetadata,
         reason: FilterReason,
-        _title: String,
-        _category: Option<String>,
     ) -> Result<()> {
         let is_out_of_schedule = matches!(&reason, FilterReason::OutOfSchedule { .. });
         let (new_state, state_change_reason) = match &reason {

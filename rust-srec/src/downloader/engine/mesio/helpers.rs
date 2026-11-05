@@ -219,6 +219,22 @@ impl<T: Send> StreamSender<T> for PipelineSender<T> {
     }
 }
 
+/// Where downloaded items go: into the processing pipeline, or straight to
+/// the writer.
+pub(super) enum WriterInput<T> {
+    Pipeline(PipelineSender<T>),
+    Raw(mpsc::Sender<std::result::Result<T, PipelineError>>),
+}
+
+impl<T: Send> StreamSender<T> for WriterInput<T> {
+    async fn send_item(&self, item: std::result::Result<T, PipelineError>) -> Result<(), ()> {
+        match self {
+            Self::Pipeline(tx) => tx.send_item(item).await,
+            Self::Raw(tx) => tx.send_item(item).await,
+        }
+    }
+}
+
 pub(super) struct StreamConsumeContext<'a> {
     pub managed_credentials: bool,
     pub parent_token: &'a CancellationToken,

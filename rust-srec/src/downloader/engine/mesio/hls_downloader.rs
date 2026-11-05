@@ -10,7 +10,7 @@
 use futures::StreamExt;
 use futures::future::BoxFuture;
 use hls::{HlsData, SplitReason};
-use hls_fix::{HlsPipeline, HlsWriter, HlsWriterConfig};
+use hls_fix::{HlsPipeline, HlsPipelineConfig, HlsWriter, HlsWriterConfig};
 use mesio::flv::FlvProtocolConfig;
 use mesio::{
     BoxMediaStream, DownloadError, DownloadRequest, DownloadTerminal, MesioConfig, MesioDownloader,
@@ -376,8 +376,6 @@ impl HlsDownloader {
         };
 
         let config_snapshot = self.handle.config_snapshot();
-        let processing =
-            config_snapshot.enable_processing && protocol.fix_enabled(&self.engine_config);
         info!(
             protocol = label,
             "Detected {} stream type for {}: {}, processing_enabled: {}",
@@ -387,131 +385,22 @@ impl HlsDownloader {
             config_snapshot.enable_processing
         );
 
-        // Route based on enable_processing flag AND engine config
-        if processing {
-            self.download_with_pipeline(
-                protocol,
-                token,
-                hls_stream,
-                first_segment,
-                extension,
-                lifecycle,
-            )
-            .await
-        } else {
-            self.download_raw(
-                protocol,
-                token,
-                hls_stream,
-                first_segment,
-                extension,
-                lifecycle,
-            )
-            .await
-        }
-    }
-
-    /// Download HLS stream with pipeline processing enabled.
-    ///
-    /// Routes the stream through HlsPipeline for defragmentation, segment splitting,
-    /// and other processing before writing to HlsWriter.
-    async fn download_with_pipeline(
-        &self,
-        protocol: SegmentedProtocol,
-        token: CancellationToken,
-        hls_stream: impl futures::Stream<
-            Item = std::result::Result<HlsData, mesio::hls::HlsDownloaderError>,
-        > + Send
-        + Unpin,
-        first_segment: HlsData,
-        extension: &str,
-        lifecycle: SessionLifecycle,
-    ) -> std::result::Result<DownloadStats, EngineStartError> {
-        let config = self.handle.config_snapshot();
-        let streamer_id = config.streamer_id.clone();
-        info!(
-            "Starting {} download with pipeline processing for {}",
-            protocol.label(),
-            streamer_id
-        );
-
-        // Build pipeline and common configs
-        let pipeline_config = config.build_pipeline_config();
-        let hls_pipeline_config = config.build_hls_pipeline_config();
-
-        // Create StreamerContext with cancellation token
-        let context = Arc::new(
-            StreamerContext::with_name(&streamer_id, token.clone())
-                .with_manual_split(self.handle.manual_split.clone()),
-        );
-        self.handle.manual_split.enable();
-
-        // Create HlsPipeline using PipelineProvider::with_config
-        let pipeline_provider =
-            HlsPipeline::with_config(context, &pipeline_config, hls_pipeline_config);
-
-        let pipeline = pipeline_provider.build_pipeline();
-
-        let pipeline_common::SpawnedPipeline {
-            input_tx: pipeline_input_tx,
-            output_rx: pipeline_output_rx,
-            tasks: processing_tasks,
-        } = spawn_pipeline(
-            pipeline,
-            HlsPipeline::channel_spec(pipeline_config.channel_size),
-        );
-
-        // Create HlsWriter with callbacks
-        let max_file_size = if config.max_segment_size_bytes > 0 {
-            Some(config.max_segment_size_bytes)
-        } else {
-            None
-        };
-
-        let mut writer = HlsWriter::new(HlsWriterConfig {
-            output_dir: config.output_dir.clone(),
-            base_name: config.filename_template.clone(),
-            extension: extension.to_string(),
-            max_file_size,
-        });
-
-        helpers::setup_writer_callbacks(&mut writer, &self.handle.event_tx);
-
-        // Spawn blocking writer task that reads from pipeline output
-        let writer_task = tokio::task::spawn_blocking(move || writer.run(pipeline_output_rx));
-
-        let (stream_error, engine_signal) = self
-            .consume_session(
-                protocol,
-                &token,
-                hls_stream,
-                first_segment,
-                pipeline_input_tx,
-                lifecycle,
-            )
-            .await;
-
-        helpers::handle_writer_result(
-            writer_task,
-            stream_error,
-            processing_tasks,
-            helpers::WriterSettleContext {
-                managed_credentials: config.managed_credentials,
-                event_tx: &self.handle.event_tx,
-                streamer_id: &streamer_id,
-                protocol: protocol.label(),
-                output_dir: &config.output_dir,
-                engine_signal,
-            },
+        self.download(
+            protocol,
+            token,
+            hls_stream,
+            first_segment,
+            extension,
+            lifecycle,
         )
         .await
-        .map_err(EngineStartError::from)
     }
 
-    /// Download HLS stream without pipeline processing (raw mode).
-    ///
-    /// Sends stream data directly to HlsWriter without any processing.
-    async fn download_raw(
+    /// Writes the session to HLS files, through the HLS pipeline
+    /// (defragmentation, segment splitting and other processing) when
+    /// processing is enabled for the download and the protocol, or straight
+    /// to the writer otherwise.
+    async fn download(
         &self,
         protocol: SegmentedProtocol,
         token: CancellationToken,
@@ -525,21 +414,42 @@ impl HlsDownloader {
     ) -> std::result::Result<DownloadStats, EngineStartError> {
         let config = self.handle.config_snapshot();
         let streamer_id = config.streamer_id.clone();
+        let processing = config.enable_processing && protocol.fix_enabled(&self.engine_config);
         info!(
-            "Starting {} download without pipeline processing for {}",
+            processing,
+            "Starting {} download for {}",
             protocol.label(),
             streamer_id
         );
 
-        // Build pipeline config for channel size
         let pipeline_config = config.build_pipeline_config();
-        let channel_size = pipeline_config.channel_size;
+        let (tx, writer_rx, processing_tasks) = if processing {
+            // Manual split needs the pipeline, so only this mode enables it.
+            let context = Arc::new(
+                StreamerContext::with_name(&streamer_id, token.clone())
+                    .with_manual_split(self.handle.manual_split.clone()),
+            );
+            self.handle.manual_split.enable();
 
-        // Create channel for sending data to writer
-        let (tx, rx) =
-            tokio::sync::mpsc::channel::<std::result::Result<HlsData, PipelineError>>(channel_size);
+            let pipeline =
+                HlsPipeline::with_config(context, &pipeline_config, HlsPipelineConfig::default())
+                    .build_pipeline();
+            let pipeline_common::SpawnedPipeline {
+                input_tx,
+                output_rx,
+                tasks,
+            } = spawn_pipeline(
+                pipeline,
+                HlsPipeline::channel_spec(pipeline_config.channel_size),
+            );
+            (helpers::WriterInput::Pipeline(input_tx), output_rx, tasks)
+        } else {
+            let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<HlsData, PipelineError>>(
+                pipeline_config.channel_size,
+            );
+            (helpers::WriterInput::Raw(tx), rx.into(), Vec::new())
+        };
 
-        // Create HlsWriter with callbacks
         let max_file_size = if config.max_segment_size_bytes > 0 {
             Some(config.max_segment_size_bytes)
         } else {
@@ -555,8 +465,7 @@ impl HlsDownloader {
 
         helpers::setup_writer_callbacks(&mut writer, &self.handle.event_tx);
 
-        // Spawn blocking writer task
-        let writer_task = tokio::task::spawn_blocking(move || writer.run(rx.into()));
+        let writer_task = tokio::task::spawn_blocking(move || writer.run(writer_rx));
 
         let (stream_error, engine_signal) = self
             .consume_session(protocol, &token, hls_stream, first_segment, tx, lifecycle)
@@ -565,7 +474,7 @@ impl HlsDownloader {
         helpers::handle_writer_result(
             writer_task,
             stream_error,
-            vec![],
+            processing_tasks,
             helpers::WriterSettleContext {
                 managed_credentials: config.managed_credentials,
                 event_tx: &self.handle.event_tx,
@@ -754,7 +663,8 @@ mod tests {
             "streamer",
             "session",
         )
-        .with_filename_template("test-hls");
+        .with_filename_template("test-hls")
+        .with_processing_enabled(false);
 
         let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<SegmentEvent>(32);
         let handle = DownloadHandle::new("download", EngineType::Mesio, config, event_tx);
@@ -801,7 +711,7 @@ mod tests {
         });
 
         let result = downloader
-            .download_raw(
+            .download(
                 SegmentedProtocol::Hls,
                 CancellationToken::new(),
                 hls_stream,
@@ -886,14 +796,15 @@ mod tests {
             "streamer",
             "session",
         )
-        .with_filename_template("test-session-end");
+        .with_filename_template("test-session-end")
+        .with_processing_enabled(false);
         let (event_tx, mut event_rx) = mpsc::channel::<SegmentEvent>(64);
         let mut handle = DownloadHandle::new("download", EngineType::Mesio, config, event_tx);
         handle.cancellation_token = parent.clone();
         let downloader = HlsDownloader::new(Arc::new(handle), MesioEngineConfig::default(), None);
         let result = timeout(
             Duration::from_secs(10),
-            downloader.download_raw(
+            downloader.download(
                 protocol,
                 parent.child_token(),
                 rest,
