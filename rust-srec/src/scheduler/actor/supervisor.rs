@@ -950,7 +950,7 @@ mod tests {
             TaskCompletionAction::Stopped { .. }
         ));
         assert!(supervisor.pending_restarts.is_empty());
-        assert_eq!(supervisor.restart_tracker.total_restarts("removed"), 0);
+        assert_eq!(supervisor.restart_tracker.recent_failures("removed"), 0);
         token.cancel();
     }
 

@@ -60,8 +60,6 @@ impl Default for RestartTrackerConfig {
 struct RestartHistory {
     /// Timestamps of recent failures.
     failures: Vec<Instant>,
-    /// Total restart count (for metrics).
-    total_restarts: u64,
     /// Consecutive crashes since tracking began; independent of the backoff window.
     consecutive_failures: u64,
     /// Last restart time.
@@ -72,7 +70,6 @@ impl RestartHistory {
     fn new() -> Self {
         Self {
             failures: Vec::new(),
-            total_restarts: 0,
             consecutive_failures: 0,
             last_restart: None,
         }
@@ -85,7 +82,6 @@ impl RestartHistory {
 
         // Add new failure
         self.failures.push(now);
-        self.total_restarts = self.total_restarts.saturating_add(1);
         self.consecutive_failures = self.consecutive_failures.saturating_add(1);
         self.last_restart = Some(now);
 
@@ -188,14 +184,6 @@ impl RestartTracker {
         self.history
             .get(actor_id)
             .map(|h| h.recent_failures(now, self.config.failure_window))
-            .unwrap_or(0)
-    }
-
-    /// Get the total restart count for an actor.
-    pub fn total_restarts(&self, actor_id: &str) -> u64 {
-        self.history
-            .get(actor_id)
-            .map(|h| h.total_restarts)
             .unwrap_or(0)
     }
 
