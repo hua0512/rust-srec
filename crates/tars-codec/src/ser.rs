@@ -137,14 +137,13 @@ impl TarsSerializer {
         buffer: &mut BytesMut,
     ) -> Result<(), TarsError> {
         // Encode directly to the target buffer
-        let temp_buffer = std::mem::replace(&mut self.buffer, BytesMut::new());
+        let temp_buffer = std::mem::take(&mut self.buffer);
         self.buffer = std::mem::replace(buffer, temp_buffer);
 
         self.encode_message_to_internal_buffer(message)?;
 
         // Swap back, keeping the encoded data in the target buffer
-        let encoded_buffer =
-            std::mem::replace(&mut self.buffer, std::mem::replace(buffer, BytesMut::new()));
+        let encoded_buffer = std::mem::replace(&mut self.buffer, std::mem::take(buffer));
         *buffer = encoded_buffer;
 
         Ok(())
