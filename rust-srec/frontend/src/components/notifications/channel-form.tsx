@@ -69,7 +69,13 @@ interface ChannelFormProps {
  * channel's stored settings are laid over these too, so a key it was saved without still starts
  * with its default.
  */
-export const DEFAULT_SETTINGS: Record<string, Record<string, unknown>> = {
+export const DEFAULT_SETTINGS: Record<ChannelType, Record<string, unknown>> = {
+  Discord: {
+    webhook_url: '',
+    min_priority: 5,
+    locale: '',
+    enabled: true,
+  },
   Webhook: {
     url: '',
     method: 'POST',
@@ -344,9 +350,9 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
                             <SelectItem value="Telegram">Telegram</SelectItem>
                             <SelectItem value="Gotify">Gotify</SelectItem>
                             <SelectItem value="Email">Email</SelectItem>
-                            {/* Disabled rather than selectable-then-rejected: selecting a type
-                              with no `DEFAULT_SETTINGS` entry leaves the previous type's keys in
-                              `settings`, so its own inputs come up blank. */}
+                            {/* Not offered for new channels yet. An existing Discord channel,
+                              such as one imported or created through the API, still opens here
+                              with its type shown. */}
                             <SelectItem value="Discord" disabled>
                               Discord <ComingSoon />
                             </SelectItem>
