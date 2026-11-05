@@ -108,26 +108,27 @@ Override any of them in `/etc/rust-srec/rust-srec.env`. `TimeoutStopSec=35` must
 
 ### Requirements
 
-- Rust 1.95 or newer on the stable channel. This is the `rust-version` declared in the workspace `Cargo.toml`; Cargo refuses to build with anything older.
-- Git, CMake 3.12 or newer, and a C/C++ compiler.
+- [rustup](https://rustup.rs/). The repository pins its toolchain in `rust-toolchain.toml`, and rustup installs and selects it automatically on the first `cargo` command. Any other Rust installation must be 1.95 or newer, the `rust-version` declared in the workspace `Cargo.toml`.
+- Git and a C/C++ compiler. CMake and `protoc` are not needed.
 - Node.js 26 and the pnpm version declared in `rust-srec/frontend/package.json` when running the frontend.
-- At least 2 GB of free disk space for dependencies and build artifacts.
+- Several gigabytes of free disk space for dependencies and build artifacts.
 
 Install the native build tools for your operating system:
 
 ```bash
 # Debian or Ubuntu
-sudo apt-get install git cmake build-essential
+sudo apt-get install git build-essential
 
 # Fedora or RHEL
-sudo dnf install git cmake gcc g++
+sudo dnf install git gcc gcc-c++
 
 # macOS
 xcode-select --install
-brew install cmake
 ```
 
-On Windows, install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the C++ workload and [CMake](https://cmake.org/download/). See the [aws-lc-rs requirements](https://aws.github.io/aws-lc-rs/requirements/index.html) if native compilation fails.
+On Windows, install [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the **Desktop development with C++** workload, then Rust with the default MSVC host. Build with the default features; `--all-features` needs extra OpenSSL build tools on Windows.
+
+For the desktop app, the tool-gated tests and other contributor setup, see [Development Environment](../development/setup.md).
 
 ### Build and Configure the Backend
 
