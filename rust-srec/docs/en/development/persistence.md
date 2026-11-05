@@ -8,8 +8,8 @@ Import and ordinary repository writes share the same typed field bindings. Impor
 reserves one SQLite write transaction for all ten configuration domains,
 subscription/filter replacement, email-slot swaps and authentication invalidation.
 Existing IDs and creation times remain stable; caller-selected update times and
-raw JSON are preserved. Extractor settings absent from the backup format retain
-their existing values, and new rows keep the same omitted-column defaults.
+raw JSON are preserved. A backup without an extractor setting sets it to
+inherit, like other settings a backup leaves out.
 
 Cache invalidation and runtime notifications occur only after commit. A late
 validation or database failure rolls back the import without publishing changes;

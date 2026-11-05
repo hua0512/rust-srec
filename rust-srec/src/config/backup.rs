@@ -498,6 +498,9 @@ pub struct GlobalConfigExport {
     pub offline_check_delay_ms: i64,
     pub offline_check_count: i32,
     pub default_download_engine: String,
+    /// Absent in backups that predate the setting; resolves to auto.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_extractor: Option<String>,
     pub max_concurrent_cpu_jobs: i32,
     pub max_concurrent_io_jobs: i32,
     pub job_history_retention_days: i32,
@@ -567,6 +570,9 @@ pub struct TemplateExport {
     pub platform_overrides: Option<serde_json::Value>,
     pub download_retry_policy: Option<serde_json::Value>,
     pub download_engine: Option<String>,
+    /// Absent in backups that predate the setting; inherits the layer above.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extractor: Option<String>,
     pub engines_override: Option<serde_json::Value>,
     /// Proxy settings of backups without saved proxies; see [`BackupRoute`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -645,6 +651,9 @@ pub struct PlatformExport {
     pub output_folder: Option<String>,
     pub output_filename_template: Option<String>,
     pub download_engine: Option<String>,
+    /// Absent in backups that predate the setting; inherits the layer above.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extractor: Option<String>,
     pub stream_selection_config: Option<serde_json::Value>,
     pub output_file_format: Option<String>,
     pub min_segment_size_bytes: Option<i64>,

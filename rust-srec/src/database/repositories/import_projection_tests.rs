@@ -86,17 +86,10 @@ fn distinctive<T: Serialize + DeserializeOwned>(seed: &T, generation: i64) -> T 
     serde_json::from_value(value).unwrap()
 }
 
-fn expected_update(previous: Value, mut candidate: Value, imported: bool) -> Value {
+fn expected_update(previous: Value, mut candidate: Value) -> Value {
     for key in ["created_at", "deleted_at"] {
         if let Some(value) = previous.get(key) {
             candidate[key] = value.clone();
-        }
-    }
-    if imported {
-        for key in ["extractor", "default_extractor"] {
-            if let Some(value) = previous.get(key) {
-                candidate[key] = value.clone();
-            }
         }
     }
     candidate
@@ -144,7 +137,7 @@ async fn complete_row_projections_match_repository_and_import_modes() {
                 $repo.$update(&candidate).await.unwrap();
                 let after = crate::database::time::now_ms();
                 let actual: $ty = sqlx::query_as(sqlx::AssertSqlSafe(read_sql.clone())).bind(&seed.id).fetch_one(&pool).await.unwrap();
-                let mut expected = expected_update(previous, serde_json::to_value(&candidate).unwrap(), false);
+                let mut expected = expected_update(previous, serde_json::to_value(&candidate).unwrap());
                 let actual_json = serde_json::to_value(&actual).unwrap();
                 if $clock {
                     let at = &actual_json["updated_at"];
@@ -162,7 +155,7 @@ async fn complete_row_projections_match_repository_and_import_modes() {
                 $import(&mut tx, &imported).await.unwrap();
                 tx.commit().await.unwrap();
                 let actual: $ty = sqlx::query_as(sqlx::AssertSqlSafe(read_sql.clone())).bind(&imported.id).fetch_one(&pool).await.unwrap();
-                let expected = if $table == "filters" { serde_json::to_value(&imported).unwrap() } else { expected_update(expected, serde_json::to_value(&imported).unwrap(), true) };
+                let expected = if $table == "filters" { serde_json::to_value(&imported).unwrap() } else { expected_update(expected, serde_json::to_value(&imported).unwrap()) };
                 assert_eq!(serde_json::to_value(actual).unwrap(), expected, "{} import projection", $table);
                 let mut reset = expected.clone();
                 for (key, value) in serde_json::to_value(&seed).unwrap().as_object().unwrap() {
@@ -183,8 +176,7 @@ async fn complete_row_projections_match_repository_and_import_modes() {
                 if matches!($table, "global_config" | "platform_config") {
                     assert!(created.is_none(), "import only updates existing global/platform rows");
                 } else {
-                    let mut expected = serde_json::to_value(&fresh).unwrap();
-                    if $table == "template_config" { expected["extractor"] = Value::Null; }
+                    let expected = serde_json::to_value(&fresh).unwrap();
                     assert_eq!(serde_json::to_value(created.unwrap()).unwrap(), expected, "{} import creation/defaults", $table);
                 }
                 assert!($repo.$create(&original).await.is_err(), "create must not become upsert");

@@ -20,8 +20,11 @@ use crate::config::backup::{
     PipelinePresetExport, PlatformExport, ProxyExport, StreamerExport, TemplateExport, UserExport,
     export_filter_config, unwrap_json_value,
 };
-use crate::credentials::CredentialOwner;
-use crate::database::models::{NotificationChannelDbModel, StreamerDbModel, UserDbModel};
+use crate::credentials::{CredentialOwner, CredentialSelection};
+use crate::database::models::{
+    GlobalConfigDbModel, NotificationChannelDbModel, PlatformConfigDbModel, StreamerDbModel,
+    TemplateConfigDbModel, UserDbModel,
+};
 use crate::database::repositories::proxies::RouteOwner;
 use crate::database::repositories::{
     FilterRepository, NotificationRepository, StoredSelection, credential_selections,
@@ -35,6 +38,201 @@ fn parse_db_config(s: impl Into<String>) -> serde_json::Value {
     }
     let value = serde_json::from_str(&s).unwrap_or(serde_json::Value::String(s));
     unwrap_json_value(value)
+}
+
+// The configuration exports below destructure their row without `..`, so a
+// new column does not compile until it is exported or skipped on purpose.
+
+fn global_export(config: GlobalConfigDbModel, route: BackupRoute) -> GlobalConfigExport {
+    let GlobalConfigDbModel {
+        id: _, // the singleton row's ID is local to each installation
+        output_folder,
+        output_filename_template,
+        output_file_format,
+        min_segment_size_bytes,
+        max_download_duration_secs,
+        max_part_size_bytes,
+        record_danmu,
+        danmu_statistics,
+        max_concurrent_downloads,
+        max_concurrent_uploads,
+        streamer_check_delay_ms,
+        offline_check_delay_ms,
+        offline_check_count,
+        default_download_engine,
+        default_extractor,
+        max_concurrent_cpu_jobs,
+        max_concurrent_io_jobs,
+        job_history_retention_days,
+        notification_event_log_retention_days,
+        output_retention_days,
+        output_retention_delete_files,
+        pipeline,
+        session_complete_pipeline,
+        paired_segment_pipeline,
+        log_filter_directive,
+        auto_thumbnail,
+        pipeline_cpu_job_timeout_secs,
+        pipeline_io_job_timeout_secs,
+        pipeline_execute_timeout_secs,
+        queue_freshness_threshold_ms,
+        gpu_health_probe_interval_secs,
+        stream_proxy_allow_private_targets,
+    } = config;
+    GlobalConfigExport {
+        output_folder,
+        output_filename_template,
+        output_file_format,
+        min_segment_size_bytes,
+        max_download_duration_secs,
+        max_part_size_bytes,
+        record_danmu,
+        danmu_statistics,
+        max_concurrent_downloads,
+        max_concurrent_uploads,
+        streamer_check_delay_ms,
+        proxy_config: serde_json::Value::Null,
+        proxy_route: Some(route),
+        offline_check_delay_ms,
+        offline_check_count,
+        default_download_engine,
+        default_extractor,
+        max_concurrent_cpu_jobs,
+        max_concurrent_io_jobs,
+        job_history_retention_days,
+        notification_event_log_retention_days,
+        output_retention_days,
+        output_retention_delete_files,
+        pipeline: pipeline.map(parse_db_config),
+        session_complete_pipeline: session_complete_pipeline.map(parse_db_config),
+        paired_segment_pipeline: paired_segment_pipeline.map(parse_db_config),
+        log_filter_directive: Some(log_filter_directive),
+        auto_thumbnail,
+        pipeline_cpu_job_timeout_secs,
+        pipeline_io_job_timeout_secs,
+        pipeline_execute_timeout_secs,
+        queue_freshness_threshold_ms,
+        gpu_health_probe_interval_secs,
+        stream_proxy_allow_private_targets,
+    }
+}
+
+fn template_export(
+    template: TemplateConfigDbModel,
+    selections: &[StoredSelection],
+    route: Option<BackupRoute>,
+) -> TemplateExport {
+    let TemplateConfigDbModel {
+        id: _, // bundles name templates; IDs stay local
+        name,
+        output_folder,
+        output_filename_template,
+        output_file_format,
+        min_segment_size_bytes,
+        max_download_duration_secs,
+        max_part_size_bytes,
+        record_danmu,
+        danmu_statistics,
+        platform_overrides,
+        download_retry_policy,
+        download_engine,
+        extractor,
+        engines_override,
+        stream_selection_config,
+        pipeline,
+        session_complete_pipeline,
+        paired_segment_pipeline,
+        offline_check_count,
+        offline_check_delay_ms,
+        created_at: _, // an import stamps its own times
+        updated_at: _,
+    } = template;
+    TemplateExport {
+        name,
+        output_folder,
+        output_filename_template,
+        cookies: None,
+        output_file_format,
+        min_segment_size_bytes,
+        max_download_duration_secs,
+        max_part_size_bytes,
+        record_danmu,
+        danmu_statistics,
+        platform_overrides: credential_selections::inject_overrides(
+            platform_overrides.map(parse_db_config),
+            selections,
+        ),
+        download_retry_policy: download_retry_policy.map(parse_db_config),
+        download_engine,
+        extractor,
+        engines_override: engines_override.map(parse_db_config),
+        proxy_config: None,
+        proxy_route: route,
+        stream_selection_config: stream_selection_config.map(parse_db_config),
+        pipeline: pipeline.map(parse_db_config),
+        session_complete_pipeline: session_complete_pipeline.map(parse_db_config),
+        paired_segment_pipeline: paired_segment_pipeline.map(parse_db_config),
+        offline_check_count,
+        offline_check_delay_ms,
+    }
+}
+
+fn platform_export(
+    platform: PlatformConfigDbModel,
+    credential_selection: Option<CredentialSelection>,
+    route: Option<BackupRoute>,
+) -> PlatformExport {
+    let PlatformConfigDbModel {
+        id: _, // bundles name platforms; IDs stay local
+        platform_name,
+        fetch_delay_ms,
+        download_delay_ms,
+        platform_specific_config,
+        record_danmu,
+        danmu_statistics,
+        output_folder,
+        output_filename_template,
+        download_engine,
+        extractor,
+        stream_selection_config,
+        output_file_format,
+        min_segment_size_bytes,
+        max_download_duration_secs,
+        max_part_size_bytes,
+        download_retry_policy,
+        pipeline,
+        session_complete_pipeline,
+        paired_segment_pipeline,
+        offline_check_count,
+        offline_check_delay_ms,
+    } = platform;
+    PlatformExport {
+        platform_name,
+        fetch_delay_ms,
+        download_delay_ms,
+        cookies: None,
+        credential_selection,
+        platform_specific_config: platform_specific_config.map(parse_db_config),
+        proxy_config: None,
+        proxy_route: route,
+        record_danmu,
+        danmu_statistics,
+        output_folder,
+        output_filename_template,
+        download_engine,
+        extractor,
+        stream_selection_config: stream_selection_config.map(parse_db_config),
+        output_file_format,
+        min_segment_size_bytes,
+        max_download_duration_secs,
+        max_part_size_bytes,
+        download_retry_policy: download_retry_policy.map(parse_db_config),
+        pipeline: pipeline.map(parse_db_config),
+        session_complete_pipeline: session_complete_pipeline.map(parse_db_config),
+        paired_segment_pipeline: paired_segment_pipeline.map(parse_db_config),
+        offline_check_count,
+        offline_check_delay_ms,
+    }
 }
 
 fn build_streamer_export(
@@ -340,78 +538,15 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
     let mut export = ConfigExport {
         version: EXPORT_SCHEMA_VERSION.to_string(),
         exported_at: Utc::now().to_rfc3339(),
-        global_config: GlobalConfigExport {
-            output_folder: global_config.output_folder,
-            output_filename_template: global_config.output_filename_template,
-            output_file_format: global_config.output_file_format,
-            min_segment_size_bytes: global_config.min_segment_size_bytes,
-            max_download_duration_secs: global_config.max_download_duration_secs,
-            max_part_size_bytes: global_config.max_part_size_bytes,
-            record_danmu: global_config.record_danmu,
-            danmu_statistics: global_config.danmu_statistics.clone(),
-            max_concurrent_downloads: global_config.max_concurrent_downloads,
-            max_concurrent_uploads: global_config.max_concurrent_uploads,
-            streamer_check_delay_ms: global_config.streamer_check_delay_ms,
-            proxy_config: serde_json::Value::Null,
-            proxy_route: Some(global_route),
-            offline_check_delay_ms: global_config.offline_check_delay_ms,
-            offline_check_count: global_config.offline_check_count,
-            default_download_engine: global_config.default_download_engine,
-            max_concurrent_cpu_jobs: global_config.max_concurrent_cpu_jobs,
-            max_concurrent_io_jobs: global_config.max_concurrent_io_jobs,
-            job_history_retention_days: global_config.job_history_retention_days,
-            notification_event_log_retention_days: global_config
-                .notification_event_log_retention_days,
-            output_retention_days: global_config.output_retention_days,
-            output_retention_delete_files: global_config.output_retention_delete_files,
-            pipeline: global_config.pipeline.map(parse_db_config),
-            session_complete_pipeline: global_config.session_complete_pipeline.map(parse_db_config),
-            paired_segment_pipeline: global_config.paired_segment_pipeline.map(parse_db_config),
-            log_filter_directive: Some(global_config.log_filter_directive),
-            auto_thumbnail: global_config.auto_thumbnail,
-
-            pipeline_cpu_job_timeout_secs: global_config.pipeline_cpu_job_timeout_secs,
-            pipeline_io_job_timeout_secs: global_config.pipeline_io_job_timeout_secs,
-            pipeline_execute_timeout_secs: global_config.pipeline_execute_timeout_secs,
-            queue_freshness_threshold_ms: global_config.queue_freshness_threshold_ms,
-            gpu_health_probe_interval_secs: global_config.gpu_health_probe_interval_secs,
-            stream_proxy_allow_private_targets: global_config.stream_proxy_allow_private_targets,
-        },
+        global_config: global_export(global_config, global_route),
         templates: templates
-            .iter()
+            .into_iter()
             .map(|t| -> ApiResult<TemplateExport> {
-                Ok(TemplateExport {
-                    name: t.name.clone(),
-                    output_folder: t.output_folder.clone(),
-                    output_filename_template: t.output_filename_template.clone(),
-                    cookies: None,
-                    output_file_format: t.output_file_format.clone(),
-                    min_segment_size_bytes: t.min_segment_size_bytes,
-                    max_download_duration_secs: t.max_download_duration_secs,
-                    max_part_size_bytes: t.max_part_size_bytes,
-                    record_danmu: t.record_danmu,
-                    danmu_statistics: t.danmu_statistics.clone(),
-                    platform_overrides: credential_selections::inject_overrides(
-                        t.platform_overrides.clone().map(parse_db_config),
-                        template_selections
-                            .get(&t.id)
-                            .map_or(&[][..], Vec::as_slice),
-                    ),
-                    download_retry_policy: t.download_retry_policy.clone().map(parse_db_config),
-                    download_engine: t.download_engine.clone(),
-                    engines_override: t.engines_override.clone().map(parse_db_config),
-                    proxy_config: None,
-                    proxy_route: scope_route(&template_routes, &t.id)?,
-                    stream_selection_config: t.stream_selection_config.clone().map(parse_db_config),
-                    pipeline: t.pipeline.clone().map(parse_db_config),
-                    session_complete_pipeline: t
-                        .session_complete_pipeline
-                        .clone()
-                        .map(parse_db_config),
-                    paired_segment_pipeline: t.paired_segment_pipeline.clone().map(parse_db_config),
-                    offline_check_count: t.offline_check_count,
-                    offline_check_delay_ms: t.offline_check_delay_ms,
-                })
+                let route = scope_route(&template_routes, &t.id)?;
+                let selections = template_selections
+                    .get(&t.id)
+                    .map_or(&[][..], Vec::as_slice);
+                Ok(template_export(t, selections, route))
             })
             .collect::<ApiResult<_>>()?,
         streamers: streamer_exports,
@@ -424,40 +559,11 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
             })
             .collect(),
         platforms: platforms
-            .iter()
+            .into_iter()
             .map(|p| -> ApiResult<PlatformExport> {
-                Ok(PlatformExport {
-                    platform_name: p.platform_name.clone(),
-                    fetch_delay_ms: p.fetch_delay_ms,
-                    download_delay_ms: p.download_delay_ms,
-                    cookies: None,
-                    credential_selection: platform_selections.get(&p.id).cloned(),
-                    platform_specific_config: p
-                        .platform_specific_config
-                        .clone()
-                        .map(parse_db_config),
-                    proxy_config: None,
-                    proxy_route: scope_route(&platform_routes, &p.id)?,
-                    record_danmu: p.record_danmu,
-                    danmu_statistics: p.danmu_statistics.clone(),
-                    output_folder: p.output_folder.clone(),
-                    output_filename_template: p.output_filename_template.clone(),
-                    download_engine: p.download_engine.clone(),
-                    stream_selection_config: p.stream_selection_config.clone().map(parse_db_config),
-                    output_file_format: p.output_file_format.clone(),
-                    min_segment_size_bytes: p.min_segment_size_bytes,
-                    max_download_duration_secs: p.max_download_duration_secs,
-                    max_part_size_bytes: p.max_part_size_bytes,
-                    download_retry_policy: p.download_retry_policy.clone().map(parse_db_config),
-                    pipeline: p.pipeline.clone().map(parse_db_config),
-                    session_complete_pipeline: p
-                        .session_complete_pipeline
-                        .clone()
-                        .map(parse_db_config),
-                    paired_segment_pipeline: p.paired_segment_pipeline.clone().map(parse_db_config),
-                    offline_check_count: p.offline_check_count,
-                    offline_check_delay_ms: p.offline_check_delay_ms,
-                })
+                let route = scope_route(&platform_routes, &p.id)?;
+                let selection = platform_selections.get(&p.id).cloned();
+                Ok(platform_export(p, selection, route))
             })
             .collect::<ApiResult<_>>()?,
         notification_channels: channel_exports,
