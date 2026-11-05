@@ -9,18 +9,9 @@ import { useLingui } from '@lingui/react';
 import { useShallow } from 'zustand/react/shallow';
 import { toast } from 'sonner';
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { StreamerAvatar } from '@/components/shared/streamer-avatar';
+import { Button } from '@/components/ui/button';
 import { NotificationBadge } from '@/components/ui/notification-badge';
 import {
   Popover,
@@ -40,7 +31,7 @@ import {
   HEADER_TRIGGER_EXIT_MS,
   headerTriggerClass,
 } from '@/components/header-indicator';
-import { cn, getProxiedUrl } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { cancelActivePipelineJob } from '@/server/functions/pipeline';
 import {
   useUploadStore,
@@ -99,6 +90,9 @@ export function summarizeUploads(uploads: UploadView[]): UploadSummary {
   }
   return { percent, speedBytesPerSec: speed, etaSecs: eta };
 }
+
+/** The avatar of a row in the header's job lists. */
+export const ROW_AVATAR = 'size-7 border border-border/60';
 
 const RING_RADIUS = 15;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
@@ -363,7 +357,12 @@ function ActiveUploadRow({
         onClick={onNavigate}
         className="flex min-w-0 flex-1 items-center gap-3 py-2 pl-4"
       >
-        <StreamerAvatar upload={upload} name={name} />
+        <StreamerAvatar
+          src={upload.streamerAvatar}
+          name={name}
+          className={ROW_AVATAR}
+          fallbackClassName="text-[10px]"
+        />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
             <span className="w-24 shrink-0 truncate text-sm font-medium">
@@ -420,7 +419,18 @@ function FailedUploadRow({
         onClick={onNavigate}
         className="flex min-w-0 flex-1 items-center gap-3 py-2 pl-4"
       >
-        <StreamerAvatar upload={upload} name={name} failed />
+        <span className="relative shrink-0">
+          <StreamerAvatar
+            src={upload.streamerAvatar}
+            name={name}
+            className={ROW_AVATAR}
+            fallbackClassName="text-[10px]"
+          />
+          <span
+            aria-hidden
+            className="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full bg-red-500 ring-2 ring-popover"
+          />
+        </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="min-w-0 truncate text-sm font-medium">{name}</span>
@@ -442,37 +452,6 @@ function FailedUploadRow({
         <X className="size-3.5" />
       </RowAction>
     </div>
-  );
-}
-
-export function StreamerAvatar({
-  upload,
-  name,
-  failed = false,
-}: {
-  upload: Pick<UploadView, 'streamerAvatar'>;
-  name: string;
-  failed?: boolean;
-}) {
-  return (
-    <span className="relative shrink-0">
-      <Avatar className="size-7 border border-border/60">
-        <AvatarImage
-          src={getProxiedUrl(upload.streamerAvatar)}
-          alt=""
-          className="object-cover"
-        />
-        <AvatarFallback className="text-[10px] font-medium text-muted-foreground">
-          {name.substring(0, 2).toUpperCase()}
-        </AvatarFallback>
-      </Avatar>
-      {failed && (
-        <span
-          aria-hidden
-          className="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full bg-red-500 ring-2 ring-popover"
-        />
-      )}
-    </span>
   );
 }
 
@@ -520,38 +499,23 @@ function CancelUploadDialog({
   const name = upload ? displayName(upload, i18n) : '';
 
   return (
-    <AlertDialog
+    <ConfirmDialog
       open={upload != null}
       onOpenChange={(next) => {
         if (!next) onClose();
       }}
-    >
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>
-            <Trans>Cancel this upload?</Trans>
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            <Trans>
-              The upload for {name} stops now. Files that already finished stay
-              at the destination, and you can retry the job later.
-            </Trans>
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>
-            <Trans>Keep uploading</Trans>
-          </AlertDialogCancel>
-          <AlertDialogAction
-            className={buttonVariants({ variant: 'destructive' })}
-            onClick={() => {
-              if (upload) cancelMutation.mutate(upload.jobId);
-            }}
-          >
-            <Trans>Cancel upload</Trans>
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+      title={<Trans>Cancel this upload?</Trans>}
+      description={
+        <Trans>
+          The upload for {name} stops now. Files that already finished stay at
+          the destination, and you can retry the job later.
+        </Trans>
+      }
+      cancelLabel={<Trans>Keep uploading</Trans>}
+      confirmLabel={<Trans>Cancel upload</Trans>}
+      onConfirm={() => {
+        if (upload) cancelMutation.mutate(upload.jobId);
+      }}
+    />
   );
 }

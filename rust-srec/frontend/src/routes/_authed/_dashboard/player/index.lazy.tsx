@@ -32,6 +32,7 @@ import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { AmbientBackground } from '@/components/shared/detail-page';
+import { CreateFab } from '@/components/shared/page-actions';
 import {
   selectInitialStream,
   renewalNeedsNewParse,
@@ -453,24 +454,10 @@ function PlayerPage() {
         {/* FAB */}
         <AnimatePresence>
           {!isImmersive && players.length > 0 && (
-            <motion.div
-              initial={{ scale: 0.93, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.93, opacity: 0 }}
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              className="fixed bottom-8 right-8 z-50"
-            >
-              <Button
-                onClick={() => setIsAddStreamOpen(true)}
-                aria-label={i18n._(msg`Add Stream`)}
-                title={i18n._(msg`Add Stream`)}
-                size="icon"
-                className="h-16 w-16 rounded-full shadow-2xl bg-primary hover:bg-primary/90 text-primary-foreground flex items-center justify-center p-0 ring-4 ring-background/50 backdrop-blur-sm"
-              >
-                <Plus className="h-8 w-8" />
-              </Button>
-            </motion.div>
+            <CreateFab
+              label={i18n._(msg`Add Stream`)}
+              onClick={() => setIsAddStreamOpen(true)}
+            />
           )}
         </AnimatePresence>
 

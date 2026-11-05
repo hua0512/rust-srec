@@ -5,18 +5,10 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '../../../lib/utils';
-import { ReactNode } from 'react';
+import type { useStreamerStatus } from './use-streamer-status';
 
-export interface StatusBadgeProps {
-  status: {
-    label: ReactNode;
-    color: string;
-    iconColor: string;
-    pulsing: boolean;
-    pingColor?: string;
-    variant?: string;
-    tooltip: ReactNode | null;
-  };
+interface StatusBadgeProps {
+  status: ReturnType<typeof useStreamerStatus>;
 }
 
 export const StatusBadge = ({ status }: StatusBadgeProps) => (

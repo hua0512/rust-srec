@@ -19,10 +19,11 @@ import { StreamerSchema } from '@/api/schemas';
 import type { UnavailableReason } from '@/api/schemas/credential-profiles';
 import type { CredentialBlock } from '@/api/schemas/streamer';
 import { z } from 'zod';
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import { StatusInfoTooltip } from '@/components/shared/status-info-tooltip';
 import type { QueuedEntry } from '@/store/downloads';
-import { isStreamerRecovering } from './recovery-state';
+import { useHydrated } from '@/hooks/use-hydrated';
+import type { MonitoringState, StopState } from './recovery-state';
 import { formatDate } from '@/lib/datetime';
 import { formatRelativeTime } from '@/lib/date-utils';
 
@@ -121,60 +122,40 @@ function CredentialBlockTooltip({
   );
 }
 
+function stopReason(state: StopState): ReactNode {
+  switch (state) {
+    case 'OUT_OF_SPACE':
+      return <Trans>Out of Space</Trans>;
+    case 'FATAL_ERROR':
+      return <Trans>Fatal Error</Trans>;
+    case 'CANCELLED':
+      return <Trans>Cancelled</Trans>;
+    case 'ERROR':
+      return <Trans>Error</Trans>;
+    case 'DISABLED':
+      return <Trans>Disabled</Trans>;
+    default:
+      return state satisfies never;
+  }
+}
+
 export function useStreamerStatus(
   streamer: z.infer<typeof StreamerSchema>,
+  {
+    disabledUntil,
+    isTemporarilyPaused,
+    stopState,
+    isRecovering,
+  }: MonitoringState,
   hasActiveDownload: boolean,
-  hasRecoverySignal: boolean,
   queuedEntry?: QueuedEntry,
 ) {
   const { i18n } = useLingui();
-
-  // Client-side time to avoid hydration mismatch
-  const [now, setNow] = useState<Date | null>(null);
-  useEffect(() => {
-    setNow(new Date());
-  }, []);
+  // Times relative to now wait for hydration, so they never differ from the
+  // server's render.
+  const hydrated = useHydrated();
 
   return useMemo(() => {
-    const formatState = (state: string) => {
-      if (state === 'NOT_LIVE') return <Trans>Offline</Trans>;
-      if (state === 'LIVE') return <Trans>Live</Trans>;
-      if (state === 'INSPECTING_LIVE') return <Trans>Inspecting</Trans>;
-      if (state === 'OUT_OF_SCHEDULE') return <Trans>Scheduled</Trans>;
-      if (state === 'OUT_OF_SPACE') return <Trans>Out of Space</Trans>;
-      if (state === 'FATAL_ERROR') return <Trans>Fatal Error</Trans>;
-      if (state === 'CANCELLED') return <Trans>Cancelled</Trans>;
-      if (state === 'NOT_FOUND') return <Trans>Streamer not found</Trans>;
-      if (state === 'TEMPORAL_DISABLED')
-        return <Trans>Temporarily Paused</Trans>;
-      if (state === 'ERROR') return <Trans>Error</Trans>;
-      if (state === 'DISABLED') return <Trans>Disabled</Trans>;
-      return (
-        state.charAt(0).toUpperCase() +
-        state.slice(1).toLowerCase().replace(/_/g, ' ')
-      );
-    };
-
-    // Basic checks - during SSR use null for now
-    const disabledUntil = streamer.disabled_until
-      ? new Date(streamer.disabled_until)
-      : null;
-    // During SSR (now === null), rely only on state field
-    const isTemporarilyPaused = now
-      ? (disabledUntil && disabledUntil > now) ||
-        streamer.state === 'TEMPORAL_DISABLED'
-      : streamer.state === 'TEMPORAL_DISABLED';
-
-    const stopStates = [
-      'FATAL_ERROR',
-      'OUT_OF_SPACE',
-      'DISABLED',
-      'CANCELLED',
-      'ERROR',
-    ];
-    const isStopped = stopStates.includes(streamer.state);
-    const isRecovering = isStreamerRecovering(streamer, hasRecoverySignal);
-
     if (isRecovering) {
       return {
         label: <Trans>Recovering</Trans>,
@@ -306,7 +287,7 @@ export function useStreamerStatus(
       };
     }
 
-    if (isStopped) {
+    if (stopState) {
       return {
         label: <Trans>Monitoring Stopped</Trans>,
         color:
@@ -327,7 +308,7 @@ export function useStreamerStatus(
                 variant="outline"
                 className="h-5 text-[10px] font-medium border-destructive/20 bg-destructive/5 text-destructive"
               >
-                {formatState(streamer.state)}
+                {stopReason(stopState)}
               </Badge>
             </div>
             {streamer.last_error && (
@@ -370,7 +351,7 @@ export function useStreamerStatus(
           <CredentialBlockTooltip
             block={credentialBlock}
             locale={i18n.locale}
-            showSince={now !== null}
+            showSince={hydrated}
           />
         ),
       };
@@ -414,7 +395,7 @@ export function useStreamerStatus(
                 when a slot frees.
               </Trans>
             </div>
-            {queuedDateValid && now && (
+            {queuedDateValid && hydrated && (
               <div className="flex items-center justify-between text-xs p-2 rounded-md bg-muted/30 border border-border/40">
                 <div className="flex items-center gap-1.5 text-muted-foreground">
                   <Clock className="h-3.5 w-3.5 text-[var(--tooltip-theme-color)]" />
@@ -540,13 +521,23 @@ export function useStreamerStatus(
       };
     }
 
-    // Fallback
+    // Only a pause with no end time is left.
     return {
-      label: formatState(streamer.state),
+      label: <Trans>Temporarily Paused</Trans>,
       color: 'bg-muted text-muted-foreground border-transparent',
       iconColor: 'bg-muted-foreground',
       pulsing: false,
       tooltip: null,
     };
-  }, [hasActiveDownload, hasRecoverySignal, queuedEntry, streamer, i18n, now]);
+  }, [
+    streamer,
+    disabledUntil,
+    isTemporarilyPaused,
+    stopState,
+    isRecovering,
+    hasActiveDownload,
+    queuedEntry,
+    i18n,
+    hydrated,
+  ]);
 }

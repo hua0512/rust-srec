@@ -22,6 +22,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { isPlayable } from '@/lib/media';
+import { ListPanelEmpty } from '@/components/shared/list-panel';
 import { getMediaFileTypeMeta } from '@/lib/media-file-type';
 import { MediaOutput } from '@/api/schemas/system';
 import type { SessionSegment } from '@/api/schemas/session';
@@ -523,12 +524,10 @@ export function RecordingsTab({
               <Skeleton className="h-24 w-full rounded-xl" />
             </div>
           ) : outputs.length === 0 ? (
-            <div className="p-10 text-center text-muted-foreground">
-              <Video className="h-10 w-10 mx-auto mb-3 opacity-20" />
-              <p>
-                <Trans>No media outputs generated yet.</Trans>
-              </p>
-            </div>
+            <ListPanelEmpty
+              icon={Video}
+              title={<Trans>No media outputs generated yet.</Trans>}
+            />
           ) : (
             <div className="p-4 sm:p-6">
               <div className="relative pl-6 ml-2 sm:ml-4 border-l-2 border-border/60 pb-4 space-y-8">

@@ -1,12 +1,12 @@
 import React, { Suspense, useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { StreamerAvatar } from '@/components/shared/streamer-avatar';
 import { Badge } from '@/components/ui/badge';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { motion } from 'motion/react';
-import { cn, getProxiedUrl } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { STAT_GRID } from '@/lib/grid';
 import { formatBytes } from '@/lib/format';
 import {
@@ -18,10 +18,14 @@ import {
   Timer,
   Zap,
   HardDrive,
+  type LucideIcon,
 } from 'lucide-react';
 import { getMediaUrl } from '@/lib/url';
 import { isPlayable } from '@/lib/media';
-import type { SessionDanmuStatistics } from '@/api/schemas';
+import type { z } from 'zod';
+import type { SessionDanmuStatistics, SessionSchema } from '@/api/schemas';
+import type { MediaOutput } from '@/api/schemas/system';
+import { StatTile } from '@/components/shared/stat-tile';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatDate } from '@/lib/datetime';
 import { formatLocalizedDuration } from '@/lib/date-utils';
@@ -66,9 +70,9 @@ function SessionDuration({
 }
 
 interface OverviewTabProps {
-  session: any;
-  outputs: any[];
-  onPlay: (output: any) => void;
+  session: z.infer<typeof SessionSchema>;
+  outputs: MediaOutput[];
+  onPlay: (output: MediaOutput) => void;
   token?: string;
   danmuStats: SessionDanmuStatistics | undefined;
   isDanmuStatsLoading: boolean;
@@ -109,19 +113,12 @@ export function OverviewTab({
             <div className="flex min-w-0 max-w-full items-center gap-4 md:gap-6">
               <div className="relative group">
                 <div className="absolute -inset-1 bg-gradient-to-br from-primary to-blue-600 rounded-full opacity-20 group-hover:opacity-40 transition-opacity blur-md" />
-                <Avatar className="h-16 w-16 md:h-24 md:w-24 border-2 md:border-4 border-background shadow-xl relative">
-                  {getProxiedUrl(session.streamer_avatar) && (
-                    <AvatarImage
-                      src={getProxiedUrl(session.streamer_avatar)}
-                      alt={session.streamer_name}
-                      className="object-cover"
-                    />
-                  )}
-                  <AvatarFallback className="text-xl md:text-3xl font-bold bg-muted text-muted-foreground">
-                    {session.streamer_name?.substring(0, 2).toUpperCase() ||
-                      '??'}
-                  </AvatarFallback>
-                </Avatar>
+                <StreamerAvatar
+                  src={session.streamer_avatar}
+                  name={session.streamer_name}
+                  className="h-16 w-16 md:h-24 md:w-24 border-2 md:border-4 border-background shadow-xl relative"
+                  fallbackClassName="text-xl md:text-3xl font-bold"
+                />
                 {!session.end_time && (
                   <div className="absolute bottom-1 right-1 h-4 w-4 md:h-5 md:w-5 bg-green-500 border-2 md:border-4 border-white dark:border-zinc-900 rounded-full" />
                 )}
@@ -148,26 +145,23 @@ export function OverviewTab({
             </div>
 
             <div className="grid grid-cols-2 @4xl:grid-cols-3 gap-3 md:gap-4 w-full @4xl:w-auto @4xl:shrink-0 min-w-0 md:min-w-[300px]">
-              <StatBox
-                icon={HardDrive}
+              <StatTile
+                icon={<HardDrive className="h-4 w-4 text-blue-500" />}
                 label={<Trans>Total Size</Trans>}
                 value={formatBytes(session.total_size_bytes)}
-                color="text-blue-500"
-                bg="bg-blue-500/10"
+                accent="bg-blue-500/10"
               />
-              <StatBox
-                icon={Video}
+              <StatTile
+                icon={<Video className="h-4 w-4 text-purple-500" />}
                 label={<Trans>Outputs</Trans>}
                 value={session.output_count}
-                color="text-purple-500"
-                bg="bg-purple-500/10"
+                accent="bg-purple-500/10"
               />
-              <StatBox
-                icon={Activity}
+              <StatTile
+                icon={<Activity className="h-4 w-4 text-orange-500" />}
                 label={<Trans>Danmus</Trans>}
                 value={(session.danmu_count ?? 0).toLocaleString(i18n.locale)}
-                color="text-orange-500"
-                bg="bg-orange-500/10"
+                accent="bg-orange-500/10"
                 className="col-span-2 @4xl:col-span-1"
               />
             </div>
@@ -311,28 +305,17 @@ export function OverviewTab({
   );
 }
 
-function StatBox({ icon: Icon, label, value, color, bg }: any) {
-  return (
-    <div className="flex items-center gap-4 bg-background/50 border border-border/50 p-3 rounded-xl hover:bg-background/80 transition-colors">
-      <div
-        className={cn(
-          'h-10 w-10 rounded-lg flex items-center justify-center shrink-0',
-          bg,
-        )}
-      >
-        <Icon className={cn('h-5 w-5', color)} />
-      </div>
-      <div>
-        <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground truncate">
-          {label}
-        </p>
-        <p className="text-xs md:text-sm font-bold">{value}</p>
-      </div>
-    </div>
-  );
-}
-
-function TimeBlock({ label, date, icon: Icon, delay }: any) {
+function TimeBlock({
+  label,
+  date,
+  icon: Icon,
+  delay,
+}: {
+  label: string;
+  date: string | null | undefined;
+  icon: LucideIcon;
+  delay: number;
+}) {
   const { i18n } = useLingui();
   return (
     <motion.div

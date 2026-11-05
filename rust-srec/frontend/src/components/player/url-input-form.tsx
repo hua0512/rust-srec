@@ -19,6 +19,7 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState } from 'react';
+import type { I18n } from '@lingui/core';
 import { cn } from '@/lib/utils';
 import {
   Collapsible,
@@ -26,7 +27,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 
-const getSingleUrlSchema = (i18n: any) =>
+const getSingleUrlSchema = (i18n: I18n) =>
   z
     .object({
       url: z
@@ -40,7 +41,7 @@ const getSingleUrlSchema = (i18n: any) =>
       message: i18n._(msg`Choose an account or raw cookies, not both`),
     });
 
-const getBatchUrlSchema = (i18n: any) =>
+const getBatchUrlSchema = (i18n: I18n) =>
   z
     .object({
       urls: z.string().min(1, i18n._(msg`Please enter at least one URL`)),

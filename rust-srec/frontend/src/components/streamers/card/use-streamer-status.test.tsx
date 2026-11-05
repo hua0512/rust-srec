@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { CredentialBlock, Streamer } from '@/api/schemas/streamer';
 import type { QueuedEntry } from '@/store/downloads';
+import { monitoringState } from './recovery-state';
 import { useStreamerStatus } from './use-streamer-status';
 
 vi.mock('@tanstack/react-router', () => ({
@@ -74,8 +75,8 @@ function status(
     () =>
       useStreamerStatus(
         value,
+        monitoringState(value, hasRecoverySignal, new Date()),
         hasActiveDownload,
-        hasRecoverySignal,
         queuedEntry,
       ),
     { wrapper },

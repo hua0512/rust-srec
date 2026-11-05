@@ -29,14 +29,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { StreamerAvatar } from '@/components/shared/streamer-avatar';
 import { SessionSchema } from '@/api/schemas';
 import { z } from 'zod';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { formatBytes, formatDuration } from '@/lib/format';
-import { cn, getProxiedUrl } from '@/lib/utils';
+import { cn } from '@/lib/utils';
 import { motion } from 'motion/react';
 import { formatDate } from '@/lib/datetime';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
@@ -147,18 +147,12 @@ export const SessionCard = memo(
 
           <CardHeader className="p-3.5 pb-0 flex-row gap-3 space-y-0 items-start relative z-10">
             <div className="relative shrink-0 pt-0.5">
-              <Avatar className="h-10 w-10 border-2 border-white/10 shadow-xl transition-colors duration-300 group-hover:border-primary/30 ring-4 ring-black/5">
-                {session.streamer_avatar && (
-                  <AvatarImage
-                    src={getProxiedUrl(session.streamer_avatar)}
-                    alt={session.streamer_name}
-                    className="object-cover"
-                  />
-                )}
-                <AvatarFallback className="text-[9px] font-black bg-gradient-to-br from-muted to-muted/50 text-muted-foreground uppercase tracking-tighter">
-                  {session.streamer_name?.substring(0, 2).toUpperCase() || '??'}
-                </AvatarFallback>
-              </Avatar>
+              <StreamerAvatar
+                src={session.streamer_avatar}
+                name={session.streamer_name}
+                className="h-10 w-10 border-2 border-white/10 shadow-xl transition-colors duration-300 group-hover:border-primary/30 ring-4 ring-black/5"
+                fallbackClassName="text-[9px] font-black bg-gradient-to-br from-muted to-muted/50 tracking-tighter"
+              />
             </div>
 
             <div className="flex-1 min-w-0 pt-0.5">

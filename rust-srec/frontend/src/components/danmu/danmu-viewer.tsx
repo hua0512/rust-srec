@@ -13,6 +13,7 @@ import {
   User,
 } from 'lucide-react';
 import { formatDuration } from '@/lib/format';
+import { ListPanelEmpty } from '@/components/shared/list-panel';
 import { Card } from '@/components/ui/card';
 import {
   DropdownMenu,
@@ -38,6 +39,8 @@ type FilterMode = 'all' | 'scrolling' | 'top' | 'bottom';
 // relabels the failure without re-running the parse.
 const PARSE_FAILURE = msg`Failed to parse danmu file`;
 
+const NO_COMMENTS: DanmuComment[] = [];
+
 function filterModeLabel(i18n: I18n, mode: FilterMode): string {
   switch (mode) {
     case 'scrolling':
@@ -57,33 +60,35 @@ export function formatDanmuOffset(seconds: number): string {
 
 export function DanmuViewer({ url, title }: DanmuViewerProps) {
   const { i18n } = useLingui();
-  const [comments, setComments] = useState<DanmuComment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | MessageDescriptor | null>(null);
+  // Keyed by the file it was parsed from, so switching files shows the new
+  // one loading instead of the old one's comments.
+  const [parsed, setParsed] = useState<{
+    url: string;
+    comments: DanmuComment[];
+    error: string | MessageDescriptor | null;
+  } | null>(null);
+  const current = parsed?.url === url ? parsed : null;
+  const loading = current === null;
+  const comments = current?.comments ?? NO_COMMENTS;
+  const error = current?.error ?? null;
   const [searchQuery, setSearchQuery] = useState('');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
 
   useEffect(() => {
-    setLoading(true);
-    setError(null);
-    setComments([]);
-
     const worker = new Worker(
       new URL('./danmu-parser.worker.ts', import.meta.url),
       { type: 'module' },
     );
     worker.addEventListener('message', (event: MessageEvent<ParseResponse>) => {
       if (event.data.type === 'success') {
-        setComments(event.data.comments);
+        setParsed({ url, comments: event.data.comments, error: null });
       } else {
-        setError(event.data.message);
+        setParsed({ url, comments: [], error: event.data.message });
       }
-      setLoading(false);
       worker.terminate();
     });
     worker.addEventListener('error', () => {
-      setError(PARSE_FAILURE);
-      setLoading(false);
+      setParsed({ url, comments: [], error: PARSE_FAILURE });
       worker.terminate();
     });
     worker.postMessage({ type: 'parse', url });
@@ -274,12 +279,10 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
                 }}
               >
                 {filteredComments.length === 0 ? (
-                  <div className="py-24 flex flex-col items-center justify-center text-muted-foreground/30 gap-3">
-                    <Filter className="h-12 w-12 stroke-[1px]" />
-                    <p className="text-sm font-medium tracking-tight">
-                      <Trans>No results found</Trans>
-                    </p>
-                  </div>
+                  <ListPanelEmpty
+                    icon={Filter}
+                    title={<Trans>No results found</Trans>}
+                  />
                 ) : (
                   virtualData.items.map((comment, index) => {
                     const actualIndex = virtualData.start + index;

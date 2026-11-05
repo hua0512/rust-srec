@@ -19,6 +19,7 @@ import {
   type StreamerCheckHistoryEntry,
 } from '@/server/functions/streamers';
 import { formatDate } from '@/lib/datetime';
+import { formatShortRelativeTime } from '@/lib/date-utils';
 import { formatBitrate } from '@/lib/format';
 
 /**
@@ -34,6 +35,9 @@ const SLOTS = 60;
  *  live updates flow through `WebSocketProvider`'s
  *  `STREAMER_CHECK_RECORDED` handler the rest of the time. */
 const REFETCH_MS = 5 * 60_000;
+
+/** Shared while there is no data, so the memos below keep their result. */
+const NO_ITEMS: StreamerCheckHistoryEntry[] = [];
 
 interface StatusCheckHistoryProps {
   streamerId: string;
@@ -56,7 +60,7 @@ export const StatusCheckHistory = memo(function StatusCheckHistory({
     refetchOnWindowFocus: true,
   });
 
-  const items = data?.items ?? [];
+  const items = data?.items ?? NO_ITEMS;
 
   // Right-align bars so the most-recent check is at "NOW" (right edge).
   // Pad the left with empty placeholders when fewer than `slots` rows exist.
@@ -465,22 +469,11 @@ function LiveIndicator({
       </div>
     );
   }
-  const ago = Math.max(0, Math.round((Date.now() - lastCheckedMs) / 1000));
+  const ago = formatShortRelativeTime(lastCheckedMs, i18n.locale);
   return (
     <div className="flex items-center gap-1.5 text-xs text-muted-foreground whitespace-nowrap">
       <Clock className="w-3.5 h-3.5 shrink-0" />
-      <span>{i18n._(msg`Last check ${formatAgo(ago, i18n)} ago`)}</span>
+      <span>{i18n._(msg`Last check ${ago}`)}</span>
     </div>
   );
-}
-
-function formatAgo(
-  seconds: number,
-  i18n: ReturnType<typeof useLingui>['i18n'],
-): string {
-  if (seconds < 60) return i18n._(msg`${seconds}s`);
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return i18n._(msg`${minutes}m`);
-  const hours = Math.round(minutes / 60);
-  return i18n._(msg`${hours}h`);
 }

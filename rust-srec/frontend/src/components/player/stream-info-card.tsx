@@ -18,7 +18,7 @@ import {
 export type { StreamOption } from './stream-source';
 
 export interface StreamInfoCardProps {
-  mediaInfo: any;
+  mediaInfo: unknown;
   selectedStream: StreamOption | null;
   onStreamSelect: (stream: StreamOption) => void;
 }

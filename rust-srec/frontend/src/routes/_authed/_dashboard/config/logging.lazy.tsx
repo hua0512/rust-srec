@@ -34,12 +34,7 @@ import { toast } from 'sonner';
 import { useState, useEffect, useMemo } from 'react';
 import {
   Save,
-  Bug,
-  Info,
-  AlertTriangle,
   Terminal,
-  XCircle,
-  Eye,
   Plus,
   Trash2,
   RotateCcw,
@@ -47,6 +42,10 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { LogViewer } from '@/components/logging/log-viewer';
+import {
+  LOG_LEVEL_STYLE,
+  LogLevelIcon,
+} from '@/components/logging/log-level-style';
 import { LogFileBrowser } from '@/components/logging/log-file-browser';
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/config/logging')({
@@ -69,43 +68,6 @@ function getModuleDescription(name: string, i18n: I18n): string {
     tower_http: i18n._(msg`HTTP middleware`),
   };
   return descriptions[name] || name;
-}
-
-/** Get log level icon */
-function getLevelIcon(level: LogLevel) {
-  const iconClass = 'w-3.5 h-3.5';
-  switch (level) {
-    case 'trace':
-      return <Terminal className={cn(iconClass, 'text-slate-400')} />;
-    case 'debug':
-      return <Bug className={cn(iconClass, 'text-blue-400')} />;
-    case 'info':
-      return <Info className={cn(iconClass, 'text-emerald-400')} />;
-    case 'warn':
-      return <AlertTriangle className={cn(iconClass, 'text-amber-400')} />;
-    case 'error':
-      return <XCircle className={cn(iconClass, 'text-rose-400')} />;
-    case 'off':
-      return <Eye className={cn(iconClass, 'text-muted-foreground/50')} />;
-  }
-}
-
-/** Get log level color classes */
-function getLevelColor(level: LogLevel): string {
-  switch (level) {
-    case 'trace':
-      return 'bg-slate-500/10 text-slate-400 border-slate-500/20';
-    case 'debug':
-      return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
-    case 'info':
-      return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
-    case 'warn':
-      return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
-    case 'error':
-      return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
-    case 'off':
-      return 'bg-muted/50 text-muted-foreground border-muted';
-  }
 }
 
 /** Predefined modules for quick add */
@@ -155,7 +117,7 @@ function LoggingConfigPage() {
       void queryClient.invalidateQueries({ queryKey: ['logging', 'config'] });
       setIsDirty(false);
     },
-    onError: (error: any) => {
+    onError: (error) => {
       toast.error(
         error.message || i18n._(msg`Failed to update logging configuration`),
       );
@@ -269,10 +231,10 @@ function LoggingConfigPage() {
                         variant="outline"
                         className={cn(
                           'text-[10px] uppercase font-medium',
-                          getLevelColor(filter.level),
+                          LOG_LEVEL_STYLE[filter.level].badgeClassName,
                         )}
                       >
-                        {getLevelIcon(filter.level)}
+                        <LogLevelIcon level={filter.level} />
                         <span className="ml-1">{filter.level}</span>
                       </Badge>
                     </div>
@@ -302,7 +264,7 @@ function LoggingConfigPage() {
                         {LOG_LEVELS.map((level) => (
                           <SelectItem key={level} value={level}>
                             <div className="flex items-center gap-2">
-                              {getLevelIcon(level)}
+                              <LogLevelIcon level={level} />
                               <span className="capitalize">{level}</span>
                             </div>
                           </SelectItem>

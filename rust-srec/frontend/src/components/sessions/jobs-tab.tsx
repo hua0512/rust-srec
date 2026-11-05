@@ -8,6 +8,7 @@ import { useLingui } from '@lingui/react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { Server, Clock } from 'lucide-react';
+import { ListPanelEmpty } from '@/components/shared/list-panel';
 import {
   getStatusConfig,
   getStatusLabel,
@@ -42,12 +43,10 @@ export function JobsTab({ isLoading, dags }: JobsTabProps) {
               <Skeleton className="h-12 w-full" />
             </div>
           ) : dags.length === 0 ? (
-            <div className="p-10 text-center text-muted-foreground">
-              <Server className="h-10 w-10 mx-auto mb-3 opacity-20" />
-              <p>
-                <Trans>No pipeline DAGs found.</Trans>
-              </p>
-            </div>
+            <ListPanelEmpty
+              icon={Server}
+              title={<Trans>No pipeline DAGs found.</Trans>}
+            />
           ) : (
             <div className="divide-y divide-border/40">
               <AnimatePresence mode="popLayout">

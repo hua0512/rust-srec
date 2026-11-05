@@ -7,10 +7,14 @@ import { FilterList } from '../../filters/FilterList';
 import { FilterDialog } from '../../filters/FilterDialog';
 import { CARD_GRID } from '@/lib/grid';
 import { cn } from '@/lib/utils';
+import type { z } from 'zod';
+import type { FilterSchema } from '@/api/schemas';
+
+type Filter = z.infer<typeof FilterSchema>;
 
 interface StreamerFiltersTabProps {
   streamerId: string;
-  filters: any[];
+  filters: Filter[];
   isLoading: boolean;
   onDeleteFilter: (filterId: string) => void;
 }
@@ -22,7 +26,7 @@ export function StreamerFiltersTab({
   onDeleteFilter,
 }: StreamerFiltersTabProps) {
   const [filterDialogOpen, setFilterDialogOpen] = useState(false);
-  const [filterToEdit, setFilterToEdit] = useState<any>(null);
+  const [filterToEdit, setFilterToEdit] = useState<Filter | null>(null);
 
   return (
     <div className="space-y-4">
@@ -59,7 +63,7 @@ export function StreamerFiltersTab({
       ) : (
         <div className="min-h-[200px]">
           <FilterList
-            filters={filters || []}
+            filters={filters}
             onEdit={(filter) => {
               setFilterToEdit(filter);
               setFilterDialogOpen(true);

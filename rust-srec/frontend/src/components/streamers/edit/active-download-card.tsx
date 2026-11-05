@@ -19,7 +19,7 @@ import { CountUp } from '@/components/ui/count-up';
 import { motion, AnimatePresence } from 'motion/react';
 import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
-import { formatBytes, formatDuration } from '@/lib/format';
+import { formatBytes, formatDuration, formatSpeed } from '@/lib/format';
 import { useShallow } from 'zustand/react/shallow';
 import { useDownloadStore } from '@/store/downloads';
 
@@ -118,7 +118,7 @@ export const ActiveDownloadCard = memo(function ActiveDownloadCard({
               <div className="font-mono font-medium text-lg">
                 <CountUp
                   value={Number(download.speedBytesPerSec)}
-                  formatter={(v) => formatBytes(v) + '/s'}
+                  formatter={(v) => formatSpeed(Number(v))}
                 />
               </div>
             </div>

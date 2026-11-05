@@ -12,7 +12,10 @@ import {
   RefreshCw,
   StopCircle,
 } from 'lucide-react';
+import type { z } from 'zod';
 import { cn } from '@/lib/utils';
+import { ListPanelEmpty } from '@/components/shared/list-panel';
+import type { SessionSchema } from '@/api/schemas';
 import type {
   SessionEvent,
   SessionEventPayload,
@@ -391,13 +394,13 @@ function EntryBody({ entry }: { entry: TimelineEntry }) {
 }
 
 interface TimelineTabProps {
-  session: any;
+  session: Pick<z.infer<typeof SessionSchema>, 'titles' | 'events'>;
 }
 
 export function TimelineTab({ session }: TimelineTabProps) {
   const { i18n } = useLingui();
-  const titles: TitleEntry[] = session.titles ?? [];
-  const events: SessionEvent[] = session.events ?? [];
+  const titles: TitleEntry[] = session.titles;
+  const events: SessionEvent[] = session.events;
   const entries = buildEntries(titles, events);
 
   return (
@@ -408,22 +411,16 @@ export function TimelineTab({ session }: TimelineTabProps) {
       className="max-w-4xl mx-auto py-8"
     >
       {entries.length === 0 ? (
-        <div className="text-center py-20 text-muted-foreground flex flex-col items-center gap-6">
-          <div className="h-24 w-24 bg-muted/30 rounded-full flex items-center justify-center border border-border/50">
-            <Clock className="h-10 w-10 opacity-20" />
-          </div>
-          <div className="space-y-1">
-            <p className="text-lg font-medium text-foreground">
-              <Trans>No Timeline Events</Trans>
-            </p>
-            <p className="text-sm">
-              <Trans>
-                No title changes or lifecycle events were recorded for this
-                session.
-              </Trans>
-            </p>
-          </div>
-        </div>
+        <ListPanelEmpty
+          icon={Clock}
+          title={<Trans>No Timeline Events</Trans>}
+          help={
+            <Trans>
+              No title changes or lifecycle events were recorded for this
+              session.
+            </Trans>
+          }
+        />
       ) : (
         <div className="relative">
           {/* Central Line */}

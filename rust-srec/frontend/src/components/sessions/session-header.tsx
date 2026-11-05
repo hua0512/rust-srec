@@ -1,38 +1,27 @@
-import { Link } from '@tanstack/react-router';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { BackLink } from '@/components/shared/detail-page';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
-import { ArrowLeft, Hash, Radio, CheckCircle2 } from 'lucide-react';
+import { Hash, Radio, CheckCircle2 } from 'lucide-react';
 
-const STATUS_CONFIG: Record<
-  string,
-  {
-    icon: any;
-    color: string;
-    animate?: boolean;
-    gradient: string;
-    borderColor: string;
-    label: { id: string; message?: string };
-  }
-> = {
-  LIVE: {
-    icon: Radio,
-    color: 'text-red-500',
-    animate: true,
-    gradient: 'from-red-500/20 to-red-500/5',
-    borderColor: 'border-red-500/20',
-    label: msg`LIVE`,
-  },
-  OFFLINE: {
-    icon: CheckCircle2,
-    color: 'text-muted-foreground',
-    gradient: 'from-gray-500/20 to-gray-500/5',
-    borderColor: 'border-gray-500/20',
-    label: msg`OFFLINE`,
-  },
+const LIVE_STATUS = {
+  icon: Radio,
+  color: 'text-red-500',
+  animate: true,
+  gradient: 'from-red-500/20 to-red-500/5',
+  borderColor: 'border-red-500/20',
+  label: msg`LIVE`,
+};
+
+const ENDED_STATUS: typeof LIVE_STATUS = {
+  icon: CheckCircle2,
+  color: 'text-muted-foreground',
+  animate: false,
+  gradient: 'from-gray-500/20 to-gray-500/5',
+  borderColor: 'border-gray-500/20',
+  label: msg`OFFLINE`,
 };
 
 interface SessionHeaderProps {
@@ -47,27 +36,12 @@ import { useLingui } from '@lingui/react';
 export function SessionHeader({ session }: SessionHeaderProps) {
   const { i18n } = useLingui();
   const isLive = !session.end_time;
-  const statusConfig = isLive ? STATUS_CONFIG.LIVE : STATUS_CONFIG.OFFLINE;
+  const statusConfig = isLive ? LIVE_STATUS : ENDED_STATUS;
   const StatusIcon = statusConfig.icon;
 
   return (
     <div className="flex flex-col gap-6 md:gap-8 mb-8 md:mb-10">
-      <motion.div
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
-      >
-        <Button
-          variant="ghost"
-          size="sm"
-          asChild
-          className="group text-muted-foreground hover:text-foreground hover:bg-transparent px-0"
-        >
-          <Link to="/sessions" className="flex items-center">
-            <ArrowLeft className="mr-2 h-4 w-4 transition-transform group-hover:-translate-x-1" />
-            <Trans>Back to Sessions</Trans>
-          </Link>
-        </Button>
-      </motion.div>
+      <BackLink to="/sessions" label={<Trans>Back to Sessions</Trans>} />
 
       <div className="flex flex-col md:flex-row md:items-start justify-between gap-6">
         <motion.div
