@@ -451,15 +451,7 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
             .ok_or_else(|| crate::Error::not_found("Job", id))
     }
 
-    async fn list_pending_jobs(&self, _job_type: &str) -> Result<Vec<JobDbModel>> {
-        unimplemented!("not needed for these tests")
-    }
-
     async fn list_jobs_by_status(&self, _status: JobStatus) -> Result<Vec<JobDbModel>> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn list_recent_jobs(&self, _limit: i32) -> Result<Vec<JobDbModel>> {
         unimplemented!("not needed for these tests")
     }
 
@@ -606,10 +598,6 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
     /// test here asserts on stored logs.
     async fn add_execution_logs(&self, _logs: &[JobExecutionLogDbModel]) -> Result<()> {
         Ok(())
-    }
-
-    async fn get_execution_logs(&self, _job_id: &str) -> Result<Vec<JobExecutionLogDbModel>> {
-        unimplemented!("not needed for these tests")
     }
 
     async fn list_execution_logs(
@@ -835,10 +823,6 @@ impl DagRepository for TestDagRepositoryForRetry {
     }
 
     async fn update_step(&self, _step: &DagStepExecutionDbModel) -> Result<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn update_step_status(&self, _id: &str, _status: &str) -> Result<()> {
         unimplemented!("not needed for these tests")
     }
 
@@ -1109,10 +1093,6 @@ impl DagRepository for TestDagRepository {
         unimplemented!("not needed for these tests")
     }
 
-    async fn update_step_status(&self, _id: &str, _status: &str) -> Result<()> {
-        unimplemented!("not needed for these tests")
-    }
-
     async fn update_step_status_with_job(
         &self,
         _id: &str,
@@ -1335,7 +1315,7 @@ async fn retried_segment_dag_completion_replaces_the_failed_runs_fallback() {
     let streamer_id = "streamer-1".to_string();
     manager
         .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::ConfigureSession {
+        .apply_event(PipelineCoordinationEvent::ConfigureSession {
             session_id: session_id.clone(),
             streamer_id: streamer_id.clone(),
             danmu_enabled: false,
@@ -1346,7 +1326,7 @@ async fn retried_segment_dag_completion_replaces_the_failed_runs_fallback() {
                 vec![remux("S")],
             )),
         });
-    let commands = manager.pipeline_coordinator.apply_event_inline(
+    let commands = manager.pipeline_coordinator.apply_event(
         PipelineCoordinationEvent::VideoSegmentCompleted {
             session_id: session_id.clone(),
             streamer_id: streamer_id.clone(),
@@ -1392,12 +1372,12 @@ async fn retried_segment_dag_completion_replaces_the_failed_runs_fallback() {
     let mut commands =
         manager
             .pipeline_coordinator
-            .apply_event_inline(PipelineCoordinationEvent::SessionEnded {
+            .apply_event(PipelineCoordinationEvent::SessionEnded {
                 session_id: session_id.clone(),
                 streamer_id: streamer_id.clone(),
                 should_run_session_complete: true,
             });
-    commands.extend(manager.pipeline_coordinator.apply_event_inline(
+    commands.extend(manager.pipeline_coordinator.apply_event(
         PipelineCoordinationEvent::SessionEndPersisted {
             session_id: session_id.clone(),
         },
@@ -1875,7 +1855,7 @@ async fn test_cancel_pipeline_cancels_dag_and_releases_session_complete() {
 
     manager
         .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::ConfigureSession {
+        .apply_event(PipelineCoordinationEvent::ConfigureSession {
             session_id: session_id.clone(),
             streamer_id: streamer_id.clone(),
             danmu_enabled: false,
@@ -1890,27 +1870,27 @@ async fn test_cancel_pipeline_cancels_dag_and_releases_session_complete() {
             )),
         });
     for segment_index in 0..2 {
-        manager.pipeline_coordinator.apply_event_inline(
-            PipelineCoordinationEvent::SegmentDagStarted {
+        manager
+            .pipeline_coordinator
+            .apply_event(PipelineCoordinationEvent::SegmentDagStarted {
                 session_id: session_id.clone(),
                 streamer_id: streamer_id.clone(),
                 segment_index,
                 source: SourceType::Video,
-            },
-        );
+            });
     }
     manager
         .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::SessionEnded {
+        .apply_event(PipelineCoordinationEvent::SessionEnded {
             session_id: session_id.clone(),
             streamer_id: streamer_id.clone(),
             should_run_session_complete: true,
         });
-    manager.pipeline_coordinator.apply_event_inline(
-        PipelineCoordinationEvent::SessionEndPersisted {
+    manager
+        .pipeline_coordinator
+        .apply_event(PipelineCoordinationEvent::SessionEndPersisted {
             session_id: session_id.clone(),
-        },
-    );
+        });
 
     // Segment 0 finishes normally: it gives the session the video output that
     // `artifacts_drained_for_session_complete` requires, leaving segment 1 as the only thing
@@ -2115,8 +2095,8 @@ async fn stop_settles_owned_pipeline_runtime_tasks() {
     assert!(manager.job_queue.progress_aggregator_is_running());
 
     manager.clone().start();
-    // Completion handler, coordinator, retry sweeper, stale-state cleanup.
-    assert_eq!(manager.runtime.lock().tasks.len(), 4);
+    // Completion handler, retry sweeper, stale-state cleanup.
+    assert_eq!(manager.runtime.lock().tasks.len(), 3);
 
     tokio::time::timeout(std::time::Duration::from_secs(1), manager.stop())
         .await
@@ -2441,7 +2421,7 @@ async fn test_paired_segment_recovers_segment_dag_completion_without_context() {
 
     manager
         .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::ConfigureSession {
+        .apply_event(PipelineCoordinationEvent::ConfigureSession {
             session_id: session_id.clone(),
             streamer_id: streamer_id.clone(),
             danmu_enabled: true,
@@ -2477,7 +2457,7 @@ async fn test_paired_segment_recovers_segment_dag_completion_without_context() {
             leaf_outputs: vec!["/v.mp4".to_string()],
         })
         .await;
-    assert_eq!(manager.pipeline_coordinator.active_pair_count_inline(), 1);
+    assert_eq!(manager.pipeline_coordinator.active_pair_count(), 1);
 
     let mut danmu_dag = DagExecutionDbModel::new(
         &dag_def,
@@ -2498,7 +2478,7 @@ async fn test_paired_segment_recovers_segment_dag_completion_without_context() {
             leaf_outputs: vec!["/d.ass".to_string()],
         })
         .await;
-    assert_eq!(manager.pipeline_coordinator.active_pair_count_inline(), 0);
+    assert_eq!(manager.pipeline_coordinator.active_pair_count(), 0);
 }
 
 fn test_session(id: &str, streamer_id: &str, end_time: Option<i64>) -> LiveSessionDbModel {
@@ -2610,7 +2590,7 @@ async fn test_recovery_ignores_historical_ended_sessions() {
     manager.recover_pipeline_coordination().await.unwrap();
 
     assert_eq!(
-        manager.pipeline_coordinator.active_session_count_inline(),
+        manager.pipeline_coordinator.active_session_count(),
         0,
         "startup recovery must not hydrate ordinary old ended sessions"
     );
@@ -2995,7 +2975,7 @@ async fn test_drain_for_session_counts_coordinator_state_with_no_rows_left() {
     let streamer_id = "coordinated-streamer".to_string();
     manager
         .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::SegmentDagStarted {
+        .apply_event(PipelineCoordinationEvent::SegmentDagStarted {
             session_id: session_id.clone(),
             streamer_id: streamer_id.clone(),
             segment_index: 0,
@@ -3017,15 +2997,15 @@ async fn test_drain_for_session_counts_coordinator_state_with_no_rows_left() {
         })
     );
 
-    manager.pipeline_coordinator.apply_event_inline(
-        PipelineCoordinationEvent::SegmentDagCompleted {
+    manager
+        .pipeline_coordinator
+        .apply_event(PipelineCoordinationEvent::SegmentDagCompleted {
             session_id: session_id.clone(),
             streamer_id: streamer_id.clone(),
             segment_index: 0,
             source: SourceType::Video,
             outputs: Vec::new(),
-        },
-    );
+        });
 
     assert_eq!(
         manager
@@ -3056,7 +3036,7 @@ async fn test_drain_for_session_waits_for_an_owed_session_complete_dag() {
     // session instead of emitting a command, and nothing is owed.
     manager
         .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::ConfigureSession {
+        .apply_event(PipelineCoordinationEvent::ConfigureSession {
             session_id: session_id.clone(),
             streamer_id: streamer_id.clone(),
             danmu_enabled: false,
@@ -3075,25 +3055,25 @@ async fn test_drain_for_session_waits_for_an_owed_session_complete_dag() {
     // gate can open once the session end is persisted.
     manager
         .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::SegmentDagStarted {
+        .apply_event(PipelineCoordinationEvent::SegmentDagStarted {
             session_id: session_id.clone(),
             streamer_id: streamer_id.clone(),
             segment_index: 0,
             source: SourceType::Video,
         });
-    manager.pipeline_coordinator.apply_event_inline(
-        PipelineCoordinationEvent::SegmentDagCompleted {
+    manager
+        .pipeline_coordinator
+        .apply_event(PipelineCoordinationEvent::SegmentDagCompleted {
             session_id: session_id.clone(),
             streamer_id: streamer_id.clone(),
             segment_index: 0,
             source: SourceType::Video,
             outputs: vec![PathBuf::from("/out0.mp4")],
-        },
-    );
+        });
 
     manager
         .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::SessionEnded {
+        .apply_event(PipelineCoordinationEvent::SessionEnded {
             session_id: session_id.clone(),
             streamer_id: streamer_id.clone(),
             should_run_session_complete: true,
@@ -3117,11 +3097,11 @@ async fn test_drain_for_session_waits_for_an_owed_session_complete_dag() {
     ));
 
     // Still owed once the command has been emitted and before the DAG row exists.
-    manager.pipeline_coordinator.apply_event_inline(
-        PipelineCoordinationEvent::SessionEndPersisted {
+    manager
+        .pipeline_coordinator
+        .apply_event(PipelineCoordinationEvent::SessionEndPersisted {
             session_id: session_id.clone(),
-        },
-    );
+        });
     assert!(matches!(
         manager
             .drain_for_session(&session_id, Duration::ZERO)
@@ -3133,7 +3113,7 @@ async fn test_drain_for_session_waits_for_an_owed_session_complete_dag() {
     // `run_session_complete_pipeline` applies this only after
     // `create_dag_pipeline_internal` has published the DAG row, which is why the
     // coordinator is read before `dag_execution`.
-    manager.pipeline_coordinator.apply_event_inline(
+    manager.pipeline_coordinator.apply_event(
         PipelineCoordinationEvent::SessionCompleteDagStarted {
             session_id: session_id.clone(),
             streamer_id: streamer_id.clone(),
@@ -3201,16 +3181,16 @@ async fn test_drain_for_session_owes_nothing_when_the_finalize_gate_cannot_open(
     let session_id = "recorded-nothing".to_string();
     manager
         .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::SessionEnded {
+        .apply_event(PipelineCoordinationEvent::SessionEnded {
             session_id: session_id.clone(),
             streamer_id: "streamer-1".to_string(),
             should_run_session_complete: true,
         });
-    manager.pipeline_coordinator.apply_event_inline(
-        PipelineCoordinationEvent::SessionEndPersisted {
+    manager
+        .pipeline_coordinator
+        .apply_event(PipelineCoordinationEvent::SessionEndPersisted {
             session_id: session_id.clone(),
-        },
-    );
+        });
 
     let started = std::time::Instant::now();
     assert_eq!(
@@ -3256,7 +3236,7 @@ async fn test_drain_for_session_keeps_owing_after_a_failed_session_complete_crea
             should_run_session_complete: true,
         },
     ] {
-        manager.pipeline_coordinator.apply_event_inline(event);
+        manager.pipeline_coordinator.apply_event(event);
     }
 
     assert!(matches!(
@@ -3267,7 +3247,7 @@ async fn test_drain_for_session_keeps_owing_after_a_failed_session_complete_crea
         SessionDrain::Outstanding(_)
     ));
 
-    manager.pipeline_coordinator.apply_event_inline(
+    manager.pipeline_coordinator.apply_event(
         PipelineCoordinationEvent::SessionCompleteDagCreationFailed {
             session_id: session_id.clone(),
         },
@@ -3306,7 +3286,7 @@ async fn test_drain_for_session_counts_a_commanded_segment_dag_before_it_starts(
 
     manager
         .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::ConfigureSession {
+        .apply_event(PipelineCoordinationEvent::ConfigureSession {
             session_id: session_id.clone(),
             streamer_id: streamer_id.clone(),
             danmu_enabled: false,
@@ -3315,7 +3295,7 @@ async fn test_drain_for_session_counts_a_commanded_segment_dag_before_it_starts(
             session_complete_pipeline: None,
         });
 
-    let commands = manager.pipeline_coordinator.apply_event_inline(
+    let commands = manager.pipeline_coordinator.apply_event(
         PipelineCoordinationEvent::VideoSegmentCompleted {
             session_id: session_id.clone(),
             streamer_id: streamer_id.clone(),
@@ -3347,7 +3327,7 @@ async fn test_drain_for_session_counts_a_commanded_segment_dag_before_it_starts(
     // `SegmentDagStarted` moves it from commanded to running, still outstanding.
     manager
         .pipeline_coordinator
-        .apply_event_inline(PipelineCoordinationEvent::SegmentDagStarted {
+        .apply_event(PipelineCoordinationEvent::SegmentDagStarted {
             session_id: session_id.clone(),
             streamer_id: streamer_id.clone(),
             segment_index: 0,
@@ -3363,15 +3343,15 @@ async fn test_drain_for_session_counts_a_commanded_segment_dag_before_it_starts(
         1
     );
 
-    manager.pipeline_coordinator.apply_event_inline(
-        PipelineCoordinationEvent::SegmentDagCompleted {
+    manager
+        .pipeline_coordinator
+        .apply_event(PipelineCoordinationEvent::SegmentDagCompleted {
             session_id: session_id.clone(),
             streamer_id: streamer_id.clone(),
             segment_index: 0,
             source: SourceType::Video,
             outputs: vec![PathBuf::from("/out0.mp4")],
-        },
-    );
+        });
     assert_eq!(
         manager
             .drain_for_session(&session_id, Duration::ZERO)

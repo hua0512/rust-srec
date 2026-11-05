@@ -712,10 +712,6 @@ pub struct JobResponse {
 pub struct JobExecutionInfo {
     /// Current processor name.
     pub current_processor: Option<String>,
-    /// Current step number (1-indexed).
-    pub current_step: Option<u32>,
-    /// Total steps in pipeline.
-    pub total_steps: Option<u32>,
     /// Intermediate artifacts produced.
     pub items_produced: Vec<String>,
     /// Input file size in bytes.
@@ -730,23 +726,6 @@ pub struct JobExecutionInfo {
     pub log_warn_count: u64,
     /// Number of ERROR lines captured.
     pub log_error_count: u64,
-    /// Per-step duration tracking for pipeline jobs.
-    pub step_durations: Vec<StepDurationInfo>,
-}
-
-/// Per-step duration information for pipeline jobs.
-#[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
-pub struct StepDurationInfo {
-    /// Step number (1-indexed).
-    pub step: u32,
-    /// Processor/job type name.
-    pub processor: String,
-    /// Duration in seconds.
-    pub duration_secs: f64,
-    /// Start timestamp.
-    pub started_at: DateTime<Utc>,
-    /// End timestamp.
-    pub completed_at: DateTime<Utc>,
 }
 
 /// Log entry for job execution.

@@ -16,8 +16,9 @@ use tracing::{debug, info};
 use super::outputs::{OutputBatch, output_size};
 use super::paths::{CasePolicy, lexical_absolute, spelling_equal};
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
-use super::utils::{create_log_entry, get_extension, is_video, parse_config_or_default};
+use super::utils::{get_extension, is_video, parse_config_or_default};
 use crate::Result;
+use crate::pipeline::job_queue::JobLogEntry;
 use crate::pipeline::manifest::PipelineInputManifest;
 
 fn default_true() -> bool {
@@ -414,10 +415,7 @@ impl Processor for AssBurnInProcessor {
 
         if video_inputs.is_empty() {
             let duration = start.elapsed().as_secs_f64();
-            logs.push(create_log_entry(
-                crate::pipeline::job_queue::LogLevel::Info,
-                "No video inputs found; passing through",
-            ));
+            logs.push(JobLogEntry::info("No video inputs found; passing through"));
             return Ok(ProcessorOutput {
                 outputs: if config.passthrough_inputs {
                     Self::build_passthrough_outputs(
@@ -512,10 +510,9 @@ impl Processor for AssBurnInProcessor {
             if !consumed_ass.insert(Self::consumed_key(&ass_path)) {
                 let reason =
                     format!("subtitle {ass_path} was already burned into an earlier video");
-                logs.push(create_log_entry(
-                    crate::pipeline::job_queue::LogLevel::Warn,
-                    format!("Skipping {video_path}: {reason}"),
-                ));
+                logs.push(JobLogEntry::warn(format!(
+                    "Skipping {video_path}: {reason}"
+                )));
                 skipped_inputs.push((video_path.clone(), reason));
                 continue;
             }
@@ -611,10 +608,7 @@ impl Processor for AssBurnInProcessor {
                     Err(e) => {
                         failed_remove_video_count = failed_remove_video_count.saturating_add(1);
                         let msg = format!("Failed to remove source video {}: {}", video, e);
-                        logs.push(create_log_entry(
-                            crate::pipeline::job_queue::LogLevel::Warn,
-                            msg,
-                        ));
+                        logs.push(JobLogEntry::warn(msg));
                     }
                 }
             }
@@ -636,10 +630,7 @@ impl Processor for AssBurnInProcessor {
                     Err(e) => {
                         failed_remove_ass_count = failed_remove_ass_count.saturating_add(1);
                         let msg = format!("Failed to remove source ass {}: {}", ass, e);
-                        logs.push(create_log_entry(
-                            crate::pipeline::job_queue::LogLevel::Warn,
-                            msg,
-                        ));
+                        logs.push(JobLogEntry::warn(msg));
                     }
                 }
             }
@@ -686,11 +677,10 @@ impl Processor for AssBurnInProcessor {
             items_produced: produced,
             input_size_bytes: (!succeeded_inputs.is_empty()).then_some(input_size_bytes),
             output_size_bytes: (!succeeded_inputs.is_empty()).then_some(output_size_bytes),
-            failed_inputs: vec![],
             succeeded_inputs,
             skipped_inputs,
-            uploads: vec![],
             logs,
+            ..Default::default()
         })
     }
 }

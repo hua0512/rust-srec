@@ -281,7 +281,7 @@ pub struct PipelineManager<
     /// Last observed queue depth status (edge-trigger warnings).
     last_queue_status: AtomicU8,
 
-    /// Single coordinator actor/reducer for all pipeline trigger/readiness policy.
+    /// Single coordinator reducer for all pipeline trigger/readiness policy.
     pipeline_coordinator: PipelineCoordinator,
 
     /// DAG execution -> segment context mapping (for per-segment DAG completion accounting).

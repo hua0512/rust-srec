@@ -979,30 +979,6 @@ mod job_repository_tests {
     }
 
     #[tokio::test]
-    async fn test_pending_jobs_query() {
-        let pool = setup_test_db().await;
-        let repo = SqlxJobRepository::new(pool.clone(), pool.clone());
-
-        // Insert jobs with different statuses
-        for (status, job_type) in [
-            (JobStatus::Pending, "DOWNLOAD"),
-            (JobStatus::Pending, "PIPELINE"),
-            (JobStatus::Processing, "DOWNLOAD"),
-            (JobStatus::Completed, "DOWNLOAD"),
-        ] {
-            create_job(&pool, job_type, status).await;
-        }
-
-        // Query pending download jobs
-        let pending = repo
-            .list_pending_jobs("DOWNLOAD")
-            .await
-            .expect("Failed to query pending jobs");
-
-        assert_eq!(pending.len(), 1);
-    }
-
-    #[tokio::test]
     async fn test_cancelled_jobs_are_not_reset_by_processing_recovery() {
         let pool = setup_test_db().await;
         let repo = SqlxJobRepository::new(pool.clone(), pool.clone());

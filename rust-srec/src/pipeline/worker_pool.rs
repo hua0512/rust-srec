@@ -147,10 +147,7 @@ fn timeout_error(
     input: &ProcessorInput,
     progress: Option<&JobProgressSnapshot>,
 ) -> String {
-    let mut context = match (facts.current_step, facts.total_steps) {
-        (Some(current), Some(total)) => format!("{} step {}/{}", facts.job_type, current, total),
-        _ => facts.job_type.clone(),
-    };
+    let mut context = facts.job_type.clone();
     context.push_str(&format!(", processor '{}'", facts.processor_name));
 
     if let Some(first) = input.inputs.first() {
@@ -782,11 +779,6 @@ impl WorkerPool {
     pub fn stalled_operations(&self, min_age: std::time::Duration) -> Vec<StalledOperation> {
         self.lingering.older_than(min_age)
     }
-
-    /// Check if the pool is running.
-    pub fn is_running(&self) -> bool {
-        !self.cancellation_token.is_cancelled()
-    }
 }
 
 /// Everything a worker task needs to run the jobs it claims.
@@ -828,8 +820,6 @@ struct JobFacts {
     job_type: String,
     processor_name: &'static str,
     dag_step_execution_id: Option<String>,
-    current_step: Option<u32>,
-    total_steps: Option<u32>,
     /// Retries this attempt already sits on top of; decides whether a step's
     /// retry budget has another attempt left.
     retry_count: i32,
@@ -946,8 +936,6 @@ impl JobRunner {
                 job_type: job.job_type.clone(),
                 processor_name: processor.name(),
                 dag_step_execution_id: Some(dag_step_id.to_string()),
-                current_step: job.execution_info.as_ref().and_then(|i| i.current_step),
-                total_steps: job.execution_info.as_ref().and_then(|i| i.total_steps),
                 retry_count: job.retry_count,
             };
             self.finish_failed(&facts, &reason, StepFailureKind::NonBatchInput, &[])
@@ -1084,8 +1072,6 @@ impl JobRunner {
             job_type: job.job_type.clone(),
             processor_name: processor.name(),
             dag_step_execution_id: job.dag_step_execution_id.take(),
-            current_step: job.execution_info.as_ref().and_then(|i| i.current_step),
-            total_steps: job.execution_info.as_ref().and_then(|i| i.total_steps),
             retry_count: job.retry_count,
         };
 
@@ -1473,8 +1459,6 @@ impl JobRunner {
                         error,
                         planned.map(|planned| planned.retry_after),
                         Some(facts.processor_name),
-                        facts.current_step,
-                        facts.total_steps,
                         uploads,
                     )
                 })
@@ -2681,8 +2665,6 @@ mod tests {
                 job_type: job.job_type,
                 processor_name: "noop",
                 dag_step_execution_id: None,
-                current_step: None,
-                total_steps: None,
                 retry_count: 0,
             };
             runner
@@ -2834,15 +2816,14 @@ mod tests {
                 Default::default(),
                 repository.clone(),
             ));
-            let mut info = JobExecutionInfo::new()
-                .with_processor("previous")
-                .with_step(2, 4)
-                .with_input_size(123)
-                .with_output_size(456);
+            let mut info = JobExecutionInfo {
+                current_processor: Some("previous".to_owned()),
+                input_size_bytes: Some(123),
+                output_size_bytes: Some(456),
+                ..Default::default()
+            };
             info.items_produced
                 .push(published.to_string_lossy().into_owned());
-            let now = chrono::Utc::now();
-            info.record_step_duration(1, "previous", 2.5, now, now);
             let mut model = JobDbModel::new_with_input("failing", "input.flv", 0, None, None, "{}");
             model.retry_count = retry_count;
             model.execution_info = Some(serde_json::to_string(&info).unwrap());
@@ -2875,11 +2856,7 @@ mod tests {
             let stored: JobExecutionInfo =
                 serde_json::from_str(failed.execution_info.as_deref().unwrap()).unwrap();
             assert_eq!(stored.current_processor.as_deref(), Some("failing"));
-            assert_eq!(stored.current_step, Some(2));
-            assert_eq!(stored.total_steps, Some(4));
             assert_eq!(stored.items_produced, info.items_produced);
-            assert_eq!(stored.step_durations.len(), 1);
-            assert_eq!(stored.total_step_duration(), 2.5);
             assert_eq!(stored.input_size_bytes, Some(123));
             assert_eq!(stored.output_size_bytes, Some(456));
             assert_eq!(stored.log_lines_total, 2);

@@ -16,8 +16,9 @@ use tracing::{debug, info, warn};
 use super::outputs::OutputBatch;
 use super::paths::{CasePolicy, lexical_absolute, spelling_equal};
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
-use super::utils::{create_log_entry, parse_config_or_default};
+use super::utils::parse_config_or_default;
 use crate::Result;
+use crate::pipeline::job_queue::JobLogEntry;
 use crate::pipeline::manifest::PipelineInputManifest;
 use crate::pipeline::{JobProgressSnapshot, ProgressKind};
 
@@ -262,8 +263,7 @@ impl Processor for DanmakuFactoryProcessor {
         if xml_count == 0 {
             let duration = start.elapsed().as_secs_f64();
             info!("No danmu XML inputs found; passing through");
-            logs.push(create_log_entry(
-                crate::pipeline::job_queue::LogLevel::Info,
+            logs.push(JobLogEntry::info(
                 "No danmu XML inputs found; passing through",
             ));
             return Ok(ProcessorOutput {
@@ -379,10 +379,7 @@ impl Processor for DanmakuFactoryProcessor {
                     xml.display()
                 );
                 warn!("{}", msg);
-                logs.push(create_log_entry(
-                    crate::pipeline::job_queue::LogLevel::Warn,
-                    msg,
-                ));
+                logs.push(JobLogEntry::warn(msg));
                 batch.discard(&temp_path);
                 skipped_inputs.push((xml_path.clone(), "produced no output".to_string()));
                 continue;
@@ -409,10 +406,7 @@ impl Processor for DanmakuFactoryProcessor {
                         let msg = format!("Failed to remove source XML {}: {}", xml_path, e);
                         warn!("{}", msg);
                         delete_warnings.push(msg.clone());
-                        logs.push(create_log_entry(
-                            crate::pipeline::job_queue::LogLevel::Warn,
-                            msg,
-                        ));
+                        logs.push(JobLogEntry::warn(msg));
                     }
                 }
             }
@@ -450,13 +444,10 @@ impl Processor for DanmakuFactoryProcessor {
                 .to_string(),
             ),
             items_produced: produced,
-            input_size_bytes: None,
-            output_size_bytes: None,
-            failed_inputs: vec![],
             succeeded_inputs: converted_xml,
             skipped_inputs,
-            uploads: vec![],
             logs,
+            ..Default::default()
         })
     }
 }

@@ -765,16 +765,6 @@ impl BaiduPcsProcessor {
         }
     }
 
-    /// Create with a custom binary path.
-    pub fn with_binary_path(path: impl Into<String>) -> Self {
-        Self {
-            binary_path: path.into(),
-            command_runner: Arc::new(ProcessBaiduPcsCommandRunner),
-            authenticator_override: None,
-            upload_args_budget: UPLOAD_ARGS_BUDGET,
-        }
-    }
-
     #[cfg(test)]
     fn with_command_runner(
         path: impl Into<String>,

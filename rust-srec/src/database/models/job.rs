@@ -339,28 +339,11 @@ impl JobDbModel {
         self.set_outputs(&outputs);
     }
 
-    /// Mark the job as started processing.
-    pub fn mark_started(&mut self) {
-        let now = crate::database::time::now_ms();
-        self.status = JobStatus::Processing.as_str().to_string();
-        self.started_at = Some(now);
-        self.updated_at = now;
-    }
-
     /// Mark the job as completed.
     pub fn mark_completed(&mut self) {
         let now = crate::database::time::now_ms();
         self.status = JobStatus::Completed.as_str().to_string();
         self.completed_at = Some(now);
-        self.updated_at = now;
-    }
-
-    /// Mark the job as failed with an error message.
-    pub fn mark_failed(&mut self, error: impl Into<String>) {
-        let now = crate::database::time::now_ms();
-        self.status = JobStatus::Failed.as_str().to_string();
-        self.completed_at = Some(now);
-        self.error = Some(error.into());
         self.updated_at = now;
     }
 

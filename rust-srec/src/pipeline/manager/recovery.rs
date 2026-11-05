@@ -309,9 +309,8 @@ where
                 .as_ref()
                 .map(|config| config.record_danmu)
                 .unwrap_or(false);
-            let mut commands = self
-                .pipeline_coordinator
-                .apply_event(PipelineCoordinationEvent::ConfigureSession {
+            let mut commands = self.pipeline_coordinator.apply_event(
+                PipelineCoordinationEvent::ConfigureSession {
                     session_id: session_id.clone(),
                     streamer_id: streamer_id.clone(),
                     danmu_enabled,
@@ -323,8 +322,8 @@ where
                     session_complete_pipeline: config
                         .as_ref()
                         .and_then(|config| config.session_complete_pipeline.clone()),
-                })
-                .await;
+                },
+            );
 
             let coordination_dags = if let Some(dag_repo) = &self.dag_repository {
                 self.list_recoverable_coordination_dags(dag_repo, None, Some(&session_id), complete)
@@ -346,14 +345,12 @@ where
                 .iter()
                 .any(|dag| dag.segment_source.as_deref() == Some("session_complete"))
             {
-                commands.extend(
-                    self.pipeline_coordinator
-                        .apply_event(PipelineCoordinationEvent::SessionCompleteDagStarted {
-                            session_id: session_id.clone(),
-                            streamer_id: streamer_id.clone(),
-                        })
-                        .await,
-                );
+                commands.extend(self.pipeline_coordinator.apply_event(
+                    PipelineCoordinationEvent::SessionCompleteDagStarted {
+                        session_id: session_id.clone(),
+                        streamer_id: streamer_id.clone(),
+                    },
+                ));
             }
 
             for dag in &coordination_dags {
@@ -366,30 +363,26 @@ where
                 };
                 match dag.get_status() {
                     Some(DagExecutionStatus::Pending | DagExecutionStatus::Processing) => {
-                        commands.extend(
-                            self.pipeline_coordinator
-                                .apply_event(PipelineCoordinationEvent::PairedDagStarted {
-                                    session_id: session_id.clone(),
-                                    streamer_id: streamer_id.clone(),
-                                    segment_index,
-                                })
-                                .await,
-                        );
+                        commands.extend(self.pipeline_coordinator.apply_event(
+                            PipelineCoordinationEvent::PairedDagStarted {
+                                session_id: session_id.clone(),
+                                streamer_id: streamer_id.clone(),
+                                segment_index,
+                            },
+                        ));
                     }
                     Some(
                         DagExecutionStatus::Completed
                         | DagExecutionStatus::Failed
                         | DagExecutionStatus::Cancelled,
                     ) => {
-                        commands.extend(
-                            self.pipeline_coordinator
-                                .apply_event(PipelineCoordinationEvent::RecoverPairedDagTriggered {
-                                    session_id: session_id.clone(),
-                                    streamer_id: streamer_id.clone(),
-                                    segment_index,
-                                })
-                                .await,
-                        );
+                        commands.extend(self.pipeline_coordinator.apply_event(
+                            PipelineCoordinationEvent::RecoverPairedDagTriggered {
+                                session_id: session_id.clone(),
+                                streamer_id: streamer_id.clone(),
+                                segment_index,
+                            },
+                        ));
                     }
                     None => {}
                 }
@@ -417,16 +410,14 @@ where
                 } else {
                     SourceType::Danmu
                 };
-                commands.extend(
-                    self.pipeline_coordinator
-                        .apply_event(PipelineCoordinationEvent::SegmentDagStarted {
-                            session_id: session_id.clone(),
-                            streamer_id: streamer_id.clone(),
-                            segment_index,
-                            source,
-                        })
-                        .await,
-                );
+                commands.extend(self.pipeline_coordinator.apply_event(
+                    PipelineCoordinationEvent::SegmentDagStarted {
+                        session_id: session_id.clone(),
+                        streamer_id: streamer_id.clone(),
+                        segment_index,
+                        source,
+                    },
+                ));
             }
 
             // Every segment DAG state is applied before source artifacts so
@@ -452,30 +443,24 @@ where
                 match dag.get_status() {
                     Some(DagExecutionStatus::Completed) => {
                         let outputs = self.recover_leaf_outputs(dag, complete).await;
-                        commands.extend(
-                            self.pipeline_coordinator
-                                .apply_event(
-                                    PipelineCoordinationEvent::RecoverSegmentDagCompleted {
-                                        session_id: session_id.clone(),
-                                        streamer_id: streamer_id.clone(),
-                                        segment_index,
-                                        source,
-                                        outputs,
-                                    },
-                                )
-                                .await,
-                        );
+                        commands.extend(self.pipeline_coordinator.apply_event(
+                            PipelineCoordinationEvent::RecoverSegmentDagCompleted {
+                                session_id: session_id.clone(),
+                                streamer_id: streamer_id.clone(),
+                                segment_index,
+                                source,
+                                outputs,
+                            },
+                        ));
                     }
                     Some(DagExecutionStatus::Failed | DagExecutionStatus::Cancelled) => {
-                        commands.extend(
-                            self.pipeline_coordinator
-                                .apply_event(PipelineCoordinationEvent::RecoverSegmentDagFailed {
-                                    session_id: session_id.clone(),
-                                    segment_index,
-                                    source,
-                                })
-                                .await,
-                        );
+                        commands.extend(self.pipeline_coordinator.apply_event(
+                            PipelineCoordinationEvent::RecoverSegmentDagFailed {
+                                session_id: session_id.clone(),
+                                segment_index,
+                                source,
+                            },
+                        ));
                     }
                     Some(DagExecutionStatus::Pending | DagExecutionStatus::Processing) | None => {}
                 }
@@ -517,17 +502,15 @@ where
                             }
                         })
                         .or_insert(Some(segment_index));
-                    commands.extend(
-                        self.pipeline_coordinator
-                            .apply_event(PipelineCoordinationEvent::RecoverSourceArtifact {
-                                session_id: session_id.clone(),
-                                streamer_id: streamer_id.clone(),
-                                segment_index,
-                                source: SourceType::Video,
-                                path,
-                            })
-                            .await,
-                    );
+                    commands.extend(self.pipeline_coordinator.apply_event(
+                        PipelineCoordinationEvent::RecoverSourceArtifact {
+                            session_id: session_id.clone(),
+                            streamer_id: streamer_id.clone(),
+                            segment_index,
+                            source: SourceType::Video,
+                            path,
+                        },
+                    ));
                 }
                 if page_len < COORDINATOR_RECOVERY_PAGE_LIMIT as usize {
                     break;
@@ -564,17 +547,15 @@ where
                                 continue;
                             }
                         };
-                        commands.extend(
-                            self.pipeline_coordinator
-                                .apply_event(PipelineCoordinationEvent::RecoverSourceArtifact {
-                                    session_id: session_id.clone(),
-                                    streamer_id: streamer_id.clone(),
-                                    segment_index,
-                                    source: SourceType::Danmu,
-                                    path,
-                                })
-                                .await,
-                        );
+                        commands.extend(self.pipeline_coordinator.apply_event(
+                            PipelineCoordinationEvent::RecoverSourceArtifact {
+                                session_id: session_id.clone(),
+                                streamer_id: streamer_id.clone(),
+                                segment_index,
+                                source: SourceType::Danmu,
+                                path,
+                            },
+                        ));
                     }
                 }
                 Err(e) => {
@@ -588,31 +569,25 @@ where
             }
 
             if recover_ended_session {
-                commands.extend(
-                    self.pipeline_coordinator
-                        .apply_event(PipelineCoordinationEvent::SessionEnded {
-                            session_id: session_id.clone(),
-                            streamer_id: streamer_id.clone(),
-                            should_run_session_complete: true,
-                        })
-                        .await,
-                );
+                commands.extend(self.pipeline_coordinator.apply_event(
+                    PipelineCoordinationEvent::SessionEnded {
+                        session_id: session_id.clone(),
+                        streamer_id: streamer_id.clone(),
+                        should_run_session_complete: true,
+                    },
+                ));
                 if recovered_danmu_activity {
-                    commands.extend(
-                        self.pipeline_coordinator
-                            .apply_event(PipelineCoordinationEvent::DanmuCollectionStopped {
-                                session_id: session_id.clone(),
-                            })
-                            .await,
-                    );
-                }
-                commands.extend(
-                    self.pipeline_coordinator
-                        .apply_event(PipelineCoordinationEvent::SessionEndPersisted {
+                    commands.extend(self.pipeline_coordinator.apply_event(
+                        PipelineCoordinationEvent::DanmuCollectionStopped {
                             session_id: session_id.clone(),
-                        })
-                        .await,
-                );
+                        },
+                    ));
+                }
+                commands.extend(self.pipeline_coordinator.apply_event(
+                    PipelineCoordinationEvent::SessionEndPersisted {
+                        session_id: session_id.clone(),
+                    },
+                ));
             }
 
             *complete &= self.execute_pipeline_commands_with_status(commands).await;

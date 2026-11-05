@@ -351,12 +351,23 @@ impl DagScheduler {
         if !dag.get_status().is_some_and(|status| status.is_terminal()) {
             return None;
         }
+        let leaf_outputs = self
+            .collect_leaf_outputs(dag)
+            .await
+            .unwrap_or_else(|error| {
+                warn!(
+                    dag_id = %dag.id,
+                    error = %error,
+                    "Failed to collect DAG leaf outputs; reporting completion without them"
+                );
+                Vec::new()
+            });
         Some(DagCompletionInfo {
             dag_id: dag.id.clone(),
             streamer_id: dag.streamer_id.clone(),
             session_id: dag.session_id.clone(),
             succeeded,
-            leaf_outputs: self.collect_leaf_outputs(dag).await.unwrap_or_default(),
+            leaf_outputs,
         })
     }
 
@@ -1910,23 +1921,9 @@ mod tests {
             unimplemented!("not needed for these tests")
         }
 
-        async fn list_pending_jobs(
-            &self,
-            _job_type: &str,
-        ) -> Result<Vec<crate::database::models::JobDbModel>> {
-            unimplemented!("not needed for these tests")
-        }
-
         async fn list_jobs_by_status(
             &self,
             _status: JobStatus,
-        ) -> Result<Vec<crate::database::models::JobDbModel>> {
-            unimplemented!("not needed for these tests")
-        }
-
-        async fn list_recent_jobs(
-            &self,
-            _limit: i32,
         ) -> Result<Vec<crate::database::models::JobDbModel>> {
             unimplemented!("not needed for these tests")
         }
@@ -2010,13 +2007,6 @@ mod tests {
             &self,
             _logs: &[crate::database::models::JobExecutionLogDbModel],
         ) -> Result<()> {
-            unimplemented!("not needed for these tests")
-        }
-
-        async fn get_execution_logs(
-            &self,
-            _job_id: &str,
-        ) -> Result<Vec<crate::database::models::JobExecutionLogDbModel>> {
             unimplemented!("not needed for these tests")
         }
 
@@ -3506,15 +3496,7 @@ mod tests {
             move |planned: Option<PlannedRetry>| async move {
                 let retry_after = planned.map(|planned| planned.retry_after);
                 let recorded = queue
-                    .fail_with_step_info(
-                        &job_id,
-                        "boom",
-                        retry_after,
-                        Some("noop"),
-                        None,
-                        None,
-                        &[],
-                    )
+                    .fail_with_step_info(&job_id, "boom", retry_after, Some("noop"), &[])
                     .await;
                 // The failure write itself carries the planned retry, so a
                 // reader or a restart right after it never sees one without
@@ -3835,8 +3817,6 @@ mod tests {
                                 "late failure",
                                 planned.map(|planned| planned.retry_after),
                                 Some("noop"),
-                                None,
-                                None,
                                 &[],
                             )
                             .await
@@ -3934,8 +3914,6 @@ mod tests {
                                     "upload failed",
                                     planned.map(|planned| planned.retry_after),
                                     Some("rclone"),
-                                    Some(1),
-                                    Some(1),
                                     &[],
                                 )
                                 .await
@@ -4343,8 +4321,6 @@ mod tests {
                 "boom",
                 Some(Utc::now() + chrono::Duration::seconds(30)),
                 Some("noop"),
-                None,
-                None,
                 &[],
             )
             .await

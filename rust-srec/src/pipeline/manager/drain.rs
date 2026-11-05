@@ -90,21 +90,17 @@ where
         let deadline = tokio::time::Instant::now().checked_add(bound);
         let mut result = StreamerDrain::default();
         for session in repo.list_sessions_for_retirement(streamer_id).await? {
-            if let Some(outstanding) = self
-                .pipeline_coordinator
-                .session_outstanding(&session.id)
-                .await
+            if let Some(outstanding) = self.pipeline_coordinator.session_outstanding(&session.id)
                 && outstanding.end_processed
                 && outstanding.session_complete_owed
                 && outstanding.pending_dags == 0
                 && !repo.session_pipeline_settled(&session.id).await?
             {
-                let commands = self
-                    .pipeline_coordinator
-                    .apply_event(PipelineCoordinationEvent::SessionEndPersisted {
+                let commands = self.pipeline_coordinator.apply_event(
+                    PipelineCoordinationEvent::SessionEndPersisted {
                         session_id: session.id.clone(),
-                    })
-                    .await;
+                    },
+                );
                 self.execute_pipeline_commands(commands).await;
                 self.record_session_pipeline_settlement(&session.id).await;
             }
@@ -230,7 +226,6 @@ where
         let coordinated = self
             .pipeline_coordinator
             .session_outstanding(session_id)
-            .await
             .unwrap_or_default();
 
         let dags = match &self.dag_scheduler {

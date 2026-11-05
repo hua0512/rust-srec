@@ -65,15 +65,15 @@ where
                     leaf_outputs = %leaf_outputs.len(),
                     "Processing successful DAG completion with segment context"
                 );
-                self.pipeline_coordinator
-                    .apply_event(PipelineCoordinationEvent::SegmentDagCompleted {
+                self.pipeline_coordinator.apply_event(
+                    PipelineCoordinationEvent::SegmentDagCompleted {
                         session_id: ctx.session_id.clone(),
                         streamer_id: ctx.streamer_id.clone(),
                         segment_index: ctx.segment_index,
                         source: ctx.source,
                         outputs: leaf_outputs,
-                    })
-                    .await
+                    },
+                )
             } else {
                 warn!(
                     dag_id = %dag_id,
@@ -89,7 +89,6 @@ where
                         segment_index: ctx.segment_index,
                         source: ctx.source,
                     })
-                    .await
             };
 
             self.execute_pipeline_commands(commands).await;
@@ -116,11 +115,11 @@ where
                     segment_index = %ctx.segment_index,
                     "Paired-segment DAG completed"
                 );
-                self.pipeline_coordinator
-                    .apply_event(PipelineCoordinationEvent::PairedDagCompleted {
+                self.pipeline_coordinator.apply_event(
+                    PipelineCoordinationEvent::PairedDagCompleted {
                         session_id: ctx.session_id.clone(),
-                    })
-                    .await
+                    },
+                )
             } else {
                 trace!(
                     dag_id = %completion.dag_id,
@@ -133,7 +132,6 @@ where
                     .apply_event(PipelineCoordinationEvent::PairedDagFailed {
                         session_id: ctx.session_id.clone(),
                     })
-                    .await
             };
 
             self.execute_pipeline_commands(commands).await;
@@ -247,23 +245,23 @@ where
                         return false;
                     };
 
-                    self.pipeline_coordinator
-                        .apply_event(PipelineCoordinationEvent::SegmentDagCompleted {
+                    self.pipeline_coordinator.apply_event(
+                        PipelineCoordinationEvent::SegmentDagCompleted {
                             session_id: session_id.to_string(),
                             streamer_id,
                             segment_index,
                             source,
                             outputs: leaf_outputs,
-                        })
-                        .await
+                        },
+                    )
                 } else {
-                    self.pipeline_coordinator
-                        .apply_event(PipelineCoordinationEvent::SegmentDagFailed {
+                    self.pipeline_coordinator.apply_event(
+                        PipelineCoordinationEvent::SegmentDagFailed {
                             session_id: session_id.to_string(),
                             segment_index,
                             source,
-                        })
-                        .await
+                        },
+                    )
                 };
 
                 self.execute_pipeline_commands(commands).await;
@@ -276,22 +274,22 @@ where
                         session_id = %session_id,
                         "Paired-segment DAG completed (recovered context)"
                     );
-                    self.pipeline_coordinator
-                        .apply_event(PipelineCoordinationEvent::PairedDagCompleted {
+                    self.pipeline_coordinator.apply_event(
+                        PipelineCoordinationEvent::PairedDagCompleted {
                             session_id: session_id.to_string(),
-                        })
-                        .await
+                        },
+                    )
                 } else {
                     trace!(
                         dag_id = %completion.dag_id,
                         session_id = %session_id,
                         "Paired-segment DAG failed (recovered context)"
                     );
-                    self.pipeline_coordinator
-                        .apply_event(PipelineCoordinationEvent::PairedDagFailed {
+                    self.pipeline_coordinator.apply_event(
+                        PipelineCoordinationEvent::PairedDagFailed {
                             session_id: session_id.to_string(),
-                        })
-                        .await
+                        },
+                    )
                 };
 
                 self.execute_pipeline_commands(commands).await;
@@ -333,10 +331,7 @@ where
     /// The end consumer records an explicit skip when no final work is needed.
     /// A failed creation stays owed, and a publication records its own receipt.
     pub(super) async fn record_session_pipeline_settlement(&self, session_id: &str) -> bool {
-        if let Some(outstanding) = self
-            .pipeline_coordinator
-            .session_outstanding(session_id)
-            .await
+        if let Some(outstanding) = self.pipeline_coordinator.session_outstanding(session_id)
             && outstanding.end_processed
             && outstanding.is_idle()
         {
@@ -368,13 +363,12 @@ where
             complete &= self
                 .mark_session_complete_dispatched(&outputs.session_id)
                 .await;
-            let _ = self
-                .pipeline_coordinator
-                .apply_event(PipelineCoordinationEvent::SessionCompleteDagStarted {
+            let _ = self.pipeline_coordinator.apply_event(
+                PipelineCoordinationEvent::SessionCompleteDagStarted {
                     session_id: outputs.session_id,
                     streamer_id: outputs.streamer_id,
-                })
-                .await;
+                },
+            );
             return complete;
         }
 
@@ -411,13 +405,12 @@ where
                 complete &= self
                     .mark_session_complete_dispatched(&outputs.session_id)
                     .await;
-                let _ = self
-                    .pipeline_coordinator
-                    .apply_event(PipelineCoordinationEvent::SessionCompleteDagStarted {
+                let _ = self.pipeline_coordinator.apply_event(
+                    PipelineCoordinationEvent::SessionCompleteDagStarted {
                         session_id: outputs.session_id,
                         streamer_id: outputs.streamer_id,
-                    })
-                    .await;
+                    },
+                );
             }
             Err(e) => {
                 complete = false;
@@ -426,14 +419,11 @@ where
                     outputs.session_id,
                     e
                 );
-                let _ = self
-                    .pipeline_coordinator
-                    .apply_event(
-                        PipelineCoordinationEvent::SessionCompleteDagCreationFailed {
-                            session_id: outputs.session_id,
-                        },
-                    )
-                    .await;
+                let _ = self.pipeline_coordinator.apply_event(
+                    PipelineCoordinationEvent::SessionCompleteDagCreationFailed {
+                        session_id: outputs.session_id,
+                    },
+                );
             }
         }
         complete
@@ -483,14 +473,13 @@ where
             "Triggering paired-segment pipeline"
         );
 
-        let start_commands = self
-            .pipeline_coordinator
-            .apply_event(PipelineCoordinationEvent::PairedDagStarted {
-                session_id: outputs.session_id.clone(),
-                streamer_id: outputs.streamer_id.clone(),
-                segment_index: outputs.segment_index,
-            })
-            .await;
+        let start_commands =
+            self.pipeline_coordinator
+                .apply_event(PipelineCoordinationEvent::PairedDagStarted {
+                    session_id: outputs.session_id.clone(),
+                    streamer_id: outputs.streamer_id.clone(),
+                    segment_index: outputs.segment_index,
+                });
         if !start_commands.is_empty() {
             complete = false;
             warn!(
@@ -548,8 +537,7 @@ where
                 self.pipeline_coordinator
                     .apply_event(PipelineCoordinationEvent::PairedDagFailed {
                         session_id: outputs.session_id.clone(),
-                    })
-                    .await,
+                    }),
                 false,
             );
         }
@@ -783,15 +771,14 @@ where
             return (Vec::new(), true);
         }
 
-        let start_commands = self
-            .pipeline_coordinator
-            .apply_event(PipelineCoordinationEvent::SegmentDagStarted {
-                session_id: session_id.clone(),
-                streamer_id: streamer_id.clone(),
-                segment_index,
-                source,
-            })
-            .await;
+        let start_commands =
+            self.pipeline_coordinator
+                .apply_event(PipelineCoordinationEvent::SegmentDagStarted {
+                    session_id: session_id.clone(),
+                    streamer_id: streamer_id.clone(),
+                    segment_index,
+                    source,
+                });
         if !start_commands.is_empty() {
             warn!(
                 session_id = %session_id,
@@ -849,13 +836,13 @@ where
                 e
             );
             return (
-                self.pipeline_coordinator
-                    .apply_event(PipelineCoordinationEvent::SegmentDagFailed {
+                self.pipeline_coordinator.apply_event(
+                    PipelineCoordinationEvent::SegmentDagFailed {
                         session_id,
                         segment_index,
                         source,
-                    })
-                    .await,
+                    },
+                ),
                 false,
             );
         }

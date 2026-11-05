@@ -106,49 +106,9 @@ impl DagExecutionDbModel {
         DagExecutionStatus::parse(&self.status)
     }
 
-    /// Mark the DAG as completed successfully.
-    pub fn mark_completed(&mut self) {
-        let now = crate::database::time::now_ms();
-        self.status = DagExecutionStatus::Completed.as_str().to_string();
-        self.completed_at = Some(now);
-        self.updated_at = now;
-    }
-
-    /// Mark the DAG as failed.
-    pub fn mark_failed(&mut self, error: impl Into<String>) {
-        let now = crate::database::time::now_ms();
-        self.status = DagExecutionStatus::Failed.as_str().to_string();
-        self.completed_at = Some(now);
-        self.error = Some(error.into());
-        self.updated_at = now;
-    }
-
-    pub fn mark_cancelled(&mut self) {
-        let now = crate::database::time::now_ms();
-        self.status = DagExecutionStatus::Cancelled.as_str().to_string();
-        self.updated_at = now;
-    }
-
-    /// Increment the completed steps counter.
-    pub fn increment_completed(&mut self) {
-        self.completed_steps += 1;
-        self.updated_at = crate::database::time::now_ms();
-    }
-
-    /// Increment the failed steps counter.
-    pub fn increment_failed(&mut self) {
-        self.failed_steps += 1;
-        self.updated_at = crate::database::time::now_ms();
-    }
-
     /// Check if the DAG is complete (all steps finished or failed).
     pub fn is_complete(&self) -> bool {
         self.completed_steps + self.failed_steps >= self.total_steps
-    }
-
-    /// Check if the DAG execution has failed.
-    pub fn is_failed(&self) -> bool {
-        self.failed_steps > 0
     }
 }
 
@@ -335,43 +295,6 @@ impl DagStepExecutionDbModel {
             && self.job_id.as_deref() == Some(job_id)
             && !dag_status.is_some_and(|status| status.is_terminal())
     }
-
-    /// Mark the step as pending (ready to run).
-    pub fn mark_pending(&mut self) {
-        let now = crate::database::time::now_ms();
-        self.status = DagStepStatus::Pending.as_str().to_string();
-        self.updated_at = now;
-    }
-
-    /// Mark the step as processing with a job ID.
-    pub fn mark_processing(&mut self, job_id: &str) {
-        let now = crate::database::time::now_ms();
-        self.status = DagStepStatus::Processing.as_str().to_string();
-        self.job_id = Some(job_id.to_string());
-        self.updated_at = now;
-    }
-
-    /// Mark the step as completed with outputs.
-    pub fn mark_completed(&mut self, outputs: &[String]) {
-        let now = crate::database::time::now_ms();
-        self.status = DagStepStatus::Completed.as_str().to_string();
-        self.set_outputs(outputs);
-        self.updated_at = now;
-    }
-
-    /// Mark the step as failed.
-    pub fn mark_failed(&mut self) {
-        let now = crate::database::time::now_ms();
-        self.status = DagStepStatus::Failed.as_str().to_string();
-        self.updated_at = now;
-    }
-
-    /// Mark the step as cancelled.
-    pub fn mark_cancelled(&mut self) {
-        let now = crate::database::time::now_ms();
-        self.status = DagStepStatus::Cancelled.as_str().to_string();
-        self.updated_at = now;
-    }
 }
 
 /// A step execution together with the status and timing of its job.
@@ -456,11 +379,6 @@ impl DagExecutionStats {
     /// Check if all steps are finished.
     pub fn is_complete(&self) -> bool {
         self.blocked == 0 && self.pending == 0 && self.processing == 0
-    }
-
-    /// Check if any step has failed.
-    pub fn has_failures(&self) -> bool {
-        self.failed > 0
     }
 }
 

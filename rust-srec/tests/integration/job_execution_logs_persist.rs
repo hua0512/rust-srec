@@ -68,16 +68,15 @@ async fn beginning_retry_preserves_metadata_and_never_replays_historical_log_row
         .append_log_entry(&job_id, std::slice::from_ref(&prior))
         .await
         .unwrap();
-    let mut info = JobExecutionInfo::new()
-        .with_processor("previous")
-        .with_step(2, 4)
-        .with_input_size(123)
-        .with_output_size(456);
+    let mut info = JobExecutionInfo {
+        current_processor: Some("previous".to_owned()),
+        input_size_bytes: Some(123),
+        output_size_bytes: Some(456),
+        ..Default::default()
+    };
     info.logs.push_back(prior);
     info.log_lines_total = 1;
     info.items_produced.push("published.mp4".to_owned());
-    let now = chrono::Utc::now();
-    info.record_step_duration(1, "previous", 2.5, now, now);
     queue
         .update_execution_info(&job_id, info.clone())
         .await
@@ -125,17 +124,16 @@ async fn retry_terminal_updates_preserve_history_and_extension_metadata() {
             .append_log_entry(&job_id, std::slice::from_ref(&prior_log))
             .await
             .unwrap();
-        let mut prior = JobExecutionInfo::new()
-            .with_processor("previous")
-            .with_step(2, 4)
-            .with_input_size(123)
-            .with_output_size(456);
+        let mut prior = JobExecutionInfo {
+            current_processor: Some("previous".to_owned()),
+            input_size_bytes: Some(123),
+            output_size_bytes: Some(456),
+            ..Default::default()
+        };
         prior.logs.push_back(prior_log);
         prior.log_lines_total = 1;
         prior.log_warn_count = 1;
         prior.items_produced.push("published.mp4".to_owned());
-        let now = chrono::Utc::now();
-        prior.record_step_duration(1, "previous", 2.5, now, now);
         let mut document = serde_json::to_value(&prior).unwrap();
         document["extension_metadata"] = serde_json::json!({"attempts": [{"kept": true}]});
         repo.update_job_execution_info(&job_id, &document.to_string())
@@ -149,15 +147,7 @@ async fn retry_terminal_updates_preserve_history_and_extension_metadata() {
             .unwrap();
         if fail {
             queue
-                .fail_with_step_info(
-                    &job_id,
-                    "retry failed",
-                    None,
-                    Some("retry"),
-                    Some(2),
-                    Some(4),
-                    &[],
-                )
+                .fail_with_step_info(&job_id, "retry failed", None, Some("retry"), &[])
                 .await
                 .unwrap();
         } else {
@@ -182,11 +172,8 @@ async fn retry_terminal_updates_preserve_history_and_extension_metadata() {
         let stored: serde_json::Value =
             serde_json::from_str(row.execution_info.as_deref().unwrap()).unwrap();
         for field in [
-            "current_step",
-            "total_steps",
             "input_size_bytes",
             "output_size_bytes",
-            "step_durations",
             "extension_metadata",
         ] {
             assert_eq!(stored[field], document[field], "lost {field}");

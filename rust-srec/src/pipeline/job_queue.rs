@@ -431,21 +431,6 @@ impl JobLogEntry {
     }
 }
 
-/// Per-step duration tracking for pipeline jobs.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StepDuration {
-    /// Step number (1-indexed).
-    pub step: u32,
-    /// Processor/job type name.
-    pub processor: String,
-    /// Duration in seconds.
-    pub duration_secs: f64,
-    /// Start timestamp.
-    pub started_at: DateTime<Utc>,
-    /// End timestamp.
-    pub completed_at: DateTime<Utc>,
-}
-
 /// Extended job information for observability.
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -453,10 +438,6 @@ pub struct StepDuration {
 pub struct JobExecutionInfo {
     /// Current processor name.
     pub current_processor: Option<String>,
-    /// Current step number (1-indexed).
-    pub current_step: Option<u32>,
-    /// Total steps in pipeline.
-    pub total_steps: Option<u32>,
     /// Intermediate artifacts produced.
     pub items_produced: Vec<String>,
     /// Input file size in bytes.
@@ -474,9 +455,6 @@ pub struct JobExecutionInfo {
     /// Number of ERROR lines captured.
     #[serde(default)]
     pub log_error_count: u64,
-    /// Per-step duration tracking for pipeline jobs.
-    #[serde(default)]
-    pub step_durations: Vec<StepDuration>,
     /// Preserve extension fields when artifact and terminal updates rewrite this document.
     #[serde(flatten)]
     pub extra_metadata: serde_json::Map<String, serde_json::Value>,
@@ -488,72 +466,9 @@ impl JobExecutionInfo {
         Self::default()
     }
 
-    /// Set the current processor.
-    pub fn with_processor(mut self, processor: impl Into<String>) -> Self {
-        self.current_processor = Some(processor.into());
-        self
-    }
-
-    /// Set the current step.
-    pub fn with_step(mut self, step: u32, total: u32) -> Self {
-        self.current_step = Some(step);
-        self.total_steps = Some(total);
-        self
-    }
-
     /// Add a log entry.
     pub fn add_log(&mut self, entry: JobLogEntry) {
         self.logs.push_back(entry);
-    }
-
-    /// Add an info log.
-    pub fn log_info(&mut self, message: impl Into<String>) {
-        self.add_log(JobLogEntry::info(message));
-    }
-
-    /// Add an error log.
-    pub fn log_error(&mut self, message: impl Into<String>) {
-        self.add_log(JobLogEntry::error(message));
-    }
-
-    /// Add an intermediate artifact.
-    pub fn add_item_produced(&mut self, path: impl Into<String>) {
-        self.items_produced.push(path.into());
-    }
-
-    /// Set input size.
-    pub fn with_input_size(mut self, size: u64) -> Self {
-        self.input_size_bytes = Some(size);
-        self
-    }
-
-    /// Set output size.
-    pub fn with_output_size(mut self, size: u64) -> Self {
-        self.output_size_bytes = Some(size);
-        self
-    }
-
-    /// Record a completed step's duration.
-    pub fn record_step_duration(
-        &mut self,
-        step: u32,
-        processor: impl Into<String>,
-        duration_secs: f64,
-        started_at: DateTime<Utc>,
-        completed_at: DateTime<Utc>,
-    ) {
-        self.step_durations.push(StepDuration {
-            step,
-            processor: processor.into(),
-            duration_secs,
-            started_at,
-            completed_at,
-        });
-    }
-
-    /// Get total duration of all recorded steps.
-    pub fn total_step_duration(&self) -> f64 {
-        self.step_durations.iter().map(|s| s.duration_secs).sum()
     }
 }
 
@@ -713,12 +628,6 @@ impl Job {
         self
     }
 
-    /// Set the DAG step execution ID.
-    pub fn with_dag_step_execution_id(mut self, dag_step_execution_id: impl Into<String>) -> Self {
-        self.dag_step_execution_id = Some(dag_step_execution_id.into());
-        self
-    }
-
     /// Set the streamer name.
     pub fn with_streamer_name(mut self, name: impl Into<String>) -> Self {
         self.streamer_name = Some(name.into());
@@ -741,11 +650,6 @@ impl Job {
     pub fn with_session_start(mut self, session_start: DateTime<Utc>) -> Self {
         self.session_start = Some(session_start);
         self
-    }
-
-    /// Check if this job is part of a DAG pipeline.
-    pub fn is_dag_job(&self) -> bool {
-        self.dag_step_execution_id.is_some()
     }
 }
 
@@ -786,14 +690,6 @@ pub struct ActiveJobInfo {
     pub started_at: Option<DateTime<Utc>>,
     /// Latest in-memory progress snapshot, when the processor has reported one.
     pub progress: Option<JobProgressSnapshot>,
-}
-
-/// Where a job failed, recorded in its execution info when known.
-#[derive(Default, Clone, Copy)]
-struct FailedStep<'a> {
-    processor_name: Option<&'a str>,
-    step_number: Option<u32>,
-    total_steps: Option<u32>,
 }
 
 struct FailedUploadContext {
@@ -1574,11 +1470,6 @@ impl JobQueue {
         self.job_repository.count_pending_jobs(job_types).await
     }
 
-    /// Wait for a job to become available.
-    pub async fn wait_for_job(&self) {
-        self.notify.notified().await;
-    }
-
     /// Mark a job as completed.
     pub async fn complete(&self, job_id: &str, result: JobResult) -> Result<()> {
         self.complete_if_processing(job_id, result).await?;
@@ -1750,14 +1641,7 @@ impl JobQueue {
     /// Mark a job as failed.
     pub async fn fail(&self, job_id: &str, error: &str) -> Result<JobFailureOutcome> {
         let outcome = self
-            .fail_internal(
-                job_id,
-                error,
-                None,
-                FailedStep::default(),
-                FailureMetadata::DatabaseLog,
-                &[],
-            )
+            .fail_internal(job_id, error, None, None, FailureMetadata::DatabaseLog, &[])
             .await?;
         if outcome == JobFailureOutcome::Transitioned {
             warn!(job_id, error, "Job failed");
@@ -1771,15 +1655,8 @@ impl JobQueue {
         job_id: &str,
         error: &str,
     ) -> Result<JobFailureOutcome> {
-        self.fail_internal(
-            job_id,
-            error,
-            None,
-            FailedStep::default(),
-            FailureMetadata::Preserve,
-            &[],
-        )
-        .await
+        self.fail_internal(job_id, error, None, None, FailureMetadata::Preserve, &[])
+            .await
     }
 
     /// Mark a job as failed with step information for observability.
@@ -1788,18 +1665,12 @@ impl JobQueue {
     /// `uploads` carries the per-file results an upload processor reported for
     /// a partially failed batch; inputs it does not cover are recorded as failed
     /// with the job's error.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "each argument is a separate part of the recorded failure"
-    )]
     pub async fn fail_with_step_info(
         &self,
         job_id: &str,
         error: &str,
         retry_after: Option<DateTime<Utc>>,
         processor_name: Option<&str>,
-        step_number: Option<u32>,
-        total_steps: Option<u32>,
         uploads: &[UploadResultItem],
     ) -> Result<JobFailureOutcome> {
         let outcome = self
@@ -1807,20 +1678,13 @@ impl JobQueue {
                 job_id,
                 error,
                 retry_after,
-                FailedStep {
-                    processor_name,
-                    step_number,
-                    total_steps,
-                },
+                processor_name,
                 FailureMetadata::DatabaseLog,
                 uploads,
             )
             .await?;
         if outcome == JobFailureOutcome::Transitioned {
-            warn!(
-                job_id,
-                step_number, total_steps, processor_name, error, "Job failed at pipeline step"
-            );
+            warn!(job_id, processor_name, error, "Job failed at pipeline step");
         }
         Ok(outcome)
     }
@@ -2578,16 +2442,6 @@ impl JobQueue {
         }
     }
 
-    /// Check if the queue is at warning level.
-    pub fn is_warning(&self) -> bool {
-        self.depth() >= self.config.warning_threshold
-    }
-
-    /// Check if the queue is at critical level.
-    pub fn is_critical(&self) -> bool {
-        self.depth() >= self.config.critical_threshold
-    }
-
     /// Get a notifier for new jobs.
     pub fn notifier(&self) -> Arc<Notify> {
         self.notify.clone()
@@ -2609,14 +2463,9 @@ impl JobQueue {
         &self,
         repo: &dyn JobRepository,
         job_id: &str,
-        step: FailedStep<'_>,
+        processor_name: Option<&str>,
         log_entry: &JobLogEntry,
     ) -> Result<()> {
-        let FailedStep {
-            processor_name,
-            step_number,
-            total_steps,
-        } = step;
         let exec_info_str = repo.get_job_execution_info(job_id).await?;
         let mut exec_info: JobExecutionInfo = json::parse_optional_or_default(
             exec_info_str.as_deref(),
@@ -2629,12 +2478,6 @@ impl JobQueue {
 
         if let Some(name) = processor_name {
             exec_info.current_processor = Some(name.to_string());
-        }
-        if let Some(step) = step_number {
-            exec_info.current_step = Some(step);
-        }
-        if let Some(total) = total_steps {
-            exec_info.total_steps = Some(total);
         }
 
         extend_logs_capped(&mut exec_info, std::slice::from_ref(log_entry));
@@ -2658,7 +2501,7 @@ impl JobQueue {
         job_id: &str,
         error: &str,
         retry_after: Option<DateTime<Utc>>,
-        step: FailedStep<'_>,
+        processor_name: Option<&str>,
         metadata: FailureMetadata,
         uploads: &[UploadResultItem],
     ) -> Result<JobFailureOutcome> {
@@ -2697,7 +2540,12 @@ impl JobQueue {
         // retry or skip terminal cleanup after this transition has won.
         if metadata != FailureMetadata::Preserve
             && let Err(error) = self
-                .persist_failure_metadata(self.job_repository.as_ref(), job_id, step, &log_entry)
+                .persist_failure_metadata(
+                    self.job_repository.as_ref(),
+                    job_id,
+                    processor_name,
+                    &log_entry,
+                )
                 .await
         {
             warn!(job_id, %error, "Failed to persist failed job execution metadata");
@@ -3307,8 +3155,6 @@ mod tests {
                 "1 of 3 inputs failed: /rec/c.mp4: boom",
                 None,
                 Some("rclone"),
-                None,
-                None,
                 &[
                     UploadResultItem {
                         local_path: "/rec/a.mp4".to_string(),
@@ -4001,8 +3847,6 @@ mod tests {
             "boom",
             Some(Utc::now()),
             Some("rclone"),
-            None,
-            None,
             &[],
         ));
         tokio::select! {

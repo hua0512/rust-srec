@@ -2,19 +2,14 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{mpsc, oneshot};
-use tokio_util::sync::CancellationToken;
+
+use parking_lot::Mutex;
 use tracing::{debug, info, trace, warn};
 
 use crate::database::models::job::DagPipelineDefinition;
 use crate::pipeline::manifest::ManifestSegment;
-
-const COORDINATOR_CAPACITY: usize = 1024;
-
-#[cfg(test)]
-mod delivery_tests;
 
 /// Source type for segment outputs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -345,285 +340,38 @@ impl SessionCoordinationOutstanding {
     }
 }
 
-#[derive(Debug)]
-enum CoordinatorRequest {
-    Apply {
-        event: PipelineCoordinationEvent,
-        reply: oneshot::Sender<Vec<PipelineCommand>>,
-    },
-    Cleanup {
-        session_ttl_secs: u64,
-    },
-    ActiveSessionCount {
-        reply: oneshot::Sender<usize>,
-    },
-    ActivePairCount {
-        reply: oneshot::Sender<usize>,
-    },
-    SessionOutstanding {
-        session_id: String,
-        reply: oneshot::Sender<Option<SessionCoordinationOutstanding>>,
-    },
-}
-
+/// Serializes reducer access behind one lock. The reducer is synchronous and
+/// nonblocking, so callers apply events directly; never hold the guard across
+/// an await.
 #[derive(Debug, Clone)]
 pub struct PipelineCoordinator {
     inner: Arc<Mutex<PipelineCoordinatorState>>,
-    tx: Arc<Mutex<Option<mpsc::Sender<CoordinatorRequest>>>>,
-}
-
-/// Owns the accepted-request boundary even when `start` is aborted or dropped.
-struct CoordinatorActor<'a> {
-    coordinator: &'a PipelineCoordinator,
-    sender: mpsc::Sender<CoordinatorRequest>,
-    receiver: mpsc::Receiver<CoordinatorRequest>,
-}
-
-impl Drop for CoordinatorActor<'_> {
-    fn drop(&mut self) {
-        let mut admission = self.coordinator.lock_admission();
-        self.receiver.close();
-        // Submission holds this same gate while publishing through a reserved permit.
-        // No permit holder can enqueue after close, so try_recv drains a finite FIFO
-        // (at most COORDINATOR_CAPACITY requests) without waiting on senders.
-        while let Ok(request) = self.receiver.try_recv() {
-            PipelineCoordinator::handle_request(&self.coordinator.inner, request);
-        }
-        if admission
-            .as_ref()
-            .is_some_and(|sender| sender.same_channel(&self.sender))
-        {
-            *admission = None;
-        }
-    }
 }
 
 impl PipelineCoordinator {
     pub fn new() -> Self {
         Self {
             inner: Arc::new(Mutex::new(PipelineCoordinatorState::new())),
-            tx: Arc::new(Mutex::new(None)),
         }
     }
 
-    /// Run the coordinator until cancellation. Cancellation or future drop closes
-    /// admission and drains the bounded accepted queue before enabling inline calls.
-    /// Reducers must remain synchronous and nonblocking: the drain is bounded by
-    /// request count, not a wall-clock timeout that could discard accepted events.
-    pub async fn start(&self, cancellation_token: CancellationToken) {
-        let mut actor = {
-            let mut tx_guard = self.lock_admission();
-            if tx_guard.is_some() {
-                return;
-            }
-            let (tx, rx) = mpsc::channel::<CoordinatorRequest>(COORDINATOR_CAPACITY);
-            *tx_guard = Some(tx.clone());
-            CoordinatorActor {
-                coordinator: self,
-                sender: tx,
-                receiver: rx,
-            }
-        };
-
-        loop {
-            tokio::select! {
-                biased;
-                _ = cancellation_token.cancelled() => break,
-                request = actor.receiver.recv() => {
-                    let Some(request) = request else {
-                        break;
-                    };
-                    Self::handle_request(&self.inner, request);
-                }
-            }
-        }
+    /// Apply an event and return the commands the caller must execute.
+    pub fn apply_event(&self, event: PipelineCoordinationEvent) -> Vec<PipelineCommand> {
+        self.inner.lock().apply_event(event)
     }
 
-    fn lock_admission(
-        &self,
-    ) -> std::sync::MutexGuard<'_, Option<mpsc::Sender<CoordinatorRequest>>> {
-        match self.tx.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => {
-                warn!("Pipeline coordinator admission lock was poisoned; recovering");
-                poisoned.into_inner()
-            }
-        }
+    pub fn cleanup_stale(&self, session_ttl_secs: u64) {
+        self.inner.lock().cleanup_stale(session_ttl_secs);
     }
 
-    async fn submit(&self, mut request: CoordinatorRequest) {
-        loop {
-            let sender = {
-                let admission = self.lock_admission();
-                let Some(sender) = admission.as_ref() else {
-                    Self::handle_request(&self.inner, request);
-                    return;
-                };
-                sender.clone()
-            };
-            // Waiting for capacity does not accept the request. Dropping this future here
-            // leaves no event in the actor, and shutdown can close admission without waiting.
-            let permit = match sender.reserve().await {
-                Ok(permit) => permit,
-                Err(_) => {
-                    let mut admission = self.lock_admission();
-                    if admission
-                        .as_ref()
-                        .is_some_and(|current| current.same_channel(&sender))
-                    {
-                        *admission = None;
-                    }
-                    continue;
-                }
-            };
-            match self.publish_reserved(&sender, permit, request) {
-                None => return,
-                Some(unaccepted) => request = unaccepted,
-            }
-            // A reserved slot from an older actor generation is not admission to its
-            // successor. Release it and retry against the post-drain state.
-        }
+    #[cfg(test)]
+    pub fn active_session_count(&self) -> usize {
+        self.inner.lock().active_session_count()
     }
 
-    fn publish_reserved(
-        &self,
-        sender: &mpsc::Sender<CoordinatorRequest>,
-        permit: mpsc::Permit<'_, CoordinatorRequest>,
-        request: CoordinatorRequest,
-    ) -> Option<CoordinatorRequest> {
-        let admission = self.lock_admission();
-        if !sender.is_closed()
-            && admission
-                .as_ref()
-                .is_some_and(|current| current.same_channel(sender))
-        {
-            permit.send(request);
-            None
-        } else {
-            Some(request)
-        }
-    }
-
-    fn lock_state(
-        inner: &Arc<Mutex<PipelineCoordinatorState>>,
-    ) -> std::sync::MutexGuard<'_, PipelineCoordinatorState> {
-        match inner.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => {
-                warn!("Pipeline coordinator state lock was poisoned; recovering state");
-                poisoned.into_inner()
-            }
-        }
-    }
-
-    fn handle_request(inner: &Arc<Mutex<PipelineCoordinatorState>>, request: CoordinatorRequest) {
-        match request {
-            CoordinatorRequest::Apply { event, reply } => {
-                let commands = Self::lock_state(inner).apply_event(event);
-                if let Err(commands) = reply.send(commands)
-                    && let Some(command) = commands.first()
-                {
-                    let session_id = match command {
-                        PipelineCommand::CreateSegmentDag { session_id, .. } => session_id,
-                        PipelineCommand::CreatePairedSegmentDag { outputs, .. } => {
-                            &outputs.session_id
-                        }
-                        PipelineCommand::CreateSessionCompleteDag { outputs, .. } => {
-                            &outputs.session_id
-                        }
-                    };
-                    warn!(
-                        session_id,
-                        commands = commands.len(),
-                        "Coordinator caller dropped before receiving commands; event will not be replayed"
-                    );
-                }
-            }
-            CoordinatorRequest::Cleanup { session_ttl_secs } => {
-                Self::lock_state(inner).cleanup_stale(session_ttl_secs);
-            }
-            CoordinatorRequest::ActiveSessionCount { reply } => {
-                let count = Self::lock_state(inner).active_session_count();
-                let _ = reply.send(count);
-            }
-            CoordinatorRequest::ActivePairCount { reply } => {
-                let count = Self::lock_state(inner).active_pair_count();
-                let _ = reply.send(count);
-            }
-            CoordinatorRequest::SessionOutstanding { session_id, reply } => {
-                let outstanding = Self::lock_state(inner).session_outstanding(&session_id);
-                let _ = reply.send(outstanding);
-            }
-        }
-    }
-
-    /// Apply an event through the bounded coordinator actor when it is running.
-    ///
-    /// Production code should use this method consistently. `apply_event_inline`
-    /// is for tests and pre-actor bootstrap paths only; do not mix the two for
-    /// the same live coordinator after `start` has been called.
-    ///
-    /// Admission is the channel publication, not waiting for capacity. Accepted events
-    /// reduce once even if this caller is cancelled; the caller still owns executing
-    /// returned commands. Losing that caller cannot guarantee external command effects.
-    pub async fn apply_event(&self, event: PipelineCoordinationEvent) -> Vec<PipelineCommand> {
-        let (reply, rx) = oneshot::channel();
-        self.submit(CoordinatorRequest::Apply { event, reply })
-            .await;
-        rx.await.unwrap_or_else(|_| {
-            // An accepted event may already have changed the reducer. A lost response
-            // is never permission to apply it again and duplicate counters or commands.
-            warn!("Coordinator reply lost after admission; event will not be replayed");
-            Vec::new()
-        })
-    }
-
-    /// Apply an event by taking the coordinator state lock directly.
-    ///
-    /// This is intended for reducer tests and bootstrap use before the actor is
-    /// started. Runtime code should use `apply_event` so events stay serialized
-    /// through the bounded channel.
-    pub fn apply_event_inline(&self, event: PipelineCoordinationEvent) -> Vec<PipelineCommand> {
-        Self::lock_state(&self.inner).apply_event(event)
-    }
-
-    pub async fn cleanup_stale(&self, session_ttl_secs: u64) {
-        self.submit(CoordinatorRequest::Cleanup { session_ttl_secs })
-            .await;
-    }
-
-    pub async fn active_session_count(&self) -> usize {
-        loop {
-            let (reply, rx) = oneshot::channel();
-            self.submit(CoordinatorRequest::ActiveSessionCount { reply })
-                .await;
-            if let Ok(count) = rx.await {
-                return count;
-            }
-            // Unlike mutation, a read can safely retry through the admission boundary.
-            // Direct fallback could overtake an actor that is still draining accepted work.
-            warn!("Coordinator count reply lost; retrying through admission");
-        }
-    }
-
-    pub fn active_session_count_inline(&self) -> usize {
-        Self::lock_state(&self.inner).active_session_count()
-    }
-
-    pub async fn active_pair_count(&self) -> usize {
-        loop {
-            let (reply, rx) = oneshot::channel();
-            self.submit(CoordinatorRequest::ActivePairCount { reply })
-                .await;
-            if let Ok(count) = rx.await {
-                return count;
-            }
-            warn!("Coordinator pair-count reply lost; retrying through admission");
-        }
-    }
-
-    pub fn active_pair_count_inline(&self) -> usize {
-        Self::lock_state(&self.inner).active_pair_count()
+    #[cfg(test)]
+    pub fn active_pair_count(&self) -> usize {
+        self.inner.lock().active_pair_count()
     }
 
     /// What the reducer still holds for `session_id`, or `None` when it tracks
@@ -631,32 +379,8 @@ impl PipelineCoordinator {
     ///
     /// `PipelineManager::drain_for_session` pairs this with its `job` and
     /// `dag_execution` queries; neither source alone sees all in-flight work.
-    pub async fn session_outstanding(
-        &self,
-        session_id: &str,
-    ) -> Option<SessionCoordinationOutstanding> {
-        loop {
-            let (reply, rx) = oneshot::channel();
-            self.submit(CoordinatorRequest::SessionOutstanding {
-                session_id: session_id.to_string(),
-                reply,
-            })
-            .await;
-            if let Ok(outstanding) = rx.await {
-                return outstanding;
-            }
-            warn!(
-                session_id,
-                "Coordinator session reply lost; retrying through admission"
-            );
-        }
-    }
-
-    pub fn session_outstanding_inline(
-        &self,
-        session_id: &str,
-    ) -> Option<SessionCoordinationOutstanding> {
-        Self::lock_state(&self.inner).session_outstanding(session_id)
+    pub fn session_outstanding(&self, session_id: &str) -> Option<SessionCoordinationOutstanding> {
+        self.inner.lock().session_outstanding(session_id)
     }
 }
 
@@ -909,10 +633,12 @@ impl PipelineCoordinatorState {
             .map(SessionPipelineState::outstanding)
     }
 
+    #[cfg(test)]
     fn active_session_count(&self) -> usize {
         self.sessions.len()
     }
 
+    #[cfg(test)]
     fn active_pair_count(&self) -> usize {
         self.sessions
             .values()
@@ -1599,6 +1325,7 @@ impl SessionPipelineState {
         outputs
     }
 
+    #[cfg(test)]
     fn active_pair_count(&self) -> usize {
         self.segments
             .iter()
@@ -1790,7 +1517,7 @@ mod tests {
 
         assert!(
             coord
-                .apply_event_inline(configure_event(
+                .apply_event(configure_event(
                     session_id,
                     streamer_id,
                     true,
@@ -1802,7 +1529,7 @@ mod tests {
         );
         assert!(
             coord
-                .apply_event_inline(PipelineCoordinationEvent::DanmuCollectionStarted {
+                .apply_event(PipelineCoordinationEvent::DanmuCollectionStarted {
                     session_id: session_id.to_string(),
                     streamer_id: streamer_id.to_string(),
                 })
@@ -1810,7 +1537,7 @@ mod tests {
         );
         assert!(
             coord
-                .apply_event_inline(PipelineCoordinationEvent::DanmuSegmentCompleted {
+                .apply_event(PipelineCoordinationEvent::DanmuSegmentCompleted {
                     session_id: session_id.to_string(),
                     streamer_id: streamer_id.to_string(),
                     segment_index: 0,
@@ -1820,23 +1547,19 @@ mod tests {
         );
         assert!(
             coord
-                .apply_event_inline(PipelineCoordinationEvent::DanmuCollectionStopped {
+                .apply_event(PipelineCoordinationEvent::DanmuCollectionStopped {
                     session_id: session_id.to_string(),
                 })
                 .is_empty()
         );
         assert!(
             coord
-                .apply_event_inline(end_event(session_id, streamer_id))
+                .apply_event(end_event(session_id, streamer_id))
                 .is_empty()
         );
-        assert!(
-            coord
-                .apply_event_inline(persisted_event(session_id))
-                .is_empty()
-        );
+        assert!(coord.apply_event(persisted_event(session_id)).is_empty());
 
-        let commands = coord.apply_event_inline(PipelineCoordinationEvent::VideoSegmentCompleted {
+        let commands = coord.apply_event(PipelineCoordinationEvent::VideoSegmentCompleted {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             segment_index: 0,
@@ -1859,7 +1582,7 @@ mod tests {
         let session_id = "session1";
         let streamer_id = "streamer1";
 
-        coord.apply_event_inline(configure_event(
+        coord.apply_event(configure_event(
             session_id,
             streamer_id,
             true,
@@ -1867,27 +1590,22 @@ mod tests {
             None,
             Some(empty_session_pipeline()),
         ));
-        coord.apply_event_inline(PipelineCoordinationEvent::DanmuCollectionStarted {
+        coord.apply_event(PipelineCoordinationEvent::DanmuCollectionStarted {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
         });
-        coord.apply_event_inline(PipelineCoordinationEvent::VideoSegmentCompleted {
+        coord.apply_event(PipelineCoordinationEvent::VideoSegmentCompleted {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             segment_index: 0,
             path: PathBuf::from("/seg0.flv"),
         });
-        coord.apply_event_inline(end_event(session_id, streamer_id));
-        assert!(
-            coord
-                .apply_event_inline(persisted_event(session_id))
-                .is_empty()
-        );
+        coord.apply_event(end_event(session_id, streamer_id));
+        assert!(coord.apply_event(persisted_event(session_id)).is_empty());
 
-        let commands =
-            coord.apply_event_inline(PipelineCoordinationEvent::DanmuCollectionStopped {
-                session_id: session_id.to_string(),
-            });
+        let commands = coord.apply_event(PipelineCoordinationEvent::DanmuCollectionStopped {
+            session_id: session_id.to_string(),
+        });
 
         assert!(matches!(
             commands.as_slice(),
@@ -1901,7 +1619,7 @@ mod tests {
         let session_id = "session1";
         let streamer_id = "streamer1";
 
-        coord.apply_event_inline(configure_event(
+        coord.apply_event(configure_event(
             session_id,
             streamer_id,
             false,
@@ -1909,24 +1627,20 @@ mod tests {
             None,
             Some(empty_session_pipeline()),
         ));
-        coord.apply_event_inline(PipelineCoordinationEvent::VideoSegmentCompleted {
+        coord.apply_event(PipelineCoordinationEvent::VideoSegmentCompleted {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             segment_index: 0,
             path: PathBuf::from("/seg0.flv"),
         });
-        coord.apply_event_inline(end_event(session_id, streamer_id));
-        let commands = coord.apply_event_inline(persisted_event(session_id));
+        coord.apply_event(end_event(session_id, streamer_id));
+        let commands = coord.apply_event(persisted_event(session_id));
         assert_eq!(commands.len(), 1);
 
+        assert!(coord.apply_event(persisted_event(session_id)).is_empty());
         assert!(
             coord
-                .apply_event_inline(persisted_event(session_id))
-                .is_empty()
-        );
-        assert!(
-            coord
-                .apply_event_inline(PipelineCoordinationEvent::VideoSegmentCompleted {
+                .apply_event(PipelineCoordinationEvent::VideoSegmentCompleted {
                     session_id: session_id.to_string(),
                     streamer_id: streamer_id.to_string(),
                     segment_index: 0,
@@ -1942,7 +1656,7 @@ mod tests {
         let session_id = "session1";
         let streamer_id = "streamer1";
 
-        coord.apply_event_inline(configure_event(
+        coord.apply_event(configure_event(
             session_id,
             streamer_id,
             false,
@@ -1950,41 +1664,33 @@ mod tests {
             None,
             Some(non_empty_pipeline("session-complete")),
         ));
-        coord.apply_event_inline(PipelineCoordinationEvent::VideoSegmentCompleted {
+        coord.apply_event(PipelineCoordinationEvent::VideoSegmentCompleted {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             segment_index: 0,
             path: PathBuf::from("/seg0.flv"),
         });
-        coord.apply_event_inline(end_event(session_id, streamer_id));
+        coord.apply_event(end_event(session_id, streamer_id));
         assert!(matches!(
-            coord
-                .apply_event_inline(persisted_event(session_id))
-                .as_slice(),
+            coord.apply_event(persisted_event(session_id)).as_slice(),
             [PipelineCommand::CreateSessionCompleteDag { .. }]
         ));
 
-        coord.apply_event_inline(
+        coord.apply_event(
             PipelineCoordinationEvent::SessionCompleteDagCreationFailed {
                 session_id: session_id.to_string(),
             },
         );
         assert!(matches!(
-            coord
-                .apply_event_inline(persisted_event(session_id))
-                .as_slice(),
+            coord.apply_event(persisted_event(session_id)).as_slice(),
             [PipelineCommand::CreateSessionCompleteDag { .. }]
         ));
 
-        coord.apply_event_inline(PipelineCoordinationEvent::SessionCompleteDagStarted {
+        coord.apply_event(PipelineCoordinationEvent::SessionCompleteDagStarted {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
         });
-        assert!(
-            coord
-                .apply_event_inline(persisted_event(session_id))
-                .is_empty()
-        );
+        assert!(coord.apply_event(persisted_event(session_id)).is_empty());
     }
 
     #[test]
@@ -1992,7 +1698,7 @@ mod tests {
         let coord = PipelineCoordinator::new();
         let session_id = "session1";
         let streamer_id = "streamer1";
-        coord.apply_event_inline(configure_event(
+        coord.apply_event(configure_event(
             session_id,
             streamer_id,
             false,
@@ -2000,7 +1706,7 @@ mod tests {
             None,
             Some(non_empty_pipeline("session-complete")),
         ));
-        coord.apply_event_inline(PipelineCoordinationEvent::RecoverSegmentDagFailed {
+        coord.apply_event(PipelineCoordinationEvent::RecoverSegmentDagFailed {
             session_id: session_id.to_string(),
             segment_index: 0,
             source: SourceType::Video,
@@ -2008,7 +1714,7 @@ mod tests {
 
         assert!(
             coord
-                .apply_event_inline(PipelineCoordinationEvent::RecoverSourceArtifact {
+                .apply_event(PipelineCoordinationEvent::RecoverSourceArtifact {
                     session_id: session_id.to_string(),
                     streamer_id: streamer_id.to_string(),
                     segment_index: 0,
@@ -2017,10 +1723,10 @@ mod tests {
                 })
                 .is_empty()
         );
-        coord.apply_event_inline(end_event(session_id, streamer_id));
+        coord.apply_event(end_event(session_id, streamer_id));
         assert!(matches!(
             coord
-                .apply_event_inline(persisted_event(session_id))
+                .apply_event(persisted_event(session_id))
                 .as_slice(),
             [PipelineCommand::CreateSessionCompleteDag { outputs, .. }]
                 if outputs.video_outputs.len() == 1
@@ -2034,7 +1740,7 @@ mod tests {
         let session_id = "session1";
         let streamer_id = "streamer1";
 
-        coord.apply_event_inline(configure_event(
+        coord.apply_event(configure_event(
             session_id,
             streamer_id,
             false,
@@ -2042,7 +1748,7 @@ mod tests {
             None,
             Some(empty_session_pipeline()),
         ));
-        let commands = coord.apply_event_inline(PipelineCoordinationEvent::VideoSegmentCompleted {
+        let commands = coord.apply_event(PipelineCoordinationEvent::VideoSegmentCompleted {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             segment_index: 0,
@@ -2052,20 +1758,20 @@ mod tests {
             commands.as_slice(),
             [PipelineCommand::CreateSegmentDag { .. }]
         ));
-        coord.apply_event_inline(PipelineCoordinationEvent::SegmentDagStarted {
+        coord.apply_event(PipelineCoordinationEvent::SegmentDagStarted {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             segment_index: 0,
             source: SourceType::Video,
         });
-        coord.apply_event_inline(PipelineCoordinationEvent::SessionEnded {
+        coord.apply_event(PipelineCoordinationEvent::SessionEnded {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             should_run_session_complete: true,
         });
-        coord.apply_event_inline(persisted_event(session_id));
+        coord.apply_event(persisted_event(session_id));
 
-        let commands = coord.apply_event_inline(PipelineCoordinationEvent::SegmentDagFailed {
+        let commands = coord.apply_event(PipelineCoordinationEvent::SegmentDagFailed {
             session_id: session_id.to_string(),
             segment_index: 0,
             source: SourceType::Video,
@@ -2083,7 +1789,7 @@ mod tests {
         let session_id = "session1";
         let streamer_id = "streamer1";
 
-        coord.apply_event_inline(configure_event(
+        coord.apply_event(configure_event(
             session_id,
             streamer_id,
             false,
@@ -2091,7 +1797,7 @@ mod tests {
             None,
             Some(empty_session_pipeline()),
         ));
-        let commands = coord.apply_event_inline(PipelineCoordinationEvent::VideoSegmentCompleted {
+        let commands = coord.apply_event(PipelineCoordinationEvent::VideoSegmentCompleted {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             segment_index: 0,
@@ -2101,7 +1807,7 @@ mod tests {
             commands.as_slice(),
             [PipelineCommand::CreateSegmentDag { .. }]
         ));
-        coord.apply_event_inline(PipelineCoordinationEvent::SegmentDagStarted {
+        coord.apply_event(PipelineCoordinationEvent::SegmentDagStarted {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             segment_index: 0,
@@ -2110,7 +1816,7 @@ mod tests {
 
         assert!(
             coord
-                .apply_event_inline(PipelineCoordinationEvent::SegmentDagFailed {
+                .apply_event(PipelineCoordinationEvent::SegmentDagFailed {
                     session_id: session_id.to_string(),
                     segment_index: 0,
                     source: SourceType::Video,
@@ -2118,25 +1824,23 @@ mod tests {
                 .is_empty()
         );
 
-        coord.apply_event_inline(PipelineCoordinationEvent::SegmentDagStarted {
+        coord.apply_event(PipelineCoordinationEvent::SegmentDagStarted {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             segment_index: 0,
             source: SourceType::Video,
         });
-        coord.apply_event_inline(PipelineCoordinationEvent::SessionEnded {
+        coord.apply_event(PipelineCoordinationEvent::SessionEnded {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             should_run_session_complete: true,
         });
         assert!(
-            coord
-                .apply_event_inline(persisted_event(session_id))
-                .is_empty(),
+            coord.apply_event(persisted_event(session_id)).is_empty(),
             "retried segment DAG is in flight, so fallback output must not finalize the session"
         );
 
-        let commands = coord.apply_event_inline(PipelineCoordinationEvent::SegmentDagCompleted {
+        let commands = coord.apply_event(PipelineCoordinationEvent::SegmentDagCompleted {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             segment_index: 0,
@@ -2161,7 +1865,7 @@ mod tests {
         let session_id = "session1";
         let streamer_id = "streamer1";
 
-        coord.apply_event_inline(configure_event(
+        coord.apply_event(configure_event(
             session_id,
             streamer_id,
             true,
@@ -2171,7 +1875,7 @@ mod tests {
         ));
         assert!(
             coord
-                .apply_event_inline(PipelineCoordinationEvent::VideoSegmentCompleted {
+                .apply_event(PipelineCoordinationEvent::VideoSegmentCompleted {
                     session_id: session_id.to_string(),
                     streamer_id: streamer_id.to_string(),
                     segment_index: 0,
@@ -2181,7 +1885,7 @@ mod tests {
         );
         assert!(
             coord
-                .apply_event_inline(PipelineCoordinationEvent::DanmuSegmentCompleted {
+                .apply_event(PipelineCoordinationEvent::DanmuSegmentCompleted {
                     session_id: session_id.to_string(),
                     streamer_id: streamer_id.to_string(),
                     segment_index: 1,
@@ -2190,7 +1894,7 @@ mod tests {
                 .is_empty()
         );
 
-        let commands = coord.apply_event_inline(PipelineCoordinationEvent::DanmuSegmentCompleted {
+        let commands = coord.apply_event(PipelineCoordinationEvent::DanmuSegmentCompleted {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             segment_index: 0,
@@ -2215,7 +1919,7 @@ mod tests {
         let session_id = "session1";
         let streamer_id = "streamer1";
 
-        coord.apply_event_inline(configure_event(
+        coord.apply_event(configure_event(
             session_id,
             streamer_id,
             true,
@@ -2223,13 +1927,13 @@ mod tests {
             Some(non_empty_pipeline("paired")),
             Some(empty_session_pipeline()),
         ));
-        coord.apply_event_inline(PipelineCoordinationEvent::DanmuCollectionStarted {
+        coord.apply_event(PipelineCoordinationEvent::DanmuCollectionStarted {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
         });
 
         // Source artifacts kick off per-segment DAGs.
-        let commands = coord.apply_event_inline(PipelineCoordinationEvent::VideoSegmentCompleted {
+        let commands = coord.apply_event(PipelineCoordinationEvent::VideoSegmentCompleted {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             segment_index: 0,
@@ -2239,7 +1943,7 @@ mod tests {
             commands.as_slice(),
             [PipelineCommand::CreateSegmentDag { .. }]
         ));
-        let commands = coord.apply_event_inline(PipelineCoordinationEvent::DanmuSegmentCompleted {
+        let commands = coord.apply_event(PipelineCoordinationEvent::DanmuSegmentCompleted {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             segment_index: 0,
@@ -2251,13 +1955,13 @@ mod tests {
         ));
 
         // Both per-segment DAGs are in flight.
-        coord.apply_event_inline(PipelineCoordinationEvent::SegmentDagStarted {
+        coord.apply_event(PipelineCoordinationEvent::SegmentDagStarted {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             segment_index: 0,
             source: SourceType::Video,
         });
-        coord.apply_event_inline(PipelineCoordinationEvent::SegmentDagStarted {
+        coord.apply_event(PipelineCoordinationEvent::SegmentDagStarted {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             segment_index: 0,
@@ -2267,25 +1971,21 @@ mod tests {
         // Session wraps up while the per-segment DAGs are still running.
         assert!(
             coord
-                .apply_event_inline(PipelineCoordinationEvent::DanmuCollectionStopped {
+                .apply_event(PipelineCoordinationEvent::DanmuCollectionStopped {
                     session_id: session_id.to_string(),
                 })
                 .is_empty()
         );
         assert!(
             coord
-                .apply_event_inline(end_event(session_id, streamer_id))
+                .apply_event(end_event(session_id, streamer_id))
                 .is_empty()
         );
-        assert!(
-            coord
-                .apply_event_inline(persisted_event(session_id))
-                .is_empty()
-        );
+        assert!(coord.apply_event(persisted_event(session_id)).is_empty());
 
         // Danmu DAG drains first. Video is still in flight, so neither
         // a paired command nor session-complete can fire.
-        let commands = coord.apply_event_inline(PipelineCoordinationEvent::SegmentDagCompleted {
+        let commands = coord.apply_event(PipelineCoordinationEvent::SegmentDagCompleted {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             segment_index: 0,
@@ -2301,7 +2001,7 @@ mod tests {
         // command; `try_finalize` runs in the same call but must NOT
         // emit session-complete because `pending_paired_starts` now
         // holds segment 0.
-        let commands = coord.apply_event_inline(PipelineCoordinationEvent::SegmentDagCompleted {
+        let commands = coord.apply_event(PipelineCoordinationEvent::SegmentDagCompleted {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             segment_index: 0,
@@ -2320,14 +2020,14 @@ mod tests {
         // `PairedDagStarted` clears `pending_paired_starts`, but
         // `pending_paired_dags` becomes 1, so session-complete still
         // waits.
-        coord.apply_event_inline(PipelineCoordinationEvent::PairedDagStarted {
+        coord.apply_event(PipelineCoordinationEvent::PairedDagStarted {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             segment_index: 0,
         });
 
         // Paired DAG finishes -> all gates clear -> session-complete fires.
-        let commands = coord.apply_event_inline(PipelineCoordinationEvent::PairedDagCompleted {
+        let commands = coord.apply_event(PipelineCoordinationEvent::PairedDagCompleted {
             session_id: session_id.to_string(),
         });
         assert!(matches!(
