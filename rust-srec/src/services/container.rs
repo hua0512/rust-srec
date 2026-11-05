@@ -98,14 +98,14 @@ pub struct ServiceContainerConfig {
 }
 
 impl ServiceContainerConfig {
-    fn standard(cache_ttl: Duration, event_capacity: usize) -> Self {
-        Self {
+    fn standard(cache_ttl: Duration, event_capacity: usize) -> Result<Self> {
+        Ok(Self {
             cache_ttl,
             event_capacity,
             download_config: DownloadManagerConfig::default(),
             pipeline_config: PipelineManagerConfig::default(),
-            api_config: ApiServerConfig::from_env_or_default(),
-        }
+            api_config: ApiServerConfig::from_env()?,
+        })
     }
 }
 
@@ -216,6 +216,9 @@ pub struct ServiceContainer {
     pub(crate) upload_status_broadcaster: crate::pipeline::UploadStatusBroadcaster,
     /// API server configuration.
     api_server_config: ApiServerConfig,
+    /// Token and password settings, read while building so an invalid value fails startup
+    /// before any service starts.
+    auth_config: crate::api::auth_service::AuthConfig,
     /// Cancellation token for graceful shutdown.
     cancellation_token: CancellationToken,
     /// Owner for background tasks started by the application runtime.
@@ -545,30 +548,6 @@ impl ServiceContainer {
         crate::Error::Other(self.task_supervisor.wait_for_failure().await.to_string())
     }
 
-    /// Build a point-in-time [`ServiceStats`] snapshot from live service
-    /// counters.
-    ///
-    /// Exported through [`crate::backend`] for embedders; nothing inside
-    /// the crate calls it. Every field is read at call time from the
-    /// owning service; `scheduler_stats` reads the `SchedulerHandle`
-    /// watch channel, so it stays current after `start_scheduler` moves
-    /// the `Scheduler` into its runtime task.
-    pub fn stats(&self) -> ServiceStats {
-        ServiceStats {
-            streamer_count: self.streamer_manager.count(),
-            active_streamer_count: self.streamer_manager.active_count(),
-            live_streamer_count: self.streamer_manager.live_count(),
-            disabled_streamer_count: self.streamer_manager.disabled_count(),
-            cache_stats: self.config_service.cache_stats(),
-            event_subscriber_count: self.event_broadcaster.subscriber_count(),
-            active_downloads: self.download_manager.active_count(),
-            pipeline_queue_depth: self.pipeline_manager.queue_depth(),
-            active_danmu_collections: self.danmu_service.active_sessions().len(),
-            notification_stats: self.notification_service.stats(),
-            scheduler_stats: Some(self.scheduler_handle.stats()),
-        }
-    }
-
     /// Get the notification service.
     pub fn notification_service(&self) -> &Arc<NotificationService> {
         &self.notification_service
@@ -601,33 +580,4 @@ impl ServiceContainer {
             config.run_retention_cleanup(cancellation).await;
         });
     }
-}
-
-/// Point-in-time service counters returned by [`ServiceContainer::stats`],
-/// exported through [`crate::backend`] for embedders.
-#[derive(Debug, Clone)]
-pub struct ServiceStats {
-    /// Total number of streamers.
-    pub streamer_count: usize,
-    /// Number of active streamers.
-    pub active_streamer_count: usize,
-    /// Number of live streamers.
-    pub live_streamer_count: usize,
-    /// Number of disabled streamers.
-    pub disabled_streamer_count: usize,
-    /// Cache statistics.
-    pub cache_stats: crate::config::CacheStats,
-    /// Number of event subscribers.
-    pub event_subscriber_count: usize,
-    /// Number of active downloads.
-    pub active_downloads: usize,
-    /// Pipeline job queue depth.
-    pub pipeline_queue_depth: usize,
-    /// Number of active danmu collections.
-    pub active_danmu_collections: usize,
-    /// Notification service statistics.
-    pub notification_stats: crate::notification::NotificationStats,
-    /// Scheduler supervisor statistics. [`ServiceContainer::stats`] always
-    /// populates this from the scheduler's watch channel.
-    pub scheduler_stats: Option<crate::scheduler::actor::SupervisorStats>,
 }

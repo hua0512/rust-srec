@@ -9,7 +9,7 @@ pub(crate) use writes::{
 use std::collections::HashMap;
 
 use async_trait::async_trait;
-use sqlx::SqlitePool;
+use sqlx::{QueryBuilder, SqlitePool};
 
 use crate::database::models::{
     NotificationChannelDbModel, NotificationDeadLetterDbModel, NotificationEventLogDbModel,
@@ -40,13 +40,8 @@ pub trait NotificationRepository: Send + Sync {
         }
         Ok(subscriptions)
     }
-    async fn get_channels_for_event(
-        &self,
-        event_name: &str,
-    ) -> Result<Vec<NotificationChannelDbModel>>;
     async fn subscribe(&self, channel_id: &str, event_name: &str) -> Result<()>;
     async fn unsubscribe(&self, channel_id: &str, event_name: &str) -> Result<()>;
-    async fn unsubscribe_all(&self, channel_id: &str) -> Result<()>;
 
     // Dead Letter Queue
     async fn add_to_dead_letter(&self, entry: &NotificationDeadLetterDbModel) -> Result<()>;
@@ -55,8 +50,6 @@ pub trait NotificationRepository: Send + Sync {
         channel_id: Option<&str>,
         limit: i32,
     ) -> Result<Vec<NotificationDeadLetterDbModel>>;
-    async fn get_dead_letter(&self, id: &str) -> Result<NotificationDeadLetterDbModel>;
-    async fn delete_dead_letter(&self, id: &str) -> Result<()>;
 
     // Event log
     async fn add_event_log(&self, entry: &NotificationEventLogDbModel) -> Result<()>;
@@ -91,22 +84,15 @@ impl NotificationRepository for SqlxNotificationRepository {
     ) -> Result<HashMap<String, Vec<String>>> {
         let mut subscriptions: HashMap<String, Vec<String>> = HashMap::new();
         let ids = super::unique_lookup_ids(channel_ids);
-        for ids in ids.chunks(super::LOOKUP_BATCH_SIZE) {
-            let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
-                "SELECT channel_id, event_name FROM notification_subscription WHERE channel_id IN (",
-            );
-            let mut separated = query.separated(", ");
-            for id in ids {
-                separated.push_bind(*id);
-            }
-            separated.push_unseparated(") ORDER BY channel_id, event_name");
-            for (id, event) in query
-                .build_query_as::<(String, String)>()
-                .fetch_all(&self.pool)
-                .await?
-            {
-                subscriptions.entry(id).or_default().push(event);
-            }
+        for (id, event) in super::fetch_in_chunks::<(String, String)>(
+            &self.pool,
+            "SELECT channel_id, event_name FROM notification_subscription WHERE channel_id IN (",
+            &ids,
+            ") ORDER BY channel_id, event_name",
+        )
+        .await?
+        {
+            subscriptions.entry(id).or_default().push(event);
         }
         Ok(subscriptions)
     }
@@ -169,24 +155,6 @@ impl NotificationRepository for SqlxNotificationRepository {
         Ok(subs.into_iter().map(|(e,)| e).collect())
     }
 
-    async fn get_channels_for_event(
-        &self,
-        event_name: &str,
-    ) -> Result<Vec<NotificationChannelDbModel>> {
-        let channels = sqlx::query_as::<_, NotificationChannelDbModel>(
-            r#"
-            SELECT nc.* FROM notification_channel nc
-            INNER JOIN notification_subscription ns ON nc.id = ns.channel_id
-            WHERE ns.event_name = ?
-            ORDER BY nc.name
-            "#,
-        )
-        .bind(event_name)
-        .fetch_all(&self.pool)
-        .await?;
-        Ok(channels)
-    }
-
     async fn subscribe(&self, channel_id: &str, event_name: &str) -> Result<()> {
         writes::insert_subscription(
             &mut *self.write_pool.acquire().await?,
@@ -206,11 +174,6 @@ impl NotificationRepository for SqlxNotificationRepository {
         .bind(event_name)
         .execute(&self.write_pool)
         .await?;
-        Ok(())
-    }
-
-    async fn unsubscribe_all(&self, channel_id: &str) -> Result<()> {
-        writes::delete_subscriptions(&mut *self.write_pool.acquire().await?, channel_id).await?;
         Ok(())
     }
 
@@ -261,24 +224,6 @@ impl NotificationRepository for SqlxNotificationRepository {
         Ok(entries)
     }
 
-    async fn get_dead_letter(&self, id: &str) -> Result<NotificationDeadLetterDbModel> {
-        sqlx::query_as::<_, NotificationDeadLetterDbModel>(
-            "SELECT * FROM notification_dead_letter WHERE id = ?",
-        )
-        .bind(id)
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| Error::not_found("NotificationDeadLetter", id))
-    }
-
-    async fn delete_dead_letter(&self, id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM notification_dead_letter WHERE id = ?")
-            .bind(id)
-            .execute(&self.write_pool)
-            .await?;
-        Ok(())
-    }
-
     async fn add_event_log(&self, entry: &NotificationEventLogDbModel) -> Result<()> {
         sqlx::query(
             r#"
@@ -310,46 +255,34 @@ impl NotificationRepository for SqlxNotificationRepository {
         let limit = limit.clamp(1, 1000);
         let offset = offset.max(0);
 
-        let mut query_str = "SELECT nel.* FROM notification_event_log nel".to_string();
-        let mut conditions = Vec::new();
-
+        let mut query = QueryBuilder::new("SELECT nel.* FROM notification_event_log nel");
         if search.is_some() {
-            query_str.push_str(" LEFT JOIN streamers s ON nel.streamer_id = s.id");
-            conditions.push(r"(LOWER(s.name) LIKE LOWER(?) ESCAPE '\' OR LOWER(nel.payload) LIKE LOWER(?) ESCAPE '\')");
+            query.push(" LEFT JOIN streamers s ON nel.streamer_id = s.id");
         }
+        let mut separator = " WHERE ";
+        let mut next_separator = || std::mem::replace(&mut separator, " AND ");
 
-        if event_type.is_some() {
-            conditions.push("nel.event_type = ?");
+        if let Some(search) = search {
+            let pattern = super::literal_substring_pattern(search);
+            query
+                .push(next_separator())
+                .push("(LOWER(s.name) LIKE LOWER(")
+                .push_bind(pattern.clone())
+                .push(r") ESCAPE '\' OR LOWER(nel.payload) LIKE LOWER(")
+                .push_bind(pattern)
+                .push(r") ESCAPE '\')");
         }
-
-        if streamer_id.is_some() {
-            conditions.push("nel.streamer_id = ?");
+        if let Some(event_type) = event_type {
+            query
+                .push(next_separator())
+                .push("nel.event_type = ")
+                .push_bind(event_type);
         }
-
-        if priority.is_some() {
-            conditions.push("nel.priority >= ?");
-        }
-
-        if !conditions.is_empty() {
-            query_str.push_str(" WHERE ");
-            query_str.push_str(&conditions.join(" AND "));
-        }
-
-        query_str.push_str(" ORDER BY nel.created_at DESC LIMIT ? OFFSET ?");
-
-        let mut query =
-            sqlx::query_as::<_, NotificationEventLogDbModel>(sqlx::AssertSqlSafe(query_str));
-
-        if let Some(s) = search {
-            let search_pattern = super::literal_substring_pattern(s);
-            query = query.bind(search_pattern.clone());
-            query = query.bind(search_pattern);
-        }
-        if let Some(et) = event_type {
-            query = query.bind(et);
-        }
-        if let Some(sid) = streamer_id {
-            query = query.bind(sid);
+        if let Some(streamer_id) = streamer_id {
+            query
+                .push(next_separator())
+                .push("nel.streamer_id = ")
+                .push_bind(streamer_id);
         }
         if let Some(p) = priority {
             // Accept both integer (new format) and string (legacy format).
@@ -364,12 +297,21 @@ impl NotificationRepository for SqlxNotificationRepository {
                     _ => 2,
                 }
             };
-            query = query.bind(priority_value);
+            query
+                .push(next_separator())
+                .push("nel.priority >= ")
+                .push_bind(priority_value);
         }
-        query = query.bind(limit);
-        query = query.bind(offset);
+        query
+            .push(" ORDER BY nel.created_at DESC LIMIT ")
+            .push_bind(limit)
+            .push(" OFFSET ")
+            .push_bind(offset);
 
-        let entries = query.fetch_all(&self.pool).await?;
+        let entries = query
+            .build_query_as::<NotificationEventLogDbModel>()
+            .fetch_all(&self.pool)
+            .await?;
         Ok(entries)
     }
 }

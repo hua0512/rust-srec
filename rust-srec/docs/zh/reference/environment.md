@@ -6,6 +6,8 @@ import { withBase } from 'vitepress'
 
 你可以在 <a :href="withBase('/env.zh.example')" download=".env.example">.env</a> 文件中配置以下环境变量。
 
+数值类变量的值无效时（例如 `API_PORT=80800`），服务器会在启动时报错并停止，错误信息会注明是哪个变量。未设置或留空的变量使用默认值。
+
 ## 通用 {#通用}
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
@@ -117,7 +119,7 @@ import { withBase } from 'vitepress'
 ## 外部工具 {#外部工具}
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `FFMPEG_PATH` | 流水线处理器使用的 FFmpeg 程序；Streamlink 引擎配置未指定 FFmpeg 路径时也使用它。FFmpeg 下载引擎则使用其引擎配置中的程序路径。 | `ffmpeg` |
+| `FFMPEG_PATH` | 流水线处理器使用的 FFmpeg 程序；Streamlink 引擎配置未指定 FFmpeg 路径时，以及 FFmpeg 下载引擎配置未指定程序路径时，也使用它。 | `ffmpeg` |
 | `FFPROBE_PATH` | `audio_extract` 处理器使用的 FFprobe 程序 | `ffprobe` |
 | `STREAMLINK_PATH` | 添加主播时用于检查 Streamlink 能否处理该地址的 Streamlink 程序。录制使用 Streamlink 引擎配置中的程序路径。 | `streamlink` |
 | `RCLONE_PATH` | `rclone` 处理器使用的 rclone 程序 | `rclone` |

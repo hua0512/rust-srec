@@ -3,8 +3,8 @@ use std::sync::atomic::{AtomicU32, AtomicUsize};
 use super::*;
 use crate::database::models::StreamerDbModel;
 use crate::database::repositories::SqlxStreamerRepository;
-use crate::downloader::EngineEndSignal;
 use crate::downloader::engine::{DownloadProgress, DownloadStatus, EngineType};
+use crate::downloader::{DownloadTerminalEvent, EngineEndSignal};
 use crate::scheduler::feedback::FeedbackDisposition;
 use tokio::sync::Notify;
 use tokio_util::task::AbortOnDropHandle;
@@ -171,7 +171,7 @@ async fn blocked_resolution_and_lagged_progress_do_not_lose_terminal_or_block_re
         let resolver = Arc::new(GateResolver::new());
         scheduler.config_resolver = Some(resolver.clone());
         let (progress, receiver) = broadcast::channel(4);
-        scheduler.set_download_receiver(receiver);
+        scheduler.download_event_rx = Some(receiver);
         let configuration_events = scheduler.event_broadcaster.clone();
         let handle = scheduler.handle();
         let cancel = scheduler.cancellation_token.clone();

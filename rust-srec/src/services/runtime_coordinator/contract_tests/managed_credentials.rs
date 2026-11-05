@@ -1035,10 +1035,18 @@ async fn real_mesio_http_auth_responses_reach_one_diagnostic_before_session_fina
                         }
                     })).await.unwrap();
                 }));
-                let mut hls_config = mesio::HlsProtocolBuilder::new().get_config();
-                hls_config.playlist_config.live_max_refresh_retries = 0;
-                hls_config.playlist_config.live_refresh_interval = Duration::from_millis(10);
-                fixture.coordinator.download_manager.register_engine(Arc::new(crate::downloader::engine::MesioEngine::new().with_hls_config(hls_config)));
+                let engine_config = crate::database::models::engine::MesioEngineConfig {
+                    hls: Some(crate::database::models::engine::MesioHlsConfig {
+                        playlist_config: Some(crate::database::models::engine::MesioHlsPlaylistConfigOverride {
+                            live_max_refresh_retries: Some(0),
+                            live_refresh_interval_ms: Some(10),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                };
+                fixture.coordinator.download_manager.register_engine(Arc::new(crate::downloader::engine::MesioEngine::with_config(engine_config)));
                 let mut events = fixture.coordinator.download_manager.subscribe();
                 let mut config = DownloadConfig::new(
                     format!("http://{address}/live.{extension}"), fixture.directory.path(), STREAMER, "Coordinator", &session,

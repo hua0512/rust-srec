@@ -97,23 +97,14 @@ impl FlvDownloader {
             let kind = super::classify_download_error(&e);
             EngineStartError::new(kind, format!("Failed to start FLV download: {}", e))
         })?;
-        let flv_stream = session.items;
-
-        let config_snapshot = self.handle.config_snapshot();
-
-        // Route based on enable_processing flag AND engine config
-        if config_snapshot.enable_processing && self.engine_config.fix_flv {
-            self.download_with_pipeline(token, flv_stream).await
-        } else {
-            self.download_raw(token, flv_stream).await
-        }
+        self.download(token, session.items).await
     }
 
-    /// Download FLV stream with pipeline processing enabled.
-    ///
-    /// Routes the stream through FlvPipeline for defragmentation, GOP sorting,
-    /// timing repair, and other processing before writing to FlvWriter.
-    async fn download_with_pipeline(
+    /// Writes the FLV stream to files, through the FLV pipeline
+    /// (defragmentation, GOP sorting, timing repair and other processing)
+    /// when processing is enabled for the download and FLV, or straight to
+    /// the writer otherwise.
+    async fn download(
         &self,
         token: CancellationToken,
         flv_stream: impl futures::Stream<Item = std::result::Result<FlvData, DownloadError>>
@@ -122,133 +113,47 @@ impl FlvDownloader {
     ) -> std::result::Result<DownloadStats, EngineStartError> {
         let config = self.handle.config_snapshot();
         let streamer_id = config.streamer_id.clone();
-        info!(streamer_id = %streamer_id, "Starting FLV download with pipeline processing");
+        let processing = config.enable_processing && self.engine_config.fix_flv;
+        info!(streamer_id = %streamer_id, processing, "Starting FLV download");
 
-        // Build pipeline and common configs
         let pipeline_config = config.build_pipeline_config();
-        let flv_pipeline_config = if let Some(cfg) = config.flv_pipeline_config.clone() {
-            cfg
-        } else {
-            let mut cfg = FlvPipelineConfig::default();
+        let (tx, writer_rx, processing_tasks) = if processing {
+            let mut flv_pipeline_config = FlvPipelineConfig::default();
             if let Some(ref opts) = self.engine_config.flv_fix {
-                opts.apply_to(&mut cfg);
+                opts.apply_to(&mut flv_pipeline_config);
             }
-            cfg
+
+            // Manual split needs the pipeline, so only this mode enables it.
+            let context = Arc::new(
+                StreamerContext::with_name(&streamer_id, token.clone())
+                    .with_manual_split(self.handle.manual_split.clone()),
+            );
+            self.handle.manual_split.enable();
+
+            let pipeline = FlvPipeline::with_config(context, &pipeline_config, flv_pipeline_config)
+                .build_pipeline();
+            let pipeline_common::SpawnedPipeline {
+                input_tx,
+                output_rx,
+                tasks,
+            } = spawn_pipeline(pipeline, ChannelSpec::items(pipeline_config.channel_size));
+            (helpers::WriterInput::Pipeline(input_tx), output_rx, tasks)
+        } else {
+            let (tx, rx) = tokio::sync::mpsc::channel::<std::result::Result<FlvData, PipelineError>>(
+                pipeline_config.channel_size,
+            );
+            (helpers::WriterInput::Raw(tx), rx.into(), Vec::new())
         };
 
-        // Create StreamerContext with streamer name and cancellation token
-        let context = Arc::new(
-            StreamerContext::with_name(&streamer_id, token.clone())
-                .with_manual_split(self.handle.manual_split.clone()),
-        );
-        self.handle.manual_split.enable();
-
-        // Create FlvPipeline using PipelineProvider::with_config
-        let pipeline_provider =
-            FlvPipeline::with_config(context, &pipeline_config, flv_pipeline_config);
-
-        let pipeline = pipeline_provider.build_pipeline();
-
-        let pipeline_common::SpawnedPipeline {
-            input_tx: pipeline_input_tx,
-            output_rx: pipeline_output_rx,
-            tasks: processing_tasks,
-        } = spawn_pipeline(pipeline, ChannelSpec::items(pipeline_config.channel_size));
-
-        // Create FlvWriter with callbacks
-        let output_dir = config.output_dir.clone();
-        let base_name = config.filename_template.clone();
-
         let mut writer = FlvWriter::new(FlvWriterConfig {
-            output_dir,
-            base_name,
+            output_dir: config.output_dir.clone(),
+            base_name: config.filename_template.clone(),
         });
 
         helpers::setup_writer_callbacks(&mut writer, &self.handle.event_tx);
 
-        // Spawn blocking writer task that reads from pipeline output
-        let writer_task = tokio::task::spawn_blocking(move || writer.run(pipeline_output_rx));
+        let writer_task = tokio::task::spawn_blocking(move || writer.run(writer_rx));
 
-        // Consume the FLV stream and send to pipeline
-        let stream_error = helpers::consume_stream(
-            flv_stream,
-            &pipeline_input_tx,
-            helpers::StreamConsumeContext {
-                managed_credentials: config.managed_credentials,
-                parent_token: &self.handle.cancellation_token,
-                child_token: &token,
-                streamer_id: &streamer_id,
-                protocol: "FLV",
-            },
-            super::classify_download_error,
-            |_| {},
-        )
-        .await;
-
-        // Close the pipeline input channel to signal completion
-        drop(pipeline_input_tx);
-
-        helpers::handle_writer_result(
-            writer_task,
-            stream_error,
-            processing_tasks,
-            helpers::WriterSettleContext {
-                managed_credentials: config.managed_credentials,
-                event_tx: &self.handle.event_tx,
-                streamer_id: &streamer_id,
-                protocol: "FLV",
-                output_dir: &config.output_dir,
-                // FLV streams end on a TCP close. That's "we got disconnected"
-                // — could be EOF, could be the streamer's network blipping.
-                // SessionLifecycle treats this as ambiguous and enters
-                // hysteresis to absorb a possible reconnect.
-                engine_signal: crate::downloader::EngineEndSignal::CleanDisconnect,
-            },
-        )
-        .await
-        .map_err(EngineStartError::from)
-    }
-
-    /// Download FLV stream without pipeline processing (raw mode).
-    ///
-    /// Sends stream data directly to FlvWriter without any processing.
-    async fn download_raw(
-        &self,
-        token: CancellationToken,
-        flv_stream: impl futures::Stream<Item = std::result::Result<FlvData, DownloadError>>
-        + Send
-        + Unpin,
-    ) -> std::result::Result<DownloadStats, EngineStartError> {
-        let config = self.handle.config_snapshot();
-        let streamer_id = config.streamer_id.clone();
-        info!(
-            "Starting FLV download without pipeline processing for {}",
-            streamer_id
-        );
-
-        // Build pipeline config for channel size
-        let pipeline_config = config.build_pipeline_config();
-        let channel_size = pipeline_config.channel_size;
-
-        // Create channel for sending data to writer
-        let (tx, rx) =
-            tokio::sync::mpsc::channel::<std::result::Result<FlvData, PipelineError>>(channel_size);
-
-        // Create FlvWriter with callbacks
-        let output_dir = config.output_dir.clone();
-        let base_name = config.filename_template.clone();
-
-        let mut writer = FlvWriter::new(FlvWriterConfig {
-            output_dir,
-            base_name,
-        });
-
-        helpers::setup_writer_callbacks(&mut writer, &self.handle.event_tx);
-
-        // Spawn blocking writer task
-        let writer_task = tokio::task::spawn_blocking(move || writer.run(rx.into()));
-
-        // Consume the FLV stream and send to writer
         let stream_error = helpers::consume_stream(
             flv_stream,
             &tx,
@@ -264,20 +169,23 @@ impl FlvDownloader {
         )
         .await;
 
-        // Close the channel to signal writer to finish
+        // Closing the input lets the writer finish.
         drop(tx);
 
         helpers::handle_writer_result(
             writer_task,
             stream_error,
-            vec![],
+            processing_tasks,
             helpers::WriterSettleContext {
                 managed_credentials: config.managed_credentials,
                 event_tx: &self.handle.event_tx,
                 streamer_id: &streamer_id,
                 protocol: "FLV",
                 output_dir: &config.output_dir,
-                // FLV always ends on TCP close — see comment in the pipeline mode above.
+                // FLV streams end on a TCP close. That's "we got disconnected"
+                // — could be EOF, could be the streamer's network blipping.
+                // SessionLifecycle treats this as ambiguous and enters
+                // hysteresis to absorb a possible reconnect.
                 engine_signal: crate::downloader::EngineEndSignal::CleanDisconnect,
             },
         )
@@ -306,7 +214,8 @@ mod tests {
             "streamer",
             "session",
         )
-        .with_filename_template("test-flv");
+        .with_filename_template("test-flv")
+        .with_processing_enabled(false);
 
         let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<SegmentEvent>(32);
         let handle = DownloadHandle::new("download", EngineType::Mesio, config, event_tx);
@@ -345,7 +254,7 @@ mod tests {
         });
 
         let result = downloader
-            .download_raw(CancellationToken::new(), flv_stream)
+            .download(CancellationToken::new(), flv_stream)
             .await;
         assert!(result.is_err(), "expected stream error");
 

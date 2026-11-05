@@ -4,6 +4,7 @@ use std::ffi::OsStr;
 
 use tokio::process::Command;
 
+pub(crate) mod env;
 pub(crate) mod failure_samples;
 pub mod filename;
 pub mod fs;

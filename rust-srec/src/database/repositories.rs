@@ -82,5 +82,30 @@ pub(crate) fn unique_lookup_ids(ids: &[String]) -> Vec<&str> {
         .collect()
 }
 
+/// Run `prefix (?, ?, ...) suffix` once per [`LOOKUP_BATCH_SIZE`] chunk of
+/// `ids` and concatenate the rows. An `ORDER BY` in `suffix` orders each chunk,
+/// not the whole result.
+pub(crate) async fn fetch_in_chunks<T>(
+    pool: &sqlx::SqlitePool,
+    prefix: &'static str,
+    ids: &[&str],
+    suffix: &'static str,
+) -> crate::Result<Vec<T>>
+where
+    T: for<'r> sqlx::FromRow<'r, sqlx::sqlite::SqliteRow> + Send + Unpin,
+{
+    let mut rows = Vec::new();
+    for ids in ids.chunks(LOOKUP_BATCH_SIZE) {
+        let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(prefix);
+        let mut separated = query.separated(", ");
+        for id in ids {
+            separated.push_bind(*id);
+        }
+        separated.push_unseparated(suffix);
+        rows.extend(query.build_query_as::<T>().fetch_all(pool).await?);
+    }
+    Ok(rows)
+}
+
 #[cfg(test)]
 mod import_projection_tests;

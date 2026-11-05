@@ -60,7 +60,7 @@ pub fn router() -> Router<AppState> {
 
 /// Convert FilterDbModel to FilterResponse.
 fn model_to_response(model: &FilterDbModel) -> ApiResult<FilterResponse> {
-    let config: Value = serde_json::from_str(&model.config).map_err(ApiError::from)?;
+    let config: Value = serde_json::from_str(&model.config)?;
 
     Ok(FilterResponse {
         id: model.id.clone(),
@@ -81,10 +81,7 @@ fn validate_and_serialize_config(filter_type: FilterType, config: Value) -> ApiR
             typed
                 .validate()
                 .map_err(|e| ApiError::validation(e.to_string()))?;
-            serialize_preserving_extensions(
-                config,
-                serde_json::to_value(&typed).map_err(ApiError::from)?,
-            )
+            serialize_preserving_extensions(config, serde_json::to_value(&typed)?)
         }
         FilterType::Keyword => {
             let mut typed: KeywordFilterConfig = serde_json::from_value(config).map_err(|e| {
@@ -116,10 +113,7 @@ fn validate_and_serialize_config(filter_type: FilterType, config: Value) -> ApiR
             typed
                 .validate()
                 .map_err(|e| ApiError::validation(e.to_string()))?;
-            serialize_preserving_extensions(
-                config,
-                serde_json::to_value(&typed).map_err(ApiError::from)?,
-            )
+            serialize_preserving_extensions(config, serde_json::to_value(&typed)?)
         }
         FilterType::Regex => {
             let typed: RegexFilterConfig = serde_json::from_value(config)
@@ -176,10 +170,7 @@ pub async fn list_filters(
 ) -> ApiResult<Json<Vec<FilterResponse>>> {
     let filter_repo = &state.filter_repository;
 
-    let filters = filter_repo
-        .get_filters_for_streamer(&streamer_id)
-        .await
-        .map_err(ApiError::from)?;
+    let filters = filter_repo.get_filters_for_streamer(&streamer_id).await?;
 
     let response: Result<Vec<_>, _> = filters.iter().map(model_to_response).collect();
     Ok(Json(response?))
@@ -226,8 +217,7 @@ pub async fn create_filter(
     // Save to DB
     filter_repo
         .create_filter_with_commit_hook(&filter, state.commit_hook())
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     model_to_response(&filter).map(|response| (StatusCode::CREATED, Json(response)))
 }
@@ -252,7 +242,7 @@ pub async fn get_filter(
 ) -> ApiResult<Json<FilterResponse>> {
     let filter_repo = &state.filter_repository;
 
-    let filter = filter_repo.get_filter(&id).await.map_err(ApiError::from)?;
+    let filter = filter_repo.get_filter(&id).await?;
 
     // Verify streamer ID matches
     if filter.streamer_id != streamer_id {
@@ -291,7 +281,7 @@ pub async fn update_filter(
     // A replacement may preserve stored members. Rebase the original request on
     // each fresh row so a concurrent update cannot restore an older timezone.
     for _ in 0..3 {
-        let existing = filter_repo.get_filter(&id).await.map_err(ApiError::from)?;
+        let existing = filter_repo.get_filter(&id).await?;
         if existing.streamer_id != streamer_id {
             return Err(ApiError::not_found(format!(
                 "Filter {} not found for streamer {}",
@@ -329,8 +319,7 @@ pub async fn update_filter(
 
         if filter_repo
             .update_filter_if_current(&existing, &filter, state.commit_hook())
-            .await
-            .map_err(ApiError::from)?
+            .await?
         {
             return model_to_response(&filter).map(Json);
         }
@@ -362,7 +351,7 @@ pub async fn delete_filter(
     let filter_repo = &state.filter_repository;
 
     // Check ownership before deleting
-    let filter = filter_repo.get_filter(&id).await.map_err(ApiError::from)?;
+    let filter = filter_repo.get_filter(&id).await?;
 
     if filter.streamer_id != streamer_id {
         return Err(ApiError::not_found(format!(
@@ -373,8 +362,7 @@ pub async fn delete_filter(
 
     filter_repo
         .delete_filter_with_commit_hook(&id, state.commit_hook())
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     Ok(Json(serde_json::json!({
         "success": true,

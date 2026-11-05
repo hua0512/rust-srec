@@ -364,8 +364,18 @@ impl JobDbModel {
     }
 }
 
-/// Job status values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Pipeline job status.
+///
+/// # State Transitions
+///
+/// ```text
+/// pending -> processing -> completed
+///                      \-> failed
+/// failed -> pending (via retry)
+/// ```
+///
+/// `CANCELLED` is terminal until the job is retried.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum JobStatus {
     /// Job is queued and waiting to be picked up by a worker.

@@ -60,13 +60,6 @@ impl StreamerActor {
                 self.handle_config_update(config).await?;
                 Ok(false)
             }
-            StreamerMessage::DownloadStarted {
-                download_id,
-                session_id,
-            } => {
-                self.handle_download_started(download_id, session_id);
-                Ok(false)
-            }
             StreamerMessage::DownloadHeartbeat {
                 download_id,
                 session_id,

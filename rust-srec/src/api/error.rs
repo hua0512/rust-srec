@@ -55,6 +55,12 @@ impl ApiError {
         }
     }
 
+    /// Attach structured details to the error body.
+    pub fn with_details(mut self, details: serde_json::Value) -> Self {
+        self.details = Some(details);
+        self
+    }
+
     /// Create a 400 Bad Request error.
     pub fn bad_request(message: impl Into<String>) -> Self {
         Self::new(StatusCode::BAD_REQUEST, "BAD_REQUEST", message)
@@ -150,24 +156,18 @@ impl From<Error> for ApiError {
             Error::CredentialProfile(error) => {
                 use crate::credentials::ProfileError;
                 match error {
-                    ProfileError::Referenced(references) => {
-                        let mut error = ApiError::new(
-                            StatusCode::CONFLICT,
-                            "CREDENTIAL_PROFILE_REFERENCED",
-                            "Credential profile is still referenced",
-                        );
-                        error.details = Some(serde_json::json!({"references": references}));
-                        error
-                    }
-                    ProfileError::InaccessibleReferences(references) => {
-                        let mut error = ApiError::new(
-                            StatusCode::CONFLICT,
-                            "CREDENTIAL_REFERENCE_INACCESSIBLE",
-                            "Update the listed configurations that select these credential profiles first",
-                        );
-                        error.details = Some(serde_json::json!({"references": references}));
-                        error
-                    }
+                    ProfileError::Referenced(references) => ApiError::new(
+                        StatusCode::CONFLICT,
+                        "CREDENTIAL_PROFILE_REFERENCED",
+                        "Credential profile is still referenced",
+                    )
+                    .with_details(serde_json::json!({"references": references})),
+                    ProfileError::InaccessibleReferences(references) => ApiError::new(
+                        StatusCode::CONFLICT,
+                        "CREDENTIAL_REFERENCE_INACCESSIBLE",
+                        "Update the listed configurations that select these credential profiles first",
+                    )
+                    .with_details(serde_json::json!({"references": references})),
                     ProfileError::StaleVersion => ApiError::new(
                         StatusCode::CONFLICT,
                         "CREDENTIAL_STALE_VERSION",
@@ -178,15 +178,12 @@ impl From<Error> for ApiError {
                         "CREDENTIAL_SOURCE_CHANGED",
                         "Credentials changed; reload before retrying",
                     ),
-                    ProfileError::ProviderUnavailable(reason) => {
-                        let mut error = ApiError::new(
-                            StatusCode::SERVICE_UNAVAILABLE,
-                            "CREDENTIAL_PROVIDER_UNAVAILABLE",
-                            "The credential provider is unavailable; retry later",
-                        );
-                        error.details = Some(serde_json::json!({"reason": reason}));
-                        error
-                    }
+                    ProfileError::ProviderUnavailable(reason) => ApiError::new(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "CREDENTIAL_PROVIDER_UNAVAILABLE",
+                        "The credential provider is unavailable; retry later",
+                    )
+                    .with_details(serde_json::json!({"reason": reason})),
                     ProfileError::Disabled => ApiError::new(
                         StatusCode::CONFLICT,
                         "CREDENTIAL_PROFILE_DISABLED",
@@ -201,19 +198,16 @@ impl From<Error> for ApiError {
                         site,
                         profile_id,
                         label,
-                    } => {
-                        let mut error = ApiError::new(
-                            StatusCode::CONFLICT,
-                            "CREDENTIAL_SITE_TAKEN",
-                            "Another account already uses this site",
-                        );
-                        error.details = Some(serde_json::json!({
-                            "site": site,
-                            "profile_id": profile_id,
-                            "label": label,
-                        }));
-                        error
-                    }
+                    } => ApiError::new(
+                        StatusCode::CONFLICT,
+                        "CREDENTIAL_SITE_TAKEN",
+                        "Another account already uses this site",
+                    )
+                    .with_details(serde_json::json!({
+                        "site": site,
+                        "profile_id": profile_id,
+                        "label": label,
+                    })),
                     ProfileError::PerStreamerOnly(message) => ApiError::new(
                         StatusCode::UNPROCESSABLE_ENTITY,
                         "CREDENTIAL_SELECTION_PER_STREAMER",
@@ -222,30 +216,24 @@ impl From<Error> for ApiError {
                     ProfileError::PlatformInUse {
                         streamer_ids,
                         template_ids,
-                    } => {
-                        let mut error = ApiError::new(
-                            StatusCode::CONFLICT,
-                            "PLATFORM_IN_USE",
-                            "Move the platform's streamers and remove template account selections on it first",
-                        );
-                        error.details = Some(serde_json::json!({
-                            "streamer_ids": streamer_ids,
-                            "template_ids": template_ids,
-                        }));
-                        error
-                    }
+                    } => ApiError::new(
+                        StatusCode::CONFLICT,
+                        "PLATFORM_IN_USE",
+                        "Move the platform's streamers and remove template account selections on it first",
+                    )
+                    .with_details(serde_json::json!({
+                        "streamer_ids": streamer_ids,
+                        "template_ids": template_ids,
+                    })),
                 }
             }
             Error::Proxy(error) => ApiError::from(error),
-            Error::CredentialUnavailable(unavailable) => {
-                let mut error = ApiError::new(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "CREDENTIAL_UNAVAILABLE",
-                    "No eligible credentials are currently available",
-                );
-                error.details = Some(serde_json::json!({"reason": unavailable.reason}));
-                error
-            }
+            Error::CredentialUnavailable(unavailable) => ApiError::new(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "CREDENTIAL_UNAVAILABLE",
+                "No eligible credentials are currently available",
+            )
+            .with_details(serde_json::json!({"reason": unavailable.reason})),
             Error::Extractor(error) => {
                 use platforms_parser::extractor::error::ExtractorError;
                 match error {
@@ -321,47 +309,35 @@ impl From<crate::proxies::ProxyError> for ApiError {
             ProxyError::Invalid(message) => {
                 ApiError::new(StatusCode::UNPROCESSABLE_ENTITY, "PROXY_INVALID", message)
             }
-            ProxyError::NameTaken(name) => {
-                let mut error = ApiError::new(
-                    StatusCode::CONFLICT,
-                    "PROXY_NAME_TAKEN",
-                    "Another proxy already has this name",
-                );
-                error.details = Some(serde_json::json!({"name": name}));
-                error
-            }
-            ProxyError::DuplicateEndpoint { name } => {
-                let mut error = ApiError::new(
-                    StatusCode::CONFLICT,
-                    "PROXY_DUPLICATE",
-                    "Another proxy already uses this address and username",
-                );
-                error.details = Some(serde_json::json!({"name": name}));
-                error
-            }
+            ProxyError::NameTaken(name) => ApiError::new(
+                StatusCode::CONFLICT,
+                "PROXY_NAME_TAKEN",
+                "Another proxy already has this name",
+            )
+            .with_details(serde_json::json!({"name": name})),
+            ProxyError::DuplicateEndpoint { name } => ApiError::new(
+                StatusCode::CONFLICT,
+                "PROXY_DUPLICATE",
+                "Another proxy already uses this address and username",
+            )
+            .with_details(serde_json::json!({"name": name})),
             ProxyError::StaleVersion => ApiError::new(
                 StatusCode::CONFLICT,
                 "PROXY_STALE_VERSION",
                 "The proxy changed; reload before saving",
             ),
-            ProxyError::Referenced(references) => {
-                let mut error = ApiError::new(
-                    StatusCode::CONFLICT,
-                    "PROXY_REFERENCED",
-                    "The proxy is still in use",
-                );
-                error.details = Some(serde_json::json!({"references": references}));
-                error
-            }
-            ProxyError::Missing(id) => {
-                let mut error = ApiError::new(
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "PROXY_NOT_FOUND",
-                    "The route names a proxy that does not exist",
-                );
-                error.details = Some(serde_json::json!({"proxy_id": id}));
-                error
-            }
+            ProxyError::Referenced(references) => ApiError::new(
+                StatusCode::CONFLICT,
+                "PROXY_REFERENCED",
+                "The proxy is still in use",
+            )
+            .with_details(serde_json::json!({"references": references})),
+            ProxyError::Missing(id) => ApiError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "PROXY_NOT_FOUND",
+                "The route names a proxy that does not exist",
+            )
+            .with_details(serde_json::json!({"proxy_id": id})),
             ProxyError::GlobalInherit => ApiError::new(
                 StatusCode::UNPROCESSABLE_ENTITY,
                 "PROXY_ROUTE_INVALID",

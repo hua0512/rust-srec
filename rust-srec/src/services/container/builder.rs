@@ -64,7 +64,7 @@ impl ServiceContainer {
         Self::build(
             pool,
             write_pool,
-            ServiceContainerConfig::standard(cache_ttl, event_capacity),
+            ServiceContainerConfig::standard(cache_ttl, event_capacity)?,
         )
         .await
     }
@@ -97,6 +97,7 @@ impl ServiceContainer {
             pipeline_config,
             api_config,
         } = options;
+        let auth_config = crate::api::auth_service::AuthConfig::from_env()?;
 
         pipeline_config.throttle.validate()?;
 
@@ -638,6 +639,7 @@ impl ServiceContainer {
             check_history_broadcaster,
             upload_status_broadcaster,
             api_server_config: api_config,
+            auth_config,
             cancellation_token,
             task_supervisor,
             committed_write_supervisor,

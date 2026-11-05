@@ -724,9 +724,12 @@ fn runtime_marker_path() -> Result<PathBuf> {
         return Ok(PathBuf::from(path));
     }
 
-    let database_url =
-        std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:srec.db?mode=rwc".to_string());
-    marker_path_from_database_url(&database_url)
+    marker_path_from_database_url(&database_url_from_env())
+}
+
+/// SQLite URL from `DATABASE_URL`, defaulting to `srec.db` in the working directory.
+pub(crate) fn database_url_from_env() -> String {
+    std::env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:srec.db?mode=rwc".to_string())
 }
 
 pub(crate) struct WorkerControl {

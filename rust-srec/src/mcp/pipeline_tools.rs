@@ -13,12 +13,10 @@ use rmcp::{
 use super::config_tools::{IdParams, PageParams};
 use super::{SrecMcpServer, tool_json};
 use crate::api::models::JobFilterParams;
-use crate::api::routes::job::{
-    self, JobPresetRouteState, PresetFilterParams, PresetPaginationParams,
-};
+use crate::api::routes::job::{self, JobPresetRouteState, PresetFilterParams};
 use crate::api::routes::pipeline::{
-    DagFilterParams, DagPaginationParams, PipelinePresetFilterParams,
-    PipelinePresetPaginationParams, PipelineRouteState, PresetRouteState, dag, jobs, presets,
+    DagFilterParams, PipelinePresetFilterParams, PipelineRouteState, PresetRouteState, dag, jobs,
+    presets,
 };
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -238,10 +236,11 @@ impl SrecMcpServer {
             session_id: params.session_id,
             search: params.search,
         };
-        let pagination = DagPaginationParams {
-            limit: params.limit.unwrap_or(20),
-            offset: params.offset.unwrap_or(0),
-        };
+        let pagination = PageParams {
+            limit: params.limit,
+            offset: params.offset,
+        }
+        .to_pagination();
         tool_json(dag::list_dags(State(state), Query(filters), Query(pagination)).await)
     }
 
@@ -315,10 +314,11 @@ impl SrecMcpServer {
         let filters = PipelinePresetFilterParams {
             search: params.search,
         };
-        let pagination = PipelinePresetPaginationParams {
-            limit: params.limit.unwrap_or(20),
-            offset: params.offset.unwrap_or(0),
-        };
+        let pagination = PageParams {
+            limit: params.limit,
+            offset: params.offset,
+        }
+        .to_pagination();
         tool_json(
             presets::list_pipeline_presets(State(state), Query(filters), Query(pagination)).await,
         )
@@ -355,10 +355,11 @@ impl SrecMcpServer {
             name: params.name,
             search: params.search,
         };
-        let pagination = PresetPaginationParams {
-            limit: params.limit.unwrap_or(20),
-            offset: params.offset.unwrap_or(0),
-        };
+        let pagination = PageParams {
+            limit: params.limit,
+            offset: params.offset,
+        }
+        .to_pagination();
         tool_json(job::list_presets(State(state), Query(filters), Query(pagination)).await)
     }
 

@@ -259,8 +259,7 @@ pub async fn list_interrupted_outputs(
     };
     let rows = repository
         .list_interrupted(params.job_id.as_deref(), LIST_LIMIT)
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
     let states = inspect(
         rows.iter().map(|row| PathBuf::from(&row.path)).collect(),
         &state.file_system.inspecting,
@@ -304,10 +303,7 @@ pub async fn list_interrupted_outputs(
 /// removed first, so a failure leaves the entry to retry or keep.
 async fn settle(state: &InterruptedOutputRouteState, id: &str, keep_file: bool) -> ApiResult<bool> {
     let repository = state.repository(id)?;
-    let row = repository
-        .get_interrupted(id)
-        .await
-        .map_err(ApiError::from)?;
+    let row = repository.get_interrupted(id).await?;
 
     let mut file_deleted = false;
     if !keep_file {
@@ -339,10 +335,7 @@ async fn settle(state: &InterruptedOutputRouteState, id: &str, keep_file: bool) 
         };
     }
 
-    repository
-        .forget_interrupted(id)
-        .await
-        .map_err(ApiError::from)?;
+    repository.forget_interrupted(id).await?;
     Ok(file_deleted)
 }
 

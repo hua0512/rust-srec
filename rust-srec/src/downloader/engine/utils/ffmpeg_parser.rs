@@ -50,37 +50,6 @@ pub fn parse_size(line: &str) -> Option<u64> {
     Some(size * 1024)
 }
 
-/// Parse speed multiplier from FFmpeg output (e.g., "speed=1.00x").
-///
-/// # Arguments
-/// * `line` - FFmpeg progress output line
-///
-/// # Returns
-/// * `Some(f64)` - Speed multiplier if found and parsed
-/// * `None` - If speed field not found or invalid
-pub fn parse_speed(line: &str) -> Option<f64> {
-    let speed_start = line.find("speed=")?;
-    let speed_str = &line[speed_start + 6..];
-    let end = speed_str.find('x')?;
-    speed_str[..end].trim().parse().ok()
-}
-
-/// Parse bitrate from FFmpeg output (e.g., "bitrate=2097.2kbits/s").
-///
-/// # Arguments
-/// * `line` - FFmpeg progress output line
-///
-/// # Returns
-/// * `Some(u64)` - Bitrate in bytes per second if found and parsed
-/// * `None` - If bitrate field not found or invalid
-pub fn parse_bitrate(line: &str) -> Option<u64> {
-    let bitrate_start = line.find("bitrate=")?;
-    let bitrate_str = &line[bitrate_start + 8..];
-    let end = bitrate_str.find("kbits/s")?;
-    let bitrate: f64 = bitrate_str[..end].trim().parse().ok()?;
-    Some((bitrate * 1024.0 / 8.0) as u64)
-}
-
 /// Parse time field from FFmpeg output line (e.g., "time=00:01:30.50").
 ///
 /// # Arguments
@@ -122,8 +91,6 @@ pub fn parse_progress(line: &str) -> Option<DownloadProgress> {
         bytes_downloaded: parse_size(line).unwrap_or(0),
         media_duration_secs: parse_time_field(line).unwrap_or(0.0),
         duration_secs: parse_time_field(line).unwrap_or(0.0),
-        playback_ratio: parse_speed(line).unwrap_or(0.0),
-        speed_bytes_per_sec: parse_bitrate(line).unwrap_or(0),
         ..Default::default()
     };
 
@@ -199,21 +166,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_progress_faster_than_realtime() {
-        // speed=2.00x means ffmpeg is pulling faster than wall-clock, and the
-        // `time=` field crosses a minute boundary.
-        let line = "frame=  200 fps=50 q=-1.0 size=    2048kB time=00:01:30.50 bitrate=1024.0kbits/s speed=2.00x";
-        let progress = parse_progress(line);
-
-        assert!(progress.is_some());
-        let p = progress.unwrap();
-        assert_eq!(p.bytes_downloaded, 2048 * 1024);
-        assert_eq!(p.media_duration_secs, 90.5);
-        assert_eq!(p.duration_secs, 90.5);
-        assert_eq!(p.playback_ratio, 2.0);
-    }
-
-    #[test]
     fn test_parse_progress_partial() {
         let line = "size=512kB time=00:00:10.00";
         let progress = parse_progress(line);
@@ -222,7 +174,6 @@ mod tests {
         let p = progress.unwrap();
         assert_eq!(p.bytes_downloaded, 512 * 1024);
         assert_eq!(p.duration_secs, 10.0);
-        assert_eq!(p.playback_ratio, 0.0); // No speed field
     }
 
     #[test]
@@ -236,7 +187,6 @@ mod tests {
         assert_eq!(p.bytes_downloaded, 0);
         assert_eq!(p.duration_secs, 4.0);
         assert_eq!(p.media_duration_secs, 4.0);
-        assert_eq!(p.playback_ratio, 1.0);
     }
 
     #[test]

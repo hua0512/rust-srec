@@ -323,10 +323,7 @@ pub async fn get_global_config(
 ) -> ApiResult<Json<GlobalConfigResponse>> {
     let config_service = &state.config_service;
 
-    let config = config_service
-        .get_global_config()
-        .await
-        .map_err(ApiError::from)?;
+    let config = config_service.get_global_config().await?;
     let route = config_service
         .proxy_route_of(&crate::database::repositories::proxies::RouteOwner::Global)
         .await?;
@@ -356,10 +353,7 @@ pub async fn update_global_config(
     tracing::info!("Received request to update global configuration via API");
 
     // Get current config to apply partial updates
-    let mut config = config_service
-        .get_global_config()
-        .await
-        .map_err(ApiError::from)?;
+    let mut config = config_service.get_global_config().await?;
 
     let mut updated_fields: Vec<&'static str> = Vec::new();
 
@@ -469,10 +463,7 @@ pub async fn list_platform_configs(
 ) -> ApiResult<Json<Vec<PlatformConfigResponse>>> {
     let config_service = &state.config_service;
 
-    let configs = config_service
-        .list_platform_configs()
-        .await
-        .map_err(ApiError::from)?;
+    let configs = config_service.list_platform_configs().await?;
 
     let selections = platform_selections(config_service).await?;
     let routes = config_service
@@ -487,8 +478,7 @@ pub async fn list_platform_configs(
             let route = routes.get(&config.id).cloned().unwrap_or_default();
             PlatformConfigResponse::with_selection(config, selection, route)
         })
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(ApiError::from)?;
+        .collect::<Result<Vec<_>, _>>()?;
 
     Ok(Json(responses))
 }
@@ -510,10 +500,7 @@ pub async fn get_platform_config(
 ) -> ApiResult<Json<PlatformConfigResponse>> {
     let config_service = &state.config_service;
 
-    let config = config_service
-        .get_platform_config(&id)
-        .await
-        .map_err(ApiError::from)?;
+    let config = config_service.get_platform_config(&id).await?;
 
     Ok(Json(platform_response(config_service, config).await?))
 }
@@ -524,8 +511,7 @@ async fn platform_selections(
 ) -> ApiResult<std::collections::HashMap<String, crate::credentials::CredentialSelection>> {
     Ok(config_service
         .list_credential_selections()
-        .await
-        .map_err(ApiError::from)?
+        .await?
         .into_iter()
         .filter(|stored| {
             matches!(
@@ -546,8 +532,7 @@ async fn platform_response(
         .credential_selections_for(&crate::credentials::CredentialOwner::Platform {
             platform_id: config.id.clone(),
         })
-        .await
-        .map_err(ApiError::from)?
+        .await?
         .into_iter()
         .next()
         .map(|stored| stored.selection);
@@ -629,10 +614,7 @@ pub async fn replace_platform_config(
     reject_cookies(request.cookies.as_ref())?;
 
     let config_service = &state.config_service;
-    let stored = config_service
-        .get_platform_config(&id)
-        .await
-        .map_err(ApiError::from)?;
+    let stored = config_service.get_platform_config(&id).await?;
     if request.name != stored.platform_name {
         return Err(ApiError::bad_request("Platform name cannot be changed"));
     }
@@ -690,8 +672,7 @@ pub async fn replace_platform_config(
                 .map_err(|_| crate::Error::validation("invalid credential selection"))
                 .and_then(crate::credentials::CredentialSelection::from_value)
         })
-        .transpose()
-        .map_err(ApiError::from)?;
+        .transpose()?;
 
     // Replace config
     if let Err(e) = config_service

@@ -2,8 +2,6 @@
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use flv_fix::FlvPipelineConfig;
-use hls_fix::HlsPipelineConfig;
 use parking_lot::RwLock;
 use pipeline_common::config::PipelineConfig;
 use platforms_parser::proxy::ProxyTarget;
@@ -135,18 +133,6 @@ pub struct DownloadConfig {
     /// Default: false
     pub enable_processing: bool,
 
-    /// Common pipeline configuration (max_file_size, max_duration, channel_size).
-    /// Used by both HLS and FLV pipelines.
-    pub pipeline_config: Option<PipelineConfig>,
-
-    /// HLS-specific pipeline configuration.
-    /// Controls defragment, split_segments, and segment_limiter options.
-    pub hls_pipeline_config: Option<HlsPipelineConfig>,
-
-    /// FLV-specific pipeline configuration.
-    /// Controls duplicate_tag_filtering, repair_strategy, continuity_mode, etc.
-    pub flv_pipeline_config: Option<FlvPipelineConfig>,
-
     /// Override configuration for engines.
     /// Map of engine_id -> config value.
     pub engines_override: Option<serde_json::Value>,
@@ -179,9 +165,6 @@ impl DownloadConfig {
             initial_segment_index: 0,
             protocol: DownloadProtocol::Unknown,
             enable_processing: true,
-            pipeline_config: None,
-            hls_pipeline_config: None,
-            flv_pipeline_config: None,
             engines_override: None,
         }
     }
@@ -246,58 +229,23 @@ impl DownloadConfig {
         self
     }
 
-    /// Set the HLS-specific pipeline configuration.
-    pub fn with_hls_pipeline_config(mut self, config: HlsPipelineConfig) -> Self {
-        self.hls_pipeline_config = Some(config);
-        self
-    }
-
-    /// Set the FLV-specific pipeline configuration.
-    pub fn with_flv_pipeline_config(mut self, config: FlvPipelineConfig) -> Self {
-        self.flv_pipeline_config = Some(config);
-        self
-    }
-
     /// Set engine overrides.
     pub fn with_engines_override(mut self, overrides: Option<serde_json::Value>) -> Self {
         self.engines_override = overrides;
         self
     }
 
-    /// Build a PipelineConfig from this DownloadConfig.
-    ///
-    /// If `pipeline_config` is set, returns a clone of it.
-    /// Otherwise, builds a new PipelineConfig from the individual settings.
+    /// Build the common pipeline configuration from the part limits.
     pub fn build_pipeline_config(&self) -> PipelineConfig {
-        if let Some(ref config) = self.pipeline_config {
-            config.clone()
-        } else {
-            let mut builder = PipelineConfig::builder()
-                .max_file_size(self.max_segment_size_bytes)
-                .channel_size(64);
+        let mut builder = PipelineConfig::builder()
+            .max_file_size(self.max_segment_size_bytes)
+            .channel_size(64);
 
-            if self.max_segment_duration_secs > 0 {
-                builder = builder.max_duration(Duration::from_secs(self.max_segment_duration_secs));
-            }
-
-            builder.build()
+        if self.max_segment_duration_secs > 0 {
+            builder = builder.max_duration(Duration::from_secs(self.max_segment_duration_secs));
         }
-    }
 
-    /// Build an HlsPipelineConfig from this DownloadConfig.
-    ///
-    /// If `hls_pipeline_config` is set, returns a clone of it.
-    /// Otherwise, returns the default HlsPipelineConfig.
-    pub fn build_hls_pipeline_config(&self) -> HlsPipelineConfig {
-        self.hls_pipeline_config.clone().unwrap_or_default()
-    }
-
-    /// Build a FlvPipelineConfig from this DownloadConfig.
-    ///
-    /// If `flv_pipeline_config` is set, returns a clone of it.
-    /// Otherwise, returns the default FlvPipelineConfig.
-    pub fn build_flv_pipeline_config(&self) -> FlvPipelineConfig {
-        self.flv_pipeline_config.clone().unwrap_or_default()
+        builder.build()
     }
 }
 

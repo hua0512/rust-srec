@@ -82,21 +82,6 @@ impl MonitorOutboxOps {
         Ok(entries)
     }
 
-    /// Mark an event as delivered.
-    pub async fn mark_delivered(pool: &SqlitePool, id: i64) -> Result<()> {
-        let now = crate::database::time::now_ms();
-
-        sqlx::query(
-            "UPDATE monitor_event_outbox SET delivered_at = ?, attempts = attempts + 1, last_error = NULL WHERE id = ?",
-        )
-        .bind(now)
-        .bind(id)
-        .execute(pool)
-        .await?;
-
-        Ok(())
-    }
-
     /// Record a delivery failure.
     pub async fn record_failure(pool: &SqlitePool, id: i64, error: &str) -> Result<()> {
         sqlx::query(

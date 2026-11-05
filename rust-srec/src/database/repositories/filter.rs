@@ -166,25 +166,18 @@ impl FilterRepository for SqlxFilterRepository {
     ) -> Result<HashMap<String, Vec<FilterDbModel>>> {
         let mut filters: HashMap<String, Vec<FilterDbModel>> = HashMap::new();
         let ids = super::unique_lookup_ids(streamer_ids);
-        for ids in ids.chunks(super::LOOKUP_BATCH_SIZE) {
-            let mut query = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
-                "SELECT * FROM filters WHERE streamer_id IN (",
-            );
-            let mut separated = query.separated(", ");
-            for id in ids {
-                separated.push_bind(*id);
-            }
-            separated.push_unseparated(") ORDER BY streamer_id, filter_type");
-            for filter in query
-                .build_query_as::<FilterDbModel>()
-                .fetch_all(&self.pool)
-                .await?
-            {
-                filters
-                    .entry(filter.streamer_id.clone())
-                    .or_default()
-                    .push(filter);
-            }
+        for filter in super::fetch_in_chunks::<FilterDbModel>(
+            &self.pool,
+            "SELECT * FROM filters WHERE streamer_id IN (",
+            &ids,
+            ") ORDER BY streamer_id, filter_type",
+        )
+        .await?
+        {
+            filters
+                .entry(filter.streamer_id.clone())
+                .or_default()
+                .push(filter);
         }
         Ok(filters)
     }

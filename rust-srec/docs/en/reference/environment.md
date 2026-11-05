@@ -6,6 +6,8 @@ import { withBase } from 'vitepress'
 
 The following environment variables can be configured in your <a :href="withBase('/env.example')" download=".env.example">.env</a> file.
 
+A numeric variable set to a value that is not a valid number, such as `API_PORT=80800`, stops startup with an error naming the variable. An unset or empty variable uses its default.
+
 ## General {#general}
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -117,7 +119,7 @@ The heuristic groups deep paths under broader keys: `/var/lib/rust-srec/output` 
 ## External tools {#external-tools}
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `FFMPEG_PATH` | FFmpeg binary used by pipeline processors, and by the Streamlink engine when its configuration names no FFmpeg path. The FFmpeg download engine uses the binary path in its engine configuration instead. | `ffmpeg` |
+| `FFMPEG_PATH` | FFmpeg binary used by pipeline processors, by the Streamlink engine when its configuration names no FFmpeg path, and by the FFmpeg download engine when its configuration names no binary path. | `ffmpeg` |
 | `FFPROBE_PATH` | FFprobe binary used by the `audio_extract` processor | `ffprobe` |
 | `STREAMLINK_PATH` | Streamlink binary used to check whether Streamlink can handle a URL when adding a streamer. Recording uses the binary path in the Streamlink engine configuration. | `streamlink` |
 | `RCLONE_PATH` | rclone binary used by the `rclone` processor | `rclone` |

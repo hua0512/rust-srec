@@ -4,6 +4,35 @@ use crate::database::models::StreamerDbModel;
 use crate::database::repositories::{
     SqlxConfigRepository, SqlxFilterRepository, SqlxSessionRepository, SqlxStreamerRepository,
 };
+use crate::scheduler::actor::DownloadEndPolicy;
+
+/// Delivers a download start to the streamer's actor through lifecycle
+/// feedback, as the download manager does.
+async fn start_download(
+    scheduler: &Scheduler<SqlxStreamerRepository>,
+    streamer_id: &str,
+    download_id: &str,
+) {
+    let feedback = scheduler.reliable_feedback();
+    let (start, _end) = feedback.reserve_attempt(streamer_id).unwrap();
+    let event = DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
+        download_id: download_id.to_owned(),
+        streamer_id: streamer_id.to_owned(),
+        streamer_name: streamer_id.to_owned(),
+        session_id: "fixture-session".to_owned(),
+        engine_type: crate::downloader::engine::EngineType::Ffmpeg,
+        cdn_host: "example.com".to_owned(),
+        download_url: "https://example.com/media".to_owned(),
+    });
+    assert_eq!(
+        feedback
+            .publish_reserved(&event, start)
+            .await
+            .unwrap()
+            .unwrap(),
+        crate::scheduler::feedback::FeedbackDisposition::Applied
+    );
+}
 
 fn assert_config(
     scheduler: &Scheduler<SqlxStreamerRepository>,
@@ -157,13 +186,7 @@ async fn actor_creation_and_every_config_scope_resolve_four_layers_without_metad
         .get_streamer(&row.id)
         .unwrap()
         .clone();
-    actor
-        .send(StreamerMessage::DownloadStarted {
-            download_id: "fixture-download".to_owned(),
-            session_id: "fixture-session".to_owned(),
-        })
-        .await
-        .unwrap();
+    start_download(&scheduler, &row.id, "fixture-download").await;
     actor
         .send(StreamerMessage::DownloadEnded(DownloadEndPolicy::Other(
             "fixture transport end".to_owned(),
@@ -288,13 +311,7 @@ async fn actor_creation_and_every_config_scope_resolve_four_layers_without_metad
         .get_streamer(&row.id)
         .unwrap()
         .clone();
-    restarted
-        .send(StreamerMessage::DownloadStarted {
-            download_id: "restarted".to_owned(),
-            session_id: "fixture-session".to_owned(),
-        })
-        .await
-        .unwrap();
+    start_download(&scheduler, &row.id, "restarted").await;
     restarted
         .send(StreamerMessage::DownloadEnded(DownloadEndPolicy::Other(
             "fixture transport end".to_owned(),

@@ -24,16 +24,14 @@ use crate::config::{ConfigEventBroadcaster, ConfigUpdateEvent};
 use crate::database::repositories::{
     ConfigRepository, FilterRepository, SessionRepository, StreamerRepository,
 };
-#[cfg(test)]
-use crate::downloader::DownloadTerminalEvent;
 use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent};
 use crate::monitor::StreamMonitor;
 use crate::streamer::metadata::{DEFAULT_OFFLINE_CHECK_COUNT, DEFAULT_OFFLINE_CHECK_DELAY_MS};
 use crate::streamer::{StreamerManager, StreamerMetadata};
 
 use super::actor::{
-    ActorRemoval, DownloadEndPolicy, MonitorStatusChecker, ShutdownReport, StreamerConfig,
-    StreamerMessage, Supervisor, SupervisorConfig, TaskCompletionAction,
+    ActorRemoval, MonitorStatusChecker, ShutdownReport, StreamerConfig, StreamerMessage,
+    Supervisor, SupervisorConfig, TaskCompletionAction,
 };
 
 /// Work only the scheduler's event loop can do, requested from another task.
@@ -195,33 +193,47 @@ pub struct Scheduler<R: StreamerRepository + Send + Sync + 'static> {
     /// Broadcast receiver for download events (direct subscription).
     download_event_rx: Option<broadcast::Receiver<DownloadManagerEvent>>,
     feedback: Arc<super::feedback::SchedulerFeedback>,
-    reliable_feedback: bool,
     configuration: configuration::ConfigurationWork,
     /// Throttle map for forwarding download heartbeats to streamer actors.
     download_heartbeat_last_sent: DashMap<String, Instant>,
 }
 
 impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
-    /// Create a new scheduler with custom configuration and shared cancellation token.
-    ///
-    /// This is the most flexible constructor, allowing full control over configuration
-    /// and cancellation behavior.
-    ///
-    /// Note: Uses `NoOpCheckerFactory` for status checking. For real status checking,
-    /// use `with_monitor_and_config()` instead.
-    pub fn with_full_config(
+    /// A scheduler whose actors use `NoOpStatusChecker`.
+    #[cfg(test)]
+    pub(crate) fn with_full_config(
         streamer_manager: Arc<StreamerManager<R>>,
         event_broadcaster: ConfigEventBroadcaster,
         config: SchedulerConfig,
         cancellation_token: CancellationToken,
     ) -> Self {
-        // Pass the shared metadata store to the supervisor
+        Self::from_parts(
+            streamer_manager,
+            event_broadcaster,
+            config,
+            cancellation_token,
+            Arc::new(super::actor::NoOpStatusChecker),
+            None,
+        )
+    }
+
+    fn from_parts(
+        streamer_manager: Arc<StreamerManager<R>>,
+        event_broadcaster: ConfigEventBroadcaster,
+        config: SchedulerConfig,
+        cancellation_token: CancellationToken,
+        status_checker: Arc<dyn super::actor::StatusChecker>,
+        config_resolver: Option<Arc<dyn ActorConfigResolver>>,
+    ) -> Self {
         let metadata_store = streamer_manager.metadata_store();
-        let supervisor = Supervisor::with_config(
+        let mut supervisor = Supervisor::with_status_checker(
             cancellation_token.clone(),
             config.supervisor_config.clone(),
             metadata_store,
+            status_checker,
         );
+        let feedback = super::feedback::SchedulerFeedback::new();
+        supervisor.set_feedback(feedback.clone());
         let (stats_tx, _) = watch::channel(supervisor.stats());
         let (command_tx, command_rx) = mpsc::channel(SCHEDULER_COMMAND_CAPACITY);
 
@@ -230,7 +242,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             event_broadcaster,
             config,
             config_repo: None,
-            config_resolver: None,
+            config_resolver,
             cancellation_token,
             supervisor,
             stats_tx,
@@ -238,8 +250,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             command_rx: Some(command_rx),
             loop_running: Arc::new(AtomicBool::new(false)),
             download_event_rx: None,
-            feedback: super::feedback::SchedulerFeedback::new(),
-            reliable_feedback: false,
+            feedback,
             configuration: configuration::ConfigurationWork::default(),
             download_heartbeat_last_sent: DashMap::new(),
         }
@@ -308,37 +319,14 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             None => MonitorStatusChecker::new(monitor.clone()),
         });
 
-        // Pass the shared metadata store to the supervisor
-        let metadata_store = streamer_manager.metadata_store();
-
-        // Create supervisor with the real checker
-        let supervisor = Supervisor::with_status_checker(
-            cancellation_token.clone(),
-            config.supervisor_config.clone(),
-            metadata_store,
-            status_checker,
-        );
-        let (stats_tx, _) = watch::channel(supervisor.stats());
-        let (command_tx, command_rx) = mpsc::channel(SCHEDULER_COMMAND_CAPACITY);
-
-        Self {
+        Self::from_parts(
             streamer_manager,
             event_broadcaster,
             config,
-            config_repo: None,
-            config_resolver: Some(config_resolver),
             cancellation_token,
-            supervisor,
-            stats_tx,
-            command_tx,
-            command_rx: Some(command_rx),
-            loop_running: Arc::new(AtomicBool::new(false)),
-            download_event_rx: None,
-            feedback: super::feedback::SchedulerFeedback::new(),
-            reliable_feedback: false,
-            configuration: configuration::ConfigurationWork::default(),
-            download_heartbeat_last_sent: DashMap::new(),
-        }
+            status_checker,
+            Some(config_resolver),
+        )
     }
 
     /// Attach a config repository to enable hot reloading of global scheduler timing config.
@@ -365,29 +353,20 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         self.stats_tx.send_replace(self.supervisor.stats());
     }
 
-    /// Set the download event receiver.
-    ///
-    /// This should be called before `run()` to enable download event handling.
     /// Connect recording lifecycle ownership and the lossy progress observer.
     /// Wire once before starting this scheduler or admitting recordings.
     pub fn connect_download_manager(
         &mut self,
         manager: &crate::downloader::DownloadManager,
     ) -> Result<()> {
-        manager.set_scheduler_feedback(self.reliable_feedback())?;
-        self.set_download_receiver(manager.subscribe());
+        manager.set_scheduler_feedback(self.feedback.clone())?;
+        self.download_event_rx = Some(manager.subscribe());
         Ok(())
     }
 
-    pub(crate) fn reliable_feedback(&mut self) -> Arc<super::feedback::SchedulerFeedback> {
-        self.reliable_feedback = true;
-        self.supervisor.set_feedback(self.feedback.clone());
+    #[cfg(test)]
+    pub(crate) fn reliable_feedback(&self) -> Arc<super::feedback::SchedulerFeedback> {
         self.feedback.clone()
-    }
-
-    /// Attach a compatibility observer; use `connect_download_manager` for reliable lifecycle delivery.
-    pub fn set_download_receiver(&mut self, receiver: broadcast::Receiver<DownloadManagerEvent>) {
-        self.download_event_rx = Some(receiver);
     }
 
     /// Resolve effective timing the way the configuration queue does, for tests
@@ -670,109 +649,68 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         self.drain_configuration().await;
     }
 
-    /// Process a download event (internal).
+    /// Forward a throttled heartbeat to the actor recording the download.
+    /// Download start and end reach actors through the lifecycle feedback,
+    /// not this lossy observer.
     fn process_download_event(&self, event: DownloadManagerEvent) {
-        if self.reliable_feedback
-            && !matches!(
-                event,
-                DownloadManagerEvent::Progress(
-                    DownloadProgressEvent::Progress { .. }
-                        | DownloadProgressEvent::SegmentStarted { .. }
-                        | DownloadProgressEvent::SegmentCompleted { .. }
-                )
-            )
+        const HEARTBEAT_THROTTLE: Duration = Duration::from_secs(30);
+
+        let (download_id, streamer_id, session_id, progress) = match event {
+            DownloadManagerEvent::Progress(DownloadProgressEvent::Progress {
+                download_id,
+                streamer_id,
+                session_id,
+                progress,
+                ..
+            }) => (download_id, streamer_id, session_id, Some(progress)),
+            DownloadManagerEvent::Progress(
+                DownloadProgressEvent::SegmentStarted {
+                    download_id,
+                    streamer_id,
+                    session_id,
+                    ..
+                }
+                | DownloadProgressEvent::SegmentCompleted {
+                    download_id,
+                    streamer_id,
+                    session_id,
+                    ..
+                },
+            ) => (download_id, streamer_id, session_id, None),
+            _ => return,
+        };
+        let now = Instant::now();
+        let should_send = match self.download_heartbeat_last_sent.get(&streamer_id) {
+            Some(last) => now.duration_since(*last.value()) >= HEARTBEAT_THROTTLE,
+            None => true,
+        };
+        if !should_send
+            || !self
+                .feedback
+                .is_current_download(&streamer_id, &download_id, &session_id)
         {
             return;
         }
-        const HEARTBEAT_THROTTLE: Duration = Duration::from_secs(30);
-
-        let send_to_actor = |streamer_id: String, msg: StreamerMessage| {
-            trace!(
-                "Handling download event for streamer {}: {:?}",
-                streamer_id, msg
-            );
-            if let Some(handle) = self.supervisor.registry().get_streamer(&streamer_id) {
-                if let Err(e) = handle.try_send(msg) {
-                    warn!(
-                        "Failed to send download message to actor {}: {}",
-                        streamer_id, e
-                    );
-                }
-            } else {
-                debug!("No actor found for streamer {}", streamer_id);
-            }
+        self.download_heartbeat_last_sent
+            .insert(streamer_id.clone(), now);
+        let msg = StreamerMessage::DownloadHeartbeat {
+            download_id,
+            session_id,
+            progress,
         };
-
-        let now = Instant::now();
-        match event {
-            DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
-                streamer_id,
-                download_id,
-                session_id,
-                ..
-            }) => {
-                send_to_actor(
-                    streamer_id,
-                    StreamerMessage::DownloadStarted {
-                        download_id,
-                        session_id,
-                    },
+        trace!(
+            "Handling download event for streamer {}: {:?}",
+            streamer_id, msg
+        );
+        if let Some(handle) = self.supervisor.registry().get_streamer(&streamer_id) {
+            if let Err(e) = handle.try_send(msg) {
+                warn!(
+                    "Failed to send download message to actor {}: {}",
+                    streamer_id, e
                 );
             }
-            DownloadManagerEvent::Terminal(terminal) => {
-                let streamer_id = terminal.streamer_id().to_owned();
-                send_to_actor(
-                    streamer_id,
-                    StreamerMessage::DownloadEnded(DownloadEndPolicy::from(terminal)),
-                );
-            }
-            DownloadManagerEvent::Progress(event) => {
-                let (download_id, streamer_id, session_id, progress) = match event {
-                    DownloadProgressEvent::Progress {
-                        download_id,
-                        streamer_id,
-                        session_id,
-                        progress,
-                        ..
-                    } => (download_id, streamer_id, session_id, Some(progress)),
-                    DownloadProgressEvent::SegmentStarted {
-                        download_id,
-                        streamer_id,
-                        session_id,
-                        ..
-                    }
-                    | DownloadProgressEvent::SegmentCompleted {
-                        download_id,
-                        streamer_id,
-                        session_id,
-                        ..
-                    } => (download_id, streamer_id, session_id, None),
-                    _ => return,
-                };
-                let should_send = match self.download_heartbeat_last_sent.get(&streamer_id) {
-                    Some(last) => now.duration_since(*last.value()) >= HEARTBEAT_THROTTLE,
-                    None => true,
-                };
-                if should_send
-                    && (!self.reliable_feedback
-                        || self.feedback.is_current_download(
-                            &streamer_id,
-                            &download_id,
-                            &session_id,
-                        ))
-                {
-                    self.download_heartbeat_last_sent
-                        .insert(streamer_id.clone(), now);
-                    send_to_actor(
-                        streamer_id,
-                        StreamerMessage::DownloadHeartbeat {
-                            download_id,
-                            session_id,
-                            progress,
-                        },
-                    );
-                }
-            }
+        } else {
+            debug!("No actor found for streamer {}", streamer_id);
         }
     }
 

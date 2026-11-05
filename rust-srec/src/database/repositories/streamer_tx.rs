@@ -180,20 +180,6 @@ impl StreamerTxOps {
         Ok(result)
     }
 
-    /// Increment error count and set last_error.
-    ///
-    /// Returns the new error count.
-    pub async fn increment_error(
-        tx: &mut SqliteConnection,
-        streamer_id: &str,
-        error_message: &str,
-    ) -> Result<i32> {
-        Ok(Self::increment_error_row(tx, streamer_id, error_message)
-            .await?
-            .consecutive_error_count
-            .unwrap_or(0))
-    }
-
     pub async fn increment_error_row(
         tx: &mut SqliteConnection,
         streamer_id: &str,

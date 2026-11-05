@@ -18,6 +18,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use crate::database::models::JobStatus;
 use crate::domain::streamer::StreamerState;
 use crate::domain::value_objects::Priority;
 use crate::session::SessionEventPayload;
@@ -59,6 +60,16 @@ impl Default for PaginationParams {
             limit: default_limit(),
             offset: 0,
         }
+    }
+}
+
+impl PaginationParams {
+    /// Largest page a list endpoint returns.
+    pub const MAX_LIMIT: u32 = 100;
+
+    /// The requested limit, capped at [`Self::MAX_LIMIT`].
+    pub fn effective_limit(&self) -> u32 {
+        self.limit.min(Self::MAX_LIMIT)
     }
 }
 
@@ -618,33 +629,6 @@ pub struct TemplateResponse {
 // Pipeline DTOs
 // ============================================================================
 
-/// Pipeline job status enumeration.
-///
-/// # Status Values
-///
-/// - `PENDING` - Job is queued and waiting to be processed
-/// - `PROCESSING` - Job is currently being executed by a worker
-/// - `COMPLETED` - Job finished successfully
-/// - `FAILED` - Job encountered an error during processing
-/// - `CANCELLED` - Job was cancelled and remains terminal until retried
-///
-/// # State Transitions
-///
-/// ```text
-/// pending -> processing -> completed
-///                      \-> failed
-/// failed -> pending (via retry)
-/// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum JobStatus {
-    Pending,
-    Processing,
-    Completed,
-    Failed,
-    Cancelled,
-}
-
 /// Pipeline job response.
 ///
 /// # Example Response
@@ -753,6 +737,16 @@ pub struct JobLogEntry {
     pub level: String,
     /// Log message.
     pub message: String,
+}
+
+impl From<crate::pipeline::JobLogEntry> for JobLogEntry {
+    fn from(log: crate::pipeline::JobLogEntry) -> Self {
+        Self {
+            timestamp: log.timestamp,
+            level: log.level.as_str().to_string(),
+            message: log.message,
+        }
+    }
 }
 
 /// Filter parameters for listing jobs.
@@ -1279,6 +1273,20 @@ pub struct ParseUrlResponse {
     pub danmu_handle: Option<String>,
 }
 
+impl ParseUrlResponse {
+    /// A failed parse carrying only `message`.
+    pub fn failure(message: impl Into<String>) -> Self {
+        Self {
+            playback: None,
+            success: false,
+            is_live: false,
+            media_info: None,
+            error: Some(message.into()),
+            danmu_handle: None,
+        }
+    }
+}
+
 /// Request to resolve the true URL for a stream.
 ///
 /// Managed sources resolve every stream during parse and never use this route.
@@ -1302,6 +1310,17 @@ pub struct ResolveUrlResponse {
     pub stream_info: Option<serde_json::Value>,
     /// Error message if resolution failed
     pub error: Option<String>,
+}
+
+impl ResolveUrlResponse {
+    /// A failed resolution carrying only `message`.
+    pub fn failure(message: impl Into<String>) -> Self {
+        Self {
+            success: false,
+            stream_info: None,
+            error: Some(message.into()),
+        }
+    }
 }
 
 // ============================================================================

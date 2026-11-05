@@ -8,7 +8,45 @@ use std::sync::Arc;
 use crate::Result;
 use crate::database::models::{JobPreset, Pagination};
 use async_trait::async_trait;
-use sqlx::SqlitePool;
+use sqlx::{QueryBuilder, Sqlite, SqlitePool};
+
+/// Append each optional job preset predicate with its bound value.
+fn push_job_preset_filters(query: &mut QueryBuilder<Sqlite>, filters: &JobPresetFilters) {
+    let mut separator = " WHERE ";
+    let mut next_separator = || std::mem::replace(&mut separator, " AND ");
+
+    if let Some(category) = &filters.category {
+        query
+            .push(next_separator())
+            .push("category = ")
+            .push_bind(category);
+    }
+    if let Some(processor) = &filters.processor {
+        query
+            .push(next_separator())
+            .push("processor = ")
+            .push_bind(processor);
+    }
+    if let Some(name) = &filters.name {
+        query.push(next_separator()).push("name = ").push_bind(name);
+    }
+    push_search_filter(query, next_separator(), filters.search.as_deref());
+}
+
+/// Append a literal substring match on name or description when `search` is set.
+fn push_search_filter(query: &mut QueryBuilder<Sqlite>, separator: &str, search: Option<&str>) {
+    let Some(search) = search else {
+        return;
+    };
+    let pattern = super::literal_substring_pattern(search);
+    query
+        .push(separator)
+        .push("(name LIKE ")
+        .push_bind(pattern.clone())
+        .push(r" ESCAPE '\' OR description LIKE ")
+        .push_bind(pattern)
+        .push(r" ESCAPE '\')");
+}
 
 /// Filter parameters for job presets.
 #[derive(Debug, Clone, Default)]
@@ -168,89 +206,24 @@ impl JobPresetRepository for SqliteJobPresetRepository {
         filters: &JobPresetFilters,
         pagination: &Pagination,
     ) -> Result<(Vec<JobPreset>, u64)> {
-        // Build dynamic WHERE clause
-        let mut conditions = Vec::new();
-        let mut bind_index = 1;
+        let mut count_query = QueryBuilder::new("SELECT COUNT(*) FROM job_presets");
+        push_job_preset_filters(&mut count_query, filters);
+        let total = count_query
+            .build_query_scalar::<i64>()
+            .fetch_one(&*self.pool)
+            .await? as u64;
 
-        if filters.category.is_some() {
-            conditions.push(format!("category = ${}", bind_index));
-            bind_index += 1;
-        }
-
-        if filters.processor.is_some() {
-            conditions.push(format!("processor = ${}", bind_index));
-            bind_index += 1;
-        }
-
-        if filters.name.is_some() {
-            conditions.push(format!("name = ${}", bind_index));
-            bind_index += 1;
-        }
-
-        if filters.search.is_some() {
-            conditions.push(format!(
-                r"(name LIKE ${} ESCAPE '\' OR description LIKE ${} ESCAPE '\')",
-                bind_index, bind_index
-            ));
-            bind_index += 1;
-        }
-
-        let where_clause = if conditions.is_empty() {
-            String::new()
-        } else {
-            format!("WHERE {}", conditions.join(" AND "))
-        };
-
-        // Count query
-        let count_sql = format!("SELECT COUNT(*) FROM job_presets {}", where_clause);
-
-        // Data query with pagination
-        let data_sql = format!(
-            "SELECT * FROM job_presets {} ORDER BY name LIMIT ${} OFFSET ${}",
-            where_clause,
-            bind_index,
-            bind_index + 1
-        );
-
-        // Execute count query
-        let mut count_query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql));
-        // Bind in the order the conditions were pushed above; each active filter consumed one
-        // placeholder, so a reordered bind would feed a value to the wrong condition.
-        if let Some(ref cat) = filters.category {
-            count_query = count_query.bind(cat);
-        }
-        if let Some(ref proc) = filters.processor {
-            count_query = count_query.bind(proc);
-        }
-        if let Some(ref name) = filters.name {
-            count_query = count_query.bind(name);
-        }
-        if let Some(ref search) = filters.search {
-            let search_pattern = super::literal_substring_pattern(search);
-            count_query = count_query.bind(search_pattern);
-        }
-        let total = count_query.fetch_one(&*self.pool).await? as u64;
-
-        // Execute data query
-        let mut data_query = sqlx::query_as::<_, JobPreset>(sqlx::AssertSqlSafe(data_sql));
-        // Same placeholder order as the count query above, then the LIMIT/OFFSET binds.
-        if let Some(ref cat) = filters.category {
-            data_query = data_query.bind(cat);
-        }
-        if let Some(ref proc) = filters.processor {
-            data_query = data_query.bind(proc);
-        }
-        if let Some(ref name) = filters.name {
-            data_query = data_query.bind(name);
-        }
-        if let Some(ref search) = filters.search {
-            let search_pattern = super::literal_substring_pattern(search);
-            data_query = data_query.bind(search_pattern);
-        }
-        data_query = data_query.bind(pagination.limit as i64);
-        data_query = data_query.bind(pagination.offset as i64);
-
-        let presets = data_query.fetch_all(&*self.pool).await?;
+        let mut data_query = QueryBuilder::new("SELECT * FROM job_presets");
+        push_job_preset_filters(&mut data_query, filters);
+        data_query
+            .push(" ORDER BY name LIMIT ")
+            .push_bind(pagination.limit as i64)
+            .push(" OFFSET ")
+            .push_bind(pagination.offset as i64);
+        let presets = data_query
+            .build_query_as::<JobPreset>()
+            .fetch_all(&*self.pool)
+            .await?;
 
         Ok((presets, total))
     }
@@ -380,49 +353,24 @@ impl PipelinePresetRepository for SqlitePipelinePresetRepository {
         filters: &PipelinePresetFilters,
         pagination: &Pagination,
     ) -> Result<(Vec<PipelinePreset>, u64)> {
-        // Build dynamic WHERE clause
-        let mut bind_index = 1;
+        let mut count_query = QueryBuilder::new("SELECT COUNT(*) FROM pipeline_presets");
+        push_search_filter(&mut count_query, " WHERE ", filters.search.as_deref());
+        let total = count_query
+            .build_query_scalar::<i64>()
+            .fetch_one(&*self.pool)
+            .await? as u64;
 
-        let where_clause = if filters.search.is_some() {
-            let clause = format!(
-                r"WHERE (name LIKE ${} ESCAPE '\' OR description LIKE ${} ESCAPE '\')",
-                bind_index, bind_index
-            );
-            bind_index += 1;
-            clause
-        } else {
-            String::new()
-        };
-
-        // Count query
-        let count_sql = format!("SELECT COUNT(*) FROM pipeline_presets {}", where_clause);
-
-        // Data query with pagination
-        let data_sql = format!(
-            "SELECT * FROM pipeline_presets {} ORDER BY name LIMIT ${} OFFSET ${}",
-            where_clause,
-            bind_index,
-            bind_index + 1
-        );
-
-        // Execute count query
-        let mut count_query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql));
-        if let Some(ref search) = filters.search {
-            let search_pattern = super::literal_substring_pattern(search);
-            count_query = count_query.bind(search_pattern);
-        }
-        let total = count_query.fetch_one(&*self.pool).await? as u64;
-
-        // Execute data query
-        let mut data_query = sqlx::query_as::<_, PipelinePreset>(sqlx::AssertSqlSafe(data_sql));
-        if let Some(ref search) = filters.search {
-            let search_pattern = super::literal_substring_pattern(search);
-            data_query = data_query.bind(search_pattern);
-        }
-        data_query = data_query.bind(pagination.limit as i64);
-        data_query = data_query.bind(pagination.offset as i64);
-
-        let presets = data_query.fetch_all(&*self.pool).await?;
+        let mut data_query = QueryBuilder::new("SELECT * FROM pipeline_presets");
+        push_search_filter(&mut data_query, " WHERE ", filters.search.as_deref());
+        data_query
+            .push(" ORDER BY name LIMIT ")
+            .push_bind(pagination.limit as i64)
+            .push(" OFFSET ")
+            .push_bind(pagination.offset as i64);
+        let presets = data_query
+            .build_query_as::<PipelinePreset>()
+            .fetch_all(&*self.pool)
+            .await?;
 
         Ok((presets, total))
     }
