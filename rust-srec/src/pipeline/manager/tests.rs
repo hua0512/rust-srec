@@ -2095,8 +2095,8 @@ async fn stop_settles_owned_pipeline_runtime_tasks() {
     assert!(manager.job_queue.progress_aggregator_is_running());
 
     manager.clone().start();
-    // Completion handler, coordinator, retry sweeper, stale-state cleanup.
-    assert_eq!(manager.runtime.lock().tasks.len(), 4);
+    // Completion handler, retry sweeper, stale-state cleanup.
+    assert_eq!(manager.runtime.lock().tasks.len(), 3);
 
     tokio::time::timeout(std::time::Duration::from_secs(1), manager.stop())
         .await

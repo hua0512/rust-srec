@@ -337,11 +337,9 @@ impl MetadataProcessor {
             items_produced: vec![output_path],
             input_size_bytes,
             output_size_bytes,
-            failed_inputs: vec![],
             succeeded_inputs: vec![input_path.to_string()],
-            skipped_inputs: vec![],
-            uploads: vec![],
             logs,
+            ..Default::default()
         })
     }
 }

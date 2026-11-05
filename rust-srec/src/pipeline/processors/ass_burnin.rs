@@ -677,11 +677,10 @@ impl Processor for AssBurnInProcessor {
             items_produced: produced,
             input_size_bytes: (!succeeded_inputs.is_empty()).then_some(input_size_bytes),
             output_size_bytes: (!succeeded_inputs.is_empty()).then_some(output_size_bytes),
-            failed_inputs: vec![],
             succeeded_inputs,
             skipped_inputs,
-            uploads: vec![],
             logs,
+            ..Default::default()
         })
     }
 }

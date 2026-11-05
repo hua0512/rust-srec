@@ -444,13 +444,10 @@ impl Processor for DanmakuFactoryProcessor {
                 .to_string(),
             ),
             items_produced: produced,
-            input_size_bytes: None,
-            output_size_bytes: None,
-            failed_inputs: vec![],
             succeeded_inputs: converted_xml,
             skipped_inputs,
-            uploads: vec![],
             logs,
+            ..Default::default()
         })
     }
 }

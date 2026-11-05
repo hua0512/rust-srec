@@ -188,7 +188,6 @@ impl Processor for DeleteProcessor {
 
                 let duration = start.elapsed().as_secs_f64();
                 return Ok(ProcessorOutput {
-                    outputs: vec![],
                     duration_secs: duration,
                     metadata: Some(
                         serde_json::json!({
@@ -198,14 +197,9 @@ impl Processor for DeleteProcessor {
                         })
                         .to_string(),
                     ),
-                    items_produced: vec![],
-                    input_size_bytes: None,
-                    output_size_bytes: None,
-                    failed_inputs: vec![],
                     succeeded_inputs: vec![file_path.clone()],
-                    skipped_inputs: vec![],
-                    uploads: vec![],
                     logs,
+                    ..Default::default()
                 });
             }
 
@@ -224,7 +218,6 @@ impl Processor for DeleteProcessor {
                     logs.push(JobLogEntry::info(msg));
 
                     Ok(ProcessorOutput {
-                        outputs: vec![],
                         duration_secs: duration,
                         metadata: Some(
                             serde_json::json!({
@@ -234,14 +227,11 @@ impl Processor for DeleteProcessor {
                             })
                             .to_string(),
                         ),
-                        items_produced: vec![],
                         input_size_bytes: file_size,
                         output_size_bytes: Some(0),
-                        failed_inputs: vec![],
                         succeeded_inputs: vec![file_path.clone()],
-                        skipped_inputs: vec![],
-                        uploads: vec![],
                         logs,
+                        ..Default::default()
                     })
                 }
                 Err(error) => {
@@ -319,17 +309,13 @@ impl Processor for DeleteProcessor {
 
         if failed.is_empty() {
             Ok(ProcessorOutput {
-                outputs: vec![],
                 duration_secs: duration,
                 metadata: Some(summary.to_string()),
-                items_produced: vec![],
                 input_size_bytes: Some(total_input_size),
                 output_size_bytes: Some(0),
-                failed_inputs: vec![],
                 succeeded_inputs: input.inputs.clone(),
-                skipped_inputs: vec![],
-                uploads: vec![],
                 logs,
+                ..Default::default()
             })
         } else {
             let mut msg = format!(

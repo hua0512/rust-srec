@@ -634,12 +634,10 @@ impl Processor for ExecuteCommandProcessor {
             items_produced,
             input_size_bytes,
             output_size_bytes,
-            failed_inputs: vec![],
             // The command received every input; none is skipped or failed individually.
             succeeded_inputs: input.inputs.clone(),
-            skipped_inputs: vec![],
-            uploads: vec![],
             logs: command_output.logs,
+            ..Default::default()
         })
     }
 }

@@ -722,12 +722,9 @@ impl Processor for CompressionProcessor {
             items_produced: vec![output_path_str],
             input_size_bytes: Some(total_input_size),
             output_size_bytes: Some(output_size),
-            // All inputs succeeded if we reach this point
-            failed_inputs: vec![],
             succeeded_inputs: input.inputs.clone(),
-            skipped_inputs: vec![],
-            uploads: vec![],
             logs,
+            ..Default::default()
         })
     }
 }
