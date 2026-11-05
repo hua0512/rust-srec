@@ -121,7 +121,7 @@ import { withBase } from 'vitepress'
 |------|------|--------|
 | `FFMPEG_PATH` | 流水线处理器使用的 FFmpeg 程序；Streamlink 引擎配置未指定 FFmpeg 路径时，以及 FFmpeg 下载引擎配置未指定程序路径时，也使用它。 | `ffmpeg` |
 | `FFPROBE_PATH` | `audio_extract` 处理器使用的 FFprobe 程序 | `ffprobe` |
-| `STREAMLINK_PATH` | 添加主播时用于检查 Streamlink 能否处理该地址的 Streamlink 程序，Streamlink 平台设置中的 `streamlink.binary_path` 指定了其他程序时除外。录制使用 Streamlink 引擎配置中的程序路径。 | `streamlink` |
+| `STREAMLINK_PATH` | 使用 Streamlink 获取直播流，以及添加主播时检查 Streamlink 能否处理该地址所用的 Streamlink 程序，平台设置中的 `streamlink.binary_path` 指定了其他程序时除外。Streamlink 下载引擎使用其自身配置中的程序路径。 | `streamlink` |
 | `RCLONE_PATH` | `rclone` 处理器使用的 rclone 程序 | `rclone` |
 | `BAIDUPCS_PATH` | 预设未设置 `binary_path` 时使用的 BaiduPCS-Go 程序 | `BaiduPCS-Go` |
 | `DANMAKU_FACTORY_PATH` | 预设未设置 `binary_path` 时使用的 DanmakuFactory 程序 | `DanmakuFactory` |

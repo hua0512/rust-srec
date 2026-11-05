@@ -1042,18 +1042,15 @@ async fn unregistered_extractor(
     state: &ParseRouteState,
     platform: Option<&crate::database::models::PlatformConfigDbModel>,
 ) -> ApiResult<ExtractorSelection> {
-    fn parse(value: Option<&str>) -> Option<ExtractorSelection> {
-        value
-            .map(str::trim)
-            .filter(|value| !value.is_empty())?
-            .parse()
-            .ok()
-    }
-    if let Some(selection) = parse(platform.and_then(|platform| platform.extractor.as_deref())) {
+    use crate::config::parse_extractor;
+    if let Some(selection) = parse_extractor(
+        platform.and_then(|platform| platform.extractor.as_deref()),
+        "platform",
+    ) {
         return Ok(selection);
     }
     let global = state.config_service.get_cached_global_config().await?;
-    Ok(parse(global.default_extractor.as_deref()).unwrap_or_default())
+    Ok(parse_extractor(global.default_extractor.as_deref(), "global").unwrap_or_default())
 }
 
 /// The route requests for `url` take; see [`resolve_url_owner`].

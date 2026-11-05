@@ -16,4 +16,5 @@ pub use merged::{
     GlobalConfigLayer, MergedConfig, MergedConfigBuilder, PlatformConfigLayer, TemplateConfigLayer,
 };
 pub use resolver::ConfigResolver;
+pub(crate) use resolver::parse_extractor;
 pub use service::ConfigService;

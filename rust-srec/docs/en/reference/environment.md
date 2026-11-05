@@ -121,7 +121,7 @@ The heuristic groups deep paths under broader keys: `/var/lib/rust-srec/output` 
 |----------|-------------|---------|
 | `FFMPEG_PATH` | FFmpeg binary used by pipeline processors, by the Streamlink engine when its configuration names no FFmpeg path, and by the FFmpeg download engine when its configuration names no binary path. | `ffmpeg` |
 | `FFPROBE_PATH` | FFprobe binary used by the `audio_extract` processor | `ffprobe` |
-| `STREAMLINK_PATH` | Streamlink binary used to check whether Streamlink can handle a URL when adding a streamer, unless `streamlink.binary_path` in the Streamlink platform's settings names another. Recording uses the binary path in the Streamlink engine configuration. | `streamlink` |
+| `STREAMLINK_PATH` | Streamlink binary used to look up streams with Streamlink, and to check whether Streamlink can handle a URL when adding a streamer, unless `streamlink.binary_path` in the platform's settings names another. The Streamlink download engine uses the binary path in its own configuration. | `streamlink` |
 | `RCLONE_PATH` | rclone binary used by the `rclone` processor | `rclone` |
 | `BAIDUPCS_PATH` | BaiduPCS-Go binary, used when the preset sets no `binary_path` | `BaiduPCS-Go` |
 | `DANMAKU_FACTORY_PATH` | DanmakuFactory binary, used when the preset sets no `binary_path` | `DanmakuFactory` |

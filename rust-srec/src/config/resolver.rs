@@ -23,7 +23,7 @@ use super::{GlobalConfigLayer, MergedConfig, PlatformConfigLayer, TemplateConfig
 /// `None` means the layer expresses no preference and the layer below it wins. An unrecognized
 /// name is treated the same way rather than failing resolution, so a bad value degrades to
 /// inheritance instead of stopping the streamer from recording.
-fn parse_extractor(value: Option<&str>, scope: &str) -> Option<ExtractorSelection> {
+pub(crate) fn parse_extractor(value: Option<&str>, scope: &str) -> Option<ExtractorSelection> {
     let value = value?.trim();
     if value.is_empty() {
         return None;
