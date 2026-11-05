@@ -390,11 +390,7 @@ async fn managed_config(
             .as_deref()
             .map(serde_json::from_str)
             .transpose()?;
-        let extractor = platform
-            .extractor
-            .as_deref()
-            .and_then(|value| value.parse().ok())
-            .unwrap_or_default();
+        let extractor = unregistered_extractor(state, Some(platform)).await?;
         (
             owner,
             platform.id.clone(),
@@ -1010,6 +1006,7 @@ async fn resolve_url_config(
             extractor: config.extractor,
         },
         UrlOwner::Platform(platform) => {
+            let extractor = unregistered_extractor(state, platform.as_deref()).await?;
             let platform_extras = platform.as_ref().and_then(|platform| {
                 let raw = platform.platform_specific_config.as_deref()?;
                 match serde_json::from_str(raw) {
@@ -1031,11 +1028,29 @@ async fn resolve_url_config(
                 platform_id: platform.map(|platform| platform.id),
                 cookies: explicit_cookies,
                 platform_extras,
-                extractor: ExtractorSelection::default(),
+                extractor,
             }
         }
     };
     Ok((extractor_config, route))
+}
+
+/// The extractor a streamer registered on `platform` would start with: the
+/// platform's setting, else the global default. As in the config resolver, a
+/// blank or unrecognized name defers to the next layer.
+async fn unregistered_extractor(
+    state: &ParseRouteState,
+    platform: Option<&crate::database::models::PlatformConfigDbModel>,
+) -> ApiResult<ExtractorSelection> {
+    use crate::config::parse_extractor;
+    if let Some(selection) = parse_extractor(
+        platform.and_then(|platform| platform.extractor.as_deref()),
+        "platform",
+    ) {
+        return Ok(selection);
+    }
+    let global = state.config_service.get_cached_global_config().await?;
+    Ok(parse_extractor(global.default_extractor.as_deref(), "global").unwrap_or_default())
 }
 
 /// The route requests for `url` take; see [`resolve_url_owner`].
@@ -1352,7 +1367,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn requests_for_a_url_take_the_route_of_its_streamer_platform_or_global() {
+    async fn requests_for_a_url_take_the_config_of_its_streamer_platform_or_global() {
         use crate::database::repositories::proxies::{self, RouteOwner};
         use crate::proxies::{ProxyRoute, RouteKind, RouteSource};
         let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
@@ -1386,11 +1401,12 @@ mod tests {
                 .map(|endpoint| endpoint.url.as_str()),
             Some("http://global-proxy.example:8080")
         );
-        let platform = state
+        let mut platform = state
             .config_service
             .get_platform_config("platform-bilibili")
             .await
             .unwrap();
+        platform.extractor = Some("streamlink".to_string());
         state
             .config_service
             .update_platform_config_scoped(
@@ -1405,6 +1421,11 @@ mod tests {
         let recognized = resolve_route_for_url(&state, STREAMER_URL).await.unwrap();
         assert_eq!(recognized.source, RouteSource::Platform);
         assert_eq!(recognized.proxy_name(), Some("platform"));
+        // An unregistered URL is previewed with its platform's extractor.
+        let (preview, _) = resolve_url_config(&state, STREAMER_URL, None)
+            .await
+            .unwrap();
+        assert_eq!(preview.extractor, ExtractorSelection::Streamlink);
 
         let mut streamer = StreamerDbModel::new("Source", STREAMER_URL, "platform-bilibili");
         streamer.id = STREAMER_ID.to_string();
