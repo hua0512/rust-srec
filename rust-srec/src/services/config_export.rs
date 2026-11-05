@@ -312,7 +312,6 @@ async fn export_channels(
         .collect())
 }
 
-#[derive(Clone)]
 pub(crate) struct ConfigurationExportService {
     write_pool: SqlitePool,
     config_service: Arc<RuntimeConfigService>,
