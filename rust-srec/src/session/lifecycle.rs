@@ -761,22 +761,7 @@ impl SessionLifecycle {
         let lifecycle = self.clone();
         crate::database::committed_writer::own_operation(self.operation_tasks.clone(), async move {
             let (_operation, _stripe) = (operation, stripe);
-            lifecycle
-                .on_live_detected_inner(LiveDetectedArgs {
-                    credential_binding: owned.credential_binding.as_ref(),
-                    streamer_id: &owned.streamer_id,
-                    streamer_name: &owned.streamer_name,
-                    streamer_url: &owned.streamer_url,
-                    current_avatar: owned.current_avatar.as_deref(),
-                    new_avatar: owned.new_avatar.as_deref(),
-                    title: &owned.title,
-                    category: owned.category.as_deref(),
-                    streams: &owned.streams,
-                    media_headers: owned.media_headers.as_ref(),
-                    media_extras: owned.media_extras.as_ref(),
-                    now: owned.now,
-                })
-                .await
+            lifecycle.on_live_detected_inner(owned).await
         })
         .await
     }
@@ -884,7 +869,7 @@ impl SessionLifecycle {
 
     async fn on_live_detected_inner(
         &self,
-        args: LiveDetectedArgs<'_>,
+        inputs: StartSessionInputs,
     ) -> Result<StartSessionOutcome> {
         // Step 1: Hysteresis resume.
         //
@@ -896,30 +881,34 @@ impl SessionLifecycle {
         // attempt. In that case the session is already Ended; fall
         // through to `start_or_resume` which produces a fresh `session_id`
         // (the prior session has `end_time` set).
-        if let Some(session_id) = self.hysteresis_session_for_streamer(args.streamer_id)
-            && let Some(outcome) = self.resume_from_hysteresis(&session_id, &args).await
-        {
-            return Ok(outcome);
+        if let Some(session_id) = self.hysteresis_session_for_streamer(&inputs.streamer_id) {
+            let args = LiveDetectedArgs {
+                credential_binding: inputs.credential_binding.as_ref(),
+                streamer_id: &inputs.streamer_id,
+                streamer_name: &inputs.streamer_name,
+                streamer_url: &inputs.streamer_url,
+                current_avatar: inputs.current_avatar.as_deref(),
+                new_avatar: inputs.new_avatar.as_deref(),
+                title: &inputs.title,
+                category: inputs.category.as_deref(),
+                streams: &inputs.streams,
+                media_headers: inputs.media_headers.as_ref(),
+                media_extras: inputs.media_extras.as_ref(),
+                now: inputs.now,
+            };
+            if let Some(outcome) = self.resume_from_hysteresis(&session_id, &args).await {
+                return Ok(outcome);
+            }
         }
 
         // Step 2: Repository call. The simplified `start_or_resume` only
         // distinguishes "active session exists" (ReusedActive) from
         // "no active session" (Created).
-        let inputs = StartSessionInputs {
-            credential_binding: args.credential_binding.cloned(),
-            streamer_id: args.streamer_id.to_string(),
-            streamer_name: args.streamer_name.to_string(),
-            streamer_url: args.streamer_url.to_string(),
-            current_avatar: args.current_avatar.map(|s| s.to_string()),
-            new_avatar: args.new_avatar.map(|s| s.to_string()),
-            title: args.title.to_string(),
-            category: args.category.map(|s| s.to_string()),
-            streams: args.streams.clone(),
-            media_headers: args.media_headers.cloned(),
-            media_extras: args.media_extras.cloned(),
-            now: args.now,
-        };
-
+        let streamer_id = inputs.streamer_id.clone();
+        let streamer_name = inputs.streamer_name.clone();
+        let title = inputs.title.clone();
+        let category = inputs.category.clone();
+        let now = inputs.now;
         let outcome = self.repo.start_or_resume(inputs).await?;
 
         // The row-level guard inside `start_or_resume` observed a
@@ -928,7 +917,7 @@ impl SessionLifecycle {
         // to track in memory either.
         if let StartSessionOutcome::SuppressedInactive { state } = &outcome {
             info!(
-                streamer_id = args.streamer_id,
+                streamer_id = %streamer_id,
                 state = %state,
                 "live detection suppressed: streamer row is inactive"
             );
@@ -939,27 +928,27 @@ impl SessionLifecycle {
         // row still holds.
         let started_at = match &outcome {
             StartSessionOutcome::ReusedActive { session_id } => {
-                self.known_started_at(session_id).await.unwrap_or(args.now)
+                self.known_started_at(session_id).await.unwrap_or(now)
             }
-            _ => args.now,
+            _ => now,
         };
         self.sessions.insert(
             outcome.session_id().to_string(),
             SessionState::recording(
-                args.streamer_id.to_string(),
+                streamer_id.clone(),
                 outcome.session_id().to_string(),
                 started_at,
             ),
         );
-        self.set_current_session(args.streamer_id, outcome.session_id());
+        self.set_current_session(&streamer_id, outcome.session_id());
 
         self.publish_transition(SessionTransition::Started {
             session_id: outcome.session_id().to_string(),
-            streamer_id: args.streamer_id.to_string(),
-            streamer_name: args.streamer_name.to_string(),
-            title: args.title.to_string(),
-            category: args.category.map(|s| s.to_string()),
-            started_at: args.now,
+            streamer_id,
+            streamer_name,
+            title,
+            category,
+            started_at: now,
             from_hysteresis: false,
             // Fresh-session path: the `MonitorEvent::StreamerLive` outbox
             // event from the atomic tx in `start_or_resume` already drives

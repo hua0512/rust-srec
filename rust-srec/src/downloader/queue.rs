@@ -396,12 +396,6 @@ impl DownloadQueue {
         n
     }
 
-    /// Set just the high-extra capacity. Returns the applied value.
-    pub fn set_high_extra_capacity(&self, high_extra: usize) -> usize {
-        let (_, h) = self.set_capacity(self.normal_capacity(), high_extra);
-        h
-    }
-
     /// Snapshot of currently-pending entries, in arrival order.
     pub fn snapshot_pending(&self) -> Vec<PendingEntry> {
         let mut entries: Vec<(u64, PendingEntry)> = self

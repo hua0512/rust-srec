@@ -377,17 +377,6 @@ impl DownloadManager {
         self
     }
 
-    /// Attach an output-root write gate during construction.
-    ///
-    /// Prefer this over [`Self::set_output_root_gate`] when the gate's
-    /// dependencies are available at construction time. When they aren't
-    /// (e.g. the services container builds `NotificationService` after
-    /// `DownloadManager`), use `set_output_root_gate` instead.
-    pub fn with_output_root_gate(self, gate: Arc<OutputRootGate>) -> Self {
-        self.set_output_root_gate(gate);
-        self
-    }
-
     /// Late-bind the output-root write gate. Used by
     /// the services container when the download manager is already
     /// wrapped in `Arc` and its dependencies are ready.
@@ -444,16 +433,6 @@ impl DownloadManager {
     /// Get an engine by type.
     pub fn get_engine(&self, engine_type: EngineType) -> Option<Arc<dyn DownloadEngine>> {
         self.engines.read().get(&engine_type).cloned()
-    }
-
-    /// Get available engines.
-    pub fn available_engines(&self) -> Vec<EngineType> {
-        self.engines
-            .read()
-            .iter()
-            .filter(|(_, engine)| engine.is_available())
-            .map(|(t, _)| *t)
-            .collect()
     }
 
     /// Start a download.

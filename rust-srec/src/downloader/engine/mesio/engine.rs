@@ -42,8 +42,6 @@ use crate::downloader::engine::utils::sanitize_engine_message;
 /// - Creates appropriate downloader (HlsDownloader, DashDownloader or FlvDownloader)
 /// - Delegates download execution and propagates results
 pub struct MesioEngine {
-    /// Whether the engine is available.
-    available: bool,
     /// Engine configuration.
     config: MesioEngineConfig,
     /// Default HLS configuration.
@@ -64,7 +62,6 @@ impl MesioEngine {
     pub fn with_config(config: MesioEngineConfig) -> Self {
         let buffer_size = config.buffer_size;
         Self {
-            available: true,
             config,
             hls_config: Some(
                 HlsProtocolBuilder::new()
@@ -86,18 +83,6 @@ impl MesioEngine {
                     .get_config(),
             ),
         }
-    }
-
-    /// Create a new Mesio engine with custom HLS configuration built from HlsProtocolBuilder.
-    pub fn with_hls_config(mut self, config: mesio::hls::HlsConfig) -> Self {
-        self.hls_config = Some(config);
-        self
-    }
-
-    /// Create a new Mesio engine with custom FLV configuration.
-    pub fn with_flv_config(mut self, config: FlvProtocolConfig) -> Self {
-        self.flv_config = Some(config);
-        self
     }
 
     /// The protocol to record `config` with.
@@ -216,7 +201,7 @@ impl DownloadEngine for MesioEngine {
     }
 
     fn is_available(&self) -> bool {
-        self.available
+        true
     }
 
     fn version(&self) -> Option<String> {

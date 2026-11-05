@@ -8,9 +8,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::domain::streamer::{
-    CheckOutcome, CheckRecord, FatalErrorType, FilterCause, SelectedStreamSummary,
-};
+use crate::domain::streamer::{CheckOutcome, CheckRecord, FilterCause, SelectedStreamSummary};
 use crate::monitor::{CheckHistoryWriter, FilterReason, LiveStatus, ProcessStatusResult};
 use crate::streamer::StreamerMetadata;
 
@@ -245,53 +243,46 @@ fn check_record_from_live_status(
     duration: chrono::Duration,
     status: &LiveStatus,
 ) -> CheckRecord {
-    let outcome = match status {
-        LiveStatus::Live {
-            title,
-            category,
-            viewer_count,
-            streams,
-            candidates,
-            ..
-        } => CheckOutcome::Live {
-            title: title.clone(),
-            category: category.clone(),
-            viewer_count: *viewer_count,
-            candidates: candidates.iter().map(selected_stream_summary).collect(),
-            selected_stream: streams.first().map(selected_stream_summary),
-        },
-        LiveStatus::Offline => CheckOutcome::Offline,
-        LiveStatus::Filtered {
-            reason,
-            title,
-            category,
-        } => CheckOutcome::Filtered {
-            reason: match reason {
-                FilterReason::OutOfSchedule { .. } => FilterCause::OutOfSchedule,
-                FilterReason::TitleMismatch => FilterCause::TitleMismatch,
-                FilterReason::CategoryMismatch => FilterCause::CategoryMismatch,
+    let outcome = if let Some(kind) = status.fatal_kind() {
+        CheckOutcome::FatalError { kind }
+    } else {
+        match status {
+            LiveStatus::Live {
+                title,
+                category,
+                viewer_count,
+                streams,
+                candidates,
+                ..
+            } => CheckOutcome::Live {
+                title: title.clone(),
+                category: category.clone(),
+                viewer_count: *viewer_count,
+                candidates: candidates.iter().map(selected_stream_summary).collect(),
+                selected_stream: streams.first().map(selected_stream_summary),
             },
-            title: title.clone(),
-            category: category.clone(),
-        },
-        LiveStatus::NotFound => CheckOutcome::FatalError {
-            kind: FatalErrorType::NotFound,
-        },
-        LiveStatus::Banned => CheckOutcome::FatalError {
-            kind: FatalErrorType::Banned,
-        },
-        LiveStatus::AgeRestricted => CheckOutcome::FatalError {
-            kind: FatalErrorType::AgeRestricted,
-        },
-        LiveStatus::RegionLocked => CheckOutcome::FatalError {
-            kind: FatalErrorType::RegionLocked,
-        },
-        LiveStatus::Private => CheckOutcome::FatalError {
-            kind: FatalErrorType::Private,
-        },
-        LiveStatus::UnsupportedPlatform => CheckOutcome::FatalError {
-            kind: FatalErrorType::UnsupportedPlatform,
-        },
+            LiveStatus::Filtered {
+                reason,
+                title,
+                category,
+            } => CheckOutcome::Filtered {
+                reason: match reason {
+                    FilterReason::OutOfSchedule { .. } => FilterCause::OutOfSchedule,
+                    FilterReason::TitleMismatch => FilterCause::TitleMismatch,
+                    FilterReason::CategoryMismatch => FilterCause::CategoryMismatch,
+                },
+                title: title.clone(),
+                category: category.clone(),
+            },
+            LiveStatus::Offline => CheckOutcome::Offline,
+            // Mapped above.
+            LiveStatus::NotFound
+            | LiveStatus::Banned
+            | LiveStatus::AgeRestricted
+            | LiveStatus::RegionLocked
+            | LiveStatus::Private
+            | LiveStatus::UnsupportedPlatform => CheckOutcome::Offline,
+        }
     };
 
     CheckRecord::new(streamer_id, checked_at, duration, outcome)
@@ -340,52 +331,21 @@ fn convert_live_status_to_check_result(status: &LiveStatus) -> CheckResult {
                 next_check_hint,
             }
         }
-        LiveStatus::NotFound => CheckResult {
-            state: StreamerState::NotFound,
+        LiveStatus::NotFound
+        | LiveStatus::Banned
+        | LiveStatus::AgeRestricted
+        | LiveStatus::RegionLocked
+        | LiveStatus::Private
+        | LiveStatus::UnsupportedPlatform => CheckResult {
+            state: if matches!(status, LiveStatus::NotFound) {
+                StreamerState::NotFound
+            } else {
+                StreamerState::FatalError
+            },
             stream_url: None,
             title: None,
             checked_at: chrono::Utc::now(),
-            error: Some("Streamer not found".to_string()),
-            next_check_hint: None,
-        },
-        LiveStatus::Banned => CheckResult {
-            state: StreamerState::FatalError,
-            stream_url: None,
-            title: None,
-            checked_at: chrono::Utc::now(),
-            error: Some("Streamer is banned".to_string()),
-            next_check_hint: None,
-        },
-        LiveStatus::AgeRestricted => CheckResult {
-            state: StreamerState::FatalError,
-            stream_url: None,
-            title: None,
-            checked_at: chrono::Utc::now(),
-            error: Some("Content is age-restricted".to_string()),
-            next_check_hint: None,
-        },
-        LiveStatus::RegionLocked => CheckResult {
-            state: StreamerState::FatalError,
-            stream_url: None,
-            title: None,
-            checked_at: chrono::Utc::now(),
-            error: Some("Content is region-locked".to_string()),
-            next_check_hint: None,
-        },
-        LiveStatus::Private => CheckResult {
-            state: StreamerState::FatalError,
-            stream_url: None,
-            title: None,
-            checked_at: chrono::Utc::now(),
-            error: Some("Content is private".to_string()),
-            next_check_hint: None,
-        },
-        LiveStatus::UnsupportedPlatform => CheckResult {
-            state: StreamerState::FatalError,
-            stream_url: None,
-            title: None,
-            checked_at: chrono::Utc::now(),
-            error: Some("Unsupported platform".to_string()),
+            error: status.fatal_error_description().map(str::to_owned),
             next_check_hint: None,
         },
     }

@@ -939,7 +939,7 @@ impl DanmuEventHandler {
     }
 
     async fn handle_event(&self, event: DanmuEvent) -> std::result::Result<(), String> {
-        match event {
+        match &event {
             DanmuEvent::CollectionStarted {
                 session_id,
                 streamer_id,
@@ -949,10 +949,7 @@ impl DanmuEventHandler {
                     session_id, streamer_id
                 );
                 self.pipeline_manager
-                    .handle_danmu_event(DanmuEvent::CollectionStarted {
-                        session_id,
-                        streamer_id,
-                    })
+                    .handle_danmu_event(event)
                     .await
                     .map_err(|error| format!("failed to apply danmu collection start: {error}"))?;
             }
@@ -966,12 +963,9 @@ impl DanmuEventHandler {
                 );
                 // Bounds `danmu_link_down`: a session that stops mid-outage never
                 // sends `Reconnected`, so this is the entry's only other removal.
-                self.danmu_link_down.remove(&session_id);
+                self.danmu_link_down.remove(session_id);
                 self.pipeline_manager
-                    .handle_danmu_event(DanmuEvent::CollectionStopped {
-                        session_id,
-                        total_count,
-                    })
+                    .handle_danmu_event(event)
                     .await
                     .map_err(|error| format!("failed to apply danmu collection stop: {error}"))?;
             }
@@ -989,10 +983,10 @@ impl DanmuEventHandler {
             }
             DanmuEvent::SegmentCompleted {
                 session_id,
-                streamer_id,
                 segment_id,
                 output_path,
                 message_count,
+                ..
             } => {
                 info!(
                     "Danmu segment completed: session={}, segment={}, messages={}",
@@ -1003,7 +997,7 @@ impl DanmuEventHandler {
                     .remove(&(session_id.clone(), segment_id.clone()))
                     .is_some()
                 {
-                    match tokio::fs::remove_file(&output_path).await {
+                    match tokio::fs::remove_file(output_path).await {
                         Ok(()) => {
                             debug!("Deleted discarded danmu segment: {}", output_path.display())
                         }
@@ -1022,13 +1016,7 @@ impl DanmuEventHandler {
                 }
                 // Forward to pipeline manager for processing
                 self.pipeline_manager
-                    .handle_danmu_event(DanmuEvent::SegmentCompleted {
-                        session_id,
-                        streamer_id,
-                        segment_id,
-                        output_path,
-                        message_count,
-                    })
+                    .handle_danmu_event(event)
                     .await
                     .map_err(|error| {
                         format!("failed to apply danmu segment completion: {error}")
@@ -1045,21 +1033,19 @@ impl DanmuEventHandler {
                     session_id, streamer_id, platform, control
                 );
 
+                let stream_closed = matches!(
+                    control,
+                    crate::danmu::DanmuControlEvent::StreamClosed { .. }
+                )
+                .then(|| (session_id.clone(), streamer_id.clone(), platform.clone()));
+
                 // Forward to pipeline manager (e.g., title updates).
                 self.pipeline_manager
-                    .handle_danmu_event(DanmuEvent::Control {
-                        session_id: session_id.clone(),
-                        streamer_id: streamer_id.clone(),
-                        platform: platform.clone(),
-                        control: control.clone(),
-                    })
+                    .handle_danmu_event(event)
                     .await
                     .map_err(|error| format!("failed to apply danmu control event: {error}"))?;
 
-                if matches!(
-                    control,
-                    crate::danmu::DanmuControlEvent::StreamClosed { .. }
-                ) {
+                if let Some((session_id, streamer_id, platform)) = stream_closed {
                     self.handle_stream_closed(&session_id, &streamer_id, &platform)
                         .await;
                 }
@@ -1084,7 +1070,7 @@ impl DanmuEventHandler {
                 attempts,
                 downtime_secs,
             } => {
-                self.danmu_link_down.remove(&session_id);
+                self.danmu_link_down.remove(session_id);
                 info!(
                     "Danmu reconnected for session {} after {} attempt(s), {}s down",
                     session_id, attempts, downtime_secs
