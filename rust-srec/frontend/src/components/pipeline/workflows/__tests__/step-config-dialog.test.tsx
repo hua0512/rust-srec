@@ -333,8 +333,9 @@ describe('StepConfigDialog preset steps', () => {
       await client.refetchQueries({
         queryKey: queryKeys.jobPresets.byName('thumbnail'),
       });
-      // react-query notifies its observers on a microtask; yield so the re-render lands inside
-      // this act() rather than after the click below.
+      // react-query notifies its observers on a zero-delay timer; wait it out
+      // so the re-render lands inside this act() rather than after the click
+      // below.
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(screen.queryByText(/No configuration form available/i)).toBeNull();

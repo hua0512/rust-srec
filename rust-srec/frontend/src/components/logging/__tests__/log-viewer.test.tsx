@@ -24,14 +24,18 @@ vi.mock('@tanstack/react-router', () => ({
   useRouteContext: () => routeContext,
 }));
 
-function emitLog(socket: MockWebSocket, index: number) {
+function emitLog(
+  socket: MockWebSocket,
+  index: number,
+  level: LogLevel = LogLevel.INFO,
+) {
   const message = create(WsMessageSchema, {
     eventType: EventType.LOG,
     payload: {
       case: 'log',
       value: create(LogEventSchema, {
         timestampMs: BigInt(1_700_000_000_000 + index),
-        level: LogLevel.INFO,
+        level,
         target: 'test',
         message: `log-${index}`,
       }),
@@ -99,22 +103,30 @@ describe('LogViewer', () => {
     expect(screen.getByText('log-39')).toBeInTheDocument();
   });
 
-  // Rendering and querying hundreds of rows in jsdom takes about half of the
-  // default 5 s budget in a normal parallel run, so extra load times it out.
-  it(
-    'keeps only the newest entries once past the cap',
-    { timeout: 15_000 },
-    () => {
-      const { container, socket } = renderViewer();
+  it('keeps only the newest entries once past the cap', () => {
+    const { container, socket } = renderViewer();
+    // Only the ten oldest and ten newest frames are warnings, so the warning
+    // filter shows which end survived without rendering hundreds of rows.
+    // The select is driven synchronously: the async query helpers never
+    // resolve under fake timers.
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Log level' }), {
+      key: 'ArrowDown',
+    });
+    fireEvent.click(screen.getByRole('option', { name: 'WARN+' }));
+    const total = MAX_LOG_ENTRIES + 20;
+    act(() => {
+      for (let i = 0; i < total; i++) {
+        const edge = i < 10 || i >= total - 10;
+        emitLog(socket, i, edge ? LogLevel.WARN : LogLevel.INFO);
+      }
+    });
+    flush();
 
-      emitLogs(socket, MAX_LOG_ENTRIES + 20);
-      flush();
-
-      expect(renderedRowCount(container)).toBe(MAX_LOG_ENTRIES);
-      expect(screen.queryByText('log-0')).not.toBeInTheDocument();
-      expect(screen.getByText('log-519')).toBeInTheDocument();
-    },
-  );
+    expect(renderedRowCount(container)).toBe(10);
+    expect(screen.queryByText('log-9')).not.toBeInTheDocument();
+    expect(screen.getByText(`log-${total - 10}`)).toBeInTheDocument();
+    expect(screen.getByText(`log-${total - 1}`)).toBeInTheDocument();
+  });
 
   it('holds frames back while paused and merges them on resume', () => {
     const { container, socket } = renderViewer();

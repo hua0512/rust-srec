@@ -64,7 +64,8 @@ async function openMenuItem(proxy: string, item: string) {
     { button: 0, ctrlKey: false },
   );
   fireEvent.click(await screen.findByRole('menuitem', { name: item }));
-  // Dialogs open once the menu has closed and handed back focus.
+  // Dialogs open once the menu has closed and handed back focus, which Radix
+  // does on a zero-delay timer after the menu unmounts.
   await waitFor(() =>
     expect(screen.queryByRole('menu')).not.toBeInTheDocument(),
   );

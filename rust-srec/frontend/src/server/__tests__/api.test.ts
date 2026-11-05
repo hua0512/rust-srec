@@ -40,6 +40,8 @@ describe('fetchBackend', () => {
       accessToken: 'new-token',
     });
     getRequestMock.mockReturnValue(new Request('http://frontend.test/'));
+    // The development request trace would otherwise surround any failure.
+    vi.spyOn(console, 'log').mockImplementation(() => {});
   });
 
   afterEach(() => {
