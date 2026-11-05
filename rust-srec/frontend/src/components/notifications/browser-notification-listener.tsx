@@ -7,6 +7,7 @@ import type { NotificationEventLog } from '@/api/schemas/notifications';
 import { useLingui } from '@lingui/react';
 import type { I18n } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
+import { formatBytes } from '@/lib/format';
 import { priorityLabel } from '@/lib/priority';
 import {
   getBrowserNotificationsEnabled,
@@ -75,8 +76,12 @@ export function formatBrowserNotification(
   if (streamer) bodyParts.push(streamer);
   // Names the platform of a failed account sign-in.
   if (platform) bodyParts.push(platform);
-  // Names the output folder that cannot be written.
+  // Names the folder that is low on space or cannot be written.
   if (path) bodyParts.push(path);
+  if (typeof fields.available_bytes === 'number') {
+    const free = formatBytes(fields.available_bytes, { decimals: 1 });
+    bodyParts.push(i18n._(msg`${free} free`));
+  }
   if (typeof fields.queue_depth === 'number') {
     const queued = fields.queue_depth;
     bodyParts.push(i18n._(msg`${queued} jobs queued`));
