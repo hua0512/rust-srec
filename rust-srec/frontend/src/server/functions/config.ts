@@ -1,6 +1,6 @@
 import { createServerFn } from '@/server/createServerFn';
 import { parseInput } from '../validate';
-import { fetchBackend } from '../api';
+import { fetchBackend, LONG_BACKEND_TIMEOUT_MS } from '../api';
 import { backendPath, PathIdSchema } from '../backend-path';
 import {
   GlobalConfigSchema,
@@ -192,7 +192,9 @@ export const cloneTemplate = createServerFn({ method: 'POST' })
 export const exportConfig = createServerFn({ method: 'GET' }).handler(
   async () => {
     // Returns the raw JSON config object
-    return await fetchBackend('/config/backup/export');
+    return await fetchBackend('/config/backup/export', {
+      timeoutMs: LONG_BACKEND_TIMEOUT_MS,
+    });
   },
 );
 
@@ -208,6 +210,7 @@ export const importConfig = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     return await fetchBackend('/config/backup/import', {
       method: 'POST',
+      timeoutMs: LONG_BACKEND_TIMEOUT_MS,
       body: JSON.stringify(data),
     });
   });

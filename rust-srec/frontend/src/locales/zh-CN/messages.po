@@ -1364,7 +1364,7 @@ msgstr "已开启自动滚动"
 msgid "Autofill name from URL"
 msgstr "从 URL 自动填充名称"
 
-#: src/routes/_public/login.lazy.tsx:100
+#: src/routes/_public/login.lazy.tsx:101
 msgid "Automate your stream recordings with ease and reliability."
 msgstr "轻松自动化您的直播录制。"
 
@@ -3986,7 +3986,7 @@ msgstr "只填写这一个账号的凭据。切勿混用不同账号的 Cookie�
 msgid "Enter the new credentials in full. Token and login fields left empty are cleared. Saved credentials are never shown."
 msgstr "请完整填写新的凭据。留空的令牌和登录字段会被清除。已保存的凭据不会显示。"
 
-#: src/routes/_public/login.lazy.tsx:115
+#: src/routes/_public/login.lazy.tsx:116
 msgid "Enter your credentials to access your account"
 msgstr "输入你的凭据以登录账户"
 
@@ -5228,7 +5228,7 @@ msgstr "隐藏弹幕"
 #: src/routes/_authed/change-password.lazy.tsx:172
 #: src/routes/_authed/change-password.lazy.tsx:214
 #: src/routes/_authed/change-password.lazy.tsx:258
-#: src/routes/_public/login.lazy.tsx:215
+#: src/routes/_public/login.lazy.tsx:218
 msgid "Hide password"
 msgstr "隐藏密码"
 
@@ -6147,7 +6147,7 @@ msgstr "退出登录"
 msgid "Logged in"
 msgstr "已登录"
 
-#: src/routes/_public/login.lazy.tsx:65
+#: src/routes/_public/login.lazy.tsx:66
 msgid "Logged in successfully"
 msgstr "登录成功"
 
@@ -6180,7 +6180,7 @@ msgstr "日志已暂停"
 msgid "Login"
 msgstr "登录信息"
 
-#: src/routes/_public/login.lazy.tsx:152
+#: src/routes/_public/login.lazy.tsx:155
 msgid "Login failed"
 msgstr "登录失败"
 
@@ -6758,7 +6758,7 @@ msgstr "必须填写名称"
 msgid "Name Z-A"
 msgstr "名称 Z-A"
 
-#: src/routes/_public/login.lazy.tsx:174
+#: src/routes/_public/login.lazy.tsx:177
 msgid "name@example.com"
 msgstr "name@example.com"
 
@@ -7793,12 +7793,12 @@ msgstr "透传输入"
 #: src/components/notifications/forms/webhook-form.tsx:300
 #: src/components/notifications/forms/webhook-form.tsx:307
 #: src/components/proxies/proxy-editor-dialog.tsx:314
-#: src/routes/_public/login.lazy.tsx:190
+#: src/routes/_public/login.lazy.tsx:193
 msgid "Password"
 msgstr "密码"
 
 #: src/lib/password-change-redirect.ts:56
-#: src/routes/_public/login.lazy.tsx:60
+#: src/routes/_public/login.lazy.tsx:61
 msgid "Password change required"
 msgstr "请修改密码"
 
@@ -9171,7 +9171,7 @@ msgstr "恢复默认值"
 msgid "Restore from a backup file"
 msgstr "从备份文件恢复"
 
-#: src/routes/_public/login.lazy.tsx:232
+#: src/routes/_public/login.lazy.tsx:235
 msgid "Restore password"
 msgstr "重置密码"
 
@@ -10078,7 +10078,7 @@ msgstr "收起"
 #: src/routes/_authed/change-password.lazy.tsx:174
 #: src/routes/_authed/change-password.lazy.tsx:216
 #: src/routes/_authed/change-password.lazy.tsx:260
-#: src/routes/_public/login.lazy.tsx:217
+#: src/routes/_public/login.lazy.tsx:220
 msgid "Show password"
 msgstr "显示密码"
 
@@ -10099,7 +10099,7 @@ msgid "Sidebar Layout"
 msgstr "侧边栏布局"
 
 #: src/integrations/lingui/router-plugin.test.tsx:42
-#: src/routes/_public/login.lazy.tsx:243
+#: src/routes/_public/login.lazy.tsx:246
 msgid "Sign In"
 msgstr "登录"
 
@@ -10132,7 +10132,7 @@ msgstr "暂时无法登录。请检查账号状态后重试。"
 msgid "Signing in with this account kept failing. Check its status or log in again."
 msgstr "该账号多次登录失败。请检查其状态，或重新登录。"
 
-#: src/routes/_public/login.lazy.tsx:241
+#: src/routes/_public/login.lazy.tsx:244
 msgid "Signing in..."
 msgstr "正在登录..."
 
@@ -11806,7 +11806,7 @@ msgstr "已被用户停用"
 #: src/components/notifications/forms/webhook-form.tsx:280
 #: src/components/notifications/forms/webhook-form.tsx:286
 #: src/components/proxies/proxy-editor-dialog.tsx:277
-#: src/routes/_public/login.lazy.tsx:170
+#: src/routes/_public/login.lazy.tsx:173
 msgid "Username"
 msgstr "用户名"
 
@@ -12096,7 +12096,7 @@ msgstr "工作日"
 msgid "Weekends"
 msgstr "周末"
 
-#: src/routes/_public/login.lazy.tsx:112
+#: src/routes/_public/login.lazy.tsx:113
 msgid "Welcome back"
 msgstr "欢迎回来"
 

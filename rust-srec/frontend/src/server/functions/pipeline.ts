@@ -1,6 +1,6 @@
 import { createServerFn } from '@/server/createServerFn';
 import { parseInput } from '../validate';
-import { fetchBackend } from '../api';
+import { fetchBackend, LONG_BACKEND_TIMEOUT_MS } from '../api';
 import {
   backendPath,
   PathIdSchema,
@@ -285,6 +285,7 @@ export const batchDeletePipelineOutputs = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const json = await fetchBackend('/pipeline/outputs/batch-delete', {
       method: 'POST',
+      timeoutMs: LONG_BACKEND_TIMEOUT_MS,
       body: JSON.stringify(data),
     });
     return BatchResponseSchema.parse(json);
@@ -327,7 +328,11 @@ export const batchDeleteInterruptedOutputs = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const json = await fetchBackend(
       '/pipeline/interrupted-outputs/batch-delete',
-      { method: 'POST', body: JSON.stringify(data) },
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+        timeoutMs: LONG_BACKEND_TIMEOUT_MS,
+      },
     );
     return BatchResponseSchema.parse(json);
   });

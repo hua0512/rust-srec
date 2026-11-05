@@ -3,6 +3,7 @@ import { fetchBackend } from '../api';
 
 const refreshAuthTokenGlobalMock = vi.hoisted(() => vi.fn());
 const useAppSessionMock = vi.hoisted(() => vi.fn());
+const getRequestMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../tokenRefresh', () => ({
   refreshAuthTokenGlobal: refreshAuthTokenGlobalMock,
@@ -10,6 +11,10 @@ vi.mock('../tokenRefresh', () => ({
 
 vi.mock('@/utils/session.server', () => ({
   useAppSession: useAppSessionMock,
+}));
+
+vi.mock('@tanstack/react-start/server', () => ({
+  getRequest: getRequestMock,
 }));
 
 vi.mock('@/utils/env', () => ({
@@ -34,6 +39,7 @@ describe('fetchBackend', () => {
       status: 'refreshed',
       accessToken: 'new-token',
     });
+    getRequestMock.mockReturnValue(new Request('http://frontend.test/'));
   });
 
   afterEach(() => {
@@ -82,4 +88,25 @@ describe('fetchBackend', () => {
       expect(session.clear).not.toHaveBeenCalled();
     },
   );
+
+  it('cancels the call and its retry when the browser abandons the request', async () => {
+    const browser = new AbortController();
+    getRequestMock.mockReturnValue(
+      new Request('http://frontend.test/', { signal: browser.signal }),
+    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(null, { status: 401 }))
+      .mockResolvedValueOnce(Response.json({ ok: true }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchBackend('/resource');
+    browser.abort();
+
+    const signals = fetchMock.mock.calls.map(
+      ([, init]) => (init as RequestInit).signal,
+    );
+    expect(signals).toHaveLength(2);
+    for (const signal of signals) expect(signal?.aborted).toBe(true);
+  });
 });

@@ -12,7 +12,7 @@ import {
 } from '../../api/schemas/auth';
 import { z } from 'zod';
 import ky, { isHTTPError } from 'ky';
-import { BackendApiError } from '../../lib/api-error';
+import { BackendApiError, LOGIN_FAILED_CODE } from '../../lib/api-error';
 
 // Dedicated ky instance for auth calls that might not need the bearer token from session (like login)
 // or need to handle session updates manually.
@@ -36,7 +36,7 @@ function describeAuthError(error: unknown): string {
 
 /**
  * The ky message names the internal backend URL; surface the backend's own
- * message for HTTP failures and a fixed one for everything else.
+ * message for HTTP failures and `LOGIN_FAILED_CODE` for everything else.
  */
 function toLoginError(error: unknown): Error {
   if (isHTTPError(error)) {
@@ -46,7 +46,8 @@ function toLoginError(error: unknown): Error {
       error.data,
     );
   }
-  return new Error('Login failed');
+  // An own property, so it survives the server function boundary.
+  return Object.assign(new Error('Login failed'), { code: LOGIN_FAILED_CODE });
 }
 
 function computeExpiryTimestamp(seconds?: number, fallback?: number): number {

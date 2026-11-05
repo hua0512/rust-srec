@@ -335,6 +335,9 @@ async fn media_content_is_served_with_a_query_token_and_as_an_attachment() {
     let response = fetch(&with_token, None).await;
     assert_eq!(response.status(), StatusCode::OK);
     assert!(response.headers().get("content-disposition").is_none());
+    // Served on the API origin, a recorded file must never run as a page there.
+    assert_eq!(response.headers()["x-content-type-options"], "nosniff");
+    assert_eq!(response.headers()["content-security-policy"], "sandbox");
     assert_eq!(
         response.bytes().await.expect("thumbnail bytes").as_ref(),
         contents

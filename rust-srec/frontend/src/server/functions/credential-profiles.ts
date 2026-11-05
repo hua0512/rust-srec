@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { createServerFn } from '@/server/createServerFn';
 import { parseInput } from '../validate';
-import { fetchBackend } from '../api';
+import { fetchBackend, PLATFORM_BACKEND_TIMEOUT_MS } from '../api';
 import { backendPath, PathIdSchema, withQuery } from '../backend-path';
 import {
   CredentialProfileCreateSchema,
@@ -108,6 +108,7 @@ export const validateCredentialProfile = createServerFn({ method: 'POST' })
     CredentialProfileDetailSchema.parse(
       await fetchBackend(backendPath`/credentials/profiles/${data}/validate`, {
         method: 'POST',
+        timeoutMs: PLATFORM_BACKEND_TIMEOUT_MS,
       }),
     ),
   );
@@ -117,6 +118,7 @@ export const refreshCredentialProfile = createServerFn({ method: 'POST' })
     CredentialProfileDetailSchema.parse(
       await fetchBackend(backendPath`/credentials/profiles/${data}/refresh`, {
         method: 'POST',
+        timeoutMs: PLATFORM_BACKEND_TIMEOUT_MS,
       }),
     ),
   );
@@ -129,6 +131,7 @@ export const generateCredentialLogin = createServerFn({ method: 'POST' })
     CredentialLoginGeneratedSchema.parse(
       await fetchBackend('/credentials/login-sessions', {
         method: 'POST',
+        timeoutMs: PLATFORM_BACKEND_TIMEOUT_MS,
         body: JSON.stringify(data),
       }),
     ),
@@ -139,7 +142,7 @@ export const pollCredentialLogin = createServerFn({ method: 'POST' })
     CredentialLoginReceiptSchema.parse(
       await fetchBackend(
         backendPath`/credentials/login-sessions/${data}/poll`,
-        { method: 'POST' },
+        { method: 'POST', timeoutMs: PLATFORM_BACKEND_TIMEOUT_MS },
       ),
     ),
   );

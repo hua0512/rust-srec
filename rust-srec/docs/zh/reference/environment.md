@@ -71,11 +71,14 @@ import { withBase } from 'vitepress'
 | `JWT_AUDIENCE` | JWT 受众标识 | `rust-srec-api` |
 | `SESSION_SECRET` | 前端会话加密密钥 (**必需**, 至少 32 位) | - |
 | `COOKIE_SECURE` | 设置为 `true` 以强制仅 HTTPS Cookie | (自动) |
+| `CSRF_TRUSTED_ORIGINS` | 除自身地址外，网页界面还接受其操作请求的来源，逗号分隔的精确来源（`scheme://host[:port]`）。在前端容器上设置 | - |
 | `MIN_PASSWORD_LENGTH` | 用户密码最小长度 | `8` |
 
 后端在未配置非空 `JWT_SECRET` 时会拒绝启动。仅在本地开发时，可以同时设置 `AUTH_DISABLED=true` 和 `API_BIND_ADDRESS=127.0.0.1`（或 `::1`）来关闭认证。通配地址、主机名和非回环绑定地址均不能使用此关闭选项。
 
 关闭认证时，只有 `API_CORS_ORIGINS` 中列出的来源可以从浏览器跨域调用 API；默认列表包含 `http://localhost:15275`、`http://127.0.0.1:15275`、`http://[::1]:15275`、`tauri://localhost` 和 `http://tauri.localhost`。设置该变量可覆盖默认值——每一项必须是不带路径的精确来源，格式错误的条目会在启动时记录警告并被忽略。来自其他来源的请求会被拒绝并返回 `403`；`Host` 请求头既不是回环名称也不是所配置绑定地址的请求同样会被拒绝。启用认证时该变量不生效，任何来源都可以发起请求，因为受保护路由仍然需要 Bearer 令牌。
+
+网页界面会拒绝来自其他页面的操作请求，并返回 `Request refused: it did not come from this site`。会发送 `Sec-Fetch-Site` 的浏览器（通过 HTTPS 或在 `localhost` 上访问的新版浏览器）只按该请求头判断。否则（例如通过纯 HTTP 访问局域网地址，或使用旧版浏览器），网页界面会将页面地址与浏览器打开的地址比较：主机和端口取自 `Host` 请求头，反向代理改写 `Host` 时取自 `X-Forwarded-Host`；若发送了 `X-Forwarded-Proto`，还会比较协议。转发的主机必须包含浏览器所用的端口（nginx 中应使用 `$http_host`，而不是 `$host`）。此时如果代理改写了 `Host` 却没有发送 `X-Forwarded-Host`，所有操作都会因此失败；请让代理转发带端口的原始 `Host`（或设置 `X-Forwarded-Host`），或将打开网页界面所用的地址加入 `CSRF_TRUSTED_ORIGINS`，例如 `https://srec.example.com`。代理也不能去掉 `Referer` 请求头。格式错误的条目会在启动时记录警告并被忽略。前端容器对每个（来源，主机）组合只记录一次拒绝日志，最多记录前 100 个组合。
 
 ## 登录限流 {#登录限流}
 

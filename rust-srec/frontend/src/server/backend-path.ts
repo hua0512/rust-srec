@@ -12,7 +12,13 @@ const MAX_SEGMENT_LENGTH = 512;
  * `backendPath` enforces the same rule, but rejecting in the validator keeps
  * the failure attributable to the named input rather than to the URL.
  */
-export const PathIdSchema = z.string().min(1).max(MAX_SEGMENT_LENGTH);
+export const PathIdSchema = z
+  .string()
+  .min(1)
+  .max(MAX_SEGMENT_LENGTH)
+  .refine((value) => value !== '.' && value !== '..', {
+    message: 'Must not be a dot segment',
+  });
 
 /** Raised before any request is made when a path parameter is unusable. */
 export class InvalidBackendPathError extends Error {
@@ -38,6 +44,14 @@ function encodeSegment(value: string): string {
       `Backend path parameter must be at most ${MAX_SEGMENT_LENGTH} characters`,
     );
   }
+  // `encodeURIComponent` leaves `.` unescaped, and the URL parser resolves a
+  // `.` or `..` segment (and its `%2E` spelling) against the template, so no
+  // encoding can keep it opaque.
+  if (value === '.' || value === '..') {
+    throw new InvalidBackendPathError(
+      'Backend path parameter must not be a dot segment',
+    );
+  }
   return encodeURIComponent(value);
 }
 
@@ -57,7 +71,7 @@ function encodeSegment(value: string): string {
  * belong in the template, never in a parameter.
  *
  * @throws InvalidBackendPathError when a parameter is not a string, is empty,
- * or is longer than a single segment may be.
+ * is `.` or `..`, or is longer than a single segment may be.
  */
 export function backendPath(
   template: TemplateStringsArray,

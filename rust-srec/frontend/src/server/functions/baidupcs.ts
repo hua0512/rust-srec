@@ -1,6 +1,6 @@
 import { createServerFn } from '@/server/createServerFn';
 import { parseInput } from '../validate';
-import { fetchBackend } from '../api';
+import { fetchBackend, LONG_BACKEND_TIMEOUT_MS } from '../api';
 import {
   BaiduPcsLoginRequestSchema,
   BaiduPcsLoginResponseSchema,
@@ -25,6 +25,7 @@ export const getBaiduPcsStatus = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const json = await fetchBackend('/tools/baidupcs/status', {
       method: 'POST',
+      timeoutMs: LONG_BACKEND_TIMEOUT_MS,
       body: JSON.stringify(data),
     });
     return BaiduPcsStatusResponseSchema.parse(json);
@@ -37,6 +38,7 @@ export const baiduPcsLogin = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const json = await fetchBackend('/tools/baidupcs/login', {
       method: 'POST',
+      timeoutMs: LONG_BACKEND_TIMEOUT_MS,
       body: JSON.stringify(data),
     });
     return BaiduPcsLoginResponseSchema.parse(json);
@@ -49,6 +51,7 @@ export const baiduPcsLogout = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const json = await fetchBackend('/tools/baidupcs/logout', {
       method: 'POST',
+      timeoutMs: LONG_BACKEND_TIMEOUT_MS,
       body: JSON.stringify(data),
     });
     return BaiduPcsLogoutResponseSchema.parse(json);

@@ -65,6 +65,17 @@ export function referencesFromConflict<T>(
   return parsed.success ? parsed.data : undefined;
 }
 
+/**
+ * `code` of the error `loginFn` throws when the failure has no backend answer
+ * to show (unreachable backend, unreadable response). The server cannot know
+ * the browser's language, so the sign-in page supplies the message.
+ */
+export const LOGIN_FAILED_CODE = 'LOGIN_FAILED';
+
+export function isLoginFailedError(error: unknown): boolean {
+  return hasErrorCode(error, LOGIN_FAILED_CODE);
+}
+
 // Body code the backend attaches to 403 responses on every authenticated
 // endpoint while the account's must_change_password flag is set (only
 // /auth/change-password and /auth/logout-all are exempt).

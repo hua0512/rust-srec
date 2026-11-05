@@ -1,6 +1,6 @@
 import { createServerFn } from '@/server/createServerFn';
 import { parseInput } from '../validate';
-import { fetchBackend } from '../api';
+import { fetchBackend, LONG_BACKEND_TIMEOUT_MS } from '../api';
 import { backendPath, PathIdSchema, withQuery } from '../backend-path';
 import {
   StreamerSchema,
@@ -150,7 +150,11 @@ export const updateStreamer = createServerFn({ method: 'POST' })
 export const deleteStreamer = createServerFn({ method: 'POST' })
   .validator((id: string) => parseInput(PathIdSchema, id))
   .handler(async ({ data: id }) => {
-    await fetchBackend(backendPath`/streamers/${id}`, { method: 'DELETE' });
+    // Stopping a live recording can take the backend about half a minute.
+    await fetchBackend(backendPath`/streamers/${id}`, {
+      method: 'DELETE',
+      timeoutMs: LONG_BACKEND_TIMEOUT_MS,
+    });
   });
 
 export const extractMetadata = createServerFn({ method: 'POST' })
@@ -158,6 +162,7 @@ export const extractMetadata = createServerFn({ method: 'POST' })
   .handler(async ({ data: url }) => {
     const json = await fetchBackend('/streamers/extract-metadata', {
       method: 'POST',
+      timeoutMs: LONG_BACKEND_TIMEOUT_MS,
       body: JSON.stringify({ url }),
     });
     return ExtractMetadataResponseSchema.parse(json);

@@ -1364,7 +1364,7 @@ msgstr "Auto-scroll enabled"
 msgid "Autofill name from URL"
 msgstr "Autofill name from URL"
 
-#: src/routes/_public/login.lazy.tsx:100
+#: src/routes/_public/login.lazy.tsx:101
 msgid "Automate your stream recordings with ease and reliability."
 msgstr "Automate your stream recordings with ease and reliability."
 
@@ -3986,7 +3986,7 @@ msgstr "Enter the credentials of this one account. Never mix cookies from differ
 msgid "Enter the new credentials in full. Token and login fields left empty are cleared. Saved credentials are never shown."
 msgstr "Enter the new credentials in full. Token and login fields left empty are cleared. Saved credentials are never shown."
 
-#: src/routes/_public/login.lazy.tsx:115
+#: src/routes/_public/login.lazy.tsx:116
 msgid "Enter your credentials to access your account"
 msgstr "Enter your credentials to access your account"
 
@@ -5228,7 +5228,7 @@ msgstr "Hide danmu"
 #: src/routes/_authed/change-password.lazy.tsx:172
 #: src/routes/_authed/change-password.lazy.tsx:214
 #: src/routes/_authed/change-password.lazy.tsx:258
-#: src/routes/_public/login.lazy.tsx:215
+#: src/routes/_public/login.lazy.tsx:218
 msgid "Hide password"
 msgstr "Hide password"
 
@@ -6147,7 +6147,7 @@ msgstr "Log out"
 msgid "Logged in"
 msgstr "Logged in"
 
-#: src/routes/_public/login.lazy.tsx:65
+#: src/routes/_public/login.lazy.tsx:66
 msgid "Logged in successfully"
 msgstr "Logged in successfully"
 
@@ -6180,7 +6180,7 @@ msgstr "Logging paused"
 msgid "Login"
 msgstr "Login"
 
-#: src/routes/_public/login.lazy.tsx:152
+#: src/routes/_public/login.lazy.tsx:155
 msgid "Login failed"
 msgstr "Login failed"
 
@@ -6758,7 +6758,7 @@ msgstr "Name is required"
 msgid "Name Z-A"
 msgstr "Name Z-A"
 
-#: src/routes/_public/login.lazy.tsx:174
+#: src/routes/_public/login.lazy.tsx:177
 msgid "name@example.com"
 msgstr "name@example.com"
 
@@ -7793,12 +7793,12 @@ msgstr "Passthrough Inputs"
 #: src/components/notifications/forms/webhook-form.tsx:300
 #: src/components/notifications/forms/webhook-form.tsx:307
 #: src/components/proxies/proxy-editor-dialog.tsx:314
-#: src/routes/_public/login.lazy.tsx:190
+#: src/routes/_public/login.lazy.tsx:193
 msgid "Password"
 msgstr "Password"
 
 #: src/lib/password-change-redirect.ts:56
-#: src/routes/_public/login.lazy.tsx:60
+#: src/routes/_public/login.lazy.tsx:61
 msgid "Password change required"
 msgstr "Password change required"
 
@@ -9171,7 +9171,7 @@ msgstr "Restore defaults"
 msgid "Restore from a backup file"
 msgstr "Restore from a backup file"
 
-#: src/routes/_public/login.lazy.tsx:232
+#: src/routes/_public/login.lazy.tsx:235
 msgid "Restore password"
 msgstr "Restore password"
 
@@ -10078,7 +10078,7 @@ msgstr "Show less"
 #: src/routes/_authed/change-password.lazy.tsx:174
 #: src/routes/_authed/change-password.lazy.tsx:216
 #: src/routes/_authed/change-password.lazy.tsx:260
-#: src/routes/_public/login.lazy.tsx:217
+#: src/routes/_public/login.lazy.tsx:220
 msgid "Show password"
 msgstr "Show password"
 
@@ -10099,7 +10099,7 @@ msgid "Sidebar Layout"
 msgstr "Sidebar Layout"
 
 #: src/integrations/lingui/router-plugin.test.tsx:42
-#: src/routes/_public/login.lazy.tsx:243
+#: src/routes/_public/login.lazy.tsx:246
 msgid "Sign In"
 msgstr "Sign In"
 
@@ -10132,7 +10132,7 @@ msgstr "Signing in is temporarily unavailable. Check the account status and try 
 msgid "Signing in with this account kept failing. Check its status or log in again."
 msgstr "Signing in with this account kept failing. Check its status or log in again."
 
-#: src/routes/_public/login.lazy.tsx:241
+#: src/routes/_public/login.lazy.tsx:244
 msgid "Signing in..."
 msgstr "Signing in..."
 
@@ -11806,7 +11806,7 @@ msgstr "User Disabled"
 #: src/components/notifications/forms/webhook-form.tsx:280
 #: src/components/notifications/forms/webhook-form.tsx:286
 #: src/components/proxies/proxy-editor-dialog.tsx:277
-#: src/routes/_public/login.lazy.tsx:170
+#: src/routes/_public/login.lazy.tsx:173
 msgid "Username"
 msgstr "Username"
 
@@ -12096,7 +12096,7 @@ msgstr "Weekdays"
 msgid "Weekends"
 msgstr "Weekends"
 
-#: src/routes/_public/login.lazy.tsx:112
+#: src/routes/_public/login.lazy.tsx:113
 msgid "Welcome back"
 msgstr "Welcome back"
 

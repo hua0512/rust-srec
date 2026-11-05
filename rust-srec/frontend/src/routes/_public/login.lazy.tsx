@@ -22,6 +22,7 @@ import { useState, useCallback, memo } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { loginFn } from '@/server/functions';
 import { safeRedirectPath } from '@/lib/url';
+import { isLoginFailedError } from '@/lib/api-error';
 
 export const Route = createLazyFileRoute('/_public/login')({
   component: LoginComp,
@@ -149,7 +150,9 @@ const LoginForm = memo(
         onSuccess(!!response.mustChangePassword);
       } catch (error: unknown) {
         const errorMessage =
-          error instanceof Error ? error.message : i18n._(msg`Login failed`);
+          error instanceof Error && !isLoginFailedError(error)
+            ? error.message
+            : i18n._(msg`Login failed`);
         toast.error(errorMessage);
       }
     };
