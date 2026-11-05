@@ -3,6 +3,7 @@
 //! This module provides the service container and initialization logic
 //! for all application services.
 
+pub(crate) mod config_export;
 pub(crate) mod config_import;
 pub(crate) mod container;
 pub(crate) mod playback_context;

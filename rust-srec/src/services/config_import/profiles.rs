@@ -25,7 +25,7 @@ struct ProfileExportRow {
 
 /// Profiles with their routes, naming proxies through `proxy_names` (entry
 /// ID to name).
-pub(super) async fn export_profiles(
+pub(in crate::services) async fn export_profiles(
     pool: &SqlitePool,
     proxy_names: &HashMap<String, String>,
 ) -> crate::Result<Vec<CredentialProfileExport>> {

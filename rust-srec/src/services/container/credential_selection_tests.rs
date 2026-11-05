@@ -46,7 +46,6 @@ async fn fixture() -> Fixture {
         health_checker: container.health_checker.clone(),
         streamer_repository: container.streamer_repository.clone(),
         pipeline_preset_repository: container.pipeline_preset_repository.clone(),
-        job_preset_repository: container.job_preset_repository.clone(),
         notification_repository: container.notification_repository.clone(),
         notification_service: container.notification_service.clone(),
         logging_config: Arc::new(logging),
@@ -62,6 +61,7 @@ async fn fixture() -> Fixture {
         danmu_taps: container.danmu_service.taps(),
         credential_login_sessions: container.credential_login_sessions.clone(),
         configuration_import_service: container.configuration_import_service.clone(),
+        configuration_export_service: container.configuration_export_service.clone(),
         runtime_coordinator: container.runtime_coordinator.clone(),
     });
     Fixture {
