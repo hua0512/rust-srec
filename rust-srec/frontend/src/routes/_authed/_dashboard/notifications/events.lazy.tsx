@@ -45,6 +45,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { toast } from 'sonner';
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { containerVariants, itemVariants } from '@/lib/animation';
@@ -70,6 +71,7 @@ export const Route = createLazyFileRoute(
 
 function NotificationEventsPage() {
   const { i18n } = useLingui();
+  const { copy } = useCopyToClipboard();
   const queryClient = useQueryClient();
   const search = Route.useSearch();
   const updateSearch = useUpdateSearch<typeof search>();
@@ -536,14 +538,10 @@ function NotificationEventsPage() {
               className="rounded-xl"
               onClick={() => {
                 if (!selectedPayload) return;
-                try {
-                  void navigator.clipboard.writeText(
-                    prettyJson(selectedPayload.payload),
-                  );
-                  toast.success(i18n._(msg`Copied`));
-                } catch {
-                  toast.error(i18n._(msg`Failed to copy`));
-                }
+                void copy(
+                  prettyJson(selectedPayload.payload),
+                  i18n._(msg`Copied`),
+                );
               }}
             >
               <Trans>Copy JSON</Trans>

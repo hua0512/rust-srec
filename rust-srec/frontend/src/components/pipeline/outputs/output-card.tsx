@@ -25,7 +25,7 @@ import { DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { DeleteOutputsDialog } from '@/components/pipeline/outputs/delete-outputs-dialog';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
-import { toast } from 'sonner';
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { msg } from '@lingui/core/macro';
 import {
   Tooltip,
@@ -60,7 +60,7 @@ export function OutputCard({
   onSelectChange,
 }: OutputCardProps) {
   const { i18n } = useLingui();
-  const [copied, setCopied] = useState(false);
+  const { copy, copied } = useCopyToClipboard();
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Client-side time for hydration-safe relative time
@@ -69,12 +69,8 @@ export function OutputCard({
     setMounted(true);
   }, []);
 
-  const handleCopyPath = () => {
-    void navigator.clipboard.writeText(output.file_path);
-    setCopied(true);
-    toast.success(i18n._(msg`File path copied to clipboard`));
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const handleCopyPath = () =>
+    void copy(output.file_path, i18n._(msg`File path copied to clipboard`));
 
   const filename = basename(output.file_path) || i18n._(msg`Unknown File`);
   const directory = dirname(output.file_path) || output.file_path;
@@ -217,10 +213,9 @@ export function OutputCard({
               {copied ? <Trans>Copied!</Trans> : <Trans>Copy Path</Trans>}
             </DropdownMenuItem>
             <DropdownMenuItem
-              onClick={() => {
-                void navigator.clipboard.writeText(directory);
-                toast.success(i18n._(msg`Directory path copied`));
-              }}
+              onClick={() =>
+                void copy(directory, i18n._(msg`Directory path copied`))
+              }
             >
               <FolderOpen className="mr-2 h-4 w-4" />{' '}
               <Trans>Copy Directory</Trans>
