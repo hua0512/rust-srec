@@ -18,8 +18,8 @@ msgstr ""
 msgid " - Session: {0}"
 msgstr " - Session: {0}"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:800
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:807
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:781
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:788
 msgid "--flag value"
 msgstr "--flag value"
 
@@ -428,7 +428,7 @@ msgid "<0>Recording uses</0> {names}"
 msgstr "<0>Recording uses</0> {names}"
 
 #: src/components/upload-status-indicator.tsx:258
-#: src/lib/job-progress.ts:154
+#: src/lib/job-progress.ts:157
 msgid "~{eta} left"
 msgstr "~{eta} left"
 
@@ -735,7 +735,7 @@ msgstr "Add at least one step"
 msgid "Add at most {count, plural, one {# item} other {# items}}"
 msgstr "Add at most {count, plural, one {# item} other {# items}}"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:446
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:447
 msgid "Add BaiduPCS-Go argument"
 msgstr "Add BaiduPCS-Go argument"
 
@@ -846,11 +846,11 @@ msgstr "Add Stream"
 msgid "Add Streamer"
 msgstr "Add Streamer"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:853
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:834
 msgid "Add Tag"
 msgstr "Add Tag"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:827
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:808
 msgid "Add the recorded title, streamer, and UTC recording date during remux. Tags below override these values."
 msgstr "Add the recorded title, streamer, and UTC recording date during remux. Tags below override these values."
 
@@ -891,7 +891,7 @@ msgstr "Adjust the roundness of UI elements."
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:46
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:290
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:104
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:227
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:208
 #: src/components/streamers/streamer-editor.tsx:172
 msgid "Advanced"
 msgstr "Advanced"
@@ -909,7 +909,7 @@ msgstr "Advanced Options"
 msgid "Advanced scheduling"
 msgstr "Advanced scheduling"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:103
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:102
 msgid "Advanced Settings"
 msgstr "Advanced Settings"
 
@@ -1101,7 +1101,7 @@ msgstr "App uses anonymous playback. Web is retained for compatibility. Audio on
 msgid "Appearance & style"
 msgstr "Appearance & style"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:806
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:787
 msgid "Appended before output filename"
 msgstr "Appended before output filename"
 
@@ -1167,7 +1167,7 @@ msgstr "Argument {number}"
 msgid "Arguments"
 msgstr "Arguments"
 
-#: src/components/pipeline/presets/processor-schemas.ts:214
+#: src/components/pipeline/presets/processor-schemas.ts:237
 msgid "Arguments require program mode"
 msgstr "Arguments require program mode"
 
@@ -1214,17 +1214,17 @@ msgid "Attempts to get origin quality by replacing the audio stream. May result 
 msgstr "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:48
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:226
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:207
 #: src/lib/media-file-type.ts:41
 msgid "Audio"
 msgstr "Audio"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:578
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:559
 msgid "Audio Bitrate"
 msgstr "Audio Bitrate"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:54
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:468
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:53
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:449
 msgid "Audio Codec"
 msgstr "Audio Codec"
 
@@ -1247,7 +1247,7 @@ msgstr "Audio inside the video stream is always kept."
 msgid "Audio only"
 msgstr "Audio only"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:676
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:657
 msgid "Audio Processing"
 msgstr "Audio Processing"
 
@@ -1259,7 +1259,7 @@ msgstr "Audio Properties"
 msgid "Audio Quality"
 msgstr "Audio Quality"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:463
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:444
 msgid "Audio Settings"
 msgstr "Audio Settings"
 
@@ -1383,7 +1383,7 @@ msgid "Back to presets"
 msgstr "Back to presets"
 
 #: src/components/sessions/session-header.tsx:44
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:324
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:328
 msgid "Back to Sessions"
 msgstr "Back to Sessions"
 
@@ -1465,7 +1465,7 @@ msgstr "BAIDUID=...; BDUSS=...; STOKEN=...; ..."
 msgid "BaiduPCS-Go binary not available at <0>{0}</0>. Install it or set the binary path in the Advanced tab."
 msgstr "BaiduPCS-Go binary not available at <0>{0}</0>. Install it or set the binary path in the Advanced tab."
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:406
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:407
 msgid "BaiduPCS-Go Executable (Optional)"
 msgstr "BaiduPCS-Go Executable (Optional)"
 
@@ -1534,12 +1534,12 @@ msgstr "Bearer Token"
 msgid "Behind live edge"
 msgstr "Behind live edge"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:522
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:503
 msgctxt "quality"
 msgid "Best"
 msgstr "Best"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:110
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:103
 msgid "Best quality"
 msgstr "Best quality"
 
@@ -1579,7 +1579,7 @@ msgstr "Blocklist"
 msgid "Blu-ray (400)"
 msgstr "Blu-ray (400)"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:116
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:109
 msgid "Blu-ray Disc"
 msgstr "Blu-ray Disc"
 
@@ -1691,7 +1691,7 @@ msgstr "Caching and progress"
 #: src/components/filters/FilterDialog.tsx:284
 #: src/components/layout/themes/import-modal.tsx:107
 #: src/components/notifications/channel-card.tsx:178
-#: src/components/notifications/channel-form.tsx:380
+#: src/components/notifications/channel-form.tsx:386
 #: src/components/notifications/subscription-manager.tsx:476
 #: src/components/pipeline/interrupted-output-list.tsx:259
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:118
@@ -1832,11 +1832,11 @@ msgstr "Changing Password..."
 msgid "Changing this restarts the player."
 msgstr "Changing this restarts the player."
 
-#: src/components/notifications/channel-form.tsx:298
+#: src/components/notifications/channel-form.tsx:304
 msgid "Channel"
 msgstr "Channel"
 
-#: src/components/notifications/channel-form.tsx:213
+#: src/components/notifications/channel-form.tsx:219
 msgid "Channel created"
 msgstr "Channel created"
 
@@ -1844,7 +1844,7 @@ msgstr "Channel created"
 msgid "Channel deleted"
 msgstr "Channel deleted"
 
-#: src/components/notifications/channel-form.tsx:227
+#: src/components/notifications/channel-form.tsx:233
 msgid "Channel updated"
 msgstr "Channel updated"
 
@@ -1947,7 +1947,7 @@ msgstr "Choose a single platform to manage its accounts."
 msgid "Choose an account or raw cookies, not both"
 msgstr "Choose an account or raw cookies, not both"
 
-#: src/components/pipeline/presets/processor-schemas.ts:207
+#: src/components/pipeline/presets/processor-schemas.ts:230
 msgid "Choose either a command or a program"
 msgstr "Choose either a command or a program"
 
@@ -1980,7 +1980,7 @@ msgid "Chosen among the audio in the preferred language."
 msgstr "Chosen among the audio in the preferred language."
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:51
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:137
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:136
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:115
 msgid "Cleanup"
 msgstr "Cleanup"
@@ -2093,7 +2093,7 @@ msgctxt "danmu"
 msgid "Coloured"
 msgstr "Coloured"
 
-#: src/components/notifications/channel-form.tsx:402
+#: src/components/notifications/channel-form.tsx:408
 msgid "Coming soon"
 msgstr "Coming soon"
 
@@ -2196,11 +2196,11 @@ msgstr "Concurrent file transfers (--transfers)."
 msgid "Config"
 msgstr "Config"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:419
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:420
 msgid "Config Directory (Optional)"
 msgstr "Config Directory (Optional)"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:421
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:422
 msgid "Config Directory help"
 msgstr "Config Directory help"
 
@@ -2208,7 +2208,7 @@ msgstr "Config Directory help"
 msgid "Config Path (Optional)"
 msgstr "Config Path (Optional)"
 
-#: src/components/notifications/channel-form.tsx:364
+#: src/components/notifications/channel-form.tsx:370
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:81
 #: src/components/pipeline/workflows/step-config-dialog.tsx:450
 #: src/components/pipeline/workflows/workflow-editor.tsx:196
@@ -2273,7 +2273,7 @@ msgstr "Configure Settings"
 msgid "Configure Step"
 msgstr "Configure Step"
 
-#: src/components/notifications/channel-form.tsx:282
+#: src/components/notifications/channel-form.tsx:288
 msgid "Configure where and how you receive notifications."
 msgstr "Configure where and how you receive notifications."
 
@@ -2352,7 +2352,7 @@ msgctxt "terminal-cause"
 msgid "Consecutive Failures"
 msgstr "Consecutive Failures"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:477
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:458
 msgid "Container"
 msgstr "Container"
 
@@ -2402,8 +2402,8 @@ msgstr "Copied!"
 msgid "Copy"
 msgstr "Copy"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:231
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:391
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:212
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:372
 msgid "Copy (Passthrough)"
 msgstr "Copy (Passthrough)"
 
@@ -2513,7 +2513,7 @@ msgstr "Could not load the preset <0>{presetName}</0>. Check that the server is 
 msgid "Could not request lossless cutting. Refresh the recording status and try again."
 msgstr "Could not request lossless cutting. Refresh the recording status and try again."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:257
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:261
 msgid "Could not show the file: {message}"
 msgstr "Could not show the file: {message}"
 
@@ -2543,8 +2543,8 @@ msgstr "CPU Job Timeout"
 msgid "CPU Usage"
 msgstr "CPU Usage"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:508
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:528
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:489
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:509
 msgid "CQ (Constant Quality)"
 msgstr "CQ (Constant Quality)"
 
@@ -2579,7 +2579,7 @@ msgstr "Create a ZIP archive of the file. Good for bundling with metadata."
 msgid "Create API key"
 msgstr "Create API key"
 
-#: src/components/notifications/channel-form.tsx:387
+#: src/components/notifications/channel-form.tsx:393
 msgid "Create channel"
 msgstr "Create channel"
 
@@ -2701,12 +2701,12 @@ msgstr "Credentials saved successfully"
 msgid "Credentials unavailable"
 msgstr "Credentials unavailable"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:61
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:60
 msgid "CRF (0-51)"
 msgstr "CRF (0-51)"
 
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:491
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:510
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:529
 msgid "CRF (Constant Rate Factor)"
 msgstr "CRF (Constant Rate Factor)"
 
@@ -2786,7 +2786,7 @@ msgstr "Custom FFmpeg"
 msgid "Custom FFmpeg output arguments are set. Remove them to record with lossless cutting; until then this engine records normally."
 msgstr "Custom FFmpeg output arguments are set. Remove them to record with lossless cutting; until then this engine records normally."
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:794
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:775
 msgid "Custom Flags"
 msgstr "Custom Flags"
 
@@ -2948,7 +2948,7 @@ msgstr "default"
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:85
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:138
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:70
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:107
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:100
 #: src/components/player/stream-info-card.tsx:47
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:340
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:525
@@ -3098,7 +3098,7 @@ msgstr "Delete Job"
 msgid "Delete local files after upload"
 msgstr "Delete local files after upload"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:785
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:766
 msgid "Delete original file after successful remux"
 msgstr "Delete original file after successful remux"
 
@@ -3157,7 +3157,7 @@ msgstr "Delete sessions"
 msgid "Delete Source"
 msgstr "Delete Source"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:146
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:145
 msgid "Delete Source ASS"
 msgstr "Delete Source ASS"
 
@@ -3165,7 +3165,7 @@ msgstr "Delete Source ASS"
 msgid "Delete source file after successful processing"
 msgstr "Delete source file after successful processing"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:142
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:141
 msgid "Delete Source Videos"
 msgstr "Delete Source Videos"
 
@@ -3298,7 +3298,7 @@ msgstr "Destination Folder"
 msgid "Destination Folder help"
 msgstr "Destination Folder help"
 
-#: src/components/pipeline/presets/processor-schemas.ts:156
+#: src/components/pipeline/presets/processor-schemas.ts:179
 msgid "Destination is required"
 msgstr "Destination is required"
 
@@ -3345,7 +3345,7 @@ msgstr "Device ID source"
 msgid "Device Model"
 msgstr "Device Model"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:596
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:577
 msgid "Dimensions & Filters"
 msgstr "Dimensions & Filters"
 
@@ -3356,7 +3356,7 @@ msgstr "Dimensions & Filters"
 msgid "Direct"
 msgstr "Direct"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:423
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:424
 msgid "Directory holding BaiduPCS-Go's login session (BAIDUPCS_GO_CONFIG_DIR). Logging in via the account card above stores the session in the same directory configured here."
 msgstr "Directory holding BaiduPCS-Go's login session (BAIDUPCS_GO_CONFIG_DIR). Logging in via the account card above stores the session in the same directory configured here."
 
@@ -3440,7 +3440,7 @@ msgstr "Dolby Vision (30000)"
 msgid "Done"
 msgstr "Done"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:445
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:446
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:483
 msgid "Double click to edit items."
 msgstr "Double click to edit items."
@@ -3502,7 +3502,7 @@ msgid "Download engine (mesio)"
 msgstr "Download engine (mesio)"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:290
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:294
 msgid "Download failed: {0}"
 msgstr "Download failed: {0}"
 
@@ -3515,8 +3515,8 @@ msgstr "Download Manager"
 msgid "Download Retry Policy"
 msgstr "Download Retry Policy"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:270
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:288
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:274
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:292
 msgid "Download started"
 msgstr "Download started"
 
@@ -3562,7 +3562,7 @@ msgstr "Due at its next use"
 #: src/components/notifications/__tests__/payload-preview.test.tsx:20
 #: src/components/notifications/events/payload-preview.tsx:78
 #: src/components/pipeline/jobs/job-progress-panel.tsx:109
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:650
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:631
 #: src/components/streamers/edit/active-download-card.tsx:138
 #: src/components/streamers/progress-indicator.tsx:80
 msgid "Duration"
@@ -3576,7 +3576,7 @@ msgstr "Duration limit"
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgstr "e.g. 'best', 'worst', '720p', 'audio_only'"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:432
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:433
 msgid "e.g. /app/config/BaiduPCS-Go"
 msgstr "e.g. /app/config/BaiduPCS-Go"
 
@@ -3588,7 +3588,7 @@ msgstr "e.g. /output/processed/"
 msgid "e.g. /rust-srec/{streamer}/%Y-%m"
 msgstr "e.g. /rust-srec/{streamer}/%Y-%m"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:820
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:801
 msgid "e.g. 0:v:0, 0:a:0"
 msgstr "e.g. 0:v:0, 0:a:0"
 
@@ -3604,11 +3604,11 @@ msgstr "e.g. 10M"
 msgid "e.g. 128k, 320k"
 msgstr "e.g. 128k, 320k"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:603
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:584
 msgid "e.g. 1920:1080"
 msgstr "e.g. 1920:1080"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:579
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:560
 msgid "e.g. 192k"
 msgstr "e.g. 192k"
 
@@ -3620,11 +3620,11 @@ msgstr "e.g. 1M"
 msgid "e.g. 250M"
 msgstr "e.g. 250M"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:570
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:551
 msgid "e.g. 5000k"
 msgstr "e.g. 5000k"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:610
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:591
 msgid "e.g. 60"
 msgstr "e.g. 60"
 
@@ -3652,7 +3652,7 @@ msgstr "e.g. flv, hls, dash"
 msgid "e.g. gdrive:/videos"
 msgstr "e.g. gdrive:/videos"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:619
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:600
 msgid "e.g. hflip,noise=alls=20:allf=t+u"
 msgstr "e.g. hflip,noise=alls=20:allf=t+u"
 
@@ -3676,7 +3676,7 @@ msgstr "e.g. Remux to H.264"
 msgid "e.g. remux-h264"
 msgstr "e.g. remux-h264"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:682
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:663
 msgid "e.g. volume=0.5"
 msgstr "e.g. volume=0.5"
 
@@ -3713,7 +3713,7 @@ msgstr "Edit"
 msgid "Edit account"
 msgstr "Edit account"
 
-#: src/components/notifications/channel-form.tsx:276
+#: src/components/notifications/channel-form.tsx:282
 msgid "Edit channel"
 msgstr "Edit channel"
 
@@ -3781,15 +3781,15 @@ msgstr "Enable selected"
 msgid "Enabled"
 msgstr "Enabled"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:70
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:69
 msgid "Encoder Preset"
 msgstr "Encoder Preset"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:425
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:406
 msgid "Encoding Preset"
 msgstr "Encoding Preset"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:41
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:40
 msgid "Encoding Settings"
 msgstr "Encoding Settings"
 
@@ -3809,7 +3809,7 @@ msgstr "End of History"
 msgid "End Stream On Danmu Close"
 msgstr "End Stream On Danmu Close"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:661
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:642
 msgid "End Time"
 msgstr "End Time"
 
@@ -3982,7 +3982,7 @@ msgstr "Error loading platform"
 msgid "Error loading preset"
 msgstr "Error loading preset"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:321
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:325
 msgid "Error Loading Session"
 msgstr "Error Loading Session"
 
@@ -4030,7 +4030,7 @@ msgstr "Exceptional states"
 msgid "Exclude"
 msgstr "Exclude"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:129
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:128
 msgid "Exclude ASS from Passthrough"
 msgstr "Exclude ASS from Passthrough"
 
@@ -4099,7 +4099,7 @@ msgid "Expand sidebar"
 msgstr "Expand sidebar"
 
 #: src/components/config/engines/forms/lossless-cutting-field.tsx:52
-#: src/components/ui/flag-form-field.tsx:55
+#: src/components/ui/flag-form-field.tsx:58
 msgid "Experimental"
 msgstr "Experimental"
 
@@ -4134,7 +4134,7 @@ msgid "Exports include all global settings, platforms, templates, streamers, eng
 msgstr "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 
 #: src/components/config/engines/forms/streamlink-form.tsx:30
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:440
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:441
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:70
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:478
 msgid "Extra Arguments"
@@ -4250,7 +4250,7 @@ msgstr "Failed to clone template: {0}"
 msgid "Failed to create API key"
 msgstr "Failed to create API key"
 
-#: src/components/notifications/channel-form.tsx:220
+#: src/components/notifications/channel-form.tsx:226
 msgid "Failed to create channel"
 msgstr "Failed to create channel"
 
@@ -4482,7 +4482,7 @@ msgstr "Failed to revoke API key"
 msgid "Failed to send test notification"
 msgstr "Failed to send test notification"
 
-#: src/components/notifications/channel-form.tsx:234
+#: src/components/notifications/channel-form.tsx:240
 msgid "Failed to update channel"
 msgstr "Failed to update channel"
 
@@ -4539,7 +4539,7 @@ msgstr "Failover off"
 msgid "Failover on"
 msgstr "Failover on"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:408
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:409
 msgid "Falls back to the BAIDUPCS_PATH environment variable, then PATH lookup."
 msgstr "Falls back to the BAIDUPCS_PATH environment variable, then PATH lookup."
 
@@ -4572,7 +4572,7 @@ msgstr "Fast GPU-accelerated HEVC/H.265 encoding using NVIDIA NVENC (CQ 24). Sma
 msgid "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
 msgstr "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:104
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:97
 msgid "Fastest"
 msgstr "Fastest"
 
@@ -4599,7 +4599,7 @@ msgstr "Fetch"
 msgid "Fetch Delay"
 msgstr "Fetch Delay"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:681
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:662
 msgid "FFmpeg Audio Filter (-af)"
 msgstr "FFmpeg Audio Filter (-af)"
 
@@ -4608,7 +4608,7 @@ msgid "FFmpeg only supports http proxies, so FFmpeg recordings fail through this
 msgstr "FFmpeg only supports http proxies, so FFmpeg recordings fail through this one. Choose an http proxy or another engine."
 
 #: src/components/config/engines/forms/streamlink-form.tsx:52
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:109
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:108
 msgid "FFmpeg Path"
 msgstr "FFmpeg Path"
 
@@ -4616,11 +4616,11 @@ msgstr "FFmpeg Path"
 msgid "FFmpeg used to remux Streamlink output. Enter a path on the backend server without shell quotes. The environment default uses FFMPEG_PATH, then ffmpeg from PATH."
 msgstr "FFmpeg used to remux Streamlink output. Enter a path on the backend server without shell quotes. The environment default uses FFMPEG_PATH, then ffmpeg from PATH."
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:617
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:598
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg Video Filter"
 
-#: src/lib/job-progress.ts:160
+#: src/lib/job-progress.ts:163
 msgid "File {index} of {total}"
 msgstr "File {index} of {total}"
 
@@ -4719,7 +4719,7 @@ msgid "Finalizing recording file..."
 msgstr "Finalizing recording file..."
 
 #: src/components/streamers/card/lossless-cut-action.tsx:173
-#: src/lib/job-progress.ts:35
+#: src/lib/job-progress.ts:38
 msgid "Finalizing..."
 msgstr "Finalizing..."
 
@@ -4811,7 +4811,7 @@ msgstr "Follows the recording"
 msgid "Font size"
 msgstr "Font size"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:116
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:115
 msgid "Fonts Directory"
 msgstr "Fonts Directory"
 
@@ -4841,7 +4841,7 @@ msgstr "Force Mobile API"
 msgid "Force Origin Quality"
 msgstr "Force Origin Quality"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:778
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:759
 msgid "Force overwrite if output exists"
 msgstr "Force overwrite if output exists"
 
@@ -4860,7 +4860,7 @@ msgstr "Form"
 #: src/components/config/global/file-config-card.tsx:99
 #: src/components/config/templates/template-card.tsx:133
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:64
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:224
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:205
 #: src/components/player/stream-info-card.tsx:30
 msgid "Format"
 msgstr "Format"
@@ -4869,7 +4869,7 @@ msgstr "Format"
 msgid "Frame rate"
 msgstr "Frame rate"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:609
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:590
 msgid "Framerate (FPS)"
 msgstr "Framerate (FPS)"
 
@@ -4965,7 +4965,7 @@ msgstr "GB"
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:43
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:284
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:98
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:223
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:204
 #: src/components/streamers/streamer-editor.tsx:152
 msgid "General"
 msgstr "General"
@@ -5106,7 +5106,7 @@ msgstr "H.264"
 msgid "H.264 medium compression (CRF 23) optimized for long-term storage."
 msgstr "H.264 medium compression (CRF 23) optimized for long-term storage."
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:706
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:687
 msgid "Hardware Acceleration"
 msgstr "Hardware Acceleration"
 
@@ -5173,11 +5173,11 @@ msgctxt "priority"
 msgid "High"
 msgstr "High"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:114
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:107
 msgid "High performance"
 msgstr "High performance"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:115
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:108
 msgid "High quality"
 msgstr "High quality"
 
@@ -5348,7 +5348,7 @@ msgstr "How often rust-srec runs nvidia-smi to detect when the container loses G
 msgid "How the stream address is found. Switch to Streamlink when a site stops working; it needs the Streamlink tool installed."
 msgstr "How the stream address is found. Switch to Streamlink when a site stops working; it needs the Streamlink tool installed."
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:89
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:88
 msgid "How to pair video files with .ass subtitles"
 msgstr "How to pair video files with .ass subtitles"
 
@@ -5511,7 +5511,7 @@ msgstr "Include Keywords"
 msgid "Include original files in outputs"
 msgstr "Include original files in outputs"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:825
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:806
 msgid "Include Recording Metadata"
 msgstr "Include Recording Metadata"
 
@@ -5574,7 +5574,7 @@ msgstr "Input"
 msgid "Input Arguments"
 msgstr "Input Arguments"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:799
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:780
 msgid "Input Options (-i flags)"
 msgstr "Input Options (-i flags)"
 
@@ -5624,7 +5624,7 @@ msgstr "Interval between checks."
 msgid "Interval between offline checks."
 msgstr "Interval between offline checks."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:264
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:268
 msgid "Invalid download URL"
 msgstr "Invalid download URL"
 
@@ -5703,7 +5703,7 @@ msgstr "Job Timeouts"
 
 #: src/components/layout/site-header.tsx:54
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:374
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:378
 msgid "Jobs"
 msgstr "Jobs"
 
@@ -5762,8 +5762,8 @@ msgstr "Keeps decryption from stalling other downloads."
 #: src/components/notifications/forms/webhook-form.tsx:390
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:114
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:115
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:177
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:178
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:158
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:159
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:182
 msgid "Key"
 msgstr "Key"
@@ -6138,15 +6138,15 @@ msgstr "Low"
 msgid "Low (80)"
 msgstr "Low (80)"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:117
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:110
 msgid "Low latency"
 msgstr "Low latency"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:119
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:112
 msgid "Low latency, high performance"
 msgstr "Low latency, high performance"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:118
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:111
 msgid "Low latency, high quality"
 msgstr "Low latency, high quality"
 
@@ -6154,7 +6154,7 @@ msgstr "Low latency, high quality"
 msgid "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
 msgstr "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:549
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:530
 msgid "Lower value = Higher Quality"
 msgstr "Lower value = Higher Quality"
 
@@ -6240,7 +6240,7 @@ msgstr "Mark Read"
 msgid "Marked all as read"
 msgstr "Marked all as read"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:86
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:85
 msgid "Match Strategy"
 msgstr "Match Strategy"
 
@@ -6248,7 +6248,7 @@ msgstr "Match Strategy"
 msgid "Matching resolution"
 msgstr "Matching resolution"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:382
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:383
 msgid "Max Attempts"
 msgstr "Max Attempts"
 
@@ -6368,7 +6368,7 @@ msgstr "Media Outputs"
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "Media outputs will appear here when pipeline jobs complete."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:444
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:448
 msgid "Media Player"
 msgstr "Media Player"
 
@@ -6408,7 +6408,7 @@ msgstr "Metadata"
 msgid "Metadata Editor"
 msgstr "Metadata Editor"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:840
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:821
 msgid "Metadata Tags"
 msgstr "Metadata Tags"
 
@@ -6616,7 +6616,7 @@ msgstr "Must be less than {count}"
 msgid "My Archiving Workflow"
 msgstr "My Archiving Workflow"
 
-#: src/components/notifications/channel-form.tsx:312
+#: src/components/notifications/channel-form.tsx:318
 msgid "My Channel"
 msgstr "My Channel"
 
@@ -6625,7 +6625,7 @@ msgid "My Template"
 msgstr "My Template"
 
 #: src/components/config/engines/forms/setting-fields.tsx:969
-#: src/components/notifications/channel-form.tsx:307
+#: src/components/notifications/channel-form.tsx:313
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:200
 #: src/components/pipeline/workflows/workflow-editor.tsx:206
 #: src/components/proxies/proxy-editor-dialog.tsx:233
@@ -6719,7 +6719,7 @@ msgstr "Never"
 msgid "New"
 msgstr "New"
 
-#: src/components/notifications/channel-form.tsx:278
+#: src/components/notifications/channel-form.tsx:284
 msgid "New notification channel"
 msgstr "New notification channel"
 
@@ -6904,7 +6904,7 @@ msgstr "No media outputs generated yet."
 msgid "No media outputs yet"
 msgstr "No media outputs yet"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:161
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:142
 msgid "No metadata tags added"
 msgstr "No metadata tags added"
 
@@ -7102,7 +7102,7 @@ msgstr "No workflows yet"
 #: src/components/config/engines/forms/streamlink-form.tsx:74
 #: src/components/config/engines/forms/streamlink-form.tsx:83
 #: src/components/notifications/forms/webhook-form.tsx:184
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:717
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:698
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:365
 msgid "None"
 msgstr "None"
@@ -7116,7 +7116,7 @@ msgstr "None"
 msgid "None (Default)"
 msgstr "None (Default)"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:236
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:217
 msgid "None (Strip Audio)"
 msgstr "None (Strip Audio)"
 
@@ -7380,7 +7380,7 @@ msgstr "Only keep the original-quality stream when TikTok offers one; other qual
 msgid "Only kicks in for files above the Cutoff size. Default is 4. Set to 0 to disable."
 msgstr "Only kicks in for files above the Cutoff size. Default is 4. Set to 0 to disable."
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:758
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:739
 msgid "Only supported for MP4/MOV/M4V"
 msgstr "Only supported for MP4/MOV/M4V"
 
@@ -7506,7 +7506,7 @@ msgid "Output folder unavailable"
 msgstr "Output folder unavailable"
 
 #: src/components/config/shared/output-settings-card.tsx:125
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:482
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:463
 msgid "Output Format"
 msgstr "Output Format"
 
@@ -7514,7 +7514,7 @@ msgstr "Output Format"
 msgid "Output Metrics"
 msgstr "Output Metrics"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:805
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:786
 msgid "Output Options"
 msgstr "Output Options"
 
@@ -7578,7 +7578,7 @@ msgstr "Override output folder."
 msgid "Override pipelines and platform options for specific platforms."
 msgstr "Override pipelines and platform options for specific platforms."
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:343
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:347
 msgid "Overview"
 msgstr "Overview"
 
@@ -7601,7 +7601,7 @@ msgid "Overwrite existing files"
 msgstr "Overwrite existing files"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:112
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:776
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:757
 msgid "Overwrite Files"
 msgstr "Overwrite Files"
 
@@ -7680,7 +7680,7 @@ msgstr "Parsing..."
 msgid "Partial file deleted"
 msgstr "Partial file deleted"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:125
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:124
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:106
 msgid "Passthrough Inputs"
 msgstr "Passthrough Inputs"
@@ -7825,7 +7825,7 @@ msgstr "Per-segment Pipeline"
 msgid "Per-Streamer"
 msgstr "Per-Streamer"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:698
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:679
 #: src/components/sessions/overview-tab.tsx:233
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:540
 msgid "Performance"
@@ -8166,14 +8166,14 @@ msgstr "Preferred Quality (QN)"
 msgid "Preferred Video Codec"
 msgstr "Preferred Video Codec"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:287
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:291
 msgid "Preparing download..."
 msgstr "Preparing download..."
 
 #: src/components/pipeline/jobs/job-progress-panel.tsx:145
 #: src/components/streamers/card/upload-indicator.tsx:73
 #: src/components/upload-status-indicator.tsx:349
-#: src/lib/job-progress.ts:38
+#: src/lib/job-progress.ts:41
 msgid "Preparing…"
 msgstr "Preparing…"
 
@@ -8365,7 +8365,7 @@ msgstr "Program"
 msgid "Program and arguments"
 msgstr "Program and arguments"
 
-#: src/components/pipeline/presets/processor-schemas.ts:191
+#: src/components/pipeline/presets/processor-schemas.ts:214
 msgid "Program is required"
 msgstr "Program is required"
 
@@ -8434,7 +8434,7 @@ msgstr "Quality"
 msgid "Quality (qscale)"
 msgstr "Quality (qscale)"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:498
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:479
 msgid "Quality Control"
 msgstr "Quality Control"
 
@@ -8684,7 +8684,7 @@ msgstr "Recording uses temporary chunks"
 msgid "Recording will start when schedule allows"
 msgstr "Recording will start when schedule allows"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:362
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:366
 msgid "Recordings"
 msgstr "Recordings"
 
@@ -8798,7 +8798,7 @@ msgid "Remove argument {number}"
 msgstr "Remove argument {number}"
 
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:135
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:212
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:193
 msgid "Remove custom tag"
 msgstr "Remove custom tag"
 
@@ -8810,7 +8810,7 @@ msgstr "Remove engine override"
 msgid "Remove header"
 msgstr "Remove header"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:783
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:764
 msgid "Remove Input on Success"
 msgstr "Remove Input on Success"
 
@@ -8842,7 +8842,7 @@ msgstr "Remove Step"
 msgid "Remove this filter from the streamer? This cannot be undone."
 msgstr "Remove this filter from the streamer? This cannot be undone."
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:372
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:373
 msgid "Removes each local file once its upload (or skip) is confirmed. The local copy is gone afterwards — keep this off unless Netdisk is the final destination."
 msgstr "Removes each local file once its upload (or skip) is confirmed. The local copy is gone afterwards — keep this off unless Netdisk is the final destination."
 
@@ -8986,7 +8986,7 @@ msgstr "Requests for this account go through {routeLabel}."
 msgid "Requests for this account use the system proxy."
 msgstr "Requests for this account use the system proxy."
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:95
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:94
 msgid "Require Subtitles"
 msgstr "Require Subtitles"
 
@@ -9027,7 +9027,7 @@ msgstr "Reset view"
 msgid "Resolution"
 msgstr "Resolution"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:602
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:583
 msgid "Resolution (Scale)"
 msgstr "Resolution (Scale)"
 
@@ -9153,7 +9153,7 @@ msgstr "Retrying in {wait}"
 msgid "Retrying shortly"
 msgstr "Retrying shortly"
 
-#: src/lib/job-progress.ts:36
+#: src/lib/job-progress.ts:39
 msgid "Retrying..."
 msgstr "Retrying..."
 
@@ -9291,7 +9291,7 @@ msgstr "Save account"
 
 #: src/components/config/engines/engine-editor.tsx:273
 #: src/components/filters/FilterDialog.tsx:298
-#: src/components/notifications/channel-form.tsx:385
+#: src/components/notifications/channel-form.tsx:391
 #: src/components/proxies/proxy-editor-dialog.tsx:363
 #: src/components/shared/save-fab.tsx:93
 #: src/components/streamers/streamer-editor.tsx:328
@@ -9636,8 +9636,8 @@ msgstr "Select category"
 msgid "Select Client Type"
 msgstr "Select Client Type"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:385
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:469
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:366
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:450
 msgid "Select codec"
 msgstr "Select codec"
 
@@ -9687,7 +9687,7 @@ msgstr "Select pipelines"
 msgid "Select policy"
 msgstr "Select policy"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:438
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:419
 msgid "Select preset"
 msgstr "Select preset"
 
@@ -9699,7 +9699,7 @@ msgstr "Select priority"
 msgid "Select sessions"
 msgstr "Select sessions"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:87
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:86
 msgid "Select strategy"
 msgstr "Select strategy"
 
@@ -9729,7 +9729,7 @@ msgid "Select the steps that must complete successfully before this step runs."
 msgstr "Select the steps that must complete successfully before this step runs."
 
 #: src/components/config/engines/engine-editor.tsx:233
-#: src/components/notifications/channel-form.tsx:338
+#: src/components/notifications/channel-form.tsx:344
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:146
 msgid "Select type"
 msgstr "Select type"
@@ -9852,11 +9852,11 @@ msgstr "Session ID is required"
 msgid "Session Menu"
 msgstr "Session Menu"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:323
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:327
 msgid "Session not found"
 msgstr "Session not found"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:24
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:23
 msgid "Session pairing (same segment)"
 msgstr "Session pairing (same segment)"
 
@@ -10172,7 +10172,7 @@ msgstr "Start a new file when the codec, resolution or initialization data chang
 msgid "Start Over"
 msgstr "Start Over"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:639
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:620
 msgid "Start Time"
 msgstr "Start Time"
 
@@ -10207,7 +10207,7 @@ msgstr "Stay"
 msgid "Stay closer to live. Network interruptions may cause more buffering."
 msgstr "Stay closer to live. Network interruptions may cause more buffering."
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:25
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:24
 msgid "Stem (Filename Match)"
 msgstr "Stem (Filename Match)"
 
@@ -10283,7 +10283,7 @@ msgstr "Stream Details"
 msgid "Stream lookup"
 msgstr "Stream lookup"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:819
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:800
 msgid "Stream Mapping (-map)"
 msgstr "Stream Mapping (-map)"
 
@@ -10446,7 +10446,7 @@ msgstr "Streamlink serves many different sites, so its accounts are chosen by si
 msgid "Streams"
 msgstr "Streams"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:814
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:795
 msgid "Streams & Metadata"
 msgstr "Streams & Metadata"
 
@@ -10471,7 +10471,7 @@ msgstr "Subscriptions updated"
 msgid "Subtitle"
 msgstr "Subtitle"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:80
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:79
 msgid "Subtitle Matching"
 msgstr "Subtitle Matching"
 
@@ -10574,7 +10574,7 @@ msgstr "Target bandwidth"
 msgid "Target bitrate"
 msgstr "Target bitrate"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:562
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:543
 msgid "Target Bitrate"
 msgstr "Target Bitrate"
 
@@ -11045,7 +11045,7 @@ msgid "time-of-day timetable"
 msgstr "time-of-day timetable"
 
 #: src/components/sessions/danmu-stats-panel.tsx:491
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:349
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:353
 msgid "Timeline"
 msgstr "Timeline"
 
@@ -11141,7 +11141,7 @@ msgstr "Toggle Sidebar"
 msgid "Token"
 msgstr "Token"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:401
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:402
 msgid "Tool Location"
 msgstr "Tool Location"
 
@@ -11316,7 +11316,7 @@ msgstr "Triggered when the application starts up."
 msgid "Triggered when video and danmu are available"
 msgstr "Triggered when video and danmu are available"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:631
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:612
 msgid "Trimming & Time"
 msgstr "Trimming & Time"
 
@@ -11378,7 +11378,7 @@ msgstr "Twitch Proxy Playlist"
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch Proxy Playlist Exclude"
 
-#: src/components/notifications/channel-form.tsx:328
+#: src/components/notifications/channel-form.tsx:334
 msgid "Type"
 msgstr "Type"
 
@@ -11522,11 +11522,11 @@ msgstr "Upload (Rclone)"
 msgid "Upload and Delete"
 msgstr "Upload and Delete"
 
-#: src/lib/job-progress.ts:134
+#: src/lib/job-progress.ts:137
 msgid "Upload attempt {attempt} of {max}"
 msgstr "Upload attempt {attempt} of {max}"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:384
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:385
 msgid "Upload attempts per job before failing. Retries only re-send files without a confirmed result."
 msgstr "Upload attempts per job before failing. Retries only re-send files without a confirmed result."
 
@@ -11596,7 +11596,7 @@ msgstr "URL is required"
 msgid "Use “{conflictName}” instead"
 msgstr "Use “{conflictName}” instead"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:753
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:734
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "Use <0>-movflags +faststart</0>"
 
@@ -11732,8 +11732,8 @@ msgstr "Validation service unavailable"
 #: src/components/notifications/forms/webhook-form.tsx:406
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:121
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:122
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:191
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:192
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:172
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:173
 msgid "Value"
 msgstr "Value"
 
@@ -11771,17 +11771,17 @@ msgstr "Very slow"
 msgid "via server proxy"
 msgstr "via server proxy"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:225
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:206
 #: src/lib/media-file-type.ts:36
 msgid "Video"
 msgstr "Video"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:569
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:550
 msgid "Video Bitrate"
 msgstr "Video Bitrate"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:47
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:370
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:46
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:351
 msgid "Video Codec"
 msgstr "Video Codec"
 
@@ -11801,7 +11801,7 @@ msgstr "Video Player"
 msgid "Video Quality"
 msgstr "Video Quality"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:362
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:343
 msgid "Video Settings"
 msgstr "Video Settings"
 
@@ -11900,7 +11900,7 @@ msgstr "Web (deprecated)"
 msgid "Web API"
 msgstr "Web API"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:750
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:731
 msgid "Web Optimize"
 msgstr "Web Optimize"
 
@@ -12046,7 +12046,7 @@ msgstr "workflows"
 msgid "Workflows"
 msgstr "Workflows"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:545
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:526
 msgctxt "quality"
 msgid "Worst"
 msgstr "Worst"

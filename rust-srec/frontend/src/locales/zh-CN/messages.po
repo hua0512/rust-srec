@@ -18,8 +18,8 @@ msgstr ""
 msgid " - Session: {0}"
 msgstr " - 会话：{0}"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:800
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:807
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:781
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:788
 msgid "--flag value"
 msgstr "--flag value"
 
@@ -428,7 +428,7 @@ msgid "<0>Recording uses</0> {names}"
 msgstr "<0>录制使用</0> {names}"
 
 #: src/components/upload-status-indicator.tsx:258
-#: src/lib/job-progress.ts:154
+#: src/lib/job-progress.ts:157
 msgid "~{eta} left"
 msgstr "约剩 {eta}"
 
@@ -735,7 +735,7 @@ msgstr "至少添加一个步骤"
 msgid "Add at most {count, plural, one {# item} other {# items}}"
 msgstr "最多添加 {count} 项"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:446
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:447
 msgid "Add BaiduPCS-Go argument"
 msgstr "添加 BaiduPCS-Go 参数"
 
@@ -846,11 +846,11 @@ msgstr "添加流"
 msgid "Add Streamer"
 msgstr "添加主播"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:853
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:834
 msgid "Add Tag"
 msgstr "添加自定义标签"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:827
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:808
 msgid "Add the recorded title, streamer, and UTC recording date during remux. Tags below override these values."
 msgstr "重封装时添加录制标题、主播和 UTC 录制日期。下方标签会覆盖这些值。"
 
@@ -891,7 +891,7 @@ msgstr "调整 UI 元素的圆角程度。"
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:46
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:290
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:104
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:227
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:208
 #: src/components/streamers/streamer-editor.tsx:172
 msgid "Advanced"
 msgstr "高级"
@@ -909,7 +909,7 @@ msgstr "高级选项"
 msgid "Advanced scheduling"
 msgstr "高级排程"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:103
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:102
 msgid "Advanced Settings"
 msgstr "高级设置"
 
@@ -1101,7 +1101,7 @@ msgstr "App 使用匿名播放。Web 为兼容旧配置而保留。仅音频始�
 msgid "Appearance & style"
 msgstr "外观与样式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:806
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:787
 msgid "Appended before output filename"
 msgstr "追加到输出文件名之前"
 
@@ -1167,7 +1167,7 @@ msgstr "参数 {number}"
 msgid "Arguments"
 msgstr "参数列表"
 
-#: src/components/pipeline/presets/processor-schemas.ts:214
+#: src/components/pipeline/presets/processor-schemas.ts:237
 msgid "Arguments require program mode"
 msgstr "只有程序模式才能设置参数"
 
@@ -1214,17 +1214,17 @@ msgid "Attempts to get origin quality by replacing the audio stream. May result 
 msgstr "尝试通过替换音频流获取原画质量。如果失败，可能会导致仅有音频。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:48
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:226
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:207
 #: src/lib/media-file-type.ts:41
 msgid "Audio"
 msgstr "音频"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:578
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:559
 msgid "Audio Bitrate"
 msgstr "音频比特率"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:54
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:468
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:53
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:449
 msgid "Audio Codec"
 msgstr "音频编码"
 
@@ -1247,7 +1247,7 @@ msgstr "视频流内自带的音频始终保留。"
 msgid "Audio only"
 msgstr "仅音频"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:676
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:657
 msgid "Audio Processing"
 msgstr "音频处理"
 
@@ -1259,7 +1259,7 @@ msgstr "音频属性"
 msgid "Audio Quality"
 msgstr "音频质量"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:463
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:444
 msgid "Audio Settings"
 msgstr "音频设置"
 
@@ -1383,7 +1383,7 @@ msgid "Back to presets"
 msgstr "返回预设列表"
 
 #: src/components/sessions/session-header.tsx:44
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:324
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:328
 msgid "Back to Sessions"
 msgstr "返回录制会话"
 
@@ -1465,7 +1465,7 @@ msgstr "BAIDUID=...; BDUSS=...; STOKEN=...; ..."
 msgid "BaiduPCS-Go binary not available at <0>{0}</0>. Install it or set the binary path in the Advanced tab."
 msgstr "未找到 BaiduPCS-Go 可执行文件（<0>{0}</0>）。请先安装，或在「高级」标签页中设置其路径。"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:406
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:407
 msgid "BaiduPCS-Go Executable (Optional)"
 msgstr "BaiduPCS-Go 可执行文件（可选）"
 
@@ -1534,12 +1534,12 @@ msgstr "Bearer Token"
 msgid "Behind live edge"
 msgstr "距直播最新位置"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:522
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:503
 msgctxt "quality"
 msgid "Best"
 msgstr "最佳"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:110
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:103
 msgid "Best quality"
 msgstr "最佳质量"
 
@@ -1579,7 +1579,7 @@ msgstr "屏蔽列表"
 msgid "Blu-ray (400)"
 msgstr "蓝光 (400)"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:116
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:109
 msgid "Blu-ray Disc"
 msgstr "蓝光光盘"
 
@@ -1691,7 +1691,7 @@ msgstr "缓存与进度"
 #: src/components/filters/FilterDialog.tsx:284
 #: src/components/layout/themes/import-modal.tsx:107
 #: src/components/notifications/channel-card.tsx:178
-#: src/components/notifications/channel-form.tsx:380
+#: src/components/notifications/channel-form.tsx:386
 #: src/components/notifications/subscription-manager.tsx:476
 #: src/components/pipeline/interrupted-output-list.tsx:259
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:118
@@ -1832,11 +1832,11 @@ msgstr "正在修改密码..."
 msgid "Changing this restarts the player."
 msgstr "更改后会重新启动播放器。"
 
-#: src/components/notifications/channel-form.tsx:298
+#: src/components/notifications/channel-form.tsx:304
 msgid "Channel"
 msgstr "渠道"
 
-#: src/components/notifications/channel-form.tsx:213
+#: src/components/notifications/channel-form.tsx:219
 msgid "Channel created"
 msgstr "渠道已创建"
 
@@ -1844,7 +1844,7 @@ msgstr "渠道已创建"
 msgid "Channel deleted"
 msgstr "渠道已删除"
 
-#: src/components/notifications/channel-form.tsx:227
+#: src/components/notifications/channel-form.tsx:233
 msgid "Channel updated"
 msgstr "渠道已更新"
 
@@ -1947,7 +1947,7 @@ msgstr "请选择单个平台以管理其账号。"
 msgid "Choose an account or raw cookies, not both"
 msgstr "请选择账号或手动 Cookie，不能同时使用"
 
-#: src/components/pipeline/presets/processor-schemas.ts:207
+#: src/components/pipeline/presets/processor-schemas.ts:230
 msgid "Choose either a command or a program"
 msgstr "请选择命令或程序其中之一"
 
@@ -1980,7 +1980,7 @@ msgid "Chosen among the audio in the preferred language."
 msgstr "在首选语言的音频中选择。"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:51
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:137
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:136
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:115
 msgid "Cleanup"
 msgstr "清理"
@@ -2093,7 +2093,7 @@ msgctxt "danmu"
 msgid "Coloured"
 msgstr "彩色"
 
-#: src/components/notifications/channel-form.tsx:402
+#: src/components/notifications/channel-form.tsx:408
 msgid "Coming soon"
 msgstr "即将推出"
 
@@ -2196,11 +2196,11 @@ msgstr "并发文件传输数（--transfers）。"
 msgid "Config"
 msgstr "配置"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:419
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:420
 msgid "Config Directory (Optional)"
 msgstr "配置目录（可选）"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:421
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:422
 msgid "Config Directory help"
 msgstr "配置目录说明"
 
@@ -2208,7 +2208,7 @@ msgstr "配置目录说明"
 msgid "Config Path (Optional)"
 msgstr "配置路径（可选）"
 
-#: src/components/notifications/channel-form.tsx:364
+#: src/components/notifications/channel-form.tsx:370
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:81
 #: src/components/pipeline/workflows/step-config-dialog.tsx:450
 #: src/components/pipeline/workflows/workflow-editor.tsx:196
@@ -2273,7 +2273,7 @@ msgstr "配置设置"
 msgid "Configure Step"
 msgstr "配置步骤"
 
-#: src/components/notifications/channel-form.tsx:282
+#: src/components/notifications/channel-form.tsx:288
 msgid "Configure where and how you receive notifications."
 msgstr "配置接收通知的位置和方式。"
 
@@ -2352,7 +2352,7 @@ msgctxt "terminal-cause"
 msgid "Consecutive Failures"
 msgstr "连续失败"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:477
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:458
 msgid "Container"
 msgstr "容器"
 
@@ -2402,8 +2402,8 @@ msgstr "已复制！"
 msgid "Copy"
 msgstr "复制"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:231
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:391
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:212
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:372
 msgid "Copy (Passthrough)"
 msgstr "复制（直通）"
 
@@ -2513,7 +2513,7 @@ msgstr "无法加载预设 <0>{presetName}</0>。请确认服务器可访问后�
 msgid "Could not request lossless cutting. Refresh the recording status and try again."
 msgstr "无法请求无损分段。请刷新录制状态后重试。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:257
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:261
 msgid "Could not show the file: {message}"
 msgstr "无法显示该文件：{message}"
 
@@ -2543,8 +2543,8 @@ msgstr "CPU 任务超时"
 msgid "CPU Usage"
 msgstr "CPU 使用率"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:508
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:528
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:489
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:509
 msgid "CQ (Constant Quality)"
 msgstr "CQ (恒定质量)"
 
@@ -2579,7 +2579,7 @@ msgstr "为文件创建 ZIP 压缩包，适合与元数据一起打包。"
 msgid "Create API key"
 msgstr "创建 API 密钥"
 
-#: src/components/notifications/channel-form.tsx:387
+#: src/components/notifications/channel-form.tsx:393
 msgid "Create channel"
 msgstr "创建渠道"
 
@@ -2701,12 +2701,12 @@ msgstr "凭据保存成功"
 msgid "Credentials unavailable"
 msgstr "凭据不可用"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:61
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:60
 msgid "CRF (0-51)"
 msgstr "CRF (0-51)"
 
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:491
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:510
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:529
 msgid "CRF (Constant Rate Factor)"
 msgstr "CRF（恒定码率因子）"
 
@@ -2786,7 +2786,7 @@ msgstr "自定义 FFmpeg"
 msgid "Custom FFmpeg output arguments are set. Remove them to record with lossless cutting; until then this engine records normally."
 msgstr "已设置自定义 FFmpeg 输出参数。移除这些参数后才能使用无损分段录制；在此之前，该引擎按普通方式录制。"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:794
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:775
 msgid "Custom Flags"
 msgstr "自定义标志"
 
@@ -2948,7 +2948,7 @@ msgstr "默认"
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:85
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:138
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:70
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:107
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:100
 #: src/components/player/stream-info-card.tsx:47
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:340
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:525
@@ -3098,7 +3098,7 @@ msgstr "删除处理任务"
 msgid "Delete local files after upload"
 msgstr "上传后删除本地文件"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:785
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:766
 msgid "Delete original file after successful remux"
 msgstr "成功重封装后删除原始文件"
 
@@ -3157,7 +3157,7 @@ msgstr "删除会话"
 msgid "Delete Source"
 msgstr "删除源文件"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:146
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:145
 msgid "Delete Source ASS"
 msgstr "删除源 ASS 文件"
 
@@ -3165,7 +3165,7 @@ msgstr "删除源 ASS 文件"
 msgid "Delete source file after successful processing"
 msgstr "处理成功后删除源文件"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:142
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:141
 msgid "Delete Source Videos"
 msgstr "删除源视频文件"
 
@@ -3298,7 +3298,7 @@ msgstr "目标文件夹"
 msgid "Destination Folder help"
 msgstr "目标文件夹说明"
 
-#: src/components/pipeline/presets/processor-schemas.ts:156
+#: src/components/pipeline/presets/processor-schemas.ts:179
 msgid "Destination is required"
 msgstr "必须填写目标文件夹"
 
@@ -3345,7 +3345,7 @@ msgstr "设备 ID 来源"
 msgid "Device Model"
 msgstr "设备机型"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:596
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:577
 msgid "Dimensions & Filters"
 msgstr "尺寸与滤镜"
 
@@ -3356,7 +3356,7 @@ msgstr "尺寸与滤镜"
 msgid "Direct"
 msgstr "直连"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:423
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:424
 msgid "Directory holding BaiduPCS-Go's login session (BAIDUPCS_GO_CONFIG_DIR). Logging in via the account card above stores the session in the same directory configured here."
 msgstr "存放 BaiduPCS-Go 登录会话的目录（BAIDUPCS_GO_CONFIG_DIR）。通过上方账号卡片登录时，会话也会保存到这里配置的目录。"
 
@@ -3440,7 +3440,7 @@ msgstr "杜比视界 (30000)"
 msgid "Done"
 msgstr "已完成"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:445
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:446
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:483
 msgid "Double click to edit items."
 msgstr "双击以编辑项目。"
@@ -3502,7 +3502,7 @@ msgid "Download engine (mesio)"
 msgstr "下载引擎（mesio）"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:290
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:294
 msgid "Download failed: {0}"
 msgstr "下载失败：{0}"
 
@@ -3515,8 +3515,8 @@ msgstr "下载管理"
 msgid "Download Retry Policy"
 msgstr "录制重试策略"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:270
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:288
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:274
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:292
 msgid "Download started"
 msgstr "下载已开始"
 
@@ -3562,7 +3562,7 @@ msgstr "下次使用时续期"
 #: src/components/notifications/__tests__/payload-preview.test.tsx:20
 #: src/components/notifications/events/payload-preview.tsx:78
 #: src/components/pipeline/jobs/job-progress-panel.tsx:109
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:650
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:631
 #: src/components/streamers/edit/active-download-card.tsx:138
 #: src/components/streamers/progress-indicator.tsx:80
 msgid "Duration"
@@ -3576,7 +3576,7 @@ msgstr "时长限制"
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgstr "例如 'best'、'worst'、'720p'、'audio_only'"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:432
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:433
 msgid "e.g. /app/config/BaiduPCS-Go"
 msgstr "例如 /app/config/BaiduPCS-Go"
 
@@ -3588,7 +3588,7 @@ msgstr "例如 /output/processed/"
 msgid "e.g. /rust-srec/{streamer}/%Y-%m"
 msgstr "例如 /rust-srec/{streamer}/%Y-%m"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:820
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:801
 msgid "e.g. 0:v:0, 0:a:0"
 msgstr "列如: 0:v:0, 0:a:0"
 
@@ -3604,11 +3604,11 @@ msgstr "例如 10M"
 msgid "e.g. 128k, 320k"
 msgstr "例如 128k、320k"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:603
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:584
 msgid "e.g. 1920:1080"
 msgstr "例如 1920:1080"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:579
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:560
 msgid "e.g. 192k"
 msgstr "例如 192k"
 
@@ -3620,11 +3620,11 @@ msgstr "例如 1M"
 msgid "e.g. 250M"
 msgstr "例如 250M"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:570
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:551
 msgid "e.g. 5000k"
 msgstr "例如 5000k"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:610
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:591
 msgid "e.g. 60"
 msgstr "例如 60"
 
@@ -3652,7 +3652,7 @@ msgstr "例如 flv, hls, dash"
 msgid "e.g. gdrive:/videos"
 msgstr "例如 gdrive:/videos"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:619
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:600
 msgid "e.g. hflip,noise=alls=20:allf=t+u"
 msgstr "例如 hflip,noise=alls=20:allf=t+u"
 
@@ -3676,7 +3676,7 @@ msgstr "例如：重封装为 H.264"
 msgid "e.g. remux-h264"
 msgstr "例如 remux-h264"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:682
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:663
 msgid "e.g. volume=0.5"
 msgstr "例如 volume=0.5"
 
@@ -3713,7 +3713,7 @@ msgstr "编辑"
 msgid "Edit account"
 msgstr "编辑账号"
 
-#: src/components/notifications/channel-form.tsx:276
+#: src/components/notifications/channel-form.tsx:282
 msgid "Edit channel"
 msgstr "编辑渠道"
 
@@ -3781,15 +3781,15 @@ msgstr "启用所选"
 msgid "Enabled"
 msgstr "启用"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:70
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:69
 msgid "Encoder Preset"
 msgstr "编码器预设"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:425
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:406
 msgid "Encoding Preset"
 msgstr "编码预设"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:41
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:40
 msgid "Encoding Settings"
 msgstr "编码设置"
 
@@ -3809,7 +3809,7 @@ msgstr "历史结束"
 msgid "End Stream On Danmu Close"
 msgstr "弹幕关闭时结束录制"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:661
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:642
 msgid "End Time"
 msgstr "结束时间"
 
@@ -3982,7 +3982,7 @@ msgstr "加载平台失败"
 msgid "Error loading preset"
 msgstr "加载预设失败"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:321
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:325
 msgid "Error Loading Session"
 msgstr "加载录制会话失败"
 
@@ -4030,7 +4030,7 @@ msgstr "异常状态"
 msgid "Exclude"
 msgstr "排除"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:129
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:128
 msgid "Exclude ASS from Passthrough"
 msgstr "从透传中排除 ASS"
 
@@ -4099,7 +4099,7 @@ msgid "Expand sidebar"
 msgstr "展开侧边栏"
 
 #: src/components/config/engines/forms/lossless-cutting-field.tsx:52
-#: src/components/ui/flag-form-field.tsx:55
+#: src/components/ui/flag-form-field.tsx:58
 msgid "Experimental"
 msgstr "实验性"
 
@@ -4134,7 +4134,7 @@ msgid "Exports include all global settings, platforms, templates, streamers, eng
 msgstr "导出内容包含所有全局设置、平台、模板、主播、引擎和通知渠道。敏感数据（如密码）可能会根据平台设置被脱敏或加密。"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:30
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:440
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:441
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:70
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:478
 msgid "Extra Arguments"
@@ -4250,7 +4250,7 @@ msgstr "克隆模板失败：{0}"
 msgid "Failed to create API key"
 msgstr "创建 API 密钥失败"
 
-#: src/components/notifications/channel-form.tsx:220
+#: src/components/notifications/channel-form.tsx:226
 msgid "Failed to create channel"
 msgstr "创建渠道失败"
 
@@ -4482,7 +4482,7 @@ msgstr "吊销 API 密钥失败"
 msgid "Failed to send test notification"
 msgstr "发送测试通知失败"
 
-#: src/components/notifications/channel-form.tsx:234
+#: src/components/notifications/channel-form.tsx:240
 msgid "Failed to update channel"
 msgstr "更新渠道失败"
 
@@ -4539,7 +4539,7 @@ msgstr "故障切换关闭"
 msgid "Failover on"
 msgstr "故障切换开启"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:408
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:409
 msgid "Falls back to the BAIDUPCS_PATH environment variable, then PATH lookup."
 msgstr "留空时依次使用 BAIDUPCS_PATH 环境变量和 PATH 查找。"
 
@@ -4572,7 +4572,7 @@ msgstr "使用 NVIDIA NVENC 的快速 GPU 加速 HEVC/H.265 编码（CQ 24）。
 msgid "Fast H.264 compression (CRF 23). Good balance of speed, quality, and file size."
 msgstr "快速 H.264 压缩（CRF 23）。在速度、画质与体积之间取得良好平衡。"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:104
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:97
 msgid "Fastest"
 msgstr "最快"
 
@@ -4599,7 +4599,7 @@ msgstr "获取"
 msgid "Fetch Delay"
 msgstr "获取延迟"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:681
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:662
 msgid "FFmpeg Audio Filter (-af)"
 msgstr "FFmpeg 音频滤镜（-af）"
 
@@ -4608,7 +4608,7 @@ msgid "FFmpeg only supports http proxies, so FFmpeg recordings fail through this
 msgstr "FFmpeg 仅支持 http 代理，通过此代理的 FFmpeg 录制会失败。请选择 http 代理或其他引擎。"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:52
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:109
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:108
 msgid "FFmpeg Path"
 msgstr "FFmpeg 路径"
 
@@ -4616,11 +4616,11 @@ msgstr "FFmpeg 路径"
 msgid "FFmpeg used to remux Streamlink output. Enter a path on the backend server without shell quotes. The environment default uses FFMPEG_PATH, then ffmpeg from PATH."
 msgstr "用于重封装 Streamlink 输出的 FFmpeg。请输入后端服务器上的路径，不要添加 shell 引号。环境默认值优先使用 FFMPEG_PATH，然后使用 PATH 中的 ffmpeg。"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:617
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:598
 msgid "FFmpeg Video Filter"
 msgstr "FFmpeg 视频滤镜"
 
-#: src/lib/job-progress.ts:160
+#: src/lib/job-progress.ts:163
 msgid "File {index} of {total}"
 msgstr "第 {index}/{total} 个文件"
 
@@ -4719,7 +4719,7 @@ msgid "Finalizing recording file..."
 msgstr "正在完成录制文件…"
 
 #: src/components/streamers/card/lossless-cut-action.tsx:173
-#: src/lib/job-progress.ts:35
+#: src/lib/job-progress.ts:38
 msgid "Finalizing..."
 msgstr "正在收尾…"
 
@@ -4811,7 +4811,7 @@ msgstr "跟随录制"
 msgid "Font size"
 msgstr "字号"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:116
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:115
 msgid "Fonts Directory"
 msgstr "字体目录"
 
@@ -4841,7 +4841,7 @@ msgstr "强制使用移动端 API"
 msgid "Force Origin Quality"
 msgstr "强制原画质量"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:778
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:759
 msgid "Force overwrite if output exists"
 msgstr "若输出已存在则强制覆盖"
 
@@ -4860,7 +4860,7 @@ msgstr "表单"
 #: src/components/config/global/file-config-card.tsx:99
 #: src/components/config/templates/template-card.tsx:133
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:64
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:224
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:205
 #: src/components/player/stream-info-card.tsx:30
 msgid "Format"
 msgstr "格式"
@@ -4869,7 +4869,7 @@ msgstr "格式"
 msgid "Frame rate"
 msgstr "帧率"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:609
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:590
 msgid "Framerate (FPS)"
 msgstr "帧率（FPS）"
 
@@ -4965,7 +4965,7 @@ msgstr "GB"
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:43
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:284
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:98
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:223
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:204
 #: src/components/streamers/streamer-editor.tsx:152
 msgid "General"
 msgstr "常规"
@@ -5106,7 +5106,7 @@ msgstr "H.264"
 msgid "H.264 medium compression (CRF 23) optimized for long-term storage."
 msgstr "面向长期存储优化的 H.264 中等压缩（CRF 23）。"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:706
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:687
 msgid "Hardware Acceleration"
 msgstr "硬件加速"
 
@@ -5173,11 +5173,11 @@ msgctxt "priority"
 msgid "High"
 msgstr "高"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:114
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:107
 msgid "High performance"
 msgstr "高性能"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:115
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:108
 msgid "High quality"
 msgstr "高质量"
 
@@ -5348,7 +5348,7 @@ msgstr "rust-srec 通过运行 nvidia-smi 来检测容器是否失去 GPU 访问
 msgid "How the stream address is found. Switch to Streamlink when a site stops working; it needs the Streamlink tool installed."
 msgstr "获取直播地址的方式。当某个站点失效时可切换为 Streamlink，该方式需要已安装 Streamlink 工具。"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:89
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:88
 msgid "How to pair video files with .ass subtitles"
 msgstr "如何将视频文件与 .ass 字幕配对"
 
@@ -5511,7 +5511,7 @@ msgstr "包含关键字"
 msgid "Include original files in outputs"
 msgstr "在输出中包含原始文件"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:825
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:806
 msgid "Include Recording Metadata"
 msgstr "包含录制元数据"
 
@@ -5574,7 +5574,7 @@ msgstr "输入"
 msgid "Input Arguments"
 msgstr "输入参数"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:799
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:780
 msgid "Input Options (-i flags)"
 msgstr "输入选项（-i 参数）"
 
@@ -5624,7 +5624,7 @@ msgstr "检查间隔。"
 msgid "Interval between offline checks."
 msgstr "离线检查之间的间隔。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:264
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:268
 msgid "Invalid download URL"
 msgstr "下载链接无效"
 
@@ -5703,7 +5703,7 @@ msgstr "任务超时"
 
 #: src/components/layout/site-header.tsx:54
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:374
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:378
 msgid "Jobs"
 msgstr "处理任务"
 
@@ -5762,8 +5762,8 @@ msgstr "避免解密阻塞其他下载。"
 #: src/components/notifications/forms/webhook-form.tsx:390
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:114
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:115
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:177
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:178
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:158
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:159
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:182
 msgid "Key"
 msgstr "键"
@@ -6138,15 +6138,15 @@ msgstr "低"
 msgid "Low (80)"
 msgstr "流畅 (80)"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:117
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:110
 msgid "Low latency"
 msgstr "低延迟"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:119
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:112
 msgid "Low latency, high performance"
 msgstr "低延迟、高性能"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:118
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:111
 msgid "Low latency, high quality"
 msgstr "低延迟、高质量"
 
@@ -6154,7 +6154,7 @@ msgstr "低延迟、高质量"
 msgid "Low-latency GPU-accelerated H.264 encoding for real-time applications. Minimal encoding delay."
 msgstr "用于实时应用的低延迟 GPU 加速 H.264 编码。编码延迟极低。"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:549
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:530
 msgid "Lower value = Higher Quality"
 msgstr "数值越低 = 质量越高"
 
@@ -6240,7 +6240,7 @@ msgstr "标记已读"
 msgid "Marked all as read"
 msgstr "已全部标记为已读"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:86
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:85
 msgid "Match Strategy"
 msgstr "匹配策略"
 
@@ -6248,7 +6248,7 @@ msgstr "匹配策略"
 msgid "Matching resolution"
 msgstr "匹配分辨率"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:382
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:383
 msgid "Max Attempts"
 msgstr "最大尝试次数"
 
@@ -6368,7 +6368,7 @@ msgstr "媒体文件"
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "处理任务完成后，媒体文件将显示在此处。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:444
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:448
 msgid "Media Player"
 msgstr "媒体播放器"
 
@@ -6408,7 +6408,7 @@ msgstr "元数据"
 msgid "Metadata Editor"
 msgstr "元数据编辑器"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:840
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:821
 msgid "Metadata Tags"
 msgstr "元数据标签"
 
@@ -6616,7 +6616,7 @@ msgstr "必须小于 {count}"
 msgid "My Archiving Workflow"
 msgstr "我的归档工作流"
 
-#: src/components/notifications/channel-form.tsx:312
+#: src/components/notifications/channel-form.tsx:318
 msgid "My Channel"
 msgstr "我的渠道"
 
@@ -6625,7 +6625,7 @@ msgid "My Template"
 msgstr "我的模板"
 
 #: src/components/config/engines/forms/setting-fields.tsx:969
-#: src/components/notifications/channel-form.tsx:307
+#: src/components/notifications/channel-form.tsx:313
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:200
 #: src/components/pipeline/workflows/workflow-editor.tsx:206
 #: src/components/proxies/proxy-editor-dialog.tsx:233
@@ -6719,7 +6719,7 @@ msgstr "从未"
 msgid "New"
 msgstr "新建"
 
-#: src/components/notifications/channel-form.tsx:278
+#: src/components/notifications/channel-form.tsx:284
 msgid "New notification channel"
 msgstr "新建通知渠道"
 
@@ -6904,7 +6904,7 @@ msgstr "尚未生成媒体输出。"
 msgid "No media outputs yet"
 msgstr "暂无媒体文件"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:161
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:142
 msgid "No metadata tags added"
 msgstr "未添加元数据标签"
 
@@ -7102,7 +7102,7 @@ msgstr "暂无工作流"
 #: src/components/config/engines/forms/streamlink-form.tsx:74
 #: src/components/config/engines/forms/streamlink-form.tsx:83
 #: src/components/notifications/forms/webhook-form.tsx:184
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:717
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:698
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:365
 msgid "None"
 msgstr "无"
@@ -7116,7 +7116,7 @@ msgstr "无"
 msgid "None (Default)"
 msgstr "无（默认）"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:236
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:217
 msgid "None (Strip Audio)"
 msgstr "无（剥离音频）"
 
@@ -7380,7 +7380,7 @@ msgstr "当 TikTok 提供原画流时只保留原画，忽略其他画质。"
 msgid "Only kicks in for files above the Cutoff size. Default is 4. Set to 0 to disable."
 msgstr "仅对超过阈值大小的文件生效。默认值为 4，设为 0 可禁用。"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:758
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:739
 msgid "Only supported for MP4/MOV/M4V"
 msgstr "仅支持 MP4/MOV/M4V"
 
@@ -7506,7 +7506,7 @@ msgid "Output folder unavailable"
 msgstr "输出目录不可用"
 
 #: src/components/config/shared/output-settings-card.tsx:125
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:482
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:463
 msgid "Output Format"
 msgstr "输出格式"
 
@@ -7514,7 +7514,7 @@ msgstr "输出格式"
 msgid "Output Metrics"
 msgstr "输出指标"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:805
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:786
 msgid "Output Options"
 msgstr "输出选项"
 
@@ -7578,7 +7578,7 @@ msgstr "覆盖输出文件夹。"
 msgid "Override pipelines and platform options for specific platforms."
 msgstr "为特定平台覆盖处理管道和平台选项。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:343
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:347
 msgid "Overview"
 msgstr "概览"
 
@@ -7601,7 +7601,7 @@ msgid "Overwrite existing files"
 msgstr "覆盖现有文件"
 
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:112
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:776
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:757
 msgid "Overwrite Files"
 msgstr "覆盖文件"
 
@@ -7680,7 +7680,7 @@ msgstr "解析中..."
 msgid "Partial file deleted"
 msgstr "残留文件已删除"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:125
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:124
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:106
 msgid "Passthrough Inputs"
 msgstr "透传输入"
@@ -7825,7 +7825,7 @@ msgstr "逐段处理管道"
 msgid "Per-Streamer"
 msgstr "按主播"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:698
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:679
 #: src/components/sessions/overview-tab.tsx:233
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:540
 msgid "Performance"
@@ -8166,14 +8166,14 @@ msgstr "首选画质 (QN)"
 msgid "Preferred Video Codec"
 msgstr "首选视频编码"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:287
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:291
 msgid "Preparing download..."
 msgstr "正在准备下载……"
 
 #: src/components/pipeline/jobs/job-progress-panel.tsx:145
 #: src/components/streamers/card/upload-indicator.tsx:73
 #: src/components/upload-status-indicator.tsx:349
-#: src/lib/job-progress.ts:38
+#: src/lib/job-progress.ts:41
 msgid "Preparing…"
 msgstr "准备中…"
 
@@ -8365,7 +8365,7 @@ msgstr "程序"
 msgid "Program and arguments"
 msgstr "程序和参数"
 
-#: src/components/pipeline/presets/processor-schemas.ts:191
+#: src/components/pipeline/presets/processor-schemas.ts:214
 msgid "Program is required"
 msgstr "必须填写程序"
 
@@ -8434,7 +8434,7 @@ msgstr "质量"
 msgid "Quality (qscale)"
 msgstr "质量（qscale）"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:498
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:479
 msgid "Quality Control"
 msgstr "质量控制"
 
@@ -8684,7 +8684,7 @@ msgstr "录制将使用临时分块"
 msgid "Recording will start when schedule allows"
 msgstr "录制将在计划允许时开始"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:362
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:366
 msgid "Recordings"
 msgstr "录制内容"
 
@@ -8798,7 +8798,7 @@ msgid "Remove argument {number}"
 msgstr "移除参数 {number}"
 
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:135
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:212
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:193
 msgid "Remove custom tag"
 msgstr "移除自定义标签"
 
@@ -8810,7 +8810,7 @@ msgstr "移除引擎覆盖项"
 msgid "Remove header"
 msgstr "移除请求头"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:783
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:764
 msgid "Remove Input on Success"
 msgstr "成功后移除输入"
 
@@ -8842,7 +8842,7 @@ msgstr "移除步骤"
 msgid "Remove this filter from the streamer? This cannot be undone."
 msgstr "确定要从该主播移除此过滤器吗？此操作无法撤销。"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:372
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:373
 msgid "Removes each local file once its upload (or skip) is confirmed. The local copy is gone afterwards — keep this off unless Netdisk is the final destination."
 msgstr "每个文件在确认上传成功（或已跳过）后删除本地副本，删除后本地将不再保留。除非网盘就是最终存储位置，否则请保持关闭。"
 
@@ -8986,7 +8986,7 @@ msgstr "此账号的请求通过 {routeLabel} 连接。"
 msgid "Requests for this account use the system proxy."
 msgstr "此账号的请求使用系统代理。"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:95
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:94
 msgid "Require Subtitles"
 msgstr "需要字幕"
 
@@ -9027,7 +9027,7 @@ msgstr "重置视图"
 msgid "Resolution"
 msgstr "分辨率"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:602
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:583
 msgid "Resolution (Scale)"
 msgstr "分辨率（缩放）"
 
@@ -9153,7 +9153,7 @@ msgstr "{wait}后重试"
 msgid "Retrying shortly"
 msgstr "即将重试"
 
-#: src/lib/job-progress.ts:36
+#: src/lib/job-progress.ts:39
 msgid "Retrying..."
 msgstr "等待重试…"
 
@@ -9291,7 +9291,7 @@ msgstr "保存账号"
 
 #: src/components/config/engines/engine-editor.tsx:273
 #: src/components/filters/FilterDialog.tsx:298
-#: src/components/notifications/channel-form.tsx:385
+#: src/components/notifications/channel-form.tsx:391
 #: src/components/proxies/proxy-editor-dialog.tsx:363
 #: src/components/shared/save-fab.tsx:93
 #: src/components/streamers/streamer-editor.tsx:328
@@ -9636,8 +9636,8 @@ msgstr "选择类别"
 msgid "Select Client Type"
 msgstr "选择客户端类型"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:385
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:469
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:366
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:450
 msgid "Select codec"
 msgstr "选择编解码器"
 
@@ -9687,7 +9687,7 @@ msgstr "选择流水线"
 msgid "Select policy"
 msgstr "选择策略"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:438
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:419
 msgid "Select preset"
 msgstr "选择预设"
 
@@ -9699,7 +9699,7 @@ msgstr "选择优先级"
 msgid "Select sessions"
 msgstr "选择录制会话"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:87
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:86
 msgid "Select strategy"
 msgstr "选择策略"
 
@@ -9729,7 +9729,7 @@ msgid "Select the steps that must complete successfully before this step runs."
 msgstr "选择必须在此步骤运行前成功完成的步骤。"
 
 #: src/components/config/engines/engine-editor.tsx:233
-#: src/components/notifications/channel-form.tsx:338
+#: src/components/notifications/channel-form.tsx:344
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:146
 msgid "Select type"
 msgstr "选择类型"
@@ -9852,11 +9852,11 @@ msgstr "会话 ID 是必需的"
 msgid "Session Menu"
 msgstr "会话菜单"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:323
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:327
 msgid "Session not found"
 msgstr "未找到录制会话"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:24
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:23
 msgid "Session pairing (same segment)"
 msgstr "会话配对（同一分段）"
 
@@ -10172,7 +10172,7 @@ msgstr "在编码、分辨率或初始化数据变化时开始新文件，并应
 msgid "Start Over"
 msgstr "重新开始"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:639
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:620
 msgid "Start Time"
 msgstr "开始时间"
 
@@ -10207,7 +10207,7 @@ msgstr "留在此页"
 msgid "Stay closer to live. Network interruptions may cause more buffering."
 msgstr "尽量接近直播最新位置，网络中断时可能更频繁地缓冲。"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:25
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:24
 msgid "Stem (Filename Match)"
 msgstr "主文件名（文件名匹配）"
 
@@ -10283,7 +10283,7 @@ msgstr "流详情"
 msgid "Stream lookup"
 msgstr "地址获取方式"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:819
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:800
 msgid "Stream Mapping (-map)"
 msgstr "流映射 (-map)"
 
@@ -10446,7 +10446,7 @@ msgstr "Streamlink 支持许多不同的网站，因此其账号按网站或在�
 msgid "Streams"
 msgstr "流数"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:814
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:795
 msgid "Streams & Metadata"
 msgstr "流与元数据"
 
@@ -10471,7 +10471,7 @@ msgstr "订阅已更新"
 msgid "Subtitle"
 msgstr "字幕"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:80
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:79
 msgid "Subtitle Matching"
 msgstr "字幕匹配"
 
@@ -10574,7 +10574,7 @@ msgstr "目标带宽"
 msgid "Target bitrate"
 msgstr "目标码率"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:562
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:543
 msgid "Target Bitrate"
 msgstr "目标比特率"
 
@@ -11045,7 +11045,7 @@ msgid "time-of-day timetable"
 msgstr "按时间段调度"
 
 #: src/components/sessions/danmu-stats-panel.tsx:491
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:349
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:353
 msgid "Timeline"
 msgstr "时间线"
 
@@ -11141,7 +11141,7 @@ msgstr "切换侧边栏"
 msgid "Token"
 msgstr "令牌"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:401
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:402
 msgid "Tool Location"
 msgstr "工具位置"
 
@@ -11316,7 +11316,7 @@ msgstr "应用启动时触发。"
 msgid "Triggered when video and danmu are available"
 msgstr "当视频和弹幕可用时触发"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:631
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:612
 msgid "Trimming & Time"
 msgstr "裁剪与时间"
 
@@ -11378,7 +11378,7 @@ msgstr "Twitch 代理播放列表"
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch 代理播放列表排除"
 
-#: src/components/notifications/channel-form.tsx:328
+#: src/components/notifications/channel-form.tsx:334
 msgid "Type"
 msgstr "类型"
 
@@ -11522,11 +11522,11 @@ msgstr "上传 (Rclone)"
 msgid "Upload and Delete"
 msgstr "上传并删除"
 
-#: src/lib/job-progress.ts:134
+#: src/lib/job-progress.ts:137
 msgid "Upload attempt {attempt} of {max}"
 msgstr "第 {attempt} 次上传尝试，共 {max} 次"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:384
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:385
 msgid "Upload attempts per job before failing. Retries only re-send files without a confirmed result."
 msgstr "每个任务在判定失败前的上传尝试次数。重试时只会重新上传尚未确认结果的文件。"
 
@@ -11596,7 +11596,7 @@ msgstr "必须填写 URL"
 msgid "Use “{conflictName}” instead"
 msgstr "改用“{conflictName}”"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:753
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:734
 msgid "Use <0>-movflags +faststart</0>"
 msgstr "使用 <0>-movflags +faststart</0>"
 
@@ -11732,8 +11732,8 @@ msgstr "校验服务不可用"
 #: src/components/notifications/forms/webhook-form.tsx:406
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:121
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:122
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:191
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:192
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:172
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:173
 msgid "Value"
 msgstr "值"
 
@@ -11771,17 +11771,17 @@ msgstr "极慢"
 msgid "via server proxy"
 msgstr "通过服务器代理"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:225
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:206
 #: src/lib/media-file-type.ts:36
 msgid "Video"
 msgstr "视频"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:569
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:550
 msgid "Video Bitrate"
 msgstr "视频比特率"
 
-#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:47
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:370
+#: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:46
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:351
 msgid "Video Codec"
 msgstr "视频编码"
 
@@ -11801,7 +11801,7 @@ msgstr "视频播放器"
 msgid "Video Quality"
 msgstr "视频质量"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:362
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:343
 msgid "Video Settings"
 msgstr "视频设置"
 
@@ -11900,7 +11900,7 @@ msgstr "Web（已弃用）"
 msgid "Web API"
 msgstr "Web API"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:750
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:731
 msgid "Web Optimize"
 msgstr "网页优化"
 
@@ -12046,7 +12046,7 @@ msgstr "工作流"
 msgid "Workflows"
 msgstr "工作流"
 
-#: src/components/pipeline/presets/processors/remux-config-form.tsx:545
+#: src/components/pipeline/presets/processors/remux-config-form.tsx:526
 msgctxt "quality"
 msgid "Worst"
 msgstr "最差"
