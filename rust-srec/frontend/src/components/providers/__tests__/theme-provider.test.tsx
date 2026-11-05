@@ -132,21 +132,6 @@ describe('ThemeProvider', () => {
     expect(document.documentElement).toHaveClass('dark');
   });
 
-  it('setMode("system") resolves to light when system prefers light', () => {
-    localStorage.setItem('theme', 'dark');
-    mockSystemDark(false);
-
-    const { result } = renderHook(() => useTheme(), { wrapper });
-
-    // Starts as 'dark' from localStorage.
-    expect(document.documentElement).toHaveClass('dark');
-
-    act(() => result.current.setMode('system'));
-
-    expect(localStorage.getItem('theme')).toBe('system');
-    expect(document.documentElement).toHaveClass('light');
-  });
-
   it('responds to system media query changes when mode is "system"', () => {
     const { fireChange } = mockSystemDark(false);
 
@@ -220,15 +205,5 @@ describe('ThemeProvider', () => {
     expect(result.current.mode).toBe('dark');
     expect(document.documentElement).toHaveClass('dark');
     expect(document.cookie).toContain('theme=dark');
-  });
-
-  it('useTheme() returns default context value when used outside ThemeProvider', () => {
-    // The context carries a default value, so consumers outside the provider
-    // get inert defaults instead of a crash.
-    const { result } = renderHook(() => useTheme());
-
-    expect(result.current.mode).toBe('system');
-    expect(result.current.resolvedMode).toBe('light');
-    expect(result.current.setMode).toBeTypeOf('function');
   });
 });

@@ -1,9 +1,8 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { render, screen } from '@testing-library/react';
+import { screen } from '@testing-library/react';
 
 import { StorageUsageCard, groupDisksByMountPoint } from './storage-usage-card';
 import type { ComponentHealth } from '@/api/schemas/system';
+import { renderWithProviders } from '@/test/render';
 
 const GB = 1024 * 1024 * 1024;
 
@@ -71,12 +70,7 @@ describe('groupDisksByMountPoint', () => {
 });
 
 function renderCard(components: ComponentHealth[]) {
-  const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
-  return render(
-    <I18nProvider i18n={i18n}>
-      <StorageUsageCard components={components} />
-    </I18nProvider>,
-  );
+  return renderWithProviders(<StorageUsageCard components={components} />);
 }
 
 describe('StorageUsageCard', () => {

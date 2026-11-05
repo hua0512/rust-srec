@@ -1,21 +1,12 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import {
-  act,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/react';
-import type { PropsWithChildren } from 'react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 
 import type { DagStepDefinition, JobPreset } from '@/api/schemas';
 import { StepConfigDialog } from '@/components/pipeline/workflows/step-config-dialog';
 import { PresetEditor } from '../preset-editor';
+import { chooseOption, renderWithProviders } from '@/test/render';
 
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children }: PropsWithChildren) => <a href="#">{children}</a>,
+vi.mock('@tanstack/react-router', async () => ({
+  Link: (await import('@/test/router')).MockLink,
 }));
 // The editors render outside a router here, which the navigation guard needs.
 vi.mock('@/components/shared/unsaved-changes-guard', () => ({
@@ -28,7 +19,6 @@ vi.mock('@/server/functions/job', () => ({
   listJobPresets: vi.fn(async () => ({ presets: [], total: 0 })),
 }));
 
-const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
 type Editor = 'preset' | 'workflow';
 
 function renderEditor(
@@ -37,9 +27,6 @@ function renderEditor(
   processor = 'execute',
 ) {
   const onSave = vi.fn();
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
   const renderContent = (nextConfig: Record<string, unknown>) => {
     const preset: JobPreset = {
       id: `${processor}-test`,
@@ -54,32 +41,26 @@ function renderEditor(
       depends_on: [],
       step: { type: 'inline', processor, config: nextConfig },
     };
-    return (
-      <I18nProvider i18n={i18n}>
-        <QueryClientProvider client={client}>
-          {editor === 'preset' ? (
-            <PresetEditor
-              initialData={preset}
-              title="Edit preset"
-              onSubmit={(values) => onSave(values.config)}
-            />
-          ) : (
-            <StepConfigDialog
-              open
-              onOpenChange={() => {}}
-              dagStep={step}
-              allSteps={[step]}
-              currentStepIndex={0}
-              onSave={(values) => {
-                if (values.step.type === 'inline') onSave(values.step.config);
-              }}
-            />
-          )}
-        </QueryClientProvider>
-      </I18nProvider>
+    return editor === 'preset' ? (
+      <PresetEditor
+        initialData={preset}
+        title="Edit preset"
+        onSubmit={(values) => onSave(values.config)}
+      />
+    ) : (
+      <StepConfigDialog
+        open
+        onOpenChange={() => {}}
+        dagStep={step}
+        allSteps={[step]}
+        currentStepIndex={0}
+        onSave={(values) => {
+          if (values.step.type === 'inline') onSave(values.step.config);
+        }}
+      />
     );
   };
-  const result = render(renderContent(config));
+  const result = renderWithProviders(renderContent(config));
   return {
     onSave,
     reload: (nextConfig: Record<string, unknown>) =>
@@ -87,12 +68,11 @@ function renderEditor(
   };
 }
 
-async function selectMode(name: 'Shell command' | 'Program and arguments') {
-  const trigger = screen.getByRole('combobox', { name: 'Execution mode' });
-  // Keyboard opening starts on the focused trigger so focus restoration keeps the menu open.
-  act(() => trigger.focus());
-  fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-  fireEvent.click(await screen.findByRole('option', { name }));
+function selectMode(name: 'Shell command' | 'Program and arguments') {
+  return chooseOption(
+    screen.getByRole('combobox', { name: 'Execution mode' }),
+    name,
+  );
 }
 
 function makePresetDirty(editor: Editor) {
@@ -102,15 +82,6 @@ function makePresetDirty(editor: Editor) {
     });
   }
 }
-
-beforeAll(() => {
-  HTMLElement.prototype.scrollIntoView = vi.fn();
-  globalThis.ResizeObserver ??= class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  } as unknown as typeof ResizeObserver;
-});
 
 // Each case renders a full editor and queries it by accessible role, which is
 // CPU-bound in jsdom: the slowest case takes about 3 s of the default 5 s

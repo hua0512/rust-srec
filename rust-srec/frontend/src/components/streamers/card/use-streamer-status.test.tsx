@@ -1,40 +1,16 @@
 import type { ReactNode } from 'react';
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { render, renderHook } from '@testing-library/react';
+import { renderHook } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
 import type { CredentialBlock, Streamer } from '@/api/schemas/streamer';
 import type { QueuedEntry } from '@/store/downloads';
 import { monitoringState } from './recovery-state';
 import { useStreamerStatus } from './use-streamer-status';
+import { providersWrapper, renderWithProviders } from '@/test/render';
 
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({
-    children,
-    to,
-    params,
-    className,
-  }: {
-    children: ReactNode;
-    to: string;
-    params?: { platformId: string };
-    className?: string;
-  }) => (
-    <a
-      href={to.replace('$platformId', params?.platformId ?? '')}
-      className={className}
-    >
-      {children}
-    </a>
-  ),
+vi.mock('@tanstack/react-router', async () => ({
+  Link: (await import('@/test/router')).MockLink,
 }));
-
-const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
-
-function wrapper({ children }: { children: ReactNode }) {
-  return <I18nProvider i18n={i18n}>{children}</I18nProvider>;
-}
 
 const loginRequired: CredentialBlock = {
   reason: 'login_required',
@@ -79,14 +55,13 @@ function status(
         hasActiveDownload,
         queuedEntry,
       ),
-    { wrapper },
+    { wrapper: providersWrapper() },
   );
   return result.current;
 }
 
 function text(node: ReactNode) {
-  return render(<I18nProvider i18n={i18n}>{node}</I18nProvider>).container
-    .textContent;
+  return renderWithProviders(node).container.textContent;
 }
 
 const queued: QueuedEntry = {
@@ -133,9 +108,7 @@ describe('useStreamerStatus credential blocks', () => {
   });
 
   it('links its tooltip to the platform accounts', () => {
-    const { container } = render(
-      <I18nProvider i18n={i18n}>{status(streamer()).tooltip}</I18nProvider>,
-    );
+    const { container } = renderWithProviders(status(streamer()).tooltip);
     expect(container.textContent).toContain('Recording is paused');
     expect(container.querySelector('a')?.getAttribute('href')).toBe(
       '/config/platforms/platform-bilibili',

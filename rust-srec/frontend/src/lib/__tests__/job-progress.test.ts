@@ -1,10 +1,10 @@
-import { setupI18n } from '@lingui/core';
 import { expect, it } from 'vitest';
 
 import { JobProgressSnapshotSchema } from '@/api/schemas/session';
 import { describeJobProgress, snapshotProgress } from '../job-progress';
+import { testI18n } from '@/test/render';
 
-const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
+const i18n = testI18n();
 
 it('leads with the phase and ends with the file name', () => {
   const snapshot = JobProgressSnapshotSchema.parse({

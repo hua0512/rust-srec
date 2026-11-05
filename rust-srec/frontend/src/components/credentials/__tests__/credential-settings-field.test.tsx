@@ -29,8 +29,8 @@ import {
   templateOwner,
 } from './credential-test-utils';
 
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
+vi.mock('@tanstack/react-router', async () => ({
+  Link: (await import('@/test/router')).MockLink,
 }));
 
 vi.mock('@/server/functions/credential-profiles');

@@ -1,15 +1,8 @@
-import {
-  act,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/react';
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { PlayerCard } from '../player-card';
 import type { PlayerDanmu } from '../player-danmu';
 import { usePlayerPlayback } from '../use-player-playback';
+import { renderWithProviders } from '@/test/render';
 
 vi.mock('../use-player-playback', () => ({ usePlayerPlayback: vi.fn() }));
 let danmuProps: React.ComponentProps<typeof PlayerDanmu> | undefined;
@@ -32,20 +25,16 @@ const playback: ReturnType<typeof usePlayerPlayback> = {
   statistics: null,
   supportsLivePresets: false,
 };
-const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
-
 function player(props: Partial<React.ComponentProps<typeof PlayerCard>> = {}) {
   return (
-    <I18nProvider i18n={i18n}>
-      <PlayerCard
-        url="https://media.example/live.m3u8"
-        sourceUrl="https://source.example/channel?token=secret"
-        title="Evening stream"
-        creator="Creator"
-        quality="1080p"
-        {...props}
-      />
-    </I18nProvider>
+    <PlayerCard
+      url="https://media.example/live.m3u8"
+      sourceUrl="https://source.example/channel?token=secret"
+      title="Evening stream"
+      creator="Creator"
+      quality="1080p"
+      {...props}
+    />
   );
 }
 
@@ -55,7 +44,7 @@ beforeEach(() => {
 });
 
 it('shows identity, status, quality and effective connection without URL credentials', () => {
-  render(player());
+  renderWithProviders(player());
   expect(screen.getByText('Evening stream')).toBeInTheDocument();
   expect(screen.getByText(/Creator/)).toHaveTextContent(
     'source.example/channel',
@@ -67,7 +56,7 @@ it('shows identity, status, quality and effective connection without URL credent
 
 it('offers retry, proxy and source selection after a playback error', () => {
   hook.mockReturnValue({ ...playback, error: 'network', status: 'error' });
-  render(player({ settingsContent: <div>Source selector</div> }));
+  renderWithProviders(player({ settingsContent: <div>Source selector</div> }));
   expect(screen.getByRole('alert')).toHaveTextContent('Check the connection');
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
   expect(reload).toHaveBeenCalledOnce();
@@ -80,7 +69,9 @@ it('offers retry, proxy and source selection after a playback error', () => {
 });
 
 it('disables direct playback for sources needing request headers', () => {
-  render(player({ headers: { Referer: 'https://source.example' } }));
+  renderWithProviders(
+    player({ headers: { Referer: 'https://source.example' } }),
+  );
   fireEvent.click(screen.getByRole('button', { name: 'Player settings' }));
   expect(screen.getByText(/Direct is unavailable/)).toBeInTheDocument();
   expect(screen.getByRole('radio', { name: 'Direct' })).toBeDisabled();
@@ -98,7 +89,7 @@ it('shows refresh progress and a recoverable error when refreshing fails', async
         rejectRefresh = reject;
       }),
   );
-  render(player({ onRefreshSource: refresh }));
+  renderWithProviders(player({ onRefreshSource: refresh }));
   fireEvent.click(screen.getByRole('button', { name: 'Player settings' }));
   fireEvent.click(screen.getByRole('button', { name: 'Refresh stream URL' }));
   expect(screen.getByRole('status')).toHaveTextContent('Resolving stream');
@@ -126,7 +117,7 @@ it('separates source metadata from measured playback details and enables samplin
       liveEdgeDistanceSeconds: 5.2,
     },
   });
-  render(
+  renderWithProviders(
     player({
       isLive: true,
       sourceDetails: { codec: 'h264', fps: 60, bitrate: 4_000_000 },
@@ -159,7 +150,7 @@ it('separates source metadata from measured playback details and enables samplin
 
 it('lets supported live players choose a playback preference', () => {
   hook.mockReturnValue({ ...playback, supportsLivePresets: true });
-  render(player({ isLive: true }));
+  renderWithProviders(player({ isLive: true }));
   fireEvent.click(screen.getByRole('button', { name: 'Player settings' }));
   const latency = screen.getByRole('radiogroup', { name: 'Latency' });
   expect(screen.getByRole('radio', { name: 'Balanced' })).toBeChecked();
@@ -177,7 +168,7 @@ it('lets supported live players choose a playback preference', () => {
 });
 
 it('explains unsupported live buffering and hides live preferences for recordings', () => {
-  const view = render(player({ isLive: true }));
+  const view = renderWithProviders(player({ isLive: true }));
   fireEvent.click(screen.getByRole('button', { name: 'Player settings' }));
   for (const option of screen.getAllByRole('radio', {
     name: /Low|Balanced|Smooth/,
@@ -195,7 +186,7 @@ it('explains unsupported live buffering and hides live preferences for recording
 });
 
 it('groups stream selection and playback settings into tabs', () => {
-  render(player({ settingsContent: <div>Source selector</div> }));
+  renderWithProviders(player({ settingsContent: <div>Source selector</div> }));
   fireEvent.click(screen.getByRole('button', { name: 'Player settings' }));
   expect(screen.getByText('Source selector')).toBeInTheDocument();
   fireEvent.mouseDown(screen.getByRole('tab', { name: 'Playback' }));
@@ -205,7 +196,7 @@ it('groups stream selection and playback settings into tabs', () => {
 });
 
 it('only shows a visible status chip for transitional states', () => {
-  const view = render(player());
+  const view = renderWithProviders(player());
   expect(screen.getByRole('status')).toHaveClass('sr-only');
   hook.mockReturnValue({ ...playback, status: 'buffering', loading: true });
   view.rerender(player());
@@ -221,7 +212,7 @@ it('renews for expired live chat at most once a minute, never beside another ren
         finish = resolve;
       }),
   );
-  const view = render(
+  const view = renderWithProviders(
     player({ onRefreshSource: refresh, liveDanmuHandle: 'h1' }),
   );
   fireEvent.click(screen.getByRole('button', { name: 'Player settings' }));

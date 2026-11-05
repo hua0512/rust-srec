@@ -1,6 +1,4 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import { useEffect } from 'react';
 import type { PropsWithChildren } from 'react';
 import { useForm } from 'react-hook-form';
@@ -9,9 +7,10 @@ import { Form } from '@/components/ui/form';
 import type { JobPreset } from '@/api/schemas';
 import { PresetMetaForm } from '../editor/preset-meta-form';
 import type { PresetFormValues } from '../preset-editor';
+import { renderWithProviders } from '@/test/render';
 
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children }: PropsWithChildren) => <a href="#">{children}</a>,
+vi.mock('@tanstack/react-router', async () => ({
+  Link: (await import('@/test/router')).MockLink,
 }));
 
 vi.mock('motion/react', () => ({
@@ -19,8 +18,6 @@ vi.mock('motion/react', () => ({
     div: ({ children }: PropsWithChildren) => <div>{children}</div>,
   },
 }));
-
-const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
 
 const EXISTING_PRESET: JobPreset = {
   id: 'preset-default-metadata',
@@ -58,28 +55,26 @@ function PresetMetaFormHarness() {
   }, [form]);
 
   return (
-    <I18nProvider i18n={i18n}>
-      <Form {...form}>
-        <form>
-          <PresetMetaForm
-            form={form}
-            initialData={EXISTING_PRESET}
-            title="Edit preset"
-            isUpdating={false}
-          />
-          <output data-testid="processor">{processor}</output>
-          <output data-testid="config">
-            {JSON.stringify(form.watch('config'))}
-          </output>
-        </form>
-      </Form>
-    </I18nProvider>
+    <Form {...form}>
+      <form>
+        <PresetMetaForm
+          form={form}
+          initialData={EXISTING_PRESET}
+          title="Edit preset"
+          isUpdating={false}
+        />
+        <output data-testid="processor">{processor}</output>
+        <output data-testid="config">
+          {JSON.stringify(form.watch('config'))}
+        </output>
+      </form>
+    </Form>
   );
 }
 
 describe('preset processor select', () => {
   it('preserves reset processor and config values', async () => {
-    render(<PresetMetaFormHarness />);
+    renderWithProviders(<PresetMetaFormHarness />);
 
     await waitFor(() => {
       expect(screen.getByTestId('processor')).toHaveTextContent('metadata');

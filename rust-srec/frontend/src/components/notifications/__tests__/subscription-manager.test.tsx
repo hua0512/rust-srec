@@ -1,7 +1,4 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 
 import type { NotificationChannel } from '@/api/schemas';
 import {
@@ -10,6 +7,7 @@ import {
   updateSubscriptions,
 } from '@/server/functions/notifications';
 import { SubscriptionManager } from '../subscription-manager';
+import { renderWithProviders } from '@/test/render';
 
 vi.mock('@/server/functions/notifications', () => ({
   listEventTypes: vi.fn(),
@@ -31,21 +29,14 @@ const eventTypes = [
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(listEventTypes).mockResolvedValue(eventTypes as any);
-  vi.mocked(getSubscriptions).mockResolvedValue(['stream_online'] as any);
-  vi.mocked(updateSubscriptions).mockResolvedValue(undefined as any);
+  vi.mocked(listEventTypes).mockResolvedValue(eventTypes);
+  vi.mocked(getSubscriptions).mockResolvedValue(['stream_online']);
+  vi.mocked(updateSubscriptions).mockResolvedValue([]);
 });
 
 async function renderManager() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <QueryClientProvider client={queryClient}>
-        <SubscriptionManager channel={channel} open onOpenChange={() => {}} />
-      </QueryClientProvider>
-    </I18nProvider>,
+  const { client: queryClient } = renderWithProviders(
+    <SubscriptionManager channel={channel} open onOpenChange={() => {}} />,
   );
   await screen.findByText('download_error');
   return { queryClient };
@@ -82,7 +73,7 @@ describe('SubscriptionManager', () => {
     vi.mocked(getSubscriptions).mockResolvedValue([
       'stream_online',
       'config_updated',
-    ] as any);
+    ]);
     await renderManager();
 
     expect(screen.getByText('1 selected')).toBeInTheDocument();

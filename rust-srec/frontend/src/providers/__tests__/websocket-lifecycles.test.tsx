@@ -5,28 +5,16 @@ import {
   render,
   screen,
 } from '@testing-library/react';
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { queryKeys } from '@/api/query-keys';
 import { LogViewer } from '@/components/logging/log-viewer';
 import { useDownloadStore } from '@/store/downloads';
 import { useUploadStore } from '@/store/uploads';
 import { WebSocketProvider } from '../WebSocketProvider';
-
-function sessionWithToken(accessToken: string, expiresInMs = 60 * 60_000) {
-  return {
-    username: 'user',
-    token: {
-      access_token: accessToken,
-      expires_in: Date.now() + expiresInMs,
-      refresh_expires_in: Date.now() + 24 * 60 * 60_000,
-    },
-    roles: [],
-    mustChangePassword: false,
-  };
-}
+import { newQueryClient, renderWithProviders } from '@/test/render';
+import { MockWebSocket } from '@/test/mock-websocket';
+import { testSession } from '@/test/session';
 
 const routeContext = vi.hoisted(() => ({
   user: null as unknown,
@@ -42,52 +30,12 @@ vi.mock('@/server/functions/auth', () => ({
   checkAuthFn: checkAuthFnMock,
 }));
 
-class MockWebSocket {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSING = 2;
-  static readonly CLOSED = 3;
-  static instances: MockWebSocket[] = [];
-
-  readonly url: string;
-  readyState = MockWebSocket.CONNECTING;
-  binaryType: BinaryType = 'blob';
-  onopen: ((event: Event) => void) | null = null;
-  onmessage: ((event: MessageEvent) => void) | null = null;
-  onclose: ((event: CloseEvent) => void) | null = null;
-  onerror: ((event: Event) => void) | null = null;
-  send = vi.fn();
-
-  constructor(url: string | URL) {
-    this.url = url.toString();
-    MockWebSocket.instances.push(this);
-  }
-
-  close() {
-    this.readyState = MockWebSocket.CLOSED;
-  }
-
-  emitOpen() {
-    this.readyState = MockWebSocket.OPEN;
-    this.onopen?.(new Event('open'));
-  }
-
-  emitClose() {
-    this.onclose?.(new CloseEvent('close'));
-  }
-}
-
-function createQueryClient() {
-  return new QueryClient({
-    defaultOptions: {
-      queries: { retry: false, staleTime: Infinity },
-    },
-  });
-}
-
 async function rotateToken(queryClient: QueryClient) {
   await act(async () => {
-    queryClient.setQueryData(queryKeys.session, sessionWithToken('token-b'));
+    queryClient.setQueryData(
+      queryKeys.session,
+      testSession({ accessToken: 'token-b' }),
+    );
     await vi.advanceTimersByTimeAsync(0);
   });
 }
@@ -142,7 +90,7 @@ describe('WebSocket lifecycle ownership', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     MockWebSocket.instances = [];
-    routeContext.user = sessionWithToken('token-a');
+    routeContext.user = testSession({ accessToken: 'token-a' });
     checkAuthFnMock.mockReset();
     checkAuthFnMock.mockRejectedValue(new Error('offline'));
     vi.stubGlobal('WebSocket', MockWebSocket);
@@ -157,7 +105,7 @@ describe('WebSocket lifecycle ownership', () => {
   });
 
   it('keeps the provider socket open across a token rotation', async () => {
-    const queryClient = createQueryClient();
+    const queryClient = newQueryClient();
     render(
       <QueryClientProvider client={queryClient}>
         <WebSocketProvider>
@@ -182,7 +130,7 @@ describe('WebSocket lifecycle ownership', () => {
   });
 
   it('keeps live transfers on screen across a token rotation', async () => {
-    const queryClient = createQueryClient();
+    const queryClient = newQueryClient();
     render(
       <QueryClientProvider client={queryClient}>
         <WebSocketProvider>
@@ -201,7 +149,7 @@ describe('WebSocket lifecycle ownership', () => {
   });
 
   it('reopens the provider socket with the renewed token after it drops', async () => {
-    const queryClient = createQueryClient();
+    const queryClient = newQueryClient();
     render(
       <QueryClientProvider client={queryClient}>
         <WebSocketProvider>
@@ -234,8 +182,11 @@ describe('WebSocket lifecycle ownership', () => {
   it('renews an expiring session when the provider socket drops', async () => {
     // Inside the renewal window, as when the backend closes the socket at
     // token expiry.
-    routeContext.user = sessionWithToken('token-a', 10_000);
-    const queryClient = createQueryClient();
+    routeContext.user = testSession({
+      accessToken: 'token-a',
+      expiresInMs: 10_000,
+    });
+    const queryClient = newQueryClient();
     render(
       <QueryClientProvider client={queryClient}>
         <WebSocketProvider>
@@ -250,7 +201,7 @@ describe('WebSocket lifecycle ownership', () => {
       firstSocket.emitOpen();
       await vi.advanceTimersByTimeAsync(0);
     });
-    checkAuthFnMock.mockResolvedValue(sessionWithToken('token-b'));
+    checkAuthFnMock.mockResolvedValue(testSession({ accessToken: 'token-b' }));
 
     await act(async () => {
       firstSocket.emitClose();
@@ -263,15 +214,8 @@ describe('WebSocket lifecycle ownership', () => {
   });
 
   it('keeps the log socket open across a token rotation and reopens it once after a drop', async () => {
-    const queryClient = createQueryClient();
-    const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
-    render(
-      <QueryClientProvider client={queryClient}>
-        <I18nProvider i18n={i18n}>
-          <LogViewer />
-        </I18nProvider>
-      </QueryClientProvider>,
-    );
+    const queryClient = newQueryClient();
+    renderWithProviders(<LogViewer />, { client: queryClient });
 
     const firstSocket = MockWebSocket.instances[0];
     act(() => firstSocket.emitOpen());
@@ -296,15 +240,8 @@ describe('WebSocket lifecycle ownership', () => {
   });
 
   it('keeps the log socket open when pausing the viewer', async () => {
-    const queryClient = createQueryClient();
-    const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
-    render(
-      <QueryClientProvider client={queryClient}>
-        <I18nProvider i18n={i18n}>
-          <LogViewer />
-        </I18nProvider>
-      </QueryClientProvider>,
-    );
+    const queryClient = newQueryClient();
+    renderWithProviders(<LogViewer />, { client: queryClient });
 
     fireEvent.click(screen.getByRole('button', { name: 'Pause' }));
     await act(async () => {

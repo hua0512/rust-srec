@@ -1,6 +1,4 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, screen } from '@testing-library/react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 
 import {
@@ -13,6 +11,7 @@ import { Form } from '@/components/ui/form';
 import { EngineOverrideCard } from '../../../templates/tabs/engine-override-card';
 import { FfmpegForm } from '../ffmpeg-form';
 import { StreamlinkForm } from '../streamlink-form';
+import { renderWithProviders } from '@/test/render';
 
 type EngineValues = {
   enable_lossless_cutting?: boolean;
@@ -26,10 +25,6 @@ type Values = {
 
 const details = () =>
   screen.queryByRole('button', { name: 'Recording uses temporary chunks' });
-
-beforeAll(() => {
-  HTMLElement.prototype.scrollIntoView = vi.fn();
-});
 
 describe.each([
   {
@@ -84,11 +79,7 @@ describe.each([
           </Form>
         );
       }
-      render(
-        <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-          <Harness />
-        </I18nProvider>,
-      );
+      renderWithProviders(<Harness />);
       return () =>
         override
           ? overrideSchema.parse(form.getValues('engines_override.engine'))

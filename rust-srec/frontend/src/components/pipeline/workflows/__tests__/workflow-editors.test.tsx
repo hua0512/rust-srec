@@ -1,11 +1,9 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import type { DagStepDefinition } from '@/api/schemas';
 import { PipelineWorkflowEditor } from '../pipeline-workflow-editor';
 import { WorkflowEditor } from '../workflow-editor';
+import { renderWithProviders } from '@/test/render';
 
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
@@ -20,7 +18,6 @@ vi.mock('../flow-editor/workflow-flow-editor', () => ({
   WorkflowFlowEditor: () => null,
 }));
 
-const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
 const initialSteps: DagStepDefinition[] = [
   { id: 'first', depends_on: [], step: { type: 'workflow', name: 'prepare' } },
   {
@@ -43,16 +40,6 @@ const inlineSteps: DagStepDefinition[] = [
   },
 ];
 
-function renderTree(node: React.ReactNode) {
-  return render(
-    <I18nProvider i18n={i18n}>
-      <QueryClientProvider client={new QueryClient()}>
-        {node}
-      </QueryClientProvider>
-    </I18nProvider>,
-  );
-}
-
 /** Edits the inline step's command, then submits the dialog's own form as Enter would. */
 async function editStepAndSubmitTheDialogForm() {
   fireEvent.click(screen.getAllByTitle('Configure Step')[0]);
@@ -66,14 +53,6 @@ async function editStepAndSubmitTheDialogForm() {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument(),
   );
 }
-
-beforeAll(() => {
-  globalThis.ResizeObserver ??= class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  } as unknown as typeof ResizeObserver;
-});
 
 describe.each(['workflow', 'pipeline'] as const)('%s editor', (kind) => {
   it('saves the renamed step and updates every dependent through the real dialog', async () => {
@@ -100,13 +79,7 @@ describe.each(['workflow', 'pipeline'] as const)('%s editor', (kind) => {
         />
       );
     }
-    render(
-      <I18nProvider i18n={i18n}>
-        <QueryClientProvider client={new QueryClient()}>
-          <Editor />
-        </QueryClientProvider>
-      </I18nProvider>,
-    );
+    renderWithProviders(<Editor />);
     fireEvent.click(screen.getAllByTitle('Configure Step')[0]);
     fireEvent.change(await screen.findByLabelText(/Step Identifier/i), {
       target: { value: 'renamed' },
@@ -132,7 +105,7 @@ describe.each(['workflow', 'pipeline'] as const)('%s editor', (kind) => {
 describe('step dialog submit', () => {
   it('saves the step without submitting the workflow form around it', async () => {
     const onSubmit = vi.fn();
-    renderTree(
+    renderWithProviders(
       <WorkflowEditor
         title="Edit workflow"
         initialData={{
@@ -172,7 +145,7 @@ describe('step dialog submit', () => {
         </form>
       );
     }
-    renderTree(<Settings />);
+    renderWithProviders(<Settings />);
 
     await editStepAndSubmitTheDialogForm();
 

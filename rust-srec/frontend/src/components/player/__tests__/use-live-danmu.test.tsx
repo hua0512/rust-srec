@@ -1,40 +1,13 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, render } from '@testing-library/react';
 import { sessionQueryOptions } from '@/api/session';
-import type { ClientSessionData } from '@/utils/session';
 import type { LiveDanmuItem } from '../danmu-overlay';
 import { useLiveDanmu } from '../use-live-danmu';
+import { MockWebSocket } from '@/test/mock-websocket';
+import { newQueryClient } from '@/test/render';
+import { testSession } from '@/test/session';
 
 vi.mock('@/server/functions/auth', () => ({ checkAuthFn: vi.fn() }));
-
-class MockWebSocket {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSED = 3;
-  static instances: MockWebSocket[] = [];
-
-  readonly url: string;
-  readyState = MockWebSocket.CONNECTING;
-  binaryType: BinaryType = 'blob';
-  onopen: ((event: Event) => void) | null = null;
-  onmessage: ((event: MessageEvent) => void) | null = null;
-  onclose: ((event: CloseEvent) => void) | null = null;
-  onerror: ((event: Event) => void) | null = null;
-
-  constructor(url: string | URL) {
-    this.url = url.toString();
-    MockWebSocket.instances.push(this);
-  }
-
-  close() {
-    this.readyState = MockWebSocket.CLOSED;
-  }
-
-  emitClose(code: number) {
-    this.readyState = MockWebSocket.CLOSED;
-    this.onclose?.(new CloseEvent('close', { code }));
-  }
-}
 
 function Harness({
   handle,
@@ -50,18 +23,11 @@ function Harness({
 }
 
 function renderWithSession(handle: string) {
-  const queryClient = new QueryClient();
-  const session: ClientSessionData = {
-    username: 'user',
-    token: {
-      access_token: 'token',
-      expires_in: Date.now() + 10 * 60_000,
-      refresh_expires_in: Date.now() + 60 * 60_000,
-    },
-    roles: [],
-    mustChangePassword: false,
-  };
-  queryClient.setQueryData(sessionQueryOptions.queryKey, session);
+  const queryClient = newQueryClient();
+  queryClient.setQueryData(
+    sessionQueryOptions.queryKey,
+    testSession({ accessToken: 'token' }),
+  );
   const onItems = vi.fn();
   const onExpired = vi.fn();
   const view = render(

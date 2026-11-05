@@ -1,11 +1,10 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import type { PropsWithChildren } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { PresetConfigForm } from '../editor/preset-config-form';
 import type { PresetFormValues } from '../preset-editor';
+import { renderWithProviders } from '@/test/render';
 
 vi.mock('motion/react', () => ({
   motion: {
@@ -16,8 +15,6 @@ vi.mock('motion/react', () => ({
 vi.mock('../processors/processor-config-manager', () => ({
   ProcessorConfigManager: () => null,
 }));
-
-const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
 
 let currentConfig: unknown;
 
@@ -50,11 +47,7 @@ function Harness({ processor }: { processor: string }) {
 }
 
 function renderForm(processor: string) {
-  return render(
-    <I18nProvider i18n={i18n}>
-      <Harness processor={processor} />
-    </I18nProvider>,
-  );
+  return renderWithProviders(<Harness processor={processor} />);
 }
 
 describe('PresetConfigForm', () => {

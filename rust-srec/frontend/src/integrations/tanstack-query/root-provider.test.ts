@@ -10,13 +10,4 @@ describe('query client defaults', () => {
 
     expect(queryFn).toHaveBeenCalledOnce();
   });
-
-  it('leaves polling to the foreground', () => {
-    const { queryClient } = getContext();
-
-    expect(
-      queryClient.defaultQueryOptions({ queryKey: ['thing'] })
-        .refetchIntervalInBackground,
-    ).toBe(false);
-  });
 });

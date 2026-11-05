@@ -1,35 +1,15 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 
 import { UploadIndicator } from './upload-indicator';
 import { useUploadStore, type UploadView } from '@/store/uploads';
-
-beforeAll(() => {
-  // Radix measures tooltip content; jsdom does not provide ResizeObserver.
-  vi.stubGlobal(
-    'ResizeObserver',
-    class {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    },
-  );
-});
-
-afterAll(() => vi.unstubAllGlobals());
+import { renderWithProviders } from '@/test/render';
 
 function renderIndicator(uploads: UploadView[]) {
-  const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
   useUploadStore.setState({
     uploadsByJobId: new Map(uploads.map((upload) => [upload.jobId, upload])),
   });
 
-  return render(
-    <I18nProvider i18n={i18n}>
-      <UploadIndicator streamerId="streamer-1" />
-    </I18nProvider>,
-  );
+  return renderWithProviders(<UploadIndicator streamerId="streamer-1" />);
 }
 
 function createUpload(overrides: Partial<UploadView> = {}): UploadView {

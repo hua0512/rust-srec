@@ -1,12 +1,11 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { act, render, screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import {
   generateCredentialLogin,
   pollCredentialLogin,
 } from '@/server/functions/credential-profiles';
 import type { CredentialLoginTarget } from '@/api/schemas/credential-profiles';
 import { CredentialLoginDialog } from '../credential-login-dialog';
+import { renderWithProviders } from '@/test/render';
 
 vi.mock('@/server/functions/credential-profiles', () => ({
   generateCredentialLogin: vi.fn(),
@@ -37,22 +36,20 @@ function dialog(
   },
 ) {
   return (
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <CredentialLoginDialog
-        target={target}
-        accountLabel="Main account"
-        platformName={platformName}
-        onClose={() => {}}
-        onSuccess={onSuccess}
-      />
-    </I18nProvider>
+    <CredentialLoginDialog
+      target={target}
+      accountLabel="Main account"
+      platformName={platformName}
+      onClose={() => {}}
+      onSuccess={onSuccess}
+    />
   );
 }
 
 it('sends only the immutable receipt ID when polling and stops after completion', async () => {
   vi.mocked(pollCredentialLogin).mockResolvedValue({ status: 'completed' });
   const success = vi.fn();
-  render(dialog(success));
+  renderWithProviders(dialog(success));
   await advance(1000);
   expect(pollCredentialLogin).toHaveBeenCalledWith({ data: 'receipt-a' });
   expect(success).toHaveBeenCalledOnce();
@@ -68,7 +65,7 @@ it('does not overlap polls and ignores completion after unmount', async () => {
     }),
   );
   const success = vi.fn();
-  const view = render(dialog(success));
+  const view = renderWithProviders(dialog(success));
   await advance(11000);
   expect(pollCredentialLogin).toHaveBeenCalledOnce();
   view.unmount();
@@ -78,19 +75,19 @@ it('does not overlap polls and ignores completion after unmount', async () => {
 
 it("names the app of the login's platform", async () => {
   vi.mocked(pollCredentialLogin).mockResolvedValue({ status: 'not_scanned' });
-  render(dialog(vi.fn(), 'douyu'));
+  renderWithProviders(dialog(vi.fn(), 'douyu'));
   await advance(0);
   expect(screen.getByText('Scan with the Douyu app')).toBeTruthy();
 });
 
 it('names the account it logs in again or adds', async () => {
   vi.mocked(pollCredentialLogin).mockResolvedValue({ status: 'not_scanned' });
-  const view = render(dialog());
+  const view = renderWithProviders(dialog());
   expect(
     screen.getByRole('heading', { name: 'Log in again to “Main account”' }),
   ).toBeInTheDocument();
   view.unmount();
-  render(
+  renderWithProviders(
     dialog(vi.fn(), 'bilibili', {
       type: 'create',
       platform_id: 'platform-a',
@@ -104,6 +101,6 @@ it('names the account it logs in again or adds', async () => {
 
 it('opens without focusing its close button', () => {
   vi.mocked(pollCredentialLogin).mockResolvedValue({ status: 'not_scanned' });
-  render(dialog());
+  renderWithProviders(dialog());
   expect(screen.getByRole('dialog')).toHaveFocus();
 });

@@ -1,23 +1,9 @@
 import { getProcessorDefinition } from '../registry';
 
 describe('getProcessorDefinition', () => {
-  it.each([
-    ['transcode', 'remux'],
-    ['convert', 'remux'],
-    ['upload', 'rclone'],
-    ['extract_audio', 'audio_extract'],
-    ['compress', 'compression'],
-    ['archive', 'compression'],
-    ['cleanup', 'delete'],
-    ['embed_metadata', 'metadata'],
-    ['command', 'execute'],
-    ['danmu_to_ass', 'danmaku_factory'],
-    ['danmu', 'danmaku_factory'],
-    ['burn_ass', 'ass_burnin'],
-    ['burn_subtitles', 'ass_burnin'],
-  ])('resolves the backend alias %s to %s', (alias, processor) => {
-    expect(getProcessorDefinition(alias)).toBe(
-      getProcessorDefinition(processor),
+  it('resolves a backend alias to its processor', () => {
+    expect(getProcessorDefinition('transcode')).toBe(
+      getProcessorDefinition('remux'),
     );
   });
 

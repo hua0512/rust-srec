@@ -1,11 +1,6 @@
-import type { ReactNode } from 'react';
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   act,
   fireEvent,
-  render,
   screen,
   waitFor,
   within,
@@ -22,24 +17,15 @@ import {
   useUploadStore,
   type UploadView,
 } from '@/store/uploads';
+import { renderWithProviders } from '@/test/render';
 
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({
-    children,
-    to,
-    params,
-  }: {
-    children: ReactNode;
-    to: string;
-    params?: { jobId: string };
-  }) => <a href={to.replace('$jobId', params?.jobId ?? '')}>{children}</a>,
+vi.mock('@tanstack/react-router', async () => ({
+  Link: (await import('@/test/router')).MockLink,
 }));
 
 vi.mock('@/server/functions/pipeline', () => ({
   cancelActivePipelineJob: vi.fn(),
 }));
-
-const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
 
 function createUpload(overrides: Partial<UploadView> = {}): UploadView {
   return {
@@ -60,13 +46,7 @@ function renderIndicator(uploads: UploadView[]) {
   useUploadStore.setState({
     uploadsByJobId: new Map(uploads.map((upload) => [upload.jobId, upload])),
   });
-  return render(
-    <QueryClientProvider client={new QueryClient()}>
-      <I18nProvider i18n={i18n}>
-        <UploadStatusIndicator />
-      </I18nProvider>
-    </QueryClientProvider>,
-  );
+  return renderWithProviders(<UploadStatusIndicator />);
 }
 
 describe('UploadStatusIndicator', () => {

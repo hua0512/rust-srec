@@ -1,6 +1,4 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
@@ -13,17 +11,12 @@ import { Form } from '@/components/ui/form';
 import { withEngineOverrideChecks } from '../../../templates/engine-override-checks';
 import { EngineOverrideCard } from '../../../templates/tabs/engine-override-card';
 import { MesioForm } from '../mesio-form';
+import { renderWithProviders } from '@/test/render';
 
 type Values = {
   config?: Record<string, unknown>;
   engines_override?: Record<string, Record<string, unknown>>;
 };
-
-beforeAll(() => {
-  HTMLElement.prototype.scrollIntoView = vi.fn();
-  HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
-  HTMLElement.prototype.releasePointerCapture = vi.fn();
-});
 
 function mount(
   override = false,
@@ -69,11 +62,7 @@ function mount(
       </Form>
     );
   }
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <Harness />
-    </I18nProvider>,
-  );
+  renderWithProviders(<Harness />);
   openDashTab();
   return {
     form,

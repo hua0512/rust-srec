@@ -1,10 +1,9 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 
 import { Form } from '@/components/ui/form';
 import { WebhookForm } from '../webhook-form';
+import { renderWithProviders } from '@/test/render';
 
 type Values = { settings: Record<string, unknown> };
 
@@ -31,11 +30,7 @@ function renderForm(headers: Array<[string, string]>) {
       </Form>
     );
   }
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <Harness />
-    </I18nProvider>,
-  );
+  renderWithProviders(<Harness />);
   return { stored: () => form.getValues('settings') };
 }
 
@@ -45,15 +40,6 @@ const removeRow = (index: number) =>
   fireEvent.click(
     within(keyInputs()[index].closest('div.group')!).getAllByRole('button')[0],
   );
-
-beforeAll(() => {
-  HTMLElement.prototype.scrollIntoView = vi.fn();
-  globalThis.ResizeObserver ??= class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  } as unknown as typeof ResizeObserver;
-});
 
 describe('WebhookForm custom headers', () => {
   it('lists the configured headers', () => {

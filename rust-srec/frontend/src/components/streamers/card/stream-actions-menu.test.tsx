@@ -1,19 +1,10 @@
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import type { ReactNode } from 'react';
+import { act, cleanup, fireEvent, screen } from '@testing-library/react';
 import { StreamActionsMenu } from './stream-actions-menu';
 import { useDownloadStore } from '@/store/downloads';
+import { renderWithProviders } from '@/test/render';
 
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
+vi.mock('@tanstack/react-router', async () => ({
+  Link: (await import('@/test/router')).MockLink,
 }));
 vi.mock('@/server/functions/downloads', () => ({
   requestLosslessCut: vi.fn(),
@@ -30,21 +21,15 @@ afterEach(cleanup);
 
 it('keeps an open menu open when a recording starts and is replaced', () => {
   useDownloadStore.getState().clearAll();
-  const queryClient = new QueryClient();
-  const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
   const tree = (downloadId: string | undefined) => (
-    <QueryClientProvider client={queryClient}>
-      <I18nProvider i18n={i18n}>
-        <StreamActionsMenu
-          downloadId={downloadId}
-          streamer={streamer}
-          onDelete={() => {}}
-          onToggle={() => {}}
-        />
-      </I18nProvider>
-    </QueryClientProvider>
+    <StreamActionsMenu
+      downloadId={downloadId}
+      streamer={streamer}
+      onDelete={() => {}}
+      onToggle={() => {}}
+    />
   );
-  const view = render(tree(undefined));
+  const view = renderWithProviders(tree(undefined));
   const trigger = screen.getByRole('button', { name: 'Open menu' });
   act(() => {
     fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });

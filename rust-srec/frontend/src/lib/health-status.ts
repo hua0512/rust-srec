@@ -12,7 +12,7 @@ import {
  * How to present one `HealthStatus` value from `rust-srec/src/metrics/health.rs`.
  * `badge` styles an outline badge; `dot` fills a status dot or a progress bar.
  */
-export interface HealthStatusMeta {
+interface HealthStatusMeta {
   label: MessageDescriptor;
   icon: LucideIcon;
   badge: string;

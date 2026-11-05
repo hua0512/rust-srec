@@ -4,6 +4,8 @@ import type { ReactNode } from 'react';
 
 import { sessionQueryOptions } from '@/api/session';
 import { useSignedOutRedirect } from '../use-signed-out-redirect';
+import { testSession } from '@/test/session';
+import { newQueryClient } from '@/test/render';
 
 const checkAuthFnMock = vi.hoisted(() => vi.fn());
 
@@ -28,26 +30,13 @@ vi.mock('@tanstack/react-router', () => ({
   }) => select(router.state),
 }));
 
-function session() {
-  return {
-    username: 'user',
-    token: {
-      access_token: 'access-token',
-      expires_in: Date.now() + 10 * 60_000,
-      refresh_expires_in: Date.now() + 60 * 60_000,
-    },
-    roles: [],
-    mustChangePassword: false,
-  };
-}
-
 /**
  * Writes the session query the way a check result lands. React Query hands the
  * change to observers on a timer, so the write is awaited past that tick.
  */
 async function setSession(
   queryClient: QueryClient,
-  value: ReturnType<typeof session> | null,
+  value: ReturnType<typeof testSession> | null,
 ) {
   await act(async () => {
     queryClient.setQueryData(sessionQueryOptions.queryKey, value);
@@ -72,9 +61,7 @@ describe('useSignedOutRedirect', () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    queryClient = newQueryClient();
     router.navigate.mockClear();
     router.state.status = 'idle';
     checkAuthFnMock.mockReset();
@@ -89,13 +76,13 @@ describe('useSignedOutRedirect', () => {
     renderRedirect(queryClient);
     expect(router.navigate).not.toHaveBeenCalled();
 
-    await setSession(queryClient, session());
+    await setSession(queryClient, testSession());
 
     expect(router.navigate).not.toHaveBeenCalled();
   });
 
   it('never runs the session check itself', async () => {
-    queryClient.setQueryData(sessionQueryOptions.queryKey, session());
+    queryClient.setQueryData(sessionQueryOptions.queryKey, testSession());
     renderRedirect(queryClient);
     await act(async () => {
       await Promise.resolve();
@@ -105,7 +92,7 @@ describe('useSignedOutRedirect', () => {
   });
 
   it('sends a signed-out visitor to login with the page they were on', async () => {
-    queryClient.setQueryData(sessionQueryOptions.queryKey, session());
+    queryClient.setQueryData(sessionQueryOptions.queryKey, testSession());
     renderRedirect(queryClient);
 
     await setSession(queryClient, null);
@@ -115,7 +102,7 @@ describe('useSignedOutRedirect', () => {
   });
 
   it('redirects once, not again while its own navigation is in flight', async () => {
-    queryClient.setQueryData(sessionQueryOptions.queryKey, session());
+    queryClient.setQueryData(sessionQueryOptions.queryKey, testSession());
     const { rerender } = renderRedirect(queryClient);
 
     await setSession(queryClient, null);
@@ -127,7 +114,7 @@ describe('useSignedOutRedirect', () => {
   });
 
   it('lets a navigation in flight finish, then redirects if still signed out', async () => {
-    queryClient.setQueryData(sessionQueryOptions.queryKey, session());
+    queryClient.setQueryData(sessionQueryOptions.queryKey, testSession());
     const { rerender } = renderRedirect(queryClient);
 
     // Sign-out and password change write `null` and navigate in the same
@@ -149,8 +136,8 @@ describe('useSignedOutRedirect', () => {
     renderRedirect(queryClient);
     expect(router.navigate).toHaveBeenCalledOnce();
 
-    await setSession(queryClient, session());
-    await setSession(queryClient, session());
+    await setSession(queryClient, testSession());
+    await setSession(queryClient, testSession());
 
     expect(router.navigate).toHaveBeenCalledOnce();
   });

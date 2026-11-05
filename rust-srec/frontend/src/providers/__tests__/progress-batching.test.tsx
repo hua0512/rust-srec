@@ -1,5 +1,5 @@
 import { act, cleanup, render } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { create, toBinary } from '@bufbuild/protobuf';
 
 import {
@@ -11,6 +11,8 @@ import type { MessageInitShape } from '@bufbuild/protobuf';
 import { useDownloadStore } from '@/store/downloads';
 import { useUploadStore } from '@/store/uploads';
 import { PROGRESS_FLUSH_MS, WebSocketProvider } from '../WebSocketProvider';
+import { MockWebSocket } from '@/test/mock-websocket';
+import { newQueryClient } from '@/test/render';
 
 const routeContext = vi.hoisted(() => ({
   user: null as unknown,
@@ -20,47 +22,13 @@ vi.mock('@tanstack/react-router', () => ({
   useRouteContext: () => routeContext,
 }));
 
-class MockWebSocket {
-  static readonly CONNECTING = 0;
-  static readonly OPEN = 1;
-  static readonly CLOSING = 2;
-  static readonly CLOSED = 3;
-  static instances: MockWebSocket[] = [];
-
-  readonly url: string;
-  readyState = MockWebSocket.CONNECTING;
-  binaryType: BinaryType = 'blob';
-  onopen: ((event: Event) => void) | null = null;
-  onmessage: ((event: MessageEvent) => void) | null = null;
-  onclose: ((event: CloseEvent) => void) | null = null;
-  onerror: ((event: Event) => void) | null = null;
-  send = vi.fn();
-
-  constructor(url: string | URL) {
-    this.url = url.toString();
-    MockWebSocket.instances.push(this);
-  }
-
-  close() {
-    this.readyState = MockWebSocket.CLOSED;
-  }
-
-  emitOpen() {
-    this.readyState = MockWebSocket.OPEN;
-    this.onopen?.(new Event('open'));
-  }
-
-  emit(message: MessageInitShape<typeof WsMessageSchema>) {
-    const bytes = toBinary(
-      WsMessageSchema,
-      create(WsMessageSchema, message) as WsMessage,
-    );
-    const data = bytes.buffer.slice(
-      bytes.byteOffset,
-      bytes.byteOffset + bytes.byteLength,
-    );
-    this.onmessage?.(new MessageEvent('message', { data }));
-  }
+function emit(
+  socket: MockWebSocket,
+  message: MessageInitShape<typeof WsMessageSchema>,
+) {
+  socket.emitBinary(
+    toBinary(WsMessageSchema, create(WsMessageSchema, message) as WsMessage),
+  );
 }
 
 const meta = {
@@ -92,11 +60,8 @@ function bytesOf(downloadId: string) {
 }
 
 function renderProvider() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
-  });
   render(
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={newQueryClient()}>
       <WebSocketProvider>
         <div>child</div>
       </WebSocketProvider>
@@ -135,7 +100,7 @@ describe('WebSocketProvider progress batching', () => {
   it('applies a window of progress ticks as one store update', () => {
     const socket = renderProvider();
     act(() => {
-      socket.emit({
+      emit(socket, {
         eventType: EventType.DOWNLOAD_META,
         payload: { case: 'downloadMeta', value: meta },
       });
@@ -144,12 +109,12 @@ describe('WebSocketProvider progress batching', () => {
 
     act(() => {
       for (const bytes of [1n, 2n, 3n]) {
-        socket.emit({
+        emit(socket, {
           eventType: EventType.DOWNLOAD_METRICS,
           payload: { case: 'downloadMetrics', value: metrics(bytes) },
         });
       }
-      socket.emit({
+      emit(socket, {
         eventType: EventType.UPLOAD_PROGRESS,
         payload: {
           case: 'uploadProgress',
@@ -175,12 +140,12 @@ describe('WebSocketProvider progress batching', () => {
     const socket = renderProvider();
 
     act(() => {
-      socket.emit({
+      emit(socket, {
         eventType: EventType.DOWNLOAD_METRICS,
         payload: { case: 'downloadMetrics', value: metrics(5n) },
       });
       // A newer snapshot must not be overwritten by the older tick.
-      socket.emit({
+      emit(socket, {
         eventType: EventType.SNAPSHOT,
         payload: {
           case: 'snapshot',
@@ -199,15 +164,15 @@ describe('WebSocketProvider progress batching', () => {
   it('does not bring back a download that finished after its last tick', () => {
     const socket = renderProvider();
     act(() => {
-      socket.emit({
+      emit(socket, {
         eventType: EventType.DOWNLOAD_META,
         payload: { case: 'downloadMeta', value: meta },
       });
-      socket.emit({
+      emit(socket, {
         eventType: EventType.DOWNLOAD_METRICS,
         payload: { case: 'downloadMetrics', value: metrics(5n) },
       });
-      socket.emit({
+      emit(socket, {
         eventType: EventType.DOWNLOAD_COMPLETED,
         payload: {
           case: 'downloadCompleted',

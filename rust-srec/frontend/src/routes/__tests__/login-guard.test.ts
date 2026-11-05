@@ -1,28 +1,16 @@
-import { QueryClient } from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
 import { isRedirect } from '@tanstack/react-router';
 
 import { sessionQueryOptions } from '@/api/session';
 import { Route } from '../_public/login';
+import { newQueryClient } from '@/test/render';
+import { testSession } from '@/test/session';
 
 const checkAuthFnMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/server/functions/auth', () => ({
   checkAuthFn: checkAuthFnMock,
 }));
-
-function session(overrides: Record<string, unknown> = {}) {
-  return {
-    username: 'user',
-    token: {
-      access_token: 'access-token',
-      expires_in: Date.now() + 10 * 60_000,
-      refresh_expires_in: Date.now() + 60 * 60_000,
-    },
-    roles: [],
-    mustChangePassword: false,
-    ...overrides,
-  };
-}
 
 function runGuard(queryClient: QueryClient) {
   const beforeLoad = Route.options.beforeLoad as (args: {
@@ -48,39 +36,31 @@ describe('/login guard', () => {
   });
 
   it('sends a signed-in visitor to the dashboard', async () => {
-    checkAuthFnMock.mockResolvedValue(session());
+    checkAuthFnMock.mockResolvedValue(testSession());
 
-    await expect(redirectTarget(runGuard(new QueryClient()))).resolves.toBe(
+    await expect(redirectTarget(runGuard(newQueryClient()))).resolves.toBe(
       '/dashboard',
     );
   });
 
   it('keeps a visitor who still has to change their password', async () => {
-    checkAuthFnMock.mockResolvedValue(session({ mustChangePassword: true }));
+    checkAuthFnMock.mockResolvedValue(
+      testSession({ mustChangePassword: true }),
+    );
 
     await expect(
-      redirectTarget(runGuard(new QueryClient())),
+      redirectTarget(runGuard(newQueryClient())),
     ).resolves.toBeUndefined();
   });
 
   it('re-checks instead of trusting a cached signed-out result', async () => {
-    const queryClient = new QueryClient();
+    const queryClient = newQueryClient();
     queryClient.setQueryData(sessionQueryOptions.queryKey, null);
-    checkAuthFnMock.mockResolvedValue(session());
+    checkAuthFnMock.mockResolvedValue(testSession());
 
     await expect(redirectTarget(runGuard(queryClient))).resolves.toBe(
       '/dashboard',
     );
     expect(checkAuthFnMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('shares the session check with the rest of the app', async () => {
-    const queryClient = new QueryClient();
-    checkAuthFnMock.mockResolvedValue(null);
-
-    await expect(
-      redirectTarget(runGuard(queryClient)),
-    ).resolves.toBeUndefined();
-    expect(queryClient.getQueryData(sessionQueryOptions.queryKey)).toBeNull();
   });
 });

@@ -1,17 +1,13 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { render, screen } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import { screen } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 
 import { DagStepSchema } from '@/api/schemas/pipeline';
 import { DagGraphView } from '../dag-graph-view';
+import { renderWithProviders } from '@/test/render';
 
-vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
+vi.mock('@tanstack/react-router', async () => ({
+  Link: (await import('@/test/router')).MockLink,
 }));
-
-const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
 
 it('shows running, queued and retrying steps, with a bar only for a reported percent', () => {
   const now = Date.now();
@@ -35,11 +31,7 @@ it('shows running, queued and retrying steps, with a bar only for a reported per
     step('rclone', { job_status: 'FAILED', retry_after: now + 60_000 }),
   ];
 
-  render(
-    <I18nProvider i18n={i18n}>
-      <DagGraphView steps={steps} />
-    </I18nProvider>,
-  );
+  renderWithProviders(<DagGraphView steps={steps} />);
 
   expect(screen.getByText('Running')).toBeInTheDocument();
   expect(screen.getByText('Queued')).toBeInTheDocument();
@@ -59,10 +51,8 @@ it('titles each node by its step id, so steps sharing a processor differ', () =>
       processor: 'execute',
     });
 
-  render(
-    <I18nProvider i18n={i18n}>
-      <DagGraphView steps={[step('notify_discord'), step('archive__notify')]} />
-    </I18nProvider>,
+  renderWithProviders(
+    <DagGraphView steps={[step('notify_discord'), step('archive__notify')]} />,
   );
 
   expect(screen.getByText('notify discord')).toBeInTheDocument();

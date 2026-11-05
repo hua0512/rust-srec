@@ -1,11 +1,9 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import type { ComponentProps } from 'react';
 
 import { createFilter, updateFilter } from '@/server/functions';
 import { FilterDialog } from '../FilterDialog';
+import { renderWithProviders } from '@/test/render';
 
 vi.mock('@/server/functions', () => ({
   createFilter: vi.fn(),
@@ -33,20 +31,13 @@ beforeEach(() => {
 });
 
 function renderDialog(filter?: Filter) {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <QueryClientProvider client={client}>
-        <FilterDialog
-          streamerId="streamer-1"
-          open
-          onOpenChange={vi.fn()}
-          filterToEdit={filter}
-        />
-      </QueryClientProvider>
-    </I18nProvider>,
+  renderWithProviders(
+    <FilterDialog
+      streamerId="streamer-1"
+      open
+      onOpenChange={vi.fn()}
+      filterToEdit={filter}
+    />,
   );
 }
 

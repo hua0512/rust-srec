@@ -1,10 +1,9 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 
 import { Form } from '@/components/ui/form';
 import { TimeBasedFilterForm } from '../TimeBasedFilterForm';
+import { renderWithProviders } from '@/test/render';
 
 type Values = { config: Record<string, unknown> };
 
@@ -29,13 +28,9 @@ function renderForm(config?: Record<string, unknown>) {
     );
   }
 
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <Harness />
-    </I18nProvider>,
-  );
+  renderWithProviders(<Harness />);
 
-  return { values: () => form.getValues('config') as Record<string, any> };
+  return { values: () => form.getValues('config') as Record<string, unknown> };
 }
 
 /**

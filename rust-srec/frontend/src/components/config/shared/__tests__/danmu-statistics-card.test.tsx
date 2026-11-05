@@ -1,10 +1,9 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { useForm } from 'react-hook-form';
 
 import { DanmuStatisticsCard } from '../danmu-statistics-card';
 import { Form } from '@/components/ui/form';
+import { renderWithProviders } from '@/test/render';
 
 type StopWords = string[] | undefined;
 
@@ -31,13 +30,10 @@ function Harness({
 }
 
 function renderCard(initial?: StopWords) {
-  const i18n = setupI18n({ locale: 'en', messages: { en: {} } });
   let read: () => StopWords = () => undefined;
 
-  render(
-    <I18nProvider i18n={i18n}>
-      <Harness expose={(fn) => (read = fn)} initial={initial} />
-    </I18nProvider>,
+  renderWithProviders(
+    <Harness expose={(fn) => (read = fn)} initial={initial} />,
   );
 
   const textarea = screen.getByPlaceholderText(

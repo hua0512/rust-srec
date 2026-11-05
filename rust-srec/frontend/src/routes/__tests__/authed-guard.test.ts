@@ -4,6 +4,8 @@ import { isRedirect } from '@tanstack/react-router';
 import { sessionQueryOptions } from '@/api/session';
 import { Route } from '../_authed';
 import { Route as LogoutRoute } from '../logout';
+import { testSession } from '@/test/session';
+import { newQueryClient } from '@/test/render';
 
 const checkAuthFnMock = vi.hoisted(() => vi.fn());
 const logoutFnMock = vi.hoisted(() => vi.fn());
@@ -14,20 +16,6 @@ vi.mock('@/server/functions/auth', () => ({
 }));
 
 type RedirectOptions = { to?: string; search?: { redirect?: string } };
-
-function session(overrides: Record<string, unknown> = {}) {
-  return {
-    username: 'user',
-    token: {
-      access_token: 'access-token',
-      expires_in: Date.now() + 10 * 60_000,
-      refresh_expires_in: Date.now() + 60 * 60_000,
-    },
-    roles: [],
-    mustChangePassword: false,
-    ...overrides,
-  };
-}
 
 function runGuard(queryClient: QueryClient, href: string) {
   const url = new URL(href, 'https://srec.test');
@@ -57,7 +45,7 @@ function runLogout(queryClient: QueryClient) {
  */
 function seedLikeTheProvider(
   queryClient: QueryClient,
-  user: ReturnType<typeof session>,
+  user: ReturnType<typeof testSession>,
 ) {
   const existing = queryClient
     .getQueryCache()
@@ -83,9 +71,7 @@ describe('/_authed guard', () => {
   beforeEach(() => {
     checkAuthFnMock.mockReset();
     logoutFnMock.mockReset();
-    queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
+    queryClient = newQueryClient();
   });
 
   it('sends an unauthenticated visitor to login with the page they wanted', async () => {
@@ -100,7 +86,9 @@ describe('/_authed guard', () => {
   });
 
   it('sends a visitor owing a password change to the change-password page', async () => {
-    checkAuthFnMock.mockResolvedValue(session({ mustChangePassword: true }));
+    checkAuthFnMock.mockResolvedValue(
+      testSession({ mustChangePassword: true }),
+    );
 
     const options = await captureRedirect(runGuard(queryClient, '/dashboard'));
 
@@ -108,7 +96,9 @@ describe('/_authed guard', () => {
   });
 
   it('lets that visitor stay on the change-password page', async () => {
-    checkAuthFnMock.mockResolvedValue(session({ mustChangePassword: true }));
+    checkAuthFnMock.mockResolvedValue(
+      testSession({ mustChangePassword: true }),
+    );
 
     await expect(
       runGuard(queryClient, '/change-password'),
@@ -116,7 +106,7 @@ describe('/_authed guard', () => {
   });
 
   it('checks the session once for a run of navigations', async () => {
-    checkAuthFnMock.mockResolvedValue(session());
+    checkAuthFnMock.mockResolvedValue(testSession());
 
     await runGuard(queryClient, '/dashboard');
     await runGuard(queryClient, '/streamers');
@@ -129,7 +119,7 @@ describe('/_authed guard', () => {
     checkAuthFnMock.mockResolvedValueOnce(null);
     await captureRedirect(runGuard(queryClient, '/dashboard'));
 
-    checkAuthFnMock.mockResolvedValueOnce(session());
+    checkAuthFnMock.mockResolvedValueOnce(testSession());
     await expect(runGuard(queryClient, '/dashboard')).resolves.toMatchObject({
       user: { username: 'user' },
     });
@@ -137,13 +127,7 @@ describe('/_authed guard', () => {
 
   it('checks again once the cached access token is about to expire', async () => {
     checkAuthFnMock.mockResolvedValue(
-      session({
-        token: {
-          access_token: 'about-to-expire',
-          expires_in: Date.now() + 5_000,
-          refresh_expires_in: Date.now() + 120_000,
-        },
-      }),
+      testSession({ accessToken: 'about-to-expire', expiresInMs: 5_000 }),
     );
 
     await runGuard(queryClient, '/dashboard');
@@ -153,7 +137,7 @@ describe('/_authed guard', () => {
   });
 
   it('asks the server again after signing out, even with a seeded session', async () => {
-    const previous = session();
+    const previous = testSession();
     seedLikeTheProvider(queryClient, previous);
     logoutFnMock.mockResolvedValue(undefined);
 
@@ -169,7 +153,7 @@ describe('/_authed guard', () => {
   });
 
   it('shares its result with the session query the provider reads', async () => {
-    checkAuthFnMock.mockResolvedValue(session());
+    checkAuthFnMock.mockResolvedValue(testSession());
 
     await runGuard(queryClient, '/dashboard');
 

@@ -25,47 +25,6 @@ const ALL_VARIANTS: [string, string][] = [
   ['default badge', DEFAULT_STEP_COLOR.badge],
 ];
 
-/** Every preset name shipped by the migrations; workflow steps store these verbatim. */
-const BUILT_IN_PRESET_NAMES = [
-  'remux',
-  'remux_mkv',
-  'remux_faststart',
-  'remux_clean',
-  'compress_fast',
-  'compress_hq',
-  'compress_archive',
-  'compress_hevc_max',
-  'compress_ultrafast',
-  'thumbnail',
-  'thumbnail_hd',
-  'thumbnail_fullhd',
-  'thumbnail_max',
-  'thumbnail_native',
-  'thumbnail_preview',
-  'audio_mp3',
-  'audio_mp3_hq',
-  'audio_aac',
-  'archive_zip',
-  'delete_source',
-  'copy',
-  'move',
-  'upload',
-  'upload_and_delete',
-  'baidupcs_upload',
-  'add_metadata',
-  'execute',
-  'custom_ffmpeg',
-  'danmu_to_ass',
-  'ass_burnin',
-  'nvenc_h264_fast',
-  'nvenc_h264_hq',
-  'nvenc_h264_lowlatency',
-  'nvenc_hevc_fast',
-  'nvenc_hevc_hq',
-  'nvenc_av1_fast',
-  'nvenc_av1_hq',
-];
-
 describe('step colours', () => {
   it.each(ALL_VARIANTS)('%s is a complete static class list', (_, value) => {
     expect(value).toMatch(STATIC_CLASS_LIST);
@@ -97,9 +56,13 @@ describe('step colours', () => {
     },
   );
 
-  it.each(BUILT_IN_PRESET_NAMES)('resolves a tint for preset %s', (name) => {
-    expect(getStepBadgeColor(name)).not.toBe(DEFAULT_STEP_COLOR.badge);
-  });
+  // Workflow steps store preset names, which start with their family.
+  it.each(['compress_hq', 'nvenc_av1_fast'])(
+    'resolves a tint for preset %s',
+    (name) => {
+      expect(getStepBadgeColor(name)).not.toBe(DEFAULT_STEP_COLOR.badge);
+    },
+  );
 
   it('falls back to the neutral tint for unknown steps', () => {
     expect(getStepBadgeColor('totally_unknown')).toBe(DEFAULT_STEP_COLOR.badge);

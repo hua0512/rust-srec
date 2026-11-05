@@ -1,10 +1,9 @@
-import { act, cleanup, render, screen } from '@testing-library/react';
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
+import { act, cleanup, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 import { useDownloadStore } from '@/store/downloads';
 import { StreamerCard } from '../streamer-card';
+import { renderWithProviders } from '@/test/render';
 
 vi.mock('@/components/streamers/card/stream-avatar-info', () => ({
   StreamAvatarInfo: () => <span>Streamer</span>,
@@ -72,10 +71,8 @@ beforeEach(() => {
 afterEach(cleanup);
 
 it('shows cut progress on the card only while a cut is in progress', () => {
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <StreamerCard streamer={streamer} onDelete={vi.fn()} onToggle={vi.fn()} />
-    </I18nProvider>,
+  renderWithProviders(
+    <StreamerCard streamer={streamer} onDelete={vi.fn()} onToggle={vi.fn()} />,
   );
   expect(screen.queryByText('Splitting...')).toBeNull();
   const update = (revision: bigint, status: string) =>

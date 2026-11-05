@@ -1,6 +1,4 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 import { z } from 'zod';
@@ -12,17 +10,12 @@ import {
 import { Form } from '@/components/ui/form';
 import { EngineOverrideCard } from '../../../templates/tabs/engine-override-card';
 import { MesioForm } from '../mesio-form';
+import { renderWithProviders } from '@/test/render';
 
 type Values = {
   config?: Record<string, unknown>;
   engines_override?: Record<string, Record<string, unknown>>;
 };
-
-beforeAll(() => {
-  HTMLElement.prototype.scrollIntoView = vi.fn();
-  HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
-  HTMLElement.prototype.releasePointerCapture = vi.fn();
-});
 
 function mountOverride(
   override: Record<string, unknown>,
@@ -54,11 +47,7 @@ function mountOverride(
       </Form>
     );
   }
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <Harness />
-    </I18nProvider>,
-  );
+  renderWithProviders(<Harness />);
   return {
     form,
     saved: () =>
@@ -84,11 +73,7 @@ function mountEngine(config: Record<string, unknown> = {}) {
       </Form>
     );
   }
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <Harness />
-    </I18nProvider>,
-  );
+  renderWithProviders(<Harness />);
   return {
     saved: () =>
       JSON.parse(

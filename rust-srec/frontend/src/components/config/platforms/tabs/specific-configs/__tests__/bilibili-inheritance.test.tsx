@@ -1,13 +1,5 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
 import { zodResolver } from '@hookform/resolvers/zod';
-import {
-  act,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import type { FieldValues, UseFormReturn } from 'react-hook-form';
@@ -22,6 +14,7 @@ import { PlatformOverrideCard } from '@/components/config/templates/tabs/platfor
 import type { TemplateFormValues } from '@/components/config/templates/template-editor';
 import { StreamerConfiguration } from '@/components/streamers/config/streamer-configuration';
 import { PlatformSpecificTab } from '../../platform-specific-tab';
+import { renderWithProviders, chooseOption } from '@/test/render';
 
 vi.mock('@/hooks/use-platform-detection', () => ({
   usePlatformDetection: () => ({ platform: 'Bilibili' }),
@@ -180,33 +173,19 @@ function renderFields(scope: Scope, quality?: number | null) {
         ? TemplateHarness
         : StreamerHarness;
 
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <Harness />
-    </I18nProvider>,
-  );
+  renderWithProviders(<Harness />);
   if (scope === 'template')
     fireEvent.click(
       screen.getByRole('button', { name: /Platform Override Settings/ }),
     );
   return { onSave, getValues, isDirty, reset };
 }
-async function selectQuality(label: string) {
-  const trigger = screen.getByRole('combobox', { name: /Preferred Quality/i });
-  // Keyboard opening starts on the focused trigger so focus restoration keeps the menu open.
-  act(() => trigger.focus());
-  fireEvent.keyDown(trigger, { key: 'ArrowDown' });
-  fireEvent.click(await screen.findByRole('option', { name: label }));
+function selectQuality(label: string) {
+  return chooseOption(
+    screen.getByRole('combobox', { name: /Preferred Quality/i }),
+    label,
+  );
 }
-
-beforeAll(() => {
-  HTMLElement.prototype.scrollIntoView = vi.fn();
-  globalThis.ResizeObserver ??= class {
-    observe() {}
-    unobserve() {}
-    disconnect() {}
-  } as unknown as typeof ResizeObserver;
-});
 
 describe.each(['platform', 'template', 'streamer'] as const)(
   'Bilibili %s configuration',

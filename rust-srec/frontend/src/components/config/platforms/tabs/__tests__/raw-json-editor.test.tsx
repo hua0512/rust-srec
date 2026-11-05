@@ -1,10 +1,9 @@
-import { setupI18n } from '@lingui/core';
-import { I18nProvider } from '@lingui/react';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, screen } from '@testing-library/react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 
 import { Form } from '@/components/ui/form';
 import { PlatformSpecificTab } from '../platform-specific-tab';
+import { renderWithProviders } from '@/test/render';
 
 type Values = { platform_specific_config: unknown };
 
@@ -21,11 +20,7 @@ function renderEditor(initial?: Record<string, unknown>) {
       </Form>
     );
   }
-  render(
-    <I18nProvider i18n={setupI18n({ locale: 'en', messages: { en: {} } })}>
-      <Harness />
-    </I18nProvider>,
-  );
+  renderWithProviders(<Harness />);
   const textarea = screen.getByPlaceholderText(
     '{ ... }',
   ) as HTMLTextAreaElement;
