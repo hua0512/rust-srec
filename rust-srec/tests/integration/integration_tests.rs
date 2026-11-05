@@ -654,34 +654,6 @@ mod streamer_repository_tests {
 
         assert_eq!(result.0, "LIVE");
     }
-
-    #[tokio::test]
-    async fn test_streamer_priority_query() {
-        let pool = setup_test_db().await;
-        let platform_id = setup_platform(&pool).await;
-
-        // Insert streamers with different priorities
-        for (name, priority) in [
-            ("High1", "HIGH"),
-            ("Normal1", "NORMAL"),
-            ("Low1", "LOW"),
-            ("High2", "HIGH"),
-        ] {
-            let url = format!("https://twitch.tv/{}", name.to_lowercase());
-            create_test_streamer(&pool, &platform_id, name, &url, "NOT_LIVE", priority)
-                .await
-                .to_string();
-        }
-
-        // Query by priority
-        let repo = SqlxStreamerRepository::new(pool.clone(), pool.clone());
-        let high_priority = repo
-            .list_streamers_by_priority("HIGH")
-            .await
-            .expect("Failed to query high priority");
-
-        assert_eq!(high_priority.len(), 2);
-    }
 }
 
 mod session_repository_tests {

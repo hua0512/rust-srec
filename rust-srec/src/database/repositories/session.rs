@@ -9,7 +9,7 @@ use crate::database::models::{
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::{Error, Result};
 use async_trait::async_trait;
-use sqlx::SqlitePool;
+use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
 /// Session repository trait.
 #[async_trait]
@@ -321,6 +321,63 @@ impl SqlxSessionRepository {
     }
 }
 
+/// Append each session list predicate with its bound value. The query must
+/// select from `live_sessions s LEFT JOIN streamers st`.
+fn push_session_filters(query: &mut QueryBuilder<Sqlite>, filters: &SessionFilters) {
+    let mut separator = " WHERE ";
+    let mut next_separator = || std::mem::replace(&mut separator, " AND ");
+
+    if let Some(streamer_id) = &filters.streamer_id {
+        query
+            .push(next_separator())
+            .push("s.streamer_id = ")
+            .push_bind(streamer_id);
+    }
+    if let Some(from_date) = &filters.from_date {
+        query
+            .push(next_separator())
+            .push("s.start_time >= ")
+            .push_bind(from_date.timestamp_millis());
+    }
+    if let Some(to_date) = &filters.to_date {
+        query
+            .push(next_separator())
+            .push("s.start_time <= ")
+            .push_bind(to_date.timestamp_millis());
+    }
+    if filters.active_only == Some(true) {
+        query.push(next_separator()).push("s.end_time IS NULL");
+    }
+
+    // Hide ended sessions that produced no retained segments by default.
+    // `total_size_bytes` grows only when a retained segment's output is
+    // recorded, so `total_size_bytes > 0` means the session kept real bytes.
+    // Active sessions (`end_time IS NULL`) are always kept: their size is 0
+    // between LIVE detection and the first retained segment.
+    if filters.include_empty != Some(true) {
+        query
+            .push(next_separator())
+            .push("(s.total_size_bytes > 0 OR s.end_time IS NULL)");
+    }
+
+    // `COALESCE` keeps a session searchable by streamer name after its
+    // `streamers` row is gone: the LEFT JOIN yields a NULL `st.name` and
+    // the denormalized `s.streamer_name` takes over. While the streamer
+    // exists `st.name` wins, so a rename is searchable immediately.
+    if let Some(search) = &filters.search {
+        let pattern = super::literal_substring_pattern(search);
+        query
+            .push(next_separator())
+            .push("(COALESCE(st.name, s.streamer_name) LIKE ")
+            .push_bind(pattern.clone())
+            .push(r" ESCAPE '\' OR s.titles LIKE ")
+            .push_bind(pattern.clone())
+            .push(r" ESCAPE '\' OR s.id LIKE ")
+            .push_bind(pattern)
+            .push(r" ESCAPE '\')");
+    }
+}
+
 #[async_trait]
 impl SessionRepository for SqlxSessionRepository {
     async fn list_sessions_for_retirement(
@@ -357,18 +414,13 @@ impl SessionRepository for SqlxSessionRepository {
             return Ok(Vec::new());
         }
 
-        let mut builder =
-            sqlx::QueryBuilder::<sqlx::Sqlite>::new("SELECT * FROM live_sessions WHERE id IN (");
-        let mut separated = builder.separated(", ");
-        for id in ids {
-            separated.push_bind(id);
-        }
-        separated.push_unseparated(")");
-
-        Ok(builder
-            .build_query_as::<LiveSessionDbModel>()
-            .fetch_all(&self.pool)
-            .await?)
+        super::fetch_in_chunks(
+            &self.pool,
+            "SELECT * FROM live_sessions WHERE id IN (",
+            &super::unique_lookup_ids(ids),
+            ")",
+        )
+        .await
     }
 
     async fn get_active_session_for_streamer(
@@ -497,21 +549,16 @@ impl SessionRepository for SqlxSessionRepository {
         }
         // The existing (session_id, created_at) index covers the count and
         // supplies insertion order (rowid) for equal thumbnail timestamps.
-        let mut builder = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+        super::fetch_in_chunks(
+            &self.pool,
             "SELECT m.session_id, COUNT(*) AS output_count, \
              (SELECT t.id FROM media_outputs t WHERE t.session_id = m.session_id \
               AND t.file_type = 'THUMBNAIL' ORDER BY t.created_at, t.rowid LIMIT 1) AS thumbnail_id \
              FROM media_outputs m WHERE m.session_id IN (",
-        );
-        let mut separated = builder.separated(", ");
-        for id in session_ids {
-            separated.push_bind(id);
-        }
-        separated.push_unseparated(") GROUP BY m.session_id");
-        Ok(builder
-            .build_query_as::<SessionOutputSummary>()
-            .fetch_all(&self.pool)
-            .await?)
+            &super::unique_lookup_ids(session_ids),
+            ") GROUP BY m.session_id",
+        )
+        .await
     }
 
     async fn first_thumbnail_id(&self, session_id: &str) -> Result<Option<String>> {
@@ -707,19 +754,13 @@ impl SessionRepository for SqlxSessionRepository {
             return Ok(Vec::new());
         }
 
-        let mut builder = sqlx::QueryBuilder::<sqlx::Sqlite>::new(
+        super::fetch_in_chunks(
+            &self.pool,
             "SELECT session_id, total_danmus FROM danmu_statistics WHERE session_id IN (",
-        );
-        let mut separated = builder.separated(", ");
-        for session_id in session_ids {
-            separated.push_bind(session_id);
-        }
-        separated.push_unseparated(") ORDER BY session_id");
-
-        Ok(builder
-            .build_query_as::<(String, i64)>()
-            .fetch_all(&self.pool)
-            .await?)
+            &super::unique_lookup_ids(session_ids),
+            ") ORDER BY session_id",
+        )
+        .await
     }
 
     async fn get_danmu_aggregator_state(&self, session_id: &str) -> Result<Option<Vec<u8>>> {
@@ -773,117 +814,28 @@ impl SessionRepository for SqlxSessionRepository {
         filters: &SessionFilters,
         pagination: &Pagination,
     ) -> Result<(Vec<LiveSessionDbModel>, u64)> {
-        // Build dynamic WHERE clause
-        let mut conditions: Vec<String> = Vec::new();
+        const FROM: &str = "FROM live_sessions s LEFT JOIN streamers st ON s.streamer_id = st.id";
 
-        if filters.streamer_id.is_some() {
-            conditions.push("s.streamer_id = ?".to_string());
-        }
-        if filters.from_date.is_some() {
-            conditions.push("s.start_time >= ?".to_string());
-        }
-        if filters.to_date.is_some() {
-            conditions.push("s.start_time <= ?".to_string());
-        }
-        if filters.active_only == Some(true) {
-            conditions.push("s.end_time IS NULL".to_string());
-        }
+        let mut count_query = QueryBuilder::new("SELECT COUNT(s.id) as count ");
+        count_query.push(FROM);
+        push_session_filters(&mut count_query, filters);
+        let total_count = count_query
+            .build_query_scalar::<i64>()
+            .fetch_one(&self.pool)
+            .await? as u64;
 
-        // Hide ended sessions that produced no retained segments by default.
-        // `total_size_bytes` is incremented in the `media_outputs` insert
-        // path (`session.rs::add_session_output_with_*`) which only runs
-        // for segments that passed the small-segment guard in
-        // `services::container`. So `total_size_bytes > 0` is a reliable
-        // signal that the session retained real bytes. Active sessions
-        // (`end_time IS NULL`) are always kept — their size is 0 in the
-        // window between LIVE detection and the first retained segment.
-        if filters.include_empty != Some(true) {
-            conditions.push("(s.total_size_bytes > 0 OR s.end_time IS NULL)".to_string());
-        }
-
-        // `COALESCE` keeps a session searchable by streamer name after its
-        // `streamers` row is gone: the LEFT JOIN yields a NULL `st.name` and
-        // the denormalized `s.streamer_name` takes over. While the streamer
-        // exists `st.name` wins, so a rename is searchable immediately.
-        if filters.search.is_some() {
-            conditions.push(
-                r"(COALESCE(st.name, s.streamer_name) LIKE ? ESCAPE '\' OR s.titles LIKE ? ESCAPE '\' OR s.id LIKE ? ESCAPE '\')"
-                    .to_string(),
-            );
-        }
-
-        let where_clause = if conditions.is_empty() {
-            String::new()
-        } else {
-            format!("WHERE {}", conditions.join(" AND "))
-        };
-
-        // Count query with JOIN to support search by streamer name
-        let count_sql = format!(
-            "SELECT COUNT(s.id) as count FROM live_sessions s \
-             LEFT JOIN streamers st ON s.streamer_id = st.id \
-             {}",
-            where_clause
-        );
-
-        // Data query with pagination, ordered by start_time descending
-        // Join with streamers table to filter by streamer name if needed
-        let data_sql = format!(
-            "SELECT s.* FROM live_sessions s \
-             LEFT JOIN streamers st ON s.streamer_id = st.id \
-             {} ORDER BY s.start_time DESC LIMIT ? OFFSET ?",
-            where_clause
-        );
-
-        // Execute count query
-        let mut count_query = sqlx::query_scalar::<_, i64>(sqlx::AssertSqlSafe(count_sql));
-
-        // Bind parameters for count query (excluding active_only which is a static condition)
-        if let Some(streamer_id) = &filters.streamer_id {
-            count_query = count_query.bind(streamer_id);
-        }
-        if let Some(from_date) = &filters.from_date {
-            count_query = count_query.bind(from_date.timestamp_millis());
-        }
-        if let Some(to_date) = &filters.to_date {
-            count_query = count_query.bind(to_date.timestamp_millis());
-        }
-        if let Some(search) = &filters.search {
-            let pattern = super::literal_substring_pattern(search);
-            count_query = count_query
-                .bind(pattern.clone())
-                .bind(pattern.clone())
-                .bind(pattern);
-        }
-
-        let total_count = count_query.fetch_one(&self.pool).await? as u64;
-
-        // Execute data query
-        let mut data_query = sqlx::query_as::<_, LiveSessionDbModel>(sqlx::AssertSqlSafe(data_sql));
-
-        // Bind parameters for data query
-        if let Some(streamer_id) = &filters.streamer_id {
-            data_query = data_query.bind(streamer_id);
-        }
-        if let Some(from_date) = &filters.from_date {
-            data_query = data_query.bind(from_date.timestamp_millis());
-        }
-        if let Some(to_date) = &filters.to_date {
-            data_query = data_query.bind(to_date.timestamp_millis());
-        }
-        if let Some(search) = &filters.search {
-            let pattern = super::literal_substring_pattern(search);
-            data_query = data_query
-                .bind(pattern.clone())
-                .bind(pattern.clone())
-                .bind(pattern);
-        }
-
-        // Bind pagination parameters
-        data_query = data_query.bind(pagination.limit as i64);
-        data_query = data_query.bind(pagination.offset as i64);
-
-        let sessions = data_query.fetch_all(&self.pool).await?;
+        let mut data_query = QueryBuilder::new("SELECT s.* ");
+        data_query.push(FROM);
+        push_session_filters(&mut data_query, filters);
+        data_query
+            .push(" ORDER BY s.start_time DESC LIMIT ")
+            .push_bind(pagination.limit as i64)
+            .push(" OFFSET ")
+            .push_bind(pagination.offset as i64);
+        let sessions = data_query
+            .build_query_as::<LiveSessionDbModel>()
+            .fetch_all(&self.pool)
+            .await?;
 
         Ok((sessions, total_count))
     }

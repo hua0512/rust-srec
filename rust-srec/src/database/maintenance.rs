@@ -17,7 +17,7 @@ use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
-use crate::database::models::{DagExecutionStatus, JobStatus, RetentionDays};
+use crate::database::models::RetentionDays;
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::database::{DbPool, WritePool};
 use crate::downloader::DownloadManager;
@@ -207,49 +207,25 @@ impl MaintenanceRepository {
         cutoff_ms: i64,
         cancellation: &CancellationToken,
     ) -> Result<u64> {
-        let mut total = 0;
-        for batch_index in 0..self.max_batches_per_task {
-            let result = tokio::select! {
-                _ = cancellation.cancelled() => return Ok(total),
-                result = retry_on_sqlite_busy("maintenance_prune_jobs", || async {
-                    let result = sqlx::query(
-                        "DELETE FROM job WHERE id IN (\
-                        SELECT j.id FROM job j \
-                        WHERE j.status IN (?, ?, ?) AND j.updated_at < ? AND j.retry_after IS NULL \
-                          AND NOT EXISTS (\
-                            SELECT 1 FROM dag_step_execution s \
-                            JOIN dag_execution d ON d.id = s.dag_id \
-                            WHERE s.job_id = j.id \
-                              AND (d.status NOT IN (?, ?, ?) OR d.updated_at >= ?)\
-                          ) \
-                        ORDER BY j.updated_at ASC LIMIT ?\
-                        )",
-                    )
-                    .bind(JobStatus::Completed.as_str())
-                    .bind(JobStatus::Failed.as_str())
-                    .bind(JobStatus::Cancelled.as_str())
-                    .bind(cutoff_ms)
-                    .bind(DagExecutionStatus::Completed.as_str())
-                    .bind(DagExecutionStatus::Failed.as_str())
-                    .bind(DagExecutionStatus::Cancelled.as_str())
-                    .bind(cutoff_ms)
-                    .bind(self.batch_size)
-                    .execute(&self.write_pool)
-                    .await?;
-                    Ok(result.rows_affected())
-                }) => result?,
-            };
-            total += result;
-            if result < self.batch_size as u64 {
-                return Ok(total);
-            }
-            if batch_index + 1 == self.max_batches_per_task {
-                debug!(total, "Job cleanup reached its per-sweep batch limit");
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
-        Ok(total)
+        self.prune_simple(
+            "maintenance_prune_jobs",
+            "DELETE FROM job WHERE id IN (\
+                SELECT j.id FROM job j \
+                WHERE j.status IN ('COMPLETED', 'FAILED', 'CANCELLED') \
+                  AND j.updated_at < ?1 AND j.retry_after IS NULL \
+                  AND NOT EXISTS (\
+                    SELECT 1 FROM dag_step_execution s \
+                    JOIN dag_execution d ON d.id = s.dag_id \
+                    WHERE s.job_id = j.id \
+                      AND (d.status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED') \
+                           OR d.updated_at >= ?1)\
+                  ) \
+                ORDER BY j.updated_at ASC LIMIT ?2\
+            )",
+            cutoff_ms,
+            cancellation,
+        )
+        .await
     }
 
     async fn prune_dags_before(
@@ -257,49 +233,24 @@ impl MaintenanceRepository {
         cutoff_ms: i64,
         cancellation: &CancellationToken,
     ) -> Result<u64> {
-        let mut total = 0;
-        for batch_index in 0..self.max_batches_per_task {
-            let result = tokio::select! {
-                _ = cancellation.cancelled() => return Ok(total),
-                result = retry_on_sqlite_busy("maintenance_prune_dags", || async {
-                    let result = sqlx::query(
-                        "DELETE FROM dag_execution WHERE id IN (\
-                        SELECT d.id FROM dag_execution d \
-                        WHERE d.status IN (?, ?, ?) AND d.updated_at < ? \
-                          AND NOT EXISTS (\
-                            SELECT 1 FROM dag_step_execution s \
-                            JOIN job j ON j.id = s.job_id \
-                            WHERE s.dag_id = d.id \
-                              AND (j.status NOT IN (?, ?, ?) OR j.updated_at >= ? OR j.retry_after IS NOT NULL)\
-                          ) \
-                        ORDER BY d.updated_at ASC LIMIT ?\
-                        )",
-                    )
-                    .bind(DagExecutionStatus::Completed.as_str())
-                    .bind(DagExecutionStatus::Failed.as_str())
-                    .bind(DagExecutionStatus::Cancelled.as_str())
-                    .bind(cutoff_ms)
-                    .bind(JobStatus::Completed.as_str())
-                    .bind(JobStatus::Failed.as_str())
-                    .bind(JobStatus::Cancelled.as_str())
-                    .bind(cutoff_ms)
-                    .bind(self.batch_size)
-                    .execute(&self.write_pool)
-                    .await?;
-                    Ok(result.rows_affected())
-                }) => result?,
-            };
-            total += result;
-            if result < self.batch_size as u64 {
-                return Ok(total);
-            }
-            if batch_index + 1 == self.max_batches_per_task {
-                debug!(total, "DAG cleanup reached its per-sweep batch limit");
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
-        Ok(total)
+        self.prune_simple(
+            "maintenance_prune_dags",
+            "DELETE FROM dag_execution WHERE id IN (\
+                SELECT d.id FROM dag_execution d \
+                WHERE d.status IN ('COMPLETED', 'FAILED', 'CANCELLED') AND d.updated_at < ?1 \
+                  AND NOT EXISTS (\
+                    SELECT 1 FROM dag_step_execution s \
+                    JOIN job j ON j.id = s.job_id \
+                    WHERE s.dag_id = d.id \
+                      AND (j.status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED') \
+                           OR j.updated_at >= ?1 OR j.retry_after IS NOT NULL)\
+                  ) \
+                ORDER BY d.updated_at ASC LIMIT ?2\
+            )",
+            cutoff_ms,
+            cancellation,
+        )
+        .await
     }
 
     /// Bounds `upload_records`: rows outlive their job (`ON DELETE SET NULL`
@@ -514,13 +465,6 @@ impl MaintenanceScheduler {
     /// Starts maintenance and returns its cancellation-aware background task.
     pub fn start(self: Arc<Self>, cancellation: CancellationToken) -> JoinHandle<()> {
         tokio::spawn(async move { self.run_loop(cancellation).await })
-    }
-
-    /// Runs one lightweight retention sweep using current database configuration.
-    pub async fn run_maintenance(&self) -> MaintenanceReport {
-        let cancellation = CancellationToken::new();
-        self.run_maintenance_with_cancellation(crate::database::time::now_ms(), &cancellation)
-            .await
     }
 
     #[cfg(test)]
@@ -945,10 +889,11 @@ mod tests {
 
     use super::*;
     use crate::database::models::{
-        ChannelType, DagExecutionDbModel, DagStepExecutionDbModel, DagStepStatus, JobDbModel,
-        JobExecutionLogDbModel, LiveSessionDbModel, MediaFileType, MediaOutputDbModel,
-        NotificationChannelDbModel, NotificationDeadLetterDbModel, NotificationEventLogDbModel,
-        RefreshTokenDbModel, SessionEventDbModel, SessionSegmentDbModel, StreamerDbModel,
+        ChannelType, DagExecutionDbModel, DagExecutionStatus, DagStepExecutionDbModel,
+        DagStepStatus, JobDbModel, JobExecutionLogDbModel, JobStatus, LiveSessionDbModel,
+        MediaFileType, MediaOutputDbModel, NotificationChannelDbModel,
+        NotificationDeadLetterDbModel, NotificationEventLogDbModel, RefreshTokenDbModel,
+        SessionEventDbModel, SessionSegmentDbModel, StreamerDbModel,
     };
     use crate::database::repositories::{
         ConfigRepository as _, DagRepository as _, JobRepository as _, NotificationRepository as _,

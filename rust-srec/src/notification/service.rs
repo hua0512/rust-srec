@@ -827,13 +827,6 @@ mod tests {
                 .unwrap_or_default())
         }
 
-        async fn get_channels_for_event(
-            &self,
-            _event_name: &str,
-        ) -> Result<Vec<NotificationChannelDbModel>> {
-            unimplemented!()
-        }
-
         async fn subscribe(&self, _channel_id: &str, _event_name: &str) -> Result<()> {
             if self.fail_subscribe.load(Ordering::SeqCst) {
                 return Err(crate::Error::Other(
@@ -866,10 +859,6 @@ mod tests {
             Ok(())
         }
 
-        async fn unsubscribe_all(&self, _channel_id: &str) -> Result<()> {
-            unimplemented!()
-        }
-
         async fn add_to_dead_letter(&self, entry: &NotificationDeadLetterDbModel) -> Result<()> {
             if self.fail_dead_letter_insert {
                 return Err(crate::Error::Other(
@@ -888,14 +877,6 @@ mod tests {
             _channel_id: Option<&str>,
             _limit: i32,
         ) -> Result<Vec<NotificationDeadLetterDbModel>> {
-            unimplemented!()
-        }
-
-        async fn get_dead_letter(&self, _id: &str) -> Result<NotificationDeadLetterDbModel> {
-            unimplemented!()
-        }
-
-        async fn delete_dead_letter(&self, _id: &str) -> Result<()> {
             unimplemented!()
         }
 
