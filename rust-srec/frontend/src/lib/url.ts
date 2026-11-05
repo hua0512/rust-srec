@@ -1,4 +1,72 @@
-import { getBaseUrl } from '@/utils/env';
+import { getPlatformFromUrl } from '@/lib/platform';
+import { isDesktopBuild } from '@/utils/desktop';
+import { BASE_URL, getBaseUrl } from '@/utils/env';
+import { getDesktopAccessToken } from '@/utils/session';
+
+/** `path` under `base`, whether or not `base` ends in a slash. */
+export function joinUrlPath(base: string, path: string): string {
+  const trimmed = base.endsWith('/') ? base.slice(0, -1) : base;
+  return `${trimmed}${path.startsWith('/') ? path : `/${path}`}`;
+}
+
+export interface StreamProxyTarget {
+  desktopBuild: boolean;
+  desktopToken: string | null;
+  baseUrl: string;
+}
+
+/**
+ * The stream proxy URL that fetches what `query` describes. The web build
+ * serves the proxy from its own origin. The desktop build has no frontend
+ * server, so its requests go to the backend and carry the session token; it
+ * gets `null` without one.
+ */
+export function streamProxyUrl(
+  query: URLSearchParams,
+  { desktopBuild, desktopToken, baseUrl }: StreamProxyTarget,
+): string | null {
+  if (!desktopBuild) return `/stream-proxy?${query}`;
+  if (!desktopToken) return null;
+  const withToken = new URLSearchParams(query);
+  withToken.set('token', desktopToken);
+  return `${joinUrlPath(baseUrl, '/stream-proxy')}?${withToken}`;
+}
+
+/**
+ * Image hosts of these platforms refuse requests that do not name the
+ * platform's site as the referer, so their images load through the proxy.
+ */
+const IMAGE_REFERERS: Partial<Record<string, string>> = {
+  acfun: 'https://live.acfun.cn/',
+  bilibili: 'https://live.bilibili.com/',
+  douyin: 'https://live.douyin.com/',
+  douyu: 'https://www.douyu.com/',
+  huya: 'https://www.huya.com/',
+};
+
+/**
+ * An image URL the browser can load: proxied with the referer its platform
+ * requires, or unchanged when it needs none or a desktop build has no session
+ * to proxy with.
+ */
+export function getProxiedUrl(url: string | null | undefined) {
+  if (!url) return undefined;
+  const referer = IMAGE_REFERERS[getPlatformFromUrl(url)];
+  if (!referer) return url;
+
+  const desktopBuild = isDesktopBuild();
+  const query = new URLSearchParams({
+    url,
+    headers: JSON.stringify({ Referer: referer }),
+  });
+  return (
+    streamProxyUrl(query, {
+      desktopBuild,
+      desktopToken: desktopBuild ? getDesktopAccessToken() : null,
+      baseUrl: BASE_URL,
+    }) ?? url
+  );
+}
 
 /**
  * Constructs a full URL for a media resource, handling base URLs and authentication tokens.

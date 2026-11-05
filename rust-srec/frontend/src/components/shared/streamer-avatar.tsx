@@ -1,5 +1,6 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { cn, getProxiedUrl } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import { getProxiedUrl } from '@/lib/url';
 
 /**
  * A streamer's picture, or the first two letters of `name` without one. It is

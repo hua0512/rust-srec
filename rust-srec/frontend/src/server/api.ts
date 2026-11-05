@@ -1,6 +1,7 @@
 import { refreshAuthTokenGlobal } from './tokenRefresh';
 
 import { BASE_URL } from '../utils/env';
+import { joinUrlPath } from '../lib/url';
 import { useAppSession } from '../utils/session.server';
 
 import {
@@ -153,9 +154,7 @@ export const fetchBackend = async <T = any>(
   }
 
   // Construct URL
-  const baseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
-  const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  const url = `${baseUrl}${path}`;
+  const url = joinUrlPath(BASE_URL, endpoint);
 
   const clientSignal = await incomingRequestSignal();
   const cleanups: Cleanups = [];

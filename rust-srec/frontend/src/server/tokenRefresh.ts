@@ -12,6 +12,7 @@ import type { ClientSessionData, SessionData } from '../utils/session';
 import { sanitizeClientSession, isValidSession } from '../utils/session';
 import { useAppSession } from '../utils/session.server';
 import { BASE_URL } from '../utils/env';
+import { joinUrlPath } from '../lib/url';
 import { ACCOUNT_DISABLED_CODE } from '../lib/api-error';
 
 type RefreshOutcome = {
@@ -345,8 +346,7 @@ async function performRefresh({
   fallbackAccessExpiry?: number;
   fallbackRefreshExpiry?: number;
 }): Promise<PerformRefreshResult> {
-  const baseUrl = BASE_URL.endsWith('/') ? BASE_URL.slice(0, -1) : BASE_URL;
-  const url = `${baseUrl}/auth/refresh`;
+  const url = joinUrlPath(BASE_URL, '/auth/refresh');
 
   let response: Response;
   try {

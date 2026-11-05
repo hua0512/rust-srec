@@ -31,7 +31,8 @@ import {
   ConfigFieldLabel,
 } from '@/components/config/shared/config-field';
 import { containerVariants, itemVariants } from '@/lib/animation';
-import { getApiEndpointUrl } from '@/utils/env';
+import { getBaseUrl } from '@/utils/env';
+import { joinUrlPath } from '@/lib/url';
 import {
   Dialog,
   DialogContent,
@@ -522,7 +523,10 @@ function McpQuickStart() {
   // and the hydrating render show an empty URL and the address follows.
   const hydrated = useHydrated();
   const mcpUrl = hydrated
-    ? new URL(getApiEndpointUrl('/mcp'), window.location.origin).toString()
+    ? new URL(
+        joinUrlPath(getBaseUrl(), '/mcp'),
+        window.location.origin,
+      ).toString()
     : '';
 
   const configSnippet = useMemo(

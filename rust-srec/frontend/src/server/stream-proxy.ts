@@ -1,4 +1,5 @@
 import { BASE_URL } from '@/utils/env';
+import { joinUrlPath } from '@/lib/url';
 import { ensureValidToken } from './tokenRefresh';
 
 const OPAQUE = 'application/octet-stream';
@@ -88,7 +89,7 @@ export async function handleStreamProxyRequest(
     // The backend emits /stream-proxy links without a bearer token when web=true.
     // Never follow a backend redirect carrying the session credential.
     const response = await fetch(
-      `${BASE_URL.replace(/\/$/, '')}/stream-proxy?${query}`,
+      `${joinUrlPath(BASE_URL, '/stream-proxy')}?${query}`,
       {
         headers,
         redirect: 'manual',
