@@ -192,7 +192,7 @@ fn total_input_size(inputs: &[String]) -> Result<u64> {
             if e.kind() == std::io::ErrorKind::NotFound {
                 input_not_found(input_path)
             } else {
-                crate::Error::io_path("read input metadata", Path::new(input_path), e)
+                crate::Error::io_path("reading input metadata", Path::new(input_path), e)
             }
         })?;
         total = total.saturating_add(metadata.len());
@@ -205,7 +205,7 @@ fn open_input(input_path: &str) -> Result<File> {
         if e.kind() == std::io::ErrorKind::NotFound {
             input_not_found(input_path)
         } else {
-            crate::Error::io_path("open input file", Path::new(input_path), e)
+            crate::Error::io_path("opening input file", Path::new(input_path), e)
         }
     })
 }
@@ -302,7 +302,7 @@ impl CompressionProcessor {
         started: Instant,
     ) -> Result<(u64, u64)> {
         let file = File::create(output_path)
-            .map_err(|e| crate::Error::io_path("create ZIP archive", output_path, e))?;
+            .map_err(|e| crate::Error::io_path("creating ZIP archive", output_path, e))?;
 
         let file = BufWriter::new(file);
         let mut zip = ZipWriter::new(file);
@@ -387,7 +387,7 @@ impl CompressionProcessor {
         started: Instant,
     ) -> Result<(u64, u64)> {
         let file = File::create(output_path)
-            .map_err(|e| crate::Error::io_path("create tar.gz archive", output_path, e))?;
+            .map_err(|e| crate::Error::io_path("creating tar.gz archive", output_path, e))?;
 
         // Map compression level (0-9) to flate2 Compression
         let compression = match config.compression_level {
@@ -416,7 +416,7 @@ impl CompressionProcessor {
 
             let mut file = open_input(input_path)?;
             let metadata = file.metadata().map_err(|e| {
-                crate::Error::io_path("read input metadata", Path::new(input_path), e)
+                crate::Error::io_path("reading input metadata", Path::new(input_path), e)
             })?;
 
             let mut header = tar::Header::new_gnu();
@@ -455,12 +455,12 @@ impl CompressionProcessor {
         // Finish the tar archive and get the gzip encoder back
         let encoder = tar
             .into_inner()
-            .map_err(|e| crate::Error::io_path("finalize tar archive", output_path, e))?;
+            .map_err(|e| crate::Error::io_path("finalizing tar archive", output_path, e))?;
 
         // Finish gzip compression
         encoder
             .finish()
-            .map_err(|e| crate::Error::io_path("finalize gzip compression", output_path, e))?;
+            .map_err(|e| crate::Error::io_path("finalizing gzip compression", output_path, e))?;
 
         // Get output file size
         let output_size = std::fs::metadata(output_path).map(|m| m.len()).unwrap_or(0);

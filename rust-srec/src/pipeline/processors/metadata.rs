@@ -432,13 +432,16 @@ impl Processor for MetadataProcessor {
             let summary =
                 super::utils::remove_sources(&output.succeeded_inputs, "input file", ctx).await;
             for input_path in &output.succeeded_inputs {
-                if summary.removed.contains(input_path) {
-                    output
-                        .logs
-                        .push(crate::pipeline::job_queue::JobLogEntry::info(format!(
-                            "Removed input file: {input_path}"
-                        )));
-                }
+                let message = if summary.absent.contains(input_path) {
+                    format!("Input file was already absent: {input_path}")
+                } else if summary.removed.contains(input_path) {
+                    format!("Removed input file: {input_path}")
+                } else {
+                    continue;
+                };
+                output
+                    .logs
+                    .push(crate::pipeline::job_queue::JobLogEntry::info(message));
             }
         }
         Ok(output)

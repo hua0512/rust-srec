@@ -847,11 +847,16 @@ impl Processor for RemuxProcessor {
 
             let summary = super::utils::remove_sources(&to_remove, "input file", ctx).await;
             removed_inputs = summary.removed.len();
-            for input_path in to_remove.iter().filter(|p| summary.removed.contains(*p)) {
-                info!("Removed input file after successful remux: {}", input_path);
-                output.logs.push(JobLogEntry::info(format!(
-                    "Removed input file: {input_path}"
-                )));
+            for input_path in &to_remove {
+                let message = if summary.absent.contains(input_path) {
+                    format!("Input file was already absent: {input_path}")
+                } else if summary.removed.contains(input_path) {
+                    info!("Removed input file after successful remux: {}", input_path);
+                    format!("Removed input file: {input_path}")
+                } else {
+                    continue;
+                };
+                output.logs.push(JobLogEntry::info(message));
             }
         }
 

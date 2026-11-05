@@ -167,6 +167,8 @@ pub(super) async fn ensure_inputs_exist(inputs: &[String]) -> crate::Result<()> 
 pub(super) struct RemovalSummary {
     /// Paths that were removed or were already absent.
     pub removed: HashSet<String>,
+    /// The subset of `removed` that was already absent.
+    pub absent: HashSet<String>,
     /// The logged message for each path that could not be removed.
     pub failed: Vec<String>,
 }
@@ -187,6 +189,7 @@ pub(super) async fn remove_sources<'a>(
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 summary.removed.insert(path.clone());
+                summary.absent.insert(path.clone());
             }
             Err(error) => {
                 warn!(path = %path, %error, "Failed to remove {what}");
