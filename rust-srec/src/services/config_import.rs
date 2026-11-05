@@ -53,6 +53,8 @@ type RuntimeStreamerManager = StreamerManager<SqlxStreamerRepository>;
 mod profiles;
 mod proxies;
 
+pub(super) use profiles::export_profiles;
+
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ConfigurationImportError {
     #[error("{0}")]
@@ -125,27 +127,6 @@ pub(crate) struct ConfigurationImportService {
 }
 
 impl ConfigurationImportService {
-    pub(crate) async fn retired_template_ids(&self) -> crate::Result<HashSet<String>> {
-        let ids: Vec<String> = sqlx::query_scalar(
-            "SELECT config_id FROM retirement_config_deletions WHERE kind = 'template'",
-        )
-        .fetch_all(&self.write_pool)
-        .await?;
-        Ok(ids.into_iter().collect())
-    }
-
-    pub(crate) async fn export_profiles(
-        &self,
-        proxy_names: &HashMap<String, String>,
-    ) -> crate::Result<Vec<crate::config::backup::CredentialProfileExport>> {
-        profiles::export_profiles(&self.write_pool, proxy_names).await
-    }
-
-    /// Saved proxies, logins included, for a backup.
-    pub(crate) async fn export_proxies(&self) -> crate::Result<Vec<crate::proxies::ProxyEntry>> {
-        crate::database::repositories::proxies::list(&mut *self.write_pool.acquire().await?).await
-    }
-
     pub fn new(
         write_pool: SqlitePool,
         config_service: Arc<RuntimeConfigService>,

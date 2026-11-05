@@ -133,8 +133,8 @@ pub struct ServiceContainer {
     streamer_repository: Arc<SqlxStreamerRepository>,
     pipeline_preset_repository:
         Arc<crate::database::repositories::preset::SqlitePipelinePresetRepository>,
-    job_preset_repository: Arc<crate::database::repositories::preset::SqliteJobPresetRepository>,
     configuration_import_service: Arc<crate::services::config_import::ConfigurationImportService>,
+    configuration_export_service: Arc<crate::services::config_export::ConfigurationExportService>,
     /// Output-root write gate. Shared by the download manager for
     /// pre-start checks + runtime ENOSPC routing and by the health checker
     /// for aggregated `/health` reporting.

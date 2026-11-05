@@ -574,6 +574,17 @@ impl ServiceContainer {
                 platform_admission.clone(),
             ),
         );
+        let configuration_export_service = Arc::new(
+            crate::services::config_export::ConfigurationExportService::new(
+                write_pool.clone(),
+                config_service.clone(),
+                streamer_repo.clone(),
+                filter_repo.clone(),
+                notification_repository.clone(),
+                preset_repo,
+                pipeline_preset_repo.clone(),
+            ),
+        );
 
         let total_ms = overall.elapsed().as_millis();
         info!(
@@ -600,8 +611,8 @@ impl ServiceContainer {
             filter_repository: filter_repo,
             streamer_repository: streamer_repo,
             pipeline_preset_repository: pipeline_preset_repo,
-            job_preset_repository: preset_repo,
             configuration_import_service,
+            configuration_export_service,
             output_root_gate,
             gpu_health_monitor: std::sync::OnceLock::new(),
             pipeline_manager,

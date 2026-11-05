@@ -132,8 +132,6 @@ pub struct ApiServices {
     pub streamer_repository: Arc<dyn StreamerRepository>,
     /// Pipeline preset repository for pipeline presets (workflow sequences)
     pub pipeline_preset_repository: Arc<dyn PipelinePresetRepository>,
-    /// Job preset repository for job presets (reusable processor configs)
-    pub job_preset_repository: Arc<dyn crate::database::repositories::JobPresetRepository>,
     /// Notification repository for channel/subscription management
     pub notification_repository: Arc<dyn NotificationRepository>,
     /// Notification service for testing and reloading
@@ -162,6 +160,9 @@ pub struct ApiServices {
     /// Validated, transactional configuration import application service.
     pub(crate) configuration_import_service:
         Arc<crate::services::config_import::ConfigurationImportService>,
+    /// Assembles the complete configuration backup.
+    pub(crate) configuration_export_service:
+        Arc<crate::services::config_export::ConfigurationExportService>,
     /// Runtime side-effect policy. Routes reach it for streamer deletion, which
     /// has to stand the scheduler actor, download and session down before the
     /// `streamers` row can go.

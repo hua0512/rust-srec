@@ -99,7 +99,6 @@ impl ServiceContainer {
             health_checker: self.health_checker.clone(),
             streamer_repository: self.streamer_repository.clone(),
             pipeline_preset_repository: self.pipeline_preset_repository.clone(),
-            job_preset_repository: self.job_preset_repository.clone(),
             notification_repository: self.notification_repository.clone(),
             notification_service: self.notification_service.clone(),
             logging_config,
@@ -115,6 +114,7 @@ impl ServiceContainer {
             danmu_taps: self.danmu_service.taps(),
             credential_login_sessions: self.credential_login_sessions.clone(),
             configuration_import_service: self.configuration_import_service.clone(),
+            configuration_export_service: self.configuration_export_service.clone(),
             runtime_coordinator: self.runtime_coordinator.clone(),
         };
 

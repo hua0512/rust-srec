@@ -1,4 +1,4 @@
-//! Best-effort related data for API lists and exports.
+//! Best-effort related data for API lists.
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;

@@ -62,6 +62,7 @@
 - A backup now keeps the **Stream lookup** choice of each platform and template, such as **Always use Streamlink**. Before, restoring a backup on a new install set them all back to the default, so streams were looked up the automatic way again.
 - After importing a configuration in **Backup & Restore**, notification channels and their subscriptions, presets, workflows, proxies and any open streamer, template or engine page now show the imported settings without reloading the page.
 - **Backup & Restore** now shows the size of the file chosen for import in a fitting unit (KB, MB) instead of always in KB.
+- Exporting the configuration in **Backup & Restore** now fails with an error when part of it, such as a streamer's filters or a notification channel's subscriptions, can't be read. Before, the export left that part out without notice and still produced a backup that looked complete.
 
 ## Notifications
 
