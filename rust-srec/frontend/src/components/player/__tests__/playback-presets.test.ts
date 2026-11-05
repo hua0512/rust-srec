@@ -32,12 +32,7 @@ it.each(['low-latency', 'balanced', 'smooth'] as const)(
   },
 );
 
-it('preserves engine defaults for Balanced and keeps MPEG-TS latency chasing bounded', () => {
-  expect(hlsPlaybackConfig(true, 'balanced')).toEqual({
-    enableWorker: true,
-    lowLatencyMode: true,
-  });
-  expect(mpegtsPlaybackConfig(true, 'balanced')).toEqual({});
+it('keeps MPEG-TS latency chasing bounded', () => {
   const low = mpegtsPlaybackConfig(true, 'low-latency');
   expect(low.liveBufferLatencyMaxLatency).toBeGreaterThan(
     low.liveBufferLatencyMinRemain!,

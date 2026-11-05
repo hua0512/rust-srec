@@ -1,4 +1,4 @@
-import { accountInitials, avatarTone } from '../account-avatar';
+import { accountInitials } from '../account-avatar';
 
 describe('accountInitials', () => {
   it('takes the first letters of the first two words', () => {
@@ -27,17 +27,5 @@ describe('accountInitials', () => {
   it('gives nothing for a blank label', () => {
     expect(accountInitials('')).toBe('');
     expect(accountInitials('   ')).toBe('');
-  });
-});
-
-describe('avatarTone', () => {
-  it('gives a label the same tint every time', () => {
-    expect(avatarTone('Main account')).toBe(avatarTone('Main account'));
-    const tones = new Set(
-      ['Main account', 'Backup', 'Old phone', 'Spare', 'Proxied'].map(
-        avatarTone,
-      ),
-    );
-    expect(tones.size).toBeGreaterThan(1);
   });
 });

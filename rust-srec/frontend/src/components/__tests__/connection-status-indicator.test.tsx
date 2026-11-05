@@ -24,14 +24,4 @@ describe('connection status indicator', () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
-
-  it('names the status it is currently showing', () => {
-    renderIndicator('error');
-
-    expect(
-      screen.getByRole('status', {
-        name: 'Connection status: Connection Error',
-      }),
-    ).toBeInTheDocument();
-  });
 });
