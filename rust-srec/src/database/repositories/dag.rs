@@ -49,14 +49,18 @@ pub trait DagRepository: Send + Sync {
     /// List DAG executions with optional status and session_id filters.
     async fn list_dags(
         &self,
-        status: Option<&str>,
+        status: Option<DagExecutionStatus>,
         session_id: Option<&str>,
         limit: u32,
         offset: u32,
     ) -> Result<Vec<DagExecutionDbModel>>;
 
     /// Count DAG executions with optional status and session_id filters.
-    async fn count_dags(&self, status: Option<&str>, session_id: Option<&str>) -> Result<u64>;
+    async fn count_dags(
+        &self,
+        status: Option<DagExecutionStatus>,
+        session_id: Option<&str>,
+    ) -> Result<u64>;
 
     /// List DAG summaries matching `filter`, newest first, each with its
     /// display status (see [`DagDisplayCounts`]).
@@ -623,7 +627,7 @@ fn push_dag_list_filter(query: &mut QueryBuilder<Sqlite>, filter: &DagListFilter
 
 fn push_dag_execution_filters(
     query: &mut QueryBuilder<Sqlite>,
-    status: Option<&str>,
+    status: Option<DagExecutionStatus>,
     session_id: Option<&str>,
 ) {
     let mut separator = " WHERE ";
@@ -632,7 +636,7 @@ fn push_dag_execution_filters(
         query
             .push(next_separator())
             .push("status = ")
-            .push_bind(status);
+            .push_bind(status.as_str());
     }
     if let Some(session_id) = session_id {
         query
@@ -746,7 +750,7 @@ impl DagRepository for SqlxDagRepository {
 
     async fn list_dags(
         &self,
-        status: Option<&str>,
+        status: Option<DagExecutionStatus>,
         session_id: Option<&str>,
         limit: u32,
         offset: u32,
@@ -764,7 +768,11 @@ impl DagRepository for SqlxDagRepository {
             .await?)
     }
 
-    async fn count_dags(&self, status: Option<&str>, session_id: Option<&str>) -> Result<u64> {
+    async fn count_dags(
+        &self,
+        status: Option<DagExecutionStatus>,
+        session_id: Option<&str>,
+    ) -> Result<u64> {
         let mut query = QueryBuilder::new("SELECT COUNT(*) FROM dag_execution");
         push_dag_execution_filters(&mut query, status, session_id);
         let count = query
@@ -1437,13 +1445,13 @@ mod tests {
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].input_manifest, stored.input_manifest);
         assert_eq!(
-            repo.count_dags(Some("PROCESSING"), Some("session"))
+            repo.count_dags(Some(DagExecutionStatus::Processing), Some("session"))
                 .await
                 .unwrap(),
             1
         );
         assert!(
-            repo.list_dags(Some("COMPLETED"), Some("session"), 10, 0)
+            repo.list_dags(Some(DagExecutionStatus::Completed), Some("session"), 10, 0)
                 .await
                 .unwrap()
                 .is_empty()

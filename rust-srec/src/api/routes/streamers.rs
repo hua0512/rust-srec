@@ -14,9 +14,9 @@ use crate::api::extract::{ApiJson, ApiPath, ApiQuery};
 use crate::api::models::{
     BatchStreamerAction, BatchStreamerItemResult, BatchStreamerRequest, BatchStreamerResponse,
     CreateStreamerRequest, ExtractMetadataRequest, ExtractMetadataResponse, PaginatedResponse,
-    PaginationParams, PlatformConfigResponse, StreamerCheckHistoryEntry,
-    StreamerCheckHistoryResponse, StreamerFilterParams, StreamerResponse, UpdatePriorityRequest,
-    UpdateStreamerRequest,
+    PaginationParams, PlatformConfigResponse, SortDirection, StreamerCheckHistoryEntry,
+    StreamerCheckHistoryResponse, StreamerFilterParams, StreamerResponse, StreamerSortBy,
+    UpdatePriorityRequest, UpdateStreamerRequest,
 };
 use crate::api::server::AppState;
 use crate::database::models::PlatformConfigDbModel;
@@ -388,6 +388,31 @@ pub async fn create_streamer(
     ))
 }
 
+/// Live streamers first so active ones stay visible at the top, then other
+/// states from errors to offline, then priority (highest first), name and id.
+fn default_streamer_order(a: &StreamerMetadata, b: &StreamerMetadata) -> std::cmp::Ordering {
+    let state_order = |s: &StreamerState| -> u8 {
+        match s {
+            StreamerState::Live => 0,
+            StreamerState::Error => 1,
+            StreamerState::FatalError => 2,
+            StreamerState::OutOfSpace => 3,
+            StreamerState::NotFound => 4,
+            StreamerState::TemporalDisabled => 5,
+            StreamerState::InspectingLive => 6,
+            StreamerState::OutOfSchedule => 7,
+            StreamerState::Cancelled => 8,
+            StreamerState::Disabled => 9,
+            StreamerState::NotLive => 10,
+        }
+    };
+    state_order(&a.state)
+        .cmp(&state_order(&b.state))
+        .then_with(|| b.priority.cmp(&a.priority))
+        .then_with(|| a.name.cmp(&b.name))
+        .then_with(|| a.id.cmp(&b.id))
+}
+
 #[utoipa::path(
     get,
     path = "/api/streamers",
@@ -445,87 +470,25 @@ pub async fn list_streamers(
     });
 
     // Sort for stable pagination
-    let sort_by = filters.sort_by.as_deref();
-    let desc = filters
-        .sort_dir
-        .as_deref()
-        .is_some_and(|dir| dir.eq_ignore_ascii_case("desc"));
-
-    match sort_by {
-        Some("name") => {
-            streamers.sort_by(|a, b| {
-                let ordering = if desc {
-                    b.name.cmp(&a.name)
-                } else {
-                    a.name.cmp(&b.name)
-                };
-                ordering.then_with(|| a.id.cmp(&b.id))
-            });
-        }
-        Some("priority") => {
-            streamers.sort_by(|a, b| {
-                let ordering = if desc {
-                    b.priority.cmp(&a.priority)
-                } else {
-                    a.priority.cmp(&b.priority)
-                };
-                ordering
-                    .then_with(|| a.name.cmp(&b.name))
-                    .then_with(|| a.id.cmp(&b.id))
-            });
-        }
-        Some("state") => {
-            streamers.sort_by(|a, b| {
-                let a_state = a.state.as_str();
-                let b_state = b.state.as_str();
-                let ordering = if desc {
-                    b_state.cmp(a_state)
-                } else {
-                    a_state.cmp(b_state)
-                };
-                ordering
-                    .then_with(|| a.name.cmp(&b.name))
-                    .then_with(|| a.id.cmp(&b.id))
-            });
-        }
-        Some("updated_at") => {
-            streamers.sort_by(|a, b| {
-                let ordering = if desc {
-                    b.updated_at.cmp(&a.updated_at)
-                } else {
-                    a.updated_at.cmp(&b.updated_at)
-                };
-                ordering.then_with(|| a.id.cmp(&b.id))
-            });
-        }
-        _ => {
-            // Default: LIVE streamers first, then by priority desc, name asc, id asc.
-            // This ensures active streamers are always visible at the top.
-            streamers.sort_by(|a, b| {
-                // State priority: Active states first, then offline, then errors, then disabled
-                let state_order = |s: &StreamerState| -> u8 {
-                    match s {
-                        StreamerState::Live => 0,
-                        StreamerState::Error => 1,
-                        StreamerState::FatalError => 2,
-                        StreamerState::OutOfSpace => 3,
-                        StreamerState::NotFound => 4,
-                        StreamerState::TemporalDisabled => 5,
-                        StreamerState::InspectingLive => 6,
-                        StreamerState::OutOfSchedule => 7,
-                        StreamerState::Cancelled => 8,
-                        StreamerState::Disabled => 9,
-                        StreamerState::NotLive => 10,
-                    }
-                };
-                state_order(&a.state)
-                    .cmp(&state_order(&b.state))
-                    .then_with(|| b.priority.cmp(&a.priority))
-                    .then_with(|| a.name.cmp(&b.name))
-                    .then_with(|| a.id.cmp(&b.id))
-            });
-        }
-    }
+    let sort_by = filters.sort_by.unwrap_or_default();
+    let desc = filters.sort_dir == Some(SortDirection::Desc);
+    streamers.sort_by(|a, b| {
+        let ordering = match sort_by {
+            StreamerSortBy::Name => a.name.cmp(&b.name),
+            StreamerSortBy::Priority => a.priority.cmp(&b.priority),
+            StreamerSortBy::State => a.state.as_str().cmp(b.state.as_str()),
+            StreamerSortBy::UpdatedAt => a.updated_at.cmp(&b.updated_at),
+            StreamerSortBy::Default => return default_streamer_order(a, b),
+        };
+        let ordering = if desc { ordering.reverse() } else { ordering };
+        // Ties always break ascending.
+        let ordering = if matches!(sort_by, StreamerSortBy::Priority | StreamerSortBy::State) {
+            ordering.then_with(|| a.name.cmp(&b.name))
+        } else {
+            ordering
+        };
+        ordering.then_with(|| a.id.cmp(&b.id))
+    });
 
     // Calculate total before pagination
     let total = streamers.len() as u64;

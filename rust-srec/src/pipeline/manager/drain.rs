@@ -234,9 +234,7 @@ where
                 // statuses that are not terminal are exactly these two.
                 let mut dags = 0;
                 for status in [DagExecutionStatus::Pending, DagExecutionStatus::Processing] {
-                    dags += scheduler
-                        .count_dags(Some(status.as_str()), Some(session_id))
-                        .await?;
+                    dags += scheduler.count_dags(Some(status), Some(session_id)).await?;
                 }
                 dags
             }

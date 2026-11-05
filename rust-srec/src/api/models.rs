@@ -286,11 +286,48 @@ pub struct StreamerFilterParams {
     /// Filter by enabled status
     pub enabled: Option<bool>,
     /// Sort field
-    pub sort_by: Option<String>,
+    #[param(inline)]
+    pub sort_by: Option<StreamerSortBy>,
     /// Sort direction (asc/desc)
-    pub sort_dir: Option<String>,
+    #[param(inline)]
+    pub sort_dir: Option<SortDirection>,
     /// Search query (name or URL)
     pub search: Option<String>,
+}
+
+/// Sort field for the streamer list. Any other value uses the default order.
+#[derive(Debug, Clone, Copy, Default, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StreamerSortBy {
+    Name,
+    Priority,
+    State,
+    UpdatedAt,
+    /// Live streamers first, then by priority (highest first), name and id;
+    /// ignores the sort direction.
+    #[default]
+    #[serde(other)]
+    Default,
+}
+
+/// Sort direction. `desc` matches case-insensitively; any other value sorts
+/// ascending.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, utoipa::ToSchema)]
+#[serde(from = "String")]
+#[schema(rename_all = "lowercase")]
+pub enum SortDirection {
+    Asc,
+    Desc,
+}
+
+impl From<String> for SortDirection {
+    fn from(value: String) -> Self {
+        if value.eq_ignore_ascii_case("desc") {
+            Self::Desc
+        } else {
+            Self::Asc
+        }
+    }
 }
 
 // ============================================================================
@@ -645,7 +682,6 @@ pub struct TemplateResponse {
 ///     "input_path": ["/recordings/stream.flv"],
 ///     "output_path": ["/recordings/stream.mp4"],
 ///     "error_message": null,
-///     "progress": null,
 ///     "created_at": "2025-12-03T10:00:00Z",
 ///     "started_at": "2025-12-03T10:00:01Z",
 ///     "completed_at": "2025-12-03T10:05:00Z"
@@ -661,7 +697,6 @@ pub struct TemplateResponse {
 /// - `input_path` - List of input file paths
 /// - `output_path` - List of output file paths (set after completion)
 /// - `error_message` - Error details if job failed
-/// - `progress` - Unavailable in summaries; use the dedicated progress endpoint
 /// - `created_at` - When the job was created
 /// - `started_at` - When processing started
 /// - `completed_at` - When processing finished
@@ -684,9 +719,6 @@ pub struct JobResponse {
     pub input_path: Vec<String>,
     pub output_path: Option<Vec<String>>,
     pub error_message: Option<String>,
-    /// Unavailable in job summaries (`null`). Use `/api/pipeline/jobs/{id}/progress`
-    /// for the latest processor-specific progress snapshot.
-    pub progress: Option<f32>,
     pub created_at: DateTime<Utc>,
     pub started_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
