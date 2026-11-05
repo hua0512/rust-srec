@@ -235,10 +235,10 @@ pub enum PipelineEvent {
         job_type: String,
         error: String,
     },
-    /// Queue depth warning.
-    QueueWarning { depth: usize },
-    /// Queue depth critical.
-    QueueCritical { depth: usize },
+    /// Queue depth reached the configured warning threshold.
+    QueueWarning { depth: usize, threshold: usize },
+    /// Queue depth reached the configured critical threshold.
+    QueueCritical { depth: usize, threshold: usize },
 }
 
 /// The Pipeline Manager service.

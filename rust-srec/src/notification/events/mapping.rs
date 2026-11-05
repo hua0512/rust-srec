@@ -266,17 +266,17 @@ impl PipelineNotifications {
                     timestamp: now,
                 })
             }
-            PipelineEvent::QueueWarning { depth } => {
+            PipelineEvent::QueueWarning { depth, threshold } => {
                 Some(NotificationEvent::PipelineQueueWarning {
                     queue_depth: depth,
-                    threshold: 100, // TODO: Get from config
+                    threshold,
                     timestamp: now,
                 })
             }
-            PipelineEvent::QueueCritical { depth } => {
+            PipelineEvent::QueueCritical { depth, threshold } => {
                 Some(NotificationEvent::PipelineQueueCritical {
                     queue_depth: depth,
-                    threshold: 200, // TODO: Get from config
+                    threshold,
                     timestamp: now,
                 })
             }

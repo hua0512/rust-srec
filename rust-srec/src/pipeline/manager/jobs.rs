@@ -45,11 +45,17 @@ where
         match status {
             QueueDepthStatus::Critical => {
                 warn!("Queue depth critical: {} jobs", depth);
-                let _ = self.event_tx.send(PipelineEvent::QueueCritical { depth });
+                let threshold = self.job_queue.config().critical_threshold;
+                let _ = self
+                    .event_tx
+                    .send(PipelineEvent::QueueCritical { depth, threshold });
             }
             QueueDepthStatus::Warning => {
                 warn!("Queue depth warning: {} jobs", depth);
-                let _ = self.event_tx.send(PipelineEvent::QueueWarning { depth });
+                let threshold = self.job_queue.config().warning_threshold;
+                let _ = self
+                    .event_tx
+                    .send(PipelineEvent::QueueWarning { depth, threshold });
             }
             QueueDepthStatus::Normal => {}
         }
