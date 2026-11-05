@@ -128,7 +128,7 @@ export function AccountReferences({
 }
 
 /** Why the account's health is what it is; a manual validation needs no note. */
-export const REASON_LABELS: Record<
+const REASON_LABELS: Record<
   Exclude<CredentialHealthReason, 'manual_validation'>,
   MessageDescriptor
 > = {
