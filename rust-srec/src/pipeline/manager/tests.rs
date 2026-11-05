@@ -733,15 +733,6 @@ impl DagRepository for TestDagRepositoryForRetry {
             .ok_or_else(|| crate::Error::not_found("DAG execution", id))
     }
 
-    async fn update_dag_status(
-        &self,
-        _id: &str,
-        _status: &str,
-        _error: Option<&str>,
-    ) -> Result<()> {
-        unimplemented!("not needed for these tests")
-    }
-
     async fn list_dags(
         &self,
         _status: Option<&str>,
@@ -820,19 +811,6 @@ impl DagRepository for TestDagRepositoryForRetry {
 
     async fn get_steps_with_jobs_by_dag(&self, _dag_id: &str) -> Result<Vec<DagStepWithJob>> {
         Ok(Vec::new())
-    }
-
-    async fn update_step(&self, _step: &DagStepExecutionDbModel) -> Result<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn update_step_status_with_job(
-        &self,
-        _id: &str,
-        _status: &str,
-        _job_id: &str,
-    ) -> Result<()> {
-        unimplemented!("not needed for these tests")
     }
 
     async fn create_job_for_step(&self, _step_id: &str, _job: &JobDbModel) -> Result<()> {
@@ -964,15 +942,6 @@ impl DagRepository for TestDagRepository {
             .ok_or_else(|| crate::Error::not_found("DAG execution", id))
     }
 
-    async fn update_dag_status(
-        &self,
-        _id: &str,
-        _status: &str,
-        _error: Option<&str>,
-    ) -> Result<()> {
-        unimplemented!("not needed for these tests")
-    }
-
     async fn list_dags(
         &self,
         status: Option<&str>,
@@ -1086,19 +1055,6 @@ impl DagRepository for TestDagRepository {
     }
 
     async fn get_steps_with_jobs_by_dag(&self, _dag_id: &str) -> Result<Vec<DagStepWithJob>> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn update_step(&self, _step: &DagStepExecutionDbModel) -> Result<()> {
-        unimplemented!("not needed for these tests")
-    }
-
-    async fn update_step_status_with_job(
-        &self,
-        _id: &str,
-        _status: &str,
-        _job_id: &str,
-    ) -> Result<()> {
         unimplemented!("not needed for these tests")
     }
 
