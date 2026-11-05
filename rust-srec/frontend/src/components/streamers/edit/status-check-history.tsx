@@ -13,6 +13,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useWebSocket } from '@/providers/WebSocketContext';
+import { QueryError } from '@/components/shared/query-error';
 import {
   getStreamerCheckHistory,
   type StreamerCheckHistoryEntry,
@@ -47,7 +48,7 @@ export const StatusCheckHistory = memo(function StatusCheckHistory({
   const { i18n } = useLingui();
   const { isConnected } = useWebSocket();
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['streamer', streamerId, 'check-history', slots],
     queryFn: () =>
       getStreamerCheckHistory({ data: { id: streamerId, limit: slots } }),
@@ -94,6 +95,14 @@ export const StatusCheckHistory = memo(function StatusCheckHistory({
           i18n={i18n}
         />
       </div>
+
+      {error && !data && (
+        <QueryError
+          title={<Trans>Failed to load check history</Trans>}
+          error={error}
+          onRetry={() => void refetch()}
+        />
+      )}
 
       <TooltipProvider delayDuration={150}>
         {/* `min-w-0` lets the strip shrink below its content's intrinsic

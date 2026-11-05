@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { HealthStatusBadge } from '@/components/health/health-status-badge';
+import { getHealthStatusMeta } from '@/lib/health-status';
 import { formatBytes } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { ComponentHealth, DiskUsage } from '@/api/schemas/system';
@@ -80,22 +81,6 @@ export function groupDisksByMountPoint(
   );
 }
 
-/**
- * Colour the bar from the component status rather than re-deriving the
- * warning and critical thresholds here — the backend owns those, and the bar
- * must never disagree with the badge next to it.
- */
-function indicatorClass(status: string): string {
-  switch (status.toLowerCase()) {
-    case 'degraded':
-      return 'bg-yellow-500';
-    case 'unhealthy':
-      return 'bg-red-500';
-    default:
-      return 'bg-green-500';
-  }
-}
-
 export function StorageUsageCard({
   components,
 }: {
@@ -125,7 +110,8 @@ export function StorageUsageCard({
           const total = formatBytes(group.usage.total_bytes);
           const percent = group.usage.used_percent.toFixed(1);
           const paths = group.paths.join(', ');
-          const isHealthy = group.status.toLowerCase() === 'healthy';
+          const status = group.status.toLowerCase();
+          const isHealthy = status === 'healthy';
 
           return (
             <div key={group.mountPoint} className="space-y-2">
@@ -138,8 +124,9 @@ export function StorageUsageCard({
                   <span
                     className={cn(
                       'text-lg font-bold tabular-nums',
-                      !isHealthy && 'text-yellow-600 dark:text-yellow-400',
-                      group.status.toLowerCase() === 'unhealthy' &&
+                      status === 'degraded' &&
+                        'text-yellow-600 dark:text-yellow-400',
+                      status === 'unhealthy' &&
                         'text-red-600 dark:text-red-400',
                     )}
                   >
@@ -148,10 +135,13 @@ export function StorageUsageCard({
                 </div>
               </div>
 
+              {/* Coloured from the status rather than re-deriving the
+                  warning and critical thresholds here: the backend owns
+                  those, and the bar must never disagree with the badge. */}
               <Progress
                 value={group.usage.used_percent}
                 className="h-2"
-                indicatorClassName={indicatorClass(group.status)}
+                indicatorClassName={getHealthStatusMeta(group.status).dot}
               />
 
               <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 text-xs text-muted-foreground">

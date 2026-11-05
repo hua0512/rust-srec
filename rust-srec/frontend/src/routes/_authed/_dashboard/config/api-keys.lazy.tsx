@@ -1,8 +1,9 @@
 import { createLazyFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'motion/react';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
@@ -350,7 +351,7 @@ function CreateApiKeyDialog({
     useState<ApiKeyAccessLevel>('read_only');
   const [expiry, setExpiry] = useState<string>('never');
   const [createdKey, setCreatedKey] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const { copy, copied } = useCopyToClipboard();
 
   const createMutation = useMutation({
     mutationFn: () => {
@@ -379,16 +380,12 @@ function CreateApiKeyDialog({
       setAccessLevel('read_only');
       setExpiry('never');
       setCreatedKey(null);
-      setCopied(false);
     }, 200);
   };
 
   const copyKey = async () => {
     if (!createdKey) return;
-    await navigator.clipboard.writeText(createdKey);
-    setCopied(true);
-    toast.success(i18n._(msg`API key copied to clipboard`));
-    setTimeout(() => setCopied(false), 2000);
+    await copy(createdKey, i18n._(msg`API key copied to clipboard`));
   };
 
   return (
@@ -541,17 +538,22 @@ function CreateApiKeyDialog({
   );
 }
 
+const subscribeNever = () => () => {};
+const getMcpUrl = () =>
+  new URL(getApiEndpointUrl('/mcp'), window.location.origin).toString();
+const getServerMcpUrl = () => '';
+
 function McpQuickStart() {
   const { i18n } = useLingui();
-  const [copied, setCopied] = useState(false);
+  const { copy, copied } = useCopyToClipboard();
 
-  const mcpUrl = useMemo(() => {
-    const endpoint = getApiEndpointUrl('/mcp');
-    if (typeof window === 'undefined' || endpoint.startsWith('http')) {
-      return endpoint;
-    }
-    return new URL(endpoint, window.location.origin).toString();
-  }, []);
+  // Only the browser knows the address it reached the app on, so the server
+  // and the hydrating render show an empty URL and the address follows.
+  const mcpUrl = useSyncExternalStore(
+    subscribeNever,
+    getMcpUrl,
+    getServerMcpUrl,
+  );
 
   const configSnippet = useMemo(
     () =>
@@ -572,12 +574,8 @@ function McpQuickStart() {
     [mcpUrl],
   );
 
-  const copySnippet = async () => {
-    await navigator.clipboard.writeText(configSnippet);
-    setCopied(true);
-    toast.success(i18n._(msg`Configuration copied to clipboard`));
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const copySnippet = () =>
+    copy(configSnippet, i18n._(msg`Configuration copied to clipboard`));
 
   return (
     <SettingsCard

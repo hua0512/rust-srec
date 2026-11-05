@@ -6,8 +6,8 @@ import { searchParamsValidator } from '@/lib/search-params';
 // search term and pagination in the URL so they survive navigation into a
 // session detail page and reloads.
 const validateSearch = searchParamsValidator({
-  page: z.number().optional(),
-  limit: z.number().optional(),
+  page: z.number().int().min(1).optional(),
+  limit: z.number().int().positive().optional(),
   streamer_id: z.string().optional(),
   search: z.string().optional(),
   status: z.enum(['all', 'active', 'completed']).optional(),

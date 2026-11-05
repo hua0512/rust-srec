@@ -1,4 +1,4 @@
-import React, { Suspense } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -32,9 +32,41 @@ const DanmuStatsPanel = React.lazy(() =>
   })),
 );
 
+/**
+ * The recorded length; a session still recording has no `duration_secs` yet,
+ * so its length counts up from `startTime`. The clock starts after mount so
+ * the server-rendered markup and the first client render agree.
+ */
+function SessionDuration({
+  durationSecs,
+  startTime,
+  endTime,
+}: {
+  durationSecs: number | null | undefined;
+  startTime: string | null | undefined;
+  endTime: string | null | undefined;
+}) {
+  const { i18n } = useLingui();
+  const isLive = !endTime;
+  const [now, setNow] = useState<number | null>(null);
+  useEffect(() => {
+    if (!isLive) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [isLive]);
+
+  const seconds =
+    typeof durationSecs === 'number' && durationSecs > 0
+      ? durationSecs
+      : isLive && startTime && now !== null
+        ? Math.max(0, (now - Date.parse(startTime)) / 1000)
+        : null;
+  return formatLocalizedDuration(seconds, i18n.locale);
+}
+
 interface OverviewTabProps {
   session: any;
-  duration: string;
   outputs: any[];
   onPlay: (output: any) => void;
   token?: string;
@@ -47,7 +79,6 @@ interface OverviewTabProps {
 
 export function OverviewTab({
   session,
-  duration,
   outputs,
   onPlay,
   token,
@@ -58,12 +89,6 @@ export function OverviewTab({
   onRetryDanmuStats,
 }: OverviewTabProps) {
   const { i18n } = useLingui();
-  // `duration` arrives pre-formatted with English unit suffixes, so the raw
-  // seconds are preferred when present to get localized unit labels.
-  const sessionDuration =
-    typeof session.duration_secs === 'number' && session.duration_secs > 0
-      ? formatLocalizedDuration(session.duration_secs, i18n.locale)
-      : duration;
   const thumbnailUrl = getMediaUrl(session.thumbnail_url, token);
 
   const playableOutput = outputs.find(isPlayable);
@@ -97,7 +122,9 @@ export function OverviewTab({
                       '??'}
                   </AvatarFallback>
                 </Avatar>
-                <div className="absolute bottom-1 right-1 h-4 w-4 md:h-5 md:w-5 bg-green-500 border-2 md:border-4 border-white dark:border-zinc-900 rounded-full" />
+                {!session.end_time && (
+                  <div className="absolute bottom-1 right-1 h-4 w-4 md:h-5 md:w-5 bg-green-500 border-2 md:border-4 border-white dark:border-zinc-900 rounded-full" />
+                )}
               </div>
 
               <div className="min-w-0 space-y-2">
@@ -221,7 +248,11 @@ export function OverviewTab({
                   </span>
                   <div className="mt-2 flex items-baseline gap-2">
                     <span className="text-4xl font-extrabold tracking-tight text-foreground">
-                      {sessionDuration}
+                      <SessionDuration
+                        durationSecs={session.duration_secs}
+                        startTime={session.start_time}
+                        endTime={session.end_time}
+                      />
                     </span>
                   </div>
                 </div>

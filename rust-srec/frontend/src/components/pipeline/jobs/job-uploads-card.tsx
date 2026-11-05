@@ -8,7 +8,7 @@ import {
   CircleX,
   CircleMinus,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -62,14 +62,9 @@ function statusLabel(status: UploadRecordStatus) {
 export function JobUploadsCard({ records }: { records: UploadRecord[] }) {
   const { i18n } = useLingui();
 
-  const handleCopyDestination = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.success(i18n._(msg`Destination copied`));
-    } catch {
-      toast.error(i18n._(msg`Failed to copy destination`));
-    }
-  };
+  const { copy } = useCopyToClipboard();
+  const handleCopyDestination = (text: string) =>
+    copy(text, i18n._(msg`Destination copied`));
 
   if (records.length === 0) return null;
 

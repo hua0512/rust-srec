@@ -5,6 +5,7 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Plus } from 'lucide-react';
 import { toast } from 'sonner';
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { Button } from '@/components/ui/button';
 import {
   deleteCredentialProfile,
@@ -104,11 +105,8 @@ export function PlatformAccountsSection({
       } else toast.error(error.message);
     },
   });
-  const copyId = (id: string) =>
-    navigator.clipboard.writeText(id).then(
-      () => toast.success(i18n._(msg`Account ID copied`)),
-      () => toast.error(i18n._(msg`Could not copy to the clipboard`)),
-    );
+  const { copy } = useCopyToClipboard();
+  const copyId = (id: string) => copy(id, i18n._(msg`Account ID copied`));
 
   const addButton = (variant: 'outline' | 'default') => (
     <Button

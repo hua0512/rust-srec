@@ -49,9 +49,11 @@ function EditEnginePage() {
             <Trans>Error</Trans>
           </AlertTitle>
           <AlertDescription>
-            <Trans>
-              Failed to load engine: {error?.message || 'Engine not found'}
-            </Trans>
+            {error ? (
+              <Trans>Failed to load engine: {error.message}</Trans>
+            ) : (
+              <Trans>Engine not found</Trans>
+            )}
           </AlertDescription>
         </Alert>
       </div>

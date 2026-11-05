@@ -17,7 +17,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useInView } from '@/hooks/use-in-view';
 
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { SearchInput } from '@/components/shared/search-input';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -59,8 +59,7 @@ export const StepLibrary = memo(function StepLibrary({
   onOpenChange,
   selectionMode = 'add',
 }: StepLibraryProps) {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [internalOpen, setInternalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('presets');
@@ -76,14 +75,6 @@ export const StepLibrary = memo(function StepLibrary({
   const { ref: presetsRef, inView: presetsInView } = useInView();
   const { ref: workflowsRef, inView: workflowsInView } = useInView();
 
-  // Debounce search
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchQuery);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
-
   // Fetch Job Presets
   const {
     data: presetsData,
@@ -92,11 +83,11 @@ export const StepLibrary = memo(function StepLibrary({
     isFetchingNextPage: isFetchingNextPresets,
     isLoading: isLoadingPresets,
   } = useInfiniteQuery({
-    queryKey: ['job', 'presets', debouncedSearch, selectedCategory],
+    queryKey: ['job', 'presets', search, selectedCategory],
     queryFn: ({ pageParam }) =>
       listJobPresets({
         data: {
-          search: debouncedSearch || undefined,
+          search: search || undefined,
           category: selectedCategory || undefined,
           limit: 20,
           offset: pageParam,
@@ -118,11 +109,11 @@ export const StepLibrary = memo(function StepLibrary({
     isFetchingNextPage: isFetchingNextWorkflows,
     isLoading: isLoadingWorkflows,
   } = useInfiniteQuery({
-    queryKey: ['pipeline', 'presets', debouncedSearch],
+    queryKey: ['pipeline', 'presets', search],
     queryFn: ({ pageParam }) =>
       listPipelinePresets({
         data: {
-          search: debouncedSearch || undefined,
+          search: search || undefined,
           limit: 20,
           offset: pageParam,
         },
@@ -287,20 +278,11 @@ export const StepLibrary = memo(function StepLibrary({
               </TabsTrigger>
             </TabsList>
 
-            <div className="relative">
-              <Search
-                aria-hidden="true"
-                className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60"
-              />
-              <Input
-                type="search"
-                placeholder={i18n._(msg`Search by name or description...`)}
-                aria-label={i18n._(msg`Search by name or description...`)}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10 h-11 bg-background border-border/50 focus:border-primary/50 focus:ring-primary/20 transition-all rounded-xl shadow-sm"
-              />
-            </div>
+            <SearchInput
+              defaultValue={search}
+              onSearch={setSearch}
+              placeholder={i18n._(msg`Search by name or description...`)}
+            />
 
             {activeTab === 'presets' && categories.length > 0 && (
               <div className="-mx-6 px-6 overflow-hidden">

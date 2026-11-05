@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import { QueryError } from '@/components/shared/query-error';
 import {
   Popover,
   PopoverContent,
@@ -92,7 +93,7 @@ export function LogFileBrowser() {
     : undefined;
   const toDate = dateRange?.to ? format(dateRange.to, 'yyyy-MM-dd') : undefined;
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['logging', 'files', fromDate, toDate],
     queryFn: () =>
       listLogFiles({
@@ -284,6 +285,12 @@ export function LogFileBrowser() {
                 <Skeleton className="h-8 w-8 rounded" />
               </div>
             ))
+          ) : error && !data ? (
+            <QueryError
+              title={<Trans>Failed to load log files</Trans>}
+              error={error}
+              onRetry={() => void refetch()}
+            />
           ) : data?.items?.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <FileText className="h-12 w-12 text-muted-foreground/30 mb-4" />

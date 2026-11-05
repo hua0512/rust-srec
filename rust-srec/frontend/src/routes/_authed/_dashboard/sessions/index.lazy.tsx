@@ -64,7 +64,6 @@ const DEFAULT_LIMIT = 20;
 
 function SessionsPage() {
   const search = Route.useSearch();
-  const navigate = Route.useNavigate();
   const queryClient = useQueryClient();
   const { i18n } = useLingui();
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
@@ -183,7 +182,16 @@ function SessionsPage() {
     (search.timeRange && search.timeRange !== 'all') ||
     search.from,
   );
-  const clearFilters = () => navigate({ search: {}, replace: true });
+  const clearFilters = () =>
+    updateSearch({
+      streamer_id: undefined,
+      search: undefined,
+      status: undefined,
+      timeRange: undefined,
+      from: undefined,
+      to: undefined,
+      page: undefined,
+    });
 
   const currentStatus = search.status || 'all';
   const currentTimeRange = search.timeRange || 'all';
@@ -254,7 +262,7 @@ function SessionsPage() {
             <SearchInput
               defaultValue={search.search || ''}
               onSearch={(val) =>
-                updateSearch({ search: val || undefined, page: 1 })
+                updateSearch({ search: val || undefined, page: undefined })
               }
               placeholder={i18n._(msg`Search sessions...`)}
               className="md:w-56 min-w-[200px]"
@@ -273,7 +281,7 @@ function SessionsPage() {
                     type="button"
                     aria-pressed={isActive}
                     onClick={() =>
-                      updateSearch({ status: filter.value, page: 1 })
+                      updateSearch({ status: filter.value, page: undefined })
                     }
                     className={cn(
                       'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200',
@@ -334,14 +342,14 @@ function SessionsPage() {
                           timeRange: 'custom',
                           from: range.from.toISOString(),
                           to: range.to?.toISOString(),
-                          page: 1,
+                          page: undefined,
                         });
                       } else {
                         updateSearch({
                           timeRange: 'all',
                           from: undefined,
                           to: undefined,
-                          page: 1,
+                          page: undefined,
                         });
                       }
                     }}
@@ -367,7 +375,7 @@ function SessionsPage() {
                         timeRange: filter.value,
                         from: undefined,
                         to: undefined,
-                        page: 1,
+                        page: undefined,
                       })
                     }
                     className={cn(

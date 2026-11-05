@@ -5,6 +5,7 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Monitor, Network, Plus } from 'lucide-react';
 import { toast } from 'sonner';
+import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -143,11 +144,9 @@ export function ProxiesPanel() {
       toast.error(error instanceof Error ? error.message : String(error));
     }
   };
+  const { copy: copyText } = useCopyToClipboard();
   const copy = (proxy: SavedProxy) =>
-    navigator.clipboard.writeText(proxy.url).then(
-      () => toast.success(i18n._(msg`Address copied`)),
-      () => toast.error(i18n._(msg`Could not copy to the clipboard`)),
-    );
+    copyText(proxy.url, i18n._(msg`Address copied`));
   const addButton = (variant: 'outline' | 'default') => (
     <Button
       type="button"

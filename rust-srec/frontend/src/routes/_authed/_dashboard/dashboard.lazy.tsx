@@ -16,7 +16,6 @@ import {
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
-import { type I18n } from '@lingui/core';
 import {
   createLazyFileRoute,
   Link,
@@ -34,6 +33,7 @@ import { CARD_GRID, STAT_GRID } from '@/lib/grid';
 import { Button } from '@/components/ui/button';
 import { formatRelativeTime, formatLocalizedDuration } from '@/lib/date-utils';
 import { formatBytes } from '@/lib/format';
+import { getHealthStatusMeta } from '@/lib/health-status';
 import type { ComponentHealth } from '@/api/schemas/system';
 import { useCallback, useMemo, memo, useState, useEffect } from 'react';
 
@@ -248,18 +248,18 @@ function Dashboard() {
                         <div
                           className={cn(
                             'h-4 w-4 rounded-full',
-                            statusDotClass(health.status),
+                            getHealthStatusMeta(health.status).dot,
                           )}
                         />
                         <div
                           className={cn(
                             'absolute inset-0 rounded-full animate-ping opacity-75',
-                            statusDotClass(health.status),
+                            getHealthStatusMeta(health.status).dot,
                           )}
                         />
                       </div>
                       <span className="text-2xl font-bold capitalize bg-clip-text text-transparent bg-gradient-to-r from-foreground to-foreground/70">
-                        {getStatusLabel(health.status, i18n)}
+                        {i18n._(getHealthStatusMeta(health.status).label)}
                       </span>
                     </div>
                     <p className="text-xs font-medium text-muted-foreground/70 mt-3 flex items-center gap-2">
@@ -497,11 +497,14 @@ const ComponentStatusCard = memo(
         </DashboardCard>
       );
 
-    const isHealthy = component.status === 'healthy';
+    const status = component.status.toLowerCase();
+    // A component that has not been checked yet reports unknown, which is
+    // not a failure.
+    const isFailing = status === 'degraded' || status === 'unhealthy';
 
     return (
       <DashboardCard
-        className={cn('h-full', !isHealthy && 'border-red-500/30 bg-red-500/5')}
+        className={cn('h-full', isFailing && 'border-red-500/30 bg-red-500/5')}
       >
         <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
           <CardTitle className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
@@ -510,9 +513,9 @@ const ComponentStatusCard = memo(
           <div
             className={cn(
               'p-1.5 rounded-md transition-colors',
-              isHealthy
-                ? 'bg-secondary/50 text-secondary-foreground'
-                : 'bg-red-500/10 text-red-500',
+              isFailing
+                ? 'bg-red-500/10 text-red-500'
+                : 'bg-secondary/50 text-secondary-foreground',
             )}
           >
             <Icon className="h-4 w-4" />
@@ -521,13 +524,13 @@ const ComponentStatusCard = memo(
         <CardContent>
           <div className="flex items-center gap-3">
             <div className="relative flex h-3 w-3">
-              {!isHealthy && (
+              {isFailing && (
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
               )}
               <span
                 className={cn(
                   'relative inline-flex rounded-full h-3 w-3',
-                  statusDotClass(component.status),
+                  getHealthStatusMeta(component.status).dot,
                 )}
               ></span>
             </div>
@@ -538,16 +541,16 @@ const ComponentStatusCard = memo(
                 // Only the status word wants title-casing; a headline is
                 // already a formatted figure ("95.12 GB free").
                 !headline && 'capitalize',
-                !isHealthy && 'text-red-500 dark:text-red-400',
+                isFailing && 'text-red-500 dark:text-red-400',
               )}
             >
               {headline
                 ? headline
-                : !isHealthy &&
+                : isFailing &&
                     component.message &&
                     component.message.length < 30
                   ? component.message
-                  : getStatusLabel(component.status, i18n)}
+                  : i18n._(getHealthStatusMeta(component.status).label)}
             </div>
           </div>
           {caption && (
@@ -636,24 +639,3 @@ const StatCard = memo(
 );
 
 StatCard.displayName = 'StatCard';
-
-function statusDotClass(status: string) {
-  if (status === 'healthy') return 'bg-green-500';
-  if (status === 'degraded') return 'bg-yellow-500';
-  return 'bg-red-500';
-}
-
-function getStatusLabel(status: string, i18n: I18n) {
-  switch (status.toLowerCase()) {
-    case 'healthy':
-      return i18n._(msg`Healthy`);
-    case 'degraded':
-      return i18n._(msg`Degraded`);
-    case 'unhealthy':
-      return i18n._(msg`Unhealthy`);
-    case 'unknown':
-      return i18n._(msg`Unknown`);
-    default:
-      return status;
-  }
-}
