@@ -1377,6 +1377,8 @@ impl JobRunner {
                     metadata: output.metadata,
                     uploads: output.uploads,
                     logs: output.logs,
+                    input_size_bytes: output.input_size_bytes,
+                    output_size_bytes: output.output_size_bytes,
                 },
             )
             .await;
@@ -2659,6 +2661,8 @@ mod tests {
                                 metadata: None,
                                 uploads: vec![],
                                 logs: vec![],
+                                input_size_bytes: None,
+                                output_size_bytes: None,
                             },
                         )
                         .await
