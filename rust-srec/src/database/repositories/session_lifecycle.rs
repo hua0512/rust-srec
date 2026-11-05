@@ -26,10 +26,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use futures::future::BoxFuture;
+use sqlx::SqliteConnection;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::Result;
+use crate::database::committed_writer::commit_owned;
 use crate::database::models::SessionEventDbModel;
 use crate::database::repositories::{
     MonitorOutboxTxOps, SessionEventTxOps, SessionTxOps, StreamerTxOps,
@@ -185,39 +188,19 @@ impl SessionLifecycleRepository {
         streamer_id: String,
         binding: crate::credentials::CredentialBinding,
     ) -> Result<crate::credentials::CredentialBinding> {
-        if let Some(store) = self.committed_state.get() {
-            return store
-                .writer
-                .transaction(
-                    "commit recording credential binding",
-                    move |connection| {
-                        Box::pin(async move {
-                            super::credential_profiles::commit_session_binding(
-                                connection,
-                                &session_id,
-                                &streamer_id,
-                                &binding,
-                                true,
-                            )
-                            .await
-                        })
-                    },
-                    |_| {},
+        self.write_transaction("commit recording credential binding", move |tx| {
+            Box::pin(async move {
+                super::credential_profiles::commit_session_binding(
+                    tx,
+                    &session_id,
+                    &streamer_id,
+                    &binding,
+                    true,
                 )
-                .await;
-        }
-        let mut transaction = begin_immediate(&self.write_pool).await?;
-        let binding = super::credential_profiles::commit_session_binding(
-            &mut transaction,
-            &session_id,
-            &streamer_id,
-            &binding,
-            true,
-        )
-        .await?;
-        crate::database::committed_writer::prepare_owned_commit()?;
-        transaction.commit().await?;
-        Ok(binding)
+                .await
+            })
+        })
+        .await
     }
     pub(crate) fn bind_committed_state(&self, state: Arc<CommittedStreamerState>) {
         self.committed_state.get_or_init(|| state);
@@ -231,6 +214,45 @@ impl SessionLifecycleRepository {
             write_pool,
             committed_state: std::sync::OnceLock::new(),
         }
+    }
+
+    /// Run a streamer-state write through the committed store so the changed
+    /// row is published to the cache. Without a bound store (repository-only
+    /// tests), the same operation runs in a plain `BEGIN IMMEDIATE`.
+    async fn state_transaction<T, F>(&self, label: &'static str, operation: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: for<'c> FnOnce(&'c mut SqliteConnection) -> BoxFuture<'c, Result<StateChange<T>>>
+            + Send
+            + 'static,
+    {
+        if let Some(store) = self.committed_state.get() {
+            store.writer.require_same_pool(&self.write_pool)?;
+            return store
+                .transaction(label, StatePublication::StateOnly, operation)
+                .await;
+        }
+        let mut tx = begin_immediate(&self.write_pool).await?;
+        let change = operation(&mut tx).await?;
+        commit_owned(tx).await?;
+        Ok(change.value)
+    }
+
+    /// Run a write that changes no streamer row through the committed writer,
+    /// falling back to a plain `BEGIN IMMEDIATE` like [`Self::state_transaction`].
+    async fn write_transaction<T, F>(&self, label: &'static str, operation: F) -> Result<T>
+    where
+        T: Send + 'static,
+        F: for<'c> FnOnce(&'c mut SqliteConnection) -> BoxFuture<'c, Result<T>> + Send + 'static,
+    {
+        if let Some(store) = self.committed_state.get() {
+            store.writer.require_same_pool(&self.write_pool)?;
+            return store.writer.transaction(label, operation, |_| {}).await;
+        }
+        let mut tx = begin_immediate(&self.write_pool).await?;
+        let value = operation(&mut tx).await?;
+        commit_owned(tx).await?;
+        Ok(value)
     }
 
     /// Build the canonical [`SessionEventDbModel`] for a typed payload.
@@ -298,21 +320,10 @@ impl SessionLifecycleRepository {
     }
 
     pub async fn start_or_resume(&self, inputs: StartSessionInputs) -> Result<StartSessionOutcome> {
-        if let Some(store) = self.committed_state.get() {
-            store.writer.require_same_pool(&self.write_pool)?;
-            return store
-                .transaction(
-                    "session start_or_resume",
-                    StatePublication::StateOnly,
-                    move |tx| Box::pin(Self::start_or_resume_in_connection(tx, inputs)),
-                )
-                .await;
-        }
-        let mut tx = begin_immediate(&self.write_pool).await?;
-        let result = Self::start_or_resume_in_connection(&mut tx, inputs).await?;
-        crate::database::committed_writer::prepare_owned_commit()?;
-        tx.commit().await?;
-        Ok(result.value)
+        self.state_transaction("session start_or_resume", move |tx| {
+            Box::pin(Self::start_or_resume_in_connection(tx, inputs))
+        })
+        .await
     }
 
     async fn start_or_resume_in_connection(
@@ -525,26 +536,13 @@ impl SessionLifecycleRepository {
         streamer_id: &str,
         now: DateTime<Utc>,
     ) -> Result<Option<StreamerState>> {
-        if let Some(store) = self.committed_state.get() {
-            store.writer.require_same_pool(&self.write_pool)?;
-            let owned_id = streamer_id.to_owned();
-            return store
-                .transaction(
-                    "session mark_streamer_live",
-                    StatePublication::StateOnly,
-                    move |tx| {
-                        Box::pin(async move {
-                            Self::mark_streamer_live_in_connection(tx, &owned_id, now).await
-                        })
-                    },
-                )
-                .await;
-        }
-        let mut tx = begin_immediate(&self.write_pool).await?;
-        let result = Self::mark_streamer_live_in_connection(&mut tx, streamer_id, now).await?;
-        crate::database::committed_writer::prepare_owned_commit()?;
-        tx.commit().await?;
-        Ok(result.value)
+        let streamer_id = streamer_id.to_owned();
+        self.state_transaction("session mark_streamer_live", move |tx| {
+            Box::pin(
+                async move { Self::mark_streamer_live_in_connection(tx, &streamer_id, now).await },
+            )
+        })
+        .await
     }
 
     async fn mark_streamer_live_in_connection(
@@ -572,28 +570,14 @@ impl SessionLifecycleRepository {
         title: &str,
         now: DateTime<Utc>,
     ) -> Result<bool> {
-        if let Some(store) = self.committed_state.get() {
-            store.writer.require_same_pool(&self.write_pool)?;
-            let id = session_id.to_owned();
-            let title = title.to_owned();
-            return store
-                .writer
-                .transaction(
-                    "session add_session_title",
-                    move |tx| {
-                        Box::pin(async move {
-                            Self::add_session_title_in_connection(tx, &id, &title, now).await
-                        })
-                    },
-                    |_| {},
-                )
-                .await;
-        }
-        let mut tx = begin_immediate(&self.write_pool).await?;
-        let added = Self::add_session_title_in_connection(&mut tx, session_id, title, now).await?;
-        crate::database::committed_writer::prepare_owned_commit()?;
-        tx.commit().await?;
-        Ok(added)
+        let session_id = session_id.to_owned();
+        let title = title.to_owned();
+        self.write_transaction("session add_session_title", move |tx| {
+            Box::pin(async move {
+                Self::add_session_title_in_connection(tx, &session_id, &title, now).await
+            })
+        })
+        .await
     }
 
     async fn add_session_title_in_connection(
@@ -642,44 +626,22 @@ impl SessionLifecycleRepository {
         via_hysteresis: bool,
         now: DateTime<Utc>,
     ) -> Result<Option<String>> {
-        if let Some(store) = self.committed_state.get() {
-            store.writer.require_same_pool(&self.write_pool)?;
-            let id = streamer_id.to_owned();
-            let session = session_id.map(str::to_owned);
-            return store
-                .writer
-                .transaction(
-                    "session end_session_only",
-                    move |tx| {
-                        Box::pin(async move {
-                            Self::end_session_only_in_connection(
-                                tx,
-                                &id,
-                                session.as_deref(),
-                                cause,
-                                via_hysteresis,
-                                now,
-                            )
-                            .await
-                        })
-                    },
-                    |_| {},
+        let streamer_id = streamer_id.to_owned();
+        let session_id = session_id.map(str::to_owned);
+        self.write_transaction("session end_session_only", move |tx| {
+            Box::pin(async move {
+                Self::end_session_only_in_connection(
+                    tx,
+                    &streamer_id,
+                    session_id.as_deref(),
+                    cause,
+                    via_hysteresis,
+                    now,
                 )
-                .await;
-        }
-        let mut tx = begin_immediate(&self.write_pool).await?;
-        let value = Self::end_session_only_in_connection(
-            &mut tx,
-            streamer_id,
-            session_id,
-            cause,
-            via_hysteresis,
-            now,
-        )
-        .await?;
-        crate::database::committed_writer::prepare_owned_commit()?;
-        tx.commit().await?;
-        Ok(value)
+                .await
+            })
+        })
+        .await
     }
 
     async fn end_session_only_in_connection(
@@ -737,42 +699,21 @@ impl SessionLifecycleRepository {
         via_hysteresis: bool,
         now: DateTime<Utc>,
     ) -> Result<Option<String>> {
-        if let Some(store) = self.committed_state.get() {
-            store.writer.require_same_pool(&self.write_pool)?;
-            let id = streamer_id.to_owned();
-            let session = session_id.map(str::to_owned);
-            return store
-                .writer
-                .transaction(
-                    "session end_for_disable",
-                    move |tx| {
-                        Box::pin(async move {
-                            Self::end_for_disable_in_connection(
-                                tx,
-                                &id,
-                                session.as_deref(),
-                                via_hysteresis,
-                                now,
-                            )
-                            .await
-                        })
-                    },
-                    |_| {},
+        let streamer_id = streamer_id.to_owned();
+        let session_id = session_id.map(str::to_owned);
+        self.write_transaction("session end_for_disable", move |tx| {
+            Box::pin(async move {
+                Self::end_for_disable_in_connection(
+                    tx,
+                    &streamer_id,
+                    session_id.as_deref(),
+                    via_hysteresis,
+                    now,
                 )
-                .await;
-        }
-        let mut tx = begin_immediate(&self.write_pool).await?;
-        let value = Self::end_for_disable_in_connection(
-            &mut tx,
-            streamer_id,
-            session_id,
-            via_hysteresis,
-            now,
-        )
-        .await?;
-        crate::database::committed_writer::prepare_owned_commit()?;
-        tx.commit().await?;
-        Ok(value)
+                .await
+            })
+        })
+        .await
     }
 
     async fn end_for_disable_in_connection(
@@ -832,21 +773,10 @@ impl SessionLifecycleRepository {
         &self,
         inputs: EndForOutOfScheduleInputs,
     ) -> Result<Option<String>> {
-        if let Some(store) = self.committed_state.get() {
-            store.writer.require_same_pool(&self.write_pool)?;
-            return store
-                .transaction(
-                    "session end_for_out_of_schedule",
-                    StatePublication::StateOnly,
-                    move |tx| Box::pin(Self::end_for_out_of_schedule_in_connection(tx, inputs)),
-                )
-                .await;
-        }
-        let mut tx = begin_immediate(&self.write_pool).await?;
-        let result = Self::end_for_out_of_schedule_in_connection(&mut tx, inputs).await?;
-        crate::database::committed_writer::prepare_owned_commit()?;
-        tx.commit().await?;
-        Ok(result.value)
+        self.state_transaction("session end_for_out_of_schedule", move |tx| {
+            Box::pin(Self::end_for_out_of_schedule_in_connection(tx, inputs))
+        })
+        .await
     }
 
     async fn end_for_out_of_schedule_in_connection(
@@ -921,29 +851,13 @@ impl SessionLifecycleRepository {
         session_id: &str,
         new_cause: TerminalCauseDto,
     ) -> Result<bool> {
-        if let Some(store) = self.committed_state.get() {
-            store.writer.require_same_pool(&self.write_pool)?;
-            let id = session_id.to_owned();
-            return store
-                .writer
-                .transaction(
-                    "session rewrite_session_ended_cause",
-                    move |tx| {
-                        Box::pin(async move {
-                            Self::rewrite_session_ended_cause_in_connection(tx, &id, new_cause)
-                                .await
-                        })
-                    },
-                    |_| {},
-                )
-                .await;
-        }
-        let mut tx = begin_immediate(&self.write_pool).await?;
-        let value =
-            Self::rewrite_session_ended_cause_in_connection(&mut tx, session_id, new_cause).await?;
-        crate::database::committed_writer::prepare_owned_commit()?;
-        tx.commit().await?;
-        Ok(value)
+        let session_id = session_id.to_owned();
+        self.write_transaction("session rewrite_session_ended_cause", move |tx| {
+            Box::pin(async move {
+                Self::rewrite_session_ended_cause_in_connection(tx, &session_id, new_cause).await
+            })
+        })
+        .await
     }
 
     async fn rewrite_session_ended_cause_in_connection(
@@ -1012,19 +926,10 @@ impl SessionLifecycleRepository {
     /// clears accumulated errors, and (if appropriate) enqueues
     /// [`MonitorEvent::StreamerOffline`].
     pub async fn end(&self, inputs: EndSessionInputs) -> Result<EndSessionOutcome> {
-        if let Some(store) = self.committed_state.get() {
-            store.writer.require_same_pool(&self.write_pool)?;
-            return store
-                .transaction("session end", StatePublication::StateOnly, move |tx| {
-                    Box::pin(Self::end_in_connection(tx, inputs))
-                })
-                .await;
-        }
-        let mut tx = begin_immediate(&self.write_pool).await?;
-        let result = Self::end_in_connection(&mut tx, inputs).await?;
-        crate::database::committed_writer::prepare_owned_commit()?;
-        tx.commit().await?;
-        Ok(result.value)
+        self.state_transaction("session end", move |tx| {
+            Box::pin(Self::end_in_connection(tx, inputs))
+        })
+        .await
     }
 
     async fn end_in_connection(

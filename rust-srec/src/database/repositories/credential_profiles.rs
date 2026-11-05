@@ -328,8 +328,7 @@ impl CredentialProfileRepository {
         let mut tx = begin_immediate(&self.write_pool).await?;
         let profile = create_in(&mut tx, platform_id, label, enabled, material, route).await?;
         set_sites(&mut tx, &profile.id, sites).await?;
-        crate::database::committed_writer::prepare_owned_commit()?;
-        tx.commit().await?;
+        crate::database::committed_writer::commit_owned(tx).await?;
         self.after_commit().await;
         Ok(profile)
     }
@@ -388,8 +387,7 @@ impl CredentialProfileRepository {
                 Some(sites) => set_sites(&mut tx, &id, sites).await?,
                 None => false,
             };
-            crate::database::committed_writer::prepare_owned_commit()?;
-            tx.commit().await?;
+            crate::database::committed_writer::commit_owned(tx).await?;
             repository.after_commit().await;
             repository.publish_sites(&profile, sites_changed);
             Ok(profile)
@@ -449,8 +447,7 @@ impl CredentialProfileRepository {
             let now = crate::database::time::now_ms();
             sqlx::query("INSERT INTO credential_profile_health(profile_id, revision, validity, last_check_at, last_refresh_at) VALUES (?, ?, 'valid', ?, ?) ON CONFLICT(profile_id) DO UPDATE SET validity = 'valid', last_check_at = excluded.last_check_at, last_refresh_at = excluded.last_refresh_at, refresh_failure_count = 0, last_failure_at = NULL, last_notified_failure_count = 0, reason_code = NULL, revision = excluded.revision")
                 .bind(&source.id).bind(current.revision).bind(now).bind(now).execute(&mut *tx).await?;
-            crate::database::committed_writer::prepare_owned_commit()?;
-            tx.commit().await?;
+            crate::database::committed_writer::commit_owned(tx).await?;
             return Ok(current);
         }
         sqlx::query("UPDATE credential_profiles SET cookies = ?, refresh_token = COALESCE(?, refresh_token), access_token = COALESCE(?, access_token), revision = revision + 1, version = version + 1, updated_at = ? WHERE id = ?")
@@ -459,8 +456,7 @@ impl CredentialProfileRepository {
         let updated = load(&mut tx, &source.id).await?;
         sqlx::query("INSERT OR REPLACE INTO credential_profile_health(profile_id, revision, validity, last_check_at, last_refresh_at) VALUES (?, ?, 'valid', ?, ?)")
             .bind(&source.id).bind(updated.revision).bind(crate::database::time::now_ms()).bind(crate::database::time::now_ms()).execute(&mut *tx).await?;
-        crate::database::committed_writer::prepare_owned_commit()?;
-        tx.commit().await?;
+        crate::database::committed_writer::commit_owned(tx).await?;
         self.after_commit().await;
         Ok(updated)
     }
@@ -681,8 +677,7 @@ impl CredentialProfileRepository {
             .bind(id)
             .execute(&mut *tx)
             .await?;
-        crate::database::committed_writer::prepare_owned_commit()?;
-        tx.commit().await?;
+        crate::database::committed_writer::commit_owned(tx).await?;
         self.after_commit().await;
         Ok((current.owner(), had_sites))
     }
