@@ -931,18 +931,25 @@ fn extractor_factory_for_proxy(
     Ok(ExtractorFactory::new(client).with_proxy(proxy.clone()))
 }
 
-/// Resolve the extractor configuration and route requests for `url` take.
-///
-/// A registered streamer supplies both; otherwise the platform configuration
-/// the URL belongs to, if any, and that platform's or the global route.
-/// Unmanaged requests: explicit request cookies, if any, are the only
-/// authentication. A route that cannot be resolved fails the request rather
+/// What configures a URL.
+enum UrlOwner {
+    /// A registered streamer and its merged configuration.
+    Streamer {
+        platform_id: String,
+        config: std::sync::Arc<crate::config::MergedConfig>,
+    },
+    /// The stored platform the URL belongs to, if any.
+    Platform(Option<Box<crate::database::models::PlatformConfigDbModel>>),
+}
+
+/// The owner of `url` and the route requests for it take: a registered
+/// streamer's, else the route of the platform the URL belongs to, else the
+/// global route. A route that cannot be resolved fails the request rather
 /// than connecting directly.
-async fn resolve_url_config(
+async fn resolve_url_owner(
     state: &ParseRouteState,
     url: &str,
-    explicit_cookies: Option<String>,
-) -> ApiResult<(ResolvedExtractorConfig, crate::proxies::ResolvedRoute)> {
+) -> ApiResult<(UrlOwner, crate::proxies::ResolvedRoute)> {
     let config_service = &state.config_service;
 
     // A streamer marked deleted still owns its url until the reaper removes the
@@ -954,14 +961,12 @@ async fn resolve_url_config(
         .filter(|streamer| !streamer.is_deleted())
     {
         let config = config_service.get_config_for_streamer(&streamer.id).await?;
-        let extractor_config = ResolvedExtractorConfig {
-            platform_id: Some(streamer.platform_config_id.clone()),
-            cookies: explicit_cookies,
-            // The resolver already removed account fields from these extras.
-            platform_extras: config.platform_extras.clone(),
-            extractor: config.extractor,
+        let route = config.proxy_route.clone();
+        let owner = UrlOwner::Streamer {
+            platform_id: streamer.platform_config_id.clone(),
+            config,
         };
-        return Ok((extractor_config, config.proxy_route.clone()));
+        return Ok((owner, route));
     }
 
     use crate::domain::value_objects::StreamerUrl;
@@ -979,38 +984,66 @@ async fn resolve_url_config(
     let route = config_service
         .resolve_scope_route(platform.as_ref().map(|platform| platform.id.as_str()))
         .await?;
-    let platform_extras = platform.as_ref().and_then(|platform| {
-        let raw = platform.platform_specific_config.as_deref()?;
-        match serde_json::from_str(raw) {
-            Ok(extras) => Some(crate::credentials::isolate_platform_authentication_extras(
-                &platform.platform_name,
-                extras,
-            )),
-            Err(error) => {
-                warn!(
-                    %error,
-                    platform_id = %platform.id,
-                    "Ignoring invalid platform extras while parsing URL"
-                );
-                None
+    Ok((UrlOwner::Platform(platform.map(Box::new)), route))
+}
+
+/// Resolve the extractor configuration and route for an unmanaged request.
+///
+/// Explicit request cookies, if any, are the only authentication. A registered
+/// streamer supplies the extractor settings; otherwise the matching platform
+/// configuration.
+async fn resolve_url_config(
+    state: &ParseRouteState,
+    url: &str,
+    explicit_cookies: Option<String>,
+) -> ApiResult<(ResolvedExtractorConfig, crate::proxies::ResolvedRoute)> {
+    let (owner, route) = resolve_url_owner(state, url).await?;
+    let extractor_config = match owner {
+        UrlOwner::Streamer {
+            platform_id,
+            config,
+        } => ResolvedExtractorConfig {
+            platform_id: Some(platform_id),
+            cookies: explicit_cookies,
+            // The resolver already removed account fields from these extras.
+            platform_extras: config.platform_extras.clone(),
+            extractor: config.extractor,
+        },
+        UrlOwner::Platform(platform) => {
+            let platform_extras = platform.as_ref().and_then(|platform| {
+                let raw = platform.platform_specific_config.as_deref()?;
+                match serde_json::from_str(raw) {
+                    Ok(extras) => Some(crate::credentials::isolate_platform_authentication_extras(
+                        &platform.platform_name,
+                        extras,
+                    )),
+                    Err(error) => {
+                        warn!(
+                            %error,
+                            platform_id = %platform.id,
+                            "Ignoring invalid platform extras while parsing URL"
+                        );
+                        None
+                    }
+                }
+            });
+            ResolvedExtractorConfig {
+                platform_id: platform.map(|platform| platform.id),
+                cookies: explicit_cookies,
+                platform_extras,
+                extractor: ExtractorSelection::default(),
             }
         }
-    });
-    let extractor_config = ResolvedExtractorConfig {
-        platform_id: platform.map(|platform| platform.id),
-        cookies: explicit_cookies,
-        platform_extras,
-        extractor: ExtractorSelection::default(),
     };
     Ok((extractor_config, route))
 }
 
-/// The route requests for `url` take; see [`resolve_url_config`].
+/// The route requests for `url` take; see [`resolve_url_owner`].
 pub(super) async fn resolve_route_for_url(
     state: &ParseRouteState,
     url: &str,
 ) -> ApiResult<crate::proxies::ResolvedRoute> {
-    Ok(resolve_url_config(state, url, None).await?.1)
+    Ok(resolve_url_owner(state, url).await?.1)
 }
 
 #[cfg(test)]

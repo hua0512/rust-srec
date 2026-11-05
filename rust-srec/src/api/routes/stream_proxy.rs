@@ -100,33 +100,6 @@ fn is_hop_by_hop(name: &str) -> bool {
     )
 }
 
-/// Why [`insert_upstream_header`] rejected a header.
-enum HeaderRejection {
-    TooLarge,
-    InvalidName,
-    InvalidValue,
-}
-
-/// Add a caller- or extractor-supplied header to an upstream request,
-/// skipping hop-by-hop headers and bounding the name and value sizes.
-fn insert_upstream_header(
-    headers: &mut reqwest::header::HeaderMap,
-    name: &str,
-    value: &str,
-) -> Result<(), HeaderRejection> {
-    if is_hop_by_hop(name) {
-        return Ok(());
-    }
-    if name.len() > 256 || value.len() > 16_384 {
-        return Err(HeaderRejection::TooLarge);
-    }
-    let name = reqwest::header::HeaderName::from_bytes(name.as_bytes())
-        .map_err(|_| HeaderRejection::InvalidName)?;
-    let value = HeaderValue::from_str(value).map_err(|_| HeaderRejection::InvalidValue)?;
-    headers.insert(name, value);
-    Ok(())
-}
-
 fn stream_proxy_client(
     allow_private_targets: bool,
     upstream_proxy: &ProxyTarget,
@@ -758,14 +731,18 @@ pub async fn stream_proxy_get(
         HeaderValue::from_static(USER_AGENT),
     );
 
-    for (name, value) in custom_headers {
-        insert_upstream_header(&mut upstream_headers, &name, &value).map_err(|rejection| {
-            ApiError::bad_request(match rejection {
-                HeaderRejection::TooLarge => "Custom header is too large",
-                HeaderRejection::InvalidName => "Invalid header name",
-                HeaderRejection::InvalidValue => "Invalid header value",
-            })
-        })?;
+    for (k, v) in custom_headers {
+        if is_hop_by_hop(&k) {
+            continue;
+        }
+        if k.len() > 256 || v.len() > 16_384 {
+            return Err(ApiError::bad_request("Custom header is too large"));
+        }
+        let name = reqwest::header::HeaderName::from_bytes(k.as_bytes())
+            .map_err(|_| ApiError::bad_request("Invalid header name"))?;
+        let value =
+            HeaderValue::from_str(&v).map_err(|_| ApiError::bad_request("Invalid header value"))?;
+        upstream_headers.insert(name, value);
     }
 
     if let Some(range) = headers_in.get(axum::http::header::RANGE)
@@ -947,14 +924,17 @@ fn managed_media_headers(
             cookie_updates.push(value);
             continue;
         }
-        insert_upstream_header(&mut headers, name, value).map_err(|rejection| {
-            ApiError::bad_request(match rejection {
-                HeaderRejection::TooLarge => "Media header is too large",
-                HeaderRejection::InvalidName | HeaderRejection::InvalidValue => {
-                    "Invalid media header"
-                }
-            })
-        })?;
+        if is_hop_by_hop(name) {
+            continue;
+        }
+        if name.len() > 256 || value.len() > 16_384 {
+            return Err(ApiError::bad_request("Media header is too large"));
+        }
+        let name = reqwest::header::HeaderName::from_bytes(name.as_bytes())
+            .map_err(|_| ApiError::bad_request("Invalid media header"))?;
+        let value = HeaderValue::from_str(value)
+            .map_err(|_| ApiError::bad_request("Invalid media header"))?;
+        headers.insert(name, value);
     }
     // The post-extraction snapshot includes any committed reactive login. It
     // wins duplicate cookie names over stale extractor header copies.
