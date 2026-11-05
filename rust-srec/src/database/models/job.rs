@@ -382,7 +382,7 @@ impl JobDbModel {
 }
 
 /// Job status values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum JobStatus {
     /// Job is queued and waiting to be picked up by a worker.

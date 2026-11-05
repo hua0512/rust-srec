@@ -10,12 +10,12 @@ use tracing::debug;
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::models::{
     JobExecutionInfo as ApiJobExecutionInfo, JobFilterParams, JobLogEntry as ApiJobLogEntry,
-    JobResponse, JobStatus as ApiJobStatus, MediaOutputResponse, MediaOutputUploadInfo,
-    PageResponse, PaginatedResponse, PaginationParams, PipelineStatsResponse,
-    StalledOperationListResponse, StalledOperationResponse,
-    StepDurationInfo as ApiStepDurationInfo, UploadRecordListResponse, UploadRecordResponse,
+    JobResponse, MediaOutputResponse, MediaOutputUploadInfo, PageResponse, PaginatedResponse,
+    PaginationParams, PipelineStatsResponse, StalledOperationListResponse,
+    StalledOperationResponse, StepDurationInfo as ApiStepDurationInfo, UploadRecordListResponse,
+    UploadRecordResponse,
 };
-use crate::database::models::{JobFilters, JobStatus, OutputFilters, Pagination};
+use crate::database::models::{JobFilters, OutputFilters, Pagination};
 use crate::database::time::ms_to_datetime;
 use crate::pipeline::{Job, JobProgressSnapshot, StalledOperation, WorkerType};
 
@@ -73,13 +73,12 @@ pub async fn list_jobs(
     let pipeline_manager = &state.pipeline_manager;
     let db_filters = job_filters(filters);
 
-    let effective_limit = pagination.limit.min(100);
+    let effective_limit = pagination.effective_limit();
     let db_pagination = Pagination::new(effective_limit, pagination.offset);
 
     let (jobs, total) = pipeline_manager
         .list_jobs(&db_filters, &db_pagination)
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     let job_responses = jobs_to_responses(&state, jobs).await;
 
@@ -106,13 +105,12 @@ pub async fn list_jobs_page(
 
     let db_filters = job_filters(filters);
 
-    let effective_limit = pagination.limit.min(100);
+    let effective_limit = pagination.effective_limit();
     let db_pagination = Pagination::new(effective_limit, pagination.offset);
 
     let jobs = pipeline_manager
         .list_jobs_page(&db_filters, &db_pagination)
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     let job_responses = jobs_to_responses(&state, jobs).await;
     Ok(Json(PageResponse::new(
@@ -149,19 +147,9 @@ pub async fn list_job_logs(
     let effective_limit = pagination.limit.min(MAX_LOG_PAGE_SIZE);
     let db_pagination = Pagination::new(effective_limit, pagination.offset);
 
-    let (logs, total) = pipeline_manager
-        .list_job_logs(&id, &db_pagination)
-        .await
-        .map_err(ApiError::from)?;
+    let (logs, total) = pipeline_manager.list_job_logs(&id, &db_pagination).await?;
 
-    let response_logs: Vec<ApiJobLogEntry> = logs
-        .into_iter()
-        .map(|log| ApiJobLogEntry {
-            timestamp: log.timestamp,
-            level: log.level.as_str().to_string(),
-            message: log.message,
-        })
-        .collect();
+    let response_logs: Vec<ApiJobLogEntry> = logs.into_iter().map(ApiJobLogEntry::from).collect();
 
     Ok(Json(PaginatedResponse::new(
         response_logs,
@@ -214,11 +202,7 @@ pub async fn list_job_uploads(
     State(state): State<UploadRouteState>,
     Path(id): Path<String>,
 ) -> ApiResult<Json<UploadRecordListResponse>> {
-    let records = state
-        .upload_record_repository
-        .list_by_job(&id)
-        .await
-        .map_err(ApiError::from)?;
+    let records = state.upload_record_repository.list_by_job(&id).await?;
 
     let items = records
         .into_iter()
@@ -297,8 +281,7 @@ pub async fn get_job(
     // Call PipelineManager.get_job
     let job = pipeline_manager
         .get_job(&id)
-        .await
-        .map_err(ApiError::from)?
+        .await?
         .ok_or_else(|| ApiError::not_found(format!("Job with id '{}' not found", id)))?;
 
     // Fetch streamer name
@@ -383,10 +366,7 @@ pub async fn retry_job(
     let pipeline_manager = &state.pipeline_manager;
 
     // Call PipelineManager.retry_job
-    let job = pipeline_manager
-        .retry_job(&id)
-        .await
-        .map_err(ApiError::from)?;
+    let job = pipeline_manager.retry_job(&id).await?;
 
     // Fetch streamer name
     let streamer_name = state
@@ -451,10 +431,7 @@ pub async fn cancel_job(
 ) -> ApiResult<Json<serde_json::Value>> {
     let pipeline_manager = &state.pipeline_manager;
 
-    pipeline_manager
-        .cancel_job(&id)
-        .await
-        .map_err(ApiError::from)?;
+    pipeline_manager.cancel_job(&id).await?;
 
     Ok(Json(serde_json::json!({
         "success": true,
@@ -480,10 +457,7 @@ pub async fn delete_job(
 ) -> ApiResult<Json<serde_json::Value>> {
     let pipeline_manager = &state.pipeline_manager;
 
-    pipeline_manager
-        .delete_job(&id)
-        .await
-        .map_err(ApiError::from)?;
+    pipeline_manager.delete_job(&id).await?;
 
     Ok(Json(serde_json::json!({
         "success": true,
@@ -516,10 +490,7 @@ pub async fn cancel_pipeline(
     let pipeline_manager = &state.pipeline_manager;
 
     // Call PipelineManager.cancel_pipeline
-    let cancelled_count = pipeline_manager
-        .cancel_pipeline(&pipeline_id)
-        .await
-        .map_err(ApiError::from)?;
+    let cancelled_count = pipeline_manager.cancel_pipeline(&pipeline_id).await?;
 
     let items = if cancelled_count == 1 {
         "step or job"
@@ -559,15 +530,14 @@ pub async fn list_outputs(
     // Borrowed from `db_filters`, which stays alive for the whole handler.
     let requested_streamer_id = db_filters.streamer_id.as_deref();
 
-    let effective_limit = pagination.limit.min(100);
+    let effective_limit = pagination.effective_limit();
     let db_pagination = Pagination::new(effective_limit, pagination.offset);
 
     // Call SessionRepository.list_outputs_filtered
     let (outputs, total) = state
         .session_repository
         .list_outputs_filtered(&db_filters, &db_pagination)
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     // One `WHERE id IN (...)` query for every session on the page. A failed
     // lookup — or a session whose streamer was deleted, leaving
@@ -706,8 +676,7 @@ pub async fn summarize_outputs(
     let by_type = state
         .session_repository
         .summarize_outputs_filtered(&db_filters)
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     let mut response = MediaOutputSummaryResponse {
         total_count: 0,
@@ -740,11 +709,7 @@ async fn delete_output_inner(
     id: &str,
     delete_file: bool,
 ) -> ApiResult<bool> {
-    let output = state
-        .session_repository
-        .get_media_output(id)
-        .await
-        .map_err(ApiError::from)?;
+    let output = state.session_repository.get_media_output(id).await?;
 
     let mut file_deleted = false;
     if delete_file {
@@ -764,11 +729,7 @@ async fn delete_output_inner(
 
     // Goes through the repository so `live_sessions.total_size_bytes` is decremented in
     // the same transaction that removes the row.
-    state
-        .session_repository
-        .delete_media_output(id)
-        .await
-        .map_err(ApiError::from)?;
+    state.session_repository.delete_media_output(id).await?;
 
     Ok(file_deleted)
 }
@@ -902,7 +863,7 @@ pub async fn get_stats(
     let pipeline_manager = &state.pipeline_manager;
 
     // Call PipelineManager.get_stats
-    let stats = pipeline_manager.get_stats().await.map_err(ApiError::from)?;
+    let stats = pipeline_manager.get_stats().await?;
 
     let response = PipelineStatsResponse {
         pending_count: stats.pending,
@@ -996,8 +957,7 @@ pub async fn create_pipeline(
             request.input_paths,
             request.dag,
         )
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     // Get the first job details (first root job)
     let first_job_id = result
@@ -1007,8 +967,7 @@ pub async fn create_pipeline(
 
     let first_job = pipeline_manager
         .get_job(first_job_id)
-        .await
-        .map_err(ApiError::from)?
+        .await?
         .ok_or_else(|| ApiError::internal("Failed to retrieve created job"))?;
 
     // Fetch streamer name (we have the ID from the request)
@@ -1032,7 +991,7 @@ pub async fn create_pipeline(
 
 fn job_filters(filters: JobFilterParams) -> JobFilters {
     JobFilters {
-        status: filters.status.map(api_status_to_job_status),
+        status: filters.status,
         statuses: None,
         streamer_id: filters.streamer_id,
         session_id: filters.session_id,
@@ -1042,28 +1001,6 @@ fn job_filters(filters: JobFilterParams) -> JobFilters {
         job_type: None,
         job_types: None,
         search: filters.search,
-    }
-}
-
-/// Convert API JobStatus to persisted job status.
-pub(super) fn api_status_to_job_status(status: ApiJobStatus) -> JobStatus {
-    match status {
-        ApiJobStatus::Pending => JobStatus::Pending,
-        ApiJobStatus::Processing => JobStatus::Processing,
-        ApiJobStatus::Completed => JobStatus::Completed,
-        ApiJobStatus::Failed => JobStatus::Failed,
-        ApiJobStatus::Cancelled => JobStatus::Cancelled,
-    }
-}
-
-/// Convert persisted job status to API JobStatus.
-pub(super) fn job_status_to_api_status(status: JobStatus) -> ApiJobStatus {
-    match status {
-        JobStatus::Pending => ApiJobStatus::Pending,
-        JobStatus::Processing => ApiJobStatus::Processing,
-        JobStatus::Completed => ApiJobStatus::Completed,
-        JobStatus::Failed => ApiJobStatus::Failed,
-        JobStatus::Cancelled => ApiJobStatus::Cancelled,
     }
 }
 
@@ -1080,15 +1017,7 @@ fn job_to_response(job: Job, streamer_name: Option<String>) -> JobResponse {
         items_produced: info.items_produced,
         input_size_bytes: info.input_size_bytes,
         output_size_bytes: info.output_size_bytes,
-        logs: info
-            .logs
-            .into_iter()
-            .map(|log| ApiJobLogEntry {
-                timestamp: log.timestamp,
-                level: log.level.as_str().to_string(),
-                message: log.message,
-            })
-            .collect(),
+        logs: info.logs.into_iter().map(ApiJobLogEntry::from).collect(),
         log_lines_total: info.log_lines_total,
         log_warn_count: info.log_warn_count,
         log_error_count: info.log_error_count,
@@ -1115,7 +1044,7 @@ fn job_to_response(job: Job, streamer_name: Option<String>) -> JobResponse {
         streamer_name,
         pipeline_id: job.pipeline_id,
         belongs_to_workflow: job.dag_step_execution_id.is_some(),
-        status: job_status_to_api_status(job.status),
+        status: job.status,
         processor_type: job.job_type,
         input_path: job.inputs,
         output_path: if job.outputs.is_empty() {

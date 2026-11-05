@@ -101,10 +101,7 @@ pub async fn list_engines(
 ) -> ApiResult<Json<Vec<EngineConfigurationDbModel>>> {
     let config_service = &state.config_service;
 
-    let engines = config_service
-        .list_engine_configs()
-        .await
-        .map_err(ApiError::from)?;
+    let engines = config_service.list_engine_configs().await?;
 
     Ok(Json(engines))
 }
@@ -126,10 +123,7 @@ pub async fn get_engine(
 ) -> ApiResult<Json<EngineConfigurationDbModel>> {
     let config_service = &state.config_service;
 
-    let engine = config_service
-        .get_engine_config(&id)
-        .await
-        .map_err(ApiError::from)?;
+    let engine = config_service.get_engine_config(&id).await?;
 
     Ok(Json(engine))
 }
@@ -157,10 +151,7 @@ pub async fn create_engine(
 
     let engine = EngineConfigurationDbModel::new(request.name, request.engine_type, config_str);
 
-    config_service
-        .create_engine_config(&engine)
-        .await
-        .map_err(ApiError::from)?;
+    config_service.create_engine_config(&engine).await?;
 
     Ok((StatusCode::CREATED, Json(engine)))
 }
@@ -186,10 +177,7 @@ pub async fn update_engine(
     let config_service = &state.config_service;
 
     // Get current config to apply partial updates
-    let mut engine = config_service
-        .get_engine_config(&id)
-        .await
-        .map_err(ApiError::from)?;
+    let mut engine = config_service.get_engine_config(&id).await?;
 
     // Apply updates
     if let Some(name) = request.name {
@@ -213,10 +201,7 @@ pub async fn update_engine(
         engine.engine_type = engine_type.as_str().to_string();
     }
 
-    config_service
-        .update_engine_config(&engine)
-        .await
-        .map_err(ApiError::from)?;
+    config_service.update_engine_config(&engine).await?;
 
     Ok(Json(engine))
 }
@@ -239,15 +224,9 @@ pub async fn delete_engine(
     let config_service = &state.config_service;
 
     // Check if exists first
-    config_service
-        .get_engine_config(&id)
-        .await
-        .map_err(ApiError::from)?;
+    config_service.get_engine_config(&id).await?;
 
-    config_service
-        .delete_engine_config(&id)
-        .await
-        .map_err(ApiError::from)?;
+    config_service.delete_engine_config(&id).await?;
 
     Ok(())
 }
@@ -269,28 +248,22 @@ pub async fn test_engine(
 ) -> ApiResult<Json<EngineTestResponse>> {
     let config_service = &state.config_service;
 
-    let config = config_service
-        .get_engine_config(&id)
-        .await
-        .map_err(ApiError::from)?;
+    let config = config_service.get_engine_config(&id).await?;
 
     let engine_type = EngineType::parse(&config.engine_type)
         .ok_or_else(|| ApiError::internal("Stored engine type is invalid"))?;
 
     let engine: Box<dyn DownloadEngine> = match engine_type {
         EngineType::Ffmpeg => {
-            let engine_config: FfmpegEngineConfig =
-                serde_json::from_str(&config.config).map_err(ApiError::from)?;
+            let engine_config: FfmpegEngineConfig = serde_json::from_str(&config.config)?;
             Box::new(FfmpegEngine::with_config_async(engine_config).await)
         }
         EngineType::Streamlink => {
-            let engine_config: StreamlinkEngineConfig =
-                serde_json::from_str(&config.config).map_err(ApiError::from)?;
+            let engine_config: StreamlinkEngineConfig = serde_json::from_str(&config.config)?;
             Box::new(StreamlinkEngine::with_config_async(engine_config).await)
         }
         EngineType::Mesio => {
-            let engine_config: MesioEngineConfig =
-                serde_json::from_str(&config.config).map_err(ApiError::from)?;
+            let engine_config: MesioEngineConfig = serde_json::from_str(&config.config)?;
             Box::new(MesioEngine::with_config(engine_config))
         }
     };

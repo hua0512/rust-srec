@@ -243,8 +243,7 @@ pub async fn login(
             request.device_info,
             client_ip,
         )
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     Ok(Json(response.into()))
 }
@@ -269,10 +268,7 @@ pub async fn refresh(
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Token refresh not available"))?;
 
-    let response = auth_service
-        .refresh_tokens(&request.refresh_token)
-        .await
-        .map_err(ApiError::from)?;
+    let response = auth_service.refresh_tokens(&request.refresh_token).await?;
 
     Ok(Json(response.into()))
 }
@@ -305,16 +301,14 @@ pub async fn logout(
                     crate::api::auth_request::request_credential(&headers, None)?,
                     true,
                 )
-                .await
-                .map_err(ApiError::from)?,
+                .await?,
         )
     } else {
         None
     };
     auth_service
         .logout_with_principal(&request.refresh_token, principal.as_ref())
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     Ok(Json(
         serde_json::json!({ "message": "Logged out successfully" }),
@@ -341,10 +335,7 @@ pub async fn logout_all(
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Logout not available"))?;
 
-    auth_service
-        .logout_all(&claims.sub)
-        .await
-        .map_err(ApiError::from)?;
+    auth_service.logout_all(&claims.sub).await?;
 
     Ok(Json(
         serde_json::json!({ "message": "All sessions logged out successfully" }),
@@ -380,8 +371,7 @@ pub async fn change_password(
             &request.current_password,
             &request.new_password,
         )
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     Ok(Json(
         serde_json::json!({ "message": "Password changed successfully" }),
@@ -408,10 +398,7 @@ pub async fn list_sessions(
         .as_ref()
         .ok_or_else(|| ApiError::service_unavailable("Session listing not available"))?;
 
-    let sessions = auth_service
-        .list_active_sessions(&claims.sub)
-        .await
-        .map_err(ApiError::from)?;
+    let sessions = auth_service.list_active_sessions(&claims.sub).await?;
 
     Ok(Json(sessions))
 }
@@ -457,10 +444,7 @@ pub async fn list_api_keys(
         .ok_or_else(|| ApiError::service_unavailable("Authentication not configured"))?;
     let principal = require_jwt_credential(principal.as_deref())?;
 
-    let keys = auth_service
-        .list_api_keys(&principal.claims.sub)
-        .await
-        .map_err(ApiError::from)?;
+    let keys = auth_service.list_api_keys(&principal.claims.sub).await?;
 
     Ok(Json(keys.into_iter().map(ApiKeyResponse::from).collect()))
 }
@@ -513,8 +497,7 @@ pub async fn create_api_key(
             request.access_level,
             request.expires_at,
         )
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     Ok(Json(CreateApiKeyResponse {
         api_key: raw_key,
@@ -548,8 +531,7 @@ pub async fn revoke_api_key(
 
     let revoked = auth_service
         .revoke_api_key(&principal.claims.sub, &id)
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     if !revoked {
         return Err(ApiError::not_found("API key not found or already revoked"));

@@ -207,12 +207,12 @@ pub async fn create_template(
 
     template.platform_overrides = match request.platform_overrides {
         Some(v) if v.is_null() => None,
-        Some(v) => Some(serde_json::to_string(&v).map_err(ApiError::from)?),
+        Some(v) => Some(serde_json::to_string(&v)?),
         None => None,
     };
     template.engines_override = match request.engines_override {
         Some(v) if v.is_null() => None,
-        Some(v) => Some(serde_json::to_string(&v).map_err(ApiError::from)?),
+        Some(v) => Some(serde_json::to_string(&v)?),
         None => None,
     };
     template.stream_selection_config = request.stream_selection_config;
@@ -229,12 +229,8 @@ pub async fn create_template(
     // Create the template
     config_service
         .create_template_config_with_route(&template, request.proxy_route.as_ref())
-        .await
-        .map_err(ApiError::from)?;
-    let template = config_service
-        .get_template_config(&template.id)
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
+    let template = config_service.get_template_config(&template.id).await?;
     let selections = template_selections(config_service, &template.id).await?;
     let route = template_route(config_service, &template.id).await?;
 
@@ -265,16 +261,13 @@ pub async fn list_templates(
     let streamer_manager = &state.streamer_manager;
 
     // Get all templates
-    let templates = config_service
-        .list_template_configs()
-        .await
-        .map_err(ApiError::from)?;
+    let templates = config_service.list_template_configs().await?;
 
     let total = templates.len() as u64;
 
     // Apply pagination
     let offset = pagination.offset as usize;
-    let effective_limit = pagination.limit.min(100);
+    let effective_limit = pagination.effective_limit();
     let limit = effective_limit as usize;
 
     let routes = config_service
@@ -283,11 +276,7 @@ pub async fn list_templates(
         )
         .await?;
     let mut selections: HashMap<String, Vec<StoredSelection>> = HashMap::new();
-    for stored in config_service
-        .list_credential_selections()
-        .await
-        .map_err(ApiError::from)?
-    {
+    for stored in config_service.list_credential_selections().await? {
         if let CredentialOwner::Template { template_id } = &stored.owner {
             selections
                 .entry(template_id.clone())
@@ -335,10 +324,7 @@ pub async fn get_template(
     let streamer_manager = &state.streamer_manager;
 
     // Get the template
-    let template = config_service
-        .get_template_config(&id)
-        .await
-        .map_err(ApiError::from)?;
+    let template = config_service.get_template_config(&id).await?;
 
     // Count streamers using this template
     let usage_count = streamer_manager.get_by_template(&id).len() as u32;
@@ -381,10 +367,7 @@ pub async fn update_template(
     let streamer_manager = &state.streamer_manager;
 
     // Get the existing template
-    let mut template = config_service
-        .get_template_config(&id)
-        .await
-        .map_err(ApiError::from)?;
+    let mut template = config_service.get_template_config(&id).await?;
 
     // Replace all fields (PUT semantics)
     if let Some(name) = request.name {
@@ -404,12 +387,12 @@ pub async fn update_template(
     template.danmu_statistics = request.danmu_statistics;
     template.platform_overrides = match request.platform_overrides {
         Some(v) if v.is_null() => None,
-        Some(v) => Some(serde_json::to_string(&v).map_err(ApiError::from)?),
+        Some(v) => Some(serde_json::to_string(&v)?),
         None => None,
     };
     template.engines_override = match request.engines_override {
         Some(v) if v.is_null() => None,
-        Some(v) => Some(serde_json::to_string(&v).map_err(ApiError::from)?),
+        Some(v) => Some(serde_json::to_string(&v)?),
         None => None,
     };
     template.stream_selection_config = request.stream_selection_config;
@@ -426,13 +409,9 @@ pub async fn update_template(
     // Update the template
     config_service
         .update_template_config_with_route(&template, request.proxy_route.as_ref())
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
     // Selections the request omitted are kept, so read back what is stored.
-    let template = config_service
-        .get_template_config(&id)
-        .await
-        .map_err(ApiError::from)?;
+    let template = config_service.get_template_config(&id).await?;
 
     info!("Updated template '{}' (id: {})", template.name, id);
 
@@ -472,10 +451,7 @@ pub async fn delete_template(
     let streamer_manager = &state.streamer_manager;
 
     // Check if template exists
-    config_service
-        .get_template_config(&id)
-        .await
-        .map_err(ApiError::from)?;
+    config_service.get_template_config(&id).await?;
 
     // Check if any streamers are using this template. The guard counts rows
     // rather than visible streamers: `streamers.template_config_id` is a
@@ -498,10 +474,7 @@ pub async fn delete_template(
     }
 
     // Delete the template
-    config_service
-        .delete_template_config(&id)
-        .await
-        .map_err(ApiError::from)?;
+    config_service.delete_template_config(&id).await?;
 
     Ok(Json(serde_json::json!({
         "success": true,
@@ -536,10 +509,7 @@ pub async fn clone_template(
     let config_service = &state.config_service;
 
     // Get the existing template
-    let existing = config_service
-        .get_template_config(&id)
-        .await
-        .map_err(ApiError::from)?;
+    let existing = config_service.get_template_config(&id).await?;
 
     // Check if a template with the new name already exists
     if config_service
@@ -555,8 +525,7 @@ pub async fn clone_template(
 
     let cloned = config_service
         .clone_template_config(&id, &request.new_name)
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     info!(
         "Cloned template '{}' (id: {}) to '{}' (id: {})",

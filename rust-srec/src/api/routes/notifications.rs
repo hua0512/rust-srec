@@ -190,10 +190,7 @@ pub async fn list_web_push_subscriptions(
         .web_push_service
         .ok_or_else(|| ApiError::service_unavailable("Web push is not configured"))?;
 
-    let rows = service
-        .list_subscriptions_for_user(&claims.sub)
-        .await
-        .map_err(ApiError::from)?;
+    let rows = service.list_subscriptions_for_user(&claims.sub).await?;
 
     Ok(Json(
         rows.into_iter()
@@ -292,8 +289,7 @@ pub async fn subscribe_web_push(
             &req.subscription.keys.auth,
             min_priority,
         )
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     Ok(Json(WebPushSubscriptionResponse {
         id: saved.id,
@@ -329,10 +325,7 @@ pub async fn unsubscribe_web_push(
         return Err(ApiError::bad_request("endpoint is required"));
     }
 
-    service
-        .unsubscribe(&claims.sub, endpoint)
-        .await
-        .map_err(ApiError::from)?;
+    service.unsubscribe(&claims.sub, endpoint).await?;
 
     Ok(StatusCode::OK)
 }
@@ -371,8 +364,7 @@ pub async fn list_events(
             offset,
             limit,
         )
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     Ok(Json(entries))
 }
@@ -421,7 +413,7 @@ pub async fn list_channels(
 ) -> Result<Json<Vec<NotificationChannelDbModel>>, ApiError> {
     let repo = &state.notification_repository;
 
-    let channels = repo.list_channels().await.map_err(ApiError::from)?;
+    let channels = repo.list_channels().await?;
     Ok(Json(channels))
 }
 
@@ -442,7 +434,7 @@ pub async fn get_channel(
 ) -> Result<Json<NotificationChannelDbModel>, ApiError> {
     let repo = &state.notification_repository;
 
-    let channel = repo.get_channel(&id).await.map_err(ApiError::from)?;
+    let channel = repo.get_channel(&id).await?;
     Ok(Json(channel))
 }
 
@@ -470,9 +462,7 @@ pub async fn create_channel(
     let channel = NotificationChannelDbModel::new(req.name, req.channel_type, settings_str);
 
     // Save to DB
-    repo.create_channel(&channel)
-        .await
-        .map_err(ApiError::from)?;
+    repo.create_channel(&channel).await?;
 
     // Reload service to pick up new channel immediately
     if let Err(e) = service.reload_from_db().await {
@@ -502,15 +492,13 @@ pub async fn update_channel(
     let repo = &state.notification_repository;
     let service = &state.notification_service;
 
-    let mut channel = repo.get_channel(&id).await.map_err(ApiError::from)?;
+    let mut channel = repo.get_channel(&id).await?;
 
     channel.name = req.name;
     channel.settings = serde_json::to_string(&req.settings)
         .map_err(|e| ApiError::bad_request(format!("Invalid settings JSON: {}", e)))?;
 
-    repo.update_channel(&channel)
-        .await
-        .map_err(ApiError::from)?;
+    repo.update_channel(&channel).await?;
 
     // Reload service
     if let Err(e) = service.reload_from_db().await {
@@ -538,7 +526,7 @@ pub async fn delete_channel(
     let repo = &state.notification_repository;
     let service = &state.notification_service;
 
-    repo.delete_channel(&id).await.map_err(ApiError::from)?;
+    repo.delete_channel(&id).await?;
 
     // Reload service
     if let Err(e) = service.reload_from_db().await {
@@ -564,10 +552,7 @@ pub async fn get_subscriptions(
 ) -> Result<Json<Vec<String>>, ApiError> {
     let repo = &state.notification_repository;
 
-    let subs = repo
-        .get_subscriptions_for_channel(&id)
-        .await
-        .map_err(ApiError::from)?;
+    let subs = repo.get_subscriptions_for_channel(&id).await?;
     Ok(Json(subs))
 }
 
@@ -591,13 +576,10 @@ pub async fn update_subscriptions(
     let service = &state.notification_service;
 
     // Verify channel exists
-    repo.get_channel(&id).await.map_err(ApiError::from)?;
+    repo.get_channel(&id).await?;
 
     // Get existing
-    let existing = repo
-        .get_subscriptions_for_channel(&id)
-        .await
-        .map_err(ApiError::from)?;
+    let existing = repo.get_subscriptions_for_channel(&id).await?;
 
     // Determine diff
     let new_set: std::collections::HashSet<_> = req.events.iter().cloned().collect();
@@ -605,12 +587,12 @@ pub async fn update_subscriptions(
 
     // Add new
     for event in new_set.difference(&old_set) {
-        repo.subscribe(&id, event).await.map_err(ApiError::from)?;
+        repo.subscribe(&id, event).await?;
     }
 
     // Remove old
     for event in old_set.difference(&new_set) {
-        repo.unsubscribe(&id, event).await.map_err(ApiError::from)?;
+        repo.unsubscribe(&id, event).await?;
     }
 
     // Reload service
@@ -639,10 +621,7 @@ pub async fn test_channel(
     let service = &state.notification_service;
 
     // The service requires the "key" which for DB channels is the ID
-    service
-        .test_channel_instance(&id)
-        .await
-        .map_err(ApiError::from)?;
+    service.test_channel_instance(&id).await?;
 
     Ok(StatusCode::OK)
 }

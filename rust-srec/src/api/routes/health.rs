@@ -131,15 +131,13 @@ pub async fn readiness_check(
         (status = 200, description = "Service is alive", body = crate::api::openapi::LivenessResponse)
     )
 )]
-pub async fn liveness_check(State(state): State<HealthRouteState>) -> impl IntoResponse {
-    let uptime = state.start_time.elapsed().as_secs();
-    (
-        StatusCode::OK,
-        Json(serde_json::json!({
-            "status": "alive",
-            "uptime_secs": uptime
-        })),
-    )
+pub async fn liveness_check(
+    State(state): State<HealthRouteState>,
+) -> Json<crate::api::openapi::LivenessResponse> {
+    Json(crate::api::openapi::LivenessResponse {
+        status: "alive".to_string(),
+        uptime_secs: state.start_time.elapsed().as_secs(),
+    })
 }
 
 /// Idle-state response for the container auto-update gate.

@@ -356,12 +356,9 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
 
     let user_exports = if let Some(auth_service) = state.auth_service.as_ref() {
         let user_repo = auth_service.user_repository();
-        let total_users = user_repo.count().await.map_err(ApiError::from)?;
+        let total_users = user_repo.count().await?;
 
-        let users = user_repo
-            .list(total_users, 0)
-            .await
-            .map_err(ApiError::from)?;
+        let users = user_repo.list(total_users, 0).await?;
 
         users
             .into_iter()
@@ -386,51 +383,26 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
     };
 
     // Collect all data
-    let global_config = config_service
-        .get_global_config()
-        .await
-        .map_err(ApiError::from)?;
+    let global_config = config_service.get_global_config().await?;
 
-    let mut templates = config_service
-        .list_template_configs()
-        .await
-        .map_err(ApiError::from)?;
+    let mut templates = config_service.list_template_configs().await?;
     let retired_templates = state
         .configuration_import_service
         .retired_template_ids()
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
     templates.retain(|template| !retired_templates.contains(&template.id));
 
-    let engines = config_service
-        .list_engine_configs()
-        .await
-        .map_err(ApiError::from)?;
+    let engines = config_service.list_engine_configs().await?;
 
-    let platforms = config_service
-        .list_platform_configs()
-        .await
-        .map_err(ApiError::from)?;
+    let platforms = config_service.list_platform_configs().await?;
 
-    let streamers = streamer_repo
-        .list_streamers()
-        .await
-        .map_err(ApiError::from)?;
+    let streamers = streamer_repo.list_streamers().await?;
 
-    let channels = notification_repo
-        .list_channels()
-        .await
-        .map_err(ApiError::from)?;
+    let channels = notification_repo.list_channels().await?;
 
-    let job_presets = job_preset_repo
-        .list_presets()
-        .await
-        .map_err(ApiError::from)?;
+    let job_presets = job_preset_repo.list_presets().await?;
 
-    let pipeline_presets = pipeline_preset_repo
-        .list_pipeline_presets()
-        .await
-        .map_err(ApiError::from)?;
+    let pipeline_presets = pipeline_preset_repo.list_pipeline_presets().await?;
 
     // Build platform ID to name map for streamer export
     let platform_map: HashMap<String, String> = platforms
@@ -456,11 +428,7 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
     let mut platform_selections = HashMap::new();
     let mut template_selections: HashMap<String, Vec<StoredSelection>> = HashMap::new();
     let mut streamer_selections = HashMap::new();
-    for stored in config_service
-        .list_credential_selections()
-        .await
-        .map_err(ApiError::from)?
-    {
+    for stored in config_service.list_credential_selections().await? {
         match &stored.owner {
             CredentialOwner::Platform { platform_id } => {
                 platform_selections.insert(platform_id.clone(), stored.selection);
@@ -485,11 +453,7 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
     let channel_exports = export_channels(&channels, notification_repo.as_ref()).await;
 
     // Backups name proxies; IDs stay local to each installation.
-    let proxies = state
-        .configuration_import_service
-        .export_proxies()
-        .await
-        .map_err(ApiError::from)?;
+    let proxies = state.configuration_import_service.export_proxies().await?;
     let proxy_names: HashMap<String, String> = proxies
         .iter()
         .map(|entry| (entry.id.clone(), entry.name.clone()))
@@ -503,13 +467,7 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
         RouteOwner::Template(String::new()),
         RouteOwner::Streamer(String::new()),
     ] {
-        kind_routes.push(
-            state
-                .config_service
-                .proxy_routes_of_kind(&kind)
-                .await
-                .map_err(ApiError::from)?,
-        );
+        kind_routes.push(state.config_service.proxy_routes_of_kind(&kind).await?);
     }
     let [platform_routes, template_routes, streamer_routes]: [_; 3] = kind_routes
         .try_into()
@@ -518,8 +476,7 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
         &state
             .config_service
             .proxy_route_of(&RouteOwner::Global)
-            .await
-            .map_err(ApiError::from)?,
+            .await?,
     )?;
     let scope_route = |routes: &HashMap<String, crate::proxies::ProxyRoute>, id: &str| {
         routes
@@ -533,8 +490,7 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
     let credential_profiles = state
         .configuration_import_service
         .export_profiles(&proxy_names)
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
     let mut export = ConfigExport {
         version: EXPORT_SCHEMA_VERSION.to_string(),
         exported_at: Utc::now().to_rfc3339(),
@@ -600,9 +556,9 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
             .collect(),
     };
     export.update_schema_version();
-    export.validate_credential_graph().map_err(ApiError::from)?;
+    export.validate_credential_graph()?;
 
-    let json = serde_json::to_string_pretty(&export).map_err(ApiError::from)?;
+    let json = serde_json::to_string_pretty(&export)?;
 
     let filename = format!(
         "rust-srec-backup-{}.json",

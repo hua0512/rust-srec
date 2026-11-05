@@ -7,19 +7,20 @@ use axum::{
 };
 
 use crate::api::error::{ApiError, ApiResult};
+use crate::api::models::PaginationParams;
 use crate::database::models::{Pagination, PipelineStep};
 
 use super::{
     CreatePipelinePresetRequest, PipelinePresetFilterParams, PipelinePresetListResponse,
-    PipelinePresetPaginationParams, PipelinePresetResponse, PresetPreviewJob,
-    PresetPreviewResponse, PresetRouteState, UpdatePipelinePresetRequest, topological_sort,
+    PipelinePresetResponse, PresetPreviewJob, PresetPreviewResponse, PresetRouteState,
+    UpdatePipelinePresetRequest, topological_sort,
 };
 
 #[utoipa::path(
     get,
     path = "/api/pipeline/presets",
     tag = "pipeline",
-    params(PipelinePresetFilterParams, PipelinePresetPaginationParams),
+    params(PipelinePresetFilterParams, PaginationParams),
     responses(
         (status = 200, description = "List of pipeline presets", body = PipelinePresetListResponse)
     ),
@@ -28,7 +29,7 @@ use super::{
 pub async fn list_pipeline_presets(
     State(state): State<PresetRouteState>,
     Query(filters): Query<PipelinePresetFilterParams>,
-    Query(pagination): Query<PipelinePresetPaginationParams>,
+    Query(pagination): Query<PaginationParams>,
 ) -> ApiResult<Json<PipelinePresetListResponse>> {
     let preset_repo = &state.pipeline_preset_repository;
 
@@ -36,13 +37,12 @@ pub async fn list_pipeline_presets(
         search: filters.search,
     };
 
-    let effective_limit = pagination.limit.min(100);
+    let effective_limit = pagination.effective_limit();
     let db_pagination = Pagination::new(effective_limit, pagination.offset);
 
     let (presets, total) = preset_repo
         .list_pipeline_presets_filtered(&db_filters, &db_pagination)
-        .await
-        .map_err(ApiError::from)?;
+        .await?;
 
     let response_presets: Vec<PipelinePresetResponse> = presets
         .into_iter()
@@ -76,8 +76,7 @@ pub async fn get_pipeline_preset_by_id(
 
     let preset = preset_repo
         .get_pipeline_preset(&id)
-        .await
-        .map_err(ApiError::from)?
+        .await?
         .ok_or_else(|| ApiError::not_found(format!("Pipeline preset {} not found", id)))?;
 
     Ok(Json(PipelinePresetResponse::from(preset)))
@@ -114,10 +113,7 @@ pub async fn create_pipeline_preset(
         preset = preset.with_description(desc);
     }
 
-    preset_repo
-        .create_pipeline_preset(&preset)
-        .await
-        .map_err(ApiError::from)?;
+    preset_repo.create_pipeline_preset(&preset).await?;
 
     Ok((
         StatusCode::CREATED,
@@ -147,8 +143,7 @@ pub async fn update_pipeline_preset(
     // Check if preset exists
     let existing = preset_repo
         .get_pipeline_preset(&id)
-        .await
-        .map_err(ApiError::from)?
+        .await?
         .ok_or_else(|| ApiError::not_found(format!("Pipeline preset {} not found", id)))?;
 
     // Validate DAG has at least one step
@@ -172,10 +167,7 @@ pub async fn update_pipeline_preset(
         updated_at: chrono::Utc::now(),
     };
 
-    preset_repo
-        .update_pipeline_preset(&preset)
-        .await
-        .map_err(ApiError::from)?;
+    preset_repo.update_pipeline_preset(&preset).await?;
 
     Ok(Json(PipelinePresetResponse::from(preset)))
 }
@@ -190,10 +182,7 @@ async fn reject_unrunnable_definition(
     pipeline_manager: &crate::pipeline::PipelineManager,
     dag: &crate::database::models::job::DagPipelineDefinition,
 ) -> ApiResult<()> {
-    let analysis = pipeline_manager
-        .analyze_dag_definition(dag.clone())
-        .await
-        .map_err(ApiError::from)?;
+    let analysis = pipeline_manager.analyze_dag_definition(dag.clone()).await?;
     if analysis.errors.is_empty() {
         return Ok(());
     }
@@ -216,10 +205,7 @@ pub async fn delete_pipeline_preset(
 ) -> ApiResult<Json<()>> {
     let preset_repo = &state.pipeline_preset_repository;
 
-    preset_repo
-        .delete_pipeline_preset(&id)
-        .await
-        .map_err(ApiError::from)?;
+    preset_repo.delete_pipeline_preset(&id).await?;
 
     Ok(Json(()))
 }
@@ -243,8 +229,7 @@ pub async fn preview_pipeline_preset(
 
     let preset = preset_repo
         .get_pipeline_preset(&id)
-        .await
-        .map_err(ApiError::from)?
+        .await?
         .ok_or_else(|| ApiError::not_found(format!("Pipeline preset {} not found", id)))?;
 
     let dag = preset
