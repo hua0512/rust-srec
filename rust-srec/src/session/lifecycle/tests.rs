@@ -1679,7 +1679,7 @@ async fn required_transition_survives_lagged_observer() {
 
     let mut received_terminal = false;
     while let Ok(Ok(Some(transition))) =
-        tokio::time::timeout(std::time::Duration::from_secs(1), required_rx.recv()).await
+        tokio::time::timeout(std::time::Duration::from_secs(1), required_rx.recv_event()).await
     {
         if matches!(
             transition,

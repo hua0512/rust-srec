@@ -10,6 +10,7 @@ pub mod filename;
 pub mod fs;
 pub mod http_client;
 pub mod json;
+pub(crate) mod required_channel;
 pub(crate) mod shared_event;
 pub(crate) mod task_supervisor;
 pub mod text;

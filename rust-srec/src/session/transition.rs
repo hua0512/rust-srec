@@ -17,14 +17,11 @@
 //! Consumers interested in final state filter on `Ended`. The notification
 //! listener builds channel payloads from these transitions.
 
-use std::sync::Arc;
+use chrono::{DateTime, Utc};
 
 use crate::session::download_start::DownloadStartPayload;
 use crate::session::state::TerminalCause;
-use chrono::{DateTime, Utc};
-use parking_lot::Mutex;
-use tokio::sync::{mpsc, oneshot};
-use tracing::debug;
+use crate::utils::required_channel::{RequiredReceiver, RequiredSender, required_channel};
 
 /// A coarse-grained session lifecycle event.
 ///
@@ -157,149 +154,12 @@ impl SessionTransition {
     }
 }
 
-enum SessionTransitionDelivery {
-    Event(SessionTransition),
-    Shutdown(oneshot::Sender<()>),
-}
-
 /// Sending half of the required session-transition coordination channel.
-#[derive(Clone)]
-pub(crate) struct SessionTransitionSender {
-    state: Arc<Mutex<SessionTransitionState>>,
-}
-
-struct SessionTransitionState {
-    tx: mpsc::UnboundedSender<SessionTransitionDelivery>,
-    accepting: bool,
-}
-
-impl SessionTransitionSender {
-    pub(crate) fn publish(&self, transition: SessionTransition) -> bool {
-        let mut state = self.state.lock();
-        if !state.accepting {
-            return false;
-        }
-        if state
-            .tx
-            .send(SessionTransitionDelivery::Event(transition))
-            .is_err()
-        {
-            state.accepting = false;
-            return false;
-        }
-        true
-    }
-
-    /// Wait until every transition published before this call has been handled,
-    /// then stop the single required consumer.
-    pub(crate) async fn shutdown(&self) -> Result<(), &'static str> {
-        let (acknowledgement, acknowledged) = oneshot::channel();
-        {
-            let mut state = self.state.lock();
-            if !state.accepting {
-                return Err("required session transition channel is already closed");
-            }
-            state.accepting = false;
-            state
-                .tx
-                .send(SessionTransitionDelivery::Shutdown(acknowledgement))
-                .map_err(|_| "required session transition channel is closed")?;
-        }
-        acknowledged
-            .await
-            .map_err(|_| "session transition coordinator stopped before acknowledging shutdown")
-    }
-}
+pub(crate) type SessionTransitionSender = RequiredSender<SessionTransition, ()>;
 
 /// Receiving half of the required session-transition coordination channel.
-pub(crate) struct SessionTransitionReceiver {
-    rx: mpsc::UnboundedReceiver<SessionTransitionDelivery>,
-}
-
-impl SessionTransitionReceiver {
-    pub(crate) async fn recv(&mut self) -> Result<Option<SessionTransition>, &'static str> {
-        match self.rx.recv().await {
-            Some(SessionTransitionDelivery::Event(transition)) => Ok(Some(transition)),
-            Some(SessionTransitionDelivery::Shutdown(acknowledgement)) => {
-                if acknowledgement.send(()).is_err() {
-                    debug!("Session transition shutdown acknowledgement receiver was dropped");
-                }
-                Ok(None)
-            }
-            None => Err("required session transition channel closed without shutdown"),
-        }
-    }
-}
+pub(crate) type SessionTransitionReceiver = RequiredReceiver<SessionTransition, ()>;
 
 pub(crate) fn session_transition_channel() -> (SessionTransitionSender, SessionTransitionReceiver) {
-    let (tx, rx) = mpsc::unbounded_channel();
-    (
-        SessionTransitionSender {
-            state: Arc::new(Mutex::new(SessionTransitionState {
-                tx,
-                accepting: true,
-            })),
-        },
-        SessionTransitionReceiver { rx },
-    )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::session::state::OfflineSignal;
-
-    fn started() -> SessionTransition {
-        SessionTransition::Started {
-            session_id: "s1".into(),
-            streamer_id: "r1".into(),
-            streamer_name: "test".into(),
-            title: "t".into(),
-            category: None,
-            started_at: Utc::now(),
-            from_hysteresis: false,
-            download_start: None,
-        }
-    }
-
-    fn ended() -> SessionTransition {
-        SessionTransition::Ended {
-            session_id: "s1".into(),
-            streamer_id: "r1".into(),
-            streamer_name: "test".into(),
-            started_at: None,
-            ended_at: Utc::now(),
-            cause: TerminalCause::DefinitiveOffline {
-                signal: OfflineSignal::ConsecutiveFailures(2),
-            },
-            via_hysteresis: false,
-        }
-    }
-
-    #[tokio::test]
-    async fn coordination_shutdown_drains_prior_transitions() {
-        let (sender, mut receiver) = session_transition_channel();
-        let late_sender = sender.clone();
-        assert!(sender.publish(started()));
-        assert!(sender.publish(ended()));
-
-        let shutdown = tokio::spawn(async move { sender.shutdown().await });
-        assert!(matches!(
-            receiver.recv().await,
-            Ok(Some(SessionTransition::Started { .. }))
-        ));
-        assert!(matches!(
-            receiver.recv().await,
-            Ok(Some(SessionTransition::Ended { .. }))
-        ));
-        assert!(matches!(receiver.recv().await, Ok(None)));
-        shutdown
-            .await
-            .expect("shutdown task should not panic")
-            .expect("shutdown marker should be acknowledged");
-        assert!(
-            !late_sender.publish(started()),
-            "a transition must not be admitted behind the shutdown marker"
-        );
-    }
+    required_channel("session transition")
 }

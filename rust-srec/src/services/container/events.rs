@@ -29,6 +29,7 @@ use crate::services::runtime_coordinator::RuntimeCoordinator;
 use crate::session::SessionLifecycle;
 use crate::streamer::StreamerManager;
 use crate::utils::failure_samples::FailureSamples;
+use crate::utils::required_channel::Delivery;
 
 type RuntimeConfigService = ConfigService<SqlxConfigRepository, SqlxStreamerRepository>;
 type RuntimeStreamMonitor = StreamMonitor<
@@ -139,7 +140,11 @@ impl ServiceContainer {
 
         self.task_supervisor
             .spawn_critical("session transition coordinator", async move {
-                while let Some(transition) = transition_rx.recv().await.map_err(str::to_string)? {
+                while let Some(transition) = transition_rx
+                    .recv_event()
+                    .await
+                    .map_err(|error| error.to_string())?
+                {
                     runtime_coordinator
                         .handle_session_transition(transition)
                         .await;
@@ -890,7 +895,11 @@ where
     Handler: FnMut(DownloadManagerEvent) -> HandlerFuture,
     HandlerFuture: Future<Output = std::result::Result<(), String>>,
 {
-    while let Some(delivery) = receiver.recv().await.map_err(str::to_string)? {
+    while let Some(delivery) = receiver
+        .recv_event()
+        .await
+        .map_err(|error| error.to_string())?
+    {
         let (event, acknowledgement) = delivery.into_parts();
         let result = handle_event(event).await;
         let acknowledgement_result = result.as_ref().map(|_| ()).map_err(ToString::to_string);
@@ -927,13 +936,20 @@ struct DanmuEventHandler {
 impl DanmuEventHandler {
     async fn run(self, mut receiver: DanmuCoordinationReceiver) -> std::result::Result<(), String> {
         let mut failures = FailureSamples::default();
-        while let Some(event) = receiver.recv().await.map_err(str::to_string)? {
-            if let Err(error) = self.handle_event(event).await {
-                warn!(%error, "Required danmu event could not be applied");
-                failures.push(error);
+        let acknowledgement = loop {
+            match receiver.recv().await.map_err(|error| error.to_string())? {
+                Delivery::Event(event) => {
+                    if let Err(error) = self.handle_event(event).await {
+                        warn!(%error, "Required danmu event could not be applied");
+                        failures.push(error);
+                    }
+                }
+                Delivery::Shutdown(acknowledgement) => break acknowledgement,
             }
+        };
+        if acknowledgement.send(failures.into_report()).is_err() {
+            debug!("Danmu coordination shutdown acknowledgement receiver was dropped");
         }
-        receiver.acknowledge_shutdown(failures.into_report());
         debug!("Danmu event handler drained and shut down");
         Ok(())
     }

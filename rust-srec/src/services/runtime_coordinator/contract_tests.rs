@@ -194,7 +194,7 @@ impl Fixture {
         );
         let persistence_lifecycle = session_lifecycle.clone();
         let persistence = AbortOnDropHandle::new(tokio::spawn(async move {
-            while let Some(delivery) = receiver.recv().await.unwrap() {
+            while let Some(delivery) = receiver.recv_event().await.unwrap() {
                 let (event, acknowledgement) = delivery.into_parts();
                 let result = match event {
                     DownloadManagerEvent::Terminal(event) => persistence_lifecycle
