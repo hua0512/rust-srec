@@ -50,9 +50,7 @@ pub(crate) async fn write_global(
         &model.default_download_engine,
         true,
     )?;
-    if mode != WriteMode::Import {
-        row.field("default_extractor", &model.default_extractor, true)?;
-    }
+    row.field("default_extractor", &model.default_extractor, true)?;
     row.field(
         "max_concurrent_cpu_jobs",
         model.max_concurrent_cpu_jobs,
@@ -189,9 +187,7 @@ pub(crate) async fn write_template(
     row.field("platform_overrides", &platform_overrides, true)?;
     row.field("download_retry_policy", &model.download_retry_policy, true)?;
     row.field("download_engine", &model.download_engine, true)?;
-    if mode != WriteMode::Import {
-        row.field("extractor", &model.extractor, true)?;
-    }
+    row.field("extractor", &model.extractor, true)?;
     row.field("engines_override", &model.engines_override, true)?;
     row.field(
         "stream_selection_config",
@@ -261,9 +257,7 @@ pub(crate) async fn write_platform(
         true,
     )?;
     row.field("download_engine", &model.download_engine, true)?;
-    if mode != WriteMode::Import {
-        row.field("extractor", &model.extractor, true)?;
-    }
+    row.field("extractor", &model.extractor, true)?;
     row.field(
         "stream_selection_config",
         &model.stream_selection_config,

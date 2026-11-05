@@ -1494,6 +1494,7 @@ fn global_model(existing: &GlobalConfigDbModel, config: &ConfigExport) -> Global
     model.offline_check_delay_ms = source.offline_check_delay_ms;
     model.offline_check_count = source.offline_check_count;
     model.default_download_engine = source.default_download_engine.clone();
+    model.default_extractor = source.default_extractor.clone();
     model.max_concurrent_cpu_jobs = source.max_concurrent_cpu_jobs;
     model.max_concurrent_io_jobs = source.max_concurrent_io_jobs;
     model.job_history_retention_days = source.job_history_retention_days;
@@ -1535,6 +1536,7 @@ fn template_model(
     model.platform_overrides = source.platform_overrides.clone().map(db_json);
     model.download_retry_policy = source.download_retry_policy.clone().map(db_json);
     model.download_engine = source.download_engine.clone();
+    model.extractor = source.extractor.clone();
     model.engines_override = source.engines_override.clone().map(db_json);
     model.stream_selection_config = source.stream_selection_config.clone().map(db_json);
     model.pipeline = source.pipeline.clone().map(db_json);
@@ -1559,6 +1561,7 @@ fn platform_model(
     model.output_folder = source.output_folder.clone();
     model.output_filename_template = source.output_filename_template.clone();
     model.download_engine = source.download_engine.clone();
+    model.extractor = source.extractor.clone();
     model.stream_selection_config = source.stream_selection_config.clone().map(db_json);
     model.output_file_format = source.output_file_format.clone();
     model.min_segment_size_bytes = source.min_segment_size_bytes;
@@ -2018,6 +2021,7 @@ mod tests {
                 offline_check_delay_ms: global.offline_check_delay_ms,
                 offline_check_count: global.offline_check_count,
                 default_download_engine: global.default_download_engine.clone(),
+                default_extractor: None,
                 max_concurrent_cpu_jobs: global.max_concurrent_cpu_jobs,
                 max_concurrent_io_jobs: global.max_concurrent_io_jobs,
                 job_history_retention_days: global.job_history_retention_days,

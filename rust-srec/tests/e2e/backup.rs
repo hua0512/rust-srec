@@ -109,16 +109,55 @@ fn assert_same_bundle(actual: &Value, expected: &Value) {
     assert!(differences.is_empty(), "bundles differ: {differences:#?}");
 }
 
+/// The global, Huya and template settings as the settings pages read them,
+/// without the IDs and times that stay local to an install.
+async fn settings_shown(app: &TestApp, token: &str, template_id: &str) -> Value {
+    let mut global = app.get_ok("/api/config/global", token).await;
+    let mut huya = app
+        .get_ok("/api/config/platforms/platform-huya", token)
+        .await;
+    let mut template = app
+        .get_ok(&format!("/api/templates/{template_id}"), token)
+        .await;
+    for (view, local) in [
+        (&mut global, &["proxy_route"][..]),
+        (&mut huya, &["credential_selection"][..]),
+        (&mut template, &["id", "created_at", "updated_at"][..]),
+    ] {
+        let view = view.as_object_mut().expect("settings object");
+        for field in local {
+            view.remove(*field);
+        }
+    }
+    // As in `comparable`, empty overrides and none mean the same.
+    if template["platform_overrides"] == json!({}) {
+        template["platform_overrides"] = Value::Null;
+    }
+    json!({ "global": global, "huya": huya, "template": template })
+}
+
 /// Configuration of each kind a bundle carries, created through the API:
 /// global settings, a proxy, a Huya account selected for the platform, the
 /// template "Backup template", the disabled streamer "Backup Alpha" on it with
 /// a time filter, and the webhook "Backup webhook" with subscriptions. Returns
 /// the streamer's id.
+///
+/// The global, Huya and template settings differ from a fresh install's, so a
+/// restore that drops one of them shows.
 async fn create_backup_content(app: &TestApp, token: &str) -> String {
     app.patch(
         "/api/config/global",
         token,
-        &json!({ "max_concurrent_downloads": 3, "stream_proxy_allow_private_targets": true }),
+        &json!({
+            "max_concurrent_downloads": 3,
+            "stream_proxy_allow_private_targets": true,
+            "default_extractor": "streamlink",
+            "default_download_engine": "default-ffmpeg",
+            "record_danmu": true,
+            "offline_check_count": 7,
+            "output_retention_days": 14,
+            "auto_thumbnail": false,
+        }),
     )
     .await
     .expect_status(StatusCode::OK);
@@ -165,6 +204,16 @@ async fn create_backup_content(app: &TestApp, token: &str) -> String {
         .await;
     huya["credential_selection"] =
         json!(json!({ "mode": "fixed", "credential_id": id_of(&profile.body) }).to_string());
+    for (field, value) in [
+        ("extractor", json!("streamlink")),
+        ("download_engine", json!("default-ffmpeg")),
+        ("fetch_delay_ms", json!(1234)),
+        ("record_danmu", json!(true)),
+        ("output_folder", json!("/srv/huya")),
+        ("offline_check_count", json!(4)),
+    ] {
+        huya[field] = value;
+    }
     app.put("/api/config/platforms/platform-huya", token, &huya)
         .await
         .expect_status(StatusCode::OK);
@@ -172,7 +221,15 @@ async fn create_backup_content(app: &TestApp, token: &str) -> String {
         .post(
             "/api/templates",
             token,
-            &json!({ "name": "Backup template" }),
+            &json!({
+                "name": "Backup template",
+                "extractor": "streamlink",
+                "download_engine": "default-ffmpeg",
+                "output_folder": "/srv/template",
+                "record_danmu": false,
+                "min_segment_size_bytes": 2048,
+                "offline_check_count": 5,
+            }),
         )
         .await
         .expect_status(StatusCode::CREATED);
@@ -440,7 +497,14 @@ async fn a_backup_restores_into_a_fresh_install_and_exports_the_same_bundle() {
         .expect_status(StatusCode::OK);
     let token = sign_in_again(&source, RESTORED_PASSWORD).await;
 
-    create_backup_content(&source, &token).await;
+    let streamer = create_backup_content(&source, &token).await;
+    let template_id = source
+        .get_ok(&format!("/api/streamers/{streamer}"), &token)
+        .await["template_id"]
+        .as_str()
+        .expect("template assigned")
+        .to_owned();
+    let settings_before = settings_shown(&source, &token, &template_id).await;
     let bundle = export(&source, &token).await;
     source.shutdown().await;
 
@@ -526,9 +590,10 @@ async fn a_backup_restores_into_a_fresh_install_and_exports_the_same_bundle() {
             .any(|instance| instance["display_name"] == "Backup webhook"),
         "the restored channel is loaded: {instances}"
     );
-    let global = target.get_ok("/api/config/global", &token).await;
-    assert_eq!(global["max_concurrent_downloads"], 3);
-    assert_eq!(global["stream_proxy_allow_private_targets"], true);
+    assert_eq!(
+        settings_shown(&target, &token, template_id).await,
+        settings_before
+    );
 
     let again = export(&target, &token).await;
     assert_same_bundle(&again, &bundle);
