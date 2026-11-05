@@ -218,12 +218,29 @@ struct ResolvedPlatform {
 
 /// Ask the external `streamlink` CLI whether it can handle a URL.
 ///
-/// A missing or failing binary counts as "no", so detection falls through to "unsupported"
-/// rather than erroring.
-async fn streamlink_can_handle(url: &str) -> bool {
-    let mut cmd = process_utils::tokio_command(
-        std::env::var("STREAMLINK_PATH").unwrap_or_else(|_| "streamlink".to_string()),
-    );
+/// Runs the binary the Streamlink extractor would use for the streamlink platform: its
+/// `streamlink.binary_path` extra, else `$STREAMLINK_PATH`, else `streamlink`. A missing or
+/// failing binary counts as "no", so detection falls through to "unsupported" rather than
+/// erroring.
+async fn streamlink_can_handle(url: &str, configs: &[PlatformConfigDbModel]) -> bool {
+    let configured = configs
+        .iter()
+        .find(|config| {
+            config
+                .platform_name
+                .eq_ignore_ascii_case(STREAMLINK_PLATFORM)
+        })
+        .and_then(|config| config.platform_specific_config.as_deref())
+        .and_then(|extras| serde_json::from_str::<serde_json::Value>(extras).ok())
+        .and_then(|extras| {
+            extras["streamlink"]["binary_path"]
+                .as_str()
+                .map(str::to_owned)
+        });
+    let binary = configured
+        .or_else(|| std::env::var("STREAMLINK_PATH").ok())
+        .unwrap_or_else(|| "streamlink".to_string());
+    let mut cmd = process_utils::tokio_command(binary);
     cmd.arg("--can-handle-url-no-redirect")
         .arg(url)
         .stdout(std::process::Stdio::null())
@@ -246,16 +263,19 @@ async fn resolve_platform_for_url(
     probe_streamlink: bool,
 ) -> ApiResult<Option<ResolvedPlatform>> {
     let mut name = url.platform().map(str::to_string);
+    if name.is_none() && !probe_streamlink {
+        return Ok(None);
+    }
 
-    if name.is_none() && probe_streamlink && streamlink_can_handle(url.as_str()).await {
+    let configs = config_service.list_platform_configs().await?;
+
+    if name.is_none() && streamlink_can_handle(url.as_str(), &configs).await {
         name = Some(STREAMLINK_PLATFORM.to_string());
     }
 
     let Some(name) = name else {
         return Ok(None);
     };
-
-    let configs = config_service.list_platform_configs().await?;
 
     let config = find_platform_config(configs, &name).ok_or_else(|| {
         ApiError::validation(format!("No platform configuration exists for '{name}'"))

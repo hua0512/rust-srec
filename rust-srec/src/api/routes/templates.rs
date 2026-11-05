@@ -148,6 +148,41 @@ async fn template_selections(
         .map_err(ApiError::from)
 }
 
+/// Copy a create or update request's settings onto `template`, replacing every one: an omitted
+/// field clears the stored value. Both request types carry the same settings (they differ only in
+/// how `name` is given), so this is a macro over their shared field names.
+macro_rules! apply_fields {
+    ($template:ident, $request:ident) => {
+        $template.output_folder = $request.output_folder;
+        $template.output_filename_template = $request.output_filename_template;
+        $template.output_file_format = $request.output_file_format;
+        $template.download_engine = $request.download_engine;
+        $template.extractor = $request.extractor;
+        $template.record_danmu = $request.record_danmu;
+        $template.danmu_statistics = $request.danmu_statistics;
+        $template.platform_overrides = json_column($request.platform_overrides)?;
+        $template.engines_override = json_column($request.engines_override)?;
+        $template.stream_selection_config = $request.stream_selection_config;
+        $template.min_segment_size_bytes = $request.min_segment_size_bytes;
+        $template.max_download_duration_secs = $request.max_download_duration_secs;
+        $template.max_part_size_bytes = $request.max_part_size_bytes;
+        $template.download_retry_policy = $request.download_retry_policy;
+        $template.pipeline = $request.pipeline;
+        $template.session_complete_pipeline = $request.session_complete_pipeline;
+        $template.paired_segment_pipeline = $request.paired_segment_pipeline;
+        $template.offline_check_count = $request.offline_check_count;
+        $template.offline_check_delay_ms = $request.offline_check_delay_ms;
+    };
+}
+
+/// A JSON request value as stored in a text column; JSON `null` clears it like an omitted value.
+fn json_column(value: Option<serde_json::Value>) -> serde_json::Result<Option<String>> {
+    value
+        .filter(|value| !value.is_null())
+        .map(|value| serde_json::to_string(&value))
+        .transpose()
+}
+
 /// Validate the optional offline-check overrides on a template request.
 fn validate_offline_check_overrides(
     count: Option<i32>,
@@ -197,34 +232,7 @@ pub async fn create_template(
 
     // Create the template config model
     let mut template = TemplateConfigDbModel::new(&request.name);
-    template.output_folder = request.output_folder;
-    template.output_filename_template = request.output_filename_template;
-    template.output_file_format = request.output_file_format;
-    template.download_engine = request.download_engine;
-    template.extractor = request.extractor;
-    template.record_danmu = request.record_danmu;
-    template.danmu_statistics = request.danmu_statistics;
-
-    template.platform_overrides = match request.platform_overrides {
-        Some(v) if v.is_null() => None,
-        Some(v) => Some(serde_json::to_string(&v)?),
-        None => None,
-    };
-    template.engines_override = match request.engines_override {
-        Some(v) if v.is_null() => None,
-        Some(v) => Some(serde_json::to_string(&v)?),
-        None => None,
-    };
-    template.stream_selection_config = request.stream_selection_config;
-    template.min_segment_size_bytes = request.min_segment_size_bytes;
-    template.max_download_duration_secs = request.max_download_duration_secs;
-    template.max_part_size_bytes = request.max_part_size_bytes;
-    template.download_retry_policy = request.download_retry_policy;
-    template.pipeline = request.pipeline;
-    template.session_complete_pipeline = request.session_complete_pipeline;
-    template.paired_segment_pipeline = request.paired_segment_pipeline;
-    template.offline_check_count = request.offline_check_count;
-    template.offline_check_delay_ms = request.offline_check_delay_ms;
+    apply_fields!(template, request);
 
     // Create the template
     config_service
@@ -377,34 +385,7 @@ pub async fn update_template(
         template.name = name;
     }
 
-    // For optional fields, direct assignment handles both Some(v) and None (clearing)
-    template.output_folder = request.output_folder;
-    template.output_filename_template = request.output_filename_template;
-    template.output_file_format = request.output_file_format;
-    template.download_engine = request.download_engine;
-    template.extractor = request.extractor;
-    template.record_danmu = request.record_danmu;
-    template.danmu_statistics = request.danmu_statistics;
-    template.platform_overrides = match request.platform_overrides {
-        Some(v) if v.is_null() => None,
-        Some(v) => Some(serde_json::to_string(&v)?),
-        None => None,
-    };
-    template.engines_override = match request.engines_override {
-        Some(v) if v.is_null() => None,
-        Some(v) => Some(serde_json::to_string(&v)?),
-        None => None,
-    };
-    template.stream_selection_config = request.stream_selection_config;
-    template.min_segment_size_bytes = request.min_segment_size_bytes;
-    template.max_download_duration_secs = request.max_download_duration_secs;
-    template.max_part_size_bytes = request.max_part_size_bytes;
-    template.download_retry_policy = request.download_retry_policy;
-    template.pipeline = request.pipeline;
-    template.session_complete_pipeline = request.session_complete_pipeline;
-    template.paired_segment_pipeline = request.paired_segment_pipeline;
-    template.offline_check_count = request.offline_check_count;
-    template.offline_check_delay_ms = request.offline_check_delay_ms;
+    apply_fields!(template, request);
 
     // Update the template
     config_service
