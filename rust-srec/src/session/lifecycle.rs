@@ -334,7 +334,7 @@ impl SessionLifecycle {
 
         let mut tasks = DrainedTasks::take_from(&self.hysteresis_tasks);
         let aborted = tasks.len();
-        let unfinished = tasks.abort_and_reap(deadline).await;
+        let unfinished = tasks.abort_and_reap(deadline, "Hysteresis timer").await;
         if unfinished > 0 {
             warn!(
                 unfinished,
@@ -669,12 +669,11 @@ impl SessionLifecycle {
     ) -> Result<crate::credentials::CredentialBinding> {
         let lifecycle = self.clone();
         let session_id = session_id.to_owned();
-        let stripe_key = streamer_id;
-        let streamer_id = streamer_id.to_owned();
-        self.run_operation(stripe_key, async move {
+        let owned_streamer_id = streamer_id.to_owned();
+        self.run_operation(streamer_id, async move {
             let binding = lifecycle
                 .repo
-                .commit_credential_binding(session_id.clone(), streamer_id.clone(), binding)
+                .commit_credential_binding(session_id.clone(), owned_streamer_id.clone(), binding)
                 .await?;
             if !lifecycle.sessions.contains_key(&session_id)
                 && let Some(started_at) = lifecycle
@@ -684,9 +683,13 @@ impl SessionLifecycle {
             {
                 lifecycle.sessions.insert(
                     session_id.clone(),
-                    SessionState::recording(streamer_id.clone(), session_id.clone(), started_at),
+                    SessionState::recording(
+                        owned_streamer_id.clone(),
+                        session_id.clone(),
+                        started_at,
+                    ),
                 );
-                lifecycle.set_current_session(&streamer_id, &session_id);
+                lifecycle.set_current_session(&owned_streamer_id, &session_id);
             }
             Ok(binding)
         })
@@ -702,20 +705,19 @@ impl SessionLifecycle {
     ) -> Result<()> {
         let lifecycle = self.clone();
         let session_id = session_id.to_owned();
-        let stripe_key = streamer_id;
-        let streamer_id = streamer_id.to_owned();
+        let owned_streamer_id = streamer_id.to_owned();
         let streamer_name = streamer_name.to_owned();
-        self.run_operation(stripe_key, async move {
+        self.run_operation(streamer_id, async move {
             if lifecycle
                 .repo
                 .credential_binding_is_retiring(&session_id, &binding)
                 .await?
                 && lifecycle
-                    .current_session_id_for_streamer(&streamer_id)
+                    .current_session_id_for_streamer(&owned_streamer_id)
                     .is_none_or(|current| current == session_id)
             {
                 lifecycle
-                    .end_for_disable_inner(&streamer_id, &streamer_name)
+                    .end_for_disable_inner(&owned_streamer_id, &streamer_name)
                     .await?;
             }
             Ok(())

@@ -96,13 +96,15 @@ impl<T: 'static> DrainedTasks<'_, T> {
     /// returns. Tasks still unsettled at `deadline` stay in the set, which the
     /// guard returns to its slot.
     ///
-    /// Returns the number of tasks that did not settle by `deadline`.
-    pub(crate) async fn abort_and_reap(&mut self, deadline: Instant) -> usize {
+    /// `label` names the task kind in the warning for a task that failed
+    /// rather than stopping on abort. Returns the number of tasks that did
+    /// not settle by `deadline`.
+    pub(crate) async fn abort_and_reap(&mut self, deadline: Instant, label: &'static str) -> usize {
         self.abort_all();
         loop {
             match timeout_at(deadline, self.join_next()).await {
                 Ok(Some(Err(error))) if !error.is_cancelled() => {
-                    warn!(%error, "Task failed while being aborted");
+                    warn!(kind = label, %error, "Task failed while being aborted");
                 }
                 Ok(Some(_)) => {}
                 Ok(None) => return 0,
@@ -409,7 +411,7 @@ impl TaskSupervisor {
 
         let mut tasks = DrainedTasks::take_from(&self.tasks);
         let aborted = tasks.len();
-        let unfinished = tasks.abort_and_reap(deadline).await;
+        let unfinished = tasks.abort_and_reap(deadline, "Background task").await;
         if unfinished > 0 {
             warn!(
                 unfinished,

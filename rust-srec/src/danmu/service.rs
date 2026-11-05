@@ -885,7 +885,7 @@ impl DanmuService {
         session_ids.sort();
 
         let unfinished = DrainedTasks::take_from(&self.collection_tasks)
-            .abort_and_reap(deadline)
+            .abort_and_reap(deadline, "Danmu collection")
             .await;
         if unfinished > 0 {
             warn!(

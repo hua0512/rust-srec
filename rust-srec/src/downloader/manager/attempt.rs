@@ -252,7 +252,7 @@ impl AttemptSupervisor {
         download_ids.sort();
 
         let unfinished = DrainedTasks::take_from(&self.tasks)
-            .abort_and_reap(deadline)
+            .abort_and_reap(deadline, "Recording attempt")
             .await;
         if unfinished > 0 {
             warn!(
