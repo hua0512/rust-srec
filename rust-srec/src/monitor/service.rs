@@ -176,7 +176,6 @@ pub struct StreamMonitor<
 }
 
 /// Inputs shared by both paths of one deduplicated status check.
-#[derive(Clone, Copy)]
 struct StatusCheck<'a> {
     streamer: &'a StreamerMetadata,
     config: &'a crate::config::MergedConfig,
