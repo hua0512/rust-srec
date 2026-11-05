@@ -196,8 +196,7 @@ impl ServiceContainer {
     /// This is required when binding to port `0` (ephemeral port), where the actual port is only
     /// known after binding.
     pub async fn start_api_server_bound(&self) -> Result<std::net::SocketAddr> {
-        // Create AuthConfig from environment first (single source of truth for token expiration)
-        let auth_config = AuthConfig::from_env()?;
+        let auth_config = self.auth_config.clone();
 
         let jwt_service =
             JwtService::from_env(auth_config.access_token_expiration_secs).map(Arc::new);
@@ -242,7 +241,7 @@ impl ServiceContainer {
         &self,
         jwt_secret: String,
     ) -> Result<std::net::SocketAddr> {
-        let auth_config = AuthConfig::from_env()?;
+        let auth_config = self.auth_config.clone();
 
         let (issuer, audience) = crate::api::jwt::issuer_and_audience_from_env();
         let jwt_service = Arc::new(JwtService::new(

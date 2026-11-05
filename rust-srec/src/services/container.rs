@@ -216,6 +216,9 @@ pub struct ServiceContainer {
     pub(crate) upload_status_broadcaster: crate::pipeline::UploadStatusBroadcaster,
     /// API server configuration.
     api_server_config: ApiServerConfig,
+    /// Token and password settings, read while building so an invalid value fails startup
+    /// before any service starts.
+    auth_config: crate::api::auth_service::AuthConfig,
     /// Cancellation token for graceful shutdown.
     cancellation_token: CancellationToken,
     /// Owner for background tasks started by the application runtime.

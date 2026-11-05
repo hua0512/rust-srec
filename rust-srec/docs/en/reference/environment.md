@@ -6,6 +6,8 @@ import { withBase } from 'vitepress'
 
 The following environment variables can be configured in your <a :href="withBase('/env.example')" download=".env.example">.env</a> file.
 
+A numeric variable set to a value that is not a valid number, such as `API_PORT=80800`, stops startup with an error naming the variable. An unset or empty variable uses its default.
+
 ## General {#general}
 | Variable | Description | Default |
 |----------|-------------|---------|
