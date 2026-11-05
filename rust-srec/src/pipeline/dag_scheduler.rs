@@ -4227,55 +4227,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn terminal_dag_status_cannot_be_reopened() {
-        let pool = setup_test_pool().await;
-        let dag_repo = Arc::new(crate::database::repositories::dag::SqlxDagRepository::new(
-            pool.clone(),
-            pool.clone(),
-        ));
-        let job_repo = Arc::new(crate::database::repositories::job::SqlxJobRepository::new(
-            pool.clone(),
-            pool,
-        ));
-        let scheduler = DagScheduler::new(
-            Arc::new(JobQueue::with_repository(
-                Default::default(),
-                job_repo.clone(),
-            )),
-            dag_repo.clone(),
-            job_repo,
-        );
-        let created = scheduler
-            .create_dag_pipeline(
-                DagPipelineDefinition::new(
-                    "terminal status guard",
-                    vec![DagStep::new("A", PipelineStep::preset("noop"))],
-                ),
-                &["/input.flv".to_string()],
-                DagRunContext::default(),
-            )
-            .await
-            .unwrap();
-        dag_repo
-            .fail_dag_and_cancel_steps(&created.dag_id, "root failed")
-            .await
-            .unwrap();
-        dag_repo
-            .update_dag_status(
-                &created.dag_id,
-                DagExecutionStatus::Processing.as_str(),
-                None,
-            )
-            .await
-            .unwrap();
-
-        let dag = dag_repo.get_dag(&created.dag_id).await.unwrap();
-        assert_eq!(dag.get_status(), Some(DagExecutionStatus::Failed));
-        assert_eq!(dag.error.as_deref(), Some("root failed"));
-        assert!(dag.completed_at.is_some());
-    }
-
     /// Cancelling a DAG counts the running steps it stopped: a step whose job
     /// waits for its automatic retry counts, although that FAILED job cannot
     /// be cancelled itself, and a step that has no job yet does not.

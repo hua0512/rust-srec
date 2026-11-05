@@ -1209,12 +1209,7 @@ mod tests {
             job_status,
             job_updated_at,
         } = fixture;
-        let initial_status = if dag_status.is_terminal() {
-            DagExecutionStatus::Processing
-        } else {
-            dag_status
-        };
-        insert_dag(database, dag_id, initial_status, dag_updated_at).await;
+        insert_dag(database, dag_id, dag_status, dag_updated_at).await;
         let step = DagStepExecutionDbModel {
             id: step_id.to_string(),
             dag_id: dag_id.to_string(),
@@ -1232,25 +1227,13 @@ mod tests {
             .await
             .expect("DAG step");
         create_job(database, job_id, job_status, job_updated_at, Some(step_id)).await;
-        database
-            .dag_repository
-            .update_step_status_with_job(step_id, DagStepStatus::Completed.as_str(), job_id)
+        sqlx::query("UPDATE dag_step_execution SET status = ?, job_id = ? WHERE id = ?")
+            .bind(DagStepStatus::Completed.as_str())
+            .bind(job_id)
+            .bind(step_id)
+            .execute(&database.pool)
             .await
             .expect("DAG step job link");
-        if initial_status != dag_status {
-            database
-                .dag_repository
-                .update_dag_status(dag_id, dag_status.as_str(), None)
-                .await
-                .expect("DAG terminal status");
-            sqlx::query("UPDATE dag_execution SET updated_at = ?, completed_at = ? WHERE id = ?")
-                .bind(dag_updated_at)
-                .bind(dag_updated_at)
-                .bind(dag_id)
-                .execute(&database.pool)
-                .await
-                .expect("historic DAG timestamps");
-        }
     }
 
     #[tokio::test]

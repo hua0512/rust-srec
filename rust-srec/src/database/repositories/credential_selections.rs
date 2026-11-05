@@ -550,20 +550,9 @@ pub(crate) async fn copy_owner(
 /// streamer's specific configuration. Text that is not a JSON object is left
 /// as written. The document is rewritten only when it carried a selection.
 pub(crate) fn take_document(raw: &mut Option<String>) -> Result<Option<CredentialSelection>> {
-    let Some(mut document) = raw
-        .as_deref()
-        .and_then(|text| serde_json::from_str::<Value>(text).ok())
-    else {
-        return Ok(None);
-    };
-    let Some(selection) = document
-        .as_object_mut()
-        .and_then(|fields| fields.remove(SELECTION_KEY))
-    else {
-        return Ok(None);
-    };
-    *raw = Some(document.to_string());
-    CredentialSelection::from_value(selection).map(Some)
+    super::take_key(raw, SELECTION_KEY)
+        .map(CredentialSelection::from_value)
+        .transpose()
 }
 
 /// Take each platform override's selection out of a template's
@@ -604,19 +593,8 @@ pub fn inject_document(
     document: Option<Value>,
     selection: Option<&CredentialSelection>,
 ) -> Option<Value> {
-    let mut document = document.filter(|document| !document.is_null());
-    if let Some(fields) = document.as_mut().and_then(Value::as_object_mut) {
-        fields.remove(SELECTION_KEY);
-    }
-    let Some(selection) = selection.and_then(|selection| serde_json::to_value(selection).ok())
-    else {
-        return document;
-    };
-    let mut document = document.unwrap_or_else(|| Value::Object(Default::default()));
-    if let Some(fields) = document.as_object_mut() {
-        fields.insert(SELECTION_KEY.to_owned(), selection);
-    }
-    Some(document)
+    let selection = selection.and_then(|selection| serde_json::to_value(selection).ok());
+    super::inject_key(document, SELECTION_KEY, selection)
 }
 
 /// Put a template's stored selections into its platform overrides, keyed by

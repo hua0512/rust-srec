@@ -633,22 +633,9 @@ pub(crate) fn reject_legacy_overrides(raw: Option<&str>) -> Result<()> {
 /// streamer's specific configuration; text that is not a JSON object is left
 /// as written. The document is rewritten only when it carried a route.
 pub(crate) fn take_document(raw: &mut Option<String>) -> Result<Option<ProxyRoute>> {
-    let Some(mut document) = raw
-        .as_deref()
-        .and_then(|text| serde_json::from_str::<serde_json::Value>(text).ok())
-    else {
+    let Some(route) = super::take_key(raw, ROUTE_KEY).filter(|route| !route.is_null()) else {
         return Ok(None);
     };
-    let Some(route) = document
-        .as_object_mut()
-        .and_then(|fields| fields.remove(ROUTE_KEY))
-    else {
-        return Ok(None);
-    };
-    *raw = Some(document.to_string());
-    if route.is_null() {
-        return Ok(None);
-    }
     serde_json::from_value(route).map(Some).map_err(|_| {
         ProxyError::invalid("proxy_route must be inherit, direct, system or a saved proxy").into()
     })
@@ -660,21 +647,10 @@ pub fn inject_document(
     document: Option<serde_json::Value>,
     route: Option<&ProxyRoute>,
 ) -> Option<serde_json::Value> {
-    let mut document = document.filter(|document| !document.is_null());
-    if let Some(fields) = document.as_mut().and_then(serde_json::Value::as_object_mut) {
-        fields.remove(ROUTE_KEY);
-    }
-    let Some(route) = route
+    let route = route
         .filter(|route| !route.is_inherit())
-        .and_then(|route| serde_json::to_value(route).ok())
-    else {
-        return document;
-    };
-    let mut document = document.unwrap_or_else(|| serde_json::Value::Object(Default::default()));
-    if let Some(fields) = document.as_object_mut() {
-        fields.insert(ROUTE_KEY.to_owned(), route);
-    }
-    Some(document)
+        .and_then(|route| serde_json::to_value(route).ok());
+    super::inject_key(document, ROUTE_KEY, route)
 }
 
 /// Saves an entry for a test and returns its ID.

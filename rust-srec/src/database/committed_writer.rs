@@ -40,6 +40,14 @@ pub(crate) fn prepare_owned_commit() -> Result<()> {
         .unwrap_or(Ok(()))
 }
 
+/// Commit `tx` immediately after [`prepare_owned_commit`], with no await
+/// between the two.
+pub(crate) async fn commit_owned(tx: sqlx::Transaction<'_, sqlx::Sqlite>) -> Result<()> {
+    prepare_owned_commit()?;
+    tx.commit().await?;
+    Ok(())
+}
+
 /// The future must own a bounded admission permit (lifecycle stripe/admission
 /// guards). Cancellation still drops the future before its commit boundary.
 pub(crate) async fn own_operation<T, F>(supervisor: Arc<TaskSupervisor>, future: F) -> Result<T>

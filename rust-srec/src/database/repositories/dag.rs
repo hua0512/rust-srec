@@ -46,9 +46,6 @@ pub trait DagRepository: Send + Sync {
     /// Get a DAG execution by ID.
     async fn get_dag(&self, id: &str) -> Result<DagExecutionDbModel>;
 
-    /// Update DAG execution status.
-    async fn update_dag_status(&self, id: &str, status: &str, error: Option<&str>) -> Result<()>;
-
     /// List DAG executions with optional status and session_id filters.
     async fn list_dags(
         &self,
@@ -115,13 +112,6 @@ pub trait DagRepository: Send + Sync {
     /// Get all step executions for a DAG, each with the status and timing of
     /// its job, in creation order.
     async fn get_steps_with_jobs_by_dag(&self, dag_id: &str) -> Result<Vec<DagStepWithJob>>;
-
-    /// Update a step execution.
-    async fn update_step(&self, step: &DagStepExecutionDbModel) -> Result<()>;
-
-    /// Update step status and job ID.
-    async fn update_step_status_with_job(&self, id: &str, status: &str, job_id: &str)
-    -> Result<()>;
 
     /// Atomically create a job and attach it to an unmaterialized DAG step.
     async fn create_job_for_step(&self, step_id: &str, job: &JobDbModel) -> Result<()>;
@@ -754,38 +744,6 @@ impl DagRepository for SqlxDagRepository {
             .ok_or_else(|| Error::not_found("DAG execution", id))
     }
 
-    async fn update_dag_status(&self, id: &str, status: &str, error: Option<&str>) -> Result<()> {
-        retry_on_sqlite_busy("update_dag_status", || async {
-            let now = crate::database::time::now_ms();
-            let completed_at = if status == "COMPLETED" || status == "FAILED" {
-                Some(now)
-            } else {
-                None
-            };
-
-            // A terminal DAG is final: neither a late `PROCESSING` write from
-            // `create_dag_pipeline_with_hook` nor a second terminal verdict may overwrite the
-            // `completed_at` and `error` recorded by whichever transition got there first.
-            sqlx::query(
-                r#"
-                UPDATE dag_execution
-                SET status = ?, updated_at = ?, completed_at = COALESCE(?, completed_at), error = ?
-                WHERE id = ?
-                  AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELLED')
-                "#,
-            )
-            .bind(status)
-            .bind(now)
-            .bind(completed_at)
-            .bind(error)
-            .bind(id)
-            .execute(&self.write_pool)
-            .await?;
-            Ok(())
-        })
-        .await
-    }
-
     async fn list_dags(
         &self,
         status: Option<&str>,
@@ -1018,97 +976,6 @@ impl DagRepository for SqlxDagRepository {
         .fetch_all(&self.pool)
         .await?;
         Ok(steps)
-    }
-
-    async fn update_step(&self, step: &DagStepExecutionDbModel) -> Result<()> {
-        retry_on_sqlite_busy("update_step", || async {
-            let now = crate::database::time::now_ms();
-            sqlx::query(
-                r#"
-                UPDATE dag_step_execution
-                SET job_id = ?, status = ?, outputs = ?, updated_at = ?
-                WHERE id = ?
-                "#,
-            )
-            .bind(&step.job_id)
-            .bind(&step.status)
-            .bind(&step.outputs)
-            .bind(now)
-            .bind(&step.id)
-            .execute(&self.write_pool)
-            .await?;
-            Ok(())
-        })
-        .await
-    }
-
-    async fn update_step_status_with_job(
-        &self,
-        id: &str,
-        status: &str,
-        job_id: &str,
-    ) -> Result<()> {
-        retry_on_sqlite_busy("update_step_status_with_job", || async {
-            let now = crate::database::time::now_ms();
-            let updated = sqlx::query(
-                r#"
-                UPDATE dag_step_execution
-                SET status = ?, job_id = ?, updated_at = ?
-                WHERE id = ?
-                  AND job_id IS NULL
-                  AND status IN ('PENDING', 'BLOCKED')
-                  AND (
-                    SELECT status
-                    FROM dag_execution
-                    WHERE id = dag_step_execution.dag_id
-                  ) NOT IN ('COMPLETED', 'FAILED', 'CANCELLED')
-                "#,
-            )
-            .bind(status)
-            .bind(job_id)
-            .bind(now)
-            .bind(id)
-            .execute(&self.write_pool)
-            .await?;
-
-            if updated.rows_affected() == 0 {
-                #[derive(sqlx::FromRow)]
-                struct StepStatusRow {
-                    status: String,
-                    job_id: Option<String>,
-                    dag_id: String,
-                }
-
-                let step = sqlx::query_as::<_, StepStatusRow>(
-                    "SELECT status, job_id, dag_id FROM dag_step_execution WHERE id = ?",
-                )
-                .bind(id)
-                .fetch_optional(&self.pool)
-                .await?;
-
-                let Some(step) = step else {
-                    return Err(Error::not_found("DAG step execution", id));
-                };
-
-                let dag_status: Option<String> =
-                    sqlx::query_scalar("SELECT status FROM dag_execution WHERE id = ?")
-                        .bind(&step.dag_id)
-                        .fetch_optional(&self.pool)
-                        .await?;
-
-                return Err(Error::InvalidStateTransition {
-                    from: format!(
-                        "step_status={}, step_job_id={}, dag_status={}",
-                        step.status,
-                        step.job_id.as_deref().unwrap_or("NULL"),
-                        dag_status.as_deref().unwrap_or("UNKNOWN")
-                    ),
-                    to: format!("{}(job_id={})", status, job_id),
-                });
-            }
-            Ok(())
-        })
-        .await
     }
 
     async fn create_job_for_step(&self, step_id: &str, job: &JobDbModel) -> Result<()> {
@@ -2061,16 +1928,13 @@ mod tests {
         repo.create_dag(&dag).await.unwrap();
 
         let step_a = DagStepExecutionDbModel::new(&dag_id, "A", &[]);
-        let step_b = DagStepExecutionDbModel::new(&dag_id, "B", &["A".to_string()]);
-        let step_b_id = step_b.id.clone();
-
-        repo.create_steps(&[step_a, step_b]).await.unwrap();
+        let mut step_b = DagStepExecutionDbModel::new(&dag_id, "B", &["A".to_string()]);
 
         // Simulate an in-flight job for step B.
         create_job(&pool, "job-b").await;
-        repo.update_step_status_with_job(&step_b_id, "PROCESSING", "job-b")
-            .await
-            .unwrap();
+        step_b.status = "PROCESSING".to_string();
+        step_b.job_id = Some("job-b".to_string());
+        repo.create_steps(&[step_a, step_b]).await.unwrap();
 
         let cancelled = repo
             .fail_dag_and_cancel_steps(&dag_id, "fail-fast")
@@ -2391,9 +2255,11 @@ mod tests {
             "D still waits on C"
         );
 
-        let mut step_c = repo.get_step(&ids["C"]).await.unwrap();
-        step_c.status = "COMPLETED".to_string();
-        repo.update_step(&step_c).await.unwrap();
+        sqlx::query("UPDATE dag_step_execution SET status = 'COMPLETED' WHERE id = ?")
+            .bind(&ids["C"])
+            .execute(&pool)
+            .await
+            .unwrap();
         assert_eq!(
             repo.list_dag_ids_with_unmaterialized_steps().await.unwrap(),
             vec![dag.id.clone()],
