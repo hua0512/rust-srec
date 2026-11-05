@@ -1,25 +1,6 @@
-import {
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-  FormDescription,
-} from '@/components/ui/form';
-import { Input } from '@/components/ui/input';
 import { type RcloneConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
-import { ListInput } from '@/components/ui/list-input';
-import { Card, CardContent } from '@/components/ui/card';
-import { CardHeaderWithIcon } from '@/components/ui/card-header-with-icon';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import {
   Cloud,
   Settings2,
@@ -38,15 +19,67 @@ import {
   ProcessorConfigFormProps,
   useProcessorFieldPath,
 } from './common-props';
-import { ProcessorSubsectionHeader } from './processor-form-layout';
+import {
+  ProcessorListField,
+  ProcessorNumberField,
+  ProcessorSection,
+  ProcessorSelectField,
+  ProcessorSubsectionHeader,
+  ProcessorTextField,
+  TimeAnchorField,
+} from './processor-form-layout';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { FieldHint } from './field-hint';
 import { PLACEHOLDER_TOKENS } from '../../constants';
-import { NumberInput } from '@/components/ui/number-input';
 
 type RcloneConfig = z.infer<typeof RcloneConfigSchema>;
+
+const OPERATIONS = [
+  {
+    value: 'copy',
+    label: (
+      <div className="flex items-center gap-2">
+        <Copy className="h-4 w-4 text-green-400" />
+        <span>
+          <Trans>Copy</Trans>
+        </span>
+        <span className="ml-2 text-xs text-muted-foreground/50">
+          <Trans>(Preserve source)</Trans>
+        </span>
+      </div>
+    ),
+  },
+  {
+    value: 'move',
+    label: (
+      <div className="flex items-center gap-2">
+        <Move className="h-4 w-4 text-orange-400" />
+        <span>
+          <Trans>Move</Trans>
+        </span>
+        <span className="ml-2 text-xs text-muted-foreground/50">
+          <Trans>(Delete source)</Trans>
+        </span>
+      </div>
+    ),
+  },
+  {
+    value: 'sync',
+    label: (
+      <div className="flex items-center gap-2">
+        <RefreshCw className="h-4 w-4 text-blue-400" />
+        <span>
+          <Trans>Sync</Trans>
+        </span>
+        <span className="ml-2 text-xs text-muted-foreground/50">
+          <Trans>(Mirror source)</Trans>
+        </span>
+      </div>
+    ),
+  },
+];
 
 export function RcloneConfigForm({
   control,
@@ -73,673 +106,384 @@ export function RcloneConfigForm({
       </TabsList>
 
       <TabsContent value="general" className="space-y-4">
-        {/* Operation Selection */}
-        <Card className="border-border/50 bg-muted/10 shadow-sm">
-          <CardHeaderWithIcon
-            icon={ArrowRightLeft}
-            title={<Trans>Operation Mode</Trans>}
-            className="border-b border-border/10 bg-muted/5"
-            iconBgClassName="p-1.5 bg-background/50 border border-border/20 shadow-sm"
-            iconClassName="h-4 w-4"
+        <ProcessorSection
+          icon={ArrowRightLeft}
+          iconClassName="text-primary"
+          title={<Trans>Operation Mode</Trans>}
+        >
+          <ProcessorSelectField
+            control={control}
+            name={fieldPath('operation')}
+            label={<Trans>Operation</Trans>}
+            placeholder={i18n._(msg`Select operation`)}
+            description={
+              <Trans>Choose how files are transferred to the remote.</Trans>
+            }
+            options={OPERATIONS}
           />
-          <CardContent className="grid gap-4 pt-4">
-            <FormField
-              control={control}
-              name={fieldPath('operation')}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    <Trans>Operation</Trans>
-                  </FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    value={field.value ?? 'copy'}
-                  >
-                    <FormControl>
-                      <SelectTrigger className="h-11 bg-background/50">
-                        <div className="flex items-center gap-2">
-                          <SelectValue
-                            placeholder={i18n._(msg`Select operation`)}
-                          />
-                        </div>
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="copy">
-                        <div className="flex items-center gap-2">
-                          <Copy className="h-4 w-4 text-green-400" />
-                          <span>
-                            <Trans>Copy</Trans>
-                          </span>
-                          <span className="ml-2 text-xs text-muted-foreground/50">
-                            <Trans>(Preserve source)</Trans>
-                          </span>
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="move">
-                        <div className="flex items-center gap-2">
-                          <Move className="h-4 w-4 text-orange-400" />
-                          <span>
-                            <Trans>Move</Trans>
-                          </span>
-                          <span className="ml-2 text-xs text-muted-foreground/50">
-                            <Trans>(Delete source)</Trans>
-                          </span>
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="sync">
-                        <div className="flex items-center gap-2">
-                          <RefreshCw className="h-4 w-4 text-blue-400" />
-                          <span>
-                            <Trans>Sync</Trans>
-                          </span>
-                          <span className="ml-2 text-xs text-muted-foreground/50">
-                            <Trans>(Mirror source)</Trans>
-                          </span>
-                        </div>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>
-                    <Trans>
-                      Choose how files are transferred to the remote.
-                    </Trans>
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </CardContent>
-        </Card>
+        </ProcessorSection>
 
-        {/* Target Configuration */}
-        <Card className="border-border/50 bg-muted/10 shadow-sm">
-          <CardHeaderWithIcon
-            icon={Cloud}
-            title={<Trans>Target Configuration</Trans>}
-            className="border-b border-border/10 bg-muted/5"
-            iconBgClassName="p-1.5 bg-background/50 border border-border/20 shadow-sm"
-            iconClassName="h-4 w-4"
+        <ProcessorSection
+          icon={Cloud}
+          iconClassName="text-primary"
+          title={<Trans>Target Configuration</Trans>}
+        >
+          <ProcessorTextField
+            control={control}
+            name={fieldPath('destination_root')}
+            label={<Trans>Destination Root</Trans>}
+            hint={
+              <FieldHint label={i18n._(msg`Destination Root help`)}>
+                <p>
+                  <Trans>
+                    Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens
+                    like %Y/%m/%d.
+                  </Trans>
+                </p>
+                <p>
+                  <Trans>
+                    Keep date and time tokens in your filename template when
+                    multiple sessions share one destination folder.
+                  </Trans>
+                </p>
+              </FieldHint>
+            }
+            description={
+              <Trans>
+                Base path for remote storage. Supports metadata and time
+                placeholders.
+              </Trans>
+            }
+            placeholder={i18n._(msg`e.g. gdrive:/videos`)}
+            className="font-mono text-sm"
           />
-          <CardContent className="grid gap-4 pt-4">
-            <FormField
-              control={control}
-              name={fieldPath('destination_root')}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="inline-flex items-center gap-1.5">
-                    <Trans>Destination Root</Trans>
-                    <FieldHint label={i18n._(msg`Destination Root help`)}>
-                      <p>
-                        <Trans>
-                          Supports placeholders: {PLACEHOLDER_TOKENS} and time
-                          tokens like %Y/%m/%d.
-                        </Trans>
-                      </p>
-                      <p>
-                        <Trans>
-                          Keep date and time tokens in your filename template
-                          when multiple sessions share one destination folder.
-                        </Trans>
-                      </p>
-                    </FieldHint>
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder={i18n._(msg`e.g. gdrive:/videos`)}
-                      {...field}
-                      value={field.value ?? ''}
-                      className="h-11 bg-background/50 font-mono text-sm"
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    <Trans>
-                      Base path for remote storage. Supports metadata and time
-                      placeholders.
-                    </Trans>
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={control}
-              name={fieldPath('time_anchor')}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    <Trans>Date placeholder anchor</Trans>
-                  </FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    value={field.value ?? 'job_created'}
-                  >
-                    <FormControl>
-                      <SelectTrigger className="h-11 bg-background/50">
-                        <SelectValue
-                          placeholder={i18n._(msg`Select date anchor`)}
-                        />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      <SelectItem value="job_created">
-                        <Trans>Job creation time (default)</Trans>
-                      </SelectItem>
-                      <SelectItem value="session_start">
-                        <Trans>Stream start time</Trans>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>
-                    <Trans>
-                      Use stream start time to keep a midnight-crossing stream
-                      in one dated folder and group all segments of a session
-                      together.
-                    </Trans>
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={control}
-              name={fieldPath('config_path')}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    <Trans>Config Path (Optional)</Trans>
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder={i18n._(msg`/path/to/rclone.conf`)}
-                      {...field}
-                      value={field.value ?? ''}
-                      className="bg-background/50"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </CardContent>
-        </Card>
+          <TimeAnchorField
+            control={control}
+            name={fieldPath('time_anchor')}
+            description={
+              <Trans>
+                Use stream start time to keep a midnight-crossing stream in one
+                dated folder and group all segments of a session together.
+              </Trans>
+            }
+          />
+          <ProcessorTextField
+            control={control}
+            name={fieldPath('config_path')}
+            label={<Trans>Config Path (Optional)</Trans>}
+            placeholder="/path/to/rclone.conf"
+          />
+        </ProcessorSection>
       </TabsContent>
 
       <TabsContent value="advanced" className="space-y-4">
-        {/* Retry Policy */}
-        <Card className="border-border/50 bg-muted/10 shadow-sm">
-          <CardHeaderWithIcon
-            icon={Settings2}
-            title={<Trans>Retry Policy</Trans>}
-            className="border-b border-border/10 bg-muted/5"
-            iconBgClassName="p-1.5 bg-background/50 border border-border/20 shadow-sm"
-            iconClassName="h-4 w-4"
+        <ProcessorSection
+          icon={Settings2}
+          iconClassName="text-primary"
+          title={<Trans>Retry Policy</Trans>}
+        >
+          <ProcessorNumberField
+            control={control}
+            name={fieldPath('max_retries')}
+            label={<Trans>Max Retries</Trans>}
+            description={
+              <Trans>Number of attempts before failing the upload.</Trans>
+            }
+            min={1}
+            step={1}
+            placeholder="3"
           />
-          <CardContent className="grid gap-4 pt-4">
-            <FormField
-              control={control}
-              name={fieldPath('max_retries')}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    <Trans>Max Retries</Trans>
-                  </FormLabel>
-                  <FormControl>
-                    <NumberInput
-                      field={field}
-                      min={1}
-                      step={1}
-                      placeholder="3"
-                      className="bg-background/50"
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    <Trans>Number of attempts before failing the upload.</Trans>
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </CardContent>
-        </Card>
+        </ProcessorSection>
 
-        {/* Throughput */}
-        <Card className="border-border/50 bg-muted/10 shadow-sm">
-          <CardHeaderWithIcon
-            icon={Gauge}
-            title={<Trans>Throughput</Trans>}
-            className="border-b border-border/10 bg-muted/5"
-            iconBgClassName="p-1.5 bg-background/50 border border-border/20 shadow-sm"
-            iconClassName="h-4 w-4"
-          />
-          <CardContent className="space-y-6 pt-4">
-            {/* Bandwidth */}
+        <ProcessorSection
+          icon={Gauge}
+          iconClassName="text-primary"
+          title={<Trans>Throughput</Trans>}
+        >
+          <div className="space-y-6">
             <div className="space-y-3">
               <ProcessorSubsectionHeader icon={Activity}>
                 <Trans>Bandwidth</Trans>
               </ProcessorSubsectionHeader>
-              <FormField
+              <ProcessorTextField
                 control={control}
                 name={fieldPath('bwlimit')}
-                render={({ field }) => (
-                  <FormItem>
-                    <div className="flex items-center gap-1.5">
-                      <FormLabel>
-                        <Trans>Bandwidth Limit</Trans>
-                      </FormLabel>
-                      <FieldHint label={i18n._(msg`Bandwidth Limit help`)}>
-                        <p>
-                          <Trans>
-                            Units are bytes (default base KiB/s). Use suffixes
-                            B, K, M, G, T, P for larger sizes.
-                          </Trans>
-                        </p>
-                        <p>
-                          <Trans>Examples:</Trans>
-                        </p>
-                        <ul className="list-disc space-y-0.5 pl-4">
-                          <li>
-                            <code>10M</code> —{' '}
-                            <Trans>both directions at 10 MiB/s</Trans>
-                          </li>
-                          <li>
-                            <code>10M:100k</code> —{' '}
-                            <Trans>upload : download (asymmetric)</Trans>
-                          </li>
-                          <li>
-                            <code>08:00,512k 23:00,off</code> —{' '}
-                            <Trans>time-of-day timetable</Trans>
-                          </li>
-                        </ul>
-                        <p className="text-muted-foreground/70">
-                          <Trans>
-                            Tip: 1 Mbit/s ≈ 0.125M (divide bits by 8).
-                          </Trans>
-                        </p>
-                      </FieldHint>
-                    </div>
-                    <FormControl>
-                      <Input
-                        placeholder={i18n._(msg`e.g. 10M`)}
-                        {...field}
-                        value={field.value ?? ''}
-                        className="h-11 bg-background/50 font-mono text-sm"
-                      />
-                    </FormControl>
-                    <FormDescription>
+                label={<Trans>Bandwidth Limit</Trans>}
+                hint={
+                  <FieldHint label={i18n._(msg`Bandwidth Limit help`)}>
+                    <p>
                       <Trans>
-                        Caps overall transfer bandwidth (rclone --bwlimit).
+                        Units are bytes (default base KiB/s). Use suffixes B, K,
+                        M, G, T, P for larger sizes.
                       </Trans>
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                    </p>
+                    <p>
+                      <Trans>Examples:</Trans>
+                    </p>
+                    <ul className="list-disc space-y-0.5 pl-4">
+                      <li>
+                        <code>10M</code> —{' '}
+                        <Trans>both directions at 10 MiB/s</Trans>
+                      </li>
+                      <li>
+                        <code>10M:100k</code> —{' '}
+                        <Trans>upload : download (asymmetric)</Trans>
+                      </li>
+                      <li>
+                        <code>08:00,512k 23:00,off</code> —{' '}
+                        <Trans>time-of-day timetable</Trans>
+                      </li>
+                    </ul>
+                    <p className="text-muted-foreground/70">
+                      <Trans>Tip: 1 Mbit/s ≈ 0.125M (divide bits by 8).</Trans>
+                    </p>
+                  </FieldHint>
+                }
+                description={
+                  <Trans>
+                    Caps overall transfer bandwidth (rclone --bwlimit).
+                  </Trans>
+                }
+                placeholder={i18n._(msg`e.g. 10M`)}
+                className="font-mono text-sm"
               />
-              <FormField
+              <ProcessorTextField
                 control={control}
                 name={fieldPath('bwlimit_file')}
-                render={({ field }) => (
-                  <FormItem>
-                    <div className="flex items-center gap-1.5">
-                      <FormLabel>
-                        <Trans>Per-File Bandwidth Limit</Trans>
-                      </FormLabel>
-                      <FieldHint
-                        label={i18n._(msg`Per-File Bandwidth Limit help`)}
-                      >
-                        <p>
-                          <Trans>
-                            Limits each individual file's transfer rate rather
-                            than the overall total.
-                          </Trans>
-                        </p>
-                        <p>
-                          <Trans>
-                            Composes with Bandwidth Limit — useful to keep one
-                            big file from saturating the whole link while still
-                            allowing many small ones to run in parallel.
-                          </Trans>
-                        </p>
-                      </FieldHint>
-                    </div>
-                    <FormControl>
-                      <Input
-                        placeholder={i18n._(msg`e.g. 1M`)}
-                        {...field}
-                        value={field.value ?? ''}
-                        className="h-11 bg-background/50 font-mono text-sm"
-                      />
-                    </FormControl>
-                    <FormDescription>
+                label={<Trans>Per-File Bandwidth Limit</Trans>}
+                hint={
+                  <FieldHint label={i18n._(msg`Per-File Bandwidth Limit help`)}>
+                    <p>
                       <Trans>
-                        Per-file cap (rclone --bwlimit-file). Same syntax as
-                        Bandwidth Limit; composes with it.
+                        Limits each individual file's transfer rate rather than
+                        the overall total.
                       </Trans>
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                    </p>
+                    <p>
+                      <Trans>
+                        Composes with Bandwidth Limit — useful to keep one big
+                        file from saturating the whole link while still allowing
+                        many small ones to run in parallel.
+                      </Trans>
+                    </p>
+                  </FieldHint>
+                }
+                description={
+                  <Trans>
+                    Per-file cap (rclone --bwlimit-file). Same syntax as
+                    Bandwidth Limit; composes with it.
+                  </Trans>
+                }
+                placeholder={i18n._(msg`e.g. 1M`)}
+                className="font-mono text-sm"
               />
             </div>
 
-            {/* Concurrency */}
             <div className="space-y-3 border-t border-border/30 pt-5">
               <ProcessorSubsectionHeader icon={Layers}>
                 <Trans>Concurrency</Trans>
               </ProcessorSubsectionHeader>
               <div className="grid grid-cols-2 gap-4">
-                <FormField
+                <ProcessorNumberField
                   control={control}
                   name={fieldPath('transfers')}
-                  render={({ field }) => (
-                    <FormItem>
-                      <div className="flex items-center gap-1.5">
-                        <FormLabel>
-                          <Trans>Transfers</Trans>
-                        </FormLabel>
-                        <FieldHint label={i18n._(msg`Transfers help`)}>
-                          <p>
-                            <Trans>
-                              How many files rclone uploads in parallel.
-                            </Trans>
-                          </p>
-                          <p>
-                            <Trans>
-                              Higher = faster on fast connections, but more
-                              aggressive on the remote and your CPU. Increase
-                              only if your network and provider can handle it.
-                            </Trans>
-                          </p>
-                        </FieldHint>
-                      </div>
-                      <FormControl>
-                        <NumberInput
-                          field={field}
-                          min={1}
-                          step={1}
-                          placeholder={i18n._(msg`rclone default: 4`)}
-                          className="bg-background/50"
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        <Trans>Concurrent file transfers (--transfers).</Trans>
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  label={<Trans>Transfers</Trans>}
+                  hint={
+                    <FieldHint label={i18n._(msg`Transfers help`)}>
+                      <p>
+                        <Trans>
+                          How many files rclone uploads in parallel.
+                        </Trans>
+                      </p>
+                      <p>
+                        <Trans>
+                          Higher = faster on fast connections, but more
+                          aggressive on the remote and your CPU. Increase only
+                          if your network and provider can handle it.
+                        </Trans>
+                      </p>
+                    </FieldHint>
+                  }
+                  description={
+                    <Trans>Concurrent file transfers (--transfers).</Trans>
+                  }
+                  min={1}
+                  step={1}
+                  placeholder={i18n._(msg`rclone default: 4`)}
                 />
-                <FormField
+                <ProcessorNumberField
                   control={control}
                   name={fieldPath('checkers')}
-                  render={({ field }) => (
-                    <FormItem>
-                      <div className="flex items-center gap-1.5">
-                        <FormLabel>
-                          <Trans>Checkers</Trans>
-                        </FormLabel>
-                        <FieldHint label={i18n._(msg`Checkers help`)}>
-                          <p>
-                            <Trans>
-                              Parallel integrity checks (e.g. comparing source /
-                              destination hashes).
-                            </Trans>
-                          </p>
-                          <p>
-                            <Trans>
-                              Cheap operations, so the default of 8 is usually
-                              fine. Increase if you have many small files
-                              against a slow remote.
-                            </Trans>
-                          </p>
-                        </FieldHint>
-                      </div>
-                      <FormControl>
-                        <NumberInput
-                          field={field}
-                          min={1}
-                          step={1}
-                          placeholder={i18n._(msg`rclone default: 8`)}
-                          className="bg-background/50"
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        <Trans>Concurrent checkers (--checkers).</Trans>
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                  label={<Trans>Checkers</Trans>}
+                  hint={
+                    <FieldHint label={i18n._(msg`Checkers help`)}>
+                      <p>
+                        <Trans>
+                          Parallel integrity checks (e.g. comparing source /
+                          destination hashes).
+                        </Trans>
+                      </p>
+                      <p>
+                        <Trans>
+                          Cheap operations, so the default of 8 is usually fine.
+                          Increase if you have many small files against a slow
+                          remote.
+                        </Trans>
+                      </p>
+                    </FieldHint>
+                  }
+                  description={<Trans>Concurrent checkers (--checkers).</Trans>}
+                  min={1}
+                  step={1}
+                  placeholder={i18n._(msg`rclone default: 8`)}
                 />
               </div>
             </div>
 
-            {/* Rate Limiting */}
             <div className="space-y-3 border-t border-border/30 pt-5">
               <ProcessorSubsectionHeader icon={Timer}>
                 <Trans>Rate Limiting</Trans>
               </ProcessorSubsectionHeader>
               <div className="grid grid-cols-2 gap-4">
-                <FormField
+                <ProcessorNumberField
                   control={control}
                   name={fieldPath('tpslimit')}
-                  render={({ field }) => (
-                    <FormItem>
-                      <div className="flex items-center gap-1.5">
-                        <FormLabel>
-                          <Trans>TPS Limit</Trans>
-                        </FormLabel>
-                        <FieldHint label={i18n._(msg`TPS Limit help`)}>
-                          <p>
-                            <Trans>
-                              Rate-limits API calls to the remote. Useful when a
-                              provider returns 429 "too many requests" under
-                              heavy load.
-                            </Trans>
-                          </p>
-                          <p>
-                            <Trans>
-                              <code>0</code> means unlimited (rclone default).
-                              Example: set to <code>10</code> if the provider
-                              caps you at 10 requests/second.
-                            </Trans>
-                          </p>
-                        </FieldHint>
-                      </div>
-                      <FormControl>
-                        <NumberInput
-                          field={field}
-                          min={0}
-                          step={0.1}
-                          placeholder={i18n._(msg`0 = unlimited`)}
-                          className="bg-background/50"
-                        />
-                      </FormControl>
-                      <FormDescription>
+                  label={<Trans>TPS Limit</Trans>}
+                  hint={
+                    <FieldHint label={i18n._(msg`TPS Limit help`)}>
+                      <p>
                         <Trans>
-                          Max transactions/second to the remote API
-                          (--tpslimit).
+                          Rate-limits API calls to the remote. Useful when a
+                          provider returns 429 "too many requests" under heavy
+                          load.
                         </Trans>
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                      </p>
+                      <p>
+                        <Trans>
+                          <code>0</code> means unlimited (rclone default).
+                          Example: set to <code>10</code> if the provider caps
+                          you at 10 requests/second.
+                        </Trans>
+                      </p>
+                    </FieldHint>
+                  }
+                  description={
+                    <Trans>
+                      Max transactions/second to the remote API (--tpslimit).
+                    </Trans>
+                  }
+                  min={0}
+                  step={0.1}
+                  placeholder={i18n._(msg`0 = unlimited`)}
                 />
-                <FormField
+                <ProcessorNumberField
                   control={control}
                   name={fieldPath('tpslimit_burst')}
-                  render={({ field }) => (
-                    <FormItem>
-                      <div className="flex items-center gap-1.5">
-                        <FormLabel>
-                          <Trans>TPS Burst</Trans>
-                        </FormLabel>
-                        <FieldHint label={i18n._(msg`TPS Burst help`)}>
-                          <p>
-                            <Trans>
-                              How many requests can briefly burst above TPS
-                              Limit before throttling kicks in.
-                            </Trans>
-                          </p>
-                          <p>
-                            <Trans>
-                              Default is 1 (no burst). Increase if the provider
-                              tolerates short bursts of activity.
-                            </Trans>
-                          </p>
-                        </FieldHint>
-                      </div>
-                      <FormControl>
-                        <NumberInput
-                          field={field}
-                          min={0}
-                          step={1}
-                          placeholder={i18n._(msg`rclone default: 1`)}
-                          className="bg-background/50"
-                        />
-                      </FormControl>
-                      <FormDescription>
+                  label={<Trans>TPS Burst</Trans>}
+                  hint={
+                    <FieldHint label={i18n._(msg`TPS Burst help`)}>
+                      <p>
                         <Trans>
-                          Burst capacity for TPS Limit (--tpslimit-burst).
+                          How many requests can briefly burst above TPS Limit
+                          before throttling kicks in.
                         </Trans>
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                      </p>
+                      <p>
+                        <Trans>
+                          Default is 1 (no burst). Increase if the provider
+                          tolerates short bursts of activity.
+                        </Trans>
+                      </p>
+                    </FieldHint>
+                  }
+                  description={
+                    <Trans>
+                      Burst capacity for TPS Limit (--tpslimit-burst).
+                    </Trans>
+                  }
+                  min={0}
+                  step={1}
+                  placeholder={i18n._(msg`rclone default: 1`)}
                 />
               </div>
             </div>
 
-            {/* Multi-Thread Copy */}
             <div className="space-y-3 border-t border-border/30 pt-5">
               <ProcessorSubsectionHeader icon={Split}>
                 <Trans>Multi-Thread Copy</Trans>
               </ProcessorSubsectionHeader>
               <div className="grid grid-cols-2 gap-4">
-                <FormField
+                <ProcessorNumberField
                   control={control}
                   name={fieldPath('multi_thread_streams')}
-                  render={({ field }) => (
-                    <FormItem>
-                      <div className="flex items-center gap-1.5">
-                        <FormLabel>
-                          <Trans>Streams</Trans>
-                        </FormLabel>
-                        <FieldHint
-                          label={i18n._(msg`Multi-Thread Streams help`)}
-                        >
-                          <p>
-                            <Trans>
-                              Splits a single large file into N parallel chunks
-                              for faster upload.
-                            </Trans>
-                          </p>
-                          <p>
-                            <Trans>
-                              Only kicks in for files above the Cutoff size.
-                              Default is 4. Set to 0 to disable.
-                            </Trans>
-                          </p>
-                        </FieldHint>
-                      </div>
-                      <FormControl>
-                        <NumberInput
-                          field={field}
-                          min={0}
-                          step={1}
-                          placeholder={i18n._(msg`rclone default: 4`)}
-                          className="bg-background/50"
-                        />
-                      </FormControl>
-                      <FormDescription>
+                  label={<Trans>Streams</Trans>}
+                  hint={
+                    <FieldHint label={i18n._(msg`Multi-Thread Streams help`)}>
+                      <p>
                         <Trans>
-                          Streams per file (--multi-thread-streams).
+                          Splits a single large file into N parallel chunks for
+                          faster upload.
                         </Trans>
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                      </p>
+                      <p>
+                        <Trans>
+                          Only kicks in for files above the Cutoff size. Default
+                          is 4. Set to 0 to disable.
+                        </Trans>
+                      </p>
+                    </FieldHint>
+                  }
+                  description={
+                    <Trans>Streams per file (--multi-thread-streams).</Trans>
+                  }
+                  min={0}
+                  step={1}
+                  placeholder={i18n._(msg`rclone default: 4`)}
                 />
-                <FormField
+                <ProcessorTextField
                   control={control}
                   name={fieldPath('multi_thread_cutoff')}
-                  render={({ field }) => (
-                    <FormItem>
-                      <div className="flex items-center gap-1.5">
-                        <FormLabel>
-                          <Trans>Cutoff</Trans>
-                        </FormLabel>
-                        <FieldHint
-                          label={i18n._(msg`Multi-Thread Cutoff help`)}
-                        >
-                          <p>
-                            <Trans>
-                              Files smaller than this stay single-threaded.
-                              Examples: <code>250M</code>, <code>1G</code>.
-                            </Trans>
-                          </p>
-                          <p>
-                            <Trans>
-                              Multi-thread upload only helps on large files; on
-                              small ones the splitting overhead outweighs the
-                              benefit.
-                            </Trans>
-                          </p>
-                        </FieldHint>
-                      </div>
-                      <FormControl>
-                        <Input
-                          placeholder={i18n._(msg`e.g. 250M`)}
-                          {...field}
-                          value={field.value ?? ''}
-                          className="bg-background/50 font-mono text-sm"
-                        />
-                      </FormControl>
-                      <FormDescription>
+                  label={<Trans>Cutoff</Trans>}
+                  hint={
+                    <FieldHint label={i18n._(msg`Multi-Thread Cutoff help`)}>
+                      <p>
                         <Trans>
-                          File size threshold (--multi-thread-cutoff).
+                          Files smaller than this stay single-threaded.
+                          Examples: <code>250M</code>, <code>1G</code>.
                         </Trans>
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
+                      </p>
+                      <p>
+                        <Trans>
+                          Multi-thread upload only helps on large files; on
+                          small ones the splitting overhead outweighs the
+                          benefit.
+                        </Trans>
+                      </p>
+                    </FieldHint>
+                  }
+                  description={
+                    <Trans>File size threshold (--multi-thread-cutoff).</Trans>
+                  }
+                  placeholder={i18n._(msg`e.g. 250M`)}
+                  className="font-mono text-sm"
                 />
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </ProcessorSection>
 
-        {/* Arguments */}
-        <Card className="border-border/50 bg-muted/10 shadow-sm">
-          <CardHeaderWithIcon
-            icon={Terminal}
-            title={<Trans>Extra Arguments</Trans>}
-            className="border-b border-border/10 bg-muted/5"
-            iconBgClassName="p-1.5 bg-background/50 border border-border/20 shadow-sm"
-            iconClassName="h-4 w-4"
+        <ProcessorSection
+          icon={Terminal}
+          iconClassName="text-primary"
+          title={<Trans>Extra Arguments</Trans>}
+        >
+          <ProcessorListField
+            control={control}
+            name={fieldPath('args')}
+            description={<Trans>Double click to edit items.</Trans>}
+            placeholder={i18n._(msg`Add rclone argument`)}
           />
-          <CardContent className="pt-4">
-            <FormField
-              control={control}
-              name={fieldPath('args')}
-              render={({ field }) => (
-                <FormItem>
-                  <FormControl>
-                    <ListInput
-                      value={field.value || []}
-                      onChange={field.onChange}
-                      placeholder={i18n._(msg`Add rclone argument`)}
-                    />
-                  </FormControl>
-                  <FormDescription>
-                    <Trans>Double click to edit items.</Trans>
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </CardContent>
-        </Card>
+        </ProcessorSection>
       </TabsContent>
     </Tabs>
   );

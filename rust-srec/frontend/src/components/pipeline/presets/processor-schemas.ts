@@ -70,7 +70,8 @@ export const RemuxConfigSchema = z.object({
 
 // --- Rclone Processor ---
 const RcloneOperationSchema = z.enum(['copy', 'move', 'sync']);
-const TimeAnchorSchema = z.enum(['job_created', 'session_start']);
+export const TimeAnchorSchema = z.enum(['job_created', 'session_start']);
+export type TimeAnchor = z.infer<typeof TimeAnchorSchema>;
 
 export const RcloneConfigSchema = z.object({
   // Attempts per transfer and destination `mkdir`; see `RcloneConfig` in
@@ -130,8 +131,8 @@ const AudioFormatSchema = z.enum(['mp3', 'aac', 'flac', 'opus']);
 export const AudioExtractConfigSchema = z.object({
   format: AudioFormatSchema.optional(), // If null -> copy
   bitrate: z.string().optional(),
-  sample_rate: z.number().optional(),
-  channels: z.number().optional(),
+  sample_rate: z.number().int().optional(),
+  channels: z.number().int().optional(),
   output_path: z.string().optional(),
   overwrite: z.boolean().default(true),
 });

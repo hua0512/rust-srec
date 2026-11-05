@@ -4,12 +4,10 @@ import {
   FormDescription,
   FormField,
   FormItem,
-  FormLabel,
 } from '@/components/ui/form';
-import { Switch } from '@/components/ui/switch';
 import { Trans } from '@lingui/react/macro';
-import { Zap, Shield, Smartphone, Gamepad2, Monitor } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { FlagFormField } from '@/components/ui/flag-form-field';
+import { Zap, Shield } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EndStreamOnDanmuCloseField } from '@/components/config/shared/end-stream-on-danmu-close-field';
 import {
@@ -37,129 +35,53 @@ export function DouyinConfigFields<TFieldValues extends FieldValues>({
         </ConfigSectionHeading>
 
         <div className="grid gap-6">
-          <FormField
-            control={form.control}
-            name={configPath<TFieldValues>(fieldName, 'force_origin_quality')}
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-center justify-between rounded-2xl border bg-muted/5 p-5 transition-all hover:bg-muted/10 border-border/50">
-                <div className="space-y-1.5 pr-4">
-                  <div className="flex items-center gap-2">
-                    <FormLabel className="text-sm font-bold text-foreground">
-                      <Trans>Force Origin Quality</Trans>
-                    </FormLabel>
-                    <Badge
-                      variant="secondary"
-                      className="text-[10px] h-4 bg-orange-500/10 text-orange-600 border-orange-200 dark:border-orange-500/20 px-1.5 font-bold uppercase tracking-wider"
-                    >
-                      <Trans>Experimental</Trans>
-                    </Badge>
-                  </div>
-                  <FormDescription className="text-xs leading-relaxed font-medium">
-                    <Trans>
-                      Attempts to get origin quality by replacing the audio
-                      stream. May result in audio-only streams if it fails.
-                    </Trans>
-                  </FormDescription>
-                </div>
-                <FormControl>
-                  <Switch
-                    checked={!!field.value}
-                    onCheckedChange={field.onChange}
-                  />
-                </FormControl>
-              </FormItem>
+          <FlagFormField
+            fieldName={configPath<TFieldValues>(
+              fieldName,
+              'force_origin_quality',
             )}
+            title={<Trans>Force Origin Quality</Trans>}
+            description={
+              <Trans>
+                Attempts to get origin quality by replacing the audio stream.
+                May result in audio-only streams if it fails.
+              </Trans>
+            }
+            checked={(value) => !!value}
+            showExperimentalBadge
           />
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FormField
-              control={form.control}
-              name={configPath<TFieldValues>(fieldName, 'double_screen')}
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 bg-background/50 transition-colors hover:bg-muted/5">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-muted text-muted-foreground shrink-0 leading-none">
-                      <Monitor className="w-4 h-4" />
-                    </div>
-                    <div className="space-y-0.5">
-                      <FormLabel className="text-xs font-bold text-foreground">
-                        <Trans>Double Screen Data</Trans>
-                      </FormLabel>
-                      <FormDescription className="text-[10px] leading-tight font-medium">
-                        <Trans>Capture separate stream data.</Trans>
-                      </FormDescription>
-                    </div>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={!!field.value}
-                      onCheckedChange={field.onChange}
-                      className="scale-90"
-                    />
-                  </FormControl>
-                </FormItem>
-              )}
+            <FlagFormField
+              fieldName={configPath<TFieldValues>(fieldName, 'double_screen')}
+              title={<Trans>Double Screen Data</Trans>}
+              description={<Trans>Capture separate stream data.</Trans>}
+              checked={(value) => !!value}
             />
 
-            <FormField
-              control={form.control}
-              name={configPath<TFieldValues>(fieldName, 'force_mobile_api')}
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 bg-background/50 transition-colors hover:bg-muted/5">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-muted text-muted-foreground shrink-0 leading-none">
-                      <Smartphone className="w-4 h-4" />
-                    </div>
-                    <div className="space-y-0.5">
-                      <FormLabel className="text-xs font-bold text-foreground">
-                        <Trans>Force Mobile API</Trans>
-                      </FormLabel>
-                      <FormDescription className="text-[10px] leading-tight font-medium">
-                        <Trans>Use mobile endpoint for extraction.</Trans>
-                      </FormDescription>
-                    </div>
-                  </div>
-                  <FormControl>
-                    <Switch
-                      checked={!!field.value}
-                      onCheckedChange={field.onChange}
-                      className="scale-90"
-                    />
-                  </FormControl>
-                </FormItem>
+            <FlagFormField
+              fieldName={configPath<TFieldValues>(
+                fieldName,
+                'force_mobile_api',
               )}
+              title={<Trans>Force Mobile API</Trans>}
+              description={<Trans>Use mobile endpoint for extraction.</Trans>}
+              checked={(value) => !!value}
             />
           </div>
 
-          <FormField
-            control={form.control}
-            name={configPath<TFieldValues>(fieldName, 'skip_interactive_games')}
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 bg-background/50 transition-colors hover:bg-muted/5">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-muted text-muted-foreground shrink-0 leading-none">
-                    <Gamepad2 className="w-4 h-4" />
-                  </div>
-                  <div className="space-y-0.5">
-                    <FormLabel className="text-xs font-bold text-foreground">
-                      <Trans>Skip Interactive Games</Trans>
-                    </FormLabel>
-                    <FormDescription className="text-[10px] leading-tight font-medium">
-                      <Trans>
-                        Treat interactive game streams (互动玩法) as offline.
-                      </Trans>
-                    </FormDescription>
-                  </div>
-                </div>
-                <FormControl>
-                  <Switch
-                    checked={!!field.value}
-                    onCheckedChange={field.onChange}
-                    className="scale-90"
-                  />
-                </FormControl>
-              </FormItem>
+          <FlagFormField
+            fieldName={configPath<TFieldValues>(
+              fieldName,
+              'skip_interactive_games',
             )}
+            title={<Trans>Skip Interactive Games</Trans>}
+            description={
+              <Trans>
+                Treat interactive game streams (互动玩法) as offline.
+              </Trans>
+            }
+            checked={(value) => !!value}
           />
         </div>
       </section>

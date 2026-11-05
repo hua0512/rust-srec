@@ -345,9 +345,10 @@ describe.each<Editor>(['preset', 'workflow'])(
 );
 
 describe('Preset editor', () => {
-  // A saved config holds only what was set: optional fields left blank are absent.
+  // A saved config holds only what was set: optional fields left blank are absent. The remux
+  // one also keeps Web Optimize on for a container it does not apply to.
   it.each<[string, Record<string, unknown>]>([
-    ['remux', { video_codec: 'copy', audio_codec: 'copy' }],
+    ['remux', { format: 'mkv', faststart: true }],
     ['rclone', {}],
     ['baidupcs', {}],
     ['thumbnail', {}],

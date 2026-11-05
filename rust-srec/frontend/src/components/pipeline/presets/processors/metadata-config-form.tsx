@@ -1,20 +1,16 @@
 import { Trans } from '@lingui/react/macro';
-import {
-  FormField,
-  FormItem,
-  FormLabel,
-  FormControl,
-  FormMessage,
-  FormDescription,
-} from '@/components/ui/form';
+import { FlagFormField } from '@/components/ui/flag-form-field';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import {
   ProcessorConfigFormProps,
   useProcessorFieldPath,
 } from './common-props';
-import { ProcessorFormShell, ProcessorSection } from './processor-form-layout';
+import {
+  ProcessorFormShell,
+  ProcessorSection,
+  ProcessorTextField,
+} from './processor-form-layout';
 import { MetadataConfigSchema } from '../processor-schemas';
 import { z } from 'zod';
 import { useEffect, useRef, useState } from 'react';
@@ -179,100 +175,36 @@ export function MetadataConfigForm({
           title={<Trans>Track Information</Trans>}
         >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <FormField
+            <ProcessorTextField
               control={control}
               name={fieldPath('artist')}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs text-muted-foreground ml-1">
-                    <Trans>Artist</Trans>
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg"
-                      placeholder={i18n._(msg`Artist`)}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+              label={<Trans>Artist</Trans>}
+              placeholder={i18n._(msg`Artist`)}
             />
-            <FormField
+            <ProcessorTextField
               control={control}
               name={fieldPath('title')}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs text-muted-foreground ml-1">
-                    <Trans>Title</Trans>
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg"
-                      placeholder={i18n._(msg`Title`)}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+              label={<Trans>Title</Trans>}
+              placeholder={i18n._(msg`Title`)}
             />
-            <FormField
+            <ProcessorTextField
               control={control}
               name={fieldPath('album')}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs text-muted-foreground ml-1">
-                    <Trans>Album</Trans>
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+              label={<Trans>Album</Trans>}
             />
-            <FormField
+            <ProcessorTextField
               control={control}
               name={fieldPath('date')}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-xs text-muted-foreground ml-1">
-                    <Trans>Date</Trans>
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg"
-                      placeholder={i18n._(msg`YYYY-MM-DD`)}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+              label={<Trans>Date</Trans>}
+              placeholder={i18n._(msg`YYYY-MM-DD`)}
             />
-
-            <FormField
-              control={control}
-              name={fieldPath('comment')}
-              render={({ field }) => (
-                <FormItem className="col-span-1 md:col-span-2">
-                  <FormLabel className="text-xs text-muted-foreground ml-1">
-                    <Trans>Comment</Trans>
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      className="h-11 bg-background/50 border-border/50 focus:bg-background rounded-lg"
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="md:col-span-2">
+              <ProcessorTextField
+                control={control}
+                name={fieldPath('comment')}
+                label={<Trans>Comment</Trans>}
+              />
+            </div>
           </div>
         </ProcessorSection>
 
@@ -291,52 +223,17 @@ export function MetadataConfigForm({
           iconClassName="text-gray-500"
           title={<Trans>File Operations</Trans>}
         >
-          <FormField
-            control={control}
-            name={fieldPath('overwrite')}
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 shadow-sm bg-muted/10 transition-colors hover:bg-muted/20">
-                <div className="space-y-1">
-                  <FormLabel className="text-sm font-medium">
-                    <Trans>Overwrite</Trans>
-                  </FormLabel>
-                  <FormDescription className="text-xs">
-                    <Trans>Overwrite existing files</Trans>
-                  </FormDescription>
-                </div>
-                <FormControl>
-                  <Switch
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                  />
-                </FormControl>
-              </FormItem>
-            )}
+          <FlagFormField
+            fieldName={fieldPath('overwrite')}
+            title={<Trans>Overwrite</Trans>}
+            description={<Trans>Overwrite existing files</Trans>}
           />
-
-          <FormField
-            control={control}
-            name={fieldPath('remove_input_on_success')}
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 shadow-sm bg-muted/10 transition-colors hover:bg-muted/20">
-                <div className="space-y-1">
-                  <FormLabel className="text-sm font-medium">
-                    <Trans>Remove source on success</Trans>
-                  </FormLabel>
-                  <FormDescription className="text-xs">
-                    <Trans>
-                      Delete source file after successful processing
-                    </Trans>
-                  </FormDescription>
-                </div>
-                <FormControl>
-                  <Switch
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                  />
-                </FormControl>
-              </FormItem>
-            )}
+          <FlagFormField
+            fieldName={fieldPath('remove_input_on_success')}
+            title={<Trans>Remove source on success</Trans>}
+            description={
+              <Trans>Delete source file after successful processing</Trans>
+            }
           />
         </ProcessorSection>
       </div>

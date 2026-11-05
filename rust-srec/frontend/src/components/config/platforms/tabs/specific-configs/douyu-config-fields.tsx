@@ -5,14 +5,13 @@ import {
   FormDescription,
   FormField,
   FormItem,
-  FormLabel,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Trans } from '@lingui/react/macro';
+import { FlagFormField } from '@/components/ui/flag-form-field';
 import { cn } from '@/lib/utils';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
-import { Switch } from '@/components/ui/switch';
 import { Zap, Cloud, Gamepad2, RotateCcw } from 'lucide-react';
 import { DouyuQualityCombobox } from './douyu-quality-combobox';
 import {
@@ -316,34 +315,19 @@ export function DouyuConfigFields<TFieldValues extends FieldValues>({
         </ConfigSectionHeading>
 
         <div className="grid gap-6">
-          <FormField
-            control={form.control}
-            name={configPath<TFieldValues>(
+          <FlagFormField
+            fieldName={configPath<TFieldValues>(
               fieldName,
               'disable_interactive_game',
             )}
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 bg-background/50 transition-colors hover:bg-muted/5">
-                <div className="space-y-0.5">
-                  <FormLabel className="text-xs font-bold text-foreground">
-                    <Trans>Filter Interactive Games</Trans>
-                  </FormLabel>
-                  <FormDescription className="text-[10px] leading-tight font-medium text-muted-foreground/80">
-                    <Trans>
-                      Treat interactive games as offline platforms during
-                      extraction checks.
-                    </Trans>
-                  </FormDescription>
-                </div>
-                <FormControl>
-                  <Switch
-                    checked={!!field.value}
-                    onCheckedChange={field.onChange}
-                    className="scale-90"
-                  />
-                </FormControl>
-              </FormItem>
-            )}
+            title={<Trans>Filter Interactive Games</Trans>}
+            description={
+              <Trans>
+                Treat interactive games as offline platforms during extraction
+                checks.
+              </Trans>
+            }
+            checked={(value) => !!value}
           />
 
           <FormField
