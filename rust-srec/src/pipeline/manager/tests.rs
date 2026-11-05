@@ -3380,3 +3380,43 @@ async fn test_drain_for_session_counts_a_commanded_segment_dag_before_it_starts(
         SessionDrain::Drained
     );
 }
+
+/// Queue notifications report the threshold the queue was configured with, so channels
+/// do not quote a level that differs from the one that fired.
+#[tokio::test]
+async fn queue_depth_events_carry_configured_thresholds() {
+    let config = PipelineManagerConfig {
+        job_queue: JobQueueConfig {
+            warning_threshold: 1,
+            critical_threshold: 2,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let manager: PipelineManager = PipelineManager::with_repository(
+        config,
+        crate::database::test_support::job_repository().await,
+    );
+    let mut events = manager.subscribe();
+
+    for _ in 0..2 {
+        manager
+            .enqueue(Job::new("remux", vec![], vec![], "streamer", "session"))
+            .await
+            .unwrap();
+    }
+
+    let mut queue_events = Vec::new();
+    while let Ok(event) = events.try_recv() {
+        match event {
+            PipelineEvent::QueueWarning { depth, threshold } => {
+                queue_events.push(("warning", depth, threshold))
+            }
+            PipelineEvent::QueueCritical { depth, threshold } => {
+                queue_events.push(("critical", depth, threshold))
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(queue_events, [("warning", 1, 1), ("critical", 2, 2)]);
+}

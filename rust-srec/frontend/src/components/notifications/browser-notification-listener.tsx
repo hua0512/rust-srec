@@ -77,8 +77,6 @@ export function formatBrowserNotification(
   if (platform) bodyParts.push(platform);
   // Names the output folder that cannot be written.
   if (path) bodyParts.push(path);
-  // The queue event's `threshold` is not the configured alert level, so only
-  // the queue length is shown.
   if (typeof fields.queue_depth === 'number') {
     const queued = fields.queue_depth;
     bodyParts.push(i18n._(msg`${queued} jobs queued`));

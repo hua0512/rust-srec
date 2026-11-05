@@ -74,9 +74,9 @@ fn pipeline_mapping_prefers_explicit_identity_and_forgets_each_terminal_job() {
         );
     }
     assert!(
-        matches!(mapper.map(PipelineEvent::QueueWarning { depth: 123 }, source), Some(NotificationEvent::PipelineQueueWarning { queue_depth: 123, threshold: 100, timestamp }) if timestamp == source)
+        matches!(mapper.map(PipelineEvent::QueueWarning { depth: 123, threshold: 120 }, source), Some(NotificationEvent::PipelineQueueWarning { queue_depth: 123, threshold: 120, timestamp }) if timestamp == source)
     );
     assert!(
-        matches!(mapper.map(PipelineEvent::QueueCritical { depth: 234 }, source), Some(NotificationEvent::PipelineQueueCritical { queue_depth: 234, threshold: 200, timestamp }) if timestamp == source)
+        matches!(mapper.map(PipelineEvent::QueueCritical { depth: 234, threshold: 230 }, source), Some(NotificationEvent::PipelineQueueCritical { queue_depth: 234, threshold: 230, timestamp }) if timestamp == source)
     );
 }

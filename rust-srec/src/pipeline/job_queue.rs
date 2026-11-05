@@ -2545,6 +2545,11 @@ impl JobQueue {
             });
     }
 
+    /// The depth thresholds and other settings this queue was built with.
+    pub fn config(&self) -> &JobQueueConfig {
+        &self.config
+    }
+
     /// Get the queue depth status.
     pub fn depth_status(&self) -> QueueDepthStatus {
         let depth = self.depth();
