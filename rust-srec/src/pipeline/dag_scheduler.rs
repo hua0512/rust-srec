@@ -351,12 +351,23 @@ impl DagScheduler {
         if !dag.get_status().is_some_and(|status| status.is_terminal()) {
             return None;
         }
+        let leaf_outputs = self
+            .collect_leaf_outputs(dag)
+            .await
+            .unwrap_or_else(|error| {
+                warn!(
+                    dag_id = %dag.id,
+                    error = %error,
+                    "Failed to collect DAG leaf outputs; reporting completion without them"
+                );
+                Vec::new()
+            });
         Some(DagCompletionInfo {
             dag_id: dag.id.clone(),
             streamer_id: dag.streamer_id.clone(),
             session_id: dag.session_id.clone(),
             succeeded,
-            leaf_outputs: self.collect_leaf_outputs(dag).await.unwrap_or_default(),
+            leaf_outputs,
         })
     }
 

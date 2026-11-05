@@ -26,8 +26,8 @@ use super::outputs::TempOutputGuard;
 use super::traits::{
     Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, TimeAnchor,
 };
-use super::utils::create_log_entry;
 use crate::Result;
+use crate::pipeline::job_queue::JobLogEntry;
 use crate::pipeline::progress::{
     JobProgressSnapshot, ProgressKind, ProgressReporter, progress_file_name,
 };
@@ -421,10 +421,7 @@ impl Processor for CopyMoveProcessor {
             if config.create_dirs {
                 let log_msg = format!("Creating destination directory: {}", dest_dir);
                 debug!("{}", log_msg);
-                logs.push(create_log_entry(
-                    crate::pipeline::job_queue::LogLevel::Debug,
-                    log_msg,
-                ));
+                logs.push(JobLogEntry::debug(log_msg));
 
                 crate::utils::fs::ensure_dir_all_with_op(
                     "creating destination directory",
@@ -499,10 +496,7 @@ impl Processor for CopyMoveProcessor {
             {
                 let msg = format!("Skipping excluded input: {}", source_path);
                 debug!("{}", msg);
-                logs.push(create_log_entry(
-                    crate::pipeline::job_queue::LogLevel::Debug,
-                    msg,
-                ));
+                logs.push(JobLogEntry::debug(msg));
                 skipped_inputs.push((source_path.clone(), "excluded".to_string()));
                 continue;
             }
@@ -513,10 +507,7 @@ impl Processor for CopyMoveProcessor {
             let Some(filename) = source.file_name() else {
                 let error_msg = format!("Failed to get filename from source: {}", source_path);
                 error!("{}", error_msg);
-                logs.push(create_log_entry(
-                    crate::pipeline::job_queue::LogLevel::Error,
-                    &error_msg,
-                ));
+                logs.push(JobLogEntry::error(&error_msg));
                 failed_inputs.push((source_path.clone(), error_msg));
                 continue;
             };
@@ -526,10 +517,7 @@ impl Processor for CopyMoveProcessor {
             {
                 let msg = format!("Skipping excluded input: {}", source_path);
                 debug!("{}", msg);
-                logs.push(create_log_entry(
-                    crate::pipeline::job_queue::LogLevel::Debug,
-                    msg,
-                ));
+                logs.push(JobLogEntry::debug(msg));
                 skipped_inputs.push((source_path.clone(), "excluded".to_string()));
                 continue;
             }
@@ -551,10 +539,7 @@ impl Processor for CopyMoveProcessor {
                 dest.display()
             );
             info!("{}", log_msg);
-            logs.push(create_log_entry(
-                crate::pipeline::job_queue::LogLevel::Info,
-                log_msg,
-            ));
+            logs.push(JobLogEntry::info(log_msg));
 
             // Get source file size (also validates existence)
             let source_size = match fs::metadata(source).await {
@@ -581,10 +566,7 @@ impl Processor for CopyMoveProcessor {
                             dest.display()
                         );
                         info!("{}", msg);
-                        logs.push(create_log_entry(
-                            crate::pipeline::job_queue::LogLevel::Info,
-                            msg,
-                        ));
+                        logs.push(JobLogEntry::info(msg));
                         let dest_path = dest.to_string_lossy().into_owned();
                         total_input_size += dest_meta.len();
                         total_output_size += dest_meta.len();
@@ -596,20 +578,14 @@ impl Processor for CopyMoveProcessor {
 
                     let error_msg = format!("Source file does not exist: {}", source_path);
                     error!("{}", error_msg);
-                    logs.push(create_log_entry(
-                        crate::pipeline::job_queue::LogLevel::Error,
-                        &error_msg,
-                    ));
+                    logs.push(JobLogEntry::error(&error_msg));
                     failed_inputs.push((source_path.clone(), error_msg));
                     continue;
                 }
                 Err(e) => {
                     let error_msg = format!("Failed to get source file metadata: {}", e);
                     error!("{}", error_msg);
-                    logs.push(create_log_entry(
-                        crate::pipeline::job_queue::LogLevel::Error,
-                        &error_msg,
-                    ));
+                    logs.push(JobLogEntry::error(&error_msg));
                     failed_inputs.push((source_path.clone(), error_msg));
                     continue;
                 }
@@ -645,10 +621,7 @@ impl Processor for CopyMoveProcessor {
                             e
                         );
                         error!("{}", error_msg);
-                        logs.push(create_log_entry(
-                            crate::pipeline::job_queue::LogLevel::Error,
-                            &error_msg,
-                        ));
+                        logs.push(JobLogEntry::error(&error_msg));
                         failed_inputs.push((source_path.clone(), error_msg));
                         continue;
                     }
@@ -659,10 +632,7 @@ impl Processor for CopyMoveProcessor {
                             e
                         );
                         error!("{}", error_msg);
-                        logs.push(create_log_entry(
-                            crate::pipeline::job_queue::LogLevel::Error,
-                            &error_msg,
-                        ));
+                        logs.push(JobLogEntry::error(&error_msg));
                         failed_inputs.push((source_path.clone(), error_msg));
                         continue;
                     }
@@ -677,10 +647,7 @@ impl Processor for CopyMoveProcessor {
                         e
                     );
                     error!("{}", error_msg);
-                    logs.push(create_log_entry(
-                        crate::pipeline::job_queue::LogLevel::Error,
-                        &error_msg,
-                    ));
+                    logs.push(JobLogEntry::error(&error_msg));
                     failed_inputs.push((source_path.clone(), error_msg));
                     continue;
                 }
@@ -696,10 +663,7 @@ impl Processor for CopyMoveProcessor {
                     )
                 };
                 info!("{}", msg);
-                logs.push(create_log_entry(
-                    crate::pipeline::job_queue::LogLevel::Info,
-                    msg,
-                ));
+                logs.push(JobLogEntry::info(msg));
                 let dest_path = dest.to_string_lossy().into_owned();
                 total_input_size += source_size;
                 total_output_size += dest_meta.len();
@@ -718,10 +682,7 @@ impl Processor for CopyMoveProcessor {
                             dest.display()
                         );
                         error!("{}", error_msg);
-                        logs.push(create_log_entry(
-                            crate::pipeline::job_queue::LogLevel::Error,
-                            &error_msg,
-                        ));
+                        logs.push(JobLogEntry::error(&error_msg));
                         failed_inputs.push((source_path.clone(), error_msg));
                         continue;
                     }
@@ -730,10 +691,7 @@ impl Processor for CopyMoveProcessor {
                         let error_msg =
                             format!("Failed to check destination file existence: {}", e);
                         error!("{}", error_msg);
-                        logs.push(create_log_entry(
-                            crate::pipeline::job_queue::LogLevel::Error,
-                            &error_msg,
-                        ));
+                        logs.push(JobLogEntry::error(&error_msg));
                         failed_inputs.push((source_path.clone(), error_msg));
                         continue;
                     }
@@ -757,10 +715,7 @@ impl Processor for CopyMoveProcessor {
                         Ok(bytes) => bytes,
                         Err(error_msg) => {
                             error!("{}", error_msg);
-                            logs.push(create_log_entry(
-                                crate::pipeline::job_queue::LogLevel::Error,
-                                &error_msg,
-                            ));
+                            logs.push(JobLogEntry::error(&error_msg));
                             failed_inputs.push((source_path.clone(), error_msg));
                             continue;
                         }
@@ -778,10 +733,7 @@ impl Processor for CopyMoveProcessor {
                                     e
                                 );
                                 error!("{}", error_msg);
-                                logs.push(create_log_entry(
-                                    crate::pipeline::job_queue::LogLevel::Error,
-                                    &error_msg,
-                                ));
+                                logs.push(JobLogEntry::error(&error_msg));
                                 failed_inputs.push((source_path.clone(), error_msg));
                                 continue;
                             }
@@ -789,10 +741,7 @@ impl Processor for CopyMoveProcessor {
                             if let Err(e) = fs::rename(source, &dest).await {
                                 let error_msg = format!("Failed to move file: {}", e);
                                 error!("{}", error_msg);
-                                logs.push(create_log_entry(
-                                    crate::pipeline::job_queue::LogLevel::Error,
-                                    &error_msg,
-                                ));
+                                logs.push(JobLogEntry::error(&error_msg));
                                 failed_inputs.push((source_path.clone(), error_msg));
                                 continue;
                             }
@@ -815,10 +764,7 @@ impl Processor for CopyMoveProcessor {
                                 Ok(bytes) => bytes,
                                 Err(error_msg) => {
                                     error!("{}", error_msg);
-                                    logs.push(create_log_entry(
-                                        crate::pipeline::job_queue::LogLevel::Error,
-                                        &error_msg,
-                                    ));
+                                    logs.push(JobLogEntry::error(&error_msg));
                                     failed_inputs.push((source_path.clone(), error_msg));
                                     continue;
                                 }
@@ -828,10 +774,7 @@ impl Processor for CopyMoveProcessor {
                                 let error_msg =
                                     format!("Failed to remove source file after move: {}", e);
                                 error!("{}", error_msg);
-                                logs.push(create_log_entry(
-                                    crate::pipeline::job_queue::LogLevel::Error,
-                                    error_msg,
-                                ));
+                                logs.push(JobLogEntry::error(error_msg));
                                 // Don't mark as failed since copy succeeded
                             }
 
@@ -840,10 +783,7 @@ impl Processor for CopyMoveProcessor {
                         Err(e) => {
                             let error_msg = format!("Failed to move file: {}", e);
                             error!("{}", error_msg);
-                            logs.push(create_log_entry(
-                                crate::pipeline::job_queue::LogLevel::Error,
-                                &error_msg,
-                            ));
+                            logs.push(JobLogEntry::error(&error_msg));
                             failed_inputs.push((source_path.clone(), error_msg));
                             continue;
                         }
@@ -876,10 +816,7 @@ impl Processor for CopyMoveProcessor {
             skipped_inputs.len()
         );
         info!("{}", success_msg);
-        logs.push(create_log_entry(
-            crate::pipeline::job_queue::LogLevel::Info,
-            success_msg,
-        ));
+        logs.push(JobLogEntry::info(success_msg));
 
         // If all inputs failed, return error
         if succeeded_inputs.is_empty() && !failed_inputs.is_empty() {

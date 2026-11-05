@@ -234,11 +234,6 @@ fn push_log_with_cap(
     logs.push_back(entry);
 }
 
-/// Helper function to create a log entry.
-pub fn create_log_entry(level: LogLevel, message: impl Into<String>) -> JobLogEntry {
-    JobLogEntry::new(level, message)
-}
-
 /// Line reader over a child process stream holding at most `MAX_LINE_BYTES`
 /// of an unterminated line: once a line crosses the cap its buffered prefix
 /// is dropped, input is discarded up to the next newline, and reading
@@ -451,7 +446,7 @@ async fn consume_command_stream<R: AsyncRead + Unpin>(
         if matches!(&context.mode, CommandMode::Plain) {
             debug!(stdout, %line, "Command output");
         }
-        if context.tx.try_send(create_log_entry(level, line)).is_err() {
+        if context.tx.try_send(JobLogEntry::new(level, line)).is_err() {
             context.dropped_count.fetch_add(1, Ordering::Relaxed);
         }
     }
@@ -958,13 +953,13 @@ fn parse_rclone_line(line: &str) -> ParsedRcloneLine {
             Some(msg) if !msg.is_empty() => msg,
             _ => trimmed.to_string(),
         };
-        return ParsedRcloneLine::Log(create_log_entry(level, message));
+        return ParsedRcloneLine::Log(JobLogEntry::new(level, message));
     }
 
     if let Some(snapshot) = parse_rclone_stats_line(line) {
         return ParsedRcloneLine::Progress(snapshot);
     }
-    ParsedRcloneLine::Log(create_log_entry(determine_rclone_log_level(line), line))
+    ParsedRcloneLine::Log(JobLogEntry::new(determine_rclone_log_level(line), line))
 }
 
 /// Determine log level from an FFmpeg stderr line.
@@ -1147,7 +1142,7 @@ async fn consume_baidupcs_stream<R: AsyncRead + Unpin>(
             }) {
                 last_noise = Some(now);
                 if let Some(sink) = &noise_sink {
-                    sink.try_send(create_log_entry(LogLevel::Info, bar));
+                    sink.try_send(JobLogEntry::info(bar));
                 }
             }
         }
@@ -1158,7 +1153,7 @@ async fn consume_baidupcs_stream<R: AsyncRead + Unpin>(
             tracker.record_line(line);
         }
         let level = determine_baidupcs_log_level(line);
-        if tx.try_send(create_log_entry(level, line)).is_err() {
+        if tx.try_send(JobLogEntry::new(level, line)).is_err() {
             dropped_count.fetch_add(1, Ordering::Relaxed);
         }
     }

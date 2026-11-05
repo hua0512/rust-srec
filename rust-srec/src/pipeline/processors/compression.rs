@@ -20,8 +20,9 @@ use zip::write::SimpleFileOptions;
 
 use super::outputs::OutputBatch;
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
-use super::utils::{create_log_entry, parse_config_or_default};
+use super::utils::parse_config_or_default;
 use crate::Result;
+use crate::pipeline::job_queue::JobLogEntry;
 use crate::pipeline::progress::{
     JobProgressSnapshot, ProgressKind, ProgressReporter, progress_file_name,
 };
@@ -563,10 +564,7 @@ impl Processor for CompressionProcessor {
         if input.inputs.is_empty() {
             let msg = "No input files specified for compression".to_string();
             error!("{}", msg);
-            logs.push(create_log_entry(
-                crate::pipeline::job_queue::LogLevel::Error,
-                msg.clone(),
-            ));
+            logs.push(JobLogEntry::error(msg.clone()));
             return Err(crate::Error::PipelineError(msg));
         }
 
@@ -592,10 +590,7 @@ impl Processor for CompressionProcessor {
                 output_path.display()
             );
             error!("{}", msg);
-            logs.push(create_log_entry(
-                crate::pipeline::job_queue::LogLevel::Error,
-                msg.clone(),
-            ));
+            logs.push(JobLogEntry::error(msg.clone()));
             return Err(crate::Error::PipelineError(msg));
         }
 
@@ -610,10 +605,7 @@ impl Processor for CompressionProcessor {
                 let msg = format!(
                     "Inputs {earlier} and {input_path} would both be stored as {entry} in the archive; enable preserve_paths or rename one of them"
                 );
-                logs.push(create_log_entry(
-                    crate::pipeline::job_queue::LogLevel::Error,
-                    msg.clone(),
-                ));
+                logs.push(JobLogEntry::error(msg.clone()));
                 return Err(crate::Error::PipelineError(msg));
             }
         }
@@ -625,10 +617,7 @@ impl Processor for CompressionProcessor {
             output_path_str
         );
         info!("{}", start_msg);
-        logs.push(create_log_entry(
-            crate::pipeline::job_queue::LogLevel::Info,
-            start_msg,
-        ));
+        logs.push(JobLogEntry::info(start_msg));
 
         // The archive is written to a staged temp and published by the shared
         // batch, whose no-replace promotion cannot overwrite a file that appeared
@@ -684,10 +673,10 @@ impl Processor for CompressionProcessor {
 
         // Add detailed logs for inputs
         for input in &input.inputs {
-            logs.push(create_log_entry(
-                crate::pipeline::job_queue::LogLevel::Debug,
-                format!("Added file to archive: {}", input),
-            ));
+            logs.push(JobLogEntry::debug(format!(
+                "Added file to archive: {}",
+                input
+            )));
         }
 
         let (total_input_size, output_size) = match result {
@@ -695,10 +684,7 @@ impl Processor for CompressionProcessor {
             Err(e) => {
                 let msg = format!("Compression failed: {}", e);
                 error!("{}", msg);
-                logs.push(create_log_entry(
-                    crate::pipeline::job_queue::LogLevel::Error,
-                    msg,
-                ));
+                logs.push(JobLogEntry::error(msg));
                 // Dropping the batch removes the staged archive.
                 return Err(e);
             }
@@ -716,10 +702,7 @@ impl Processor for CompressionProcessor {
             compression_ratio
         );
         info!("{}", complete_msg);
-        logs.push(create_log_entry(
-            crate::pipeline::job_queue::LogLevel::Info,
-            complete_msg,
-        ));
+        logs.push(JobLogEntry::info(complete_msg));
 
         Ok(ProcessorOutput {
             outputs: vec![output_path_str.clone()],

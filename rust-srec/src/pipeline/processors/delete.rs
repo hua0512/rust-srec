@@ -11,8 +11,9 @@ use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
 use super::traits::{Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType};
-use super::utils::{create_log_entry, parse_config_or_default};
+use super::utils::parse_config_or_default;
 use crate::Result;
+use crate::pipeline::job_queue::JobLogEntry;
 
 /// Default maximum retry attempts for locked files.
 fn default_max_retries() -> u32 {
@@ -90,10 +91,7 @@ impl DeleteProcessor {
                             attempt, path
                         );
                         debug!("{}", msg);
-                        logs.push(create_log_entry(
-                            crate::pipeline::job_queue::LogLevel::Debug,
-                            msg,
-                        ));
+                        logs.push(JobLogEntry::debug(msg));
                     }
                     return Ok(());
                 }
@@ -109,10 +107,7 @@ impl DeleteProcessor {
                             path
                         );
                         warn!("{}", msg);
-                        logs.push(create_log_entry(
-                            crate::pipeline::job_queue::LogLevel::Warn,
-                            msg,
-                        ));
+                        logs.push(JobLogEntry::warn(msg));
 
                         sleep(delay).await;
                         last_error = Some(e);
@@ -178,10 +173,7 @@ impl Processor for DeleteProcessor {
 
             let start_msg = format!("Deleting file: {}", file_path);
             info!("{}", start_msg);
-            logs.push(create_log_entry(
-                crate::pipeline::job_queue::LogLevel::Info,
-                start_msg,
-            ));
+            logs.push(JobLogEntry::info(start_msg));
 
             let exists = fs::try_exists(path)
                 .await
@@ -192,10 +184,7 @@ impl Processor for DeleteProcessor {
                     file_path
                 );
                 warn!("{}", msg);
-                logs.push(create_log_entry(
-                    crate::pipeline::job_queue::LogLevel::Warn,
-                    msg,
-                ));
+                logs.push(JobLogEntry::warn(msg));
 
                 let duration = start.elapsed().as_secs_f64();
                 return Ok(ProcessorOutput {
@@ -232,10 +221,7 @@ impl Processor for DeleteProcessor {
                         duration, file_path
                     );
                     info!("{}", msg);
-                    logs.push(create_log_entry(
-                        crate::pipeline::job_queue::LogLevel::Info,
-                        msg,
-                    ));
+                    logs.push(JobLogEntry::info(msg));
 
                     Ok(ProcessorOutput {
                         outputs: vec![],
@@ -264,10 +250,7 @@ impl Processor for DeleteProcessor {
                         config.max_retries, file_path, error
                     );
                     error!("{}", err_detail); // Log error for backend
-                    logs.push(create_log_entry(
-                        crate::pipeline::job_queue::LogLevel::Error,
-                        err_detail.clone(),
-                    ));
+                    logs.push(JobLogEntry::error(err_detail.clone()));
 
                     Err(crate::Error::PipelineError(err_detail))
                 }
@@ -280,10 +263,7 @@ impl Processor for DeleteProcessor {
         // batches (session-complete can include many files).
         let start_msg = format!("Deleting {} files", input.inputs.len());
         info!("{}", start_msg);
-        logs.push(create_log_entry(
-            crate::pipeline::job_queue::LogLevel::Info,
-            start_msg,
-        ));
+        logs.push(JobLogEntry::info(start_msg));
 
         let mut succeeded = 0usize;
         let mut skipped_missing = 0usize;
@@ -301,10 +281,7 @@ impl Processor for DeleteProcessor {
                     let error = crate::Error::io_path("try_exists", path, error);
                     let msg = format!("Failed to check file: {}: {}", file_path, error);
                     warn!("{}", msg);
-                    logs.push(create_log_entry(
-                        crate::pipeline::job_queue::LogLevel::Error,
-                        msg,
-                    ));
+                    logs.push(JobLogEntry::error(msg));
                     failed.push((file_path.clone(), error.to_string()));
                     continue;
                 }
@@ -313,10 +290,7 @@ impl Processor for DeleteProcessor {
                 skipped_missing = skipped_missing.saturating_add(1);
                 let msg = format!("File does not exist, skipping: {}", file_path);
                 warn!("{}", msg);
-                logs.push(create_log_entry(
-                    crate::pipeline::job_queue::LogLevel::Warn,
-                    msg,
-                ));
+                logs.push(JobLogEntry::warn(msg));
                 continue;
             }
 
@@ -377,10 +351,7 @@ impl Processor for DeleteProcessor {
             }
 
             error!("{}", msg);
-            logs.push(create_log_entry(
-                crate::pipeline::job_queue::LogLevel::Error,
-                msg.clone(),
-            ));
+            logs.push(JobLogEntry::error(msg.clone()));
             Err(crate::Error::PipelineError(msg))
         }
     }

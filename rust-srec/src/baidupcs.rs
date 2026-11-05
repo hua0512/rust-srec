@@ -12,10 +12,11 @@
 
 use std::collections::HashMap;
 use std::process::Stdio;
-use std::sync::{Arc, Mutex, OnceLock, Weak};
+use std::sync::{Arc, OnceLock, Weak};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
@@ -411,7 +412,6 @@ impl ReloginCooldown {
     fn should_attempt_at(&self, key: &str, now: Instant) -> bool {
         self.last_failure
             .lock()
-            .unwrap()
             .get(key)
             .is_none_or(|failed_at| now.duration_since(*failed_at) >= self.window)
     }
@@ -421,17 +421,14 @@ impl ReloginCooldown {
     }
 
     fn record_failure_at(&self, key: &str, now: Instant) {
-        self.last_failure
-            .lock()
-            .unwrap()
-            .insert(key.to_string(), now);
+        self.last_failure.lock().insert(key.to_string(), now);
     }
 
     /// Cleared on success and whenever the stored material changes
     /// (`save_credentials` / `delete_credentials`), so fresh credentials are
     /// tried immediately instead of sitting out a stale window.
     fn clear(&self, key: &str) {
-        self.last_failure.lock().unwrap().remove(key);
+        self.last_failure.lock().remove(key);
     }
 }
 

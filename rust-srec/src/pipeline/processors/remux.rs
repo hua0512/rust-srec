@@ -10,8 +10,9 @@ use super::outputs::{OutputBatch, output_size};
 use super::traits::{
     Processor, ProcessorContext, ProcessorInput, ProcessorOutput, ProcessorType, TimeAnchor,
 };
-use super::utils::{create_log_entry, get_extension, is_media, parse_config_or_default};
+use super::utils::{get_extension, is_media, parse_config_or_default};
 use crate::Result;
+use crate::pipeline::job_queue::JobLogEntry;
 
 use super::paths::{remux_command_path as make_absolute, remux_comparison_key as comparison_key};
 
@@ -836,10 +837,7 @@ impl Processor for RemuxProcessor {
                         "Not removing input {input_path}: it is the same file as a remux output"
                     );
                     warn!("{msg}");
-                    output.logs.push(create_log_entry(
-                        crate::pipeline::job_queue::LogLevel::Warn,
-                        msg,
-                    ));
+                    output.logs.push(JobLogEntry::warn(msg));
                     continue;
                 }
 
@@ -847,17 +845,17 @@ impl Processor for RemuxProcessor {
                 let input_path = input_path_string.as_str();
                 if let Err(e) = tokio::fs::remove_file(input_path).await {
                     warn!(path = input_path, error = %e, "Failed to remove remux input");
-                    output.logs.push(create_log_entry(
-                        crate::pipeline::job_queue::LogLevel::Warn,
-                        format!("Failed to remove input file {}: {}", input_path, e),
-                    ));
+                    output.logs.push(JobLogEntry::warn(format!(
+                        "Failed to remove input file {}: {}",
+                        input_path, e
+                    )));
                 } else {
                     removed_inputs += 1;
                     info!("Removed input file after successful remux: {}", input_path);
-                    output.logs.push(create_log_entry(
-                        crate::pipeline::job_queue::LogLevel::Info,
-                        format!("Removed input file: {}", input_path),
-                    ));
+                    output.logs.push(JobLogEntry::info(format!(
+                        "Removed input file: {}",
+                        input_path
+                    )));
                 }
             }
         }
