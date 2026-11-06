@@ -251,7 +251,7 @@ pub async fn create_preset(
     responses(
         (status = 200, description = "Preset updated", body = crate::database::models::JobPreset),
         (status = 404, description = "Preset not found", body = crate::api::error::ApiErrorResponse),
-        (status = 409, description = "Preset name already exists", body = crate::api::error::ApiErrorResponse)
+        (status = 409, description = "CONFLICT: the name is taken; PRESET_IN_USE: a renamed preset is still referenced by a stored pipeline", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]
@@ -306,7 +306,8 @@ pub async fn update_preset(
     tag = "job",
     params(("id" = String, Path, description = "Preset ID")),
     responses(
-        (status = 200, description = "Preset deleted")
+        (status = 200, description = "Preset deleted"),
+        (status = 409, description = "PRESET_IN_USE: a stored pipeline references the preset by name", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]

@@ -926,6 +926,60 @@ async fn job_presets_resolve_by_exact_name_and_validate_their_writes() {
 }
 
 #[tokio::test]
+async fn presets_a_stored_pipeline_names_cannot_be_deleted_or_renamed() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    save_job_preset(&app, &token, "e2e-archive", "E2E Archive").await;
+    let workflow = id_of(
+        &save_preset(
+            &app,
+            &token,
+            "E2E Tidy",
+            definition("E2E Tidy", vec![inline("tidy", "delete", json!({}), &[])]),
+        )
+        .await
+        .created(),
+    );
+    let workflow_path = format!("/api/pipeline/presets/{workflow}");
+    let pipeline = definition(
+        "Evening",
+        vec![
+            json!({ "id": "archive", "step": { "type": "preset", "name": "E2E Archive" } }),
+            json!({ "id": "tidy", "step": { "type": "workflow", "name": "E2E Tidy" }, "depends_on": ["archive"] }),
+        ],
+    );
+    app.post(
+        "/api/templates",
+        &token,
+        &json!({ "name": "Evening", "pipeline": pipeline.to_string() }),
+    )
+    .await
+    .created();
+
+    for path in ["/api/job/presets/e2e-archive", workflow_path.as_str()] {
+        let refused = app.delete(path, &token).await;
+        refused.assert_error(StatusCode::CONFLICT, "PRESET_IN_USE");
+        assert!(
+            refused.body["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("template 'Evening'")),
+            "{}",
+            refused.text
+        );
+    }
+    // Renaming would leave the template naming nothing.
+    let renamed = app
+        .put(
+            "/api/job/presets/e2e-archive",
+            &token,
+            &job_preset("e2e-archive", "E2E Archive v2"),
+        )
+        .await;
+    renamed.assert_error(StatusCode::CONFLICT, "PRESET_IN_USE");
+    app.shutdown().await;
+}
+
+#[tokio::test]
 async fn cloning_a_job_preset_copies_it_under_a_new_id_and_refuses_a_taken_name() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
