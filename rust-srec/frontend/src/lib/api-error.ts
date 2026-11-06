@@ -36,10 +36,7 @@ export function hasErrorCode(body: unknown, code: string): boolean {
   );
 }
 
-/**
- * The body of a backend error. Read by shape, so any `Error` carrying a `body`
- * counts, not only a `BackendApiError` instance.
- */
+/** The body of a backend error, or `undefined` for any other error. */
 export function errorBody(error: unknown): unknown {
   return error instanceof Error
     ? (error as { body?: unknown }).body
@@ -82,7 +79,7 @@ export function referencesFromConflict<T>(
 export const LOGIN_FAILED_CODE = 'LOGIN_FAILED';
 
 export function isLoginFailedError(error: unknown): boolean {
-  return hasErrorCode(error, LOGIN_FAILED_CODE);
+  return hasErrorCode(errorBody(error), LOGIN_FAILED_CODE);
 }
 
 // Body code the backend attaches to 403 responses on every authenticated
@@ -94,7 +91,6 @@ export function hasPasswordChangeRequiredCode(body: unknown): boolean {
   return hasErrorCode(body, PASSWORD_CHANGE_REQUIRED_CODE);
 }
 
-// Matched by shape, like `errorBody`.
 export function isPasswordChangeRequiredError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const { status, body } = error as Partial<BackendApiError>;

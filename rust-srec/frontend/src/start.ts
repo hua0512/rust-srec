@@ -14,7 +14,8 @@ import { themeMiddleware } from './integrations/theme/theme-middleware';
 const backendApiErrorAdapter = createSerializationAdapter({
   key: 'srec/BackendApiError',
   test: (value): value is BackendApiError => value instanceof BackendApiError,
-  // The body is parsed JSON or text, so it round-trips as a JSON string.
+  // The adapter's types reject an `unknown` body; the body is parsed JSON or
+  // text, so it round-trips as a JSON string.
   toSerializable: (error) => ({
     status: error.status,
     statusText: error.statusText,
