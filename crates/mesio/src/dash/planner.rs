@@ -1605,6 +1605,7 @@ fn init_descriptor(
         discontinuity: false,
         encryption: None,
         init_key: None,
+        scramble_seed: None,
         meta: SegmentMeta::Dash(meta),
     }
 }
@@ -1658,6 +1659,7 @@ fn media_descriptor(
         discontinuity: false,
         encryption: None,
         init_key: Some(epoch.init_key.clone()),
+        scramble_seed: None,
         meta: SegmentMeta::Dash(Arc::new(meta)),
     }
 }

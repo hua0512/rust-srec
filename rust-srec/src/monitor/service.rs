@@ -1802,6 +1802,7 @@ mod tests {
                 strategy: crate::credentials::PoolStrategy::RoundRobin,
                 failover: true,
                 max_attempts: 3,
+                anonymous_fallback: false,
             },
         )
         .unwrap();

@@ -524,7 +524,7 @@ msgstr "A crash or forced exit stopped these jobs before they could clean up. Th
 msgid "A language tag. Any language is used when none matches."
 msgstr "A language tag. Any language is used when none matches."
 
-#: src/components/credentials/credential-selection-editor.tsx:260
+#: src/components/credentials/credential-selection-editor.tsx:261
 msgid "A recording keeps using the account it started with."
 msgstr "A recording keeps using the account it started with."
 
@@ -577,7 +577,7 @@ msgstr "Access token"
 msgid "Access was denied. Refresh the stream URL or check the source credentials. If your app session expired, sign in again."
 msgstr "Access was denied. Refresh the stream URL or check the source credentials. If your app session expired, sign in again."
 
-#: src/components/credentials/credential-selection-editor.tsx:274
+#: src/components/credentials/credential-selection-editor.tsx:275
 msgid "Account"
 msgstr "Account"
 
@@ -598,7 +598,7 @@ msgstr "Account ID copied"
 msgid "Account needs login"
 msgstr "Account needs login"
 
-#: src/components/credentials/credential-selection-editor.tsx:217
+#: src/components/credentials/credential-selection-editor.tsx:218
 msgid "Account selection"
 msgstr "Account selection"
 
@@ -607,7 +607,7 @@ msgid "Account unavailable"
 msgstr "Account unavailable"
 
 #: src/components/config/templates/tabs/platform-override-card.tsx:80
-#: src/components/credentials/credential-selection-editor.tsx:312
+#: src/components/credentials/credential-selection-editor.tsx:313
 #: src/components/credentials/platform-accounts-section.tsx:127
 #: src/components/credentials/read-only-accounts-section.tsx:25
 msgid "Accounts"
@@ -639,7 +639,7 @@ msgstr "Accounts disabled"
 msgid "Accounts failing"
 msgstr "Accounts failing"
 
-#: src/components/credentials/credential-selection-editor.tsx:310
+#: src/components/credentials/credential-selection-editor.tsx:311
 msgid "Accounts, in the order they are tried"
 msgstr "Accounts, in the order they are tried"
 
@@ -701,8 +701,8 @@ msgstr "Add a stream to start your viewing session."
 msgid "Add a streamer"
 msgstr "Add a streamer"
 
-#: src/components/credentials/credential-selection-editor.tsx:383
-#: src/components/credentials/credential-selection-editor.tsx:386
+#: src/components/credentials/credential-selection-editor.tsx:384
+#: src/components/credentials/credential-selection-editor.tsx:387
 #: src/components/credentials/platform-accounts-section.tsx:120
 #: src/components/credentials/profile-editor-dialog.tsx:199
 msgid "Add account"
@@ -1155,11 +1155,11 @@ msgstr "Are you sure you want to delete this session? This action cannot be undo
 msgid "Are you sure you want to delete this streamer?"
 msgstr "Are you sure you want to delete this streamer?"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:46
+#: src/components/config/engines/forms/ffmpeg-form.tsx:47
 msgid "Args inserted before -i input_url"
 msgstr "Args inserted before -i input_url"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:54
+#: src/components/config/engines/forms/ffmpeg-form.tsx:55
 msgid "Args used for processing/encoding"
 msgstr "Args used for processing/encoding"
 
@@ -1167,7 +1167,7 @@ msgstr "Args used for processing/encoding"
 msgid "Argument {number}"
 msgstr "Argument {number}"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:39
+#: src/components/config/engines/forms/ffmpeg-form.tsx:40
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:137
 msgid "Arguments"
 msgstr "Arguments"
@@ -1907,6 +1907,10 @@ msgstr "Check that it reaches"
 msgid "Check this streamer and record when it goes live."
 msgstr "Check this streamer and record when it goes live."
 
+#: src/components/credentials/credential-selection-editor.tsx:428
+msgid "Check without an account when no account can be used"
+msgstr "Check without an account when no account can be used"
+
 #: src/components/credentials/account-usage.tsx:176
 msgid "checked {when}"
 msgstr "checked {when}"
@@ -2344,7 +2348,7 @@ msgstr "Connection Instability"
 msgid "Connection status: {statusLabel}"
 msgstr "Connection status: {statusLabel}"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:72
+#: src/components/config/engines/forms/ffmpeg-form.tsx:73
 msgid "Connection/activity timeout"
 msgstr "Connection/activity timeout"
 
@@ -2819,7 +2823,7 @@ msgstr "Custom rate"
 msgid "Custom Tags"
 msgstr "Custom Tags"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:31
+#: src/components/config/engines/forms/ffmpeg-form.tsx:32
 msgid "Custom User-Agent string (Optional)"
 msgstr "Custom User-Agent string (Optional)"
 
@@ -4763,7 +4767,7 @@ msgstr "Fix FLV Streams"
 msgid "Fix HLS Streams"
 msgstr "Fix HLS Streams"
 
-#: src/components/credentials/credential-selection-editor.tsx:243
+#: src/components/credentials/credential-selection-editor.tsx:244
 msgid "Fixed account"
 msgstr "Fixed account"
 
@@ -5093,7 +5097,7 @@ msgstr "GPU-accelerated high quality archive: NVENC HEVC encoding, thumbnail, an
 msgid "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
 msgstr "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:78
+#: src/components/config/engines/forms/ffmpeg-form.tsx:79
 #: src/components/config/engines/forms/streamlink-form.tsx:95
 msgid "Graceful Stop Timeout"
 msgstr "Graceful Stop Timeout"
@@ -5521,7 +5525,7 @@ msgstr "Include Recording Metadata"
 
 #: src/components/config/shared/proxy-route-picker.tsx:116
 #: src/components/config/shared/proxy-route-picker.tsx:118
-#: src/components/credentials/credential-selection-editor.tsx:236
+#: src/components/credentials/credential-selection-editor.tsx:237
 msgid "Inherit"
 msgstr "Inherit"
 
@@ -5533,7 +5537,7 @@ msgstr "Inherit — {resolved}"
 msgid "Inherit — each streamer's platform setting"
 msgstr "Inherit — each streamer's platform setting"
 
-#: src/components/credentials/credential-selection-editor.tsx:234
+#: src/components/credentials/credential-selection-editor.tsx:235
 msgid "Inherit (the site's account)"
 msgstr "Inherit (the site's account)"
 
@@ -5574,7 +5578,7 @@ msgstr "Inline: {stepName}"
 msgid "Input"
 msgstr "Input"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:45
+#: src/components/config/engines/forms/ffmpeg-form.tsx:46
 msgid "Input Arguments"
 msgstr "Input Arguments"
 
@@ -6328,7 +6332,7 @@ msgstr "Max transactions/second to the remote API (--tpslimit)."
 msgid "Max Uploads"
 msgstr "Max Uploads"
 
-#: src/components/credentials/credential-selection-editor.tsx:419
+#: src/components/credentials/credential-selection-editor.tsx:435
 msgid "Maximum attempts (1–10)"
 msgstr "Maximum attempts (1–10)"
 
@@ -6540,11 +6544,11 @@ msgstr "Morning"
 msgid "Move"
 msgstr "Move"
 
-#: src/components/credentials/credential-selection-editor.tsx:348
+#: src/components/credentials/credential-selection-editor.tsx:349
 msgid "Move account down"
 msgstr "Move account down"
 
-#: src/components/credentials/credential-selection-editor.tsx:337
+#: src/components/credentials/credential-selection-editor.tsx:338
 msgid "Move account up"
 msgstr "Move account up"
 
@@ -6793,7 +6797,7 @@ msgstr "No API keys yet. Create one to let scripts or AI assistants access this 
 msgid "No Archives Found"
 msgstr "No Archives Found"
 
-#: src/components/credentials/credential-selection-editor.tsx:240
+#: src/components/credentials/credential-selection-editor.tsx:241
 msgid "No authentication"
 msgstr "No authentication"
 
@@ -7100,7 +7104,7 @@ msgstr "No workflows found"
 msgid "No workflows yet"
 msgstr "No workflows yet"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:33
+#: src/components/config/engines/forms/ffmpeg-form.tsx:34
 #: src/components/config/engines/forms/setting-fields.tsx:919
 #: src/components/config/engines/forms/setting-fields.tsx:1054
 #: src/components/config/engines/forms/streamlink-form.tsx:74
@@ -7480,7 +7484,7 @@ msgstr "Output"
 msgid "Output and its file deleted"
 msgstr "Output and its file deleted"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:53
+#: src/components/config/engines/forms/ffmpeg-form.tsx:54
 msgid "Output Arguments"
 msgstr "Output Arguments"
 
@@ -8266,7 +8270,7 @@ msgstr "Primary"
 msgid "Primary Action"
 msgstr "Primary Action"
 
-#: src/components/credentials/credential-selection-editor.tsx:248
+#: src/components/credentials/credential-selection-editor.tsx:249
 msgid "Primary and backups"
 msgstr "Primary and backups"
 
@@ -8793,7 +8797,7 @@ msgstr "Remove {module}"
 msgid "Remove {tag}"
 msgstr "Remove {tag}"
 
-#: src/components/credentials/credential-selection-editor.tsx:367
+#: src/components/credentials/credential-selection-editor.tsx:368
 msgid "Remove account"
 msgstr "Remove account"
 
@@ -9189,7 +9193,7 @@ msgstr "Revoked"
 msgid "Right"
 msgstr "Right"
 
-#: src/components/credentials/credential-selection-editor.tsx:251
+#: src/components/credentials/credential-selection-editor.tsx:252
 msgid "Round-robin pool"
 msgstr "Round-robin pool"
 
@@ -10502,7 +10506,7 @@ msgstr "Switch language"
 msgid "Switch Theme"
 msgstr "Switch Theme"
 
-#: src/components/credentials/credential-selection-editor.tsx:414
+#: src/components/credentials/credential-selection-editor.tsx:415
 msgid "Switch to the next account when one stops working"
 msgstr "Switch to the next account when one stops working"
 
@@ -11037,7 +11041,7 @@ msgstr "Time Placeholders (Local Time)"
 msgid "Time Range"
 msgstr "Time Range"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:79
+#: src/components/config/engines/forms/ffmpeg-form.tsx:80
 #: src/components/config/engines/forms/streamlink-form.tsx:96
 msgid "Time to wait for ffmpeg to finalize the file before force-killing it"
 msgstr "Time to wait for ffmpeg to finalize the file before force-killing it"
@@ -11055,7 +11059,7 @@ msgstr "Timeline"
 msgid "Timeline granularity. Very long streams are automatically coarsened past a point."
 msgstr "Timeline granularity. Very long streams are automatically coarsened past a point."
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:71
+#: src/components/config/engines/forms/ffmpeg-form.tsx:72
 msgid "Timeout"
 msgstr "Timeout"
 
@@ -11076,7 +11080,7 @@ msgstr "Timeout before cancelling CPU-bound processors."
 msgid "Timeout before cancelling IO-bound processors."
 msgstr "Timeout before cancelling IO-bound processors."
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:65
+#: src/components/config/engines/forms/ffmpeg-form.tsx:66
 msgid "Timeouts"
 msgstr "Timeouts"
 
@@ -11438,7 +11442,7 @@ msgstr "Unknown"
 
 #: src/components/credentials/account-selection-section.tsx:176
 #: src/components/credentials/account-selection-section.tsx:407
-#: src/components/credentials/credential-selection-editor.tsx:176
+#: src/components/credentials/credential-selection-editor.tsx:177
 msgid "Unknown account"
 msgstr "Unknown account"
 
@@ -11656,7 +11660,7 @@ msgctxt "danmu"
 msgid "User"
 msgstr "User"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:30
+#: src/components/config/engines/forms/ffmpeg-form.tsx:31
 #: src/components/config/engines/forms/mesio-sections.tsx:285
 msgid "User Agent"
 msgstr "User Agent"

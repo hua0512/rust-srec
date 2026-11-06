@@ -17,6 +17,8 @@ export const CredentialSelectionSchema = z.discriminatedUnion('mode', [
       strategy: z.enum(['round_robin', 'priority']),
       failover: z.boolean(),
       max_attempts: z.number().int().min(1).max(10),
+      // Omitted by the server when off.
+      anonymous_fallback: z.boolean().optional(),
     })
     .strict(),
 ]);

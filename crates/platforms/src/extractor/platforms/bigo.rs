@@ -1,3 +1,4 @@
+pub mod account;
 mod builder;
 pub mod danmu;
 mod models;

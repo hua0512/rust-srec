@@ -331,6 +331,7 @@ async fn pending_credential_start_recovers_with_next_account_in_the_same_session
             strategy: crate::credentials::PoolStrategy::RoundRobin,
             failover: true,
             max_attempts: 3,
+            anonymous_fallback: false,
         };
         set_platform_selection(&fixture.pool, "platform-twitch", &selection).await;
         let session = fixture.live().await;

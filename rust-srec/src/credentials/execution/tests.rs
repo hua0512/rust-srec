@@ -55,6 +55,7 @@ async fn fixture() -> (
             strategy: PoolStrategy::RoundRobin,
             failover: true,
             max_attempts: 3,
+            anonymous_fallback: false,
         },
     )
     .unwrap();
@@ -278,6 +279,7 @@ async fn a_throttled_account_hands_over_to_one_on_another_route() {
             strategy: PoolStrategy::Priority,
             failover: true,
             max_attempts: 3,
+            anonymous_fallback: false,
         },
     )
     .unwrap();
@@ -421,6 +423,7 @@ async fn disabled_profiles_are_skipped_even_when_failover_is_off() {
             strategy: PoolStrategy::Priority,
             failover: false,
             max_attempts: 3,
+            anonymous_fallback: false,
         },
     )
     .unwrap();
@@ -755,6 +758,7 @@ async fn repair_uses_bound_access_token_and_consumes_another_attempt() {
             strategy: PoolStrategy::Priority,
             failover: true,
             max_attempts: 1,
+            anonymous_fallback: false,
         },
     )
     .unwrap();
@@ -1792,4 +1796,188 @@ async fn a_failed_use_record_does_not_fail_the_operation() {
     })
     .await
     .expect("failed last-use test timed out");
+}
+
+/// Checkable cookie accounts that rest after a rejection. Every login checks
+/// out at first; once rejected, `account=A` checks as `status_of_a`.
+struct CheckingRestProvider {
+    status_of_a: AccountStatus,
+    checks_of_a: std::sync::atomic::AtomicUsize,
+}
+
+#[async_trait::async_trait]
+impl super::super::CredentialProvider for CheckingRestProvider {
+    fn capabilities(&self) -> super::super::ProviderCapabilities {
+        super::super::ProviderCapabilities {
+            check: true,
+            ..Default::default()
+        }
+    }
+
+    fn rejection_rest(&self) -> Option<Duration> {
+        Some(Duration::from_secs(3600))
+    }
+
+    async fn check(
+        &self,
+        _client: &reqwest::Client,
+        material: &CredentialMaterial,
+    ) -> std::result::Result<AccountStatus, CredentialError> {
+        let working = material.cookies != "account=A"
+            || self
+                .checks_of_a
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                == 0;
+        Ok(if working {
+            AccountStatus::Valid
+        } else {
+            self.status_of_a
+        })
+    }
+}
+
+/// Extracts with every account in turn; `account=A` is always turned away.
+async fn extract_rejecting_a(
+    service: &CredentialExecutionService,
+    policy: &ResolvedCredentialPolicy,
+    seen: &parking_lot::Mutex<Vec<String>>,
+) -> String {
+    service
+        .execute(
+            policy,
+            None,
+            true,
+            OperationDeadline::new(Duration::from_secs(5)),
+            direct(),
+            |snapshot| async move {
+                seen.lock().push(snapshot.material.cookies.clone());
+                if snapshot.material.cookies == "account=A" {
+                    return Err(Error::Extractor(ExtractorError::Authentication {
+                        code: "need_login".into(),
+                    }));
+                }
+                Ok(Extracted {
+                    preserve_health: false,
+                    value: snapshot.material.cookies,
+                    session_cookies: None,
+                })
+            },
+        )
+        .await
+        .unwrap()
+        .value
+}
+
+#[tokio::test]
+async fn a_walled_working_login_rests_and_a_revoked_one_needs_a_new_login() {
+    for (status_of_a, invalid) in [
+        (AccountStatus::Valid, false),
+        (AccountStatus::Revoked, true),
+    ] {
+        let (repository, mut service, policy, profiles) = fixture().await;
+        Arc::get_mut(&mut service.providers)
+            .unwrap()
+            .register_provider(
+                "huya",
+                Arc::new(CheckingRestProvider {
+                    status_of_a,
+                    checks_of_a: Default::default(),
+                }),
+            );
+        let seen = parking_lot::Mutex::new(Vec::new());
+        for _ in 0..6 {
+            assert_ne!(
+                extract_rejecting_a(&service, &policy, &seen).await,
+                "account=A"
+            );
+        }
+        let tried_a = seen
+            .lock()
+            .iter()
+            .filter(|cookies| *cookies == "account=A")
+            .count();
+        assert_eq!(
+            tried_a, 1,
+            "{status_of_a:?}: a resting or invalid account is skipped"
+        );
+        let health = repository.health(&profiles[0].id).await.unwrap();
+        assert_eq!(
+            health.is_some_and(|health| health.validity == CredentialValidity::Invalid),
+            invalid,
+            "{status_of_a:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_pool_with_anonymous_fallback_checks_without_an_account_when_none_works() {
+    let (repository, service, policy, profiles) = fixture().await;
+    let CredentialSelection::Pool {
+        credential_ids,
+        strategy,
+        failover,
+        max_attempts,
+        ..
+    } = policy.selection.clone()
+    else {
+        unreachable!("the fixture selects a pool");
+    };
+    let policy = ResolvedCredentialPolicy::new(
+        policy.platform_id.clone(),
+        policy.owner.clone(),
+        CredentialSelection::Pool {
+            credential_ids,
+            strategy,
+            failover,
+            max_attempts,
+            anonymous_fallback: true,
+        },
+    )
+    .unwrap();
+    let rejecting_accounts = |allow_switch: bool, binding: Option<CredentialBinding>| {
+        let (service, policy) = (&service, &policy);
+        async move {
+            service
+                .execute(
+                    policy,
+                    binding.as_ref(),
+                    allow_switch,
+                    OperationDeadline::new(Duration::from_secs(5)),
+                    direct(),
+                    |snapshot| async move {
+                        if !snapshot.material.cookies.is_empty() {
+                            return Err(Error::Extractor(ExtractorError::Authentication {
+                                code: "expired".into(),
+                            }));
+                        }
+                        Ok(Extracted {
+                            preserve_health: false,
+                            value: (),
+                            session_cookies: None,
+                        })
+                    },
+                )
+                .await
+        }
+    };
+
+    let started = rejecting_accounts(true, None).await.unwrap();
+    assert!(matches!(
+        started.snapshot.binding.identity,
+        CredentialIdentity::Anonymous
+    ));
+    for profile in &profiles {
+        let health = repository.health(&profile.id).await.unwrap().unwrap();
+        assert_eq!(health.validity, CredentialValidity::Invalid);
+    }
+    assert!(service.unavailable_status(&policy).is_none());
+
+    // A session that started without an account keeps polling without one.
+    let polled = rejecting_accounts(false, Some(started.snapshot.binding))
+        .await
+        .unwrap();
+    assert!(matches!(
+        polled.snapshot.binding.identity,
+        CredentialIdentity::Anonymous
+    ));
 }

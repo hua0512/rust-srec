@@ -1118,6 +1118,7 @@ mod tests {
             discontinuity: false,
             encryption: None,
             init_key: None,
+            scramble_seed: None,
             meta: SegmentMeta::Hls(Arc::new(m3u8_rs::MediaSegment {
                 uri: uri.to_string(),
                 duration: 2.0,

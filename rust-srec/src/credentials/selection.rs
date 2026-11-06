@@ -28,6 +28,11 @@ pub enum CredentialSelection {
         strategy: PoolStrategy,
         failover: bool,
         max_attempts: u8,
+        /// Check without an account when no account in the pool can be used.
+        /// Omitted when off, so pools saved before the setting existed keep
+        /// their policy generation and the sessions bound to it.
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        anonymous_fallback: bool,
     },
 }
 
@@ -53,6 +58,8 @@ impl<'de> Deserialize<'de> for CredentialSelection {
                 failover: bool,
                 #[serde(default = "default_max_attempts")]
                 max_attempts: u8,
+                #[serde(default)]
+                anonymous_fallback: bool,
             },
         }
         let selection = match Wire::deserialize(deserializer)? {
@@ -64,11 +71,13 @@ impl<'de> Deserialize<'de> for CredentialSelection {
                 strategy,
                 failover,
                 max_attempts,
+                anonymous_fallback,
             } => Self::Pool {
                 credential_ids,
                 strategy,
                 failover,
                 max_attempts,
+                anonymous_fallback,
             },
         };
         selection.validate().map_err(serde::de::Error::custom)?;
@@ -109,6 +118,17 @@ impl CredentialSelection {
                 ..
             } => "priority",
         }
+    }
+
+    /// Whether checks fall back to no account when the pool has none usable.
+    pub fn anonymous_fallback(&self) -> bool {
+        matches!(
+            self,
+            Self::Pool {
+                anonymous_fallback: true,
+                ..
+            }
+        )
     }
 
     pub fn profile_ids(&self) -> Vec<&str> {
@@ -263,6 +283,7 @@ mod tests {
                 strategy: PoolStrategy::Priority,
                 failover: true,
                 max_attempts: 3,
+                anonymous_fallback: false,
             }
         );
         let owner = CredentialOwner::Platform {

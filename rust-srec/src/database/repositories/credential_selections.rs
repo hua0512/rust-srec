@@ -77,10 +77,11 @@ struct SelectionRow {
     strategy: Option<String>,
     failover: Option<bool>,
     max_attempts: Option<i64>,
+    anonymous_fallback: bool,
     profile_id: Option<String>,
 }
 
-const SELECT_ROWS: &str = "SELECT s.id, s.platform_config_id, p.platform_name, s.template_config_id, s.streamer_id, s.mode, s.strategy, s.failover, s.max_attempts, m.profile_id FROM credential_selections s JOIN platform_config p ON p.id = s.platform_config_id LEFT JOIN credential_selection_members m ON m.selection_id = s.id";
+const SELECT_ROWS: &str = "SELECT s.id, s.platform_config_id, p.platform_name, s.template_config_id, s.streamer_id, s.mode, s.strategy, s.failover, s.max_attempts, s.anonymous_fallback, m.profile_id FROM credential_selections s JOIN platform_config p ON p.id = s.platform_config_id LEFT JOIN credential_selection_members m ON m.selection_id = s.id";
 const ORDER_ROWS: &str = " ORDER BY s.id, m.position";
 
 fn malformed(id: i64) -> Error {
@@ -116,6 +117,7 @@ fn decode(row: SelectionRow, members: Vec<String>) -> Result<StoredSelection> {
                 .max_attempts
                 .and_then(|attempts| u8::try_from(attempts).ok())
                 .ok_or_else(|| malformed(row.id))?,
+            anonymous_fallback: row.anonymous_fallback,
         },
         _ => return Err(malformed(row.id)),
     };
@@ -430,7 +432,8 @@ pub(crate) async fn set(
     platform_id: &str,
     selection: &CredentialSelection,
 ) -> Result<bool> {
-    let Some((mode, strategy, failover, max_attempts)) = stored_mode(selection) else {
+    let Some((mode, strategy, failover, max_attempts, anonymous_fallback)) = stored_mode(selection)
+    else {
         return delete_scope(connection, owner, platform_id).await;
     };
     let current = load_owner(connection, owner)
@@ -471,8 +474,8 @@ pub(crate) async fn set(
         CredentialOwner::Template { template_id } => (Some(template_id.as_str()), None),
         CredentialOwner::Streamer { streamer_id } => (None, Some(streamer_id.as_str())),
     };
-    let id: i64 = sqlx::query_scalar("INSERT INTO credential_selections(platform_config_id, template_config_id, streamer_id, mode, strategy, failover, max_attempts) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id")
-        .bind(platform_id).bind(template_id).bind(streamer_id).bind(mode).bind(strategy).bind(failover).bind(max_attempts)
+    let id: i64 = sqlx::query_scalar("INSERT INTO credential_selections(platform_config_id, template_config_id, streamer_id, mode, strategy, failover, max_attempts, anonymous_fallback) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id")
+        .bind(platform_id).bind(template_id).bind(streamer_id).bind(mode).bind(strategy).bind(failover).bind(max_attempts).bind(anonymous_fallback)
         .fetch_one(&mut *connection).await?;
     for (position, profile_id) in (0_i64..).zip(selection.profile_ids()) {
         sqlx::query("INSERT INTO credential_selection_members(selection_id, platform_config_id, position, profile_id) VALUES (?, ?, ?, ?)")
@@ -512,24 +515,27 @@ type StoredMode = (
     Option<&'static str>,
     Option<bool>,
     Option<i64>,
+    bool,
 );
 
 /// Column values for a selection that is stored; `inherit` is not.
 fn stored_mode(selection: &CredentialSelection) -> Option<StoredMode> {
     match selection {
         CredentialSelection::Inherit => None,
-        CredentialSelection::None => Some(("none", None, None, None)),
-        CredentialSelection::Fixed { .. } => Some(("fixed", None, None, None)),
+        CredentialSelection::None => Some(("none", None, None, None, false)),
+        CredentialSelection::Fixed { .. } => Some(("fixed", None, None, None, false)),
         CredentialSelection::Pool {
             strategy,
             failover,
             max_attempts,
+            anonymous_fallback,
             ..
         } => Some((
             "pool",
             Some(strategy_text(*strategy)),
             Some(*failover),
             Some(i64::from(*max_attempts)),
+            *anonymous_fallback,
         )),
     }
 }

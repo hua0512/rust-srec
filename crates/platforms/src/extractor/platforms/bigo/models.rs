@@ -67,8 +67,6 @@ pub struct StudioData {
         deserialize_with = "de_opt_stringish"
     )]
     pub client_bigo_id: Option<String>,
-    #[serde(default, deserialize_with = "de_opt_i64ish")]
-    pub reserver: Option<i64>,
     #[serde(rename = "country_code", default)]
     pub country_code: Option<String>,
 }
@@ -197,8 +195,7 @@ mod tests {
             "hls_src": "https://cdn.example.com/list_x_0.m3u8",
             "passRoom": false,
             "avatar": "https://example.com/a.jpg",
-            "clientBigoId": "221338632",
-            "reserver": 4108
+            "clientBigoId": "221338632"
           }
         }"#;
         let resp: StudioResponse = serde_json::from_str(json).unwrap();

@@ -8,6 +8,7 @@ mod hls_downloader;
 mod playlist;
 mod soop_processor;
 mod twitch_processor;
+pub(crate) mod web_protection;
 
 // Re-exports for easier access
 pub use crate::segment_engine::metrics::{MetricsSnapshot, PerformanceMetrics};

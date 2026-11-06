@@ -84,6 +84,10 @@ pub struct SegmentDescriptor {
     /// having arrived (or terminally failed), so a rotated init cannot lose
     /// the race against the first media segment it covers.
     pub init_key: Option<SegmentKey>,
+    /// Seed for descrambling the leading TS packets of this media segment,
+    /// taken from the `EXT-X-BIGO-WEB-PROTECTION` tag of the playlist that
+    /// listed it (see `hls::web_protection`). `None` leaves the body as is.
+    pub scramble_seed: Option<u32>,
     /// Protocol metadata carried for output construction. Identity and
     /// scheduling use the typed fields above.
     pub meta: SegmentMeta,

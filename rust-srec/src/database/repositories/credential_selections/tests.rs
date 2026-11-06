@@ -106,6 +106,7 @@ async fn pools_round_trip_in_saved_order_and_rewrites_are_no_ops() {
         strategy: PoolStrategy::RoundRobin,
         failover: false,
         max_attempts: 5,
+        anonymous_fallback: true,
     };
     let owner = platform("platform-bilibili");
     let mut connection = f.pool.acquire().await.unwrap();
@@ -335,6 +336,7 @@ fn documents_split_and_rejoin_their_selection() {
             strategy: PoolStrategy::Priority,
             failover: true,
             max_attempts: 3,
+            anonymous_fallback: false,
         }
     );
     assert_eq!(raw.as_deref(), Some(r#"{"quality":1}"#));
@@ -406,6 +408,7 @@ async fn streamlink_accounts_are_chosen_per_streamer_one_at_a_time() {
             strategy: PoolStrategy::Priority,
             failover: true,
             max_attempts: 3,
+            anonymous_fallback: false,
         };
 
         let mut connection = f.pool.acquire().await.unwrap();
