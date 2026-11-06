@@ -49,7 +49,7 @@ The installer downloads the Compose and environment files, generates the require
 To pin a release instead of tracking `latest`, pass `VERSION` — image tags use a leading `v`:
 
 ```bash
-curl -fsSL https://docs.srec.rs/install.sh | VERSION=v0.7.1 bash
+curl -fsSL https://docs.srec.rs/install.sh | VERSION=v0.8.0 bash
 ```
 
 > Piping a remote script to a shell runs whatever the server returns. To review it first, download [install.sh](https://docs.srec.rs/install.sh) and run your local copy, or follow the manual Compose steps in the [Docker guide](https://docs.srec.rs/en/getting-started/docker).

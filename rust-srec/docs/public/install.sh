@@ -12,7 +12,7 @@
 #   curl -fsSL https://docs.srec.rs/install.sh | SREC_LANG=zh bash
 #
 # With custom parameters:
-#   curl -fsSL https://docs.srec.rs/install.sh | RUST_SREC_DIR=/opt/rust-srec VERSION=v0.7.1 bash
+#   curl -fsSL https://docs.srec.rs/install.sh | RUST_SREC_DIR=/opt/rust-srec VERSION=v0.8.0 bash
 
 set -euo pipefail
 

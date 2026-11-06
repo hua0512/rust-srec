@@ -1959,7 +1959,7 @@ dependencies = [
 
 [[package]]
 name = "flv"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "aac",
  "amf0",
@@ -1980,7 +1980,7 @@ dependencies = [
 
 [[package]]
 name = "flv-fix"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "amf0",
  "byteorder",
@@ -3752,7 +3752,7 @@ dependencies = [
 
 [[package]]
 name = "mesio"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "byteorder",
  "bytes",
@@ -3784,7 +3784,7 @@ dependencies = [
 
 [[package]]
 name = "mesio-engine"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "aes",
  "axum",
@@ -4754,7 +4754,7 @@ checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
 name = "pipeline-common"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "criterion",
  "crossbeam-channel",
@@ -4799,7 +4799,7 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
 name = "platforms-parser"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "aes",
  "async-trait",
@@ -5629,7 +5629,7 @@ dependencies = [
 
 [[package]]
 name = "rust-srec"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -5702,7 +5702,7 @@ dependencies = [
 
 [[package]]
 name = "rust-srec-desktop"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -6669,7 +6669,7 @@ checksum = "ff7589a1859b09232522bb9edf076ca7fcf14ded96685d3fa629db73023ffbb7"
 
 [[package]]
 name = "strev"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -6955,7 +6955,7 @@ checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
 
 [[package]]
 name = "tars-codec"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "bytes",
  "rustc-hash",

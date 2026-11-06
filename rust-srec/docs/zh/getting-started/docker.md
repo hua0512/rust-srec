@@ -43,7 +43,7 @@ $env:SREC_LANG = "zh"; irm https://docs.srec.rs/install.ps1 | iex
 使用已审查发布版时应设置准确版本。Linux/macOS 示例：
 
 ```bash
-curl -fsSL https://docs.srec.rs/install.sh | SREC_LANG=zh RUST_SREC_DIR=/opt/rust-srec VERSION=v0.7.1 bash
+curl -fsSL https://docs.srec.rs/install.sh | SREC_LANG=zh RUST_SREC_DIR=/opt/rust-srec VERSION=v0.8.0 bash
 ```
 
 ::: warning 与 systemd 服务的路径冲突

@@ -15,7 +15,7 @@
 编辑 `.env`，把 `VERSION` 设置为已审查的目标版本，例如：
 
 ```dotenv
-VERSION=v0.7.1
+VERSION=v0.8.0
 ```
 
 然后执行：

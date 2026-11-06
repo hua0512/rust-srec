@@ -8,9 +8,11 @@ Track version updates, behavior changes, compatibility notes, and upgrade guidan
 
 ## Latest release
 
-- [`v0.7.1`](./v0.7.1.md) — Windows portable notification registration, the Rust-Srec notification display name, and visible notification test errors
+- [`v0.8.0`](./v0.8.0.md) — recorded and live chat over the video, Twitch H.265 and AV1, a low disk space notification and checks without an account, plus fixes for Bigo login requests, Mesio FLV recordings, cross-site requests, backups and the web interface
 
 ## Archive
+
+- [`v0.7.1`](./v0.7.1.md) — Windows portable notification registration, the Rust-Srec notification display name, and visible notification test errors
 
 - [`v0.7.0`](./v0.7.0.md) — MPEG-DASH recording with Mesio, TikTok DASH streams and HTTP/2 downloads, live progress for workflow steps, redesigned engine settings and cleanup of partial files from interrupted jobs, plus fixes for HLS segments, webhook notifications, stuck copies and the web interface layout
 

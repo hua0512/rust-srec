@@ -48,7 +48,7 @@ $env:SREC_LANG = "zh"; irm https://docs.srec.rs/install.ps1 | iex
 若不想跟随 `latest`，可用 `VERSION` 指定版本；镜像 tag 以 `v` 开头：
 
 ```bash
-curl -fsSL https://docs.srec.rs/install.sh | SREC_LANG=zh VERSION=v0.7.1 bash
+curl -fsSL https://docs.srec.rs/install.sh | SREC_LANG=zh VERSION=v0.8.0 bash
 ```
 
 > 将远程脚本直接管道给 shell，执行的是服务器当次返回的内容。如需先行审阅，可下载 [install.sh](https://docs.srec.rs/install.sh) 检查后再运行本地副本，或参考 [Docker 部署文档](https://docs.srec.rs/zh/getting-started/docker)中的手动步骤。

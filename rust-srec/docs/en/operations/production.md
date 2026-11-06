@@ -20,7 +20,7 @@ Keep the backend, database, configuration, and output paths on one trusted host.
 
 ## Deployment Baseline
 
-1. Pin the version you deploy. With the [Docker deployment](../getting-started/docker.md), set `VERSION=v0.7.1` for both images; avoid `latest` where changes must be reviewed before rollout. With the [systemd service](../getting-started/installation.md#systemd-service-linux), install a release binary rather than an ad-hoc build and record which release it is.
+1. Pin the version you deploy. With the [Docker deployment](../getting-started/docker.md), set `VERSION=v0.8.0` for both images; avoid `latest` where changes must be reviewed before rollout. With the [systemd service](../getting-started/installation.md#systemd-service-linux), install a release binary rather than an ad-hoc build and record which release it is.
 2. Generate unique values for `JWT_SECRET` and `SESSION_SECRET`; store the `.env` file with restrictive permissions. On a systemd host the backend secret lives in `/etc/rust-srec/rust-srec.env` at mode `0640`, owned `root:rust-srec`.
 3. Bind host ports to a private address or loopback. In Compose, a loopback-only mapping takes the form `127.0.0.1:15275:80` and `127.0.0.1:12555:8080`. The systemd unit ships `API_BIND_ADDRESS=0.0.0.0`; set `API_BIND_ADDRESS=127.0.0.1` in `/etc/rust-srec/rust-srec.env` when the API must not leave the host.
 4. Terminate HTTPS at a maintained reverse proxy and forward `Host`, `X-Forwarded-For`, and `X-Forwarded-Proto`. The session cookie is marked `Secure` automatically once the proxy sends `X-Forwarded-Proto: https`. If the proxy cannot send that header, set `COOKIE_SECURE=true` explicitly.

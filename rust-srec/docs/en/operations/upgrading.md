@@ -15,7 +15,7 @@ Upgrade the backend and frontend together. Database migrations run at startup an
 Edit `.env` so `VERSION` is the reviewed target, for example:
 
 ```dotenv
-VERSION=v0.7.1
+VERSION=v0.8.0
 ```
 
 Then run:
