@@ -127,6 +127,9 @@ struct AttemptStep<'a> {
 pub struct Exclusions {
     disabled: bool,
     login_required: bool,
+    /// An account is resting after the platform turned it away; it needs
+    /// no new login, so it reports as the attempts running out.
+    resting: bool,
 }
 
 impl Exclusions {
@@ -148,6 +151,8 @@ impl Exclusions {
             Some(UnavailableReason::LoginRequired)
         } else if self.disabled {
             Some(UnavailableReason::ProfilesDisabled)
+        } else if self.resting {
+            Some(UnavailableReason::AttemptsExhausted)
         } else {
             None
         }
@@ -749,8 +754,17 @@ impl CredentialExecutionService {
                     reason = unavailable.reason.as_str(),
                     "No account in the pool can be used; checking without one"
                 );
-                self.execute_anonymous(policy, binding, deadline, route, &mut extract)
+                match self
+                    .execute_anonymous(policy, binding, deadline, route, &mut extract)
                     .await
+                {
+                    // The platform wants a login without one too, so the
+                    // streamer is still waiting for an account.
+                    Err(Error::Extractor(ExtractorError::Authentication { .. })) => {
+                        Err(self.unavailable(policy, unavailable.reason).await)
+                    }
+                    result => result,
+                }
             }
             result => result,
         }
@@ -1112,6 +1126,12 @@ impl CredentialExecutionService {
         if !attempts.exclusions.admits(true, health.as_ref()) {
             return Ok(None);
         }
+        // Checked before any repair: an operation that selected the account
+        // before its rest began must not refresh it during the rest.
+        let profile = self.repository.get(id).await?;
+        if self.excluded_while_resting(&profile, &mut attempts.exclusions) {
+            return Ok(None);
+        }
         let prepared = self
             .prepare(
                 step,
@@ -1314,16 +1334,21 @@ impl CredentialExecutionService {
                         repair: true,
                         route: step.route.clone(),
                     });
-                } else if let Some(rest) = provider.rejection_rest()
-                    && self.should_rest(step, provider, profile, rest).await
-                {
+                } else if let Some(rest) = provider.rejection_rest() {
+                    self.resting.lock().insert(
+                        id.to_owned(),
+                        Rest {
+                            revision: profile.revision,
+                            until: Instant::now() + rest,
+                        },
+                    );
                     tracing::warn!(
                         profile_id = %id,
                         platform = %attempts.platform,
                         rest_secs = rest.as_secs(),
                         "Credential profile turned away by the platform; resting it before trying it again"
                     );
-                    attempts.exclusions.login_required = true;
+                    attempts.exclusions.resting = true;
                     attempts.previous = Some((id.to_owned(), "resting"));
                 } else {
                     self.mark_invalid(profile, &attempts.platform).await?;
@@ -1367,81 +1392,6 @@ impl CredentialExecutionService {
         }
     }
 
-    /// Whether an account the platform turned away rests instead of needing
-    /// a new login. A provider that can check accounts decides: a working
-    /// login always rests, since signing in again would not help, and a
-    /// revoked one needs a new login. Without a verdict, [`Self::rest`]
-    /// decides.
-    async fn should_rest(
-        &self,
-        step: &AttemptStep<'_>,
-        provider: &dyn super::CredentialProvider,
-        profile: &CredentialProfile,
-        rest: Duration,
-    ) -> bool {
-        let status = if provider.capabilities().check {
-            match self
-                .provider_check(provider, profile, step.route, step.deadline)
-                .await
-            {
-                Ok(status) => Some(status),
-                Err(error) => {
-                    tracing::warn!(profile_id = %profile.id, %error, "Could not check the rejected credential profile");
-                    None
-                }
-            }
-        } else {
-            None
-        };
-        match status {
-            Some(AccountStatus::Valid) => {
-                self.resting.lock().insert(
-                    profile.id.clone(),
-                    Rest {
-                        revision: profile.revision,
-                        until: Instant::now() + rest,
-                    },
-                );
-                true
-            }
-            Some(AccountStatus::Revoked) => false,
-            Some(AccountStatus::Repairable | AccountStatus::Unverifiable) | None => {
-                self.rest(profile, rest)
-            }
-        }
-    }
-
-    /// Whether a rejected account rests instead of needing a new login. The
-    /// first rejection starts a rest of `rest`; a rejection during it comes
-    /// from an operation that overlapped the first and changes nothing. The
-    /// next rejection after the rest, with no success in between, is final.
-    /// Rests are runtime state, and one that ended over [`REST_MEMORY`] ago
-    /// is forgotten, so the next rejection starts a new one.
-    fn rest(&self, profile: &CredentialProfile, rest: Duration) -> bool {
-        let now = Instant::now();
-        let mut resting = self.resting.lock();
-        resting.retain(|_, rest| now.saturating_duration_since(rest.until) < REST_MEMORY);
-        match resting.get(&profile.id) {
-            Some(current) if current.revision == profile.revision => {
-                if now < current.until {
-                    return true;
-                }
-                resting.remove(&profile.id);
-                false
-            }
-            _ => {
-                resting.insert(
-                    profile.id.clone(),
-                    Rest {
-                        revision: profile.revision,
-                        until: now + rest,
-                    },
-                );
-                true
-            }
-        }
-    }
-
     /// Skips an account that is resting at its current revision. New
     /// material ends the rest, since it may be the fresh login.
     fn excluded_while_resting(
@@ -1453,7 +1403,7 @@ impl CredentialExecutionService {
             self.resting.lock().get(&profile.id).is_some_and(|rest| {
                 rest.revision == profile.revision && Instant::now() < rest.until
             });
-        exclusions.login_required |= resting;
+        exclusions.resting |= resting;
         resting
     }
 
@@ -1465,9 +1415,6 @@ impl CredentialExecutionService {
         }
     }
 }
-
-/// How long an ended rest still makes the account's next rejection final.
-const REST_MEMORY: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// How long a failed renewal waits before the next one.
 const RENEWAL_RETRY: Duration = Duration::from_secs(60 * 60);

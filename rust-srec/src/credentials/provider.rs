@@ -136,11 +136,11 @@ pub trait CredentialProvider: Send + Sync {
         None
     }
 
-    /// How long an account rests when the platform first turns it away,
-    /// for platforms whose login wall also meets working accounts for a
-    /// while. Only consulted when the account cannot be refreshed. A
-    /// rejection after the rest needs a new login; `None` needs one on the
-    /// first rejection.
+    /// How long an account rests when the platform turns it away, for
+    /// platforms whose login wall also meets working accounts for a while.
+    /// Consulted once the account has been refreshed in the same operation
+    /// (or cannot be): a refresh that finds the login gone has already asked
+    /// for a new one. `None` asks for a new login instead of resting.
     fn rejection_rest(&self) -> Option<std::time::Duration> {
         None
     }

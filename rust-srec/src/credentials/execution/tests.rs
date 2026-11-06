@@ -1798,18 +1798,17 @@ async fn a_failed_use_record_does_not_fail_the_operation() {
     .expect("failed last-use test timed out");
 }
 
-/// Checkable cookie accounts that rest after a rejection. Every login checks
-/// out at first; once rejected, `account=A` checks as `status_of_a`.
-struct CheckingRestProvider {
-    status_of_a: AccountStatus,
-    checks_of_a: std::sync::atomic::AtomicUsize,
+/// Refreshable cookie accounts that rest after a login wall. The refresh
+/// finds `account=A` signed in or, when `a_signed_out`, signed out.
+struct RefreshingRestProvider {
+    a_signed_out: bool,
 }
 
 #[async_trait::async_trait]
-impl super::super::CredentialProvider for CheckingRestProvider {
+impl super::super::CredentialProvider for RefreshingRestProvider {
     fn capabilities(&self) -> super::super::ProviderCapabilities {
         super::super::ProviderCapabilities {
-            check: true,
+            refresh: true,
             ..Default::default()
         }
     }
@@ -1818,20 +1817,19 @@ impl super::super::CredentialProvider for CheckingRestProvider {
         Some(Duration::from_secs(3600))
     }
 
-    async fn check(
+    async fn refresh(
         &self,
         _client: &reqwest::Client,
         material: &CredentialMaterial,
-    ) -> std::result::Result<AccountStatus, CredentialError> {
-        let working = material.cookies != "account=A"
-            || self
-                .checks_of_a
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                == 0;
-        Ok(if working {
-            AccountStatus::Valid
-        } else {
-            self.status_of_a
+    ) -> std::result::Result<RefreshedCredentials, CredentialError> {
+        if self.a_signed_out && material.cookies == "account=A" {
+            return Err(CredentialError::InvalidCredentials("signed_out".into()));
+        }
+        Ok(RefreshedCredentials {
+            cookies: material.cookies.clone(),
+            refresh_token: None,
+            access_token: None,
+            expires_at: None,
         })
     }
 }
@@ -1869,21 +1867,14 @@ async fn extract_rejecting_a(
 }
 
 #[tokio::test]
-async fn a_walled_working_login_rests_and_a_revoked_one_needs_a_new_login() {
-    for (status_of_a, invalid) in [
-        (AccountStatus::Valid, false),
-        (AccountStatus::Revoked, true),
-    ] {
+async fn a_walled_login_that_refreshes_rests_and_a_signed_out_one_needs_a_new_login() {
+    // A signed-in A is walled, refreshed and walled again; a signed-out A
+    // fails its refresh before a second extraction.
+    for (a_signed_out, tries_of_a) in [(false, 2), (true, 1)] {
         let (repository, mut service, policy, profiles) = fixture().await;
         Arc::get_mut(&mut service.providers)
             .unwrap()
-            .register_provider(
-                "huya",
-                Arc::new(CheckingRestProvider {
-                    status_of_a,
-                    checks_of_a: Default::default(),
-                }),
-            );
+            .register_provider("huya", Arc::new(RefreshingRestProvider { a_signed_out }));
         let seen = parking_lot::Mutex::new(Vec::new());
         for _ in 0..6 {
             assert_ne!(
@@ -1896,15 +1887,11 @@ async fn a_walled_working_login_rests_and_a_revoked_one_needs_a_new_login() {
             .iter()
             .filter(|cookies| *cookies == "account=A")
             .count();
-        assert_eq!(
-            tried_a, 1,
-            "{status_of_a:?}: a resting or invalid account is skipped"
-        );
+        assert_eq!(tried_a, tries_of_a, "signed out: {a_signed_out}");
         let health = repository.health(&profiles[0].id).await.unwrap();
         assert_eq!(
             health.is_some_and(|health| health.validity == CredentialValidity::Invalid),
-            invalid,
-            "{status_of_a:?}"
+            a_signed_out
         );
     }
 }

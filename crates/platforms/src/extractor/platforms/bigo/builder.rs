@@ -258,13 +258,23 @@ impl PlatformExtractor for Bigo {
         let password = self.resolve_password();
 
         if self.signed_in || !self.mint_token {
-            let data = self
+            match self
                 .studio(site_id.as_str(), password.as_deref(), None)
-                .await?;
-            // Without a token Bigo may still withhold the playlist of a live
-            // room; only then is a token worth its two extra requests.
-            if !(self.mint_token && data.is_room_live() && !data.has_playable_source()) {
-                return self.media_from_data(data, &site_id);
+                .await
+            {
+                // Without a token Bigo may still withhold the playlist of a
+                // live room, or refuse the request; only then is a token
+                // worth its two extra requests.
+                Ok(data)
+                    if !(self.mint_token && data.is_room_live() && !data.has_playable_source()) =>
+                {
+                    return self.media_from_data(data, &site_id);
+                }
+                Ok(_) => {}
+                Err(error @ ExtractorError::ValidationError(_)) if self.mint_token => {
+                    debug!(%error, "bigo studio refused the request without a token");
+                }
+                Err(error) => return Err(error),
             }
         }
 

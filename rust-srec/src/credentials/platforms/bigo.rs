@@ -2,8 +2,10 @@
 //!
 //! Accounts are cookies pasted from a browser. Bigo's `getUserInfo` tells a
 //! working login from a lapsed one and sets some of the login's cookies
-//! again, as the website does on every page load, so the provider checks and
-//! refreshes accounts with it, and renews them hourly before use.
+//! again, as the website does on every page load. The provider refreshes
+//! accounts with it, hourly before use and after a login wall. There is no
+//! separate check: a failed renewal keeps the current cookies, so an outage
+//! of `getUserInfo` alone does not stop checks.
 
 use std::time::Duration;
 
@@ -14,7 +16,7 @@ use tracing::instrument;
 use crate::credentials::CredentialMaterial;
 use crate::credentials::error::CredentialError;
 use crate::credentials::provider::{
-    AccountStatus, CredentialProvider, ProviderCapabilities, RefreshedCredentials,
+    CredentialProvider, ProviderCapabilities, RefreshedCredentials,
 };
 
 use platforms_parser::extractor::platforms::bigo::account::{self, AccountSession};
@@ -30,32 +32,20 @@ pub struct BigoProvider;
 impl CredentialProvider for BigoProvider {
     fn capabilities(&self) -> ProviderCapabilities {
         ProviderCapabilities {
-            check: true,
             refresh: true,
             ..ProviderCapabilities::default()
         }
     }
 
     /// Bigo answers with its login wall both for a lapsed login and, for a
-    /// while, for a working account it has flagged as unusual traffic.
+    /// while, for a working account it has flagged as unusual traffic. A
+    /// wall that the refresh before it found signed in is the second kind.
     fn rejection_rest(&self) -> Option<Duration> {
         Some(REJECTION_REST)
     }
 
     fn renew_after(&self) -> Option<Duration> {
         Some(RENEW_AFTER)
-    }
-
-    #[instrument(skip_all)]
-    async fn check(
-        &self,
-        client: &Client,
-        material: &CredentialMaterial,
-    ) -> Result<AccountStatus, CredentialError> {
-        Ok(match account::user_info(client, &material.cookies).await? {
-            AccountSession::SignedIn { .. } => AccountStatus::Valid,
-            AccountSession::SignedOut => AccountStatus::Revoked,
-        })
     }
 
     #[instrument(skip_all)]
