@@ -228,6 +228,13 @@ const JSON_STATS_ARGS: [&str; 8] = [
     "--stats-one-line",
 ];
 
+/// Limits each transfer process to one pass. The processor's own loop, bounded
+/// by `max_retries`, retries failed transfers with backoff and reports each
+/// attempt; rclone's default of 3 internal passes would multiply that count
+/// unseen. Request-level retries (`--low-level-retries`) stay at rclone's
+/// default. Placed before `extra_args`, so a preset can still set `--retries`.
+const SINGLE_PASS_ARGS: [&str; 2] = ["--retries", "1"];
+
 /// Processor for interacting with Rclone.
 pub struct RcloneProcessor {
     /// Path to rclone binary.
@@ -717,6 +724,7 @@ impl RcloneProcessor {
             }
 
             cmd.args(JSON_STATS_ARGS);
+            cmd.args(SINGLE_PASS_ARGS);
             cmd.args([cmd_op, input_path, remote_destination]);
 
             // Throughput flags first, so any duplicates in `extra_args` win.
@@ -921,6 +929,7 @@ impl RcloneProcessor {
             }
 
             cmd.args(JSON_STATS_ARGS);
+            cmd.args(SINGLE_PASS_ARGS);
             cmd.args([
                 "--files-from",
                 &files_from_path_str,
@@ -2428,6 +2437,7 @@ mod tests {
         assert_eq!(stats_flag_window(args), EXPECTED_STATS_FLAGS);
         assert!(!args.iter().any(|arg| arg == "--stats-one-line-date"));
         assert!(args.iter().any(|arg| arg == "copyto"));
+        assert!(args.windows(2).any(|pair| pair == ["--retries", "1"]));
     }
 
     #[tokio::test]
@@ -2464,6 +2474,7 @@ mod tests {
         assert_eq!(stats_flag_window(args), EXPECTED_STATS_FLAGS);
         assert!(!args.iter().any(|arg| arg == "--stats-one-line-date"));
         assert!(args.iter().any(|arg| arg == "--files-from"));
+        assert!(args.windows(2).any(|pair| pair == ["--retries", "1"]));
     }
 
     #[tokio::test]
