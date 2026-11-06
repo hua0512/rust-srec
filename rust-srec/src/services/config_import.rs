@@ -109,6 +109,7 @@ struct CommittedImport {
     stats: ImportStats,
     streamers: StreamerImportDiff,
     moved_proxies: Vec<String>,
+    kept_presets: Vec<String>,
     retained_definitions: i64,
     credential_retirement_streamers: Vec<String>,
 }
@@ -184,6 +185,7 @@ impl ConfigurationImportService {
                             stats,
                             streamers,
                             moved_proxies,
+                            kept_presets,
                         } = apply_import(tx, &snapshot, &config, mode).await?;
                         let retained_definitions =
                             sqlx::query_scalar("SELECT COUNT(*) FROM retirement_config_deletions")
@@ -195,6 +197,7 @@ impl ConfigurationImportService {
                             stats,
                             streamers,
                             moved_proxies,
+                            kept_presets,
                             retained_definitions,
                             credential_retirement_streamers,
                         })
@@ -230,6 +233,7 @@ impl ConfigurationImportService {
             stats,
             streamers,
             moved_proxies,
+            kept_presets,
             retained_definitions,
             credential_retirement_streamers,
         } = committed;
@@ -239,7 +243,7 @@ impl ConfigurationImportService {
                 .clear_route(&crate::proxies::RouteKey::Proxy { id });
         }
 
-        let mut warnings = Vec::new();
+        let mut warnings = kept_presets;
         if retained_definitions > 0 {
             warnings.push(format!(
                 "{retained_definitions} omitted templates or presets remain available until recording post-processing finishes"
@@ -1072,6 +1076,9 @@ struct AppliedImport {
     streamers: StreamerImportDiff,
     /// Saved proxies now reaching another exit.
     moved_proxies: Vec<String>,
+    /// Warnings for omitted presets and workflows kept because a kept
+    /// pipeline names them.
+    kept_presets: Vec<String>,
 }
 
 async fn apply_import(
@@ -1142,8 +1149,13 @@ async fn apply_import(
     proxies::delete_omitted(tx, config, mode).await?;
 
     apply_notification_channels(tx, snapshot, config, replace, &mut changes.stats).await?;
-    apply_job_presets(tx, snapshot, config, replace, &mut changes.stats).await?;
-    apply_pipeline_presets(tx, snapshot, config, replace, &mut changes.stats).await?;
+    apply_job_presets(tx, snapshot, config, &mut changes.stats).await?;
+    apply_pipeline_presets(tx, snapshot, config, &mut changes.stats).await?;
+    let kept_presets = if replace {
+        delete_omitted_presets(tx, snapshot, config, &mut changes.stats).await?
+    } else {
+        Vec::new()
+    };
     apply_users(tx, snapshot, config, replace, &mut changes.stats).await?;
 
     crate::database::repositories::refresh_token::invalidate_all_for_import(tx).await?;
@@ -1152,6 +1164,7 @@ async fn apply_import(
         stats: changes.stats,
         streamers: changes.streamers,
         moved_proxies: imported_proxies.moved,
+        kept_presets,
     })
 }
 
@@ -1819,7 +1832,6 @@ async fn apply_job_presets(
     tx: &mut sqlx::SqliteConnection,
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
-    replace: bool,
     stats: &mut ImportStats,
 ) -> Result<(), ConfigurationImportError> {
     for item in &config.job_presets {
@@ -1840,19 +1852,6 @@ async fn apply_job_presets(
             stats.job_presets_created += 1;
         }
     }
-    if replace {
-        let imported: HashSet<&str> = config
-            .job_presets
-            .iter()
-            .map(|item| item.name.as_str())
-            .collect();
-        for (name, existing) in &snapshot.job_presets {
-            if !imported.contains(name.as_str()) {
-                delete_or_defer(tx, RetiredConfigKind::JobPreset, &existing.id).await?;
-                stats.job_presets_deleted += 1;
-            }
-        }
-    }
     Ok(())
 }
 
@@ -1860,7 +1859,6 @@ async fn apply_pipeline_presets(
     tx: &mut sqlx::SqliteConnection,
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
-    replace: bool,
     stats: &mut ImportStats,
 ) -> Result<(), ConfigurationImportError> {
     for item in &config.pipeline_presets {
@@ -1907,20 +1905,77 @@ async fn apply_pipeline_presets(
             stats.pipeline_presets_created += 1;
         }
     }
-    if replace {
-        let imported: HashSet<&str> = config
-            .pipeline_presets
-            .iter()
-            .map(|item| item.name.as_str())
-            .collect();
-        for (name, existing) in &snapshot.pipeline_presets {
-            if !imported.contains(name.as_str()) {
-                delete_or_defer(tx, RetiredConfigKind::PipelinePreset, &existing.id).await?;
-                stats.pipeline_presets_deleted += 1;
+    Ok(())
+}
+
+/// Delete or defer the presets and workflows a replace-mode bundle omits,
+/// keeping each one a kept pipeline still names, since pipelines resolve
+/// steps by name at run time. Runs once every pipeline owner is written.
+/// Returns one warning per kept definition.
+async fn delete_omitted_presets(
+    tx: &mut sqlx::SqliteConnection,
+    snapshot: &ImportSnapshot,
+    config: &ConfigExport,
+    stats: &mut ImportStats,
+) -> Result<Vec<String>, ConfigurationImportError> {
+    use crate::database::repositories::preset::{Owners, StepRef, step_users, summarize_users};
+
+    let imported_presets: HashSet<&str> = config
+        .job_presets
+        .iter()
+        .map(|item| item.name.as_str())
+        .collect();
+    let imported_workflows: HashSet<&str> = config
+        .pipeline_presets
+        .iter()
+        .map(|item| item.name.as_str())
+        .collect();
+    let mut omitted: Vec<(StepRef, &str, &str)> = snapshot
+        .pipeline_presets
+        .iter()
+        .filter(|(name, _)| !imported_workflows.contains(name.as_str()))
+        .map(|(name, model)| (StepRef::Workflow, name.as_str(), model.id.as_str()))
+        .chain(
+            snapshot
+                .job_presets
+                .iter()
+                .filter(|(name, _)| !imported_presets.contains(name.as_str()))
+                .map(|(name, model)| (StepRef::JobPreset, name.as_str(), model.id.as_str())),
+        )
+        .collect();
+    // Removing an omitted workflow can free what it names, so repeat until a
+    // pass removes nothing.
+    loop {
+        let before = omitted.len();
+        let mut still_used = Vec::new();
+        for (step, name, id) in omitted.drain(..) {
+            let users = step_users(tx, step, id, name, Owners::Kept).await?;
+            if !users.is_empty() {
+                still_used.push((step, name, id, users));
+                continue;
+            }
+            delete_or_defer(tx, step.into(), id).await?;
+            match step {
+                StepRef::JobPreset => stats.job_presets_deleted += 1,
+                StepRef::Workflow => stats.pipeline_presets_deleted += 1,
             }
         }
+        if still_used.len() == before {
+            return Ok(still_used
+                .into_iter()
+                .map(|(step, name, _, users)| {
+                    format!(
+                        "kept {step} '{name}' because the imported configuration still uses it: {}",
+                        summarize_users(users).join(", ")
+                    )
+                })
+                .collect());
+        }
+        omitted = still_used
+            .into_iter()
+            .map(|(step, name, id, _)| (step, name, id))
+            .collect();
     }
-    Ok(())
 }
 
 async fn apply_users(

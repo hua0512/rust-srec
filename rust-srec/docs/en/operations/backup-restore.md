@@ -25,7 +25,7 @@ configuration lists abort the export.
 Import supports two modes:
 
 - `merge` updates matching entities and keeps entities absent from the file.
-- `replace` removes existing managed configuration not present in the import. Treat this as destructive and test it on a disposable instance first.
+- `replace` removes existing managed configuration not present in the import. Treat this as destructive and test it on a disposable instance first. Job presets and workflows that a kept pipeline still names stay, and the import result lists them as warnings.
 
 For exports using schema version `0.1.3` or later with a nonempty user list,
 users are matched by username. Email uniqueness is checked against the final

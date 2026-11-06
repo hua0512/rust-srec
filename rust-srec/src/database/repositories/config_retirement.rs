@@ -2,6 +2,8 @@
 
 use sqlx::SqliteConnection;
 
+use super::preset::{Owners, StepRef, step_users};
+
 #[derive(Clone, Copy)]
 pub(crate) enum RetiredConfigKind {
     Template,
@@ -18,11 +20,20 @@ impl RetiredConfigKind {
         }
     }
 
-    fn table(self) -> &'static str {
+    pub(crate) fn table(self) -> &'static str {
         match self {
             Self::Template => "template_config",
             Self::JobPreset => "job_presets",
             Self::PipelinePreset => "pipeline_presets",
+        }
+    }
+}
+
+impl From<StepRef> for RetiredConfigKind {
+    fn from(step: StepRef) -> Self {
+        match step {
+            StepRef::JobPreset => Self::JobPreset,
+            StepRef::Workflow => Self::PipelinePreset,
         }
     }
 }
@@ -87,10 +98,31 @@ pub(crate) async fn reap(conn: &mut SqliteConnection) -> Result<(), sqlx::Error>
     sqlx::query(
         "DELETE FROM template_config WHERE id IN (SELECT config_id FROM retirement_config_deletions WHERE kind = 'template') AND NOT EXISTS(SELECT 1 FROM streamers WHERE template_config_id = template_config.id)",
     ).execute(&mut *conn).await?;
-    for kind in [
-        RetiredConfigKind::JobPreset,
-        RetiredConfigKind::PipelinePreset,
-    ] {
+    for step in [StepRef::JobPreset, StepRef::Workflow] {
+        let kind = RetiredConfigKind::from(step);
+        // A pipeline may have started naming a definition after its deletion
+        // was deferred; such a definition stays and its deletion is dropped.
+        let pending: Vec<(String, String)> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT d.id, d.name FROM {} d JOIN retirement_config_deletions r ON r.config_id = d.id AND r.kind = ?",
+            kind.table(),
+        )))
+        .bind(kind.key())
+        .fetch_all(&mut *conn)
+        .await?;
+        for (id, name) in pending {
+            if !step_users(conn, step, &id, &name, Owners::Kept)
+                .await?
+                .is_empty()
+            {
+                sqlx::query(
+                    "DELETE FROM retirement_config_deletions WHERE kind = ? AND config_id = ?",
+                )
+                .bind(kind.key())
+                .bind(&id)
+                .execute(&mut *conn)
+                .await?;
+            }
+        }
         sqlx::query(sqlx::AssertSqlSafe(format!(
             "DELETE FROM {} WHERE id IN (SELECT config_id FROM retirement_config_deletions WHERE kind = ?) AND NOT EXISTS(SELECT 1 FROM streamers WHERE deleted_at IS NOT NULL)", kind.table(),
         )))
@@ -159,6 +191,34 @@ mod tests {
         reap(&mut conn).await.unwrap();
         let remaining: i64 =
             sqlx::query_scalar("SELECT COUNT(*) FROM template_config WHERE id = 'retained'")
+                .fetch_one(&mut *conn)
+                .await
+                .unwrap();
+        assert_eq!(remaining, 1);
+    }
+
+    #[tokio::test]
+    async fn a_deferred_preset_a_pipeline_starts_naming_survives_the_reap() {
+        let pool = fixture().await;
+        let mut conn = pool.acquire().await.unwrap();
+        sqlx::query("INSERT INTO job_presets(id, name, processor, config) VALUES ('deferred', 'Deferred', 'remux', '{}')")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        delete_or_defer(&mut conn, RetiredConfigKind::JobPreset, "deferred")
+            .await
+            .unwrap();
+        sqlx::query(r#"INSERT INTO template_config(id, name, pipeline) VALUES ('user', 'User', '{"name":"p","steps":[{"id":"s","step":{"type":"preset","name":"Deferred"}}]}')"#)
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM streamers WHERE id = 'retiring'")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        reap(&mut conn).await.unwrap();
+        let remaining: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM job_presets WHERE id = 'deferred'")
                 .fetch_one(&mut *conn)
                 .await
                 .unwrap();

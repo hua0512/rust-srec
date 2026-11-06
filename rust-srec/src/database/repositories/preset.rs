@@ -48,6 +48,217 @@ fn push_search_filter(query: &mut QueryBuilder<Sqlite>, separator: &str, search:
         .push(r" ESCAPE '\')");
 }
 
+/// A pipeline step kind that stored pipelines reference by name.
+#[derive(Clone, Copy, Debug)]
+pub enum StepRef {
+    JobPreset,
+    Workflow,
+}
+
+impl StepRef {
+    /// The `type` tag of [`crate::database::models::PipelineStep`].
+    fn tag(self) -> &'static str {
+        match self {
+            Self::JobPreset => "preset",
+            Self::Workflow => "workflow",
+        }
+    }
+
+    fn table(self) -> &'static str {
+        super::config_retirement::RetiredConfigKind::from(self).table()
+    }
+}
+
+impl std::fmt::Display for StepRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.tag())
+    }
+}
+
+/// A change to a job preset or workflow that stored pipelines can block.
+#[derive(Clone, Copy, Debug)]
+pub enum PresetChange {
+    Delete,
+    Rename,
+}
+
+impl std::fmt::Display for PresetChange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Delete => "delete",
+            Self::Rename => "rename",
+        })
+    }
+}
+
+/// Which stored pipelines count as users of a step.
+#[derive(Clone, Copy)]
+pub(crate) enum Owners {
+    /// Every stored pipeline. Streamers and definitions being removed still
+    /// run the pipelines owed to their last session; their labels say so.
+    All,
+    /// Pipelines that stay once removals settle. Owners being removed are
+    /// left out: retirement keeps definitions for them until they finish
+    /// (`config_retirement::delete_or_defer`).
+    Kept,
+}
+
+/// Whether the JSON column `column` holds a pipeline step
+/// `{"type": ?1, "name": ?2}`. Steps sit at `steps[N].step` of a pipeline,
+/// which is the column itself or a `*pipeline` key nested in it (template
+/// platform overrides and streamer-specific configs).
+fn names_step(column: &str) -> String {
+    format!(
+        "EXISTS(SELECT 1 FROM json_tree(CASE WHEN json_valid({column}) THEN {column} ELSE 'null' END) j \
+         WHERE j.key = 'step' AND (j.fullkey GLOB '$.steps[[]*].step' OR j.fullkey GLOB '*pipeline.steps[[]*].step') \
+         AND j.type = 'object' AND json_extract(j.value, '$.type') = ?1 AND json_extract(j.value, '$.name') = ?2)"
+    )
+}
+
+/// Labels of the stored pipeline owners that name the `step` definition `id`
+/// called `name`. A workflow does not count as its own user.
+pub(crate) async fn step_users(
+    conn: &mut sqlx::SqliteConnection,
+    step: StepRef,
+    id: &str,
+    name: &str,
+    owners: Owners,
+) -> std::result::Result<Vec<String>, sqlx::Error> {
+    const PIPELINES: [&str; 3] = [
+        "pipeline",
+        "session_complete_pipeline",
+        "paired_segment_pipeline",
+    ];
+    const TEMPLATE_REMOVING: &str = "EXISTS(SELECT 1 FROM retirement_config_deletions r WHERE r.kind = 'template' AND r.config_id = template_config.id)";
+    const WORKFLOW_REMOVING: &str = "EXISTS(SELECT 1 FROM retirement_config_deletions r WHERE r.kind = 'pipeline_preset' AND r.config_id = pipeline_presets.id)";
+    const STREAMER_REMOVING: &str = "deleted_at IS NOT NULL";
+    let any_names_step = |columns: &[&str]| {
+        columns
+            .iter()
+            .map(|column| names_step(column))
+            .collect::<Vec<_>>()
+            .join(" OR ")
+    };
+    let kept = |removing: &str| match owners {
+        Owners::All => String::new(),
+        Owners::Kept => format!("NOT {removing} AND "),
+    };
+    let query = format!(
+        "SELECT 'global', '', 0 FROM global_config WHERE {global} \
+         UNION ALL SELECT 'platform', platform_name, 0 FROM platform_config WHERE {platform} \
+         UNION ALL SELECT 'template', name, {TEMPLATE_REMOVING} FROM template_config WHERE {kept_template}({template}) \
+         UNION ALL SELECT 'streamer', name, {STREAMER_REMOVING} FROM streamers WHERE {kept_streamer}({streamer}) \
+         UNION ALL SELECT 'workflow', name, {WORKFLOW_REMOVING} FROM pipeline_presets WHERE {kept_workflow}(?3 IS NULL OR id <> ?3) AND ({workflow}) \
+         ORDER BY 1, 2",
+        global = any_names_step(&PIPELINES),
+        platform = any_names_step(&PIPELINES),
+        template = any_names_step(&[&PIPELINES[..], &["platform_overrides"]].concat()),
+        streamer = names_step("streamer_specific_config"),
+        workflow = names_step("dag_definition"),
+        kept_template = kept(TEMPLATE_REMOVING),
+        kept_streamer = kept(STREAMER_REMOVING),
+        kept_workflow = kept(WORKFLOW_REMOVING),
+    );
+    let rows: Vec<(String, String, bool)> = sqlx::query_as(sqlx::AssertSqlSafe(query))
+        .bind(step.tag())
+        .bind(name)
+        .bind(matches!(step, StepRef::Workflow).then_some(id))
+        .fetch_all(conn)
+        .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(kind, owner, removing)| match (kind.as_str(), removing) {
+            ("global", _) => "the global config".to_string(),
+            (_, false) => format!("{kind} '{owner}'"),
+            (_, true) => format!("{kind} '{owner}' (being removed)"),
+        })
+        .collect())
+}
+
+/// How many users a message names before summarising the rest as a count.
+const LISTED_USERS: usize = 5;
+
+/// `users` cut to the first [`LISTED_USERS`], followed by a count of the rest,
+/// so a widely used preset still yields a readable message.
+pub(crate) fn summarize_users(mut users: Vec<String>) -> Vec<String> {
+    if users.len() > LISTED_USERS {
+        let more = users.len() - LISTED_USERS;
+        users.truncate(LISTED_USERS);
+        users.push(format!("{more} more"));
+    }
+    users
+}
+
+/// Fail with [`crate::Error::PresetInUse`] if a stored pipeline names the
+/// `step` definition `id` called `name`.
+async fn ensure_unused(
+    conn: &mut sqlx::SqliteConnection,
+    step: StepRef,
+    id: &str,
+    name: &str,
+    change: PresetChange,
+) -> Result<()> {
+    let users = step_users(conn, step, id, name, Owners::All).await?;
+    if users.is_empty() {
+        return Ok(());
+    }
+    Err(crate::Error::PresetInUse {
+        change,
+        kind: step,
+        name: name.to_string(),
+        users: summarize_users(users),
+    })
+}
+
+async fn stored_name(
+    conn: &mut sqlx::SqliteConnection,
+    step: StepRef,
+    id: &str,
+) -> Result<Option<String>> {
+    Ok(sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+        "SELECT name FROM {} WHERE id = ?",
+        step.table()
+    )))
+    .bind(id)
+    .fetch_optional(conn)
+    .await?)
+}
+
+/// Delete the `step` definition `id` unless a stored pipeline names it.
+/// The check and the delete share one immediate write transaction.
+async fn delete_unused(write_pool: &SqlitePool, step: StepRef, id: &str) -> Result<()> {
+    let mut tx = crate::database::begin_immediate(write_pool).await?;
+    let Some(name) = stored_name(&mut tx, step, id).await? else {
+        return Ok(());
+    };
+    ensure_unused(&mut tx, step, id, &name, PresetChange::Delete).await?;
+    sqlx::query(sqlx::AssertSqlSafe(format!(
+        "DELETE FROM {} WHERE id = ?",
+        step.table()
+    )))
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+/// Fail with [`crate::Error::PresetInUse`] if renaming the `step` definition
+/// `id` to `new_name` would leave a stored pipeline naming nothing.
+async fn ensure_rename_allowed(
+    conn: &mut sqlx::SqliteConnection,
+    step: StepRef,
+    id: &str,
+    new_name: &str,
+) -> Result<()> {
+    match stored_name(conn, step, id).await? {
+        Some(name) if name != new_name => {
+            ensure_unused(conn, step, id, &name, PresetChange::Rename).await
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Filter parameters for job presets.
 #[derive(Debug, Clone, Default)]
 pub struct JobPresetFilters {
@@ -93,10 +304,12 @@ pub trait JobPresetRepository: Send + Sync {
     /// Create a new preset.
     async fn create_preset(&self, preset: &JobPreset) -> Result<()>;
 
-    /// Update an existing preset.
+    /// Update an existing preset. Fails with [`crate::Error::PresetInUse`]
+    /// when it renames a preset a stored pipeline references by name.
     async fn update_preset(&self, preset: &JobPreset) -> Result<()>;
 
-    /// Delete a preset.
+    /// Delete a preset. Fails with [`crate::Error::PresetInUse`] while a
+    /// stored pipeline references it by name.
     async fn delete_preset(&self, id: &str) -> Result<()>;
 }
 
@@ -254,28 +467,21 @@ impl JobPresetRepository for SqliteJobPresetRepository {
 
     async fn update_preset(&self, preset: &JobPreset) -> Result<()> {
         let updated_at = crate::database::time::now_ms();
+        let mut tx = crate::database::begin_immediate(&self.write_pool).await?;
+        ensure_rename_allowed(&mut tx, StepRef::JobPreset, &preset.id, &preset.name).await?;
         writes::write_job_preset(
-            &mut *self.write_pool.acquire().await?,
+            &mut tx,
             preset,
             super::row_write::WriteMode::Update,
             updated_at,
         )
         .await?;
-
+        tx.commit().await?;
         Ok(())
     }
 
     async fn delete_preset(&self, id: &str) -> Result<()> {
-        sqlx::query(
-            r#"
-            DELETE FROM job_presets WHERE id = $1
-            "#,
-        )
-        .bind(id)
-        .execute(&*self.write_pool)
-        .await?;
-
-        Ok(())
+        delete_unused(&self.write_pool, StepRef::JobPreset, id).await
     }
 }
 
@@ -314,10 +520,13 @@ pub trait PipelinePresetRepository: Send + Sync {
     /// Create a new pipeline preset.
     async fn create_pipeline_preset(&self, preset: &PipelinePreset) -> Result<()>;
 
-    /// Update an existing pipeline preset.
+    /// Update an existing pipeline preset. Fails with
+    /// [`crate::Error::PresetInUse`] when it renames a workflow a stored
+    /// pipeline references by name.
     async fn update_pipeline_preset(&self, preset: &PipelinePreset) -> Result<()>;
 
-    /// Delete a pipeline preset.
+    /// Delete a pipeline preset. Fails with [`crate::Error::PresetInUse`]
+    /// while a stored pipeline references it by name.
     async fn delete_pipeline_preset(&self, id: &str) -> Result<()>;
 }
 
@@ -415,27 +624,20 @@ impl PipelinePresetRepository for SqlitePipelinePresetRepository {
 
     async fn update_pipeline_preset(&self, preset: &PipelinePreset) -> Result<()> {
         let updated_at = crate::database::time::now_ms();
+        let mut tx = crate::database::begin_immediate(&self.write_pool).await?;
+        ensure_rename_allowed(&mut tx, StepRef::Workflow, &preset.id, &preset.name).await?;
         writes::write_pipeline_preset(
-            &mut *self.write_pool.acquire().await?,
+            &mut tx,
             preset,
             super::row_write::WriteMode::Update,
             updated_at,
         )
         .await?;
-
+        tx.commit().await?;
         Ok(())
     }
 
     async fn delete_pipeline_preset(&self, id: &str) -> Result<()> {
-        sqlx::query(
-            r#"
-            DELETE FROM pipeline_presets WHERE id = $1
-            "#,
-        )
-        .bind(id)
-        .execute(&*self.write_pool)
-        .await?;
-
-        Ok(())
+        delete_unused(&self.write_pool, StepRef::Workflow, id).await
     }
 }

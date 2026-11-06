@@ -125,7 +125,7 @@ pub async fn import_config(
         stats.users_created + stats.users_updated
     );
     if !outcome.warnings.is_empty() {
-        message.push_str(". Runtime reload warnings: ");
+        message.push_str(". Warnings: ");
         message.push_str(&outcome.warnings.join("; "));
     }
 

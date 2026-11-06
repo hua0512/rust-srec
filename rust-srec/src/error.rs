@@ -96,6 +96,17 @@ pub enum Error {
 
     #[error("Duplicate URL: a streamer with URL '{0}' already exists")]
     DuplicateUrl(String),
+
+    /// A job preset or workflow cannot be deleted or renamed while a stored
+    /// pipeline names it, because pipelines reference steps by name and would
+    /// fail to resolve the step at run time.
+    #[error("Cannot {change} {kind} '{name}': it is used by {}", .users.join(", "))]
+    PresetInUse {
+        change: crate::database::repositories::preset::PresetChange,
+        kind: crate::database::repositories::preset::StepRef,
+        name: String,
+        users: Vec<String>,
+    },
 }
 
 impl Error {

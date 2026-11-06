@@ -285,6 +285,9 @@ impl From<Error> for ApiError {
             Error::DuplicateUrl(url) => {
                 ApiError::conflict(format!("A streamer with URL '{}' already exists", url))
             }
+            Error::PresetInUse { .. } => {
+                ApiError::new(StatusCode::CONFLICT, "PRESET_IN_USE", err.to_string())
+            }
             Error::Io(e) => {
                 tracing::error!("IO error: {}", e);
                 ApiError::internal("IO error occurred")

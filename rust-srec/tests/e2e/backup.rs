@@ -636,6 +636,69 @@ async fn a_backup_restores_into_a_fresh_install_and_exports_the_same_bundle() {
     target.shutdown().await;
 }
 
+#[tokio::test]
+async fn a_replace_import_keeps_an_omitted_preset_a_kept_pipeline_names() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    app.post(
+        "/api/job/presets",
+        &token,
+        &json!({
+            "id": "e2e-archive", "name": "E2E Archive", "category": "file_ops",
+            "processor": "copy_move",
+            "config": "{\"destination\":\"/archive\",\"operation\":\"copy\"}",
+        }),
+    )
+    .await
+    .created();
+    for (name, step) in [
+        (
+            "E2E Tidy",
+            json!({"type": "inline", "processor": "delete", "config": {}}),
+        ),
+        ("E2E Chain", json!({"type": "workflow", "name": "E2E Tidy"})),
+    ] {
+        app.post(
+            "/api/pipeline/presets",
+            &token,
+            &json!({"name": name, "dag": {"name": name, "steps": [{"id": "only", "step": step}]}}),
+        )
+        .await
+        .created();
+    }
+    let pipeline = json!({"name": "Evening", "steps": [
+        {"id": "archive", "step": {"type": "preset", "name": "E2E Archive"}},
+    ]});
+    app.post(
+        "/api/templates",
+        &token,
+        &json!({"name": "Evening", "pipeline": pipeline.to_string()}),
+    )
+    .await
+    .created();
+
+    // Omit the preset the kept template names, and a workflow chain nothing
+    // kept names.
+    let mut bundle = export(&app, &token).await;
+    let omitted = ["E2E Archive", "E2E Tidy", "E2E Chain"];
+    for list in ["job_presets", "pipeline_presets"] {
+        bundle[list]
+            .as_array_mut()
+            .expect("bundle presets")
+            .retain(|preset| !omitted.iter().any(|name| preset["name"] == *name));
+    }
+    let replaced = import(&app, &token, &bundle, "replace").await.ok();
+    assert_eq!(replaced["stats"]["job_presets_deleted"], 0);
+    assert_eq!(replaced["stats"]["pipeline_presets_deleted"], 2);
+    let message = replaced["message"].as_str().expect("message");
+    assert!(
+        message.contains("kept preset 'E2E Archive'") && message.contains("template 'Evening'"),
+        "{message}"
+    );
+
+    app.shutdown().await;
+}
+
 const SEEDED_LOG_FILTER: &str = "rust_srec=info,sqlx=warn";
 const SEEDED_AVATAR: &str = "https://127.0.0.1/seeded-avatar.png";
 

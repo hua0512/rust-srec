@@ -126,7 +126,8 @@ pub async fn create_pipeline_preset(
     request_body = UpdatePipelinePresetRequest,
     responses(
         (status = 200, description = "Preset updated", body = PipelinePresetResponse),
-        (status = 404, description = "Preset not found", body = crate::api::error::ApiErrorResponse)
+        (status = 404, description = "Preset not found", body = crate::api::error::ApiErrorResponse),
+        (status = 409, description = "PRESET_IN_USE: a renamed workflow is still referenced by a stored pipeline", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]
@@ -192,7 +193,8 @@ async fn reject_unrunnable_definition(
     tag = "pipeline",
     params(("id" = String, Path, description = "Preset ID")),
     responses(
-        (status = 200, description = "Preset deleted")
+        (status = 200, description = "Preset deleted"),
+        (status = 409, description = "PRESET_IN_USE: a stored pipeline references the preset by name", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]
