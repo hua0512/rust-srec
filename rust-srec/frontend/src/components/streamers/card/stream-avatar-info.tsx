@@ -8,11 +8,7 @@ import {
 } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
 import { ExternalLink, AlertTriangle, Activity } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import {
-  getPlatformColor,
-  getPlatformIcon,
-} from '@/components/pipeline/constants';
+import { getPlatformIcon } from '@/components/pipeline/constants';
 import { formatPlatformName, getPlatformFromUrl } from '@/lib/platform';
 import { Trans } from '@lingui/react/macro';
 import { z } from 'zod';
@@ -49,12 +45,7 @@ export const StreamAvatarInfo = ({
         </CardTitle>
 
         <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1.5">
-          <div
-            className={cn(
-              'flex items-center gap-1 px-1.5 py-0.5 rounded-md border',
-              platform === 'other' ? 'bg-muted/40' : getPlatformColor(platform),
-            )}
-          >
+          <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-md border border-border/40 bg-muted/40 transition-colors group-hover:border-border/60">
             <PlatformIcon className="h-3 w-3" />
             <span className="font-medium">{formatPlatformName(platform)}</span>
           </div>
