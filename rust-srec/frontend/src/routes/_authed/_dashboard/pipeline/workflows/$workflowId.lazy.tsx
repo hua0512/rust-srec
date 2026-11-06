@@ -5,7 +5,13 @@ import {
   getPipelinePreset,
   updatePipelinePreset,
 } from '@/server/functions/pipeline';
+import { useState } from 'react';
 import { toast } from 'sonner';
+import {
+  StepInUseDialog,
+  stepUsersFromConflict,
+  type StepInUse,
+} from '@/components/pipeline/step-in-use-dialog';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
@@ -26,6 +32,7 @@ function EditWorkflowPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { i18n } = useLingui();
+  const [inUse, setInUse] = useState<StepInUse>();
 
   const {
     data: workflow,
@@ -46,6 +53,17 @@ function EditWorkflowPage() {
       void navigate({ to: '/pipeline/workflows' });
     },
     onError: (error) => {
+      // Saving refuses only a rename while pipelines name the workflow.
+      const users = stepUsersFromConflict(error);
+      if (users && workflow) {
+        setInUse({
+          change: 'rename',
+          step: 'workflow',
+          name: workflow.name,
+          users,
+        });
+        return;
+      }
       console.error('Failed to update workflow:', error);
       toast.error(i18n._(msg`Failed to update workflow: ${error.message}`));
     },
@@ -96,11 +114,14 @@ function EditWorkflowPage() {
   }
 
   return (
-    <WorkflowEditor
-      initialData={workflow}
-      title={<Trans>Edit Workflow: {workflow.name}</Trans>}
-      onSubmit={onSubmit}
-      isUpdating={updateMutation.isPending}
-    />
+    <>
+      <WorkflowEditor
+        initialData={workflow}
+        title={<Trans>Edit Workflow: {workflow.name}</Trans>}
+        onSubmit={onSubmit}
+        isUpdating={updateMutation.isPending}
+      />
+      <StepInUseDialog refusal={inUse} onClose={() => setInUse(undefined)} />
+    </>
   );
 }

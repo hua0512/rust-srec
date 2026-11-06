@@ -9,7 +9,7 @@ use axum::{
     routing::{delete, get, post, put},
 };
 
-use crate::api::error::{ApiError, ApiResult};
+use crate::api::error::{ApiError, ApiResult, TEMPLATE_IN_USE_CODE};
 use crate::api::extract::{ApiJson, ApiPath, ApiQuery};
 use crate::api::models::{
     CreateTemplateRequest, PaginatedResponse, PaginationParams, TemplateResponse,
@@ -443,16 +443,26 @@ pub async fn delete_template(
     let streamers_using = streamer_manager.get_by_template(&id).len();
     let rows_referencing = streamer_manager.template_reference_count(&id);
     if streamers_using > 0 {
-        return Err(ApiError::conflict(format!(
-            "Cannot delete template '{}': {} streamer(s) are using it",
-            id, streamers_using
-        )));
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            TEMPLATE_IN_USE_CODE,
+            format!(
+                "Cannot delete template '{}': {} streamer(s) are using it",
+                id, streamers_using
+            ),
+        )
+        .with_details(serde_json::json!({ "streamer_count": streamers_using })));
     }
     if rows_referencing > 0 {
-        return Err(ApiError::conflict(format!(
-            "Cannot delete template '{}': a streamer using it is still being removed; try again shortly",
-            id
-        )));
+        return Err(ApiError::new(
+            StatusCode::CONFLICT,
+            TEMPLATE_IN_USE_CODE,
+            format!(
+                "Cannot delete template '{}': a streamer using it is still being removed; try again shortly",
+                id
+            ),
+        )
+        .with_details(serde_json::json!({ "streamer_count": 0 })));
     }
 
     // Delete the template

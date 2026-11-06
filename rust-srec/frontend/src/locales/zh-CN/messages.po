@@ -41,14 +41,23 @@ msgstr "“{conflictName}”已在使用相同的地址和用户名。"
 msgid "\"{label}\" cannot be deleted while it is selected or recording."
 msgstr "“{label}”正被选择策略选中或正在录制中使用，无法删除。"
 
+#: src/components/pipeline/step-in-use-dialog.tsx:142
+msgid "\"{name}\" cannot be deleted while these pipelines use it. Remove it from each of them first."
+msgstr "以下处理管道正在使用“{name}”，因此无法删除。请先从这些处理管道中移除它。"
+
 #: src/components/proxies/delete-proxy-dialog.tsx:56
 msgid "\"{name}\" cannot be deleted while these settings use it. Choose another proxy in each of them first."
 msgstr "以下设置仍在使用“{name}”，暂时无法删除。请先在这些设置中改选其他代理。"
+
+#: src/components/pipeline/step-in-use-dialog.tsx:135
+msgid "\"{name}\" cannot be renamed while these pipelines use it, because they refer to it by name. Remove it from each of them first, or keep the current name."
+msgstr "以下处理管道按名称引用“{name}”，因此无法重命名。请先从这些处理管道中移除它，或保留当前名称。"
 
 #: src/components/logging/log-viewer.tsx:452
 msgid "(+{pausedCount} paused)"
 msgstr "（+{pausedCount} 条已暂停）"
 
+#: src/components/pipeline/step-in-use-dialog.tsx:72
 #: src/components/proxies/proxy-references.tsx:26
 msgid "(being removed)"
 msgstr "（正在移除）"
@@ -233,6 +242,10 @@ msgstr "{0}小时{1}分"
 msgid "{attempts, plural, one {up to # try} other {up to # tries}}"
 msgstr "{attempts, plural, other {最多尝试 # 次}}"
 
+#: src/components/config/templates/template-card.tsx:112
+msgid "{blockingCount, plural, one {\"{name}\" is used by # streamer. Change its template or delete it before deleting this template.} other {\"{name}\" is used by # streamers. Change their template or delete them before deleting this template.}}"
+msgstr "{blockingCount, plural, other {“{name}”正被 # 个主播使用。请先更改这些主播的模板或删除它们，再删除此模板。}}"
+
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:131
 msgid "{cancellableCount, plural, one {Cancel # running pipeline} other {Cancel # running pipelines}}"
 msgstr "{cancellableCount, plural, other {取消 # 个运行中的流水线}}"
@@ -404,6 +417,10 @@ msgstr "{totalOutputs, plural, other {# 个文件}}"
 msgid "{totalPipelines, plural, one {# pipeline} other {# pipelines}}"
 msgstr "{totalPipelines, plural, other {# 个处理管道}}"
 
+#: src/components/config/templates/template-card.tsx:116
+msgid "{usageCount, plural, one {# streamer} other {# streamers}}"
+msgstr "{usageCount, plural, other {# 个主播}}"
+
 #: src/components/health/storage-usage-card.tsx:149
 msgid "{used} of {total} used ({percent}%)"
 msgstr "已用 {used} / {total}（{percent}%）"
@@ -527,6 +544,11 @@ msgstr "语言标签。没有匹配时使用任意语言。"
 #: src/components/credentials/credential-selection-editor.tsx:261
 msgid "A recording keeps using the account it started with."
 msgstr "一次录制会一直使用开始时的账号。"
+
+#. placeholder {0}: template.name
+#: src/components/config/templates/template-card.tsx:267
+msgid "A streamer that used \"{0}\" is still being removed. Try again in a moment."
+msgstr "使用“{0}”的主播仍在删除中，请稍后重试。"
 
 #: src/components/proxies/delete-proxy-dialog.tsx:70
 msgid "A template being removed lets go of the proxy once the recordings using it finish."
@@ -936,7 +958,7 @@ msgstr "磁盘空间不足时发出警报。"
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:172
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:83
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:286
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:224
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:237
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:160
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:92
 msgid "All"
@@ -1143,7 +1165,7 @@ msgid "Archive to Cloud"
 msgstr "云端归档"
 
 #. placeholder {0}: template.name
-#: src/components/config/templates/template-card.tsx:172
+#: src/components/config/templates/template-card.tsx:272
 msgid "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 msgstr "确定要删除模板“{0}”吗？此操作无法撤销。"
 
@@ -1383,7 +1405,7 @@ msgid "Back to platforms"
 msgstr "返回平台列表"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:103
-#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:84
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:103
 msgid "Back to presets"
 msgstr "返回预设列表"
 
@@ -1401,7 +1423,7 @@ msgid "Back to templates"
 msgstr "返回模板列表"
 
 #: src/components/pipeline/workflows/workflow-editor.tsx:128
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:92
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:110
 msgid "Back to workflows"
 msgstr "返回工作流列表"
 
@@ -1691,7 +1713,7 @@ msgstr "缓存与进度"
 
 #: src/components/config/engines/engines-panel.tsx:270
 #: src/components/config/global/backup-restore-card.tsx:523
-#: src/components/config/templates/template-card.tsx:180
+#: src/components/config/templates/template-card.tsx:281
 #: src/components/credentials/delete-profile-dialog.tsx:146
 #: src/components/filters/FilterDialog.tsx:285
 #: src/components/layout/themes/import-modal.tsx:107
@@ -1716,9 +1738,9 @@ msgstr "缓存与进度"
 #: src/components/shared/confirm-dialog.tsx:54
 #: src/components/streamers/streamer-editor.tsx:240
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:499
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:234
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:236
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:175
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:371
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:384
 msgid "Cancel"
 msgstr "取消"
 
@@ -2030,30 +2052,32 @@ msgstr "用于流认证签名的客户端平台类型。不同平台使用不同
 msgid "Client Type (ctype)"
 msgstr "客户端类型 (ctype)"
 
-#: src/components/config/templates/template-card.tsx:103
+#: src/components/config/templates/template-card.tsx:152
 #: src/components/pipeline/presets/preset-card.tsx:103
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:243
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:380
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:245
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:393
 msgid "Clone"
 msgstr "克隆"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:345
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:358
 msgid "Clone Preset"
 msgstr "克隆预设"
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:211
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:213
 msgid "Clone Template"
 msgstr "克隆模板"
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:241
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:378
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:243
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:391
 msgid "Cloning..."
 msgstr "正在克隆..."
 
 #: src/components/config/global/backup-restore-card.tsx:514
+#: src/components/config/templates/template-card.tsx:248
 #: src/components/credentials/delete-profile-dialog.tsx:123
 #: src/components/notifications/browser-channel-dialog.tsx:206
 #: src/components/notifications/desktop-channel-dialog.tsx:231
+#: src/components/pipeline/step-in-use-dialog.tsx:198
 #: src/components/proxies/delete-proxy-dialog.tsx:82
 #: src/components/ui/dialog.tsx:75
 #: src/components/ui/sheet.tsx:77
@@ -2340,7 +2364,7 @@ msgstr "连接方式"
 msgid "Connection Error"
 msgstr "连接错误"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:84
+#: src/components/streamers/card/stream-avatar-info.tsx:75
 msgid "Connection Instability"
 msgstr "连接不稳定"
 
@@ -2352,7 +2376,7 @@ msgstr "连接状态：{statusLabel}"
 msgid "Connection/activity timeout"
 msgstr "连接/活动超时"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:91
+#: src/components/streamers/card/stream-avatar-info.tsx:82
 msgid "Consecutive Failures"
 msgstr "连续失败"
 
@@ -2559,15 +2583,15 @@ msgstr "CQ (恒定质量)"
 
 #: src/components/config/templates/template-editor.tsx:209
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:508
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:128
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:130
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:402
 msgid "Create"
 msgstr "创建"
 
 #. placeholder {0}: presetToClone?.name
 #. placeholder {0}: templateToClone?.name
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:214
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:348
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:216
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:361
 msgid "Create a copy of \"{0}\" with a new name."
 msgstr "创建“{0}”的副本并使用新名称。"
 
@@ -2575,7 +2599,7 @@ msgstr "创建“{0}”的副本并使用新名称。"
 msgid "Create a filter to control when this streamer is recorded. You can filter by time, keywords, categories, and more."
 msgstr "创建过滤器以控制何时录制该主播。你可以按时间、关键字、分类等进行过滤。"
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:187
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:189
 msgid "Create a template to define reusable download configurations."
 msgstr "创建模板以定义可复用的录制配置。"
 
@@ -2628,8 +2652,8 @@ msgstr "创建新工作流"
 msgid "Create Pipeline"
 msgstr "创建处理管道"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:324
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:387
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:337
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:400
 msgid "Create Preset"
 msgstr "创建预设"
 
@@ -2638,20 +2662,20 @@ msgid "Create streamer"
 msgstr "创建主播"
 
 #: src/components/config/templates/template-editor.tsx:161
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:197
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:199
 msgid "Create Template"
 msgstr "创建模板"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:222
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:239
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:236
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:253
 msgid "Create Workflow"
 msgstr "创建工作流"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:314
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:327
 msgid "Create your first job preset to define reusable processor configurations for your pipelines."
 msgstr "创建你的第一个预设，用于为处理管道定义可复用的处理器配置。"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:212
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:226
 msgid "Create your first workflow to define a sequence of processing steps for your recordings."
 msgstr "创建你的第一个工作流，用于定义录制内容的处理步骤序列。"
 
@@ -2949,8 +2973,8 @@ msgid "Decryption Key Cache TTL (ms)"
 msgstr "解密密钥缓存 TTL（毫秒）"
 
 #: src/components/config/platforms/platform-card.tsx:37
-#: src/components/config/templates/template-card.tsx:126
-#: src/components/config/templates/template-card.tsx:138
+#: src/components/config/templates/template-card.tsx:175
+#: src/components/config/templates/template-card.tsx:187
 msgid "default"
 msgstr "默认"
 
@@ -3016,7 +3040,7 @@ msgstr "定义此步骤如何标识自身以及如何连接到其他步骤。"
 msgid "Define rules to automatically record or skip streams based on title, time, or language."
 msgstr "根据标题、时间或语言定义自动录制或跳过的规则。"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:118
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:132
 msgid "Define sequences of processing steps for your recordings"
 msgstr "为录制内容定义处理步骤序列"
 
@@ -3039,8 +3063,8 @@ msgstr "用于确认主播确实已下播的复查之间的间隔。"
 
 #: src/components/config/engines/engines-panel.tsx:250
 #: src/components/config/engines/engines-panel.tsx:276
-#: src/components/config/templates/template-card.tsx:111
-#: src/components/config/templates/template-card.tsx:186
+#: src/components/config/templates/template-card.tsx:160
+#: src/components/config/templates/template-card.tsx:290
 #: src/components/credentials/account-row.tsx:302
 #: src/components/credentials/delete-profile-dialog.tsx:153
 #: src/components/notifications/channel-card.tsx:161
@@ -3186,7 +3210,7 @@ msgstr "删除源 XML 文件"
 msgid "Delete streamer"
 msgstr "删除主播"
 
-#: src/components/config/templates/template-card.tsx:169
+#: src/components/config/templates/template-card.tsx:263
 msgid "Delete Template"
 msgstr "删除模板"
 
@@ -3227,10 +3251,11 @@ msgid "Deleted “{name}”"
 msgstr "已删除“{name}”"
 
 #. placeholder {0}: template.name
-#: src/components/config/templates/template-card.tsx:63
+#: src/components/config/templates/template-card.tsx:73
 msgid "Deleted template \"{0}\""
 msgstr "已删除模板“{0}”"
 
+#: src/components/pipeline/step-in-use-dialog.tsx:68
 #: src/components/proxies/proxy-references.tsx:21
 msgid "Deleted; kept until the recordings using it finish"
 msgstr "已删除；保留至使用它的录制结束"
@@ -3705,7 +3730,7 @@ msgid "Earlier files are still being finalized, so the cut was not made. Recordi
 msgstr "之前的文件仍在收尾，本次未分段，录制仍在继续。"
 
 #: src/components/config/platforms/platform-card.tsx:92
-#: src/components/config/templates/template-card.tsx:99
+#: src/components/config/templates/template-card.tsx:148
 #: src/components/credentials/account-row.tsx:222
 #: src/components/credentials/account-row.tsx:280
 #: src/components/layout/site-header.tsx:60
@@ -3735,7 +3760,7 @@ msgid "Edit filter"
 msgstr "编辑过滤器"
 
 #. placeholder {0}: preset.name
-#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:93
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:113
 msgid "Edit Preset: {0}"
 msgstr "编辑预设：{0}"
 
@@ -3744,7 +3769,7 @@ msgid "Edit proxy"
 msgstr "编辑代理"
 
 #. placeholder {0}: workflow.name
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:101
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:120
 msgid "Edit Workflow: {0}"
 msgstr "编辑工作流：{0}"
 
@@ -3843,7 +3868,7 @@ msgid "Endpoint Configuration"
 msgstr "端点配置"
 
 #: src/components/config/platforms/platform-card.tsx:128
-#: src/components/config/templates/template-card.tsx:122
+#: src/components/config/templates/template-card.tsx:171
 msgid "Engine"
 msgstr "引擎"
 
@@ -3901,8 +3926,8 @@ msgstr "英语（国际）"
 msgid "Enter a number"
 msgstr "请输入数字"
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:228
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:362
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:230
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:375
 msgid "Enter a unique name"
 msgstr "输入唯一名称"
 
@@ -3986,7 +4011,7 @@ msgstr "加载处理管道失败"
 msgid "Error loading platform"
 msgstr "加载平台失败"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:79
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:98
 msgid "Error loading preset"
 msgstr "加载预设失败"
 
@@ -3998,7 +4023,7 @@ msgstr "加载录制会话失败"
 msgid "Error loading template"
 msgstr "加载模板失败"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:87
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:105
 msgid "Error loading workflow"
 msgstr "加载工作流失败"
 
@@ -4245,12 +4270,12 @@ msgid "Failed to check this link. Please try again."
 msgstr "检查该链接失败，请重试。"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:154
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:167
 msgid "Failed to clone preset: {0}"
 msgstr "克隆预设失败：{0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:78
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:80
 msgid "Failed to clone template: {0}"
 msgstr "克隆模板失败：{0}"
 
@@ -4314,7 +4339,7 @@ msgid "Failed to delete pipeline"
 msgstr "删除处理管道失败"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:134
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:142
 msgid "Failed to delete preset: {0}"
 msgstr "删除预设失败：{0}"
 
@@ -4335,12 +4360,12 @@ msgid "Failed to delete streamer"
 msgstr "删除主播失败"
 
 #. placeholder {0}: error.message
-#: src/components/config/templates/template-card.tsx:67
+#: src/components/config/templates/template-card.tsx:79
 msgid "Failed to delete template: {0}"
 msgstr "删除模板失败：{0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:93
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:101
 msgid "Failed to delete workflow: {0}"
 msgstr "删除工作流失败：{0}"
 
@@ -4417,7 +4442,7 @@ msgstr "加载处理管道统计失败"
 msgid "Failed to load platforms"
 msgstr "加载平台失败"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:251
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:264
 msgid "Failed to load presets"
 msgstr "加载预设失败"
 
@@ -4437,11 +4462,12 @@ msgstr "加载系统健康状态失败"
 msgid "Failed to load system status"
 msgstr "加载系统状态失败"
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:137
+#: src/components/config/templates/template-card.tsx:103
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:139
 msgid "Failed to load templates"
 msgstr "加载模板失败"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:147
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:161
 msgid "Failed to load workflows"
 msgstr "加载工作流失败"
 
@@ -4508,7 +4534,7 @@ msgid "Failed to update platform: {0}"
 msgstr "更新平台失败：{0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:47
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:65
 msgid "Failed to update preset: {0}"
 msgstr "更新预设失败：{0}"
 
@@ -4535,7 +4561,7 @@ msgid "Failed to update template: {0}"
 msgstr "更新模板失败：{0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:50
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:68
 msgid "Failed to update workflow: {0}"
 msgstr "更新工作流失败：{0}"
 
@@ -4717,7 +4743,7 @@ msgid "Filtered:"
 msgstr "过滤原因："
 
 #: src/components/config/shared-config-editor.tsx:157
-#: src/components/config/templates/template-card.tsx:87
+#: src/components/config/templates/template-card.tsx:136
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:427
 msgid "Filters"
 msgstr "过滤器"
@@ -4866,7 +4892,7 @@ msgid "Form"
 msgstr "表单"
 
 #: src/components/config/global/file-config-card.tsx:99
-#: src/components/config/templates/template-card.tsx:134
+#: src/components/config/templates/template-card.tsx:183
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:64
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:205
 #: src/components/player/stream-info-card.tsx:30
@@ -5025,6 +5051,7 @@ msgstr "礼物数"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:115
 #: src/components/layout/site-header.tsx:52
+#: src/components/pipeline/step-in-use-dialog.tsx:96
 #: src/components/proxies/proxy-references.tsx:68
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:44
 msgid "Global"
@@ -5040,6 +5067,7 @@ msgstr "全局"
 msgid "Global Default"
 msgstr "全局默认"
 
+#: src/components/pipeline/step-in-use-dialog.tsx:113
 #: src/components/proxies/proxy-references.tsx:71
 msgid "Global settings"
 msgstr "全局设置"
@@ -5829,7 +5857,7 @@ msgstr "上次检查：{0}"
 msgid "Last Error"
 msgstr "最后错误"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:104
+#: src/components/streamers/card/stream-avatar-info.tsx:95
 msgid "Last Error Log"
 msgstr "最后错误日志"
 
@@ -6739,7 +6767,7 @@ msgstr "新密码"
 msgid "New password (min 8 chars)"
 msgstr "新密码（至少 8 个字符）"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:356
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:369
 msgid "New Preset Name"
 msgstr "新预设名称"
 
@@ -6747,7 +6775,7 @@ msgstr "新预设名称"
 msgid "New recording filter"
 msgstr "新建录制过滤器"
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:222
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:224
 msgid "New Template Name"
 msgstr "新模板名称"
 
@@ -6829,7 +6857,7 @@ msgstr "未添加自定义标签"
 msgid "No description."
 msgstr "暂无描述。"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:109
+#: src/components/streamers/card/stream-avatar-info.tsx:100
 msgid "No detailed error message available"
 msgstr "没有可用的详细错误信息"
 
@@ -6986,11 +7014,11 @@ msgid "No preset named <0>{presetName}</0> is defined. If a processor goes by th
 msgstr "没有名为 <0>{presetName}</0> 的预设。如果存在同名的处理器，此步骤会以其默认设置运行该处理器；否则管道将无法启动。请将此步骤指向一个现有预设，即可在这里查看和编辑它的设置。"
 
 #: src/components/pipeline/workflows/step-library.tsx:440
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:305
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:318
 msgid "No presets found"
 msgstr "未找到预设"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:307
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:320
 msgid "No presets yet"
 msgstr "暂无预设"
 
@@ -7054,6 +7082,10 @@ msgstr "未添加步骤"
 msgid "No steps defined"
 msgstr "未定义步骤"
 
+#: src/components/config/templates/template-card.tsx:208
+msgid "No streamers"
+msgstr "无主播"
+
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:676
 msgid "No streamers found"
 msgstr "未找到主播"
@@ -7075,11 +7107,11 @@ msgstr "暂无发言用户数据"
 msgid "No template assigned"
 msgstr "未分配模板"
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:178
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:180
 msgid "No templates found"
 msgstr "未找到模板"
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:180
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:182
 msgid "No templates yet"
 msgstr "暂无模板"
 
@@ -7096,11 +7128,11 @@ msgid "No word data"
 msgstr "暂无词频数据"
 
 #: src/components/pipeline/workflows/step-library.tsx:578
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:203
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:217
 msgid "No workflows found"
 msgstr "未找到工作流"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:205
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:219
 msgid "No workflows yet"
 msgstr "暂无工作流"
 
@@ -7476,7 +7508,7 @@ msgstr "输出：{outputSize}"
 
 #: src/components/config/platforms/platform-card.tsx:119
 #: src/components/config/shared-config-editor.tsx:168
-#: src/components/config/templates/template-card.tsx:147
+#: src/components/config/templates/template-card.tsx:216
 msgid "Output"
 msgstr "输出"
 
@@ -8019,6 +8051,7 @@ msgstr "平台"
 #: src/components/config/global/backup-restore-card.tsx:415
 #: src/components/config/templates/template-editor.tsx:260
 #: src/components/layout/site-header.tsx:49
+#: src/components/pipeline/step-in-use-dialog.tsx:97
 #: src/components/proxies/proxy-references.tsx:77
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:50
 msgid "Platforms"
@@ -8193,7 +8226,7 @@ msgstr "保留路径"
 msgid "preset"
 msgstr "预设"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:140
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:153
 msgid "Preset cloned successfully"
 msgstr "预设克隆成功"
 
@@ -8201,7 +8234,7 @@ msgstr "预设克隆成功"
 msgid "Preset created successfully"
 msgstr "预设创建成功"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:128
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:134
 msgid "Preset deleted successfully"
 msgstr "预设删除成功"
 
@@ -8209,7 +8242,7 @@ msgstr "预设删除成功"
 msgid "Preset Details"
 msgstr "预设详情"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:81
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:100
 msgid "Preset not found"
 msgstr "未找到预设"
 
@@ -8217,11 +8250,11 @@ msgstr "未找到预设"
 msgid "Preset Step"
 msgstr "预设步骤"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:40
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:47
 msgid "Preset updated successfully"
 msgstr "预设更新成功"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:209
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:222
 msgid "presets"
 msgstr "预设"
 
@@ -8229,7 +8262,7 @@ msgstr "预设"
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:225
 #: src/components/layout/site-header.tsx:56
 #: src/lib/menu-list.ts:75
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:191
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:204
 msgid "Presets"
 msgstr "预设"
 
@@ -9165,7 +9198,7 @@ msgstr "即将重试"
 msgid "Retrying..."
 msgstr "等待重试…"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:193
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:206
 msgid "Reusable processor configurations for pipeline steps"
 msgstr "处理管道步骤可复用的处理器配置"
 
@@ -9492,7 +9525,7 @@ msgstr "搜索平台…"
 msgid "Search platforms..."
 msgstr "搜索平台..."
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:202
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:215
 msgid "Search presets..."
 msgstr "搜索预设..."
 
@@ -9508,11 +9541,11 @@ msgstr "搜索主播..."
 msgid "Search streamers..."
 msgstr "搜索主播..."
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:116
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:118
 msgid "Search templates..."
 msgstr "搜索模板..."
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:129
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:143
 msgid "Search workflows..."
 msgstr "搜索工作流..."
 
@@ -9921,6 +9954,10 @@ msgstr "设置新的录制工具配置"
 msgid "Settings"
 msgstr "设置"
 
+#: src/components/pipeline/step-in-use-dialog.tsx:186
+msgid "Settings being removed let go of it once the recordings using them finish."
+msgstr "正在移除的配置会在使用它们的录制结束后释放它。"
+
 #: src/routes/_authed/_dashboard/config/global.lazy.tsx:189
 msgid "Settings updated successfully"
 msgstr "设置更新成功"
@@ -9973,6 +10010,10 @@ msgstr "显示密码"
 #: src/components/credentials/profile-editor-dialog.tsx:405
 msgid "Show QR code"
 msgstr "显示二维码"
+
+#: src/components/config/templates/template-card.tsx:255
+msgid "Show streamers"
+msgstr "查看主播"
 
 #: src/components/notifications/browser-channel-dialog.tsx:99
 msgid "Shows notifications while the application tab is open by polling recent events."
@@ -10294,7 +10335,7 @@ msgstr "地址获取方式"
 msgid "Stream Mapping (-map)"
 msgstr "流映射 (-map)"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:86
+#: src/components/streamers/card/stream-avatar-info.tsx:77
 msgid "Stream monitoring encountered issues"
 msgstr "流监控遇到问题"
 
@@ -10415,6 +10456,7 @@ msgstr "主播更新成功"
 #: src/components/config/global/backup-restore-card.tsx:386
 #: src/components/config/global/backup-restore-card.tsx:391
 #: src/components/layout/site-header.tsx:36
+#: src/components/pipeline/step-in-use-dialog.tsx:99
 #: src/components/proxies/proxy-references.tsx:105
 #: src/lib/menu-list.ts:58
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:295
@@ -10603,13 +10645,17 @@ msgstr "模板"
 msgid "Template {name}"
 msgstr "模板 {name}"
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:67
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:69
 msgid "Template cloned successfully"
 msgstr "模板克隆成功"
 
 #: src/routes/_authed/_dashboard/config/templates/create.lazy.tsx:30
 msgid "Template created successfully"
 msgstr "模板创建成功"
+
+#: src/components/config/templates/template-card.tsx:240
+msgid "Template in use"
+msgstr "模板正在使用中"
 
 #: src/components/config/templates/tabs/general-tab.tsx:43
 msgid "Template Information"
@@ -10627,7 +10673,7 @@ msgstr "未找到模板"
 msgid "Template updated successfully"
 msgstr "模板更新成功"
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:123
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:125
 msgid "templates"
 msgstr "模板"
 
@@ -10635,6 +10681,7 @@ msgstr "模板"
 #: src/components/config/global/backup-restore-card.tsx:369
 #: src/components/config/global/backup-restore-card.tsx:374
 #: src/components/layout/site-header.tsx:50
+#: src/components/pipeline/step-in-use-dialog.tsx:98
 #: src/components/proxies/proxy-references.tsx:93
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:56
 msgid "Templates"
@@ -10916,6 +10963,10 @@ msgstr "该平台还没有账号，请在平台设置中添加。"
 msgid "This platform has no accounts yet. Use Add account above to create one."
 msgstr "该平台还没有账号。请使用上方的“添加账号”创建一个。"
 
+#: src/components/pipeline/step-in-use-dialog.tsx:175
+msgid "This preset is in use"
+msgstr "此预设正在使用中"
+
 #: src/components/proxies/delete-proxy-dialog.tsx:51
 msgid "This proxy is in use"
 msgstr "此代理正在使用中"
@@ -11006,6 +11057,10 @@ msgstr "这将永久删除预设“{0}”。若不更新，使用该预设的处
 #: src/components/pipeline/workflows/workflow-card.tsx:94
 msgid "This will permanently delete the workflow \"{0}\". Streamers using this workflow will need to be updated."
 msgstr "这将永久删除工作流“{0}”。使用该工作流的主播需要更新。"
+
+#: src/components/pipeline/step-in-use-dialog.tsx:173
+msgid "This workflow is in use"
+msgstr "此工作流正在使用中"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:201
 msgid "Throughput"
@@ -11345,16 +11400,17 @@ msgstr "尝试调整搜索或过滤器，或添加新主播以开始监控。"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:515
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:389
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:312
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:325
 msgid "Try adjusting your search or filters."
 msgstr "尝试调整搜索或过滤器。"
 
 #: src/routes/_authed/_dashboard/config/platforms/index.lazy.tsx:125
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:185
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:210
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:187
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:224
 msgid "Try adjusting your search."
 msgstr "尝试调整搜索。"
 
+#: src/components/config/templates/template-card.tsx:288
 #: src/components/default-catch-boundary.tsx:42
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:81
 msgid "Try Again"
@@ -11646,6 +11702,10 @@ msgstr "启用 TLS"
 #: src/components/credentials/account-usage.tsx:228
 msgid "used {when}"
 msgstr "{when}使用"
+
+#: src/components/config/templates/template-card.tsx:196
+msgid "Used by"
+msgstr "使用情况"
 
 #: src/components/proxies/proxy-row.tsx:124
 msgid "used by {usage}"
@@ -12021,11 +12081,11 @@ msgstr "工作流"
 msgid "Workflow created successfully"
 msgstr "工作流创建成功"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:87
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:93
 msgid "Workflow deleted successfully"
 msgstr "工作流删除成功"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:89
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:107
 msgid "Workflow not found"
 msgstr "未找到工作流"
 
@@ -12037,18 +12097,19 @@ msgstr "已开始重试工作流"
 msgid "Workflow Step"
 msgstr "工作流步骤"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:42
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:49
 msgid "Workflow updated successfully"
 msgstr "工作流更新成功"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:136
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:150
 msgid "workflows"
 msgstr "工作流"
 
 #: src/components/layout/site-header.tsx:57
+#: src/components/pipeline/step-in-use-dialog.tsx:100
 #: src/components/pipeline/workflows/step-library.tsx:281
 #: src/lib/menu-list.ts:80
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:116
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:130
 msgid "Workflows"
 msgstr "工作流"
 

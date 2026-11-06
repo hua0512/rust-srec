@@ -1966,7 +1966,7 @@ async fn delete_omitted_presets(
                 .map(|(step, name, _, users)| {
                     format!(
                         "kept {step} '{name}' because the imported configuration still uses it: {}",
-                        summarize_users(users).join(", ")
+                        summarize_users(&users)
                     )
                 })
                 .collect());

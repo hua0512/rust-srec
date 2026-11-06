@@ -5,7 +5,9 @@ import { listTemplates } from '@/server/functions';
 /**
  * Templates only change through the templates pages, and every one of those
  * writes invalidates this key, so moving between the pages that offer a
- * template picker can reuse a single fetch for this long.
+ * template picker can reuse a single fetch for this long. Each template's
+ * `usage_count` changes with streamer edits, which do not invalidate this key,
+ * so readers of the count refetch it.
  */
 const TEMPLATES_STALE_TIME_MS = 60_000;
 

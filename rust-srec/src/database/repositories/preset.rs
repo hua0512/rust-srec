@@ -115,15 +115,57 @@ fn names_step(column: &str) -> String {
     )
 }
 
-/// Labels of the stored pipeline owners that name the `step` definition `id`
-/// called `name`. A workflow does not count as its own user.
+/// What kind of configuration owns a pipeline that names a step.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, sqlx::Type)]
+#[serde(rename_all = "snake_case")]
+#[sqlx(rename_all = "snake_case")]
+pub enum StepUserKind {
+    Global,
+    Platform,
+    Template,
+    Streamer,
+    Workflow,
+}
+
+/// A stored pipeline owner that names a step definition.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct StepUser {
+    pub kind: StepUserKind,
+    /// The owner's id; empty for the global config.
+    pub id: String,
+    /// The owner's name; empty for the global config.
+    pub name: String,
+    /// The owner is being removed but still runs the pipelines owed to its
+    /// last session.
+    pub removing: bool,
+}
+
+impl std::fmt::Display for StepUser {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let kind = match self.kind {
+            StepUserKind::Global => return f.write_str("the global config"),
+            StepUserKind::Platform => "platform",
+            StepUserKind::Template => "template",
+            StepUserKind::Streamer => "streamer",
+            StepUserKind::Workflow => "workflow",
+        };
+        write!(f, "{kind} '{}'", self.name)?;
+        if self.removing {
+            f.write_str(" (being removed)")?;
+        }
+        Ok(())
+    }
+}
+
+/// The stored pipeline owners that name the `step` definition `id` called
+/// `name`. A workflow does not count as its own user.
 pub(crate) async fn step_users(
     conn: &mut sqlx::SqliteConnection,
     step: StepRef,
     id: &str,
     name: &str,
     owners: Owners,
-) -> std::result::Result<Vec<String>, sqlx::Error> {
+) -> std::result::Result<Vec<StepUser>, sqlx::Error> {
     const PIPELINES: [&str; 3] = [
         "pipeline",
         "session_complete_pipeline",
@@ -144,12 +186,12 @@ pub(crate) async fn step_users(
         Owners::Kept => format!("NOT {removing} AND "),
     };
     let query = format!(
-        "SELECT 'global', '', 0 FROM global_config WHERE {global} \
-         UNION ALL SELECT 'platform', platform_name, 0 FROM platform_config WHERE {platform} \
-         UNION ALL SELECT 'template', name, {TEMPLATE_REMOVING} FROM template_config WHERE {kept_template}({template}) \
-         UNION ALL SELECT 'streamer', name, {STREAMER_REMOVING} FROM streamers WHERE {kept_streamer}({streamer}) \
-         UNION ALL SELECT 'workflow', name, {WORKFLOW_REMOVING} FROM pipeline_presets WHERE {kept_workflow}(?3 IS NULL OR id <> ?3) AND ({workflow}) \
-         ORDER BY 1, 2",
+        "SELECT 'global', '', '', 0 FROM global_config WHERE {global} \
+         UNION ALL SELECT 'platform', id, platform_name, 0 FROM platform_config WHERE {platform} \
+         UNION ALL SELECT 'template', id, name, {TEMPLATE_REMOVING} FROM template_config WHERE {kept_template}({template}) \
+         UNION ALL SELECT 'streamer', id, name, {STREAMER_REMOVING} FROM streamers WHERE {kept_streamer}({streamer}) \
+         UNION ALL SELECT 'workflow', id, name, {WORKFLOW_REMOVING} FROM pipeline_presets WHERE {kept_workflow}(?3 IS NULL OR id <> ?3) AND ({workflow}) \
+         ORDER BY 1, 3",
         global = any_names_step(&PIPELINES),
         platform = any_names_step(&PIPELINES),
         template = any_names_step(&[&PIPELINES[..], &["platform_overrides"]].concat()),
@@ -159,18 +201,20 @@ pub(crate) async fn step_users(
         kept_streamer = kept(STREAMER_REMOVING),
         kept_workflow = kept(WORKFLOW_REMOVING),
     );
-    let rows: Vec<(String, String, bool)> = sqlx::query_as(sqlx::AssertSqlSafe(query))
-        .bind(step.tag())
-        .bind(name)
-        .bind(matches!(step, StepRef::Workflow).then_some(id))
-        .fetch_all(conn)
-        .await?;
+    let rows: Vec<(StepUserKind, String, String, bool)> =
+        sqlx::query_as(sqlx::AssertSqlSafe(query))
+            .bind(step.tag())
+            .bind(name)
+            .bind(matches!(step, StepRef::Workflow).then_some(id))
+            .fetch_all(conn)
+            .await?;
     Ok(rows
         .into_iter()
-        .map(|(kind, owner, removing)| match (kind.as_str(), removing) {
-            ("global", _) => "the global config".to_string(),
-            (_, false) => format!("{kind} '{owner}'"),
-            (_, true) => format!("{kind} '{owner}' (being removed)"),
+        .map(|(kind, id, name, removing)| StepUser {
+            kind,
+            id,
+            name,
+            removing,
         })
         .collect())
 }
@@ -178,15 +222,19 @@ pub(crate) async fn step_users(
 /// How many users a message names before summarising the rest as a count.
 const LISTED_USERS: usize = 5;
 
-/// `users` cut to the first [`LISTED_USERS`], followed by a count of the rest,
-/// so a widely used preset still yields a readable message.
-pub(crate) fn summarize_users(mut users: Vec<String>) -> Vec<String> {
+/// `users` as a comma-separated list of the first [`LISTED_USERS`], followed
+/// by a count of the rest, so a widely used preset still yields a readable
+/// message.
+pub(crate) fn summarize_users(users: &[StepUser]) -> String {
+    let mut labels: Vec<String> = users
+        .iter()
+        .take(LISTED_USERS)
+        .map(ToString::to_string)
+        .collect();
     if users.len() > LISTED_USERS {
-        let more = users.len() - LISTED_USERS;
-        users.truncate(LISTED_USERS);
-        users.push(format!("{more} more"));
+        labels.push(format!("{} more", users.len() - LISTED_USERS));
     }
-    users
+    labels.join(", ")
 }
 
 /// Fail with [`crate::Error::PresetInUse`] if a stored pipeline names the
@@ -206,7 +254,7 @@ async fn ensure_unused(
         change,
         kind: step,
         name: name.to_string(),
-        users: summarize_users(users),
+        users,
     })
 }
 

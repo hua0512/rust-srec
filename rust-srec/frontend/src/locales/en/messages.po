@@ -41,14 +41,23 @@ msgstr "“{conflictName}” already uses this address and username."
 msgid "\"{label}\" cannot be deleted while it is selected or recording."
 msgstr "\"{label}\" cannot be deleted while it is selected or recording."
 
+#: src/components/pipeline/step-in-use-dialog.tsx:142
+msgid "\"{name}\" cannot be deleted while these pipelines use it. Remove it from each of them first."
+msgstr "\"{name}\" cannot be deleted while these pipelines use it. Remove it from each of them first."
+
 #: src/components/proxies/delete-proxy-dialog.tsx:56
 msgid "\"{name}\" cannot be deleted while these settings use it. Choose another proxy in each of them first."
 msgstr "\"{name}\" cannot be deleted while these settings use it. Choose another proxy in each of them first."
+
+#: src/components/pipeline/step-in-use-dialog.tsx:135
+msgid "\"{name}\" cannot be renamed while these pipelines use it, because they refer to it by name. Remove it from each of them first, or keep the current name."
+msgstr "\"{name}\" cannot be renamed while these pipelines use it, because they refer to it by name. Remove it from each of them first, or keep the current name."
 
 #: src/components/logging/log-viewer.tsx:452
 msgid "(+{pausedCount} paused)"
 msgstr "(+{pausedCount} paused)"
 
+#: src/components/pipeline/step-in-use-dialog.tsx:72
 #: src/components/proxies/proxy-references.tsx:26
 msgid "(being removed)"
 msgstr "(being removed)"
@@ -233,6 +242,10 @@ msgstr "{0}h {1}m"
 msgid "{attempts, plural, one {up to # try} other {up to # tries}}"
 msgstr "{attempts, plural, one {up to # try} other {up to # tries}}"
 
+#: src/components/config/templates/template-card.tsx:112
+msgid "{blockingCount, plural, one {\"{name}\" is used by # streamer. Change its template or delete it before deleting this template.} other {\"{name}\" is used by # streamers. Change their template or delete them before deleting this template.}}"
+msgstr "{blockingCount, plural, one {\"{name}\" is used by # streamer. Change its template or delete it before deleting this template.} other {\"{name}\" is used by # streamers. Change their template or delete them before deleting this template.}}"
+
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:131
 msgid "{cancellableCount, plural, one {Cancel # running pipeline} other {Cancel # running pipelines}}"
 msgstr "{cancellableCount, plural, one {Cancel # running pipeline} other {Cancel # running pipelines}}"
@@ -404,6 +417,10 @@ msgstr "{totalOutputs, plural, one {# file} other {# files}}"
 msgid "{totalPipelines, plural, one {# pipeline} other {# pipelines}}"
 msgstr "{totalPipelines, plural, one {# pipeline} other {# pipelines}}"
 
+#: src/components/config/templates/template-card.tsx:116
+msgid "{usageCount, plural, one {# streamer} other {# streamers}}"
+msgstr "{usageCount, plural, one {# streamer} other {# streamers}}"
+
 #: src/components/health/storage-usage-card.tsx:149
 msgid "{used} of {total} used ({percent}%)"
 msgstr "{used} of {total} used ({percent}%)"
@@ -527,6 +544,11 @@ msgstr "A language tag. Any language is used when none matches."
 #: src/components/credentials/credential-selection-editor.tsx:261
 msgid "A recording keeps using the account it started with."
 msgstr "A recording keeps using the account it started with."
+
+#. placeholder {0}: template.name
+#: src/components/config/templates/template-card.tsx:267
+msgid "A streamer that used \"{0}\" is still being removed. Try again in a moment."
+msgstr "A streamer that used \"{0}\" is still being removed. Try again in a moment."
 
 #: src/components/proxies/delete-proxy-dialog.tsx:70
 msgid "A template being removed lets go of the proxy once the recordings using it finish."
@@ -936,7 +958,7 @@ msgstr "Alerts when disk space is running low."
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:172
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:83
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:286
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:224
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:237
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:160
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:92
 msgid "All"
@@ -1143,7 +1165,7 @@ msgid "Archive to Cloud"
 msgstr "Archive to Cloud"
 
 #. placeholder {0}: template.name
-#: src/components/config/templates/template-card.tsx:172
+#: src/components/config/templates/template-card.tsx:272
 msgid "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 msgstr "Are you sure you want to delete the template \"{0}\"? This action cannot be undone."
 
@@ -1383,7 +1405,7 @@ msgid "Back to platforms"
 msgstr "Back to platforms"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:103
-#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:84
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:103
 msgid "Back to presets"
 msgstr "Back to presets"
 
@@ -1401,7 +1423,7 @@ msgid "Back to templates"
 msgstr "Back to templates"
 
 #: src/components/pipeline/workflows/workflow-editor.tsx:128
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:92
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:110
 msgid "Back to workflows"
 msgstr "Back to workflows"
 
@@ -1691,7 +1713,7 @@ msgstr "Caching and progress"
 
 #: src/components/config/engines/engines-panel.tsx:270
 #: src/components/config/global/backup-restore-card.tsx:523
-#: src/components/config/templates/template-card.tsx:180
+#: src/components/config/templates/template-card.tsx:281
 #: src/components/credentials/delete-profile-dialog.tsx:146
 #: src/components/filters/FilterDialog.tsx:285
 #: src/components/layout/themes/import-modal.tsx:107
@@ -1716,9 +1738,9 @@ msgstr "Caching and progress"
 #: src/components/shared/confirm-dialog.tsx:54
 #: src/components/streamers/streamer-editor.tsx:240
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:499
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:234
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:236
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:175
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:371
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:384
 msgid "Cancel"
 msgstr "Cancel"
 
@@ -2030,30 +2052,32 @@ msgstr "Client platform type used for stream authentication signing. Different p
 msgid "Client Type (ctype)"
 msgstr "Client Type (ctype)"
 
-#: src/components/config/templates/template-card.tsx:103
+#: src/components/config/templates/template-card.tsx:152
 #: src/components/pipeline/presets/preset-card.tsx:103
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:243
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:380
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:245
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:393
 msgid "Clone"
 msgstr "Clone"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:345
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:358
 msgid "Clone Preset"
 msgstr "Clone Preset"
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:211
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:213
 msgid "Clone Template"
 msgstr "Clone Template"
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:241
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:378
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:243
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:391
 msgid "Cloning..."
 msgstr "Cloning..."
 
 #: src/components/config/global/backup-restore-card.tsx:514
+#: src/components/config/templates/template-card.tsx:248
 #: src/components/credentials/delete-profile-dialog.tsx:123
 #: src/components/notifications/browser-channel-dialog.tsx:206
 #: src/components/notifications/desktop-channel-dialog.tsx:231
+#: src/components/pipeline/step-in-use-dialog.tsx:198
 #: src/components/proxies/delete-proxy-dialog.tsx:82
 #: src/components/ui/dialog.tsx:75
 #: src/components/ui/sheet.tsx:77
@@ -2340,7 +2364,7 @@ msgstr "Connection"
 msgid "Connection Error"
 msgstr "Connection Error"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:84
+#: src/components/streamers/card/stream-avatar-info.tsx:75
 msgid "Connection Instability"
 msgstr "Connection Instability"
 
@@ -2352,7 +2376,7 @@ msgstr "Connection status: {statusLabel}"
 msgid "Connection/activity timeout"
 msgstr "Connection/activity timeout"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:91
+#: src/components/streamers/card/stream-avatar-info.tsx:82
 msgid "Consecutive Failures"
 msgstr "Consecutive Failures"
 
@@ -2559,15 +2583,15 @@ msgstr "CQ (Constant Quality)"
 
 #: src/components/config/templates/template-editor.tsx:209
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:508
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:128
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:130
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:402
 msgid "Create"
 msgstr "Create"
 
 #. placeholder {0}: presetToClone?.name
 #. placeholder {0}: templateToClone?.name
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:214
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:348
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:216
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:361
 msgid "Create a copy of \"{0}\" with a new name."
 msgstr "Create a copy of \"{0}\" with a new name."
 
@@ -2575,7 +2599,7 @@ msgstr "Create a copy of \"{0}\" with a new name."
 msgid "Create a filter to control when this streamer is recorded. You can filter by time, keywords, categories, and more."
 msgstr "Create a filter to control when this streamer is recorded. You can filter by time, keywords, categories, and more."
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:187
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:189
 msgid "Create a template to define reusable download configurations."
 msgstr "Create a template to define reusable download configurations."
 
@@ -2628,8 +2652,8 @@ msgstr "Create New Workflow"
 msgid "Create Pipeline"
 msgstr "Create Pipeline"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:324
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:387
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:337
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:400
 msgid "Create Preset"
 msgstr "Create Preset"
 
@@ -2638,20 +2662,20 @@ msgid "Create streamer"
 msgstr "Create streamer"
 
 #: src/components/config/templates/template-editor.tsx:161
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:197
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:199
 msgid "Create Template"
 msgstr "Create Template"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:222
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:239
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:236
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:253
 msgid "Create Workflow"
 msgstr "Create Workflow"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:314
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:327
 msgid "Create your first job preset to define reusable processor configurations for your pipelines."
 msgstr "Create your first job preset to define reusable processor configurations for your pipelines."
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:212
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:226
 msgid "Create your first workflow to define a sequence of processing steps for your recordings."
 msgstr "Create your first workflow to define a sequence of processing steps for your recordings."
 
@@ -2949,8 +2973,8 @@ msgid "Decryption Key Cache TTL (ms)"
 msgstr "Decryption Key Cache TTL (ms)"
 
 #: src/components/config/platforms/platform-card.tsx:37
-#: src/components/config/templates/template-card.tsx:126
-#: src/components/config/templates/template-card.tsx:138
+#: src/components/config/templates/template-card.tsx:175
+#: src/components/config/templates/template-card.tsx:187
 msgid "default"
 msgstr "default"
 
@@ -3016,7 +3040,7 @@ msgstr "Define how this step identifies itself and connects to others."
 msgid "Define rules to automatically record or skip streams based on title, time, or language."
 msgstr "Define rules to automatically record or skip streams based on title, time, or language."
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:118
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:132
 msgid "Define sequences of processing steps for your recordings"
 msgstr "Define sequences of processing steps for your recordings"
 
@@ -3039,8 +3063,8 @@ msgstr "Delay between the re-checks used to confirm a streamer has really gone o
 
 #: src/components/config/engines/engines-panel.tsx:250
 #: src/components/config/engines/engines-panel.tsx:276
-#: src/components/config/templates/template-card.tsx:111
-#: src/components/config/templates/template-card.tsx:186
+#: src/components/config/templates/template-card.tsx:160
+#: src/components/config/templates/template-card.tsx:290
 #: src/components/credentials/account-row.tsx:302
 #: src/components/credentials/delete-profile-dialog.tsx:153
 #: src/components/notifications/channel-card.tsx:161
@@ -3186,7 +3210,7 @@ msgstr "Delete Source XML"
 msgid "Delete streamer"
 msgstr "Delete streamer"
 
-#: src/components/config/templates/template-card.tsx:169
+#: src/components/config/templates/template-card.tsx:263
 msgid "Delete Template"
 msgstr "Delete Template"
 
@@ -3227,10 +3251,11 @@ msgid "Deleted “{name}”"
 msgstr "Deleted “{name}”"
 
 #. placeholder {0}: template.name
-#: src/components/config/templates/template-card.tsx:63
+#: src/components/config/templates/template-card.tsx:73
 msgid "Deleted template \"{0}\""
 msgstr "Deleted template \"{0}\""
 
+#: src/components/pipeline/step-in-use-dialog.tsx:68
 #: src/components/proxies/proxy-references.tsx:21
 msgid "Deleted; kept until the recordings using it finish"
 msgstr "Deleted; kept until the recordings using it finish"
@@ -3705,7 +3730,7 @@ msgid "Earlier files are still being finalized, so the cut was not made. Recordi
 msgstr "Earlier files are still being finalized, so the cut was not made. Recording continues."
 
 #: src/components/config/platforms/platform-card.tsx:92
-#: src/components/config/templates/template-card.tsx:99
+#: src/components/config/templates/template-card.tsx:148
 #: src/components/credentials/account-row.tsx:222
 #: src/components/credentials/account-row.tsx:280
 #: src/components/layout/site-header.tsx:60
@@ -3735,7 +3760,7 @@ msgid "Edit filter"
 msgstr "Edit filter"
 
 #. placeholder {0}: preset.name
-#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:93
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:113
 msgid "Edit Preset: {0}"
 msgstr "Edit Preset: {0}"
 
@@ -3744,7 +3769,7 @@ msgid "Edit proxy"
 msgstr "Edit proxy"
 
 #. placeholder {0}: workflow.name
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:101
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:120
 msgid "Edit Workflow: {0}"
 msgstr "Edit Workflow: {0}"
 
@@ -3843,7 +3868,7 @@ msgid "Endpoint Configuration"
 msgstr "Endpoint Configuration"
 
 #: src/components/config/platforms/platform-card.tsx:128
-#: src/components/config/templates/template-card.tsx:122
+#: src/components/config/templates/template-card.tsx:171
 msgid "Engine"
 msgstr "Engine"
 
@@ -3901,8 +3926,8 @@ msgstr "English (International)"
 msgid "Enter a number"
 msgstr "Enter a number"
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:228
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:362
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:230
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:375
 msgid "Enter a unique name"
 msgstr "Enter a unique name"
 
@@ -3986,7 +4011,7 @@ msgstr "Error Loading Pipeline"
 msgid "Error loading platform"
 msgstr "Error loading platform"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:79
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:98
 msgid "Error loading preset"
 msgstr "Error loading preset"
 
@@ -3998,7 +4023,7 @@ msgstr "Error Loading Session"
 msgid "Error loading template"
 msgstr "Error loading template"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:87
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:105
 msgid "Error loading workflow"
 msgstr "Error loading workflow"
 
@@ -4245,12 +4270,12 @@ msgid "Failed to check this link. Please try again."
 msgstr "Failed to check this link. Please try again."
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:154
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:167
 msgid "Failed to clone preset: {0}"
 msgstr "Failed to clone preset: {0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:78
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:80
 msgid "Failed to clone template: {0}"
 msgstr "Failed to clone template: {0}"
 
@@ -4314,7 +4339,7 @@ msgid "Failed to delete pipeline"
 msgstr "Failed to delete pipeline"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:134
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:142
 msgid "Failed to delete preset: {0}"
 msgstr "Failed to delete preset: {0}"
 
@@ -4335,12 +4360,12 @@ msgid "Failed to delete streamer"
 msgstr "Failed to delete streamer"
 
 #. placeholder {0}: error.message
-#: src/components/config/templates/template-card.tsx:67
+#: src/components/config/templates/template-card.tsx:79
 msgid "Failed to delete template: {0}"
 msgstr "Failed to delete template: {0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:93
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:101
 msgid "Failed to delete workflow: {0}"
 msgstr "Failed to delete workflow: {0}"
 
@@ -4417,7 +4442,7 @@ msgstr "Failed to load pipeline statistics"
 msgid "Failed to load platforms"
 msgstr "Failed to load platforms"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:251
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:264
 msgid "Failed to load presets"
 msgstr "Failed to load presets"
 
@@ -4437,11 +4462,12 @@ msgstr "Failed to load system health"
 msgid "Failed to load system status"
 msgstr "Failed to load system status"
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:137
+#: src/components/config/templates/template-card.tsx:103
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:139
 msgid "Failed to load templates"
 msgstr "Failed to load templates"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:147
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:161
 msgid "Failed to load workflows"
 msgstr "Failed to load workflows"
 
@@ -4508,7 +4534,7 @@ msgid "Failed to update platform: {0}"
 msgstr "Failed to update platform: {0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:47
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:65
 msgid "Failed to update preset: {0}"
 msgstr "Failed to update preset: {0}"
 
@@ -4535,7 +4561,7 @@ msgid "Failed to update template: {0}"
 msgstr "Failed to update template: {0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:50
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:68
 msgid "Failed to update workflow: {0}"
 msgstr "Failed to update workflow: {0}"
 
@@ -4717,7 +4743,7 @@ msgid "Filtered:"
 msgstr "Filtered:"
 
 #: src/components/config/shared-config-editor.tsx:157
-#: src/components/config/templates/template-card.tsx:87
+#: src/components/config/templates/template-card.tsx:136
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:427
 msgid "Filters"
 msgstr "Filters"
@@ -4866,7 +4892,7 @@ msgid "Form"
 msgstr "Form"
 
 #: src/components/config/global/file-config-card.tsx:99
-#: src/components/config/templates/template-card.tsx:134
+#: src/components/config/templates/template-card.tsx:183
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:64
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:205
 #: src/components/player/stream-info-card.tsx:30
@@ -5025,6 +5051,7 @@ msgstr "Gift items"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:115
 #: src/components/layout/site-header.tsx:52
+#: src/components/pipeline/step-in-use-dialog.tsx:96
 #: src/components/proxies/proxy-references.tsx:68
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:44
 msgid "Global"
@@ -5040,6 +5067,7 @@ msgstr "Global"
 msgid "Global Default"
 msgstr "Global Default"
 
+#: src/components/pipeline/step-in-use-dialog.tsx:113
 #: src/components/proxies/proxy-references.tsx:71
 msgid "Global settings"
 msgstr "Global settings"
@@ -5829,7 +5857,7 @@ msgstr "Last checked {0}"
 msgid "Last Error"
 msgstr "Last Error"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:104
+#: src/components/streamers/card/stream-avatar-info.tsx:95
 msgid "Last Error Log"
 msgstr "Last Error Log"
 
@@ -6739,7 +6767,7 @@ msgstr "New Password"
 msgid "New password (min 8 chars)"
 msgstr "New password (min 8 chars)"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:356
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:369
 msgid "New Preset Name"
 msgstr "New Preset Name"
 
@@ -6747,7 +6775,7 @@ msgstr "New Preset Name"
 msgid "New recording filter"
 msgstr "New recording filter"
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:222
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:224
 msgid "New Template Name"
 msgstr "New Template Name"
 
@@ -6829,7 +6857,7 @@ msgstr "No custom tags added"
 msgid "No description."
 msgstr "No description."
 
-#: src/components/streamers/card/stream-avatar-info.tsx:109
+#: src/components/streamers/card/stream-avatar-info.tsx:100
 msgid "No detailed error message available"
 msgstr "No detailed error message available"
 
@@ -6986,11 +7014,11 @@ msgid "No preset named <0>{presetName}</0> is defined. If a processor goes by th
 msgstr "No preset named <0>{presetName}</0> is defined. If a processor goes by that name, this step runs it with its default settings; otherwise the pipeline fails to start. Point the step at an existing preset to see and edit its settings here."
 
 #: src/components/pipeline/workflows/step-library.tsx:440
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:305
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:318
 msgid "No presets found"
 msgstr "No presets found"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:307
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:320
 msgid "No presets yet"
 msgstr "No presets yet"
 
@@ -7054,6 +7082,10 @@ msgstr "No Steps Added"
 msgid "No steps defined"
 msgstr "No steps defined"
 
+#: src/components/config/templates/template-card.tsx:208
+msgid "No streamers"
+msgstr "No streamers"
+
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:676
 msgid "No streamers found"
 msgstr "No streamers found"
@@ -7075,11 +7107,11 @@ msgstr "No talker data"
 msgid "No template assigned"
 msgstr "No template assigned"
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:178
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:180
 msgid "No templates found"
 msgstr "No templates found"
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:180
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:182
 msgid "No templates yet"
 msgstr "No templates yet"
 
@@ -7096,11 +7128,11 @@ msgid "No word data"
 msgstr "No word data"
 
 #: src/components/pipeline/workflows/step-library.tsx:578
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:203
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:217
 msgid "No workflows found"
 msgstr "No workflows found"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:205
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:219
 msgid "No workflows yet"
 msgstr "No workflows yet"
 
@@ -7476,7 +7508,7 @@ msgstr "Out: {outputSize}"
 
 #: src/components/config/platforms/platform-card.tsx:119
 #: src/components/config/shared-config-editor.tsx:168
-#: src/components/config/templates/template-card.tsx:147
+#: src/components/config/templates/template-card.tsx:216
 msgid "Output"
 msgstr "Output"
 
@@ -8019,6 +8051,7 @@ msgstr "platforms"
 #: src/components/config/global/backup-restore-card.tsx:415
 #: src/components/config/templates/template-editor.tsx:260
 #: src/components/layout/site-header.tsx:49
+#: src/components/pipeline/step-in-use-dialog.tsx:97
 #: src/components/proxies/proxy-references.tsx:77
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:50
 msgid "Platforms"
@@ -8193,7 +8226,7 @@ msgstr "Preserve Paths"
 msgid "preset"
 msgstr "preset"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:140
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:153
 msgid "Preset cloned successfully"
 msgstr "Preset cloned successfully"
 
@@ -8201,7 +8234,7 @@ msgstr "Preset cloned successfully"
 msgid "Preset created successfully"
 msgstr "Preset created successfully"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:128
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:134
 msgid "Preset deleted successfully"
 msgstr "Preset deleted successfully"
 
@@ -8209,7 +8242,7 @@ msgstr "Preset deleted successfully"
 msgid "Preset Details"
 msgstr "Preset Details"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:81
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:100
 msgid "Preset not found"
 msgstr "Preset not found"
 
@@ -8217,11 +8250,11 @@ msgstr "Preset not found"
 msgid "Preset Step"
 msgstr "Preset Step"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:40
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:47
 msgid "Preset updated successfully"
 msgstr "Preset updated successfully"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:209
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:222
 msgid "presets"
 msgstr "presets"
 
@@ -8229,7 +8262,7 @@ msgstr "presets"
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:225
 #: src/components/layout/site-header.tsx:56
 #: src/lib/menu-list.ts:75
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:191
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:204
 msgid "Presets"
 msgstr "Presets"
 
@@ -9165,7 +9198,7 @@ msgstr "Retrying shortly"
 msgid "Retrying..."
 msgstr "Retrying..."
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:193
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:206
 msgid "Reusable processor configurations for pipeline steps"
 msgstr "Reusable processor configurations for pipeline steps"
 
@@ -9492,7 +9525,7 @@ msgstr "Search platform..."
 msgid "Search platforms..."
 msgstr "Search platforms..."
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:202
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:215
 msgid "Search presets..."
 msgstr "Search presets..."
 
@@ -9508,11 +9541,11 @@ msgstr "Search streamer..."
 msgid "Search streamers..."
 msgstr "Search streamers..."
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:116
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:118
 msgid "Search templates..."
 msgstr "Search templates..."
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:129
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:143
 msgid "Search workflows..."
 msgstr "Search workflows..."
 
@@ -9921,6 +9954,10 @@ msgstr "Set up a new download tool configuration"
 msgid "Settings"
 msgstr "Settings"
 
+#: src/components/pipeline/step-in-use-dialog.tsx:186
+msgid "Settings being removed let go of it once the recordings using them finish."
+msgstr "Settings being removed let go of it once the recordings using them finish."
+
 #: src/routes/_authed/_dashboard/config/global.lazy.tsx:189
 msgid "Settings updated successfully"
 msgstr "Settings updated successfully"
@@ -9973,6 +10010,10 @@ msgstr "Show password"
 #: src/components/credentials/profile-editor-dialog.tsx:405
 msgid "Show QR code"
 msgstr "Show QR code"
+
+#: src/components/config/templates/template-card.tsx:255
+msgid "Show streamers"
+msgstr "Show streamers"
 
 #: src/components/notifications/browser-channel-dialog.tsx:99
 msgid "Shows notifications while the application tab is open by polling recent events."
@@ -10294,7 +10335,7 @@ msgstr "Stream lookup"
 msgid "Stream Mapping (-map)"
 msgstr "Stream Mapping (-map)"
 
-#: src/components/streamers/card/stream-avatar-info.tsx:86
+#: src/components/streamers/card/stream-avatar-info.tsx:77
 msgid "Stream monitoring encountered issues"
 msgstr "Stream monitoring encountered issues"
 
@@ -10415,6 +10456,7 @@ msgstr "Streamer updated successfully"
 #: src/components/config/global/backup-restore-card.tsx:386
 #: src/components/config/global/backup-restore-card.tsx:391
 #: src/components/layout/site-header.tsx:36
+#: src/components/pipeline/step-in-use-dialog.tsx:99
 #: src/components/proxies/proxy-references.tsx:105
 #: src/lib/menu-list.ts:58
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:295
@@ -10603,13 +10645,17 @@ msgstr "Template"
 msgid "Template {name}"
 msgstr "Template {name}"
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:67
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:69
 msgid "Template cloned successfully"
 msgstr "Template cloned successfully"
 
 #: src/routes/_authed/_dashboard/config/templates/create.lazy.tsx:30
 msgid "Template created successfully"
 msgstr "Template created successfully"
+
+#: src/components/config/templates/template-card.tsx:240
+msgid "Template in use"
+msgstr "Template in use"
 
 #: src/components/config/templates/tabs/general-tab.tsx:43
 msgid "Template Information"
@@ -10627,7 +10673,7 @@ msgstr "Template not found"
 msgid "Template updated successfully"
 msgstr "Template updated successfully"
 
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:123
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:125
 msgid "templates"
 msgstr "templates"
 
@@ -10635,6 +10681,7 @@ msgstr "templates"
 #: src/components/config/global/backup-restore-card.tsx:369
 #: src/components/config/global/backup-restore-card.tsx:374
 #: src/components/layout/site-header.tsx:50
+#: src/components/pipeline/step-in-use-dialog.tsx:98
 #: src/components/proxies/proxy-references.tsx:93
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:56
 msgid "Templates"
@@ -10916,6 +10963,10 @@ msgstr "This platform has no accounts yet. Add them in the platform settings."
 msgid "This platform has no accounts yet. Use Add account above to create one."
 msgstr "This platform has no accounts yet. Use Add account above to create one."
 
+#: src/components/pipeline/step-in-use-dialog.tsx:175
+msgid "This preset is in use"
+msgstr "This preset is in use"
+
 #: src/components/proxies/delete-proxy-dialog.tsx:51
 msgid "This proxy is in use"
 msgstr "This proxy is in use"
@@ -11006,6 +11057,10 @@ msgstr "This will permanently delete the preset \"{0}\". Pipelines using this pr
 #: src/components/pipeline/workflows/workflow-card.tsx:94
 msgid "This will permanently delete the workflow \"{0}\". Streamers using this workflow will need to be updated."
 msgstr "This will permanently delete the workflow \"{0}\". Streamers using this workflow will need to be updated."
+
+#: src/components/pipeline/step-in-use-dialog.tsx:173
+msgid "This workflow is in use"
+msgstr "This workflow is in use"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:201
 msgid "Throughput"
@@ -11345,16 +11400,17 @@ msgstr "Try adjusting your search or filters, or add a new streamer to start mon
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:515
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:389
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:312
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:325
 msgid "Try adjusting your search or filters."
 msgstr "Try adjusting your search or filters."
 
 #: src/routes/_authed/_dashboard/config/platforms/index.lazy.tsx:125
-#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:185
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:210
+#: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:187
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:224
 msgid "Try adjusting your search."
 msgstr "Try adjusting your search."
 
+#: src/components/config/templates/template-card.tsx:288
 #: src/components/default-catch-boundary.tsx:42
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:81
 msgid "Try Again"
@@ -11646,6 +11702,10 @@ msgstr "Use TLS"
 #: src/components/credentials/account-usage.tsx:228
 msgid "used {when}"
 msgstr "used {when}"
+
+#: src/components/config/templates/template-card.tsx:196
+msgid "Used by"
+msgstr "Used by"
 
 #: src/components/proxies/proxy-row.tsx:124
 msgid "used by {usage}"
@@ -12021,11 +12081,11 @@ msgstr "workflow"
 msgid "Workflow created successfully"
 msgstr "Workflow created successfully"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:87
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:93
 msgid "Workflow deleted successfully"
 msgstr "Workflow deleted successfully"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:89
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:107
 msgid "Workflow not found"
 msgstr "Workflow not found"
 
@@ -12037,18 +12097,19 @@ msgstr "Workflow retry initiated"
 msgid "Workflow Step"
 msgstr "Workflow Step"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:42
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:49
 msgid "Workflow updated successfully"
 msgstr "Workflow updated successfully"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:136
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:150
 msgid "workflows"
 msgstr "workflows"
 
 #: src/components/layout/site-header.tsx:57
+#: src/components/pipeline/step-in-use-dialog.tsx:100
 #: src/components/pipeline/workflows/step-library.tsx:281
 #: src/lib/menu-list.ts:80
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:116
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:130
 msgid "Workflows"
 msgstr "Workflows"
 

@@ -6,7 +6,7 @@ import {
   keepPreviousData,
 } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'motion/react';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { queryKeys } from '@/api/query-keys';
 import {
   listPipelinePresets,
@@ -21,6 +21,11 @@ import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { WorkflowCard } from '@/components/pipeline/workflows/workflow-card';
+import {
+  StepInUseDialog,
+  stepUsersFromConflict,
+  type StepInUse,
+} from '@/components/pipeline/step-in-use-dialog';
 import { SearchInput } from '@/components/shared/search-input';
 import { useUpdateSearch } from '@/hooks/use-update-search';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -54,6 +59,7 @@ function WorkflowsPage() {
   // The URL counts pages from 1; the pager counts them from 0.
   const currentPage = (search.page ?? 1) - 1;
 
+  const [inUse, setInUse] = useState<StepInUse>();
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: queryKeys.pipeline.workflows.list({
       search: debouncedSearch,
@@ -89,8 +95,16 @@ function WorkflowsPage() {
         queryKey: queryKeys.pipeline.workflows.all,
       });
     },
-    onError: (error) =>
-      toast.error(i18n._(msg`Failed to delete workflow: ${error.message}`)),
+    onError: (error, { data: id }) => {
+      const users = stepUsersFromConflict(error);
+      if (!users) {
+        toast.error(i18n._(msg`Failed to delete workflow: ${error.message}`));
+        return;
+      }
+      const name =
+        workflows?.find((workflow) => workflow.id === id)?.name ?? id;
+      setInUse({ change: 'delete', step: 'workflow', name, users });
+    },
   });
 
   const handleDelete = (id: string) => {
@@ -239,6 +253,7 @@ function WorkflowsPage() {
           label={i18n._(msg`Create Workflow`)}
           onClick={handleCreate}
         />
+        <StepInUseDialog refusal={inUse} onClose={() => setInUse(undefined)} />
       </div>
     </div>
   );

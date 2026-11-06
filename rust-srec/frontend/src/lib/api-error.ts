@@ -130,6 +130,21 @@ export function isDagAlreadyTerminalError(error: unknown): boolean {
   return hasErrorCode(body, DAG_ALREADY_TERMINAL_CODE);
 }
 
+// Body code the backend returns when a template cannot be deleted because
+// streamers use it. Mirrors TEMPLATE_IN_USE_CODE in `api/error.rs`.
+const TEMPLATE_IN_USE_CODE = 'TEMPLATE_IN_USE';
+
+/**
+ * How many streamers use a template whose deletion the backend refused, or
+ * `undefined` when it refused for another reason. Zero means only streamers
+ * that are still being removed hold the template.
+ */
+export function templateInUseCount(error: unknown): number | undefined {
+  if (!hasErrorCode(errorBody(error), TEMPLATE_IN_USE_CODE)) return undefined;
+  const count = errorDetails(error)?.streamer_count;
+  return typeof count === 'number' ? count : 0;
+}
+
 /** The message of a thrown error, or `fallback` when it carries none. */
 export function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
