@@ -18,7 +18,9 @@ use parking_lot::RwLock;
 use reqwest::Client;
 use serde::Serialize;
 
-use super::platforms::{BilibiliProvider, DouyuProvider, SoopProvider, TwitchProvider};
+use super::platforms::{
+    BigoProvider, BilibiliProvider, DouyuProvider, SoopProvider, TwitchProvider,
+};
 use super::{CredentialError, CredentialMaterial};
 
 /// What accounts on a platform support. Profile validation, the extractor
@@ -134,6 +136,15 @@ pub trait CredentialProvider: Send + Sync {
         None
     }
 
+    /// How long an account rests when the platform turns it away, for
+    /// platforms whose login wall also meets working accounts for a while.
+    /// Consulted once the account has been refreshed in the same operation
+    /// (or cannot be): a refresh that finds the login gone has already asked
+    /// for a new one. `None` asks for a new login instead of resting.
+    fn rejection_rest(&self) -> Option<std::time::Duration> {
+        None
+    }
+
     /// Repairs a rejected account. Only called when
     /// [`ProviderCapabilities::refresh`] is set.
     async fn refresh(
@@ -217,6 +228,8 @@ pub(super) fn registered(platform: &str) -> Option<&'static dyn CredentialProvid
 pub fn provider(platform: &str) -> &'static dyn CredentialProvider {
     if let Some(provider) = registered(platform) {
         provider
+    } else if platform.eq_ignore_ascii_case("bigo") {
+        &BigoProvider
     } else if platform.eq_ignore_ascii_case("bilibili") {
         &BilibiliProvider
     } else if platform.eq_ignore_ascii_case("douyu") {

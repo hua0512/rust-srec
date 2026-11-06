@@ -32,6 +32,7 @@ async fn acceptance_backup_restart_and_concurrent_qr_keep_account_identity() {
         let ids: Vec<_> = backup.credential_profiles.iter().map(|profile| profile.id.clone()).collect();
         let selection = CredentialSelection::Pool {
             credential_ids: ids.clone(), strategy: PoolStrategy::RoundRobin, failover: true, max_attempts: 3,
+            anonymous_fallback: false,
         };
         backup.platforms[0].credential_selection = Some(selection.clone());
         let mut fixed = imported_streamer("https://live.bilibili.com/123", "bilibili");

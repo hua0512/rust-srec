@@ -26,6 +26,7 @@ use crate::segment_engine::control::{
 };
 
 use super::super::soop_processor::is_preloading_segment;
+use super::super::web_protection;
 
 use super::descriptor::{
     EffectiveIv, EncryptionDescriptor, EncryptionMethod, KeyFormat, SegmentDescriptor, SegmentMeta,
@@ -242,6 +243,9 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
 
     let base_url = Url::parse(snapshot.base_url.as_ref()).ok();
     let parent_params = query_params(snapshot.parent_query.as_deref());
+    // The seed may change between refreshes; each segment uses the one from
+    // the snapshot that listed it.
+    let scramble_seed = web_protection::playlist_seed(playlist);
 
     let scan: Vec<ScanSegment<'_>> = match ctx.twitch.as_mut() {
         Some(twitch) => twitch
@@ -497,6 +501,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
             discontinuity: scanned.discontinuity,
             encryption,
             init_key: active_init_key,
+            scramble_seed,
             meta: SegmentMeta::Hls(Arc::new(media_segment)),
         });
     }
@@ -549,6 +554,7 @@ fn build_init_descriptor(
         discontinuity,
         encryption,
         init_key: None,
+        scramble_seed: None,
         meta: SegmentMeta::Hls(Arc::new(media_segment)),
     })
 }

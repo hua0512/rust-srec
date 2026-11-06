@@ -117,7 +117,8 @@
       "mode",
       "strategy",
       "failover",
-      "max_attempts"
+      "max_attempts",
+      "anonymous_fallback"
     ]
   },
   "dag_execution": {

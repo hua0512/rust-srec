@@ -41,6 +41,7 @@ async fn overlapping_discovery_queue_and_bound_polls_extract_only_equivalent_res
             strategy: PoolStrategy::RoundRobin,
             failover: true,
             max_attempts: 3,
+            anonymous_fallback: false,
         };
         crate::database::repositories::credential_selections::test_support::set_platform_selection(
             &pool,

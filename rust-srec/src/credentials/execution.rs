@@ -127,6 +127,9 @@ struct AttemptStep<'a> {
 pub struct Exclusions {
     disabled: bool,
     login_required: bool,
+    /// An account is resting after the platform turned it away; it needs
+    /// no new login, so it reports as the attempts running out.
+    resting: bool,
 }
 
 impl Exclusions {
@@ -148,6 +151,8 @@ impl Exclusions {
             Some(UnavailableReason::LoginRequired)
         } else if self.disabled {
             Some(UnavailableReason::ProfilesDisabled)
+        } else if self.resting {
+            Some(UnavailableReason::AttemptsExhausted)
         } else {
             None
         }
@@ -162,6 +167,14 @@ pub struct CredentialExecutionService {
     unavailable: Mutex<HashMap<String, (CredentialUnavailable, Instant)>>,
     /// When this process last wrote each account's last use.
     used: Mutex<HashMap<String, Instant>>,
+    /// Accounts resting after a rejection their provider may lift by itself.
+    resting: Mutex<HashMap<String, Rest>>,
+}
+
+/// A rejected account's rest, at the revision that was rejected.
+struct Rest {
+    revision: i64,
+    until: Instant,
 }
 
 impl CredentialExecutionService {
@@ -192,6 +205,7 @@ impl CredentialExecutionService {
             locks: dashmap::DashMap::new(),
             unavailable: Mutex::new(HashMap::new()),
             used: Mutex::new(HashMap::new()),
+            resting: Mutex::new(HashMap::new()),
         }
     }
 
@@ -290,9 +304,33 @@ impl CredentialExecutionService {
         policy: &ResolvedCredentialPolicy,
         exclusions: &Exclusions,
         fallback: UnavailableReason,
+        anonymous_fallback: bool,
     ) -> Error {
-        self.unavailable(policy, exclusions.reason().unwrap_or(fallback))
-            .await
+        self.exhausted(
+            policy,
+            exclusions.reason().unwrap_or(fallback),
+            anonymous_fallback,
+        )
+        .await
+    }
+
+    /// The pool has no account for this operation. When the operation goes on
+    /// without one, nothing is blocked, so the exhaustion is neither logged
+    /// as a warning nor notified; the accounts' own login notifications
+    /// still say what needs attention.
+    async fn exhausted(
+        &self,
+        policy: &ResolvedCredentialPolicy,
+        reason: UnavailableReason,
+        anonymous_fallback: bool,
+    ) -> Error {
+        if anonymous_fallback {
+            return Error::CredentialUnavailable(CredentialUnavailable {
+                reason,
+                policy_generation: policy.generation.clone(),
+            });
+        }
+        self.unavailable(policy, reason).await
     }
 
     /// Owner display names for notifications; a failed lookup keeps the ID.
@@ -680,17 +718,83 @@ impl CredentialExecutionService {
         Fut: Future<Output = Result<Extracted<T>>>,
     {
         self.repository.validate_selection(policy).await?;
+        let bound_anonymous = binding.is_some_and(|binding| {
+            binding.policy.generation == policy.generation
+                && matches!(binding.identity, CredentialIdentity::Anonymous)
+        });
         if matches!(
             policy.selection,
             CredentialSelection::Inherit | CredentialSelection::None
-        ) {
+        ) || (policy.selection.anonymous_fallback() && bound_anonymous && !allow_switch)
+        {
             return self
                 .execute_anonymous(policy, binding, deadline, route, &mut extract)
                 .await;
         }
+        // Switching to no account is a switch like any other, so a bound poll
+        // that cannot switch keeps reporting its account unavailable.
+        let anonymous_fallback =
+            policy.selection.anonymous_fallback() && (binding.is_none() || allow_switch);
+        match self
+            .execute_pool(
+                policy,
+                binding,
+                allow_switch,
+                deadline,
+                route,
+                &mut extract,
+                anonymous_fallback,
+            )
+            .await
+        {
+            Err(Error::CredentialUnavailable(unavailable)) if anonymous_fallback => {
+                tracing::debug!(
+                    platform_id = %policy.platform_id,
+                    strategy = policy.selection.strategy_name(),
+                    reason = unavailable.reason.as_str(),
+                    "No account in the pool can be used; checking without one"
+                );
+                match self
+                    .execute_anonymous(policy, binding, deadline, route, &mut extract)
+                    .await
+                {
+                    // The platform wants a login without one too, so the
+                    // streamer is still waiting for an account.
+                    Err(Error::Extractor(ExtractorError::Authentication { .. })) => {
+                        Err(self.unavailable(policy, unavailable.reason).await)
+                    }
+                    result => result,
+                }
+            }
+            result => result,
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn execute_pool<T, F, Fut>(
+        &self,
+        policy: &ResolvedCredentialPolicy,
+        binding: Option<&CredentialBinding>,
+        allow_switch: bool,
+        deadline: OperationDeadline,
+        route: &ResolvedRoute,
+        extract: &mut F,
+        anonymous_fallback: bool,
+    ) -> Result<CredentialExecution<T>>
+    where
+        F: FnMut(CredentialSnapshot) -> Fut,
+        Fut: Future<Output = Result<Extracted<T>>>,
+    {
         let mut exclusions = Exclusions::default();
         let candidates = self
-            .select_candidates(policy, binding, allow_switch, route, &mut exclusions)
+            .select_candidates(
+                policy,
+                binding,
+                allow_switch,
+                route,
+                &mut exclusions,
+                anonymous_fallback,
+            )
             .await?;
         let platform = self.repository.platform_name(&policy.platform_id).await?;
         let mut attempts = Attempts {
@@ -729,7 +833,7 @@ impl CredentialExecutionService {
                 repair,
                 route: &route,
             };
-            if let Some(execution) = self.attempt(&step, &mut attempts, &mut extract).await? {
+            if let Some(execution) = self.attempt(&step, &mut attempts, extract).await? {
                 return Ok(execution);
             }
         }
@@ -739,15 +843,21 @@ impl CredentialExecutionService {
                 policy,
                 &attempts.exclusions,
                 UnavailableReason::AttemptsExhausted,
+                anonymous_fallback,
             )
             .await
         } else {
-            self.unavailable(policy, UnavailableReason::AttemptsExhausted)
-                .await
+            self.exhausted(
+                policy,
+                UnavailableReason::AttemptsExhausted,
+                anonymous_fallback,
+            )
+            .await
         })
     }
 
-    /// `Inherit`/`None` run once without an account, under platform admission.
+    /// `Inherit`/`None`, and pools falling back to no account, run once
+    /// without an account, under platform admission.
     async fn execute_anonymous<T, F, Fut>(
         &self,
         policy: &ResolvedCredentialPolicy,
@@ -805,12 +915,18 @@ impl CredentialExecutionService {
         allow_switch: bool,
         route: &ResolvedRoute,
         exclusions: &mut Exclusions,
+        anonymous_fallback: bool,
     ) -> Result<VecDeque<Candidate>> {
         let paths = self.eligible_profiles(policy, route, exclusions).await?;
         let mut eligible: Vec<String> = paths.iter().map(|(id, _)| id.clone()).collect();
         if eligible.is_empty() {
             return Err(self
-                .unavailable_after(policy, exclusions, UnavailableReason::AttemptsExhausted)
+                .unavailable_after(
+                    policy,
+                    exclusions,
+                    UnavailableReason::AttemptsExhausted,
+                    anonymous_fallback,
+                )
                 .await);
         }
         let bound_id = binding
@@ -832,7 +948,11 @@ impl CredentialExecutionService {
                 )
             {
                 return Err(self
-                    .unavailable(policy, UnavailableReason::BoundProfileUnavailable)
+                    .exhausted(
+                        policy,
+                        UnavailableReason::BoundProfileUnavailable,
+                        anonymous_fallback,
+                    )
                     .await);
             } else {
                 start_after_bound(policy, id, &mut eligible);
@@ -857,7 +977,12 @@ impl CredentialExecutionService {
         ) {
             let Some(start) = self.round_robin_start(policy, &eligible) else {
                 return Err(self
-                    .unavailable_after(policy, exclusions, UnavailableReason::AttemptsExhausted)
+                    .unavailable_after(
+                        policy,
+                        exclusions,
+                        UnavailableReason::AttemptsExhausted,
+                        anonymous_fallback,
+                    )
                     .await);
             };
             if let Some(index) = eligible.iter().position(|id| *id == start) {
@@ -887,8 +1012,9 @@ impl CredentialExecutionService {
             .collect())
     }
 
-    /// Saved accounts that are enabled and not invalid, in saved order, with
-    /// the route each one takes: its own, else the operation's `route`.
+    /// Saved accounts that are enabled, not invalid and not resting, in saved
+    /// order, with the route each one takes: its own, else the operation's
+    /// `route`.
     async fn eligible_profiles(
         &self,
         policy: &ResolvedCredentialPolicy,
@@ -899,7 +1025,9 @@ impl CredentialExecutionService {
         for id in policy.selection.profile_ids() {
             let profile = self.repository.get(id).await?;
             let health = self.repository.health(id).await?;
-            if exclusions.admits(profile.enabled, health.as_ref()) {
+            if exclusions.admits(profile.enabled, health.as_ref())
+                && !self.excluded_while_resting(&profile, exclusions)
+            {
                 let own = self.repository.account_route(&profile, Some(route)).await?;
                 eligible.push((id.to_owned(), own));
             }
@@ -998,6 +1126,12 @@ impl CredentialExecutionService {
         if !attempts.exclusions.admits(true, health.as_ref()) {
             return Ok(None);
         }
+        // Checked before any repair: an operation that selected the account
+        // before its rest began must not refresh it during the rest.
+        let profile = self.repository.get(id).await?;
+        if self.excluded_while_resting(&profile, &mut attempts.exclusions) {
+            return Ok(None);
+        }
         let prepared = self
             .prepare(
                 step,
@@ -1064,7 +1198,9 @@ impl CredentialExecutionService {
             attempts.retry_source(id, route);
             return Ok(None);
         }
-        if !attempts.exclusions.admits(true, latest_health.as_ref()) {
+        if !attempts.exclusions.admits(true, latest_health.as_ref())
+            || self.excluded_while_resting(&latest, &mut attempts.exclusions)
+        {
             return Ok(None);
         }
         self.repository.validate_current(profile).await?;
@@ -1101,6 +1237,7 @@ impl CredentialExecutionService {
         } else if !result.preserve_health {
             self.confirm_health(profile).await?;
         }
+        self.resting.lock().remove(step.id);
         self.unavailable.lock().remove(&step.policy.generation);
         Ok(Some(CredentialExecution {
             value: result.value,
@@ -1176,13 +1313,8 @@ impl CredentialExecutionService {
         let id = step.id;
         match error {
             Error::Extractor(ExtractorError::Authentication { .. }) => {
-                if !attempts.repaired.contains(id)
-                    && self
-                        .providers
-                        .provider(&attempts.platform)
-                        .capabilities()
-                        .refresh
-                {
+                let provider = self.providers.provider(&attempts.platform);
+                if !attempts.repaired.contains(id) && provider.capabilities().refresh {
                     tracing::info!(
                         profile_id = %id,
                         platform_id = %step.policy.platform_id,
@@ -1202,6 +1334,22 @@ impl CredentialExecutionService {
                         repair: true,
                         route: step.route.clone(),
                     });
+                } else if let Some(rest) = provider.rejection_rest() {
+                    self.resting.lock().insert(
+                        id.to_owned(),
+                        Rest {
+                            revision: profile.revision,
+                            until: Instant::now() + rest,
+                        },
+                    );
+                    tracing::warn!(
+                        profile_id = %id,
+                        platform = %attempts.platform,
+                        rest_secs = rest.as_secs(),
+                        "Credential profile turned away by the platform; resting it before trying it again"
+                    );
+                    attempts.exclusions.resting = true;
+                    attempts.previous = Some((id.to_owned(), "resting"));
                 } else {
                     self.mark_invalid(profile, &attempts.platform).await?;
                     attempts.exclusions.login_required = true;
@@ -1242,6 +1390,21 @@ impl CredentialExecutionService {
         {
             tracing::warn!(profile_id = %id, %error, "Could not record the credential profile's last use");
         }
+    }
+
+    /// Skips an account that is resting at its current revision. New
+    /// material ends the rest, since it may be the fresh login.
+    fn excluded_while_resting(
+        &self,
+        profile: &CredentialProfile,
+        exclusions: &mut Exclusions,
+    ) -> bool {
+        let resting =
+            self.resting.lock().get(&profile.id).is_some_and(|rest| {
+                rest.revision == profile.revision && Instant::now() < rest.until
+            });
+        exclusions.resting |= resting;
+        resting
     }
 
     fn defer_throttle(&self, platform_id: &str, route: &ResolvedRoute, error: &Error) {

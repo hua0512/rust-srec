@@ -524,7 +524,7 @@ msgstr "这些任务因崩溃或强制退出而中断，没来得及清理。这
 msgid "A language tag. Any language is used when none matches."
 msgstr "语言标签。没有匹配时使用任意语言。"
 
-#: src/components/credentials/credential-selection-editor.tsx:260
+#: src/components/credentials/credential-selection-editor.tsx:261
 msgid "A recording keeps using the account it started with."
 msgstr "一次录制会一直使用开始时的账号。"
 
@@ -577,7 +577,7 @@ msgstr "访问令牌"
 msgid "Access was denied. Refresh the stream URL or check the source credentials. If your app session expired, sign in again."
 msgstr "访问被拒绝。请刷新直播地址或检查源站凭据。如果应用登录已过期，请重新登录。"
 
-#: src/components/credentials/credential-selection-editor.tsx:274
+#: src/components/credentials/credential-selection-editor.tsx:275
 msgid "Account"
 msgstr "账号"
 
@@ -598,7 +598,7 @@ msgstr "已复制账号 ID"
 msgid "Account needs login"
 msgstr "账号需要登录"
 
-#: src/components/credentials/credential-selection-editor.tsx:217
+#: src/components/credentials/credential-selection-editor.tsx:218
 msgid "Account selection"
 msgstr "账号选择"
 
@@ -607,7 +607,7 @@ msgid "Account unavailable"
 msgstr "账号不可用"
 
 #: src/components/config/templates/tabs/platform-override-card.tsx:80
-#: src/components/credentials/credential-selection-editor.tsx:312
+#: src/components/credentials/credential-selection-editor.tsx:313
 #: src/components/credentials/platform-accounts-section.tsx:127
 #: src/components/credentials/read-only-accounts-section.tsx:25
 msgid "Accounts"
@@ -639,7 +639,7 @@ msgstr "账号已停用"
 msgid "Accounts failing"
 msgstr "账号均不可用"
 
-#: src/components/credentials/credential-selection-editor.tsx:310
+#: src/components/credentials/credential-selection-editor.tsx:311
 msgid "Accounts, in the order they are tried"
 msgstr "账号（按尝试顺序）"
 
@@ -701,8 +701,8 @@ msgstr "添加一个流以开始观看会话。"
 msgid "Add a streamer"
 msgstr "添加主播"
 
-#: src/components/credentials/credential-selection-editor.tsx:383
-#: src/components/credentials/credential-selection-editor.tsx:386
+#: src/components/credentials/credential-selection-editor.tsx:384
+#: src/components/credentials/credential-selection-editor.tsx:387
 #: src/components/credentials/platform-accounts-section.tsx:120
 #: src/components/credentials/profile-editor-dialog.tsx:199
 msgid "Add account"
@@ -1155,11 +1155,11 @@ msgstr "确定要删除此会话吗？此操作无法撤销。"
 msgid "Are you sure you want to delete this streamer?"
 msgstr "确定要删除此主播吗？"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:46
+#: src/components/config/engines/forms/ffmpeg-form.tsx:47
 msgid "Args inserted before -i input_url"
 msgstr "插入到 -i input_url 之前的参数"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:54
+#: src/components/config/engines/forms/ffmpeg-form.tsx:55
 msgid "Args used for processing/encoding"
 msgstr "用于处理/编码的参数"
 
@@ -1167,7 +1167,7 @@ msgstr "用于处理/编码的参数"
 msgid "Argument {number}"
 msgstr "参数 {number}"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:39
+#: src/components/config/engines/forms/ffmpeg-form.tsx:40
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:137
 msgid "Arguments"
 msgstr "参数列表"
@@ -1907,6 +1907,10 @@ msgstr "检查能否访问"
 msgid "Check this streamer and record when it goes live."
 msgstr "检查该主播，并在开播时自动录制。"
 
+#: src/components/credentials/credential-selection-editor.tsx:428
+msgid "Check without an account when no account can be used"
+msgstr "没有可用账号时以未登录状态检测"
+
 #: src/components/credentials/account-usage.tsx:176
 msgid "checked {when}"
 msgstr "{when}检查"
@@ -2344,7 +2348,7 @@ msgstr "连接不稳定"
 msgid "Connection status: {statusLabel}"
 msgstr "连接状态：{statusLabel}"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:72
+#: src/components/config/engines/forms/ffmpeg-form.tsx:73
 msgid "Connection/activity timeout"
 msgstr "连接/活动超时"
 
@@ -2819,7 +2823,7 @@ msgstr "自定义画质值"
 msgid "Custom Tags"
 msgstr "自定义标签"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:31
+#: src/components/config/engines/forms/ffmpeg-form.tsx:32
 msgid "Custom User-Agent string (Optional)"
 msgstr "自定义 User-Agent 字符串（可选）"
 
@@ -4763,7 +4767,7 @@ msgstr "修复 FLV 流"
 msgid "Fix HLS Streams"
 msgstr "修复 HLS 流"
 
-#: src/components/credentials/credential-selection-editor.tsx:243
+#: src/components/credentials/credential-selection-editor.tsx:244
 msgid "Fixed account"
 msgstr "固定账号"
 
@@ -5093,7 +5097,7 @@ msgstr "GPU 加速高质量归档：NVENC HEVC 编码、缩略图生成和云端
 msgid "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
 msgstr "GPU 加速后处理：NVENC H.264 编码和缩略图生成。"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:78
+#: src/components/config/engines/forms/ffmpeg-form.tsx:79
 #: src/components/config/engines/forms/streamlink-form.tsx:95
 msgid "Graceful Stop Timeout"
 msgstr "优雅停止超时"
@@ -5521,7 +5525,7 @@ msgstr "包含录制元数据"
 
 #: src/components/config/shared/proxy-route-picker.tsx:116
 #: src/components/config/shared/proxy-route-picker.tsx:118
-#: src/components/credentials/credential-selection-editor.tsx:236
+#: src/components/credentials/credential-selection-editor.tsx:237
 msgid "Inherit"
 msgstr "继承"
 
@@ -5533,7 +5537,7 @@ msgstr "继承 — {resolved}"
 msgid "Inherit — each streamer's platform setting"
 msgstr "继承 — 各主播所在平台的设置"
 
-#: src/components/credentials/credential-selection-editor.tsx:234
+#: src/components/credentials/credential-selection-editor.tsx:235
 msgid "Inherit (the site's account)"
 msgstr "继承（该网站的账号）"
 
@@ -5574,7 +5578,7 @@ msgstr "内联：{stepName}"
 msgid "Input"
 msgstr "输入"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:45
+#: src/components/config/engines/forms/ffmpeg-form.tsx:46
 msgid "Input Arguments"
 msgstr "输入参数"
 
@@ -6328,7 +6332,7 @@ msgstr "对远端 API 的每秒最大事务数（--tpslimit）。"
 msgid "Max Uploads"
 msgstr "最大上传数"
 
-#: src/components/credentials/credential-selection-editor.tsx:419
+#: src/components/credentials/credential-selection-editor.tsx:435
 msgid "Maximum attempts (1–10)"
 msgstr "最大尝试次数（1–10）"
 
@@ -6540,11 +6544,11 @@ msgstr "上午"
 msgid "Move"
 msgstr "移动"
 
-#: src/components/credentials/credential-selection-editor.tsx:348
+#: src/components/credentials/credential-selection-editor.tsx:349
 msgid "Move account down"
 msgstr "下移账号"
 
-#: src/components/credentials/credential-selection-editor.tsx:337
+#: src/components/credentials/credential-selection-editor.tsx:338
 msgid "Move account up"
 msgstr "上移账号"
 
@@ -6793,7 +6797,7 @@ msgstr "还没有 API 密钥。创建一个以便脚本或 AI 助手访问此服
 msgid "No Archives Found"
 msgstr "未找到归档"
 
-#: src/components/credentials/credential-selection-editor.tsx:240
+#: src/components/credentials/credential-selection-editor.tsx:241
 msgid "No authentication"
 msgstr "不使用身份验证"
 
@@ -7100,7 +7104,7 @@ msgstr "未找到工作流"
 msgid "No workflows yet"
 msgstr "暂无工作流"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:33
+#: src/components/config/engines/forms/ffmpeg-form.tsx:34
 #: src/components/config/engines/forms/setting-fields.tsx:919
 #: src/components/config/engines/forms/setting-fields.tsx:1054
 #: src/components/config/engines/forms/streamlink-form.tsx:74
@@ -7480,7 +7484,7 @@ msgstr "输出"
 msgid "Output and its file deleted"
 msgstr "已删除产物及其文件"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:53
+#: src/components/config/engines/forms/ffmpeg-form.tsx:54
 msgid "Output Arguments"
 msgstr "输出参数"
 
@@ -8266,7 +8270,7 @@ msgstr "主要"
 msgid "Primary Action"
 msgstr "主要操作"
 
-#: src/components/credentials/credential-selection-editor.tsx:248
+#: src/components/credentials/credential-selection-editor.tsx:249
 msgid "Primary and backups"
 msgstr "主账号与备用账号"
 
@@ -8793,7 +8797,7 @@ msgstr "移除 {module}"
 msgid "Remove {tag}"
 msgstr "移除 {tag}"
 
-#: src/components/credentials/credential-selection-editor.tsx:367
+#: src/components/credentials/credential-selection-editor.tsx:368
 msgid "Remove account"
 msgstr "移除账号"
 
@@ -9189,7 +9193,7 @@ msgstr "已吊销"
 msgid "Right"
 msgstr "右侧"
 
-#: src/components/credentials/credential-selection-editor.tsx:251
+#: src/components/credentials/credential-selection-editor.tsx:252
 msgid "Round-robin pool"
 msgstr "轮询账号池"
 
@@ -10502,7 +10506,7 @@ msgstr "切换语言"
 msgid "Switch Theme"
 msgstr "切换主题"
 
-#: src/components/credentials/credential-selection-editor.tsx:414
+#: src/components/credentials/credential-selection-editor.tsx:415
 msgid "Switch to the next account when one stops working"
 msgstr "账号失效时切换到下一个账号"
 
@@ -11037,7 +11041,7 @@ msgstr "时间占位符（本地时间）"
 msgid "Time Range"
 msgstr "时间范围"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:79
+#: src/components/config/engines/forms/ffmpeg-form.tsx:80
 #: src/components/config/engines/forms/streamlink-form.tsx:96
 msgid "Time to wait for ffmpeg to finalize the file before force-killing it"
 msgstr "等待 ffmpeg 完成文件写入的时间，超时后将强制终止进程"
@@ -11055,7 +11059,7 @@ msgstr "时间线"
 msgid "Timeline granularity. Very long streams are automatically coarsened past a point."
 msgstr "时间线的粒度。超长直播会自动降低精度。"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:71
+#: src/components/config/engines/forms/ffmpeg-form.tsx:72
 msgid "Timeout"
 msgstr "超时"
 
@@ -11076,7 +11080,7 @@ msgstr "取消 CPU 密集型处理器前的超时时间。"
 msgid "Timeout before cancelling IO-bound processors."
 msgstr "取消 IO 密集型处理器前的超时时间。"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:65
+#: src/components/config/engines/forms/ffmpeg-form.tsx:66
 msgid "Timeouts"
 msgstr "超时"
 
@@ -11438,7 +11442,7 @@ msgstr "未知"
 
 #: src/components/credentials/account-selection-section.tsx:176
 #: src/components/credentials/account-selection-section.tsx:407
-#: src/components/credentials/credential-selection-editor.tsx:176
+#: src/components/credentials/credential-selection-editor.tsx:177
 msgid "Unknown account"
 msgstr "未知账号"
 
@@ -11656,7 +11660,7 @@ msgctxt "danmu"
 msgid "User"
 msgstr "用户"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:30
+#: src/components/config/engines/forms/ffmpeg-form.tsx:31
 #: src/components/config/engines/forms/mesio-sections.tsx:285
 msgid "User Agent"
 msgstr "User-Agent"

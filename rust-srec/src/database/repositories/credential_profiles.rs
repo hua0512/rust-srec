@@ -1039,10 +1039,10 @@ pub(crate) async fn commit_session_binding(
         }
     } else if !matches!(incoming.identity, CredentialIdentity::Anonymous)
         || incoming.revision != 0
-        || !matches!(
+        || !(matches!(
             incoming.policy.selection,
             CredentialSelection::None | CredentialSelection::Inherit
-        )
+        ) || incoming.policy.selection.anonymous_fallback())
     {
         return Err(ProfileError::SourceChanged.into());
     }

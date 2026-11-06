@@ -2320,6 +2320,7 @@ mod tests {
             discontinuity: false,
             encryption: None,
             init_key: None,
+            scramble_seed: None,
             meta: SegmentMeta::Dash(Arc::new(DashSegmentMeta {
                 track,
                 period_id: period.map(Arc::from),

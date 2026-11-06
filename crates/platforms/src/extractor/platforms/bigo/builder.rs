@@ -1,7 +1,10 @@
 //! Bigo Live stream extractor.
 //!
 //! Resolves `siteId` via `getInternalStudioInfo` to a single HLS media playlist.
-//! Mints an integrity token by default (website parity) and supports password rooms.
+//! A signed-in check is answered in full without an integrity token, so it
+//! mints one only when a live room comes back without its playlist; an
+//! anonymous check mints one first by default (website parity). Supports
+//! password rooms.
 
 use std::sync::LazyLock;
 
@@ -29,6 +32,8 @@ pub struct Bigo {
     extractor: Extractor,
     stream_password: Option<String>,
     mint_token: bool,
+    /// Cookies were supplied, so the request carries a login.
+    signed_in: bool,
 }
 
 impl Bigo {
@@ -43,6 +48,9 @@ impl Bigo {
     ) -> Self {
         let mut extractor = Extractor::new("bigo", url, client);
         extractor.set_origin_and_referer_static(Self::BASE_URL);
+        let signed_in = cookies
+            .as_deref()
+            .is_some_and(|cookies| !cookies.trim().is_empty());
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
         }
@@ -57,6 +65,7 @@ impl Bigo {
             extractor,
             stream_password,
             mint_token,
+            signed_in,
         }
     }
 
@@ -114,6 +123,24 @@ impl Bigo {
             .await?;
 
         Ok(response)
+    }
+
+    async fn studio(
+        &self,
+        site_id: &str,
+        password: Option<&str>,
+        integrity_token: Option<&str>,
+    ) -> Result<StudioData, ExtractorError> {
+        let response = self
+            .fetch_studio(site_id, password, integrity_token)
+            .await?;
+        if !response.is_success() {
+            return Err(ExtractorError::ValidationError(format!(
+                "bigo studio API error: code={:?} msg={:?}",
+                response.code, response.msg
+            )));
+        }
+        Ok(response.data.unwrap_or_default())
     }
 
     fn media_from_data(
@@ -206,9 +233,6 @@ impl Bigo {
             // Forward to danmu enter secretKey via ConnectionConfig extras.
             extras.insert("stream_password".to_string(), pwd);
         }
-        if let Some(viewers) = data.reserver {
-            extras.insert("viewer_count".to_string(), viewers.to_string());
-        }
 
         Ok(MediaInfo::builder(Self::BASE_URL, title, artist)
             .is_live(true)
@@ -233,37 +257,44 @@ impl PlatformExtractor for Bigo {
 
         let password = self.resolve_password();
 
-        let integrity_token = if self.mint_token {
-            match token::mint_token(&self.extractor.client).await {
-                Ok(t) => {
-                    debug!("bigo integrity token minted");
-                    Some(t)
+        if self.signed_in || !self.mint_token {
+            match self
+                .studio(site_id.as_str(), password.as_deref(), None)
+                .await
+            {
+                // Without a token Bigo may still withhold the playlist of a
+                // live room, or refuse the request; only then is a token
+                // worth its two extra requests.
+                Ok(data)
+                    if !(self.mint_token && data.is_room_live() && !data.has_playable_source()) =>
+                {
+                    return self.media_from_data(data, &site_id);
                 }
-                Err(e) => {
-                    warn!(error = %e, "bigo integrity token mint failed; falling back to bare studio POST");
-                    None
+                Ok(_) => {}
+                Err(error @ ExtractorError::ValidationError(_)) if self.mint_token => {
+                    debug!(%error, "bigo studio refused the request without a token");
                 }
+                Err(error) => return Err(error),
             }
-        } else {
-            None
-        };
+        }
 
-        let response = self
-            .fetch_studio(
+        let integrity_token = match token::mint_token(&self.extractor.client).await {
+            Ok(t) => {
+                debug!("bigo integrity token minted");
+                Some(t)
+            }
+            Err(e) => {
+                warn!(error = %e, "bigo integrity token mint failed; falling back to bare studio POST");
+                None
+            }
+        };
+        let data = self
+            .studio(
                 site_id.as_str(),
                 password.as_deref(),
                 integrity_token.as_deref(),
             )
             .await?;
-
-        if !response.is_success() {
-            return Err(ExtractorError::ValidationError(format!(
-                "bigo studio API error: code={:?} msg={:?}",
-                response.code, response.msg
-            )));
-        }
-
-        let data = response.data.unwrap_or_default();
         self.media_from_data(data, &site_id)
     }
 }

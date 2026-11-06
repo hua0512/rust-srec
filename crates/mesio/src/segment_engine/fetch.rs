@@ -211,6 +211,11 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
             // reservation keeps the body charged through wrap.
             _ => (raw, reservation),
         };
+    // Descrambled before caching so cached bytes are the final payload too.
+    let final_bytes = match descriptor.scramble_seed {
+        Some(seed) => crate::hls::web_protection::descramble(final_bytes, seed),
+        None => final_bytes,
+    };
 
     if let Some(cache) = &ctx.cache_manager {
         let metadata = CacheMetadata::new(final_bytes.len() as u64)
@@ -900,6 +905,7 @@ mod tests {
             discontinuity: false,
             encryption: None,
             init_key,
+            scramble_seed: None,
             meta: SegmentMeta::Hls(Arc::new(m3u8_rs::MediaSegment {
                 uri: uri.to_string(),
                 ..Default::default()

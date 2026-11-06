@@ -148,7 +148,8 @@ function AccountName({
 
 /**
  * Edits a scope's account selection: the mode, then the fixed account or the
- * pool's ordered members, its failover and its attempt budget.
+ * pool's ordered members, its failover, its attempt budget and whether it
+ * falls back to no account.
  */
 export function CredentialSelectionEditor({
   value,
@@ -412,6 +413,21 @@ export function CredentialSelectionEditor({
               </FormControl>
               <FormLabel className="font-normal leading-snug">
                 <Trans>Switch to the next account when one stops working</Trans>
+              </FormLabel>
+            </FormItem>
+            <FormItem className="flex min-w-0 flex-1 basis-64 items-center gap-2.5">
+              <FormControl>
+                <Switch
+                  checked={value.anonymous_fallback ?? false}
+                  onCheckedChange={(anonymous_fallback) =>
+                    onChange({ ...value, anonymous_fallback })
+                  }
+                />
+              </FormControl>
+              <FormLabel className="font-normal leading-snug">
+                <Trans>
+                  Check without an account when no account can be used
+                </Trans>
               </FormLabel>
             </FormItem>
             <FormItem className="flex shrink-0 items-center gap-2.5">
