@@ -23,6 +23,11 @@ import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { PresetCard } from '@/components/pipeline/presets/preset-card';
+import {
+  StepInUseDialog,
+  stepUsersFromConflict,
+  type StepInUse,
+} from '@/components/pipeline/step-in-use-dialog';
 import { getCategoryName } from '@/components/pipeline/presets/default-presets-i18n';
 import { SearchInput } from '@/components/shared/search-input';
 import { useUpdateSearch } from '@/hooks/use-update-search';
@@ -73,6 +78,7 @@ function PresetsPage() {
     typeof JobPresetSchema
   > | null>(null);
   const [cloneName, setCloneName] = useState('');
+  const [inUse, setInUse] = useState<StepInUse>();
 
   const updateSearch = useUpdateSearch<typeof search>();
 
@@ -130,8 +136,15 @@ function PresetsPage() {
         queryKey: queryKeys.jobPresets.all,
       });
     },
-    onError: (error) =>
-      toast.error(i18n._(msg`Failed to delete preset: ${error.message}`)),
+    onError: (error, { data: id }) => {
+      const users = stepUsersFromConflict(error);
+      if (!users) {
+        toast.error(i18n._(msg`Failed to delete preset: ${error.message}`));
+        return;
+      }
+      const name = presets?.find((preset) => preset.id === id)?.name ?? id;
+      setInUse({ change: 'delete', step: 'preset', name, users });
+    },
   });
 
   const cloneMutation = useMutation({
@@ -385,6 +398,7 @@ function PresetsPage() {
         </Dialog>
 
         <CreateFab label={i18n._(msg`Create Preset`)} onClick={handleCreate} />
+        <StepInUseDialog refusal={inUse} onClose={() => setInUse(undefined)} />
       </div>
     </div>
   );

@@ -948,13 +948,15 @@ async fn presets_a_stored_pipeline_names_cannot_be_deleted_or_renamed() {
             json!({ "id": "tidy", "step": { "type": "workflow", "name": "E2E Tidy" }, "depends_on": ["archive"] }),
         ],
     );
-    app.post(
-        "/api/templates",
-        &token,
-        &json!({ "name": "Evening", "pipeline": pipeline.to_string() }),
-    )
-    .await
-    .created();
+    let template = id_of(
+        &app.post(
+            "/api/templates",
+            &token,
+            &json!({ "name": "Evening", "pipeline": pipeline.to_string() }),
+        )
+        .await
+        .created(),
+    );
 
     for path in ["/api/job/presets/e2e-archive", workflow_path.as_str()] {
         let refused = app.delete(path, &token).await;
@@ -966,6 +968,12 @@ async fn presets_a_stored_pipeline_names_cannot_be_deleted_or_renamed() {
             "{}",
             refused.text
         );
+        let users = &refused.body["details"]["references"];
+        assert_eq!(users.as_array().map(Vec::len), Some(1), "{users}");
+        assert_eq!(users[0]["kind"], "template");
+        assert_eq!(users[0]["id"], template.as_str());
+        assert_eq!(users[0]["name"], "Evening");
+        assert_eq!(users[0]["removing"], false);
     }
     // Renaming would leave the template naming nothing.
     let renamed = app

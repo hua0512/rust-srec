@@ -201,6 +201,8 @@ API errors use one stable envelope:
 
 The source address is the peer of the TCP connection. `X-Forwarded-For` and `X-Real-IP` are not trusted, so **behind the bundled frontend container, nginx, or any other reverse proxy, every login is attributed to the proxy's address** — the per-address budget is a work cap, not a per-client lockout. Usernames longer than 128 characters — counted as characters, not bytes, so non-Latin names are not penalised — are rejected with `400` before either budget is consulted. A configuration import applies the same limit, so it cannot create an account that could never sign in. Both budgets are configurable; see [Configuration](../reference/environment.md#login-throttling).
 
+Deleting a template that streamers still use returns `409` `TEMPLATE_IN_USE` with `details.streamer_count`; `0` means only streamers that are still being removed use it. Deleting or renaming a job preset or workflow that a stored pipeline names returns `409` `PRESET_IN_USE` with `details.references`, one entry per user with its `kind` (`global`, `platform`, `template`, `streamer` or `workflow`), `id`, `name` and whether it is `removing`.
+
 Clients should branch on HTTP status and `code`, not parse the human-readable `message`.
 
 ## Compatibility and Deployment

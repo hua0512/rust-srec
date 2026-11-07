@@ -2,7 +2,13 @@ import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/api/query-keys';
 import { getJobPreset, updateJobPreset } from '@/server/functions/job';
+import { useState } from 'react';
 import { toast } from 'sonner';
+import {
+  StepInUseDialog,
+  stepUsersFromConflict,
+  type StepInUse,
+} from '@/components/pipeline/step-in-use-dialog';
 import { msg } from '@lingui/core/macro';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
@@ -24,6 +30,7 @@ function EditPresetPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { i18n } = useLingui();
+  const [inUse, setInUse] = useState<StepInUse>();
 
   const {
     data: preset,
@@ -43,8 +50,20 @@ function EditPresetPage() {
       });
       void navigate({ to: '/pipeline/presets' });
     },
-    onError: (error) =>
-      toast.error(i18n._(msg`Failed to update preset: ${error.message}`)),
+    onError: (error) => {
+      // Saving refuses only a rename while pipelines name the preset.
+      const users = stepUsersFromConflict(error);
+      if (users && preset) {
+        setInUse({
+          change: 'rename',
+          step: 'preset',
+          name: preset.name,
+          users,
+        });
+        return;
+      }
+      toast.error(i18n._(msg`Failed to update preset: ${error.message}`));
+    },
   });
 
   const onSubmit = (data: PresetFormValues) => {
@@ -88,11 +107,14 @@ function EditPresetPage() {
   }
 
   return (
-    <PresetEditor
-      initialData={preset}
-      title={<Trans>Edit Preset: {preset.name}</Trans>}
-      onSubmit={onSubmit}
-      isUpdating={updateMutation.isPending}
-    />
+    <>
+      <PresetEditor
+        initialData={preset}
+        title={<Trans>Edit Preset: {preset.name}</Trans>}
+        onSubmit={onSubmit}
+        isUpdating={updateMutation.isPending}
+      />
+      <StepInUseDialog refusal={inUse} onClose={() => setInUse(undefined)} />
+    </>
   );
 }

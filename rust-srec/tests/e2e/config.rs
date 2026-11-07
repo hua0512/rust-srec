@@ -484,7 +484,8 @@ async fn templates_are_replaced_whole_counted_by_their_streamers_and_cloned() {
     assert_eq!(listed["items"][0]["id"], template_id.as_str());
     assert_eq!(listed["items"][0]["usage_count"], 1);
     let in_use = app.delete(&path, &token).await;
-    in_use.assert_error(StatusCode::CONFLICT, "CONFLICT");
+    in_use.assert_error(StatusCode::CONFLICT, "TEMPLATE_IN_USE");
+    assert_eq!(in_use.body["details"]["streamer_count"], 1);
 
     // A clone copies the fields and the route under a new id and name.
     let clone_path = format!("{path}/clone");
@@ -586,7 +587,8 @@ async fn a_template_stays_until_its_deleted_streamer_is_reaped() {
     let stored = app.get_ok(&path, &token).await;
     assert_eq!(stored["usage_count"], 0, "a deleted streamer is not a user");
     let refused = app.delete(&path, &token).await;
-    refused.assert_error(StatusCode::CONFLICT, "CONFLICT");
+    refused.assert_error(StatusCode::CONFLICT, "TEMPLATE_IN_USE");
+    assert_eq!(refused.body["details"]["streamer_count"], 0);
     app.get_ok(&path, &token).await;
 
     app.shutdown().await;

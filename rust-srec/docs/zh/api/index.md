@@ -185,6 +185,8 @@ API 错误使用统一结构：
 
 来源地址取自 TCP 连接的对端，且不信任 `X-Forwarded-For` 与 `X-Real-IP`，因此**在本项目自带的前端容器、nginx 或任何反向代理之后，所有登录都会被归到代理的地址上**——按地址的配额是开销上限，而不是针对某个客户端的锁定。超过 128 个字符的用户名会在两个配额生效之前直接返回 `400`（按字符而非字节计算，非拉丁文名称不会因此吃亏）。导入配置时也会应用同一限制，避免导入出无法登录的账号。两个配额均可配置，详见[配置](../reference/environment.md#登录限流)。
 
+删除仍被主播使用的模板会返回 `409` `TEMPLATE_IN_USE`，`details.streamer_count` 为使用它的主播数；为 `0` 时表示只有正在移除的主播仍在使用它。删除或重命名仍被已保存流水线按名称引用的任务预设或工作流会返回 `409` `PRESET_IN_USE`，`details.references` 中每项为一个使用者，包含其 `kind`（`global`、`platform`、`template`、`streamer` 或 `workflow`）、`id`、`name`，以及是否正在移除（`removing`）。
+
 客户端应根据 HTTP 状态和 `code` 分支，不要解析面向用户的 `message` 文本。
 
 ## 兼容性与部署

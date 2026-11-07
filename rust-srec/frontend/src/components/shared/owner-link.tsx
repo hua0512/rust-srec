@@ -22,7 +22,7 @@ export type OwnerTarget =
   | { type: 'template'; id: string }
   | { type: 'streamer'; id: string };
 
-const OWNER_ICONS: Record<OwnerTarget['type'], LucideIcon> = {
+export const OWNER_ICONS: Record<OwnerTarget['type'], LucideIcon> = {
   global: Settings,
   platform: Globe,
   template: LayoutTemplate,

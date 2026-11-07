@@ -54,12 +54,14 @@ function TemplatesConfigPage() {
   > | null>(null);
   const [cloneName, setCloneName] = useState('');
 
+  // Streamer edits change each card's usage count without touching this key,
+  // so the cached list is only good for the pickers.
   const {
     data: templates,
     isLoading,
     error,
     refetch,
-  } = useQuery(templatesQueryOptions);
+  } = useQuery({ ...templatesQueryOptions, refetchOnMount: 'always' });
 
   const cloneMutation = useMutation({
     mutationFn: cloneTemplate,

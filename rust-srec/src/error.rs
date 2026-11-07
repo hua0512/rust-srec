@@ -100,12 +100,16 @@ pub enum Error {
     /// A job preset or workflow cannot be deleted or renamed while a stored
     /// pipeline names it, because pipelines reference steps by name and would
     /// fail to resolve the step at run time.
-    #[error("Cannot {change} {kind} '{name}': it is used by {}", .users.join(", "))]
+    #[error(
+        "Cannot {change} {kind} '{name}': it is used by {}",
+        crate::database::repositories::preset::summarize_users(.users)
+    )]
     PresetInUse {
         change: crate::database::repositories::preset::PresetChange,
         kind: crate::database::repositories::preset::StepRef,
         name: String,
-        users: Vec<String>,
+        /// Every user, in a stable order.
+        users: Vec<crate::database::repositories::preset::StepUser>,
     },
 }
 

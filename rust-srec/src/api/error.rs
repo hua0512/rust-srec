@@ -18,6 +18,12 @@ use crate::error::Error;
 /// `DAG_ALREADY_TERMINAL_CODE` in `lib/api-error.ts`.
 pub const DAG_ALREADY_TERMINAL_CODE: &str = "DAG_ALREADY_TERMINAL";
 
+/// Code returned when a template cannot be deleted because streamers still
+/// use it. `details.streamer_count` holds how many; zero means only streamers
+/// that are still being removed hold it. Keep in sync with the frontend's
+/// `TEMPLATE_IN_USE_CODE` in `lib/api-error.ts`.
+pub const TEMPLATE_IN_USE_CODE: &str = "TEMPLATE_IN_USE";
+
 /// API error response body.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct ApiErrorResponse {
@@ -285,8 +291,10 @@ impl From<Error> for ApiError {
             Error::DuplicateUrl(url) => {
                 ApiError::conflict(format!("A streamer with URL '{}' already exists", url))
             }
-            Error::PresetInUse { .. } => {
+            Error::PresetInUse { ref users, .. } => {
+                let details = serde_json::json!({ "references": users });
                 ApiError::new(StatusCode::CONFLICT, "PRESET_IN_USE", err.to_string())
+                    .with_details(details)
             }
             Error::Io(e) => {
                 tracing::error!("IO error: {}", e);
