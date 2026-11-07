@@ -45,8 +45,12 @@ function toLoginError(error: unknown): Error {
       error.data,
     );
   }
-  // An own property, so it survives the server function boundary.
-  return Object.assign(new Error('Login failed'), { code: LOGIN_FAILED_CODE });
+  // A backend error body, so the code reaches the browser through the
+  // server function's error serialization like any backend refusal.
+  return new BackendApiError(502, 'Bad Gateway', {
+    code: LOGIN_FAILED_CODE,
+    message: 'Login failed',
+  });
 }
 
 function computeExpiryTimestamp(seconds?: number, fallback?: number): number {

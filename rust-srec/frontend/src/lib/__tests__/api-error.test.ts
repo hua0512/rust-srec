@@ -11,14 +11,8 @@ import {
   referencesFromConflict,
 } from '../api-error';
 
-/**
- * Server functions rethrow `BackendApiError` across the serialization
- * boundary as a plain `Error` that keeps `status`/`body` but loses the
- * subclass prototype, so every matcher has to work on this shape too.
- */
-function rethrownAcrossBoundary(status: number, body: unknown): Error {
-  const error = new Error('Request failed');
-  return Object.assign(error, { status, body });
+function backendError(status: number, body: unknown): BackendApiError {
+  return new BackendApiError(status, 'Error', body);
 }
 
 describe('hasErrorCode', () => {
@@ -44,17 +38,8 @@ describe('isDagAlreadyTerminalError', () => {
     expect(isDagAlreadyTerminalError(error)).toBe(true);
   });
 
-  it('matches the shape that survives the server-function boundary', () => {
-    const error = rethrownAcrossBoundary(422, {
-      code: DAG_ALREADY_TERMINAL_CODE,
-    });
-
-    expect(error).not.toBeInstanceOf(BackendApiError);
-    expect(isDagAlreadyTerminalError(error)).toBe(true);
-  });
-
   it('does not match other validation failures', () => {
-    const error = rethrownAcrossBoundary(422, {
+    const error = backendError(422, {
       code: 'VALIDATION_ERROR',
       // Same status and wording family as the terminal-state rejection used
       // to have; only the code distinguishes them now.
@@ -77,18 +62,8 @@ describe('isNotFoundError', () => {
     ).toBe(true);
   });
 
-  // An `instanceof BackendApiError` check is always false for an error a
-  // component receives from a server function, so a 404 has to be recognised
-  // from the own properties alone.
-  it('matches the shape that survives the server-function boundary', () => {
-    const error = rethrownAcrossBoundary(404, { message: 'no statistics yet' });
-
-    expect(error).not.toBeInstanceOf(BackendApiError);
-    expect(isNotFoundError(error)).toBe(true);
-  });
-
   it('does not match other failures', () => {
-    expect(isNotFoundError(rethrownAcrossBoundary(500, {}))).toBe(false);
+    expect(isNotFoundError(backendError(500, {}))).toBe(false);
     expect(isNotFoundError(new Error('Network request failed'))).toBe(false);
     expect(isNotFoundError(undefined)).toBe(false);
     expect(isNotFoundError({ status: 404 })).toBe(false);
@@ -99,30 +74,30 @@ describe('isPasswordChangeRequiredError', () => {
   it('still requires both the 403 status and the code', () => {
     expect(
       isPasswordChangeRequiredError(
-        rethrownAcrossBoundary(403, { code: 'PASSWORD_CHANGE_REQUIRED' }),
+        backendError(403, { code: 'PASSWORD_CHANGE_REQUIRED' }),
       ),
     ).toBe(true);
     expect(
       isPasswordChangeRequiredError(
-        rethrownAcrossBoundary(422, { code: 'PASSWORD_CHANGE_REQUIRED' }),
+        backendError(422, { code: 'PASSWORD_CHANGE_REQUIRED' }),
       ),
     ).toBe(false);
   });
 });
 
 describe('error body helpers', () => {
-  it('reads the body and its details from a rethrown error', () => {
+  it('reads the body and its details from a backend error', () => {
     const body = { code: 'X', details: { name: 'proxy-a' } };
-    const error = rethrownAcrossBoundary(409, body);
+    const error = backendError(409, body);
     expect(errorBody(error)).toBe(body);
     expect(errorDetails(error)).toEqual({ name: 'proxy-a' });
   });
 
   it('has no details without an error or an object body', () => {
     expect(errorBody('not an error')).toBeUndefined();
-    expect(errorDetails(rethrownAcrossBoundary(500, 'text'))).toBeUndefined();
+    expect(errorDetails(backendError(500, 'text'))).toBeUndefined();
     expect(
-      errorDetails(rethrownAcrossBoundary(409, { details: 'text' })),
+      errorDetails(backendError(409, { details: 'text' })),
     ).toBeUndefined();
   });
 });
@@ -130,7 +105,7 @@ describe('error body helpers', () => {
 describe('referencesFromConflict', () => {
   const schema = z.object({ names: z.array(z.string()) });
   const refused = (code: string, references: unknown) =>
-    rethrownAcrossBoundary(409, { code, details: { references } });
+    backendError(409, { code, details: { references } });
 
   it('parses the references of the matching code', () => {
     expect(

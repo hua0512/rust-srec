@@ -36,10 +36,7 @@ export function hasErrorCode(body: unknown, code: string): boolean {
   );
 }
 
-/**
- * The body of a backend error. Read by shape: a server function rethrows
- * `BackendApiError` as a plain `Error` that keeps only its own properties.
- */
+/** The body of a backend error, or `undefined` for any other error. */
 export function errorBody(error: unknown): unknown {
   return error instanceof Error
     ? (error as { body?: unknown }).body
@@ -82,7 +79,7 @@ export function referencesFromConflict<T>(
 export const LOGIN_FAILED_CODE = 'LOGIN_FAILED';
 
 export function isLoginFailedError(error: unknown): boolean {
-  return hasErrorCode(error, LOGIN_FAILED_CODE);
+  return hasErrorCode(errorBody(error), LOGIN_FAILED_CODE);
 }
 
 // Body code the backend attaches to 403 responses on every authenticated
@@ -94,22 +91,13 @@ export function hasPasswordChangeRequiredCode(body: unknown): boolean {
   return hasErrorCode(body, PASSWORD_CHANGE_REQUIRED_CODE);
 }
 
-// Server functions rethrow BackendApiError across the serialization boundary
-// as a plain Error that keeps own properties (status/body) but not the
-// subclass prototype, so match by shape instead of instanceof.
 export function isPasswordChangeRequiredError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const { status, body } = error as Partial<BackendApiError>;
   return status === 403 && hasPasswordChangeRequiredCode(body);
 }
 
-/**
- * True when the backend answered with the given HTTP status.
- *
- * Shape-matched for the same reason as `isPasswordChangeRequiredError`: an
- * `instanceof BackendApiError` check is always false for an error raised inside
- * a server function, because only the own properties survive serialization.
- */
+/** True when the backend answered with the given HTTP status. */
 function isBackendStatus(error: unknown, status: number): boolean {
   if (!(error instanceof Error)) return false;
   return (error as Partial<BackendApiError>).status === status;
@@ -135,8 +123,6 @@ export const DAG_ALREADY_TERMINAL_CODE = 'DAG_ALREADY_TERMINAL';
  * True when the backend rejected the action because the DAG had already
  * finished. Callers treat this as a no-op rather than a failure: a cancel
  * racing a DAG that completed a moment earlier got the outcome it wanted.
- *
- * Shape-matched for the same reason as `isPasswordChangeRequiredError`.
  */
 export function isDagAlreadyTerminalError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
