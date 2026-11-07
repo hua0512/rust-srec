@@ -968,7 +968,7 @@ async fn presets_a_stored_pipeline_names_cannot_be_deleted_or_renamed() {
             "{}",
             refused.text
         );
-        let users = &refused.body["details"]["users"];
+        let users = &refused.body["details"]["references"];
         assert_eq!(users.as_array().map(Vec::len), Some(1), "{users}");
         assert_eq!(users[0]["kind"], "template");
         assert_eq!(users[0]["id"], template.as_str());

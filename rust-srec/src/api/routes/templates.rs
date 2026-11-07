@@ -418,7 +418,7 @@ pub async fn update_template(
     responses(
         (status = 200, description = "Template deleted", body = crate::api::openapi::MessageResponse),
         (status = 404, description = "Template not found", body = crate::api::error::ApiErrorResponse),
-        (status = 409, description = "Template in use", body = crate::api::error::ApiErrorResponse)
+        (status = 409, description = "TEMPLATE_IN_USE: streamers use the template; details.streamer_count counts them", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]

@@ -5,7 +5,7 @@ import { useLingui } from '@lingui/react';
 import { Link } from '@tanstack/react-router';
 import { Workflow } from 'lucide-react';
 import { z } from 'zod';
-import { errorBody, errorDetails, hasErrorCode } from '@/lib/api-error';
+import { referencesFromConflict } from '@/lib/api-error';
 import { formatPlatformName } from '@/lib/platform';
 import { Button } from '@/components/ui/button';
 import {
@@ -24,6 +24,7 @@ import {
 } from '@/components/shared/list-panel';
 import {
   NAME_ICON,
+  OWNER_ICONS,
   OwnerLink,
   TERM,
   type OwnerTarget,
@@ -44,9 +45,11 @@ type StepUser = z.infer<typeof StepUserSchema>;
  * reason.
  */
 export function stepUsersFromConflict(error: unknown): StepUser[] | undefined {
-  if (!hasErrorCode(errorBody(error), 'PRESET_IN_USE')) return undefined;
-  const parsed = z.array(StepUserSchema).safeParse(errorDetails(error)?.users);
-  return parsed.success ? parsed.data : undefined;
+  return referencesFromConflict(
+    error,
+    'PRESET_IN_USE',
+    z.array(StepUserSchema),
+  );
 }
 
 /** A refused delete or rename of the job preset or workflow called `name`. */
@@ -57,22 +60,28 @@ export interface StepInUse {
   users: StepUser[];
 }
 
+function displayName(user: StepUser): string {
+  return user.kind === 'platform' ? formatPlatformName(user.name) : user.name;
+}
+
 function UserName({ user }: { user: StepUser }) {
   const { i18n } = useLingui();
-  const name =
-    user.kind === 'platform' ? formatPlatformName(user.name) : user.name;
-  if (user.removing)
+  const name = displayName(user);
+  if (user.removing) {
+    const Icon = user.kind === 'workflow' ? Workflow : OWNER_ICONS[user.kind];
     return (
       <span
         className="min-w-0 truncate text-muted-foreground"
         title={i18n._(msg`Deleted; kept until the recordings using it finish`)}
       >
+        <Icon className={NAME_ICON} />
         {name}{' '}
         <span className="italic">
           <Trans>(being removed)</Trans>
         </span>
       </span>
     );
+  }
   if (user.kind === 'workflow')
     return (
       <Link
@@ -116,7 +125,7 @@ function StepUsersList({ users }: { users: StepUser[] }) {
                 <NameList
                   items={items}
                   limit={DIALOG_NAME_LIMIT}
-                  label={(user) => user.name}
+                  label={displayName}
                   render={(user) => <UserName user={user} />}
                 />
               )}

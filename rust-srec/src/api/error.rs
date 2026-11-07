@@ -292,7 +292,7 @@ impl From<Error> for ApiError {
                 ApiError::conflict(format!("A streamer with URL '{}' already exists", url))
             }
             Error::PresetInUse { ref users, .. } => {
-                let details = serde_json::json!({ "users": users });
+                let details = serde_json::json!({ "references": users });
                 ApiError::new(StatusCode::CONFLICT, "PRESET_IN_USE", err.to_string())
                     .with_details(details)
             }

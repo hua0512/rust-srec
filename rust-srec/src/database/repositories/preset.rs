@@ -116,7 +116,7 @@ fn names_step(column: &str) -> String {
 }
 
 /// What kind of configuration owns a pipeline that names a step.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, sqlx::Type)]
+#[derive(Debug, serde::Serialize, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(rename_all = "snake_case")]
 pub enum StepUserKind {
@@ -128,7 +128,7 @@ pub enum StepUserKind {
 }
 
 /// A stored pipeline owner that names a step definition.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, serde::Serialize)]
 pub struct StepUser {
     pub kind: StepUserKind,
     /// The owner's id; empty for the global config.

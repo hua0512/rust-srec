@@ -79,7 +79,7 @@ export function TemplateCard({ template, onEdit, onClone }: TemplateCardProps) {
         toast.error(i18n._(msg`Failed to delete template: ${error.message}`));
         return;
       }
-      // The usage count on the card was stale: explain in the dialog instead.
+      // Streamers still use it, or one using it is still being removed.
       setBlockingCount(inUse);
       setBeingRemoved(inUse === 0);
       setShowDeleteAlert(true);
