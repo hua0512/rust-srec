@@ -299,12 +299,19 @@ pub struct StreamerFilterParams {
 #[derive(Debug, Clone, Copy, Default, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum StreamerSortBy {
+    /// Case-insensitive name.
     Name,
     Priority,
+    /// Live first, then error states, then offline, with cancelled and
+    /// disabled streamers last; within a state, highest priority first, then
+    /// name.
     State,
+    /// Last edit to the streamer, including enabling or disabling it;
+    /// monitoring state changes do not count.
     UpdatedAt,
-    /// Live streamers first, then by priority (highest first), name and id;
-    /// ignores the sort direction.
+    /// The same state ranking as `State`, but within a state by when each
+    /// streamer last went live (most recent first, never-live last), then
+    /// name and id. Ignores the sort direction.
     #[default]
     #[serde(other)]
     Default,

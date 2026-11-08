@@ -391,7 +391,7 @@ async fn list_filters_sorts_and_paginates_like_the_streamers_page() {
         ("delta", "twitch", "DISABLED", "NORMAL"),
         ("alpha", "huya", "DISABLED", "LOW"),
     ];
-    let seed: String = rows
+    let seed = rows
         .iter()
         .enumerate()
         .map(|(index, (id, platform, state, priority))| {
@@ -404,7 +404,11 @@ async fn list_filters_sorts_and_paginates_like_the_streamers_page() {
             let platform = format!("platform-{platform}");
             seeded_streamer(id, &name, &url, &platform, state, priority)
         })
-        .collect();
+        .collect::<String>()
+        // A lowercase name checks that name order ignores case.
+        + "UPDATE streamers SET name = 'delta' WHERE id = 'delta';\n\
+           UPDATE streamers SET last_live_time = 1700000000000 WHERE id = 'bravo';\n\
+           UPDATE streamers SET last_live_time = 1700000500000 WHERE id = 'delta';\n";
     let app = TestApp::start_seeded(&seed).await;
     let token = app.admin_token().await;
     let template = create_template(&app, &token, "Night shift").await;
@@ -416,8 +420,8 @@ async fn list_filters_sorts_and_paginates_like_the_streamers_page() {
     .await
     .ok();
 
-    // Errors first (ERROR, FATAL_ERROR, OUT_OF_SPACE, NOT_FOUND), then
-    // CANCELLED, then DISABLED; priority descending, then name, within a state.
+    // By state as below, but most recently live first within a state, then
+    // never-live streamers by name.
     let all = list_page(&app, &token, "").await;
     assert_eq!(all["total"], 10);
     assert_eq!(all["limit"], 20);
@@ -425,12 +429,22 @@ async fn list_filters_sorts_and_paginates_like_the_streamers_page() {
     assert_eq!(
         names(&all),
         [
-            "Yankee", "Echo", "Foxtrot", "Oscar", "November", "Charlie", "Zulu", "Bravo", "Delta",
+            "Echo", "Yankee", "Foxtrot", "Oscar", "November", "Charlie", "delta", "Bravo", "Alpha",
+            "Zulu"
+        ]
+    );
+
+    // Errors first (ERROR, FATAL_ERROR, OUT_OF_SPACE, NOT_FOUND), then
+    // CANCELLED, then DISABLED; priority descending, then name, within a state.
+    assert_eq!(
+        names(&list_page(&app, &token, "sort_by=state").await),
+        [
+            "Yankee", "Echo", "Foxtrot", "Oscar", "November", "Charlie", "Zulu", "Bravo", "delta",
             "Alpha"
         ]
     );
 
-    let page = list_page(&app, &token, "limit=3&offset=2").await;
+    let page = list_page(&app, &token, "sort_by=state&limit=3&offset=2").await;
     assert_eq!(names(&page), ["Foxtrot", "Oscar", "November"]);
     assert_eq!(page["total"], 10);
     assert_eq!(page["limit"], 3);
@@ -441,20 +455,20 @@ async fn list_filters_sorts_and_paginates_like_the_streamers_page() {
 
     let cases: [(&str, &[&str]); 12] = [
         ("search=ECHO", &["Echo"]),
-        ("search=twitch.tv", &["Foxtrot", "Oscar", "Delta"]),
+        ("search=twitch.tv", &["Foxtrot", "Oscar", "delta"]),
         ("platform=platform-huya", &["November", "Charlie", "Alpha"]),
-        ("state=error,fatal_error", &["Yankee", "Echo", "Foxtrot"]),
+        ("state=error,fatal_error", &["Echo", "Yankee", "Foxtrot"]),
         ("state=NOT_A_STATE", &[]),
-        ("enabled=false", &["Zulu", "Bravo", "Delta", "Alpha"]),
+        ("enabled=false", &["delta", "Bravo", "Alpha", "Zulu"]),
         (
             "enabled=true",
-            &["Yankee", "Echo", "Foxtrot", "Oscar", "November", "Charlie"],
+            &["Echo", "Yankee", "Foxtrot", "Oscar", "November", "Charlie"],
         ),
         ("priority=HIGH", &["Yankee", "Foxtrot", "Zulu"]),
         ("template=TEMPLATE", &["Zulu"]),
         (
             "template_unassigned=true&state=DISABLED",
-            &["Bravo", "Delta", "Alpha"],
+            &["delta", "Bravo", "Alpha"],
         ),
         (
             "sort_by=name&sort_dir=desc&limit=4",
