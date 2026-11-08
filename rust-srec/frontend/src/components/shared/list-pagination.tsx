@@ -45,10 +45,13 @@ interface ListPaginationProps {
 /**
  * The footer of a paginated list: the page-size picker and the page links.
  *
- * It renders nothing for a single page but stays mounted, because it also
- * moves the page back into range when the total shrinks under it — deleting
- * the last rows of the last page would otherwise leave an empty page with no
- * way to tell it apart from an empty list.
+ * A single page shows only the page-size picker, and only while a smaller
+ * size would split the list again; otherwise picking a large size would hide
+ * the picker and leave no way back. With neither picker nor page links it
+ * renders nothing but stays mounted, because it also moves the page back into
+ * range when the total shrinks under it — deleting the last rows of the last
+ * page would otherwise leave an empty page with no way to tell it apart from
+ * an empty list.
  */
 export function ListPagination({
   pageIndex,
@@ -76,7 +79,12 @@ export function ListPagination({
     [totalPages, pageIndex],
   );
 
-  if (totalPages === undefined || totalPages <= 1) return null;
+  if (totalCount === undefined || totalPages === undefined) return null;
+  const hasPages = totalPages > 1;
+  const showPageSize =
+    onPageSizeChange !== undefined &&
+    (hasPages || totalCount > Math.min(...pageSizes));
+  if (!hasPages && !showPageSize) return null;
 
   const isFirst = pageIndex <= 0;
   const isLast = pageIndex >= totalPages - 1;
@@ -88,7 +96,7 @@ export function ListPagination({
         className,
       )}
     >
-      {onPageSizeChange ? (
+      {showPageSize ? (
         <div className="flex shrink-0 items-center gap-2">
           <span
             id={pageSizeLabelId}
@@ -121,59 +129,61 @@ export function ListPagination({
         <span aria-hidden="true" />
       )}
 
-      <Pagination
-        className="mx-0 w-auto min-w-0 justify-end"
-        aria-label={ariaLabel}
-      >
-        <PaginationContent className="flex-nowrap">
-          <PaginationItem>
-            <PaginationPrevious
-              onClick={() => onPageIndexChange(pageIndex - 1)}
-              disabled={isFirst}
-              className="h-8 cursor-pointer px-2 text-xs sm:px-3 sm:text-sm"
-            />
-          </PaginationItem>
+      {hasPages && (
+        <Pagination
+          className="mx-0 w-auto min-w-0 justify-end"
+          aria-label={ariaLabel}
+        >
+          <PaginationContent className="flex-nowrap">
+            <PaginationItem>
+              <PaginationPrevious
+                onClick={() => onPageIndexChange(pageIndex - 1)}
+                disabled={isFirst}
+                className="h-8 cursor-pointer px-2 text-xs sm:px-3 sm:text-sm"
+              />
+            </PaginationItem>
 
-          {pages.map((page, idx) => {
-            if (page === 'ellipsis') {
+            {pages.map((page, idx) => {
+              if (page === 'ellipsis') {
+                return (
+                  <PaginationItem
+                    key={`ellipsis-${idx}`}
+                    aria-hidden="true"
+                    className="hidden sm:block"
+                  >
+                    <PaginationEllipsis />
+                  </PaginationItem>
+                );
+              }
+              const pageNumber = page + 1;
               return (
-                <PaginationItem
-                  key={`ellipsis-${idx}`}
-                  aria-hidden="true"
-                  className="hidden sm:block"
-                >
-                  <PaginationEllipsis />
+                <PaginationItem key={page} className="hidden sm:block">
+                  <PaginationLink
+                    isActive={page === pageIndex}
+                    onClick={() => onPageIndexChange(page)}
+                    aria-label={i18n._(msg`Go to page ${pageNumber}`)}
+                    className="h-8 w-8 cursor-pointer text-xs font-medium"
+                  >
+                    {pageNumber}
+                  </PaginationLink>
                 </PaginationItem>
               );
-            }
-            const pageNumber = page + 1;
-            return (
-              <PaginationItem key={page} className="hidden sm:block">
-                <PaginationLink
-                  isActive={page === pageIndex}
-                  onClick={() => onPageIndexChange(page)}
-                  aria-label={i18n._(msg`Go to page ${pageNumber}`)}
-                  className="h-8 w-8 cursor-pointer text-xs font-medium"
-                >
-                  {pageNumber}
-                </PaginationLink>
-              </PaginationItem>
-            );
-          })}
+            })}
 
-          <PaginationItem className="px-4 text-xs font-medium whitespace-nowrap text-muted-foreground sm:hidden">
-            {pageIndex + 1} / {totalPages}
-          </PaginationItem>
+            <PaginationItem className="px-4 text-xs font-medium whitespace-nowrap text-muted-foreground sm:hidden">
+              {pageIndex + 1} / {totalPages}
+            </PaginationItem>
 
-          <PaginationItem>
-            <PaginationNext
-              onClick={() => onPageIndexChange(pageIndex + 1)}
-              disabled={isLast}
-              className="h-8 cursor-pointer px-2 text-xs sm:px-3 sm:text-sm"
-            />
-          </PaginationItem>
-        </PaginationContent>
-      </Pagination>
+            <PaginationItem>
+              <PaginationNext
+                onClick={() => onPageIndexChange(pageIndex + 1)}
+                disabled={isLast}
+                className="h-8 cursor-pointer px-2 text-xs sm:px-3 sm:text-sm"
+              />
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
+      )}
     </div>
   );
 }
