@@ -136,9 +136,6 @@ describe('useStreamerStatus credential blocks', () => {
     expect(
       text(status(streamer({ state: 'DISABLED', enabled: false })).label),
     ).toBe('Monitoring Stopped');
-    expect(text(status(streamer({ state: 'CANCELLED' })).label)).toBe(
-      'Monitoring Stopped',
-    );
     expect(
       text(
         status(

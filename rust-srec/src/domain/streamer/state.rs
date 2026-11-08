@@ -19,8 +19,6 @@ pub enum StreamerState {
     OutOfSpace,
     /// A persistent error is preventing monitoring.
     FatalError,
-    /// Monitoring for this streamer has been manually stopped.
-    Cancelled,
     /// The streamer's URL or ID is invalid on the platform.
     NotFound,
     /// The system is currently checking the streamer's status.
@@ -42,7 +40,6 @@ impl StreamerState {
             Self::OutOfSchedule => "OUT_OF_SCHEDULE",
             Self::OutOfSpace => "OUT_OF_SPACE",
             Self::FatalError => "FATAL_ERROR",
-            Self::Cancelled => "CANCELLED",
             Self::NotFound => "NOT_FOUND",
             Self::InspectingLive => "INSPECTING_LIVE",
             Self::TemporalDisabled => "TEMPORAL_DISABLED",
@@ -52,6 +49,10 @@ impl StreamerState {
     }
 
     /// Parse from database string representation.
+    ///
+    /// `CANCELLED`, which old rows and config bundles may still hold, reads as
+    /// [`Self::Disabled`], so such a streamer stays stopped rather than falling
+    /// back to monitoring.
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "NOT_LIVE" => Some(Self::NotLive),
@@ -59,12 +60,11 @@ impl StreamerState {
             "OUT_OF_SCHEDULE" => Some(Self::OutOfSchedule),
             "OUT_OF_SPACE" => Some(Self::OutOfSpace),
             "FATAL_ERROR" => Some(Self::FatalError),
-            "CANCELLED" => Some(Self::Cancelled),
             "NOT_FOUND" => Some(Self::NotFound),
             "INSPECTING_LIVE" => Some(Self::InspectingLive),
             "TEMPORAL_DISABLED" => Some(Self::TemporalDisabled),
             "ERROR" => Some(Self::Error),
-            "DISABLED" => Some(Self::Disabled),
+            "DISABLED" | "CANCELLED" => Some(Self::Disabled),
             _ => None,
         }
     }
@@ -85,7 +85,7 @@ impl StreamerState {
     pub fn is_active(&self) -> bool {
         !matches!(
             self,
-            Self::Cancelled | Self::FatalError | Self::NotFound | Self::Disabled | Self::Error
+            Self::FatalError | Self::NotFound | Self::Disabled | Self::Error
         )
     }
 
@@ -98,24 +98,22 @@ impl StreamerState {
             (from, to) if from == &to => true,
 
             // From NotLive
-            (NotLive, Live | InspectingLive | FatalError | NotFound | OutOfSpace | Cancelled) => {
-                true
-            }
+            (NotLive, Live | InspectingLive | FatalError | NotFound | OutOfSpace) => true,
 
             // From Live
-            (Live, NotLive | OutOfSchedule | FatalError | OutOfSpace | Cancelled) => true,
+            (Live, NotLive | OutOfSchedule | FatalError | OutOfSpace) => true,
 
             // From InspectingLive - can go to any state
             (InspectingLive, _) => true,
 
             // From OutOfSchedule
-            (OutOfSchedule, Live | NotLive | FatalError | OutOfSpace | Cancelled) => true,
+            (OutOfSchedule, Live | NotLive | FatalError | OutOfSpace) => true,
 
             // From error states - can recover to NotLive or InspectingLive
-            (FatalError | OutOfSpace | NotFound, NotLive | InspectingLive | Cancelled) => true,
+            (FatalError | OutOfSpace | NotFound, NotLive | InspectingLive) => true,
 
             // From TemporalDisabled - can recover
-            (TemporalDisabled, NotLive | InspectingLive | Cancelled) => true,
+            (TemporalDisabled, NotLive | InspectingLive) => true,
 
             // From Disabled - can be re-enabled
             (Disabled, NotLive) => true,
@@ -123,11 +121,8 @@ impl StreamerState {
             // FatalError can transition to TemporalDisabled
             (FatalError, TemporalDisabled) => true,
 
-            // Cancelled can only go to NotLive
-            (Cancelled, NotLive) => true,
-
-            // Any state can be cancelled or disabled
-            (_, Cancelled | Disabled) => true,
+            // Any state can be disabled
+            (_, Disabled) => true,
 
             _ => false,
         }

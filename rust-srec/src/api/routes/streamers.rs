@@ -413,8 +413,7 @@ fn state_rank(state: &StreamerState) -> u8 {
         StreamerState::InspectingLive => 6,
         StreamerState::OutOfSchedule => 7,
         StreamerState::NotLive => 8,
-        StreamerState::Cancelled => 9,
-        StreamerState::Disabled => 10,
+        StreamerState::Disabled => 9,
     }
 }
 

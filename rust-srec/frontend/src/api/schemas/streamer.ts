@@ -33,7 +33,6 @@ export const StreamerStateSchema = z.enum([
   'OUT_OF_SCHEDULE',
   'OUT_OF_SPACE',
   'FATAL_ERROR',
-  'CANCELLED',
   'NOT_FOUND',
   'INSPECTING_LIVE',
   'TEMPORAL_DISABLED',
