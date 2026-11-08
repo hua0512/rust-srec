@@ -41,7 +41,7 @@ msgstr "“{conflictName}” already uses this address and username."
 msgid "\"{label}\" cannot be deleted while it is selected or recording."
 msgstr "\"{label}\" cannot be deleted while it is selected or recording."
 
-#: src/components/pipeline/step-in-use-dialog.tsx:142
+#: src/components/pipeline/step-in-use-dialog.tsx:151
 msgid "\"{name}\" cannot be deleted while these pipelines use it. Remove it from each of them first."
 msgstr "\"{name}\" cannot be deleted while these pipelines use it. Remove it from each of them first."
 
@@ -49,7 +49,7 @@ msgstr "\"{name}\" cannot be deleted while these pipelines use it. Remove it fro
 msgid "\"{name}\" cannot be deleted while these settings use it. Choose another proxy in each of them first."
 msgstr "\"{name}\" cannot be deleted while these settings use it. Choose another proxy in each of them first."
 
-#: src/components/pipeline/step-in-use-dialog.tsx:135
+#: src/components/pipeline/step-in-use-dialog.tsx:144
 msgid "\"{name}\" cannot be renamed while these pipelines use it, because they refer to it by name. Remove it from each of them first, or keep the current name."
 msgstr "\"{name}\" cannot be renamed while these pipelines use it, because they refer to it by name. Remove it from each of them first, or keep the current name."
 
@@ -57,7 +57,7 @@ msgstr "\"{name}\" cannot be renamed while these pipelines use it, because they 
 msgid "(+{pausedCount} paused)"
 msgstr "(+{pausedCount} paused)"
 
-#: src/components/pipeline/step-in-use-dialog.tsx:72
+#: src/components/pipeline/step-in-use-dialog.tsx:80
 #: src/components/proxies/proxy-references.tsx:26
 msgid "(being removed)"
 msgstr "(being removed)"
@@ -1414,7 +1414,7 @@ msgstr "Back to presets"
 msgid "Back to Sessions"
 msgstr "Back to Sessions"
 
-#: src/components/streamers/edit/streamer-header.tsx:46
+#: src/components/streamers/edit/streamer-header.tsx:67
 msgid "Back to streamers"
 msgstr "Back to streamers"
 
@@ -1770,7 +1770,6 @@ msgid "Cancel upload"
 msgstr "Cancel upload"
 
 #: src/components/pipeline/status-config.ts:156
-#: src/components/streamers/card/use-streamer-status.tsx:131
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:98
 msgid "Cancelled"
 msgstr "Cancelled"
@@ -1953,7 +1952,7 @@ msgstr "Checking"
 msgid "Checking link"
 msgstr "Checking link"
 
-#: src/components/streamers/card/use-streamer-status.tsx:450
+#: src/components/streamers/card/use-streamer-status.tsx:448
 msgid "Checking stream status..."
 msgstr "Checking stream status..."
 
@@ -2077,7 +2076,7 @@ msgstr "Cloning..."
 #: src/components/credentials/delete-profile-dialog.tsx:123
 #: src/components/notifications/browser-channel-dialog.tsx:206
 #: src/components/notifications/desktop-channel-dialog.tsx:231
-#: src/components/pipeline/step-in-use-dialog.tsx:198
+#: src/components/pipeline/step-in-use-dialog.tsx:207
 #: src/components/proxies/delete-proxy-dialog.tsx:82
 #: src/components/ui/dialog.tsx:75
 #: src/components/ui/sheet.tsx:77
@@ -2209,7 +2208,7 @@ msgstr "Compression Level"
 msgid "Concurrency"
 msgstr "Concurrency"
 
-#: src/components/streamers/card/use-streamer-status.tsx:386
+#: src/components/streamers/card/use-streamer-status.tsx:384
 msgid "Concurrency limit reached"
 msgstr "Concurrency limit reached"
 
@@ -3255,7 +3254,7 @@ msgstr "Deleted “{name}”"
 msgid "Deleted template \"{0}\""
 msgstr "Deleted template \"{0}\""
 
-#: src/components/pipeline/step-in-use-dialog.tsx:68
+#: src/components/pipeline/step-in-use-dialog.tsx:75
 #: src/components/proxies/proxy-references.tsx:21
 msgid "Deleted; kept until the recordings using it finish"
 msgstr "Deleted; kept until the recordings using it finish"
@@ -3422,7 +3421,7 @@ msgstr "Disable selected"
 #: src/components/credentials/account-row.tsx:92
 #: src/components/credentials/account-selection-section.tsx:157
 #: src/components/credentials/credential-selection-editor.tsx:107
-#: src/components/streamers/card/use-streamer-status.tsx:135
+#: src/components/streamers/card/use-streamer-status.tsx:133
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:297
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:320
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:329
@@ -3434,7 +3433,7 @@ msgstr "Disabled"
 msgid "Disabled accounts are not used, checked or refreshed. You can still edit them or log in again."
 msgstr "Disabled accounts are not used, checked or refreshed. You can still edit them or log in again."
 
-#: src/components/shared/unsaved-changes-guard.tsx:23
+#: src/components/shared/unsaved-changes-guard.tsx:26
 msgid "Discard unsaved changes?"
 msgstr "Discard unsaved changes?"
 
@@ -3505,7 +3504,7 @@ msgstr "Download"
 msgid "Download {0}"
 msgstr "Download {0}"
 
-#: src/components/streamers/card/use-streamer-status.tsx:170
+#: src/components/streamers/card/use-streamer-status.tsx:168
 msgid "Download activity looks healthy"
 msgstr "Download activity looks healthy"
 
@@ -3984,13 +3983,13 @@ msgid "Enter your credentials to access your account"
 msgstr "Enter your credentials to access your account"
 
 #: src/components/notifications/events/payload-preview.tsx:34
-#: src/components/streamers/card/use-streamer-status.tsx:133
+#: src/components/streamers/card/use-streamer-status.tsx:131
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:95
 msgid "Error"
 msgstr "Error"
 
-#: src/components/streamers/card/use-streamer-status.tsx:277
-#: src/components/streamers/card/use-streamer-status.tsx:317
+#: src/components/streamers/card/use-streamer-status.tsx:275
+#: src/components/streamers/card/use-streamer-status.tsx:315
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:604
 msgid "Error Details"
 msgstr "Error Details"
@@ -5051,7 +5050,7 @@ msgstr "Gift items"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:115
 #: src/components/layout/site-header.tsx:52
-#: src/components/pipeline/step-in-use-dialog.tsx:96
+#: src/components/pipeline/step-in-use-dialog.tsx:105
 #: src/components/proxies/proxy-references.tsx:68
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:44
 msgid "Global"
@@ -5067,7 +5066,7 @@ msgstr "Global"
 msgid "Global Default"
 msgstr "Global Default"
 
-#: src/components/pipeline/step-in-use-dialog.tsx:113
+#: src/components/pipeline/step-in-use-dialog.tsx:122
 #: src/components/proxies/proxy-references.tsx:71
 msgid "Global settings"
 msgstr "Global settings"
@@ -5084,7 +5083,7 @@ msgstr "Go Back"
 msgid "Go to next page"
 msgstr "Go to next page"
 
-#: src/components/shared/list-pagination.tsx:155
+#: src/components/shared/list-pagination.tsx:164
 msgid "Go to page {pageNumber}"
 msgstr "Go to page {pageNumber}"
 
@@ -5245,7 +5244,7 @@ msgstr "High quality H.265/HEVC compression (CRF 22). Smaller files but slower e
 msgid "High Quality MP3"
 msgstr "High Quality MP3"
 
-#: src/components/streamers/card/use-streamer-status.tsx:382
+#: src/components/streamers/card/use-streamer-status.tsx:380
 msgid "High-priority slot waiting (concurrency limit reached)"
 msgstr "High-priority slot waiting (concurrency limit reached)"
 
@@ -5626,8 +5625,8 @@ msgstr "Input Paths (comma separated)"
 msgid "Inset"
 msgstr "Inset"
 
-#: src/components/streamers/card/use-streamer-status.tsx:438
-#: src/components/streamers/card/use-streamer-status.tsx:447
+#: src/components/streamers/card/use-streamer-status.tsx:436
+#: src/components/streamers/card/use-streamer-status.tsx:445
 msgid "Inspecting"
 msgstr "Inspecting"
 
@@ -5668,8 +5667,8 @@ msgstr "Invalid download URL"
 msgid "Invalid JSON: {error}"
 msgstr "Invalid JSON: {error}"
 
-#: src/api/schemas/streamer.ts:263
-#: src/api/schemas/streamer.ts:298
+#: src/api/schemas/streamer.ts:262
+#: src/api/schemas/streamer.ts:297
 msgid "Invalid URL"
 msgstr "Invalid URL"
 
@@ -5832,7 +5831,7 @@ msgstr "Label"
 msgid "Language"
 msgstr "Language"
 
-#: src/components/streamers/card/use-streamer-status.tsx:509
+#: src/components/streamers/card/use-streamer-status.tsx:507
 msgid "Last Activity"
 msgstr "Last Activity"
 
@@ -5853,7 +5852,7 @@ msgstr "Last checked"
 msgid "Last checked {0}"
 msgstr "Last checked {0}"
 
-#: src/components/streamers/card/use-streamer-status.tsx:240
+#: src/components/streamers/card/use-streamer-status.tsx:238
 msgid "Last Error"
 msgstr "Last Error"
 
@@ -5879,7 +5878,7 @@ msgstr "Latency"
 msgid "Launch Pipeline"
 msgstr "Launch Pipeline"
 
-#: src/components/shared/unsaved-changes-guard.tsx:27
+#: src/components/shared/unsaved-changes-guard.tsx:30
 msgctxt "unsaved-changes"
 msgid "Leave"
 msgstr "Leave"
@@ -5945,12 +5944,12 @@ msgstr "Limits each individual file's transfer rate rather than the overall tota
 msgid "List"
 msgstr "List"
 
-#: src/components/streamers/card/use-streamer-status.tsx:425
+#: src/components/streamers/card/use-streamer-status.tsx:423
 #: src/components/streamers/edit/recent-sessions-list.tsx:76
 #: src/components/streamers/edit/status-check-history.tsx:379
 #: src/components/streamers/edit/status-check-history.tsx:400
 #: src/components/streamers/edit/status-check-history.tsx:457
-#: src/components/streamers/edit/streamer-header.tsx:67
+#: src/components/streamers/edit/streamer-header.tsx:88
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:161
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:93
 msgid "Live"
@@ -6528,8 +6527,8 @@ msgstr "Monitoring"
 msgid "Monitoring intervals and the default proxy."
 msgstr "Monitoring intervals and the default proxy."
 
-#: src/components/streamers/card/use-streamer-status.tsx:291
-#: src/components/streamers/card/use-streamer-status.tsx:300
+#: src/components/streamers/card/use-streamer-status.tsx:289
+#: src/components/streamers/card/use-streamer-status.tsx:298
 msgid "Monitoring Stopped"
 msgstr "Monitoring Stopped"
 
@@ -6687,8 +6686,8 @@ msgstr "Name autofilled successfully"
 #: src/api/schemas/notifications.ts:180
 #: src/api/schemas/notifications.ts:186
 #: src/api/schemas/notifications.ts:192
-#: src/api/schemas/streamer.ts:262
-#: src/api/schemas/streamer.ts:297
+#: src/api/schemas/streamer.ts:261
+#: src/api/schemas/streamer.ts:296
 #: src/api/schemas/template.ts:80
 #: src/components/pipeline/presets/preset-editor.tsx:49
 #: src/components/pipeline/workflows/workflow-editor.tsx:44
@@ -7350,12 +7349,12 @@ msgstr "Off Canvas"
 msgid "Office proxy"
 msgstr "Office proxy"
 
-#: src/components/streamers/card/use-streamer-status.tsx:495
-#: src/components/streamers/card/use-streamer-status.tsx:504
+#: src/components/streamers/card/use-streamer-status.tsx:493
+#: src/components/streamers/card/use-streamer-status.tsx:502
 #: src/components/streamers/edit/recent-sessions-list.tsx:74
 #: src/components/streamers/edit/status-check-history.tsx:381
 #: src/components/streamers/edit/status-check-history.tsx:402
-#: src/components/streamers/edit/streamer-header.tsx:69
+#: src/components/streamers/edit/streamer-header.tsx:90
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:94
 msgid "Offline"
 msgstr "Offline"
@@ -7582,7 +7581,7 @@ msgstr "Output Settings"
 msgid "Outputs"
 msgstr "Outputs"
 
-#: src/components/streamers/card/use-streamer-status.tsx:468
+#: src/components/streamers/card/use-streamer-status.tsx:466
 msgid "Outside Schedule"
 msgstr "Outside Schedule"
 
@@ -7828,7 +7827,7 @@ msgstr "Pending"
 msgid "PENDING CONFIRMATION"
 msgstr "PENDING CONFIRMATION"
 
-#: src/components/streamers/card/use-streamer-status.tsx:181
+#: src/components/streamers/card/use-streamer-status.tsx:179
 msgid "Pending Error Clears"
 msgstr "Pending Error Clears"
 
@@ -7836,7 +7835,7 @@ msgstr "Pending Error Clears"
 msgid "Pending Jobs"
 msgstr "Pending Jobs"
 
-#: src/components/shared/list-pagination.tsx:97
+#: src/components/shared/list-pagination.tsx:105
 msgid "Per page:"
 msgstr "Per page:"
 
@@ -8051,7 +8050,7 @@ msgstr "platforms"
 #: src/components/config/global/backup-restore-card.tsx:415
 #: src/components/config/templates/template-editor.tsx:260
 #: src/components/layout/site-header.tsx:49
-#: src/components/pipeline/step-in-use-dialog.tsx:97
+#: src/components/pipeline/step-in-use-dialog.tsx:106
 #: src/components/proxies/proxy-references.tsx:77
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:50
 msgid "Platforms"
@@ -8497,11 +8496,11 @@ msgid "Queue"
 msgstr "Queue"
 
 #: src/components/pipeline/status-config.ts:146
-#: src/components/streamers/card/use-streamer-status.tsx:369
+#: src/components/streamers/card/use-streamer-status.tsx:367
 msgid "Queued"
 msgstr "Queued"
 
-#: src/components/streamers/card/use-streamer-status.tsx:379
+#: src/components/streamers/card/use-streamer-status.tsx:377
 msgid "Queued for download"
 msgstr "Queued for download"
 
@@ -8610,7 +8609,7 @@ msgid "Real-time status of all system components and resources."
 msgstr "Real-time status of all system components and resources."
 
 #: src/components/notifications/events/payload-preview.tsx:41
-#: src/components/streamers/card/use-streamer-status.tsx:304
+#: src/components/streamers/card/use-streamer-status.tsx:302
 msgid "Reason"
 msgstr "Reason"
 
@@ -8668,7 +8667,7 @@ msgid "Record Video"
 msgstr "Record Video"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:49
-#: src/components/streamers/edit/streamer-header.tsx:65
+#: src/components/streamers/edit/streamer-header.tsx:86
 msgid "Recording"
 msgstr "Recording"
 
@@ -8692,7 +8691,7 @@ msgid "Recording error"
 msgstr "Recording error"
 
 #: src/components/streamers/edit/streamer-filters-tab.tsx:36
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:134
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:143
 msgid "Recording Filters"
 msgstr "Recording Filters"
 
@@ -8721,7 +8720,7 @@ msgstr "Recording started"
 msgid "Recording uses temporary chunks"
 msgstr "Recording uses temporary chunks"
 
-#: src/components/streamers/card/use-streamer-status.tsx:478
+#: src/components/streamers/card/use-streamer-status.tsx:476
 msgid "Recording will start when schedule allows"
 msgstr "Recording will start when schedule allows"
 
@@ -8733,8 +8732,8 @@ msgstr "Recordings"
 msgid "Recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
 msgstr "Recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
 
-#: src/components/streamers/card/use-streamer-status.tsx:160
-#: src/components/streamers/card/use-streamer-status.tsx:169
+#: src/components/streamers/card/use-streamer-status.tsx:158
+#: src/components/streamers/card/use-streamer-status.tsx:167
 msgid "Recovering"
 msgstr "Recovering"
 
@@ -9125,7 +9124,7 @@ msgstr "Resumed after {0}s in pending state."
 msgid "RESUMED START"
 msgstr "RESUMED START"
 
-#: src/components/streamers/card/use-streamer-status.tsx:214
+#: src/components/streamers/card/use-streamer-status.tsx:212
 msgid "Resuming in"
 msgstr "Resuming in"
 
@@ -9460,7 +9459,7 @@ msgstr "Scanning replaces this account's saved login. Account selections are not
 msgid "Schedule recording times"
 msgstr "Schedule recording times"
 
-#: src/components/streamers/card/use-streamer-status.tsx:459
+#: src/components/streamers/card/use-streamer-status.tsx:457
 msgid "Scheduled"
 msgstr "Scheduled"
 
@@ -9954,7 +9953,7 @@ msgstr "Set up a new download tool configuration"
 msgid "Settings"
 msgstr "Settings"
 
-#: src/components/pipeline/step-in-use-dialog.tsx:186
+#: src/components/pipeline/step-in-use-dialog.tsx:195
 msgid "Settings being removed let go of it once the recordings using them finish."
 msgstr "Settings being removed let go of it once the recordings using them finish."
 
@@ -10246,7 +10245,7 @@ msgstr "State"
 msgid "Status"
 msgstr "Status"
 
-#: src/components/shared/unsaved-changes-guard.tsx:28
+#: src/components/shared/unsaved-changes-guard.tsx:31
 msgctxt "unsaved-changes"
 msgid "Stay"
 msgstr "Stay"
@@ -10421,16 +10420,16 @@ msgstr "Streamer ID"
 msgid "Streamer ID is required"
 msgstr "Streamer ID is required"
 
-#: src/components/streamers/card/use-streamer-status.tsx:208
+#: src/components/streamers/card/use-streamer-status.tsx:206
 msgid "Streamer is on cooldown"
 msgstr "Streamer is on cooldown"
 
-#: src/components/streamers/card/use-streamer-status.tsx:264
+#: src/components/streamers/card/use-streamer-status.tsx:262
 msgid "Streamer no longer exists on the platform"
 msgstr "Streamer no longer exists on the platform"
 
-#: src/components/streamers/card/use-streamer-status.tsx:254
-#: src/components/streamers/card/use-streamer-status.tsx:263
+#: src/components/streamers/card/use-streamer-status.tsx:252
+#: src/components/streamers/card/use-streamer-status.tsx:261
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:117
 msgid "Streamer not found"
 msgstr "Streamer not found"
@@ -10448,7 +10447,7 @@ msgstr "Streamer pagination"
 msgid "Streamer updated"
 msgstr "Streamer updated"
 
-#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:72
+#: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:73
 msgid "Streamer updated successfully"
 msgstr "Streamer updated successfully"
 
@@ -10456,7 +10455,7 @@ msgstr "Streamer updated successfully"
 #: src/components/config/global/backup-restore-card.tsx:386
 #: src/components/config/global/backup-restore-card.tsx:391
 #: src/components/layout/site-header.tsx:36
-#: src/components/pipeline/step-in-use-dialog.tsx:99
+#: src/components/pipeline/step-in-use-dialog.tsx:108
 #: src/components/proxies/proxy-references.tsx:105
 #: src/lib/menu-list.ts:58
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:295
@@ -10681,7 +10680,7 @@ msgstr "templates"
 #: src/components/config/global/backup-restore-card.tsx:369
 #: src/components/config/global/backup-restore-card.tsx:374
 #: src/components/layout/site-header.tsx:50
-#: src/components/pipeline/step-in-use-dialog.tsx:98
+#: src/components/pipeline/step-in-use-dialog.tsx:107
 #: src/components/proxies/proxy-references.tsx:93
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:56
 msgid "Templates"
@@ -10691,9 +10690,9 @@ msgstr "Templates"
 msgid "Temporarily disabled"
 msgstr "Temporarily disabled"
 
-#: src/components/streamers/card/use-streamer-status.tsx:198
-#: src/components/streamers/card/use-streamer-status.tsx:207
-#: src/components/streamers/card/use-streamer-status.tsx:525
+#: src/components/streamers/card/use-streamer-status.tsx:196
+#: src/components/streamers/card/use-streamer-status.tsx:205
+#: src/components/streamers/card/use-streamer-status.tsx:523
 msgid "Temporarily Paused"
 msgstr "Temporarily Paused"
 
@@ -10804,7 +10803,7 @@ msgstr "The page you are looking for does not exist."
 msgid "The platform asked for a new login"
 msgstr "The platform asked for a new login"
 
-#: src/components/streamers/card/use-streamer-status.tsx:267
+#: src/components/streamers/card/use-streamer-status.tsx:265
 msgid "The platform reported this streamer as missing. The channel may have been deleted or banned, or the URL or ID is incorrect. Consider removing or updating this streamer."
 msgstr "The platform reported this streamer as missing. The channel may have been deleted or banned, or the URL or ID is incorrect. Consider removing or updating this streamer."
 
@@ -10963,7 +10962,7 @@ msgstr "This platform has no accounts yet. Add them in the platform settings."
 msgid "This platform has no accounts yet. Use Add account above to create one."
 msgstr "This platform has no accounts yet. Use Add account above to create one."
 
-#: src/components/pipeline/step-in-use-dialog.tsx:175
+#: src/components/pipeline/step-in-use-dialog.tsx:184
 msgid "This preset is in use"
 msgstr "This preset is in use"
 
@@ -11011,7 +11010,7 @@ msgstr "This STOKEN contains no uppercase letters — it is likely the wrong val
 msgid "This stream is already active"
 msgstr "This stream is already active"
 
-#: src/components/streamers/card/use-streamer-status.tsx:391
+#: src/components/streamers/card/use-streamer-status.tsx:389
 msgid "This stream is live but the global download limit is fully in use. Recording and danmu collection will start automatically when a slot frees."
 msgstr "This stream is live but the global download limit is fully in use. Recording and danmu collection will start automatically when a slot frees."
 
@@ -11019,7 +11018,7 @@ msgstr "This stream is live but the global download limit is fully in use. Recor
 msgid "This streamer has no account with a valid login."
 msgstr "This streamer has no account with a valid login."
 
-#: src/components/streamers/card/use-streamer-status.tsx:471
+#: src/components/streamers/card/use-streamer-status.tsx:469
 msgid "This streamer is currently live, but outside your configured recording schedule."
 msgstr "This streamer is currently live, but outside your configured recording schedule."
 
@@ -11058,7 +11057,7 @@ msgstr "This will permanently delete the preset \"{0}\". Pipelines using this pr
 msgid "This will permanently delete the workflow \"{0}\". Streamers using this workflow will need to be updated."
 msgstr "This will permanently delete the workflow \"{0}\". Streamers using this workflow will need to be updated."
 
-#: src/components/pipeline/step-in-use-dialog.tsx:173
+#: src/components/pipeline/step-in-use-dialog.tsx:182
 msgid "This workflow is in use"
 msgstr "This workflow is in use"
 
@@ -11301,7 +11300,7 @@ msgstr "Transfers help"
 msgid "Transient error"
 msgstr "Transient error"
 
-#: src/components/streamers/card/use-streamer-status.tsx:173
+#: src/components/streamers/card/use-streamer-status.tsx:171
 msgid "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
 msgstr "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
 
@@ -11539,7 +11538,7 @@ msgstr "Unsaved"
 msgid "Unsupported link"
 msgstr "Unsupported link"
 
-#: src/components/streamers/card/use-streamer-status.tsx:227
+#: src/components/streamers/card/use-streamer-status.tsx:225
 msgid "Until"
 msgstr "Until"
 
@@ -11942,7 +11941,7 @@ msgstr "Waiting for a safe cut..."
 msgid "Waiting for connection..."
 msgstr "Waiting for connection..."
 
-#: src/components/streamers/card/use-streamer-status.tsx:402
+#: src/components/streamers/card/use-streamer-status.tsx:400
 msgid "Waiting since"
 msgstr "Waiting since"
 
@@ -12106,7 +12105,7 @@ msgid "workflows"
 msgstr "workflows"
 
 #: src/components/layout/site-header.tsx:57
-#: src/components/pipeline/step-in-use-dialog.tsx:100
+#: src/components/pipeline/step-in-use-dialog.tsx:109
 #: src/components/pipeline/workflows/step-library.tsx:281
 #: src/lib/menu-list.ts:80
 #: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:130
@@ -12134,7 +12133,7 @@ msgstr "Year (4 digits)"
 msgid "Yesterday"
 msgstr "Yesterday"
 
-#: src/components/shared/unsaved-changes-guard.tsx:25
+#: src/components/shared/unsaved-changes-guard.tsx:28
 msgid "You have unsaved changes. Leave without saving?"
 msgstr "You have unsaved changes. Leave without saving?"
 

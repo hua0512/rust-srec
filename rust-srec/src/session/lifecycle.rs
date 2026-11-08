@@ -902,7 +902,7 @@ impl SessionLifecycle {
         let outcome = self.repo.start_or_resume(inputs).await?;
 
         // The row-level guard inside `start_or_resume` observed a
-        // user-disabled/cancelled (or fatal) streamer: nothing was written
+        // user-disabled (or fatal) streamer: nothing was written
         // and no `StreamerLive` outbox event exists, so there is no session
         // to track in memory either.
         if let StartSessionOutcome::SuppressedInactive { state } = &outcome {

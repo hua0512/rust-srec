@@ -35,7 +35,6 @@ const STOP_STATES = [
   'FATAL_ERROR',
   'OUT_OF_SPACE',
   'DISABLED',
-  'CANCELLED',
   'ERROR',
 ] as const;
 

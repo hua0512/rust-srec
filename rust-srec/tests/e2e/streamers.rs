@@ -3,7 +3,7 @@
 //!
 //! Every streamer here is either created disabled or seeded in a state the
 //! scheduler never monitors (ERROR, FATAL_ERROR, OUT_OF_SPACE, NOT_FOUND,
-//! CANCELLED, DISABLED), so no check ever reaches a platform. For the same
+//! DISABLED), so no check ever reaches a platform. For the same
 //! reason nothing here calls `clear-error` on an existing streamer or sends
 //! `enabled: true` to a state it would move to NOT_LIVE: both would start
 //! monitoring.
@@ -13,13 +13,12 @@ use serde_json::{Value, json};
 
 use crate::support::{TestApp, assert_recent, id_of, millis, now_ms};
 
-const STATES: [&str; 11] = [
+const STATES: [&str; 10] = [
     "NOT_LIVE",
     "LIVE",
     "OUT_OF_SCHEDULE",
     "OUT_OF_SPACE",
     "FATAL_ERROR",
-    "CANCELLED",
     "NOT_FOUND",
     "INSPECTING_LIVE",
     "TEMPORAL_DISABLED",
@@ -385,7 +384,7 @@ async fn list_filters_sorts_and_paginates_like_the_streamers_page() {
         ("foxtrot", "twitch", "FATAL_ERROR", "HIGH"),
         ("oscar", "twitch", "OUT_OF_SPACE", "LOW"),
         ("november", "huya", "NOT_FOUND", "NORMAL"),
-        ("charlie", "huya", "CANCELLED", "NORMAL"),
+        ("charlie", "huya", "NOT_FOUND", "NORMAL"),
         ("zulu", "bilibili", "DISABLED", "HIGH"),
         ("bravo", "bilibili", "DISABLED", "NORMAL"),
         ("delta", "twitch", "DISABLED", "NORMAL"),
@@ -429,23 +428,23 @@ async fn list_filters_sorts_and_paginates_like_the_streamers_page() {
     assert_eq!(
         names(&all),
         [
-            "Echo", "Yankee", "Foxtrot", "Oscar", "November", "Charlie", "delta", "Bravo", "Alpha",
+            "Echo", "Yankee", "Foxtrot", "Oscar", "Charlie", "November", "delta", "Bravo", "Alpha",
             "Zulu"
         ]
     );
 
     // Errors first (ERROR, FATAL_ERROR, OUT_OF_SPACE, NOT_FOUND), then
-    // CANCELLED, then DISABLED; priority descending, then name, within a state.
+    // DISABLED; priority descending, then name, within a state.
     assert_eq!(
         names(&list_page(&app, &token, "sort_by=state").await),
         [
-            "Yankee", "Echo", "Foxtrot", "Oscar", "November", "Charlie", "Zulu", "Bravo", "delta",
+            "Yankee", "Echo", "Foxtrot", "Oscar", "Charlie", "November", "Zulu", "Bravo", "delta",
             "Alpha"
         ]
     );
 
     let page = list_page(&app, &token, "sort_by=state&limit=3&offset=2").await;
-    assert_eq!(names(&page), ["Foxtrot", "Oscar", "November"]);
+    assert_eq!(names(&page), ["Foxtrot", "Oscar", "Charlie"]);
     assert_eq!(page["total"], 10);
     assert_eq!(page["limit"], 3);
     assert_eq!(page["offset"], 2);
@@ -456,13 +455,13 @@ async fn list_filters_sorts_and_paginates_like_the_streamers_page() {
     let cases: [(&str, &[&str]); 12] = [
         ("search=ECHO", &["Echo"]),
         ("search=twitch.tv", &["Foxtrot", "Oscar", "delta"]),
-        ("platform=platform-huya", &["November", "Charlie", "Alpha"]),
+        ("platform=platform-huya", &["Charlie", "November", "Alpha"]),
         ("state=error,fatal_error", &["Echo", "Yankee", "Foxtrot"]),
         ("state=NOT_A_STATE", &[]),
         ("enabled=false", &["delta", "Bravo", "Alpha", "Zulu"]),
         (
             "enabled=true",
-            &["Echo", "Yankee", "Foxtrot", "Oscar", "November", "Charlie"],
+            &["Echo", "Yankee", "Foxtrot", "Oscar", "Charlie", "November"],
         ),
         ("priority=HIGH", &["Yankee", "Foxtrot", "Zulu"]),
         ("template=TEMPLATE", &["Zulu"]),
@@ -872,21 +871,23 @@ async fn put_is_a_partial_update_and_disabling_clears_the_error_backoff() {
     assert_eq!(fatal["consecutive_error_count"], 0);
     assert!(fatal["disabled_until"].is_null());
 
-    // `enabled: true` leaves ERROR and CANCELLED as they are: enabling moves
-    // only DISABLED or an error state to NOT_LIVE, CANCELLED is neither, and
-    // ERROR may not make that transition.
-    for (id, state) in [("errored", "ERROR"), ("cancelled", "CANCELLED")] {
-        let response = app
-            .put(
-                &format!("/api/streamers/{id}"),
-                &token,
-                &json!({ "enabled": true }),
-            )
-            .await
-            .ok();
-        assert_eq!(response["state"], state);
-        assert_eq!(app.streamer(&token, id).await["state"], state);
-    }
+    // `enabled: true` leaves ERROR as it is: ERROR may not move to NOT_LIVE.
+    let response = app
+        .put(
+            "/api/streamers/errored",
+            &token,
+            &json!({ "enabled": true }),
+        )
+        .await
+        .ok();
+    assert_eq!(response["state"], "ERROR");
+    assert_eq!(app.streamer(&token, "errored").await["state"], "ERROR");
+
+    // A row that still holds CANCELLED reads as a disabled streamer, so it
+    // stays unmonitored and shows as switched off.
+    let cancelled = app.streamer(&token, "cancelled").await;
+    assert_eq!(cancelled["state"], "DISABLED");
+    assert_eq!(cancelled["enabled"], false);
 
     let response = app
         .put(

@@ -127,8 +127,6 @@ function stopReason(state: StopState): ReactNode {
       return <Trans>Out of Space</Trans>;
     case 'FATAL_ERROR':
       return <Trans>Fatal Error</Trans>;
-    case 'CANCELLED':
-      return <Trans>Cancelled</Trans>;
     case 'ERROR':
       return <Trans>Error</Trans>;
     case 'DISABLED':

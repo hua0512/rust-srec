@@ -26,7 +26,7 @@ pub struct StreamerListParams {
     pub offset: Option<u32>,
     /// Filter by platform name (e.g. "bilibili", "douyu", "twitch")
     pub platform: Option<String>,
-    /// Filter by state (comma-separated: NotLive, Live, InspectingLive, OutOfSchedule, Cancelled, FatalError, Unknown)
+    /// Filter by state (comma-separated, case-insensitive: NOT_LIVE, LIVE, INSPECTING_LIVE, OUT_OF_SCHEDULE, OUT_OF_SPACE, FATAL_ERROR, NOT_FOUND, TEMPORAL_DISABLED, ERROR, DISABLED)
     pub state: Option<String>,
     /// Filter by template ID
     pub template: Option<String>,

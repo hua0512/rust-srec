@@ -1702,23 +1702,22 @@ fn streamer_model(
 
 /// Value written to `streamers.state`.
 ///
-/// Only `DISABLED` and `CANCELLED` are carried over from the bundle: every other
-/// [`StreamerState`] is produced by monitoring, so importing one would overwrite
-/// the state of a streamer whose actor is mid-check or whose download is
-/// running — a `LIVE` row rewritten to `NOT_LIVE` re-triggers
-/// `SessionLifecycle::on_live_detected` on the next poll. An existing row
+/// Only `DISABLED` is carried over from the bundle (`CANCELLED` parses as
+/// `DISABLED`): every other [`StreamerState`] is produced by monitoring, so
+/// importing one would overwrite the state of a streamer whose actor is
+/// mid-check or whose download is running — a `LIVE` row rewritten to
+/// `NOT_LIVE` re-triggers `SessionLifecycle::on_live_detected` on the next
+/// poll. An existing row
 /// otherwise keeps its own state, except when the bundle re-enables a row the
 /// operator had stopped, which resets it to `NOT_LIVE` so
 /// `StreamerMetadata::is_active` turns true again.
 fn imported_state(existing: Option<&StreamerDbModel>, source_state: &str) -> String {
-    let stopped =
-        |state: StreamerState| matches!(state, StreamerState::Disabled | StreamerState::Cancelled);
     let not_live = StreamerState::NotLive.as_str().to_string();
 
     match StreamerState::parse(source_state) {
-        Some(imported) if stopped(imported) => imported.as_str().to_string(),
+        Some(StreamerState::Disabled) => StreamerState::Disabled.as_str().to_string(),
         _ => match existing.and_then(|row| StreamerState::parse(&row.state)) {
-            Some(current) if stopped(current) => not_live,
+            Some(StreamerState::Disabled) => not_live,
             Some(current) => current.as_str().to_string(),
             None => not_live,
         },
@@ -1736,16 +1735,13 @@ fn imported_state(existing: Option<&StreamerDbModel>, source_state: &str) -> Str
 /// `StreamerManager::partial_update_streamer`, which calls
 /// `StreamerMetadata::clear_error_tracking` on a `Disabled` write.
 fn clears_error_tracking(existing: Option<&StreamerDbModel>, new_state: &str) -> bool {
-    let stopped =
-        |state: StreamerState| matches!(state, StreamerState::Disabled | StreamerState::Cancelled);
-    let new_state = StreamerState::parse(new_state);
-    if new_state.is_some_and(stopped) {
-        return true;
-    }
-    new_state == Some(StreamerState::NotLive)
-        && existing
+    match StreamerState::parse(new_state) {
+        Some(StreamerState::Disabled) => true,
+        Some(StreamerState::NotLive) => existing
             .and_then(|row| StreamerState::parse(&row.state))
-            .is_some_and(stopped)
+            .is_some_and(|state| state == StreamerState::Disabled),
+        _ => false,
+    }
 }
 
 fn db_json(value: serde_json::Value) -> String {
@@ -2656,6 +2652,11 @@ mod tests {
         );
         assert_eq!(
             imported_state(Some(&live), StreamerState::Disabled.as_str()),
+            StreamerState::Disabled.as_str()
+        );
+        // Bundles from versions that had a separate cancelled state.
+        assert_eq!(
+            imported_state(Some(&live), "CANCELLED"),
             StreamerState::Disabled.as_str()
         );
 

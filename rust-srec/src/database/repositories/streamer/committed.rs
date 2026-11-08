@@ -81,8 +81,8 @@ async fn write_with_publication(
                 crate::database::repositories::config_retirement::reap(connection).await?;
                 row
             }
-            // Only an error state is lifted (`StreamerState::is_error`); a disabled,
-            // cancelled or live streamer keeps its state.
+            // Only an error state is lifted (`StreamerState::is_error`); a disabled
+            // or live streamer keeps its state.
             Mutation::ClearErrors => row!("UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL, last_error = NULL, state = CASE WHEN state IN ('FATAL_ERROR', 'OUT_OF_SPACE', 'NOT_FOUND', 'TEMPORAL_DISABLED', 'ERROR') THEN 'NOT_LIVE' ELSE state END WHERE id = ? RETURNING *"),
             Mutation::ClearLastError => row!("UPDATE streamers SET last_error = NULL WHERE id = ? RETURNING *"),
             Mutation::Success(Some(time)) => row!("UPDATE streamers SET state = 'LIVE', consecutive_error_count = 0, disabled_until = NULL, last_error = NULL, last_live_time = ? WHERE id = ? RETURNING *", time),

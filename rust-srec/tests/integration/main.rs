@@ -6,6 +6,7 @@
 //! top-level `tests/*.rs` files.
 
 mod account_token_contracts;
+mod cancelled_streamer_migration;
 mod credential_profile_contracts;
 mod credential_profile_migration;
 mod credential_profile_owner_deletion;
