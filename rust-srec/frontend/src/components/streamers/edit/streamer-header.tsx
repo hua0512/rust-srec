@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
+import { useGoBack } from '@/hooks/use-go-back';
 import type { Streamer } from '@/api/schemas/streamer';
 
 interface StreamerHeaderProps {
@@ -20,6 +21,7 @@ export const StreamerHeader = memo(function StreamerHeader({
   isLive,
   platform,
 }: StreamerHeaderProps) {
+  const goBack = useGoBack('/streamers');
   const statusColor = isRecording
     ? 'text-red-500'
     : isLive
@@ -40,7 +42,26 @@ export const StreamerHeader = memo(function StreamerHeader({
           className="h-10 w-10 shrink-0 rounded-full bg-background border shadow-sm hover:bg-muted"
           asChild
         >
-          <Link to="/streamers">
+          <Link
+            to="/streamers"
+            // A plain click goes back rather than here, so preloading the bare list is wasted.
+            preload={false}
+            onClick={(event) => {
+              // A plain click returns to the list view the user came from;
+              // modified clicks keep the link's open-in-new-tab behaviour.
+              if (
+                event.button !== 0 ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.shiftKey ||
+                event.altKey
+              ) {
+                return;
+              }
+              event.preventDefault();
+              goBack();
+            }}
+          >
             <ArrowLeft className="h-5 w-5 text-muted-foreground" />
             <span className="sr-only">
               <Trans>Back to streamers</Trans>

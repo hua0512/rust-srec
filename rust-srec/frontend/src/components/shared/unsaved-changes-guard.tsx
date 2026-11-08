@@ -8,6 +8,9 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog';
  *
  * Pass `when={isDirty && !isSaving}`: a save that navigates away on success
  * does so while its request is still marked pending, so it is not blocked.
+ * That holds for pushing a new location only; a history back step is checked
+ * when `popstate` fires, after the save has settled, so pass `ignoreBlocker`
+ * to it (see `useGoBack`).
  */
 export function UnsavedChangesGuard({ when }: { when: boolean }) {
   const blocker = useBlocker({

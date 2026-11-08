@@ -1,6 +1,5 @@
 import { ReactNode, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import { useNavigate } from '@tanstack/react-router';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
@@ -26,6 +25,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
+import { useGoBack } from '@/hooks/use-go-back';
 import { containerVariants, itemVariants } from '@/lib/animation';
 import { extractMetadata } from '@/server/functions';
 import { platformConfigQueryOptions } from '@/api/platform-configs';
@@ -74,7 +74,7 @@ export function StreamerEditor({
   extraTabs = [],
 }: StreamerEditorProps) {
   const { i18n } = useLingui();
-  const navigate = useNavigate();
+  const goBack = useGoBack('/streamers');
   const [stage, setStage] = useState<1 | 2>(1);
   const [isCheckingUrl, setIsCheckingUrl] = useState(false);
 
@@ -107,8 +107,8 @@ export function StreamerEditor({
 
   const isDirty = form.formState.isDirty;
 
-  // Guard against losing edits to an accidental navigation. Submitting resets `isDirty` via the
-  // mutation's refetch, so a successful save does not trip this.
+  // Guard against losing edits to an accidental navigation. It is off while a save is pending; a
+  // caller that leaves after the save settles must bypass it (`ignoreBlocker`).
   const unsavedChangesGuard = (
     <UnsavedChangesGuard when={isDirty && !isSubmitting} />
   );
@@ -234,7 +234,7 @@ export function StreamerEditor({
                   <Button
                     type="button"
                     variant="ghost"
-                    onClick={() => navigate({ to: '/streamers' })}
+                    onClick={() => goBack()}
                   >
                     <Undo2 className="mr-2 h-4 w-4" />
                     <Trans>Cancel</Trans>
