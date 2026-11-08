@@ -388,29 +388,41 @@ pub async fn create_streamer(
     ))
 }
 
-/// Live streamers first so active ones stay visible at the top, then other
-/// states from errors to offline, then priority (highest first), name and id.
+/// States ranked by [`state_rank`]; within a state, the most recently live
+/// first and streamers that have never been live last, then name and id.
 fn default_streamer_order(a: &StreamerMetadata, b: &StreamerMetadata) -> std::cmp::Ordering {
-    let state_order = |s: &StreamerState| -> u8 {
-        match s {
-            StreamerState::Live => 0,
-            StreamerState::Error => 1,
-            StreamerState::FatalError => 2,
-            StreamerState::OutOfSpace => 3,
-            StreamerState::NotFound => 4,
-            StreamerState::TemporalDisabled => 5,
-            StreamerState::InspectingLive => 6,
-            StreamerState::OutOfSchedule => 7,
-            StreamerState::Cancelled => 8,
-            StreamerState::Disabled => 9,
-            StreamerState::NotLive => 10,
-        }
-    };
-    state_order(&a.state)
-        .cmp(&state_order(&b.state))
-        .then_with(|| b.priority.cmp(&a.priority))
-        .then_with(|| a.name.cmp(&b.name))
+    state_rank(&a.state)
+        .cmp(&state_rank(&b.state))
+        // `None < Some`, so comparing `b` to `a` puts never-live streamers last.
+        .then_with(|| b.last_live_time.cmp(&a.last_live_time))
+        .then_with(|| compare_names(&a.name, &b.name))
         .then_with(|| a.id.cmp(&b.id))
+}
+
+/// Live first so active streamers stay visible, then the states that need
+/// attention, then the other monitored states, and streamers that are not
+/// monitored at all last.
+fn state_rank(state: &StreamerState) -> u8 {
+    match state {
+        StreamerState::Live => 0,
+        StreamerState::Error => 1,
+        StreamerState::FatalError => 2,
+        StreamerState::OutOfSpace => 3,
+        StreamerState::NotFound => 4,
+        StreamerState::TemporalDisabled => 5,
+        StreamerState::InspectingLive => 6,
+        StreamerState::OutOfSchedule => 7,
+        StreamerState::NotLive => 8,
+        StreamerState::Cancelled => 9,
+        StreamerState::Disabled => 10,
+    }
+}
+
+/// Case-insensitive name order, so "alice" and "Bob" sort as people expect.
+fn compare_names(a: &str, b: &str) -> std::cmp::Ordering {
+    a.chars()
+        .flat_map(char::to_lowercase)
+        .cmp(b.chars().flat_map(char::to_lowercase))
 }
 
 #[utoipa::path(
@@ -474,18 +486,20 @@ pub async fn list_streamers(
     let desc = filters.sort_dir == Some(SortDirection::Desc);
     streamers.sort_by(|a, b| {
         let ordering = match sort_by {
-            StreamerSortBy::Name => a.name.cmp(&b.name),
+            StreamerSortBy::Name => compare_names(&a.name, &b.name),
             StreamerSortBy::Priority => a.priority.cmp(&b.priority),
-            StreamerSortBy::State => a.state.as_str().cmp(b.state.as_str()),
+            StreamerSortBy::State => state_rank(&a.state).cmp(&state_rank(&b.state)),
             StreamerSortBy::UpdatedAt => a.updated_at.cmp(&b.updated_at),
             StreamerSortBy::Default => return default_streamer_order(a, b),
         };
         let ordering = if desc { ordering.reverse() } else { ordering };
-        // Ties always break ascending.
-        let ordering = if matches!(sort_by, StreamerSortBy::Priority | StreamerSortBy::State) {
-            ordering.then_with(|| a.name.cmp(&b.name))
-        } else {
-            ordering
+        // Ties break the same way whatever the direction.
+        let ordering = match sort_by {
+            StreamerSortBy::State => ordering
+                .then_with(|| b.priority.cmp(&a.priority))
+                .then_with(|| compare_names(&a.name, &b.name)),
+            StreamerSortBy::Priority => ordering.then_with(|| compare_names(&a.name, &b.name)),
+            _ => ordering,
         };
         ordering.then_with(|| a.id.cmp(&b.id))
     });
