@@ -1,5 +1,5 @@
 import { lazy, Suspense, useMemo } from 'react';
-import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
+import { createLazyFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
@@ -25,6 +25,7 @@ import { RecentSessionsList } from '@/components/streamers/edit/recent-sessions-
 import { StatusCheckHistory } from '@/components/streamers/edit/status-check-history';
 import { EditStreamerSkeleton } from '@/components/streamers/edit/edit-streamer-skeleton';
 import type { StreamerPayload } from '@/hooks/use-streamer-form';
+import { useGoBack } from '@/hooks/use-go-back';
 import { invalidateCredentialQueries } from '@/api/credential-profiles';
 
 const StreamerFiltersTab = lazy(() =>
@@ -42,7 +43,7 @@ export const Route = createLazyFileRoute(
 function EditStreamerPage() {
   const { id } = Route.useParams();
   const { i18n } = useLingui();
-  const navigate = useNavigate();
+  const goBack = useGoBack('/streamers');
   const queryClient = useQueryClient();
 
   const { data: streamer, isLoading } = useQuery({
@@ -74,7 +75,6 @@ function EditStreamerPage() {
       // The form also saves the account selection, and a changed URL can
       // move the streamer to another platform.
       void invalidateCredentialQueries(queryClient);
-      void navigate({ to: '/streamers' });
     },
     onError: (error) => {
       toast.error(error.message || i18n._(msg`Failed to update streamer`));
@@ -108,7 +108,16 @@ function EditStreamerPage() {
     <StreamerEditor
       mode="edit"
       streamer={streamer}
-      onSubmit={(payload) => updateMutation.mutate(payload)}
+      onSubmit={(payload) =>
+        updateMutation.mutate(payload, {
+          // Navigate in the per-call callback, which React Query skips once
+          // this page has unmounted, so a save that finishes after the user
+          // has left does not step back again from wherever they are now.
+          // Back rather than to `/streamers`, so the list reopens on the same
+          // page with its filters and sorting.
+          onSuccess: () => goBack({ ignoreBlocker: true }),
+        })
+      }
       isSubmitting={updateMutation.isPending}
       header={
         <StreamerHeader
