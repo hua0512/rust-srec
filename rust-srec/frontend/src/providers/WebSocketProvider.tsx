@@ -161,7 +161,7 @@ export function checkHistoryEntryFromWire(
     title: wire.title || null,
     category: wire.category || null,
     viewer_count: wire.viewerCount === 0n ? null : Number(wire.viewerCount),
-    source: wire.source || undefined,
+    source: wire.source,
   });
   if (!parsed.success) {
     console.warn(

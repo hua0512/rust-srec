@@ -178,23 +178,31 @@ const Bar = memo(function Bar({ entry, i18n }: BarProps) {
   });
   const ariaLabel =
     entry.source === 'batch'
-      ? i18n._(msg`${outcome} (batch check) at ${time}`)
+      ? i18n._(msg`${outcome} (batch detection) at ${time}`)
       : i18n._(msg`${outcome} at ${time}`);
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
+        {/* The button spans the strip's full height so short bars keep a
+            usable hover and focus target; the bar is drawn inside it. A
+            named group, because `group-hover:` alone matches any `.group`
+            ancestor. */}
         <button
           type="button"
           aria-label={ariaLabel}
-          className={cn(
-            'flex-1 basis-0 min-w-0 rounded-sm transition-opacity hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            color,
-          )}
-          // Inline `height` keeps each outcome's relative height obvious;
-          // promoting these to Tailwind tokens would just hide the mapping.
-          style={{ height: `${height}%`, alignSelf: 'flex-end' }}
-        />
+          className="group/bar flex flex-1 basis-0 min-w-0 items-end rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <span
+            className={cn(
+              'w-full rounded-sm transition-opacity group-hover/bar:opacity-80',
+              color,
+            )}
+            // Inline `height` keeps each outcome's relative height obvious;
+            // promoting these to Tailwind tokens would just hide the mapping.
+            style={{ height: `${height}%` }}
+          />
+        </button>
       </TooltipTrigger>
       <TooltipContent
         side="top"
@@ -237,8 +245,8 @@ function BarTooltipContent({
       {entry.source === 'batch' && (
         <div className="opacity-80">
           <Trans>
-            From a batch check: the platform reported many streamers at once, so
-            this streamer was not checked on its own.
+            From batch detection: one request reported many streamers at once,
+            so this streamer was not checked on its own.
           </Trans>
         </div>
       )}
@@ -446,7 +454,7 @@ function barAppearance(
       return { color: 'bg-emerald-500', height: 100 };
     case 'offline':
       return source === 'batch'
-        ? { color: 'bg-muted-foreground/20', height: 20 }
+        ? { color: 'bg-muted-foreground/30', height: 20 }
         : { color: 'bg-muted-foreground/40', height: 35 };
     case 'filtered':
       return { color: 'bg-amber-500', height: 100 };

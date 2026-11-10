@@ -132,7 +132,7 @@ impl StreamerCheckHistoryRepository for SqlxStreamerCheckHistoryRepository {
                 .bind(row.title.as_deref())
                 .bind(row.category.as_deref())
                 .bind(row.viewer_count)
-                .bind(row.source.as_deref())
+                .bind(&row.source)
                 .execute(&mut *tx)
                 .await?;
             sqlx::query(TRIM_SQL)
@@ -205,7 +205,7 @@ mod tests {
             title: None,
             category: None,
             viewer_count: None,
-            source: None,
+            source: "individual".to_string(),
         }
     }
 
