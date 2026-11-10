@@ -165,16 +165,21 @@ interface BarProps {
 
 const Bar = memo(function Bar({ entry, i18n }: BarProps) {
   const { color, height } = useMemo(
-    () => barAppearance(entry.outcome),
-    [entry.outcome],
+    () => barAppearance(entry.outcome, entry.source),
+    [entry.outcome, entry.source],
   );
 
   // Localized aria-label: outcome name + timestamp. The raw string
   // `entry.outcome` is the wire-format discriminator (`live`, `offline`,
   // …) which must not reach the screen-reader as-is.
-  const ariaLabel = i18n._(
-    msg`${outcomeAriaName(entry.outcome, i18n)} at ${formatDate(i18n.locale, new Date(entry.checked_at), { timeStyle: 'short' })}`,
-  );
+  const outcome = outcomeAriaName(entry.outcome, i18n);
+  const time = formatDate(i18n.locale, new Date(entry.checked_at), {
+    timeStyle: 'short',
+  });
+  const ariaLabel =
+    entry.source === 'batch'
+      ? i18n._(msg`${outcome} (batch check) at ${time}`)
+      : i18n._(msg`${outcome} at ${time}`);
 
   return (
     <Tooltip>
@@ -228,6 +233,14 @@ function BarTooltipContent({
       </div>
       {entry.title && (
         <div className="text-[11px] opacity-90 line-clamp-2">{entry.title}</div>
+      )}
+      {entry.source === 'batch' && (
+        <div className="opacity-80">
+          <Trans>
+            From a batch check: the platform reported many streamers at once, so
+            this streamer was not checked on its own.
+          </Trans>
+        </div>
       )}
 
       {/* Stream candidates: when the persisted detail is present, list
@@ -413,9 +426,14 @@ function outcomeAriaName(
  * Per-outcome bar appearance. Color tokens follow the rest of the dashboard
  * (emerald = live, amber = filtered, red = error). Heights skew the eye
  * toward anomalies — short gray bars for offline polls, tall colored bars
- * everywhere else.
+ * everywhere else. An offline poll answered by a batch check is the same
+ * short gray bar, hatched, so it stands apart from the streamer's own checks
+ * without hovering.
  */
-function barAppearance(outcome: StreamerCheckHistoryEntry['outcome']): {
+function barAppearance(
+  outcome: StreamerCheckHistoryEntry['outcome'],
+  source: StreamerCheckHistoryEntry['source'],
+): {
   color: string;
   height: number;
 } {
@@ -423,7 +441,13 @@ function barAppearance(outcome: StreamerCheckHistoryEntry['outcome']): {
     case 'live':
       return { color: 'bg-emerald-500', height: 100 };
     case 'offline':
-      return { color: 'bg-muted-foreground/40', height: 35 };
+      return source === 'batch'
+        ? {
+            color:
+              'bg-muted-foreground/10 bg-[repeating-linear-gradient(135deg,var(--color-muted-foreground)_0_1px,transparent_1px_4px)]',
+            height: 35,
+          }
+        : { color: 'bg-muted-foreground/40', height: 35 };
     case 'filtered':
       return { color: 'bg-amber-500', height: 100 };
     case 'transient_error':

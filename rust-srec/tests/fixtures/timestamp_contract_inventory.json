@@ -563,7 +563,8 @@
       "title",
       "category",
       "viewer_count",
-      "streams_extracted_json"
+      "streams_extracted_json",
+      "source"
     ]
   },
   "streamers": {

@@ -1149,5 +1149,11 @@ fn map_check_history_row(
         title: row.title,
         category: row.category,
         viewer_count: row.viewer_count,
+        // The column is NULL for an individual check.
+        source: row.source.unwrap_or_else(|| {
+            crate::domain::streamer::CheckSource::Individual
+                .as_str()
+                .to_owned()
+        }),
     }
 }

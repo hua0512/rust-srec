@@ -775,6 +775,7 @@ pub fn map_check_record_to_protobuf(record: &CheckRecord) -> WsMessage {
         category: String::new(),
         viewer_count: 0,
         streams_extracted_json: String::new(),
+        source: record.source.as_str().to_string(),
     };
 
     match &record.outcome {

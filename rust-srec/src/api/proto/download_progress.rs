@@ -329,6 +329,11 @@ pub struct StreamerCheckRecorded {
     /// the array with the matching candidate marked.
     #[prost(string, tag = "13")]
     pub streams_extracted_json: ::prost::alloc::string::String,
+    /// How the status was obtained: `individual` (the streamer's own check) or
+    /// `batch` (a platform batch status call covering many streamers reported
+    /// it offline, so its own check did not run).
+    #[prost(string, tag = "14")]
+    pub source: ::prost::alloc::string::String,
 }
 /// A streamer's download is parked on the concurrency queue.
 ///

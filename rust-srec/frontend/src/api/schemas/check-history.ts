@@ -36,6 +36,10 @@ export const StreamerCheckHistoryEntrySchema = z.object({
   title: z.string().nullable().optional(),
   category: z.string().nullable().optional(),
   viewer_count: z.number().nullable().optional(),
+  // `batch`: a platform batch status call reported the streamer offline, so
+  // its own check did not run. A backend that predates the field only made
+  // individual checks.
+  source: z.enum(['individual', 'batch']).default('individual'),
 });
 
 export type StreamerCheckHistoryEntry = z.infer<

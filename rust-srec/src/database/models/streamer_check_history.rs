@@ -66,6 +66,10 @@ pub struct StreamerCheckHistoryDbModel {
     /// Snapshot of the live-side viewer count for tooltip display. NULL on
     /// non-live outcomes or when the platform doesn't report it.
     pub viewer_count: Option<i64>,
+    /// `batch` when a platform batch status call answered the poll instead
+    /// of the streamer's own check. NULL for an individual check, including
+    /// every row persisted before the column was added.
+    pub source: Option<String>,
 }
 
 /// Outcome discriminator values, kept in one place to prevent typos drifting
@@ -100,7 +104,7 @@ impl From<&crate::domain::streamer::CheckRecord> for StreamerCheckHistoryDbModel
     ///
     /// [`CheckRecord`]: crate::domain::streamer::CheckRecord
     fn from(record: &crate::domain::streamer::CheckRecord) -> Self {
-        use crate::domain::streamer::CheckOutcome;
+        use crate::domain::streamer::{CheckOutcome, CheckSource};
 
         let mut row = Self {
             id: 0,
@@ -117,6 +121,10 @@ impl From<&crate::domain::streamer::CheckRecord> for StreamerCheckHistoryDbModel
             title: None,
             category: None,
             viewer_count: None,
+            source: match record.source {
+                CheckSource::Individual => None,
+                CheckSource::Batch => Some(CheckSource::Batch.as_str().to_string()),
+            },
         };
 
         match &record.outcome {

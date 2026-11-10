@@ -8,7 +8,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::domain::streamer::{CheckOutcome, CheckRecord, FilterCause, SelectedStreamSummary};
+use crate::domain::streamer::{
+    CheckOutcome, CheckRecord, CheckSource, FilterCause, SelectedStreamSummary,
+};
 use crate::monitor::{CheckHistoryWriter, FilterReason, LiveStatus, ProcessStatusResult};
 use crate::streamer::StreamerMetadata;
 
@@ -190,9 +192,13 @@ where
         // actual polls.
         if let Some(writer) = &self.history_writer {
             let record = match &outcome {
-                Ok(status) => {
-                    check_record_from_live_status(&streamer.id, checked_at, duration, status)
-                }
+                Ok((status, source)) => check_record_from_live_status(
+                    &streamer.id,
+                    checked_at,
+                    duration,
+                    status,
+                    *source,
+                ),
                 Err(err) => {
                     CheckRecord::from_error(&streamer.id, checked_at, duration, &err.to_string())
                 }
@@ -200,7 +206,7 @@ where
             writer.record(record);
         }
 
-        let status = outcome?;
+        let (status, _) = outcome?;
 
         // Convert LiveStatus to CheckResult
         let result = convert_live_status_to_check_result(&status);
@@ -242,6 +248,7 @@ fn check_record_from_live_status(
     checked_at: chrono::DateTime<chrono::Utc>,
     duration: chrono::Duration,
     status: &LiveStatus,
+    source: CheckSource,
 ) -> CheckRecord {
     let outcome = if let Some(kind) = status.fatal_kind() {
         CheckOutcome::FatalError { kind }
@@ -285,7 +292,7 @@ fn check_record_from_live_status(
         }
     };
 
-    CheckRecord::new(streamer_id, checked_at, duration, outcome)
+    CheckRecord::new(streamer_id, checked_at, duration, outcome, source)
 }
 
 fn selected_stream_summary(stream: &platforms_parser::media::StreamInfo) -> SelectedStreamSummary {

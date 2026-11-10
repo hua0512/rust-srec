@@ -36,7 +36,7 @@ use crate::{Error, Result};
 
 use super::batch_precheck::{BatchPrecheck, GroupKey, Poll};
 use super::detector::{CheckContext, FilterReason, LiveStatus, StreamDetector};
-use crate::domain::streamer::FatalErrorType;
+use crate::domain::streamer::{CheckSource, FatalErrorType};
 
 use super::events::{MonitorEvent, MonitorEventBroadcaster, MonitorEventDelivery};
 
@@ -103,6 +103,10 @@ const BATCH_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 type PendingCredentialRecovery = Arc<dyn Fn(String) -> BoxFuture<'static, ()> + Send + Sync>;
 
+/// One shared result per running check. The cell holds the source with the status, so a caller
+/// that joins a running check records it the same way as the caller that started it.
+type InFlightChecks = DashMap<CredentialCheckKey, Arc<OnceCell<(LiveStatus, CheckSource)>>>;
+
 /// Configuration for the stream monitor.
 #[derive(Debug, Clone)]
 pub struct StreamMonitorConfig {
@@ -155,7 +159,7 @@ pub struct StreamMonitor<
     /// Shared platform admission (rate limits and throttle pauses).
     admission: Arc<PlatformAdmission>,
     /// In-flight request deduplication.
-    in_flight: Arc<DashMap<CredentialCheckKey, Arc<OnceCell<LiveStatus>>>>,
+    in_flight: Arc<InFlightChecks>,
     /// Sender for in-flight cleanup requests (single worker processes these).
     cleanup_tx: mpsc::Sender<CredentialCheckKey>,
     /// Event broadcaster for notifications.
@@ -572,7 +576,7 @@ impl<
 
     /// Spawn a single cleanup worker that processes delayed removal requests.
     fn spawn_cleanup_worker(
-        in_flight: Arc<DashMap<CredentialCheckKey, Arc<OnceCell<LiveStatus>>>>,
+        in_flight: Arc<InFlightChecks>,
         mut cleanup_rx: mpsc::Receiver<CredentialCheckKey>,
         cancellation_token: CancellationToken,
         task_supervisor: Arc<TaskSupervisor>,
@@ -650,9 +654,14 @@ impl<
     /// If multiple requests come in for the same streamer simultaneously,
     /// only one will perform the actual HTTP check and others will wait
     /// for and share the result.
-    pub async fn check_streamer(&self, streamer: &StreamerMetadata) -> Result<LiveStatus> {
+    ///
+    /// The status comes with how it was obtained, for the check history.
+    pub async fn check_streamer(
+        &self,
+        streamer: &StreamerMetadata,
+    ) -> Result<(LiveStatus, CheckSource)> {
         let result = self
-            .check_streamer_for(streamer, CredentialCheckPurpose::Discovery)
+            .check_streamer_with_source(streamer, CredentialCheckPurpose::Discovery)
             .await;
         // A cooldown can expire without a config event, and a login event may
         // arrive while a previous startup still owns its reservation. A healthy
@@ -661,10 +670,13 @@ impl<
         if matches!(
             &result,
             Err(Error::CredentialUnavailable(_))
-                | Ok(LiveStatus::Live {
-                    credential_binding: Some(_),
-                    ..
-                })
+                | Ok((
+                    LiveStatus::Live {
+                        credential_binding: Some(_),
+                        ..
+                    },
+                    _
+                ))
         ) && let Some(recovery) = self.pending_credential_recovery.get()
         {
             recovery(streamer.id.clone()).await;
@@ -677,6 +689,16 @@ impl<
         streamer: &StreamerMetadata,
         requested_purpose: CredentialCheckPurpose,
     ) -> Result<LiveStatus> {
+        self.check_streamer_with_source(streamer, requested_purpose)
+            .await
+            .map(|(status, _)| status)
+    }
+
+    async fn check_streamer_with_source(
+        &self,
+        streamer: &StreamerMetadata,
+        requested_purpose: CredentialCheckPurpose,
+    ) -> Result<(LiveStatus, CheckSource)> {
         trace!(
             streamer_id = %streamer.id,
             streamer_name = %streamer.name,
@@ -694,7 +716,7 @@ impl<
                 streamer_id = %streamer.id,
                 "streamer disabled; skipping status check"
             );
-            return Ok(LiveStatus::Offline);
+            return Ok((LiveStatus::Offline, CheckSource::Individual));
         }
 
         // Outer bound for the whole check pipeline (filter load, config resolution,
@@ -748,7 +770,7 @@ impl<
                         .batch_says_offline(streamer, &config, purpose, deadline)
                         .await
                     {
-                        return Ok(LiveStatus::Offline);
+                        return Ok((LiveStatus::Offline, CheckSource::Batch));
                     }
                     let filters = self.filter_store.get(&streamer.id).await?;
                     let check = StatusCheck {
@@ -757,13 +779,14 @@ impl<
                         filters: &filters,
                         deadline,
                     };
-                    match &config.credential_policy {
+                    let status = match &config.credential_policy {
                         Some(policy) => {
                             self.check_with_credentials(check, policy, binding.as_ref(), purpose)
-                                .await
+                                .await?
                         }
-                        None => self.check_anonymous(check).await,
-                    }
+                        None => self.check_anonymous(check).await?,
+                    };
+                    Ok((status, CheckSource::Individual))
                 };
 
                 tokio::time::timeout_at(deadline.instant(), check)
@@ -792,9 +815,7 @@ impl<
         }
 
         // Now check result - cleanup is already scheduled
-        let status = result?.clone();
-
-        Ok(status)
+        result.cloned()
     }
 
     /// Whether the streamer's platform batch status call reports it offline, which answers the

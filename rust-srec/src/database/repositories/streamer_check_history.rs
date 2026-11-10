@@ -39,9 +39,10 @@ const INSERT_SQL: &str = r#"
         streams_extracted_json,
         title,
         category,
-        viewer_count
+        viewer_count,
+        source
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 "#;
 
 /// Trim to the most-recent `KEEP_PER_STREAMER` rows for a given streamer.
@@ -67,7 +68,7 @@ const LIST_RECENT_SQL: &str = r#"
     SELECT id, streamer_id, checked_at, duration_ms, outcome,
            fatal_kind, filter_reason, error_message,
            streams_extracted, stream_selected, streams_extracted_json,
-           title, category, viewer_count
+           title, category, viewer_count, source
     FROM streamer_check_history
     WHERE streamer_id = ?
     ORDER BY checked_at DESC, id DESC
@@ -131,6 +132,7 @@ impl StreamerCheckHistoryRepository for SqlxStreamerCheckHistoryRepository {
                 .bind(row.title.as_deref())
                 .bind(row.category.as_deref())
                 .bind(row.viewer_count)
+                .bind(row.source.as_deref())
                 .execute(&mut *tx)
                 .await?;
             sqlx::query(TRIM_SQL)
@@ -203,6 +205,7 @@ mod tests {
             title: None,
             category: None,
             viewer_count: None,
+            source: None,
         }
     }
 

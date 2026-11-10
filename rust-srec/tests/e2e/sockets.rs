@@ -82,7 +82,7 @@ async fn subscribe(socket: &mut Socket, streamer_id: Option<&str>) {
 
 /// A socket authenticated by its `token` query parameter, as a browser opens
 /// it.
-async fn query_socket(app: &TestApp, route: &str, token: &str) -> Socket {
+pub(crate) async fn query_socket(app: &TestApp, route: &str, token: &str) -> Socket {
     app.connect_socket(&with_query(route, &[("token", token)]), None)
         .await
 }
@@ -578,7 +578,7 @@ async fn downloads_socket_snapshots_every_subscription_change_until_its_credenti
 
 /// The next frame on the downloads socket whose payload `select` picks;
 /// other frames are skipped.
-async fn next_payload<T>(
+pub(crate) async fn next_payload<T>(
     socket: &mut Socket,
     what: &str,
     mut select: impl FnMut(download_progress::ws_message::Payload) -> Option<T>,
