@@ -40,6 +40,8 @@ impl CredentialProvider for BigoProvider {
     /// Bigo answers with its login wall both for a lapsed login and, for a
     /// while, for a working account it has flagged as unusual traffic. A
     /// wall that the refresh before it found signed in is the second kind.
+    /// The extractor reports an account that Bigo restricts by reading live
+    /// rooms as offline the same way.
     fn rejection_rest(&self) -> Option<Duration> {
         Some(REJECTION_REST)
     }

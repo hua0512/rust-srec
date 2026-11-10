@@ -356,25 +356,77 @@ async fn only_unavailable_accounts_block_a_streamer_and_reaching_an_account_lift
 }
 
 #[tokio::test]
-async fn a_streamer_without_any_account_selection_is_never_blocked() {
+async fn a_streamer_without_any_account_selection_is_blocked_only_by_a_passing_login_wall() {
     tokio::time::timeout(Duration::from_secs(10), async {
         let pool = setup_monitor_test_db().await;
         insert_streamer(&pool, "anonymous", StreamerState::NotLive, 0, None).await;
+        let mut bigo = StreamerDbModel::new(
+            "Bigo Streamer",
+            "https://www.bigo.tv/1".to_string(),
+            "platform-bigo",
+        );
+        bigo.id = "bigo".to_string();
+        SqlxStreamerRepository::new(pool.clone(), pool.clone())
+            .create_streamer(&bigo)
+            .await
+            .unwrap();
         let mut monitor = build_test_monitor(&pool).await;
+        let walled = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let wall = walled.clone();
         let mut detector = StreamDetector::new();
-        detector.test_extraction = Some(Arc::new(|_cookies, _proxy| {
-            Box::pin(async { Ok(LiveStatus::Offline) })
+        detector.test_extraction = Some(Arc::new(move |_cookies, _proxy| {
+            let walled = wall.load(std::sync::atomic::Ordering::SeqCst);
+            Box::pin(async move {
+                if walled {
+                    Err(Error::Extractor(ExtractorError::Authentication {
+                        code: "need_login".into(),
+                    }))
+                } else {
+                    Ok(LiveStatus::Offline)
+                }
+            })
         }));
         monitor.detector = Arc::new(detector);
+        let blocks = monitor.credential_blocks().clone();
         // A block left from before the selection was removed.
-        monitor.credential_blocks().block(
+        blocks.block(
             "anonymous",
             "platform-twitch",
             crate::credentials::UnavailableReason::LoginRequired,
         );
-        let metadata = monitor.streamer_manager.get_streamer("anonymous").unwrap();
-        monitor.check_streamer(&metadata).await.unwrap();
-        assert!(monitor.credential_blocks().get("anonymous").is_none());
+        // A platform whose login requests do not pass keeps the error, which
+        // the streamer's error state reports.
+        let anonymous = monitor.streamer_manager.get_streamer("anonymous").unwrap();
+        assert!(matches!(
+            monitor.check_streamer(&anonymous).await,
+            Err(Error::Extractor(ExtractorError::Authentication { .. }))
+        ));
+        assert!(blocks.get("anonymous").is_none());
+
+        // Bigo asks for a login for a while: the streamer waits for an
+        // account, which costs it no error, instead of failing.
+        let bigo = monitor.streamer_manager.get_streamer("bigo").unwrap();
+        assert!(matches!(
+            monitor.check_streamer(&bigo).await,
+            Err(Error::CredentialUnavailable(_))
+        ));
+        let block = blocks.get("bigo").expect("a Bigo login wall blocks");
+        assert_eq!(
+            block.reason,
+            crate::credentials::UnavailableReason::LoginRequired
+        );
+        assert_eq!(block.platform_id, "platform-bigo");
+        // Starting a recording has no account to wait for.
+        assert!(matches!(
+            monitor
+                .check_streamer_for(&bigo, CredentialCheckPurpose::QueueStart)
+                .await,
+            Err(Error::Extractor(ExtractorError::Authentication { .. }))
+        ));
+
+        walled.store(false, std::sync::atomic::Ordering::SeqCst);
+        monitor.check_streamer(&bigo).await.unwrap();
+        assert!(blocks.get("bigo").is_none());
         monitor.cancellation.cancel();
     })
     .await

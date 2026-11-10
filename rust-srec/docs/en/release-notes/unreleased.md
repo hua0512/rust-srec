@@ -2,6 +2,11 @@
 
 ## `unreleased`
 
+## Recording and recovery
+
+- Fixed Bigo streamers showing as offline while they were live when Bigo had restricted the account used to check them. A restricted account still shows as logged in, but Bigo tells it that every room is offline, so nothing was recorded and rust-srec never switched to another account or to checking without an account. rust-srec now notices this by checking a room that Bigo lists as live, and rests the account for 30 minutes. Meanwhile checks use the pool's other accounts or, with **Check without an account when no account can be used** on, continue without an account. See [Bigo Live](https://docs.srec.rs/en/platforms/bigo).
+- Fixed Bigo streamers checked without an account being paused for up to an hour when Bigo asked for a login. Bigo often stops asking a few checks later, but each request counted as an error, so streamers soon went into ever longer pauses and missed streams until they were disabled and enabled again. Such checks now show **Account needs login** and continue at the usual interval.
+
 ## Workflows and file processing
 
 - Fixed rclone uploads trying more times than the preset's Max Retries allowed. rclone retried each failed upload up to 3 times on its own before the next retry started, so a failing upload could run up to three times as often as configured, with no sign of it in the job's progress. Now each try shown in the job's progress is a single upload, and Max Retries limits the total. Presets can still pass `--retries` in their extra arguments to restore rclone's own retries.
