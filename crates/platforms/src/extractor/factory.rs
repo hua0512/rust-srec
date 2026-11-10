@@ -141,28 +141,9 @@ pub struct DuplicatePlatformName(pub &'static str);
 ///
 /// Registered platforms are consulted after every built-in one, so `regex` never takes a URL from
 /// a built-in platform. Names are compared case-insensitively, as stored configuration names are.
+/// `batch_probe` is what [`batch_probe_for_url`] returns for the platform's URLs.
 #[doc(hidden)]
 pub fn register_platform(
-    name: &'static str,
-    regex: Regex,
-    constructor: ExtractorConstructor,
-) -> Result<(), DuplicatePlatformName> {
-    register(name, regex, constructor, None)
-}
-
-/// [`register_platform`] for a platform that also offers a batch status probe, which
-/// [`batch_probe_for_url`] then returns for the platform's URLs.
-#[doc(hidden)]
-pub fn register_platform_with_batch_probe(
-    name: &'static str,
-    regex: Regex,
-    constructor: ExtractorConstructor,
-    batch_probe: &'static dyn BatchStatusProbe,
-) -> Result<(), DuplicatePlatformName> {
-    register(name, regex, constructor, Some(batch_probe))
-}
-
-fn register(
     name: &'static str,
     regex: Regex,
     constructor: ExtractorConstructor,
@@ -187,7 +168,6 @@ fn register(
 }
 
 /// What [`find_platform`] knows about the platform that claims a URL.
-#[derive(Clone, Copy)]
 struct PlatformMatch {
     name: &'static str,
     constructor: ExtractorConstructor,
@@ -386,7 +366,7 @@ mod tests {
             |url, client, _, _| Box::new(Registered(Extractor::new("RegistryTest", url, client)));
         // Also claims Twitch URLs, which must stay with the built-in Twitch platform.
         let regex = Regex::new(r"^https://(?:registry-test\.invalid|www\.twitch\.tv)/").unwrap();
-        register_platform("RegistryTest", regex, constructor).unwrap();
+        register_platform("RegistryTest", regex, constructor, None).unwrap();
 
         let room = "https://registry-test.invalid/room";
         assert_eq!(platform_name_for_url(room), Some("RegistryTest"));
@@ -403,7 +383,7 @@ mod tests {
         let other = Regex::new(r"^https://other\.invalid/").unwrap();
         for name in ["registrytest", "SOOP", "soop"] {
             assert_eq!(
-                register_platform(name, other.clone(), constructor),
+                register_platform(name, other.clone(), constructor, None),
                 Err(DuplicatePlatformName(name))
             );
         }

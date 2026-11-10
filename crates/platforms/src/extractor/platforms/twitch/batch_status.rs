@@ -22,7 +22,7 @@ pub(crate) static BATCH_PROBE: TwitchStatusProbe = TwitchStatusProbe {
 const MAX_LOGINS: usize = 100;
 
 /// Fetches only each user's login and whether it has a stream, for a list of logins.
-const USERS_QUERY: &str = "query($l:[String!]){users(logins:$l){login stream{id type}}}";
+const USERS_QUERY: &str = "query($l:[String!]){users(logins:$l){login stream{id}}}";
 
 /// Live status of Twitch channels from one GraphQL `users(logins: …)` query. Keys are lowercased
 /// logins.
@@ -79,19 +79,22 @@ impl BatchStatusProbe for TwitchStatusProbe {
             .send()
             .await?;
         let response: UsersResponse = ExtractorError::check_response(response)?.json().await?;
-        let Some(users) = response.data.and_then(|data| data.users) else {
-            let message = response
-                .errors
-                .into_iter()
-                .next()
-                .map_or_else(|| "no data".to_owned(), |error| error.message);
+        // Any error fails the whole answer: a field that failed to resolve comes back as `null`
+        // beside the error, and a `null` stream would otherwise read as offline.
+        if let Some(error) = response.errors.into_iter().next() {
             return Err(ExtractorError::ValidationError(format!(
-                "Twitch batch status query failed: {message}"
+                "Twitch batch status query failed: {}",
+                error.message
             )));
+        }
+        let Some(users) = response.data.and_then(|data| data.users) else {
+            return Err(ExtractorError::ValidationError(
+                "Twitch batch status query returned no users".to_owned(),
+            ));
         };
 
         // Matched by login rather than position, so the answer stays correct if Twitch drops or
-        // reorders entries. Logins are case-insensitive.
+        // reorders entries. Logins are case-insensitive and keys are already lowercase.
         let by_login: HashMap<String, BatchPresence> = users
             .into_iter()
             .flatten()
@@ -107,7 +110,7 @@ impl BatchStatusProbe for TwitchStatusProbe {
         Ok(keys
             .iter()
             .filter_map(|key| {
-                let presence = by_login.get(&key.to_ascii_lowercase())?;
+                let presence = by_login.get(key)?;
                 Some((key.clone(), *presence))
             })
             .collect())
@@ -140,7 +143,7 @@ mod tests {
     /// reaches the right channels, and a `null` user is left unknown.
     #[tokio::test]
     async fn users_are_matched_by_login_not_position() {
-        let body = r#"{"data":{"users":[{"login":"Live_One","stream":{"id":"1","type":"live"}},null,{"login":"offline_one","stream":null}]}}"#;
+        let body = r#"{"data":{"users":[{"login":"Live_One","stream":{"id":"1"}},null,{"login":"offline_one","stream":null}]}}"#;
 
         let result = probe_against(body, &["offline_one", "missing", "live_one", "gone"])
             .await
@@ -155,15 +158,26 @@ mod tests {
         );
     }
 
+    /// A rejected query and a field that failed to resolve are both errors; the failed field's
+    /// `null` stream must not read as offline.
     #[tokio::test]
-    async fn graphql_errors_without_data_are_an_error() {
-        let body = r#"{"errors":[{"message":"Cannot query field \"typ\" on type \"Stream\"."}]}"#;
+    async fn graphql_errors_are_an_error() {
+        for (body, message) in [
+            (
+                r#"{"errors":[{"message":"Cannot query field \"typ\" on type \"Stream\"."}]}"#,
+                "Cannot query field",
+            ),
+            (
+                r#"{"data":{"users":[{"login":"foo","stream":null}]},"errors":[{"message":"service timeout","path":["users",0,"stream"]}]}"#,
+                "service timeout",
+            ),
+        ] {
+            let error = probe_against(body, &["foo"]).await.unwrap_err();
 
-        let error = probe_against(body, &["someone"]).await.unwrap_err();
-
-        assert!(
-            matches!(&error, ExtractorError::ValidationError(message) if message.contains("Cannot query field")),
-            "{error:?}"
-        );
+            assert!(
+                matches!(&error, ExtractorError::ValidationError(text) if text.contains(message)),
+                "{error:?}"
+            );
+        }
     }
 }

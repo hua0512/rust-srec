@@ -28,7 +28,9 @@ pub enum BatchPresence {
 ///
 /// Calls are anonymous: they carry no cookies or account tokens, so a failure is never evidence
 /// against an account. HTTP failures map to the same [`ExtractorError`] variants as the platform's
-/// extractor, so a provider throttle surfaces as [`ExtractorError::RateLimited`].
+/// extractor: an HTTP 429 is [`ExtractorError::RateLimited`], any other error status is
+/// [`ExtractorError::HttpError`], and an error the platform reports in the response body is
+/// [`ExtractorError::ValidationError`].
 #[async_trait]
 pub trait BatchStatusProbe: Send + Sync {
     /// The largest number of keys one [`probe`](Self::probe) call accepts.
