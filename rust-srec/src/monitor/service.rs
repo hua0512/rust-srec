@@ -10,6 +10,9 @@ use std::time::Duration;
 
 use dashmap::DashMap;
 use futures::StreamExt;
+use platforms_parser::extractor::factory::{
+    ExtractorSelection, batch_probe_for_url, platform_name_for_url,
+};
 use sqlx::SqlitePool;
 use tokio::sync::OnceCell;
 use tokio::sync::{Notify, mpsc};
@@ -31,6 +34,7 @@ use crate::streamer::{
 use crate::utils::task_supervisor::TaskSupervisor;
 use crate::{Error, Result};
 
+use super::batch_precheck::{BatchPrecheck, GroupKey, Poll};
 use super::detector::{CheckContext, FilterReason, LiveStatus, StreamDetector};
 use crate::domain::streamer::FatalErrorType;
 
@@ -92,6 +96,10 @@ const STREAM_CHECK_HARD_TIMEOUT: Duration = Duration::from_secs(300);
 /// This is a performance optimization only. If cleanup is delayed, the effect is limited
 /// to temporarily reusing the most recent result for the same streamer.
 const IN_FLIGHT_DEDUP_WINDOW: Duration = Duration::from_millis(100);
+
+/// Upper bound for one batch status request. The monitor's HTTP clients have no timeout of their
+/// own by default, and every poll of a chunk waits for its refresh.
+const BATCH_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 type PendingCredentialRecovery = Arc<dyn Fn(String) -> BoxFuture<'static, ()> + Send + Sync>;
 
@@ -173,6 +181,8 @@ pub struct StreamMonitor<
     pending_credential_recovery: std::sync::OnceLock<PendingCredentialRecovery>,
     /// Streamers whose latest credential acquisition found no usable account.
     credential_blocks: Arc<crate::credentials::CredentialBlocks>,
+    /// Cached batch status results that answer routine offline polls.
+    batch_precheck: BatchPrecheck,
 }
 
 /// Inputs shared by both paths of one deduplicated status check.
@@ -438,6 +448,7 @@ impl<
             execution_service: std::sync::OnceLock::new(),
             pending_credential_recovery: std::sync::OnceLock::new(),
             credential_blocks: Arc::new(crate::credentials::CredentialBlocks::new()),
+            batch_precheck: BatchPrecheck::default(),
         };
 
         monitor.spawn_outbox_publisher(
@@ -733,6 +744,12 @@ impl<
             deadline.instant(),
             cell.get_or_try_init(|| async {
                 let check = async {
+                    if self
+                        .batch_says_offline(streamer, &config, purpose, deadline)
+                        .await
+                    {
+                        return Ok(LiveStatus::Offline);
+                    }
                     let filters = self.filter_store.get(&streamer.id).await?;
                     let check = StatusCheck {
                         streamer,
@@ -778,6 +795,91 @@ impl<
         let status = result?.clone();
 
         Ok(status)
+    }
+
+    /// Whether the streamer's platform batch status call reports it offline, which answers the
+    /// poll without the platform's extractor. `false` means the individual check decides.
+    ///
+    /// Only a discovery poll qualifies. [`CredentialCheckKey::new`] turns a discovery of a
+    /// streamer with a session into a bound poll, so a recording, its offline confirmation and a
+    /// restart reconciling an open session keep their individual checks: a batch answer may
+    /// delay a recording's start by a poll but never end one. Streamers checked with an account
+    /// are pre-checked anonymously too; the account is used once the batch reports them live.
+    async fn batch_says_offline(
+        &self,
+        streamer: &StreamerMetadata,
+        config: &crate::config::MergedConfig,
+        purpose: CredentialCheckPurpose,
+        deadline: OperationDeadline,
+    ) -> bool {
+        let platform_id = &streamer.platform_config_id;
+        let route = &config.proxy_route;
+        // Only a real check clears a credential block. While the platform throttles this route,
+        // its polls wait in admission as individual checks rather than adding batch calls.
+        if purpose != CredentialCheckPurpose::Discovery
+            || !batch_detection_enabled(config.platform_extras.as_ref())
+            || config.extractor == ExtractorSelection::Streamlink
+            || self.credential_blocks.get(&streamer.id).is_some()
+            || self.admission.backing_off(platform_id, &route.key)
+        {
+            return false;
+        }
+        // The extractor factory resolves the same URL, so the probe belongs to the platform
+        // whose built-in extractor would check the streamer.
+        let Some(probe) = batch_probe_for_url(&streamer.url) else {
+            return false;
+        };
+        let (Some(platform), Some(key)) = (
+            platform_name_for_url(&streamer.url),
+            probe.key_for_url(&streamer.url),
+        ) else {
+            return false;
+        };
+        // Every actor polls an offline streamer at the global check delay.
+        let interval = match self.config_service.get_cached_global_config().await {
+            Ok(global) => Duration::from_millis(
+                u64::try_from(global.streamer_check_delay_ms).unwrap_or_default(),
+            ),
+            Err(error) => {
+                debug!(streamer_id = %streamer.id, %error, "Global configuration unavailable; skipping the batch status");
+                return false;
+            }
+        };
+        let client = match self.detector.client_for_proxy(&route.target) {
+            Ok(client) => client,
+            Err(error) => {
+                debug!(streamer_id = %streamer.id, %error, "No HTTP client for the route; skipping the batch status");
+                return false;
+            }
+        };
+        let poll = Poll {
+            group: GroupKey {
+                platform,
+                platform_id: platform_id.clone(),
+                route: route.key.clone(),
+            },
+            streamer_id: &streamer.id,
+            key,
+            max_keys: probe.max_keys(),
+            interval,
+        };
+        self.batch_precheck
+            .offline(poll, |keys| async move {
+                self.admission
+                    .admit(platform_id, &route.key, deadline)
+                    .await
+                    .map_err(|error| Error::Monitor(error.to_string()))?;
+                match tokio::time::timeout(BATCH_REQUEST_TIMEOUT, probe.probe(&client, &keys)).await
+                {
+                    Ok(result) => Ok(result.inspect_err(|error| {
+                        self.admission.observe(platform_id, route, error);
+                    })?),
+                    Err(_) => Err(Error::Monitor(format!(
+                        "Batch status request timed out after {BATCH_REQUEST_TIMEOUT:?}"
+                    ))),
+                }
+            })
+            .await
     }
 
     /// Checks the streamer with an account from its credential policy, records
@@ -1750,6 +1852,14 @@ async fn flush_outbox_once(
         fetched,
         needs_wait,
     })
+}
+
+/// The `batch_detection` platform option, off unless a configuration layer sets it to `true`.
+fn batch_detection_enabled(platform_extras: Option<&serde_json::Value>) -> bool {
+    platform_extras
+        .and_then(|extras| extras.get("batch_detection"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
 }
 
 /// Get a summary of a live status for logging.
