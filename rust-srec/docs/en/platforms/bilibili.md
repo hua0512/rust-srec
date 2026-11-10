@@ -53,6 +53,10 @@ Set **Preferred Quality (QN)** (`quality`) in the Bilibili platform settings, or
 | `80` | 流畅 (Smooth) |
 | `0` | Lowest available |
 
+## Batch Detection
+
+Turn on **Batch Detection** on the Bilibili platform's **Specific** tab to ask whether up to 100 rooms are live in one request, instead of checking each offline room separately. It is off by default, and a stream start can be noticed up to a quarter of the check interval later. See [Batch detection](./index.md#batch-detection).
+
 ## Notes
 
 ::: warning

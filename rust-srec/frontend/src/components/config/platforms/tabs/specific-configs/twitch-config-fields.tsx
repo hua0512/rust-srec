@@ -2,7 +2,7 @@ import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
-import { Activity, Shield } from 'lucide-react';
+import { Activity, Radar, Shield } from 'lucide-react';
 import {
   FormControl,
   FormDescription,
@@ -11,6 +11,7 @@ import {
   FormLabel,
 } from '@/components/ui/form';
 import { Switch } from '@/components/ui/switch';
+import { FlagFormField } from '@/components/ui/flag-form-field';
 import { EndStreamOnDanmuCloseField } from '@/components/config/shared/end-stream-on-danmu-close-field';
 import { ConfigSectionHeading } from '@/components/config/shared/config-field';
 import { configPath } from '@/components/config/shared/form-path';
@@ -118,6 +119,24 @@ export function TwitchConfigFields<TFieldValues extends FieldValues>({
             fieldName,
             'end_stream_on_danmu_stream_closed',
           )}
+        />
+      </section>
+
+      <section className="space-y-6">
+        <ConfigSectionHeading icon={Radar} accent="indigo">
+          <Trans>Status Checks</Trans>
+        </ConfigSectionHeading>
+        <FlagFormField
+          fieldName={configPath<TFieldValues>(fieldName, 'batch_detection')}
+          title={<Trans>Batch Detection</Trans>}
+          description={
+            <Trans>
+              Check up to 100 streamers in one request and skip the individual
+              check of those still offline. Uses fewer requests, but a stream
+              start can be noticed up to a quarter of the check interval later.
+            </Trans>
+          }
+          checked={(value) => !!value}
         />
       </section>
     </div>

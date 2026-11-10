@@ -16,7 +16,8 @@ import {
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
-import { Tv } from 'lucide-react';
+import { Radar, Tv } from 'lucide-react';
+import { FlagFormField } from '@/components/ui/flag-form-field';
 import { EndStreamOnDanmuCloseField } from '@/components/config/shared/end-stream-on-danmu-close-field';
 import {
   ConfigFieldLabel,
@@ -137,6 +138,24 @@ export function BilibiliConfigFields<TFieldValues extends FieldValues>({
             )}
           />
         </div>
+      </section>
+
+      <section className="space-y-6">
+        <ConfigSectionHeading icon={Radar} accent="indigo">
+          <Trans>Status Checks</Trans>
+        </ConfigSectionHeading>
+        <FlagFormField
+          fieldName={configPath<TFieldValues>(fieldName, 'batch_detection')}
+          title={<Trans>Batch Detection</Trans>}
+          description={
+            <Trans>
+              Check up to 100 streamers in one request and skip the individual
+              check of those still offline. Uses fewer requests, but a stream
+              start can be noticed up to a quarter of the check interval later.
+            </Trans>
+          }
+          checked={(value) => !!value}
+        />
       </section>
     </div>
   );

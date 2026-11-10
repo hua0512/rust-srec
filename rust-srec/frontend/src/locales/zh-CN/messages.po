@@ -511,7 +511,7 @@ msgstr "30 天"
 msgid "404"
 msgstr "404"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:39
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:40
 msgid "4K (20000)"
 msgstr "4K (20000)"
 
@@ -1000,11 +1000,11 @@ msgstr "全部时间"
 msgid "All Types"
 msgstr "所有类型"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:56
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:57
 msgid "Allow AV1"
 msgstr "允许 AV1"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:51
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:52
 msgid "Allow H.265 (HEVC)"
 msgstr "允许 H.265 (HEVC)"
 
@@ -1542,6 +1542,11 @@ msgstr "基础后处理：将 FLV 重封装为 MP4，并生成缩略图预览。
 msgid "Basic settings for the streamer."
 msgstr "主播的基础设置。"
 
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:149
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:131
+msgid "Batch Detection"
+msgstr "批量检测"
+
 #. placeholder {0}: error instanceof Error ? error.message : i18n._(msg`Unknown error`)
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:207
 msgid "Batch parse error: {0}"
@@ -1604,7 +1609,7 @@ msgstr "被浏览器阻止"
 msgid "Blocklist"
 msgstr "屏蔽列表"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:42
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:43
 msgid "Blu-ray (400)"
 msgstr "蓝光 (400)"
 
@@ -1612,7 +1617,7 @@ msgstr "蓝光 (400)"
 msgid "Blu-ray Disc"
 msgstr "蓝光光盘"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:41
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:42
 msgid "Blu-ray Dolby (401)"
 msgstr "蓝光杜比 (401)"
 
@@ -1929,6 +1934,11 @@ msgstr "检查能否访问"
 #: src/components/streamers/config/streamer-recording-fields.tsx:136
 msgid "Check this streamer and record when it goes live."
 msgstr "检查该主播，并在开播时自动录制。"
+
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:151
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:133
+msgid "Check up to 100 streamers in one request and skip the individual check of those still offline. Uses fewer requests, but a stream start can be noticed up to a quarter of the check interval later."
+msgstr "每次请求最多检测 100 位主播，并跳过对仍未开播主播的单独检测。请求更少，但开播最多可能晚四分之一个检查间隔才被发现。"
 
 #: src/components/credentials/credential-selection-editor.tsx:428
 msgid "Check without an account when no account can be used"
@@ -2891,7 +2901,7 @@ msgid "Danmu"
 msgstr "弹幕"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:140
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:113
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:114
 msgid "Danmu Control"
 msgstr "弹幕控制"
 
@@ -3029,7 +3039,7 @@ msgstr "默认工作流：重封装为 MP4（删除原始文件），生成原�
 msgid "Default: {value}"
 msgstr "默认值：{value}"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:57
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:58
 msgid "Default: Dolby Vision (30000)"
 msgstr "默认：杜比视界 (30000)"
 
@@ -3465,7 +3475,7 @@ msgstr "忽略"
 msgid "Display area"
 msgstr "显示区域"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:38
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:39
 msgid "Dolby Vision (30000)"
 msgstr "杜比视界 (30000)"
 
@@ -4211,7 +4221,7 @@ msgstr "API 模式"
 msgid "Extraction Method"
 msgstr "提取方式"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:64
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:65
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:34
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:68
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:45
@@ -5155,7 +5165,7 @@ msgstr "硬件加速"
 msgid "HD"
 msgstr "高清"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:44
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:45
 msgid "HD (150)"
 msgstr "高清 (150)"
 
@@ -5574,7 +5584,7 @@ msgstr "继承 — 各主播所在平台的设置"
 msgid "Inherit (the site's account)"
 msgstr "继承（该网站的账号）"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:56
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:57
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:61
 #: src/components/config/shared/offline-check-card.tsx:77
 #: src/components/config/shared/offline-check-card.tsx:105
@@ -6175,7 +6185,7 @@ msgctxt "priority"
 msgid "Low"
 msgstr "低"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:45
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:46
 msgid "Low (80)"
 msgstr "流畅 (80)"
 
@@ -6199,7 +6209,7 @@ msgstr "用于实时应用的低延迟 GPU 加速 H.264 编码。编码延迟极
 msgid "Lower value = Higher Quality"
 msgstr "数值越低 = 质量越高"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:46
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:47
 msgid "Lowest (0)"
 msgstr "最低画质 (0)"
 
@@ -7482,7 +7492,7 @@ msgstr "选项"
 msgid "Order this streamer is checked in."
 msgstr "该主播的检查优先顺序。"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:40
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:41
 msgid "Original (10000)"
 msgstr "原画 (10000)"
 
@@ -8204,7 +8214,7 @@ msgstr "首选格式"
 msgid "Preferred Qualities"
 msgstr "首选画质"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:85
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:86
 msgid "Preferred Quality (QN)"
 msgstr "首选画质 (QN)"
 
@@ -8489,7 +8499,7 @@ msgid "Quality Rate"
 msgstr "画质等级"
 
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:160
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:72
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:73
 msgid "Quality Settings"
 msgstr "画质设置"
 
@@ -8660,11 +8670,11 @@ msgstr "录制弹幕"
 msgid "Record Separate Audio"
 msgstr "录制独立音频"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:57
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:58
 msgid "Record the qualities some channels stream only in AV1. H.264 qualities stay available. Turn on only if your players and post-processing handle AV1."
 msgstr "录制部分频道仅以 AV1 提供的画质。H.264 画质仍然可用。请仅在你的播放器和后期处理支持 AV1 时开启。"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:52
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:53
 msgid "Record the qualities some channels stream only in H.265. H.264 qualities stay available. Turn on only if your players and post-processing handle H.265."
 msgstr "录制部分频道仅以 H.265 提供的画质。H.264 画质仍然可用。请仅在你的播放器和后期处理支持 H.265 时开启。"
 
@@ -9765,7 +9775,7 @@ msgstr "选择此过滤器生效的日期。"
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "选择会为 <0>{0}</0> 触发通知的事件。"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:122
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:123
 msgid "Select the highest quality level you want to attempt capturing."
 msgstr "选择你想要尝试采集的最高质量等级。"
 
@@ -10250,6 +10260,11 @@ msgstr "状态"
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:226
 msgid "Status"
 msgstr "状态"
+
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:145
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:127
+msgid "Status Checks"
+msgstr "状态检测"
 
 #: src/components/shared/unsaved-changes-guard.tsx:31
 msgctxt "unsaved-changes"
@@ -11457,7 +11472,7 @@ msgstr "输入内容..."
 msgid "UI: {UI_BUILD}"
 msgstr "界面：{UI_BUILD}"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:43
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:44
 msgid "Ultra (250)"
 msgstr "超清 (250)"
 

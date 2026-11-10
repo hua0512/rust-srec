@@ -511,7 +511,7 @@ msgstr "30 days"
 msgid "404"
 msgstr "404"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:39
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:40
 msgid "4K (20000)"
 msgstr "4K (20000)"
 
@@ -1000,11 +1000,11 @@ msgstr "All Time"
 msgid "All Types"
 msgstr "All Types"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:56
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:57
 msgid "Allow AV1"
 msgstr "Allow AV1"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:51
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:52
 msgid "Allow H.265 (HEVC)"
 msgstr "Allow H.265 (HEVC)"
 
@@ -1542,6 +1542,11 @@ msgstr "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview
 msgid "Basic settings for the streamer."
 msgstr "Basic settings for the streamer."
 
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:149
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:131
+msgid "Batch Detection"
+msgstr "Batch Detection"
+
 #. placeholder {0}: error instanceof Error ? error.message : i18n._(msg`Unknown error`)
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:207
 msgid "Batch parse error: {0}"
@@ -1604,7 +1609,7 @@ msgstr "Blocked by browser"
 msgid "Blocklist"
 msgstr "Blocklist"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:42
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:43
 msgid "Blu-ray (400)"
 msgstr "Blu-ray (400)"
 
@@ -1612,7 +1617,7 @@ msgstr "Blu-ray (400)"
 msgid "Blu-ray Disc"
 msgstr "Blu-ray Disc"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:41
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:42
 msgid "Blu-ray Dolby (401)"
 msgstr "Blu-ray Dolby (401)"
 
@@ -1929,6 +1934,11 @@ msgstr "Check that it reaches"
 #: src/components/streamers/config/streamer-recording-fields.tsx:136
 msgid "Check this streamer and record when it goes live."
 msgstr "Check this streamer and record when it goes live."
+
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:151
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:133
+msgid "Check up to 100 streamers in one request and skip the individual check of those still offline. Uses fewer requests, but a stream start can be noticed up to a quarter of the check interval later."
+msgstr "Check up to 100 streamers in one request and skip the individual check of those still offline. Uses fewer requests, but a stream start can be noticed up to a quarter of the check interval later."
 
 #: src/components/credentials/credential-selection-editor.tsx:428
 msgid "Check without an account when no account can be used"
@@ -2891,7 +2901,7 @@ msgid "Danmu"
 msgstr "Danmu"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:140
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:113
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:114
 msgid "Danmu Control"
 msgstr "Danmu Control"
 
@@ -3029,7 +3039,7 @@ msgstr "Default workflow: Remux to MP4 (deletes original), generate native-resol
 msgid "Default: {value}"
 msgstr "Default: {value}"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:57
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:58
 msgid "Default: Dolby Vision (30000)"
 msgstr "Default: Dolby Vision (30000)"
 
@@ -3465,7 +3475,7 @@ msgstr "Dismiss"
 msgid "Display area"
 msgstr "Display area"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:38
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:39
 msgid "Dolby Vision (30000)"
 msgstr "Dolby Vision (30000)"
 
@@ -4211,7 +4221,7 @@ msgstr "Extraction API Mode"
 msgid "Extraction Method"
 msgstr "Extraction Method"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:64
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:65
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:34
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:68
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:45
@@ -5155,7 +5165,7 @@ msgstr "Hardware Acceleration"
 msgid "HD"
 msgstr "HD"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:44
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:45
 msgid "HD (150)"
 msgstr "HD (150)"
 
@@ -5574,7 +5584,7 @@ msgstr "Inherit — each streamer's platform setting"
 msgid "Inherit (the site's account)"
 msgstr "Inherit (the site's account)"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:56
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:57
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:61
 #: src/components/config/shared/offline-check-card.tsx:77
 #: src/components/config/shared/offline-check-card.tsx:105
@@ -6175,7 +6185,7 @@ msgctxt "priority"
 msgid "Low"
 msgstr "Low"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:45
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:46
 msgid "Low (80)"
 msgstr "Low (80)"
 
@@ -6199,7 +6209,7 @@ msgstr "Low-latency GPU-accelerated H.264 encoding for real-time applications. M
 msgid "Lower value = Higher Quality"
 msgstr "Lower value = Higher Quality"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:46
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:47
 msgid "Lowest (0)"
 msgstr "Lowest (0)"
 
@@ -7482,7 +7492,7 @@ msgstr "Options"
 msgid "Order this streamer is checked in."
 msgstr "Order this streamer is checked in."
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:40
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:41
 msgid "Original (10000)"
 msgstr "Original (10000)"
 
@@ -8204,7 +8214,7 @@ msgstr "Preferred Formats"
 msgid "Preferred Qualities"
 msgstr "Preferred Qualities"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:85
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:86
 msgid "Preferred Quality (QN)"
 msgstr "Preferred Quality (QN)"
 
@@ -8489,7 +8499,7 @@ msgid "Quality Rate"
 msgstr "Quality Rate"
 
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:160
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:72
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:73
 msgid "Quality Settings"
 msgstr "Quality Settings"
 
@@ -8660,11 +8670,11 @@ msgstr "Record Danmu"
 msgid "Record Separate Audio"
 msgstr "Record Separate Audio"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:57
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:58
 msgid "Record the qualities some channels stream only in AV1. H.264 qualities stay available. Turn on only if your players and post-processing handle AV1."
 msgstr "Record the qualities some channels stream only in AV1. H.264 qualities stay available. Turn on only if your players and post-processing handle AV1."
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:52
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:53
 msgid "Record the qualities some channels stream only in H.265. H.264 qualities stay available. Turn on only if your players and post-processing handle H.265."
 msgstr "Record the qualities some channels stream only in H.265. H.264 qualities stay available. Turn on only if your players and post-processing handle H.265."
 
@@ -9765,7 +9775,7 @@ msgstr "Select the days required for this filter to apply."
 msgid "Select the events that should trigger notifications for <0>{0}</0>."
 msgstr "Select the events that should trigger notifications for <0>{0}</0>."
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:122
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:123
 msgid "Select the highest quality level you want to attempt capturing."
 msgstr "Select the highest quality level you want to attempt capturing."
 
@@ -10250,6 +10260,11 @@ msgstr "State"
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:226
 msgid "Status"
 msgstr "Status"
+
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:145
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:127
+msgid "Status Checks"
+msgstr "Status Checks"
 
 #: src/components/shared/unsaved-changes-guard.tsx:31
 msgctxt "unsaved-changes"
@@ -11457,7 +11472,7 @@ msgstr "Type something..."
 msgid "UI: {UI_BUILD}"
 msgstr "UI: {UI_BUILD}"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:43
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:44
 msgid "Ultra (250)"
 msgstr "Ultra (250)"
 
