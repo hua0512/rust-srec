@@ -5,14 +5,25 @@
 //! mints one only when a live room comes back without its playlist; an
 //! anonymous check mints one first by default (website parity). Supports
 //! password rooms.
+//!
+//! Bigo restricts some accounts without signing them out: `getUserInfo` still
+//! succeeds, but the studio API reports every room offline, `needLogin`
+//! unset, the same as for a room that really is offline. A signed-in check
+//! that reads a room as offline therefore confirms, at most every
+//! [`ACCOUNT_TRUSTED_FOR`], that the account still sees a room from Bigo's
+//! public list of live rooms.
 
+use std::hash::BuildHasher;
 use std::sync::LazyLock;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use md5::{Digest, Md5};
+use parking_lot::Mutex;
 use regex::Regex;
 use reqwest::Client;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxBuildHasher, FxHashMap};
+use serde::Deserialize;
 use tracing::{debug, warn};
 use url::Url;
 
@@ -28,17 +39,67 @@ pub static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(?:https?://)?(?:www\.)?bigo\.tv/(?:[a-z]{2}/)?([^/?#]+)").unwrap()
 });
 
+/// How long an account that saw a live room is trusted to report offline
+/// rooms truthfully.
+const ACCOUNT_TRUSTED_FOR: Duration = Duration::from_secs(5 * 60);
+/// Listed rooms an account is asked about. A room can end between the list
+/// and the request, so one offline answer does not condemn the account.
+const PROBE_ROOMS: usize = 2;
+
+/// When each account, keyed by [`Bigo::account`], last saw a live room.
+static ACCOUNTS_SEEING_LIVE: LazyLock<Mutex<FxHashMap<u64, Instant>>> =
+    LazyLock::new(|| Mutex::new(FxHashMap::default()));
+
+fn saw_live_room(account: u64) {
+    let mut seen = ACCOUNTS_SEEING_LIVE.lock();
+    seen.retain(|_, at| at.elapsed() < ACCOUNT_TRUSTED_FOR);
+    seen.insert(account, Instant::now());
+}
+
+#[derive(Deserialize)]
+struct LiveListResponse {
+    #[serde(default)]
+    data: Option<LiveListData>,
+}
+
+#[derive(Deserialize)]
+struct LiveListData {
+    #[serde(default)]
+    data: Vec<ListedRoom>,
+}
+
+#[derive(Deserialize)]
+struct ListedRoom {
+    #[serde(default)]
+    bigo_id: Option<String>,
+    #[serde(default)]
+    is_locked: Option<serde_json::Value>,
+}
+
+impl ListedRoom {
+    /// The room's site id, unless it needs a password.
+    fn public_site_id(self) -> Option<String> {
+        let locked = self.is_locked.is_some_and(|value| {
+            value.as_i64().is_some_and(|n| n != 0) || value.as_bool() == Some(true)
+        });
+        self.bigo_id.filter(|id| !locked && !id.is_empty())
+    }
+}
+
 pub struct Bigo {
     extractor: Extractor,
     stream_password: Option<String>,
     mint_token: bool,
-    /// Cookies were supplied, so the request carries a login.
-    signed_in: bool,
+    /// Identifies the login when cookies were supplied: a hash of them.
+    account: Option<u64>,
 }
 
 impl Bigo {
     const BASE_URL: &str = "https://www.bigo.tv";
     const STUDIO_API: &str = "https://ta.bigo.tv/official_website/studio/getInternalStudioInfo";
+    /// Public rooms broadcasting now, as listed on the website's home page.
+    /// Answered without a login.
+    const LIVE_LIST_API: &str = "https://ta.bigo.tv/official_website/OInterfaceWeb/vedioList/72";
 
     pub fn new(
         url: String,
@@ -48,9 +109,11 @@ impl Bigo {
     ) -> Self {
         let mut extractor = Extractor::new("bigo", url, client);
         extractor.set_origin_and_referer_static(Self::BASE_URL);
-        let signed_in = cookies
+        let account = cookies
             .as_deref()
-            .is_some_and(|cookies| !cookies.trim().is_empty());
+            .map(str::trim)
+            .filter(|cookies| !cookies.is_empty())
+            .map(|cookies| FxBuildHasher.hash_one(cookies));
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
         }
@@ -65,7 +128,7 @@ impl Bigo {
             extractor,
             stream_password,
             mint_token,
-            signed_in,
+            account,
         }
     }
 
@@ -243,21 +306,87 @@ impl Bigo {
             .extras(extras)
             .build())
     }
-}
 
-#[async_trait]
-impl PlatformExtractor for Bigo {
-    fn get_extractor(&self) -> &Extractor {
-        &self.extractor
+    async fn live_site_ids(&self) -> Result<Vec<String>, ExtractorError> {
+        let response = self
+            .extractor
+            .get(Self::LIVE_LIST_API)
+            .send()
+            .await?
+            .error_for_status()?
+            .json::<LiveListResponse>()
+            .await?;
+        Ok(response
+            .data
+            .map(|list| {
+                list.data
+                    .into_iter()
+                    .filter_map(ListedRoom::public_site_id)
+                    .collect()
+            })
+            .unwrap_or_default())
     }
 
-    async fn extract(&self) -> Result<MediaInfo, ExtractorError> {
+    /// Fails with [`ExtractorError::Authentication`] when the signed-in
+    /// account reads rooms from Bigo's live list as offline, which Bigo does
+    /// to accounts it restricts. Anything that prevents the comparison, such
+    /// as an empty list or a failed request, lets the offline result stand.
+    async fn confirm_account_sees_live_rooms(
+        &self,
+        account: u64,
+        site_id: &str,
+    ) -> Result<(), ExtractorError> {
+        if ACCOUNTS_SEEING_LIVE
+            .lock()
+            .get(&account)
+            .is_some_and(|seen| seen.elapsed() < ACCOUNT_TRUSTED_FOR)
+        {
+            return Ok(());
+        }
+        let rooms = match self.live_site_ids().await {
+            Ok(rooms) => rooms,
+            Err(error) => {
+                debug!(%error, "bigo live list unavailable; offline result unconfirmed");
+                return Ok(());
+            }
+        };
+        let mut offline = 0;
+        for room in rooms
+            .iter()
+            .filter(|room| room.as_str() != site_id)
+            .take(PROBE_ROOMS)
+        {
+            match self.studio(room, None, None).await {
+                Ok(data) if data.is_room_live() => {
+                    saw_live_room(account);
+                    return Ok(());
+                }
+                Ok(_) => offline += 1,
+                Err(error) => {
+                    debug!(%error, "bigo listed-room probe failed; offline result unconfirmed");
+                    return Ok(());
+                }
+            }
+        }
+        if offline == 0 {
+            return Ok(());
+        }
+        warn!(
+            rooms = offline,
+            "bigo account reads rooms from the live list as offline; Bigo has restricted it"
+        );
+        Err(ExtractorError::Authentication {
+            code: "account_restricted".to_string(),
+        })
+    }
+
+    async fn extract_media(&self) -> Result<MediaInfo, ExtractorError> {
         let site_id = self.extract_site_id()?;
         debug!(%site_id, "bigo extract");
 
         let password = self.resolve_password();
 
-        if self.signed_in || !self.mint_token {
+        if self.account.is_some() || !self.mint_token {
             match self
                 .studio(site_id.as_str(), password.as_deref(), None)
                 .await
@@ -296,6 +425,27 @@ impl PlatformExtractor for Bigo {
             )
             .await?;
         self.media_from_data(data, &site_id)
+    }
+}
+
+#[async_trait]
+impl PlatformExtractor for Bigo {
+    fn get_extractor(&self) -> &Extractor {
+        &self.extractor
+    }
+
+    async fn extract(&self) -> Result<MediaInfo, ExtractorError> {
+        let media = self.extract_media().await?;
+        if let Some(account) = self.account {
+            if media.is_live {
+                saw_live_room(account);
+            } else {
+                let site_id = self.extract_site_id()?;
+                self.confirm_account_sees_live_rooms(account, &site_id)
+                    .await?;
+            }
+        }
+        Ok(media)
     }
 }
 

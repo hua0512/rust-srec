@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use dashmap::DashMap;
 use futures::StreamExt;
+use platforms_parser::extractor::error::ExtractorError;
 use sqlx::SqlitePool;
 use tokio::sync::OnceCell;
 use tokio::sync::{Notify, mpsc};
@@ -745,7 +746,7 @@ impl<
                             self.check_with_credentials(check, policy, binding.as_ref(), purpose)
                                 .await
                         }
-                        None => self.check_anonymous(check).await,
+                        None => self.check_anonymous(check, purpose).await,
                     }
                 };
 
@@ -898,8 +899,21 @@ impl<
         Ok(status)
     }
 
-    /// Checks the streamer without an account, under the platform's admission limits.
-    async fn check_anonymous(&self, check: StatusCheck<'_>) -> Result<LiveStatus> {
+    /// Checks a streamer that selects no account.
+    ///
+    /// Some platforms ask for a login for a while and then answer again,
+    /// which their provider declares with a rejection rest (Bigo asks a
+    /// network to log in on some requests and not others). A discovery check
+    /// that meets such a login request reports the streamer as waiting for an
+    /// account, so it keeps its check interval and error count instead of
+    /// backing off for up to an hour. Session start and recovery checks keep
+    /// the error: they would otherwise wait for an account that is never
+    /// selected.
+    async fn check_anonymous(
+        &self,
+        check: StatusCheck<'_>,
+        purpose: CredentialCheckPurpose,
+    ) -> Result<LiveStatus> {
         let StatusCheck {
             streamer,
             config,
@@ -907,9 +921,42 @@ impl<
             deadline,
         } = check;
         let platform_id = &streamer.platform_config_id;
-        // No selection anywhere: the check runs anonymously, so no
-        // account can block it.
-        self.credential_blocks.clear(&streamer.id);
+        let result = self
+            .check_without_account(streamer, config, filters, deadline)
+            .await;
+        match result {
+            Err(Error::Extractor(ExtractorError::Authentication { .. }))
+                if purpose == CredentialCheckPurpose::Discovery
+                    && crate::credentials::provider(streamer.platform())
+                        .rejection_rest()
+                        .is_some() =>
+            {
+                let reason = crate::credentials::UnavailableReason::LoginRequired;
+                self.credential_blocks
+                    .block(&streamer.id, platform_id, reason);
+                Err(Error::CredentialUnavailable(
+                    crate::credentials::CredentialUnavailable {
+                        reason,
+                        policy_generation: String::new(),
+                    },
+                ))
+            }
+            result => {
+                self.credential_blocks.clear(&streamer.id);
+                result
+            }
+        }
+    }
+
+    /// Checks the streamer without an account, under the platform's admission limits.
+    async fn check_without_account(
+        &self,
+        streamer: &StreamerMetadata,
+        config: &crate::config::MergedConfig,
+        filters: &[crate::domain::filter::Filter],
+        deadline: OperationDeadline,
+    ) -> Result<LiveStatus> {
+        let platform_id = &streamer.platform_config_id;
         self.admission
             .admit(platform_id, &config.proxy_route.key, deadline)
             .await
