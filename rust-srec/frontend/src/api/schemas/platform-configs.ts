@@ -57,6 +57,7 @@ export const BilibiliConfigSchema = z
   .object({
     quality: z.number().nullable().optional(),
     end_stream_on_danmu_stream_closed: z.boolean().nullable().optional(),
+    batch_detection: z.boolean().nullable().optional(),
   })
   .strict();
 
@@ -88,6 +89,7 @@ export const TwitchConfigSchema = z
     // Codecs announced to Twitch; unset means H.264 only.
     supported_codecs: z.array(z.enum(TwitchCodecValues)).nullable().optional(),
     end_stream_on_danmu_stream_closed: z.boolean().nullable().optional(),
+    batch_detection: z.boolean().nullable().optional(),
   })
   .strict();
 

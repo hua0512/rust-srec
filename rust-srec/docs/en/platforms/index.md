@@ -42,6 +42,29 @@ See individual platform pages for authentication details.
 
 A streamer URL that no platform above recognizes, but the `streamlink` CLI can handle (for example YouTube or Kick), is added to the **Streamlink** platform. Its accounts are chosen on each streamer, not on the platform or in a template; see [Streamlink accounts](../concepts/configuration.md#streamlink-accounts).
 
+### Batch detection {#batch-detection}
+
+Bilibili and Twitch can report whether many streamers are live in a single request. To use this, turn on **Batch Detection** on the platform's **Specific** tab. It is off by default.
+
+With it on, rust-srec asks the platform about up to 100 of its streamers at once, and uses the answer for the routine check of each streamer that is not recording:
+
+- A streamer the answer shows as offline counts as checked, with no request of its own.
+- A streamer the answer shows as live gets the usual full check, and recording starts as usual.
+- If the batch request fails, or the answer leaves a streamer out, those streamers are checked one by one, as without the setting. After a failed batch request, the next one is tried 30 seconds later, then at growing intervals of up to 10 minutes; meanwhile the check history shows ordinary bars.
+
+An answer is reused for up to a quarter of the check interval (**Streamer Check**, 60 seconds by default). With 250 Bilibili streamers at the default interval, that is about 12 requests a minute instead of about 250, which makes rate limits and platform anti-abuse checks less likely. With only a few streamers on a platform, most checks still make a request of their own.
+
+What you give up:
+
+- A stream start is usually noticed up to a quarter of the check interval later than without the setting: about 75 seconds instead of 60 at the default interval. If the batch request itself is slow to answer, the delay can be as long as that request takes (at most 30 seconds).
+- The batch request is made without an account, over the connection the streamer itself uses (its own, its template's, the platform's or the global proxy setting), not an account's own [proxy setting](../concepts/configuration.md#account-proxies). Streamers on different connections are asked about in separate requests. If that connection cannot reach the platform, the batch request fails and those streamers are checked one by one, as without the setting. A streamer checked with a logged-in account still uses that account once it is live, but an expired login on that account may only be noticed when the streamer goes live, not while it is offline.
+
+Batch detection never ends a recording. A streamer that is recording, or whose stream is being confirmed as ended, is always checked on its own, and so are streamers whose extractor is set to Streamlink. A streamer's first check after rust-srec starts, after it is added or after the setting is turned on is still an individual check, and so is every check of a streamer whose last check failed, until one succeeds.
+
+A template's platform override or a streamer's **Platform options** tab can set it differently. The switch there shows the template's or streamer's own value, not the platform's, so to turn it off for a streamer while the platform has it on, switch it on and then off again. To make a template or streamer follow the platform again, remove `batch_detection` in that tab's **JSON** view.
+
+Checks answered by a batch request appear in the streamer's check history as shorter, lighter bars than other offline checks, and their tooltip says so.
+
 ### Stream Inspection
 
 You can use the built-in player to inspect available stream details for any live streamer:

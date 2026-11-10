@@ -2,6 +2,10 @@
 
 ## `unreleased`
 
+## New features
+
+- **Batch detection for Bilibili and Twitch:** A new **Batch Detection** platform setting asks Bilibili or Twitch whether up to 100 streamers are live in one request, so streamers that are still offline are not checked one by one and monitoring many streamers is less likely to be rate limited. It is off by default and can be set differently for a template or streamer. In exchange, a stream start can be noticed up to a quarter of the check interval later, and because that request does not use an account, an expired login may only be noticed once the streamer goes live. Checks answered this way are drawn differently in the streamer's check history. See [Batch detection](https://docs.srec.rs/en/platforms/#batch-detection).
+
 ## Workflows and file processing
 
 - Fixed rclone uploads trying more times than the preset's Max Retries allowed. rclone retried each failed upload up to 3 times on its own before the next retry started, so a failing upload could run up to three times as often as configured, with no sign of it in the job's progress. Now each try shown in the job's progress is a single upload, and Max Retries limits the total. Presets can still pass `--retries` in their extra arguments to restore rclone's own retries.
