@@ -63,7 +63,7 @@ Batch detection never ends a recording. A streamer that is recording, or whose s
 
 A template's platform override or a streamer's **Platform options** tab can set it differently. The switch there shows the template's or streamer's own value, not the platform's, so to turn it off for a streamer while the platform has it on, switch it on and then off again.
 
-Checks answered by a batch request are drawn differently in the streamer's check history, and their tooltip says so.
+Checks answered by a batch request appear in the streamer's check history as shorter, lighter bars than other offline checks, and their tooltip says so.
 
 ### Stream Inspection
 
