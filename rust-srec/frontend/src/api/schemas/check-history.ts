@@ -36,6 +36,8 @@ export const StreamerCheckHistoryEntrySchema = z.object({
   title: z.string().nullable().optional(),
   category: z.string().nullable().optional(),
   viewer_count: z.number().nullable().optional(),
+  // A missing or unknown value (an older or newer backend) reads as individual.
+  source: z.enum(['individual', 'batch']).catch('individual'),
 });
 
 export type StreamerCheckHistoryEntry = z.infer<

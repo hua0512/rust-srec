@@ -281,6 +281,10 @@ message StreamerCheckRecorded {
   // candidate is also referenced by `stream_selected_json`; clients render
   // the array with the matching candidate marked.
   string streams_extracted_json = 13;
+  // How the status was obtained: `individual` (the streamer's own check) or
+  // `batch` (a platform batch status call covering many streamers reported
+  // it offline, so its own check did not run).
+  string source = 14;
 }
 
 // A streamer's download is parked on the concurrency queue.

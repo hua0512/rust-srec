@@ -165,31 +165,44 @@ interface BarProps {
 
 const Bar = memo(function Bar({ entry, i18n }: BarProps) {
   const { color, height } = useMemo(
-    () => barAppearance(entry.outcome),
-    [entry.outcome],
+    () => barAppearance(entry.outcome, entry.source),
+    [entry.outcome, entry.source],
   );
 
   // Localized aria-label: outcome name + timestamp. The raw string
   // `entry.outcome` is the wire-format discriminator (`live`, `offline`,
   // …) which must not reach the screen-reader as-is.
-  const ariaLabel = i18n._(
-    msg`${outcomeAriaName(entry.outcome, i18n)} at ${formatDate(i18n.locale, new Date(entry.checked_at), { timeStyle: 'short' })}`,
-  );
+  const outcome = outcomeAriaName(entry.outcome, i18n);
+  const time = formatDate(i18n.locale, new Date(entry.checked_at), {
+    timeStyle: 'short',
+  });
+  const ariaLabel =
+    entry.source === 'batch'
+      ? i18n._(msg`${outcome} (batch detection) at ${time}`)
+      : i18n._(msg`${outcome} at ${time}`);
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
+        {/* The button spans the strip's full height so short bars keep a
+            usable hover and focus target; the bar is drawn inside it. A
+            named group, because `group-hover:` alone matches any `.group`
+            ancestor. */}
         <button
           type="button"
           aria-label={ariaLabel}
-          className={cn(
-            'flex-1 basis-0 min-w-0 rounded-sm transition-opacity hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-            color,
-          )}
-          // Inline `height` keeps each outcome's relative height obvious;
-          // promoting these to Tailwind tokens would just hide the mapping.
-          style={{ height: `${height}%`, alignSelf: 'flex-end' }}
-        />
+          className="group/bar flex flex-1 basis-0 min-w-0 items-end rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <span
+            className={cn(
+              'w-full rounded-sm transition-opacity group-hover/bar:opacity-80',
+              color,
+            )}
+            // Inline `height` keeps each outcome's relative height obvious;
+            // promoting these to Tailwind tokens would just hide the mapping.
+            style={{ height: `${height}%` }}
+          />
+        </button>
       </TooltipTrigger>
       <TooltipContent
         side="top"
@@ -229,12 +242,21 @@ function BarTooltipContent({
       {entry.title && (
         <div className="text-[11px] opacity-90 line-clamp-2">{entry.title}</div>
       )}
+      {entry.source === 'batch' && (
+        <div className="opacity-80">
+          <Trans>
+            From batch detection: one request reported many streamers at once,
+            so this streamer was not checked on its own.
+          </Trans>
+        </div>
+      )}
 
       {/* Stream candidates: when the persisted detail is present, list
           every candidate the extractor returned with the selected one
           marked with a check + emerald accent. Fall back to a count + the
           selected summary alone when the detail isn't available (older
-          rows, or non-live outcomes). */}
+          rows, or non-live outcomes). A batch answer ran no extractor, so
+          it has no count to show. */}
       {candidates.length > 0 ? (
         <div className="flex flex-col gap-1">
           <div className="flex items-center justify-between gap-3 opacity-80">
@@ -256,12 +278,14 @@ function BarTooltipContent({
         </div>
       ) : (
         <>
-          <div className="flex items-center justify-between gap-3 opacity-80">
-            <span>
-              <Trans>Streams extracted</Trans>
-            </span>
-            <span className="font-mono">{entry.streams_extracted}</span>
-          </div>
+          {entry.source !== 'batch' && (
+            <div className="flex items-center justify-between gap-3 opacity-80">
+              <span>
+                <Trans>Streams extracted</Trans>
+              </span>
+              <span className="font-mono">{entry.streams_extracted}</span>
+            </div>
+          )}
           {selected && (
             <div className="flex flex-col gap-0.5">
               <span className="opacity-80">
@@ -413,9 +437,15 @@ function outcomeAriaName(
  * Per-outcome bar appearance. Color tokens follow the rest of the dashboard
  * (emerald = live, amber = filtered, red = error). Heights skew the eye
  * toward anomalies — short gray bars for offline polls, tall colored bars
- * everywhere else.
+ * everywhere else. An offline poll answered by a batch check is a shorter,
+ * lighter gray bar: with batch detection on these make up most of the strip,
+ * so they are the quietest bars, yet still apart from the streamer's own
+ * offline checks without hovering.
  */
-function barAppearance(outcome: StreamerCheckHistoryEntry['outcome']): {
+function barAppearance(
+  outcome: StreamerCheckHistoryEntry['outcome'],
+  source: StreamerCheckHistoryEntry['source'],
+): {
   color: string;
   height: number;
 } {
@@ -423,7 +453,9 @@ function barAppearance(outcome: StreamerCheckHistoryEntry['outcome']): {
     case 'live':
       return { color: 'bg-emerald-500', height: 100 };
     case 'offline':
-      return { color: 'bg-muted-foreground/40', height: 35 };
+      return source === 'batch'
+        ? { color: 'bg-muted-foreground/30', height: 20 }
+        : { color: 'bg-muted-foreground/40', height: 35 };
     case 'filtered':
       return { color: 'bg-amber-500', height: 100 };
     case 'transient_error':

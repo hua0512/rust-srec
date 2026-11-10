@@ -18,6 +18,7 @@ import type {
 } from '@/store/uploads';
 import type {
   JobStarted as WireJobStarted,
+  StreamerCheckRecorded as WireCheckRecorded,
   StreamerCredentialBlock as WireCredentialBlock,
   UploadProgress as WireUploadProgress,
   UploadStarted as WireUploadStarted,
@@ -127,6 +128,49 @@ export function applyCredentialBlock(
   const detailKey = queryKeys.streamers.detail(wire.streamerId);
   const detail = queryClient.getQueryData<Streamer>(detailKey);
   if (detail) queryClient.setQueryData(detailKey, patch(detail));
+}
+
+/**
+ * Translates a check-history frame into the REST entry shape, so the cached
+ * entries stay homogeneous whichever path delivered them. The proto marks an
+ * absent value with an empty string, the REST shape with `null`. Malformed
+ * stream JSON degrades to `null`, as the REST handler does, rather than
+ * dropping the bar; a frame that still fails the schema returns `null`.
+ */
+export function checkHistoryEntryFromWire(
+  wire: WireCheckRecorded,
+): StreamerCheckHistoryEntry | null {
+  const parseJson = (raw: string): unknown => {
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  };
+  const parsed = StreamerCheckHistoryEntrySchema.safeParse({
+    checked_at: new Date(Number(wire.checkedAtMs)).toISOString(),
+    duration_ms: wire.durationMs,
+    outcome: wire.outcome,
+    fatal_kind: wire.fatalKind || null,
+    filter_reason: wire.filterReason || null,
+    error_message: wire.errorMessage || null,
+    streams_extracted: wire.streamsExtracted,
+    stream_selected: parseJson(wire.streamSelectedJson),
+    streams_extracted_detail: parseJson(wire.streamsExtractedJson),
+    title: wire.title || null,
+    category: wire.category || null,
+    viewer_count: wire.viewerCount === 0n ? null : Number(wire.viewerCount),
+    source: wire.source,
+  });
+  if (!parsed.success) {
+    console.warn(
+      '[WS] Discarded malformed StreamerCheckRecorded',
+      parsed.error.message,
+    );
+    return null;
+  }
+  return parsed.data;
 }
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
@@ -519,54 +563,10 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
           case EventType.STREAMER_CHECK_RECORDED:
             if (message.payload.case === 'streamerCheckRecorded') {
               const wire = message.payload.value;
-              // Translate the proto shape (empty strings for absent values)
-              // back into the REST shape (null for absent) so the cache
-              // entries stay homogeneous regardless of source. Defensive
-              // parse on the JSON fields for the same reason the REST
-              // handler does it: malformed JSON degrades to null rather
-              // than dropping the bar.
-              let parsedSelected: unknown = null;
-              if (wire.streamSelectedJson) {
-                try {
-                  parsedSelected = JSON.parse(wire.streamSelectedJson);
-                } catch {
-                  parsedSelected = null;
-                }
+              const entry = checkHistoryEntryFromWire(wire);
+              if (entry) {
+                appendCheckHistoryEntry(queryClient, wire.streamerId, entry);
               }
-              let parsedExtracted: unknown = null;
-              if (wire.streamsExtractedJson) {
-                try {
-                  parsedExtracted = JSON.parse(wire.streamsExtractedJson);
-                } catch {
-                  parsedExtracted = null;
-                }
-              }
-              const candidate = {
-                checked_at: new Date(Number(wire.checkedAtMs)).toISOString(),
-                duration_ms: wire.durationMs,
-                outcome: wire.outcome,
-                fatal_kind: wire.fatalKind || null,
-                filter_reason: wire.filterReason || null,
-                error_message: wire.errorMessage || null,
-                streams_extracted: wire.streamsExtracted,
-                stream_selected: parsedSelected,
-                streams_extracted_detail: parsedExtracted,
-                title: wire.title || null,
-                category: wire.category || null,
-                viewer_count:
-                  wire.viewerCount === 0n ? null : Number(wire.viewerCount),
-              };
-              const parsed =
-                StreamerCheckHistoryEntrySchema.safeParse(candidate);
-              if (!parsed.success) {
-                console.warn(
-                  '[WS] Discarded malformed StreamerCheckRecorded',
-                  parsed.error.message,
-                );
-                break;
-              }
-              const entry: StreamerCheckHistoryEntry = parsed.data;
-              appendCheckHistoryEntry(queryClient, wire.streamerId, entry);
             }
             break;
         }

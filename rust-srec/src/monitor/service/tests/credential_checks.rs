@@ -164,7 +164,7 @@ async fn overlapping_discovery_queue_and_bound_polls_extract_only_equivalent_res
         }));
         release.add_permits(1);
         let metadata = monitor.streamer_manager.get_streamer("overlap").unwrap();
-        assert!(monitor.check_streamer(&metadata).await.unwrap().is_live());
+        assert!(monitor.check_streamer(&metadata).await.unwrap().0.is_live());
         assert_eq!(wakes.recv().await.unwrap(), "overlap");
         monitor.cancellation.cancel();
     })
@@ -338,7 +338,7 @@ async fn only_unavailable_accounts_block_a_streamer_and_reaching_an_account_lift
         unreachable.store(false, std::sync::atomic::Ordering::SeqCst);
         assert!(matches!(
             monitor.check_streamer(&metadata).await,
-            Ok(LiveStatus::Offline)
+            Ok((LiveStatus::Offline, _))
         ));
         assert!(blocks.get("blocked").is_none());
 

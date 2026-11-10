@@ -199,12 +199,6 @@ msgstr "{0, plural, other {另外 # 个}}"
 msgid "{0} / {1, plural, one {# entry} other {# entries}}"
 msgstr "{0} / {1, plural, other {# 条}}"
 
-#. placeholder {0}: outcomeAriaName(entry.outcome, i18n)
-#. placeholder {1}: formatDate(i18n.locale, new Date(entry.checked_at), { timeStyle: 'short' })
-#: src/components/streamers/edit/status-check-history.tsx:176
-msgid "{0} at {1}"
-msgstr "{1} 时为 {0}"
-
 #. placeholder {0}: source.fps
 #: src/components/player/playback-details.tsx:61
 msgid "{0} fps"
@@ -336,6 +330,14 @@ msgstr "{linesTotal, plural, other {# 行}}"
 #: src/components/config/engines/forms/mesio-form.tsx:37
 msgid "{name} fixing is off, so these settings have no effect."
 msgstr "{name} 修复已关闭，这些设置不会生效。"
+
+#: src/components/streamers/edit/status-check-history.tsx:181
+msgid "{outcome} (batch detection) at {time}"
+msgstr "{time} 时为 {outcome}（批量检测）"
+
+#: src/components/streamers/edit/status-check-history.tsx:182
+msgid "{outcome} at {time}"
+msgstr "{time} 时为 {outcome}"
 
 #: src/components/upload-status-indicator.tsx:132
 msgid "{pending, plural, one {# queued upload} other {# queued uploads}}"
@@ -1370,7 +1372,7 @@ msgstr "平均/分钟"
 msgid "Avg. Duration"
 msgstr "平均时长"
 
-#: src/components/streamers/edit/status-check-history.tsx:467
+#: src/components/streamers/edit/status-check-history.tsx:499
 msgid "Awaiting first check"
 msgstr "等待首次检查"
 
@@ -1904,7 +1906,7 @@ msgstr "跟踪发言人数"
 msgid "Cheap operations, so the default of 8 is usually fine. Increase if you have many small files against a slow remote."
 msgstr "此操作开销较低，默认值 8 通常已足够。如果远端较慢且有大量小文件，可适当调高。"
 
-#: src/components/streamers/edit/status-check-history.tsx:298
+#: src/components/streamers/edit/status-check-history.tsx:322
 msgid "Check duration"
 msgstr "检查耗时"
 
@@ -4026,7 +4028,7 @@ msgstr "加载模板失败"
 msgid "Error loading workflow"
 msgstr "加载工作流失败"
 
-#: src/components/streamers/edit/status-check-history.tsx:292
+#: src/components/streamers/edit/status-check-history.tsx:316
 msgid "Error:"
 msgstr "错误："
 
@@ -4609,8 +4611,8 @@ msgstr "快速 H.264 压缩（CRF 23）。在速度、画质与体积之间取�
 msgid "Fastest"
 msgstr "最快"
 
-#: src/components/streamers/edit/status-check-history.tsx:387
-#: src/components/streamers/edit/status-check-history.tsx:408
+#: src/components/streamers/edit/status-check-history.tsx:411
+#: src/components/streamers/edit/status-check-history.tsx:432
 #: src/lib/notification-event-types.ts:33
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:116
 msgid "Fatal error"
@@ -4620,7 +4622,7 @@ msgstr "致命错误"
 msgid "Fatal Error"
 msgstr "严重错误"
 
-#: src/components/streamers/edit/status-check-history.tsx:286
+#: src/components/streamers/edit/status-check-history.tsx:310
 msgid "Fatal:"
 msgstr "致命："
 
@@ -4732,12 +4734,12 @@ msgstr "过滤器类型"
 msgid "Filter updated successfully"
 msgstr "过滤器更新成功"
 
-#: src/components/streamers/edit/status-check-history.tsx:383
-#: src/components/streamers/edit/status-check-history.tsx:404
+#: src/components/streamers/edit/status-check-history.tsx:407
+#: src/components/streamers/edit/status-check-history.tsx:428
 msgid "Filtered"
 msgstr "已过滤"
 
-#: src/components/streamers/edit/status-check-history.tsx:280
+#: src/components/streamers/edit/status-check-history.tsx:304
 msgid "Filtered:"
 msgstr "过滤原因："
 
@@ -4927,6 +4929,10 @@ msgstr "变更前"
 #: src/components/notifications/forms/email-form.tsx:129
 msgid "From Address"
 msgstr "发件人地址"
+
+#: src/components/streamers/edit/status-check-history.tsx:247
+msgid "From batch detection: one request reported many streamers at once, so this streamer was not checked on its own."
+msgstr "来自批量检测：平台一次返回了多位主播的状态，因此未单独检测该主播。"
 
 #: src/components/proxies/proxy-route-label.tsx:42
 msgid "from global settings"
@@ -5839,7 +5845,7 @@ msgstr "最后活动"
 msgid "Last Check"
 msgstr "最后检查"
 
-#: src/components/streamers/edit/status-check-history.tsx:476
+#: src/components/streamers/edit/status-check-history.tsx:508
 msgid "Last check {ago}"
 msgstr "上次检查：{ago}"
 
@@ -5946,9 +5952,9 @@ msgstr "列表"
 
 #: src/components/streamers/card/use-streamer-status.tsx:423
 #: src/components/streamers/edit/recent-sessions-list.tsx:76
-#: src/components/streamers/edit/status-check-history.tsx:379
-#: src/components/streamers/edit/status-check-history.tsx:400
-#: src/components/streamers/edit/status-check-history.tsx:457
+#: src/components/streamers/edit/status-check-history.tsx:403
+#: src/components/streamers/edit/status-check-history.tsx:424
+#: src/components/streamers/edit/status-check-history.tsx:489
 #: src/components/streamers/edit/streamer-header.tsx:88
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:161
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:93
@@ -7352,8 +7358,8 @@ msgstr "办公室代理"
 #: src/components/streamers/card/use-streamer-status.tsx:493
 #: src/components/streamers/card/use-streamer-status.tsx:502
 #: src/components/streamers/edit/recent-sessions-list.tsx:74
-#: src/components/streamers/edit/status-check-history.tsx:381
-#: src/components/streamers/edit/status-check-history.tsx:402
+#: src/components/streamers/edit/status-check-history.tsx:405
+#: src/components/streamers/edit/status-check-history.tsx:426
 #: src/components/streamers/edit/streamer-header.tsx:90
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:94
 msgid "Offline"
@@ -9777,7 +9783,7 @@ msgstr "选择类型"
 msgid "Select your preferred color scheme."
 msgstr "选择你偏好的配色方案。"
 
-#: src/components/streamers/edit/status-check-history.tsx:268
+#: src/components/streamers/edit/status-check-history.tsx:292
 msgid "Selected"
 msgstr "已选择"
 
@@ -9786,7 +9792,7 @@ msgstr "已选择"
 msgid "Selected by"
 msgstr "选用者"
 
-#: src/components/streamers/edit/status-check-history.tsx:327
+#: src/components/streamers/edit/status-check-history.tsx:351
 msgid "Selected stream"
 msgstr "已选择的流"
 
@@ -10498,8 +10504,8 @@ msgstr "流数"
 msgid "Streams & Metadata"
 msgstr "流与元数据"
 
-#: src/components/streamers/edit/status-check-history.tsx:242
-#: src/components/streamers/edit/status-check-history.tsx:261
+#: src/components/streamers/edit/status-check-history.tsx:264
+#: src/components/streamers/edit/status-check-history.tsx:284
 msgid "Streams extracted"
 msgstr "已提取流"
 
@@ -11295,8 +11301,8 @@ msgstr "传输数"
 msgid "Transfers help"
 msgstr "传输数帮助"
 
-#: src/components/streamers/edit/status-check-history.tsx:385
-#: src/components/streamers/edit/status-check-history.tsx:406
+#: src/components/streamers/edit/status-check-history.tsx:409
+#: src/components/streamers/edit/status-check-history.tsx:430
 msgid "Transient error"
 msgstr "瞬时错误"
 

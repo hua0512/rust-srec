@@ -1102,6 +1102,8 @@ pub struct StreamerCheckHistoryEntry {
     pub title: Option<String>,
     pub category: Option<String>,
     pub viewer_count: Option<i64>,
+    /// How the status was obtained: `individual` or `batch` (a batch status call).
+    pub source: String,
 }
 
 /// Response payload for `GET /api/streamers/{id}/check-history`.

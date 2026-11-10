@@ -1149,5 +1149,6 @@ fn map_check_history_row(
         title: row.title,
         category: row.category,
         viewer_count: row.viewer_count,
+        source: row.source,
     }
 }

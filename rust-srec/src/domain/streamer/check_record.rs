@@ -95,6 +95,25 @@ impl CheckOutcome {
     }
 }
 
+/// How the monitor obtained a poll's status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CheckSource {
+    /// The streamer's own status check.
+    Individual,
+    /// A platform batch status call covering many streamers reported the
+    /// streamer offline, so its own check did not run.
+    Batch,
+}
+
+impl CheckSource {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Individual => "individual",
+            Self::Batch => "batch",
+        }
+    }
+}
+
 /// One timestamped monitor poll outcome for a streamer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CheckRecord {
@@ -102,6 +121,7 @@ pub struct CheckRecord {
     pub checked_at: DateTime<Utc>,
     pub duration: Duration,
     pub outcome: CheckOutcome,
+    pub source: CheckSource,
 }
 
 impl CheckRecord {
@@ -110,12 +130,14 @@ impl CheckRecord {
         checked_at: DateTime<Utc>,
         duration: Duration,
         outcome: CheckOutcome,
+        source: CheckSource,
     ) -> Self {
         Self {
             streamer_id: streamer_id.into(),
             checked_at,
             duration,
             outcome,
+            source,
         }
     }
 
@@ -132,6 +154,7 @@ impl CheckRecord {
             CheckOutcome::TransientError {
                 message: crate::utils::text::truncate_bytes(error, MAX_ERROR_MESSAGE_LEN),
             },
+            CheckSource::Individual,
         )
     }
 }
