@@ -835,7 +835,9 @@ impl<
         ) else {
             return false;
         };
-        // Every actor polls an offline streamer at the global check delay.
+        // Freshness and slot expiry are measured against the global check delay, the interval
+        // of routine offline polls. Offline-confirmation polls without a session come sooner and
+        // may reuse a result for up to a quarter of that longer delay.
         let interval = match self.config_service.get_cached_global_config().await {
             Ok(global) => Duration::from_millis(
                 u64::try_from(global.streamer_check_delay_ms).unwrap_or_default(),

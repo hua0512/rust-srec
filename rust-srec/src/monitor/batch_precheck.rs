@@ -8,6 +8,11 @@
 //! streamer reported live, one the result does not mention, and every poll while the chunk has no
 //! usable result run the individual check instead.
 //!
+//! A result is reused for a quarter of the poll's interval. A poll that waited for its chunk's
+//! in-flight refresh reads that refresh's result whatever its age, so an answer is at most a quarter
+//! of the interval or the duration of that call (bounded by the request timeout) old, whichever is
+//! longer.
+//!
 //! Polling is the registration. A streamer joins the first chunk with a free slot the first time it
 //! polls and keeps that slot while it keeps polling. One that stops (deleted, disabled, recording,
 //! backing off, moved to another route) is dropped once it has gone [`EXPIRY_INTERVALS`] check
