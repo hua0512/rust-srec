@@ -31,6 +31,10 @@ pub enum BatchPresence {
 /// extractor: an HTTP 429 is [`ExtractorError::RateLimited`], any other error status is
 /// [`ExtractorError::HttpError`], and an error the platform reports in the response body is
 /// [`ExtractorError::ValidationError`].
+///
+/// Probes set no timeout of their own, so the caller bounds each [`probe`](Self::probe) call.
+/// The calls are anonymous only if the `client` passed in carries no cookie store and no default
+/// authentication headers.
 #[async_trait]
 pub trait BatchStatusProbe: Send + Sync {
     /// The largest number of keys one [`probe`](Self::probe) call accepts.

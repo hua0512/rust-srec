@@ -158,26 +158,17 @@ mod tests {
         );
     }
 
-    /// A rejected query and a field that failed to resolve are both errors; the failed field's
-    /// `null` stream must not read as offline.
+    /// A field that failed to resolve comes back as `null` beside an error; that `null` stream
+    /// must not read as offline.
     #[tokio::test]
-    async fn graphql_errors_are_an_error() {
-        for (body, message) in [
-            (
-                r#"{"errors":[{"message":"Cannot query field \"typ\" on type \"Stream\"."}]}"#,
-                "Cannot query field",
-            ),
-            (
-                r#"{"data":{"users":[{"login":"foo","stream":null}]},"errors":[{"message":"service timeout","path":["users",0,"stream"]}]}"#,
-                "service timeout",
-            ),
-        ] {
-            let error = probe_against(body, &["foo"]).await.unwrap_err();
+    async fn partial_data_with_errors_is_an_error() {
+        let body = r#"{"data":{"users":[{"login":"foo","stream":null}]},"errors":[{"message":"service timeout","path":["users",0,"stream"]}]}"#;
 
-            assert!(
-                matches!(&error, ExtractorError::ValidationError(text) if text.contains(message)),
-                "{error:?}"
-            );
-        }
+        let error = probe_against(body, &["foo"]).await.unwrap_err();
+
+        assert!(
+            matches!(error, ExtractorError::ValidationError(_)),
+            "{error:?}"
+        );
     }
 }

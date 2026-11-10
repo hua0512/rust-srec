@@ -28,9 +28,30 @@ pub(crate) struct BilibiliStatusProbe {
     endpoint: Cow<'static, str>,
 }
 
+impl BilibiliStatusProbe {
+    async fn fetch(
+        &self,
+        client: &Client,
+        keys: &[String],
+    ) -> Result<RoomBaseInfoResponse, ExtractorError> {
+        let mut query = Vec::with_capacity(keys.len() + 1);
+        query.push(("req_biz", "web_room_componet"));
+        query.extend(keys.iter().map(|key| ("room_ids", key.as_str())));
+        let response = client
+            .get(self.endpoint.as_ref())
+            .header(reqwest::header::USER_AGENT, DEFAULT_UA)
+            .header(reqwest::header::REFERER, Bilibili::BASE_URL)
+            .query(&query)
+            .send()
+            .await?;
+        Ok(ExtractorError::check_response(response)?.json().await?)
+    }
+}
+
 #[derive(Deserialize)]
 struct RoomBaseInfoResponse {
     code: i32,
+    /// Absent when `code` is non-zero.
     data: Option<RoomBaseInfoData>,
 }
 
@@ -59,7 +80,7 @@ impl BatchStatusProbe for BilibiliStatusProbe {
 
     /// The room ID in canonical decimal form, so the key compares equal to the IDs in the
     /// response. Only IDs in `1..=i64::MAX` qualify: the endpoint rejects the whole request
-    /// (code -400) when any ID is 0 or larger.
+    /// (code -400) when any ID is 0 or exceeds `i64::MAX`.
     fn key_for_url(&self, url: &str) -> Option<String> {
         let room_id: i64 = capture_group_1(&URL_REGEX, url)?.parse().ok()?;
         (room_id > 0).then(|| room_id.to_string())
@@ -70,18 +91,15 @@ impl BatchStatusProbe for BilibiliStatusProbe {
         client: &Client,
         keys: &[String],
     ) -> Result<HashMap<String, BatchPresence>, ExtractorError> {
-        let mut query = Vec::with_capacity(keys.len() + 1);
-        query.push(("req_biz", "web_room_componet"));
-        query.extend(keys.iter().map(|key| ("room_ids", key.as_str())));
-        let response = client
-            .get(self.endpoint.as_ref())
-            .header(reqwest::header::USER_AGENT, DEFAULT_UA)
-            .header(reqwest::header::REFERER, Bilibili::BASE_URL)
-            .query(&query)
-            .send()
-            .await?;
-        let response: RoomBaseInfoResponse =
-            ExtractorError::check_response(response)?.json().await?;
+        // reqwest errors name the request URL, which lists every requested room; without it the
+        // error stays short enough to log.
+        let response = self
+            .fetch(client, keys)
+            .await
+            .map_err(|error| match error {
+                ExtractorError::HttpError(error) => ExtractorError::HttpError(error.without_url()),
+                other => other,
+            })?;
         // The request is anonymous, so no code is evidence against an account.
         if response.code != 0 {
             return Err(ExtractorError::ValidationError(format!(
@@ -89,10 +107,11 @@ impl BatchStatusProbe for BilibiliStatusProbe {
                 response.code
             )));
         }
-        let rooms = response
-            .data
-            .map(|data| data.by_room_ids)
-            .unwrap_or_default();
+        let Some(RoomBaseInfoData { by_room_ids: rooms }) = response.data else {
+            return Err(ExtractorError::ValidationError(
+                "Bilibili room status request returned no data".to_owned(),
+            ));
+        };
 
         // A room answers to its long ID and its short ID. Long IDs are inserted last so that a
         // requested long ID matches its own room even if it equals another room's short ID.
