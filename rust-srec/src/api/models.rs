@@ -1102,9 +1102,7 @@ pub struct StreamerCheckHistoryEntry {
     pub title: Option<String>,
     pub category: Option<String>,
     pub viewer_count: Option<i64>,
-    /// How the status was obtained: `individual` (the streamer's own check)
-    /// or `batch` (a platform batch status call covering many streamers
-    /// reported it offline, so its own check did not run).
+    /// How the status was obtained: `individual` or `batch` (a batch status call).
     pub source: String,
 }
 

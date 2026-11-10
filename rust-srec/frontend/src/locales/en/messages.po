@@ -1906,7 +1906,7 @@ msgstr "Chatters tracked"
 msgid "Cheap operations, so the default of 8 is usually fine. Increase if you have many small files against a slow remote."
 msgstr "Cheap operations, so the default of 8 is usually fine. Increase if you have many small files against a slow remote."
 
-#: src/components/streamers/edit/status-check-history.tsx:311
+#: src/components/streamers/edit/status-check-history.tsx:314
 msgid "Check duration"
 msgstr "Check duration"
 
@@ -4028,7 +4028,7 @@ msgstr "Error loading template"
 msgid "Error loading workflow"
 msgstr "Error loading workflow"
 
-#: src/components/streamers/edit/status-check-history.tsx:305
+#: src/components/streamers/edit/status-check-history.tsx:308
 msgid "Error:"
 msgstr "Error:"
 
@@ -4611,8 +4611,8 @@ msgstr "Fast H.264 compression (CRF 23). Good balance of speed, quality, and fil
 msgid "Fastest"
 msgstr "Fastest"
 
-#: src/components/streamers/edit/status-check-history.tsx:400
-#: src/components/streamers/edit/status-check-history.tsx:421
+#: src/components/streamers/edit/status-check-history.tsx:403
+#: src/components/streamers/edit/status-check-history.tsx:424
 #: src/lib/notification-event-types.ts:33
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:116
 msgid "Fatal error"
@@ -4622,7 +4622,7 @@ msgstr "Fatal error"
 msgid "Fatal Error"
 msgstr "Fatal Error"
 
-#: src/components/streamers/edit/status-check-history.tsx:299
+#: src/components/streamers/edit/status-check-history.tsx:302
 msgid "Fatal:"
 msgstr "Fatal:"
 
@@ -4734,12 +4734,12 @@ msgstr "Filter Type"
 msgid "Filter updated successfully"
 msgstr "Filter updated successfully"
 
-#: src/components/streamers/edit/status-check-history.tsx:396
-#: src/components/streamers/edit/status-check-history.tsx:417
+#: src/components/streamers/edit/status-check-history.tsx:399
+#: src/components/streamers/edit/status-check-history.tsx:420
 msgid "Filtered"
 msgstr "Filtered"
 
-#: src/components/streamers/edit/status-check-history.tsx:293
+#: src/components/streamers/edit/status-check-history.tsx:296
 msgid "Filtered:"
 msgstr "Filtered:"
 
@@ -5952,8 +5952,8 @@ msgstr "List"
 
 #: src/components/streamers/card/use-streamer-status.tsx:423
 #: src/components/streamers/edit/recent-sessions-list.tsx:76
-#: src/components/streamers/edit/status-check-history.tsx:392
-#: src/components/streamers/edit/status-check-history.tsx:413
+#: src/components/streamers/edit/status-check-history.tsx:395
+#: src/components/streamers/edit/status-check-history.tsx:416
 #: src/components/streamers/edit/status-check-history.tsx:481
 #: src/components/streamers/edit/streamer-header.tsx:88
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:161
@@ -7358,8 +7358,8 @@ msgstr "Office proxy"
 #: src/components/streamers/card/use-streamer-status.tsx:493
 #: src/components/streamers/card/use-streamer-status.tsx:502
 #: src/components/streamers/edit/recent-sessions-list.tsx:74
-#: src/components/streamers/edit/status-check-history.tsx:394
-#: src/components/streamers/edit/status-check-history.tsx:415
+#: src/components/streamers/edit/status-check-history.tsx:397
+#: src/components/streamers/edit/status-check-history.tsx:418
 #: src/components/streamers/edit/streamer-header.tsx:90
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:94
 msgid "Offline"
@@ -9783,7 +9783,7 @@ msgstr "Select type"
 msgid "Select your preferred color scheme."
 msgstr "Select your preferred color scheme."
 
-#: src/components/streamers/edit/status-check-history.tsx:281
+#: src/components/streamers/edit/status-check-history.tsx:284
 msgid "Selected"
 msgstr "Selected"
 
@@ -9792,7 +9792,7 @@ msgstr "Selected"
 msgid "Selected by"
 msgstr "Selected by"
 
-#: src/components/streamers/edit/status-check-history.tsx:340
+#: src/components/streamers/edit/status-check-history.tsx:343
 msgid "Selected stream"
 msgstr "Selected stream"
 
@@ -10504,8 +10504,8 @@ msgstr "Streams"
 msgid "Streams & Metadata"
 msgstr "Streams & Metadata"
 
-#: src/components/streamers/edit/status-check-history.tsx:255
-#: src/components/streamers/edit/status-check-history.tsx:274
+#: src/components/streamers/edit/status-check-history.tsx:256
+#: src/components/streamers/edit/status-check-history.tsx:276
 msgid "Streams extracted"
 msgstr "Streams extracted"
 
@@ -11301,8 +11301,8 @@ msgstr "Transfers"
 msgid "Transfers help"
 msgstr "Transfers help"
 
-#: src/components/streamers/edit/status-check-history.tsx:398
-#: src/components/streamers/edit/status-check-history.tsx:419
+#: src/components/streamers/edit/status-check-history.tsx:401
+#: src/components/streamers/edit/status-check-history.tsx:422
 msgid "Transient error"
 msgstr "Transient error"
 

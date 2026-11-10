@@ -66,9 +66,7 @@ pub struct StreamerCheckHistoryDbModel {
     /// Snapshot of the live-side viewer count for tooltip display. NULL on
     /// non-live outcomes or when the platform doesn't report it.
     pub viewer_count: Option<i64>,
-    /// `batch` when a platform batch status call answered the poll instead
-    /// of the streamer's own check. NULL for an individual check, including
-    /// every row persisted before the column was added.
+    /// `batch` for a batch status call; NULL for an individual check.
     pub source: Option<String>,
 }
 

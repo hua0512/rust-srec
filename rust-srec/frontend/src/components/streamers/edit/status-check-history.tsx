@@ -247,7 +247,8 @@ function BarTooltipContent({
           every candidate the extractor returned with the selected one
           marked with a check + emerald accent. Fall back to a count + the
           selected summary alone when the detail isn't available (older
-          rows, or non-live outcomes). */}
+          rows, or non-live outcomes). A batch answer ran no extractor, so
+          it has no count to show. */}
       {candidates.length > 0 ? (
         <div className="flex flex-col gap-1">
           <div className="flex items-center justify-between gap-3 opacity-80">
@@ -269,12 +270,14 @@ function BarTooltipContent({
         </div>
       ) : (
         <>
-          <div className="flex items-center justify-between gap-3 opacity-80">
-            <span>
-              <Trans>Streams extracted</Trans>
-            </span>
-            <span className="font-mono">{entry.streams_extracted}</span>
-          </div>
+          {entry.source !== 'batch' && (
+            <div className="flex items-center justify-between gap-3 opacity-80">
+              <span>
+                <Trans>Streams extracted</Trans>
+              </span>
+              <span className="font-mono">{entry.streams_extracted}</span>
+            </div>
+          )}
           {selected && (
             <div className="flex flex-col gap-0.5">
               <span className="opacity-80">
@@ -426,9 +429,10 @@ function outcomeAriaName(
  * Per-outcome bar appearance. Color tokens follow the rest of the dashboard
  * (emerald = live, amber = filtered, red = error). Heights skew the eye
  * toward anomalies — short gray bars for offline polls, tall colored bars
- * everywhere else. An offline poll answered by a batch check is the same
- * short gray bar, hatched, so it stands apart from the streamer's own checks
- * without hovering.
+ * everywhere else. An offline poll answered by a batch check is a shorter,
+ * lighter gray bar: with batch detection on these make up most of the strip,
+ * so they are the quietest bars, yet still apart from the streamer's own
+ * offline checks without hovering.
  */
 function barAppearance(
   outcome: StreamerCheckHistoryEntry['outcome'],
@@ -442,11 +446,7 @@ function barAppearance(
       return { color: 'bg-emerald-500', height: 100 };
     case 'offline':
       return source === 'batch'
-        ? {
-            color:
-              'bg-muted-foreground/10 bg-[repeating-linear-gradient(135deg,var(--color-muted-foreground)_0_1px,transparent_1px_4px)]',
-            height: 35,
-          }
+        ? { color: 'bg-muted-foreground/20', height: 20 }
         : { color: 'bg-muted-foreground/40', height: 35 };
     case 'filtered':
       return { color: 'bg-amber-500', height: 100 };
