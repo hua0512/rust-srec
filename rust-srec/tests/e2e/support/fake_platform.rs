@@ -75,6 +75,7 @@ fn register() {
                 }
                 Box::new(FakeExtractor { extractor })
             },
+            None,
         )
         .expect("register the fake platform");
     });

@@ -1,3 +1,4 @@
+pub mod batch_status;
 mod default;
 pub mod error;
 pub mod factory;
@@ -13,3 +14,6 @@ pub use default::{
 };
 
 pub mod hls_extractor;
+
+#[cfg(test)]
+mod test_support;
