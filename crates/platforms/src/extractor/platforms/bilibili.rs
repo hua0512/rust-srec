@@ -1,3 +1,4 @@
+mod batch_status;
 mod builder;
 pub mod cookie_utils;
 pub mod danmu;
@@ -7,6 +8,7 @@ pub mod token_refresh;
 mod utils;
 mod wbi;
 
+pub(crate) use batch_status::BATCH_PROBE;
 pub use builder::Bilibili;
 pub use builder::BilibiliQuality;
 pub use builder::URL_REGEX;

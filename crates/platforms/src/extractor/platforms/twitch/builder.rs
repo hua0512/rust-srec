@@ -20,6 +20,12 @@ use tracing::debug;
 pub static URL_REGEX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^https?://(?:www\.)?twitch\.tv/([^/?#]+)").unwrap());
 
+/// The client ID of Twitch's web player, which GQL accepts without an account.
+pub(super) const CLIENT_ID: &str = "kimne78kx3ncx6brgo4mv6wki5h1ko";
+
+/// The endpoint for every Twitch GraphQL query.
+pub(super) const GQL_URL: &str = "https://gql.twitch.tv/gql";
+
 pub struct Twitch {
     extractor: Extractor,
     gql_url: String,
@@ -78,7 +84,7 @@ impl Twitch {
         extractor.add_header_typed(reqwest::header::ACCEPT, "application/vnd.twitchtv.v5+json");
         extractor.set_referer_static(Self::BASE_URL);
         extractor.add_header_str("device-id", Self::get_device_id());
-        extractor.add_header_str("Client-Id", "kimne78kx3ncx6brgo4mv6wki5h1ko");
+        extractor.add_header_str("Client-Id", CLIENT_ID);
 
         let supported_codecs = supported_codecs(extras.as_ref());
         let oauth_token = resolve_oauth_token(
@@ -94,7 +100,7 @@ impl Twitch {
         }
         Self {
             extractor,
-            gql_url: Self::GPL_API_URL.to_owned(),
+            gql_url: GQL_URL.to_owned(),
             has_oauth_token: oauth_token.is_some(),
             supported_codecs,
         }
@@ -131,8 +137,6 @@ impl Twitch {
         }))
         .unwrap_or_else(|_| "{}".to_string())
     }
-
-    const GPL_API_URL: &str = "https://gql.twitch.tv/gql";
 
     async fn post_gql<T: for<'de> serde::Deserialize<'de>>(
         &self,
@@ -399,29 +403,8 @@ mod tests {
 
     use crate::extractor::{
         default::default_client, error::ExtractorError, platforms::twitch::builder::Twitch,
+        test_support::serve_once,
     };
-
-    /// Serves one HTTP request with the given status line and JSON body,
-    /// returning the URL to post to.
-    async fn serve_once(status: &'static str, body: &'static str) -> String {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        tokio::spawn(async move {
-            if let Ok((mut socket, _)) = listener.accept().await {
-                let mut buf = [0u8; 8192];
-                let _ = socket.read(&mut buf).await;
-                let response = format!(
-                    "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-                    body.len(),
-                );
-                let _ = socket.write_all(response.as_bytes()).await;
-                let _ = socket.shutdown().await;
-            }
-        });
-        format!("http://{addr}/gql")
-    }
 
     const INVALID_TOKEN_BODY: &str = r#"{"error":"Unauthorized","status":401,"message":"The \"Authorization\" token is invalid."}"#;
 

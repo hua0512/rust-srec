@@ -4,6 +4,7 @@ use parking_lot::RwLock;
 use regex::Regex;
 use reqwest::Client;
 
+use super::batch_status::BatchStatusProbe;
 use super::error::ExtractorError;
 use super::platform_extractor::PlatformExtractor;
 use super::streamlink_extractor::StreamlinkExtractor;
@@ -73,10 +74,16 @@ struct PlatformEntry {
     name: &'static str,
     regex: &'static LazyLock<Regex>,
     constructor: ExtractorConstructor,
+    /// What [`batch_probe_for_url`] returns for the platform's URLs.
+    batch_probe: Option<&'static dyn BatchStatusProbe>,
 }
 
+/// One `name: REGEX => constructor` entry per platform, with `; batch: PROBE` for a platform
+/// that has a batch status probe.
 macro_rules! platform_registry {
-    ( $( $name:literal: $regex:path => $builder:path ),+ $(,)? ) => {
+    (@batch_probe) => { None };
+    (@batch_probe $probe:path) => { Some(&$probe as &'static dyn BatchStatusProbe) };
+    ( $( $name:literal: $regex:path => $builder:path $(; batch: $probe:path)? ),+ $(,)? ) => {
         &[
             $(
                 PlatformEntry {
@@ -86,6 +93,7 @@ macro_rules! platform_registry {
                         Box::new($builder(url, client, cookies, extras))
                             as Box<dyn PlatformExtractor>
                     },
+                    batch_probe: platform_registry!(@batch_probe $($probe)?),
                 },
             )+
         ]
@@ -101,9 +109,11 @@ static PLATFORMS: &[PlatformEntry] = platform_registry![
     "Douyu": platforms::douyu::URL_REGEX => Douyu::new,
     "PandaTV": platforms::pandatv::URL_REGEX => PandaTV::new,
     "Weibo": platforms::weibo::URL_REGEX => Weibo::new,
-    "Twitch": platforms::twitch::URL_REGEX => Twitch::new,
+    "Twitch": platforms::twitch::URL_REGEX => Twitch::new;
+        batch: platforms::twitch::BATCH_PROBE,
     "RedBook": platforms::redbook::URL_REGEX => RedBook::new,
-    "Bilibili": platforms::bilibili::URL_REGEX => Bilibili::new,
+    "Bilibili": platforms::bilibili::URL_REGEX => Bilibili::new;
+        batch: platforms::bilibili::BATCH_PROBE,
     "Picarto": platforms::picarto::URL_REGEX => Picarto::new,
     "TikTok": platforms::tiktok::URL_REGEX => TikTok::new,
     "Twitcasting": platforms::twitcasting::URL_REGEX => Twitcasting::new,
@@ -116,6 +126,7 @@ struct RegisteredPlatform {
     name: &'static str,
     regex: Regex,
     constructor: ExtractorConstructor,
+    batch_probe: Option<&'static dyn BatchStatusProbe>,
 }
 
 static REGISTERED: RwLock<Vec<RegisteredPlatform>> = RwLock::new(Vec::new());
@@ -136,6 +147,27 @@ pub fn register_platform(
     regex: Regex,
     constructor: ExtractorConstructor,
 ) -> Result<(), DuplicatePlatformName> {
+    register(name, regex, constructor, None)
+}
+
+/// [`register_platform`] for a platform that also offers a batch status probe, which
+/// [`batch_probe_for_url`] then returns for the platform's URLs.
+#[doc(hidden)]
+pub fn register_platform_with_batch_probe(
+    name: &'static str,
+    regex: Regex,
+    constructor: ExtractorConstructor,
+    batch_probe: &'static dyn BatchStatusProbe,
+) -> Result<(), DuplicatePlatformName> {
+    register(name, regex, constructor, Some(batch_probe))
+}
+
+fn register(
+    name: &'static str,
+    regex: Regex,
+    constructor: ExtractorConstructor,
+    batch_probe: Option<&'static dyn BatchStatusProbe>,
+) -> Result<(), DuplicatePlatformName> {
     let mut registered = REGISTERED.write();
     let taken = PLATFORMS
         .iter()
@@ -149,23 +181,40 @@ pub fn register_platform(
         name,
         regex,
         constructor,
+        batch_probe,
     });
     Ok(())
 }
 
+/// What [`find_platform`] knows about the platform that claims a URL.
+#[derive(Clone, Copy)]
+struct PlatformMatch {
+    name: &'static str,
+    constructor: ExtractorConstructor,
+    batch_probe: Option<&'static dyn BatchStatusProbe>,
+}
+
 /// The first platform whose URL regex matches: built-ins first, then registered ones.
-fn find_platform(url: &str) -> Option<(&'static str, ExtractorConstructor)> {
+fn find_platform(url: &str) -> Option<PlatformMatch> {
     if let Some(platform) = PLATFORMS
         .iter()
         .find(|platform| platform.regex.is_match(url))
     {
-        return Some((platform.name, platform.constructor));
+        return Some(PlatformMatch {
+            name: platform.name,
+            constructor: platform.constructor,
+            batch_probe: platform.batch_probe,
+        });
     }
     REGISTERED
         .read()
         .iter()
         .find(|platform| platform.regex.is_match(url))
-        .map(|platform| (platform.name, platform.constructor))
+        .map(|platform| PlatformMatch {
+            name: platform.name,
+            constructor: platform.constructor,
+            batch_probe: platform.batch_probe,
+        })
 }
 
 /// The name of the platform [`ExtractorFactory::create_extractor`] dispatches `url` to under
@@ -173,7 +222,17 @@ fn find_platform(url: &str) -> Option<(&'static str, ExtractorConstructor)> {
 ///
 /// The URL regexes are case-sensitive, so callers lowercase the host first.
 pub fn platform_name_for_url(url: &str) -> Option<&'static str> {
-    find_platform(url).map(|(name, _)| name)
+    find_platform(url).map(|platform| platform.name)
+}
+
+/// The batch status probe of the platform [`platform_name_for_url`] names for `url`, or `None`
+/// when that platform has none.
+///
+/// Each platform has at most one probe, so URLs with the same platform name can share a batch
+/// call. The probe answers only for the platform's built-in extractor; a streamer forced to
+/// [`ExtractorSelection::Streamlink`] is checked by a different extractor.
+pub fn batch_probe_for_url(url: &str) -> Option<&'static dyn BatchStatusProbe> {
+    find_platform(url)?.batch_probe
 }
 
 /// A factory for creating platform-specific extractors.
@@ -230,7 +289,7 @@ impl ExtractorFactory {
             ));
         }
 
-        if let Some((_, constructor)) = find_platform(url) {
+        if let Some(PlatformMatch { constructor, .. }) = find_platform(url) {
             return Ok(constructor(
                 url.to_string(),
                 self.client.clone(),
