@@ -803,8 +803,16 @@ impl<
     /// Only a discovery poll qualifies. [`CredentialCheckKey::new`] turns a discovery of a
     /// streamer with a session into a bound poll, so a recording, its offline confirmation and a
     /// restart reconciling an open session keep their individual checks: a batch answer may
-    /// delay a recording's start by a poll but never end one. Streamers checked with an account
-    /// are pre-checked anonymously too; the account is used once the batch reports them live.
+    /// delay a recording's start by a poll but never end one.
+    ///
+    /// A streamer with a credential block or an error state (a consecutive error count or a
+    /// backoff) is checked individually, because an offline answer would clear that state and
+    /// only a check through the extractor shows the problem is gone.
+    ///
+    /// Streamers checked with an account are pre-checked anonymously too, on the streamer's own
+    /// route even when the account has a proxy of its own; the account is used once the batch
+    /// reports them live. A batch failure, a throttle included, backs off only the batch call: it
+    /// does not pause the route for individual checks.
     async fn batch_says_offline(
         &self,
         streamer: &StreamerMetadata,
@@ -814,13 +822,16 @@ impl<
     ) -> bool {
         let platform_id = &streamer.platform_config_id;
         let route = &config.proxy_route;
-        // Only a real check clears a credential block. While the platform throttles this route,
-        // its polls wait in admission as individual checks rather than adding batch calls.
+        // The caller's copy was taken before the check started; the shared metadata also
+        // reflects errors other checks have recorded since.
+        let current = self.streamer_manager.get_streamer_snapshot(&streamer.id);
+        let current = current.as_deref().unwrap_or(streamer);
         if purpose != CredentialCheckPurpose::Discovery
             || !batch_detection_enabled(config.platform_extras.as_ref())
             || config.extractor == ExtractorSelection::Streamlink
             || self.credential_blocks.get(&streamer.id).is_some()
-            || self.admission.backing_off(platform_id, &route.key)
+            || current.consecutive_error_count != 0
+            || current.disabled_until.is_some()
         {
             return false;
         }
@@ -865,21 +876,23 @@ impl<
             max_keys: probe.max_keys(),
             interval,
         };
+        // The call waits in admission like an individual check, so a paused route sends one
+        // batch request when the pause ends. Its throttles are not reported to admission: the
+        // chunk's own backoff absorbs them.
         self.batch_precheck
             .offline(poll, |keys| async move {
                 self.admission
                     .admit(platform_id, &route.key, deadline)
                     .await
                     .map_err(|error| Error::Monitor(error.to_string()))?;
-                match tokio::time::timeout(BATCH_REQUEST_TIMEOUT, probe.probe(&client, &keys)).await
-                {
-                    Ok(result) => Ok(result.inspect_err(|error| {
-                        self.admission.observe(platform_id, route, error);
-                    })?),
-                    Err(_) => Err(Error::Monitor(format!(
-                        "Batch status request timed out after {BATCH_REQUEST_TIMEOUT:?}"
-                    ))),
-                }
+                tokio::time::timeout(BATCH_REQUEST_TIMEOUT, probe.probe(&client, &keys))
+                    .await
+                    .map_err(|_| {
+                        Error::Monitor(format!(
+                            "Batch status request timed out after {BATCH_REQUEST_TIMEOUT:?}"
+                        ))
+                    })?
+                    .map_err(Error::from)
             })
             .await
     }

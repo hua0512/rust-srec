@@ -26,17 +26,19 @@ use std::time::Duration;
 
 use parking_lot::Mutex;
 use platforms_parser::extractor::batch_status::BatchPresence;
+use platforms_parser::extractor::error::ExtractorError;
 use tokio::time::Instant;
 use tracing::{debug, warn};
 
 use crate::proxies::RouteKey;
 
 /// The first wait after a failed batch call. Each further consecutive failure doubles it, up to
+/// [`MAX_BACKOFF`]. A throttle that states how long to wait extends the wait to that, also up to
 /// [`MAX_BACKOFF`].
 const FIRST_BACKOFF: Duration = Duration::from_secs(30);
 const MAX_BACKOFF: Duration = Duration::from_secs(10 * 60);
 
-/// A member that has not polled for this many of its check intervals gives up its slot.
+/// A member that has not polled for this many check intervals gives up its slot.
 const EXPIRY_INTERVALS: u32 = 4;
 
 /// The shortest time a silent member keeps its slot, so a poll delayed by a busy scheduler or a
@@ -98,7 +100,6 @@ struct ChunkState {
 struct Member {
     key: String,
     last_poll: Instant,
-    interval: Duration,
 }
 
 struct Cached {
@@ -113,14 +114,9 @@ enum Read {
     Stale(u64),
 }
 
-impl Member {
-    fn expired(&self, now: Instant) -> bool {
-        let expiry = self
-            .interval
-            .saturating_mul(EXPIRY_INTERVALS)
-            .max(MIN_EXPIRY);
-        now.saturating_duration_since(self.last_poll) > expiry
-    }
+/// How long a member keeps its slot without polling, for polls every `interval`.
+fn expiry(interval: Duration) -> Duration {
+    interval.saturating_mul(EXPIRY_INTERVALS).max(MIN_EXPIRY)
 }
 
 impl ChunkState {
@@ -144,16 +140,24 @@ impl ChunkState {
             .is_some_and(|cached| cached.presence.get(key) == Some(&BatchPresence::Offline))
     }
 
-    fn expire_members(&mut self, now: Instant) {
-        self.members.retain(|_, member| !member.expired(now));
+    fn expire_members(&mut self, now: Instant, interval: Duration) {
+        let expiry = expiry(interval);
+        self.members
+            .retain(|_, member| now.saturating_duration_since(member.last_poll) <= expiry);
     }
 }
 
-fn backoff_after(failures: u32) -> Duration {
+fn backoff_after(failures: u32, error: &crate::Error) -> Duration {
     let doublings = failures.saturating_sub(1).min(5);
-    FIRST_BACKOFF
-        .saturating_mul(1 << doublings)
-        .min(MAX_BACKOFF)
+    let exponential = FIRST_BACKOFF.saturating_mul(1 << doublings);
+    let requested = match error {
+        crate::Error::Extractor(ExtractorError::RateLimited {
+            retry_after: Some(retry_after),
+            ..
+        }) => *retry_after,
+        _ => Duration::ZERO,
+    };
+    exponential.max(requested).min(MAX_BACKOFF)
 }
 
 impl BatchPrecheck {
@@ -187,7 +191,7 @@ impl BatchPrecheck {
             if state.refreshes != seen {
                 return state.offline(&poll.key);
             }
-            state.expire_members(Instant::now());
+            state.expire_members(Instant::now(), poll.interval);
             let mut distinct = HashSet::new();
             state
                 .members
@@ -197,8 +201,9 @@ impl BatchPrecheck {
                 .collect::<Vec<_>>()
         };
 
+        let chunk_size = keys.len();
         let started = Instant::now();
-        let outcome = call(keys.clone()).await;
+        let outcome = call(keys).await;
         let mut state = chunk.state.lock();
         state.refreshes += 1;
         match outcome {
@@ -206,7 +211,7 @@ impl BatchPrecheck {
                 debug!(
                     platform = poll.group.platform,
                     route = ?poll.group.route,
-                    chunk_size = keys.len(),
+                    chunk_size,
                     live = presence
                         .values()
                         .filter(|presence| **presence == BatchPresence::Live)
@@ -224,14 +229,14 @@ impl BatchPrecheck {
             }
             Err(error) => {
                 state.failures = state.failures.saturating_add(1);
-                let backoff = backoff_after(state.failures);
+                let backoff = backoff_after(state.failures, &error);
                 state.backoff_until = Some(Instant::now() + backoff);
                 state.result = None;
                 if state.failures == 1 {
                     warn!(
                         platform = poll.group.platform,
                         route = ?poll.group.route,
-                        chunk_size = keys.len(),
+                        chunk_size,
                         backoff_secs = backoff.as_secs(),
                         %error,
                         "Batch status call failed; checking these streamers individually meanwhile"
@@ -260,13 +265,12 @@ impl BatchPrecheck {
             if let Some(member) = chunk.state.lock().members.get_mut(poll.streamer_id) {
                 member.key.clone_from(&poll.key);
                 member.last_poll = now;
-                member.interval = poll.interval;
                 return chunk.clone();
             }
         }
 
         for chunk in chunks.iter() {
-            chunk.state.lock().expire_members(now);
+            chunk.state.lock().expire_members(now, poll.interval);
         }
         chunks.retain(|chunk| !chunk.state.lock().members.is_empty());
         let capacity = poll.max_keys.max(1);
@@ -286,7 +290,6 @@ impl BatchPrecheck {
             Member {
                 key: poll.key.clone(),
                 last_poll: now,
-                interval: poll.interval,
             },
         );
         chunk
