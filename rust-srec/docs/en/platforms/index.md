@@ -48,20 +48,22 @@ Bilibili and Twitch can report whether many streamers are live in a single reque
 
 With it on, rust-srec asks the platform about up to 100 of its streamers at once, and uses the answer for the routine check of each streamer that is not recording:
 
-- A streamer the answer shows as offline is not checked on its own; that check is done.
+- A streamer the answer shows as offline counts as checked, with no request of its own.
 - A streamer the answer shows as live gets the usual full check, and recording starts as usual.
-- If the request fails, or the answer leaves a streamer out, those streamers are checked one by one as before.
+- If the batch request fails, or the answer leaves a streamer out, those streamers are checked one by one, as without the setting.
 
 An answer is reused for up to a quarter of the check interval (**Streamer Check**, 60 seconds by default). With 250 Bilibili streamers at the default interval, that is about 12 requests a minute instead of more than 250, which makes rate limits and platform anti-abuse checks less likely.
 
 What you give up:
 
 - A stream start can be noticed up to a quarter of the check interval later than without the setting: up to 75 seconds instead of 60 at the default interval.
-- The shared request is made without an account. A streamer checked with a logged-in account still uses that account once it is live, but an expired login on that account may only be noticed when the streamer goes live, not while it is offline.
+- The batch request is made without an account. A streamer checked with a logged-in account still uses that account once it is live, but an expired login on that account may only be noticed when the streamer goes live, not while it is offline.
 
 Batch detection never ends a recording. A streamer that is recording, or whose stream is being confirmed as ended, is always checked on its own, and so are streamers whose extractor is set to Streamlink.
 
-A template's platform override or a streamer's **Platform options** tab can set it differently, for example to turn it off for one streamer whose stream start must be caught as early as possible. Checks answered by a batch request are drawn differently in the streamer's check history, and their tooltip says so.
+A template's platform override or a streamer's **Platform options** tab can set it differently. The switch there shows the template's or streamer's own value, not the platform's, so to turn it off for a streamer while the platform has it on, switch it on and then off again.
+
+Checks answered by a batch request are drawn differently in the streamer's check history, and their tooltip says so.
 
 ### Stream Inspection
 
