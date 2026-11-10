@@ -12,8 +12,15 @@
 //!
 //! Media is served at `<page>/live.flv` as a chunked body the test feeds with
 //! [`FakeRoom::push`] and closes with [`FakeRoom::end`] or [`FakeRoom::reset`].
+//!
+//! The platform also has a batch status probe. Its key for a room is
+//! `127.0.0.1:<port>/<room>`, so the static registration reaches whichever
+//! server a test started, and it asks `/__srec_batch__?rooms=<a>,<b>` for every
+//! room at once. A room answering an error is left out of the batch answer;
+//! [`FakePlatform::fail_batch_calls`] makes the endpoint fail.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Once};
 
 use axum::body::Body;
@@ -21,6 +28,7 @@ use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use bytes::Bytes;
 use futures::channel::mpsc;
+use platforms_parser::extractor::batch_status::{BatchPresence, BatchStatusProbe};
 use platforms_parser::extractor::error::ExtractorError;
 use platforms_parser::extractor::factory::register_platform;
 use platforms_parser::extractor::platform_extractor::{Extractor, PlatformExtractor};
@@ -37,6 +45,7 @@ pub const FAKE_PLATFORM_NAME: &str = "Fake";
 /// The `platform_config` row [`super::Seed`] adds for the fake platform.
 pub const FAKE_PLATFORM_ID: &str = "platform-fake";
 const PATH_PREFIX: &str = "/__srec_fake__/";
+const BATCH_PATH: &str = "/__srec_batch__";
 const URL_PATTERN: &str = r"^http://127\.0\.0\.1:\d{1,5}/__srec_fake__/[A-Za-z0-9_-]+$";
 
 /// Every `kind` [`FakeRoom::set_error`] accepts: the categories of the
@@ -75,10 +84,54 @@ fn register() {
                 }
                 Box::new(FakeExtractor { extractor })
             },
-            None,
+            Some(&FakeBatchProbe),
         )
         .expect("register the fake platform");
     });
+}
+
+struct FakeBatchProbe;
+
+#[async_trait::async_trait]
+impl BatchStatusProbe for FakeBatchProbe {
+    fn max_keys(&self) -> usize {
+        100
+    }
+
+    fn key_for_url(&self, url: &str) -> Option<String> {
+        let (origin, room) = url.strip_prefix("http://")?.split_once(PATH_PREFIX)?;
+        Some(format!("{origin}/{room}"))
+    }
+
+    async fn probe(
+        &self,
+        client: &reqwest::Client,
+        keys: &[String],
+    ) -> Result<HashMap<String, BatchPresence>, ExtractorError> {
+        let mut rooms_by_origin = BTreeMap::<&str, Vec<&str>>::new();
+        for key in keys {
+            let (origin, room) = key
+                .split_once('/')
+                .ok_or_else(|| ExtractorError::ValidationError(format!("bad key {key:?}")))?;
+            rooms_by_origin.entry(origin).or_default().push(room);
+        }
+        let mut presence = HashMap::new();
+        for (origin, rooms) in rooms_by_origin {
+            let url = format!("http://{origin}{BATCH_PATH}?rooms={}", rooms.join(","));
+            let response = client.get(url).send().await?;
+            let text = ExtractorError::check_response(response)?.text().await?;
+            let answers: HashMap<String, bool> = serde_json::from_str(&text)?;
+            presence.extend(answers.into_iter().map(|(room, live)| {
+                let state = if live {
+                    BatchPresence::Live
+                } else {
+                    BatchPresence::Offline
+                };
+                (format!("{origin}/{room}"), state)
+            }));
+        }
+        Ok(presence)
+    }
 }
 
 struct FakeExtractor {
@@ -215,6 +268,7 @@ pub struct FakePlatform {
 struct Shared {
     rooms: Mutex<HashMap<String, Arc<Room>>>,
     requests: Mutex<Vec<ReceivedRequest>>,
+    batch_failing: AtomicBool,
 }
 
 impl Shared {
@@ -300,6 +354,19 @@ impl FakePlatform {
             .clone()
     }
 
+    /// How many batch status requests have arrived.
+    pub fn batch_calls(&self) -> usize {
+        self.requests()
+            .iter()
+            .filter(|request| request.path.split('?').next() == Some(BATCH_PATH))
+            .count()
+    }
+
+    /// Answer batch status requests with 503 from now on.
+    pub fn fail_batch_calls(&self) {
+        self.shared.batch_failing.store(true, Ordering::SeqCst);
+    }
+
     /// The requests for `room`'s `resource` (`status` or `live.flv`).
     pub fn requests_to(&self, room: &FakeRoom, resource: &str) -> Vec<ReceivedRequest> {
         let path = format!("{}/{resource}", room.path);
@@ -318,6 +385,15 @@ impl Drop for FakePlatform {
 
 async fn serve(shared: &Shared, request: axum::extract::Request) -> Response {
     let request = ReceivedRequest::from_axum(request).await;
+    if let Some(query) = request.path.strip_prefix(BATCH_PATH) {
+        let response = batch_response(shared, query);
+        shared
+            .requests
+            .lock()
+            .expect("request log lock")
+            .push(request);
+        return response;
+    }
     let resource = request
         .path
         .split('?')
@@ -335,6 +411,31 @@ async fn serve(shared: &Shared, request: axum::extract::Request) -> Response {
         Some((room, resource)) if resource == "live.flv" => room.open_media(),
         _ => StatusCode::NOT_FOUND.into_response(),
     }
+}
+
+/// Live (`true`) or offline (`false`) for each room `?rooms=a,b` names that
+/// is not answering an error.
+fn batch_response(shared: &Shared, query: &str) -> Response {
+    if shared.batch_failing.load(Ordering::SeqCst) {
+        return (StatusCode::SERVICE_UNAVAILABLE, "batch unavailable").into_response();
+    }
+    let rooms = query
+        .strip_prefix("?rooms=")
+        .map(|rooms| rooms.split(',').filter(|room| !room.is_empty()))
+        .into_iter()
+        .flatten();
+    let answers: Map<String, Value> = rooms
+        .filter_map(|name| {
+            let room = shared.room(name);
+            let live = match &*room.status.lock().expect("room status lock") {
+                Status::Offline => false,
+                Status::Live(live) => live.get("live").and_then(Value::as_bool).unwrap_or(false),
+                Status::Error { .. } => return None,
+            };
+            Some((name.to_owned(), json!(live)))
+        })
+        .collect();
+    axum::Json(Value::Object(answers)).into_response()
 }
 
 impl Room {

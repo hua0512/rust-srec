@@ -25,6 +25,7 @@ mod log_event;
 
 mod auth;
 mod backup;
+mod batch_detection;
 mod config;
 mod control;
 mod credential_providers;

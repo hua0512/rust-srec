@@ -7,6 +7,7 @@
 //! - State transitions and session management
 //! - Emitting events for the notification system
 
+mod batch_precheck;
 pub(crate) mod check_history_writer;
 mod detector;
 mod events;
