@@ -16,6 +16,9 @@ env:
   CARGO_PROFILE_DEV_DEBUG: 0
   CARGO_PROFILE_TEST_DEBUG: 0
   CARGO_INCREMENTAL: 0
+  # Only main saves compiler caches. A release saved several GB under its tag,
+  # which no later run reads, and evicted the main caches pull requests use.
+  SCCACHE_GHA_RW_MODE: READ_ONLY
 
 jobs:
   check-and-test:
@@ -33,7 +36,9 @@ jobs:
       - uses: taiki-e/install-action@nextest
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: ci
+          # Main saves this cache from the Linux Test Suite job in pr.yml.
+          shared-key: pr-test
+          save-if: false
       - name: Check
         run: cargo check -p mesio --locked --features tls-native-fallback
       - name: Clippy
