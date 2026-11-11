@@ -56,23 +56,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-      - name: Enable sccache
-        if: runner.os != 'macOS' || runner.arch == 'ARM64'
-        shell: pwsh
-        run: |
-          "RUSTC_WRAPPER=sccache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "SCCACHE_GHA_ENABLED=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-      - uses: mozilla-actions/sccache-action@v0.0.11
-        if: runner.os != 'macOS' || runner.arch == 'ARM64'
-        with:
-          version: "v0.19.0"
+      # No compiler caches: fat LTO with one codegen unit re-optimises the
+      # whole program, so cached dependencies save only a few minutes. Release
+      # tags cannot read caches saved by other branches, and the per-target
+      # caches would take about 4 GB of the repository's 10 GB Actions cache,
+      # evicting the main-branch caches that pull request checks restore.
       - uses: ./.github/actions/setup-rust
         with:
           target: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: binaries
-          key: ${{ matrix.target }}
       - name: Install build dependencies on Linux
         if: contains(matrix.os, 'ubuntu') && !contains(matrix.target, 'musl')
         run: |
@@ -111,6 +102,3 @@ jobs:
           name: binaries-${{ matrix.target }}
           path: upload/
           if-no-files-found: error
-      - name: sccache stats
-        if: always() && (runner.os != 'macOS' || runner.arch == 'ARM64')
-        run: sccache --show-stats || true
