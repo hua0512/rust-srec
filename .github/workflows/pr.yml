@@ -82,15 +82,19 @@ jobs:
       # cancel the others, some of which are required to merge.
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-          - os: ubuntu-22.04-arm
-          - os: windows-latest
-          - os: macos-15-intel
-          - os: macos-latest
+        os: [ubuntu-latest, ubuntu-22.04-arm, windows-latest, macos-15-intel, macos-latest]
+        exclude:
+          # Intel macOS runs after merge only. The account runs at most five
+          # macOS jobs at once, and an Intel job on every pull request kept
+          # macos-latest, the slowest platform a merge waits for, queued for a runner.
+          - os: ${{ github.event_name == 'pull_request' && 'macos-15-intel' || 'none' }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
+      # macOS runners vary in CPU and memory, and test time varies with them.
+      - name: Show macOS runner resources
+        if: runner.os == 'macOS'
+        run: sysctl hw.ncpu hw.memsize vm.swapusage
       - name: Enable sccache
         if: runner.os != 'macOS' || runner.arch == 'ARM64'
         shell: pwsh
