@@ -2669,7 +2669,9 @@ async fn a_step_timeout_fails_a_job_that_outlives_it() {
     assert_eq!(failed["status"], "FAILED", "{failed}");
     let timed_out = job(&app, &token, &step_job_id(&failed, "wait")).await;
     let error = timed_out["error_message"].as_str().unwrap_or_default();
-    assert!(error.starts_with("Job timed out after 1s"), "{timed_out}");
+    // The pool's job timeout and the command's own timeout share the step's
+    // deadline, so either may report it.
+    assert!(error.contains("timed out after 1s"), "{timed_out}");
 
     app.shutdown().await;
 }

@@ -875,23 +875,26 @@ async fn concurrent_health_change_after_reservation_prevents_stale_account_extra
             },
         );
         tokio::pin!(operation);
-        // Keep driving the operation until it parks on the platform backoff.
-        // The in-memory fixture has one connection, so stopping mid-query
-        // would leave the health write below waiting for that connection.
+        // The in-memory fixture has one connection, so the operation is
+        // driven alongside everything below: left suspended mid-query, it
+        // would hold the connection the health write needs.
+        while !service.cursors.lock().contains_key(&policy.generation) {
+            tokio::select! {
+                _ = &mut operation => panic!("platform backoff must hold extraction"),
+                () = tokio::time::sleep(Duration::from_millis(10)) => {},
+            }
+        }
+        let health = repository.publish_health(
+            &profiles[0],
+            CredentialValidity::Invalid,
+            Some(HealthReason::LoginRequired),
+            false,
+        );
+        tokio::pin!(health);
         tokio::select! {
             _ = &mut operation => panic!("platform backoff must hold extraction"),
-            () = tokio::time::sleep(Duration::from_millis(200)) => {},
+            published = &mut health => published.unwrap(),
         }
-        assert!(service.cursors.lock().contains_key(&policy.generation));
-        repository
-            .publish_health(
-                &profiles[0],
-                CredentialValidity::Invalid,
-                Some(HealthReason::LoginRequired),
-                false,
-            )
-            .await
-            .unwrap();
         let result = operation.await.unwrap();
         assert_eq!(result.value, "account=B");
         assert_eq!(*used.lock(), vec!["account=B"]);

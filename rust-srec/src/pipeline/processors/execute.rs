@@ -549,9 +549,10 @@ impl Processor for ExecuteCommandProcessor {
             Ok(Ok(output)) => output,
             Ok(Err(e)) => return Err(e),
             Err(_) => {
-                ctx.error(format!("Command timed out after {}s", timeout.as_secs()));
+                let message = format!("Command timed out after {}s", timeout.as_secs());
+                ctx.error(message.clone());
                 // Dropping the command future terminates its contained process tree.
-                return Err(crate::Error::Other("Command timed out".to_string()));
+                return Err(crate::Error::Other(message));
             }
         };
 
