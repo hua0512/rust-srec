@@ -136,7 +136,7 @@ fn substitute_argument<'a>(template: &str, resolve: impl Fn(&str) -> Option<&'a 
 
 /// Processor for executing shell commands or programs with literal arguments.
 pub struct ExecuteCommandProcessor {
-    /// Command timeout in seconds.
+    /// Command timeout in seconds, unless the workflow step sets its own.
     timeout_secs: u64,
 }
 
@@ -533,8 +533,11 @@ impl Processor for ExecuteCommandProcessor {
         let started_at = std::time::SystemTime::now();
 
         // Execute command and capture logs (with timeout)
+        let timeout = ctx
+            .step_timeout
+            .unwrap_or(std::time::Duration::from_secs(self.timeout_secs));
         let command_output_result = tokio::time::timeout(
-            std::time::Duration::from_secs(self.timeout_secs),
+            timeout,
             crate::pipeline::processors::utils::run_command_with_logs(
                 &mut cmd,
                 Some(ctx.log_sink.clone()),
@@ -546,7 +549,7 @@ impl Processor for ExecuteCommandProcessor {
             Ok(Ok(output)) => output,
             Ok(Err(e)) => return Err(e),
             Err(_) => {
-                ctx.error(format!("Command timed out after {}s", self.timeout_secs));
+                ctx.error(format!("Command timed out after {}s", timeout.as_secs()));
                 // Dropping the command future terminates its contained process tree.
                 return Err(crate::Error::Other("Command timed out".to_string()));
             }
@@ -801,15 +804,19 @@ mod tests {
 
     #[tokio::test]
     async fn program_failure_and_timeout_fail_the_job() {
-        for (mode, timeout, expected_error) in [
-            ("__fail__", 10, "exit code: 7"),
-            ("__wait__", 1, "timed out"),
+        // The last case's step timeout must replace the processor's default.
+        for (mode, timeout, step_timeout, expected_error) in [
+            ("__fail__", 10, None, "exit code: 7"),
+            ("__wait__", 1, None, "timed out"),
+            ("__wait__", 3600, Some(1), "timed out"),
         ] {
             let dir = tempfile::tempdir().unwrap();
             let input = argument_helper_input(&dir.path().join("arguments.json"), &[mode]);
+            let ctx = ProcessorContext::noop("program-failure")
+                .with_step_timeout(step_timeout.map(std::time::Duration::from_secs));
             let error = ExecuteCommandProcessor::new()
                 .with_timeout(timeout)
-                .process(&input, &ProcessorContext::noop("program-failure"))
+                .process(&input, &ctx)
                 .await
                 .unwrap_err();
             assert!(error.to_string().contains(expected_error), "{error}");

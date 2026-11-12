@@ -55,7 +55,7 @@
 | `queue_freshness_threshold_ms` | 单位为毫秒。当某项录制在并发队列中等待时间超过该阈值时，rust-srec 会在启动前重新检查主播以刷新流地址和请求头。对签名 URL 会在几分钟内过期的平台尤其有用。设为 `0` 表示每次排队等待都刷新。 | `60000`（60 秒） |
 | `pipeline_cpu_job_timeout_secs` | 单个 CPU 密集型流水线任务的最长运行时间，超时即取消（最小 `1`） | `3600` |
 | `pipeline_io_job_timeout_secs` | 单个 I/O 密集型流水线任务（包括上传）的最长运行时间，超时即取消（最小 `1`） | `3600` |
-| `pipeline_execute_timeout_secs` | `execute` 处理器命令的最长运行时间（最小 `1`） | `3600` |
+| `pipeline_execute_timeout_secs` | `execute` 处理器命令的最长运行时间，工作流步骤设置了 `timeout_secs` 时以后者为准（最小 `1`） | `3600` |
 | `gpu_health_probe_interval_secs` | GPU 健康监视器调用 `nvidia-smi` 探测的间隔秒数；修改在下一次探测时生效（最小 `1`） | `30` |
 
 由哪个提取器解析流地址是与 `default_download_engine` 相互独立的设置，此处不提供，需要在平台、模板或主播层级配置。参见[引擎与提取器选择](./configuration-overrides.md#引擎与提取器选择)。
