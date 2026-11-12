@@ -471,11 +471,12 @@ impl ConfigEventHandler {
                                 .set_interval(global.gpu_health_probe_interval_secs.max(0) as u64);
                         }
 
-                        // Wire CPU/IO pipeline job concurrency knobs (best-effort).
+                        // Wire CPU/IO/upload pipeline job concurrency knobs (best-effort).
                         let cpu_jobs = autoscale_concurrency_limit(global.max_concurrent_cpu_jobs);
                         let io_jobs = autoscale_concurrency_limit(global.max_concurrent_io_jobs);
+                        let uploads = autoscale_concurrency_limit(global.max_concurrent_uploads);
                         self.pipeline_manager
-                            .set_worker_concurrency(cpu_jobs, io_jobs);
+                            .set_worker_concurrency(cpu_jobs, io_jobs, uploads);
                     }
                     Err(e) => {
                         warn!(

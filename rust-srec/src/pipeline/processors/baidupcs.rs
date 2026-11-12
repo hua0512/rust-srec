@@ -957,9 +957,13 @@ impl Default for BaiduPcsProcessor {
 #[async_trait]
 impl Processor for BaiduPcsProcessor {
     fn processor_type(&self) -> ProcessorType {
+        ProcessorType::Upload
+    }
+
+    fn runs_one_at_a_time(&self) -> bool {
         // BaiduPCS-Go's upload database in its config directory is
         // single-writer.
-        ProcessorType::SerialIo
+        true
     }
 
     fn job_types(&self) -> Vec<&'static str> {

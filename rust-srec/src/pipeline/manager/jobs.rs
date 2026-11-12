@@ -117,7 +117,7 @@ where
             .stalled_operations(STALLED_OPERATION_THRESHOLD);
         operations.extend(self.io_pool.stalled_operations(STALLED_OPERATION_THRESHOLD));
         operations.extend(
-            self.serial_io_pool
+            self.upload_pool
                 .stalled_operations(STALLED_OPERATION_THRESHOLD),
         );
         operations.sort_by_key(|operation| operation.ended_at);

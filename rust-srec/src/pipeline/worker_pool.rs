@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::future::Future;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use tokio::sync::broadcast;
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use tokio::sync::{Notify, broadcast};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
@@ -245,12 +245,12 @@ fn emit_event(event_tx: Option<&broadcast::Sender<PipelineEvent>>, event: Pipeli
 pub enum WorkerType {
     /// CPU-bound worker (remux, thumbnail).
     Cpu,
-    /// IO-bound worker (upload, file operations).
+    /// IO-bound worker (file operations).
     Io,
-    /// The one worker that runs [`ProcessorType::SerialIo`] jobs.
+    /// Worker that runs [`ProcessorType::Upload`] jobs.
     ///
-    /// [`ProcessorType::SerialIo`]: crate::pipeline::ProcessorType::SerialIo
-    SerialIo,
+    /// [`ProcessorType::Upload`]: crate::pipeline::ProcessorType::Upload
+    Upload,
 }
 
 impl std::fmt::Display for WorkerType {
@@ -258,7 +258,7 @@ impl std::fmt::Display for WorkerType {
         match self {
             WorkerType::Cpu => write!(f, "CPU"),
             WorkerType::Io => write!(f, "IO"),
-            WorkerType::SerialIo => write!(f, "Serial IO"),
+            WorkerType::Upload => write!(f, "Upload"),
         }
     }
 }
@@ -399,6 +399,63 @@ struct WorkerPermit {
     concurrency: Arc<WorkerConcurrency>,
 }
 
+/// The pool-wide turn for jobs of processors that run one job at a time.
+#[derive(Default)]
+struct OneAtATime {
+    held: AtomicBool,
+    /// A worker found the turn held and claimed without those job types.
+    missed: AtomicBool,
+}
+
+/// A held [`OneAtATime`] turn. Released on drop, so an aborted or panicking
+/// worker cannot keep it.
+struct OneAtATimeTurn {
+    state: Arc<OneAtATime>,
+    notifier: Arc<Notify>,
+}
+
+impl OneAtATimeTurn {
+    fn try_take(state: &Arc<OneAtATime>, notifier: &Arc<Notify>) -> Option<Self> {
+        // SeqCst on `held` and `missed` here and in `pass_on`: either this
+        // worker sees the turn released, or `pass_on` sees the miss and wakes it.
+        loop {
+            if state
+                .held
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                return Some(Self {
+                    state: Arc::clone(state),
+                    notifier: Arc::clone(notifier),
+                });
+            }
+            state.missed.store(true, Ordering::SeqCst);
+            if state.held.load(Ordering::SeqCst) {
+                return None;
+            }
+        }
+    }
+
+    /// Release a turn the claimed job does not need. A worker that missed it
+    /// may have parked with backoff while a one-at-a-time job waits, so wake
+    /// the workers instead of leaving that job to its next poll. Only a
+    /// successful claim passes a turn on, so this cannot wake workers in a loop.
+    fn pass_on(self) {
+        let state = Arc::clone(&self.state);
+        let notifier = Arc::clone(&self.notifier);
+        drop(self);
+        if state.missed.swap(false, Ordering::SeqCst) {
+            notifier.notify_waiters();
+        }
+    }
+}
+
+impl Drop for OneAtATimeTurn {
+    fn drop(&mut self) {
+        self.state.held.store(false, Ordering::SeqCst);
+    }
+}
+
 /// Active accounting must settle even when a worker is aborted or panics.
 struct ActiveWorkerGuard<'a>(&'a AtomicUsize);
 
@@ -513,6 +570,27 @@ impl WorkerPool {
             .map(|s| s.to_string())
             .collect();
         let supported_job_types = Arc::new(supported_job_types);
+        // Job types of processors that run one job at a time. A worker may claim
+        // them only while it holds `one_at_a_time`; otherwise it claims from
+        // `other_job_types`. Claiming in one queue keeps those jobs in queue
+        // order with the rest of the pool's work, and a job waiting for its turn
+        // holds no worker.
+        let one_at_a_time_job_types: Arc<Vec<String>> = Arc::new(
+            processors
+                .iter()
+                .filter(|p| p.runs_one_at_a_time())
+                .flat_map(|p| p.job_types())
+                .map(str::to_string)
+                .collect(),
+        );
+        let other_job_types: Arc<Vec<String>> = Arc::new(
+            supported_job_types
+                .iter()
+                .filter(|t| !one_at_a_time_job_types.contains(t))
+                .cloned()
+                .collect(),
+        );
+        let one_at_a_time = Arc::new(OneAtATime::default());
 
         if self.config.adaptive.enabled {
             let initial = self
@@ -539,6 +617,9 @@ impl WorkerPool {
                 let processors = processors.clone();
                 let notifier = job_queue.notifier();
                 let supported_job_types = supported_job_types.clone();
+                let one_at_a_time_job_types = one_at_a_time_job_types.clone();
+                let other_job_types = other_job_types.clone();
+                let one_at_a_time = one_at_a_time.clone();
                 let active_workers = active_workers.clone();
                 let avg_runtime_ms = avg_runtime_ms.clone();
                 let dag_scheduler = dag_scheduler.clone();
@@ -575,26 +656,48 @@ impl WorkerPool {
                         }
 
                         if let Some(permit) = concurrency.try_acquire() {
-                            let filter_types = if supported_job_types.is_empty() {
+                            let turn = if one_at_a_time_job_types.is_empty() {
                                 None
                             } else {
-                                Some(supported_job_types.as_slice())
+                                OneAtATimeTurn::try_take(&one_at_a_time, &notifier)
                             };
-                            let claimed = match job_queue.dequeue(filter_types).await {
-                                Ok(claimed) => claimed,
-                                Err(e) => {
-                                    error!("Error dequeuing job: {}", e);
-                                    None
+                            let filter_types = if supported_job_types.is_empty() {
+                                None
+                            } else if turn.is_some() {
+                                Some(supported_job_types.as_slice())
+                            } else {
+                                Some(other_job_types.as_slice())
+                            };
+                            let claimed = if filter_types.is_some_and(<[String]>::is_empty) {
+                                None
+                            } else {
+                                match job_queue.dequeue(filter_types).await {
+                                    Ok(claimed) => claimed,
+                                    Err(e) => {
+                                        error!("Error dequeuing job: {}", e);
+                                        None
+                                    }
                                 }
                             };
 
                             if let Some(job) = claimed {
+                                // Keep the turn only for the job that needs it.
+                                let turn = match turn {
+                                    Some(turn)
+                                        if !one_at_a_time_job_types.contains(&job.job_type) =>
+                                    {
+                                        turn.pass_on();
+                                        None
+                                    }
+                                    turn => turn,
+                                };
                                 current_poll_interval = poll_interval;
                                 debug!(
                                     "{} worker {} processing job {} ({})",
                                     worker_type, i, job.id, job.job_type
                                 );
                                 runner.run(job).await;
+                                drop(turn);
                                 drop(permit);
                                 // A cache-backed queue and a short processor may both
                                 // finish without yielding. Keep other tasks responsive
@@ -1815,6 +1918,109 @@ mod tests {
         })
         .await
         .unwrap();
+    }
+
+    /// Reports each started job's type and waits for its release.
+    struct GatedUploadProcessor {
+        job_type: &'static str,
+        one_at_a_time: bool,
+        started: tokio::sync::mpsc::UnboundedSender<(String, tokio::sync::oneshot::Sender<()>)>,
+    }
+
+    #[async_trait]
+    impl Processor for GatedUploadProcessor {
+        fn processor_type(&self) -> ProcessorType {
+            ProcessorType::Upload
+        }
+        fn runs_one_at_a_time(&self) -> bool {
+            self.one_at_a_time
+        }
+        fn job_types(&self) -> Vec<&'static str> {
+            vec![self.job_type]
+        }
+        fn name(&self) -> &'static str {
+            self.job_type
+        }
+        async fn process(
+            &self,
+            _input: &ProcessorInput,
+            _ctx: &ProcessorContext,
+        ) -> crate::Result<ProcessorOutput> {
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+            self.started
+                .send((self.job_type.to_string(), release_tx))
+                .unwrap();
+            release_rx.await.unwrap();
+            Ok(ProcessorOutput::default())
+        }
+    }
+
+    #[tokio::test]
+    async fn one_at_a_time_jobs_wait_without_holding_a_worker() {
+        let queue = Arc::new(JobQueue::with_repository(
+            Default::default(),
+            crate::database::test_support::job_repository().await,
+        ));
+        let pool = WorkerPool::with_config(
+            WorkerType::Upload,
+            WorkerPoolConfig {
+                max_workers: 2,
+                poll_interval_ms: 1,
+                ..Default::default()
+            },
+        );
+        // Distinct creation times fix the claim order, so a pool that claims the
+        // second serial job before the parallel one always fails below.
+        let created = chrono::Utc::now();
+        for (i, job_type) in ["serial", "serial", "parallel"].into_iter().enumerate() {
+            let mut job = Job::new(job_type, vec![], vec![], "streamer", "session");
+            job.created_at = created + chrono::Duration::milliseconds(i as i64);
+            queue.enqueue(job).await.unwrap();
+        }
+        let (started_tx, mut started_rx) = tokio::sync::mpsc::unbounded_channel();
+        pool.start(
+            queue,
+            vec![
+                Arc::new(GatedUploadProcessor {
+                    job_type: "serial",
+                    one_at_a_time: true,
+                    started: started_tx.clone(),
+                }),
+                Arc::new(GatedUploadProcessor {
+                    job_type: "parallel",
+                    one_at_a_time: false,
+                    started: started_tx,
+                }),
+            ],
+        );
+
+        let mut running = Vec::new();
+        for _ in 0..2 {
+            running.push(
+                tokio::time::timeout(WAIT, started_rx.recv())
+                    .await
+                    .unwrap()
+                    .unwrap(),
+            );
+        }
+        // With two workers, the parallel job starts only if the queued second
+        // serial job is not claimed by (and blocking) the other worker.
+        let mut types: Vec<_> = running.iter().map(|(t, _)| t.as_str()).collect();
+        types.sort_unstable();
+        assert_eq!(types, ["parallel", "serial"]);
+
+        let serial = running.iter().position(|(t, _)| t == "serial").unwrap();
+        running.remove(serial).1.send(()).unwrap();
+        let (next, release) = tokio::time::timeout(WAIT, started_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(next, "serial");
+        release.send(()).unwrap();
+        running.pop().unwrap().1.send(()).unwrap();
+
+        wait_for_admissions(&pool, 0).await;
+        tokio::time::timeout(WAIT, pool.stop()).await.unwrap();
     }
 
     #[tokio::test]

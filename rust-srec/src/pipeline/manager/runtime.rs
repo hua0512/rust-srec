@@ -28,12 +28,12 @@ where
         // pool claims would stay pending forever.
         let mut cpu_processors: Vec<Arc<dyn Processor>> = Vec::new();
         let mut io_processors: Vec<Arc<dyn Processor>> = Vec::new();
-        let mut serial_io_processors: Vec<Arc<dyn Processor>> = Vec::new();
+        let mut upload_processors: Vec<Arc<dyn Processor>> = Vec::new();
         for processor in &self.processors {
             match processor.processor_type() {
                 ProcessorType::Cpu => cpu_processors.push(processor.clone()),
                 ProcessorType::Io => io_processors.push(processor.clone()),
-                ProcessorType::SerialIo => serial_io_processors.push(processor.clone()),
+                ProcessorType::Upload => upload_processors.push(processor.clone()),
             }
         }
 
@@ -46,8 +46,8 @@ where
             io_processors.iter().map(|p| p.name()).collect::<Vec<_>>()
         );
         info!(
-            "Starting Serial IO pool with processors: {:?}",
-            serial_io_processors
+            "Starting Upload pool with processors: {:?}",
+            upload_processors
                 .iter()
                 .map(|p| p.name())
                 .collect::<Vec<_>>()
@@ -149,9 +149,9 @@ where
             Some(dag_notify_tx.clone()),
             Some(self.event_tx.clone()),
         );
-        self.serial_io_pool.start_with_dag_scheduler(
+        self.upload_pool.start_with_dag_scheduler(
             self.job_queue.clone(),
-            serial_io_processors,
+            upload_processors,
             self.dag_scheduler.clone(),
             Some(dag_notify_tx),
             Some(self.event_tx.clone()),
@@ -192,7 +192,7 @@ where
         tokio::join!(
             self.cpu_pool.stop(),
             self.io_pool.stop(),
-            self.serial_io_pool.stop()
+            self.upload_pool.stop()
         );
 
         // Workers are the only producers of DAG completion and progress
@@ -231,12 +231,12 @@ where
             std::mem::take(&mut runtime.tasks)
         };
 
-        let (cpu_aborted, io_aborted, serial_io_aborted) = tokio::join!(
+        let (cpu_aborted, io_aborted, upload_aborted) = tokio::join!(
             self.cpu_pool.abort(deadline),
             self.io_pool.abort(deadline),
-            self.serial_io_pool.abort(deadline)
+            self.upload_pool.abort(deadline)
         );
-        let mut aborted = cpu_aborted + io_aborted + serial_io_aborted;
+        let mut aborted = cpu_aborted + io_aborted + upload_aborted;
 
         aborted += runtime_tasks.len();
         runtime_tasks.abort_all();

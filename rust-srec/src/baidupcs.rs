@@ -8,7 +8,7 @@
 //! the write side) against reads (`upload`/`who`/`quota` take the read
 //! side). Each `upload` also writes the shared upload database, so the
 //! pipeline runs uploads one at a time
-//! ([`crate::pipeline::ProcessorType::SerialIo`]).
+//! ([`crate::pipeline::Processor::runs_one_at_a_time`]).
 
 use std::collections::HashMap;
 use std::process::Stdio;

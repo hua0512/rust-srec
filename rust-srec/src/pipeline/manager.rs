@@ -174,6 +174,10 @@ pub struct PipelineManagerConfig {
     pub cpu_pool: WorkerPoolConfig,
     /// IO worker pool configuration.
     pub io_pool: WorkerPoolConfig,
+    /// Worker count of the upload pool. The pool otherwise uses `io_pool`'s
+    /// settings, including its job timeout.
+    #[serde(default = "default_max_concurrent_uploads")]
+    pub max_concurrent_uploads: usize,
 
     /// Throttle controller configuration.
     #[serde(default)]
@@ -183,6 +187,10 @@ pub struct PipelineManagerConfig {
     /// This is enforced inside the processor (in addition to worker pool timeouts).
     #[serde(default = "default_execute_timeout_secs")]
     pub execute_timeout_secs: u64,
+}
+
+fn default_max_concurrent_uploads() -> usize {
+    3
 }
 
 fn default_execute_timeout_secs() -> u64 {
@@ -201,6 +209,7 @@ impl Default for PipelineManagerConfig {
                 max_workers: 4,
                 ..Default::default()
             },
+            max_concurrent_uploads: default_max_concurrent_uploads(),
 
             throttle: ThrottleConfig::default(),
             execute_timeout_secs: default_execute_timeout_secs(),
@@ -253,8 +262,8 @@ pub struct PipelineManager<
     cpu_pool: WorkerPool,
     /// IO worker pool.
     io_pool: WorkerPool,
-    /// One-worker pool for [`ProcessorType::SerialIo`] processors.
-    serial_io_pool: WorkerPool,
+    /// Pool for [`ProcessorType::Upload`] processors.
+    upload_pool: WorkerPool,
     /// Processors.
     processors: Vec<Arc<dyn Processor>>,
     /// Event broadcaster.
@@ -334,45 +343,36 @@ where
         self.job_queue.output_files_gate.clone()
     }
 
-    /// Adjust CPU/IO worker pool concurrency at runtime.
+    /// Adjust CPU, IO and upload worker pool concurrency at runtime.
     ///
     /// Notes:
     /// - New admissions use the limit immediately; already-admitted jobs finish normally.
     /// - It cannot increase beyond each pool's `max_workers()` without restarting the manager.
-    pub fn set_worker_concurrency(&self, cpu_jobs: usize, io_jobs: usize) {
-        let cpu_jobs = cpu_jobs.max(1);
-        let io_jobs = io_jobs.max(1);
-
-        let cpu_max = self.cpu_pool.max_workers();
-        let io_max = self.io_pool.max_workers();
-
-        let applied_cpu = self.cpu_pool.set_desired_max_workers(cpu_jobs);
-        let applied_io = self.io_pool.set_desired_max_workers(io_jobs);
-
-        if applied_cpu != cpu_jobs {
-            tracing::warn!(
-                requested = cpu_jobs,
-                applied = applied_cpu,
-                max_workers = cpu_max,
-                "CPU worker pool concurrency was clamped; restart is required to increase max_workers"
-            );
+    pub fn set_worker_concurrency(&self, cpu_jobs: usize, io_jobs: usize, uploads: usize) {
+        for (pool, requested) in [
+            (&self.cpu_pool, cpu_jobs),
+            (&self.io_pool, io_jobs),
+            (&self.upload_pool, uploads),
+        ] {
+            let requested = requested.max(1);
+            let previous = pool.desired_max_workers();
+            let applied = pool.set_desired_max_workers(requested);
+            if applied != requested {
+                tracing::warn!(
+                    pool = %pool.worker_type(),
+                    requested,
+                    applied,
+                    max_workers = pool.max_workers(),
+                    "Worker pool concurrency was clamped; restart is required to increase max_workers"
+                );
+            } else if applied != previous {
+                tracing::info!(
+                    pool = %pool.worker_type(),
+                    applied,
+                    "Updated pipeline worker pool concurrency"
+                );
+            }
         }
-        if applied_io != io_jobs {
-            tracing::warn!(
-                requested = io_jobs,
-                applied = applied_io,
-                max_workers = io_max,
-                "IO worker pool concurrency was clamped; restart is required to increase max_workers"
-            );
-        }
-
-        tracing::info!(
-            cpu_requested = cpu_jobs,
-            cpu_applied = applied_cpu,
-            io_requested = io_jobs,
-            io_applied = applied_io,
-            "Updated pipeline worker pool concurrency"
-        );
     }
 
     /// Create a persistent pipeline manager with startup job recovery.
@@ -414,10 +414,10 @@ where
         Self {
             cpu_pool: WorkerPool::with_config(WorkerType::Cpu, config.cpu_pool.clone()),
             io_pool: WorkerPool::with_config(WorkerType::Io, config.io_pool.clone()),
-            serial_io_pool: WorkerPool::with_config(
-                WorkerType::SerialIo,
+            upload_pool: WorkerPool::with_config(
+                WorkerType::Upload,
                 WorkerPoolConfig {
-                    max_workers: 1,
+                    max_workers: config.max_concurrent_uploads.max(1),
                     ..config.io_pool.clone()
                 },
             ),

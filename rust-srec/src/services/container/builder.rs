@@ -379,12 +379,14 @@ impl ServiceContainer {
         };
 
         // Create pipeline manager with job repository for database persistence.
-        // Wire global-config concurrency knobs into CPU/IO worker pool sizes.
+        // Wire global-config concurrency knobs into CPU/IO/upload worker pool sizes.
         let mut effective_pipeline_config = pipeline_config;
         effective_pipeline_config.cpu_pool.max_workers =
             autoscale_concurrency_limit(global_config.max_concurrent_cpu_jobs);
         effective_pipeline_config.io_pool.max_workers =
             autoscale_concurrency_limit(global_config.max_concurrent_io_jobs);
+        effective_pipeline_config.max_concurrent_uploads =
+            autoscale_concurrency_limit(global_config.max_concurrent_uploads);
 
         // Apply global-config pipeline timeouts (startup-only).
         effective_pipeline_config.cpu_pool.job_timeout_secs =
