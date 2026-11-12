@@ -212,7 +212,7 @@ trait BaiduPcsCommandRunner: Send + Sync {
     /// has exited.
     async fn run(
         &self,
-        command: &mut Command,
+        command: Command,
         context: &ProcessorContext,
         tracker: Option<Arc<UploadTracker>>,
         config_lease: &ConfigLease,
@@ -242,31 +242,28 @@ struct ProcessBaiduPcsCommandRunner;
 impl BaiduPcsCommandRunner for ProcessBaiduPcsCommandRunner {
     async fn run(
         &self,
-        command: &mut Command,
+        mut command: Command,
         context: &ProcessorContext,
         tracker: Option<Arc<UploadTracker>>,
         config_lease: &ConfigLease,
     ) -> Result<CommandOutput> {
-        let process_lease = process_lock().clone().lock_owned().await;
+        let process_lease = match process_lock().clone().try_lock_owned() {
+            Ok(lease) => lease,
+            Err(_) => {
+                context.info("Waiting for the previous BaiduPCS-Go process to exit");
+                process_lock().clone().lock_owned().await
+            }
+        };
         let config_lease = Arc::clone(config_lease);
         let token = tokio_util::sync::CancellationToken::new();
         // Dropping this future (job cancellation or timeout) stops the
         // process; the task below keeps both leases until it has exited.
         let _stop_on_drop = token.clone().drop_guard();
-        let mut command = std::mem::replace(command, Command::new(""));
         let log_sink = context.log_sink.clone();
         tokio::spawn(async move {
-            let mut stop = super::utils::CommandStop::new(token);
-            let result =
-                super::utils::run_baidupcs_with_logs(&mut command, tracker, Some(log_sink), &mut stop)
-                    .await;
-            if stop.exit_unconfirmed {
-                error!(
-                    "BaiduPCS-Go may still be running after it was stopped; further BaiduPCS-Go commands wait until rust-srec restarts"
-                );
-                std::mem::forget((process_lease, config_lease));
-            }
-            result
+            let _leases = (process_lease, config_lease);
+            super::utils::run_baidupcs_with_logs(&mut command, tracker, Some(log_sink), &token)
+                .await
         })
         .await
         .map_err(|error| crate::Error::Other(format!("BaiduPCS-Go task failed: {error}")))?
@@ -858,7 +855,7 @@ impl BaiduPcsProcessor {
         cmd.arg("who");
         match self
             .command_runner
-            .run(&mut cmd, &ctx.without_job_log(), None, &lease)
+            .run(cmd, &ctx.without_job_log(), None, &lease)
             .await
         {
             Ok(output) => {
@@ -1212,9 +1209,9 @@ impl Processor for BaiduPcsProcessor {
                     &chunk,
                     &file_sizes,
                 ));
-                let run =
-                    self.command_runner
-                        .run(&mut cmd, ctx, Some(tracker.clone()), &config_lease);
+                let run = self
+                    .command_runner
+                    .run(cmd, ctx, Some(tracker.clone()), &config_lease);
                 let command_output = match tracker.report_while(run).await {
                     Ok(output) => output,
                     Err(e) => {
@@ -1508,7 +1505,7 @@ mod tests {
     impl BaiduPcsCommandRunner for MockBaiduPcsCommandRunner {
         async fn run(
             &self,
-            command: &mut Command,
+            command: Command,
             context: &ProcessorContext,
             tracker: Option<Arc<UploadTracker>>,
             _config_lease: &ConfigLease,

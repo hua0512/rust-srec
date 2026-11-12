@@ -532,36 +532,21 @@ async fn run_logged_command(
     run_logged_command_until(command, mode, log_sink, None).await
 }
 
-/// How long [`CommandStop`] waits for a stopped process tree to be reaped.
+/// How long a stopped command's process tree gets to be reaped before
+/// [`run_logged_command_until`] logs that it is still waiting.
 const STOPPED_COMMAND_REAP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
-/// Stops a running command on request and records whether its process exit
-/// was confirmed, for callers that must not start another process before then.
-pub(super) struct CommandStop {
-    token: tokio_util::sync::CancellationToken,
-    /// The stopped process tree was not reaped within the timeout, so it may
-    /// still be running.
-    pub(super) exit_unconfirmed: bool,
-}
-
-impl CommandStop {
-    pub(super) fn new(token: tokio_util::sync::CancellationToken) -> Self {
-        Self {
-            token,
-            exit_unconfirmed: false,
-        }
-    }
-}
-
 /// [`run_logged_command`] that, once `stop` is cancelled, terminates the
-/// process tree and waits for the direct child to be reaped before returning.
+/// process tree and returns only after the direct child has been reaped, for
+/// callers that must not start another process before then. A child stuck in
+/// the kernel (for example on a stalled network mount) is waited for as long
+/// as it takes.
 async fn run_logged_command_until(
     command: &mut Command,
     mode: CommandMode,
     log_sink: Option<JobLogSink>,
-    mut stop: Option<&mut CommandStop>,
+    stop: Option<&tokio_util::sync::CancellationToken>,
 ) -> crate::Result<CommandOutput> {
-    let stop_token = stop.as_ref().map(|stop| stop.token.clone());
     let start = std::time::Instant::now();
     command.stdin(Stdio::null());
     command.stdout(if matches!(&mode, CommandMode::Rclone(_)) {
@@ -607,7 +592,7 @@ async fn run_logged_command_until(
     loop {
         tokio::select! {
             () = async {
-                match &stop_token {
+                match stop {
                     Some(token) => token.cancelled().await,
                     None => std::future::pending().await,
                 }
@@ -636,13 +621,13 @@ async fn run_logged_command_until(
     }
     if stopped {
         drop(wait_fut);
-        drop((stdout_handle, stderr_handle));
+        drop((stdout_handle, stderr_handle, log_sink));
         let deadline = tokio::time::Instant::now() + STOPPED_COMMAND_REAP_TIMEOUT;
-        if let Err(error) = child.terminate_tree_until(deadline).await
-            && let Some(stop) = stop.as_mut()
-        {
-            warn!(%error, "Stopped command was not reaped in time");
-            stop.exit_unconfirmed = true;
+        if let Err(error) = child.terminate_tree_until(deadline).await {
+            warn!(%error, "Stopped command has not exited yet; waiting for it");
+            if let Err(error) = child.wait().await {
+                warn!(%error, "Failed to wait for stopped command");
+            }
         }
         return Err(crate::Error::Other("Command stopped".to_owned()));
     }
@@ -1294,7 +1279,7 @@ pub(super) async fn run_baidupcs_with_logs(
     command: &mut Command,
     tracker: Option<Arc<UploadTracker>>,
     log_sink: Option<JobLogSink>,
-    stop: &mut CommandStop,
+    stop: &tokio_util::sync::CancellationToken,
 ) -> crate::Result<CommandOutput> {
     run_logged_command_until(
         command,
