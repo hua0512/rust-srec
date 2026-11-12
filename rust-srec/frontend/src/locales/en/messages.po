@@ -2215,7 +2215,7 @@ msgstr "Compression / Archive"
 msgid "Compression Level"
 msgstr "Compression Level"
 
-#: src/components/config/global/concurrency-card.tsx:76
+#: src/components/config/global/concurrency-card.tsx:97
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:284
 msgid "Concurrency"
 msgstr "Concurrency"
@@ -2224,7 +2224,7 @@ msgstr "Concurrency"
 msgid "Concurrency limit reached"
 msgstr "Concurrency limit reached"
 
-#: src/components/config/global/concurrency-card.tsx:65
+#: src/components/config/global/concurrency-card.tsx:86
 msgid "Concurrency limits, pipeline timeouts, and engine defaults."
 msgstr "Concurrency limits, pipeline timeouts, and engine defaults."
 
@@ -2575,11 +2575,11 @@ msgstr "Counts stay exact while a stream has fewer distinct chatters than this. 
 msgid "Covers LAN restreamers, cameras and tailnet addresses. Leave this off unless you stream from local sources: it re-opens requests to internal addresses for any signed-in user."
 msgstr "Covers LAN restreamers, cameras and tailnet addresses. Leave this off unless you stream from local sources: it re-opens requests to internal addresses for any signed-in user."
 
-#: src/components/config/global/concurrency-card.tsx:263
+#: src/components/config/global/concurrency-card.tsx:298
 msgid "CPU Job"
 msgstr "CPU Job"
 
-#: src/components/config/global/concurrency-card.tsx:266
+#: src/components/config/global/concurrency-card.tsx:301
 msgid "CPU Job Timeout"
 msgstr "CPU Job Timeout"
 
@@ -3007,7 +3007,7 @@ msgstr "Default ({fallback})"
 msgid "Default Douyu quality"
 msgstr "Default Douyu quality"
 
-#: src/components/config/global/concurrency-card.tsx:378
+#: src/components/config/global/concurrency-card.tsx:413
 msgid "Default Engine"
 msgstr "Default Engine"
 
@@ -3883,7 +3883,7 @@ msgstr "Endpoint Configuration"
 msgid "Engine"
 msgstr "Engine"
 
-#: src/components/config/global/concurrency-card.tsx:369
+#: src/components/config/global/concurrency-card.tsx:404
 msgid "Engine & Hardware"
 msgstr "Engine & Hardware"
 
@@ -3915,7 +3915,7 @@ msgstr "Engine Type"
 msgid "Engine updated successfully"
 msgstr "Engine updated successfully"
 
-#: src/components/config/global/concurrency-card.tsx:401
+#: src/components/config/global/concurrency-card.tsx:436
 msgid "Engine used for downloads when not specified by platform/streamer."
 msgstr "Engine used for downloads when not specified by platform/streamer."
 
@@ -4094,7 +4094,7 @@ msgstr "Exclude streams from these CDN providers entirely. Press Enter to add."
 msgid "Excluded from the frequent-words chart, on top of the built-in list. One per line."
 msgstr "Excluded from the frequent-words chart, on top of the built-in list. One per line."
 
-#: src/components/config/global/concurrency-card.tsx:322
+#: src/components/config/global/concurrency-card.tsx:357
 msgid "Execute"
 msgstr "Execute"
 
@@ -4103,11 +4103,11 @@ msgstr "Execute"
 msgid "Execute Command"
 msgstr "Execute Command"
 
-#: src/components/config/global/concurrency-card.tsx:325
+#: src/components/config/global/concurrency-card.tsx:360
 msgid "Execute Timeout"
 msgstr "Execute Timeout"
 
-#: src/components/config/global/concurrency-card.tsx:63
+#: src/components/config/global/concurrency-card.tsx:84
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:70
 msgid "Execution"
 msgstr "Execution"
@@ -5115,8 +5115,8 @@ msgstr "Gotify application token"
 msgid "GPU"
 msgstr "GPU"
 
-#: src/components/config/global/concurrency-card.tsx:416
-#: src/components/config/global/concurrency-card.tsx:419
+#: src/components/config/global/concurrency-card.tsx:451
+#: src/components/config/global/concurrency-card.tsx:454
 msgid "GPU Health Probe Interval"
 msgstr "GPU Health Probe Interval"
 
@@ -5343,7 +5343,7 @@ msgstr "How files that already exist at the destination are handled (--policy). 
 msgid "How long a live stream may deliver no data before the recording fails."
 msgstr "How long a live stream may deliver no data before the recording fails."
 
-#: src/components/config/global/concurrency-card.tsx:247
+#: src/components/config/global/concurrency-card.tsx:282
 msgid "How long a pipeline step may run before it is cancelled. These are read when the worker pools are built, so a change needs a restart."
 msgstr "How long a pipeline step may run before it is cancelled. These are read when the worker pools are built, so a change needs a restart."
 
@@ -5359,11 +5359,11 @@ msgstr "How many appear in the ranking. 1–500."
 msgid "How many appear in the word chart. 1–500."
 msgstr "How many appear in the word chart. 1–500."
 
-#: src/components/config/global/concurrency-card.tsx:149
+#: src/components/config/global/concurrency-card.tsx:170
 msgid "How many CPU-bound pipeline steps, such as transcodes, may run at the same time. Raising this past your core count slows every job down."
 msgstr "How many CPU-bound pipeline steps, such as transcodes, may run at the same time. Raising this past your core count slows every job down."
 
-#: src/components/config/global/concurrency-card.tsx:179
+#: src/components/config/global/concurrency-card.tsx:200
 msgid "How many disk-bound pipeline steps, such as moves and copies, may run at the same time."
 msgstr "How many disk-bound pipeline steps, such as moves and copies, may run at the same time."
 
@@ -5371,7 +5371,7 @@ msgstr "How many disk-bound pipeline steps, such as moves and copies, may run at
 msgid "How many files rclone uploads in parallel."
 msgstr "How many files rclone uploads in parallel."
 
-#: src/components/config/global/concurrency-card.tsx:121
+#: src/components/config/global/concurrency-card.tsx:142
 msgid "How many pipeline upload steps may run at the same time."
 msgstr "How many pipeline upload steps may run at the same time."
 
@@ -5383,15 +5383,15 @@ msgstr "How many requests can briefly burst above TPS Limit before throttling ki
 msgid "How many segments are held while waiting for earlier ones."
 msgstr "How many segments are held while waiting for earlier ones."
 
-#: src/components/config/global/concurrency-card.tsx:91
+#: src/components/config/global/concurrency-card.tsx:112
 msgid "How many streamers may record at the same time. Recordings past this limit wait in the queue until a slot frees up."
 msgstr "How many streamers may record at the same time. Recordings past this limit wait in the queue until a slot frees up."
 
-#: src/components/config/global/concurrency-card.tsx:443
+#: src/components/config/global/concurrency-card.tsx:478
 msgid "How often nvidia-smi is polled to confirm the GPU is still reachable."
 msgstr "How often nvidia-smi is polled to confirm the GPU is still reachable."
 
-#: src/components/config/global/concurrency-card.tsx:422
+#: src/components/config/global/concurrency-card.tsx:457
 msgid "How often rust-srec runs nvidia-smi to detect when the container loses GPU access (a known NVIDIA Container Toolkit issue on cgroup v2 hosts). Only active when nvidia-smi is available; otherwise the GPU row is not registered. Default 30 seconds. Changes apply on the next probe, with no restart required. Values below 30 seconds are discouraged."
 msgstr "How often rust-srec runs nvidia-smi to detect when the container loses GPU access (a known NVIDIA Container Toolkit issue on cgroup v2 hosts). Only active when nvidia-smi is available; otherwise the GPU row is not registered. Default 30 seconds. Changes apply on the next probe, with no restart required. Values below 30 seconds are discouraged."
 
@@ -5688,11 +5688,11 @@ msgstr "Invalid JSON: {error}"
 msgid "Invalid URL"
 msgstr "Invalid URL"
 
-#: src/components/config/global/concurrency-card.tsx:291
+#: src/components/config/global/concurrency-card.tsx:326
 msgid "IO Job"
 msgstr "IO Job"
 
-#: src/components/config/global/concurrency-card.tsx:294
+#: src/components/config/global/concurrency-card.tsx:329
 msgid "IO Job Timeout"
 msgstr "IO Job Timeout"
 
@@ -5748,7 +5748,7 @@ msgstr "Job Presets"
 msgid "Job retry initiated"
 msgstr "Job retry initiated"
 
-#: src/components/config/global/concurrency-card.tsx:245
+#: src/components/config/global/concurrency-card.tsx:280
 msgid "Job Timeouts"
 msgstr "Job Timeouts"
 
@@ -6209,6 +6209,10 @@ msgstr "Low-latency GPU-accelerated H.264 encoding for real-time applications. M
 msgid "Lower value = Higher Quality"
 msgstr "Lower value = Higher Quality"
 
+#: src/components/config/global/concurrency-card.tsx:226
+msgid "Lowering Max Uploads, Max CPU Jobs or Max IO Jobs applies right away. Raising one above the value rust-srec started with takes effect after a restart."
+msgstr "Lowering Max Uploads, Max CPU Jobs or Max IO Jobs applies right away. Raising one above the value rust-srec started with takes effect after a restart."
+
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:47
 msgid "Lowest (0)"
 msgstr "Lowest (0)"
@@ -6307,8 +6311,8 @@ msgstr "Max Attempts"
 msgid "Max Bitrate (bps)"
 msgstr "Max Bitrate (bps)"
 
-#: src/components/config/global/concurrency-card.tsx:144
-#: src/components/config/global/concurrency-card.tsx:147
+#: src/components/config/global/concurrency-card.tsx:165
+#: src/components/config/global/concurrency-card.tsx:168
 msgid "Max CPU Jobs"
 msgstr "Max CPU Jobs"
 
@@ -6316,8 +6320,8 @@ msgstr "Max CPU Jobs"
 msgid "Max Delay (ms)"
 msgstr "Max Delay (ms)"
 
-#: src/components/config/global/concurrency-card.tsx:86
-#: src/components/config/global/concurrency-card.tsx:89
+#: src/components/config/global/concurrency-card.tsx:107
+#: src/components/config/global/concurrency-card.tsx:110
 msgid "Max Downloads"
 msgstr "Max Downloads"
 
@@ -6330,8 +6334,8 @@ msgstr "Max Duration"
 msgid "Max HEVC Compression"
 msgstr "Max HEVC Compression"
 
-#: src/components/config/global/concurrency-card.tsx:173
-#: src/components/config/global/concurrency-card.tsx:176
+#: src/components/config/global/concurrency-card.tsx:194
+#: src/components/config/global/concurrency-card.tsx:197
 msgid "Max IO Jobs"
 msgstr "Max IO Jobs"
 
@@ -6370,8 +6374,8 @@ msgstr "Max Stall Duration (ms)"
 msgid "Max transactions/second to the remote API (--tpslimit)."
 msgstr "Max transactions/second to the remote API (--tpslimit)."
 
-#: src/components/config/global/concurrency-card.tsx:115
-#: src/components/config/global/concurrency-card.tsx:118
+#: src/components/config/global/concurrency-card.tsx:136
+#: src/components/config/global/concurrency-card.tsx:139
 msgid "Max Uploads"
 msgstr "Max Uploads"
 
@@ -8004,7 +8008,7 @@ msgstr "Pipeline Statistics"
 msgid "Pipeline Structure"
 msgstr "Pipeline Structure"
 
-#: src/components/config/global/concurrency-card.tsx:242
+#: src/components/config/global/concurrency-card.tsx:277
 msgid "Pipeline Timeouts"
 msgstr "Pipeline Timeouts"
 
@@ -8520,8 +8524,8 @@ msgstr "Queued"
 msgid "Queued for download"
 msgstr "Queued for download"
 
-#: src/components/config/global/concurrency-card.tsx:204
-#: src/components/config/global/concurrency-card.tsx:207
+#: src/components/config/global/concurrency-card.tsx:239
+#: src/components/config/global/concurrency-card.tsx:242
 msgid "Queued Refresh Threshold"
 msgstr "Queued Refresh Threshold"
 
@@ -9107,7 +9111,7 @@ msgstr "Resources"
 msgid "Restart Required"
 msgstr "Restart Required"
 
-#: src/components/config/global/concurrency-card.tsx:356
+#: src/components/config/global/concurrency-card.tsx:391
 msgid "Restart rust-srec after saving for the new timeouts to take effect."
 msgstr "Restart rust-srec after saving for the new timeouts to take effect."
 
@@ -9633,7 +9637,7 @@ msgstr "Segments downloaded at once."
 msgid "Select"
 msgstr "Select"
 
-#: src/components/config/global/concurrency-card.tsx:388
+#: src/components/config/global/concurrency-card.tsx:423
 msgid "Select a default engine"
 msgstr "Select a default engine"
 
@@ -11143,15 +11147,15 @@ msgstr "Timeout"
 msgid "Timeout (seconds)"
 msgstr "Timeout (seconds)"
 
-#: src/components/config/global/concurrency-card.tsx:328
+#: src/components/config/global/concurrency-card.tsx:363
 msgid "Timeout before cancelling `execute` processor commands."
 msgstr "Timeout before cancelling `execute` processor commands."
 
-#: src/components/config/global/concurrency-card.tsx:268
+#: src/components/config/global/concurrency-card.tsx:303
 msgid "Timeout before cancelling CPU-bound processors."
 msgstr "Timeout before cancelling CPU-bound processors."
 
-#: src/components/config/global/concurrency-card.tsx:297
+#: src/components/config/global/concurrency-card.tsx:332
 msgid "Timeout before cancelling IO-bound processors."
 msgstr "Timeout before cancelling IO-bound processors."
 
@@ -12050,7 +12054,7 @@ msgstr "Welcome back"
 msgid "What happens when a segment is missing or the stream stops advancing."
 msgstr "What happens when a segment is missing or the stream stops advancing."
 
-#: src/components/config/global/concurrency-card.tsx:210
+#: src/components/config/global/concurrency-card.tsx:245
 msgid "When a recording has been waiting in the concurrency queue longer than this, rust-srec re-checks the streamer to refresh stream URLs and headers before starting. Below this threshold the URLs captured at the original live event are reused. Default 60 seconds. Set to 0 to refresh on every queue wait."
 msgstr "When a recording has been waiting in the concurrency queue longer than this, rust-srec re-checks the streamer to refresh stream URLs and headers before starting. Below this threshold the URLs captured at the original live event are reused. Default 60 seconds. Set to 0 to refresh on every queue wait."
 

@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { useFormState } from 'react-hook-form';
+import { useFormState, useWatch } from 'react-hook-form';
 import { SettingsCard } from '../settings-card';
 import {
   FormControl,
@@ -42,6 +42,12 @@ import {
 } from '@/components/config/shared/config-field';
 import { enginesQueryOptions } from '@/api/engines';
 
+const POOL_LIMIT_FIELDS = [
+  'max_concurrent_cpu_jobs',
+  'max_concurrent_io_jobs',
+  'max_concurrent_uploads',
+] as const;
+
 export const ConcurrencyCard = memo(() => {
   const { i18n } = useLingui();
   const { data: enginesData, isLoading: enginesLoading } =
@@ -49,12 +55,27 @@ export const ConcurrencyCard = memo(() => {
 
   // The pipeline timeouts are read when the worker pools are built, which currently only happens
   // at startup, so a save alone does not apply them. Warn once any of the three is edited.
-  const { dirtyFields } = useFormState();
+  const { dirtyFields, defaultValues } = useFormState();
   const restartRequired = Boolean(
     dirtyFields?.pipeline_cpu_job_timeout_secs ||
     dirtyFields?.pipeline_io_job_timeout_secs ||
     dirtyFields?.pipeline_execute_timeout_secs,
   );
+
+  // Worker pools are sized at startup, so a saved limit above that size only applies after a
+  // restart; lowering applies at once. The startup size is not known here, so warn on any
+  // increase, including a change to or from 0 (Auto).
+  const poolLimits = useWatch({ name: POOL_LIMIT_FIELDS });
+  const poolLimitRaised = POOL_LIMIT_FIELDS.some((name, i) => {
+    const saved = defaultValues?.[name];
+    const current = poolLimits[i];
+    return (
+      typeof saved === 'number' &&
+      typeof current === 'number' &&
+      current !== saved &&
+      (saved === 0 || current === 0 || current > saved)
+    );
+  });
 
   const engines = enginesData || [];
 
@@ -195,6 +216,20 @@ export const ConcurrencyCard = memo(() => {
                 )}
               />
             </div>
+
+            {poolLimitRaised && (
+              <div
+                role="status"
+                className="flex items-start gap-2 rounded-xl border border-orange-500/30 bg-orange-500/10 px-3 py-2.5 text-xs font-medium text-orange-700 dark:text-orange-300"
+              >
+                <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+                <Trans>
+                  Lowering Max Uploads, Max CPU Jobs or Max IO Jobs applies
+                  right away. Raising one above the value rust-srec started with
+                  takes effect after a restart.
+                </Trans>
+              </div>
+            )}
 
             <FormField
               name="queue_freshness_threshold_ms"

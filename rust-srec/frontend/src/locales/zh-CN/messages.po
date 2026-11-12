@@ -2215,7 +2215,7 @@ msgstr "压缩/归档"
 msgid "Compression Level"
 msgstr "压缩级别"
 
-#: src/components/config/global/concurrency-card.tsx:76
+#: src/components/config/global/concurrency-card.tsx:97
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:284
 msgid "Concurrency"
 msgstr "并发"
@@ -2224,7 +2224,7 @@ msgstr "并发"
 msgid "Concurrency limit reached"
 msgstr "已达到并发限制"
 
-#: src/components/config/global/concurrency-card.tsx:65
+#: src/components/config/global/concurrency-card.tsx:86
 msgid "Concurrency limits, pipeline timeouts, and engine defaults."
 msgstr "并发限制、流水线超时与引擎默认值。"
 
@@ -2575,11 +2575,11 @@ msgstr "当一场直播的不同发言人数少于此值时，计数保持精确
 msgid "Covers LAN restreamers, cameras and tailnet addresses. Leave this off unless you stream from local sources: it re-opens requests to internal addresses for any signed-in user."
 msgstr "涵盖局域网转推、摄像头和 tailnet 地址。除非你从本地源拉流，否则请保持关闭：它会为任何已登录用户重新开放对内部地址的请求。"
 
-#: src/components/config/global/concurrency-card.tsx:263
+#: src/components/config/global/concurrency-card.tsx:298
 msgid "CPU Job"
 msgstr "CPU 任务"
 
-#: src/components/config/global/concurrency-card.tsx:266
+#: src/components/config/global/concurrency-card.tsx:301
 msgid "CPU Job Timeout"
 msgstr "CPU 任务超时"
 
@@ -3007,7 +3007,7 @@ msgstr "默认（{fallback}）"
 msgid "Default Douyu quality"
 msgstr "斗鱼默认画质"
 
-#: src/components/config/global/concurrency-card.tsx:378
+#: src/components/config/global/concurrency-card.tsx:413
 msgid "Default Engine"
 msgstr "默认引擎"
 
@@ -3883,7 +3883,7 @@ msgstr "端点配置"
 msgid "Engine"
 msgstr "引擎"
 
-#: src/components/config/global/concurrency-card.tsx:369
+#: src/components/config/global/concurrency-card.tsx:404
 msgid "Engine & Hardware"
 msgstr "引擎与硬件"
 
@@ -3915,7 +3915,7 @@ msgstr "引擎类型"
 msgid "Engine updated successfully"
 msgstr "引擎更新成功"
 
-#: src/components/config/global/concurrency-card.tsx:401
+#: src/components/config/global/concurrency-card.tsx:436
 msgid "Engine used for downloads when not specified by platform/streamer."
 msgstr "未在平台/主播中指定时使用的录制引擎。"
 
@@ -4094,7 +4094,7 @@ msgstr "完全排除这些 CDN 提供商的流。按回车键添加。"
 msgid "Excluded from the frequent-words chart, on top of the built-in list. One per line."
 msgstr "在内置列表之外，额外从高频词图表中排除的词。每行一个。"
 
-#: src/components/config/global/concurrency-card.tsx:322
+#: src/components/config/global/concurrency-card.tsx:357
 msgid "Execute"
 msgstr "执行"
 
@@ -4103,11 +4103,11 @@ msgstr "执行"
 msgid "Execute Command"
 msgstr "执行命令"
 
-#: src/components/config/global/concurrency-card.tsx:325
+#: src/components/config/global/concurrency-card.tsx:360
 msgid "Execute Timeout"
 msgstr "执行超时"
 
-#: src/components/config/global/concurrency-card.tsx:63
+#: src/components/config/global/concurrency-card.tsx:84
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:70
 msgid "Execution"
 msgstr "执行"
@@ -5115,8 +5115,8 @@ msgstr "Gotify 应用令牌"
 msgid "GPU"
 msgstr "GPU"
 
-#: src/components/config/global/concurrency-card.tsx:416
-#: src/components/config/global/concurrency-card.tsx:419
+#: src/components/config/global/concurrency-card.tsx:451
+#: src/components/config/global/concurrency-card.tsx:454
 msgid "GPU Health Probe Interval"
 msgstr "GPU 健康探测间隔"
 
@@ -5343,7 +5343,7 @@ msgstr "目标位置已有同名文件时的处理方式（--policy）。选择�
 msgid "How long a live stream may deliver no data before the recording fails."
 msgstr "直播流在录制失败前可以没有任何数据的时长。"
 
-#: src/components/config/global/concurrency-card.tsx:247
+#: src/components/config/global/concurrency-card.tsx:282
 msgid "How long a pipeline step may run before it is cancelled. These are read when the worker pools are built, so a change needs a restart."
 msgstr "流水线步骤在被取消前允许运行的时长。这些值在工作线程池创建时读取，因此修改后需要重启才能生效。"
 
@@ -5359,11 +5359,11 @@ msgstr "排行榜中显示的数量。范围 1–500。"
 msgid "How many appear in the word chart. 1–500."
 msgstr "词频图表中显示的数量。范围 1–500。"
 
-#: src/components/config/global/concurrency-card.tsx:149
+#: src/components/config/global/concurrency-card.tsx:170
 msgid "How many CPU-bound pipeline steps, such as transcodes, may run at the same time. Raising this past your core count slows every job down."
 msgstr "可同时运行的 CPU 密集型流水线步骤（如转码）数量。设置超过 CPU 核心数会拖慢所有任务。"
 
-#: src/components/config/global/concurrency-card.tsx:179
+#: src/components/config/global/concurrency-card.tsx:200
 msgid "How many disk-bound pipeline steps, such as moves and copies, may run at the same time."
 msgstr "可同时运行的磁盘密集型流水线步骤（如移动、复制）数量。"
 
@@ -5371,7 +5371,7 @@ msgstr "可同时运行的磁盘密集型流水线步骤（如移动、复制）
 msgid "How many files rclone uploads in parallel."
 msgstr "rclone 并行上传的文件数量。"
 
-#: src/components/config/global/concurrency-card.tsx:121
+#: src/components/config/global/concurrency-card.tsx:142
 msgid "How many pipeline upload steps may run at the same time."
 msgstr "可同时运行的流水线上传步骤数量。"
 
@@ -5383,15 +5383,15 @@ msgstr "在节流生效之前，可短时超出 TPS 限制的请求数量。"
 msgid "How many segments are held while waiting for earlier ones."
 msgstr "等待较早分段时最多保留多少分段。"
 
-#: src/components/config/global/concurrency-card.tsx:91
+#: src/components/config/global/concurrency-card.tsx:112
 msgid "How many streamers may record at the same time. Recordings past this limit wait in the queue until a slot frees up."
 msgstr "可同时录制的主播数量。超出此限制的录制会在队列中等待，直到有空闲名额。"
 
-#: src/components/config/global/concurrency-card.tsx:443
+#: src/components/config/global/concurrency-card.tsx:478
 msgid "How often nvidia-smi is polled to confirm the GPU is still reachable."
 msgstr "轮询 nvidia-smi 以确认 GPU 仍可访问的频率。"
 
-#: src/components/config/global/concurrency-card.tsx:422
+#: src/components/config/global/concurrency-card.tsx:457
 msgid "How often rust-srec runs nvidia-smi to detect when the container loses GPU access (a known NVIDIA Container Toolkit issue on cgroup v2 hosts). Only active when nvidia-smi is available; otherwise the GPU row is not registered. Default 30 seconds. Changes apply on the next probe, with no restart required. Values below 30 seconds are discouraged."
 msgstr "rust-srec 通过运行 nvidia-smi 来检测容器是否失去 GPU 访问权限(NVIDIA Container Toolkit 在 cgroup v2 主机上的已知问题)。仅在系统中存在 nvidia-smi 时启用,否则不会注册 GPU 行。默认 30 秒。修改会在下一次探测时生效,无需重启。不建议设置低于 30 秒。"
 
@@ -5688,11 +5688,11 @@ msgstr "JSON 格式有误：{error}"
 msgid "Invalid URL"
 msgstr "无效的 URL"
 
-#: src/components/config/global/concurrency-card.tsx:291
+#: src/components/config/global/concurrency-card.tsx:326
 msgid "IO Job"
 msgstr "IO 任务"
 
-#: src/components/config/global/concurrency-card.tsx:294
+#: src/components/config/global/concurrency-card.tsx:329
 msgid "IO Job Timeout"
 msgstr "IO 任务超时"
 
@@ -5748,7 +5748,7 @@ msgstr "任务预设"
 msgid "Job retry initiated"
 msgstr "已开始重试处理任务"
 
-#: src/components/config/global/concurrency-card.tsx:245
+#: src/components/config/global/concurrency-card.tsx:280
 msgid "Job Timeouts"
 msgstr "任务超时"
 
@@ -6209,6 +6209,10 @@ msgstr "用于实时应用的低延迟 GPU 加速 H.264 编码。编码延迟极
 msgid "Lower value = Higher Quality"
 msgstr "数值越低 = 质量越高"
 
+#: src/components/config/global/concurrency-card.tsx:226
+msgid "Lowering Max Uploads, Max CPU Jobs or Max IO Jobs applies right away. Raising one above the value rust-srec started with takes effect after a restart."
+msgstr "调低最大上传数、最大 CPU 任务数或最大 IO 任务数会立即生效；调高到超过 rust-srec 启动时的值则需要重启后才生效。"
+
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:47
 msgid "Lowest (0)"
 msgstr "最低画质 (0)"
@@ -6307,8 +6311,8 @@ msgstr "最大尝试次数"
 msgid "Max Bitrate (bps)"
 msgstr "最大比特率（bps）"
 
-#: src/components/config/global/concurrency-card.tsx:144
-#: src/components/config/global/concurrency-card.tsx:147
+#: src/components/config/global/concurrency-card.tsx:165
+#: src/components/config/global/concurrency-card.tsx:168
 msgid "Max CPU Jobs"
 msgstr "最大 CPU 任务数"
 
@@ -6316,8 +6320,8 @@ msgstr "最大 CPU 任务数"
 msgid "Max Delay (ms)"
 msgstr "最大延迟（ms）"
 
-#: src/components/config/global/concurrency-card.tsx:86
-#: src/components/config/global/concurrency-card.tsx:89
+#: src/components/config/global/concurrency-card.tsx:107
+#: src/components/config/global/concurrency-card.tsx:110
 msgid "Max Downloads"
 msgstr "最大并发录制数"
 
@@ -6330,8 +6334,8 @@ msgstr "最大时长"
 msgid "Max HEVC Compression"
 msgstr "最大 HEVC 压缩"
 
-#: src/components/config/global/concurrency-card.tsx:173
-#: src/components/config/global/concurrency-card.tsx:176
+#: src/components/config/global/concurrency-card.tsx:194
+#: src/components/config/global/concurrency-card.tsx:197
 msgid "Max IO Jobs"
 msgstr "最大 IO 任务数"
 
@@ -6370,8 +6374,8 @@ msgstr "最大停顿时间（毫秒）"
 msgid "Max transactions/second to the remote API (--tpslimit)."
 msgstr "对远端 API 的每秒最大事务数（--tpslimit）。"
 
-#: src/components/config/global/concurrency-card.tsx:115
-#: src/components/config/global/concurrency-card.tsx:118
+#: src/components/config/global/concurrency-card.tsx:136
+#: src/components/config/global/concurrency-card.tsx:139
 msgid "Max Uploads"
 msgstr "最大上传数"
 
@@ -8004,7 +8008,7 @@ msgstr "处理管道统计"
 msgid "Pipeline Structure"
 msgstr "处理管道结构"
 
-#: src/components/config/global/concurrency-card.tsx:242
+#: src/components/config/global/concurrency-card.tsx:277
 msgid "Pipeline Timeouts"
 msgstr "流水线超时"
 
@@ -8520,8 +8524,8 @@ msgstr "排队中"
 msgid "Queued for download"
 msgstr "等待下载"
 
-#: src/components/config/global/concurrency-card.tsx:204
-#: src/components/config/global/concurrency-card.tsx:207
+#: src/components/config/global/concurrency-card.tsx:239
+#: src/components/config/global/concurrency-card.tsx:242
 msgid "Queued Refresh Threshold"
 msgstr "排队刷新阈值"
 
@@ -9107,7 +9111,7 @@ msgstr "资源"
 msgid "Restart Required"
 msgstr "需要重启"
 
-#: src/components/config/global/concurrency-card.tsx:356
+#: src/components/config/global/concurrency-card.tsx:391
 msgid "Restart rust-srec after saving for the new timeouts to take effect."
 msgstr "保存后需重启 rust-srec，新的超时设置才会生效。"
 
@@ -9633,7 +9637,7 @@ msgstr "同时下载的分段数。"
 msgid "Select"
 msgstr "选择"
 
-#: src/components/config/global/concurrency-card.tsx:388
+#: src/components/config/global/concurrency-card.tsx:423
 msgid "Select a default engine"
 msgstr "选择默认引擎"
 
@@ -11143,15 +11147,15 @@ msgstr "超时"
 msgid "Timeout (seconds)"
 msgstr "超时（秒）"
 
-#: src/components/config/global/concurrency-card.tsx:328
+#: src/components/config/global/concurrency-card.tsx:363
 msgid "Timeout before cancelling `execute` processor commands."
 msgstr "取消 `execute` 处理器命令前的超时时间。"
 
-#: src/components/config/global/concurrency-card.tsx:268
+#: src/components/config/global/concurrency-card.tsx:303
 msgid "Timeout before cancelling CPU-bound processors."
 msgstr "取消 CPU 密集型处理器前的超时时间。"
 
-#: src/components/config/global/concurrency-card.tsx:297
+#: src/components/config/global/concurrency-card.tsx:332
 msgid "Timeout before cancelling IO-bound processors."
 msgstr "取消 IO 密集型处理器前的超时时间。"
 
@@ -12050,7 +12054,7 @@ msgstr "欢迎回来"
 msgid "What happens when a segment is missing or the stream stops advancing."
 msgstr "分段缺失或流停止推进时的处理方式。"
 
-#: src/components/config/global/concurrency-card.tsx:210
+#: src/components/config/global/concurrency-card.tsx:245
 msgid "When a recording has been waiting in the concurrency queue longer than this, rust-srec re-checks the streamer to refresh stream URLs and headers before starting. Below this threshold the URLs captured at the original live event are reused. Default 60 seconds. Set to 0 to refresh on every queue wait."
 msgstr "当一项录制在并发队列中等待时间超过该阈值时，rust-srec 会在启动前重新检查主播以获取新的流地址和请求头。低于此阈值时，会复用首次直播事件中捕获的 URL。默认 60 秒。设为 0 表示每次排队等待都刷新。"
 
