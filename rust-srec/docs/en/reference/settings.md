@@ -57,7 +57,7 @@ longer than what is tracked.
 | `queue_freshness_threshold_ms` | Milliseconds; when a recording has been waiting for a free slot longer than this, rust-srec re-checks the streamer to refresh stream URLs and headers before starting. Useful on platforms whose signed URLs expire within minutes. Set to `0` to refresh on every queue wait. | `60000` (60 s) |
 | `pipeline_cpu_job_timeout_secs` | Longest a single CPU-bound pipeline job may run before it is cancelled (minimum `1`) | `3600` |
 | `pipeline_io_job_timeout_secs` | Longest a single I/O-bound pipeline job, including uploads, may run before it is cancelled (minimum `1`) | `3600` |
-| `pipeline_execute_timeout_secs` | Longest an `execute` processor command may run (minimum `1`) | `3600` |
+| `pipeline_execute_timeout_secs` | Longest an `execute` processor command may run, unless its workflow step sets `timeout_secs` (minimum `1`) | `3600` |
 | `gpu_health_probe_interval_secs` | Seconds between `nvidia-smi` probes by the GPU health monitor; changes apply on the next probe (minimum `1`) | `30` |
 
 Which extractor resolves the stream URL is a separate setting from `default_download_engine`, is not exposed here, and is set per platform, template, or streamer. See [Engine and extractor selection](./configuration-overrides.md#engine-and-extractor-selection).

@@ -1165,10 +1165,8 @@ impl JobRunner {
                 .is_some_and(|info| info.current_processor.is_some());
 
         // A workflow step may set its own timeout; the pool default covers the rest.
-        let job_timeout = job
-            .timeout_secs
-            .map(std::time::Duration::from_secs)
-            .unwrap_or(self.job_timeout);
+        let step_timeout = job.timeout_secs.map(std::time::Duration::from_secs);
+        let job_timeout = step_timeout.unwrap_or(self.job_timeout);
 
         let facts = JobFacts {
             id: job.id.clone(),
@@ -1216,6 +1214,7 @@ impl JobRunner {
             processor_token.clone(),
         )
         .with_retry(is_retry)
+        .with_step_timeout(step_timeout)
         .with_staged_outputs(staged_outputs.clone());
 
         let outcome = self

@@ -192,6 +192,10 @@ pub struct ProcessorContext {
     pub log_sink: JobLogSink,
     pub cancellation_token: CancellationToken,
     pub is_retry: bool,
+    /// The workflow step's own timeout, when it sets one. It replaces both the
+    /// worker pool's job timeout and any processor-specific default, such as
+    /// the `execute` command timeout.
+    pub step_timeout: Option<std::time::Duration>,
     /// Records staged temporary files so a restart can list what an
     /// interrupted attempt left behind.
     pub(crate) staged_outputs: StagedOutputRecorder,
@@ -230,6 +234,7 @@ impl ProcessorContext {
             log_sink: JobLogSink::new(log_tx, dropped),
             cancellation_token: CancellationToken::new(),
             is_retry: false,
+            step_timeout: None,
             staged_outputs: StagedOutputRecorder::default(),
         }
     }
@@ -246,6 +251,7 @@ impl ProcessorContext {
             log_sink,
             cancellation_token,
             is_retry: false,
+            step_timeout: None,
             staged_outputs: StagedOutputRecorder::default(),
         }
     }
@@ -253,6 +259,12 @@ impl ProcessorContext {
     /// Mark this execution as a retry of a previously persisted job.
     pub fn with_retry(mut self, is_retry: bool) -> Self {
         self.is_retry = is_retry;
+        self
+    }
+
+    /// Set the workflow step's own timeout.
+    pub fn with_step_timeout(mut self, step_timeout: Option<std::time::Duration>) -> Self {
+        self.step_timeout = step_timeout;
         self
     }
 
@@ -274,6 +286,7 @@ impl ProcessorContext {
             log_sink: JobLogSink::new(log_tx, Arc::new(AtomicUsize::new(0))),
             cancellation_token: self.cancellation_token.clone(),
             is_retry: self.is_retry,
+            step_timeout: self.step_timeout,
             staged_outputs: self.staged_outputs.clone(),
         }
     }
