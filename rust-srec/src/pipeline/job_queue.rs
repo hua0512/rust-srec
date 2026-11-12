@@ -2476,7 +2476,7 @@ impl JobQueue {
     /// Wake workers after a job becomes runnable.
     ///
     /// `notify_waiters` wakes every currently parked worker, so every pool
-    /// (CPU, IO and the one-worker serial IO pool, which share this notifier
+    /// (CPU, IO and upload, which share this notifier
     /// but accept different job types) re-checks the queue. It stores no permit, so `notify_one` also
     /// runs for a worker that is mid-iteration and re-enters
     /// `Notify::notified` only after this call.

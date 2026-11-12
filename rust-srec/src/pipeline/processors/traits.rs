@@ -18,12 +18,12 @@ use crate::pipeline::staged_outputs::StagedOutputRecorder;
 pub enum ProcessorType {
     /// CPU-bound processor (remux, thumbnail).
     Cpu,
-    /// IO-bound processor (upload, file operations).
+    /// IO-bound processor (file operations).
     Io,
-    /// IO-bound processor whose jobs run one at a time, on one worker shared
-    /// by every such processor. A job waiting for its turn stays pending: it
-    /// holds no IO worker and its timeout has not started.
-    SerialIo,
+    /// Remote upload processor. Its jobs run on the upload pool, whose size is
+    /// the `max_concurrent_uploads` setting, so that setting caps every upload
+    /// tool together and uploads do not count against the IO job limit.
+    Upload,
 }
 
 /// Timestamp source for processor time placeholder expansion.
@@ -404,6 +404,14 @@ impl ProcessorOutput {
 pub trait Processor: Send + Sync {
     /// Get the processor type.
     fn processor_type(&self) -> ProcessorType;
+
+    /// Whether this processor's jobs share one turn with every other such
+    /// processor in its pool, so at most one of those jobs runs at a time. A
+    /// job waiting for its turn stays pending: it holds no worker and its
+    /// timeout has not started.
+    fn runs_one_at_a_time(&self) -> bool {
+        false
+    }
 
     /// Get the job types this processor can handle.
     fn job_types(&self) -> Vec<&'static str>;

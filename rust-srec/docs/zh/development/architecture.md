@@ -244,7 +244,7 @@ PipelineManager 是后处理引擎：
 
 - DB-backed job queue（支持重启恢复）
 - DAG 执行（fan-in / fan-out、fail-fast）
-- CPU/IO 分离的 worker pool，另有一个单 worker 的 pool 用于必须逐个运行的 BaiduPCS 上传
+- CPU、IO 与上传分离的 worker pool；上传 pool 的大小由**最大上传数**决定，BaiduPCS 上传在其中同一时间最多运行一个
 - 多阶段触发协调：
   - Segment pipeline（单个文件）
   - Paired-segment pipeline（同一分段的 视频 + 弹幕）

@@ -1142,7 +1142,7 @@ impl Default for RcloneProcessor {
 #[async_trait]
 impl Processor for RcloneProcessor {
     fn processor_type(&self) -> ProcessorType {
-        ProcessorType::Io
+        ProcessorType::Upload
     }
 
     fn job_types(&self) -> Vec<&'static str> {
