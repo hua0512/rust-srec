@@ -207,13 +207,33 @@ pub struct BaiduPcsProcessor {
 #[async_trait]
 trait BaiduPcsCommandRunner: Send + Sync {
     /// An `upload` invocation's output lines feed `tracker`; other commands
-    /// have none.
+    /// have none. `config_lease` is the caller's read side of
+    /// [`crate::baidupcs::cli_lock`]; the runner keeps it until the process
+    /// has exited.
     async fn run(
         &self,
-        command: &mut Command,
+        command: Command,
         context: &ProcessorContext,
         tracker: Option<Arc<UploadTracker>>,
+        config_lease: &ConfigLease,
     ) -> Result<CommandOutput>;
+}
+
+/// The read side of [`crate::baidupcs::cli_lock`], shared with the tasks that
+/// own running BaiduPCS-Go processes.
+type ConfigLease = Arc<tokio::sync::OwnedRwLockReadGuard<()>>;
+
+async fn config_lease() -> ConfigLease {
+    Arc::new(crate::baidupcs::cli_lock().clone().read_owned().await)
+}
+
+/// Held from spawning a BaiduPCS-Go process until it has exited. Its upload
+/// database is single-writer, and a cancelled or timed-out job ends before
+/// its killed process exits, so the next process must wait here rather than
+/// for the job.
+fn process_lock() -> &'static Arc<tokio::sync::Mutex<()>> {
+    static LOCK: std::sync::OnceLock<Arc<tokio::sync::Mutex<()>>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(Arc::default)
 }
 
 struct ProcessBaiduPcsCommandRunner;
@@ -222,11 +242,31 @@ struct ProcessBaiduPcsCommandRunner;
 impl BaiduPcsCommandRunner for ProcessBaiduPcsCommandRunner {
     async fn run(
         &self,
-        command: &mut Command,
+        mut command: Command,
         context: &ProcessorContext,
         tracker: Option<Arc<UploadTracker>>,
+        config_lease: &ConfigLease,
     ) -> Result<CommandOutput> {
-        super::utils::run_baidupcs_with_logs(command, tracker, Some(context.log_sink.clone())).await
+        let process_lease = match process_lock().clone().try_lock_owned() {
+            Ok(lease) => lease,
+            Err(_) => {
+                context.info("Waiting for the previous BaiduPCS-Go process to exit");
+                process_lock().clone().lock_owned().await
+            }
+        };
+        let config_lease = Arc::clone(config_lease);
+        let token = tokio_util::sync::CancellationToken::new();
+        // Dropping this future (job cancellation or timeout) stops the
+        // process; the task below keeps both leases until it has exited.
+        let _stop_on_drop = token.clone().drop_guard();
+        let log_sink = context.log_sink.clone();
+        tokio::spawn(async move {
+            let _leases = (process_lease, config_lease);
+            super::utils::run_baidupcs_with_logs(&mut command, tracker, Some(log_sink), &token)
+                .await
+        })
+        .await
+        .map_err(|error| crate::Error::Other(format!("BaiduPCS-Go task failed: {error}")))?
     }
 }
 
@@ -810,12 +850,12 @@ impl BaiduPcsProcessor {
         config: &BaiduPcsConfig,
         ctx: &ProcessorContext,
     ) -> bool {
-        let _guard = crate::baidupcs::cli_lock().read().await;
+        let lease = config_lease().await;
         let mut cmd = crate::baidupcs::base_command(binary_path, config.config_dir.as_deref());
         cmd.arg("who");
         match self
             .command_runner
-            .run(&mut cmd, &ctx.without_job_log(), None)
+            .run(cmd, &ctx.without_job_log(), None, &lease)
             .await
         {
             Ok(output) => {
@@ -1123,10 +1163,10 @@ impl Processor for BaiduPcsProcessor {
 
             // The read side of `cli_lock` keeps `login`/`logout` from
             // rewriting the session mid-upload.
-            let _config_guard = crate::baidupcs::cli_lock().read().await;
+            let config_lease = config_lease().await;
 
             // One invocation per chunk of paths that fits the command line;
-            // the guard above spans every chunk of this attempt.
+            // the lease above spans every chunk of this attempt.
             let chunks = chunk_by_argument_budget(&pending, self.upload_args_budget);
             if chunks.len() > 1 {
                 ctx.info(format!(
@@ -1171,7 +1211,7 @@ impl Processor for BaiduPcsProcessor {
                 ));
                 let run = self
                     .command_runner
-                    .run(&mut cmd, ctx, Some(tracker.clone()));
+                    .run(cmd, ctx, Some(tracker.clone()), &config_lease);
                 let command_output = match tracker.report_while(run).await {
                     Ok(output) => output,
                     Err(e) => {
@@ -1465,9 +1505,10 @@ mod tests {
     impl BaiduPcsCommandRunner for MockBaiduPcsCommandRunner {
         async fn run(
             &self,
-            command: &mut Command,
+            command: Command,
             context: &ProcessorContext,
             tracker: Option<Arc<UploadTracker>>,
+            _config_lease: &ConfigLease,
         ) -> Result<CommandOutput> {
             let args: Vec<String> = command
                 .as_std()

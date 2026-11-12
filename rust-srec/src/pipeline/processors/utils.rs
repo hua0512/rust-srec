@@ -522,10 +522,30 @@ async fn consume_command_stream<R: AsyncRead + Unpin>(
 /// Own the process tree and its pipe readers for the lifetime of the command.
 /// Worker cancellation and deadlines drop this future; containment then stops
 /// descendants and the reader guards close pipes without leaving detached tasks.
+/// Dropping only requests termination; callers that must know the process has
+/// exited use [`run_logged_command_until`].
 async fn run_logged_command(
     command: &mut Command,
     mode: CommandMode,
     log_sink: Option<JobLogSink>,
+) -> crate::Result<CommandOutput> {
+    run_logged_command_until(command, mode, log_sink, None).await
+}
+
+/// How long a stopped command's process tree gets to be reaped before
+/// [`run_logged_command_until`] logs that it is still waiting.
+const STOPPED_COMMAND_REAP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// [`run_logged_command`] that, once `stop` is cancelled, terminates the
+/// process tree and returns only after the direct child has been reaped, for
+/// callers that must not start another process before then. A child stuck in
+/// the kernel (for example on a stalled network mount) is waited for as long
+/// as it takes.
+async fn run_logged_command_until(
+    command: &mut Command,
+    mode: CommandMode,
+    log_sink: Option<JobLogSink>,
+    stop: Option<&tokio_util::sync::CancellationToken>,
 ) -> crate::Result<CommandOutput> {
     let start = std::time::Instant::now();
     command.stdin(Stdio::null());
@@ -567,9 +587,19 @@ async fn run_logged_command(
     let mut logs = VecDeque::new();
     let mut truncated_count = 0usize;
     let mut status = None;
+    let mut stopped = false;
     let mut wait_fut = Box::pin(child.wait());
     loop {
         tokio::select! {
+            () = async {
+                match stop {
+                    Some(token) => token.cancelled().await,
+                    None => std::future::pending().await,
+                }
+            }, if status.is_none() => {
+                stopped = true;
+                break;
+            }
             result = &mut wait_fut, if status.is_none() => {
                 status = Some(result.map_err(|error| crate::Error::Other(format!("Failed to wait for command: {error}")))?);
             }
@@ -581,13 +611,25 @@ async fn run_logged_command(
                     }
                     None => {
                         if status.is_none() {
-                            status = Some(wait_fut.await.map_err(|error| crate::Error::Other(format!("Failed to wait for command: {error}")))?);
+                            status = Some((&mut wait_fut).await.map_err(|error| crate::Error::Other(format!("Failed to wait for command: {error}")))?);
                         }
                         break;
                     }
                 }
             }
         }
+    }
+    if stopped {
+        drop(wait_fut);
+        drop((stdout_handle, stderr_handle, log_sink));
+        let deadline = tokio::time::Instant::now() + STOPPED_COMMAND_REAP_TIMEOUT;
+        if let Err(error) = child.terminate_tree_until(deadline).await {
+            warn!(%error, "Stopped command has not exited yet; waiting for it");
+            if let Err(error) = child.wait().await {
+                warn!(%error, "Failed to wait for stopped command");
+            }
+        }
+        return Err(crate::Error::Other("Command stopped".to_owned()));
     }
     let (stdout_result, stderr_result) = tokio::join!(
         wait_for_reader_task("command stdout", stdout_handle),
@@ -1237,8 +1279,15 @@ pub(super) async fn run_baidupcs_with_logs(
     command: &mut Command,
     tracker: Option<Arc<UploadTracker>>,
     log_sink: Option<JobLogSink>,
+    stop: &tokio_util::sync::CancellationToken,
 ) -> crate::Result<CommandOutput> {
-    run_logged_command(command, CommandMode::BaiduPcs(tracker), log_sink).await
+    run_logged_command_until(
+        command,
+        CommandMode::BaiduPcs(tracker),
+        log_sink,
+        Some(stop),
+    )
+    .await
 }
 
 #[cfg(test)]
