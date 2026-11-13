@@ -178,6 +178,9 @@ const LoginForm = memo(
                     {...field}
                     className="bg-background/50 lg:bg-background"
                     autoComplete="username"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                   />
                 </FormControl>
                 <FormMessage />
