@@ -403,6 +403,11 @@ export function sweepTerminatedDownloads(nowMs = Date.now()): void {
   }
 }
 
+// A hidden page holds its progress ticks until it is shown again (see
+// WebSocketProvider). A late tick for an ended download can be among them, so
+// the ended marker must outlive the hold or the flush would recreate the entry.
 if (typeof window !== 'undefined') {
-  setInterval(() => sweepTerminatedDownloads(), TERMINATED_SWEEP_INTERVAL_MS);
+  setInterval(() => {
+    if (!document.hidden) sweepTerminatedDownloads();
+  }, TERMINATED_SWEEP_INTERVAL_MS);
 }

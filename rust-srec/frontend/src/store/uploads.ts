@@ -478,6 +478,12 @@ export function sweepStaleUploads(nowMs = Date.now()): void {
   }
 }
 
+// A hidden page holds its progress ticks until it is shown again (see
+// WebSocketProvider), so its entries age while their jobs are still running.
+// Sweeping then would drop live jobs; the flush on becoming visible refreshes
+// them before the next sweep.
 if (typeof window !== 'undefined') {
-  setInterval(() => sweepStaleUploads(), STALE_SWEEP_INTERVAL_MS);
+  setInterval(() => {
+    if (!document.hidden) sweepStaleUploads();
+  }, STALE_SWEEP_INTERVAL_MS);
 }

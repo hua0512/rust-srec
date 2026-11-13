@@ -1,10 +1,18 @@
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { useState } from 'react';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { getProxiedUrl } from '@/lib/url';
 
 /**
  * A streamer's picture, or the first two letters of `name` without one. It is
  * decorative: every place it appears names the streamer beside it.
+ *
+ * The picture is a plain lazy `<img>` over the initials rather than Radix's
+ * `AvatarImage`, which preloads through `new Image()` and so fetches every
+ * avatar on a page at once, off-screen ones included. Until the picture
+ * loads it paints nothing and the initials show through; once it fails it is
+ * removed, and once it loads the initials are, so a transparent picture does
+ * not show them.
  */
 export function StreamerAvatar({
   src,
@@ -20,14 +28,37 @@ export function StreamerAvatar({
   fallbackClassName?: string;
 }) {
   const image = getProxiedUrl(src);
+  // Keyed by the URL it describes, so a new picture starts out loading.
+  const [settled, setSettled] = useState<{ src: string; loaded: boolean }>();
+  const status = image && settled?.src === image ? settled : undefined;
   return (
     <Avatar className={className}>
-      {image && <AvatarImage src={image} alt="" className="object-cover" />}
-      <AvatarFallback
-        className={cn('font-medium text-muted-foreground', fallbackClassName)}
-      >
-        {name?.substring(0, 2).toUpperCase() || '??'}
-      </AvatarFallback>
+      {!status?.loaded && (
+        <AvatarFallback
+          className={cn('font-medium text-muted-foreground', fallbackClassName)}
+        >
+          {name?.substring(0, 2).toUpperCase() || '??'}
+        </AvatarFallback>
+      )}
+      {image && status?.loaded !== false && (
+        <img
+          src={image}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          className="absolute inset-0 aspect-square size-full object-cover"
+          // A server-rendered picture can finish loading before hydration,
+          // when React has not attached onLoad yet. One that fails that early
+          // stays in place; with an empty alt it paints nothing.
+          ref={(img) => {
+            if (img && img.naturalWidth > 0 && !status) {
+              setSettled({ src: image, loaded: true });
+            }
+          }}
+          onLoad={() => setSettled({ src: image, loaded: true })}
+          onError={() => setSettled({ src: image, loaded: false })}
+        />
+      )}
     </Avatar>
   );
 }
