@@ -173,19 +173,19 @@ export function PresetMetaForm({
                   <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-medium ml-1">
                     <Trans>ID</Trans>
                   </FormLabel>
-                  <FormControl>
-                    <div className="relative">
+                  <div className="relative">
+                    <FormControl>
                       <Input
                         {...field}
                         placeholder={i18n._(msg`e.g. remux-h264`)}
                         disabled={!!initialData}
                         className="h-11 pl-9 bg-muted/30 border-muted-foreground/20 focus:bg-background transition-all font-mono text-sm"
                       />
-                      <div className="absolute left-3 top-3.5 text-muted-foreground/50 text-xs">
-                        #
-                      </div>
+                    </FormControl>
+                    <div className="absolute left-3 top-3.5 text-muted-foreground/50 text-xs">
+                      #
                     </div>
-                  </FormControl>
+                  </div>
                   <FormMessage />
                 </FormItem>
               )}
@@ -263,8 +263,8 @@ export function PresetMetaForm({
                   <FormLabel className="text-xs uppercase tracking-wider text-muted-foreground font-medium ml-1">
                     <Trans>Description</Trans>
                   </FormLabel>
-                  <FormControl>
-                    <div className="relative">
+                  <div className="relative">
+                    <FormControl>
                       <Textarea
                         {...field}
                         disabled={isDefault}
@@ -277,17 +277,17 @@ export function PresetMetaForm({
                           isDefault ? 'opacity-70 cursor-not-allowed' : ''
                         }`}
                       />
-                      {isDefault && (
-                        <p className="mt-1.5 text-[10px] text-muted-foreground/60 flex items-center gap-1.5">
-                          <Settings2 className="h-3 w-3" />
-                          <Trans>
-                            This is a default preset. Description cannot be
-                            modified.
-                          </Trans>
-                        </p>
-                      )}
-                    </div>
-                  </FormControl>
+                    </FormControl>
+                    {isDefault && (
+                      <p className="mt-1.5 text-[10px] text-muted-foreground/60 flex items-center gap-1.5">
+                        <Settings2 className="h-3 w-3" />
+                        <Trans>
+                          This is a default preset. Description cannot be
+                          modified.
+                        </Trans>
+                      </p>
+                    )}
+                  </div>
                   <FormMessage />
                 </FormItem>
               )}

@@ -1,10 +1,22 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, type MouseEvent } from 'react';
 import { useTheme } from '@/components/providers/theme-provider';
 import { getSystemTheme, type Mode } from '@/lib/theme-config';
 import { flushSync } from 'react-dom';
 
 interface CircularTransitionHook {
-  setModeWithReveal: (next: Mode, coords: { x: number; y: number }) => void;
+  /** Switches the mode with a circular reveal centred on the clicked control. */
+  setModeWithReveal: (next: Mode, event: MouseEvent<HTMLElement>) => void;
+}
+
+// A click from Enter or Space reports detail 0 and no pointer position
+// (clientX/clientY are 0), so the reveal starts at the control's centre.
+function revealOrigin(event: MouseEvent<HTMLElement>): {
+  x: number;
+  y: number;
+} {
+  if (event.detail !== 0) return { x: event.clientX, y: event.clientY };
+  const rect = event.currentTarget.getBoundingClientRect();
+  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 }
 
 export function useCircularTransition(): CircularTransitionHook {
@@ -70,7 +82,7 @@ export function useCircularTransition(): CircularTransitionHook {
   );
 
   const setModeWithReveal = useCallback(
-    (next: Mode, coords: { x: number; y: number }) => {
+    (next: Mode, event: MouseEvent<HTMLElement>) => {
       const nextResolved = next === 'system' ? getSystemTheme() : next;
       if (nextResolved === resolvedMode) {
         // Persist the preference change (e.g. dark -> system while the OS is
@@ -78,7 +90,7 @@ export function useCircularTransition(): CircularTransitionHook {
         setMode(next);
         return;
       }
-      startTransition(coords, () => setMode(next));
+      startTransition(revealOrigin(event), () => setMode(next));
     },
     [resolvedMode, setMode, startTransition],
   );

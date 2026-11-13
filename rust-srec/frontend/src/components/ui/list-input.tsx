@@ -5,18 +5,23 @@ import { Plus, X } from 'lucide-react';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 
-interface ListInputProps {
+interface ListInputProps extends Pick<
+  React.ComponentProps<'input'>,
+  'id' | 'aria-describedby' | 'aria-invalid'
+> {
   value?: string[];
   onChange: (value: string[]) => void;
   placeholder?: string;
   className?: string;
 }
 
+/** `id` and the aria props (set by `FormControl`) go to the text field. */
 export function ListInput({
   value = [],
   onChange,
   placeholder,
   className,
+  ...inputProps
 }: ListInputProps) {
   const { i18n } = useLingui();
   const [newItem, setNewItem] = useState('');
@@ -35,6 +40,10 @@ export function ListInput({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
+      // Enter also confirms an IME candidate (pinyin, kana). WebKit fires
+      // compositionend before that keydown and clears isComposing, so
+      // keyCode 229 is the only signal there.
+      if (e.nativeEvent.isComposing || e.keyCode === 229) return;
       handleAdd();
     }
   };
@@ -43,6 +52,7 @@ export function ListInput({
     <div className="space-y-2">
       <div className="flex space-x-2">
         <Input
+          {...inputProps}
           value={newItem}
           onChange={(e) => setNewItem(e.target.value)}
           onKeyDown={handleKeyDown}

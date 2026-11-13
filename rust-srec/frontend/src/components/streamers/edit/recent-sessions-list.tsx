@@ -5,8 +5,8 @@ import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
 import { ListPanelEmpty } from '@/components/shared/list-panel';
 import { useLingui } from '@lingui/react';
-import { formatDate } from '@/lib/datetime';
-import { formatBytes, formatDuration } from '@/lib/format';
+import { formatDate, formatLocalizedDuration } from '@/lib/datetime';
+import { formatBytes } from '@/lib/format';
 import type { z } from 'zod';
 import type { SessionSchema } from '@/api/schemas';
 
@@ -91,7 +91,10 @@ export const RecentSessionsList = memo(function RecentSessionsList({
                   <Clock className="w-3 h-3" />
                   <span>
                     {session.duration_secs
-                      ? formatDuration(session.duration_secs)
+                      ? formatLocalizedDuration(
+                          session.duration_secs,
+                          i18n.locale,
+                        )
                       : '-'}
                   </span>
                 </div>

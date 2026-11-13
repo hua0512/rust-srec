@@ -9,7 +9,7 @@ import { useLingui } from '@lingui/react';
 import type { StalledOperation } from '@/api/schemas';
 import { stalledOperationsQueryOptions } from '@/api/stalled-operations';
 import { HeaderIndicator } from '@/components/header-indicator';
-import { formatDuration } from '@/lib/format';
+import { formatLocalizedDuration } from '@/lib/datetime';
 import { jobTypeLabel } from '@/lib/job-progress';
 
 function stalledOperationsLabel(count: number, i18n: I18n) {
@@ -21,7 +21,7 @@ function stalledOperationsLabel(count: number, i18n: I18n) {
 
 /** How long the operation has outlived its job, e.g. "Not responding for 2m 5s". */
 export function stalledForLabel(operation: StalledOperation, i18n: I18n) {
-  const duration = formatDuration(operation.stalled_secs, { decimals: 0 });
+  const duration = formatLocalizedDuration(operation.stalled_secs, i18n.locale);
   return i18n._(msg`Not responding for ${duration}`);
 }
 

@@ -142,21 +142,19 @@ function ConfigTheme() {
                       label: <Trans>System</Trans>,
                     },
                   ].map(({ value, icon: Icon, label }) => (
-                    <div
+                    <button
                       key={value}
-                      role="button"
+                      type="button"
+                      aria-pressed={mode === value}
                       onClick={(event) => {
                         if (mode === value) return;
                         setModeWithReveal(
                           value as 'light' | 'dark' | 'system',
-                          {
-                            x: event.clientX,
-                            y: event.clientY,
-                          },
+                          event,
                         );
                       }}
                       className={cn(
-                        'flex flex-col items-center justify-between rounded-xl border-2 p-4 cursor-pointer transition-all hover:bg-muted/50',
+                        'flex flex-col items-center justify-between rounded-xl border-2 p-4 cursor-pointer transition-all hover:bg-muted/50 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
                         mode === value
                           ? 'border-primary bg-primary/5'
                           : 'border-muted bg-transparent',
@@ -171,7 +169,7 @@ function ConfigTheme() {
                         )}
                       />
                       <span className="text-sm font-medium">{label}</span>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </Section>
@@ -287,8 +285,9 @@ function ConfigTheme() {
                     <button
                       key={option.value}
                       type="button"
+                      aria-pressed={themeSettings.radius === option.value}
                       className={cn(
-                        'relative cursor-pointer rounded-md p-3 border transition-colors',
+                        'relative cursor-pointer rounded-md p-3 border transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
                         themeSettings.radius === option.value
                           ? 'border-primary bg-primary/5'
                           : 'border-border hover:border-border/60',
@@ -297,9 +296,9 @@ function ConfigTheme() {
                         themeSettings.setRadius(option.value);
                       }}
                     >
-                      <div className="text-center">
-                        <div className="text-xs font-medium">{option.name}</div>
-                      </div>
+                      <span className="block text-center text-xs font-medium">
+                        {option.name}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -317,9 +316,10 @@ function ConfigTheme() {
                     </Label>
                     <div className="grid grid-cols-3 gap-3">
                       {['sidebar', 'floating', 'inset'].map((value) => (
-                        <div
+                        <button
                           key={value}
-                          role="button"
+                          type="button"
+                          aria-pressed={sidebarConfig.variant === value}
                           onClick={() =>
                             updateSidebarConfig({
                               variant: value as
@@ -329,13 +329,13 @@ function ConfigTheme() {
                             })
                           }
                           className={cn(
-                            'rounded-xl border-2 p-4 cursor-pointer transition-all hover:bg-muted/50 text-center',
+                            'rounded-xl border-2 p-4 cursor-pointer transition-all hover:bg-muted/50 text-center outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
                             sidebarConfig.variant === value
                               ? 'border-primary bg-primary/5'
                               : 'border-muted bg-transparent',
                           )}
                         >
-                          <div className="text-sm font-medium capitalize">
+                          <span className="text-sm font-medium capitalize">
                             {value === 'sidebar' ? (
                               <Trans>Default</Trans>
                             ) : value === 'floating' ? (
@@ -343,8 +343,8 @@ function ConfigTheme() {
                             ) : (
                               <Trans>Inset</Trans>
                             )}
-                          </div>
-                        </div>
+                          </span>
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -364,9 +364,12 @@ function ConfigTheme() {
                         { value: 'icon', label: <Trans>Icon</Trans> },
                         { value: 'none', label: <Trans>None</Trans> },
                       ].map((option) => (
-                        <div
+                        <button
                           key={option.value}
-                          role="button"
+                          type="button"
+                          aria-pressed={
+                            sidebarConfig.collapsible === option.value
+                          }
                           onClick={() => {
                             updateSidebarConfig({
                               collapsible: option.value as
@@ -383,16 +386,16 @@ function ConfigTheme() {
                             }
                           }}
                           className={cn(
-                            'rounded-xl border-2 p-4 cursor-pointer transition-all hover:bg-muted/50 text-center',
+                            'rounded-xl border-2 p-4 cursor-pointer transition-all hover:bg-muted/50 text-center outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
                             sidebarConfig.collapsible === option.value
                               ? 'border-primary bg-primary/5'
                               : 'border-muted bg-transparent',
                           )}
                         >
-                          <div className="text-sm font-medium">
+                          <span className="text-sm font-medium">
                             {option.label}
-                          </div>
-                        </div>
+                          </span>
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -408,25 +411,26 @@ function ConfigTheme() {
                         { value: 'left', label: <Trans>Left</Trans> },
                         { value: 'right', label: <Trans>Right</Trans> },
                       ].map((option) => (
-                        <div
+                        <button
                           key={option.value}
-                          role="button"
+                          type="button"
+                          aria-pressed={sidebarConfig.side === option.value}
                           onClick={() =>
                             updateSidebarConfig({
                               side: option.value as 'left' | 'right',
                             })
                           }
                           className={cn(
-                            'rounded-xl border-2 p-4 cursor-pointer transition-all hover:bg-muted/50 text-center',
+                            'rounded-xl border-2 p-4 cursor-pointer transition-all hover:bg-muted/50 text-center outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
                             sidebarConfig.side === option.value
                               ? 'border-primary bg-primary/5'
                               : 'border-muted bg-transparent',
                           )}
                         >
-                          <div className="text-sm font-medium">
+                          <span className="text-sm font-medium">
                             {option.label}
-                          </div>
-                        </div>
+                          </span>
+                        </button>
                       ))}
                     </div>
                   </div>

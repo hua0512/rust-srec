@@ -54,7 +54,7 @@ import { PageEmptyState } from '@/components/shared/list-panel';
 import { FilterChip } from '@/components/shared/filter-pill';
 import { SelectModeButton } from '@/components/shared/page-actions';
 import { QueryError } from '@/components/shared/query-error';
-import { formatDuration } from '@/lib/format';
+import { formatLocalizedDuration } from '@/lib/datetime';
 import { CARD_GRID } from '@/lib/grid';
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/pipeline/jobs/')({
@@ -444,7 +444,7 @@ function PipelineJobsPage() {
               loading={isStatsLoading}
               color="text-purple-500"
               icon={<Timer className="h-4 w-4 text-purple-500" />}
-              formatValue={formatDuration}
+              formatValue={(secs) => formatLocalizedDuration(secs, i18n.locale)}
             />
           </div>
         </div>

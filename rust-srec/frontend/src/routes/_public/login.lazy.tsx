@@ -178,6 +178,9 @@ const LoginForm = memo(
                     {...field}
                     className="bg-background/50 lg:bg-background"
                     autoComplete="username"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                   />
                 </FormControl>
                 <FormMessage />
@@ -192,8 +195,8 @@ const LoginForm = memo(
                 <FormLabel>
                   <Trans>Password</Trans>
                 </FormLabel>
-                <FormControl>
-                  <div className="relative">
+                <div className="relative">
+                  <FormControl>
                     <Input
                       type={showPassword ? 'text' : 'password'}
                       placeholder="••••••"
@@ -201,28 +204,28 @@ const LoginForm = memo(
                       className="bg-background/50 lg:bg-background pr-10"
                       autoComplete="current-password"
                     />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                      onClick={togglePasswordVisibility}
-                    >
+                  </FormControl>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                    onClick={togglePasswordVisibility}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <Eye className="h-4 w-4 text-muted-foreground" />
+                    )}
+                    <span className="sr-only">
                       {showPassword ? (
-                        <EyeOff className="h-4 w-4 text-muted-foreground" />
+                        <Trans>Hide password</Trans>
                       ) : (
-                        <Eye className="h-4 w-4 text-muted-foreground" />
+                        <Trans>Show password</Trans>
                       )}
-                      <span className="sr-only">
-                        {showPassword ? (
-                          <Trans>Hide password</Trans>
-                        ) : (
-                          <Trans>Show password</Trans>
-                        )}
-                      </span>
-                    </Button>
-                  </div>
-                </FormControl>
+                    </span>
+                  </Button>
+                </div>
                 <FormMessage />
               </FormItem>
             )}

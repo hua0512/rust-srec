@@ -36,10 +36,10 @@ import { z } from 'zod';
 import { useLingui } from '@lingui/react';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
-import { formatBytes, formatDuration } from '@/lib/format';
+import { formatBytes } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { motion } from 'motion/react';
-import { formatDate } from '@/lib/datetime';
+import { formatDate, formatLocalizedDuration } from '@/lib/datetime';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { useMenuDialog } from '@/hooks/use-menu-dialog';
 
@@ -89,7 +89,7 @@ export const SessionCard = memo(
     };
 
     const duration = session.duration_secs
-      ? formatDuration(session.duration_secs)
+      ? formatLocalizedDuration(session.duration_secs, i18n.locale)
       : isLive
         ? i18n._(msg`Ongoing`)
         : '-';

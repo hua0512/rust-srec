@@ -32,7 +32,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { formatDate } from '@/lib/datetime';
+import { formatDate, formatLocalizedDuration } from '@/lib/datetime';
 import { isTauriRuntime } from '@/utils/tauri';
 
 function isNonEmptyString(value: unknown): value is string {
@@ -331,7 +331,7 @@ const TimelineNode = memo(function TimelineNode({
                   <span>•</span>
                   <span className="flex items-center gap-1">
                     <Timer className="h-3 w-3 opacity-50" />
-                    {formatDuration(group.durationSecs, {
+                    {formatLocalizedDuration(group.durationSecs, i18n.locale, {
                       showSeconds: true,
                     })}
                   </span>

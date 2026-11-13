@@ -59,6 +59,7 @@ export function GotifyForm() {
               <IconInput
                 icon={KeyRound}
                 type="password"
+                autoComplete="new-password"
                 placeholder={i18n._(msg`Gotify application token`)}
                 className={CONFIG_INPUT}
                 {...field}

@@ -43,7 +43,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Dialog,
   DialogContent,
@@ -464,7 +463,9 @@ function NotificationEventsPage() {
           if (!open) setSelectedPayload(null);
         }}
       >
-        <DialogContent className="max-w-3xl">
+        {/* A flex column lets the payload shrink to fit a short window, so it
+            is the only part that scrolls. */}
+        <DialogContent className="flex flex-col sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <div className="p-1.5 rounded-lg bg-primary/10">
@@ -476,9 +477,9 @@ function NotificationEventsPage() {
               <Trans>The full event payload as JSON.</Trans>
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="max-h-[70vh] rounded-xl bg-muted/50 p-4 border">
+          <div className="min-h-0 max-h-[70vh] overflow-auto rounded-xl bg-muted/50 p-4 border">
             {selectedPayload && <JsonViewer json={selectedPayload.payload} />}
-          </ScrollArea>
+          </div>
           <div className="flex justify-end gap-2">
             <Button
               variant="outline"

@@ -18,8 +18,10 @@ import {
 import { CountUp } from '@/components/ui/count-up';
 import { motion, AnimatePresence } from 'motion/react';
 import { Trans } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react';
 import { cn } from '@/lib/utils';
-import { formatBytes, formatDuration, formatSpeed } from '@/lib/format';
+import { formatBytes, formatSpeed } from '@/lib/format';
+import { formatLocalizedDuration } from '@/lib/datetime';
 import { useShallow } from 'zustand/react/shallow';
 import { useDownloadStore } from '@/store/downloads';
 
@@ -32,6 +34,7 @@ interface ActiveDownloadCardProps {
 export const ActiveDownloadCard = memo(function ActiveDownloadCard({
   streamerId,
 }: ActiveDownloadCardProps) {
+  const { i18n } = useLingui();
   const downloads = useDownloadStore(
     useShallow((state) => state.getDownloadsByStreamer(streamerId)),
   );
@@ -138,7 +141,7 @@ export const ActiveDownloadCard = memo(function ActiveDownloadCard({
                 <Clock className="w-3 h-3" /> <Trans>Duration</Trans>
               </div>
               <div className="font-mono font-medium text-lg">
-                {formatDuration(download.durationSecs)}
+                {formatLocalizedDuration(download.durationSecs, i18n.locale)}
               </div>
             </div>
             <div className="space-y-1">

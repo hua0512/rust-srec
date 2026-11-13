@@ -523,24 +523,31 @@ html {
   animation: rs-dashboard-grid-enter 300ms ease-out both;
 }
 
+/* Items stagger 40ms apart, capped at the fourth so a long streamer grid
+   finishes entering at the same time as a four-card stat row. */
 .rs-dashboard-grid-item {
   animation: rs-dashboard-item-enter 150ms ease-out both;
+  animation-delay: calc(min(sibling-index(), 4) * 40ms - 20ms);
 }
 
-.rs-dashboard-grid-item:nth-child(1) {
-  animation-delay: 20ms;
-}
+/* Engines without sibling-index() (older WebKitGTK/Safari, Firefox < 154)
+   drop the declaration above, so stagger the first four items explicitly. */
+@supports not (animation-delay: calc(sibling-index() * 1ms)) {
+  .rs-dashboard-grid-item:nth-child(1) {
+    animation-delay: 20ms;
+  }
 
-.rs-dashboard-grid-item:nth-child(2) {
-  animation-delay: 60ms;
-}
+  .rs-dashboard-grid-item:nth-child(2) {
+    animation-delay: 60ms;
+  }
 
-.rs-dashboard-grid-item:nth-child(3) {
-  animation-delay: 100ms;
-}
+  .rs-dashboard-grid-item:nth-child(3) {
+    animation-delay: 100ms;
+  }
 
-.rs-dashboard-grid-item:nth-child(4) {
-  animation-delay: 140ms;
+  .rs-dashboard-grid-item:nth-child(n + 4) {
+    animation-delay: 140ms;
+  }
 }
 
 .rs-dashboard-empty-enter {
