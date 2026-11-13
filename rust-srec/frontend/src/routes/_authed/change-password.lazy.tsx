@@ -145,38 +145,38 @@ function ChangePasswordPage() {
                     <FormLabel>
                       <Trans>Current Password</Trans>
                     </FormLabel>
-                    <FormControl>
-                      <div className="relative">
+                    <div className="relative">
+                      <FormControl>
                         <Input
                           type={showCurrentPassword ? 'text' : 'password'}
                           placeholder={i18n._(msg`Current password`)}
                           {...field}
                           className="bg-background/50 lg:bg-background pr-10"
                         />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                          onClick={() =>
-                            setShowCurrentPassword(!showCurrentPassword)
-                          }
-                        >
+                      </FormControl>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                        onClick={() =>
+                          setShowCurrentPassword(!showCurrentPassword)
+                        }
+                      >
+                        {showCurrentPassword ? (
+                          <EyeOff className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        <span className="sr-only">
                           {showCurrentPassword ? (
-                            <EyeOff className="h-4 w-4 text-muted-foreground" />
+                            <Trans>Hide password</Trans>
                           ) : (
-                            <Eye className="h-4 w-4 text-muted-foreground" />
+                            <Trans>Show password</Trans>
                           )}
-                          <span className="sr-only">
-                            {showCurrentPassword ? (
-                              <Trans>Hide password</Trans>
-                            ) : (
-                              <Trans>Show password</Trans>
-                            )}
-                          </span>
-                        </Button>
-                      </div>
-                    </FormControl>
+                        </span>
+                      </Button>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -189,36 +189,36 @@ function ChangePasswordPage() {
                     <FormLabel>
                       <Trans>New Password</Trans>
                     </FormLabel>
-                    <FormControl>
-                      <div className="relative">
+                    <div className="relative">
+                      <FormControl>
                         <Input
                           type={showNewPassword ? 'text' : 'password'}
                           placeholder={i18n._(msg`New password (min 8 chars)`)}
                           {...field}
                           className="bg-background/50 lg:bg-background pr-10"
                         />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                          onClick={() => setShowNewPassword(!showNewPassword)}
-                        >
+                      </FormControl>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                        onClick={() => setShowNewPassword(!showNewPassword)}
+                      >
+                        {showNewPassword ? (
+                          <EyeOff className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        <span className="sr-only">
                           {showNewPassword ? (
-                            <EyeOff className="h-4 w-4 text-muted-foreground" />
+                            <Trans>Hide password</Trans>
                           ) : (
-                            <Eye className="h-4 w-4 text-muted-foreground" />
+                            <Trans>Show password</Trans>
                           )}
-                          <span className="sr-only">
-                            {showNewPassword ? (
-                              <Trans>Hide password</Trans>
-                            ) : (
-                              <Trans>Show password</Trans>
-                            )}
-                          </span>
-                        </Button>
-                      </div>
-                    </FormControl>
+                        </span>
+                      </Button>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}
@@ -231,38 +231,38 @@ function ChangePasswordPage() {
                     <FormLabel>
                       <Trans>Confirm Password</Trans>
                     </FormLabel>
-                    <FormControl>
-                      <div className="relative">
+                    <div className="relative">
+                      <FormControl>
                         <Input
                           type={showConfirmPassword ? 'text' : 'password'}
                           placeholder={i18n._(msg`Confirm new password`)}
                           {...field}
                           className="bg-background/50 lg:bg-background pr-10"
                         />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                          onClick={() =>
-                            setShowConfirmPassword(!showConfirmPassword)
-                          }
-                        >
+                      </FormControl>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                        onClick={() =>
+                          setShowConfirmPassword(!showConfirmPassword)
+                        }
+                      >
+                        {showConfirmPassword ? (
+                          <EyeOff className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <Eye className="h-4 w-4 text-muted-foreground" />
+                        )}
+                        <span className="sr-only">
                           {showConfirmPassword ? (
-                            <EyeOff className="h-4 w-4 text-muted-foreground" />
+                            <Trans>Hide password</Trans>
                           ) : (
-                            <Eye className="h-4 w-4 text-muted-foreground" />
+                            <Trans>Show password</Trans>
                           )}
-                          <span className="sr-only">
-                            {showConfirmPassword ? (
-                              <Trans>Hide password</Trans>
-                            ) : (
-                              <Trans>Show password</Trans>
-                            )}
-                          </span>
-                        </Button>
-                      </div>
-                    </FormControl>
+                        </span>
+                      </Button>
+                    </div>
                     <FormMessage />
                   </FormItem>
                 )}

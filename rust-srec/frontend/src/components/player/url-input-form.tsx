@@ -183,16 +183,16 @@ export function UrlInputForm({
                   name="url"
                   render={({ field }) => (
                     <FormItem>
-                      <FormControl>
-                        <div className="relative group">
+                      <div className="relative group">
+                        <FormControl>
                           <Input
                             placeholder="https://example.com/stream"
                             className="h-12 pl-4 pr-4 bg-background/50 border-input/60 focus:border-primary/50 focus:ring-primary/20 backdrop-blur-sm transition-all shadow-sm group-hover:border-primary/30"
                             {...field}
                             disabled={isLoading}
                           />
-                        </div>
-                      </FormControl>
+                        </FormControl>
+                      </div>
                       <FormMessage />
                     </FormItem>
                   )}

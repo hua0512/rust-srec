@@ -164,21 +164,21 @@ function RawJsonEditor<TFieldValues extends FieldValues>({
         </span>
       </div>
       <FormItem>
-        <FormControl>
-          <div className="space-y-2">
+        <div className="space-y-2">
+          <FormControl>
             <Textarea
               value={text}
               onChange={handleChange}
               className="font-mono text-sm min-h-[500px] bg-background/50 focus:bg-background border-border/50 focus-visible:ring-indigo-500 rounded-2xl shadow-inner scrollbar-none"
               placeholder="{ ... }"
             />
-            {error && (
-              <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-xs font-semibold text-destructive animate-in shake duration-300">
-                <Trans>Invalid JSON: {error}</Trans>
-              </div>
-            )}
-          </div>
-        </FormControl>
+          </FormControl>
+          {error && (
+            <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-xs font-semibold text-destructive animate-in shake duration-300">
+              <Trans>Invalid JSON: {error}</Trans>
+            </div>
+          )}
+        </div>
         <FormDescription className="text-xs font-medium">
           <Trans>
             Expert mode: Edit the raw platform-specific configuration directly.

@@ -96,44 +96,44 @@ export function StreamerIdentityFields({
             <ConfigFieldLabel>
               <Trans>Name</Trans>
             </ConfigFieldLabel>
-            <FormControl>
-              <div className="flex gap-2">
+            <div className="flex gap-2">
+              <FormControl>
                 <IconInput
                   icon={User}
                   placeholder={i18n._(msg`e.g. My Favorite Streamer`)}
                   {...field}
                   className={CONFIG_INPUT}
                 />
-                {onAutofillName && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          className="h-11 w-11 shrink-0 rounded-xl border-border/50 shadow-sm"
-                          onClick={onAutofillName}
-                          disabled={isAutofilling || !url}
-                        >
-                          {isAutofilling ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Sparkles className="h-4 w-4" />
-                          )}
-                          <span className="sr-only">
-                            <Trans>Autofill name from URL</Trans>
-                          </span>
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <Trans>Autofill name from URL</Trans>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
-              </div>
-            </FormControl>
+              </FormControl>
+              {onAutofillName && (
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        className="h-11 w-11 shrink-0 rounded-xl border-border/50 shadow-sm"
+                        onClick={onAutofillName}
+                        disabled={isAutofilling || !url}
+                      >
+                        {isAutofilling ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Sparkles className="h-4 w-4" />
+                        )}
+                        <span className="sr-only">
+                          <Trans>Autofill name from URL</Trans>
+                        </span>
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <Trans>Autofill name from URL</Trans>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+            </div>
             <FormMessage />
           </FormItem>
         )}
