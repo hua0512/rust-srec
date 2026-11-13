@@ -181,9 +181,12 @@ export function OverviewTab({
               <div className="aspect-video bg-muted/30 flex items-center justify-center relative group overflow-hidden flex-1 min-h-[300px]">
                 {thumbnailUrl ? (
                   <>
+                    {/* The largest element of the default tab, so it is
+                        fetched ahead of the avatars and other images. */}
                     <img
                       src={thumbnailUrl}
                       alt={i18n._(msg`Session thumbnail`)}
+                      fetchPriority="high"
                       className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
