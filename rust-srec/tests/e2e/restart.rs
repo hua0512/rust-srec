@@ -2,9 +2,8 @@
 //! starts a new one on the same data directory, as restarting the process
 //! does.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use reqwest::StatusCode;
 use serde_json::{Value, json};
 
 use crate::support::{

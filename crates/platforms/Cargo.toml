@@ -27,12 +27,7 @@ tokio = { workspace = true, features = [
     "sync",
     "time",
 ] }
-reqwest = { workspace = true, features = [
-    "json",
-    "stream",
-    "gzip",
-    "deflate",
-] }
+reqwest = { workspace = true, features = ["json", "stream", "gzip", "deflate"] }
 rustls = { workspace = true }
 rustls-platform-verifier = { workspace = true }
 # TLS to an `https` proxy before tunnelling a danmu WebSocket through it.
@@ -50,11 +45,11 @@ regex = { workspace = true, default-features = false, features = [
 ] }
 jieba-rs = { workspace = true }
 
- # Logging
+# Logging
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+
 async-trait = { workspace = true }
-tars-codec = { path = "../tars-codec"}
+tars-codec = { path = "../tars-codec" }
 rustc-hash = { workspace = true }
 rand = { workspace = true }
 
@@ -63,7 +58,7 @@ rand = { workspace = true }
 # module in lib.rs when a platform requires JS-based signing).
 # rquickjs = { version = "0.12.0", optional = true, features = ["full-async"] }
 
-uuid  = { workspace = true, features = ["v4", "fast-rng"]}
+uuid = { workspace = true, features = ["v4", "fast-rng"] }
 m3u8-rs = { workspace = true }
 md-5 = { workspace = true }
 aes = { workspace = true }
@@ -71,7 +66,9 @@ cbc = { workspace = true }
 cipher = { workspace = true }
 percent-encoding = "2.3.2"
 base64 = { workspace = true }
-tokio-tungstenite = { workspace = true, default-features = false, features = ["connect"] }
+tokio-tungstenite = { workspace = true, default-features = false, features = [
+    "connect",
+] }
 chrono = { workspace = true, features = ["serde"] }
 futures = { workspace = true }
 # tokio-rustls = { version = "0.26", default-features = false, features = ["aws-lc-rs", "logging", "tls12"] }
@@ -91,6 +88,7 @@ prost = { workspace = true }
 [dev-dependencies]
 prost-build = { workspace = true }
 protox = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [features]
 default = ["rustls-tls"]

@@ -17,14 +17,14 @@ tokio-util = { workspace = true }
 tokio-stream = "0.1.19"
 futures = { workspace = true }
 reqwest = { workspace = true, features = [
-  "json",
-  "stream",
-  "http2",
-  "system-proxy",
-  "socks",
-  "gzip",
-  "brotli",
-  "deflate",
+    "json",
+    "stream",
+    "http2",
+    "system-proxy",
+    "socks",
+    "gzip",
+    "brotli",
+    "deflate",
 ] }
 url = { workspace = true }
 chrono = { workspace = true }
@@ -45,7 +45,6 @@ hex = { workspace = true }
 clap = { version = "4.6.7", features = ["derive"], optional = true }
 # Logging
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
 
 # Workspace crates
 flv = { path = "../flv" }
@@ -53,11 +52,17 @@ hls = { path = "../hls" }
 mp4 = { path = "../mp4" }
 
 [dev-dependencies]
-tokio = { version = "1.53.3", features = ["rt-multi-thread", "macros", "time", "test-util"] }
+tokio = { version = "1.53.3", features = [
+    "rt-multi-thread",
+    "macros",
+    "time",
+    "test-util",
+] }
 axum = { workspace = true }
 tempfile = { workspace = true }
 hls-fix = { path = "../hls-fix", default-features = false }
 pipeline-common = { path = "../pipeline-common" }
+tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
 
 [features]
 default = []
