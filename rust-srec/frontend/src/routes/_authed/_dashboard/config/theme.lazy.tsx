@@ -150,10 +150,7 @@ function ConfigTheme() {
                         if (mode === value) return;
                         setModeWithReveal(
                           value as 'light' | 'dark' | 'system',
-                          {
-                            x: event.clientX,
-                            y: event.clientY,
-                          },
+                          event,
                         );
                       }}
                       className={cn(

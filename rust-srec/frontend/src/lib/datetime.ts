@@ -126,7 +126,26 @@ export function formatShortRelativeTime(
 type DurationFormatCtor = new (
   locale: string,
   options?: { style?: 'long' | 'short' | 'narrow' | 'digital' },
-) => { format: (duration: Record<string, number>) => string };
+) => DurationFormatter;
+type DurationFormatter = {
+  format: (duration: Record<string, number>) => string;
+};
+
+// Durations are formatted on every progress tick, so one formatter is kept
+// per locale.
+const durationFormatters = new Map<string, DurationFormatter>();
+
+function getDurationFormatter(
+  ctor: DurationFormatCtor,
+  locale: string,
+): DurationFormatter {
+  let formatter = durationFormatters.get(locale);
+  if (!formatter) {
+    formatter = new ctor(locale, { style: 'narrow' });
+    durationFormatters.set(locale, formatter);
+  }
+  return formatter;
+}
 
 /**
  * Locale-aware counterpart of formatDuration's verbose mode: same unit
@@ -154,7 +173,7 @@ export function formatLocalizedDuration(
   }
 
   if (seconds < 1) {
-    return new durationFormat(locale, { style: 'narrow' }).format({
+    return getDurationFormatter(durationFormat, locale).format({
       milliseconds: Math.round(seconds * 1000),
     });
   }
@@ -174,5 +193,5 @@ export function formatLocalizedDuration(
 
   if (Object.keys(duration).length === 0) return formatDuration(seconds);
 
-  return new durationFormat(locale, { style: 'narrow' }).format(duration);
+  return getDurationFormatter(durationFormat, locale).format(duration);
 }

@@ -25,10 +25,10 @@ export function ModeToggle() {
             // Toggle from the resolved appearance: with mode 'system' the
             // preference itself never equals 'dark', so comparing `mode`
             // would set the appearance the user already sees.
-            setModeWithReveal(resolvedMode === 'dark' ? 'light' : 'dark', {
-              x: event.clientX,
-              y: event.clientY,
-            });
+            setModeWithReveal(
+              resolvedMode === 'dark' ? 'light' : 'dark',
+              event,
+            );
           }}
         >
           <Sun className="w-[1.2rem] h-[1.2rem] rotate-90 scale-95 opacity-0 transition-all ease-in-out duration-500 dark:rotate-0 dark:scale-100 dark:opacity-100" />

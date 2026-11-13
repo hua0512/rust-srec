@@ -80,7 +80,10 @@ export const PayloadPreview = memo(({ payload }: { payload: string }) => {
     if (inner.duration_secs !== undefined) {
       fields.push({
         label: msg`Duration`,
-        value: formatLocalizedDuration(inner.duration_secs, i18n.locale),
+        value:
+          inner.duration_secs === 0
+            ? '0s'
+            : formatLocalizedDuration(inner.duration_secs, i18n.locale),
       });
     }
 

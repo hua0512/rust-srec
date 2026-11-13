@@ -465,7 +465,7 @@ function NotificationEventsPage() {
       >
         {/* A flex column lets the payload shrink to fit a short window, so it
             is the only part that scrolls. */}
-        <DialogContent className="flex max-w-3xl flex-col">
+        <DialogContent className="flex flex-col sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <div className="p-1.5 rounded-lg bg-primary/10">

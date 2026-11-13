@@ -57,7 +57,7 @@ export function SecretFieldSection<TFieldValues extends FieldValues>({
                   <Input
                     type="password"
                     // A secret for another service: keeps browsers from
-                    // offering, or saving, the rust-srec login here.
+                    // filling in the rust-srec login here.
                     autoComplete="new-password"
                     {...field}
                     value={field.value || ''}
