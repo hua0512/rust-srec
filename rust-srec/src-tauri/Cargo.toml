@@ -2,9 +2,9 @@
 name = "rust-srec-desktop"
 version.workspace = true
 description = "rust-srec desktop app (Tauri)"
-authors = ["hua0512"]
+authors.workspace = true
 license.workspace = true
-repository = "https://github.com/hua0512/rust-srec"
+repository.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 

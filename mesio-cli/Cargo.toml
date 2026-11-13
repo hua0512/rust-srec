@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 description = "Mesio (media) streaming downloader CLI"
 license.workspace = true
-repository = "https://github.com/hua0512/rust-srec"
+repository.workspace = true
 
 [lints]
 workspace = true
