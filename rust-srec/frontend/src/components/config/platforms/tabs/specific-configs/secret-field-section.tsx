@@ -26,7 +26,6 @@ interface SecretFieldSectionProps<TFieldValues extends FieldValues> {
   label: ReactNode;
   description: ReactNode;
   placeholder: string;
-  autoComplete?: string;
 }
 
 /** A platform tab whose only option is one masked secret, such as a token or password. */
@@ -39,7 +38,6 @@ export function SecretFieldSection<TFieldValues extends FieldValues>({
   label,
   description,
   placeholder,
-  autoComplete,
 }: SecretFieldSectionProps<TFieldValues>) {
   return (
     <div className="space-y-12">
@@ -58,7 +56,9 @@ export function SecretFieldSection<TFieldValues extends FieldValues>({
                 <FormControl>
                   <Input
                     type="password"
-                    autoComplete={autoComplete}
+                    // A secret for another service: keeps browsers from
+                    // offering, or saving, the rust-srec login here.
+                    autoComplete="new-password"
                     {...field}
                     value={field.value || ''}
                     className="bg-background/50 h-10 rounded-xl border-border/50 focus:bg-background transition-all font-mono text-xs shadow-sm"

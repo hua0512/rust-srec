@@ -137,6 +137,16 @@ function ChangePasswordPage() {
           </div>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              {/* Lets password managers file the new password under this
+                  account's saved login. */}
+              <input
+                type="text"
+                name="username"
+                autoComplete="username"
+                value={user?.username ?? ''}
+                readOnly
+                hidden
+              />
               <FormField
                 control={form.control}
                 name="current_password"
@@ -151,6 +161,7 @@ function ChangePasswordPage() {
                           type={showCurrentPassword ? 'text' : 'password'}
                           placeholder={i18n._(msg`Current password`)}
                           {...field}
+                          autoComplete="current-password"
                           className="bg-background/50 lg:bg-background pr-10"
                         />
                       </FormControl>
@@ -195,6 +206,7 @@ function ChangePasswordPage() {
                           type={showNewPassword ? 'text' : 'password'}
                           placeholder={i18n._(msg`New password (min 8 chars)`)}
                           {...field}
+                          autoComplete="new-password"
                           className="bg-background/50 lg:bg-background pr-10"
                         />
                       </FormControl>
@@ -237,6 +249,7 @@ function ChangePasswordPage() {
                           type={showConfirmPassword ? 'text' : 'password'}
                           placeholder={i18n._(msg`Confirm new password`)}
                           {...field}
+                          autoComplete="new-password"
                           className="bg-background/50 lg:bg-background pr-10"
                         />
                       </FormControl>

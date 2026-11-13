@@ -89,6 +89,7 @@ export function EmailForm() {
                 <IconInput
                   icon={User}
                   placeholder={i18n._(msg`Username`)}
+                  autoComplete="off"
                   className={CONFIG_INPUT}
                   {...field}
                 />
@@ -109,6 +110,7 @@ export function EmailForm() {
                 <IconInput
                   icon={Shield}
                   type="password"
+                  autoComplete="new-password"
                   placeholder={i18n._(msg`Password`)}
                   className={CONFIG_INPUT}
                   {...field}

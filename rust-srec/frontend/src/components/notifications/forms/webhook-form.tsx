@@ -221,6 +221,7 @@ export const WebhookForm = memo(function WebhookForm() {
                           className={CONFIG_INPUT}
                           icon={Key}
                           type="password"
+                          autoComplete="new-password"
                           placeholder="ey..."
                           {...field}
                         />
@@ -254,6 +255,7 @@ export const WebhookForm = memo(function WebhookForm() {
                             className={CONFIG_INPUT}
                             icon={User}
                             placeholder={i18n._(msg`Username`)}
+                            autoComplete="off"
                             {...field}
                           />
                         </FormControl>
@@ -274,6 +276,7 @@ export const WebhookForm = memo(function WebhookForm() {
                             className={CONFIG_INPUT}
                             icon={Lock}
                             type="password"
+                            autoComplete="new-password"
                             placeholder={i18n._(msg`Password`)}
                             {...field}
                           />
@@ -308,6 +311,7 @@ export const WebhookForm = memo(function WebhookForm() {
                             className={CONFIG_INPUT}
                             icon={Type}
                             placeholder="X-Auth-Key"
+                            autoComplete="off"
                             {...field}
                           />
                         </FormControl>
@@ -328,6 +332,7 @@ export const WebhookForm = memo(function WebhookForm() {
                             className={CONFIG_INPUT}
                             icon={Shield}
                             type="password"
+                            autoComplete="new-password"
                             placeholder={i18n._(msg`secret`)}
                             {...field}
                           />

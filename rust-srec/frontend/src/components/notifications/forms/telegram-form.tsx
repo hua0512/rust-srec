@@ -47,6 +47,7 @@ export function TelegramForm() {
               <IconInput
                 icon={KeyRound}
                 type="password"
+                autoComplete="new-password"
                 placeholder="123456:ABC-DEF..."
                 className={CONFIG_INPUT}
                 {...field}

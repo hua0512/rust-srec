@@ -174,7 +174,7 @@ export function BaiduPcsLoginDialog({
                 type="password"
                 value={bduss}
                 onChange={(e) => setBduss(e.target.value)}
-                autoComplete="off"
+                autoComplete="new-password"
               />
             </div>
             <div className="space-y-2">
@@ -186,7 +186,7 @@ export function BaiduPcsLoginDialog({
                 type="password"
                 value={stoken}
                 onChange={(e) => setStoken(e.target.value)}
-                autoComplete="off"
+                autoComplete="new-password"
               />
               {stokenLooksWrong && (
                 <p className="flex items-start gap-1.5 text-xs text-amber-500">

@@ -48,6 +48,7 @@ export function BigoConfigFields<TFieldValues extends FieldValues>({
                 <FormControl>
                   <Input
                     type="password"
+                    autoComplete="new-password"
                     {...field}
                     value={field.value || ''}
                     className="bg-background/50 h-10 rounded-xl border-border/50 focus:bg-background transition-all font-mono text-xs shadow-sm"
