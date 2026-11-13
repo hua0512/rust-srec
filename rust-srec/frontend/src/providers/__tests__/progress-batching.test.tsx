@@ -95,6 +95,7 @@ describe('WebSocketProvider progress batching', () => {
     useUploadStore.getState().clearAll();
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it('applies a window of progress ticks as one store update', () => {
@@ -159,6 +160,34 @@ describe('WebSocketProvider progress batching', () => {
       vi.advanceTimersByTime(PROGRESS_FLUSH_MS);
     });
     expect(bytesOf('download-1')).toBe(10n);
+  });
+
+  it('holds ticks while the page is hidden and applies the latest on return', () => {
+    const socket = renderProvider();
+    act(() => {
+      emit(socket, {
+        eventType: EventType.DOWNLOAD_META,
+        payload: { case: 'downloadMeta', value: meta },
+      });
+    });
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+
+    act(() => {
+      for (const bytes of [1n, 2n, 3n]) {
+        emit(socket, {
+          eventType: EventType.DOWNLOAD_METRICS,
+          payload: { case: 'downloadMetrics', value: metrics(bytes) },
+        });
+        vi.advanceTimersByTime(PROGRESS_FLUSH_MS);
+      }
+    });
+    expect(bytesOf('download-1')).toBe(0n);
+
+    hidden.mockReturnValue(false);
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(bytesOf('download-1')).toBe(3n);
   });
 
   it('does not bring back a download that finished after its last tick', () => {

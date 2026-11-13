@@ -225,10 +225,15 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   // is patched in place on each WS event.
   const queryClient = useQueryClient();
 
-  // Progress ticks waiting for the next flush, in arrival order.
-  const pendingMetricsRef = useRef<DownloadMetrics[]>([]);
-  const pendingUploadProgressRef = useRef<UploadProgressInput[]>([]);
-  const pendingJobProgressRef = useRef<UploadProgressInput[]>([]);
+  // Progress ticks waiting for the next flush, the latest per download or
+  // job. Each tick carries every progress field, so a newer one fully
+  // replaces an older one and keeping only the latest applies the same state
+  // while the pending set stays bounded by the number of active entries.
+  const pendingMetricsRef = useRef(new Map<string, DownloadMetrics>());
+  const pendingUploadProgressRef = useRef(
+    new Map<string, UploadProgressInput>(),
+  );
+  const pendingJobProgressRef = useRef(new Map<string, UploadProgressInput>());
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -238,21 +243,34 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       clearTimeout(flushTimerRef.current);
       flushTimerRef.current = undefined;
     }
-    const metrics = pendingMetricsRef.current;
-    const uploads = pendingUploadProgressRef.current;
-    const jobs = pendingJobProgressRef.current;
-    pendingMetricsRef.current = [];
-    pendingUploadProgressRef.current = [];
-    pendingJobProgressRef.current = [];
+    const metrics = [...pendingMetricsRef.current.values()];
+    const uploads = [...pendingUploadProgressRef.current.values()];
+    const jobs = [...pendingJobProgressRef.current.values()];
+    pendingMetricsRef.current.clear();
+    pendingUploadProgressRef.current.clear();
+    pendingJobProgressRef.current.clear();
     if (metrics.length > 0) upsertMetricsBatch(metrics);
     if (uploads.length > 0) upsertUploadProgressBatch(uploads);
     if (jobs.length > 0) useUploadStore.getState().upsertJobProgressBatch(jobs);
   }, [upsertMetricsBatch, upsertUploadProgressBatch]);
 
+  // A hidden page (a background tab, or the desktop window minimised to the
+  // tray, often for hours) shows nothing, so its ticks wait for the page to
+  // become visible instead of re-rendering every progress card twice a
+  // second. Other events still apply the held ticks first.
   const scheduleProgressFlush = useCallback(() => {
-    if (flushTimerRef.current === undefined) {
+    if (flushTimerRef.current === undefined && !document.hidden) {
       flushTimerRef.current = setTimeout(flushProgress, PROGRESS_FLUSH_MS);
     }
+  }, [flushProgress]);
+
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (!document.hidden) flushProgress();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () =>
+      document.removeEventListener('visibilitychange', onVisibilityChange);
   }, [flushProgress]);
 
   const dropPendingProgress = useCallback(() => {
@@ -260,9 +278,9 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
       clearTimeout(flushTimerRef.current);
       flushTimerRef.current = undefined;
     }
-    pendingMetricsRef.current = [];
-    pendingUploadProgressRef.current = [];
-    pendingJobProgressRef.current = [];
+    pendingMetricsRef.current.clear();
+    pendingUploadProgressRef.current.clear();
+    pendingJobProgressRef.current.clear();
   }, []);
 
   useEffect(() => dropPendingProgress, [dropPendingProgress]);
@@ -420,9 +438,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
           case EventType.UPLOAD_PROGRESS:
             if (message.payload.case === 'uploadProgress') {
-              pendingUploadProgressRef.current.push(
-                wireUploadProgress(message.payload.value),
-              );
+              const progress = wireUploadProgress(message.payload.value);
+              pendingUploadProgressRef.current.set(progress.jobId, progress);
               scheduleProgressFlush();
             }
             break;
@@ -454,9 +471,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
           case EventType.JOB_PROGRESS:
             if (message.payload.case === 'jobProgress') {
-              pendingJobProgressRef.current.push(
-                wireUploadProgress(message.payload.value),
-              );
+              const progress = wireUploadProgress(message.payload.value);
+              pendingJobProgressRef.current.set(progress.jobId, progress);
               scheduleProgressFlush();
             }
             break;
@@ -509,7 +525,8 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
 
           case EventType.DOWNLOAD_METRICS:
             if (message.payload.case === 'downloadMetrics') {
-              pendingMetricsRef.current.push(message.payload.value);
+              const metrics = message.payload.value;
+              pendingMetricsRef.current.set(metrics.downloadId, metrics);
               scheduleProgressFlush();
             }
             break;
