@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useDeferredValue, useEffect, useState, useMemo, useRef } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -107,14 +107,28 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
     };
   }, [url]);
 
+  // Lowercased once per file, so a search only scans these strings.
+  const searchTexts = useMemo(
+    () =>
+      comments.map((c) => ({
+        content: c.content.toLowerCase(),
+        username: c.username?.toLowerCase(),
+      })),
+    [comments],
+  );
+
+  // A file can hold tens of thousands of comments. Filtering on the deferred
+  // query lets each keystroke update the input first; the list catches up in
+  // a lower-priority render that React skips once a newer keystroke makes it
+  // stale.
+  const deferredQuery = useDeferredValue(searchQuery);
+
   const filteredComments = useMemo(() => {
-    // Lowercase the query once; the per-comment filter reuses it for both
-    // the content and username matches.
-    const query = searchQuery.toLowerCase();
-    return comments.filter((c) => {
-      const contentMatch = c.content.toLowerCase().includes(query);
-      const userMatch = c.username?.toLowerCase().includes(query);
-      const matchesSearch = contentMatch || userMatch;
+    const query = deferredQuery.toLowerCase();
+    return comments.filter((c, i) => {
+      const text = searchTexts[i];
+      const matchesSearch =
+        text.content.includes(query) || text.username?.includes(query);
       if (!matchesSearch) return false;
 
       if (filterMode === 'all') return true;
@@ -125,7 +139,7 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
 
       return true;
     });
-  }, [comments, searchQuery, filterMode]);
+  }, [comments, searchTexts, deferredQuery, filterMode]);
 
   // Virtual Scrolling
   const rowHeight = 44;
