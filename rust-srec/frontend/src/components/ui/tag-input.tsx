@@ -26,6 +26,11 @@ export function TagInput({
   const [inputValue, setInputValue] = React.useState('');
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Keys pressed while an IME is composing (pinyin, kana) belong to the
+    // IME: Enter confirms a candidate and Backspace edits the composition.
+    // WebKit fires compositionend before the confirming keydown and clears
+    // isComposing, so keyCode 229 is the only signal there.
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter' || e.key === ',') {
       // Always prevent default to avoid form submission or comma insertion
       e.preventDefault();

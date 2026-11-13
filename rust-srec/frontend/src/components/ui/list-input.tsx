@@ -35,6 +35,10 @@ export function ListInput({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
+      // Enter also confirms an IME candidate (pinyin, kana). WebKit fires
+      // compositionend before that keydown and clears isComposing, so
+      // keyCode 229 is the only signal there.
+      if (e.nativeEvent.isComposing || e.keyCode === 229) return;
       handleAdd();
     }
   };
