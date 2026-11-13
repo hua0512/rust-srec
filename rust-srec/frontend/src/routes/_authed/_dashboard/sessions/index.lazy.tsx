@@ -8,7 +8,7 @@ import {
 import { queryKeys } from '@/api/query-keys';
 import { listSessions, deleteSessions } from '@/server/functions/sessions';
 import { SessionList } from '@/components/sessions/session-list';
-import { startOfDay, subDays } from 'date-fns';
+import { endOfDay, startOfDay, subDays } from 'date-fns';
 import { useMemo, useState, useCallback } from 'react';
 import {
   Film,
@@ -72,9 +72,12 @@ function SessionsPage() {
   // Calculate dates based on timeRange or use custom dates
   const { from_date, to_date } = useMemo(() => {
     if (search.timeRange === 'custom' && search.from) {
+      // The picker stores local midnight of each picked day. The range covers
+      // the whole end day, and a range with only a start (labelled as that
+      // single day) covers just that day.
       return {
         from_date: search.from,
-        to_date: search.to,
+        to_date: endOfDay(new Date(search.to ?? search.from)).toISOString(),
       };
     }
 

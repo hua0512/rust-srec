@@ -14,8 +14,10 @@ const validateSearch = searchParamsValidator({
   timeRange: z
     .enum(['all', 'today', 'yesterday', 'week', 'month', 'custom'])
     .optional(),
-  from: z.string().optional(),
-  to: z.string().optional(),
+  // ISO timestamps, so a hand-edited value is dropped instead of reaching
+  // date arithmetic that throws on an invalid date.
+  from: z.iso.datetime().optional(),
+  to: z.iso.datetime().optional(),
 });
 
 export const Route = createFileRoute('/_authed/_dashboard/sessions/')({
