@@ -138,7 +138,7 @@ async fn a_restart_runs_again_the_job_it_interrupted_and_the_jobs_still_queued()
                 }),
             )
             .await
-            .expect_status(StatusCode::CREATED);
+            .expect_status(reqwest::StatusCode::CREATED);
         created.body["pipeline_id"]
             .as_str()
             .expect("pipeline_id")
@@ -168,8 +168,9 @@ async fn a_restart_runs_again_the_job_it_interrupted_and_the_jobs_still_queued()
     let interrupted_job = dag_job(&app, &interrupted).await;
     let queued_job = dag_job(&app, &queued).await;
     eventually(WAIT, "the first job to start", || async {
-        (job_status(&app, &interrupted_job).await == "PROCESSING" && Path::new(&marker).exists())
-            .then_some(())
+        (job_status(&app, &interrupted_job).await == "PROCESSING"
+            && std::path::Path::new(&marker).exists())
+        .then_some(())
     })
     .await;
     assert_eq!(job_status(&app, &queued_job).await, "PENDING");

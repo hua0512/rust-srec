@@ -64,6 +64,13 @@ jobs:
         run: |
           "RUSTC_WRAPPER=sccache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "SCCACHE_GHA_ENABLED=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          # Rust 1.100's build-dir layout passes one `-L` per dependency, and sccache
+          # spawns rustc with the full argument list instead of an @argfile, which
+          # exceeds the Windows command-line limit. Cargo's temporary opt-out keeps
+          # the legacy layout until sccache handles long command lines.
+          if ($IsWindows) {
+            "__CARGO_TEMPORARY_BUILD_DIR_NEW_LAYOUT_OPT_OUT=1" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          }
       - uses: mozilla-actions/sccache-action@v0.0.11
         if: runner.os != 'macOS' || runner.arch == 'ARM64'
         with:
