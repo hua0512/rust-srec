@@ -47,6 +47,14 @@ export function StreamerAvatar({
           loading="lazy"
           decoding="async"
           className="absolute inset-0 aspect-square size-full object-cover"
+          // A server-rendered picture can finish loading before hydration,
+          // when React has not attached onLoad yet. One that fails that early
+          // stays in place; with an empty alt it paints nothing.
+          ref={(img) => {
+            if (img && img.naturalWidth > 0 && !status) {
+              setSettled({ src: image, loaded: true });
+            }
+          }}
           onLoad={() => setSettled({ src: image, loaded: true })}
           onError={() => setSettled({ src: image, loaded: false })}
         />

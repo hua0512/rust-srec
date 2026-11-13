@@ -118,9 +118,8 @@ export function DanmuViewer({ url, title }: DanmuViewerProps) {
   );
 
   // A file can hold tens of thousands of comments. Filtering on the deferred
-  // query lets each keystroke update the input first; the list catches up in
-  // a lower-priority render that React skips once a newer keystroke makes it
-  // stale.
+  // query lets each keystroke update the input before the list re-filters in
+  // a lower-priority render.
   const deferredQuery = useDeferredValue(searchQuery);
 
   const filteredComments = useMemo(() => {
