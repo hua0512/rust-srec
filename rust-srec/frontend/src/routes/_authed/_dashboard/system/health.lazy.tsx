@@ -38,7 +38,11 @@ import { type I18n } from '@lingui/core';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'motion/react';
 import { containerVariants, itemVariants } from '@/lib/animation';
-import { formatDate, formatRelativeTime } from '@/lib/datetime';
+import {
+  formatDate,
+  formatLocalizedDuration,
+  formatRelativeTime,
+} from '@/lib/datetime';
 import { STAT_GRID } from '@/lib/grid';
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/system/health')({
@@ -160,7 +164,7 @@ function SystemHealthPage() {
               <MetricCard
                 title={<Trans>Uptime</Trans>}
                 icon={Clock}
-                content={formatUptime(health.uptime_secs)}
+                content={formatUptime(health.uptime_secs, i18n.locale)}
                 description={
                   mounted ? (
                     <Trans>
@@ -338,14 +342,10 @@ function MetricCard({
   );
 }
 
-function formatUptime(seconds: number): string {
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
+/** Uptime to the hour once it passes a day, to the minute once it passes a minute. */
+function formatUptime(seconds: number, locale: string): string {
+  const unit = seconds >= 86400 ? 3600 : seconds >= 60 ? 60 : 1;
+  return formatLocalizedDuration(seconds - (seconds % unit), locale);
 }
 
 function formatComponentName(name: string, i18n: I18n): string {

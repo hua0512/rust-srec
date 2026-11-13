@@ -131,14 +131,15 @@ type DurationFormatCtor = new (
 /**
  * Locale-aware counterpart of formatDuration's verbose mode: same unit
  * selection (days/hours/minutes, seconds only when the total is under an
- * hour), but with unit labels from Intl.DurationFormat for the given
- * locale (en "2h 5m", zh-CN "2小时5分钟"). Falls back to the
- * English-suffixed formatDuration when the engine lacks
+ * hour unless `showSeconds` is set), but with unit labels from
+ * Intl.DurationFormat for the given locale (en "2h 5m", zh-CN "2小时5分钟").
+ * Falls back to the English-suffixed formatDuration when the engine lacks
  * Intl.DurationFormat.
  */
 export function formatLocalizedDuration(
   seconds: number | null | undefined,
   locale: string = 'en',
+  { showSeconds = false }: { showSeconds?: boolean } = {},
 ): string {
   if (seconds == null || seconds === 0) return '-';
 
@@ -148,6 +149,7 @@ export function formatLocalizedDuration(
   if (!durationFormat) {
     return formatDuration(seconds < 1 ? seconds : Math.round(seconds), {
       decimals: 0,
+      showSeconds,
     });
   }
 
@@ -168,7 +170,7 @@ export function formatLocalizedDuration(
   if (days > 0) duration.days = days;
   if (hours > 0) duration.hours = hours;
   if (minutes > 0) duration.minutes = minutes;
-  if (total < 3600 && secs > 0) duration.seconds = secs;
+  if ((total < 3600 || showSeconds) && secs > 0) duration.seconds = secs;
 
   if (Object.keys(duration).length === 0) return formatDuration(seconds);
 

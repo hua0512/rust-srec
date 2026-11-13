@@ -29,3 +29,4 @@
 - Fixed phones and tablets capitalising or autocorrecting the username on the sign-in page. Usernames are case-sensitive, so an automatically capitalised first letter made signing in fail.
 - Fixed the theme mode and sidebar options on the **Theme** settings page not working from the keyboard. They could not be reached with Tab or chosen with Enter or Space, and screen readers did not say which option was selected.
 - Fixed tall dialogs running past the bottom of a small window or phone screen, leaving their buttons out of reach because the page behind cannot scroll. Dialogs now fit the window and scroll inside.
+- Fixed durations showing English units such as "2h 5m" in the Chinese interface, including session and recording lengths, the duration of an active download, server uptime on the **System Health** page, the average job duration, and how long a file operation has not been responding.

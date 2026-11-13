@@ -4,6 +4,7 @@ import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { formatBytes, formatDuration, formatSpeed } from '../../lib/format';
 import { cn } from '../../lib/utils';
+import { formatLocalizedDuration } from '@/lib/datetime';
 import { useDownloadStore } from '@/store/downloads';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { StatusInfoTooltip } from '../shared/status-info-tooltip';
@@ -80,7 +81,7 @@ export function ProgressIndicator({ downloadId }: ProgressIndicatorProps) {
               <Trans>Duration</Trans>
             </div>
             <div className="font-mono text-foreground/90">
-              {formatDuration(progress.durationSecs)}
+              {formatLocalizedDuration(progress.durationSecs, i18n.locale)}
             </div>
             <div className="text-muted-foreground">
               <Trans>Ratio</Trans>

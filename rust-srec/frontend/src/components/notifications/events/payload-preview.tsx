@@ -2,9 +2,9 @@ import { memo } from 'react';
 import type { MessageDescriptor } from '@lingui/core';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
-import { formatDate } from '@/lib/datetime';
+import { formatDate, formatLocalizedDuration } from '@/lib/datetime';
 import { cn } from '@/lib/utils';
-import { formatBytes, formatDuration } from '@/lib/format';
+import { formatBytes } from '@/lib/format';
 
 export const PayloadPreview = memo(({ payload }: { payload: string }) => {
   const { i18n } = useLingui();
@@ -80,10 +80,7 @@ export const PayloadPreview = memo(({ payload }: { payload: string }) => {
     if (inner.duration_secs !== undefined) {
       fields.push({
         label: msg`Duration`,
-        value: formatDuration(inner.duration_secs, {
-          decimals: 0,
-          nullValue: '0s',
-        }),
+        value: formatLocalizedDuration(inner.duration_secs, i18n.locale),
       });
     }
 
