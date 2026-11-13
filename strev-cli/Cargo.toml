@@ -6,7 +6,7 @@ rust-version.workspace = true
 description = "Strev (Streev) - CLI tool for streaming media extraction and retrieval from various platforms"
 authors = ["rust-srec team"]
 license.workspace = true
-repository = "https://github.com/hua0512/rust-srec"
+repository.workspace = true
 
 [lints]
 workspace = true
