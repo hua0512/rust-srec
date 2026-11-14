@@ -85,10 +85,11 @@ export const SHOTS = [
       }
       if (!video || video.readyState < 3) throw new Error('player video did not load');
       video.muted = true;
-      video.currentTime = 4;
+      // Play from the start rather than seeking: comments already in flight
+      // at a seek target are placed without lane spacing and can overlap.
       await video.play();
       // Let the chat fill the screen.
-      await sleep(6000);
+      await sleep(8000);
       document.activeElement?.blur();`,
     settle: 0,
     clip: '[role=dialog]',

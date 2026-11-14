@@ -216,10 +216,11 @@ function danmuXml(streamer) {
     t += 0.3 + random() * 0.5;
     const text = lines[Math.floor(random() * lines.length)];
     const colour = random() < 0.18 ? COLOURS[Math.floor(random() * COLOURS.length)] : 0xffffff;
-    const mode = random() < 0.03 ? 5 : 1;
     const user = CHAT_USERS[Math.floor(random() * CHAT_USERS.length)];
     rows.push(
-      `<d p="${t.toFixed(3)},${mode},25,${colour},${1763150000000 + Math.round(t * 1000)},0,u${i % 97},${i}" user="${escapeXml(user)}">${escapeXml(text)}</d>`,
+      // Mode 1 (scrolling) only: pinned top comments are drawn across the
+      // top scrolling row and read as overlapping text.
+      `<d p="${t.toFixed(3)},1,25,${colour},${1763150000000 + Math.round(t * 1000)},0,u${i % 97},${i}" user="${escapeXml(user)}">${escapeXml(text)}</d>`,
     );
   }
   return `<?xml version="1.0" encoding="UTF-8"?>\n<i>\n<chatserver>chat.example.com</chatserver>\n${rows.join('\n')}\n</i>\n`;
