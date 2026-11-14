@@ -31,3 +31,4 @@
 - Fixed tall dialogs running past the bottom of a small window or phone screen, leaving their buttons out of reach because the page behind cannot scroll. Dialogs now fit the window and scroll inside.
 - Fixed durations showing English units such as "2h 5m" in the Chinese interface, including session and recording lengths, the duration of an active download, server uptime on the **System Health** page, the average job duration, and how long a file operation has not been responding.
 - The web interface now uses less CPU while its browser tab is in the background during recordings and uploads. Download, upload and job progress is no longer redrawn twice a second in a background tab, and catches up as soon as the tab is shown again.
+- Fixed the **Top Talkers**, **Top Words**, **Top Gifters** and **Top Gifts** charts in a session's **Danmu Statistics** drawing every bar in black, which made them hard to read in dark mode. Each chart has its own colour again.
