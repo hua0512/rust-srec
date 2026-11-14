@@ -45,8 +45,8 @@
 ## 界面预览
 
 <table>
-  <tr>
-    <td width="50%">
+<tr>
+<td width="50%">
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/zh-CN/player-dark.webp" />
@@ -55,8 +55,8 @@
 
 <p align="center"><sub>回放录像，弹幕同步叠加在画面上</sub></p>
 
-    </td>
-    <td width="50%">
+</td>
+<td width="50%">
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/zh-CN/danmu-stats-dark.webp" />
@@ -65,10 +65,10 @@
 
 <p align="center"><sub>每场直播的弹幕走势、活跃观众与高频词</sub></p>
 
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
+</td>
+</tr>
+<tr>
+<td width="50%">
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/zh-CN/streamers-dark.webp" />
@@ -77,8 +77,8 @@
 
 <p align="center"><sub>所有频道一览，直播中的会显示下载速度和文件大小</sub></p>
 
-    </td>
-    <td width="50%">
+</td>
+<td width="50%">
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/zh-CN/workflow-dark.webp" />
@@ -87,10 +87,10 @@
 
 <p align="center"><sub>以图的方式编排后处理工作流</sub></p>
 
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
+</td>
+</tr>
+<tr>
+<td width="50%">
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/zh-CN/jobs-dark.webp" />
@@ -99,8 +99,8 @@
 
 <p align="center"><sub>实时查看每个处理任务的进度</sub></p>
 
-    </td>
-    <td width="50%">
+</td>
+<td width="50%">
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/zh-CN/mobile-dark.webp" />
@@ -109,8 +109,8 @@
 
 <p align="center"><sub>在手机上随时查看录制情况</sub></p>
 
-    </td>
-  </tr>
+</td>
+</tr>
 </table>
 
 ## 支持平台
