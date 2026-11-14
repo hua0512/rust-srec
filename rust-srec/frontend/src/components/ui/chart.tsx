@@ -37,19 +37,25 @@ function ChartContainer({
   className,
   config,
   children,
+  style: styleProp,
   ...props
 }: ChartContainerProps) {
   const uniqueId = React.useId();
   const chartId = `chart-${id ?? uniqueId.replace(/:/g, '')}`;
 
+  // The `--color-<key>` variables are merged into the caller's style rather
+  // than replaced by it, so series colours survive a caller-set height.
   const style = React.useMemo(
     () =>
-      Object.fromEntries(
-        Object.entries(config)
-          .filter(([, value]) => Boolean(value.color))
-          .map(([key, value]) => [`--color-${key}`, value.color]),
-      ) as React.CSSProperties,
-    [config],
+      ({
+        ...Object.fromEntries(
+          Object.entries(config)
+            .filter(([, value]) => Boolean(value.color))
+            .map(([key, value]) => [`--color-${key}`, value.color]),
+        ),
+        ...styleProp,
+      }) as React.CSSProperties,
+    [config, styleProp],
   );
 
   return (
