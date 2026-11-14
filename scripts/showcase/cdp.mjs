@@ -20,6 +20,8 @@ export async function launchChromium({ binary, port }) {
       '--hide-scrollbars',
       '--font-render-hinting=none',
       '--force-color-profile=srgb',
+      // The player shot starts playback from a script, without a click.
+      '--autoplay-policy=no-user-gesture-required',
       // Headless reports no hover-capable pointer, which disables every
       // Tailwind `hover:` style; pretend to have a mouse.
       '--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4',

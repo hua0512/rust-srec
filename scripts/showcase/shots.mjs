@@ -1,18 +1,22 @@
-// Pages to capture. `path` may be a function of the seeded data and the
-// locale. `ready` is a JS expression polled until true; `prepare` runs once
-// before the capture (async function body, with `sleep(ms)` available) and may
-// be a function of the locale. `title` maps each locale to the window title.
+// Pages to capture, at 1280×800 unless `width`/`height` say otherwise, with
+// the sidebar collapsed when `collapseSidebar` is set. `ready` is a JS
+// expression polled until true; `prepare` runs once before the capture (async
+// function body, with `sleep(ms)` available). `path`, `ready` and `prepare`
+// may instead be functions of `{ seed, locale }`. `title` maps each locale to
+// the window title.
+import { FEATURED } from './media.mjs';
 
 export const LOCALES = ['en', 'zh-CN'];
 
 // UI text the scripts below match on, as the frontend translates it.
 const TEXT = {
-  en: { danmuStatistics: 'Danmu Statistics' },
-  'zh-CN': { danmuStatistics: '弹幕统计' },
+  en: { danmuStatistics: 'Danmu Statistics', play: 'Play', sessionPreview: 'Session Preview' },
+  'zh-CN': { danmuStatistics: '弹幕统计', play: '播放', sessionPreview: '录制预览' },
 };
 
-// The chat statistics shot shows a stream in the page's language.
-const DANMU_STREAMER = { en: 'aurora', 'zh-CN': 'nightjar' };
+// The chat statistics and player shots show a stream in the page's language.
+const featuredSession = ({ seed, locale }) =>
+  `/sessions/${seed.sessions.find((s) => s.streamerId === FEATURED[locale]).id}`;
 const loaded = (selector) =>
   `!!document.querySelector(${JSON.stringify(selector)}) && !document.querySelector('main [data-slot=skeleton]')`;
 
@@ -39,7 +43,7 @@ export const SHOTS = [
     name: 'dashboard',
     path: '/dashboard',
     title: { en: 'Dashboard', 'zh-CN': '仪表盘' },
-    height: 1000,
+    height: 980,
     ready: `${loaded('main [data-slot=card]')} && document.body.innerText.includes('KB/s')`,
   },
   {
@@ -49,19 +53,45 @@ export const SHOTS = [
     ready: `${loaded('main [data-slot=card]')} && document.body.innerText.includes('KB/s')`,
   },
   {
-    name: 'sessions',
-    path: '/sessions',
-    title: { en: 'Sessions', 'zh-CN': '录制会话' },
-    ready: loaded('main [data-slot=card]'),
+    name: 'session',
+    path: featuredSession,
+    title: { en: 'Session', 'zh-CN': '会话' },
+    ready: ({ locale }) =>
+      `${loaded('main [data-slot=card]')} && !!document.querySelector('main button[aria-label="${TEXT[locale].play}"]')`,
+    prepare: ({ locale }) => scrollToHeading(TEXT[locale].sessionPreview),
   },
   {
     name: 'danmu-stats',
-    path: (seed, locale) =>
-      `/sessions/${seed.sessions.find((s) => s.streamerId === DANMU_STREAMER[locale]).id}`,
+    collapseSidebar: true,
+    path: featuredSession,
     title: { en: 'Session', 'zh-CN': '会话' },
     ready: loaded('main svg.recharts-surface'),
-    prepare: (locale) => scrollToHeading(TEXT[locale].danmuStatistics),
+    prepare: ({ locale }) => scrollToHeading(TEXT[locale].danmuStatistics),
     settle: 2500,
+  },
+  {
+    name: 'player',
+    path: featuredSession,
+    title: { en: 'Player', 'zh-CN': '播放器' },
+    ready: ({ locale }) =>
+      `${loaded('main [data-slot=card]')} && !!document.querySelector('main button[aria-label="${TEXT[locale].play}"]')`,
+    prepare: ({ locale }) => `${PRELUDE}
+      document.querySelector('main button[aria-label="${TEXT[locale].play}"]').click();
+      let video;
+      for (let i = 0; i < 300; i++) {
+        video = document.querySelector('[role=dialog] video');
+        if (video && video.readyState >= 3) break;
+        await sleep(100);
+      }
+      if (!video || video.readyState < 3) throw new Error('player video did not load');
+      video.muted = true;
+      video.currentTime = 4;
+      await video.play();
+      // Let the chat fill the screen.
+      await sleep(6000);
+      document.activeElement?.blur();`,
+    settle: 0,
+    clip: '[role=dialog]',
   },
   {
     name: 'workflow',
@@ -77,8 +107,27 @@ export const SHOTS = [
   },
   {
     name: 'jobs',
+    collapseSidebar: true,
     path: '/pipeline/jobs',
     title: { en: 'Jobs', 'zh-CN': '处理任务' },
     ready: loaded('main'),
   },
 ];
+
+// Pages captured at phone size and shown side by side in phone frames.
+export const PHONE = {
+  name: 'mobile',
+  width: 390,
+  height: 844,
+  pages: [
+    {
+      path: '/dashboard',
+      ready: `${loaded('main [data-slot=card]')} && document.body.innerText.includes('KB/s')`,
+    },
+    {
+      path: '/streamers',
+      ready: `${loaded('main [data-slot=card]')} && document.body.innerText.includes('KB/s')`,
+    },
+    { path: '/sessions', ready: loaded('main [data-slot=card]') },
+  ],
+};

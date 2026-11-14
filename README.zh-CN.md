@@ -49,11 +49,11 @@
     <td width="50%">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/zh-CN/streamers-dark.webp" />
-  <img src="rust-srec/docs/public/images/showcase/zh-CN/streamers-light.webp" alt="主播列表" />
+  <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/zh-CN/player-dark.webp" />
+  <img src="rust-srec/docs/public/images/showcase/zh-CN/player-light.webp" alt="回放录像，弹幕在画面上滚动" />
 </picture>
 
-<p align="center"><sub>所有频道一览，直播中的会显示下载速度和文件大小</sub></p>
+<p align="center"><sub>回放录像，弹幕同步叠加在画面上</sub></p>
 
     </td>
     <td width="50%">
@@ -71,6 +71,16 @@
     <td width="50%">
 
 <picture>
+  <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/zh-CN/streamers-dark.webp" />
+  <img src="rust-srec/docs/public/images/showcase/zh-CN/streamers-light.webp" alt="主播列表" />
+</picture>
+
+<p align="center"><sub>所有频道一览，直播中的会显示下载速度和文件大小</sub></p>
+
+    </td>
+    <td width="50%">
+
+<picture>
   <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/zh-CN/workflow-dark.webp" />
   <img src="rust-srec/docs/public/images/showcase/zh-CN/workflow-light.webp" alt="工作流编辑器（图视图）" />
 </picture>
@@ -78,6 +88,8 @@
 <p align="center"><sub>以图的方式编排后处理工作流</sub></p>
 
     </td>
+  </tr>
+  <tr>
     <td width="50%">
 
 <picture>
@@ -86,6 +98,16 @@
 </picture>
 
 <p align="center"><sub>实时查看每个处理任务的进度</sub></p>
+
+    </td>
+    <td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/zh-CN/mobile-dark.webp" />
+  <img src="rust-srec/docs/public/images/showcase/zh-CN/mobile-light.webp" alt="手机上的 Web 界面" />
+</picture>
+
+<p align="center"><sub>在手机上随时查看录制情况</sub></p>
 
     </td>
   </tr>

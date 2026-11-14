@@ -1,0 +1,163 @@
+<!doctype html>
+<!--
+  Shows phone-size captures side by side in generic phone frames, the outer
+  two lower and running off the bottom edge. capture.mjs fills the .shot
+  images and the data-theme attribute, then screenshots #stage.
+-->
+<html data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+      }
+      body {
+        background: transparent;
+        font-family:
+          'Inter Variable', Inter, -apple-system, BlinkMacSystemFont,
+          'Segoe UI', sans-serif;
+      }
+      #stage {
+        position: relative;
+        width: 1560px;
+        height: 1100px;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        gap: 64px;
+        padding-top: 72px;
+        background:
+          radial-gradient(
+            120% 90% at 0% 0%,
+            #f16529 0%,
+            rgba(241, 101, 41, 0) 55%
+          ),
+          radial-gradient(
+            110% 90% at 100% 100%,
+            #7c3aed 0%,
+            rgba(124, 58, 237, 0) 60%
+          ),
+          linear-gradient(135deg, #2a1b3d 0%, #1a1530 100%);
+      }
+      [data-theme='light'] #stage {
+        background:
+          radial-gradient(
+            120% 90% at 0% 0%,
+            #ffb38a 0%,
+            rgba(255, 179, 138, 0) 55%
+          ),
+          radial-gradient(
+            110% 90% at 100% 100%,
+            #c4b5fd 0%,
+            rgba(196, 181, 253, 0) 60%
+          ),
+          linear-gradient(135deg, #fde7da 0%, #e9e3ff 100%);
+      }
+      .phone {
+        flex: none;
+        position: relative;
+        padding: 12px;
+        border-radius: 58px;
+        background: #0b0b0e;
+        box-shadow:
+          inset 0 0 0 1.5px #3a3a40,
+          0 0 0 1px rgba(0, 0, 0, 0.5),
+          0 30px 60px -12px rgba(0, 0, 0, 0.45),
+          0 60px 120px -30px rgba(0, 0, 0, 0.5);
+      }
+      .phone:nth-child(odd) {
+        margin-top: 88px;
+      }
+      [data-theme='light'] .phone {
+        box-shadow:
+          inset 0 0 0 1.5px #3a3a40,
+          0 0 0 1px rgba(0, 0, 0, 0.25),
+          0 30px 60px -12px rgba(0, 0, 0, 0.25),
+          0 60px 120px -30px rgba(0, 0, 0, 0.3);
+      }
+      .screen {
+        position: relative;
+        width: 390px;
+        border-radius: 46px;
+        overflow: hidden;
+        background: #09090b;
+      }
+      [data-theme='light'] .screen {
+        background: #ffffff;
+      }
+      .status {
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 6px 30px 0 34px;
+        font-size: 15px;
+        font-weight: 600;
+        color: #fff;
+      }
+      [data-theme='light'] .status {
+        color: #111;
+      }
+      .camera {
+        position: absolute;
+        top: 12px;
+        left: 50%;
+        width: 104px;
+        height: 30px;
+        margin-left: -52px;
+        border-radius: 15px;
+        background: #000;
+      }
+      .icons {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .battery {
+        width: 25px;
+        height: 12px;
+        border-radius: 3.5px;
+        border: 1.5px solid currentColor;
+        opacity: 0.9;
+        padding: 1.5px;
+      }
+      .battery::after {
+        content: '';
+        display: block;
+        width: 75%;
+        height: 100%;
+        border-radius: 1.5px;
+        background: currentColor;
+      }
+      .shot {
+        display: block;
+        width: 390px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <template id="phone">
+      <div class="phone">
+        <div class="screen">
+          <div class="status">
+            <span>21:30</span>
+            <span class="icons">
+              <svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor">
+                <rect x="0" y="8" width="3" height="4" rx="1" />
+                <rect x="5" y="5.5" width="3" height="6.5" rx="1" />
+                <rect x="10" y="3" width="3" height="9" rx="1" />
+                <rect x="15" y="0" width="3" height="12" rx="1" />
+              </svg>
+              <span class="battery"></span>
+            </span>
+          </div>
+          <div class="camera"></div>
+          <img class="shot" alt="" />
+        </div>
+      </div>
+    </template>
+  </body>
+</html>

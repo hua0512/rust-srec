@@ -3,15 +3,15 @@ layout: home
 
 hero:
   name: Rust-srec
-  text: Automated Multi-Platform Stream Recorder
-  tagline: Monitor live channels, record video and chat, and run repeatable post-processing workflows from one self-hosted service.
+  text: Never miss a stream again
+  tagline: Records your favorite streamers and their chat the moment they go live, on Bilibili, Douyin, Huya, Twitch, TikTok and more, on your own computer or server.
   actions:
     - theme: brand
       text: Get Started
       link: /en/getting-started/
     - theme: alt
-      text: Production Guide
-      link: /en/operations/production
+      text: Download
+      link: https://github.com/hua0512/rust-srec/releases/latest
     - theme: alt
       text: View on GitHub
       link: https://github.com/hua0512/rust-srec
@@ -20,33 +20,30 @@ hero:
     alt: Rust-srec
 
 features:
-  - icon: 📝
-    title: Release Notes
-    details: Track version updates, behavior changes, compatibility notes, and upgrade guidance
-  - icon: 🎬
-    title: Multi-Platform Support
-    details: Support for Bilibili, Douyin, Douyu, Huya, Twitch, TikTok, and more
-  - icon: ⚡
-    title: Controlled Resource Use
-    details: Set task and download concurrency limits to match the capacity of your host
-  - icon: 🔄
-    title: DAG Pipeline
-    details: Post-processing with directed acyclic graph workflows
-  - icon: 🎯
-    title: Flexible Configuration
-    details: 4-layer config hierarchy for fine-grained control
+  - icon: 🔴
+    title: Records on its own
+    details: Add a channel once. Recording starts as soon as the stream goes live, around the clock or only in the hours you choose.
+    link: /en/getting-started/first-recording
   - icon: 💬
-    title: Danmaku Support
-    details: Capture live chat/danmaku alongside video streams
-  - icon: 🐳
-    title: Container Ready
-    details: Persistent volumes, health checks, and log rotation for single-node deployments
-  - icon: 📅
-    title: Customizable Recording Schedules
-    details: Schedule recording times and automatically manage file names for easy organization
-  - icon: 🔧
-    title: FLV Fix
-    details: Automatically repair broken FLV streams with timestamp correction and metadata fixing
+    title: Keeps the chat
+    details: Danmaku and live chat are saved beside the video, replayed over it in the player, and summed up for every session.
+    link: /en/guides/danmu
+  - icon: 🩹
+    title: Recordings that play
+    details: Streams that stutter or lose their length are repaired while they record, so files open and seek properly in any player.
+    link: /en/concepts/engines
+  - icon: ☁️
+    title: Finishes the job for you
+    details: Convert, make thumbnails, upload to Google Drive, OneDrive or Baidu Netdisk and tidy up, in a workflow you build visually.
+    link: /en/concepts/pipeline
+  - icon: 🔔
+    title: Keeps you posted
+    details: Get a Telegram, Gotify, email or webhook message when a stream starts, a recording ends or something needs attention.
+    link: /en/concepts/notifications
+  - icon: 🖥️
+    title: Runs where you want
+    details: A desktop app for Windows, macOS and Linux, or Docker on a home server or NAS, managed from any browser, even on your phone.
+    link: /en/getting-started/installation
 ---
 
 <div class="showcase">
@@ -59,14 +56,19 @@ features:
     <figcaption>The dashboard: system health, processing jobs and active recordings</figcaption>
   </figure>
   <figure>
+    <img class="showcase-light" src="/images/showcase/en/player-light.webp" alt="Recording playing with chat scrolling over the video" loading="lazy" />
+    <img class="showcase-dark" src="/images/showcase/en/player-dark.webp" alt="Recording playing with chat scrolling over the video" loading="lazy" />
+    <figcaption>Watch recordings with their chat replayed over the video</figcaption>
+  </figure>
+  <figure>
     <img class="showcase-light" src="/images/showcase/en/streamers-light.webp" alt="Streamer list" loading="lazy" />
     <img class="showcase-dark" src="/images/showcase/en/streamers-dark.webp" alt="Streamer list" loading="lazy" />
     <figcaption>Every channel at a glance, live ones with download speed and size</figcaption>
   </figure>
   <figure>
-    <img class="showcase-light" src="/images/showcase/en/sessions-light.webp" alt="Session list" loading="lazy" />
-    <img class="showcase-dark" src="/images/showcase/en/sessions-dark.webp" alt="Session list" loading="lazy" />
-    <figcaption>Recorded sessions with titles, duration and size</figcaption>
+    <img class="showcase-light" src="/images/showcase/en/session-light.webp" alt="A recorded session's page" loading="lazy" />
+    <img class="showcase-dark" src="/images/showcase/en/session-dark.webp" alt="A recorded session's page" loading="lazy" />
+    <figcaption>Every recorded session with a preview you can play</figcaption>
   </figure>
   <figure>
     <img class="showcase-light" src="/images/showcase/en/danmu-stats-light.webp" alt="Chat statistics for a session" loading="lazy" />
@@ -82,5 +84,10 @@ features:
     <img class="showcase-light" src="/images/showcase/en/jobs-light.webp" alt="Pipeline jobs list" loading="lazy" />
     <img class="showcase-dark" src="/images/showcase/en/jobs-dark.webp" alt="Pipeline jobs list" loading="lazy" />
     <figcaption>Follow every processing job as it runs</figcaption>
+  </figure>
+  <figure>
+    <img class="showcase-light" src="/images/showcase/en/mobile-light.webp" alt="The web interface on a phone" loading="lazy" />
+    <img class="showcase-dark" src="/images/showcase/en/mobile-dark.webp" alt="The web interface on a phone" loading="lazy" />
+    <figcaption>Check on your recordings from your phone</figcaption>
   </figure>
 </div>

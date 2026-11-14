@@ -14,7 +14,7 @@ const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
 
 // Deterministic PRNG so every run produces the same numbers.
-function rng(seed) {
+export function rng(seed) {
   let s = seed >>> 0;
   return () => {
     s = (s + 0x6d2b79f5) >>> 0;
@@ -27,8 +27,7 @@ function rng(seed) {
 
 function uuid(random) {
   const h = Array.from({ length: 32 }, () => Math.floor(random() * 16).toString(16));
-  // Version 4, variant 8 or 9: a valid UUID whose fourth group starts with a
-  // digit, so the breadcrumb's CSS `capitalize` leaves it lower-case.
+  // A valid version 4 UUID, like the IDs the backend generates.
   h[12] = '4';
   h[16] = parseInt(h[16], 16) & 1 ? '9' : '8';
   return `${h.slice(0, 8).join('')}-${h.slice(8, 12).join('')}-${h.slice(12, 16).join('')}-${h.slice(16, 20).join('')}-${h.slice(20).join('')}`;
@@ -59,7 +58,7 @@ export const STREAMERS = [
     titles: ['Piano requests', 'Lo-fi beats making', 'Late night jam'] },
 ];
 
-const CHAT_USERS = [
+export const CHAT_USERS = [
   'moonlit_otter', 'pixel_pilot', '小鱼干', 'cosmic_toast', 'driftwood', '风铃草',
   'nebula_cat', 'quietstorm', 'tea_and_code', '晚风', 'lumen_fan', 'paper_crane',
 ];
@@ -83,23 +82,12 @@ function avatar(name, [c0, c1]) {
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
 }
 
-async function thumbnail(path, [c0, c1], seed) {
-  // A soft two-colour gradient with drifting light blobs: reads as a video
-  // frame at card size without depicting anyone.
-  const hex = (c) => `0x${c.slice(1)}`;
-  const filter =
-    `gradients=s=640x360:c0=${hex(c0)}:c1=${hex(c1)}:x0=0:y0=0:x1=640:y1=360:nb_colors=2:seed=${seed}:duration=1,` +
-    `format=rgb24`;
-  await run('ffmpeg', ['-y', '-v', 'error', '-f', 'lavfi', '-i', filter, '-frames:v', '1', '-q:v', '3', path]);
-}
-
 /** Seeds an already-migrated database. Returns what the proxy needs. */
 export async function seedDatabase({ dbPath, outputDir, now = Date.now() }) {
   const db = new DatabaseSync(dbPath);
   const random = rng(20261114);
   const parked = now + 365 * DAY;
   const thumbsDir = join(outputDir, 'thumbnails');
-  await mkdir(thumbsDir, { recursive: true });
 
   const insertStreamer = db.prepare(
     `INSERT INTO streamers (id, name, url, platform_config_id, state, priority,
@@ -134,7 +122,6 @@ export async function seedDatabase({ dbPath, outputDir, now = Date.now() }) {
 
   const recordings = [];
   const sessions = [];
-  const thumbJobs = [];
   // Sessions and their chat statistics reference each other.
   db.exec('PRAGMA defer_foreign_keys = ON; BEGIN');
   STREAMERS.forEach((s, si) => {
@@ -151,8 +138,9 @@ export async function seedDatabase({ dbPath, outputDir, now = Date.now() }) {
       const duration = (1.5 + random() * 4) * HOUR;
       const start = end - duration;
       const id = uuid(random);
-      sessions.push({ id, streamerId: s.id, index: k });
       const title = s.titles[k % s.titles.length];
+      const session = { id, streamerId: s.id, index: k, title, parts: [] };
+      sessions.push(session);
       const bytesPerSec = 400_000 + random() * 600_000;
       const size = Math.round((duration / 1000) * bytesPerSec);
       const danmuId = `danmu-${id}`;
@@ -167,15 +155,20 @@ export async function seedDatabase({ dbPath, outputDir, now = Date.now() }) {
         const partSize = Math.round(size / parts);
         const partStart = Math.round(start + (p * duration) / parts);
         const partEnd = Math.round(start + ((p + 1) * duration) / parts);
+        // Recording writes each part's chat beside it under the same name,
+        // which is how the player pairs them.
+        const xml = file.replace(/\.mp4$/, '.xml');
+        session.parts.push({ video: file, xml });
         insertOutput.run(`out-${id}-v${p}`, id, file, 'VIDEO', partSize, partEnd);
+        insertOutput.run(`out-${id}-x${p}`, id, xml, 'DANMU_XML', Math.round(partSize / 900), partEnd);
         insertSegment.run(
           `seg-${id}-${p}`, id, p, file, (partEnd - partStart) / 1000, partSize,
           p + 1 < parts ? 'size_limit' : 'stream_ended', partStart, partEnd, partEnd,
         );
       }
-      insertOutput.run(`out-${id}-x`, id, join(outputDir, s.id, `${id}.xml`), 'DANMU_XML', Math.round(size / 900), Math.round(end));
       const thumb = join(thumbsDir, `${id}.jpg`);
-      thumbJobs.push(thumbnail(thumb, k % 2 ? [...s.colors].reverse() : s.colors, si * 10 + k));
+      // media.mjs draws the picture once a browser is running.
+      session.thumbnail = thumb;
       insertOutput.run(`out-${id}-t`, id, thumb, 'THUMBNAIL', 48_000, Math.round(end));
 
       // Chat statistics: an evening-shaped curve with a mid-stream peak.
@@ -244,7 +237,6 @@ export async function seedDatabase({ dbPath, outputDir, now = Date.now() }) {
   });
   db.exec('COMMIT');
   db.close();
-  await Promise.all(thumbJobs);
 
   return {
     liveIds: new Set(STREAMERS.filter((s) => s.live).map((s) => s.id)),
