@@ -45,8 +45,8 @@
 ## Screenshots
 
 <table>
-  <tr>
-    <td width="50%">
+<tr>
+<td width="50%">
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/en/player-dark.webp" />
@@ -55,8 +55,8 @@
 
 <p align="center"><sub>Watch recordings with their chat replayed over the video</sub></p>
 
-    </td>
-    <td width="50%">
+</td>
+<td width="50%">
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/en/danmu-stats-dark.webp" />
@@ -65,10 +65,10 @@
 
 <p align="center"><sub>Chat activity, top chatters and top words for each session</sub></p>
 
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
+</td>
+</tr>
+<tr>
+<td width="50%">
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/en/streamers-dark.webp" />
@@ -77,8 +77,8 @@
 
 <p align="center"><sub>Every channel at a glance, live ones with download speed and size</sub></p>
 
-    </td>
-    <td width="50%">
+</td>
+<td width="50%">
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/en/workflow-dark.webp" />
@@ -87,10 +87,10 @@
 
 <p align="center"><sub>Build post-processing workflows as a graph</sub></p>
 
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
+</td>
+</tr>
+<tr>
+<td width="50%">
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/en/jobs-dark.webp" />
@@ -99,8 +99,8 @@
 
 <p align="center"><sub>Follow every processing job as it runs</sub></p>
 
-    </td>
-    <td width="50%">
+</td>
+<td width="50%">
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/en/mobile-dark.webp" />
@@ -109,8 +109,8 @@
 
 <p align="center"><sub>Check on your recordings from your phone</sub></p>
 
-    </td>
-  </tr>
+</td>
+</tr>
 </table>
 
 ## Supported platforms
