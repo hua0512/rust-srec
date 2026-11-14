@@ -23,6 +23,25 @@ import {
 } from '@/components/ui/breadcrumb';
 import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * A path segment with no page name, such as a record ID. UUIDs are shortened
+ * to the `#` and first 8 characters the rest of the interface shows, with the
+ * full ID on hover; other segments are shown as they are.
+ */
+function SegmentLabel({ segment }: { segment: string }) {
+  if (UUID_PATTERN.test(segment)) {
+    return (
+      <span className="font-mono" title={segment}>
+        #{segment.slice(0, 8)}
+      </span>
+    );
+  }
+  return <>{segment}</>;
+}
+
 export function SiteHeader() {
   const { config } = useSidebarConfig();
   const { isMobile, toggleSidebar } = useSidebar();
@@ -93,18 +112,18 @@ export function SiteHeader() {
               {pathSegments.map((segment, index) => {
                 const isLast = index === pathSegments.length - 1;
                 const href = `/${pathSegments.slice(0, index + 1).join('/')}`;
-                const breadcrumbName = BREADCRUMB_NAME_MAP[segment] || segment;
+                const breadcrumbName = BREADCRUMB_NAME_MAP[segment] ?? (
+                  <SegmentLabel segment={segment} />
+                );
 
                 return (
                   <React.Fragment key={href}>
                     <BreadcrumbSeparator />
                     <BreadcrumbItem>
                       {isLast ? (
-                        <BreadcrumbPage className="capitalize">
-                          {breadcrumbName}
-                        </BreadcrumbPage>
+                        <BreadcrumbPage>{breadcrumbName}</BreadcrumbPage>
                       ) : (
-                        <BreadcrumbLink asChild className="capitalize">
+                        <BreadcrumbLink asChild>
                           <Link to={href}>{breadcrumbName}</Link>
                         </BreadcrumbLink>
                       )}
