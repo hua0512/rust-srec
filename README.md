@@ -5,34 +5,107 @@
 <h1 align="center">rust-srec</h1>
 
 <p align="center">
-  <b>Automated live-stream recorder for the platforms you actually watch.</b><br/>
-  Set it up once, and it captures your favorite streamers the moment they go live.
+  <b>Never miss a stream again.</b><br/>
+  rust-srec watches your favorite streamers and starts recording the moment they go live,<br/>
+  chat included, on your own computer or server.
+</p>
+
+<p align="center">
+  <a href="https://github.com/hua0512/rust-srec/releases/latest"><img src="https://img.shields.io/github/v/release/hua0512/rust-srec?filter=rust-srec-*&label=release&color=f16529" alt="Latest release" /></a>
+  <a href="https://docs.srec.rs"><img src="https://img.shields.io/badge/docs-docs.srec.rs-7c3aed" alt="Documentation" /></a>
+  <a href="#license"><img src="https://img.shields.io/badge/license-MIT%20%2F%20Apache--2.0-blue" alt="License" /></a>
 </p>
 
 <p align="center">
   <a href="./README.zh-CN.md">简体中文</a> ·
   <a href="https://docs.srec.rs">Documentation</a> ·
   <a href="https://docs.srec.rs/en/getting-started/">Get Started</a> ·
-  <a href="https://docs.srec.rs/en/getting-started/docker">Docker</a> ·
-  <a href="https://docs.srec.rs/en/release-notes/">Release Notes</a>
+  <a href="https://docs.srec.rs/en/getting-started/faq">FAQ</a> ·
+  <a href="https://docs.srec.rs/en/release-notes/">What's New</a>
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/en/dashboard-dark.webp" />
+    <img src="rust-srec/docs/public/images/showcase/en/dashboard-light.webp" alt="rust-srec dashboard with live recordings and processing jobs" />
+  </picture>
 </p>
 
 ---
 
-## What it does
+## Why rust-srec
 
-- **Records streams automatically.** Add a streamer, walk away. rust-srec watches and records when they go live.
-- **Captures chat too.** Danmaku and live chat are saved alongside the video where the platform allows.
-- **Fixes broken recordings.** Built-in repair for FLV and HLS streams handles timestamp drift, missing metadata, and similar issues.
-- **Stays out of your way.** Lightweight, runs in Docker, and offers a web UI plus a REST API with Swagger docs.
+- 🔴 **Records on its own.** Add a channel once. rust-srec checks it around the clock and starts recording as soon as the stream begins, even at 3 a.m. Set recording hours if you only want certain shows.
+- 💬 **Keeps the chat.** On supported platforms, danmaku and live chat are saved next to the video, and every session gets charts of chat activity, top chatters and the most-used words.
+- 🩹 **Recordings that actually play.** Streams that stutter, jump or lose their length are repaired while they record, so files open and seek properly in any player.
+- ☁️ **Finishes the job for you.** After each stream it can convert the video, make a thumbnail, upload to Google Drive, OneDrive or Baidu Netdisk, and tidy up local copies. You build these steps visually in the workflow editor.
+- 🔔 **Tells you what's happening.** Get a message on Telegram, Gotify, email or a webhook when a stream starts, a recording ends or something needs attention.
+- 🖥️ **Runs where you want.** Use the desktop app on Windows, macOS or Linux, or run it 24/7 on a home server or NAS with Docker and manage it from any browser.
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/en/streamers-dark.webp" />
+  <img src="rust-srec/docs/public/images/showcase/en/streamers-light.webp" alt="Streamer list" />
+</picture>
+
+<p align="center"><sub>Every channel at a glance, live ones with download speed and size</sub></p>
+
+    </td>
+    <td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/en/danmu-stats-dark.webp" />
+  <img src="rust-srec/docs/public/images/showcase/en/danmu-stats-light.webp" alt="Chat statistics for a session" />
+</picture>
+
+<p align="center"><sub>Chat activity, top chatters and top words for each session</sub></p>
+
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/en/workflow-dark.webp" />
+  <img src="rust-srec/docs/public/images/showcase/en/workflow-light.webp" alt="Workflow editor in graph view" />
+</picture>
+
+<p align="center"><sub>Build post-processing workflows as a graph</sub></p>
+
+    </td>
+    <td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/en/jobs-dark.webp" />
+  <img src="rust-srec/docs/public/images/showcase/en/jobs-light.webp" alt="Pipeline jobs list" />
+</picture>
+
+<p align="center"><sub>Follow every processing job as it runs</sub></p>
+
+    </td>
+  </tr>
+</table>
 
 ## Supported platforms
 
-Bilibili · Douyin · Douyu · Huya · Twitch · TikTok · SOOP · Bigo Live · AcFun · Picarto · Redbook · TwitCasting · Weibo · PandaTV (legacy)
+**Bilibili · Douyin · Douyu · Huya · Twitch · TikTok · SOOP · Bigo Live · AcFun · Picarto · Redbook · TwitCasting · Weibo · PandaTV**
 
-## Quick start (Docker)
+Other sites, such as YouTube and Kick, can be recorded through [Streamlink](https://docs.srec.rs/en/platforms/#sites-handled-by-streamlink).
 
-The fastest way to try it — Linux and macOS:
+## Get started
+
+### On your computer: the desktop app
+
+Download the installer for Windows (`.msi` / `.exe`), macOS (`.dmg`) or Linux (`.AppImage` / `.deb` / `.rpm`) from the [latest release](https://github.com/hua0512/rust-srec/releases/latest), open it, and add your first streamer. There is nothing to configure.
+
+### On a server or NAS: Docker
+
+One command sets everything up. Linux and macOS:
 
 ```bash
 curl -fsSL https://docs.srec.rs/install.sh | bash
@@ -44,60 +117,29 @@ Windows PowerShell:
 irm https://docs.srec.rs/install.ps1 | iex
 ```
 
-The installer downloads the Compose and environment files, generates the required secrets, detects optional NVIDIA support, and offers to start the services. Then open the web UI and follow the [getting-started guide](https://docs.srec.rs/en/getting-started/).
+The installer downloads the files it needs, generates the secrets it needs, and offers to start rust-srec. Then open the web interface in your browser.
 
-To pin a release instead of tracking `latest`, pass `VERSION` — image tags use a leading `v`:
+> Prefer to read the script before running it, or to set things up by hand? See the [Docker guide](https://docs.srec.rs/en/getting-started/docker). Standalone downloads for every platform are in the [installation guide](https://docs.srec.rs/en/getting-started/installation).
 
-```bash
-curl -fsSL https://docs.srec.rs/install.sh | VERSION=v0.8.0 bash
-```
+Next, follow [Your first recording](https://docs.srec.rs/en/getting-started/first-recording).
 
-> Piping a remote script to a shell runs whatever the server returns. To review it first, download [install.sh](https://docs.srec.rs/install.sh) and run your local copy, or follow the manual Compose steps in the [Docker guide](https://docs.srec.rs/en/getting-started/docker).
+## Learn more
 
-Prefer a binary or to build from source? See the [installation guide](https://docs.srec.rs/en/getting-started/installation).
-
-## Highlights
-
-- **Multi-platform** — 14 streaming sites supported out of the box; other sites can be recorded through Streamlink.
-- **Three download engines** — pick `ffmpeg`, `streamlink`, or the built-in Rust engine (`mesio`).
-- **Post-processing pipelines** — automatically transcode, segment, or hand off recordings to your own scripts.
-- **Web UI + REST API** — manage streamers from the browser; automate with the API (JWT-protected, OpenAPI docs at `/api/docs`).
-- **Persistent and reliable** — SQLite-backed state; schema upgrades happen on startup.
-
-## Companion CLI tools
-
-Two standalone tools ship in the same repo:
-
-| Tool | What it's for | Docs |
-| --- | --- | --- |
-| `strev` | Inspect a live-stream URL and pull out media info from supported platforms. | [`strev-cli/README.md`](./strev-cli/README.md) |
-| `mesio` | Download and repair FLV, HLS and MPEG-DASH streams from the command line. | [`mesio-cli/README.md`](./mesio-cli/README.md) |
-
-## Helpful links
-
-- [Configuration reference](https://docs.srec.rs/en/getting-started/configuration)
-- [Architecture overview](https://docs.srec.rs/en/concepts/architecture)
-- [Engines explained](https://docs.srec.rs/en/concepts/engines)
+- [Getting started](https://docs.srec.rs/en/getting-started/) – install, add a streamer, find your files
+- [Chat recording](https://docs.srec.rs/en/guides/danmu) – what is saved for each platform
+- [Recording schedules](https://docs.srec.rs/en/guides/schedules) – record only at certain times
+- [Post-processing workflows](https://docs.srec.rs/en/concepts/pipeline) – convert, upload and clean up automatically
+- [Notifications](https://docs.srec.rs/en/concepts/notifications) – Telegram, email, webhooks and more
 - [FAQ](https://docs.srec.rs/en/getting-started/faq)
 
-## For developers
+## Also in this repository
 
-This is a Cargo workspace. The main pieces:
+- **[strev](./strev-cli/README.md)** – look up a live-stream link from the command line and see its qualities and stream addresses.
+- **[mesio](./mesio-cli/README.md)** – download and repair live streams from the command line, without the full recorder.
 
-- `rust-srec/` — the recorder backend (API, scheduler, pipeline, database)
-- `strev-cli/`, `mesio-cli/` — the CLI tools above
-- `crates/` — reusable libraries: platform extractors, codec and container parsers (FLV, MPEG-TS, MP4, HLS), the `mesio` download engine, and stream-repair utilities
+## Contributing
 
-Common commands:
-
-```bash
-cargo build --locked              # build the backend and both CLIs (the desktop app is built separately)
-cargo test --locked               # run tests
-cargo clippy --locked --all-targets -- -D warnings   # lint
-cargo fmt --all                   # format
-```
-
-Contributions welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md).
+Bug reports, platform fixes and translations are welcome. To build rust-srec or work on the code, start with [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## License
 

@@ -48,3 +48,39 @@ features:
     title: FLV Fix
     details: Automatically repair broken FLV streams with timestamp correction and metadata fixing
 ---
+
+<div class="showcase">
+
+## Screenshots
+
+  <figure>
+    <img class="showcase-light" src="/images/showcase/en/dashboard-light.webp" alt="Dashboard with live recordings and pipeline statistics" loading="lazy" />
+    <img class="showcase-dark" src="/images/showcase/en/dashboard-dark.webp" alt="Dashboard with live recordings and pipeline statistics" loading="lazy" />
+    <figcaption>The dashboard: system health, processing jobs and active recordings</figcaption>
+  </figure>
+  <figure>
+    <img class="showcase-light" src="/images/showcase/en/streamers-light.webp" alt="Streamer list" loading="lazy" />
+    <img class="showcase-dark" src="/images/showcase/en/streamers-dark.webp" alt="Streamer list" loading="lazy" />
+    <figcaption>Every channel at a glance, live ones with download speed and size</figcaption>
+  </figure>
+  <figure>
+    <img class="showcase-light" src="/images/showcase/en/sessions-light.webp" alt="Session list" loading="lazy" />
+    <img class="showcase-dark" src="/images/showcase/en/sessions-dark.webp" alt="Session list" loading="lazy" />
+    <figcaption>Recorded sessions with titles, duration and size</figcaption>
+  </figure>
+  <figure>
+    <img class="showcase-light" src="/images/showcase/en/danmu-stats-light.webp" alt="Chat statistics for a session" loading="lazy" />
+    <img class="showcase-dark" src="/images/showcase/en/danmu-stats-dark.webp" alt="Chat statistics for a session" loading="lazy" />
+    <figcaption>Chat activity, top chatters and top words for each session</figcaption>
+  </figure>
+  <figure>
+    <img class="showcase-light" src="/images/showcase/en/workflow-light.webp" alt="Workflow editor in graph view" loading="lazy" />
+    <img class="showcase-dark" src="/images/showcase/en/workflow-dark.webp" alt="Workflow editor in graph view" loading="lazy" />
+    <figcaption>Build post-processing workflows as a graph</figcaption>
+  </figure>
+  <figure>
+    <img class="showcase-light" src="/images/showcase/en/jobs-light.webp" alt="Pipeline jobs list" loading="lazy" />
+    <img class="showcase-dark" src="/images/showcase/en/jobs-dark.webp" alt="Pipeline jobs list" loading="lazy" />
+    <figcaption>Follow every processing job as it runs</figcaption>
+  </figure>
+</div>
