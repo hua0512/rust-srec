@@ -49,11 +49,11 @@
     <td width="50%">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/en/streamers-dark.webp" />
-  <img src="rust-srec/docs/public/images/showcase/en/streamers-light.webp" alt="Streamer list" />
+  <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/en/player-dark.webp" />
+  <img src="rust-srec/docs/public/images/showcase/en/player-light.webp" alt="Recording playing with chat scrolling over the video" />
 </picture>
 
-<p align="center"><sub>Every channel at a glance, live ones with download speed and size</sub></p>
+<p align="center"><sub>Watch recordings with their chat replayed over the video</sub></p>
 
     </td>
     <td width="50%">
@@ -71,6 +71,16 @@
     <td width="50%">
 
 <picture>
+  <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/en/streamers-dark.webp" />
+  <img src="rust-srec/docs/public/images/showcase/en/streamers-light.webp" alt="Streamer list" />
+</picture>
+
+<p align="center"><sub>Every channel at a glance, live ones with download speed and size</sub></p>
+
+    </td>
+    <td width="50%">
+
+<picture>
   <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/en/workflow-dark.webp" />
   <img src="rust-srec/docs/public/images/showcase/en/workflow-light.webp" alt="Workflow editor in graph view" />
 </picture>
@@ -78,6 +88,8 @@
 <p align="center"><sub>Build post-processing workflows as a graph</sub></p>
 
     </td>
+  </tr>
+  <tr>
     <td width="50%">
 
 <picture>
@@ -86,6 +98,16 @@
 </picture>
 
 <p align="center"><sub>Follow every processing job as it runs</sub></p>
+
+    </td>
+    <td width="50%">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="rust-srec/docs/public/images/showcase/en/mobile-dark.webp" />
+  <img src="rust-srec/docs/public/images/showcase/en/mobile-light.webp" alt="The web interface on a phone" />
+</picture>
+
+<p align="center"><sub>Check on your recordings from your phone</sub></p>
 
     </td>
   </tr>

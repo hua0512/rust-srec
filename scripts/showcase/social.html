@@ -1,0 +1,133 @@
+<!doctype html>
+<!--
+  The 1280×640 social preview: logo and tagline beside the framed dashboard,
+  which runs off the right and bottom edges. capture.mjs fills #shot and
+  #logo, then screenshots #stage at 1× scale.
+-->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+      }
+      body {
+        font-family:
+          'Inter Variable', Inter, -apple-system, BlinkMacSystemFont,
+          'Segoe UI', sans-serif;
+      }
+      #stage {
+        position: relative;
+        width: 1280px;
+        height: 640px;
+        overflow: hidden;
+        color: #fff;
+        background:
+          radial-gradient(
+            90% 110% at 0% 0%,
+            #f16529 0%,
+            rgba(241, 101, 41, 0) 55%
+          ),
+          radial-gradient(
+            90% 100% at 100% 100%,
+            #7c3aed 0%,
+            rgba(124, 58, 237, 0) 60%
+          ),
+          linear-gradient(135deg, #2a1b3d 0%, #1a1530 100%);
+      }
+      .copy {
+        position: absolute;
+        left: 72px;
+        top: 0;
+        bottom: 0;
+        width: 440px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+      #logo {
+        width: 84px;
+        height: 84px;
+        margin-bottom: 28px;
+        filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.35));
+      }
+      h1 {
+        font-size: 64px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        line-height: 1;
+      }
+      .tagline {
+        margin-top: 20px;
+        font-size: 34px;
+        font-weight: 700;
+        line-height: 1.2;
+      }
+      .sub {
+        margin-top: 18px;
+        font-size: 20px;
+        line-height: 1.45;
+        color: rgba(255, 255, 255, 0.78);
+      }
+      .window {
+        position: absolute;
+        left: 560px;
+        top: 96px;
+        width: 860px;
+        border-radius: 12px;
+        overflow: hidden;
+        background: #1e1e22;
+        box-shadow:
+          0 0 0 0.5px rgba(0, 0, 0, 0.6),
+          inset 0 0 0 0.5px rgba(255, 255, 255, 0.14),
+          0 24px 48px -8px rgba(0, 0, 0, 0.45),
+          0 48px 96px -24px rgba(0, 0, 0, 0.5);
+      }
+      .titlebar {
+        height: 30px;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 0 12px;
+        background: linear-gradient(#2c2c31, #26262b);
+        border-bottom: 1px solid rgba(0, 0, 0, 0.55);
+      }
+      .titlebar span {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+      }
+      .titlebar span:nth-child(1) {
+        background: #ff5f57;
+      }
+      .titlebar span:nth-child(2) {
+        background: #febc2e;
+      }
+      .titlebar span:nth-child(3) {
+        background: #28c840;
+      }
+      #shot {
+        display: block;
+        width: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="stage">
+      <div class="copy">
+        <img id="logo" alt="" />
+        <h1>rust-srec</h1>
+        <p class="tagline">Never miss a stream again.</p>
+        <p class="sub">
+          Records live streams and their chat automatically, on your own
+          computer or server.
+        </p>
+      </div>
+      <div class="window">
+        <div class="titlebar"><span></span><span></span><span></span></div>
+        <img id="shot" alt="" />
+      </div>
+    </div>
+  </body>
+</html>

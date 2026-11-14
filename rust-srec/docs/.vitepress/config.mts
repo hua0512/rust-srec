@@ -19,6 +19,17 @@ export default defineConfig({
   head: [
     ["link", { rel: "icon", type: "image/svg+xml", href: "/stream-rec.svg" }],
     ["meta", { name: "theme-color", content: "#e44d26" }],
+    // Link previews (chat apps, social sites) need an absolute image URL.
+    [
+      "meta",
+      {
+        property: "og:image",
+        content: "https://docs.srec.rs/images/showcase/social-preview.png",
+      },
+    ],
+    ["meta", { property: "og:image:width", content: "1280" }],
+    ["meta", { property: "og:image:height", content: "640" }],
+    ["meta", { name: "twitter:card", content: "summary_large_image" }],
   ],
 
   locales: {

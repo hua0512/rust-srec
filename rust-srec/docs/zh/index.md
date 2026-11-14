@@ -3,15 +3,15 @@ layout: home
 
 hero:
   name: Rust-srec
-  text: 多平台自动直播录制系统
-  tagline: 在一个自托管服务中监控直播间、录制视频与弹幕，并运行可重复的后处理工作流。
+  text: 再也不错过任何一场直播
+  tagline: 主播一开播就自动录制视频和弹幕，支持 B 站、抖音、虎牙、Twitch、TikTok 等平台，运行在你自己的电脑或服务器上。
   actions:
     - theme: brand
       text: 快速开始
       link: /zh/getting-started/
     - theme: alt
-      text: 生产部署
-      link: /zh/operations/production
+      text: 下载
+      link: https://github.com/hua0512/rust-srec/releases/latest
     - theme: alt
       text: GitHub
       link: https://github.com/hua0512/rust-srec
@@ -20,33 +20,30 @@ hero:
     alt: Rust-srec
 
 features:
-  - icon: 📝
-    title: 更新日志
-    details: 查看版本更新、行为变更、兼容性说明与升级建议
-  - icon: 🎬
-    title: 多平台支持
-    details: 支持 Bilibili、抖音、斗鱼、虎牙、Twitch、TikTok 等平台
-  - icon: ⚡
-    title: 资源可控
-    details: 可按主机容量限制任务与下载并发数
-  - icon: 🔄
-    title: DAG 管道
-    details: 基于有向无环图的后处理工作流
-  - icon: 🎯
-    title: 灵活配置
-    details: 4 层配置层级，精细化控制
+  - icon: 🔴
+    title: 全自动录制
+    details: 添加一次主播，开播立刻开录。可以全天候守候，也可以只在你设定的时间段录制。
+    link: /zh/getting-started/first-recording
   - icon: 💬
-    title: 弹幕支持
-    details: 同步录制弹幕
-  - icon: 🐳
-    title: 容器化部署
-    details: 为单机部署提供持久化卷、健康检查与日志轮转
-  - icon: 📅
-    title: 自定义录制计划
-    details: 定时录制，自动管理文件名，便于组织归档
-  - icon: 🔧
-    title: FLV 修复
-    details: 自动修复损坏的 FLV 流，包括时间戳校正和元数据修复
+    title: 弹幕一起留下
+    details: 弹幕与视频一同保存，播放时可叠加在画面上回放，每场直播还有弹幕统计。
+    link: /zh/guides/danmu
+  - icon: 🩹
+    title: 录像拿来就能看
+    details: 直播流卡顿、时长丢失等问题会在录制时自动修复，录出来的文件在任何播放器里都能正常播放和拖动。
+    link: /zh/concepts/engines
+  - icon: ☁️
+    title: 录完自动收尾
+    details: 自动转码、生成封面、上传到百度网盘、Google Drive 或 OneDrive 并清理本地文件，工作流可视化搭建。
+    link: /zh/concepts/pipeline
+  - icon: 🔔
+    title: 动态及时通知
+    details: 开播、录制结束或需要处理的问题，都能通过 Telegram、Gotify、邮件或 Webhook 通知你。
+    link: /zh/concepts/notifications
+  - icon: 🖥️
+    title: 想在哪儿跑就在哪儿跑
+    details: Windows、macOS、Linux 桌面版，或用 Docker 部署到家用服务器、NAS，在任意浏览器里管理，手机也行。
+    link: /zh/getting-started/installation
 ---
 
 <div class="showcase">
@@ -59,14 +56,19 @@ features:
     <figcaption>仪表盘：系统状态、处理任务与正在进行的录制</figcaption>
   </figure>
   <figure>
+    <img class="showcase-light" src="/images/showcase/zh-CN/player-light.webp" alt="回放录像，弹幕在画面上滚动" loading="lazy" />
+    <img class="showcase-dark" src="/images/showcase/zh-CN/player-dark.webp" alt="回放录像，弹幕在画面上滚动" loading="lazy" />
+    <figcaption>回放录像，弹幕同步叠加在画面上</figcaption>
+  </figure>
+  <figure>
     <img class="showcase-light" src="/images/showcase/zh-CN/streamers-light.webp" alt="主播列表" loading="lazy" />
     <img class="showcase-dark" src="/images/showcase/zh-CN/streamers-dark.webp" alt="主播列表" loading="lazy" />
     <figcaption>所有频道一览，直播中的会显示下载速度和文件大小</figcaption>
   </figure>
   <figure>
-    <img class="showcase-light" src="/images/showcase/zh-CN/sessions-light.webp" alt="场次列表" loading="lazy" />
-    <img class="showcase-dark" src="/images/showcase/zh-CN/sessions-dark.webp" alt="场次列表" loading="lazy" />
-    <figcaption>已录制的场次，附带标题、时长与大小</figcaption>
+    <img class="showcase-light" src="/images/showcase/zh-CN/session-light.webp" alt="录制会话详情页" loading="lazy" />
+    <img class="showcase-dark" src="/images/showcase/zh-CN/session-dark.webp" alt="录制会话详情页" loading="lazy" />
+    <figcaption>每场录制都有可直接播放的预览</figcaption>
   </figure>
   <figure>
     <img class="showcase-light" src="/images/showcase/zh-CN/danmu-stats-light.webp" alt="场次弹幕统计" loading="lazy" />
@@ -82,5 +84,10 @@ features:
     <img class="showcase-light" src="/images/showcase/zh-CN/jobs-light.webp" alt="处理任务列表" loading="lazy" />
     <img class="showcase-dark" src="/images/showcase/zh-CN/jobs-dark.webp" alt="处理任务列表" loading="lazy" />
     <figcaption>实时查看每个处理任务的进度</figcaption>
+  </figure>
+  <figure>
+    <img class="showcase-light" src="/images/showcase/zh-CN/mobile-light.webp" alt="手机上的 Web 界面" loading="lazy" />
+    <img class="showcase-dark" src="/images/showcase/zh-CN/mobile-dark.webp" alt="手机上的 Web 界面" loading="lazy" />
+    <figcaption>在手机上随时查看录制情况</figcaption>
   </figure>
 </div>
