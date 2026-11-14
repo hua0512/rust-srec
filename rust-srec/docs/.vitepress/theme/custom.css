@@ -135,3 +135,42 @@ html {
     height: var(--diagram-height, auto);
     max-height: none;
 }
+
+/* Home page screenshots: each shot ships in a light and a dark variant, and
+   the one matching the site theme is shown. */
+.showcase {
+  max-width: 1152px;
+  margin: 64px auto 0;
+  padding: 0 24px;
+}
+
+.showcase figure {
+  margin: 0 0 40px;
+}
+
+.showcase img {
+  width: 100%;
+  height: auto;
+}
+
+.showcase figcaption {
+  margin-top: 4px;
+  text-align: center;
+  color: var(--vp-c-text-2);
+  font-size: 14px;
+}
+
+.showcase .showcase-dark,
+.dark .showcase .showcase-light {
+  display: none;
+}
+
+.dark .showcase .showcase-dark {
+  display: block;
+}
+
+@media (min-width: 960px) {
+  .showcase {
+    padding: 0 64px;
+  }
+}

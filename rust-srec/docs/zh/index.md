@@ -48,3 +48,39 @@ features:
     title: FLV 修复
     details: 自动修复损坏的 FLV 流，包括时间戳校正和元数据修复
 ---
+
+<div class="showcase">
+
+## 界面预览
+
+  <figure>
+    <img class="showcase-light" src="/images/showcase/zh-CN/dashboard-light.webp" alt="仪表盘：正在录制的直播与处理任务统计" loading="lazy" />
+    <img class="showcase-dark" src="/images/showcase/zh-CN/dashboard-dark.webp" alt="仪表盘：正在录制的直播与处理任务统计" loading="lazy" />
+    <figcaption>仪表盘：系统状态、处理任务与正在进行的录制</figcaption>
+  </figure>
+  <figure>
+    <img class="showcase-light" src="/images/showcase/zh-CN/streamers-light.webp" alt="主播列表" loading="lazy" />
+    <img class="showcase-dark" src="/images/showcase/zh-CN/streamers-dark.webp" alt="主播列表" loading="lazy" />
+    <figcaption>所有频道一览，直播中的会显示下载速度和文件大小</figcaption>
+  </figure>
+  <figure>
+    <img class="showcase-light" src="/images/showcase/zh-CN/sessions-light.webp" alt="场次列表" loading="lazy" />
+    <img class="showcase-dark" src="/images/showcase/zh-CN/sessions-dark.webp" alt="场次列表" loading="lazy" />
+    <figcaption>已录制的场次，附带标题、时长与大小</figcaption>
+  </figure>
+  <figure>
+    <img class="showcase-light" src="/images/showcase/zh-CN/danmu-stats-light.webp" alt="场次弹幕统计" loading="lazy" />
+    <img class="showcase-dark" src="/images/showcase/zh-CN/danmu-stats-dark.webp" alt="场次弹幕统计" loading="lazy" />
+    <figcaption>每场直播的弹幕走势、活跃观众与高频词</figcaption>
+  </figure>
+  <figure>
+    <img class="showcase-light" src="/images/showcase/zh-CN/workflow-light.webp" alt="工作流编辑器（图视图）" loading="lazy" />
+    <img class="showcase-dark" src="/images/showcase/zh-CN/workflow-dark.webp" alt="工作流编辑器（图视图）" loading="lazy" />
+    <figcaption>以图的方式编排后处理工作流</figcaption>
+  </figure>
+  <figure>
+    <img class="showcase-light" src="/images/showcase/zh-CN/jobs-light.webp" alt="处理任务列表" loading="lazy" />
+    <img class="showcase-dark" src="/images/showcase/zh-CN/jobs-dark.webp" alt="处理任务列表" loading="lazy" />
+    <figcaption>实时查看每个处理任务的进度</figcaption>
+  </figure>
+</div>
