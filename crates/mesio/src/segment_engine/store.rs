@@ -193,6 +193,10 @@ pub struct StoreConfig {
     pub retry_budget: u32,
     pub retry_delay_base: Duration,
     pub retry_delay_max: Duration,
+    /// Total time budget for one segment, measured from its first attempt.
+    /// Once spent, the segment fails terminally instead of being rescheduled.
+    /// `None` removes the cap (the retry count still applies).
+    pub retry_deadline: Option<Duration>,
     /// How long after it was first held back by rate limiting a segment
     /// fails; rate-limited attempts do not spend `retry_budget`.
     pub max_throttled: Duration,
@@ -213,6 +217,7 @@ impl Default for StoreConfig {
             retry_budget: 3,
             retry_delay_base: Duration::from_millis(500),
             retry_delay_max: Duration::from_secs(10),
+            retry_deadline: None,
             max_throttled: crate::rate_limit::RateLimitPolicy::default().max_throttled,
             fallback_size_estimate: 2 * 1024 * 1024,
             max_segment_size: 0,
@@ -259,6 +264,9 @@ struct SegmentRecord {
     descriptor: Arc<SegmentDescriptor>,
     state: SegmentState,
     reschedules: u32,
+    /// When the first attempt started. The retry deadline is measured from
+    /// here, so backoff and re-discovery waits count against it.
+    first_attempt_at: Option<Instant>,
     /// When rate limiting first held this segment back.
     throttled_since: Option<Instant>,
     /// Waiting for re-discovery to refresh a URL that was refused with
@@ -453,6 +461,7 @@ impl SegmentStateStore {
                         descriptor: Arc::new(descriptor),
                         state: SegmentState::Discovered,
                         reschedules: 0,
+                        first_attempt_at: None,
                         throttled_since: None,
                         awaiting_refresh: false,
                         refresh_wait_used: false,
@@ -678,6 +687,7 @@ impl SegmentStateStore {
             record.awaiting_refresh = false;
             record.state = SegmentState::InFlight;
             record.attempt_generation = record.generation;
+            record.first_attempt_at.get_or_insert(now);
             if is_media && window.is_some() {
                 self.window_bytes
                     .insert(record.descriptor.msn, reserve_size);
@@ -838,10 +848,23 @@ impl SegmentStateStore {
                             | FailureClass::RateLimited { .. }
                             | FailureClass::OverBudget => false,
                         };
-                        (retryable && record.reschedules < self.config.retry_budget).then(|| {
-                            record.reschedules += 1;
-                            backoff(record.reschedules)
-                        })
+                        // A segment that has already spent its total time
+                        // budget is skipped instead of rescheduled: every
+                        // attempt pays the full download timeout, so without
+                        // this a black-holed segment holds the recording for
+                        // minutes (count alone allows ~12 attempts at 10s).
+                        let within_deadline = self.config.retry_deadline.is_none_or(|deadline| {
+                            record
+                                .first_attempt_at
+                                .is_none_or(|first| now.saturating_duration_since(first) < deadline)
+                        });
+                        (retryable
+                            && within_deadline
+                            && record.reschedules < self.config.retry_budget)
+                            .then(|| {
+                                record.reschedules += 1;
+                                backoff(record.reschedules)
+                            })
                     }
                 };
 
