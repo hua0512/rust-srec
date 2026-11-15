@@ -11,6 +11,7 @@ use std::borrow::Cow;
 #[derive(Deserialize, Debug)]
 
 pub(crate) struct DouyinAppResponse<'a> {
+    pub status_code: Option<i32>,
     #[serde(borrow)]
     pub data: DouyinAppResponseData<'a>,
 }
@@ -34,6 +35,7 @@ pub(crate) struct DouyinAppResponseData<'a> {
 #[derive(Deserialize, Debug)]
 
 pub(crate) struct DouyinPcResponse<'a> {
+    pub status_code: Option<i32>,
     #[serde(borrow)]
     pub data: DouyinPcResponseData<'a>,
 }

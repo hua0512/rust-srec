@@ -220,6 +220,70 @@ where
 
     // ========== CRUD Operations (Write-Through) ==========
 
+    /// Stores an identity only while its source and previous observation still match.
+    /// Custom repositories without a committed writer do not persist observations.
+    pub async fn observe_platform_metadata(
+        &self,
+        source: &StreamerMetadata,
+        metadata: platforms_parser::media::PlatformMetadata,
+        verified_at_ms: i64,
+    ) -> Result<bool> {
+        use platforms_parser::extractor::factory::{batch_probe_for_url, platform_name_for_url};
+
+        let Some(store) = &self.committed else {
+            return Ok(false);
+        };
+        if verified_at_ms <= 0
+            || source.is_deleted()
+            || metadata.schema_version != 1
+            || !metadata.data.is_object()
+            || platform_name_for_url(&source.url)
+                .is_none_or(|name| name.to_ascii_lowercase() != metadata.platform)
+        {
+            return Ok(false);
+        }
+        // A probe that consumes identity must agree with the page that produced it.
+        if batch_probe_for_url(&source.url)
+            .is_some_and(|probe| probe.key_for_url(&source.url, Some(&metadata)).is_none())
+        {
+            return Ok(false);
+        }
+        let observation = super::platform_metadata::StoredPlatformMetadata {
+            metadata,
+            verified_at_ms,
+        };
+        if !observation.needs_write(source.platform_metadata.as_deref()) {
+            return Ok(false);
+        }
+        let document = serde_json::to_string(&observation)?;
+        let source = source.clone();
+        store
+            .transaction(
+                "observe platform metadata",
+                StatePublication::Silent,
+                move |connection| {
+                    Box::pin(async move {
+                        let row = sqlx::query_as::<_, crate::database::models::StreamerDbModel>(
+                            "UPDATE streamers SET platform_metadata = ? \
+                             WHERE id = ? AND url = ? AND platform_config_id = ? \
+                             AND updated_at = ? AND platform_metadata IS ? \
+                             AND deleted_at IS NULL RETURNING *",
+                        )
+                        .bind(document)
+                        .bind(&source.id)
+                        .bind(&source.url)
+                        .bind(&source.platform_config_id)
+                        .bind(source.updated_at.timestamp_millis())
+                        .bind(&source.platform_metadata)
+                        .fetch_optional(connection)
+                        .await?;
+                        Ok(StateChange::row(row.is_some(), row))
+                    })
+                },
+            )
+            .await
+    }
+
     /// Create a new streamer.
     ///
     /// Persists to database first, then updates in-memory cache.
@@ -864,6 +928,7 @@ where
             disabled_until: metadata.disabled_until.map(|dt| dt.timestamp_millis()),
             last_live_time: metadata.last_live_time.map(|dt| dt.timestamp_millis()),
             streamer_specific_config: metadata.streamer_specific_config.clone(),
+            platform_metadata: metadata.platform_metadata.clone(),
             created_at: metadata.created_at.timestamp_millis(),
             updated_at: metadata.updated_at.timestamp_millis(),
             deleted_at: metadata.deleted_at.map(|dt| dt.timestamp_millis()),

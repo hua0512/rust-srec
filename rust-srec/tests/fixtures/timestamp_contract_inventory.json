@@ -586,6 +586,7 @@
       "state",
       "priority",
       "streamer_specific_config",
+      "platform_metadata",
       "consecutive_error_count",
       "last_error",
       "avatar",

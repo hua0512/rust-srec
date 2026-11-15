@@ -2,6 +2,7 @@ pub(crate) mod abogus;
 pub(crate) mod apis;
 mod builder;
 pub mod danmu;
+mod metadata;
 pub(crate) mod models;
 pub(crate) mod sign;
 mod signature;

@@ -1361,6 +1361,7 @@ mod end_to_end_tests {
             last_live_time: None,
             avatar_url: None,
             streamer_specific_config: None,
+            platform_metadata: None,
             last_error: None,
             offline_check_count: 3,
             offline_check_delay_ms: 20_000,

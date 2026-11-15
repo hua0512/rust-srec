@@ -98,8 +98,21 @@ impl BatchStatusProbe for FakeBatchProbe {
         100
     }
 
-    fn key_for_url(&self, url: &str) -> Option<String> {
+    fn key_for_url(
+        &self,
+        url: &str,
+        metadata: Option<&platforms_parser::media::PlatformMetadata>,
+    ) -> Option<String> {
         let (origin, room) = url.strip_prefix("http://")?.split_once(PATH_PREFIX)?;
+        if room.starts_with("identity-") {
+            let metadata = metadata?;
+            if metadata.platform != "fake"
+                || metadata.schema_version != 1
+                || metadata.data.get("url").and_then(Value::as_str) != Some(url)
+            {
+                return None;
+            }
+        }
         Some(format!("{origin}/{room}"))
     }
 
@@ -155,7 +168,21 @@ impl PlatformExtractor for FakeExtractor {
         if let Some(error) = status.get("error") {
             return Err(extractor_error(error));
         }
-        Ok(media_info(&self.extractor.url, &status))
+        let mut info = media_info(&self.extractor.url, &status);
+        if self
+            .extractor
+            .url
+            .rsplit('/')
+            .next()
+            .is_some_and(|room| room.starts_with("identity-"))
+        {
+            info.platform_metadata = Some(platforms_parser::media::PlatformMetadata {
+                platform: "fake".into(),
+                schema_version: 1,
+                data: json!({"url": self.extractor.url}),
+            });
+        }
+        Ok(info)
     }
 }
 

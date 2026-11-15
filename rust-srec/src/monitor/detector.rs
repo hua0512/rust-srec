@@ -21,6 +21,29 @@ use crate::utils::http_client::ClientCache;
 /// Re-export StreamInfo from platforms_parser for convenience.
 pub use platforms_parser::media::StreamInfo;
 
+/// Extraction observations retained independently of recording eligibility.
+#[derive(Debug, Clone)]
+pub struct DetectionResult {
+    pub status: LiveStatus,
+    pub platform_metadata: Option<platforms_parser::media::PlatformMetadata>,
+}
+
+impl DetectionResult {
+    fn filtered(mut self, filters: &[Filter]) -> Result<Self> {
+        self.status = StreamDetector::filter_status(self.status, filters)?;
+        Ok(self)
+    }
+}
+
+impl From<LiveStatus> for DetectionResult {
+    fn from(status: LiveStatus) -> Self {
+        Self {
+            status,
+            platform_metadata: None,
+        }
+    }
+}
+
 /// Live status of a streamer.
 #[derive(Clone)]
 pub enum LiveStatus {
@@ -309,10 +332,12 @@ impl StreamDetector {
         &self,
         streamer: &StreamerMetadata,
         context: CheckContext<'_>,
-    ) -> Result<LiveStatus> {
+    ) -> Result<DetectionResult> {
         #[cfg(test)]
         if let Some(extract) = &self.test_extraction {
-            return extract(context.cookies, context.proxy.clone()).await;
+            return extract(context.cookies, context.proxy.clone())
+                .await
+                .map(Into::into);
         }
         let CheckContext {
             cookies,
@@ -347,7 +372,7 @@ impl StreamDetector {
             Ok(ext) => ext,
             Err(ExtractorError::UnsupportedExtractor) => {
                 warn!("Unsupported platform for URL: {}", streamer.url);
-                return Ok(LiveStatus::UnsupportedPlatform);
+                return Ok(LiveStatus::UnsupportedPlatform.into());
             }
             Err(e) => {
                 return Err(e.into());
@@ -363,30 +388,30 @@ impl StreamDetector {
         streamer: &StreamerMetadata,
         selection_config: Option<&StreamSelectionConfig>,
         extractor: &dyn PlatformExtractor,
-    ) -> Result<LiveStatus> {
+    ) -> Result<DetectionResult> {
         // Extract media information
         let mut media_info = match extractor.extract().await {
             Ok(info) => info,
             // Fatal errors - these should stop monitoring
             Err(ExtractorError::StreamerNotFound) => {
                 warn!("Streamer not found on platform: {}", streamer.name);
-                return Ok(LiveStatus::NotFound);
+                return Ok(LiveStatus::NotFound.into());
             }
             Err(ExtractorError::StreamerBanned) => {
                 warn!("Streamer is banned: {}", streamer.name);
-                return Ok(LiveStatus::Banned);
+                return Ok(LiveStatus::Banned.into());
             }
             Err(ExtractorError::AgeRestrictedContent) => {
                 warn!("Age-restricted content: {}", streamer.name);
-                return Ok(LiveStatus::AgeRestricted);
+                return Ok(LiveStatus::AgeRestricted.into());
             }
             Err(ExtractorError::RegionLockedContent) => {
                 warn!("Region-locked content: {}", streamer.name);
-                return Ok(LiveStatus::RegionLocked);
+                return Ok(LiveStatus::RegionLocked.into());
             }
             Err(ExtractorError::PrivateContent) => {
                 warn!("Private content: {}", streamer.name);
-                return Ok(LiveStatus::Private);
+                return Ok(LiveStatus::Private.into());
             }
             // Non-fatal - streamer is just offline
             Err(ExtractorError::NoStreamsFound) => {
@@ -396,7 +421,7 @@ impl StreamDetector {
                     reason = "no_streams",
                     "status=OFFLINE"
                 );
-                return Ok(LiveStatus::Offline);
+                return Ok(LiveStatus::Offline.into());
             }
             // Transient errors - should be retried
             Err(e) => {
@@ -404,6 +429,23 @@ impl StreamDetector {
             }
         };
 
+        let platform_metadata = media_info.platform_metadata.take();
+        let status = self
+            .status_from_media(streamer, selection_config, extractor, media_info)
+            .await?;
+        Ok(DetectionResult {
+            status,
+            platform_metadata,
+        })
+    }
+
+    async fn status_from_media(
+        &self,
+        streamer: &StreamerMetadata,
+        selection_config: Option<&StreamSelectionConfig>,
+        extractor: &dyn PlatformExtractor,
+        mut media_info: platforms_parser::media::MediaInfo,
+    ) -> Result<LiveStatus> {
         trace!(
             streamer_name = %streamer.name,
             streamer_url = %streamer.url,
@@ -580,9 +622,13 @@ impl StreamDetector {
         streamer: &StreamerMetadata,
         filters: &[Filter],
         context: CheckContext<'_>,
-    ) -> Result<LiveStatus> {
-        let status = self.check_status_with_cookies(streamer, context).await?;
+    ) -> Result<DetectionResult> {
+        self.check_status_with_cookies(streamer, context)
+            .await?
+            .filtered(filters)
+    }
 
+    fn filter_status(status: LiveStatus, filters: &[Filter]) -> Result<LiveStatus> {
         // If offline, no need to filter
         if status.is_offline() {
             return Ok(status);
@@ -910,7 +956,57 @@ mod tests {
             .check_status_with_extractor(&streamer, None, &extractor)
             .await
             .unwrap();
-        assert!(matches!(status, LiveStatus::Offline), "{status:?}");
+        assert!(matches!(status.status, LiveStatus::Offline), "{status:?}");
+    }
+
+    #[tokio::test]
+    async fn identity_survives_offline_selection_and_filter_results() {
+        let streamer =
+            StreamerMetadata::from_db_model(&crate::database::models::StreamerDbModel::new(
+                "fixture",
+                "https://example.com/channel",
+                "fixture-platform",
+            ));
+        let metadata = platforms_parser::media::PlatformMetadata {
+            platform: "fixture".into(),
+            schema_version: 1,
+            data: serde_json::json!({"user_id":"456"}),
+        };
+        let filters = [Filter::Keyword(crate::domain::filter::KeywordFilter::new(
+            vec![],
+            vec!["fixture".into()],
+        ))];
+        for (live, streams) in [
+            (false, vec![]),
+            (true, vec![]),
+            (true, vec![create_test_stream()]),
+        ] {
+            let has_streams = !streams.is_empty();
+            let extractor = FakeExtractor::new(
+                Ok(platforms_parser::media::MediaInfo::builder(
+                    &streamer.url,
+                    "fixture",
+                    "fixture",
+                )
+                .is_live(live)
+                .streams(streams)
+                .platform_metadata(metadata.clone())
+                .build()),
+                vec![Ok(())],
+            );
+            let result = StreamDetector::new()
+                .check_status_with_extractor(&streamer, None, &extractor)
+                .await
+                .unwrap()
+                .filtered(&filters)
+                .unwrap();
+            assert_eq!(result.platform_metadata, Some(metadata.clone()));
+            if has_streams {
+                assert!(matches!(result.status, LiveStatus::Filtered { .. }));
+            } else {
+                assert!(matches!(result.status, LiveStatus::Offline));
+            }
+        }
     }
 
     fn create_test_stream() -> StreamInfo {

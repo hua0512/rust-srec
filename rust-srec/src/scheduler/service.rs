@@ -824,6 +824,7 @@ mod tests {
                     last_live_time: None,
                     last_error: None,
                     streamer_specific_config: None,
+                    platform_metadata: None,
                     offline_check_count: 3,
                     offline_check_delay_ms: 20_000,
                     created_at: Utc::now(),

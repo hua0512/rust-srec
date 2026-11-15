@@ -157,3 +157,59 @@ async fn without_the_option_no_batch_call_is_made() {
 
     app.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn offline_identity_is_reused_after_restart_and_refreshed_after_url_change() {
+    let fake = FakePlatform::start().await;
+    let room = fake.room("identity-original");
+    let app = TestApp::start_with(with_batch_detection()).await;
+    let token = app.admin_token().await;
+    let id = app.watch(&token, "Identity", &room, Value::Null).await;
+    wait_for_batch_calls(&fake, 2).await;
+    assert_eq!(fake.requests_to(&room, "status").len(), 1);
+
+    let app = app.restart().await;
+    let before = fake.batch_calls();
+    wait_for_batch_calls(&fake, before + 2).await;
+    assert_eq!(
+        fake.requests_to(&room, "status").len(),
+        1,
+        "restart must hydrate the verified identity"
+    );
+    let checks = app.checks(&token, &id).await;
+    assert_eq!(checks.last().unwrap()["source"], "batch");
+
+    app.put(
+        &format!("/api/streamers/{id}"),
+        &token,
+        &serde_json::json!({"name":"Renamed"}),
+    )
+    .await
+    .ok();
+    app.wait_for_more_checks(&token, &id, 2).await;
+    assert_eq!(
+        fake.requests_to(&room, "status").len(),
+        1,
+        "ordinary edits must preserve identity"
+    );
+
+    let replacement = fake.room("identity-replacement");
+    app.put(
+        &format!("/api/streamers/{id}"),
+        &token,
+        &serde_json::json!({"url":replacement.url()}),
+    )
+    .await
+    .ok();
+    eventually(WAIT, "the replacement identity to be resolved", || async {
+        (!fake.requests_to(&replacement, "status").is_empty()).then_some(())
+    })
+    .await;
+    app.wait_for_more_checks(&token, &id, 3).await;
+    assert_eq!(
+        app.checks(&token, &id).await.last().unwrap()["source"],
+        "batch"
+    );
+    assert_eq!(fake.requests_to(&replacement, "status").len(), 1);
+    app.shutdown().await;
+}

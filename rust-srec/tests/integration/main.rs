@@ -19,6 +19,7 @@ mod job_claim_rank;
 mod job_execution_logs_persist;
 mod literal_database_search;
 mod mesio_buffer_size_migration;
+mod platform_metadata;
 mod preset_template_timestamps;
 mod proxy_route_migration;
 mod retired_notification_subscription_migration;
