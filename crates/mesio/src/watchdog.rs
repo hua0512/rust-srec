@@ -30,7 +30,18 @@ pub(crate) struct StallWatchdog<S, F> {
 }
 
 impl<S, F> StallWatchdog<S, F> {
-    pub(crate) fn new(inner: S, timeout: Duration, is_media: F) -> Self {
+    /// Wraps `inner`; `is_media` sees each `Ok` payload.
+    ///
+    /// `T` is bound here, from the stream's item type, so the predicate's
+    /// argument type is inferred at the call site. Without that bound a caller
+    /// who does not annotate the result cannot resolve `Stream::next`: `T`
+    /// only appears in the `Stream` impl's where clause, which inference does
+    /// not use in that direction.
+    pub(crate) fn new<T>(inner: S, timeout: Duration, is_media: F) -> Self
+    where
+        S: Stream<Item = Result<T, DownloadError>>,
+        F: FnMut(&T) -> bool,
+    {
         Self {
             inner,
             is_media,
@@ -117,7 +128,7 @@ mod tests {
         let mut watchdog = StallWatchdog::new(
             boxed(stream::pending::<Result<u8, DownloadError>>()),
             Duration::from_secs(5),
-            |_| true,
+            |_: &u8| true,
         );
 
         assert!(matches!(
@@ -131,7 +142,7 @@ mod tests {
     async fn media_items_reset_the_deadline() {
         // 3 items 40 ms apart, each arriving inside the 50 ms window.
         let (stream, _driver) = timed_stream(vec![Ok(1), Ok(2), Ok(3)], Duration::from_millis(40));
-        let mut watchdog = StallWatchdog::new(stream, Duration::from_millis(50), |_| true);
+        let mut watchdog = StallWatchdog::new(stream, Duration::from_millis(50), |_: &u8| true);
 
         for expected in [1u8, 2, 3] {
             assert!(matches!(watchdog.next().await, Some(Ok(v)) if v == expected));
@@ -143,7 +154,7 @@ mod tests {
         // The first non-media item arrives at 40 ms; the deadline set at
         // construction (50 ms) must fire before the second one at 80 ms.
         let (stream, _driver) = timed_stream(vec![Ok(0), Ok(0), Ok(0)], Duration::from_millis(40));
-        let mut watchdog = StallWatchdog::new(stream, Duration::from_millis(50), |_| false);
+        let mut watchdog = StallWatchdog::new(stream, Duration::from_millis(50), |_: &u8| false);
 
         assert!(matches!(watchdog.next().await, Some(Ok(0))));
         assert!(matches!(
