@@ -219,6 +219,18 @@ pub struct MesioDuplicateTagFilterConfig {
     pub enable_replay_offset_matching: Option<bool>,
 }
 
+/// Mesio-configurable knobs for the FLV download engine itself.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MesioFlvConfig {
+    /// Fail the stream when no audio/video tag arrives for this long.
+    /// `null` disables the watchdog; absent keeps the engine default.
+    #[serde(
+        default,
+        deserialize_with = "crate::utils::json::deserialize_field_present_nullable"
+    )]
+    pub media_stall_timeout_ms: Option<Option<u64>>,
+}
+
 /// Mesio-configurable knobs for FLV fixing.
 ///
 /// This config is applied only when FLV pipeline processing is enabled.
@@ -291,6 +303,9 @@ pub struct MesioEngineConfig {
     /// Extra FLV-fix tuning knobs for Mesio.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flv_fix: Option<MesioFlvFixConfig>,
+    /// Extra FLV protocol tuning knobs for Mesio.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flv: Option<MesioFlvConfig>,
     /// Extra HLS runtime tuning knobs for Mesio.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hls: Option<MesioHlsConfig>,
@@ -519,6 +534,13 @@ pub struct MesioHlsFetcherConfigOverride {
     pub segment_retry_delay_base_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_segment_retry_delay_ms: Option<u64>,
+    /// Total time budget for one segment, counted from its first attempt.
+    /// `null` removes the cap.
+    #[serde(
+        default,
+        deserialize_with = "crate::utils::json::deserialize_field_present_nullable"
+    )]
+    pub segment_retry_deadline_ms: Option<Option<u64>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key_download_timeout_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -623,6 +645,7 @@ impl Default for MesioEngineConfig {
             fix_hls: true,
             fix_dash: true,
             flv_fix: None,
+            flv: None,
             hls: None,
             dash: None,
         }
@@ -641,6 +664,7 @@ mod tests {
         assert!(parsed.fix_flv);
         assert!(!parsed.fix_hls);
         assert!(parsed.flv_fix.is_none());
+        assert!(parsed.flv.is_none());
         assert!(parsed.hls.is_none());
         assert!(parsed.fix_dash);
         assert!(parsed.dash.is_none());

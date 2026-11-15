@@ -61,6 +61,13 @@ When a server answers HLS or DASH requests with HTTP 429 (Too Many Requests), or
 
 These answers do not use up the segment or playlist/manifest retry counts. A segment is given up five minutes after it was first held back, and a live segment that leaves the playlist window meanwhile is skipped as a gap. If a segment address that carries a signature is refused as unauthorized right after such a pause, Mesio waits up to 10 seconds for the next playlist or manifest to bring a fresh address before giving the segment up. The recording fails when the playlist or manifest has not been fetched for five minutes because of rate limiting, or sooner when no media at all arrives for the **Max Stall Duration**, as happens while an HLS playlist is refused.
 
+Two per-stream limits bound how long a bad upstream can hold a recording:
+
+- **Max stall duration** (live only, default 60 s) fails the session when no media arrives for that long. Playlist refreshes and failed segment downloads do not count as media: a playlist that keeps rolling while every segment is refused still fails on time instead of recording nothing forever. A track that is absent by design (a DASH Period without it) does count, so a legitimate track switch is not treated as a stall.
+- **Segment retry deadline** (default 45 s) gives up on one segment once it has been retried for that long, then skips it and keeps writing. Without it, a black-holed segment is retried about a dozen times — each attempt paying the full segment timeout — before the recording moves on.
+
+The FLV downloader has its own **stream stall timeout** (default 90 s) on the same principle: the HTTP read timeout only sees bytes, so a source that trickles bytes without producing audio/video tags would otherwise stay connected and write nothing. Both watchdogs can be disabled with a zero duration.
+
 ## MPEG-DASH engine {#mpeg-dash-engine}
 
 Mesio records MPEG-DASH (`.mpd`) streams, both live and finished (on-demand) presentations. Streams that a platform labels as DASH, and addresses ending in `.mpd`, use this engine.

@@ -347,6 +347,7 @@ const MesioHlsConfigSchema = group({
       max_segment_retries: intSetting(0, U32_MAX),
       segment_retry_delay_base_ms: intSetting(0),
       max_segment_retry_delay_ms: intSetting(0),
+      segment_retry_deadline_ms: disableableIntSetting(),
       key_download_timeout_ms: intSetting(0),
       max_key_retries: intSetting(0, U32_MAX),
       key_retry_delay_base_ms: intSetting(0),
@@ -529,6 +530,11 @@ const mesioShape = {
           enable_replay_offset_matching: boolSetting(),
         }),
       ),
+    }),
+  ),
+  flv: optionalSetting(
+    group({
+      media_stall_timeout_ms: disableableIntSetting(),
     }),
   ),
   hls: optionalSetting(MesioHlsConfigSchema),
