@@ -59,8 +59,8 @@ pub use utils::{
 };
 
 pub use writer_task::{
-    FormatStrategy, PostWriteAction, ProgressCallback, ProgressConfig, WriterConfig, WriterError,
-    WriterProgress, WriterState, WriterStats, WriterTask,
+    FormatStrategy, PostWriteAction, ProgressCallback, ProgressConfig, WriterActivity,
+    WriterConfig, WriterError, WriterProgress, WriterState, WriterStats, WriterTask,
 };
 
 pub use split_reason::{AudioCodecInfo, SplitReason, VideoCodecInfo};
@@ -104,6 +104,13 @@ pub trait ProtocolWriter: Send + 'static {
     fn get_state(&self) -> &WriterState;
 
     fn run(&mut self, input: PipelineReceiver<Self::Item>) -> Result<WriterStats, WriterError>;
+
+    /// Live write progress, for observers that watch for a recorder which is
+    /// connected but writing nothing. `None` when the writer does not expose
+    /// it (the default).
+    fn activity(&self) -> Option<std::sync::Arc<WriterActivity>> {
+        None
+    }
 }
 
 /// A writer that reports the files it opens and closes, and its progress.

@@ -74,4 +74,8 @@ impl ProtocolWriter for FlvWriter {
     ) -> Result<WriterStats, WriterError> {
         self.writer_task.run_from_channel(input, |_, _| true)
     }
+
+    fn activity(&self) -> Option<std::sync::Arc<pipeline_common::WriterActivity>> {
+        Some(self.writer_task.activity())
+    }
 }

@@ -315,6 +315,10 @@ impl ProtocolWriter for HlsWriter {
             !item.is_end_marker() || state.current_file_path.is_some()
         })
     }
+
+    fn activity(&self) -> Option<std::sync::Arc<pipeline_common::WriterActivity>> {
+        Some(self.writer_task.activity())
+    }
 }
 
 #[cfg(test)]
