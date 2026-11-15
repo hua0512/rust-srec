@@ -11,4 +11,4 @@ pub use self::headers::parse_headers;
 pub use self::params::parse_params;
 pub use self::size::format_bytes;
 pub use self::size::parse_size;
-pub use self::time::parse_time;
+pub use self::time::{parse_duration_flag, parse_time};

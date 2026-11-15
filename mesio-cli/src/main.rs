@@ -30,7 +30,7 @@ mod utils;
 
 use cli::CliArgs;
 use input::input_handler;
-use utils::{parse_headers, parse_params, parse_size, parse_time};
+use utils::{parse_duration_flag, parse_headers, parse_params, parse_size, parse_time};
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -296,6 +296,7 @@ async fn bootstrap() -> Result<(), AppError> {
     let flv_config = FlvProtocolConfig::builder()
         .with_base_config(download_config.clone())
         .buffer_size(args.download_buffer)
+        .media_stall_timeout(parse_duration_flag(&args.flv_stall_timeout)?)
         .build();
 
     // DASH requests share the HTTP settings of FLV and HLS.
@@ -314,6 +315,8 @@ async fn bootstrap() -> Result<(), AppError> {
         .live_max_refresh_retries(args.hls_playlist_retries)
         .max_segment_retries(args.hls_retries)
         .segment_download_timeout(Duration::from_secs(args.hls_segment_timeout))
+        .segment_retry_deadline(parse_duration_flag(&args.hls_segment_retry_deadline)?)
+        .live_max_overall_stall_duration(parse_duration_flag(&args.hls_max_stall)?)
         .get_config();
 
     // Create the program configuration

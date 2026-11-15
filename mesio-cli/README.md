@@ -115,6 +115,7 @@ Name template placeholders: `%u` (unique identifier), `%Y` (year), `%m` (month),
 
 ```text
   -k, --keyframe-index[=<BOOL>]       Inject keyframe index in metadata for better seeking; --keyframe-index=false disables it [default: true]
+      --flv-stall-timeout <DURATION>  Fail an HTTP-FLV stream when no audio/video tag arrives for this long (e.g. 90s, 2m); 0 disables the watchdog [default: 90s]
 ```
 
 ### HLS Options
@@ -126,6 +127,8 @@ Name template placeholders: `%u` (unique identifier), `%Y` (year), `%m` (month),
       --hls-playlist-retries <NUM>               Number of retry attempts for failed playlist downloads [default: 5]
       --hls-retries <NUM>                        Number of retry attempts for failed segments [default: 3]
       --hls-segment-timeout <SEC>                Timeout for individual segment downloads in seconds [default: 10]
+      --hls-max-stall <DURATION>                 Fail a live stream when no media arrives for this long (e.g. 60s, 2m); 0 disables the watchdog [default: 60s]
+      --hls-segment-retry-deadline <DURATION>    Give up on a segment once it has been retried for this long, then skip it (0 = no cap) [default: 45s]
       --hls-cache-playlists[=<BOOL>]             Enable caching of HLS playlists; =false disables it [default: true]
 ```
 
