@@ -31,6 +31,7 @@ pub mod redact;
 pub(crate) mod segment_engine;
 pub mod session;
 pub mod source;
+pub(crate) mod watchdog;
 
 /// A boxed async media stream.
 pub type BoxMediaStream<D, E> = std::pin::Pin<Box<dyn futures::Stream<Item = Result<D, E>> + Send>>;

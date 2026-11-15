@@ -22,6 +22,7 @@ use super::flv_config::FlvProtocolConfig;
 use crate::bytes_stream::BytesStreamReader;
 use crate::config::HttpVersionPreference;
 use crate::redact::Redacted;
+use crate::watchdog::StallWatchdog;
 use crate::{BoxMediaStream, DownloadError, downloader::create_client_pool};
 use crate::{
     DownloadEvent, DownloadRequest, DownloadSession, EventSink, MediaEngine, ProtocolSelection,
@@ -298,6 +299,21 @@ impl FlvDownloader {
             .download_url_with_events(request.url, stream_token.clone(), Some(events.clone()))
             .await?;
         let stream = stream.map(|item| item.map_err(DownloadError::from)).boxed();
+
+        // The read timeout only sees bytes: a source that trickles bytes (or
+        // repeats a header) without producing tags keeps it alive forever.
+        // The watchdog fails the session once no media tag arrives for the
+        // configured window.
+        let stream: BoxMediaStream<FlvData, DownloadError> = match self.config.media_stall_timeout {
+            Some(timeout) if !timeout.is_zero() => Box::pin(StallWatchdog::new(
+                stream,
+                timeout,
+                |data: &FlvData| {
+                    matches!(data, FlvData::Tag(tag) if tag.is_video_tag() || tag.is_audio_tag())
+                },
+            )),
+            _ => stream,
+        };
         let stream: BoxMediaStream<FlvData, DownloadError> =
             Box::pin(CancelOnDropStream::new(stream, stream_token.clone()));
 
