@@ -37,7 +37,7 @@ const HEADER_LEN: usize = 10;
 /// Largest frame accepted; Linkd's frames are a few hundred bytes.
 const MAX_FRAME_LEN: usize = 1 << 20;
 /// The status requests carry and successful answers report.
-const STATUS_OK: u16 = 200;
+pub(super) const STATUS_OK: u16 = 200;
 
 const KEY_REQUEST: u32 = 5636;
 const KEY_ANSWER: u32 = 5892;
@@ -80,6 +80,8 @@ pub struct Linkd {
 /// A frame as received.
 pub(super) struct Frame {
     pub(super) uri: u32,
+    /// [`STATUS_OK`] unless the request it answers failed.
+    pub(super) status: u16,
     pub(super) body: Bytes,
 }
 
@@ -87,20 +89,26 @@ impl Linkd {
     /// Signs in with `ticket` at the first address that accepts it. An
     /// address that is unreachable, times out or restricts this IP moves on
     /// to the next; a rejected login or an unexpected answer ends the
-    /// attempt.
+    /// attempt. When one address restricted this IP and the rest could not
+    /// be reached, the error is [`NativeError::IpRestricted`].
     pub async fn connect(route: &Route, ticket: &Ticket) -> Result<Self, NativeError> {
         let [first, others @ ..] = ADDRESSES;
         let mut result = Self::connect_to(first, route, ticket).await;
+        let mut restricted = false;
         for address in others {
-            if !matches!(
-                result,
-                Err(NativeError::IpRestricted | NativeError::Io(_) | NativeError::Timeout(_))
-            ) {
-                break;
+            match result {
+                Err(NativeError::IpRestricted) => restricted = true,
+                Err(NativeError::Io(_) | NativeError::Timeout(_)) => {}
+                _ => break,
             }
             result = Self::connect_to(address, route, ticket).await;
         }
-        result
+        match result {
+            Err(NativeError::Io(_) | NativeError::Timeout(_)) if restricted => {
+                Err(NativeError::IpRestricted)
+            }
+            result => result,
+        }
     }
 
     async fn connect_to(
@@ -141,8 +149,7 @@ impl Linkd {
         };
 
         linkd.queue(PREPARE_LOGIN, &prepare_login_body(ticket));
-        linkd.flush().await?;
-        let mut answer = &linkd.answer(PREPARE_LOGIN_ANSWER).await?[..];
+        let mut answer = &linkd.answer(PREPARE_LOGIN_ANSWER, |_| true).await?[..];
         // The uid, then the result.
         answer.try_get_u32_le()?;
         match answer.try_get_i32_le()? {
@@ -150,7 +157,7 @@ impl Linkd {
             IP_RESTRICTED => return Err(NativeError::IpRestricted),
             result => {
                 return Err(NativeError::Rejected {
-                    request: "login",
+                    request: "prepare-login",
                     result,
                 });
             }
@@ -159,8 +166,7 @@ impl Linkd {
         let mut body = Vec::new();
         put_blob(&mut body, b"CN");
         linkd.queue(LOGIN, &body);
-        linkd.flush().await?;
-        let mut answer = &linkd.answer(LOGIN_ANSWER).await?[..];
+        let mut answer = &linkd.answer(LOGIN_ANSWER, |_| true).await?[..];
         match answer.try_get_i32_le()? {
             0 | 200 => Ok(linkd),
             result => Err(NativeError::Rejected {
@@ -177,17 +183,10 @@ impl Linkd {
         // The room's session id is the low 32 bits of its id.
         let sid = room_id as u32;
         self.queue(JOIN_CHANNEL, &join_channel_body(seq, self.uid, sid));
-        let lookup = async {
-            self.flush().await?;
-            loop {
-                let frame = self.read_frame().await?;
-                if frame.uri == JOIN_CHANNEL_ANSWER
-                    && frame.body.get(2..6) == Some(&seq.to_le_bytes()[..])
-                {
-                    return Ok::<_, NativeError>(frame.body);
-                }
-            }
-        };
+        // The answer's seq follows its u16 code.
+        let lookup = self.answer(JOIN_CHANNEL_ANSWER, |body| {
+            body.get(2..6) == Some(&seq.to_le_bytes()[..])
+        });
         let answer = timeout(ANSWER_TIMEOUT, lookup)
             .await
             .map_err(|_| NativeError::Timeout("the room lookup"))??;
@@ -199,11 +198,17 @@ impl Linkd {
         channel
     }
 
-    /// Reads frames until one with `uri` arrives, dropping the others.
-    async fn answer(&mut self, uri: u32) -> Result<Bytes, NativeError> {
+    /// Writes the queued requests, then reads frames until one with `uri`
+    /// whose body `matches` arrives, dropping the others.
+    async fn answer(
+        &mut self,
+        uri: u32,
+        matches: impl Fn(&[u8]) -> bool,
+    ) -> Result<Bytes, NativeError> {
+        self.flush().await?;
         loop {
             let frame = self.read_frame().await?;
-            if frame.uri == uri {
+            if frame.uri == uri && matches(&frame.body) {
                 return Ok(frame.body);
             }
         }
@@ -259,13 +264,16 @@ impl Linkd {
         let mut frame = self.input.split_to(len).freeze();
         frame.advance(4);
         let uri = frame.try_get_u32_le()?;
-        frame.try_get_u16_le()?;
-        Ok(Some(Frame { uri, body: frame }))
+        let status = frame.try_get_u16_le()?;
+        Ok(Some(Frame {
+            uri,
+            status,
+            body: frame,
+        }))
     }
 }
 
 /// A room's media servers and the ticket that admits this login to them.
-#[derive(Clone)]
 pub struct Channel {
     /// The viewer's id towards the media servers.
     pub source: u32,
@@ -304,7 +312,7 @@ impl fmt::Debug for Channel {
 }
 
 /// A media server and its TCP ports.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub struct MediaServer {
     pub ip: Ipv4Addr,
     pub tcp_ports: Vec<u16>,
@@ -465,7 +473,7 @@ fn get_servers(body: &mut &[u8]) -> Result<Vec<MediaServer>, NativeError> {
 /// a list of 8-byte items, then the flags. `None` when the suffix is absent
 /// or shorter than that.
 fn suffix_flags(mut body: &[u8]) -> Option<u32> {
-    skip(&mut body, 8).ok()?;
+    take(&mut body, 8).ok()?;
     skip_list(&mut body, 8).ok()?;
     body.try_get_u32_le().ok()
 }
@@ -473,11 +481,8 @@ fn suffix_flags(mut body: &[u8]) -> Option<u32> {
 /// Skips a list of `item_len`-byte items behind a u32 count.
 fn skip_list(body: &mut &[u8], item_len: usize) -> Result<(), NativeError> {
     let count = body.try_get_u32_le()? as usize;
-    skip(body, count.saturating_mul(item_len))
-}
-
-fn skip(body: &mut &[u8], len: usize) -> Result<(), NativeError> {
-    take(body, len).map(|_| ())
+    take(body, count.saturating_mul(item_len))?;
+    Ok(())
 }
 
 pub(super) fn take<'a>(body: &mut &'a [u8], len: usize) -> Result<&'a [u8], NativeError> {
@@ -674,7 +679,7 @@ mod tests {
     use serde_json::Value;
 
     use super::*;
-    use crate::extractor::default::{DEFAULT_UA, create_client_builder};
+    use crate::extractor::default::{DEFAULT_UA, default_client};
     use crate::extractor::platforms::bigo::native::ticket;
 
     fn hex(text: &str) -> Vec<u8> {
@@ -722,24 +727,48 @@ mod tests {
     }
 
     #[test]
+    fn a_generated_key_decrypts_what_its_public_half_encrypts() {
+        let key = RsaKey::generate();
+        let message = BigUint::from_bytes_be(b"session key");
+        let ciphertext = message.modpow(&BigUint::from(RSA_EXPONENT), &key.n);
+        assert_eq!(ciphertext.modpow(&key.d, &key.n), message);
+        // A 512-bit modulus, sent with its sign byte.
+        assert_eq!(java_bytes(&key.n).len(), MODULUS_LEN + 1);
+    }
+
+    #[test]
+    fn frame_lengths_out_of_bounds_are_protocol_errors() {
+        for len in [0, MAX_FRAME_LEN as u32 + 1] {
+            let mut linkd = Linkd::unconnected(1);
+            linkd.input.put_u32_le(len);
+            linkd.input.put_bytes(0, HEADER_LEN);
+            assert!(
+                matches!(linkd.take_frame(), Err(NativeError::Protocol(_))),
+                "length {len}"
+            );
+        }
+    }
+
+    #[test]
     fn decodes_a_captured_room_lookup() {
-        // A guest's PJoinChannel2 answer for a single-host room, with the
-        // media ticket replaced by the bytes 0..112.
+        // A guest's PJoinChannel2 answer for a single-host room, with made-up
+        // seq, uid and room, and the media ticket replaced by the bytes
+        // 0..112.
         let frame = hex(
-            "a1010000c8040000c800c80010ee124d0e3276480dfdcaab0e3276487000000102030405060708090a0b0c0d0e0f1011
+            "a1010000c8040000c800c8000700000001e1f5050394357701e1f5057000000102030405060708090a0b0c0d0e0f1011
              12131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f4041
              42434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6fa8e3
              3ae66c73fb6a02000000a988a9090a000000c121510a69061204724b504f205746687868aa6809000000c121510a6906
              1204724b504f20574668bc4bca3f27290a0000005a21ea090206aa030b4be94eb956df6711684368090000005a21ea09
              0206aa030b4be94eb956df675b4b02000000a988a7260a0000004c24dc0cf4089d06fd4ddb51ab59d16a036b356b0900
              00004c24dc0cf4089d06fd4ddb51ab59d16a144ea988a7280a0000005923e90b0108c6050a4de850b858de69106a426a
-             090000005923e90b0108aa050a4de850b858de694e4d00000000000000000000000002000080030000000000000e3276
-             48000000000dfdcaab000000000000000000000000000000000000000000000000",
+             090000005923e90b0108aa050a4de850b858de694e4d000000000000000000000000020000800300000000000001e1f5
+             050000000003943577000000000000000000000000000000000000000000000000",
         );
         let channel = decode_channel(&frame[HEADER_LEN..]).unwrap();
 
-        assert_eq!(channel.source, 1_215_705_614);
-        assert_eq!(channel.sid, 2_882_206_989);
+        assert_eq!(channel.source, 100_000_001);
+        assert_eq!(channel.sid, 2_000_000_003);
         assert_eq!(channel.media_ticket, (0..112).collect::<Vec<u8>>());
         assert_eq!(channel.timestamp, 3_862_619_048);
         let ips =
@@ -771,10 +800,8 @@ mod tests {
     #[tokio::test]
     #[ignore = "signs in to BIGO's Linkd as a guest"]
     async fn a_guest_looks_up_a_live_room() {
-        // Direct, so that the ticket and Linkd see the same address.
-        let client = create_client_builder(None).no_proxy().build().unwrap();
         let route = Route {
-            client,
+            client: default_client(),
             proxy: None,
         };
         let list: Value = route

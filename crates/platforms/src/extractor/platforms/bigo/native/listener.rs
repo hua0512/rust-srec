@@ -11,16 +11,16 @@
 //! fresh ticket, and sending its subscriptions again on every new connection.
 
 use std::collections::HashMap;
+use std::fmt;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use bytes::{Buf, BufMut};
+use bytes::BufMut;
 use serde_json::Value;
-use thiserror::Error;
 use tokio::time::{Instant, sleep_until, timeout};
 use tracing::debug;
 use url::Url;
 
-use super::linkd::{Frame, Linkd, get_blob, take};
+use super::linkd::{Frame, Linkd, STATUS_OK, get_blob, take};
 use super::ticket::Ticket;
 use super::{NativeError, Route};
 
@@ -69,15 +69,29 @@ pub enum Event {
     },
 }
 
-/// A refused subscription, with BIGO's result.
-#[derive(Clone, Copy, Debug, Error, PartialEq, Eq)]
+/// A refused subscription, with BIGO's result: `None` when the answer
+/// reported a failure or carried no result.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Refusal {
-    /// A guest account gets 5.
-    #[error("BIGO refused to follow the streamer (result {0})")]
-    Follow(i32),
-    #[error("BIGO refused the streamer's live notices (result {0})")]
-    LiveNotice(i32),
+    /// A guest account gets result 5.
+    Follow(Option<i32>),
+    LiveNotice(Option<i32>),
 }
+
+impl fmt::Display for Refusal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (refused, result) = match self {
+            Self::Follow(result) => ("follow the streamer", result),
+            Self::LiveNotice(result) => ("turn on the streamer's live notices", result),
+        };
+        match result {
+            Some(result) => write!(f, "BIGO refused to {refused} (result {result})"),
+            None => write!(f, "BIGO refused to {refused} (no result)"),
+        }
+    }
+}
+
+impl std::error::Error for Refusal {}
 
 impl Listener {
     /// Signs in to Linkd with an account ticket.
@@ -137,7 +151,7 @@ impl Listener {
                 biased;
                 frame = self.linkd.read_frame() => {
                     self.last_frame = Instant::now();
-                    if let Some(event) = self.dispatch(frame?)? {
+                    if let Some(event) = self.dispatch(frame?) {
                         return Ok(event);
                     }
                 }
@@ -155,12 +169,12 @@ impl Listener {
     }
 
     /// Handles one incoming frame. Every frame goes through here, so pushes
-    /// and answers that arrive in any order are all seen.
-    fn dispatch(&mut self, frame: Frame) -> Result<Option<Event>, NativeError> {
-        let mut body = &frame.body[..];
+    /// and answers that arrive in any order are all seen. A malformed frame
+    /// never ends the connection.
+    fn dispatch(&mut self, frame: Frame) -> Option<Event> {
         match frame.uri {
             LIVE_START_NOTIFY => {
-                let uid = match LiveStart::decode(body) {
+                let uid = match LiveStart::decode(&frame.body) {
                     Ok(push) => {
                         self.linkd
                             .queue(LIVE_START_ACK, &push.ack(self.linkd.uid, unix_time()));
@@ -172,27 +186,22 @@ impl Listener {
                     }
                 };
                 debug!(?uid, "live notice");
-                Ok(Some(Event::Live { uid }))
+                Some(Event::Live { uid })
             }
             // Seen carrying only the streamer's avatar.
             NEW_LIVE_NOTIFY => {
                 debug!("live notice without a streamer");
-                Ok(Some(Event::Live { uid: None }))
+                Some(Event::Live { uid: None })
             }
             // App id, seq, uid, result.
             FOLLOW_ANSWER => {
-                body.try_get_i32_le()?;
-                let Some(uid) = self.pending.remove(&body.try_get_u32_le()?) else {
-                    return Ok(None);
-                };
-                body.try_get_u32_le()?;
-                let result = body.try_get_i32_le()?;
-                if !FOLLOWED.contains(&result) {
-                    debug!(uid, result, "follow refused");
-                    return Ok(Some(Event::Subscribed {
+                let (uid, result) = self.answered(&frame, 4, 12)?;
+                if !result.is_some_and(|result| FOLLOWED.contains(&result)) {
+                    debug!(uid, ?result, status = frame.status, "follow refused");
+                    return Some(Event::Subscribed {
                         uid,
                         result: Err(Refusal::Follow(result)),
-                    }));
+                    });
                 }
                 // Live notices apply only to followed streamers.
                 let seq = self.next_seq();
@@ -205,24 +214,51 @@ impl Listener {
                 body.put_i32_le(1);
                 self.linkd.queue(LIVE_NOTICE, &body);
                 self.pending.insert(seq, uid);
-                Ok(None)
+                None
             }
             // Seq, result.
             LIVE_NOTICE_ANSWER => {
-                let Some(uid) = self.pending.remove(&body.try_get_u32_le()?) else {
-                    return Ok(None);
-                };
-                let result = match body.try_get_i32_le()? {
-                    0 => Ok(()),
+                let (uid, result) = self.answered(&frame, 0, 4)?;
+                let result = match result {
+                    Some(0) => Ok(()),
                     result => Err(Refusal::LiveNotice(result)),
                 };
-                debug!(uid, ?result, "subscription answered");
-                Ok(Some(Event::Subscribed { uid, result }))
+                debug!(uid, ?result, status = frame.status, "subscription answered");
+                Some(Event::Subscribed { uid, result })
             }
             // Heartbeat answers, and frames Linkd sends unasked (seen: 607511,
             // 36505, 761071, 1047), only show that the connection is alive.
-            _ => Ok(None),
+            _ => None,
         }
+    }
+
+    /// The streamer a subscription answer is for, no longer pending, and the
+    /// answer's result: `None` when the frame reports a failure or is too
+    /// short to hold one. `None` overall, ignoring the frame, when its seq is
+    /// unreadable or answers nothing pending.
+    fn answered(
+        &mut self,
+        frame: &Frame,
+        seq_at: usize,
+        result_at: usize,
+    ) -> Option<(u32, Option<i32>)> {
+        let field = |at: usize| {
+            frame
+                .body
+                .get(at..at + 4)
+                .and_then(|bytes| <[u8; 4]>::try_from(bytes).ok())
+        };
+        let Some(uid) = field(seq_at)
+            .map(u32::from_le_bytes)
+            .and_then(|seq| self.pending.remove(&seq))
+        else {
+            debug!(uri = frame.uri, "answer to nothing pending");
+            return None;
+        };
+        let result = field(result_at)
+            .map(i32::from_le_bytes)
+            .filter(|_| frame.status == STATUS_OK);
+        Some((uid, result))
     }
 }
 
@@ -306,13 +342,14 @@ mod tests {
         }
     }
 
-    fn frame(uri: u32, fields: &[i64]) -> Frame {
+    fn frame(uri: u32, status: u16, fields: &[i64]) -> Frame {
         let mut body = Vec::new();
         for &field in fields {
             body.put_u32_le(field as u32);
         }
         Frame {
             uri,
+            status,
             body: Bytes::from(body),
         }
     }
@@ -320,26 +357,36 @@ mod tests {
     #[test]
     fn a_followed_streamer_then_gets_live_notices() {
         let mut listener = listener();
-        listener.subscribe(3_000_000_123);
-        listener.subscribe(200_000_002);
+        for uid in [3_000_000_123, 200_000_002, 200_000_003, 200_000_004] {
+            listener.subscribe(uid);
+        }
+        let refused = |uid, result| {
+            Some(Event::Subscribed {
+                uid,
+                result: Err(Refusal::Follow(result)),
+            })
+        };
 
         // Follow answers: app id, seq, uid, result. "Already following"
         // counts as followed.
-        let follow = |seq, result| frame(FOLLOW_ANSWER, &[60, seq, 100_000_001, result]);
-        assert_eq!(listener.dispatch(follow(1, 8)).unwrap(), None);
+        let follow = |seq, result| frame(FOLLOW_ANSWER, 200, &[60, seq, 100_000_001, result]);
+        assert_eq!(listener.dispatch(follow(1, 8)), None);
         assert_eq!(
-            listener.dispatch(follow(2, 5)).unwrap(),
-            Some(Event::Subscribed {
-                uid: 200_000_002,
-                result: Err(Refusal::Follow(5)),
-            })
+            listener.dispatch(follow(2, 5)),
+            refused(200_000_002, Some(5))
         );
-        // The live-notice request went out as seq 3; its answer is seq,
+        // An answer without a result, or with a failure status, is a
+        // refusal; a stray short answer is ignored.
+        let short = frame(FOLLOW_ANSWER, 200, &[60, 3]);
+        assert_eq!(listener.dispatch(short), refused(200_000_003, None));
+        let failed = frame(FOLLOW_ANSWER, 500, &[60, 4, 100_000_001, 0]);
+        assert_eq!(listener.dispatch(failed), refused(200_000_004, None));
+        assert_eq!(listener.dispatch(frame(LIVE_NOTICE_ANSWER, 200, &[])), None);
+
+        // The live-notice request went out as seq 5; its answer is seq,
         // result.
         assert_eq!(
-            listener
-                .dispatch(frame(LIVE_NOTICE_ANSWER, &[3, 0]))
-                .unwrap(),
+            listener.dispatch(frame(LIVE_NOTICE_ANSWER, 200, &[5, 0])),
             Some(Event::Subscribed {
                 uid: 3_000_000_123,
                 result: Ok(()),

@@ -7,8 +7,6 @@
 //! - [`listener`] keeps a signed-in Linkd connection open for live
 //!   notifications.
 
-use std::fmt;
-
 use thiserror::Error;
 
 use crate::danmaku::DanmuProxy;
@@ -24,15 +22,6 @@ pub mod ticket;
 pub struct Route {
     pub client: reqwest::Client,
     pub proxy: Option<DanmuProxy>,
-}
-
-/// Shows only the tunnel, whose `Debug` hides the proxy login.
-impl fmt::Debug for Route {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Route")
-            .field("proxy", &self.proxy)
-            .finish_non_exhaustive()
-    }
 }
 
 /// Why a native request failed.
