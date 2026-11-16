@@ -1,9 +1,7 @@
 use std::error::Error;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 use tracing::debug;
 
@@ -54,63 +52,6 @@ impl WriterProgress {
             speed_bytes_per_sec,
             playback_ratio,
         }
-    }
-}
-
-/// Live write progress, shared with observers that watch for a stalled
-/// recorder. The writer thread updates it on every successful write; readers
-/// only need `idle()` to tell "recording" from "connected but writing
-/// nothing".
-#[derive(Debug)]
-pub struct WriterActivity {
-    started: Instant,
-    /// Microseconds since `started` at the last successful write; 0 means no
-    /// write yet, so `idle()` counts from the writer's creation.
-    last_write_micros: AtomicU64,
-    items: AtomicU64,
-    bytes: AtomicU64,
-    media_millis: AtomicU64,
-}
-
-impl WriterActivity {
-    fn new() -> Self {
-        Self {
-            started: Instant::now(),
-            last_write_micros: AtomicU64::new(0),
-            items: AtomicU64::new(0),
-            bytes: AtomicU64::new(0),
-            media_millis: AtomicU64::new(0),
-        }
-    }
-
-    fn mark_write(&self, items: u64, bytes: u64, media_millis: u64) {
-        let elapsed = u64::try_from(self.started.elapsed().as_micros()).unwrap_or(u64::MAX);
-        self.last_write_micros.store(elapsed, Ordering::Relaxed);
-        self.items.store(items, Ordering::Relaxed);
-        self.bytes.store(bytes, Ordering::Relaxed);
-        self.media_millis.store(media_millis, Ordering::Relaxed);
-    }
-
-    /// Time since the last successful write, or since the writer started.
-    pub fn idle(&self) -> Duration {
-        let now = u64::try_from(self.started.elapsed().as_micros()).unwrap_or(u64::MAX);
-        let last = self.last_write_micros.load(Ordering::Relaxed);
-        Duration::from_micros(now.saturating_sub(last))
-    }
-
-    /// Items written across all files of the session.
-    pub fn items(&self) -> u64 {
-        self.items.load(Ordering::Relaxed)
-    }
-
-    /// Bytes written across all files of the session.
-    pub fn bytes(&self) -> u64 {
-        self.bytes.load(Ordering::Relaxed)
-    }
-
-    /// Media duration written across all files of the session.
-    pub fn media_duration(&self) -> Duration {
-        Duration::from_millis(self.media_millis.load(Ordering::Relaxed))
     }
 }
 
@@ -396,7 +337,6 @@ pub struct WriterTask<D, S: FormatStrategy<D>> {
     strategy: S,
     writer: Option<S::Writer>,
     pending_rotation: bool,
-    activity: Arc<WriterActivity>,
     on_file_open_callback: Option<FileOpenCallback>,
     on_file_close_callback: Option<FileCloseCallback>,
     on_progress_callback: Option<ProgressCallback>,
@@ -468,7 +408,6 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
             strategy,
             writer: None,
             pending_rotation: false,
-            activity: Arc::new(WriterActivity::new()),
             on_file_open_callback: None,
             on_file_close_callback: None,
             on_progress_callback: None,
@@ -671,11 +610,6 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
 
                     // Check and emit progress if thresholds exceeded
                     self.maybe_emit_progress();
-                    self.activity.mark_write(
-                        self.state.items_written_total as u64,
-                        self.state.bytes_written_total,
-                        (self.state.media_duration_secs_total * 1000.0) as u64,
-                    );
 
                     let post_write_action = self
                         .strategy
@@ -808,11 +742,6 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
 
     pub fn get_current_file_path(&self) -> Option<&PathBuf> {
         self.state.current_file_path.as_ref()
-    }
-
-    /// Live write progress, for observers that watch for a stalled recorder.
-    pub fn activity(&self) -> Arc<WriterActivity> {
-        Arc::clone(&self.activity)
     }
 
     pub fn get_state(&self) -> &WriterState {
