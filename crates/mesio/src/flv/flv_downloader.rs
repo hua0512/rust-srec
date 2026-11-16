@@ -308,9 +308,7 @@ impl FlvDownloader {
             Some(timeout) if !timeout.is_zero() => Box::pin(StallWatchdog::new(
                 stream,
                 timeout,
-                |data: &FlvData| {
-                    matches!(data, FlvData::Tag(tag) if tag.is_video_tag() || tag.is_audio_tag())
-                },
+                |data: &FlvData| matches!(data, FlvData::Tag(tag) if tag.is_video_tag() || tag.is_audio_tag()),
             )),
             _ => stream,
         };

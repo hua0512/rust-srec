@@ -175,13 +175,15 @@ pub struct HlsFetcherConfig {
     pub segment_retry_delay_base: Duration,
     /// Cap on the segment reschedule backoff.
     pub max_segment_retry_delay: Duration,
-    /// Total time budget for one segment, counted from its first attempt.
+    /// Time budget for retrying one segment, counted from its first attempt.
     ///
     /// A segment that keeps timing out is retried by the store, and every
-    /// attempt pays the full download timeout; without a budget a single
-    /// black-holed segment holds the recording for minutes. Once the budget
-    /// is spent the segment is treated as terminally failed and skipped.
-    /// `None` removes the cap (the retry count still applies).
+    /// attempt can pay the download timeout several times over; with the
+    /// retry count alone, a segment that never answers holds the recording
+    /// for minutes. The budget is checked when an attempt fails: a failure
+    /// past it gives the segment up, and a running attempt is never cut
+    /// short. Waiting out rate limiting restarts it. `None` removes the cap
+    /// (the retry count still applies).
     pub segment_retry_deadline: Option<Duration>,
     pub key_download_timeout: Duration,
     /// Retries of a failed key fetch (network errors, timeouts, 5xx). Rate
@@ -285,7 +287,7 @@ pub struct HlsOutputConfig {
     pub max_pending_init_segments: usize,
     /// Duration to wait for a segment to be received before considering it stalled.
     /// If the overall stall duration exceeds this value, the downloader will throw an error.
-    /// If None, this timeout is disabled.
+    /// If None or zero, this timeout is disabled.
     pub live_max_overall_stall_duration: Option<Duration>,
 
     /// Gap skip strategy for live streams

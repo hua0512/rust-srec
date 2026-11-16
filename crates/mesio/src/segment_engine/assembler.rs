@@ -678,9 +678,13 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
     }
 
     /// When a live stream that receives no input fails; `None` when it never
-    /// does.
+    /// does. A zero duration disables the deadline, as `None` does.
     fn stall_deadline(&self, clock: &ThrottleClock, now: Instant) -> Option<Instant> {
-        let timeout = self.config.output.live_max_overall_stall_duration?;
+        let timeout = self
+            .config
+            .output
+            .live_max_overall_stall_duration
+            .filter(|timeout| !timeout.is_zero())?;
         let since = self.last_input_received_time?;
         self.is_live_stream
             .then(|| clock.deadline(since, self.last_input_paused, timeout, now))
@@ -726,16 +730,18 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                 }
 
                 input = self.input_rx.recv() => {
-                    // Only an item that carries media — or proves this track is
-                    // absent by design — counts as liveness. Control traffic
-                    // (playlist refreshes, download failures, skipped ranges)
-                    // must not keep a stalled stream alive: a live session
-                    // whose segments all fail still refreshes its playlist
-                    // every few seconds, and treating that as progress would
-                    // hide the stall forever.
+                    // Only an item that carries media, or shows there is none
+                    // to record by design (a filtered ad, a track the section
+                    // does not carry), counts as liveness. Control traffic
+                    // (playlist refreshes, download failures, ranges that
+                    // went missing) must not keep a stalled stream alive: a
+                    // live session whose segments all fail still refreshes
+                    // its playlist every few seconds, and treating that as
+                    // progress would hide the stall forever.
                     let counts_as_liveness = matches!(
                         input.as_ref(),
                         Some(AssemblerInput::Payload(_))
+                            | Some(AssemblerInput::Filtered { .. })
                             | Some(AssemblerInput::Notice(EngineNotice::TrackAbsent { .. }))
                     );
                     if self.is_live_stream && counts_as_liveness {
@@ -749,7 +755,10 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                                 return;
                             }
                         }
-                        Some(AssemblerInput::Skipped { from_msn, to_msn }) => {
+                        Some(
+                            AssemblerInput::Skipped { from_msn, to_msn }
+                            | AssemblerInput::Filtered { from_msn, to_msn },
+                        ) => {
                             trace!(from_msn, to_msn, "upstream skip range");
                             self.rate_limit_holds.skip(from_msn, to_msn, Instant::now());
                             self.dead.insert(from_msn, to_msn);
@@ -1524,6 +1533,11 @@ mod tests {
 
     fn spawn_assembler(mut config: HlsConfig, live: bool, initial_msn: u64) -> Harness {
         config.output_config.live_max_overall_stall_duration = None;
+        spawn_with_config(config, live, initial_msn)
+    }
+
+    /// Like [`spawn_assembler`], with the stall deadline `config` sets.
+    fn spawn_with_config(config: HlsConfig, live: bool, initial_msn: u64) -> Harness {
         let (input_tx, input_rx) = mpsc::channel(64);
         let (event_tx, event_rx) = mpsc::channel(64);
         let cancel = CancellationToken::new();
@@ -1837,137 +1851,75 @@ mod tests {
         let _ = h.join.await;
     }
 
-    /// A live assembler with the stall watchdog armed, so a test can drive
-    /// inputs and observe which of them count as liveness.
-    fn spawn_live_assembler_with_stall(stall: Duration) -> Harness {
+    /// A live assembler that fails after `stall` without liveness.
+    fn spawn_stalling_assembler(stall: Duration) -> Harness {
         let mut config = HlsConfig::default();
         config.output_config.live_max_overall_stall_duration = Some(stall);
-        let (input_tx, input_rx) = mpsc::channel(64);
-        let (event_tx, event_rx) = mpsc::channel(64);
-        let cancel = CancellationToken::new();
-        let assembler = SequenceAssembler::new(
-            Arc::new(SegmentCoreConfig::from(&config)),
-            input_rx,
-            HlsEventSink::new(event_tx),
-            true,
-            0,
-            cancel.clone(),
-        );
-        let holds = assembler.rate_limit_holds();
-        let join = tokio::spawn(assembler.run());
-        Harness {
-            input_tx,
-            event_rx,
-            cancel,
-            join,
-            holds,
-        }
+        spawn_with_config(config, true, 0)
     }
 
-    /// Feeds `make()` every `gap` until the channel closes or `count` is reached.
-    async fn feed_every(
-        h: &mut Harness,
-        mut make: impl FnMut() -> AssemblerInput,
-        gap: Duration,
-        count: usize,
-    ) {
-        for _ in 0..count {
-            if h.input_tx.send(make()).await.is_err() {
-                return;
+    /// Sends `make()` every 10 ms for as long as the assembler runs.
+    fn feed_continuously(h: &Harness, make: fn() -> AssemblerInput) {
+        let input_tx = h.input_tx.clone();
+        tokio::spawn(async move {
+            while input_tx.send(make()).await.is_ok() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
             }
-            tokio::time::sleep(gap).await;
-        }
+        });
     }
 
-    /// A playlist that keeps refreshing is not media: a live session whose
-    /// segments never arrive must still fail on the stall deadline.
+    /// Control traffic is not media: a live session that only refreshes its
+    /// playlist, fails its downloads or loses ranges fails on the stall
+    /// deadline while those inputs keep arriving.
     #[tokio::test]
-    async fn manifest_refreshes_alone_do_not_keep_a_stalled_live_stream_alive() {
-        let mut h = spawn_live_assembler_with_stall(Duration::from_millis(60));
-        feed_every(
-            &mut h,
+    async fn control_traffic_does_not_keep_a_stalled_live_stream_alive() {
+        let control_traffic: [fn() -> AssemblerInput; 3] = [
             || {
                 AssemblerInput::Notice(EngineNotice::ManifestRefreshed {
                     sequence_base: 0,
                     target_duration: 2.0,
                 })
             },
-            Duration::from_millis(25),
-            8,
-        )
-        .await;
-
-        let error = first_error_before_data(&mut h).await;
-        assert!(matches!(error, Some(DownloadError::Timeout { .. })));
-        assert!(matches!(h.join.await.unwrap(), AssemblerExit::Failed(_)));
-    }
-
-    /// Failed downloads are the absence of media, not progress.
-    #[tokio::test]
-    async fn terminal_failures_do_not_count_as_liveness() {
-        let mut h = spawn_live_assembler_with_stall(Duration::from_millis(60));
-        feed_every(
-            &mut h,
             || media_failure(0),
-            Duration::from_millis(25),
-            8,
-        )
-        .await;
-
-        let error = first_error_before_data(&mut h).await;
-        assert!(matches!(error, Some(DownloadError::Timeout { .. })));
-    }
-
-    /// A skipped range means "upstream had it, we did not write it": for a
-    /// recorder that is zero output, so it must not extend the deadline.
-    #[tokio::test]
-    async fn skipped_ranges_do_not_count_as_liveness() {
-        let mut h = spawn_live_assembler_with_stall(Duration::from_millis(60));
-        feed_every(
-            &mut h,
             || AssemblerInput::Skipped {
                 from_msn: 0,
                 to_msn: 1,
             },
-            Duration::from_millis(25),
-            8,
-        )
-        .await;
+        ];
+        for make in control_traffic {
+            let mut h = spawn_stalling_assembler(Duration::from_millis(100));
+            feed_continuously(&h, make);
 
-        let error = first_error_before_data(&mut h).await;
-        assert!(matches!(error, Some(DownloadError::Timeout { .. })));
+            let error = first_error_before_data(&mut h).await;
+            assert!(
+                matches!(error, Some(DownloadError::Timeout { .. })),
+                "{:?} kept the stream alive: {error:?}",
+                make()
+            );
+        }
     }
 
-    /// A track that is absent by design is not a stall (DASH semantics).
+    /// A track the section does not carry is absent by design, not stalled
+    /// (a DASH Period without it).
     #[tokio::test]
-    async fn track_absent_counts_as_liveness() {
-        let mut h = spawn_live_assembler_with_stall(Duration::from_millis(120));
-        // 8 × 40 ms = 320 ms, well past the 120 ms deadline, refreshed throughout.
-        feed_every(
-            &mut h,
-            || {
-                AssemblerInput::Notice(EngineNotice::TrackAbsent {
-                    section_id: None,
-                    section_start: Duration::ZERO,
-                    after_sequence: 0,
-                })
-            },
-            Duration::from_millis(40),
-            8,
-        )
-        .await;
+    async fn a_track_absent_by_design_keeps_a_live_stream_alive() {
+        let stall = Duration::from_millis(300);
+        let mut h = spawn_stalling_assembler(stall);
+        feed_continuously(&h, || {
+            AssemblerInput::Notice(EngineNotice::TrackAbsent {
+                section_id: None,
+                section_start: Duration::ZERO,
+                after_sequence: 0,
+            })
+        });
 
+        tokio::time::sleep(stall * 2).await;
         assert!(
-            tokio::time::timeout(Duration::from_millis(40), h.event_rx.recv())
-                .await
-                .is_err(),
-            "track-absent notices must keep the session alive"
+            !matches!(h.event_rx.try_recv(), Ok(Err(_))),
+            "the stall deadline fired"
         );
+        assert!(!h.join.is_finished());
         h.cancel.cancel();
-        tokio::time::timeout(Duration::from_secs(2), h.join)
-            .await
-            .unwrap()
-            .unwrap();
     }
 
     #[tokio::test]

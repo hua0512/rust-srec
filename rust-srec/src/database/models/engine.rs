@@ -664,7 +664,6 @@ mod tests {
         assert!(parsed.fix_flv);
         assert!(!parsed.fix_hls);
         assert!(parsed.flv_fix.is_none());
-        assert!(parsed.flv.is_none());
         assert!(parsed.hls.is_none());
         assert!(parsed.fix_dash);
         assert!(parsed.dash.is_none());
