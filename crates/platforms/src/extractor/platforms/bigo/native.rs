@@ -6,13 +6,22 @@
 //!   media servers.
 //! - [`listener`] keeps a signed-in Linkd connection open for live
 //!   notifications.
+//! - [`stream`] records a room from its media servers as FLV.
+
+use std::io;
 
 use thiserror::Error;
 
 use crate::danmaku::DanmuProxy;
+use crate::danmaku::error::DanmakuError;
+use crate::danmaku::proxy::{self, BoxedTransport};
 
+mod depacketize;
+mod flv;
 pub mod linkd;
 pub mod listener;
+mod media;
+pub mod stream;
 pub mod ticket;
 
 /// How native connections reach BIGO, both taken from the platform's proxy
@@ -22,6 +31,18 @@ pub mod ticket;
 pub struct Route {
     pub client: reqwest::Client,
     pub proxy: Option<DanmuProxy>,
+}
+
+impl Route {
+    /// A TCP connection to `host:port` through the tunnel.
+    async fn open(&self, host: &str, port: u16) -> Result<BoxedTransport, NativeError> {
+        proxy::open_transport(host, port, self.proxy.as_ref())
+            .await
+            .map_err(|error| match error {
+                DanmakuError::Io(error) => error.into(),
+                error => io::Error::other(error).into(),
+            })
+    }
 }
 
 /// Why a native request failed.
@@ -43,6 +64,8 @@ pub enum NativeError {
     Timeout(&'static str),
     #[error("unexpected answer from BIGO: {0}")]
     Protocol(String),
+    #[error("unsupported stream: {0}")]
+    Unsupported(&'static str),
 }
 
 impl From<bytes::TryGetError> for NativeError {

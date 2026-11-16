@@ -63,6 +63,11 @@ m3u8-rs = { workspace = true }
 md-5 = { workspace = true }
 # Bigo's native key exchange (ephemeral RSA-512).
 num-bigint = "0.4.8"
+# Bigo's native media, written as FLV.
+aac = { path = "../aac" }
+flv = { path = "../flv" }
+h264 = { path = "../h264" }
+h265 = { path = "../h265" }
 aes = { workspace = true }
 cbc = { workspace = true }
 percent-encoding = "2.3.2"

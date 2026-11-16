@@ -218,6 +218,93 @@ impl PartialAudioSpecificConfig {
     }
 }
 
+/// The header of an ADTS frame.
+///
+/// ISO/IEC 14496-3:2019(E) - 1.A.3.2 (`adts_fixed_header` and
+/// `adts_variable_header`)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use]
+pub struct AdtsHeader {
+    /// Audio Object Type: the header's profile plus one.
+    pub audio_object_type: AudioObjectType,
+    /// Sampling Frequency Index; never an escape or reserved value.
+    pub sampling_frequency_index: SampleFrequencyIndex,
+    /// Channel Configuration; never 0, which would need a program config
+    /// element from the payload.
+    pub channel_configuration: u8,
+    /// Bytes in the header: 7, or 9 with a CRC.
+    pub header_length: usize,
+    /// Bytes in the frame, including the header.
+    pub frame_length: usize,
+    /// Raw data blocks in the frame, each of 1024 samples.
+    pub raw_data_blocks: u8,
+}
+
+impl AdtsHeader {
+    /// Parses the header at the start of an ADTS frame.
+    pub fn parse(data: &[u8]) -> io::Result<Self> {
+        let invalid = |message| io::Error::new(io::ErrorKind::InvalidData, message);
+        let mut bitreader = BitReader::new_from_slice(data);
+
+        if bitreader.read_bits(12)? != 0xfff {
+            return Err(invalid("ADTS frame without a sync word"));
+        }
+        // ID, then layer, which is always 0.
+        bitreader.read_bits(1)?;
+        if bitreader.read_bits(2)? != 0 {
+            return Err(invalid("ADTS layer is not 0"));
+        }
+        let protection_absent = bitreader.read_bit()?;
+        let profile = bitreader.read_bits(2)? as u16;
+        let sampling_frequency_index = SampleFrequencyIndex::from_u8(bitreader.read_bits(4)? as u8)
+            .filter(|index| index.to_freq().is_some())
+            .ok_or_else(|| invalid("ADTS sampling frequency index is reserved"))?;
+        // Private bit.
+        bitreader.read_bits(1)?;
+        let channel_configuration = bitreader.read_bits(3)? as u8;
+        if channel_configuration == 0 {
+            return Err(invalid("ADTS channel configuration 0 is not supported"));
+        }
+        // Original/copy, home, and the two copyright identification bits.
+        bitreader.read_bits(4)?;
+        let frame_length = bitreader.read_bits(13)? as usize;
+        // Buffer fullness.
+        bitreader.read_bits(11)?;
+        let raw_data_blocks = bitreader.read_bits(2)? as u8 + 1;
+
+        let header_length = if protection_absent { 7 } else { 9 };
+        if frame_length < header_length {
+            return Err(invalid("ADTS frame is shorter than its header"));
+        }
+        Ok(Self {
+            audio_object_type: AudioObjectType::from_u16(profile + 1),
+            sampling_frequency_index,
+            channel_configuration,
+            header_length,
+            frame_length,
+            raw_data_blocks,
+        })
+    }
+
+    /// The sampling frequency in Hz.
+    pub fn sampling_frequency(&self) -> u32 {
+        self.sampling_frequency_index.to_freq().unwrap_or_default()
+    }
+
+    /// The AudioSpecificConfig that describes this stream, as an MP4 or FLV
+    /// sequence header carries it.
+    ///
+    /// ISO/IEC 14496-3:2019(E) - 1.6.2.1 (Table 1.19), with a
+    /// `GASpecificConfig` of 1024-sample frames, no core coder and no
+    /// extension.
+    pub fn audio_specific_config(&self) -> [u8; 2] {
+        let config = (self.audio_object_type.as_u16() << 11)
+            | (u16::from(self.sampling_frequency_index as u8) << 7)
+            | (u16::from(self.channel_configuration) << 3);
+        config.to_be_bytes()
+    }
+}
+
 #[cfg(test)]
 #[cfg_attr(all(test, coverage_nightly), coverage(off))]
 mod tests {
@@ -234,6 +321,36 @@ mod tests {
         assert_eq!(config.audio_object_type, AudioObjectType::AacLowComplexity);
         assert_eq!(config.sampling_frequency, 44100);
         assert_eq!(config.channel_configuration, 2);
+    }
+
+    #[test]
+    fn adts_headers_give_frame_layout_and_audio_specific_config() {
+        // A live AAC-LC 22.05 kHz mono frame; FFmpeg's 44.1 kHz stereo
+        // encoder output with the AudioSpecificConfig FFmpeg writes for it;
+        // the same header with a CRC and two raw data blocks.
+        let cases = [
+            (*b"\xff\xf1\x5c\x40\x45\xa0\xd0", (7, 557, 1), [0x13, 0x88]),
+            (*b"\xff\xf1\x50\x80\x2a\xff\xfc", (7, 343, 1), [0x12, 0x10]),
+            (*b"\xff\xf0\x50\x80\x2a\xff\xfd", (9, 343, 2), [0x12, 0x10]),
+        ];
+        for (header, layout, config) in cases {
+            let adts = AdtsHeader::parse(&header).unwrap();
+            assert_eq!(
+                (adts.header_length, adts.frame_length, adts.raw_data_blocks),
+                layout
+            );
+            assert_eq!(adts.audio_specific_config(), config);
+        }
+
+        let mono = AdtsHeader::parse(b"\xff\xf1\x5c\x40\x45\xa0\xd0").unwrap();
+        assert_eq!(
+            PartialAudioSpecificConfig::parse(&mono.audio_specific_config()).unwrap(),
+            PartialAudioSpecificConfig {
+                audio_object_type: AudioObjectType::AacLowComplexity,
+                sampling_frequency: 22050,
+                channel_configuration: 1,
+            }
+        );
     }
 
     #[test]
