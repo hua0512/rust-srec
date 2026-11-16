@@ -61,12 +61,15 @@ When a server answers HLS or DASH requests with HTTP 429 (Too Many Requests), or
 
 These answers do not use up the segment or playlist/manifest retry counts. A segment is given up five minutes after it was first held back, and a live segment that leaves the playlist window meanwhile is skipped as a gap. If a segment address that carries a signature is refused as unauthorized right after such a pause, Mesio waits up to 10 seconds for the next playlist or manifest to bring a fresh address before giving the segment up. The recording fails when the playlist or manifest has not been fetched for five minutes because of rate limiting, or sooner when no media at all arrives for the **Max Stall Duration**, as happens while an HLS playlist is refused.
 
-Two per-stream limits bound how long a bad upstream can hold a recording:
+### Stalled streams {#stalled-streams}
 
-- **Max stall duration** (live only, default 60 s) fails the session when no media arrives for that long. Playlist refreshes and failed segment downloads do not count as media: a playlist that keeps rolling while every segment is refused still fails on time instead of recording nothing forever. A track that is absent by design (a DASH Period without it) does count, so a legitimate track switch is not treated as a stall.
-- **Segment retry deadline** (default 45 s) gives up on one segment once it has been retried for that long, then skips it and keeps writing. Without it, a black-holed segment is retried about a dozen times — each attempt paying the full segment timeout — before the recording moves on.
+A server can keep a connection open, or keep publishing a playlist, while no audio or video arrives. Mesio ends such a recording with a network error instead of leaving it running with nothing written, so rust-srec handles it like any other network failure.
 
-The FLV downloader has its own **stream stall timeout** (default 90 s) on the same principle: the HTTP read timeout only sees bytes, so a source that trickles bytes without producing audio/video tags would otherwise stay connected and write nothing. Both watchdogs can be disabled with a zero duration.
+- **Live HLS and DASH** fail when no media arrives for 60 seconds. For HLS this is **Max Stall Duration**, under **Advanced → Gaps and stalls** on the HLS tab. A playlist that keeps updating does not count as media, and neither does a segment that failed or went missing. Advertisement segments that Mesio leaves out of a Twitch recording do count, and so does a part of a DASH stream that has no audio or no video by design, because the stream itself is working.
+- **FLV** fails when no audio or video arrives for 90 seconds, even if the server keeps sending other data. This is **Max Stall Duration**, under **Advanced → Download** on the FLV tab.
+- **A segment that keeps failing** is skipped once it has been retried for 45 seconds, even if it has retries left, and the recording continues without it. For HLS this is **Segment Retry Deadline**, under **Advanced → Segment downloads** on the HLS tab; DASH uses the same 45 seconds. The time is checked when a try fails and a try that is already running finishes first, so with the default timeouts a segment that never answers is given up after about a minute. Time spent waiting out [rate limiting](#rate-limiting) is not counted.
+
+Each of these settings can be set to **Disabled** on the engine, and a value of `0` also disables it. A template override can change the value but cannot disable it.
 
 ## MPEG-DASH engine {#mpeg-dash-engine}
 
