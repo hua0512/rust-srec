@@ -17,7 +17,8 @@ pub struct StoredPlatformMetadata {
 
 impl StoredPlatformMetadata {
     /// Returns a fresh supported observation for the actual extractor platform.
-    /// Malformed documents and future versions remain stored but cannot suppress extraction.
+    /// A malformed document or an unsupported version cannot suppress extraction; the next
+    /// observation replaces it.
     pub fn fresh(raw: Option<&str>, platform: &str, now_ms: i64) -> Option<PlatformMetadata> {
         let raw = raw?;
         let stored: Self = match serde_json::from_str(raw) {
@@ -37,23 +38,7 @@ impl StoredPlatformMetadata {
     }
 
     pub(crate) fn needs_write(&self, previous: Option<&str>) -> bool {
-        let Some(document) =
-            previous.and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
-        else {
-            return true;
-        };
-        // Future versions may use a different envelope. Read their discriminator
-        // before attempting to deserialize the fields this binary understands.
-        if document.get("platform").and_then(serde_json::Value::as_str)
-            == Some(self.metadata.platform.as_str())
-            && document
-                .get("schema_version")
-                .and_then(serde_json::Value::as_u64)
-                .is_some_and(|version| version > u64::from(self.metadata.schema_version))
-        {
-            return false;
-        }
-        let Ok(previous) = serde_json::from_value::<Self>(document) else {
+        let Some(previous) = previous.and_then(|raw| serde_json::from_str::<Self>(raw).ok()) else {
             return true;
         };
         previous.metadata != self.metadata
@@ -97,10 +82,6 @@ mod tests {
         future.metadata.schema_version = 2;
         let raw = serde_json::to_string(&future).unwrap();
         assert!(StoredPlatformMetadata::fresh(Some(&raw), "sample", verified).is_none());
-        assert!(!observation(verified + IDENTITY_LIFETIME_MS).needs_write(Some(&raw)));
-        assert!(!observation(verified).needs_write(Some(
-            r#"{"platform":"sample","schema_version":2,"new_envelope":true}"#
-        )));
     }
 
     #[test]

@@ -11,7 +11,6 @@ use std::borrow::Cow;
 #[derive(Deserialize, Debug)]
 
 pub(crate) struct DouyinAppResponse<'a> {
-    pub status_code: Option<i32>,
     #[serde(borrow)]
     pub data: DouyinAppResponseData<'a>,
 }
@@ -35,9 +34,16 @@ pub(crate) struct DouyinAppResponseData<'a> {
 #[derive(Deserialize, Debug)]
 
 pub(crate) struct DouyinPcResponse<'a> {
-    pub status_code: Option<i32>,
+    pub status_code: Option<i64>,
     #[serde(borrow)]
     pub data: DouyinPcResponseData<'a>,
+}
+
+impl DouyinPcResponse<'_> {
+    /// Whether the platform reported success. Error replies carry a non-zero code.
+    pub fn is_success(&self) -> bool {
+        self.status_code.is_none_or(|code| code == 0)
+    }
 }
 
 #[derive(Deserialize, Debug)]

@@ -56,7 +56,7 @@ pub struct StreamerMetadata {
     pub last_error: Option<String>,
     /// Streamer specific configuration override (JSON string).
     pub streamer_specific_config: Option<String>,
-    /// Opaque persisted platform metadata; unsupported versions survive ordinary edits.
+    /// Persisted platform metadata document. Only observations write it; ordinary edits keep it.
     #[serde(default, skip_serializing)]
     pub platform_metadata: Option<String>,
     /// Offline-check count after merging the Global → Platform → Template →

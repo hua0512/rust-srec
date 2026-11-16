@@ -239,7 +239,6 @@ impl<'a> DouyinRequest<'a> {
         }
 
         let response: DouyinPcResponse = serde_json::from_str(body)?;
-        Self::check_status_code(response.status_code)?;
         // debug!("response: {:#?}", response);
 
         // Unlike parse_pc_response, we continue even if stream ended
@@ -249,7 +248,9 @@ impl<'a> DouyinRequest<'a> {
                 return Err(ExtractorError::StreamerNotFound);
             }
             self.sec_rid = Some(user.sec_uid.to_string());
-            self.platform_metadata = super::metadata::metadata(&self.web_rid, user.id_str);
+            if response.is_success() {
+                self.platform_metadata = super::metadata::metadata(&self.web_rid, user.id_str);
+            }
         } else {
             let msg = response.data.message.as_ref().unwrap_or(&"Unknown error");
             return Err(ExtractorError::ValidationError(format!("API error: {msg}")));
@@ -257,17 +258,6 @@ impl<'a> DouyinRequest<'a> {
 
         self.id_str = response.data.enter_room_id.map(|v| v.to_string());
 
-        Ok(())
-    }
-
-    fn check_status_code(status_code: Option<i32>) -> Result<(), ExtractorError> {
-        if let Some(code) = status_code
-            && code != 0
-        {
-            return Err(ExtractorError::ValidationError(format!(
-                "Douyin API returned code {code}"
-            )));
-        }
         Ok(())
     }
 
@@ -506,12 +496,14 @@ impl<'a> DouyinRequest<'a> {
             }
         };
 
-        Self::check_status_code(response.status_code)?;
-        if let Some(user) = response
-            .data
-            .user
-            .as_ref()
-            .filter(|user| !user.is_cancelled())
+        // An error reply cannot verify identity, but it still decides the status below:
+        // the platform sends its prompts with a non-zero code.
+        if response.is_success()
+            && let Some(user) = response
+                .data
+                .user
+                .as_ref()
+                .filter(|user| !user.is_cancelled())
         {
             self.platform_metadata = super::metadata::metadata(&self.web_rid, user.id_str);
         }
@@ -592,8 +584,6 @@ impl<'a> DouyinRequest<'a> {
                 return Err(ExtractorError::JsonError(e));
             }
         };
-        Self::check_status_code(response.status_code)?;
-        Self::check_status_code(response.data.code)?;
         if let Some(prompts) = &response.data.prompts {
             if prompts.contains("直播已结束") || prompts.contains("你不在主播设置的可见范围内")
             {
@@ -1402,24 +1392,24 @@ mod tests {
             );
         }
         let mut body = pc_identity_body("123", room_fixture(StreamSource::Sdk, LIVE_FLV, LIVE_HLS));
-        body["status_code"] = json!(10011);
+        // The platform's error envelope: the prompt still means offline, but the reply
+        // cannot verify who the broadcaster is.
+        body["status_code"] = json!(30003);
+        body["data"]["prompts"] = json!("直播已结束");
         for forced_mobile in [false, true] {
             let mut request = DouyinRequest::new(
                 config.extractor.cookies.clone(),
                 &config,
                 "page-id".to_string(),
             );
-            let error = if forced_mobile {
+            if forced_mobile {
                 request
                     .extract_user_info_from_pc_response(&body.to_string())
-                    .unwrap_err()
+                    .unwrap();
             } else {
-                request.parse_pc_response(&body.to_string()).unwrap_err()
-            };
-            assert!(matches!(
-                error,
-                crate::extractor::error::ExtractorError::ValidationError(_)
-            ));
+                let info = request.parse_pc_response(&body.to_string()).unwrap();
+                assert!(!info.is_live);
+            }
             assert!(request.platform_metadata.is_none());
         }
         body["status_code"] = json!(0);

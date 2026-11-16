@@ -266,14 +266,12 @@ where
                         let row = sqlx::query_as::<_, crate::database::models::StreamerDbModel>(
                             "UPDATE streamers SET platform_metadata = ? \
                              WHERE id = ? AND url = ? AND platform_config_id = ? \
-                             AND updated_at = ? AND platform_metadata IS ? \
-                             AND deleted_at IS NULL RETURNING *",
+                             AND platform_metadata IS ? AND deleted_at IS NULL RETURNING *",
                         )
                         .bind(document)
                         .bind(&source.id)
                         .bind(&source.url)
                         .bind(&source.platform_config_id)
-                        .bind(source.updated_at.timestamp_millis())
                         .bind(&source.platform_metadata)
                         .fetch_optional(connection)
                         .await?;

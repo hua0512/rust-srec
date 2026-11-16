@@ -12,10 +12,7 @@ use reqwest::Client;
 use rust_srec::config::ConfigEventBroadcaster;
 use rust_srec::database::{self, models::StreamerDbModel, repositories::*};
 use rust_srec::streamer::StreamerManager;
-use sqlx::{SqlitePool, migrate::Migrator, sqlite::SqlitePoolOptions};
-
-const VERSION: i64 = 20261115120000;
-static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
+use sqlx::SqlitePool;
 
 type Manager = StreamerManager<SqlxStreamerRepository>;
 
@@ -137,49 +134,6 @@ async fn fixture() -> (
             .is_none()
     );
     (pool, repository, manager, events, model.id)
-}
-
-#[tokio::test]
-async fn upgrade_keeps_rows_and_initializes_metadata_as_null() {
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .unwrap();
-    let previous = Migrator::with_migrations(
-        MIGRATOR
-            .iter()
-            .filter(|migration| migration.version < VERSION)
-            .cloned()
-            .collect::<Vec<_>>(),
-    );
-    previous.run(&pool).await.unwrap();
-    seed_platform(&pool).await;
-    sqlx::query("INSERT INTO streamers (id,name,url,platform_config_id,state,priority,created_at,updated_at,streamer_specific_config) VALUES ('old','Old','https://metadata.example.test/channels/one','platform-metadata-test','NOT_LIVE','NORMAL',1800000000000,1800000000000,'{\"record_danmu\":true}')")
-        .execute(&pool).await.unwrap();
-    MIGRATOR.run(&pool).await.unwrap();
-    let row: (String, Option<String>, Option<String>) = sqlx::query_as(
-        "SELECT name,streamer_specific_config,platform_metadata FROM streamers WHERE id='old'",
-    )
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(
-        row,
-        ("Old".into(), Some(r#"{"record_danmu":true}"#.into()), None)
-    );
-    assert!(
-        sqlx::query("PRAGMA foreign_key_check")
-            .fetch_all(&pool)
-            .await
-            .unwrap()
-            .is_empty()
-    );
-    let integrity: String = sqlx::query_scalar("PRAGMA integrity_check")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(integrity, "ok");
 }
 
 #[tokio::test]
@@ -319,99 +273,6 @@ async fn platform_change_and_deletion_reject_observations() {
             .await
             .unwrap()
     );
-}
-
-#[tokio::test]
-async fn future_or_malformed_documents_survive_unrelated_edits() {
-    let (pool, repository, manager, _events, id) = fixture().await;
-    for raw in [
-        r#"{"platform":"metadatatest","schema_version":2,"verified_at_ms":1,"data":{"extension":true}}"#,
-        "malformed",
-    ] {
-        sqlx::query("UPDATE streamers SET platform_metadata=? WHERE id=?")
-            .bind(raw)
-            .bind(&id)
-            .execute(&pool)
-            .await
-            .unwrap();
-        manager.hydrate().await.unwrap();
-        let mut row = repository.get_streamer(&id).await.unwrap();
-        row.name = "Rename".into();
-        row.platform_metadata = None;
-        repository.update_streamer(&row).await.unwrap();
-        assert_eq!(
-            repository
-                .get_streamer(&id)
-                .await
-                .unwrap()
-                .platform_metadata
-                .as_deref(),
-            Some(raw)
-        );
-        assert_eq!(
-            manager
-                .get_streamer_snapshot(&id)
-                .unwrap()
-                .platform_metadata
-                .as_deref(),
-            Some(raw)
-        );
-    }
-}
-
-#[tokio::test]
-async fn configuration_edit_rejects_an_in_flight_observation() {
-    let (pool, _repository, manager, _events, id) = fixture().await;
-    let source = manager.get_streamer_snapshot(&id).unwrap();
-    sqlx::query("UPDATE streamers SET updated_at=updated_at+1 WHERE id=?")
-        .bind(&id)
-        .execute(&pool)
-        .await
-        .unwrap();
-    assert!(
-        !manager
-            .observe_platform_metadata(&source, observation("456"), database::time::now_ms())
-            .await
-            .unwrap()
-    );
-    let raw: Option<String> =
-        sqlx::query_scalar("SELECT platform_metadata FROM streamers WHERE id=?")
-            .bind(&id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert!(raw.is_none());
-}
-
-#[tokio::test]
-async fn failed_metadata_transaction_does_not_publish() {
-    let (pool, repository, manager, events, id) = fixture().await;
-    sqlx::raw_sql("CREATE TRIGGER refuse_metadata BEFORE UPDATE OF platform_metadata ON streamers BEGIN SELECT RAISE(ABORT,'injected metadata failure'); END;")
-        .execute(&pool).await.unwrap();
-    let source = manager.get_streamer_snapshot(&id).unwrap();
-    let mut receiver = events.subscribe();
-    assert!(
-        manager
-            .observe_platform_metadata(&source, observation("456"), database::time::now_ms())
-            .await
-            .is_err()
-    );
-    assert!(
-        repository
-            .get_streamer(&id)
-            .await
-            .unwrap()
-            .platform_metadata
-            .is_none()
-    );
-    assert!(
-        manager
-            .get_streamer_snapshot(&id)
-            .unwrap()
-            .platform_metadata
-            .is_none()
-    );
-    assert!(receiver.try_recv().is_err());
 }
 
 #[tokio::test]

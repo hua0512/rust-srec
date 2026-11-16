@@ -101,6 +101,9 @@ const IN_FLIGHT_DEDUP_WINDOW: Duration = Duration::from_millis(100);
 /// own by default, and every poll of a chunk waits for its refresh.
 const BATCH_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// How long a status check waits for its observed platform metadata to be saved.
+const PLATFORM_METADATA_SAVE_TIMEOUT: Duration = Duration::from_secs(2);
+
 type PendingCredentialRecovery = Arc<dyn Fn(String) -> BoxFuture<'static, ()> + Send + Sync>;
 
 /// One shared result per running check. The cell holds the source with the status, so a caller
@@ -789,17 +792,10 @@ impl<
                         }
                         None => self.check_anonymous(check).await?,
                     };
-                    if let Some(metadata) = observation.platform_metadata
-                        && deadline.instant().saturating_duration_since(tokio::time::Instant::now()) > Duration::from_millis(100)
-                    {
-                        // Leave time to return the valid status even if saving identity stalls.
+                    if let Some(metadata) = observation.platform_metadata {
                         // The check owner saves once; joined callers reuse its status.
-                        let limit = (deadline.instant() - Duration::from_millis(50)).min(tokio::time::Instant::now() + Duration::from_secs(2));
-                        match tokio::time::timeout_at(limit, self.streamer_manager.observe_platform_metadata(streamer, metadata, verified_at_ms)).await {
-                            Ok(Ok(_)) => {},
-                            Ok(Err(error)) => warn!(streamer_id = %streamer.id, %error, "Could not save platform metadata"),
-                            Err(_) => warn!(streamer_id = %streamer.id, "Saving platform metadata timed out"),
-                        }
+                        self.save_platform_metadata(streamer, metadata, verified_at_ms)
+                            .await;
                     }
                     Ok((observation.status, CheckSource::Individual))
                 };
@@ -831,6 +827,29 @@ impl<
 
         // Now check result - cleanup is already scheduled
         result.cloned()
+    }
+
+    /// Saves the identity an individual check observed, without failing the check.
+    ///
+    /// The save runs before the status is returned, so it is bounded: a stalled database write
+    /// delays the status by at most [`PLATFORM_METADATA_SAVE_TIMEOUT`]. A failed or abandoned
+    /// save costs nothing lasting, because the next individual check observes the identity again.
+    async fn save_platform_metadata(
+        &self,
+        streamer: &StreamerMetadata,
+        metadata: platforms_parser::media::PlatformMetadata,
+        verified_at_ms: i64,
+    ) {
+        let save =
+            self.streamer_manager
+                .observe_platform_metadata(streamer, metadata, verified_at_ms);
+        match tokio::time::timeout(PLATFORM_METADATA_SAVE_TIMEOUT, save).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(error)) => {
+                warn!(streamer_id = %streamer.id, %error, "Could not save platform metadata");
+            }
+            Err(_) => warn!(streamer_id = %streamer.id, "Saving platform metadata timed out"),
+        }
     }
 
     /// Whether the streamer's platform batch status call reports it offline, which answers the
