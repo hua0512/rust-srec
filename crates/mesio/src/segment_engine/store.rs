@@ -193,9 +193,11 @@ pub struct StoreConfig {
     pub retry_budget: u32,
     pub retry_delay_base: Duration,
     pub retry_delay_max: Duration,
-    /// Total time budget for one segment, measured from its first attempt.
-    /// Once spent, the segment fails terminally instead of being rescheduled.
-    /// `None` removes the cap (the retry count still applies).
+    /// Time budget for retrying one segment, measured from its first attempt
+    /// and checked when an attempt fails: a failure past it is terminal
+    /// instead of rescheduled, and a running attempt is never cut short.
+    /// Waiting out rate limiting restarts it. `None` removes the cap (the
+    /// retry count still applies).
     pub retry_deadline: Option<Duration>,
     /// How long after it was first held back by rate limiting a segment
     /// fails; rate-limited attempts do not spend `retry_budget`.
@@ -264,8 +266,11 @@ struct SegmentRecord {
     descriptor: Arc<SegmentDescriptor>,
     state: SegmentState,
     reschedules: u32,
-    /// When the first attempt started. The retry deadline is measured from
-    /// here, so backoff and re-discovery waits count against it.
+    /// When the current run of ordinary attempts started. The retry deadline
+    /// is measured from here, so the backoff between those attempts counts
+    /// against it. Cleared by an outcome that does not spend the retry
+    /// budget (rate limiting, the URL refresh wait, budget contention): the
+    /// time the segment waited there says nothing about the segment.
     first_attempt_at: Option<Instant>,
     /// When rate limiting first held this segment back.
     throttled_since: Option<Instant>,
@@ -784,6 +789,7 @@ impl SegmentStateStore {
                     // The retry is clamped to the rest of the allowance, so a
                     // long cool-down near its end cannot carry it past it.
                     FailureClass::RateLimited { delay, .. } => {
+                        record.first_attempt_at = None;
                         let since = *record.throttled_since.get_or_insert(now);
                         self.config
                             .max_throttled
@@ -809,6 +815,7 @@ impl SegmentStateStore {
                             && record.throttled_since.is_some()
                             && !record.refresh_wait_used =>
                     {
+                        record.first_attempt_at = None;
                         record.refresh_wait_used = true;
                         record.awaiting_refresh = true;
                         keeps_hold = true;
@@ -820,7 +827,10 @@ impl SegmentStateStore {
                     // a size that can never fit is terminal at the fetch,
                     // contention clears as siblings finish, and a live
                     // backlog is bounded.
-                    FailureClass::OverBudget => Some(backoff(record.reschedules)),
+                    FailureClass::OverBudget => {
+                        record.first_attempt_at = None;
+                        Some(backoff(record.reschedules))
+                    }
                     _ => {
                         let retryable = match class {
                             // 425 Too Early: an origin that enforces live
@@ -848,11 +858,11 @@ impl SegmentStateStore {
                             | FailureClass::RateLimited { .. }
                             | FailureClass::OverBudget => false,
                         };
-                        // A segment that has already spent its total time
-                        // budget is skipped instead of rescheduled: every
-                        // attempt pays the full download timeout, so without
-                        // this a black-holed segment holds the recording for
-                        // minutes (count alone allows ~12 attempts at 10s).
+                        // A segment past its retry deadline is given up
+                        // instead of rescheduled: every attempt can pay the
+                        // full download timeout several times over, so the
+                        // retry count alone lets a segment that never answers
+                        // hold the recording for minutes.
                         let within_deadline = self.config.retry_deadline.is_none_or(|deadline| {
                             record
                                 .first_attempt_at
@@ -2232,6 +2242,7 @@ mod tests {
             StoreConfig {
                 retry_budget: 1,
                 retry_delay_base: Duration::from_millis(10),
+                retry_deadline: Some(Duration::from_secs(30)),
                 max_throttled: Duration::from_secs(60),
                 ..StoreConfig::default()
             },
@@ -2265,7 +2276,8 @@ mod tests {
         };
 
         // Three cool-downs of 20 s fit the 60 s bound; the budget of one
-        // ordinary retry is untouched.
+        // ordinary retry is untouched, and the 30 s retry deadline does not
+        // count the time spent waiting them out.
         for _ in 0..3 {
             let effects = fail(&mut s, limited, now);
             assert!(effects.assembler_inputs.is_empty(), "still waiting");
@@ -2292,6 +2304,46 @@ mod tests {
             effects.assembler_inputs.as_slice(),
             [AssemblerInput::TerminalFailed { msn: 1, error, .. }]
                 if matches!(error.get(), DownloadError::SegmentFetch { retryable: true, .. })
+        ));
+    }
+
+    /// The retry deadline ends a segment whose attempts are slow to fail
+    /// while most of its retry count is unspent.
+    #[test]
+    fn a_failure_past_the_retry_deadline_is_terminal_with_retries_left() {
+        let mut s = SegmentStateStore::new(
+            StoreConfig {
+                retry_budget: 10,
+                retry_delay_base: Duration::from_millis(10),
+                retry_deadline: Some(Duration::from_secs(45)),
+                ..StoreConfig::default()
+            },
+            Arc::new(RateLimitHolds::new()),
+        );
+        let b = budget_unlimited();
+        let start = Instant::now();
+        s.ingest(
+            vec![descriptor("https://e.com/1.m4s", 1, SegmentKind::Media)],
+            start,
+        );
+
+        for inside in [start, start + Duration::from_secs(44)] {
+            assert!(
+                fail_at(&mut s, &b, FailureClass::Timeout, inside)
+                    .assembler_inputs
+                    .is_empty(),
+                "retried inside the deadline"
+            );
+        }
+        let effects = fail_at(
+            &mut s,
+            &b,
+            FailureClass::Timeout,
+            start + Duration::from_secs(46),
+        );
+        assert!(matches!(
+            effects.assembler_inputs.as_slice(),
+            [AssemblerInput::TerminalFailed { msn: 1, .. }]
         ));
     }
 

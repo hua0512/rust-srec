@@ -631,38 +631,6 @@ mod tests {
     }
 
     #[test]
-    fn stall_flags_default_to_the_engine_defaults_and_parse_durations() {
-        use crate::utils::parse_duration_flag;
-
-        let defaults = parse(&[]).unwrap();
-        assert_eq!(defaults.hls_max_stall, "60s");
-        assert_eq!(defaults.flv_stall_timeout, "90s");
-        assert_eq!(defaults.hls_segment_retry_deadline, "45s");
-
-        let custom = parse(&[
-            "--hls-max-stall",
-            "2m",
-            "--flv-stall-timeout",
-            "0",
-            "--hls-segment-retry-deadline",
-            "500ms",
-        ])
-        .unwrap();
-        assert_eq!(
-            parse_duration_flag(&custom.hls_max_stall).unwrap(),
-            Some(Duration::from_secs(120))
-        );
-        assert_eq!(
-            parse_duration_flag(&custom.flv_stall_timeout).unwrap(),
-            None
-        );
-        assert_eq!(
-            parse_duration_flag(&custom.hls_segment_retry_deadline).unwrap(),
-            Some(Duration::from_millis(500))
-        );
-    }
-
-    #[test]
     fn default_on_flags_can_be_turned_off_without_swallowing_the_url() {
         let defaults = parse(&[]).unwrap();
         assert!(

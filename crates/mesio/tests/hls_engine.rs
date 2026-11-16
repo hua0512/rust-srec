@@ -498,6 +498,48 @@ async fn first_redirected_twitch_variant_keeps_prefetch_segments() {
     assert!(ends_with_stream_ended(&events));
 }
 
+/// Ad segments are dropped by design while the source keeps delivering, so
+/// an ad break longer than the stall deadline does not end the recording.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_twitch_ad_break_longer_than_the_stall_deadline_keeps_recording() {
+    let origin = Origin::new();
+    // The CDN marker in the path makes this a Twitch playlist.
+    origin.redirect("live.m3u8", "/ttvnw.net/live.m3u8");
+    origin.serve_playlists_at("ttvnw.net/live.m3u8");
+    let rolling = |seq: u64, title: &str, uri: &str| {
+        format!(
+            "#EXTM3U\n#EXT-X-TARGETDURATION:0\n#EXT-X-MEDIA-SEQUENCE:{seq}\n\
+             #EXTINF:0.5,{title}\n{uri}\n"
+        )
+    };
+    origin.push_playlist(rolling(0, "live", "seg0.ts"));
+    // One new ad segment per refresh: at least 1.4 s of nothing but ads.
+    let ads = 70;
+    for seq in 1..=ads {
+        origin.push_playlist(rolling(seq, "Amazon|ad", "ad.ts"));
+    }
+    origin.push_playlist(rolling(ads + 1, "live", "seg1.ts") + "#EXT-X-ENDLIST\n");
+    origin.add_file("ttvnw.net/seg0.ts", b"zero".to_vec());
+    origin.add_file("ttvnw.net/seg1.ts", b"one".to_vec());
+
+    let mut config = fast_config();
+    config.output_config.live_max_overall_stall_duration = Some(Duration::from_secs(1));
+
+    let base = origin.clone().serve().await;
+    let events = run_engine(&base, config).await;
+
+    assert_eq!(
+        data_uris(&events),
+        [
+            format!("{base}/ttvnw.net/seg0.ts"),
+            format!("{base}/ttvnw.net/seg1.ts"),
+        ],
+        "{events:?}"
+    );
+    assert!(ends_with_stream_ended(&events));
+    assert_eq!(origin.hits("ttvnw.net/ad.ts"), 0);
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn rotated_auth_tokens_download_each_segment_once() {
     let origin = Origin::new();

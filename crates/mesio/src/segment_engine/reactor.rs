@@ -371,6 +371,9 @@ fn process_snapshot<P: SegmentPlanner>(
     for (from_msn, to_msn) in planned.skipped {
         pending.push(AssemblerInput::Skipped { from_msn, to_msn });
     }
+    for (from_msn, to_msn) in planned.filtered {
+        pending.push(AssemblerInput::Filtered { from_msn, to_msn });
+    }
     // Snapshot-derived notices cross the same ordered boundary as payloads,
     // keeping the client channel single-producer.
     for notice in planned.notices {

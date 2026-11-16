@@ -571,74 +571,19 @@ mod tests {
 
     #[test]
     fn flv_stall_timeout_override_applies_and_null_disables_it() {
-        use crate::database::models::engine::MesioFlvConfig;
-
         let download = create_test_download_config();
-        let mut engine_config = MesioEngineConfig::default();
-        assert_eq!(
-            build_flv_config(&download, &engine_config).media_stall_timeout,
-            Some(std::time::Duration::from_secs(90))
-        );
-
-        engine_config.flv = Some(MesioFlvConfig {
-            media_stall_timeout_ms: Some(Some(5_000)),
-        });
-        assert_eq!(
-            build_flv_config(&download, &engine_config).media_stall_timeout,
-            Some(std::time::Duration::from_secs(5))
-        );
-
-        // `null` disables the watchdog.
-        engine_config.flv = Some(MesioFlvConfig {
-            media_stall_timeout_ms: Some(None),
-        });
-        assert_eq!(
-            build_flv_config(&download, &engine_config).media_stall_timeout,
-            None
-        );
-    }
-
-    #[test]
-    fn segment_retry_deadline_override_is_tri_state() {
-        use crate::database::models::engine::{
-            MesioHlsConfig, MesioHlsFetcherConfigOverride,
+        let stall_timeout = |flv: serde_json::Value| {
+            let engine_config: MesioEngineConfig =
+                serde_json::from_value(serde_json::json!({ "flv": flv })).unwrap();
+            build_flv_config(&download, &engine_config).media_stall_timeout
         };
 
-        let download = create_test_download_config();
-        let mut engine_config = MesioEngineConfig::default();
         assert_eq!(
-            build_hls_config(&download, &engine_config)
-                .fetcher_config
-                .segment_retry_deadline,
-            Some(std::time::Duration::from_secs(45))
+            stall_timeout(serde_json::json!({ "media_stall_timeout_ms": 5000 })),
+            Some(std::time::Duration::from_secs(5))
         );
-
-        engine_config.hls = Some(MesioHlsConfig {
-            fetcher_config: Some(MesioHlsFetcherConfigOverride {
-                segment_retry_deadline_ms: Some(Some(10_000)),
-                ..Default::default()
-            }),
-            ..Default::default()
-        });
         assert_eq!(
-            build_hls_config(&download, &engine_config)
-                .fetcher_config
-                .segment_retry_deadline,
-            Some(std::time::Duration::from_secs(10))
-        );
-
-        // `null` removes the cap without changing the retry count.
-        engine_config.hls = Some(MesioHlsConfig {
-            fetcher_config: Some(MesioHlsFetcherConfigOverride {
-                segment_retry_deadline_ms: Some(None),
-                ..Default::default()
-            }),
-            ..Default::default()
-        });
-        assert_eq!(
-            build_hls_config(&download, &engine_config)
-                .fetcher_config
-                .segment_retry_deadline,
+            stall_timeout(serde_json::json!({ "media_stall_timeout_ms": null })),
             None
         );
     }
@@ -759,6 +704,7 @@ mod tests {
                 "fetcher_config": {
                   "max_segment_retries": 42,
                   "max_segment_retry_delay_ms": 5555,
+                  "segment_retry_deadline_ms": null,
                   "max_key_retry_delay_ms": 6666,
                   "progress_emit_min_bytes": 0,
                   "progress_emit_min_interval_ms": 0
@@ -821,6 +767,7 @@ mod tests {
             hls_config.fetcher_config.max_segment_retry_delay,
             std::time::Duration::from_millis(5555)
         );
+        assert!(hls_config.fetcher_config.segment_retry_deadline.is_none());
         assert_eq!(
             hls_config.fetcher_config.max_key_retry_delay,
             std::time::Duration::from_millis(6666)

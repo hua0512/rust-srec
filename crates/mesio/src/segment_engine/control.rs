@@ -87,8 +87,12 @@ pub struct PlanOutcome {
     pub descriptors: Vec<SegmentDescriptor>,
     /// Sequence numbers proven gone before they were ever decided.
     pub missing: Vec<SequenceRange>,
-    /// Sequence numbers that will never be planned (filtered or unusable).
+    /// Sequence numbers that will never be planned because they are unusable.
     pub skipped: Vec<SequenceRange>,
+    /// Sequence numbers the source served and the planner dropped by policy
+    /// (ads, placeholders). They reach the assembler as
+    /// `AssemblerInput::Filtered`, which counts as liveness.
+    pub filtered: Vec<SequenceRange>,
     /// Window for state pruning; `None` leaves the store unpruned.
     pub prune: Option<PruneWindow>,
     /// Set when output cannot continue; the reactor fails the stream before

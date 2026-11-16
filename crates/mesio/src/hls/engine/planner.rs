@@ -50,9 +50,14 @@ pub struct Planned {
     /// decided (including across coalesced snapshots). Forwarded as explicit
     /// `AssemblerInput::Skipped`, never a silent stall.
     pub missing: Vec<MsnRange>,
-    /// MSNs that will never be planned: ads, empty URIs, uninferable
-    /// BYTERANGEs, malformed URLs. Decided exactly once (watermark-gated).
+    /// MSNs that will never be planned because they are unusable: empty
+    /// URIs, uninferable BYTERANGEs, malformed URLs. Decided exactly once
+    /// (watermark-gated).
     pub skipped: Vec<MsnRange>,
+    /// MSNs dropped by policy although the source served them: ads and
+    /// placeholder segments. Kept apart from `skipped` because the source is
+    /// delivering, so they count as liveness. Decided exactly once.
+    pub filtered: Vec<MsnRange>,
     /// A media-sequence reset was detected: the window regressed too far to
     /// be a stale edge response. Output continuity cannot be preserved across
     /// a reset (every re-based payload would sit below the assembler's emit
@@ -138,6 +143,7 @@ impl SegmentPlanner for PlannerContext {
         outcome.descriptors = planned.descriptors;
         outcome.missing = planned.missing;
         outcome.skipped = planned.skipped;
+        outcome.filtered = planned.filtered;
         outcome.reset = planned.reset.then_some(ResetKind::SequenceRegressed);
         outcome.prune = Some(PruneWindow {
             start: playlist.media_sequence,
@@ -277,14 +283,14 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
     // resource); the store dedups across calls.
     let mut emitted_init_keys: HashSet<SegmentKey> = HashSet::new();
     let watermark = ctx.next_undecided_msn;
-    let skip = |planned: &mut Planned, msn: u64| {
-        // Coalesce contiguous skips produced within this scan.
-        if let Some((_, to)) = planned.skipped.last_mut()
+    let skip = |ranges: &mut Vec<MsnRange>, msn: u64| {
+        // Coalesce contiguous MSNs produced within this scan.
+        if let Some((_, to)) = ranges.last_mut()
             && *to + 1 == msn
         {
             *to = msn;
         } else {
-            planned.skipped.push((msn, msn));
+            ranges.push((msn, msn));
         }
     };
 
@@ -362,7 +368,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
         let Some(effective_uri) = effective_uri.filter(|u| !u.trim().is_empty()) else {
             if deciding {
                 warn!(msn, "skipping segment with empty URI");
-                skip(&mut planned, msn);
+                skip(&mut planned.skipped, msn);
             }
             continue;
         };
@@ -423,7 +429,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
                                 uri = %redact_url_for_log(&effective_uri),
                                 "skipping BYTERANGE segment with no explicit offset and no prior range to infer from"
                             );
-                            skip(&mut planned, msn);
+                            skip(&mut planned.skipped, msn);
                         }
                         continue;
                     }
@@ -438,7 +444,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
         if scanned.is_ad {
             if deciding {
                 debug!(msn, uri = %redact_url_for_log(&segment.uri), "dropping ad segment");
-                skip(&mut planned, msn);
+                skip(&mut planned.filtered, msn);
             }
             continue;
         }
@@ -449,7 +455,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
         if ctx.soop && is_preloading_segment(segment) {
             if deciding {
                 debug!(msn, uri = %redact_url_for_log(&segment.uri), "dropping SOOP preloading placeholder");
-                skip(&mut planned, msn);
+                skip(&mut planned.filtered, msn);
             }
             continue;
         }
@@ -458,7 +464,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
         let Some(absolute_uri) = resolve_uri(&base_url, &effective_uri) else {
             if deciding {
                 warn!(msn, uri = %redact_url_for_log(&effective_uri), "skipping segment with unresolvable URI");
-                skip(&mut planned, msn);
+                skip(&mut planned.skipped, msn);
             }
             continue;
         };
@@ -467,7 +473,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
             // A malformed URL never produces a job (terminal by construction).
             if deciding {
                 warn!(msn, uri = %redact_url_for_log(&final_uri), "skipping segment with malformed URL");
-                skip(&mut planned, msn);
+                skip(&mut planned.skipped, msn);
             }
             continue;
         };

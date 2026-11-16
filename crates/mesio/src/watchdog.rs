@@ -65,29 +65,27 @@ where
             return Poll::Ready(None);
         }
 
-        match this.inner.poll_next_unpin(cx) {
-            Poll::Ready(Some(Ok(item))) => {
-                if (this.is_media)(&item) {
-                    this.deadline
-                        .as_mut()
-                        .reset(Instant::now() + this.timeout);
-                }
-                Poll::Ready(Some(Ok(item)))
+        let polled = match this.inner.poll_next_unpin(cx) {
+            Poll::Ready(Some(Ok(item))) if (this.is_media)(&item) => {
+                this.deadline.as_mut().reset(Instant::now() + this.timeout);
+                return Poll::Ready(Some(Ok(item)));
             }
-            Poll::Ready(other) => Poll::Ready(other),
-            Poll::Pending => {
-                if this.deadline.as_mut().poll(cx).is_ready() {
-                    this.fired = true;
-                    return Poll::Ready(Some(Err(DownloadError::Timeout {
-                        reason: format!(
-                            "stalled: no media received for {:.1}s",
-                            this.timeout.as_secs_f64()
-                        ),
-                    })));
-                }
-                Poll::Pending
-            }
+            Poll::Ready(Some(Err(error))) => return Poll::Ready(Some(Err(error))),
+            Poll::Ready(None) => return Poll::Ready(None),
+            polled => polled,
+        };
+        // The deadline is checked on a non-media item as well as while
+        // waiting, so a source that always has one ready cannot outrun it.
+        if this.deadline.as_mut().poll(cx).is_ready() {
+            this.fired = true;
+            return Poll::Ready(Some(Err(DownloadError::Timeout {
+                reason: format!(
+                    "stalled: no media received for {:.1}s",
+                    this.timeout.as_secs_f64()
+                ),
+            })));
         }
+        polled
     }
 }
 

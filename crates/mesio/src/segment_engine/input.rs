@@ -24,6 +24,14 @@ pub enum AssemblerInput {
         from_msn: u64,
         to_msn: u64,
     },
+    /// The planner dropped these MSNs by policy (ads, placeholders) although
+    /// the source served them. The assembler advances past them like
+    /// `Skipped`; unlike `Skipped` they show the source is delivering, so
+    /// they count as liveness for the live stall deadline.
+    Filtered {
+        from_msn: u64,
+        to_msn: u64,
+    },
     /// A specific segment will never arrive (terminal failure).
     TerminalFailed {
         key: SegmentKey,

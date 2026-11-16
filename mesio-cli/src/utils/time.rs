@@ -66,13 +66,10 @@ pub fn parse_time(time_str: &str) -> Result<f64, AppError> {
 /// The engine treats a zero duration as "no timeout"; the CLI spells that as
 /// `0`, matching the existing `--timeout`/`--read-timeout` convention.
 pub fn parse_duration_flag(value: &str) -> Result<Option<Duration>, AppError> {
-    let seconds = parse_time(value)?;
-    if !seconds.is_finite() || seconds < 0.0 {
-        return Err(AppError::ParseError(format!(
-            "Invalid duration: {value}"
-        )));
-    }
-    Ok((seconds > 0.0).then(|| Duration::from_secs_f64(seconds)))
+    // Rejects negative, non-finite and out-of-range values.
+    let duration = Duration::try_from_secs_f64(parse_time(value)?)
+        .map_err(|_| AppError::ParseError(format!("Invalid duration: {value}")))?;
+    Ok((!duration.is_zero()).then_some(duration))
 }
 
 #[cfg(test)]
@@ -103,5 +100,6 @@ mod tests {
             Some(Duration::from_millis(500))
         );
         assert!(parse_duration_flag("-1").is_err());
+        assert!(parse_duration_flag("1e30").is_err());
     }
 }
