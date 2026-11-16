@@ -9,9 +9,9 @@
 //!
 //! Bigo restricts some accounts without signing them out: the studio then
 //! answers every room as offline. When the studio reads a room as offline that
-//! the profile reports live, the profile is asked again, and if the room is
-//! still live a signed-in check fails with `account_restricted`, so the
-//! account is set aside instead of the room reading offline.
+//! the profile reports live, both are asked again a few seconds later, and if
+//! they still disagree a signed-in check fails with `account_restricted`, so
+//! the account is set aside instead of the room reading offline.
 
 use std::borrow::Cow;
 use std::sync::LazyLock;
@@ -20,7 +20,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use md5::{Digest, Md5};
 use regex::Regex;
-use reqwest::{Client, RequestBuilder};
+use reqwest::Client;
 use rustc_hash::FxHashMap;
 use tracing::debug;
 use url::Url;
@@ -43,9 +43,10 @@ const PRESENCE_API: &str = "https://ta.bigo.tv/official_website/OUserCenter/getU
 const STUDIO_API: &str = "https://ta.bigo.tv/official_website/studio/getInternalStudioInfo";
 /// The profile API's code for an id that names no account.
 const UNKNOWN_ID: i64 = 1;
-/// How long to wait before asking the profile again when the studio reads a
-/// live room as offline, so a stream that has just ended reads as ended.
-const RECHECK_DELAY: Duration = Duration::from_secs(1);
+/// How long to wait before asking the profile and the studio again when the
+/// studio reads a live room as offline. Around a stream's start and end the
+/// two can disagree for a moment.
+const RECHECK_DELAY: Duration = Duration::from_secs(5);
 
 pub struct Bigo {
     extractor: Extractor,
@@ -54,6 +55,7 @@ pub struct Bigo {
     signed_in: bool,
     presence_api: Cow<'static, str>,
     studio_api: Cow<'static, str>,
+    recheck_delay: Duration,
 }
 
 impl Bigo {
@@ -84,6 +86,7 @@ impl Bigo {
             signed_in,
             presence_api: Cow::Borrowed(PRESENCE_API),
             studio_api: Cow::Borrowed(STUDIO_API),
+            recheck_delay: RECHECK_DELAY,
         }
     }
 
@@ -109,22 +112,33 @@ impl Bigo {
         digest_to_hex(&hasher.finalize())
     }
 
-    /// The profile request. It goes through the client directly because
-    /// [`Extractor::request`] would add the account's cookies, which a public
-    /// lookup has no use for.
-    fn presence_request(&self, site_id: &str) -> RequestBuilder {
-        self.extractor
+    /// Asks the profile API about `site_id`.
+    ///
+    /// The request goes through the client directly, never through
+    /// [`Extractor::request`], which would add the account's cookies: whether
+    /// a room is live must not depend on the state of the account's login.
+    async fn fetch_presence(&self, site_id: &str) -> Result<PresenceResponse, ExtractorError> {
+        let response = self
+            .extractor
             .client
             .get(self.presence_api.as_ref())
             .headers(self.extractor.get_platform_headers().clone())
             .query(&[("bigoId", site_id)])
+            .send()
+            .await?;
+        Ok(ExtractorError::check_response(response)?
+            .json::<PresenceResponse>()
+            .await?)
     }
 
     async fn presence(&self, site_id: &str) -> Result<Presence, ExtractorError> {
-        let response = self.presence_request(site_id).send().await?;
-        let response = ExtractorError::check_response(response)?
-            .json::<PresenceResponse>()
-            .await?;
+        let mut response = self.fetch_presence(site_id).await?;
+        // A not-found result stops monitoring the streamer, and Bigo answers
+        // this code with a generic "paramters invalid", so one answer is not
+        // enough.
+        if response.code == UNKNOWN_ID {
+            response = self.fetch_presence(site_id).await?;
+        }
         match (response.code, response.data) {
             (0, Some(presence)) => Ok(presence),
             (UNKNOWN_ID, _) => Err(ExtractorError::StreamerNotFound),
@@ -199,7 +213,7 @@ impl Bigo {
         presence: &Presence,
         data: StudioData,
         site_id: &str,
-        password: Option<String>,
+        password: Option<&str>,
     ) -> Result<Option<MediaInfo>, ExtractorError> {
         // The website stops playback on this flag before reading `alive`.
         if data.need_login == Some(true) {
@@ -245,7 +259,7 @@ impl Bigo {
         }
         if let Some(pwd) = password {
             // The danmu provider sends it as the room's secret key.
-            extras.insert("stream_password".to_string(), pwd);
+            extras.insert("stream_password".to_string(), pwd.to_string());
         }
 
         let mut media = self.media_info(presence, site_id);
@@ -273,26 +287,33 @@ impl PlatformExtractor for Bigo {
         }
 
         let password = self.resolve_password();
-        let data = self.studio(&site_id, password.as_deref()).await?;
+        let password = password.as_deref();
+        let data = self.studio(&site_id, password).await?;
         if let Some(media) = self.live_media(&presence, data, &site_id, password)? {
             return Ok(media);
         }
 
-        // The studio reads a room the profile reports live as offline. Either
-        // the stream ended in between, or Bigo answers this session that way
-        // for every room.
-        tokio::time::sleep(RECHECK_DELAY).await;
-        let again = self.presence(&site_id).await?;
-        if again.alive != 1 || again.room_id() != presence.room_id() {
-            return Ok(self.offline_media(&again, &site_id));
+        // The studio reads a room the profile reports live as offline. Around
+        // a stream's start or end the two can disagree for a while; otherwise
+        // Bigo answers this session that way for every room.
+        tokio::time::sleep(self.recheck_delay).await;
+        let presence = self.presence(&site_id).await?;
+        if presence.alive != 1 {
+            return Ok(self.offline_media(&presence, &site_id));
         }
+        let data = self.studio(&site_id, password).await?;
+        if let Some(media) = self.live_media(&presence, data, &site_id, password)? {
+            return Ok(media);
+        }
+        // A live profile without a link to its room is not definite enough
+        // to set an account aside.
         if self.signed_in && presence.room_id().is_some() {
             return Err(ExtractorError::Authentication {
                 code: "account_restricted".to_string(),
             });
         }
         Err(ExtractorError::ValidationError(format!(
-            "bigo studio reads live room {site_id} as offline"
+            "bigo profile reports room {site_id} live, but the studio reads it as offline"
         )))
     }
 }
@@ -301,7 +322,7 @@ impl PlatformExtractor for Bigo {
 mod tests {
     use super::*;
     use crate::extractor::default::default_client;
-    use crate::extractor::test_support::serve_in_order;
+    use crate::extractor::test_support::{ReceivedRequests, serve_in_order};
 
     const ROOM_ID: &str = "6935768021135771674";
     const LIVE: &str = r#"{"code":0,"msg":"success","data":{"uid":509239070,
@@ -323,19 +344,24 @@ mod tests {
         "uid":509239070,"alive":0,"roomId":"0","hls_src":"","needLogin":true,"passRoom":false}}"#;
     const STUDIO_LOCKED: &str = r#"{"code":0,"msg":"success","data":{"sid":2555365402,
         "uid":509239070,"alive":0,"roomId":"0","hls_src":"","needLogin":false,"passRoom":true}}"#;
+    /// Locked, yet carrying a playlist.
+    const STUDIO_LOCKED_WITH_HLS: &str = r#"{"code":0,"msg":"success","data":{"alive":1,
+        "roomId":"6935768021135771674","hls_src":"https://cdn.example.com/list_x.m3u8",
+        "needLogin":false,"passRoom":true}}"#;
     /// Live by `alive`/`roomId`, but without a playlist.
     const STUDIO_LIVE_WITHOUT_HLS: &str = r#"{"code":0,"msg":"success","data":{"alive":1,
         "roomId":"6935768021135771674","hls_src":"","needLogin":false,"passRoom":false}}"#;
     const ACCOUNT: &str = "uniqid=u; tid=t; yyuid=1";
 
     /// Runs a check whose profile requests are answered by `presence` and
-    /// studio requests by `studio`, in order. A request beyond those fails.
-    async fn check(
+    /// studio requests by `studio`, in order, without the recheck delay. A
+    /// request beyond those fails. Also returns the profile requests received.
+    async fn check_received(
         presence: &[&'static str],
         studio: &[&'static str],
         cookies: Option<&str>,
         extras: Option<serde_json::Value>,
-    ) -> Result<MediaInfo, ExtractorError> {
+    ) -> (Result<MediaInfo, ExtractorError>, ReceivedRequests) {
         let ok = |bodies: &[&'static str]| bodies.iter().map(|body| ("200 OK", *body)).collect();
         let mut bigo = Bigo::new(
             "https://www.bigo.tv/725943857".to_string(),
@@ -343,11 +369,23 @@ mod tests {
             cookies.map(str::to_owned),
             extras,
         );
-        bigo.presence_api = Cow::Owned(serve_in_order(ok(presence)).await);
-        bigo.studio_api = Cow::Owned(serve_in_order(ok(studio)).await);
-        tokio::time::timeout(Duration::from_secs(10), bigo.extract())
+        let (presence_api, received) = serve_in_order(ok(presence)).await;
+        bigo.presence_api = Cow::Owned(presence_api);
+        bigo.studio_api = Cow::Owned(serve_in_order(ok(studio)).await.0);
+        bigo.recheck_delay = Duration::ZERO;
+        let result = tokio::time::timeout(Duration::from_secs(10), bigo.extract())
             .await
-            .expect("local Bigo requests timed out")
+            .expect("local Bigo requests timed out");
+        (result, received)
+    }
+
+    async fn check(
+        presence: &[&'static str],
+        studio: &[&'static str],
+        cookies: Option<&str>,
+        extras: Option<serde_json::Value>,
+    ) -> Result<MediaInfo, ExtractorError> {
+        check_received(presence, studio, cookies, extras).await.0
     }
 
     fn extra<'a>(media: &'a MediaInfo, key: &str) -> Option<&'a str> {
@@ -390,16 +428,14 @@ mod tests {
         assert_eq!(Bigo::md5_hex("secret"), "5ebe2294ecd0e0f08eab7690d2a6ee69");
     }
 
-    #[test]
-    fn profile_request_carries_no_account_cookies() {
-        let bigo = Bigo::new(
-            "https://www.bigo.tv/1".to_string(),
-            default_client(),
-            Some(ACCOUNT.to_string()),
-            None,
-        );
-        let request = bigo.presence_request("1").build().unwrap();
-        assert!(!request.headers().contains_key(reqwest::header::COOKIE));
+    #[tokio::test]
+    async fn profile_request_carries_no_account_cookies() {
+        let (media, received) = check_received(&[OFFLINE], &[], Some(ACCOUNT), None).await;
+        media.unwrap();
+
+        let request = received.lock().unwrap()[0].to_ascii_lowercase();
+        assert!(request.starts_with("get /?bigoid=725943857 "), "{request}");
+        assert!(!request.contains("\r\ncookie:"), "{request}");
     }
 
     #[tokio::test]
@@ -419,11 +455,16 @@ mod tests {
         let unknown = r#"{"code":1,"data":null,"msg":"paramters invalid"}"#;
         let refused = r#"{"code":80009,"data":null,"msg":"empty bigoId or sid"}"#;
 
-        let error = check(&[unknown], &[], None, None).await.unwrap_err();
+        let error = check(&[unknown, unknown], &[], None, None)
+            .await
+            .unwrap_err();
         assert!(
             matches!(error, ExtractorError::StreamerNotFound),
             "{error:?}"
         );
+        // One unknown-id answer is asked again before the streamer is given up.
+        let media = check(&[unknown, OFFLINE], &[], None, None).await.unwrap();
+        assert!(!media.is_live);
         let error = check(&[refused], &[], None, None).await.unwrap_err();
         assert!(
             matches!(error, ExtractorError::ValidationError(_)),
@@ -455,8 +496,8 @@ mod tests {
         let password = || Some(serde_json::json!({"stream_password": "wrong"}));
         for (studio, cookies, extras, expected) in [
             (STUDIO_NEED_LOGIN, None, None, "authentication"),
+            (STUDIO_LOCKED_WITH_HLS, Some(ACCOUNT), None, "private"),
             // A locked room is private, never evidence of a restricted account.
-            (STUDIO_LOCKED, Some(ACCOUNT), None, "private"),
             (STUDIO_LOCKED, Some(ACCOUNT), password(), "private"),
             (STUDIO_LIVE_WITHOUT_HLS, Some(ACCOUNT), None, "validation"),
         ] {
@@ -467,11 +508,28 @@ mod tests {
         }
     }
 
-    /// A signed-in studio answer that reads a live room as offline means a
-    /// restricted account only while the profile still reports the same room.
+    /// A studio answer that reads a live room as offline is asked again,
+    /// together with the profile. Only a signed-in check whose answers stay
+    /// that way, for a profile that links its room, means a restricted account.
     #[tokio::test]
     async fn studio_offline_for_a_live_room_is_rechecked() {
-        let restricted = check(&[LIVE, LIVE], &[STUDIO_OFFLINE], Some(ACCOUNT), None)
+        let ended = check(&[LIVE, OFFLINE], &[STUDIO_OFFLINE], Some(ACCOUNT), None)
+            .await
+            .unwrap();
+        assert!(!ended.is_live);
+
+        let started = check(
+            &[LIVE, LIVE],
+            &[STUDIO_OFFLINE, STUDIO_LIVE],
+            Some(ACCOUNT),
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(started.streams.len(), 1);
+
+        let both = [STUDIO_OFFLINE, STUDIO_OFFLINE];
+        let restricted = check(&[LIVE, LIVE], &both, Some(ACCOUNT), None)
             .await
             .unwrap_err();
         assert!(
@@ -479,18 +537,11 @@ mod tests {
             "{restricted:?}"
         );
 
-        let ended = check(&[LIVE, OFFLINE], &[STUDIO_OFFLINE], Some(ACCOUNT), None)
-            .await
-            .unwrap();
-        assert!(!ended.is_live);
-
         for (presence, cookies) in [
             ([LIVE, LIVE], None),
             ([LIVE_WITHOUT_ROOM, LIVE_WITHOUT_ROOM], Some(ACCOUNT)),
         ] {
-            let error = check(&presence, &[STUDIO_OFFLINE], cookies, None)
-                .await
-                .unwrap_err();
+            let error = check(&presence, &both, cookies, None).await.unwrap_err();
             assert!(
                 matches!(error, ExtractorError::ValidationError(_)),
                 "{error:?}"

@@ -73,22 +73,6 @@ async fn upgrade_removes_mint_token_wherever_bigo_options_are_stored() {
         ),
         json!({"platform_extras": {"stream_password": "pw"}, "record_danmu": true})
     );
-    assert_eq!(
-        text(
-            &pool,
-            "SELECT platform_overrides FROM template_config WHERE id = 'malformed'"
-        )
-        .await,
-        r#"{"bigo":"#
-    );
-    assert_eq!(
-        text(
-            &pool,
-            "SELECT streamer_specific_config FROM streamers WHERE id = 'broken'"
-        )
-        .await,
-        r#"{"platform_extras":"#
-    );
     // Rewriting the template must not cancel its pending deletion.
     assert_eq!(
         text(

@@ -1,10 +1,11 @@
 -- Remove the Bigo `mint_token` option.
 --
 -- Bigo live checks no longer send an integrity token, so the option has no
--- reader. The web interface validates Bigo options strictly and rejects an
--- unknown key, so a stored copy is removed from every place Bigo options are
--- kept. Rows whose JSON is malformed are left alone: json_remove would fail on
--- them and stop the upgrade.
+-- reader. The web interface's raw JSON editor for platform options checks
+-- them against the Bigo options it knows and rejects any other key, so a
+-- stored copy is removed from every place Bigo options are kept. Rows whose
+-- JSON is malformed are left alone: json_remove would fail on them and stop
+-- the upgrade.
 
 -- The Bigo platform's own settings.
 UPDATE platform_config
