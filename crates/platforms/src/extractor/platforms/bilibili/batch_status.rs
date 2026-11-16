@@ -81,7 +81,11 @@ impl BatchStatusProbe for BilibiliStatusProbe {
     /// The room ID in canonical decimal form, so the key compares equal to the IDs in the
     /// response. Only IDs in `1..=i64::MAX` qualify: the endpoint rejects the whole request
     /// (code -400) when any ID is 0 or exceeds `i64::MAX`.
-    fn key_for_url(&self, url: &str) -> Option<String> {
+    fn key_for_url(
+        &self,
+        url: &str,
+        _metadata: Option<&crate::media::PlatformMetadata>,
+    ) -> Option<String> {
         let room_id: i64 = capture_group_1(&URL_REGEX, url)?.parse().ok()?;
         (room_id > 0).then(|| room_id.to_string())
     }

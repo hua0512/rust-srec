@@ -124,6 +124,7 @@ fn create_test_metadata() -> StreamerMetadata {
         last_live_time: None,
         last_error: None,
         streamer_specific_config: None,
+        platform_metadata: None,
         offline_check_count: 3,
         offline_check_delay_ms: 20_000,
         created_at: chrono::Utc::now(),

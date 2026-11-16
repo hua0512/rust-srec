@@ -1,8 +1,9 @@
 use chrono::{DateTime, TimeZone, Utc};
 use rustc_hash::FxHashMap;
-
-use super::stream_info::StreamInfo;
 use serde::{Deserialize, Serialize};
+
+use super::PlatformMetadata;
+use super::stream_info::StreamInfo;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 /// Represents comprehensive information about a media item from a streaming platform.
@@ -51,6 +52,9 @@ pub struct MediaInfo {
     pub streams: Vec<StreamInfo>,
     pub headers: Option<FxHashMap<String, String>>,
     pub extras: Option<FxHashMap<String, String>>,
+    /// Validated platform identity; the consumer owns its persistence and freshness.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform_metadata: Option<PlatformMetadata>,
 }
 
 #[derive(Debug, Clone)]
@@ -66,6 +70,7 @@ pub struct MediaInfoBuilder {
     streams: Vec<StreamInfo>,
     headers: Option<FxHashMap<String, String>>,
     extras: Option<FxHashMap<String, String>>,
+    platform_metadata: Option<PlatformMetadata>,
 }
 
 impl MediaInfo {
@@ -105,6 +110,7 @@ impl MediaInfo {
             streams,
             headers,
             extras,
+            platform_metadata: None,
         }
     }
 
@@ -121,6 +127,7 @@ impl MediaInfo {
             streams: vec![],
             headers: None,
             extras: None,
+            platform_metadata: None,
         }
     }
 
@@ -324,6 +331,7 @@ impl MediaInfoBuilder {
             streams: Vec::new(),
             headers: None,
             extras: None,
+            platform_metadata: None,
         }
     }
 
@@ -436,7 +444,13 @@ impl MediaInfoBuilder {
             streams: self.streams,
             headers: self.headers,
             extras: self.extras,
+            platform_metadata: self.platform_metadata,
         }
+    }
+
+    pub fn platform_metadata(mut self, metadata: PlatformMetadata) -> Self {
+        self.platform_metadata = Some(metadata);
+        self
     }
 }
 

@@ -13,7 +13,7 @@ This library provides a unified interface to extract streaming media information
 | Acfun       | `acfun.cn/live/{room_id}` (also `live.`/`m.` hosts) | |
 | Bigo        | `bigo.tv/{room_id}` or `bigo.tv/{lang}/{room_id}` | Yes |
 | Bilibili    | `live.bilibili.com/{room_id}`                    | Yes |
-| Douyin      | `live.douyin.com/{room_id}`                      | Yes |
+| Douyin      | `live.douyin.com/{web_rid}`                      | Yes |
 | Douyu       | `douyu.com/{room_id}` (numeric)                  | Yes |
 | Huya        | `huya.com/{room_id}`                             | Yes |
 | PandaTV     | `pandalive.co.kr/play/{user_id}`                 | |
@@ -34,6 +34,7 @@ extractor when the `streamlink` executable is available. Pass
 * **Unified API**: every platform implements the `PlatformExtractor` trait (`extract`, `get_url`).
 * **Asynchronous**: built on `async/await` and `reqwest`.
 * **Extensible**: `ExtractorFactory` selects an extractor from a URL regex registry.
+* **Platform metadata**: `MediaInfo.platform_metadata` carries versioned platform identity separately from playback data. Consumers own its storage and freshness; Douyin supplies the page identifier and verified broadcaster UID on successful live and offline extraction.
 * **Cookie management**: each extractor instance keeps its own cookie store.
 * **Danmaku**: `danmaku::ProviderRegistry::with_defaults()` provides live chat providers for the platforms marked above.
 

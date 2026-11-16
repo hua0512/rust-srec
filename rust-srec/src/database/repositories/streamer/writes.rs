@@ -37,6 +37,21 @@ pub(crate) async fn write_streamer(
             credential_selections::streamer_before_write(connection, &model.id).await?
         }
     };
+    // Ordinary edits and imports cannot supply learned identity. Read the committed
+    // document here so a stale caller model cannot overwrite a newer observation.
+    let platform_metadata = match mode {
+        WriteMode::Insert => None,
+        WriteMode::Update | WriteMode::Import => sqlx::query_scalar::<_, Option<String>>(
+            "SELECT platform_metadata FROM streamers \
+                 WHERE id = ? AND url = ? AND platform_config_id = ?",
+        )
+        .bind(&model.id)
+        .bind(&model.url)
+        .bind(&model.platform_config_id)
+        .fetch_optional(&mut *connection)
+        .await?
+        .flatten(),
+    };
     let mut row = RowWrite::new("streamers", mutation, &model.id)?;
     row.field("name", &model.name, true)?;
     row.field("url", &model.url, true)?;
@@ -47,6 +62,7 @@ pub(crate) async fn write_streamer(
     row.field("avatar", &model.avatar, true)?;
     row.field("last_live_time", model.last_live_time, true)?;
     row.field("streamer_specific_config", &streamer_specific_config, true)?;
+    row.field("platform_metadata", &platform_metadata, true)?;
     row.field(
         "consecutive_error_count",
         model.consecutive_error_count,

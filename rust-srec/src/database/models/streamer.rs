@@ -24,6 +24,9 @@ pub struct StreamerDbModel {
     pub last_live_time: Option<i64>,
     /// JSON blob for streamer-specific overrides
     pub streamer_specific_config: Option<String>,
+    /// Application-managed, versioned platform metadata in JSON form.
+    #[serde(default, skip_serializing)]
+    pub platform_metadata: Option<String>,
     /// Number of consecutive errors encountered
     pub consecutive_error_count: Option<i32>,
     /// If temporarily disabled, the time it will be re-enabled (epoch ms).
@@ -66,6 +69,7 @@ impl StreamerDbModel {
             avatar: None,
             last_live_time: None,
             streamer_specific_config: None,
+            platform_metadata: None,
             consecutive_error_count: Some(0),
             disabled_until: None,
             last_error: None,

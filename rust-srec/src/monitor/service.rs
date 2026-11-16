@@ -35,7 +35,7 @@ use crate::utils::task_supervisor::TaskSupervisor;
 use crate::{Error, Result};
 
 use super::batch_precheck::{BatchPrecheck, GroupKey, Poll};
-use super::detector::{CheckContext, FilterReason, LiveStatus, StreamDetector};
+use super::detector::{CheckContext, DetectionResult, FilterReason, LiveStatus, StreamDetector};
 use crate::domain::streamer::{CheckSource, FatalErrorType};
 
 use super::events::{MonitorEvent, MonitorEventBroadcaster, MonitorEventDelivery};
@@ -100,6 +100,9 @@ const IN_FLIGHT_DEDUP_WINDOW: Duration = Duration::from_millis(100);
 /// Upper bound for one batch status request. The monitor's HTTP clients have no timeout of their
 /// own by default, and every poll of a chunk waits for its refresh.
 const BATCH_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How long a status check waits for its observed platform metadata to be saved.
+const PLATFORM_METADATA_SAVE_TIMEOUT: Duration = Duration::from_secs(2);
 
 type PendingCredentialRecovery = Arc<dyn Fn(String) -> BoxFuture<'static, ()> + Send + Sync>;
 
@@ -699,6 +702,8 @@ impl<
         streamer: &StreamerMetadata,
         requested_purpose: CredentialCheckPurpose,
     ) -> Result<(LiveStatus, CheckSource)> {
+        let source = self.streamer_manager.get_streamer_snapshot(&streamer.id);
+        let streamer = source.as_deref().unwrap_or(streamer);
         trace!(
             streamer_id = %streamer.id,
             streamer_name = %streamer.name,
@@ -779,14 +784,20 @@ impl<
                         filters: &filters,
                         deadline,
                     };
-                    let status = match &config.credential_policy {
+                    let verified_at_ms = crate::database::time::now_ms();
+                    let observation = match &config.credential_policy {
                         Some(policy) => {
                             self.check_with_credentials(check, policy, binding.as_ref(), purpose)
                                 .await?
                         }
                         None => self.check_anonymous(check).await?,
                     };
-                    Ok((status, CheckSource::Individual))
+                    if let Some(metadata) = observation.platform_metadata {
+                        // The check owner saves once; joined callers reuse its status.
+                        self.save_platform_metadata(streamer, metadata, verified_at_ms)
+                            .await;
+                    }
+                    Ok((observation.status, CheckSource::Individual))
                 };
 
                 tokio::time::timeout_at(deadline.instant(), check)
@@ -816,6 +827,29 @@ impl<
 
         // Now check result - cleanup is already scheduled
         result.cloned()
+    }
+
+    /// Saves the identity an individual check observed, without failing the check.
+    ///
+    /// The save runs before the status is returned, so it is bounded: a stalled database write
+    /// delays the status by at most [`PLATFORM_METADATA_SAVE_TIMEOUT`]. A failed or abandoned
+    /// save costs nothing lasting, because the next individual check observes the identity again.
+    async fn save_platform_metadata(
+        &self,
+        streamer: &StreamerMetadata,
+        metadata: platforms_parser::media::PlatformMetadata,
+        verified_at_ms: i64,
+    ) {
+        let save =
+            self.streamer_manager
+                .observe_platform_metadata(streamer, metadata, verified_at_ms);
+        match tokio::time::timeout(PLATFORM_METADATA_SAVE_TIMEOUT, save).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(error)) => {
+                warn!(streamer_id = %streamer.id, %error, "Could not save platform metadata");
+            }
+            Err(_) => warn!(streamer_id = %streamer.id, "Saving platform metadata timed out"),
+        }
     }
 
     /// Whether the streamer's platform batch status call reports it offline, which answers the
@@ -861,10 +895,19 @@ impl<
         let Some(probe) = batch_probe_for_url(&streamer.url) else {
             return false;
         };
-        let (Some(platform), Some(key)) = (
-            platform_name_for_url(&streamer.url),
-            probe.key_for_url(&streamer.url),
-        ) else {
+        let Some(platform) = platform_name_for_url(&streamer.url) else {
+            return false;
+        };
+        if current.url != streamer.url || current.platform_config_id != streamer.platform_config_id
+        {
+            return false;
+        }
+        let metadata = crate::streamer::platform_metadata::StoredPlatformMetadata::fresh(
+            current.platform_metadata.as_deref(),
+            platform,
+            crate::database::time::now_ms(),
+        );
+        let Some(key) = probe.key_for_url(&streamer.url, metadata.as_ref()) else {
             return false;
         };
         // Freshness and slot expiry are measured against the global check delay, the interval
@@ -926,7 +969,7 @@ impl<
         policy: &crate::credentials::ResolvedCredentialPolicy,
         binding: Option<&crate::credentials::CredentialBinding>,
         purpose: CredentialCheckPurpose,
-    ) -> Result<LiveStatus> {
+    ) -> Result<DetectionResult> {
         let StatusCheck {
             streamer,
             config,
@@ -966,7 +1009,7 @@ impl<
                                 },
                             )
                             .await?;
-                        let session_cookies = match &status {
+                        let session_cookies = match &status.status {
                             LiveStatus::Live { media_extras, .. } => media_extras
                                 .as_ref()
                                 .and_then(|extras| extras.get("session_cookies"))
@@ -975,7 +1018,7 @@ impl<
                             _ => None,
                         };
                         Ok(crate::credentials::Extracted {
-                            preserve_health: !status.is_live(),
+                            preserve_health: !status.status.is_live(),
                             value: status,
                             session_cookies,
                         })
@@ -1025,7 +1068,7 @@ impl<
             credential_snapshot,
             media_extras,
             ..
-        } = &mut status
+        } = &mut status.status
         {
             *credential_binding = Some(Box::new(result.snapshot.binding.clone()));
             *credential_snapshot = Some(Arc::new(result.snapshot));
@@ -1037,7 +1080,7 @@ impl<
     }
 
     /// Checks the streamer without an account, under the platform's admission limits.
-    async fn check_anonymous(&self, check: StatusCheck<'_>) -> Result<LiveStatus> {
+    async fn check_anonymous(&self, check: StatusCheck<'_>) -> Result<DetectionResult> {
         let StatusCheck {
             streamer,
             config,
@@ -1076,7 +1119,7 @@ impl<
         if let LiveStatus::Live {
             media_extras: Some(extras),
             ..
-        } = &mut status
+        } = &mut status.status
         {
             extras.remove("session_cookies");
         }

@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 
 use super::error::ExtractorError;
+use crate::media::PlatformMetadata;
 
 /// What a batch status call reports for one requested key.
 ///
@@ -44,13 +45,16 @@ pub trait BatchStatusProbe: Send + Sync {
     /// cannot be batched.
     ///
     /// Two URLs for the same channel in the same form yield the same key.
-    fn key_for_url(&self, url: &str) -> Option<String>;
+    /// The caller supplies only fresh, verified metadata associated with this URL, if any.
+    fn key_for_url(&self, url: &str, metadata: Option<&PlatformMetadata>) -> Option<String>;
 
     /// The status of each key in `keys`, which holds at most [`max_keys`](Self::max_keys) keys
     /// produced by [`key_for_url`](Self::key_for_url).
     ///
     /// The result is keyed by the requested keys. A key the platform did not answer for (an unknown
-    /// room or login, for instance) is absent.
+    /// room or login, for instance) is absent. A platform that returns a complete live list can
+    /// report a verified key omitted from that list as offline; malformed or partial data cannot
+    /// establish that absence.
     async fn probe(
         &self,
         client: &Client,

@@ -2239,6 +2239,7 @@ mod tests {
                 priority TEXT NOT NULL DEFAULT 'NORMAL',
                 last_live_time INTEGER,
                 streamer_specific_config TEXT,
+                platform_metadata TEXT,
                 consecutive_error_count INTEGER DEFAULT 0,
                 last_error TEXT,
                 disabled_until INTEGER,

@@ -349,6 +349,7 @@ pub async fn create_streamer(
 
     // Create metadata from request
     let metadata = StreamerMetadata {
+        platform_metadata: None,
         id: id.clone(),
         name: request.name.clone(),
         url: request.url.clone(),
@@ -949,6 +950,7 @@ mod tests {
     #[test]
     fn a_credential_block_is_shown_only_while_the_streamer_is_monitored() {
         let mut metadata = StreamerMetadata {
+            platform_metadata: None,
             id: "test-id".to_string(),
             name: "Test".to_string(),
             url: "https://example.com".to_string(),

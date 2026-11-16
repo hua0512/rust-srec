@@ -167,6 +167,7 @@ struct DouyinRequest<'a> {
     params: FxHashMap<String, String>,
     id_str: Option<String>,
     sec_rid: Option<String>,
+    platform_metadata: Option<crate::media::PlatformMetadata>,
 }
 
 impl<'a> DouyinRequest<'a> {
@@ -182,6 +183,7 @@ impl<'a> DouyinRequest<'a> {
             params: config.extractor.platform_params.clone(),
             id_str: None,
             sec_rid: None,
+            platform_metadata: None,
         }
     }
 
@@ -246,6 +248,9 @@ impl<'a> DouyinRequest<'a> {
                 return Err(ExtractorError::StreamerNotFound);
             }
             self.sec_rid = Some(user.sec_uid.to_string());
+            if response.is_success() {
+                self.platform_metadata = super::metadata::metadata(&self.web_rid, user.id_str);
+            }
         } else {
             let msg = response.data.message.as_ref().unwrap_or(&"Unknown error");
             return Err(ExtractorError::ValidationError(format!("API error: {msg}")));
@@ -491,6 +496,18 @@ impl<'a> DouyinRequest<'a> {
             }
         };
 
+        // An error reply cannot verify identity, but it still decides the status below:
+        // the platform sends its prompts with a non-zero code.
+        if response.is_success()
+            && let Some(user) = response
+                .data
+                .user
+                .as_ref()
+                .filter(|user| !user.is_cancelled())
+        {
+            self.platform_metadata = super::metadata::metadata(&self.web_rid, user.id_str);
+        }
+
         // Check for "直播已结束" prompt or visibility restriction
         if let Some(prompts) = &response.data.prompts
             && (prompts.contains("直播已结束") || prompts.contains("你不在主播设置的可见范围内"))
@@ -703,7 +720,7 @@ impl<'a> DouyinRequest<'a> {
             extras.insert("id_str".to_string(), id);
         }
 
-        Ok(MediaInfo::new(
+        let mut info = MediaInfo::new(
             self.config.extractor.url.clone(),
             title.to_string(),
             artist.to_string(),
@@ -713,7 +730,9 @@ impl<'a> DouyinRequest<'a> {
             streams,
             Some(self.config.extractor.get_platform_headers_map()),
             Some(extras),
-        ))
+        );
+        info.platform_metadata = self.platform_metadata.clone();
+        Ok(info)
     }
 
     fn create_offline_media_info(
@@ -723,7 +742,7 @@ impl<'a> DouyinRequest<'a> {
         cover_url: Option<String>,
         avatar_url: Option<String>,
     ) -> MediaInfo {
-        MediaInfo::new(
+        let mut info = MediaInfo::new(
             self.config.extractor.url.clone(),
             title.to_string(),
             artist.to_string(),
@@ -733,7 +752,9 @@ impl<'a> DouyinRequest<'a> {
             Vec::new(),
             None,
             None,
-        )
+        );
+        info.platform_metadata = self.platform_metadata.clone();
+        info
     }
 
     /// Extract streams using owned quality data (from pull_datas)
@@ -1283,6 +1304,130 @@ mod tests {
 
     const REFLOW_LIVE_ROOM: &str = include_str!("fixtures/reflow_live_room.json");
     const REFLOW_ENDED_ROOM: &str = include_str!("fixtures/reflow_ended_room.json");
+
+    fn pc_identity_body(user_id: &str, room: Value) -> Value {
+        json!({
+            "status_code": 0,
+            "data": {
+                "user": {"id_str": user_id, "sec_uid": "sec_uid", "nickname": "Broadcaster"},
+                "enter_room_id": "7654321",
+                "data": [room]
+            }
+        })
+    }
+
+    #[test]
+    fn platform_identity_survives_live_offline_and_filtered_results() {
+        let config = Douyin::new(TEST_URL.to_string(), default_client(), None, None);
+        for case in ["live", "ended", "prompt", "interactive"] {
+            let mut room = room_fixture(StreamSource::Sdk, LIVE_FLV, LIVE_HLS);
+            if case == "ended" {
+                room["status"] = json!(4);
+            }
+            if case == "interactive" {
+                room["scene_type_info"] = json!({"is_union_live_room": false});
+                room["toolbar_data"] = json!({"entrance_list": [{"text": "互动玩法"}]});
+            }
+            let mut body = pc_identity_body("9007199254740993", room);
+            if case == "prompt" {
+                body["data"]["prompts"] = json!("直播已结束");
+            }
+            let mut request = DouyinRequest::new(
+                config.extractor.cookies.clone(),
+                &config,
+                "page-id".to_string(),
+            );
+            let info = request.parse_pc_response(&body.to_string()).unwrap();
+            assert_eq!(info.is_live, case == "live", "{case}");
+            let metadata = info.platform_metadata.unwrap();
+            assert_eq!(
+                metadata.data,
+                json!({"web_rid": "page-id", "user_id": "9007199254740993"}),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn forced_mobile_result_keeps_the_pc_broadcaster_identity() {
+        let config =
+            Douyin::new(TEST_URL.to_string(), default_client(), None, None).force_mobile_api(true);
+        let pc = pc_identity_body(
+            "9007199254740993",
+            room_fixture(StreamSource::Sdk, LIVE_FLV, LIVE_HLS),
+        );
+        for app_body in [REFLOW_LIVE_ROOM, REFLOW_ENDED_ROOM] {
+            let mut request = DouyinRequest::new(
+                config.extractor.cookies.clone(),
+                &config,
+                "page-id".to_string(),
+            );
+            request
+                .extract_user_info_from_pc_response(&pc.to_string())
+                .unwrap();
+            let info = request.parse_app_response(app_body).unwrap();
+            assert_eq!(
+                info.platform_metadata.unwrap().data["user_id"],
+                "9007199254740993"
+            );
+        }
+    }
+
+    #[test]
+    fn unverified_response_cannot_establish_platform_identity() {
+        let config = Douyin::new(TEST_URL.to_string(), default_client(), None, None);
+        for id in ["", "0", "-1", "not-a-uid"] {
+            let mut request = DouyinRequest::new(
+                config.extractor.cookies.clone(),
+                &config,
+                "page-id".to_string(),
+            );
+            let body = pc_identity_body(id, room_fixture(StreamSource::Sdk, LIVE_FLV, LIVE_HLS));
+            assert!(
+                request
+                    .parse_pc_response(&body.to_string())
+                    .unwrap()
+                    .platform_metadata
+                    .is_none()
+            );
+        }
+        let mut body = pc_identity_body("123", room_fixture(StreamSource::Sdk, LIVE_FLV, LIVE_HLS));
+        // The platform's error envelope: the prompt still means offline, but the reply
+        // cannot verify who the broadcaster is.
+        body["status_code"] = json!(30003);
+        body["data"]["prompts"] = json!("直播已结束");
+        for forced_mobile in [false, true] {
+            let mut request = DouyinRequest::new(
+                config.extractor.cookies.clone(),
+                &config,
+                "page-id".to_string(),
+            );
+            if forced_mobile {
+                request
+                    .extract_user_info_from_pc_response(&body.to_string())
+                    .unwrap();
+            } else {
+                let info = request.parse_pc_response(&body.to_string()).unwrap();
+                assert!(!info.is_live);
+            }
+            assert!(request.platform_metadata.is_none());
+        }
+        body["status_code"] = json!(0);
+        body["data"]["user"] = Value::Null;
+        body["data"]["prompts"] = json!("直播已结束");
+        let mut request = DouyinRequest::new(
+            config.extractor.cookies.clone(),
+            &config,
+            "page-id".to_string(),
+        );
+        assert!(
+            request
+                .parse_pc_response(&body.to_string())
+                .unwrap()
+                .platform_metadata
+                .is_none()
+        );
+    }
 
     fn parse_app_body(body: &str) -> MediaInfo {
         let config = Douyin::new(TEST_URL.to_string(), default_client(), None, None);

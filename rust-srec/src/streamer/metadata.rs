@@ -56,6 +56,9 @@ pub struct StreamerMetadata {
     pub last_error: Option<String>,
     /// Streamer specific configuration override (JSON string).
     pub streamer_specific_config: Option<String>,
+    /// Persisted platform metadata document. Only observations write it; ordinary edits keep it.
+    #[serde(default, skip_serializing)]
+    pub platform_metadata: Option<String>,
     /// Offline-check count after merging the Global → Platform → Template →
     /// Streamer configuration hierarchy.
     ///
@@ -118,6 +121,7 @@ impl StreamerMetadata {
             last_error: model.last_error.clone(),
             // Map config overrides
             streamer_specific_config: model.streamer_specific_config.clone(),
+            platform_metadata: model.platform_metadata.clone(),
             offline_check_count: default_offline_check_count(),
             offline_check_delay_ms: default_offline_check_delay_ms(),
             disabled_until: model
@@ -241,6 +245,7 @@ mod tests {
             disabled_until: None,
             last_live_time: None,
             streamer_specific_config: None,
+            platform_metadata: None,
             offline_check_count: default_offline_check_count(),
             offline_check_delay_ms: default_offline_check_delay_ms(),
             created_at: Utc::now(),

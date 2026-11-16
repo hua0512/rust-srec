@@ -61,7 +61,11 @@ impl BatchStatusProbe for TwitchStatusProbe {
         MAX_LOGINS
     }
 
-    fn key_for_url(&self, url: &str) -> Option<String> {
+    fn key_for_url(
+        &self,
+        url: &str,
+        _metadata: Option<&crate::media::PlatformMetadata>,
+    ) -> Option<String> {
         capture_group_1(&URL_REGEX, url).map(str::to_ascii_lowercase)
     }
 
