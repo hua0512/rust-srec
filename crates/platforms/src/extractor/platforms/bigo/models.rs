@@ -156,6 +156,10 @@ pub struct WsLinkData {
     pub device_id: Option<String>,
     #[serde(rename = "seqId", default, deserialize_with = "de_opt_stringish")]
     pub seq_id: Option<String>,
+    /// The signed-in account's identity, in the same fields; absent unless
+    /// the request carried a signed-in session.
+    #[serde(rename = "realUser", default)]
+    pub real_user: Option<Box<WsLinkData>>,
 }
 
 fn de_opt_stringish<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>

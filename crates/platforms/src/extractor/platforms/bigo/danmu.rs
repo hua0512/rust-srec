@@ -30,7 +30,7 @@ use crate::extractor::platforms::bigo::URL_REGEX;
 use crate::extractor::platforms::bigo::models::{WsLinkData, WsLinkResponse};
 use crate::extractor::utils::capture_group_1_owned;
 
-const WS_LINK_URL: &str = "https://ta.bigo.tv/official_website/studio/getWebSocketLink";
+pub(super) const WS_LINK_URL: &str = "https://ta.bigo.tv/official_website/studio/getWebSocketLink";
 const WSS_URL: &str = "wss://wss.bigolive.tv/live/official/web";
 const HEARTBEAT_INTERVAL_SECS: u64 = 10;
 
