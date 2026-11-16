@@ -1102,10 +1102,6 @@ msgstr "用于直播流提取的 API 协议。WUP 是 PC 客户端的标准协�
 msgid "API Request Retries"
 msgstr "API 请求重试次数"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:72
-msgid "API Settings"
-msgstr "API 设置"
-
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:177
 msgid "App CDN examples: hw, tct, hs, ws. Legacy -h5 suffixes are accepted."
 msgstr "App CDN 示例：hw、tct、hs、ws。兼容旧的 -h5 后缀。"
@@ -3019,7 +3015,7 @@ msgstr "默认值为 1（无突发）。当服务方容忍短时突发流量时�
 msgid "Default password for password-protected rooms (can be overridden per-streamer with ?pwd= in the URL)."
 msgstr "密码锁房的默认密码（可在主播 URL 上用 ?pwd= 覆盖）。"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:59
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:58
 msgid "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
 msgstr "密码锁房的默认密码。可在主播 URL 上用 ?pwd= 覆盖。"
 
@@ -6515,10 +6511,6 @@ msgstr "最小刷新间隔 (ms)"
 msgid "Mins"
 msgstr "分钟"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:78
-msgid "Mint Integrity Token"
-msgstr "签发完整性 token"
-
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:386
 msgid "Minute (00-59)"
 msgstr "分 (00-59)"
@@ -7784,7 +7776,7 @@ msgstr "密码至少需要 8 个字符"
 msgid "password saved"
 msgstr "已保存密码"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:55
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:54
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:53
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:27
 msgid "Password..."
@@ -8463,7 +8455,7 @@ msgstr "进度更新间隔（毫秒）"
 msgid "Progress:"
 msgstr "进度："
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:36
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:35
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:25
 msgid "Protection Settings"
 msgstr "保护设置"
@@ -9823,10 +9815,6 @@ msgstr "选用者"
 msgid "Selected stream"
 msgstr "已选择的流"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:80
-msgid "Send a website-style integrity token with studio requests. Enabled by default; disable only if minting fails in your network."
-msgstr "向 studio 请求附带与网页类似的完整性 token。默认开启；仅在你所在网络签发失败时关闭。"
-
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:324
 msgid "Separate multiple paths with commas."
 msgstr "用英文逗号分隔多个路径。"
@@ -10388,7 +10376,7 @@ msgstr "开播"
 msgid "Stream parsed successfully"
 msgstr "流解析成功"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:46
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:45
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:35
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:44
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:26

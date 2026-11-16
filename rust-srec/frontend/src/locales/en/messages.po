@@ -1102,10 +1102,6 @@ msgstr "API protocol to use for live stream extraction. WUP is the standard prot
 msgid "API Request Retries"
 msgstr "API Request Retries"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:72
-msgid "API Settings"
-msgstr "API Settings"
-
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:177
 msgid "App CDN examples: hw, tct, hs, ws. Legacy -h5 suffixes are accepted."
 msgstr "App CDN examples: hw, tct, hs, ws. Legacy -h5 suffixes are accepted."
@@ -3019,7 +3015,7 @@ msgstr "Default is 1 (no burst). Increase if the provider tolerates short bursts
 msgid "Default password for password-protected rooms (can be overridden per-streamer with ?pwd= in the URL)."
 msgstr "Default password for password-protected rooms (can be overridden per-streamer with ?pwd= in the URL)."
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:59
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:58
 msgid "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
 msgstr "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
 
@@ -6515,10 +6511,6 @@ msgstr "Minimum Refresh Interval (ms)"
 msgid "Mins"
 msgstr "Mins"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:78
-msgid "Mint Integrity Token"
-msgstr "Mint Integrity Token"
-
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:386
 msgid "Minute (00-59)"
 msgstr "Minute (00-59)"
@@ -7784,7 +7776,7 @@ msgstr "Password must be at least 8 characters"
 msgid "password saved"
 msgstr "password saved"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:55
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:54
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:53
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:27
 msgid "Password..."
@@ -8463,7 +8455,7 @@ msgstr "Progress Update Interval (ms)"
 msgid "Progress:"
 msgstr "Progress:"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:36
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:35
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:25
 msgid "Protection Settings"
 msgstr "Protection Settings"
@@ -9823,10 +9815,6 @@ msgstr "Selected by"
 msgid "Selected stream"
 msgstr "Selected stream"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:80
-msgid "Send a website-style integrity token with studio requests. Enabled by default; disable only if minting fails in your network."
-msgstr "Send a website-style integrity token with studio requests. Enabled by default; disable only if minting fails in your network."
-
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:324
 msgid "Separate multiple paths with commas."
 msgstr "Separate multiple paths with commas."
@@ -10388,7 +10376,7 @@ msgstr "Stream online"
 msgid "Stream parsed successfully"
 msgstr "Stream parsed successfully"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:46
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:45
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:35
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:44
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:26

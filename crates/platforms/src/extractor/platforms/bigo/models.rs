@@ -3,9 +3,66 @@
     reason = "API response models include fields not consumed by the extractor"
 )]
 
-//! Serde models for Bigo studio + WebSocket link APIs.
+//! Serde models for the Bigo profile, studio and WebSocket link APIs.
 
 use serde::Deserialize;
+use url::Url;
+
+/// Response from the public profile API, `getUserInfoStudio`.
+#[derive(Debug, Deserialize)]
+pub struct PresenceResponse {
+    /// 0 on success, 1 for an unknown id.
+    pub code: i64,
+    #[serde(default)]
+    pub msg: Option<String>,
+    #[serde(default)]
+    pub data: Option<Presence>,
+}
+
+/// A broadcaster's profile and live state.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Presence {
+    /// 1 while the broadcaster is live.
+    pub alive: i64,
+    /// The broadcaster's numeric account id.
+    pub uid: u64,
+    #[serde(default)]
+    pub nickname: Option<String>,
+    #[serde(default)]
+    pub room_topic: Option<String>,
+    /// The room's cover picture.
+    #[serde(default)]
+    pub og_image: Option<String>,
+    /// App link to the room,
+    /// `bigolive://livevideoshow?roomid=<room id>&uid=<uid>&visitor=1`, with
+    /// `roomid=0` while offline.
+    #[serde(rename = "aliOSUrl", default)]
+    pub ali_os_url: Option<String>,
+}
+
+impl Presence {
+    /// The id of the broadcaster's live room, read from the app link.
+    ///
+    /// Only a `bigolive://livevideoshow` link whose `uid` is this
+    /// broadcaster's and whose `roomid` is not 0 names a room; anything else
+    /// gives `None`.
+    pub fn room_id(&self) -> Option<u64> {
+        let url = Url::parse(self.ali_os_url.as_deref()?).ok()?;
+        if url.scheme() != "bigolive" || url.host_str() != Some("livevideoshow") {
+            return None;
+        }
+        let (mut room_id, mut uid) = (None, None);
+        for (key, value) in url.query_pairs() {
+            match key.as_ref() {
+                "roomid" => room_id = value.parse::<u64>().ok(),
+                "uid" => uid = value.parse::<u64>().ok(),
+                _ => {}
+            }
+        }
+        room_id.filter(|&room_id| room_id != 0 && uid == Some(self.uid))
+    }
+}
 
 /// Top-level studio API response.
 #[derive(Debug, Deserialize)]
@@ -37,47 +94,23 @@ pub struct StudioData {
     pub alive: Option<i64>,
     #[serde(rename = "roomId", default, deserialize_with = "de_opt_stringish")]
     pub room_id: Option<String>,
-    #[serde(rename = "siteId", default, deserialize_with = "de_opt_stringish")]
-    pub site_id: Option<String>,
     #[serde(default, deserialize_with = "de_opt_stringish")]
     pub sid: Option<String>,
-    #[serde(default, deserialize_with = "de_opt_stringish")]
-    pub uid: Option<String>,
-    #[serde(default)]
-    pub nick_name: Option<String>,
-    #[serde(rename = "roomTopic", default)]
-    pub room_topic: Option<String>,
-    #[serde(rename = "gameTitle", default)]
-    pub game_title: Option<String>,
     #[serde(default)]
     pub hls_src: Option<String>,
-    #[serde(default)]
-    pub snapshot: Option<String>,
     #[serde(default)]
     pub avatar: Option<String>,
     #[serde(rename = "passRoom", default)]
     pub pass_room: Option<bool>,
-    /// Set when the request carried no signed-in session; `alive` and
-    /// `roomId` then read as offline whatever the room is doing.
+    /// Set when Bigo wants a signed-in session before it answers; `alive`
+    /// and `roomId` then read as offline whatever the room is doing.
     #[serde(rename = "needLogin", default)]
     pub need_login: Option<bool>,
-    #[serde(
-        rename = "clientBigoId",
-        default,
-        deserialize_with = "de_opt_stringish"
-    )]
-    pub client_bigo_id: Option<String>,
-    #[serde(rename = "country_code", default)]
-    pub country_code: Option<String>,
 }
 
 impl StudioData {
-    /// Whether the room is broadcasting, judged from `alive` and `roomId` alone.
-    ///
-    /// Deliberately ignores `hls_src`: `getInternalStudioInfo` answers a
-    /// replayed `token` with a live `alive`/`roomId` pair but a blank
-    /// `hls_src`, so folding the source into the liveness test would report a
-    /// rejected token as an offline room.
+    /// Whether the studio reports the room as broadcasting, from `alive` and
+    /// `roomId`.
     pub fn is_room_live(&self) -> bool {
         let alive = self.alive.unwrap_or(0) != 0;
         let room_id = self.room_id.as_deref().unwrap_or("");
@@ -87,26 +120,6 @@ impl StudioData {
     /// Whether the response carried a playlist URL to hand to the downloader.
     pub fn has_playable_source(&self) -> bool {
         self.hls_src.as_deref().is_some_and(|s| !s.is_empty())
-    }
-
-    pub fn display_title(&self) -> String {
-        self.room_topic
-            .as_deref()
-            .filter(|s| !s.is_empty())
-            .or_else(|| self.game_title.as_deref().filter(|s| !s.is_empty()))
-            .or_else(|| self.nick_name.as_deref().filter(|s| !s.is_empty()))
-            .or(self.site_id.as_deref())
-            .unwrap_or("Bigo Live")
-            .to_string()
-    }
-
-    pub fn artist(&self) -> String {
-        self.nick_name
-            .clone()
-            .filter(|s| !s.is_empty())
-            .or_else(|| self.client_bigo_id.clone())
-            .or_else(|| self.site_id.clone())
-            .unwrap_or_else(|| "unknown".to_string())
     }
 }
 
@@ -178,76 +191,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn online_fixture() {
-        let json = r#"{
-          "code": 0,
-          "msg": "success",
-          "data": {
-            "sid": 2318878816,
-            "siteId": "221338632",
-            "uid": 1739055289,
-            "nick_name": "Streamer",
-            "gameTitle": "",
-            "roomTopic": "Hello",
-            "snapshot": "https://example.com/snap.jpg",
-            "alive": 1,
-            "roomId": "6576287577575737440",
-            "hls_src": "https://cdn.example.com/list_x_0.m3u8",
-            "passRoom": false,
-            "avatar": "https://example.com/a.jpg",
-            "clientBigoId": "221338632"
-          }
-        }"#;
-        let resp: StudioResponse = serde_json::from_str(json).unwrap();
-        assert!(resp.is_success());
-        let data = resp.data.unwrap();
-        assert!(data.is_room_live());
-        assert!(data.has_playable_source());
-        assert_eq!(data.room_id.as_deref(), Some("6576287577575737440"));
-        assert_eq!(data.display_title(), "Hello");
-        assert_eq!(data.artist(), "Streamer");
-    }
-
-    /// The shape `getInternalStudioInfo` returns for a replayed `token`.
-    #[test]
-    fn live_room_without_source_stays_live() {
-        let json = r#"{
-          "code": 0,
-          "msg": "success",
-          "data": {
-            "alive": 1,
-            "roomId": "7631598258675132407",
-            "hls_src": "",
-            "nick_name": "Streamer",
-            "siteId": "1118452367"
-          }
-        }"#;
-        let resp: StudioResponse = serde_json::from_str(json).unwrap();
-        let data = resp.data.unwrap();
-        assert!(data.is_room_live());
-        assert!(!data.has_playable_source());
-    }
-
-    #[test]
-    fn offline_fixture() {
-        let json = r#"{
-          "code": 0,
-          "msg": "success",
-          "data": {
-            "alive": 0,
-            "roomId": "0",
-            "hls_src": "",
-            "nick_name": "OfflineBJ",
-            "siteId": "123"
-          }
-        }"#;
-        let resp: StudioResponse = serde_json::from_str(json).unwrap();
-        let data = resp.data.unwrap();
-        assert!(!data.is_room_live());
-        assert_eq!(data.artist(), "OfflineBJ");
-    }
-
-    #[test]
     fn string_code_and_room_id() {
         let json = r#"{"code":"0","data":{"alive":"1","roomId":7482488749430738201,"hls_src":"https://x/list.m3u8","nick_name":"n"}}"#;
         let resp: StudioResponse = serde_json::from_str(json).unwrap();
@@ -256,5 +199,32 @@ mod tests {
         assert!(data.is_room_live());
         assert!(data.has_playable_source());
         assert_eq!(data.room_id.as_deref(), Some("7482488749430738201"));
+    }
+
+    #[test]
+    fn room_id_comes_only_from_the_broadcasters_own_room_link() {
+        let presence = |link: &str| Presence {
+            alive: 1,
+            uid: 509239070,
+            nickname: None,
+            room_topic: None,
+            og_image: None,
+            ali_os_url: Some(link.to_owned()),
+        };
+        assert_eq!(
+            presence("bigolive://livevideoshow?roomid=6935768021135771674&uid=509239070&visitor=1")
+                .room_id(),
+            Some(6935768021135771674)
+        );
+        for link in [
+            "bigolive://livevideoshow?roomid=0&uid=509239070&visitor=1",
+            "bigolive://livevideoshow?roomid=6935768021135771674&uid=1&visitor=1",
+            "bigolive://livevideoshow?roomid=6935768021135771674",
+            "bigolive://otherpage?roomid=6935768021135771674&uid=509239070",
+            "https://livevideoshow/?roomid=6935768021135771674&uid=509239070",
+            "bigolive://livevideoshow?roomid=abc&uid=509239070",
+        ] {
+            assert_eq!(presence(link).room_id(), None, "{link}");
+        }
     }
 }

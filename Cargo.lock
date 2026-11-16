@@ -4776,7 +4776,6 @@ dependencies = [
  "bytes",
  "cbc",
  "chrono",
- "cipher",
  "flate2",
  "futures",
  "jieba-rs",

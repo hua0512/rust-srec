@@ -123,7 +123,6 @@ export const SoopConfigSchema = z
 export const BigoConfigSchema = z
   .object({
     stream_password: z.string().nullable().optional(),
-    mint_token: z.boolean().nullable().optional(),
   })
   .strict();
 
