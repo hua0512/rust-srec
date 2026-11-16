@@ -92,6 +92,13 @@ impl FlvProtocolBuilder {
         self
     }
 
+    /// Set how long the stream may go without a media tag before it fails.
+    /// `None` or a zero duration disables the watchdog.
+    pub fn media_stall_timeout(mut self, timeout: Option<Duration>) -> Self {
+        self.config.media_stall_timeout = timeout.filter(|timeout| !timeout.is_zero());
+        self
+    }
+
     /// Set the byte threshold for FLV progress events.
     pub fn progress_emit_min_bytes(mut self, bytes: u64) -> Self {
         self.config.progress_emit_min_bytes = bytes;
@@ -277,6 +284,14 @@ impl HlsProtocolBuilder {
     /// Set base delay for exponential backoff when retrying segment downloads.
     pub fn segment_retry_delay_base(mut self, delay: Duration) -> Self {
         self.config.fetcher_config.segment_retry_delay_base = delay;
+        self
+    }
+
+    /// Set the total time budget for one segment, counted from its first
+    /// attempt. A zero duration removes the cap.
+    pub fn segment_retry_deadline(mut self, deadline: Option<Duration>) -> Self {
+        self.config.fetcher_config.segment_retry_deadline =
+            deadline.filter(|deadline| !deadline.is_zero());
         self
     }
 

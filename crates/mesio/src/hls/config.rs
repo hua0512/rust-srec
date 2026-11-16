@@ -175,6 +175,14 @@ pub struct HlsFetcherConfig {
     pub segment_retry_delay_base: Duration,
     /// Cap on the segment reschedule backoff.
     pub max_segment_retry_delay: Duration,
+    /// Total time budget for one segment, counted from its first attempt.
+    ///
+    /// A segment that keeps timing out is retried by the store, and every
+    /// attempt pays the full download timeout; without a budget a single
+    /// black-holed segment holds the recording for minutes. Once the budget
+    /// is spent the segment is treated as terminally failed and skipped.
+    /// `None` removes the cap (the retry count still applies).
+    pub segment_retry_deadline: Option<Duration>,
     pub key_download_timeout: Duration,
     /// Retries of a failed key fetch (network errors, timeouts, 5xx). Rate
     /// limiting is waited out by the segment instead, like its own download.
@@ -198,6 +206,7 @@ impl Default for HlsFetcherConfig {
             max_segment_retries: 3,
             segment_retry_delay_base: Duration::from_millis(500),
             max_segment_retry_delay: Duration::from_secs(10),
+            segment_retry_deadline: Some(Duration::from_secs(45)),
             key_download_timeout: Duration::from_secs(5),
             max_key_retries: 3,
             key_retry_delay_base: Duration::from_millis(200),

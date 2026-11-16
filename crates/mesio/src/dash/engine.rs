@@ -245,6 +245,7 @@ pub(crate) async fn start(
                 retry_budget: config.fetcher.max_segment_retries,
                 retry_delay_base: config.fetcher.segment_retry_delay_base,
                 retry_delay_max: config.fetcher.max_segment_retry_delay,
+                retry_deadline: config.fetcher.segment_retry_deadline,
                 max_throttled,
                 fallback_size_estimate: engine.initial_segment_size_estimate,
                 max_segment_size: engine.max_segment_size_bytes,

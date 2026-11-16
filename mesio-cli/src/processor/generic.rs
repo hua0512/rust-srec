@@ -10,7 +10,8 @@ use pipeline_common::{
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
-use tracing::{Level, Span, span, warn};
+use std::time::Duration;
+use tracing::{Level, Span, info, span, warn};
 
 pub async fn process_stream<P, W>(
     pipeline_common_config: &PipelineConfig,
@@ -41,6 +42,55 @@ where
         token,
     )
     .await
+}
+
+/// Aborts a task when dropped, so a session's monitor cannot outlive it.
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
+/// Warns when the writer stops making progress, and reports when it resumes.
+///
+/// Observation only: it never cancels the session. It exists because a
+/// recorder that is connected but writing nothing looks the same as a healthy
+/// one from the outside (the write buffer hides small gaps), and waiting for
+/// the protocol watchdog to fire is the only other signal.
+fn spawn_activity_log(activity: Arc<pipeline_common::WriterActivity>) -> AbortOnDrop {
+    /// Long enough to ignore a slow segment, short enough to precede the
+    /// 60 s / 90 s protocol watchdogs.
+    const IDLE_WARN: Duration = Duration::from_secs(30);
+    const RESUME_IDLE: Duration = Duration::from_secs(2);
+
+    AbortOnDrop(tokio::spawn(async move {
+        let mut warned = false;
+        let mut ticker = tokio::time::interval(Duration::from_secs(2));
+        loop {
+            ticker.tick().await;
+            let idle = activity.idle();
+            if !warned && idle >= IDLE_WARN {
+                warn!(
+                    idle_secs = idle.as_secs(),
+                    items = activity.items(),
+                    bytes = activity.bytes(),
+                    media_secs = activity.media_duration().as_secs_f64(),
+                    "recording has written nothing for a while; it will fail if this lasts"
+                );
+                warned = true;
+            } else if warned && idle < RESUME_IDLE {
+                info!(
+                    idle_secs = idle.as_secs(),
+                    items = activity.items(),
+                    bytes = activity.bytes(),
+                    "recording resumed"
+                );
+                warned = false;
+            }
+        }
+    }))
 }
 
 /// Runs `stream` through the pipeline `P` into the writer. With `cut`, the
@@ -83,6 +133,7 @@ where
 
     // Initialize the writer using the provided span
     let mut writer = writer_initializer(&writer_span);
+    let _activity_log = writer.activity().map(spawn_activity_log);
     if let Some(cut) = cut {
         cut.attach(&mut writer);
     }

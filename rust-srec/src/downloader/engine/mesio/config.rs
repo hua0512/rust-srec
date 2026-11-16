@@ -155,6 +155,9 @@ fn apply_hls_engine_overrides(
         if let Some(v) = fc.segment_retry_delay_base_ms {
             builder = builder.segment_retry_delay_base(ms(v));
         }
+        if let Some(value) = fc.segment_retry_deadline_ms {
+            builder = builder.segment_retry_deadline(value.map(ms));
+        }
         if let Some(v) = fc.key_download_timeout_ms {
             builder = builder.key_download_timeout(ms(v));
         }
@@ -435,11 +438,20 @@ pub fn build_flv_config(
     config: &DownloadConfig,
     engine_config: &MesioEngineConfig,
 ) -> FlvProtocolConfig {
-    FlvProtocolBuilder::new()
+    let builder = FlvProtocolBuilder::new()
         .headers(HeaderMap::new())
         .buffer_size(engine_config.buffer_size)
-        .with_config(|c| apply_network(&mut c.base, config))
-        .get_config()
+        .with_config(|c| apply_network(&mut c.base, config));
+
+    let builder = if let Some(ref flv) = engine_config.flv
+        && let Some(value) = flv.media_stall_timeout_ms
+    {
+        builder.media_stall_timeout(value.map(std::time::Duration::from_millis))
+    } else {
+        builder
+    };
+
+    builder.get_config()
 }
 
 /// Applies the download's headers, cookies and route to a mesio base config.
@@ -555,6 +567,80 @@ mod tests {
         };
         let flv_config = build_flv_config(&create_test_download_config(), &engine_config);
         assert_eq!(flv_config.buffer_size, 256 * 1024);
+    }
+
+    #[test]
+    fn flv_stall_timeout_override_applies_and_null_disables_it() {
+        use crate::database::models::engine::MesioFlvConfig;
+
+        let download = create_test_download_config();
+        let mut engine_config = MesioEngineConfig::default();
+        assert_eq!(
+            build_flv_config(&download, &engine_config).media_stall_timeout,
+            Some(std::time::Duration::from_secs(90))
+        );
+
+        engine_config.flv = Some(MesioFlvConfig {
+            media_stall_timeout_ms: Some(Some(5_000)),
+        });
+        assert_eq!(
+            build_flv_config(&download, &engine_config).media_stall_timeout,
+            Some(std::time::Duration::from_secs(5))
+        );
+
+        // `null` disables the watchdog.
+        engine_config.flv = Some(MesioFlvConfig {
+            media_stall_timeout_ms: Some(None),
+        });
+        assert_eq!(
+            build_flv_config(&download, &engine_config).media_stall_timeout,
+            None
+        );
+    }
+
+    #[test]
+    fn segment_retry_deadline_override_is_tri_state() {
+        use crate::database::models::engine::{
+            MesioHlsConfig, MesioHlsFetcherConfigOverride,
+        };
+
+        let download = create_test_download_config();
+        let mut engine_config = MesioEngineConfig::default();
+        assert_eq!(
+            build_hls_config(&download, &engine_config)
+                .fetcher_config
+                .segment_retry_deadline,
+            Some(std::time::Duration::from_secs(45))
+        );
+
+        engine_config.hls = Some(MesioHlsConfig {
+            fetcher_config: Some(MesioHlsFetcherConfigOverride {
+                segment_retry_deadline_ms: Some(Some(10_000)),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        assert_eq!(
+            build_hls_config(&download, &engine_config)
+                .fetcher_config
+                .segment_retry_deadline,
+            Some(std::time::Duration::from_secs(10))
+        );
+
+        // `null` removes the cap without changing the retry count.
+        engine_config.hls = Some(MesioHlsConfig {
+            fetcher_config: Some(MesioHlsFetcherConfigOverride {
+                segment_retry_deadline_ms: Some(None),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+        assert_eq!(
+            build_hls_config(&download, &engine_config)
+                .fetcher_config
+                .segment_retry_deadline,
+            None
+        );
     }
 
     #[test]

@@ -119,6 +119,15 @@ pub struct CliArgs {
     )]
     pub download_buffer: usize,
 
+    /// Maximum time without a media tag before an FLV stream fails
+    #[arg(
+        long,
+        default_value = "90s",
+        value_name = "DURATION",
+        help = "Fail an HTTP-FLV stream when no audio/video tag arrives for this long (e.g. 90s, 2m). 0 disables the watchdog"
+    )]
+    pub flv_stall_timeout: String,
+
     /// Connection timeout in seconds
     #[arg(
         long,
@@ -272,6 +281,24 @@ pub struct CliArgs {
         help = "Timeout for individual HLS segment downloads in seconds"
     )]
     pub hls_segment_timeout: u64,
+
+    /// Live HLS stall watchdog
+    #[arg(
+        long,
+        default_value = "60s",
+        value_name = "DURATION",
+        help = "Fail a live HLS stream when no media arrives for this long (e.g. 60s, 2m). 0 disables the watchdog"
+    )]
+    pub hls_max_stall: String,
+
+    /// Total retry budget for one HLS segment
+    #[arg(
+        long,
+        default_value = "45s",
+        value_name = "DURATION",
+        help = "Give up on an HLS segment once it has been retried for this long, then skip it (e.g. 45s, 2m). 0 removes the cap"
+    )]
+    pub hls_segment_retry_deadline: String,
 
     /// Enable HLS playlist caching
     #[arg(
@@ -601,6 +628,38 @@ mod tests {
     fn command_definition_is_valid() {
         use clap::CommandFactory;
         CliArgs::command().debug_assert();
+    }
+
+    #[test]
+    fn stall_flags_default_to_the_engine_defaults_and_parse_durations() {
+        use crate::utils::parse_duration_flag;
+
+        let defaults = parse(&[]).unwrap();
+        assert_eq!(defaults.hls_max_stall, "60s");
+        assert_eq!(defaults.flv_stall_timeout, "90s");
+        assert_eq!(defaults.hls_segment_retry_deadline, "45s");
+
+        let custom = parse(&[
+            "--hls-max-stall",
+            "2m",
+            "--flv-stall-timeout",
+            "0",
+            "--hls-segment-retry-deadline",
+            "500ms",
+        ])
+        .unwrap();
+        assert_eq!(
+            parse_duration_flag(&custom.hls_max_stall).unwrap(),
+            Some(Duration::from_secs(120))
+        );
+        assert_eq!(
+            parse_duration_flag(&custom.flv_stall_timeout).unwrap(),
+            None
+        );
+        assert_eq!(
+            parse_duration_flag(&custom.hls_segment_retry_deadline).unwrap(),
+            Some(Duration::from_millis(500))
+        );
     }
 
     #[test]
