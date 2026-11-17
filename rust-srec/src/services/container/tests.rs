@@ -672,7 +672,7 @@ async fn hard_cap_shutdown_under_the_cap_closes_pools() {
 #[test]
 fn test_should_end_stream_on_danmu_stream_closed_honors_false() {
     assert!(!should_end_stream_on_danmu_stream_closed(Some(
-        r#"{"end_stream_on_danmu_stream_closed":false}"#,
+        &serde_json::json!({ "end_stream_on_danmu_stream_closed": false }),
     )));
 }
 

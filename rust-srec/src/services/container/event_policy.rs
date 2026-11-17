@@ -4,16 +4,14 @@ use tracing::{debug, warn};
 
 use crate::downloader::engine::DownloadProgress;
 
+/// The `end_stream_on_danmu_stream_closed` option of a streamer's merged platform options, on
+/// unless a configuration layer sets it to `false`.
 pub(super) fn should_end_stream_on_danmu_stream_closed(
-    platform_specific_config: Option<&str>,
+    platform_extras: Option<&serde_json::Value>,
 ) -> bool {
-    platform_specific_config
-        .and_then(|json| serde_json::from_str::<serde_json::Value>(json).ok())
-        .and_then(|value| {
-            value
-                .get("end_stream_on_danmu_stream_closed")
-                .and_then(|v| v.as_bool())
-        })
+    platform_extras
+        .and_then(|extras| extras.get("end_stream_on_danmu_stream_closed"))
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(true)
 }
 

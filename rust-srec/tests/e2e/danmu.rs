@@ -217,3 +217,64 @@ async fn without_record_danmu_no_danmu_is_collected_and_no_paired_pipeline_runs(
 
     app.shutdown().await;
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_streamer_that_turns_off_end_stream_on_danmu_close_keeps_recording() {
+    let fake = FakePlatform::start().await;
+    let kept_room = fake.room("kept");
+    let kept_danmu = FakeDanmu::of(&kept_room);
+    kept_room.set_live(kept_room.live("Kept"));
+    let ended_room = fake.room("ended");
+    let ended_danmu = FakeDanmu::of(&ended_room);
+    ended_room.set_live(ended_room.live("Ended"));
+    let app = TestApp::start_with(Seed::live()).await;
+    let token = app.admin_token().await;
+
+    // The platform leaves the option unset, which ends a recording on the signal.
+    let kept = app
+        .watch(
+            &token,
+            "Kept",
+            &kept_room,
+            json!({
+                "record_danmu": true,
+                "platform_extras": { "end_stream_on_danmu_stream_closed": false },
+            }),
+        )
+        .await;
+    let ended = app
+        .watch(
+            &token,
+            "Ended",
+            &ended_room,
+            json!({ "record_danmu": true }),
+        )
+        .await;
+    for (room, danmu) in [(&kept_room, &kept_danmu), (&ended_room, &ended_danmu)] {
+        room.wait_for_media_connection(1).await;
+        danmu.wait_for_connection(1).await;
+        room.push(FlvLoop::tiny().stream(1));
+    }
+
+    // Danmu events are handled one at a time in the order they are sent, and a
+    // collector passes the signal on before it disconnects. So once the second
+    // session has ended, the first signal has been handled too.
+    kept_danmu.close_stream();
+    eventually(WAIT, "the kept room's collector to stop", || async {
+        (kept_danmu.disconnects() >= 1).then_some(())
+    })
+    .await;
+    // Offline, so the next check does not start a new session.
+    ended_room.set_offline();
+    ended_danmu.close_stream();
+    app.ended_session_id(&token, &ended).await;
+
+    assert!(!kept_room.media_closed(), "the kept recording was stopped");
+    let sessions = app.sessions(&token, &kept).await;
+    assert_eq!(sessions.len(), 1, "{sessions:?}");
+    assert_eq!(sessions[0]["is_live"], true, "{sessions:?}");
+
+    kept_room.broadcast_ends(1);
+    app.ended_session_id(&token, &kept).await;
+    app.shutdown().await;
+}
