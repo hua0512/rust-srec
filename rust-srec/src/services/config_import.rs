@@ -1729,11 +1729,9 @@ fn imported_state(existing: Option<&StreamerDbModel>, source_state: &str) -> Str
 /// [`imported_state`] chose.
 ///
 /// `streamer_model` starts from `existing.cloned()`, so without this the backoff
-/// a stopped streamer accumulated survives the write and a later re-enable lands
-/// on `NOT_LIVE` with a `disabled_until` still in the future, which
-/// `StreamerMetadata::is_ready_for_check` keeps rejecting. Matches
-/// `StreamerManager::partial_update_streamer`, which calls
-/// `StreamerMetadata::clear_error_tracking` on a `Disabled` write.
+/// a stopped streamer accumulated survives the write and delays the first check
+/// after re-enabling. Disabling a streamer also clears the backoff and error
+/// history when editing it outside an import.
 fn clears_error_tracking(existing: Option<&StreamerDbModel>, new_state: &str) -> bool {
     match StreamerState::parse(new_state) {
         Some(StreamerState::Disabled) => true,

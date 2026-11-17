@@ -14,7 +14,6 @@ workspace = true
 bytes = { workspace = true }
 byteorder = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "io-util", "sync"] }
-tokio-util = { workspace = true }
 futures = { workspace = true }
 reqwest = { workspace = true, features = ["json", "stream"] }
 crossterm = "0.29.0"

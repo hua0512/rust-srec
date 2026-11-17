@@ -523,11 +523,6 @@ impl HysteresisState {
         self.offline_count = 0;
     }
 
-    /// Check if currently in grace period (suppressing offline events).
-    pub fn in_grace_period(&self) -> bool {
-        self.was_live && self.offline_count > 0
-    }
-
     /// Check if streamer was previously live.
     pub fn was_live(&self) -> bool {
         self.was_live
@@ -801,11 +796,6 @@ impl StreamerActorState {
     /// This bypasses the live state check and schedules an immediate check.
     pub fn schedule_immediate_check(&mut self) {
         self.set_next_check(Some(Instant::now()));
-    }
-
-    /// Check if a check is due.
-    pub fn is_check_due(&self) -> bool {
-        self.next_check.map(|t| Instant::now() >= t).unwrap_or(true)
     }
 
     /// Get time until next check.

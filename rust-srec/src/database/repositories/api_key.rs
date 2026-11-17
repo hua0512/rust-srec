@@ -135,12 +135,6 @@ pub struct InMemoryApiKeyRepository {
 
 #[cfg(test)]
 impl InMemoryApiKeyRepository {
-    pub fn with_keys(keys: Vec<ApiKeyDbModel>) -> Self {
-        Self {
-            keys: std::sync::Mutex::new(keys),
-        }
-    }
-
     fn lock(&self) -> std::sync::MutexGuard<'_, Vec<ApiKeyDbModel>> {
         self.keys.lock().expect("test repository mutex poisoned")
     }
