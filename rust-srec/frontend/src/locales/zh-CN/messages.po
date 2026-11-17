@@ -292,7 +292,7 @@ msgstr "{count} 项已更改"
 msgid "{count} overridden"
 msgstr "{count} 项已覆盖"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:255
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:265
 msgid "{displayName} Configuration"
 msgstr "{displayName} 配置"
 
@@ -318,6 +318,10 @@ msgstr "{first} 等 {others} 个文件"
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:270
 msgid "{free} free"
 msgstr "剩余 {free}"
+
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:232
+msgid "{label} (disabled)"
+msgstr "{label}（已禁用）"
 
 #: src/components/credentials/account-selection-section.tsx:113
 msgid "{label} is set up for {sites}, but this streamer is on {host}. Its cookies will be sent to {host}."
@@ -386,6 +390,10 @@ msgstr "{sessions, plural, other {请等待使用它的 # 个进行中的录制�
 #: src/components/credentials/profile-editor-dialog.tsx:78
 msgid "{site} already belongs to the account {label}. A site can belong to one account only."
 msgstr "{site} 已属于账号 {label}。一个网站只能属于一个账号。"
+
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:320
+msgid "{subscribed} of {total}"
+msgstr "{subscribed} / {total}"
 
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:199
 msgid "{succeeded, plural, one {Deleted # output} other {Deleted # outputs}}"
@@ -717,11 +725,15 @@ msgstr "添加"
 msgid "Add a module above to configure its log level"
 msgstr "在上方添加模块以配置其日志级别"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:245
+msgid "Add a signed-in BIGO account on the Network tab first."
+msgstr "请先在“网络”选项卡中添加一个已登录的 BIGO 账号。"
+
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:440
 msgid "Add a stream to start your viewing session."
 msgstr "添加一个流以开始观看会话。"
 
-#: src/components/streamers/streamer-editor.tsx:212
+#: src/components/streamers/streamer-editor.tsx:218
 msgid "Add a streamer"
 msgstr "添加主播"
 
@@ -921,11 +933,11 @@ msgstr "调整 UI 元素的圆角程度。"
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:290
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:104
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:208
-#: src/components/streamers/streamer-editor.tsx:172
+#: src/components/streamers/streamer-editor.tsx:178
 msgid "Advanced"
 msgstr "高级"
 
-#: src/components/streamers/streamer-editor.tsx:176
+#: src/components/streamers/streamer-editor.tsx:182
 msgid "Advanced Configuration"
 msgstr "高级配置"
 
@@ -1389,7 +1401,7 @@ msgstr "返回引擎列表"
 msgid "Back to Jobs"
 msgstr "返回处理任务列表"
 
-#: src/components/streamers/streamer-editor.tsx:283
+#: src/components/streamers/streamer-editor.tsx:289
 msgid "Back to link"
 msgstr "返回链接"
 
@@ -1412,7 +1424,7 @@ msgstr "返回预设列表"
 msgid "Back to Sessions"
 msgstr "返回录制会话"
 
-#: src/components/streamers/edit/streamer-header.tsx:67
+#: src/components/streamers/edit/streamer-header.tsx:68
 msgid "Back to streamers"
 msgstr "返回主播列表"
 
@@ -1437,7 +1449,7 @@ msgstr "后台"
 msgid "Backoff Multiplier"
 msgstr "退避倍率"
 
-#: src/components/layout/site-header.tsx:46
+#: src/components/layout/site-header.tsx:65
 msgid "Backup"
 msgstr "备份"
 
@@ -1534,14 +1546,19 @@ msgstr "基本信息"
 msgid "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview."
 msgstr "基础后处理：将 FLV 重封装为 MP4，并生成缩略图预览。"
 
-#: src/components/streamers/streamer-editor.tsx:157
+#: src/components/streamers/streamer-editor.tsx:160
 msgid "Basic settings for the streamer."
 msgstr "主播的基础设置。"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:107
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:149
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:131
 msgid "Batch Detection"
 msgstr "批量检测"
+
+#: src/components/shared/bigo-notifications.tsx:35
+msgid "Batch Detection is off for this streamer"
+msgstr "此主播已关闭批量检测"
 
 #. placeholder {0}: error instanceof Error ? error.message : i18n._(msg`Unknown error`)
 #: src/routes/_authed/_dashboard/player/index.lazy.tsx:207
@@ -1572,6 +1589,18 @@ msgstr "最佳"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:103
 msgid "Best quality"
 msgstr "最佳质量"
+
+#: src/components/shared/bigo-notifications.tsx:47
+msgid "BIGO refused to follow the streamer"
+msgstr "BIGO 拒绝关注该主播"
+
+#: src/components/shared/bigo-notifications.tsx:66
+msgid "Bigo streamers are checked by polling, which is inconsistent: stream starts are noticed late, short streams can be missed, and some networks need an account for checks."
+msgstr "Bigo 主播通过轮询检查，结果并不可靠：开播会较晚才被发现，短时直播可能被漏掉，而且某些网络需要账号才能检查。"
+
+#: src/components/streamers/card/monitoring-method-badge.tsx:87
+msgid "BIGO tells rust-srec when this streamer goes live, and it is checked at once. Offline checks need no request of their own, apart from a real check at least every 10 minutes."
+msgstr "该主播开播时 BIGO 会通知 rust-srec，随即立刻检查。离线时的例行检查无需单独请求，但至少每 10 分钟仍会真正检查一次。"
 
 #: src/components/config/engines/forms/ffmpeg-form.tsx:23
 #: src/components/config/engines/forms/streamlink-form.tsx:45
@@ -1739,7 +1768,7 @@ msgstr "缓存与进度"
 #: src/components/proxies/delete-proxy-dialog.tsx:105
 #: src/components/proxies/proxy-editor-dialog.tsx:360
 #: src/components/shared/confirm-dialog.tsx:54
-#: src/components/streamers/streamer-editor.tsx:240
+#: src/components/streamers/streamer-editor.tsx:246
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:499
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:236
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:175
@@ -1826,7 +1855,7 @@ msgstr "CDN"
 msgid "Change"
 msgstr "更改"
 
-#: src/components/layout/site-header.tsx:39
+#: src/components/layout/site-header.tsx:58
 #: src/components/sidebar/user-menu.tsx:125
 #: src/routes/_authed/change-password.lazy.tsx:131
 #: src/routes/_authed/change-password.lazy.tsx:291
@@ -1956,7 +1985,7 @@ msgstr "校验数帮助"
 msgid "Checking"
 msgstr "检查中"
 
-#: src/components/streamers/streamer-editor.tsx:251
+#: src/components/streamers/streamer-editor.tsx:257
 msgid "Checking link"
 msgstr "检查链接中"
 
@@ -2232,7 +2261,7 @@ msgstr "并发校验数（--checkers）。"
 msgid "Concurrent file transfers (--transfers)."
 msgstr "并发文件传输数（--transfers）。"
 
-#: src/components/layout/site-header.tsx:37
+#: src/components/layout/site-header.tsx:56
 msgid "Config"
 msgstr "配置"
 
@@ -2354,7 +2383,17 @@ msgstr "连接超时 (ms)"
 msgid "Connected"
 msgstr "已连接"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:270
+msgctxt "bigo notifications"
+msgid "Connected"
+msgstr "已连接"
+
 #: src/components/player/playback-state.ts:16
+msgid "Connecting"
+msgstr "连接中"
+
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:268
+msgctxt "bigo notifications"
 msgid "Connecting"
 msgstr "连接中"
 
@@ -2400,7 +2439,7 @@ msgstr "容器"
 msgid "Context"
 msgstr "上下文"
 
-#: src/components/streamers/streamer-editor.tsx:255
+#: src/components/streamers/streamer-editor.tsx:261
 msgid "Continue"
 msgstr "继续"
 
@@ -2664,7 +2703,7 @@ msgstr "创建处理管道"
 msgid "Create Preset"
 msgstr "创建预设"
 
-#: src/components/streamers/streamer-editor.tsx:326
+#: src/components/streamers/streamer-editor.tsx:332
 msgid "Create streamer"
 msgstr "创建主播"
 
@@ -2937,7 +2976,7 @@ msgstr "弹幕数"
 msgid "Dark"
 msgstr "深色"
 
-#: src/components/layout/site-header.tsx:33
+#: src/components/layout/site-header.tsx:52
 #: src/lib/menu-list.ts:46
 msgid "Dashboard"
 msgstr "仪表盘"
@@ -3015,7 +3054,7 @@ msgstr "默认值为 1（无突发）。当服务方容忍短时突发流量时�
 msgid "Default password for password-protected rooms (can be overridden per-streamer with ?pwd= in the URL)."
 msgstr "密码锁房的默认密码（可在主播 URL 上用 ?pwd= 覆盖）。"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:58
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:90
 msgid "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
 msgstr "密码锁房的默认密码。可在主播 URL 上用 ?pwd= 覆盖。"
 
@@ -3740,7 +3779,7 @@ msgstr "之前的文件仍在收尾，本次未分段，录制仍在继续。"
 #: src/components/config/templates/template-card.tsx:148
 #: src/components/credentials/account-row.tsx:222
 #: src/components/credentials/account-row.tsx:280
-#: src/components/layout/site-header.tsx:60
+#: src/components/layout/site-header.tsx:79
 #: src/components/notifications/channel-card.tsx:145
 #: src/components/pipeline/presets/preset-card.tsx:99
 #: src/components/pipeline/workflows/workflow-card.tsx:77
@@ -3920,7 +3959,7 @@ msgstr "未在平台/主播中指定时使用的录制引擎。"
 #: src/components/config/global/backup-restore-card.tsx:403
 #: src/components/config/global/backup-restore-card.tsx:408
 #: src/components/config/templates/template-editor.tsx:250
-#: src/components/layout/site-header.tsx:47
+#: src/components/layout/site-header.tsx:66
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:62
 msgid "Engines"
 msgstr "引擎列表"
@@ -4047,10 +4086,14 @@ msgstr "事件类型"
 msgid "Event Types"
 msgstr "事件类型"
 
-#: src/components/layout/site-header.tsx:43
+#: src/components/layout/site-header.tsx:62
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:185
 msgid "Events"
 msgstr "事件"
+
+#: src/components/streamers/card/monitoring-method-badge.tsx:110
+msgid "Every check asks BIGO whether the streamer is live. A stream start is noticed up to one check interval late, so short streams can be missed."
+msgstr "每次检查都会向 BIGO 询问该主播是否在直播。开播最多会晚一个检查间隔才被发现，因此短时直播可能被漏掉。"
 
 #: src/components/player/danmu-settings-panel.tsx:49
 msgid "Exact user name"
@@ -4120,7 +4163,7 @@ msgstr "执行设置"
 msgid "Execution time (default)"
 msgstr "执行时间（默认）"
 
-#: src/components/layout/site-header.tsx:53
+#: src/components/layout/site-header.tsx:72
 msgid "Executions"
 msgstr "执行记录"
 
@@ -4143,7 +4186,7 @@ msgstr "展开侧边栏"
 msgid "Experimental"
 msgstr "实验性"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:183
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:185
 msgid "Expert mode: Edit the raw platform-specific configuration directly."
 msgstr "专家模式：直接编辑原始的平台特定配置。"
 
@@ -4272,7 +4315,7 @@ msgstr "取消上传失败"
 msgid "Failed to change password"
 msgstr "修改密码失败"
 
-#: src/components/streamers/streamer-editor.tsx:143
+#: src/components/streamers/streamer-editor.tsx:146
 msgid "Failed to check this link. Please try again."
 msgstr "检查该链接失败，请重试。"
 
@@ -4894,7 +4937,7 @@ msgstr "强制请求可用的最高原画质量（直连流）。"
 msgid "Force specific output format."
 msgstr "强制指定输出格式。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:283
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:293
 msgid "Form"
 msgstr "表单"
 
@@ -5011,11 +5054,11 @@ msgstr "GB"
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:284
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:98
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:204
-#: src/components/streamers/streamer-editor.tsx:152
+#: src/components/streamers/streamer-editor.tsx:155
 msgid "General"
 msgstr "常规"
 
-#: src/components/streamers/streamer-editor.tsx:156
+#: src/components/streamers/streamer-editor.tsx:159
 msgid "General Configuration"
 msgstr "常规配置"
 
@@ -5061,7 +5104,7 @@ msgid "Gift items"
 msgstr "礼物数"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:115
-#: src/components/layout/site-header.tsx:52
+#: src/components/layout/site-header.tsx:71
 #: src/components/pipeline/step-in-use-dialog.tsx:105
 #: src/components/proxies/proxy-references.tsx:68
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:44
@@ -5181,7 +5224,7 @@ msgstr "收到头部"
 msgid "Header Value"
 msgstr "Header 值"
 
-#: src/components/layout/site-header.tsx:58
+#: src/components/layout/site-header.tsx:77
 msgid "Health"
 msgstr "健康"
 
@@ -5303,7 +5346,7 @@ msgid "HLS stream fixing pipeline"
 msgstr "HLS 流修复管道"
 
 #: src/components/default-catch-boundary.tsx:47
-#: src/components/layout/site-header.tsx:89
+#: src/components/layout/site-header.tsx:108
 msgid "Home"
 msgstr "主页"
 
@@ -5683,7 +5726,7 @@ msgstr "离线检查之间的间隔。"
 msgid "Invalid download URL"
 msgstr "下载链接无效"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:178
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:180
 msgid "Invalid JSON: {error}"
 msgstr "JSON 格式有误：{error}"
 
@@ -5756,7 +5799,7 @@ msgstr "已开始重试处理任务"
 msgid "Job Timeouts"
 msgstr "任务超时"
 
-#: src/components/layout/site-header.tsx:54
+#: src/components/layout/site-header.tsx:73
 #: src/lib/menu-list.ts:85
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:379
 msgid "Jobs"
@@ -5766,7 +5809,7 @@ msgstr "处理任务"
 msgid "Jobs will appear here when recordings are processed."
 msgstr "处理录制内容后，处理任务将显示在此处。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:299
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:309
 msgid "JSON"
 msgstr "JSON"
 
@@ -5872,6 +5915,10 @@ msgstr "最近检查"
 msgid "Last checked {0}"
 msgstr "上次检查：{0}"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:339
+msgid "Last error"
+msgstr "最后错误"
+
 #: src/components/streamers/card/use-streamer-status.tsx:238
 msgid "Last Error"
 msgstr "最后错误"
@@ -5969,7 +6016,7 @@ msgstr "列表"
 #: src/components/streamers/edit/status-check-history.tsx:403
 #: src/components/streamers/edit/status-check-history.tsx:424
 #: src/components/streamers/edit/status-check-history.tsx:489
-#: src/components/streamers/edit/streamer-header.tsx:88
+#: src/components/streamers/edit/streamer-header.tsx:89
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:164
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:93
 msgid "Live"
@@ -5988,6 +6035,23 @@ msgstr "直播边缘"
 #: src/components/config/engines/forms/mesio-sections.tsx:414
 msgid "Live Gap Strategy"
 msgstr "直播缺口策略"
+
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:298
+#: src/components/streamers/card/monitoring-method-badge.tsx:84
+msgid "Live notifications"
+msgstr "开播通知"
+
+#: src/components/shared/bigo-notifications.tsx:49
+msgid "Live notifications are not available"
+msgstr "开播通知不可用"
+
+#: src/components/shared/bigo-notifications.tsx:19
+msgid "Live notifications are off"
+msgstr "开播通知已关闭"
+
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:165
+msgid "Live notifications need a signed-in BIGO account. rust-srec signs this account in to BIGO's app service and makes it <0>follow every Bigo streamer you monitor (they can see it)</0>, with live alerts on. Turn on live notifications in that account's BIGO settings. Use a dedicated account: opening BIGO with the same account disconnects rust-srec, and the other way round."
+msgstr "开播通知需要一个已登录的 BIGO 账号。rust-srec 会用此账号登录 BIGO 的应用服务，并让它<0>关注你监控的每一位 Bigo 主播（对方能看到）</0>，同时打开开播提醒。请在该账号的 BIGO 设置中打开开播通知。请使用专用账号：用同一账号打开 BIGO 会让 rust-srec 断开连接，反之亦然。"
 
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:77
 msgid "Live page HTML"
@@ -6149,7 +6213,7 @@ msgstr "登录失败"
 msgid "Login invalid"
 msgstr "登录失效"
 
-#: src/components/layout/site-header.tsx:38
+#: src/components/layout/site-header.tsx:57
 msgid "Logs"
 msgstr "日志"
 
@@ -6251,7 +6315,7 @@ msgstr "管理账号"
 msgid "Manage proxies"
 msgstr "管理代理"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:261
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:271
 msgid "Manage specialized extraction and identification options."
 msgstr "管理专门的提取和识别选项。"
 
@@ -6771,7 +6835,7 @@ msgctxt "an account never used or checked"
 msgid "Never"
 msgstr "从未"
 
-#: src/components/layout/site-header.tsx:59
+#: src/components/layout/site-header.tsx:78
 msgid "New"
 msgstr "新建"
 
@@ -6972,6 +7036,10 @@ msgstr "未配置模块"
 msgid "No new media arrived in time, so no safe cut boundary was found. Recording continues."
 msgstr "未在时限内收到新的媒体数据，未找到安全分割点，录制仍在继续。"
 
+#: src/components/shared/bigo-notifications.tsx:21
+msgid "No notification account is chosen"
+msgstr "未选择通知账号"
+
 #: src/components/pipeline/workflows/step-config-dialog.tsx:662
 msgid "No other steps available to depend on."
 msgstr "没有其他可依赖的步骤。"
@@ -7009,7 +7077,7 @@ msgid "No platform overrides configured"
 msgstr "未配置平台覆盖项"
 
 #: src/components/streamers/config/streamer-identity-fields.tsx:202
-#: src/components/streamers/streamer-editor.tsx:135
+#: src/components/streamers/streamer-editor.tsx:138
 msgid "No platform recognizes this link, so it cannot be recorded."
 msgstr "无法识别该链接所属的平台，因此无法录制。"
 
@@ -7090,7 +7158,7 @@ msgstr "未找到会话"
 msgid "No sessions match the current search or filters."
 msgstr "没有符合当前搜索或筛选条件的会话。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:312
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:322
 msgid "No specialized options available for this platform."
 msgstr "此平台没有可用的专门选项。"
 
@@ -7172,6 +7240,11 @@ msgctxt "no proxy login"
 msgid "None"
 msgstr "无"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:224
+msgctxt "notification account"
+msgid "None"
+msgstr "无"
+
 #: src/components/streamers/config/streamer-recording-fields.tsx:74
 msgid "None (Default)"
 msgstr "无（默认）"
@@ -7221,6 +7294,15 @@ msgstr "未校验"
 msgid "Not checked yet"
 msgstr "尚未检查"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:272
+msgctxt "bigo notifications"
+msgid "Not connected"
+msgstr "未连接"
+
+#: src/components/shared/bigo-notifications.tsx:31
+msgid "Not connected to BIGO"
+msgstr "未连接到 BIGO"
+
 #: src/components/config/engines/engines-panel.tsx:94
 msgid "Not installed"
 msgstr "未安装"
@@ -7266,6 +7348,10 @@ msgstr "暂无屏蔽内容。"
 msgid "Nothing it inherits from chooses an account"
 msgstr "继承来源未选择任何账号"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:209
+msgid "Notification Account"
+msgstr "通知账号"
+
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:269
 msgid "Notification Events"
 msgstr "通知事件"
@@ -7290,11 +7376,16 @@ msgstr "通知保留"
 msgid "Notification Service"
 msgstr "通知服务"
 
-#: src/components/layout/site-header.tsx:42
+#: src/components/layout/site-header.tsx:61
 #: src/lib/menu-list.ts:119
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:175
 msgid "Notifications"
 msgstr "通知"
+
+#: src/components/streamers/card/monitoring-method-badge.tsx:97
+msgctxt "monitoring method"
+msgid "Notifications"
+msgstr "开播通知"
 
 #: src/components/streamers/edit/status-check-history.tsx:154
 msgid "Now"
@@ -7362,6 +7453,11 @@ msgstr "NVENC HEVC 高质量"
 msgid "Off"
 msgstr "关"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:266
+msgctxt "bigo notifications"
+msgid "Off"
+msgstr "已关闭"
+
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:362
 msgid "Off Canvas"
 msgstr "侧滑"
@@ -7375,7 +7471,7 @@ msgstr "办公室代理"
 #: src/components/streamers/edit/recent-sessions-list.tsx:74
 #: src/components/streamers/edit/status-check-history.tsx:405
 #: src/components/streamers/edit/status-check-history.tsx:426
-#: src/components/streamers/edit/streamer-header.tsx:90
+#: src/components/streamers/edit/streamer-header.tsx:91
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:94
 msgid "Offline"
 msgstr "离线"
@@ -7595,7 +7691,7 @@ msgstr "输出保留时间（天）"
 msgid "Output Settings"
 msgstr "输出设置"
 
-#: src/components/layout/site-header.tsx:55
+#: src/components/layout/site-header.tsx:74
 #: src/components/sessions/overview-tab.tsx:155
 #: src/lib/menu-list.ts:90
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:422
@@ -7622,7 +7718,7 @@ msgstr "覆盖文件名模板。"
 msgid "Override global default."
 msgstr "覆盖全局默认值。"
 
-#: src/components/streamers/streamer-editor.tsx:178
+#: src/components/streamers/streamer-editor.tsx:184
 msgid "Override global defaults for this streamer."
 msgstr "为该主播覆盖全局默认设置。"
 
@@ -7776,7 +7872,7 @@ msgstr "密码至少需要 8 个字符"
 msgid "password saved"
 msgstr "已保存密码"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:54
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:86
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:53
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:27
 msgid "Password..."
@@ -7790,7 +7886,7 @@ msgstr "两次输入的密码不一致"
 msgid "Past"
 msgstr "过去"
 
-#: src/components/streamers/streamer-editor.tsx:215
+#: src/components/streamers/streamer-editor.tsx:221
 msgid "Paste a channel link. Everything else can wait."
 msgstr "先粘贴频道链接，其他设置稍后再填。"
 
@@ -7904,7 +8000,7 @@ msgid "Pick a preset theme or import a custom one."
 msgstr "选择预设主题或导入自定义主题。"
 
 #: src/components/config/shared-config-editor.tsx:212
-#: src/components/layout/site-header.tsx:41
+#: src/components/layout/site-header.tsx:60
 #: src/lib/menu-list.ts:70
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:404
 msgid "Pipeline"
@@ -8056,7 +8152,7 @@ msgstr "平台覆盖项"
 msgid "Platform rate limited"
 msgstr "平台限流"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:257
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:267
 msgid "Platform Specific Configuration"
 msgstr "平台专属配置"
 
@@ -8070,7 +8166,7 @@ msgstr "平台"
 
 #: src/components/config/global/backup-restore-card.tsx:415
 #: src/components/config/templates/template-editor.tsx:260
-#: src/components/layout/site-header.tsx:49
+#: src/components/layout/site-header.tsx:68
 #: src/components/pipeline/step-in-use-dialog.tsx:106
 #: src/components/proxies/proxy-references.tsx:77
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:50
@@ -8108,7 +8204,7 @@ msgstr "播放错误"
 msgid "Playback stalled while seeking. Retry to reload the video."
 msgstr "跳转时播放停滞。请重试以重新加载视频。"
 
-#: src/components/layout/site-header.tsx:44
+#: src/components/layout/site-header.tsx:63
 #: src/lib/menu-list.ts:97
 msgid "Player"
 msgstr "播放器"
@@ -8166,6 +8262,16 @@ msgstr "正在解析流 URL，请稍候。"
 #: src/components/pipeline/presets/default-presets-i18n.ts:106
 msgid "Podcast Extraction"
 msgstr "播客提取"
+
+#: src/components/streamers/card/monitoring-method-badge.tsx:106
+msgctxt "monitoring method"
+msgid "Polling"
+msgstr "轮询"
+
+#: src/components/streamers/card/monitoring-method-badge.tsx:130
+msgctxt "monitoring method"
+msgid "Polling · inconsistent"
+msgstr "轮询 · 不可靠"
 
 #: src/components/pipeline/workflows/step-config-dialog.tsx:730
 msgid "pool default"
@@ -8280,7 +8386,7 @@ msgstr "预设"
 
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:146
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:225
-#: src/components/layout/site-header.tsx:56
+#: src/components/layout/site-header.tsx:75
 #: src/lib/menu-list.ts:75
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:204
 msgid "Presets"
@@ -8455,7 +8561,7 @@ msgstr "进度更新间隔（毫秒）"
 msgid "Progress:"
 msgstr "进度："
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:35
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:67
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:25
 msgid "Protection Settings"
 msgstr "保护设置"
@@ -8464,7 +8570,7 @@ msgstr "保护设置"
 msgid "Protocol Settings"
 msgstr "协议设置"
 
-#: src/components/layout/site-header.tsx:48
+#: src/components/layout/site-header.tsx:67
 #: src/components/proxies/proxies-panel.tsx:165
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:68
 msgid "Proxies"
@@ -8559,7 +8665,7 @@ msgstr "对远端的 API 调用进行限速。当服务方在高负载下返回 
 msgid "Ratio"
 msgstr "比例"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:163
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:165
 msgid "Raw JSON Editor"
 msgstr "原始 JSON 编辑器"
 
@@ -8688,7 +8794,7 @@ msgid "Record Video"
 msgstr "录制视频"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:49
-#: src/components/streamers/edit/streamer-header.tsx:86
+#: src/components/streamers/edit/streamer-header.tsx:87
 msgid "Recording"
 msgstr "录制"
 
@@ -9355,7 +9461,7 @@ msgstr "保存账号"
 #: src/components/notifications/channel-form.tsx:390
 #: src/components/proxies/proxy-editor-dialog.tsx:363
 #: src/components/shared/save-fab.tsx:93
-#: src/components/streamers/streamer-editor.tsx:328
+#: src/components/streamers/streamer-editor.tsx:334
 msgid "Save changes"
 msgstr "保存更改"
 
@@ -9940,7 +10046,7 @@ msgstr "会话已启动。其他详细信息不可用。"
 msgid "Session thumbnail"
 msgstr "会话缩略图"
 
-#: src/components/layout/site-header.tsx:34
+#: src/components/layout/site-header.tsx:53
 #: src/lib/menu-list.ts:64
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:258
 msgid "Sessions"
@@ -9967,8 +10073,17 @@ msgstr "设为 0 可禁用自动清理输出。每 30 分钟清理一次，仅�
 msgid "Set up a new download tool configuration"
 msgstr "设置新的录制工具配置"
 
+#: src/components/streamers/card/monitoring-method-badge.tsx:123
+msgid "Set up live notifications"
+msgstr "设置开播通知"
+
+#: src/components/shared/bigo-notifications.tsx:77
+#: src/components/shared/bigo-notifications.tsx:80
+msgid "Set up live notifications."
+msgstr "设置开播通知。"
+
 #: src/components/filters/FilterDialog.tsx:268
-#: src/components/layout/site-header.tsx:35
+#: src/components/layout/site-header.tsx:54
 #: src/lib/menu-list.ts:105
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:114
 msgid "Settings"
@@ -10253,6 +10368,14 @@ msgstr "已开始"
 msgid "STARTED"
 msgstr "已启动"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:332
+msgid "Starts BIGO did not notify: {missed}"
+msgstr "BIGO 未通知的开播：{missed}"
+
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:328
+msgid "Starts BIGO did not notify: {missed}, the last {lastMissed}"
+msgstr "BIGO 未通知的开播：{missed}，最近一次在{lastMissed}"
+
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:544
 msgid "State"
 msgstr "状态"
@@ -10266,6 +10389,7 @@ msgstr "状态"
 msgid "Status"
 msgstr "状态"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:103
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:145
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:127
 msgid "Status Checks"
@@ -10376,7 +10500,7 @@ msgstr "开播"
 msgid "Stream parsed successfully"
 msgstr "流解析成功"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:45
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:77
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:35
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:44
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:26
@@ -10480,7 +10604,7 @@ msgstr "主播更新成功"
 #: src/components/config/global/backup-restore-card.tsx:381
 #: src/components/config/global/backup-restore-card.tsx:386
 #: src/components/config/global/backup-restore-card.tsx:391
-#: src/components/layout/site-header.tsx:36
+#: src/components/layout/site-header.tsx:55
 #: src/components/pipeline/step-in-use-dialog.tsx:108
 #: src/components/proxies/proxy-references.tsx:105
 #: src/lib/menu-list.ts:58
@@ -10532,6 +10656,10 @@ msgstr "已提取流"
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:437
 msgid "Streams per file (--multi-thread-streams)."
 msgstr "每个文件的流数（--multi-thread-streams）。"
+
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:317
+msgid "Subscribed streamers"
+msgstr "已订阅主播"
 
 #: src/components/notifications/channel-card.tsx:149
 msgid "Subscriptions"
@@ -10585,7 +10713,7 @@ msgstr "切换模式会清除之前的命令，或程序和参数。"
 msgid "Sync"
 msgstr "同步"
 
-#: src/components/layout/site-header.tsx:45
+#: src/components/layout/site-header.tsx:64
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:142
 msgid "System"
 msgstr "系统"
@@ -10705,7 +10833,7 @@ msgstr "模板"
 #: src/components/config/global/backup-restore-card.tsx:364
 #: src/components/config/global/backup-restore-card.tsx:369
 #: src/components/config/global/backup-restore-card.tsx:374
-#: src/components/layout/site-header.tsx:50
+#: src/components/layout/site-header.tsx:69
 #: src/components/pipeline/step-in-use-dialog.tsx:107
 #: src/components/proxies/proxy-references.tsx:93
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:56
@@ -10769,6 +10897,10 @@ msgstr "当前录制使用的账号已无法使用。"
 msgid "The account the recording uses can no longer be used."
 msgstr "录制使用的账号已无法使用。"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:249
+msgid "The BIGO account that receives live notifications. Recording never signs in to BIGO's app service with it, but uses its cookies if it is also chosen on the Network tab."
+msgstr "接收开播通知的 BIGO 账号。录制从不使用它登录 BIGO 的应用服务，但如果在“网络”选项卡中也选择了它，录制会使用它的 Cookie。"
+
 #: src/components/player/playback-state.ts:31
 msgid "The browser could not decode this stream. Choose another quality or format."
 msgstr "浏览器无法解码此直播流。请选择其他画质或格式。"
@@ -10820,6 +10952,14 @@ msgstr "上次刷新失败"
 #: src/components/config/engines/forms/mesio-sections.tsx:830
 msgid "The manifest's own update period applies when longer."
 msgstr "清单自身的更新周期更长时以其为准。"
+
+#: src/components/shared/bigo-notifications.tsx:24
+msgid "The notification account is missing, disabled or not a BIGO account"
+msgstr "通知账号不存在、已禁用或不是 BIGO 账号"
+
+#: src/components/shared/bigo-notifications.tsx:29
+msgid "The notification account needs a new login"
+msgstr "通知账号需要重新登录"
 
 #: src/components/not-found.tsx:17
 msgid "The page you are looking for does not exist."
@@ -10877,6 +11017,18 @@ msgstr "无法刷新直播地址。请重试或检查源站凭据。"
 msgid "The stream's segments are not marked as independently playable, so no safe cut boundary was found. Recording continues."
 msgstr "直播流的分片未标记为可独立播放，未找到安全分割点，录制仍在继续。"
 
+#: src/components/shared/bigo-notifications.tsx:37
+msgid "The streamer is checked with Streamlink"
+msgstr "该主播通过 Streamlink 检查"
+
+#: src/components/shared/bigo-notifications.tsx:33
+msgid "The streamer is disabled"
+msgstr "该主播已禁用"
+
+#: src/components/shared/bigo-notifications.tsx:40
+msgid "The streamer's BIGO account is not known yet; its next check finds it"
+msgstr "尚不知道该主播的 BIGO 账号，下次检查时会获取"
+
 #: src/components/player/playback-state.ts:29
 msgid "The streaming source could not be reached through the server. Retry or choose another source."
 msgstr "服务器无法连接直播源。请重试或切换直播源。"
@@ -10889,7 +11041,7 @@ msgstr "用于录制的底层工具。"
 msgid "The upload for {name} stops now. Files that already finished stay at the destination, and you can retry the job later."
 msgstr "{name} 的上传将立即停止。已完成的文件会保留在目标位置，之后可以重试该任务。"
 
-#: src/components/layout/site-header.tsx:51
+#: src/components/layout/site-header.tsx:70
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:86
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:111
 msgid "Theme"
@@ -11213,7 +11365,7 @@ msgstr "如需立即停止使用，请改为禁用它。"
 msgid "Today"
 msgstr "今天"
 
-#: src/components/layout/site-header.tsx:77
+#: src/components/layout/site-header.tsx:96
 msgid "Toggle navigation menu"
 msgstr "切换导航菜单"
 
@@ -11453,6 +11605,10 @@ msgstr "TTWID 管理模式"
 msgid "Tuesday"
 msgstr "星期二"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:110
+msgid "Turn off to poll these streamers even while BIGO live notifications are on in the Bigo platform settings."
+msgstr "关闭后，即使 Bigo 平台设置中已开启 BIGO 开播通知，这些主播仍会通过轮询检查。"
+
 #: src/components/config/engines/forms/streamlink-form.tsx:64
 msgid "Twitch (ttv-lol)"
 msgstr "Twitch (ttv-lol)"
@@ -11521,6 +11677,7 @@ msgstr "Unix 时间戳"
 msgid "Unknown"
 msgstr "未知"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:238
 #: src/components/credentials/account-selection-section.tsx:176
 #: src/components/credentials/account-selection-section.tsx:407
 #: src/components/credentials/credential-selection-editor.tsx:177
@@ -11695,6 +11852,10 @@ msgstr "请使用语言标签，例如 'en' 或 'pt-BR'"
 msgid "Use an http, https, socks5 or socks5h address."
 msgstr "请使用 http、https、socks5 或 socks5h 地址。"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:115
+msgid "Use BIGO live notifications instead of checking each streamer: stream starts are noticed within seconds. Needs a signed-in account (below)."
+msgstr "使用 BIGO 开播通知代替逐个检查主播：开播在几秒内即可发现。需要一个已登录的账号（见下方）。"
+
 #: src/components/config/engines/forms/setting-fields.tsx:116
 msgid "Use engine setting ({inherited})"
 msgstr "使用引擎设置（{inherited}）"
@@ -11773,7 +11934,7 @@ msgstr "用户名（可选）"
 msgid "Username is required"
 msgstr "必须填写用户名"
 
-#: src/components/layout/site-header.tsx:40
+#: src/components/layout/site-header.tsx:59
 msgid "Users"
 msgstr "用户"
 
@@ -11963,6 +12124,10 @@ msgstr "正在等待空闲的上传工作线程。"
 msgid "Waiting for a safe cut..."
 msgstr "正在等待安全分割点…"
 
+#: src/components/shared/bigo-notifications.tsx:45
+msgid "Waiting for BIGO to confirm the follow"
+msgstr "等待 BIGO 确认关注"
+
 #: src/components/logging/log-viewer.tsx:433
 msgid "Waiting for connection..."
 msgstr "正在等待连接..."
@@ -12130,7 +12295,7 @@ msgstr "工作流更新成功"
 msgid "workflows"
 msgstr "工作流"
 
-#: src/components/layout/site-header.tsx:57
+#: src/components/layout/site-header.tsx:76
 #: src/components/pipeline/step-in-use-dialog.tsx:109
 #: src/components/pipeline/workflows/step-library.tsx:281
 #: src/lib/menu-list.ts:80

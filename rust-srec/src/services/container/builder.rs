@@ -306,6 +306,8 @@ impl ServiceContainer {
             .with_supervisor(committed_write_supervisor.clone()),
         );
         stream_monitor.set_execution_service(credential_execution.clone());
+        let bigo_notifications = Arc::new(crate::monitor::BigoNotifications::default());
+        stream_monitor.set_bigo_notifications(bigo_notifications.clone());
         let stream_monitor = Arc::new(stream_monitor);
 
         // Create download manager with custom config, overridden by global config for concurrency.
@@ -523,6 +525,7 @@ impl ServiceContainer {
         .with_config_repo(config_repo.clone());
         scheduler.connect_download_manager(&download_manager)?;
         let scheduler_handle = scheduler.handle();
+        let scheduler_feedback = scheduler.reliable_feedback();
         let scheduler = parking_lot::Mutex::new(Some(scheduler));
 
         let session_cancels = Arc::new(SessionCancelTokens::new());
@@ -639,7 +642,9 @@ impl ServiceContainer {
             maintenance_scheduler,
             scheduler,
             scheduler_handle,
+            scheduler_feedback,
             stream_monitor,
+            bigo_notifications,
             platform_admission,
             credential_profiles,
             playback_contexts: Arc::new(

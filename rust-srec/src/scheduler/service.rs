@@ -350,7 +350,8 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         Ok(())
     }
 
-    #[cfg(test)]
+    /// The lossless path for asking actors to check, which outlives the move
+    /// of the scheduler into its task.
     pub(crate) fn reliable_feedback(&self) -> Arc<super::feedback::SchedulerFeedback> {
         self.feedback.clone()
     }

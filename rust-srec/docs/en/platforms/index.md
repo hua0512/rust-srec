@@ -46,6 +46,8 @@ A streamer URL that no platform above recognizes, but the `streamlink` CLI can h
 
 Bilibili and Twitch can report whether many streamers are live in a single request. To use this, turn on **Batch Detection** on the platform's **Specific** tab. It is off by default.
 
+Bigo has no such request. For Bigo, the same switch turns on [live notifications](./bigo.md#live-notifications) instead: BIGO tells rust-srec when a streamer goes live, and routine checks of offline streamers are answered without a request. They need a signed-in BIGO account that follows every monitored streamer; the rest of this section describes Bilibili and Twitch.
+
 With it on, rust-srec asks the platform about up to 100 of its streamers at once, and uses the answer for the routine check of each streamer that is not recording:
 
 - A streamer the answer shows as offline counts as checked, with no request of its own.

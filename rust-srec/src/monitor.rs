@@ -8,6 +8,7 @@
 //! - Emitting events for the notification system
 
 mod batch_precheck;
+mod bigo_notifications;
 pub(crate) mod check_history_writer;
 mod detector;
 mod events;
@@ -15,6 +16,11 @@ mod rate_limiter;
 mod service;
 
 pub use crate::domain::streamer::FatalErrorType;
+pub(crate) use bigo_notifications::BigoNotificationDeps;
+pub use bigo_notifications::{
+    BigoNotificationStatus, BigoNotifications, ListenerState, MonitoringMethod, PollingReason,
+    StreamerNotificationMethod,
+};
 pub(crate) use check_history_writer::{CheckHistoryBroadcaster, CheckHistoryWriter};
 pub use detector::{FilterReason, LiveStatus, StreamDetector, StreamInfo};
 pub(crate) use events::MonitorEventDelivery;

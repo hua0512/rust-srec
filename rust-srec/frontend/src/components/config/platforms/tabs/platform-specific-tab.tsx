@@ -57,6 +57,8 @@ type PlatformConfigFields = <TFieldValues extends FieldValues>(props: {
   form: UseFormReturn<TFieldValues>;
   fieldName: Path<TFieldValues>;
   inherited?: boolean;
+  /** The platform row's ID, on the platform's own editor. */
+  platformId?: string;
 }) => ReactElement;
 
 const SPECIFIC_CONFIG_COMPONENTS: Record<string, PlatformConfigFields> = {
@@ -201,6 +203,8 @@ interface PlatformSpecificTabProps<TFieldValues extends FieldValues> {
    */
   field?: string;
   inherited?: boolean;
+  /** The platform row's ID, on the platform's own editor. */
+  platformId?: string;
 }
 
 export function PlatformSpecificTab<TFieldValues extends FieldValues>({
@@ -209,6 +213,7 @@ export function PlatformSpecificTab<TFieldValues extends FieldValues>({
   platformName,
   field: fieldKey = 'platform_specific_config',
   inherited = false,
+  platformId,
 }: PlatformSpecificTabProps<TFieldValues>) {
   const fieldName = configPath<TFieldValues>(basePath, fieldKey);
 
@@ -237,7 +242,12 @@ export function PlatformSpecificTab<TFieldValues extends FieldValues>({
     if (!SpecificFields) return null;
 
     return (
-      <SpecificFields form={form} fieldName={fieldName} inherited={inherited} />
+      <SpecificFields
+        form={form}
+        fieldName={fieldName}
+        inherited={inherited}
+        platformId={platformId}
+      />
     );
   };
 

@@ -7,7 +7,7 @@ pub struct WsMessage {
     pub event_type: i32,
     #[prost(
         oneof = "ws_message::Payload",
-        tags = "2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23"
+        tags = "2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24"
     )]
     pub payload: ::core::option::Option<ws_message::Payload>,
 }
@@ -57,9 +57,11 @@ pub mod ws_message {
         JobStarted(super::JobStarted),
         #[prost(message, tag = "22")]
         JobProgress(super::UploadProgress),
-        /// Next free oneof field: 24.
         #[prost(message, tag = "23")]
         JobEnded(super::JobEnded),
+        /// Next free oneof field: 25.
+        #[prost(message, tag = "24")]
+        BigoNotificationsChanged(super::BigoNotificationsChanged),
     }
 }
 /// Client-to-server message for filtering
@@ -546,6 +548,9 @@ pub struct StreamerCredentialBlock {
 /// Marker: refetch the accounts needing attention.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CredentialAttentionChanged {}
+/// Marker: refetch the Bigo live-notification status.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct BigoNotificationsChanged {}
 /// Event types for WebSocket messages
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -589,7 +594,7 @@ pub enum EventType {
     /// silent for longer than that as lost.
     ///
     /// NOTE: enum values and WsMessage oneof field numbers have drifted
-    /// (value 11 is a hole); pick each independently. Next free enum: 24.
+    /// (value 11 is a hole); pick each independently. Next free enum: 25.
     UploadStarted = 14,
     UploadProgress = 15,
     UploadTerminal = 16,
@@ -616,6 +621,12 @@ pub enum EventType {
     JobStarted = 21,
     JobProgress = 22,
     JobEnded = 23,
+    /// The Bigo live-notification status
+    /// (GET /api/config/platforms/bigo/notifications) may have changed: the
+    /// listener's state, a streamer's method or the subscription count. No
+    /// payload beyond the marker; clients refetch. Never narrowed by the
+    /// streamer subscription.
+    BigoNotificationsChanged = 24,
 }
 impl EventType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -647,6 +658,7 @@ impl EventType {
             Self::JobStarted => "EVENT_TYPE_JOB_STARTED",
             Self::JobProgress => "EVENT_TYPE_JOB_PROGRESS",
             Self::JobEnded => "EVENT_TYPE_JOB_ENDED",
+            Self::BigoNotificationsChanged => "EVENT_TYPE_BIGO_NOTIFICATIONS_CHANGED",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -677,6 +689,9 @@ impl EventType {
             "EVENT_TYPE_JOB_STARTED" => Some(Self::JobStarted),
             "EVENT_TYPE_JOB_PROGRESS" => Some(Self::JobProgress),
             "EVENT_TYPE_JOB_ENDED" => Some(Self::JobEnded),
+            "EVENT_TYPE_BIGO_NOTIFICATIONS_CHANGED" => {
+                Some(Self::BigoNotificationsChanged)
+            }
             _ => None,
         }
     }

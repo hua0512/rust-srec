@@ -235,6 +235,7 @@ export function PlatformEditor({
                   <PlatformSpecificTab
                     form={form}
                     platformName={platform.name}
+                    platformId={platform.id}
                   />
                 ),
               },
