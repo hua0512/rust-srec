@@ -16,8 +16,7 @@ use crate::config::{ConfigService, ConfigUpdateEvent};
 use crate::danmu::events::DanmuCoordinationReceiver;
 use crate::danmu::{DanmuEvent, DanmuService};
 use crate::database::repositories::{
-    config::SqlxConfigRepository, filter::SqlxFilterRepository, session::SqlxSessionRepository,
-    streamer::SqlxStreamerRepository,
+    config::SqlxConfigRepository, session::SqlxSessionRepository, streamer::SqlxStreamerRepository,
 };
 use crate::downloader::{
     DownloadCoordinationReceiver, DownloadManager, DownloadManagerEvent, DownloadProgressEvent,
@@ -32,12 +31,8 @@ use crate::utils::failure_samples::FailureSamples;
 use crate::utils::required_channel::Delivery;
 
 type RuntimeConfigService = ConfigService<SqlxConfigRepository, SqlxStreamerRepository>;
-type RuntimeStreamMonitor = StreamMonitor<
-    SqlxStreamerRepository,
-    SqlxFilterRepository,
-    SqlxSessionRepository,
-    SqlxConfigRepository,
->;
+type RuntimeStreamMonitor =
+    StreamMonitor<SqlxStreamerRepository, SqlxSessionRepository, SqlxConfigRepository>;
 
 impl ServiceContainer {
     /// Set up config event subscriptions between services.

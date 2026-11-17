@@ -722,17 +722,6 @@ where
     pub(crate) fn committed_state(&self) -> Option<Arc<CommittedStreamerState>> {
         self.committed.clone()
     }
-    pub(crate) fn state_store_with_writer(
-        &self,
-        writer: Arc<crate::database::CommittedWriter>,
-    ) -> Arc<CommittedStreamerState> {
-        self.committed.clone().unwrap_or_else(|| {
-            Arc::new(CommittedStreamerState::with_cache(
-                writer,
-                self.cache.clone(),
-            ))
-        })
-    }
 
     pub fn get_streamer(&self, id: &str) -> Option<StreamerMetadata> {
         self.metadata

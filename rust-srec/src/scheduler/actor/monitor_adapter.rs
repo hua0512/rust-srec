@@ -122,29 +122,27 @@ impl From<crate::Error> for CheckError {
 /// Real implementation of StatusChecker using StreamMonitor.
 ///
 /// This adapter connects StreamerActors to the actual monitoring infrastructure.
-pub struct MonitorStatusChecker<SR, FR, SSR, CR>
+pub struct MonitorStatusChecker<SR, SSR, CR>
 where
     SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
-    FR: crate::database::repositories::FilterRepository + Send + Sync + 'static,
     SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
     CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
 {
-    monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR, CR>>,
+    monitor: Arc<crate::monitor::StreamMonitor<SR, SSR, CR>>,
     /// Optional sink for per-poll diagnostic rows that power the streamer
     /// details page's check-history strip. `None` in tests and in callers
     /// that don't want the strip; the polling path is unaffected either way.
     history_writer: Option<CheckHistoryWriter>,
 }
 
-impl<SR, FR, SSR, CR> MonitorStatusChecker<SR, FR, SSR, CR>
+impl<SR, SSR, CR> MonitorStatusChecker<SR, SSR, CR>
 where
     SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
-    FR: crate::database::repositories::FilterRepository + Send + Sync + 'static,
     SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
     CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
 {
     /// Create a new MonitorStatusChecker without check-history persistence.
-    pub fn new(monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR, CR>>) -> Self {
+    pub fn new(monitor: Arc<crate::monitor::StreamMonitor<SR, SSR, CR>>) -> Self {
         Self {
             monitor,
             history_writer: None,
@@ -155,7 +153,7 @@ where
     /// writer is best-effort — failed sends drop silently — so wiring it up
     /// has no effect on polling cadence.
     pub(crate) fn with_history_writer(
-        monitor: Arc<crate::monitor::StreamMonitor<SR, FR, SSR, CR>>,
+        monitor: Arc<crate::monitor::StreamMonitor<SR, SSR, CR>>,
         writer: CheckHistoryWriter,
     ) -> Self {
         Self {
@@ -166,10 +164,9 @@ where
 }
 
 #[async_trait]
-impl<SR, FR, SSR, CR> StatusChecker for MonitorStatusChecker<SR, FR, SSR, CR>
+impl<SR, SSR, CR> StatusChecker for MonitorStatusChecker<SR, SSR, CR>
 where
     SR: crate::database::repositories::StreamerRepository + Send + Sync + 'static,
-    FR: crate::database::repositories::FilterRepository + Send + Sync + 'static,
     SSR: crate::database::repositories::SessionRepository + Send + Sync + 'static,
     CR: crate::database::repositories::ConfigRepository + Send + Sync + 'static,
 {

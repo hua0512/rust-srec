@@ -143,14 +143,17 @@ async fn actor_creation_and_every_config_scope_resolve_four_layers_without_metad
         Arc::new(crate::session::OfflineClassifier::new()),
         16,
     ));
-    let monitor = Arc::new(StreamMonitor::new(
-        manager.clone(),
-        Arc::new(SqlxFilterRepository::new(pool.clone(), pool.clone())),
-        Arc::new(SqlxSessionRepository::new(pool.clone(), pool.clone())),
-        service.clone(),
-        pool.clone(),
-        lifecycle,
-    ));
+    let monitor = Arc::new(
+        StreamMonitor::new(
+            manager.clone(),
+            Arc::new(SqlxFilterRepository::new(pool.clone(), pool.clone())),
+            Arc::new(SqlxSessionRepository::new(pool.clone(), pool.clone())),
+            service.clone(),
+            pool.clone(),
+            lifecycle,
+        )
+        .unwrap(),
+    );
     let token = CancellationToken::new();
     let mut scheduler = Scheduler::with_monitor_and_config(
         manager.clone(),

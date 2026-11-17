@@ -163,10 +163,6 @@ impl CommittedStreamerState {
         }
     }
 
-    pub(crate) fn with_cache(writer: Arc<CommittedWriter>, cache: Arc<StreamerCache>) -> Self {
-        Self { writer, cache }
-    }
-
     /// Called synchronously under the cache publication lock, before any event.
     /// The callback may invalidate other caches but must not re-enter streamer
     /// cache access, await work, or attempt to acquire the database writer.
