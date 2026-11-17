@@ -121,6 +121,10 @@ async fn a_peer_batch_starts_recording_before_the_rooms_next_poll() {
         TestApp::start_with(with_batch_detection().global("streamer_check_delay_ms", 16_000)).await;
     let token = app.admin_token().await;
     let mut socket = query_socket(&app, "/api/downloads/ws", &token).await;
+    next_payload(&mut socket, "the initial downloads snapshot", |payload| {
+        matches!(payload, Payload::Snapshot(_)).then_some(())
+    })
+    .await;
     let deadline = tokio::time::Instant::now() + Duration::from_secs(12);
     let id = app.watch(&token, "Peer", &room, Value::Null).await;
     assert_eq!(next_check(&mut socket, &id).await.1, "batch");
