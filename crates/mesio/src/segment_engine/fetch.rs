@@ -132,9 +132,12 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
     // Cache lookup keys on the normalized identity URI (not the volatile
     // fetch URL), so a rotated auth token still hits. Cached bytes are the
     // final (decrypted) payload.
-    let cache_key = segment_cache_key(&descriptor.key);
-    if let Some(cache) = &ctx.cache_manager
-        && let Ok(Some((bytes, _, _))) = cache.get(&cache_key).await
+    let cache = ctx
+        .cache_manager
+        .as_ref()
+        .map(|cache| (cache, segment_cache_key(&descriptor.key)));
+    if let Some((cache, cache_key)) = &cache
+        && let Ok(Some((bytes, _, _))) = cache.get(cache_key).await
     {
         debug!(msn, "segment served from cache");
         if let Some(metrics) = &ctx.metrics {
@@ -153,7 +156,7 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
         drop(reservation);
         return SegmentOutcome::Completed { key, msn, payload };
     }
-    if ctx.cache_manager.is_some()
+    if cache.is_some()
         && let Some(metrics) = &ctx.metrics
     {
         metrics.record_cache_miss();
@@ -217,7 +220,7 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
         None => final_bytes,
     };
 
-    if let Some(cache) = &ctx.cache_manager {
+    if let Some((cache, cache_key)) = cache {
         let metadata = CacheMetadata::new(final_bytes.len() as u64)
             .with_expiration(ctx.config.fetch.processed_segment_ttl);
         if let Err(e) = cache.put(cache_key, final_bytes.clone(), metadata).await {

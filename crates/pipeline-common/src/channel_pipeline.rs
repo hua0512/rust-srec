@@ -9,6 +9,7 @@ use crate::{Pipeline, PipelineError};
 
 const DEFAULT_CHANNEL_CAPACITY: usize = 32;
 const DEFAULT_MAX_BATCH_ITEMS: usize = 64;
+const MAX_RETAINED_STAGE_ITEMS: usize = 512;
 
 #[derive(Clone, Copy)]
 enum ChannelMode<T> {
@@ -271,6 +272,7 @@ where
     let task = tokio::task::spawn_blocking(move || {
         let mut inputs = Vec::with_capacity(batch_items);
         let mut input_permits = Vec::with_capacity(batch_items);
+        let mut stage_buffers = Pipeline::stage_buffers();
 
         while let Some(first) = input_rx.blocking_recv() {
             let (item, permit) = first.into_parts();
@@ -289,12 +291,15 @@ where
             }
 
             let mut outputs = Vec::with_capacity(inputs.len());
-            let process_result = pipeline.process_items(inputs.drain(..), &mut |item| {
-                outputs.push(item);
-            });
+            let process_result = pipeline.process_items(
+                inputs.drain(..),
+                &mut |item| outputs.push(item),
+                &mut stage_buffers,
+            );
             input_permits.clear();
 
             if let Err(source) = process_result {
+                drop(stage_buffers);
                 if matches!(source, PipelineError::Cancelled) {
                     return Err(PipelineError::Cancelled);
                 }
@@ -313,6 +318,11 @@ where
                 return Err(stage_process_error(message));
             }
 
+            for buffer in &mut stage_buffers {
+                if buffer.capacity() > MAX_RETAINED_STAGE_ITEMS {
+                    buffer.shrink_to(MAX_RETAINED_STAGE_ITEMS);
+                }
+            }
             send_output_items(
                 &output_tx,
                 output_limiter.as_ref(),
@@ -323,6 +333,7 @@ where
             )?;
         }
 
+        drop(stage_buffers);
         let mut outputs = Vec::new();
         if let Err(source) = pipeline.finalize_processors(&mut |item| outputs.push(item)) {
             if matches!(source, PipelineError::Cancelled) {
@@ -370,6 +381,13 @@ fn send_output_items<T>(
     outputs: Vec<Result<T, PipelineError>>,
     channel_name: &'static str,
 ) -> Result<(), PipelineError> {
+    if outputs.is_empty() {
+        return Ok(());
+    }
+    if limiter.is_none() && outputs.capacity() <= max_batch_items {
+        return send_output_batch(output_tx, None, runtime, outputs, 0, channel_name);
+    }
+
     let mut batch = Vec::with_capacity(outputs.len().min(max_batch_items));
     let mut batch_permits = 0u32;
 
