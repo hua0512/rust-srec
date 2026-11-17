@@ -54,26 +54,21 @@ export function DouyinConfigFields<TFieldValues extends FieldValues>({
             showExperimentalBadge
           />
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FlagFormField
-              fieldName={configPath<TFieldValues>(fieldName, 'double_screen')}
-              inherited={inherited}
-              title={<Trans>Double Screen Data</Trans>}
-              description={<Trans>Capture separate stream data.</Trans>}
-              checked={(value) => !!value}
-            />
+          <FlagFormField
+            fieldName={configPath<TFieldValues>(fieldName, 'double_screen')}
+            inherited={inherited}
+            title={<Trans>Double Screen Data</Trans>}
+            description={<Trans>Capture separate stream data.</Trans>}
+            checked={(value) => !!value}
+          />
 
-            <FlagFormField
-              fieldName={configPath<TFieldValues>(
-                fieldName,
-                'force_mobile_api',
-              )}
-              inherited={inherited}
-              title={<Trans>Force Mobile API</Trans>}
-              description={<Trans>Use mobile endpoint for extraction.</Trans>}
-              checked={(value) => !!value}
-            />
-          </div>
+          <FlagFormField
+            fieldName={configPath<TFieldValues>(fieldName, 'force_mobile_api')}
+            inherited={inherited}
+            title={<Trans>Force Mobile API</Trans>}
+            description={<Trans>Use mobile endpoint for extraction.</Trans>}
+            checked={(value) => !!value}
+          />
 
           <FlagFormField
             fieldName={configPath<TFieldValues>(

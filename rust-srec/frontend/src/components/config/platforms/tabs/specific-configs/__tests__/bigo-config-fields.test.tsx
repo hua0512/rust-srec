@@ -89,7 +89,7 @@ describe('Bigo live notification settings', () => {
     expect(warning()).not.toBeInTheDocument();
   });
 
-  it('offers only the switch on a template or streamer', () => {
+  it('offers only the Batch Detection choice on a template or streamer', () => {
     renderFields({ batch_detection: true }, { inherited: true });
 
     expect(screen.getByText('Batch Detection')).toBeInTheDocument();

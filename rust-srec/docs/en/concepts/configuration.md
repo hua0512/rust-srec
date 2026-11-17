@@ -28,7 +28,7 @@ A template can also provide platform-specific overrides for pipelines, credentia
 - A pipeline override replaces the entire pipeline, not individual steps.
 - Empty quality, format, and CDN preference lists retain lower-layer preferences. CDN blacklists are combined.
 - Platform options merge by key and ignore `null` overrides. Engine overrides use JSON Merge Patch, where `null` removes a key.
-- In a template or streamer, each on/off platform option offers **Inherit**, **On** and **Off**. **Inherit** uses the value from the layer below.
+- In a template or streamer, on/off platform options offer **Inherit**, **On** and **Off**, and **Inherit** uses the value from the layer below. Twitch's **Allow H.265 (HEVC)** and **Allow AV1** are the exception: they are switches that together set one codec list, which a template or streamer replaces as a whole.
 
 For supported JSON keys, account selection, and examples for API clients, use the [override reference](../reference/configuration-overrides.md). Schedules and daylight-saving behavior are covered in [Recording schedules](../guides/schedules.md).
 

@@ -1823,7 +1823,7 @@ msgstr "Capture Mode"
 msgid "Capture real-time comments and chat messages if available."
 msgstr "Capture real-time comments and chat messages if available."
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:62
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:61
 msgid "Capture separate stream data."
 msgstr "Capture separate stream data."
 
@@ -2935,7 +2935,7 @@ msgstr "Danmaku to ASS Subtitles"
 msgid "Danmu"
 msgstr "Danmu"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:146
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:141
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:116
 msgid "Danmu Control"
 msgstr "Danmu Control"
@@ -3524,7 +3524,7 @@ msgstr "Done"
 msgid "Double click to edit items."
 msgstr "Double click to edit items."
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:61
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:60
 msgid "Double Screen Data"
 msgstr "Double Screen Data"
 
@@ -4182,7 +4182,7 @@ msgid "Expand sidebar"
 msgstr "Expand sidebar"
 
 #: src/components/config/engines/forms/lossless-cutting-field.tsx:52
-#: src/components/ui/flag-form-field.tsx:118
+#: src/components/ui/flag-form-field.tsx:112
 msgid "Experimental"
 msgstr "Experimental"
 
@@ -4915,7 +4915,7 @@ msgstr "Force IPv4"
 msgid "Force IPv6"
 msgstr "Force IPv6"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:72
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:68
 msgid "Force Mobile API"
 msgstr "Force Mobile API"
 
@@ -5103,7 +5103,7 @@ msgstr "Generating QR code..."
 msgid "Gift items"
 msgstr "Gift items"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:121
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:116
 #: src/components/layout/site-header.tsx:71
 #: src/components/pipeline/step-in-use-dialog.tsx:105
 #: src/components/proxies/proxy-references.tsx:68
@@ -5619,7 +5619,7 @@ msgstr "Include Recording Metadata"
 msgid "Inherit"
 msgstr "Inherit"
 
-#: src/components/ui/flag-form-field.tsx:139
+#: src/components/ui/flag-form-field.tsx:133
 msgctxt "inherited flag"
 msgid "Inherit"
 msgstr "Inherit"
@@ -5748,7 +5748,7 @@ msgstr "IO Job"
 msgid "IO Job Timeout"
 msgstr "IO Job Timeout"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:133
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:128
 msgid "Isolation level for tracking identifiers. Global is usually best."
 msgstr "Isolation level for tracking identifiers. Global is usually best."
 
@@ -7463,7 +7463,7 @@ msgctxt "bigo notifications"
 msgid "Off"
 msgstr "Off"
 
-#: src/components/ui/flag-form-field.tsx:149
+#: src/components/ui/flag-form-field.tsx:143
 msgctxt "inherited flag"
 msgid "Off"
 msgstr "Off"
@@ -7534,7 +7534,7 @@ msgstr "OK"
 msgid "On"
 msgstr "On"
 
-#: src/components/ui/flag-form-field.tsx:144
+#: src/components/ui/flag-form-field.tsx:138
 msgctxt "inherited flag"
 msgid "On"
 msgstr "On"
@@ -8000,7 +8000,7 @@ msgstr "Per-segment"
 msgid "Per-segment Pipeline"
 msgstr "Per-segment Pipeline"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:127
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:122
 msgid "Per-Streamer"
 msgstr "Per-Streamer"
 
@@ -9724,7 +9724,7 @@ msgstr "secret"
 msgid "Secs"
 msgstr "Secs"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:98
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:93
 msgid "Security & Identity"
 msgstr "Security & Identity"
 
@@ -10276,7 +10276,7 @@ msgstr "Skip after duration"
 msgid "Skip existing files (default)"
 msgstr "Skip existing files (default)"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:84
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:79
 msgid "Skip Interactive Games"
 msgstr "Skip Interactive Games"
 
@@ -11514,7 +11514,7 @@ msgstr "Transient error"
 msgid "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
 msgstr "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:86
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:81
 msgid "Treat interactive game streams (互动玩法) as offline."
 msgstr "Treat interactive game streams (互动玩法) as offline."
 
@@ -11629,7 +11629,7 @@ msgstr "Try Again"
 msgid "Try server proxy"
 msgstr "Try server proxy"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:108
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:103
 msgid "TTWID Management Mode"
 msgstr "TTWID Management Mode"
 
@@ -11892,7 +11892,7 @@ msgstr "Use engine setting ({inherited})"
 msgid "Use engine settings"
 msgstr "Use engine settings"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:73
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:69
 msgid "Use mobile endpoint for extraction."
 msgstr "Use mobile endpoint for extraction."
 

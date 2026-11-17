@@ -16,7 +16,6 @@ import { SETTING_ROW_CLASS } from './switch-card';
 import { cn } from '@/lib/utils';
 
 type FlagFormFieldProps = {
-  controlPrefix?: string;
   fieldName: string;
   title?: string | React.ReactNode;
   description?: string | React.ReactNode;
@@ -33,8 +32,6 @@ type FlagFormFieldProps = {
   inherited?: boolean;
   /** The switch position for a stored value. Unused when `inherited`. */
   checked?: (value: unknown) => boolean;
-  /** Called with the stored value; `null` only when `inherited`. */
-  onChange?: (value: boolean | null) => void;
   showExperimentalBadge?: boolean;
   className?: string;
   children?: React.ReactNode;
@@ -50,32 +47,29 @@ type FlagRowProps = Pick<
   | 'children'
 > & {
   labelId?: string;
+  /**
+   * Moves the control below the text when the row is too narrow for both, for a control
+   * wider than a switch.
+   */
+  wrap?: boolean;
   control: React.ReactElement;
 };
 
 export function FlagFormField({
-  controlPrefix,
   fieldName,
   ariaLabel,
   inherited = false,
   checked,
-  onChange,
   ...row
 }: FlagFormFieldProps) {
-  const name = controlPrefix ? `${controlPrefix}.${fieldName}` : fieldName;
   if (inherited) {
     return (
-      <InheritedFlagField
-        name={name}
-        ariaLabel={ariaLabel}
-        onChange={onChange}
-        {...row}
-      />
+      <InheritedFlagField name={fieldName} ariaLabel={ariaLabel} {...row} />
     );
   }
   return (
     <FormField
-      name={name}
+      name={fieldName}
       render={({ field }) => (
         <FlagRow
           {...row}
@@ -83,10 +77,7 @@ export function FlagFormField({
             <Switch
               className="shrink-0"
               checked={checked ? checked(field.value) : field.value}
-              onCheckedChange={(value) => {
-                field.onChange(value);
-                onChange?.(value);
-              }}
+              onCheckedChange={field.onChange}
               aria-label={ariaLabel}
             />
           }
@@ -104,11 +95,14 @@ function FlagRow({
   className,
   children,
   labelId,
+  wrap = false,
   control,
 }: FlagRowProps) {
   return (
-    <FormItem className={cn(SETTING_ROW_CLASS, className)}>
-      <div className="min-w-0 space-y-1">
+    <FormItem
+      className={cn(SETTING_ROW_CLASS, wrap && 'flex-wrap gap-y-3', className)}
+    >
+      <div className={cn('min-w-0 space-y-1', wrap && 'grow basis-48')}>
         <FormLabel id={labelId}>
           <div className={'flex flex-row items-center gap-x-2'}>
             {title}
@@ -159,10 +153,9 @@ const INHERITED_FLAG_CHOICES = [
 function InheritedFlagField({
   name,
   ariaLabel,
-  onChange,
   ...row
-}: Omit<FlagRowProps, 'labelId' | 'control'> &
-  Pick<FlagFormFieldProps, 'ariaLabel' | 'onChange'> & { name: string }) {
+}: Omit<FlagRowProps, 'labelId' | 'wrap' | 'control'> &
+  Pick<FlagFormFieldProps, 'ariaLabel'> & { name: string }) {
   const { i18n } = useLingui();
   const labelId = useId();
   const { formState } = useFormContext();
@@ -180,6 +173,7 @@ function InheritedFlagField({
           <FlagRow
             {...row}
             labelId={labelId}
+            wrap
             control={
               <div
                 role="radiogroup"
@@ -190,7 +184,9 @@ function InheritedFlagField({
                 {INHERITED_FLAG_CHOICES.map((choice) => (
                   <label
                     key={choice.id}
-                    className="cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground has-checked:bg-background has-checked:text-foreground has-checked:shadow-sm has-focus-visible:ring-2 has-focus-visible:ring-ring"
+                    // The transparent outline shows only in forced colors, where the background
+                    // that marks the selected choice is not drawn.
+                    className="cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground has-checked:bg-background has-checked:text-foreground has-checked:shadow-sm has-checked:outline has-checked:outline-transparent has-focus-visible:ring-2 has-focus-visible:ring-ring"
                   >
                     <input
                       type="radio"
@@ -198,10 +194,7 @@ function InheritedFlagField({
                       name={name}
                       value={choice.id}
                       checked={selected === choice.value}
-                      onChange={() => {
-                        field.onChange(choice.value);
-                        onChange?.(choice.value);
-                      }}
+                      onChange={() => field.onChange(choice.value)}
                     />
                     {i18n._(choice.label)}
                   </label>
