@@ -8,7 +8,7 @@
 use std::sync::OnceLock;
 
 use platforms_parser::danmaku::{DanmakuError, DanmuProxy};
-use platforms_parser::proxy::redacted_url;
+use platforms_parser::proxy::{ProxyTarget, redacted_url};
 use serde::Serialize;
 
 /// Variables naming the proxy, in the order they are consulted: an HTTPS
@@ -93,6 +93,21 @@ impl SystemProxy {
                 .and_then(|url| url::Url::parse(url).ok())
                 .is_some_and(|url| !url.username().is_empty()),
             no_proxy: self.no_proxy.clone(),
+        }
+    }
+
+    /// The tunnel raw connections (danmu, Bigo's native stream) take on
+    /// `target`; `None` connects directly. Those connections have no access
+    /// to the operating system's proxy settings, so the system target uses
+    /// this snapshot of the proxy environment variables.
+    pub fn danmu_proxy_for(
+        &self,
+        target: &ProxyTarget,
+    ) -> Result<Option<DanmuProxy>, DanmakuError> {
+        match target {
+            ProxyTarget::Direct => Ok(None),
+            ProxyTarget::System => self.danmu_proxy(),
+            ProxyTarget::Explicit(endpoint) => DanmuProxy::new(endpoint.clone()).map(Some),
         }
     }
 

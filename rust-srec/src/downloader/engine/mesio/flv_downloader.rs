@@ -94,8 +94,9 @@ impl FlvDownloader {
     /// Writes the FLV stream to files, through the FLV pipeline
     /// (defragmentation, GOP sorting, timing repair and other processing)
     /// when processing is enabled for the download and FLV, or straight to
-    /// the writer otherwise.
-    async fn download(
+    /// the writer otherwise. The stream ending without an error is a clean
+    /// disconnect. Any source of FLV data can be recorded this way.
+    pub(super) async fn download(
         &self,
         token: CancellationToken,
         flv_stream: impl futures::Stream<Item = std::result::Result<FlvData, DownloadError>>

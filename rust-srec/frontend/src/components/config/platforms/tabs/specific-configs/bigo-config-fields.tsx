@@ -19,7 +19,7 @@ import {
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
-import { BellRing, Lock, Radar } from 'lucide-react';
+import { BellRing, Lock, Radar, Video } from 'lucide-react';
 import { FlagFormField } from '@/components/ui/flag-form-field';
 import {
   ConfigFieldLabel,
@@ -62,6 +62,25 @@ export function BigoConfigFields<TFieldValues extends FieldValues>({
   const { i18n } = useLingui();
   return (
     <div className="space-y-12">
+      <section className="space-y-6">
+        <ConfigSectionHeading icon={Video} accent="sky">
+          <Trans>Recording</Trans>
+        </ConfigSectionHeading>
+        <FlagFormField
+          fieldName={configPath<TFieldValues>(fieldName, 'native_stream')}
+          title={<Trans>Record the original stream</Trans>}
+          description={
+            <Trans>
+              Records the broadcaster's own stream from BIGO's app servers, in
+              its original quality (HEVC or H.264), without an account. The
+              website's stream is recorded instead when this fails, for
+              password-protected rooms and for rooms with several hosts.
+            </Trans>
+          }
+          checked={(value) => value !== false}
+        />
+      </section>
+
       <section className="space-y-6">
         <ConfigSectionHeading icon={Lock} accent="sky">
           <Trans>Protection Settings</Trans>

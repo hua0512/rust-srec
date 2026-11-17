@@ -3,13 +3,17 @@
 
 use std::collections::VecDeque;
 use std::net::Ipv4Addr;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use ::flv::FlvData;
 use bytes::Bytes;
 use futures::Stream;
+use parking_lot::Mutex;
+use rustc_hash::FxHashMap;
 use tokio::time::{Instant, sleep, sleep_until, timeout};
 use tracing::{debug, warn};
+use url::Url;
 
 use super::depacketize::{VideoDepacketizer, audio_frames};
 use super::flv::Muxer;
@@ -33,6 +37,66 @@ const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 /// A connection that has delivered media this long restores the reconnects,
 /// so that a room whose connections start and then die runs out of them.
 const HEALTHY_AFTER: Duration = Duration::from_secs(30);
+/// How long a room whose native recording failed is left to the web stream.
+/// A failure before the media became stable tends to repeat for the whole
+/// broadcast (an unsupported codec, servers that send no video), and each
+/// attempt costs up to a minute of recording; a passing problem, or the
+/// broadcaster's next stream, gets the native stream again soon.
+const FAILURE_MEMORY: Duration = Duration::from_secs(30 * 60);
+
+/// Rooms whose last native recording failed before its media became stable,
+/// with when it failed. Room ids are stable per broadcaster.
+static FAILED_ROOMS: LazyLock<Mutex<FxHashMap<u64, std::time::Instant>>> =
+    LazyLock::new(Mutex::default);
+
+/// Whether a native recording of `room_id` failed in the last 30 minutes
+/// before its media became stable.
+pub fn recently_failed(room_id: u64) -> bool {
+    FAILED_ROOMS
+        .lock()
+        .get(&room_id)
+        .is_some_and(|at| at.elapsed() < FAILURE_MEMORY)
+}
+
+pub(crate) fn remember_failure(room_id: u64) {
+    let mut rooms = FAILED_ROOMS.lock();
+    rooms.retain(|_, at| at.elapsed() < FAILURE_MEMORY);
+    rooms.insert(room_id, std::time::Instant::now());
+}
+
+/// A room to record natively, written as the stream URL
+/// `bigo://room/<room id>?uid=<owner uid>`. No HTTP client can open that URL;
+/// only [`open`] records it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NativeRoom {
+    pub room_id: u64,
+    pub owner_uid: u32,
+}
+
+impl NativeRoom {
+    pub fn url(&self) -> String {
+        format!("bigo://room/{}?uid={}", self.room_id, self.owner_uid)
+    }
+
+    /// The room a native stream URL names; `None` for any other URL.
+    pub fn parse(url: &str) -> Option<Self> {
+        if !url.starts_with("bigo://") {
+            return None;
+        }
+        let url = Url::parse(url).ok()?;
+        if url.host_str() != Some("room") {
+            return None;
+        }
+        let room_id = url.path().strip_prefix('/')?.parse::<u64>().ok()?;
+        let owner_uid = url
+            .query_pairs()
+            .find(|(key, _)| key == "uid")?
+            .1
+            .parse::<u32>()
+            .ok()?;
+        (room_id != 0 && owner_uid != 0).then_some(Self { room_id, owner_uid })
+    }
+}
 
 /// What a room lookup says about recording a room natively.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -73,7 +137,9 @@ pub async fn probe(room_id: u64, route: &Route) -> Result<RoomKind, NativeError>
 /// 2 s apart, each time with a fresh ticket and room lookup, and continues
 /// as the same FLV stream, its video at the next keyframe; 30 s of media
 /// restore the reconnects. Packets that cannot be read are skipped. It ends
-/// without an error when the room ends, and after its first error.
+/// without an error when the room ends, and after its first error. An error
+/// before 30 s of media makes [`recently_failed`] true for the room for the
+/// next 30 minutes.
 pub fn open(
     room_id: u64,
     owner_uid: u32,
@@ -90,6 +156,7 @@ pub fn open(
         output: VecDeque::new(),
         connects: 0,
         reconnects: 0,
+        stable: false,
         done: false,
     };
     futures::stream::unfold(recorder, |mut recorder| async move {
@@ -112,6 +179,8 @@ struct Recorder {
     /// Connection attempts, which pick the servers.
     connects: usize,
     reconnects: u32,
+    /// Whether a connection has delivered media for [`HEALTHY_AFTER`].
+    stable: bool,
     done: bool,
 }
 
@@ -179,6 +248,9 @@ impl Recorder {
                     sleep(RECONNECT_DELAY).await;
                 }
                 error => {
+                    if !self.stable {
+                        remember_failure(self.room_id);
+                    }
                     self.done = true;
                     return Some(Err(error));
                 }
@@ -254,6 +326,10 @@ impl Recorder {
         if session.healthy_at.is_some_and(|at| now >= at) {
             session.healthy_at = None;
             self.reconnects = 0;
+            if !self.stable {
+                self.stable = true;
+                FAILED_ROOMS.lock().remove(&self.room_id);
+            }
         }
         if !self.started && matches!(session.startup, Startup::Done) {
             self.started = true;

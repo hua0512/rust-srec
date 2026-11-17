@@ -2,16 +2,29 @@
 //!
 //! Live status comes from the public profile API, `getUserInfoStudio`. It
 //! needs no login and is sent no cookies, so Bigo's login wall cannot refuse
-//! it, and an offline check is that one request. A live room then goes to
-//! `getInternalStudioInfo` for its single HLS media playlist, with the
-//! account's cookies when one is selected and the room password when one is
-//! set.
+//! it, and an offline check is that one request.
+//!
+//! A live room lists up to two streams, in this order:
+//!
+//! - `native`: the broadcaster's own stream from BIGO's app servers, as a
+//!   [`NativeRoom`] URL that only mesio records. Its [`get_url`] looks the
+//!   room up as a guest and succeeds only for a single host with video and
+//!   audio servers. It is listed only when the caller gave the route native
+//!   connections take, `native_stream` is on and no room password is set.
+//! - `web`: the website's HLS playlist. Its URL is filled in by [`get_url`]
+//!   from `getInternalStudioInfo`, with the account's cookies when one is
+//!   selected and the room password when one is set, so the studio, and any
+//!   account, is asked only when the web stream is tried.
 //!
 //! Bigo restricts some accounts without signing them out: the studio then
 //! answers every room as offline. When the studio reads a room as offline that
-//! the profile reports live, both are asked again a few seconds later, and if
-//! they still disagree a signed-in check fails with `account_restricted`, so
-//! the account is set aside instead of the room reading offline.
+//! the profile reports live, the guest room lookup decides, as it does not
+//! depend on an account: a room that exists means a signed-in check fails
+//! with `account_restricted`, so the account is set aside; an ended room is
+//! offline. Without a lookup, the profile and the studio are asked again a few
+//! seconds later.
+//!
+//! [`get_url`]: PlatformExtractor::get_url
 
 use std::borrow::Cow;
 use std::sync::LazyLock;
@@ -22,6 +35,7 @@ use md5::{Digest, Md5};
 use regex::Regex;
 use reqwest::Client;
 use rustc_hash::FxHashMap;
+use tokio::sync::OnceCell;
 use tracing::debug;
 use url::Url;
 
@@ -32,7 +46,9 @@ use crate::extractor::platforms::bigo::metadata::metadata;
 use crate::extractor::platforms::bigo::models::{
     Presence, PresenceResponse, StudioData, StudioResponse,
 };
-use crate::extractor::utils::{capture_group_1_owned, extras_get_str};
+use crate::extractor::platforms::bigo::native::stream::{self, NativeRoom, RoomKind};
+use crate::extractor::platforms::bigo::native::{NativeError, Route};
+use crate::extractor::utils::{capture_group_1_owned, extras_get_bool, extras_get_str};
 use crate::media::{MediaFormat, MediaInfo, StreamFormat, StreamInfo};
 
 pub static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
@@ -44,15 +60,40 @@ const STUDIO_API: &str = "https://ta.bigo.tv/official_website/studio/getInternal
 /// The profile API's code for an id that names no account.
 const UNKNOWN_ID: i64 = 1;
 /// How long to wait before asking the profile and the studio again when the
-/// studio reads a live room as offline. Around a stream's start and end the
-/// two can disagree for a moment.
+/// studio reads a live room as offline and the room lookup cannot settle it.
+/// Around a stream's start and end the two can disagree for a moment.
 const RECHECK_DELAY: Duration = Duration::from_secs(5);
+/// Both streams carry the same quality label, so a quality preference never
+/// outranks a format preference between them: `preferred_formats` alone
+/// chooses, and the native stream comes first otherwise.
+const QUALITY: &str = "live";
+/// The web stream's extra naming its room, as a decimal string: room ids
+/// exceed the integers JavaScript holds exactly, and the player sends the
+/// stream back to have its URL resolved.
+const ROOM_ID_EXTRA: &str = "room_id";
+
+/// What the guest room lookup of a check said.
+#[derive(Debug)]
+enum Lookup {
+    Room(RoomKind),
+    Ended,
+    /// The lookup failed, for this reason.
+    Failed(String),
+}
 
 pub struct Bigo {
     extractor: Extractor,
     stream_password: Option<String>,
     /// Cookies were supplied, so studio requests carry a login.
     signed_in: bool,
+    /// `native_stream`: whether to offer the native stream (default on).
+    native_stream: bool,
+    /// How native connections reach BIGO. Without it the native stream is
+    /// not offered and rooms cannot be looked up.
+    native_route: Option<Route>,
+    /// The room lookup of this check, shared by its streams, so that a check
+    /// signs in to Linkd once.
+    lookup: OnceCell<Lookup>,
     presence_api: Cow<'static, str>,
     studio_api: Cow<'static, str>,
     recheck_delay: Duration,
@@ -84,10 +125,20 @@ impl Bigo {
             extractor,
             stream_password,
             signed_in,
+            native_stream: extras_get_bool(extras.as_ref(), "native_stream").unwrap_or(true),
+            native_route: None,
+            lookup: OnceCell::new(),
             presence_api: Cow::Borrowed(PRESENCE_API),
             studio_api: Cow::Borrowed(STUDIO_API),
             recheck_delay: RECHECK_DELAY,
         }
+    }
+
+    /// Lets the extractor offer the native stream and look rooms up, with
+    /// native connections going through `route`.
+    pub fn with_native_route(mut self, route: Route) -> Self {
+        self.native_route = Some(route);
+        self
     }
 
     fn extract_site_id(&self) -> Result<String, ExtractorError> {
@@ -180,6 +231,22 @@ impl Bigo {
         Ok(response.data.unwrap_or_default())
     }
 
+    /// Looks `room_id` up as a guest, once per check. `None` without a route.
+    async fn lookup(&self, room_id: u64) -> Option<&Lookup> {
+        let route = self.native_route.as_ref()?;
+        Some(
+            self.lookup
+                .get_or_init(|| async move {
+                    match stream::probe(room_id, route).await {
+                        Ok(kind) => Lookup::Room(kind),
+                        Err(NativeError::RoomEnded) => Lookup::Ended,
+                        Err(error) => Lookup::Failed(error.to_string()),
+                    }
+                })
+                .await,
+        )
+    }
+
     /// Title, artist, cover and identity, all from the profile.
     fn media_info(&self, presence: &Presence, site_id: &str) -> MediaInfo {
         let nickname = presence.nickname.as_deref().filter(|s| !s.is_empty());
@@ -206,15 +273,79 @@ impl Bigo {
         media
     }
 
-    /// The live result for a room the profile reports live, from the
-    /// studio's answer. `None` means the studio reads the room as offline.
-    fn live_media(
-        &self,
-        presence: &Presence,
-        data: StudioData,
-        site_id: &str,
-        password: Option<&str>,
-    ) -> Result<Option<MediaInfo>, ExtractorError> {
+    /// The live result for a room the profile reports live.
+    fn live_media(&self, presence: &Presence, site_id: &str) -> Result<MediaInfo, ExtractorError> {
+        let room_id = presence.room_id().ok_or_else(|| {
+            ExtractorError::ValidationError(format!(
+                "bigo profile reports room {site_id} live without naming the room"
+            ))
+        })?;
+        let password = self.resolve_password();
+
+        let mut streams = Vec::with_capacity(2);
+        let owner_uid = u32::try_from(presence.uid).ok().filter(|&uid| uid != 0);
+        if let Some(owner_uid) = owner_uid
+            && self.native_stream
+            && self.native_route.is_some()
+            && password.is_none()
+        {
+            let room = NativeRoom { room_id, owner_uid };
+            streams.push(
+                StreamInfo::builder(room.url(), StreamFormat::Flv, MediaFormat::Flv)
+                    .quality(QUALITY)
+                    .priority(0)
+                    .build(),
+            );
+        }
+        streams.push(
+            StreamInfo::builder("", StreamFormat::Hls, MediaFormat::Ts)
+                .quality(QUALITY)
+                .priority(1)
+                .is_headers_needed(true)
+                .extras(serde_json::json!({ ROOM_ID_EXTRA: room_id.to_string() }))
+                .build(),
+        );
+
+        let mut extras = FxHashMap::default();
+        // The danmu provider enters the chat room by this id.
+        extras.insert("room_id".to_string(), room_id.to_string());
+        extras.insert("site_id".to_string(), site_id.to_string());
+        extras.insert("uid".to_string(), presence.uid.to_string());
+        if let Some(pwd) = password {
+            // The danmu provider sends it as the room's secret key.
+            extras.insert("stream_password".to_string(), pwd);
+        }
+
+        let mut media = self.media_info(presence, site_id);
+        media.is_live = true;
+        media.streams = streams;
+        media.extras = Some(extras);
+        Ok(media)
+    }
+
+    /// Whether the native stream of `room` can be recorded.
+    async fn check_native(&self, room: NativeRoom) -> Result<(), ExtractorError> {
+        let unavailable = |reason: String| {
+            debug!(room_id = room.room_id, %reason, "bigo native stream unavailable");
+            Err(ExtractorError::Other(format!(
+                "bigo native stream unavailable: {reason}"
+            )))
+        };
+        if stream::recently_failed(room.room_id) {
+            return unavailable("it failed to record recently".to_owned());
+        }
+        match self.lookup(room.room_id).await {
+            Some(Lookup::Room(RoomKind::Host)) => Ok(()),
+            Some(Lookup::Ended) => Err(ExtractorError::NoStreamsFound),
+            Some(Lookup::Room(kind)) => unavailable(format!("the room is {kind:?}")),
+            Some(Lookup::Failed(reason)) => unavailable(format!("room lookup failed: {reason}")),
+            None => unavailable("no route for native connections".to_owned()),
+        }
+    }
+
+    /// The playlist URL in a studio answer for a room the profile reports
+    /// live. `None` means the studio reads the room as offline.
+    fn web_url(data: StudioData, password: Option<&str>) -> Result<Option<String>, ExtractorError> {
         // The website stops playback on this flag before reading `alive`.
         if data.need_login == Some(true) {
             return Err(ExtractorError::Authentication {
@@ -228,46 +359,72 @@ impl Bigo {
         }
         if !data.has_playable_source() {
             if data.is_room_live() {
-                return Err(ExtractorError::ValidationError(format!(
-                    "bigo studio response for live room {site_id} omitted hls_src"
-                )));
+                return Err(ExtractorError::ValidationError(
+                    "bigo studio response for a live room omitted hls_src".to_string(),
+                ));
             }
             return Ok(None);
         }
+        Ok(data.hls_src)
+    }
 
-        let room_id = presence
-            .room_id()
-            .map(|room_id| room_id.to_string())
-            .or_else(|| data.room_id.filter(|s| !s.is_empty() && s != "0"))
-            .ok_or_else(|| {
-                ExtractorError::ValidationError("bigo online room missing roomId".to_string())
-            })?;
-        let hls_src = data.hls_src.unwrap_or_default();
-        let stream = StreamInfo::builder(hls_src, StreamFormat::Hls, MediaFormat::Ts)
-            .quality("live")
-            .priority(0)
-            .is_headers_needed(true)
-            .build();
-
-        let mut extras = FxHashMap::default();
-        // The danmu provider enters the chat room by this id.
-        extras.insert("room_id".to_string(), room_id);
-        extras.insert("site_id".to_string(), site_id.to_string());
-        extras.insert("uid".to_string(), presence.uid.to_string());
-        if let Some(sid) = data.sid {
-            extras.insert("sid".to_string(), sid);
-        }
-        if let Some(pwd) = password {
-            // The danmu provider sends it as the room's secret key.
-            extras.insert("stream_password".to_string(), pwd.to_string());
+    /// Fills in the web stream's URL from the studio.
+    async fn resolve_web(&self, stream: &mut StreamInfo) -> Result<(), ExtractorError> {
+        let site_id = self.extract_site_id()?;
+        let password = self.resolve_password();
+        let password = password.as_deref();
+        if let Some(url) = Self::web_url(self.studio(&site_id, password).await?, password)? {
+            stream.url = url;
+            return Ok(());
         }
 
-        let mut media = self.media_info(presence, site_id);
-        media.is_live = true;
-        media.artist_url = data.avatar.filter(|s| !s.is_empty());
-        media.streams = vec![stream];
-        media.extras = Some(extras);
-        Ok(Some(media))
+        // The studio reads a room the profile reports live as offline. The
+        // guest lookup tells a restricted account from a room that ended.
+        let room_id = extras_get_str(stream.extras.as_ref(), ROOM_ID_EXTRA)
+            .and_then(|room_id| room_id.parse::<u64>().ok());
+        let lookup = match room_id {
+            Some(room_id) => self.lookup(room_id).await,
+            None => None,
+        };
+        match lookup {
+            Some(Lookup::Ended) => return Err(ExtractorError::NoStreamsFound),
+            Some(Lookup::Room(_)) => return Err(self.studio_disagrees(&site_id)),
+            Some(Lookup::Failed(_)) | None => {}
+        }
+
+        // Without a lookup, both are asked again: around a stream's start or
+        // end the profile and the studio can disagree for a while.
+        tokio::time::sleep(self.recheck_delay).await;
+        let presence = self.presence(&site_id).await?;
+        if presence.alive != 1 {
+            return Err(ExtractorError::NoStreamsFound);
+        }
+        if let Some(url) = Self::web_url(self.studio(&site_id, password).await?, password)? {
+            stream.url = url;
+            return Ok(());
+        }
+        // A live profile without a link to its room is not definite enough
+        // to set an account aside.
+        if presence.room_id().is_some() {
+            return Err(self.studio_disagrees(&site_id));
+        }
+        Err(ExtractorError::ValidationError(format!(
+            "bigo profile reports room {site_id} live, but the studio reads it as offline"
+        )))
+    }
+
+    /// The error for a room that is live while the studio reads it as
+    /// offline: a restricted account when signed in.
+    fn studio_disagrees(&self, site_id: &str) -> ExtractorError {
+        if self.signed_in {
+            ExtractorError::Authentication {
+                code: "account_restricted".to_string(),
+            }
+        } else {
+            ExtractorError::ValidationError(format!(
+                "bigo room {site_id} is live, but the studio reads it as offline"
+            ))
+        }
     }
 }
 
@@ -285,36 +442,17 @@ impl PlatformExtractor for Bigo {
         if presence.alive != 1 {
             return Ok(self.offline_media(&presence, &site_id));
         }
+        self.live_media(&presence, &site_id)
+    }
 
-        let password = self.resolve_password();
-        let password = password.as_deref();
-        let data = self.studio(&site_id, password).await?;
-        if let Some(media) = self.live_media(&presence, data, &site_id, password)? {
-            return Ok(media);
+    async fn get_url(&self, stream: &mut StreamInfo) -> Result<(), ExtractorError> {
+        if let Some(room) = NativeRoom::parse(&stream.url) {
+            return self.check_native(room).await;
         }
-
-        // The studio reads a room the profile reports live as offline. Around
-        // a stream's start or end the two can disagree for a while; otherwise
-        // Bigo answers this session that way for every room.
-        tokio::time::sleep(self.recheck_delay).await;
-        let presence = self.presence(&site_id).await?;
-        if presence.alive != 1 {
-            return Ok(self.offline_media(&presence, &site_id));
+        if !stream.url.is_empty() {
+            return Ok(());
         }
-        let data = self.studio(&site_id, password).await?;
-        if let Some(media) = self.live_media(&presence, data, &site_id, password)? {
-            return Ok(media);
-        }
-        // A live profile without a link to its room is not definite enough
-        // to set an account aside.
-        if self.signed_in && presence.room_id().is_some() {
-            return Err(ExtractorError::Authentication {
-                code: "account_restricted".to_string(),
-            });
-        }
-        Err(ExtractorError::ValidationError(format!(
-            "bigo profile reports room {site_id} live, but the studio reads it as offline"
-        )))
+        self.resolve_web(stream).await
     }
 }
 
@@ -324,7 +462,7 @@ mod tests {
     use crate::extractor::default::default_client;
     use crate::extractor::test_support::{ReceivedRequests, serve_in_order};
 
-    const ROOM_ID: &str = "7000000000000000002";
+    const ROOM_ID: u64 = 7000000000000000002;
     const LIVE: &str = r#"{"code":0,"msg":"success","data":{"uid":300000003,
         "nickname":"Streamer","roomTopic":"","alive":1,"ogImage":"https://esx.bigo.sg/cover.jpg",
         "aliOSUrl":"bigolive://livevideoshow?roomid=7000000000000000002&uid=300000003&visitor=1"}}"#;
@@ -352,16 +490,20 @@ mod tests {
     const STUDIO_LIVE_WITHOUT_HLS: &str = r#"{"code":0,"msg":"success","data":{"alive":1,
         "roomId":"7000000000000000002","hls_src":"","needLogin":false,"passRoom":false}}"#;
     const ACCOUNT: &str = "uniqid=u; tid=t; yyuid=1";
+    const PLAYLIST: &str = "https://cdn.example.com/list_x.m3u8";
 
-    /// Runs a check whose profile requests are answered by `presence` and
+    /// An extractor whose profile requests are answered by `presence` and
     /// studio requests by `studio`, in order, without the recheck delay. A
-    /// request beyond those fails. Also returns the profile requests received.
-    async fn check_received(
+    /// request beyond those fails. With `lookup`, it has a native route and
+    /// that lookup answer, so it never reaches BIGO. Also returns the profile
+    /// requests received.
+    async fn bigo_received(
         presence: &[&'static str],
         studio: &[&'static str],
         cookies: Option<&str>,
         extras: Option<serde_json::Value>,
-    ) -> (Result<MediaInfo, ExtractorError>, ReceivedRequests) {
+        lookup: Option<Lookup>,
+    ) -> (Bigo, ReceivedRequests) {
         let ok = |bodies: &[&'static str]| bodies.iter().map(|body| ("200 OK", *body)).collect();
         let mut bigo = Bigo::new(
             "https://www.bigo.tv/400500600".to_string(),
@@ -373,19 +515,53 @@ mod tests {
         bigo.presence_api = Cow::Owned(presence_api);
         bigo.studio_api = Cow::Owned(serve_in_order(ok(studio)).await.0);
         bigo.recheck_delay = Duration::ZERO;
-        let result = tokio::time::timeout(Duration::from_secs(10), bigo.extract())
-            .await
-            .expect("local Bigo requests timed out");
-        (result, received)
+        if let Some(lookup) = lookup {
+            bigo.native_route = Some(Route {
+                client: default_client(),
+                proxy: None,
+            });
+            bigo.lookup = OnceCell::new_with(Some(lookup));
+        }
+        (bigo, received)
     }
 
-    async fn check(
+    async fn bigo(
         presence: &[&'static str],
         studio: &[&'static str],
         cookies: Option<&str>,
         extras: Option<serde_json::Value>,
-    ) -> Result<MediaInfo, ExtractorError> {
-        check_received(presence, studio, cookies, extras).await.0
+        lookup: Option<Lookup>,
+    ) -> Bigo {
+        bigo_received(presence, studio, cookies, extras, lookup)
+            .await
+            .0
+    }
+
+    async fn extract(bigo: &Bigo) -> Result<MediaInfo, ExtractorError> {
+        tokio::time::timeout(Duration::from_secs(10), bigo.extract())
+            .await
+            .expect("local Bigo requests timed out")
+    }
+
+    /// Resolves the web stream of a live check, as the monitor does when the
+    /// native stream is not used, returning its URL.
+    async fn web_url(bigo: &Bigo) -> Result<String, ExtractorError> {
+        let media = extract(bigo).await?;
+        let mut web = media
+            .streams
+            .into_iter()
+            .find(|stream| stream.stream_format == StreamFormat::Hls)
+            .expect("a web stream");
+        tokio::time::timeout(Duration::from_secs(10), bigo.get_url(&mut web))
+            .await
+            .expect("local Bigo requests timed out")?;
+        Ok(web.url)
+    }
+
+    async fn check_native(bigo: &Bigo, room: NativeRoom) -> Result<(), ExtractorError> {
+        let mut native =
+            StreamInfo::builder(room.url(), StreamFormat::Flv, MediaFormat::Flv).build();
+        bigo.get_url(&mut native).await
     }
 
     fn extra<'a>(media: &'a MediaInfo, key: &str) -> Option<&'a str> {
@@ -430,8 +606,8 @@ mod tests {
 
     #[tokio::test]
     async fn profile_request_carries_no_account_cookies() {
-        let (media, received) = check_received(&[OFFLINE], &[], Some(ACCOUNT), None).await;
-        media.unwrap();
+        let (bigo, received) = bigo_received(&[OFFLINE], &[], Some(ACCOUNT), None, None).await;
+        extract(&bigo).await.unwrap();
 
         let request = received.lock().unwrap()[0].to_ascii_lowercase();
         assert!(request.starts_with("get /?bigoid=400500600 "), "{request}");
@@ -441,7 +617,8 @@ mod tests {
     #[tokio::test]
     async fn offline_profile_answers_without_the_studio() {
         // The studio has no answers, so asking it would fail the check.
-        let media = check(&[OFFLINE], &[], Some(ACCOUNT), None).await.unwrap();
+        let bigo = bigo(&[OFFLINE], &[], Some(ACCOUNT), None, None).await;
+        let media = extract(&bigo).await.unwrap();
 
         assert!(!media.is_live);
         assert_eq!(media.title, "Back soon");
@@ -455,40 +632,116 @@ mod tests {
         let unknown = r#"{"code":1,"data":null,"msg":"paramters invalid"}"#;
         let refused = r#"{"code":80009,"data":null,"msg":"empty bigoId or sid"}"#;
 
-        let error = check(&[unknown, unknown], &[], None, None)
-            .await
-            .unwrap_err();
+        let bigo1 = bigo(&[unknown, unknown], &[], None, None, None).await;
+        let error = extract(&bigo1).await.unwrap_err();
         assert!(
             matches!(error, ExtractorError::StreamerNotFound),
             "{error:?}"
         );
         // One unknown-id answer is asked again before the streamer is given up.
-        let media = check(&[unknown, OFFLINE], &[], None, None).await.unwrap();
-        assert!(!media.is_live);
-        let error = check(&[refused], &[], None, None).await.unwrap_err();
+        let bigo2 = bigo(&[unknown, OFFLINE], &[], None, None, None).await;
+        assert!(!extract(&bigo2).await.unwrap().is_live);
+        let bigo3 = bigo(&[refused], &[], None, None, None).await;
+        let error = extract(&bigo3).await.unwrap_err();
         assert!(
             matches!(error, ExtractorError::ValidationError(_)),
             "{error:?}"
         );
     }
 
+    /// A live check lists the native stream first and the web stream after
+    /// it, without asking the studio; the native stream is left out without
+    /// a native route, with `native_stream` off and for a password.
     #[tokio::test]
-    async fn live_room_resolves_its_stream_through_the_studio() {
-        let extras = serde_json::json!({"stream_password": "pw"});
-        let media = check(&[LIVE], &[STUDIO_LIVE], None, Some(extras))
-            .await
-            .unwrap();
-
+    async fn live_room_lists_native_then_web() {
+        let host = || Some(Lookup::Room(RoomKind::Host));
+        // No studio answers: listing the streams must not ask it.
+        let bigo1 = bigo(&[LIVE], &[], None, None, host()).await;
+        let media = extract(&bigo1).await.unwrap();
         assert!(media.is_live);
-        assert_eq!(media.streams.len(), 1);
-        assert_eq!(media.streams[0].url, "https://cdn.example.com/list_x.m3u8");
+        let urls: Vec<_> = media.streams.iter().map(|s| s.url.as_str()).collect();
+        assert_eq!(urls, ["bigo://room/7000000000000000002?uid=300000003", ""]);
         assert_eq!(
-            media.artist_url.as_deref(),
-            Some("https://esx.bigo.sg/avatar.jpg")
+            NativeRoom::parse(urls[0]),
+            Some(NativeRoom {
+                room_id: ROOM_ID,
+                owner_uid: 300000003
+            })
         );
-        assert_eq!(extra(&media, "room_id"), Some(ROOM_ID));
-        assert_eq!(extra(&media, "stream_password"), Some("pw"));
+        assert_eq!(extra(&media, "room_id"), Some("7000000000000000002"));
+        assert_eq!(extra(&media, "uid"), Some("300000003"));
         assert_eq!(metadata_uid(&media), "300000003");
+
+        for (extras, lookup) in [
+            (None, None),
+            (Some(serde_json::json!({"native_stream": false})), host()),
+            (Some(serde_json::json!({"stream_password": "pw"})), host()),
+        ] {
+            let bigo = bigo(&[LIVE], &[], None, extras.clone(), lookup).await;
+            let media = extract(&bigo).await.unwrap();
+            let formats: Vec<_> = media.streams.iter().map(|s| s.stream_format).collect();
+            assert_eq!(formats, [StreamFormat::Hls], "{extras:?}");
+            if extras.is_some_and(|extras| extras.get("stream_password").is_some()) {
+                assert_eq!(extra(&media, "stream_password"), Some("pw"));
+            }
+        }
+
+        let bigo4 = bigo(&[LIVE_WITHOUT_ROOM], &[], None, None, host()).await;
+        let error = extract(&bigo4).await.unwrap_err();
+        assert!(
+            matches!(error, ExtractorError::ValidationError(_)),
+            "{error:?}"
+        );
+    }
+
+    /// The native stream records only a single host's room. A room the lookup
+    /// finds ended is offline; any other failure leaves the next stream to be
+    /// tried, never an account error.
+    #[tokio::test]
+    async fn native_stream_needs_a_host_room() {
+        let room = NativeRoom {
+            room_id: ROOM_ID,
+            owner_uid: 300000003,
+        };
+        let check = async |lookup| {
+            let bigo = bigo(&[], &[], Some(ACCOUNT), None, Some(lookup)).await;
+            check_native(&bigo, room).await
+        };
+        check(Lookup::Room(RoomKind::Host)).await.unwrap();
+        let ended = check(Lookup::Ended).await.unwrap_err();
+        assert!(matches!(ended, ExtractorError::NoStreamsFound), "{ended:?}");
+        for lookup in [
+            Lookup::Room(RoomKind::MultiGuest),
+            Lookup::Room(RoomKind::NoMedia),
+            Lookup::Failed("IP restricted".to_owned()),
+        ] {
+            let error = check(lookup).await.unwrap_err();
+            assert_eq!(error.category(), "other", "{error:?}");
+        }
+    }
+
+    /// A room whose native recording just failed is left to the web stream,
+    /// whatever the lookup says.
+    #[tokio::test]
+    async fn native_stream_skips_a_room_that_failed_to_record() {
+        // A room of its own: the memory is shared by the whole process.
+        let room = NativeRoom {
+            room_id: 4_000_000_000_017,
+            owner_uid: 17,
+        };
+        let bigo = bigo(&[], &[], None, None, Some(Lookup::Room(RoomKind::Host))).await;
+        check_native(&bigo, room).await.unwrap();
+
+        stream::remember_failure(room.room_id);
+        let error = check_native(&bigo, room).await.unwrap_err();
+        assert_eq!(error.category(), "other", "{error:?}");
+    }
+
+    #[tokio::test]
+    async fn web_stream_resolves_through_the_studio() {
+        let extras = serde_json::json!({"stream_password": "pw"});
+        let bigo = bigo(&[LIVE], &[STUDIO_LIVE], None, Some(extras), None).await;
+        assert_eq!(web_url(&bigo).await.unwrap(), PLAYLIST);
     }
 
     #[tokio::test]
@@ -501,47 +754,99 @@ mod tests {
             (STUDIO_LOCKED, Some(ACCOUNT), password(), "private"),
             (STUDIO_LIVE_WITHOUT_HLS, Some(ACCOUNT), None, "validation"),
         ] {
-            let error = check(&[LIVE], &[studio], cookies, extras)
-                .await
-                .unwrap_err();
+            let bigo = bigo(&[LIVE], &[studio], cookies, extras, None).await;
+            let error = web_url(&bigo).await.unwrap_err();
             assert_eq!(error.category(), expected, "{studio}: {error:?}");
         }
     }
 
-    /// A studio answer that reads a live room as offline is asked again,
-    /// together with the profile. Only a signed-in check whose answers stay
-    /// that way, for a profile that links its room, means a restricted account.
+    /// When the studio reads a live room as offline, the guest lookup
+    /// decides at once: a room that exists means a restricted account when
+    /// signed in, and an ended room is offline.
     #[tokio::test]
-    async fn studio_offline_for_a_live_room_is_rechecked() {
-        let ended = check(&[LIVE, OFFLINE], &[STUDIO_OFFLINE], Some(ACCOUNT), None)
-            .await
-            .unwrap();
-        assert!(!ended.is_live);
+    async fn studio_offline_is_settled_by_the_room_lookup() {
+        let lookup = |exists| {
+            Some(if exists {
+                Lookup::Room(RoomKind::Host)
+            } else {
+                Lookup::Ended
+            })
+        };
+        let restricted = bigo(
+            &[LIVE],
+            &[STUDIO_OFFLINE],
+            Some(ACCOUNT),
+            None,
+            lookup(true),
+        )
+        .await;
+        let error = web_url(&restricted).await.unwrap_err();
+        assert!(
+            matches!(&error, ExtractorError::Authentication { code } if code == "account_restricted"),
+            "{error:?}"
+        );
 
-        let started = check(
+        let anonymous = bigo(&[LIVE], &[STUDIO_OFFLINE], None, None, lookup(true)).await;
+        let error = web_url(&anonymous).await.unwrap_err();
+        assert!(
+            matches!(error, ExtractorError::ValidationError(_)),
+            "{error:?}"
+        );
+
+        let ended = bigo(
+            &[LIVE],
+            &[STUDIO_OFFLINE],
+            Some(ACCOUNT),
+            None,
+            lookup(false),
+        )
+        .await;
+        let error = web_url(&ended).await.unwrap_err();
+        assert!(matches!(error, ExtractorError::NoStreamsFound), "{error:?}");
+    }
+
+    /// Without a room lookup, a studio answer that reads a live room as
+    /// offline is asked again, together with the profile. Only a signed-in
+    /// check whose answers stay that way, for a profile that links its room,
+    /// means a restricted account.
+    #[tokio::test]
+    async fn studio_offline_without_a_lookup_is_rechecked() {
+        let failed = || Some(Lookup::Failed("unreachable".to_owned()));
+        let ended = bigo(
+            &[LIVE, OFFLINE],
+            &[STUDIO_OFFLINE],
+            Some(ACCOUNT),
+            None,
+            failed(),
+        )
+        .await;
+        let error = web_url(&ended).await.unwrap_err();
+        assert!(matches!(error, ExtractorError::NoStreamsFound), "{error:?}");
+
+        let started = bigo(
             &[LIVE, LIVE],
             &[STUDIO_OFFLINE, STUDIO_LIVE],
             Some(ACCOUNT),
             None,
+            None,
         )
-        .await
-        .unwrap();
-        assert_eq!(started.streams.len(), 1);
+        .await;
+        assert_eq!(web_url(&started).await.unwrap(), PLAYLIST);
 
         let both = [STUDIO_OFFLINE, STUDIO_OFFLINE];
-        let restricted = check(&[LIVE, LIVE], &both, Some(ACCOUNT), None)
-            .await
-            .unwrap_err();
+        let restricted = bigo(&[LIVE, LIVE], &both, Some(ACCOUNT), None, None).await;
+        let error = web_url(&restricted).await.unwrap_err();
         assert!(
-            matches!(&restricted, ExtractorError::Authentication { code } if code == "account_restricted"),
-            "{restricted:?}"
+            matches!(&error, ExtractorError::Authentication { code } if code == "account_restricted"),
+            "{error:?}"
         );
 
         for (presence, cookies) in [
             ([LIVE, LIVE], None),
-            ([LIVE_WITHOUT_ROOM, LIVE_WITHOUT_ROOM], Some(ACCOUNT)),
+            ([LIVE, LIVE_WITHOUT_ROOM], Some(ACCOUNT)),
         ] {
-            let error = check(&presence, &both, cookies, None).await.unwrap_err();
+            let bigo = bigo(&presence, &both, cookies, None, None).await;
+            let error = web_url(&bigo).await.unwrap_err();
             assert!(
                 matches!(error, ExtractorError::ValidationError(_)),
                 "{error:?}"
@@ -563,15 +868,18 @@ mod tests {
                 .trim()
                 .to_owned()
         });
-        let bigo = Bigo::new(url, default_client(), cookies, None);
-        let media = bigo.extract().await.expect("extract failed");
+        let route = Route {
+            client: default_client(),
+            proxy: None,
+        };
+        let bigo = Bigo::new(url, default_client(), cookies, None).with_native_route(route);
+        let mut media = bigo.extract().await.expect("extract failed");
 
         println!(
-            "live={} title={:?} artist={:?} streams={} room_id={:?} metadata={:?}",
+            "live={} title={:?} artist={:?} room_id={:?} metadata={:?}",
             media.is_live,
             media.title,
             media.artist,
-            media.streams.len(),
             extra(&media, "room_id"),
             media
                 .platform_metadata
@@ -579,9 +887,9 @@ mod tests {
                 .map(|metadata| &metadata.data),
         );
         assert!(media.platform_metadata.is_some());
-        if media.is_live {
-            assert!(media.streams[0].url.contains(".m3u8"));
-            assert!(extra(&media, "room_id").is_some());
+        for stream in &mut media.streams {
+            let result = bigo.get_url(stream).await;
+            println!("{:?} {}: {result:?}", stream.stream_format, stream.url);
         }
     }
 }

@@ -98,3 +98,13 @@ describe('Bigo live notification settings', () => {
     expect(warning()).not.toBeInTheDocument();
   });
 });
+
+describe('Bigo original stream setting', () => {
+  it('is on unless turned off, as the backend reads it', () => {
+    renderFields({});
+
+    expect(
+      screen.getByRole('switch', { name: /Record the original stream/ }),
+    ).toBeChecked();
+  });
+});

@@ -49,23 +49,42 @@ Without notifications, each Bigo streamer is checked at every check interval. Po
 - A stream start is noticed up to one check interval late, so short streams can be missed.
 - On some networks, Bigo refuses checks without an account (see **Authentication** below).
 
+## Recording {#recording}
+
+By default, rust-srec records the broadcaster's original stream: the one the BIGO app plays, from BIGO's app servers. It needs no account and keeps the quality the broadcaster sends, often 720p or 1080p in HEVC (H.265) and sometimes H.264, where the website offers a smaller H.264 stream of about 540p. These recordings are FLV files, and they are always made by the built-in Mesio engine, whichever engine is configured. If the connection drops, rust-srec reconnects up to three times and the recording continues, in the same file unless the servers send a different version of the stream after the reconnect. A recording ends when the room ends.
+
+The website's HLS stream is recorded instead:
+
+- for password-protected rooms;
+- for rooms with several hosts, whose combined picture only the website has;
+- when BIGO's app servers cannot be reached from your network, or the original stream of the room failed to record in the last 30 minutes;
+- when **Record the original stream** is turned off, or **Preferred Formats** puts `hls` first.
+
+The website's stream can need an account (see **Authentication** below). When it comes first, a login request for it fails the check without trying the original stream.
+
+::: warning FFmpeg version for HEVC recordings
+Remuxing, converting or otherwise post-processing HEVC FLV files needs FFmpeg 6.1 or newer. The Docker image ships a current build; for a binary or desktop installation, make sure the `ffmpeg` it uses is recent enough.
+:::
+
 ## Features
 
-- ✅ HLS streams (single public quality, usually labeled `live`, typically ~540p portrait)
+- ✅ [Original stream](#recording) from BIGO's app servers, without an account (HEVC or H.264, as the broadcaster sends it)
+- ✅ The website's HLS stream as the fallback (one quality, typically ~540p portrait)
 - ✅ [Live notifications](#live-notifications) through a signed-in account (recommended)
 - ✅ Live status from the room's public profile, without an account
 - ✅ Danmaku collection (guest WebSocket: public chat and gifts)
-- ✅ Password-protected rooms
-- ❌ Multi-quality / multi-bitrate selection on the public API path
-- ✅ Signed-in session from pasted cookies (for when Bigo asks for a login before handing out a stream)
-- ❌ Browser-only paths that may offer higher quality (e.g. 1080p HEVC)
+- ✅ Password-protected rooms (through the website's stream)
+- ❌ Choosing a quality: each stream comes in one quality
+- ❌ Separate recordings of each host in a room with several hosts
+- ✅ Signed-in session from pasted cookies (for when Bigo asks for a login before handing out the website's stream)
 
 ## Configuration
 
-Platform options are under **Settings** → **Platforms** → **Bigo**. Public rooms usually need nothing — add a URL and record — but set up [live notifications](#live-notifications) to notice stream starts within seconds. If checks of a live room fail with a login-required error, add an [account profile](../concepts/configuration.md#account-profiles-and-selection) with cookies from a logged-in browser; see **Authentication** below.
+Platform options are under **Settings** → **Platforms** → **Bigo**. Public rooms usually need nothing — add a URL and record — but set up [live notifications](#live-notifications) to notice stream starts within seconds. If checks of a live room fail with a login-required error, the website's stream was needed: add an [account profile](../concepts/configuration.md#account-profiles-and-selection) with cookies from a logged-in browser; see **Authentication** below.
 
 | Option | Default | Description |
 |--------|---------|-------------|
+| **Record the original stream** (`native_stream`) | on | Records the broadcaster's [original stream](#recording), with the website's stream as the fallback. Turned off, only the website's stream is recorded. |
 | **Stream Password** (`stream_password`) | empty | Default password for locked rooms. Override per streamer with `?pwd=...` on the URL. |
 | **Batch Detection** (`batch_detection`) | off | Turns on [live notifications](#live-notifications). A template or streamer can only turn it off. |
 | **Notification Account** (`notification_account`) | none | The signed-in account that receives live notifications. Set on the platform only. |
@@ -85,9 +104,9 @@ When danmaku is enabled for the streamer:
 - **Not supported**: sending chat, enter notices, hearts, follow/share notices.
 
 ::: info
-- **Quality**: The public API exposes one media playlist per room (labeled `live`). That stream is usually mid-quality portrait video around **480p–540p** (for example ~480×854 H.264). There is no multi-bitrate ladder on this path. Browser-reported 1080p HEVC, when present, is not available through this API.
+- **Quality**: The original stream's resolution and codec (HEVC or H.264) are the broadcaster's; BIGO's servers pick which version a connection gets, so they can differ between recordings, and a change during a recording starts a new file. The website's stream is one media playlist per room, usually mid-quality portrait video around **480p–540p** (for example ~480×854 H.264). Both are labeled `live`; choose between them with **Preferred Formats** (`flv` for the original stream, `hls` for the website's).
 - **Live status**: Whether a room is live comes from its public profile, which Bigo answers without an account and is never sent one, so an account never makes a live room read as offline. A check of an offline room is one request.
-- **Authentication**: Once a room is live, its stream comes from a second request, which uses the account if one is selected and the room password if one is set. Bigo may ask for a login there, for example on some networks or after many requests from the same network. Such checks fail with a login-required error instead of showing the room as offline; add an account to fix them. Copy the `bigo.tv` cookies from a browser where you are logged in; they must include `tid` and `yyuid`. Bigo logins last a short time, so accounts are refreshed every hour the way the website does it. When Bigo asks an account to log in, rust-srec checks whether the login still works. An expired login is marked as needing a new login. A working one, which Bigo sometimes turns away for a while, for example after many requests, rests for 30 minutes and is then tried again. Receiving chat does not need an account.
-- **Restricted accounts**: Bigo sometimes restricts an account without signing it out, and such an account sees every room as offline. When the public profile shows a room as live but the account sees it offline, rust-srec asks both again a few seconds later. If the profile still shows the room as live and the account still sees it offline, the account is treated like one Bigo turned away: it rests for 30 minutes and is then tried again, and a pool with failover moves on to its next account.
+- **Authentication**: The original stream never uses an account. The website's stream comes from a second request, made only when that stream is tried, which uses the account if one is selected and the room password if one is set. Bigo may ask for a login there, for example on some networks or after many requests from the same network. Such checks fail with a login-required error instead of showing the room as offline; add an account to fix them. Copy the `bigo.tv` cookies from a browser where you are logged in; they must include `tid` and `yyuid`. Bigo logins last a short time, so accounts are refreshed every hour the way the website does it. When Bigo asks an account to log in, rust-srec checks whether the login still works. An expired login is marked as needing a new login. A working one, which Bigo sometimes turns away for a while, for example after many requests, rests for 30 minutes and is then tried again. Receiving chat does not need an account.
+- **Restricted accounts**: Bigo sometimes restricts an account without signing it out, and such an account sees every room as offline. When the public profile shows a room as live but the account sees it offline, rust-srec looks the room up on BIGO's app servers without an account. If the room is there, the account is treated like one Bigo turned away: it rests for 30 minutes and is then tried again, and a pool with failover moves on to its next account. If the room has ended, it reads as offline. When the app servers cannot be reached, the profile and the account are asked again a few seconds later, and the account is set aside only if they still disagree.
 - **Checking without an account**: While no selected account can be used, for example because it is resting or needs a new login, checks of the streamers using it stop, including whether they are live. Select Bigo accounts as a pool, even a pool with a single account, and turn on **Check without an account when no account can be used**, so live status keeps being checked and live rooms are tried without an account, on days when Bigo allows that. A **Fixed** selection cannot do this.
 :::

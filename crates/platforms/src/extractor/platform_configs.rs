@@ -178,6 +178,10 @@ pub struct BigoConfig {
     /// Password for password-protected rooms
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream_password: Option<String>,
+    /// Record the broadcaster's original stream from BIGO's app servers,
+    /// falling back to the web HLS stream (default: true)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub native_stream: Option<bool>,
 }
 
 /// Streamlink *extractor* configuration.
