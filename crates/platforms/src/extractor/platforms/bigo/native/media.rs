@@ -61,6 +61,11 @@ pub(super) struct MediaConnection {
     source: u32,
     sid: u32,
     timestamp: u32,
+    /// Bytes read from the server. Packets are copied out of it rather than
+    /// split off: a split-off packet would keep its whole 64 KiB read buffer
+    /// alive while anything downstream holds it, such as a fragment of an
+    /// incomplete frame or audio held for the first keyframe, and each read
+    /// meanwhile would need a new buffer.
     input: BytesMut,
     output: BytesMut,
     keepalive_at: Instant,
@@ -267,7 +272,8 @@ impl MediaConnection {
             if self.input.len() < size {
                 return Ok(None);
             }
-            let data = self.input.split_to(size).freeze();
+            let data = Bytes::copy_from_slice(&self.input[..size]);
+            self.input.advance(size);
             return Ok(Some(Packet::Media {
                 kind: word & 0xf,
                 data,
@@ -277,7 +283,8 @@ impl MediaConnection {
         if self.input.len() < len {
             return Ok(None);
         }
-        let mut frame = self.input.split_to(len).freeze();
+        let mut frame = Bytes::copy_from_slice(&self.input[..len]);
+        self.input.advance(len);
         frame.advance(4);
         let uri = frame.try_get_u32_le()?;
         let status = frame.try_get_u16_le()?;
