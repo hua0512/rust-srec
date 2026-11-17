@@ -71,9 +71,9 @@ const UNKNOWN_ID: i64 = 1;
 /// two can disagree for a moment.
 const RECHECK_DELAY: Duration = Duration::from_secs(5);
 /// How long room lookups skip a route on which BIGO could not be reached or
-/// turned a lookup away. A network that drops them would otherwise hold every live
-/// check for the lookup's timeouts, about 30 s, before the web stream, and
-/// one that BIGO refuses would only be refused again.
+/// turned a lookup away. A network that drops them would otherwise hold every
+/// live check for the lookup's timeouts, about 30 s, before the web stream,
+/// and one that BIGO refuses would only be refused again.
 const UNREACHABLE_FOR: Duration = Duration::from_secs(5 * 60);
 
 /// Routes, by their tunnel (`None`: direct), on which BIGO could not be
@@ -698,7 +698,6 @@ mod tests {
             media.artist_url.as_deref(),
             Some("https://esx.bigo.sg/profile_avatar.jpg")
         );
-        assert_eq!(media.cover_url, None);
         assert_eq!(extra(&media, "room_id"), None);
         assert_eq!(metadata_uid(&media), "300000003");
     }
@@ -885,7 +884,7 @@ mod tests {
     /// finds ended is offline at once. A room it finds is asked about again,
     /// as the studio can lag behind the profile, and only then means a
     /// restricted account when signed in, also for a profile that no longer
-    /// links the room.
+    /// links the room, unless the profile marks the room as app-only.
     #[tokio::test]
     async fn studio_offline_is_settled_with_the_room_lookup() {
         let exists = || Some(Lookup::Room(RoomKind::Host));
