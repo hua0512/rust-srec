@@ -63,9 +63,9 @@ pub(super) struct MediaConnection {
     timestamp: u32,
     /// Bytes read from the server. Packets are copied out of it rather than
     /// split off: a split-off packet would keep its whole 64 KiB read buffer
-    /// alive while the depacketizer holds it, for example as a fragment of a
-    /// frame that is still incomplete, and every later read would then need a
-    /// new buffer.
+    /// alive while anything downstream holds it, such as a fragment of an
+    /// incomplete frame or audio held for the first keyframe, and each read
+    /// meanwhile would need a new buffer.
     input: BytesMut,
     output: BytesMut,
     keepalive_at: Instant,
