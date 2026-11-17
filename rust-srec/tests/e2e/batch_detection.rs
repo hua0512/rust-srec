@@ -213,3 +213,65 @@ async fn offline_identity_is_reused_after_restart_and_refreshed_after_url_change
     assert_eq!(fake.requests_to(&replacement, "status").len(), 1);
     app.shutdown().await;
 }
+
+/// Bigo has no batch status call: its batch detection is BIGO's live
+/// notifications, whose listener reports how each Bigo streamer is monitored.
+const BIGO_NOTIFICATIONS: &str = "/api/config/platforms/bigo/notifications";
+
+/// The notification status once the listener has read the Bigo platform.
+async fn bigo_notifications(app: &TestApp, token: &str, settled: impl Fn(&Value) -> bool) -> Value {
+    eventually(WAIT, "the Bigo notification status", || async {
+        let status = app.get_ok(BIGO_NOTIFICATIONS, token).await;
+        settled(&status).then_some(status)
+    })
+    .await
+}
+
+#[tokio::test]
+async fn bigo_notifications_are_off_until_batch_detection_is_on() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+
+    let status = bigo_notifications(&app, &token, |status| !status["platform_id"].is_null()).await;
+    assert_eq!(status["platform_id"], "platform-bigo", "{status}");
+    assert_eq!(status["state"], "disabled", "{status}");
+    assert_eq!(status["reason"], "notifications_off", "{status}");
+
+    app.shutdown().await;
+}
+
+/// Without a notification account the listener cannot sign in, so every Bigo
+/// streamer is polled, and the socket tells clients to refetch the status.
+#[tokio::test]
+async fn bigo_streamers_are_polled_without_a_notification_account() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    let mut socket = query_socket(&app, "/api/downloads/ws", &token).await;
+    let id = app
+        .disabled_streamer(&token, "Bigo", "https://www.bigo.tv/100000001")
+        .await;
+
+    let path = "/api/config/platforms/platform-bigo";
+    let mut platform = app.get_ok(path, &token).await;
+    platform["platform_specific_config"] = r#"{"batch_detection":true}"#.into();
+    app.put(path, &token, &platform).await.ok();
+
+    next_payload(
+        &mut socket,
+        "a Bigo notification status change",
+        |payload| matches!(payload, Payload::BigoNotificationsChanged(_)).then_some(()),
+    )
+    .await;
+    let status = bigo_notifications(&app, &token, |status| {
+        status["reason"] == "no_account" && status["streamers"] != serde_json::json!([])
+    })
+    .await;
+    assert_eq!(status["state"], "error", "{status}");
+    assert_eq!(
+        status["streamers"],
+        serde_json::json!([{"streamer_id": id, "method": "polling", "reason": "no_account"}]),
+        "{status}"
+    );
+
+    app.shutdown().await;
+}

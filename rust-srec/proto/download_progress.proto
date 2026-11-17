@@ -43,7 +43,7 @@ enum EventType {
   // silent for longer than that as lost.
   //
   // NOTE: enum values and WsMessage oneof field numbers have drifted
-  // (value 11 is a hole); pick each independently. Next free enum: 24.
+  // (value 11 is a hole); pick each independently. Next free enum: 25.
   EVENT_TYPE_UPLOAD_STARTED = 14;
   EVENT_TYPE_UPLOAD_PROGRESS = 15;
   EVENT_TYPE_UPLOAD_TERMINAL = 16;
@@ -70,6 +70,12 @@ enum EventType {
   EVENT_TYPE_JOB_STARTED = 21;
   EVENT_TYPE_JOB_PROGRESS = 22;
   EVENT_TYPE_JOB_ENDED = 23;
+  // The Bigo live-notification status
+  // (GET /api/config/platforms/bigo/notifications) may have changed: the
+  // listener's state, a streamer's method or the subscription count. No
+  // payload beyond the marker; clients refetch. Never narrowed by the
+  // streamer subscription.
+  EVENT_TYPE_BIGO_NOTIFICATIONS_CHANGED = 24;
 }
 
 // Server-to-client message envelope
@@ -98,7 +104,8 @@ message WsMessage {
     JobStarted job_started = 21;
     UploadProgress job_progress = 22;
     JobEnded job_ended = 23;
-    // Next free oneof field: 24.
+    BigoNotificationsChanged bigo_notifications_changed = 24;
+    // Next free oneof field: 25.
   }
 }
 
@@ -463,3 +470,6 @@ message StreamerCredentialBlock {
 
 // Marker: refetch the accounts needing attention.
 message CredentialAttentionChanged {}
+
+// Marker: refetch the Bigo live-notification status.
+message BigoNotificationsChanged {}

@@ -57,6 +57,8 @@ pub struct DownloadRouteState {
     credential_blocks: std::sync::Arc<crate::credentials::CredentialBlocks>,
     /// Wakes when the accounts needing attention may have changed.
     credential_attention: tokio::sync::watch::Receiver<u64>,
+    /// Wakes when the Bigo live-notification status may have changed.
+    bigo_notifications: tokio::sync::watch::Receiver<u64>,
 }
 
 /// Streamer id to avatar URL. Jobs carry the streamer's name but not its
@@ -85,6 +87,7 @@ impl FromRef<AppState> for DownloadRouteState {
             streamer_avatar: streamer_avatar_lookup(state.streamer_manager.clone()),
             credential_blocks: state.services.credential_blocks.clone(),
             credential_attention: state.credential_profiles.attention_changes(),
+            bigo_notifications: state.bigo_notifications.changes(),
         }
     }
 }
@@ -269,6 +272,10 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
     let mut attention_rx = state.credential_attention.clone();
     attention_rx.mark_unchanged();
     let mut attention_open = true;
+    // Likewise for the Bigo notification status.
+    let mut bigo_rx = state.bigo_notifications.clone();
+    bigo_rx.mark_unchanged();
+    let mut bigo_open = true;
 
     // 2. Send initial snapshot as protobuf binary
     let bytes = encode_snapshot(&state, None).await;
@@ -483,6 +490,21 @@ async fn handle_socket(socket: WebSocket, state: DownloadRouteState) {
                     Err(_) => {
                         debug!("credential attention channel closed");
                         attention_open = false;
+                    }
+                }
+            }
+
+            changed = bigo_rx.changed(), if bigo_open => {
+                match changed {
+                    Ok(()) => {
+                        let bytes = bigo_notifications_changed_message().encode_to_vec();
+                        if let Err(e) = sender.send(Message::Binary(Bytes::from(bytes))).await {
+                            debug!("Failed to send Bigo notification status message: {}", e);
+                        }
+                    }
+                    Err(_) => {
+                        debug!("Bigo notification status channel closed");
+                        bigo_open = false;
                     }
                 }
             }
@@ -852,6 +874,15 @@ fn credential_attention_changed_message() -> WsMessage {
     }
 }
 
+fn bigo_notifications_changed_message() -> WsMessage {
+    WsMessage {
+        event_type: EventType::BigoNotificationsChanged as i32,
+        payload: Some(Payload::BigoNotificationsChanged(
+            crate::api::proto::download_progress::BigoNotificationsChanged {},
+        )),
+    }
+}
+
 /// Map an [`UploadStatusEvent`] to the WebSocket envelope.
 ///
 /// `pub` for the same reason as [`map_check_record_to_protobuf`]: the
@@ -1027,6 +1058,7 @@ mod tests {
             streamer_avatar: Arc::new(|_| None),
             credential_blocks: Arc::new(crate::credentials::CredentialBlocks::new()),
             credential_attention: tokio::sync::watch::channel(0).1,
+            bigo_notifications: tokio::sync::watch::channel(0).1,
         };
         let app = Router::new()
             .route(
@@ -1212,6 +1244,7 @@ mod tests {
             streamer_avatar: Arc::new(|_| None),
             credential_blocks: Arc::new(crate::credentials::CredentialBlocks::new()),
             credential_attention: tokio::sync::watch::channel(0).1,
+            bigo_notifications: tokio::sync::watch::channel(0).1,
         };
         let app = Router::new()
             .route("/ws", get(download_progress_ws))
@@ -1304,6 +1337,7 @@ mod tests {
             streamer_avatar: Arc::new(|_| None),
             credential_blocks: Arc::new(crate::credentials::CredentialBlocks::new()),
             credential_attention: tokio::sync::watch::channel(0).1,
+            bigo_notifications: tokio::sync::watch::channel(0).1,
         };
         let app = Router::new()
             .route("/ws", get(download_progress_ws))
@@ -1385,6 +1419,7 @@ mod tests {
             streamer_avatar,
             credential_blocks: Arc::new(crate::credentials::CredentialBlocks::new()),
             credential_attention: tokio::sync::watch::channel(0).1,
+            bigo_notifications: tokio::sync::watch::channel(0).1,
         };
         let app = Router::new()
             .route("/ws", get(download_progress_ws))
@@ -1474,6 +1509,7 @@ mod tests {
             streamer_avatar: Arc::new(|_| None),
             credential_blocks: blocks.clone(),
             credential_attention: attention_rx,
+            bigo_notifications: tokio::sync::watch::channel(0).1,
         };
         let app = Router::new()
             .route("/ws", get(download_progress_ws))

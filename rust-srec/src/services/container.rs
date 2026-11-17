@@ -186,6 +186,8 @@ pub struct ServiceContainer {
     scheduler: parking_lot::Mutex<Option<Scheduler<SqlxStreamerRepository>>>,
     /// Read-only scheduler state available while the runtime task owns the scheduler.
     scheduler_handle: SchedulerHandle,
+    /// Asks streamer actors for checks while the runtime task owns the scheduler.
+    scheduler_feedback: Arc<crate::scheduler::feedback::SchedulerFeedback>,
     /// Stream monitor for real status detection
     pub(crate) stream_monitor: Arc<
         StreamMonitor<
@@ -195,6 +197,8 @@ pub struct ServiceContainer {
             SqlxConfigRepository,
         >,
     >,
+    /// Bigo's live notifications, read by the monitor and the API.
+    pub(crate) bigo_notifications: Arc<crate::monitor::BigoNotifications>,
     /// Credential refresh service (shared between monitor + API).
     pub(crate) credential_service: Arc<crate::credentials::CredentialProviderRegistry>,
     /// One platform rate budget shared by monitor, parse and credential providers.
@@ -430,6 +434,17 @@ impl ServiceContainer {
         // first pass instead of treating every actor as unobserved.
         self.spawn_streamer_reaper();
         self.spawn_login_session_pruning();
+        // After the scheduler, which owns the actors its pushes ask to check.
+        self.bigo_notifications.spawn(
+            crate::monitor::BigoNotificationDeps {
+                config_service: self.config_service.clone(),
+                streamer_manager: self.streamer_manager.clone(),
+                credentials: self.credential_execution.clone(),
+                feedback: self.scheduler_feedback.clone(),
+            },
+            &self.task_supervisor,
+            self.cancellation_token.child_token(),
+        );
 
         info!("Startup: scheduler task started");
 

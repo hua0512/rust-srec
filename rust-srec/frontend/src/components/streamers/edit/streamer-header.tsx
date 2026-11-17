@@ -7,9 +7,10 @@ import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
 import { useGoBack } from '@/hooks/use-go-back';
 import type { Streamer } from '@/api/schemas/streamer';
+import { MonitoringMethodBadge } from '@/components/streamers/card/use-streamer-status';
 
 interface StreamerHeaderProps {
-  streamer: Pick<Streamer, 'id' | 'name' | 'url'>;
+  streamer: Pick<Streamer, 'id' | 'name' | 'url' | 'enabled'>;
   isRecording: boolean;
   isLive: boolean;
   platform: string;
@@ -90,6 +91,7 @@ export const StreamerHeader = memo(function StreamerHeader({
                 <Trans>Offline</Trans>
               )}
             </Badge>
+            <MonitoringMethodBadge streamer={streamer} />
           </div>
           <div className="flex flex-wrap items-center text-sm text-muted-foreground gap-2">
             <span className="capitalize shrink-0">

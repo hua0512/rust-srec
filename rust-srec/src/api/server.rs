@@ -154,6 +154,8 @@ pub struct ApiServices {
     pub(crate) proxies: Arc<crate::proxies::ProxyService>,
     /// Streamers whose latest credential acquisition found no usable account.
     pub(crate) credential_blocks: Arc<crate::credentials::CredentialBlocks>,
+    /// Bigo's live-notification listener, for its status.
+    pub(crate) bigo_notifications: Arc<crate::monitor::BigoNotifications>,
     pub(crate) playback_contexts: Arc<crate::services::playback_context::PlaybackContextService>,
     /// Rooms recordings are collecting, which live danmu sockets follow.
     pub(crate) danmu_taps: Arc<crate::danmu::DanmuTaps>,

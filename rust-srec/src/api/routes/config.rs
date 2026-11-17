@@ -230,6 +230,7 @@ pub fn router() -> Router<AppState> {
         .route("/platforms", get(list_platform_configs))
         .route("/platforms/{id}", get(get_platform_config))
         .route("/platforms/{id}", put(replace_platform_config))
+        .route("/platforms/bigo/notifications", get(get_bigo_notifications))
 }
 
 /// Map GlobalConfigDbModel and the global route to GlobalConfigResponse.
@@ -504,6 +505,22 @@ pub async fn get_platform_config(
     let config = config_service.get_platform_config(&id).await?;
 
     Ok(Json(platform_response(config_service, config).await?))
+}
+
+/// Bigo's live-notification listener and how each Bigo streamer is monitored.
+#[utoipa::path(
+    get,
+    path = "/api/config/platforms/bigo/notifications",
+    tag = "config",
+    responses(
+        (status = 200, description = "Bigo live-notification status", body = crate::monitor::BigoNotificationStatus)
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn get_bigo_notifications(
+    State(state): State<AppState>,
+) -> Json<crate::monitor::BigoNotificationStatus> {
+    Json(state.bigo_notifications.status())
 }
 
 /// Each platform's own stored account selection, by platform ID.

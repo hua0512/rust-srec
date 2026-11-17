@@ -190,6 +190,8 @@ pub struct StreamMonitor<
     credential_blocks: Arc<crate::credentials::CredentialBlocks>,
     /// Cached batch status results that answer routine offline polls.
     batch_precheck: BatchPrecheck,
+    /// Bigo's live notifications, which answer its routine offline polls.
+    bigo_notifications: std::sync::OnceLock<Arc<super::BigoNotifications>>,
 }
 
 /// Inputs shared by both paths of one deduplicated status check.
@@ -456,6 +458,7 @@ impl<
             pending_credential_recovery: std::sync::OnceLock::new(),
             credential_blocks: Arc::new(crate::credentials::CredentialBlocks::new()),
             batch_precheck: BatchPrecheck::default(),
+            bigo_notifications: std::sync::OnceLock::new(),
         };
 
         monitor.spawn_outbox_publisher(
@@ -478,6 +481,10 @@ impl<
         service: Arc<crate::credentials::CredentialExecutionService>,
     ) {
         self.execution_service.get_or_init(|| service);
+    }
+
+    pub(crate) fn set_bigo_notifications(&self, notifications: Arc<super::BigoNotifications>) {
+        self.bigo_notifications.get_or_init(|| notifications);
     }
 
     pub(crate) fn set_pending_credential_recovery(&self, recovery: PendingCredentialRecovery) {
@@ -785,6 +792,7 @@ impl<
                         deadline,
                     };
                     let verified_at_ms = crate::database::time::now_ms();
+                    let started = tokio::time::Instant::now();
                     let observation = match &config.credential_policy {
                         Some(policy) => {
                             self.check_with_credentials(check, policy, binding.as_ref(), purpose)
@@ -792,6 +800,16 @@ impl<
                         }
                         None => self.check_anonymous(check).await?,
                     };
+                    if let Some(notifications) = self.bigo_notifications.get() {
+                        notifications.checked(
+                            &streamer.id,
+                            started,
+                            matches!(
+                                observation.status,
+                                LiveStatus::Live { .. } | LiveStatus::Filtered { .. }
+                            ),
+                        );
+                    }
                     if let Some(metadata) = observation.platform_metadata {
                         // The check owner saves once; joined callers reuse its status.
                         self.save_platform_metadata(streamer, metadata, verified_at_ms)
@@ -868,6 +886,9 @@ impl<
     /// route even when the account has a proxy of its own; the account is used once the batch
     /// reports them live. A batch failure, a throttle included, backs off only the batch call: it
     /// does not pause the route for individual checks.
+    ///
+    /// Bigo has no batch status call. Its live notifications answer instead, under the same
+    /// conditions; see [`super::BigoNotifications::answers_offline`].
     async fn batch_says_offline(
         &self,
         streamer: &StreamerMetadata,
@@ -890,11 +911,6 @@ impl<
         {
             return false;
         }
-        // The extractor factory resolves the same URL, so the probe belongs to the platform
-        // whose built-in extractor would check the streamer.
-        let Some(probe) = batch_probe_for_url(&streamer.url) else {
-            return false;
-        };
         let Some(platform) = platform_name_for_url(&streamer.url) else {
             return false;
         };
@@ -902,6 +918,17 @@ impl<
         {
             return false;
         }
+        if platform.eq_ignore_ascii_case("bigo") {
+            return self
+                .bigo_notifications
+                .get()
+                .is_some_and(|notifications| notifications.answers_offline(&streamer.id));
+        }
+        // The extractor factory resolves the same URL, so the probe belongs to the platform
+        // whose built-in extractor would check the streamer.
+        let Some(probe) = batch_probe_for_url(&streamer.url) else {
+            return false;
+        };
         let metadata = crate::streamer::platform_metadata::StoredPlatformMetadata::fresh(
             current.platform_metadata.as_deref(),
             platform,
@@ -1934,7 +1961,7 @@ async fn flush_outbox_once(
 }
 
 /// The `batch_detection` platform option, off unless a configuration layer sets it to `true`.
-fn batch_detection_enabled(platform_extras: Option<&serde_json::Value>) -> bool {
+pub(super) fn batch_detection_enabled(platform_extras: Option<&serde_json::Value>) -> bool {
     platform_extras
         .and_then(|extras| extras.get("batch_detection"))
         .and_then(serde_json::Value::as_bool)

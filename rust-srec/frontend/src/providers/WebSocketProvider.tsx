@@ -40,6 +40,7 @@ import { UnavailableReasonSchema } from '@/api/schemas/credential-profiles';
 import type { JobPhase } from '@/api/schemas/session';
 import type { CredentialBlock, Streamer } from '@/api/schemas/streamer';
 import { invalidateCredentialAttention } from '@/api/credential-profiles';
+import { invalidateBigoNotificationStatus } from '@/api/platform-configs';
 
 /**
  * How long progress ticks are held before they reach the stores. Every active
@@ -577,6 +578,10 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
             void invalidateCredentialAttention(queryClient);
             break;
 
+          case EventType.BIGO_NOTIFICATIONS_CHANGED:
+            void invalidateBigoNotificationStatus(queryClient);
+            break;
+
           case EventType.STREAMER_CHECK_RECORDED:
             if (message.payload.case === 'streamerCheckRecorded') {
               const wire = message.payload.value;
@@ -634,8 +639,10 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     // A fresh socket starts unfiltered and opens with a full snapshot, so
     // nothing has to be sent to receive every streamer's events.
     onOpen: () => {
-      // Attention changes while disconnected were never announced.
+      // Attention and Bigo notification changes while disconnected were
+      // never announced.
       void invalidateCredentialAttention(queryClient);
+      void invalidateBigoNotificationStatus(queryClient);
       if (hasConnectedRef.current) {
         // Checks recorded and streamer state changes while the socket was
         // down were never announced either.

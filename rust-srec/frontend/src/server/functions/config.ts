@@ -12,7 +12,10 @@ import {
 } from '../../api/schemas';
 import { z } from 'zod';
 import { CredentialSelectionSchema } from '@/api/schemas/credential-profiles';
-import { ExtractorSelectionSchema } from '@/api/schemas/platform-configs';
+import {
+  BigoNotificationStatusSchema,
+  ExtractorSelectionSchema,
+} from '@/api/schemas/platform-configs';
 
 // --- Global Config ---
 export const getGlobalConfig = createServerFn({ method: 'GET' }).handler(
@@ -63,6 +66,15 @@ export const getPlatformConfig = createServerFn({ method: 'GET' })
     const json = await fetchBackend(backendPath`/config/platforms/${id}`);
     return PlatformConfigSchema.parse(json);
   });
+
+/** The Bigo live-notification listener and how each Bigo streamer is monitored. */
+export const getBigoNotificationStatus = createServerFn({
+  method: 'GET',
+}).handler(async () =>
+  BigoNotificationStatusSchema.parse(
+    await fetchBackend('/config/platforms/bigo/notifications'),
+  ),
+);
 
 // Helper to convert empty strings to null
 const emptyStringToNull = z

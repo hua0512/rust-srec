@@ -114,6 +114,9 @@ const platformConfigs = {
   all: [...config.all, 'platforms'] as const,
   list: () => [...platformConfigs.all, 'list'] as const,
   detail: (id: string) => [...platformConfigs.all, 'detail', id] as const,
+  /** Under `all`, so saving a platform's settings also refreshes it. */
+  bigoNotifications: () =>
+    [...platformConfigs.all, 'bigo-notifications'] as const,
 };
 
 const notifications = {

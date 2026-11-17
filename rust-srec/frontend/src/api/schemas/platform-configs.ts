@@ -119,12 +119,70 @@ export const SoopConfigSchema = z
   })
   .strict();
 
-// Bigo Live platform-specific configuration
+// Bigo Live platform-specific configuration. For Bigo, `batch_detection` turns on live
+// notifications, which sign in with the account `notification_account` names. Only the platform
+// row's account is used; templates and streamers can only turn notifications off.
 export const BigoConfigSchema = z
   .object({
     stream_password: z.string().nullable().optional(),
+    batch_detection: z.boolean().nullable().optional(),
+    notification_account: z.string().nullable().optional(),
   })
   .strict();
+
+/** Why the Bigo notification listener is not connected. */
+export const BigoListenerReasonValues = [
+  'notifications_off',
+  'no_account',
+  'account_unusable',
+  'signed_out',
+  'disconnected',
+] as const;
+
+/**
+ * Why a Bigo streamer is polled instead of using notifications: the listener's reason, or one of
+ * the streamer's own. `unknown` stands in for a reason this version does not know.
+ */
+export const BigoStreamerReasonSchema = z
+  .enum([
+    ...BigoListenerReasonValues,
+    'streamer_disabled',
+    'batch_detection_off',
+    'streamlink_extractor',
+    'uid_unknown',
+    'subscribing',
+    'follow_refused',
+    'unknown',
+  ])
+  .catch('unknown');
+export type BigoStreamerReason = z.infer<typeof BigoStreamerReasonSchema>;
+
+/** The Bigo live-notification listener and how each Bigo streamer is monitored. */
+export const BigoNotificationStatusSchema = z.object({
+  /** The Bigo platform's ID, for links to its settings; `null` without a Bigo platform. */
+  platform_id: z.string().nullable(),
+  state: z
+    .enum(['disabled', 'connecting', 'connected', 'error'])
+    .catch('error'),
+  reason: BigoStreamerReasonSchema.nullable(),
+  /** The listener's last error, as the server wrote it. */
+  message: z.string().nullable(),
+  /** Streamers whose follow and live notices BIGO confirmed on the current connection. */
+  subscribed: z.number().int(),
+  /** Enabled Bigo streamers that use notifications. */
+  total: z.number().int(),
+  /** Every Bigo streamer, disabled ones included. */
+  streamers: z.array(
+    z.object({
+      streamer_id: z.string(),
+      method: z.enum(['notifications', 'polling']).catch('polling'),
+      reason: BigoStreamerReasonSchema.nullable(),
+    }),
+  ),
+});
+export type BigoNotificationStatus = z.infer<
+  typeof BigoNotificationStatusSchema
+>;
 
 // Union of all platform configs
 export const AllPlatformConfigsSchema = z.union([

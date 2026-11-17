@@ -57,6 +57,7 @@ async fn fixture() -> Fixture {
         credential_execution: container.credential_execution.clone(),
         proxies: container.proxies.clone(),
         credential_blocks: container.stream_monitor.credential_blocks().clone(),
+        bigo_notifications: container.bigo_notifications.clone(),
         playback_contexts: container.playback_contexts.clone(),
         danmu_taps: container.danmu_service.taps(),
         credential_login_sessions: container.credential_login_sessions.clone(),

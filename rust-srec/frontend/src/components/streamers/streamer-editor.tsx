@@ -5,6 +5,7 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
 import { useQuery } from '@tanstack/react-query';
+import { useWatch } from 'react-hook-form';
 import {
   Activity,
   ArrowLeft,
@@ -38,6 +39,7 @@ import { StreamerGeneralSettings } from './config/streamer-general-settings';
 import { StreamerConfiguration } from './config/streamer-configuration';
 import { StreamerTabs, StreamerTab } from './config/streamer-tabs';
 import { SaveFab } from '@/components/shared/save-fab';
+import { BigoPollingNotice } from '@/components/shared/bigo-notifications';
 import { UnsavedChangesGuard } from '@/components/shared/unsaved-changes-guard';
 import { enginesQueryOptions } from '@/api/engines';
 
@@ -106,6 +108,7 @@ export function StreamerEditor({
   );
 
   const isDirty = form.formState.isDirty;
+  const url = useWatch({ control: form.control, name: 'url' });
 
   // Guard against losing edits to an accidental navigation. It is off while a save is pending; a
   // caller that leaves after the save settles must bypass it (`ignoreBlocker`).
@@ -156,6 +159,9 @@ export function StreamerEditor({
           title={<Trans>General Configuration</Trans>}
           description={<Trans>Basic settings for the streamer.</Trans>}
         >
+          <div className="mb-6 empty:hidden">
+            <BigoPollingNotice url={url} />
+          </div>
           <StreamerGeneralSettings
             form={form}
             templates={templates}

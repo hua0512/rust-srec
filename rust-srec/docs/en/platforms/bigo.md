@@ -15,9 +15,44 @@ Examples:
 - `https://www.bigo.tv/ja/221338632`
 - Vanity slugs such as `https://www.bigo.tv/username`
 
+## Live notifications {#live-notifications}
+
+Bigo has no request that reports many rooms at once. Instead, rust-srec can listen for BIGO's own live notifications, the alerts the BIGO app shows when a followed streamer starts streaming. This is the recommended way to monitor Bigo streamers:
+
+- When a streamer goes live, BIGO notifies rust-srec and the streamer is checked at once. BIGO's public profile can take a moment to show the new stream, so the streamer is checked again a few times over the next minute.
+- Routine checks of offline streamers are answered without a request of their own. A full check still runs at least every 10 minutes, in case BIGO misses a notification, and the first check after each connection to BIGO is a full one.
+- Stream ends are not notified. They are noticed by the usual checks, as without notifications.
+
+### Requirements
+
+- **A signed-in BIGO account**, added on the Bigo platform's **Network** tab like any other [account profile](../concepts/configuration.md#account-profiles-and-selection). Use a dedicated account.
+- rust-srec makes that account **follow every Bigo streamer you monitor** and turns on their live alerts. Streamers can see who follows them. Streamers you remove from rust-srec stay followed.
+- Turn on live notifications in that account's settings in the BIGO app.
+- BIGO keeps one app session per account: opening the BIGO app with the same account disconnects rust-srec, and the other way round. Recordings never use this account, so they do not disconnect it.
+
+### Turning them on
+
+1. Open **Settings** → **Platforms** → **Bigo** → **Specific**, section **Status Checks**.
+2. Turn on **Batch Detection**. For Bigo, this switch turns on live notifications.
+3. Choose the account under **Notification Account**, then save.
+
+The same section shows whether rust-srec is connected, how many streamers BIGO has confirmed, and the last error. Each Bigo streamer card shows how the streamer is monitored: **Notifications**, or **Polling · inconsistent** with the reason in its tooltip. A newly added streamer starts on polling: its BIGO account is learned by its first check, and BIGO then has to confirm the follow.
+
+While rust-srec is not connected to BIGO, every Bigo streamer is polled as without notifications. rust-srec reconnects after 2 seconds, waiting longer after each failure, up to 30 seconds. If BIGO reports the account as signed out, rust-srec refreshes its login. If the login has expired, the account is marked as needing a new login, like any account that needs attention. Either way, notifications are tried again every 15 minutes, and at once when the account is changed, for example signed in again.
+
+A template's platform override or a streamer's **Platform options** tab can turn **Batch Detection** off: those streamers are then polled and not followed. Turning it on there has no effect while it is off for the platform.
+
+### Polling
+
+Without notifications, each Bigo streamer is checked at every check interval. Polling is inconsistent:
+
+- A stream start is noticed up to one check interval late, so short streams can be missed.
+- On some networks, Bigo refuses checks without an account (see **Authentication** below).
+
 ## Features
 
 - ✅ HLS streams (single public quality, usually labeled `live`, typically ~540p portrait)
+- ✅ [Live notifications](#live-notifications) through a signed-in account (recommended)
 - ✅ Live status from the room's public profile, without an account
 - ✅ Danmaku collection (guest WebSocket: public chat and gifts)
 - ✅ Password-protected rooms
@@ -27,11 +62,13 @@ Examples:
 
 ## Configuration
 
-Platform options are under **Settings** → **Platforms** → **Bigo**. Public rooms usually need nothing — add a URL and record. If checks of a live room fail with a login-required error, add an [account profile](../concepts/configuration.md#account-profiles-and-selection) with cookies from a logged-in browser; see **Authentication** below.
+Platform options are under **Settings** → **Platforms** → **Bigo**. Public rooms usually need nothing — add a URL and record — but set up [live notifications](#live-notifications) to notice stream starts within seconds. If checks of a live room fail with a login-required error, add an [account profile](../concepts/configuration.md#account-profiles-and-selection) with cookies from a logged-in browser; see **Authentication** below.
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | **Stream Password** (`stream_password`) | empty | Default password for locked rooms. Override per streamer with `?pwd=...` on the URL. |
+| **Batch Detection** (`batch_detection`) | off | Turns on [live notifications](#live-notifications). A template or streamer can only turn it off. |
+| **Notification Account** (`notification_account`) | none | The signed-in account that receives live notifications. Set on the platform only. |
 
 ### Password rooms
 
