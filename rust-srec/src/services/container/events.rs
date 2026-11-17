@@ -1104,23 +1104,26 @@ impl DanmuEventHandler {
     }
 
     /// Treat a danmu stream-closed control event as authoritative
-    /// end-of-stream (unless the platform config opts out via
+    /// end-of-stream (unless the streamer's platform options opt out via
     /// `should_end_stream_on_danmu_stream_closed`):
     /// - stop downloads promptly
     /// - end session and bypass resume hysteresis
+    ///
+    /// The option is read from the streamer's merged configuration, so a
+    /// template or streamer can set it differently from the platform.
     async fn handle_stream_closed(&self, session_id: &str, streamer_id: &str, platform: &str) {
         let should_end_stream = match self
             .config_service
-            .get_platform_config_by_name(platform)
+            .get_config_for_streamer(streamer_id)
             .await
         {
-            Ok(platform_config) => should_end_stream_on_danmu_stream_closed(
-                platform_config.platform_specific_config.as_deref(),
-            ),
+            Ok(config) => should_end_stream_on_danmu_stream_closed(config.platform_extras.as_ref()),
             Err(e) => {
                 warn!(
-                    "Failed to load platform config for '{}' while handling danmu stream closed: {}",
-                    platform, e
+                    streamer_id = %streamer_id,
+                    platform = %platform,
+                    error = %e,
+                    "Failed to load streamer config while handling danmu stream closed; ending the stream"
                 );
                 true
             }
@@ -1131,7 +1134,7 @@ impl DanmuEventHandler {
                 session_id = %session_id,
                 streamer_id = %streamer_id,
                 platform = %platform,
-                "Ignoring danmu stream-closed signal due to platform config"
+                "Ignoring danmu stream-closed signal due to the streamer's platform options"
             );
             return;
         }

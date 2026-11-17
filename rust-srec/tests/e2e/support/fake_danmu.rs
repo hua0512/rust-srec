@@ -11,8 +11,8 @@ use std::sync::{Arc, LazyLock, Mutex, Once};
 
 use platforms_parser::danmaku::registry::register_provider;
 use platforms_parser::danmaku::{
-    ConnectionConfig, DanmakuError, DanmuConnection, DanmuItem, DanmuMessage, DanmuProvider,
-    DanmuStream, Result as DanmakuResult,
+    ConnectionConfig, DanmakuError, DanmuConnection, DanmuControlEvent, DanmuItem, DanmuMessage,
+    DanmuProvider, DanmuStream, Result as DanmakuResult,
 };
 use tokio::sync::mpsc;
 
@@ -140,10 +140,25 @@ impl FakeDanmu {
     pub fn chat(&self, user: &str, content: &str) {
         let id = self.feed.messages.fetch_add(1, Ordering::SeqCst);
         let message = DanmuMessage::chat(format!("message-{id}"), user, user, content);
+        self.send(DanmuItem::Message(message));
+    }
+
+    /// Send the platform's signal that the stream was closed on the newest
+    /// connection, as a platform's chat does when the broadcast ends.
+    #[track_caller]
+    pub fn close_stream(&self) {
+        self.send(DanmuItem::Control(DanmuControlEvent::StreamClosed {
+            message: None,
+            action: None,
+        }));
+    }
+
+    #[track_caller]
+    fn send(&self, item: DanmuItem) {
         let state = self.feed.state.lock().expect("danmu feed lock");
         let sender = state.sender.as_ref().expect("no danmu connection is open");
         sender
-            .try_send(DanmuItem::Message(message))
+            .try_send(item)
             .expect("the backend is reading the danmu connection");
     }
 }

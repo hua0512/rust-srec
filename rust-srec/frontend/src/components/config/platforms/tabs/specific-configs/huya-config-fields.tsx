@@ -45,11 +45,13 @@ interface HuyaConfigFieldsProps<TFieldValues extends FieldValues> {
   form: UseFormReturn<TFieldValues>;
   /** Path to the object holding this platform's options. */
   fieldName: Path<TFieldValues>;
+  inherited?: boolean;
 }
 
 export function HuyaConfigFields<TFieldValues extends FieldValues>({
   form,
   fieldName,
+  inherited = false,
 }: HuyaConfigFieldsProps<TFieldValues>) {
   const { i18n } = useLingui();
   return (
@@ -166,6 +168,7 @@ export function HuyaConfigFields<TFieldValues extends FieldValues>({
               fieldName,
               'force_origin_quality',
             )}
+            inherited={inherited}
             title={<Trans>Force Origin Quality</Trans>}
             description={
               <Trans>

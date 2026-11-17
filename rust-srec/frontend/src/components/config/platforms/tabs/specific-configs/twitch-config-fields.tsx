@@ -24,6 +24,7 @@ interface TwitchConfigFieldsProps<TFieldValues extends FieldValues> {
   form: UseFormReturn<TFieldValues>;
   /** Path to the object holding this platform's options. */
   fieldName: Path<TFieldValues>;
+  inherited?: boolean;
 }
 
 /**
@@ -63,6 +64,7 @@ const OPTIONAL_CODECS = [
 export function TwitchConfigFields<TFieldValues extends FieldValues>({
   form,
   fieldName,
+  inherited = false,
 }: TwitchConfigFieldsProps<TFieldValues>) {
   const { i18n } = useLingui();
 
@@ -114,11 +116,11 @@ export function TwitchConfigFields<TFieldValues extends FieldValues>({
           <Trans>Danmu Control</Trans>
         </ConfigSectionHeading>
         <EndStreamOnDanmuCloseField
-          form={form}
           name={configPath<TFieldValues>(
             fieldName,
             'end_stream_on_danmu_stream_closed',
           )}
+          inherited={inherited}
         />
       </section>
 
@@ -128,6 +130,7 @@ export function TwitchConfigFields<TFieldValues extends FieldValues>({
         </ConfigSectionHeading>
         <FlagFormField
           fieldName={configPath<TFieldValues>(fieldName, 'batch_detection')}
+          inherited={inherited}
           title={<Trans>Batch Detection</Trans>}
           description={
             <Trans>
