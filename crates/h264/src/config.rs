@@ -153,7 +153,6 @@ impl AVCDecoderConfigurationRecord {
     /// extension with chroma format and bit depths, which come from the
     /// parsed SPS.
     pub fn from_parameter_sets(sps: Bytes, pps: Bytes) -> io::Result<Self> {
-        let parsed = crate::Sps::parse_with_emulation_prevention(io::Cursor::new(&sps))?;
         // These bytes start with a non-zero profile, so they hold no
         // emulation prevention byte.
         let Some(&[profile_indication, profile_compatibility, level_indication]) = sps.get(1..4)
@@ -162,7 +161,8 @@ impl AVCDecoderConfigurationRecord {
         };
         let extended_config = match profile_indication {
             100 | 110 | 122 | 244 => {
-                let ext = parsed.ext.as_ref().ok_or_else(|| {
+                let parsed = crate::Sps::parse_with_emulation_prevention(io::Cursor::new(&sps))?;
+                let ext = parsed.ext.ok_or_else(|| {
                     io::Error::new(
                         io::ErrorKind::InvalidData,
                         "High profile SPS without chroma format",

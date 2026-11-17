@@ -22,6 +22,8 @@ use super::{NativeError, Route, ticket};
 const MEDIA_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 /// A connection must deliver a keyframe this soon.
 const KEYFRAME_TIMEOUT: Duration = Duration::from_secs(12);
+/// After that, it fails when this long passes without video written.
+const VIDEO_TIMEOUT: Duration = Duration::from_secs(20);
 /// How long the start of the stream waits for audio after the first
 /// keyframe, so that a room with audio starts with both sequence headers. A
 /// room without audio is recorded without it.
@@ -65,12 +67,13 @@ pub async fn probe(room_id: u64, route: &Route) -> Result<RoomKind, NativeError>
 /// Records the room `room_id` of the streamer `owner_uid` as FLV.
 ///
 /// The stream starts with the FLV header, which announces audio and video.
-/// Each media connection must deliver a keyframe within 12 s; audio is
-/// written whenever it comes. When the media drops, stalls or is refused,
-/// the stream reconnects up to 3 times, 2 s apart, each time with a fresh
-/// ticket and room lookup, and continues as the same FLV stream; 30 s of
-/// media restore the reconnects. It ends without an error when the room
-/// ends, and after its first error.
+/// Each media connection must deliver a keyframe within 12 s, and then
+/// video at least every 20 s; audio is written whenever it comes. When the
+/// media drops, stalls or is refused, the stream reconnects up to 3 times,
+/// 2 s apart, each time with a fresh ticket and room lookup, and continues
+/// as the same FLV stream, its video at the next keyframe; 30 s of media
+/// restore the reconnects. Packets that cannot be read are skipped. It ends
+/// without an error when the room ends, and after its first error.
 pub fn open(
     room_id: u64,
     owner_uid: u32,
@@ -118,18 +121,20 @@ struct Session {
     audio: MediaConnection,
     depacketizer: VideoDepacketizer,
     startup: Startup,
-    /// The muxer's keyframe count when this session started.
-    keyframes: u64,
+    /// The muxer's video frame count when this session last wrote one.
+    video_frames: u64,
+    /// When this session fails unless it writes video.
+    video_deadline: Instant,
     /// When this session will have delivered media long enough to restore
     /// the reconnects.
     healthy_at: Option<Instant>,
 }
 
-/// What a session waits for, and until when.
+/// What a session waits for.
 #[derive(Clone, Copy)]
 enum Startup {
-    /// A keyframe; without one the connection has failed.
-    Keyframe(Instant),
+    /// A keyframe, by the video deadline.
+    Keyframe,
     /// Audio, before the stream starts; without it the stream starts anyway.
     Audio(Instant),
     Done,
@@ -192,24 +197,27 @@ impl Recorder {
         };
 
         let deadline = match session.startup {
-            Startup::Keyframe(at) | Startup::Audio(at) => Some(at),
-            Startup::Done => None,
+            Startup::Audio(at) => at.min(session.video_deadline),
+            Startup::Keyframe | Startup::Done => session.video_deadline,
         };
         let received = tokio::select! {
             packet = session.video.next_packet() => Some(Received::Video(packet?)),
             packet = session.audio.next_packet() => Some(Received::Audio(packet?)),
-            () = sleep_until(deadline.unwrap_or_else(Instant::now)), if deadline.is_some() => None,
+            () = sleep_until(deadline) => None,
         };
 
         let mut tags = Vec::new();
         match received {
-            None => {
-                if let Startup::Keyframe(_) = session.startup {
-                    return Err(NativeError::Timeout("a keyframe"));
+            None => match session.startup {
+                Startup::Keyframe => return Err(NativeError::Timeout("a keyframe")),
+                _ if Instant::now() >= session.video_deadline => {
+                    return Err(NativeError::Timeout("video"));
                 }
-                debug!(room_id = self.room_id, "no audio yet; starting without it");
-                session.startup = Startup::Done;
-            }
+                _ => {
+                    debug!(room_id = self.room_id, "no audio yet; starting without it");
+                    session.startup = Startup::Done;
+                }
+            },
             Some(Received::Video(packet)) => {
                 let mut frames = Vec::new();
                 session.depacketizer.push(packet, &mut frames)?;
@@ -225,15 +233,18 @@ impl Recorder {
         }
 
         let now = Instant::now();
-        if let Startup::Keyframe(_) = session.startup
-            && self.muxer.keyframes() > session.keyframes
-        {
-            session.healthy_at = Some(now + HEALTHY_AFTER);
-            session.startup = if self.started {
-                Startup::Done
-            } else {
-                Startup::Audio(now + AUDIO_WAIT)
-            };
+        if self.muxer.video_frames() > session.video_frames {
+            session.video_frames = self.muxer.video_frames();
+            session.video_deadline = now + VIDEO_TIMEOUT;
+            // The muxer starts a session's video at a keyframe.
+            if let Startup::Keyframe = session.startup {
+                session.healthy_at = Some(now + HEALTHY_AFTER);
+                session.startup = if self.started {
+                    Startup::Done
+                } else {
+                    Startup::Audio(now + AUDIO_WAIT)
+                };
+            }
         }
         if let Startup::Audio(_) = session.startup
             && self.muxer.audio_frames() > 0
@@ -272,7 +283,7 @@ impl Recorder {
             pick(&channel.audio_servers, attempt),
         ) else {
             return Err(NativeError::Unsupported(
-                "a room without video or audio servers",
+                "a room without TCP video or audio servers",
             ));
         };
         let (video, audio) = timeout(
@@ -296,25 +307,29 @@ impl Recorder {
         )
         .await
         .map_err(|_| NativeError::Timeout("the media servers"))??;
+        self.muxer.wait_for_keyframe();
         Ok(Session {
             video,
             audio,
             depacketizer: VideoDepacketizer::new(self.owner_uid),
-            startup: Startup::Keyframe(Instant::now() + KEYFRAME_TIMEOUT),
-            keyframes: self.muxer.keyframes(),
+            startup: Startup::Keyframe,
+            video_frames: self.muxer.video_frames(),
+            video_deadline: Instant::now() + KEYFRAME_TIMEOUT,
             healthy_at: None,
         })
     }
 }
 
-/// The server and port for connection attempt `attempt`: each server in
-/// turn, then each with its next port.
+/// The server and port for connection attempt `attempt`: each server with a
+/// TCP port in turn, then each with its next port.
 fn pick(servers: &[MediaServer], attempt: usize) -> Option<(Ipv4Addr, u16)> {
+    let servers: Vec<_> = servers
+        .iter()
+        .filter(|server| !server.tcp_ports.is_empty())
+        .collect();
     let server = servers.get(attempt % servers.len().max(1))?;
     let round = attempt / servers.len();
-    let port = server
-        .tcp_ports
-        .get(round % server.tcp_ports.len().max(1))?;
+    let port = server.tcp_ports.get(round % server.tcp_ports.len())?;
     Some((server.ip, *port))
 }
 

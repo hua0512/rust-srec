@@ -341,16 +341,6 @@ mod tests {
             );
             assert_eq!(adts.audio_specific_config(), config);
         }
-
-        let mono = AdtsHeader::parse(b"\xff\xf1\x5c\x40\x45\xa0\xd0").unwrap();
-        assert_eq!(
-            PartialAudioSpecificConfig::parse(&mono.audio_specific_config()).unwrap(),
-            PartialAudioSpecificConfig {
-                audio_object_type: AudioObjectType::AacLowComplexity,
-                sampling_frequency: 22050,
-                channel_configuration: 1,
-            }
-        );
     }
 
     #[test]

@@ -17,8 +17,8 @@ use ::flv::avc::AvcPacketType;
 use ::flv::video::{EnhancedPacketType, VideoCodecId, VideoFourCC, VideoFrameType};
 use ::flv::{FlvData, FlvHeader, FlvTag, FlvTagType};
 use bytes::{BufMut, Bytes};
-use h264::AVCDecoderConfigurationRecord;
-use h265::HEVCDecoderConfigurationRecord;
+use h264::{AVCDecoderConfigurationRecord, NALUnitType as AvcNal};
+use h265::{HEVCDecoderConfigurationRecord, NALUnitType as HevcNal};
 
 use super::NativeError;
 use super::depacketize::{AudioFrame, VideoCodec, VideoFrame};
@@ -51,12 +51,15 @@ pub(super) struct Muxer {
     last_tag_time: Option<u32>,
     /// Audio that arrived before the timeline started.
     held_audio: VecDeque<AudioFrame>,
-    keyframes: u64,
+    /// Video waits for a keyframe, because what follows may not continue
+    /// what was written.
+    keyframe_needed: bool,
+    video_frames: u64,
     audio_frames: u64,
 }
 
 /// The parameter sets of a video sequence header.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 enum VideoConfig {
     H264 { sps: Bytes, pps: Bytes },
     Hevc { vps: Bytes, sps: Bytes, pps: Bytes },
@@ -98,9 +101,15 @@ fn order(time: u32, last: Option<u32>) -> Order {
 }
 
 impl Muxer {
-    /// Video keyframes written so far.
-    pub(super) fn keyframes(&self) -> u64 {
-        self.keyframes
+    /// Writes no more video until a keyframe: the frames that follow may be
+    /// of another substream than those written.
+    pub(super) fn wait_for_keyframe(&mut self) {
+        self.keyframe_needed = true;
+    }
+
+    /// Video frames written so far.
+    pub(super) fn video_frames(&self) -> u64 {
+        self.video_frames
     }
 
     /// Audio frames written so far.
@@ -109,8 +118,8 @@ impl Muxer {
     }
 
     /// Appends the tags for a video frame to `out`, after the file header
-    /// and a sequence header when needed. Before the first keyframe, frames
-    /// are dropped.
+    /// and a sequence header when needed. Before the first keyframe, and
+    /// after [`Self::wait_for_keyframe`] until the next, frames are dropped.
     pub(super) fn push_video(
         &mut self,
         frame: VideoFrame,
@@ -120,6 +129,9 @@ impl Muxer {
             Order::Next => {}
             Order::Repeat => return Ok(()),
             Order::Reset => self.reset(),
+        }
+        if self.keyframe_needed && !frame.keyframe {
+            return Ok(());
         }
         let nalus = annex_b_nalus(&frame.data);
         let config = frame
@@ -162,8 +174,9 @@ impl Muxer {
         ));
         self.last_video = Some(frame.dts);
         self.wrote(time);
+        self.video_frames += 1;
         if frame.keyframe {
-            self.keyframes += 1;
+            self.keyframe_needed = false;
         }
 
         for audio in std::mem::take(&mut self.held_audio) {
@@ -250,13 +263,13 @@ impl VideoConfig {
         };
         Some(match codec {
             VideoCodec::H264 => Self::H264 {
-                sps: find(h264_nal::SPS)?,
-                pps: find(h264_nal::PPS)?,
+                sps: find(AvcNal::SPS as u8)?,
+                pps: find(AvcNal::PPS as u8)?,
             },
             VideoCodec::Hevc => Self::Hevc {
-                vps: find(hevc_nal::VPS)?,
-                sps: find(hevc_nal::SPS)?,
-                pps: find(hevc_nal::PPS)?,
+                vps: find(HevcNal::VpsNut as u8)?,
+                sps: find(HevcNal::SpsNut as u8)?,
+                pps: find(HevcNal::PpsNut as u8)?,
             },
         })
     }
@@ -335,9 +348,18 @@ fn coded_frame(
     // SI24.
     let composition_time = composition_time.clamp(-(1 << 23), (1 << 23) - 1);
     body.put_slice(&composition_time.to_be_bytes()[1..]);
-    let skipped = match codec {
-        VideoCodec::H264 => &[h264_nal::SPS, h264_nal::PPS, h264_nal::AUD][..],
-        VideoCodec::Hevc => &[hevc_nal::VPS, hevc_nal::SPS, hevc_nal::PPS, hevc_nal::AUD][..],
+    let skipped: &[u8] = match codec {
+        VideoCodec::H264 => &[
+            AvcNal::SPS as u8,
+            AvcNal::PPS as u8,
+            AvcNal::AccessUnitDelimiter as u8,
+        ],
+        VideoCodec::Hevc => &[
+            HevcNal::VpsNut as u8,
+            HevcNal::SpsNut as u8,
+            HevcNal::PpsNut as u8,
+            HevcNal::AudNut as u8,
+        ],
     };
     for nalu in nalus {
         if nal_type(codec, nalu).is_some_and(|kind| skipped.contains(&kind)) {
@@ -367,19 +389,6 @@ fn audio_tag(time: u32, packet_type: u8, payload: &[u8]) -> FlvData {
     body.put_u8(packet_type);
     body.put_slice(payload);
     FlvData::Tag(FlvTag::new(time, 0, FlvTagType::Audio, false, body.into()))
-}
-
-mod h264_nal {
-    pub(super) const SPS: u8 = 7;
-    pub(super) const PPS: u8 = 8;
-    pub(super) const AUD: u8 = 9;
-}
-
-mod hevc_nal {
-    pub(super) const VPS: u8 = 32;
-    pub(super) const SPS: u8 = 33;
-    pub(super) const PPS: u8 = 34;
-    pub(super) const AUD: u8 = 35;
 }
 
 fn nal_type(codec: VideoCodec, nalu: &[u8]) -> Option<u8> {
@@ -593,29 +602,34 @@ mod tests {
     }
 
     #[test]
-    fn the_timeline_continues_across_repeats_and_clock_resets() {
-        enum Frame {
+    fn the_timeline_continues_across_reconnects_and_clock_resets() {
+        enum Step {
             Key(u32),
             Inter(u32),
             Audio(u32),
+            Reconnect,
         }
-        use Frame::{Audio, Inter, Key};
+        use Step::{Audio, Inter, Key, Reconnect};
 
         let keyframe = annex_b(&[VPS, SPS, PPS, b"\x26\x01\xaf"]);
         let mut muxer = Muxer::default();
         // The source clock wraps around, then restarts an hour back.
         let t = |ms: u32| (u32::MAX - 20).wrapping_add(ms);
         let restart = |ms: u32| t(0).wrapping_sub(3_600_000).wrapping_add(ms);
-        let steps: &[(Frame, &[u32])] = &[
+        let steps: &[(Step, &[u32])] = &[
             (Key(t(0)), &[0]),
             (Inter(t(40)), &[40]),
             (Audio(t(10)), &[10]),
             // A reconnect sends what was written again, then new frames.
+            // Its video may be of another substream, so it continues at a
+            // keyframe.
+            (Reconnect, &[]),
             (Key(t(0)), &[]),
             (Inter(t(40)), &[]),
             (Audio(t(10)), &[]),
-            (Inter(t(80)), &[80]),
+            (Inter(t(60)), &[]),
             (Audio(t(56)), &[56]),
+            (Key(t(80)), &[80]),
             // The source clock restarts: frames wait for a keyframe, which
             // continues after the last tag.
             (Inter(restart(100)), &[]),
@@ -623,9 +637,9 @@ mod tests {
             (Key(restart(100)), &[81, 91]),
             (Inter(restart(140)), &[121]),
         ];
-        for (at, (frame, expected)) in steps.iter().enumerate() {
+        for (at, (step, expected)) in steps.iter().enumerate() {
             let mut out = Vec::new();
-            match *frame {
+            match *step {
                 Key(dts) => {
                     muxer.push_video(video(VideoCodec::Hevc, true, dts, dts, &keyframe), &mut out)
                 }
@@ -634,6 +648,10 @@ mod tests {
                     &mut out,
                 ),
                 Audio(pts) => muxer.push_audio(audio(pts, 0), &mut out),
+                Reconnect => {
+                    muxer.wait_for_keyframe();
+                    Ok(())
+                }
             }
             .unwrap();
             let times: Vec<u32> = out

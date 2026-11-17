@@ -40,9 +40,10 @@ const VIDEO_PACKET: u32 = 5;
 const AUDIO_PACKET: u32 = 2;
 
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(5);
-/// A track counts as dead after this long without media. Audio only once
-/// the connection has delivered some: a room can have no audio at all.
-const MEDIA_TIMEOUT: Duration = Duration::from_secs(20);
+/// Audio counts as dead after this long without any, once the connection
+/// has delivered some: a room can have no audio at all. Video is watched by
+/// the recorder, which sees whether it yields frames.
+const AUDIO_TIMEOUT: Duration = Duration::from_secs(20);
 /// Bound on the server accepting what is queued for it.
 const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -63,7 +64,7 @@ pub(super) struct MediaConnection {
     input: BytesMut,
     output: BytesMut,
     keepalive_at: Instant,
-    media_deadline: Option<Instant>,
+    audio_deadline: Option<Instant>,
     /// The id of the video subscription once sent.
     subscription: Option<u64>,
     /// Whether the server confirmed the subscription. Video before that is
@@ -98,7 +99,7 @@ impl MediaConnection {
             input: BytesMut::new(),
             output: BytesMut::new(),
             keepalive_at: now + KEEPALIVE_INTERVAL,
-            media_deadline: (track == Track::Video).then_some(now + MEDIA_TIMEOUT),
+            audio_deadline: None,
             subscription: None,
             subscribed: false,
         };
@@ -130,28 +131,23 @@ impl MediaConnection {
                 .map_err(|_| NativeError::Timeout("a media server to accept data"))??;
 
             let keepalive_at = self.keepalive_at;
-            let media_deadline = self.media_deadline;
+            let audio_deadline = self.audio_deadline;
             let packet = tokio::select! {
                 packet = self.read_packet() => packet?,
                 () = sleep_until(keepalive_at) => continue,
-                () = sleep_until(media_deadline.unwrap_or(keepalive_at)), if media_deadline.is_some() => {
-                    return Err(NativeError::Timeout(match self.track {
-                        Track::Video => "video",
-                        Track::Audio => "audio",
-                    }));
+                () = sleep_until(audio_deadline.unwrap_or(keepalive_at)), if audio_deadline.is_some() => {
+                    return Err(NativeError::Timeout("audio"));
                 }
             };
             match packet {
-                Packet::Media { kind, data } => {
-                    let wanted = match self.track {
-                        Track::Video => kind == VIDEO_PACKET && self.subscribed,
-                        Track::Audio => kind == AUDIO_PACKET,
-                    };
-                    if wanted {
-                        self.media_deadline = Some(Instant::now() + MEDIA_TIMEOUT);
+                Packet::Media { kind, data } => match self.track {
+                    Track::Video if kind == VIDEO_PACKET && self.subscribed => return Ok(data),
+                    Track::Audio if kind == AUDIO_PACKET => {
+                        self.audio_deadline = Some(Instant::now() + AUDIO_TIMEOUT);
                         return Ok(data);
                     }
-                }
+                    _ => {}
+                },
                 Packet::Control { uri, status, body } => self.control(uri, status, &body)?,
             }
         }
@@ -172,22 +168,32 @@ impl MediaConnection {
             });
         }
         let short = || NativeError::Protocol(format!("media control message {uri:#x} is short"));
+        let ignored = || {
+            debug!(
+                track = ?self.track,
+                uri,
+                len = body.len(),
+                "short media control message ignored"
+            );
+        };
         match uri {
             LOGIN_ANSWER => debug!(track = ?self.track, "media login answered"),
-            PING => {
-                let (Some(head), Some(tail)) = (body.get(..8), body.get(16..28)) else {
-                    return Err(short());
-                };
-                put_frame(&mut self.output, PING_ANSWER, &[head, tail].concat());
-            }
+            PING => match (body.get(..8), body.get(16..28)) {
+                (Some(head), Some(tail)) => {
+                    put_frame(&mut self.output, PING_ANSWER, &[head, tail].concat());
+                }
+                _ => ignored(),
+            },
             STREAMS => {
                 put_frame(
                     &mut self.output,
                     STREAMS_ANSWER,
                     body.get(..16).ok_or_else(short)?,
                 );
-                let streams = body.get(16..20).ok_or_else(short)?;
-                if self.track == Track::Video && self.subscription.is_none() && streams != [0; 4] {
+                if self.track == Track::Video
+                    && self.subscription.is_none()
+                    && body.get(16..20).ok_or_else(short)? != [0; 4]
+                {
                     let id = unix_ms();
                     put_frame(
                         &mut self.output,
@@ -199,11 +205,14 @@ impl MediaConnection {
             }
             SUBSCRIBED => {
                 let mut body = body;
-                if body.try_get_u32_le()? == self.source
-                    && Some(body.try_get_u64_le()?) == self.subscription
-                {
-                    debug!("video subscription confirmed");
-                    self.subscribed = true;
+                match (body.try_get_u32_le(), body.try_get_u64_le()) {
+                    (Ok(source), Ok(id)) => {
+                        if source == self.source && Some(id) == self.subscription {
+                            debug!("video subscription confirmed");
+                            self.subscribed = true;
+                        }
+                    }
+                    _ => ignored(),
                 }
             }
             // Shorter ones need no answer.

@@ -24,8 +24,10 @@ use super::linkd::take;
 
 /// Bound on the frames being reassembled.
 const MAX_PENDING_FRAMES: usize = 32;
-/// Bound on the bytes of the frames being reassembled.
+/// Bound on the memory of the frames being reassembled: their bytes, and
+/// [`FRAGMENT_COST`] for each fragment, so that many tiny ones count too.
 const MAX_PENDING_BYTES: usize = 8 << 20;
+const FRAGMENT_COST: usize = 64;
 /// Bytes before an assembled frame's access unit: pts, dts and one more.
 const FRAME_PREFIX_LEN: usize = 9;
 
@@ -36,7 +38,7 @@ pub(super) enum VideoCodec {
 }
 
 /// A complete video frame.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub(super) struct VideoFrame {
     pub(super) codec: VideoCodec,
     pub(super) keyframe: bool,
@@ -48,7 +50,7 @@ pub(super) struct VideoFrame {
 }
 
 /// One ADTS frame.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub(super) struct AudioFrame {
     /// Presentation time in ms, on the video's clock.
     pub(super) pts: u32,
@@ -69,6 +71,8 @@ struct Fragment {
     index: u16,
     /// The frame's fragment count, when this fragment tells it.
     count: Option<u32>,
+    /// Whether the frame combines several participants' video.
+    combined: bool,
     payload: Bytes,
 }
 
@@ -91,6 +95,7 @@ impl Fragment {
         let mut mode = 0;
         let mut index = 0u16;
         let mut count = None;
+        let mut combined = false;
         // Counted from the packet's third byte.
         let mut header_len = None;
         if g & 1 != 0 {
@@ -178,8 +183,8 @@ impl Fragment {
                         if e4 & 64 != 0 {
                             header_len = Some(usize::from(header.try_get_u16_le()?));
                         }
-                        if e4 & 128 != 0 && header.try_get_u8()? & 1 != 0 {
-                            return Err(NativeError::Unsupported("video of combined sources"));
+                        if e4 & 128 != 0 {
+                            combined = header.try_get_u8()? & 1 != 0;
                         }
                     }
                 }
@@ -207,6 +212,7 @@ impl Fragment {
             mode,
             index,
             count,
+            combined,
             payload: packet.slice(payload_start..),
         })
     }
@@ -217,24 +223,35 @@ impl Fragment {
 struct PartialFrame {
     keyframe: bool,
     codec: u8,
+    combined: bool,
     count: Option<u32>,
     parts: BTreeMap<u16, Bytes>,
-    len: usize,
+    /// The memory held, counted as for [`MAX_PENDING_BYTES`].
+    cost: usize,
 }
 
 impl PartialFrame {
+    /// Whether the fragments `0..count` are all there.
     fn is_complete(&self) -> bool {
-        self.count
-            .is_some_and(|count| self.parts.len() as u32 == count)
+        self.count.is_some_and(|count| {
+            self.parts.len() as u32 == count
+                && self
+                    .parts
+                    .last_key_value()
+                    .is_some_and(|(&index, _)| u32::from(index) < count)
+        })
     }
 
     fn assemble(self) -> Result<VideoFrame, NativeError> {
+        if self.combined {
+            return Err(NativeError::Unsupported("video of combined sources"));
+        }
         let codec = match self.codec {
             0 | 2 | 3 => VideoCodec::H264,
             4 | 5 => VideoCodec::Hevc,
             _ => return Err(NativeError::Unsupported("video codec")),
         };
-        let mut data = Vec::with_capacity(self.len);
+        let mut data = Vec::with_capacity(self.parts.values().map(Bytes::len).sum());
         for part in self.parts.into_values() {
             data.extend_from_slice(&part);
         }
@@ -264,13 +281,18 @@ struct Substream {
     /// A frame went missing; frames that may depend on it are dropped until
     /// the next keyframe.
     broken: bool,
+    /// Frames numbered below this were output or given up. The server
+    /// resends lost fragments a few frames late, and those of such a frame
+    /// are dropped rather than holding up the frames after it.
+    floor: u32,
 }
 
 /// Reassembles one streamer's video frames from their fragments.
 ///
 /// Frames of a substream come out in frame-number order, starting at a
 /// keyframe. Output follows one substream, and moves to another at that
-/// one's first keyframe. Fragments of other participants are dropped.
+/// one's first keyframe. Fragments of other participants are dropped, and so
+/// are packets that cannot be read.
 pub(super) struct VideoDepacketizer {
     owner_uid: u32,
     substreams: HashMap<u8, Substream>,
@@ -292,38 +314,50 @@ impl VideoDepacketizer {
     }
 
     /// Takes a video packet and appends the frames it completes to `out`.
+    /// Fails only for a frame that would be output but cannot be.
     pub(super) fn push(
         &mut self,
         packet: Bytes,
         out: &mut Vec<VideoFrame>,
     ) -> Result<(), NativeError> {
-        let fragment = Fragment::parse(packet)?;
+        let fragment = match Fragment::parse(packet) {
+            Ok(fragment) => fragment,
+            Err(error) => {
+                debug!(%error, "video packet unreadable; dropped");
+                return Ok(());
+            }
+        };
         if fragment.owner.is_some_and(|owner| owner != self.owner_uid) {
             return Ok(());
         }
         let mode = fragment.mode;
         let substream = self.substreams.entry(mode).or_default();
+        if fragment.frame < substream.floor {
+            return Ok(());
+        }
         let frame = substream.frames.entry(fragment.frame).or_insert_with(|| {
             self.pending_frames += 1;
             PartialFrame::default()
         });
         frame.keyframe |= fragment.keyframe;
         frame.codec = fragment.codec;
+        frame.combined |= fragment.combined;
         frame.count = frame.count.or(fragment.count);
-        let len = fragment.payload.len();
+        let cost = fragment.payload.len() + FRAGMENT_COST;
         if let Some(replaced) = frame.parts.insert(fragment.index, fragment.payload) {
-            frame.len -= replaced.len();
-            self.pending_bytes -= replaced.len();
+            frame.cost -= replaced.len() + FRAGMENT_COST;
+            self.pending_bytes -= replaced.len() + FRAGMENT_COST;
         }
-        frame.len += len;
-        self.pending_bytes += len;
+        frame.cost += cost;
+        self.pending_bytes += cost;
 
-        // Frames before a complete keyframe can no longer matter.
+        // Frames before a complete keyframe can no longer matter. Draining
+        // the keyframe then raises the floor past them.
         if frame.keyframe && frame.is_complete() {
             let newer = substream.frames.split_off(&fragment.frame);
             for (_, stale) in std::mem::replace(&mut substream.frames, newer) {
                 self.pending_frames -= 1;
-                self.pending_bytes -= stale.len;
+                self.pending_bytes -= stale.cost;
             }
         }
         self.drain(mode, out)?;
@@ -337,8 +371,9 @@ impl VideoDepacketizer {
             {
                 debug!(mode, frame = number, "video frame incomplete; dropped");
                 substream.broken = true;
+                substream.floor = number.saturating_add(1);
                 self.pending_frames -= 1;
-                self.pending_bytes -= lost.len;
+                self.pending_bytes -= lost.cost;
             }
             self.drain(mode, out)?;
         }
@@ -354,9 +389,10 @@ impl VideoDepacketizer {
             if !entry.get().is_complete() {
                 break;
             }
-            let frame = entry.remove();
+            let (number, frame) = entry.remove_entry();
+            substream.floor = number.saturating_add(1);
             self.pending_frames -= 1;
-            self.pending_bytes -= frame.len;
+            self.pending_bytes -= frame.cost;
             if frame.keyframe {
                 substream.broken = false;
             } else if substream.broken {
@@ -366,7 +402,20 @@ impl VideoDepacketizer {
             if switched && !frame.keyframe {
                 continue;
             }
-            let frame = frame.assemble()?;
+            let frame = match frame.assemble() {
+                Ok(frame) => frame,
+                // Output stays with a substream it can follow.
+                Err(NativeError::Unsupported(what)) if switched && self.current.is_some() => {
+                    debug!(mode, what, "video substream not followed");
+                    continue;
+                }
+                Err(error @ NativeError::Unsupported(_)) => return Err(error),
+                Err(error) => {
+                    debug!(mode, frame = number, %error, "video frame unreadable; dropped");
+                    substream.broken = true;
+                    continue;
+                }
+            };
             if switched {
                 match self.current {
                     Some(from) => info!(
@@ -402,15 +451,28 @@ fn skip(body: &mut &[u8], len: usize) -> Result<(), NativeError> {
 }
 
 /// The ADTS frames in an audio packet, with their times. Empty for another
-/// participant's audio or a packet without a time.
+/// participant's audio, a packet without a time and one that cannot be
+/// read. Fails only for the streamer's audio in a format not recorded.
 pub(super) fn audio_frames(packet: &Bytes, owner_uid: u32) -> Result<Vec<AudioFrame>, NativeError> {
+    match read_audio(packet, owner_uid) {
+        Err(error @ NativeError::Unsupported(_)) => Err(error),
+        Err(error) => {
+            debug!(%error, "audio packet unreadable; dropped");
+            Ok(Vec::new())
+        }
+        frames => frames,
+    }
+}
+
+fn read_audio(packet: &Bytes, owner_uid: u32) -> Result<Vec<AudioFrame>, NativeError> {
     let mut header = &packet[..];
 
     skip(&mut header, 2)?;
     let f = header.try_get_u8()?;
     let g = header.try_get_u8()?;
     if g & 128 == 0 {
-        return Err(NativeError::Unsupported("legacy audio header"));
+        // Its owner cannot be told.
+        return Err(NativeError::Protocol("legacy audio header".to_owned()));
     }
     // Sequence number.
     skip(&mut header, 4)?;
@@ -529,9 +591,11 @@ pub(super) fn audio_frames(packet: &Bytes, owner_uid: u32) -> Result<Vec<AudioFr
                 "audio frame length differs from its ADTS header".to_owned(),
             ));
         }
-        let rate = u64::from(adts.sampling_frequency());
+        let since = (samples * 1000)
+            .checked_div(u64::from(adts.sampling_frequency()))
+            .ok_or_else(|| NativeError::Protocol("audio frame without a sample rate".to_owned()))?;
         frames.push(AudioFrame {
-            pts: pts.wrapping_add((samples * 1000 / rate) as u32),
+            pts: pts.wrapping_add(since as u32),
             header: adts,
             data: packet.slice_ref(data),
         });
@@ -560,7 +624,8 @@ mod tests {
     ];
     const H264_KEY_FIRST: &str = "b54bd0c162daeb890200229d040302013a01e803ff000d0c0b0a86a05a9d096801000058020000000000006701000000000000570200000000000030000000008104030201000000000d0c0b0a00000000000000008a008b0084ac00";
     const H264_KEY_LAST: &str = "e548d0c190daeb890200223d040302015101e803ff1786a033808104030201000000000d0c0b0a00000000000000000000000004ac";
-    /// Where the fragment index sits in these headers.
+    /// Where the frame number and the fragment index sit in these headers.
+    const FRAME_AT: usize = 6;
     const INDEX_AT: usize = 21;
 
     fn hex(text: &str) -> Vec<u8> {
@@ -579,6 +644,12 @@ mod tests {
     fn second_and_last(header: &str, payload: &[u8]) -> Bytes {
         let mut packet = [hex(header), payload.to_vec()].concat();
         packet[INDEX_AT] = 1;
+        packet.into()
+    }
+
+    fn numbered(packet: Bytes, frame: u32) -> Bytes {
+        let mut packet = packet.to_vec();
+        packet[FRAME_AT..FRAME_AT + 4].copy_from_slice(&frame.to_le_bytes());
         packet.into()
     }
 
@@ -700,6 +771,54 @@ mod tests {
             })
             .collect();
         assert_eq!(push(&mut depacketizer, guest), []);
+    }
+
+    #[test]
+    fn late_fragments_neither_reorder_nor_hold_up_the_frames_after_them() {
+        let mut depacketizer = VideoDepacketizer::new(OWNER);
+        let keyframe = |number, dts| {
+            [
+                packet(HEVC_KEY_FIRST, &frame_start(dts, dts, b"\0\0\x01\x26\x01")),
+                second_and_last(HEVC_KEY_LAST, b""),
+            ]
+            .map(|packet| numbered(packet, number))
+        };
+        let inter_frame = |number, dts| {
+            [
+                packet(HEVC_P[0], &frame_start(dts, dts, b"\0\0\x01\x02\x01")),
+                packet(HEVC_P[1], b""),
+                packet(HEVC_P[2], b""),
+            ]
+            .map(|packet| numbered(packet, number))
+        };
+        let mut output = |packets: &[&[Bytes]]| -> Vec<u32> {
+            push(&mut depacketizer, packets.concat())
+                .into_iter()
+                .map(|frame| frame.dts)
+                .collect()
+        };
+
+        // As seen live, the server resends a frame's lost middle fragments
+        // after the next few frames.
+        let [first, middle, last] = inter_frame(11, 1040);
+        assert_eq!(
+            output(&[
+                &keyframe(10, 1000),
+                &[first, last],
+                &inter_frame(12, 1080),
+                &inter_frame(13, 1120),
+            ]),
+            [1000]
+        );
+        assert_eq!(output(&[&[middle]]), [1040, 1080, 1120]);
+
+        // When they come after a keyframe, the frames before it are lost.
+        let [first, middle, last] = inter_frame(14, 1160);
+        assert_eq!(
+            output(&[&[first, last], &inter_frame(15, 1200), &keyframe(16, 1240)]),
+            [1240]
+        );
+        assert_eq!(output(&[&[middle], &inter_frame(17, 1280)]), [1280]);
     }
 
     #[test]
