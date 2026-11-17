@@ -36,6 +36,7 @@ impl StreamerActor {
 
     /// Initiate a status check, unless the streamer is inside its error backoff.
     pub(super) async fn initiate_check(&mut self) -> Result<(), ActorError> {
+        self.discard_batch_hint();
         // Respect temporary backoff (disabled_until) without removing the actor.
         // This prevents "dead stop" monitoring where the scheduler removes actors
         // for temporary errors and never respawns them.

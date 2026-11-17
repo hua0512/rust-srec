@@ -182,7 +182,7 @@ where
         // duration measurement so we don't get hit by wall-clock jumps.
         let started = std::time::Instant::now();
         let checked_at = chrono::Utc::now();
-        let outcome = self.monitor.check_streamer(streamer).await;
+        let outcome = self.monitor.check_streamer_for_actor(streamer).await;
         let duration =
             chrono::Duration::from_std(started.elapsed()).unwrap_or(chrono::Duration::MAX);
 
@@ -192,12 +192,12 @@ where
         // actual polls.
         if let Some(writer) = &self.history_writer {
             let record = match &outcome {
-                Ok((status, source)) => check_record_from_live_status(
+                Ok(check) => check_record_from_live_status(
                     &streamer.id,
                     checked_at,
                     duration,
-                    status,
-                    *source,
+                    &check.status,
+                    check.source,
                 ),
                 Err(err) => {
                     CheckRecord::from_error(&streamer.id, checked_at, duration, &err.to_string())
@@ -206,10 +206,19 @@ where
             writer.record(record);
         }
 
-        let (status, _) = outcome?;
+        let check = outcome?;
+        let status = check.status;
 
         // Convert LiveStatus to CheckResult
-        let result = convert_live_status_to_check_result(&status);
+        let mut result = convert_live_status_to_check_result(&status);
+        if matches!(status, LiveStatus::Offline) {
+            result.batch_live = check.live_hint;
+            if check.source == CheckSource::Individual
+                && let Some(hint) = &mut result.batch_live
+            {
+                hint.mark_unchanged();
+            }
+        }
 
         // Return both the result and the status.
         Ok((result, status))
@@ -321,6 +330,7 @@ fn convert_live_status_to_check_result(status: &LiveStatus) -> CheckResult {
             title: Some(title.clone()),
             checked_at: chrono::Utc::now(),
             next_check_hint: *next_check_hint,
+            batch_live: None,
         },
         LiveStatus::Offline => CheckResult::success(StreamerState::NotLive),
         LiveStatus::Filtered { reason, title, .. } => {
@@ -334,6 +344,7 @@ fn convert_live_status_to_check_result(status: &LiveStatus) -> CheckResult {
                 title: Some(title.clone()),
                 checked_at: chrono::Utc::now(),
                 next_check_hint,
+                batch_live: None,
             }
         }
         LiveStatus::NotFound
@@ -351,6 +362,7 @@ fn convert_live_status_to_check_result(status: &LiveStatus) -> CheckResult {
             title: None,
             checked_at: chrono::Utc::now(),
             next_check_hint: None,
+            batch_live: None,
         },
     }
 }

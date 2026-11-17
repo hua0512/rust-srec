@@ -38,6 +38,11 @@ impl StreamerActor {
 
             let sleep_duration = self.wake_delay();
             let check_timer = Self::create_check_timer(sleep_duration);
+            let batch_live = self
+                .state
+                .last_check
+                .as_mut()
+                .and_then(|check| check.batch_live.as_mut());
 
             tokio::select! {
                 // Bias towards handling messages first
@@ -60,6 +65,13 @@ impl StreamerActor {
                     if should_stop {
                         debug!("StreamerActor {} received stop signal", self.id);
                         break;
+                    }
+                }
+
+                live = Self::wait_for_batch_live(batch_live) => {
+                    self.discard_batch_hint();
+                    if live && self.can_advance_batch_poll() {
+                        self.state.schedule_immediate_check();
                     }
                 }
 
@@ -91,6 +103,24 @@ impl StreamerActor {
 
         info!("StreamerActor {} stopped gracefully", self.id);
         Ok(ActorOutcome::Stopped)
+    }
+
+    async fn wait_for_batch_live(hint: Option<&mut tokio::sync::watch::Receiver<bool>>) -> bool {
+        let Some(hint) = hint else {
+            return std::future::pending().await;
+        };
+        while hint.changed().await.is_ok() {
+            if *hint.borrow_and_update() {
+                return hint.has_changed().is_ok();
+            }
+        }
+        false
+    }
+
+    pub(super) fn discard_batch_hint(&mut self) {
+        if let Some(check) = &mut self.state.last_check {
+            check.batch_live = None;
+        }
     }
 
     /// Fatal mailbox errors are terminal policy decisions, just like fatal timer errors.

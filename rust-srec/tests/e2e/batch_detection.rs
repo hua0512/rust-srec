@@ -9,6 +9,7 @@
 //! `individual`.
 
 use serde_json::Value;
+use std::time::Duration;
 
 use crate::download_progress::ws_message::Payload;
 use crate::sockets::{next_payload, query_socket};
@@ -109,6 +110,34 @@ async fn a_room_going_live_is_recorded_and_its_end_is_confirmed_per_room() {
         "the end was confirmed without asking the room"
     );
 
+    app.shutdown().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_peer_batch_starts_recording_before_the_rooms_next_poll() {
+    let fake = FakePlatform::start().await;
+    let room = fake.room("peer");
+    let app =
+        TestApp::start_with(with_batch_detection().global("streamer_check_delay_ms", 16_000)).await;
+    let token = app.admin_token().await;
+    let mut socket = query_socket(&app, "/api/downloads/ws", &token).await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(12);
+    let id = app.watch(&token, "Peer", &room, Value::Null).await;
+    assert_eq!(next_check(&mut socket, &id).await.1, "batch");
+    room.set_live(room.live("Peer"));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(4100), next_check(&mut socket, &id))
+            .await
+            .is_err()
+    );
+
+    app.watch(&token, "Trigger", &fake.room("trigger"), Value::Null)
+        .await;
+    tokio::time::timeout_at(deadline, room.wait_for_media_connection(1))
+        .await
+        .expect("peer discovery must beat the earliest routine poll");
+    assert_eq!(fake.requests_to(&room, "status").len(), 1);
+    assert_eq!(fake.batch_calls(), 2);
     app.shutdown().await;
 }
 

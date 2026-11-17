@@ -8,7 +8,9 @@
 //! streamer reported live, one the result does not mention, and every poll while the chunk has no
 //! usable result run the individual check instead.
 //!
-//! A result is reused for a quarter of the poll's interval. A poll that waited for its chunk's
+//! An offline answer is reused for a quarter of the poll's interval from request start. For a live
+//! answer that window starts at completion, so a peer woken by a slow request can go straight to
+//! extraction. A poll that waited for its chunk's
 //! in-flight refresh reads that refresh's result whatever its age, so an answer is at most a quarter
 //! of the interval or the duration of that call (bounded by the request timeout) old, whichever is
 //! longer.
@@ -27,6 +29,7 @@ use std::time::Duration;
 use parking_lot::Mutex;
 use platforms_parser::extractor::batch_status::BatchPresence;
 use platforms_parser::extractor::error::ExtractorError;
+use tokio::sync::watch;
 use tokio::time::Instant;
 use tracing::{debug, warn};
 
@@ -100,11 +103,19 @@ struct ChunkState {
 struct Member {
     key: String,
     last_poll: Instant,
+    live: watch::Sender<bool>,
+}
+
+#[derive(Default)]
+pub(super) struct BatchAnswer {
+    pub offline: bool,
+    pub live_hint: Option<watch::Receiver<bool>>,
 }
 
 struct Cached {
     /// When the call that produced the result started; the platform answered at some point after.
     at: Instant,
+    completed_at: Instant,
     presence: BatchResult,
 }
 
@@ -120,11 +131,40 @@ fn expiry(interval: Duration) -> Duration {
 }
 
 impl ChunkState {
+    fn publish(&mut self, result: Option<Cached>) {
+        for member in self.members.values() {
+            let reports_live =
+                |cached: &Cached| cached.presence.get(&member.key) == Some(&BatchPresence::Live);
+            let live = result.as_ref().is_some_and(reports_live);
+            if live != self.result.as_ref().is_some_and(reports_live) {
+                member.live.send_replace(live);
+            }
+        }
+        self.result = result;
+    }
+
+    fn answer(&self, poll: &Poll<'_>, offline: bool) -> BatchAnswer {
+        BatchAnswer {
+            offline,
+            live_hint: self
+                .members
+                .get(poll.streamer_id)
+                .filter(|member| member.key == poll.key)
+                .map(|member| member.live.subscribe()),
+        }
+    }
+
     fn read(&self, key: &str, interval: Duration, now: Instant) -> Read {
         if self.backoff_until.is_some_and(|until| now < until) {
             return Read::Answer(false);
         }
         match &self.result {
+            Some(cached)
+                if cached.presence.get(key) == Some(&BatchPresence::Live)
+                    && now.saturating_duration_since(cached.completed_at) <= interval / 4 =>
+            {
+                Read::Answer(false)
+            }
             Some(cached) if now.saturating_duration_since(cached.at) <= interval / 4 => {
                 Read::Answer(self.offline(key))
             }
@@ -168,19 +208,18 @@ impl BatchPrecheck {
     /// `max_keys`), and reads the new result. Polls of a chunk that is already refreshing wait for
     /// that refresh instead. A failed call backs the chunk off, and its polls answer `false` until
     /// the backoff ends.
-    pub(crate) async fn offline<F, Fut>(&self, poll: Poll<'_>, call: F) -> bool
+    pub(super) async fn check<F, Fut>(&self, poll: Poll<'_>, call: F) -> BatchAnswer
     where
         F: FnOnce(Vec<String>) -> Fut,
         Fut: Future<Output = crate::Result<BatchResult>>,
     {
         let chunk = self.join(&poll);
-        let seen = match chunk
-            .state
-            .lock()
-            .read(&poll.key, poll.interval, Instant::now())
-        {
-            Read::Answer(offline) => return offline,
-            Read::Stale(seen) => seen,
+        let seen = {
+            let state = chunk.state.lock();
+            match state.read(&poll.key, poll.interval, Instant::now()) {
+                Read::Answer(offline) => return state.answer(&poll, offline),
+                Read::Stale(seen) => seen,
+            }
         };
 
         // A cancelled refresh releases this lock without counting as finished, so the next
@@ -189,7 +228,7 @@ impl BatchPrecheck {
         let keys = {
             let mut state = chunk.state.lock();
             if state.refreshes != seen {
-                return state.offline(&poll.key);
+                return state.answer(&poll, state.offline(&poll.key));
             }
             state.expire_members(Instant::now(), poll.interval);
             let mut distinct = HashSet::new();
@@ -221,17 +260,18 @@ impl BatchPrecheck {
                 );
                 state.failures = 0;
                 state.backoff_until = None;
-                state.result = Some(Cached {
+                state.publish(Some(Cached {
                     at: started,
+                    completed_at: Instant::now(),
                     presence,
-                });
-                state.offline(&poll.key)
+                }));
+                state.answer(&poll, state.offline(&poll.key))
             }
             Err(error) => {
                 state.failures = state.failures.saturating_add(1);
                 let backoff = backoff_after(state.failures, &error);
                 state.backoff_until = Some(Instant::now() + backoff);
-                state.result = None;
+                state.publish(None);
                 if state.failures == 1 {
                     warn!(
                         platform = poll.group.platform,
@@ -251,7 +291,7 @@ impl BatchPrecheck {
                         "Batch status call failed again"
                     );
                 }
-                false
+                state.answer(&poll, false)
             }
         }
     }
@@ -263,7 +303,10 @@ impl BatchPrecheck {
         let chunks = groups.entry(poll.group.clone()).or_default();
         for chunk in chunks.iter() {
             if let Some(member) = chunk.state.lock().members.get_mut(poll.streamer_id) {
-                member.key.clone_from(&poll.key);
+                if member.key != poll.key {
+                    member.key.clone_from(&poll.key);
+                    member.live = watch::Sender::new(false);
+                }
                 member.last_poll = now;
                 return chunk.clone();
             }
@@ -290,6 +333,7 @@ impl BatchPrecheck {
             Member {
                 key: poll.key.clone(),
                 last_poll: now,
+                live: watch::Sender::new(false),
             },
         );
         chunk
@@ -354,7 +398,7 @@ mod tests {
     }
 
     async fn offline(precheck: &BatchPrecheck, calls: &FakeCalls, poll: Poll<'_>) -> bool {
-        precheck.offline(poll, |keys| calls.call(keys)).await
+        precheck.check(poll, |keys| calls.call(keys)).await.offline
     }
 
     #[tokio::test(start_paused = true)]
@@ -395,17 +439,45 @@ mod tests {
             }
         };
         for streamer in ["a", "b", "c"] {
-            precheck.offline(poll(streamer, 100), slow_call).await;
+            precheck.check(poll(streamer, 100), slow_call).await;
         }
         tokio::time::advance(INTERVAL).await;
         calls.store(0, Ordering::SeqCst);
 
         let answers = futures::future::join_all(
-            ["a", "b", "c"].map(|streamer| precheck.offline(poll(streamer, 100), slow_call)),
+            ["a", "b", "c"].map(|streamer| precheck.check(poll(streamer, 100), slow_call)),
         )
         .await;
-        assert_eq!(answers, [true, true, true]);
+        assert!(answers.iter().all(|answer| answer.offline));
         assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_slow_refresh_wakes_the_peer_once_without_a_second_batch_request() {
+        let precheck = BatchPrecheck::default();
+        let calls = FakeCalls::default();
+        let mut peer = precheck
+            .check(poll("peer", 100), |keys| calls.call(keys))
+            .await
+            .live_hint
+            .unwrap();
+        tokio::time::advance(INTERVAL).await;
+        let live_peer = |_: Vec<String>| async {
+            tokio::time::sleep(INTERVAL / 2).await;
+            Ok(BatchResult::from([(
+                "key-peer".to_owned(),
+                BatchPresence::Live,
+            )]))
+        };
+        precheck.check(poll("trigger", 100), live_peer).await;
+        assert!(peer.has_changed().unwrap() && *peer.borrow_and_update());
+        let answer = precheck
+            .check(poll("peer", 100), |_| async { panic!("redundant refresh") })
+            .await;
+        assert!(!answer.offline);
+        tokio::time::advance(INTERVAL).await;
+        precheck.check(poll("trigger", 100), live_peer).await;
+        assert!(!peer.has_changed().unwrap());
     }
 
     #[tokio::test(start_paused = true)]

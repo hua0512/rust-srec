@@ -297,6 +297,7 @@ pub struct CheckResult {
     pub checked_at: DateTime<Utc>,
     /// Hint for when to check next (used for smart wake).
     pub next_check_hint: Option<DateTime<Utc>>,
+    pub(crate) batch_live: Option<tokio::sync::watch::Receiver<bool>>,
 }
 
 impl CheckResult {
@@ -308,6 +309,7 @@ impl CheckResult {
             title: None,
             checked_at: Utc::now(),
             next_check_hint: None,
+            batch_live: None,
         }
     }
 
@@ -319,6 +321,7 @@ impl CheckResult {
             title: None,
             checked_at: Utc::now(),
             next_check_hint: None,
+            batch_live: None,
         }
     }
 }

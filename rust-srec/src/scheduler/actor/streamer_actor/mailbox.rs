@@ -103,6 +103,7 @@ impl StreamerActor {
         config: StreamerConfig,
     ) -> Result<(), ActorError> {
         debug!("StreamerActor {} received ConfigUpdate", self.id);
+        self.discard_batch_hint();
 
         let old_config = std::mem::replace(&mut self.config, config);
 
