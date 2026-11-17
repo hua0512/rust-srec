@@ -383,7 +383,9 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                                 .update_streamer_restart_config(&id, config.clone());
                             self.feedback
                                 .update_registry_targets(self.supervisor.registry(), Some(&id));
-                            if let Some(handle) = self.supervisor.registry().get_streamer(&id) {
+                            if let Some(handle) = self.supervisor.registry().get_streamer(&id)
+                                && Some(handle.generation()) == generation
+                            {
                                 self.feedback.configure(
                                     &id,
                                     DesiredConfig {

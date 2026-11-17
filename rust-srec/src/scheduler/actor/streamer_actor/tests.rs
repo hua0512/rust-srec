@@ -493,6 +493,7 @@ async fn test_suppressed_live_restores_notlive_grace_hysteresis_context() {
         state: StreamerState::NotLive,
         stream_url: None,
         title: Some("Previous offline".to_string()),
+        batch_live: None,
         checked_at: chrono::Utc::now(),
         next_check_hint: None,
     });
@@ -563,6 +564,7 @@ async fn test_suppressed_live_restores_out_of_schedule_smart_wake_context() {
         state: StreamerState::OutOfSchedule,
         stream_url: None,
         title: Some("Out of schedule".to_string()),
+        batch_live: None,
         checked_at: chrono::Utc::now(),
         next_check_hint: Some(smart_wake_hint),
     });

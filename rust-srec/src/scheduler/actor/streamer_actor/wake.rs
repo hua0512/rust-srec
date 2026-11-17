@@ -55,6 +55,19 @@ fn should_reemit_live(state: &StreamerActorState, next_state: StreamerState, now
 }
 
 impl StreamerActor {
+    pub(super) fn can_advance_batch_poll(&self) -> bool {
+        self.state.streamer_state == StreamerState::NotLive
+            && self.state.recurring_interval_ms.is_some()
+            && self.current_download.is_none()
+            && !self.state.hysteresis.was_live()
+            && self.get_metadata().is_some_and(|metadata| {
+                metadata.state == StreamerState::NotLive
+                    && !metadata.is_deleted()
+                    && !metadata.is_disabled()
+                    && metadata.consecutive_error_count == 0
+            })
+    }
+
     pub(super) fn wake_delay(&self) -> Option<Duration> {
         wake_delay(
             &self.state,

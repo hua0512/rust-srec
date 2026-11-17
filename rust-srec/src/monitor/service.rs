@@ -34,7 +34,7 @@ use crate::streamer::{
 use crate::utils::task_supervisor::TaskSupervisor;
 use crate::{Error, Result};
 
-use super::batch_precheck::{BatchPrecheck, GroupKey, Poll};
+use super::batch_precheck::{BatchAnswer, BatchPrecheck, GroupKey, Poll};
 use super::detector::{CheckContext, DetectionResult, FilterReason, LiveStatus, StreamDetector};
 use crate::domain::streamer::{CheckSource, FatalErrorType};
 
@@ -108,7 +108,14 @@ type PendingCredentialRecovery = Arc<dyn Fn(String) -> BoxFuture<'static, ()> + 
 
 /// One shared result per running check. The cell holds the source with the status, so a caller
 /// that joins a running check records it the same way as the caller that started it.
-type InFlightChecks = DashMap<CredentialCheckKey, Arc<OnceCell<(LiveStatus, CheckSource)>>>;
+type InFlightChecks = DashMap<CredentialCheckKey, Arc<OnceCell<CheckedStatus>>>;
+
+#[derive(Debug, Clone)]
+pub(crate) struct CheckedStatus {
+    pub status: LiveStatus,
+    pub source: CheckSource,
+    pub live_hint: Option<tokio::sync::watch::Receiver<bool>>,
+}
 
 /// Configuration for the stream monitor.
 #[derive(Debug, Clone)]
@@ -670,6 +677,15 @@ impl<
         &self,
         streamer: &StreamerMetadata,
     ) -> Result<(LiveStatus, CheckSource)> {
+        self.check_streamer_for_actor(streamer)
+            .await
+            .map(|check| (check.status, check.source))
+    }
+
+    pub(crate) async fn check_streamer_for_actor(
+        &self,
+        streamer: &StreamerMetadata,
+    ) -> Result<CheckedStatus> {
         let result = self
             .check_streamer_with_source(streamer, CredentialCheckPurpose::Discovery)
             .await;
@@ -680,13 +696,13 @@ impl<
         if matches!(
             &result,
             Err(Error::CredentialUnavailable(_))
-                | Ok((
-                    LiveStatus::Live {
+                | Ok(CheckedStatus {
+                    status: LiveStatus::Live {
                         credential_binding: Some(_),
                         ..
                     },
-                    _
-                ))
+                    ..
+                })
         ) && let Some(recovery) = self.pending_credential_recovery.get()
         {
             recovery(streamer.id.clone()).await;
@@ -701,14 +717,14 @@ impl<
     ) -> Result<LiveStatus> {
         self.check_streamer_with_source(streamer, requested_purpose)
             .await
-            .map(|(status, _)| status)
+            .map(|check| check.status)
     }
 
     async fn check_streamer_with_source(
         &self,
         streamer: &StreamerMetadata,
         requested_purpose: CredentialCheckPurpose,
-    ) -> Result<(LiveStatus, CheckSource)> {
+    ) -> Result<CheckedStatus> {
         let source = self.streamer_manager.get_streamer_snapshot(&streamer.id);
         let streamer = source.as_deref().unwrap_or(streamer);
         trace!(
@@ -728,7 +744,11 @@ impl<
                 streamer_id = %streamer.id,
                 "streamer disabled; skipping status check"
             );
-            return Ok((LiveStatus::Offline, CheckSource::Individual));
+            return Ok(CheckedStatus {
+                status: LiveStatus::Offline,
+                source: CheckSource::Individual,
+                live_hint: None,
+            });
         }
 
         // Outer bound for the whole check pipeline (filter load, config resolution,
@@ -778,11 +798,15 @@ impl<
             deadline.instant(),
             cell.get_or_try_init(|| async {
                 let check = async {
-                    if self
-                        .batch_says_offline(streamer, &config, purpose, deadline)
-                        .await
-                    {
-                        return Ok((LiveStatus::Offline, CheckSource::Batch));
+                    let batch = self
+                        .batch_precheck(streamer, &config, purpose, deadline)
+                        .await;
+                    if batch.offline {
+                        return Ok(CheckedStatus {
+                            status: LiveStatus::Offline,
+                            source: CheckSource::Batch,
+                            live_hint: batch.live_hint,
+                        });
                     }
                     let filters = self.filter_store.get(&streamer.id).await?;
                     let check = StatusCheck {
@@ -815,7 +839,11 @@ impl<
                         self.save_platform_metadata(streamer, metadata, verified_at_ms)
                             .await;
                     }
-                    Ok((observation.status, CheckSource::Individual))
+                    Ok(CheckedStatus {
+                        status: observation.status,
+                        source: CheckSource::Individual,
+                        live_hint: batch.live_hint,
+                    })
                 };
 
                 tokio::time::timeout_at(deadline.instant(), check)
@@ -834,16 +862,16 @@ impl<
         })
         .and_then(|result| result);
 
-        // Schedule delayed cleanup BEFORE checking result to ensure cleanup
-        // happens regardless of success or error. This prevents in_flight map
-        // from leaking entries when errors occur.
-        // Use the cleanup worker (DelayQueue) to avoid spawning per-entry tasks.
-        // If the channel is saturated, fall back to immediate cleanup (dedup is best-effort).
-        if self.cleanup_tx.try_send(key.clone()).is_err() {
-            self.in_flight.remove(&key);
+        // An idle batch member may be woken before the dedup window ends. That check must
+        // not reuse its completed offline result. Other checks retain the short reuse window.
+        if result.as_ref().is_ok_and(|check| {
+            matches!(check.status, LiveStatus::Offline) && check.live_hint.is_some()
+        }) || self.cleanup_tx.try_send(key.clone()).is_err()
+        {
+            self.in_flight
+                .remove_if(&key, |_, current| Arc::ptr_eq(current, &cell));
         }
 
-        // Now check result - cleanup is already scheduled
         result.cloned()
     }
 
@@ -889,13 +917,13 @@ impl<
     ///
     /// Bigo has no batch status call. Its live notifications answer instead, under the same
     /// conditions; see [`super::BigoNotifications::answers_offline`].
-    async fn batch_says_offline(
+    async fn batch_precheck(
         &self,
         streamer: &StreamerMetadata,
         config: &crate::config::MergedConfig,
         purpose: CredentialCheckPurpose,
         deadline: OperationDeadline,
-    ) -> bool {
+    ) -> BatchAnswer {
         let platform_id = &streamer.platform_config_id;
         let route = &config.proxy_route;
         // The caller's copy was taken before the check started; the shared metadata also
@@ -909,25 +937,28 @@ impl<
             || current.consecutive_error_count != 0
             || current.disabled_until.is_some()
         {
-            return false;
+            return BatchAnswer::default();
         }
         let Some(platform) = platform_name_for_url(&streamer.url) else {
-            return false;
+            return BatchAnswer::default();
         };
         if current.url != streamer.url || current.platform_config_id != streamer.platform_config_id
         {
-            return false;
+            return BatchAnswer::default();
         }
         if platform.eq_ignore_ascii_case("bigo") {
-            return self
-                .bigo_notifications
-                .get()
-                .is_some_and(|notifications| notifications.answers_offline(&streamer.id));
+            return BatchAnswer {
+                offline: self
+                    .bigo_notifications
+                    .get()
+                    .is_some_and(|notifications| notifications.answers_offline(&streamer.id)),
+                live_hint: None,
+            };
         }
         // The extractor factory resolves the same URL, so the probe belongs to the platform
         // whose built-in extractor would check the streamer.
         let Some(probe) = batch_probe_for_url(&streamer.url) else {
-            return false;
+            return BatchAnswer::default();
         };
         let metadata = crate::streamer::platform_metadata::StoredPlatformMetadata::fresh(
             current.platform_metadata.as_deref(),
@@ -935,7 +966,7 @@ impl<
             crate::database::time::now_ms(),
         );
         let Some(key) = probe.key_for_url(&streamer.url, metadata.as_ref()) else {
-            return false;
+            return BatchAnswer::default();
         };
         // Freshness and slot expiry are measured against the global check delay, the interval
         // of routine offline polls. Offline-confirmation polls without a session come sooner and
@@ -946,14 +977,14 @@ impl<
             ),
             Err(error) => {
                 debug!(streamer_id = %streamer.id, %error, "Global configuration unavailable; skipping the batch status");
-                return false;
+                return BatchAnswer::default();
             }
         };
         let client = match self.detector.client_for_proxy(&route.target) {
             Ok(client) => client,
             Err(error) => {
                 debug!(streamer_id = %streamer.id, %error, "No HTTP client for the route; skipping the batch status");
-                return false;
+                return BatchAnswer::default();
             }
         };
         let poll = Poll {
@@ -971,7 +1002,7 @@ impl<
         // batch request when the pause ends. Its throttles are not reported to admission: the
         // chunk's own backoff absorbs them.
         self.batch_precheck
-            .offline(poll, |keys| async move {
+            .check(poll, |keys| async move {
                 self.admission
                     .admit(platform_id, &route.key, deadline)
                     .await
