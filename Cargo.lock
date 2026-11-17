@@ -4783,6 +4783,7 @@ dependencies = [
  "m3u8-rs",
  "md-5",
  "native-tls",
+ "num-bigint",
  "openssl",
  "parking_lot",
  "percent-encoding",
