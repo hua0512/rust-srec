@@ -9,7 +9,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dashmap::DashMap;
-use futures::StreamExt;
 use platforms_parser::extractor::factory::{
     ExtractorSelection, batch_probe_for_url, platform_name_for_url,
 };
@@ -17,7 +16,6 @@ use sqlx::SqlitePool;
 use tokio::sync::OnceCell;
 use tokio::sync::{Notify, mpsc};
 use tokio_util::sync::CancellationToken;
-use tokio_util::time::DelayQueue;
 use tracing::{debug, info, trace, warn};
 
 use crate::credentials::{OperationDeadline, PlatformAdmission};
@@ -91,12 +89,6 @@ pub enum ProcessStatusSuppression {
 /// deduplication entries when upstream requests hang.
 const STREAM_CHECK_HARD_TIMEOUT: Duration = Duration::from_secs(300);
 
-/// In-flight deduplication window for per-streamer status checks.
-///
-/// This is a performance optimization only. If cleanup is delayed, the effect is limited
-/// to temporarily reusing the most recent result for the same streamer.
-const IN_FLIGHT_DEDUP_WINDOW: Duration = Duration::from_millis(100);
-
 /// Upper bound for one batch status request. The monitor's HTTP clients have no timeout of their
 /// own by default, and every poll of a chunk waits for its refresh.
 const BATCH_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -106,9 +98,49 @@ const PLATFORM_METADATA_SAVE_TIMEOUT: Duration = Duration::from_secs(2);
 
 type PendingCredentialRecovery = Arc<dyn Fn(String) -> BoxFuture<'static, ()> + Send + Sync>;
 
-/// One shared result per running check. The cell holds the source with the status, so a caller
-/// that joins a running check records it the same way as the caller that started it.
-type InFlightChecks = DashMap<CredentialCheckKey, Arc<OnceCell<CheckedStatus>>>;
+type InFlightChecks = DashMap<CredentialCheckKey, SharedCheck>;
+
+#[derive(Default)]
+struct SharedCheck {
+    result: Arc<OnceCell<CheckedStatus>>,
+    callers: usize,
+}
+
+struct CheckLease<'a> {
+    checks: &'a InFlightChecks,
+    key: &'a CredentialCheckKey,
+    result: Arc<OnceCell<CheckedStatus>>,
+}
+
+impl<'a> CheckLease<'a> {
+    fn join(checks: &'a InFlightChecks, key: &'a CredentialCheckKey) -> Self {
+        let mut check = checks.entry(key.clone()).or_default();
+        check.callers += 1;
+        Self {
+            checks,
+            key,
+            result: check.result.clone(),
+        }
+    }
+
+    fn finish(&self) {
+        self.checks.remove_if(self.key, |_, check| {
+            Arc::ptr_eq(&check.result, &self.result)
+        });
+    }
+}
+
+impl Drop for CheckLease<'_> {
+    fn drop(&mut self) {
+        self.checks.remove_if_mut(self.key, |_, check| {
+            if !Arc::ptr_eq(&check.result, &self.result) {
+                return false;
+            }
+            check.callers -= 1;
+            check.callers == 0
+        });
+    }
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct CheckedStatus {
@@ -167,9 +199,7 @@ pub struct StreamMonitor<
     /// Shared platform admission (rate limits and throttle pauses).
     admission: Arc<PlatformAdmission>,
     /// In-flight request deduplication.
-    in_flight: Arc<InFlightChecks>,
-    /// Sender for in-flight cleanup requests (single worker processes these).
-    cleanup_tx: mpsc::Sender<CredentialCheckKey>,
+    in_flight: InFlightChecks,
     /// Event broadcaster for notifications.
     event_broadcaster: MonitorEventBroadcaster,
     /// Required runtime consumer for state-changing monitor events.
@@ -184,7 +214,7 @@ pub struct StreamMonitor<
     write_pool: SqlitePool,
     /// Notifies the outbox publisher that new events are available.
     outbox_notify: Arc<Notify>,
-    /// Cancellation token for background tasks (outbox publisher and cleanup worker).
+    /// Cancellation token for the outbox publisher.
     cancellation: CancellationToken,
     /// Keeps standalone monitor tasks owned for the lifetime of the service.
     _task_supervisor: Arc<TaskSupervisor>,
@@ -380,11 +410,6 @@ impl<
         let outbox_notify = Arc::new(Notify::new());
         let cancellation = CancellationToken::new();
 
-        // Create bounded channel for cleanup requests (single worker pattern)
-        // Buffer size of 4096 should be plenty for typical concurrent request counts.
-        let (cleanup_tx, cleanup_rx) = mpsc::channel::<CredentialCheckKey>(4096);
-        let in_flight = Arc::new(DashMap::new());
-
         let filter_store = config_service.filter_store_for(filter_repo);
         let monitor = Self {
             streamer_manager,
@@ -393,8 +418,7 @@ impl<
             config_service,
             detector,
             admission,
-            in_flight: in_flight.clone(),
-            cleanup_tx,
+            in_flight: InFlightChecks::new(),
             event_broadcaster: MonitorEventBroadcaster::new(),
             required_event_sender,
             session_lifecycle,
@@ -411,12 +435,7 @@ impl<
             bigo_notifications: std::sync::OnceLock::new(),
         };
 
-        monitor.spawn_outbox_publisher(
-            outbox_notify,
-            cancellation.clone(),
-            task_supervisor.clone(),
-        );
-        Self::spawn_cleanup_worker(in_flight, cleanup_rx, cancellation, task_supervisor);
+        monitor.spawn_outbox_publisher(outbox_notify, cancellation, task_supervisor);
 
         Ok(monitor)
     }
@@ -527,41 +546,10 @@ impl<
 
     /// Stop the stream monitor's background tasks.
     ///
-    /// This cancels the outbox publisher and cleanup worker tasks. Should be called
-    /// during graceful shutdown to ensure clean task termination.
+    /// This cancels the outbox publisher during graceful shutdown.
     pub fn stop(&self) {
         info!("Stopping StreamMonitor background tasks");
         self.cancellation.cancel();
-    }
-
-    /// Spawn a single cleanup worker that processes delayed removal requests.
-    fn spawn_cleanup_worker(
-        in_flight: Arc<InFlightChecks>,
-        mut cleanup_rx: mpsc::Receiver<CredentialCheckKey>,
-        cancellation_token: CancellationToken,
-        task_supervisor: Arc<TaskSupervisor>,
-    ) {
-        task_supervisor.spawn("monitor in-flight cleanup", async move {
-            let mut queue = DelayQueue::new();
-            loop {
-                tokio::select! {
-                    biased;
-
-                    _ = cancellation_token.cancelled() => {
-                        debug!("In-flight cleanup worker shutting down");
-                        break;
-                    }
-                    Some(id) = cleanup_rx.recv() => {
-                        queue.insert(id, IN_FLIGHT_DEDUP_WINDOW);
-                    }
-                    Some(expired) = queue.next() => {
-                        let id = expired.into_inner();
-                        in_flight.remove(&id);
-                    }
-                }
-            }
-            debug!("In-flight cleanup worker stopped");
-        });
     }
 
     fn spawn_outbox_publisher(
@@ -728,18 +716,13 @@ impl<
         );
         let purpose = key.purpose;
 
-        // Get or create the deduplication cell for this streamer
-        let cell = self
-            .in_flight
-            .entry(key.clone())
-            .or_insert_with(|| Arc::new(OnceCell::new()))
-            .clone();
+        let lease = CheckLease::join(&self.in_flight, &key);
 
         // get_or_try_init ensures only ONE caller executes the closure,
         // all other concurrent callers wait for the result
         let result = tokio::time::timeout_at(
             deadline.instant(),
-            cell.get_or_try_init(|| async {
+            lease.result.get_or_try_init(|| async {
                 let check = async {
                     let batch = self
                         .batch_precheck(streamer, &config, purpose, deadline)
@@ -789,14 +772,18 @@ impl<
                     })
                 };
 
-                tokio::time::timeout_at(deadline.instant(), check)
+                let result = tokio::time::timeout_at(deadline.instant(), check)
                     .await
                     .map_err(|_| {
                         Error::Monitor(format!(
                             "Stream monitor check timed out after {:?} (streamer_id={})",
                             hard_timeout, streamer.id
                         ))
-                    })?
+                    })?;
+                if result.is_ok() {
+                    lease.finish();
+                }
+                result
             }),
         )
         .await
@@ -804,16 +791,6 @@ impl<
             Error::Monitor("Stream monitor deadline exceeded during admission or check".into())
         })
         .and_then(|result| result);
-
-        // An idle batch member may be woken before the dedup window ends. That check must
-        // not reuse its completed offline result. Other checks retain the short reuse window.
-        if result.as_ref().is_ok_and(|check| {
-            matches!(check.status, LiveStatus::Offline) && check.live_hint.is_some()
-        }) || self.cleanup_tx.try_send(key.clone()).is_err()
-        {
-            self.in_flight
-                .remove_if(&key, |_, current| Arc::ptr_eq(current, &cell));
-        }
 
         result.cloned()
     }

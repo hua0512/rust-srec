@@ -7,6 +7,29 @@ use crate::credentials::{
 use crate::database::repositories::CredentialProfileRepository;
 use tokio_util::task::AbortOnDropHandle;
 
+#[test]
+fn dropping_a_check_releases_only_its_own_entry() {
+    let checks = InFlightChecks::new();
+    let key = CredentialCheckKey::new(
+        "streamer",
+        CredentialCheckPurpose::Discovery,
+        None,
+        None,
+        None,
+    );
+    let owner = CheckLease::join(&checks, &key);
+    let waiter = CheckLease::join(&checks, &key);
+    drop(owner);
+    assert!(checks.contains_key(&key));
+
+    waiter.finish();
+    let replacement = CheckLease::join(&checks, &key);
+    drop(waiter);
+    assert!(checks.contains_key(&key));
+    drop(replacement);
+    assert!(checks.is_empty());
+}
+
 #[tokio::test]
 async fn overlapping_discovery_queue_and_bound_polls_extract_only_equivalent_results_once() {
     tokio::time::timeout(Duration::from_secs(10), async {
@@ -122,7 +145,7 @@ async fn overlapping_discovery_queue_and_bound_polls_extract_only_equivalent_res
         loop {
             let joined = monitor.in_flight.iter().any(|entry| {
                 entry.key().purpose == CredentialCheckPurpose::BoundPoll
-                    && Arc::strong_count(entry.value()) >= 3
+                    && entry.value().callers == 2
             });
             if joined {
                 break;
@@ -140,7 +163,13 @@ async fn overlapping_discovery_queue_and_bound_polls_extract_only_equivalent_res
             assert_eq!(operation.await.unwrap().title(), Some(expected));
         }
         assert!(calls.try_recv().is_err());
-        // A new binding epoch cannot reuse the just-completed B poll.
+        assert!(monitor.in_flight.is_empty());
+        let next_poll = check(CredentialCheckPurpose::BoundPoll);
+        assert_eq!(calls.recv().await.unwrap(), "account=B");
+        release.add_permits(1);
+        assert_eq!(next_poll.await.unwrap().title(), Some("account=B"));
+
+        // A new binding epoch uses the newly bound account.
         let mut next = binding;
         next.identity = CredentialIdentity::Profile {
             profile_id: accounts[2].id.clone(),
