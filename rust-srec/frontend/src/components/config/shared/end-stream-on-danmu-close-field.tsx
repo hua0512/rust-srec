@@ -1,48 +1,26 @@
-import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
-import {
-  FormControl,
-  FormDescription,
-  FormField,
-  FormItem,
-  FormLabel,
-} from '@/components/ui/form';
-import { Switch } from '@/components/ui/switch';
+import type { FieldValues, Path } from 'react-hook-form';
 import { Trans } from '@lingui/react/macro';
+import { FlagFormField } from '@/components/ui/flag-form-field';
 
 interface EndStreamOnDanmuCloseFieldProps<TFieldValues extends FieldValues> {
-  form: UseFormReturn<TFieldValues>;
   name: Path<TFieldValues>;
+  inherited?: boolean;
 }
 
 export function EndStreamOnDanmuCloseField<TFieldValues extends FieldValues>({
-  form,
   name,
+  inherited = false,
 }: EndStreamOnDanmuCloseFieldProps<TFieldValues>) {
   return (
-    <FormField
-      control={form.control}
-      name={name}
-      render={({ field }) => (
-        <FormItem className="flex flex-row items-center justify-between rounded-xl border border-border/40 p-4 bg-background/50 transition-colors hover:bg-muted/5">
-          <div className="space-y-0.5 pr-4">
-            <FormLabel className="text-xs font-bold text-foreground">
-              <Trans>End Stream On Danmu Close</Trans>
-            </FormLabel>
-            <FormDescription className="text-[10px] leading-tight font-medium">
-              <Trans>
-                Stop recording when danmu control signals stream closed.
-              </Trans>
-            </FormDescription>
-          </div>
-          <FormControl>
-            <Switch
-              checked={field.value ?? true}
-              onCheckedChange={field.onChange}
-              className="scale-90"
-            />
-          </FormControl>
-        </FormItem>
-      )}
+    <FlagFormField
+      fieldName={name}
+      inherited={inherited}
+      title={<Trans>End Stream On Danmu Close</Trans>}
+      description={
+        <Trans>Stop recording when danmu control signals stream closed.</Trans>
+      }
+      // Recording stops on a close signal unless this is `false`.
+      checked={(value) => value !== false}
     />
   );
 }

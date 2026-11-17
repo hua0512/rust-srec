@@ -1012,11 +1012,11 @@ msgstr "All Time"
 msgid "All Types"
 msgstr "All Types"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:57
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:58
 msgid "Allow AV1"
 msgstr "Allow AV1"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:52
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:53
 msgid "Allow H.265 (HEVC)"
 msgstr "Allow H.265 (HEVC)"
 
@@ -1106,11 +1106,11 @@ msgstr "API key revoked"
 msgid "API Keys"
 msgstr "API Keys"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:103
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:105
 msgid "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 msgstr "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:343
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:344
 msgid "API Request Retries"
 msgstr "API Request Retries"
 
@@ -1246,7 +1246,7 @@ msgstr "Attempt {attempt} of {maxAttempts}"
 msgid "Attempts (including the first run)"
 msgstr "Attempts (including the first run)"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:45
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:48
 msgid "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 msgstr "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 
@@ -1310,7 +1310,7 @@ msgid "Authentication"
 msgstr "Authentication"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:257
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:68
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:70
 #: src/components/player/player-card.tsx:285
 msgid "Auto"
 msgstr "Auto"
@@ -1327,7 +1327,7 @@ msgstr "Auto re-login"
 msgid "Auto Thumbnail"
 msgstr "Auto Thumbnail"
 
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:82
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:84
 msgid "Auto tries the signature-free Web API first and falls back to parsing the live page. The live page is more likely to hit bot checks."
 msgstr "Auto tries the signature-free Web API first and falls back to parsing the live page. The live page is more likely to hit bot checks."
 
@@ -1551,8 +1551,8 @@ msgid "Basic settings for the streamer."
 msgstr "Basic settings for the streamer."
 
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:138
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:149
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:131
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:150
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:134
 msgid "Batch Detection"
 msgstr "Batch Detection"
 
@@ -1823,7 +1823,7 @@ msgstr "Capture Mode"
 msgid "Capture real-time comments and chat messages if available."
 msgstr "Capture real-time comments and chat messages if available."
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:58
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:62
 msgid "Capture separate stream data."
 msgstr "Capture separate stream data."
 
@@ -1960,8 +1960,8 @@ msgstr "Check that it reaches"
 msgid "Check this streamer and record when it goes live."
 msgstr "Check this streamer and record when it goes live."
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:151
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:133
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:152
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:136
 msgid "Check up to 100 streamers in one request and skip the individual check of those still offline. Uses fewer requests, but a stream start can be noticed up to a quarter of the check interval later."
 msgstr "Check up to 100 streamers in one request and skip the individual check of those still offline. Uses fewer requests, but a stream start can be noticed up to a quarter of the check interval later."
 
@@ -2080,11 +2080,11 @@ msgstr "Clear selection"
 msgid "Click to add. You can reorder steps in the editor."
 msgstr "Click to add. You can reorder steps in the editor."
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:146
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:148
 msgid "Client platform type used for stream authentication signing. Different platforms use different signing methods."
 msgstr "Client platform type used for stream authentication signing. Different platforms use different signing methods."
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:119
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:121
 msgid "Client Type (ctype)"
 msgstr "Client Type (ctype)"
 
@@ -2935,8 +2935,8 @@ msgstr "Danmaku to ASS Subtitles"
 msgid "Danmu"
 msgstr "Danmu"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:140
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:114
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:146
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:116
 msgid "Danmu Control"
 msgstr "Danmu Control"
 
@@ -3024,9 +3024,9 @@ msgstr "Decryption Key Cache TTL (ms)"
 msgid "default"
 msgstr "default"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:85
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:138
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:70
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:87
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:140
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:72
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:100
 #: src/components/player/stream-info-card.tsx:47
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:340
@@ -3054,7 +3054,7 @@ msgstr "Default is 1 (no burst). Increase if the provider tolerates short bursts
 msgid "Default password for password-protected rooms (can be overridden per-streamer with ?pwd= in the URL)."
 msgstr "Default password for password-protected rooms (can be overridden per-streamer with ?pwd= in the URL)."
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:121
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:120
 msgid "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
 msgstr "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
 
@@ -3524,7 +3524,7 @@ msgstr "Done"
 msgid "Double click to edit items."
 msgstr "Double click to edit items."
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:57
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:61
 msgid "Double Screen Data"
 msgstr "Double Screen Data"
 
@@ -3884,7 +3884,7 @@ msgstr "End"
 msgid "End of History"
 msgstr "End of History"
 
-#: src/components/config/shared/end-stream-on-danmu-close-field.tsx:29
+#: src/components/config/shared/end-stream-on-danmu-close-field.tsx:18
 msgid "End Stream On Danmu Close"
 msgstr "End Stream On Danmu Close"
 
@@ -4182,7 +4182,7 @@ msgid "Expand sidebar"
 msgstr "Expand sidebar"
 
 #: src/components/config/engines/forms/lossless-cutting-field.tsx:52
-#: src/components/ui/flag-form-field.tsx:58
+#: src/components/ui/flag-form-field.tsx:118
 msgid "Experimental"
 msgstr "Experimental"
 
@@ -4251,8 +4251,8 @@ msgstr "Extract high-quality audio for podcast distribution and upload."
 msgid "Extract MP3"
 msgstr "Extract MP3"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:70
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:55
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:72
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:57
 msgid "Extraction API Mode"
 msgstr "Extraction API Mode"
 
@@ -4261,9 +4261,9 @@ msgid "Extraction Method"
 msgstr "Extraction Method"
 
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:65
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:34
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:36
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:68
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:45
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:47
 msgid "Extraction Settings"
 msgstr "Extraction Settings"
 
@@ -4766,7 +4766,7 @@ msgstr "Filter deleted successfully"
 msgid "Filter events below this priority"
 msgstr "Filter events below this priority"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:323
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:324
 msgid "Filter Interactive Games"
 msgstr "Filter Interactive Games"
 
@@ -4915,13 +4915,13 @@ msgstr "Force IPv4"
 msgid "Force IPv6"
 msgstr "Force IPv6"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:67
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:72
 msgid "Force Mobile API"
 msgstr "Force Mobile API"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:43
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:169
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:97
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:46
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:172
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:100
 msgid "Force Origin Quality"
 msgstr "Force Origin Quality"
 
@@ -4929,7 +4929,7 @@ msgstr "Force Origin Quality"
 msgid "Force overwrite if output exists"
 msgstr "Force overwrite if output exists"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:171
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:174
 msgid "Force requesting the highest origin quality available (Direct stream)."
 msgstr "Force requesting the highest origin quality available (Direct stream)."
 
@@ -5103,7 +5103,7 @@ msgstr "Generating QR code..."
 msgid "Gift items"
 msgstr "Gift items"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:115
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:121
 #: src/components/layout/site-header.tsx:71
 #: src/components/pipeline/step-in-use-dialog.tsx:105
 #: src/components/proxies/proxy-references.tsx:68
@@ -5619,6 +5619,11 @@ msgstr "Include Recording Metadata"
 msgid "Inherit"
 msgstr "Inherit"
 
+#: src/components/ui/flag-form-field.tsx:139
+msgctxt "inherited flag"
+msgid "Inherit"
+msgstr "Inherit"
+
 #: src/components/config/shared/proxy-route-picker.tsx:114
 msgid "Inherit — {resolved}"
 msgstr "Inherit — {resolved}"
@@ -5743,7 +5748,7 @@ msgstr "IO Job"
 msgid "IO Job Timeout"
 msgstr "IO Job Timeout"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:127
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:133
 msgid "Isolation level for tracking identifiers. Global is usually best."
 msgstr "Isolation level for tracking identifiers. Global is usually best."
 
@@ -6053,7 +6058,7 @@ msgstr "Live notifications are off"
 msgid "Live notifications need a signed-in BIGO account. rust-srec signs this account in to BIGO's app service and makes it <0>follow every Bigo streamer you monitor (they can see it)</0>, with live alerts on. Turn on live notifications in that account's BIGO settings. Use a dedicated account: opening BIGO with the same account disconnects rust-srec, and the other way round."
 msgstr "Live notifications need a signed-in BIGO account. rust-srec signs this account in to BIGO's app service and makes it <0>follow every Bigo streamer you monitor (they can see it)</0>, with live alerts on. Turn on live notifications in that account's BIGO settings. Use a dedicated account: opening BIGO with the same account disconnects rust-srec, and the other way round."
 
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:77
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:79
 msgid "Live page HTML"
 msgstr "Live page HTML"
 
@@ -6452,7 +6457,7 @@ msgstr "Max Uploads"
 msgid "Maximum attempts (1–10)"
 msgstr "Maximum attempts (1–10)"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:358
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:359
 msgid "Maximum attempts for metadata and App playback requests."
 msgstr "Maximum attempts for metadata and App playback requests."
 
@@ -6676,7 +6681,7 @@ msgstr "Move Files"
 msgid "Move the file to another location. Removes the original file."
 msgstr "Move the file to another location. Removes the original file."
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:89
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:91
 msgid "MP"
 msgstr "MP"
 
@@ -7415,8 +7420,8 @@ msgstr "Number of days to keep completed, failed, or cancelled jobs and workflow
 msgid "Number of days to keep the notification event log. Set to 0 to retain events indefinitely."
 msgstr "Number of days to keep the notification event log. Set to 0 to retain events indefinitely."
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:91
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:97
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:93
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:99
 msgid "Numeric Room IDs Only"
 msgstr "Numeric Room IDs Only"
 
@@ -7458,9 +7463,22 @@ msgctxt "bigo notifications"
 msgid "Off"
 msgstr "Off"
 
+#: src/components/ui/flag-form-field.tsx:149
+msgctxt "inherited flag"
+msgid "Off"
+msgstr "Off"
+
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:362
 msgid "Off Canvas"
 msgstr "Off Canvas"
+
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:141
+msgid "Off polls these streamers even while BIGO live notifications are on in the Bigo platform settings."
+msgstr "Off polls these streamers even while BIGO live notifications are on in the Bigo platform settings."
+
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:75
+msgid "Off records only the website's stream for these streamers. On records the original stream even while it is off in the Bigo platform settings."
+msgstr "Off records only the website's stream for these streamers. On records the original stream even while it is off in the Bigo platform settings."
 
 #: src/components/proxies/proxy-editor-dialog.tsx:239
 msgid "Office proxy"
@@ -7516,6 +7534,11 @@ msgstr "OK"
 msgid "On"
 msgstr "On"
 
+#: src/components/ui/flag-form-field.tsx:144
+msgctxt "inherited flag"
+msgid "On"
+msgstr "On"
+
 #: src/components/config/shared/danmu-statistics-card.tsx:87
 msgid "One word per line"
 msgstr "One word per line"
@@ -7528,7 +7551,7 @@ msgstr "Ongoing"
 msgid "Only include files with this extension (without dot)"
 msgstr "Only include files with this extension (without dot)"
 
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:99
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:102
 msgid "Only keep the original-quality stream when TikTok offers one; other qualities are ignored."
 msgstr "Only keep the original-quality stream when TikTok offers one; other qualities are ignored."
 
@@ -7872,7 +7895,7 @@ msgstr "Password must be at least 8 characters"
 msgid "password saved"
 msgstr "password saved"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:117
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:116
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:53
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:27
 msgid "Password..."
@@ -7977,7 +8000,7 @@ msgstr "Per-segment"
 msgid "Per-segment Pipeline"
 msgstr "Per-segment Pipeline"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:121
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:127
 msgid "Per-Streamer"
 msgstr "Per-Streamer"
 
@@ -8561,12 +8584,12 @@ msgstr "Progress Update Interval (ms)"
 msgid "Progress:"
 msgstr "Progress:"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:98
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:97
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:25
 msgid "Protection Settings"
 msgstr "Protection Settings"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:60
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:62
 msgid "Protocol Settings"
 msgstr "Protocol Settings"
 
@@ -8609,8 +8632,8 @@ msgstr "Quality Control"
 msgid "Quality Rate"
 msgstr "Quality Rate"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:160
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:73
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:162
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:75
 msgid "Quality Settings"
 msgstr "Quality Settings"
 
@@ -8781,15 +8804,15 @@ msgstr "Record Danmu"
 msgid "Record Separate Audio"
 msgstr "Record Separate Audio"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:71
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:72
 msgid "Record the original stream"
 msgstr "Record the original stream"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:58
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:59
 msgid "Record the qualities some channels stream only in AV1. H.264 qualities stay available. Turn on only if your players and post-processing handle AV1."
 msgstr "Record the qualities some channels stream only in AV1. H.264 qualities stay available. Turn on only if your players and post-processing handle AV1."
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:53
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:54
 msgid "Record the qualities some channels stream only in H.265. H.264 qualities stay available. Turn on only if your players and post-processing handle H.265."
 msgstr "Record the qualities some channels stream only in H.265. H.264 qualities stay available. Turn on only if your players and post-processing handle H.265."
 
@@ -8864,7 +8887,7 @@ msgstr "Recordings"
 msgid "Recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
 msgstr "Recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:80
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:81
 msgid "Records the broadcaster's own stream from BIGO's app servers, in its original quality (HEVC or H.264), without an account. The website's stream is recorded instead when this fails, for rooms with several hosts, and when a stream password is set (the platform's default applies to every streamer)."
 msgstr "Records the broadcaster's own stream from BIGO's app servers, in its original quality (HEVC or H.264), without an account. The website's stream is recorded instead when this fails, for rooms with several hosts, and when a stream password is set (the platform's default applies to every streamer)."
 
@@ -9701,7 +9724,7 @@ msgstr "secret"
 msgid "Secs"
 msgstr "Secs"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:92
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:98
 msgid "Security & Identity"
 msgstr "Security & Identity"
 
@@ -9794,8 +9817,8 @@ msgstr "Select All"
 msgid "Select an engine"
 msgstr "Select an engine"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:78
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:63
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:80
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:65
 msgid "Select API Mode"
 msgstr "Select API Mode"
 
@@ -9811,7 +9834,7 @@ msgstr "Select behavior"
 msgid "Select category"
 msgstr "Select category"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:128
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:130
 msgid "Select Client Type"
 msgstr "Select Client Type"
 
@@ -10253,7 +10276,7 @@ msgstr "Skip after duration"
 msgid "Skip existing files (default)"
 msgstr "Skip existing files (default)"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:78
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:84
 msgid "Skip Interactive Games"
 msgstr "Skip Interactive Games"
 
@@ -10398,9 +10421,9 @@ msgstr "State"
 msgid "Status"
 msgstr "Status"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:134
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:133
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:145
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:127
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:129
 msgid "Status Checks"
 msgstr "Status Checks"
 
@@ -10453,7 +10476,7 @@ msgstr "STOKEN (optional)"
 msgid "STOKEN comes from the same netdisk page cookies as BDUSS. Some features fail without it."
 msgstr "STOKEN comes from the same netdisk page cookies as BDUSS. Some features fail without it."
 
-#: src/components/config/shared/end-stream-on-danmu-close-field.tsx:32
+#: src/components/config/shared/end-stream-on-danmu-close-field.tsx:20
 msgid "Stop recording when danmu control signals stream closed."
 msgstr "Stop recording when danmu control signals stream closed."
 
@@ -10509,7 +10532,7 @@ msgstr "Stream online"
 msgid "Stream parsed successfully"
 msgstr "Stream parsed successfully"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:108
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:107
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:35
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:44
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:26
@@ -11491,11 +11514,11 @@ msgstr "Transient error"
 msgid "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
 msgstr "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:80
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:86
 msgid "Treat interactive game streams (互动玩法) as offline."
 msgstr "Treat interactive game streams (互动玩法) as offline."
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:325
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:326
 msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "Treat interactive games as offline platforms during extraction checks."
 
@@ -11606,21 +11629,13 @@ msgstr "Try Again"
 msgid "Try server proxy"
 msgstr "Try server proxy"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:102
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:108
 msgid "TTWID Management Mode"
 msgstr "TTWID Management Mode"
 
 #: src/components/filters/filter-types.ts:89
 msgid "Tuesday"
 msgstr "Tuesday"
-
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:141
-msgid "Turn off to poll these streamers even while BIGO live notifications are on in the Bigo platform settings."
-msgstr "Turn off to poll these streamers even while BIGO live notifications are on in the Bigo platform settings."
-
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:74
-msgid "Turn off to record only the website's stream for these streamers, or on to record the original stream even while it is off in the Bigo platform settings."
-msgstr "Turn off to record only the website's stream for these streamers, or on to record the original stream even while it is off in the Bigo platform settings."
 
 #: src/components/config/engines/forms/streamlink-form.tsx:64
 msgid "Twitch (ttv-lol)"
@@ -11877,7 +11892,7 @@ msgstr "Use engine setting ({inherited})"
 msgid "Use engine settings"
 msgstr "Use engine settings"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:68
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:73
 msgid "Use mobile endpoint for extraction."
 msgstr "Use mobile endpoint for extraction."
 
@@ -12157,7 +12172,7 @@ msgstr "Warning when the processing queue gets too long."
 msgid "Watch"
 msgstr "Watch"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:83
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:85
 msgid "WEB"
 msgstr "WEB"
 
@@ -12165,7 +12180,7 @@ msgstr "WEB"
 msgid "Web (deprecated)"
 msgstr "Web (deprecated)"
 
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:74
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:76
 msgid "Web API"
 msgstr "Web API"
 
@@ -12325,7 +12340,7 @@ msgstr "Worst"
 msgid "Write Timeout (ms)"
 msgstr "Write Timeout (ms)"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:95
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:97
 msgid "WUP"
 msgstr "WUP"
 

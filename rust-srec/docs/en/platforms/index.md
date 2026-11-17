@@ -63,7 +63,7 @@ What you give up:
 
 Batch detection never ends a recording. A streamer that is recording, or whose stream is being confirmed as ended, is always checked on its own, and so are streamers whose extractor is set to Streamlink. A streamer's first check after rust-srec starts, after it is added or after the setting is turned on is still an individual check, and so is every check of a streamer whose last check failed, until one succeeds.
 
-A template's platform override or a streamer's **Platform options** tab can set it differently. The switch there shows the template's or streamer's own value, not the platform's, so to turn it off for a streamer while the platform has it on, switch it on and then off again. To make a template or streamer follow the platform again, remove `batch_detection` in that tab's **JSON** view.
+A template's platform override or a streamer's **Platform options** tab can set it differently: choose **On** or **Off** there, or **Inherit** to use the template's or the platform's setting.
 
 Checks answered by a batch request appear in the streamer's check history as shorter, lighter bars than other offline checks, and their tooltip says so.
 

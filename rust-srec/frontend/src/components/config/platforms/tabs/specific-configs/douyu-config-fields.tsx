@@ -320,6 +320,7 @@ export function DouyuConfigFields<TFieldValues extends FieldValues>({
               fieldName,
               'disable_interactive_game',
             )}
+            inherited={inherited}
             title={<Trans>Filter Interactive Games</Trans>}
             description={
               <Trans>

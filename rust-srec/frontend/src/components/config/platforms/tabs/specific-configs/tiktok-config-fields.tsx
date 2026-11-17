@@ -29,11 +29,13 @@ interface TikTokConfigFieldsProps<TFieldValues extends FieldValues> {
   form: UseFormReturn<TFieldValues>;
   /** Path to the object holding this platform's options. */
   fieldName: Path<TFieldValues>;
+  inherited?: boolean;
 }
 
 export function TikTokConfigFields<TFieldValues extends FieldValues>({
   form,
   fieldName,
+  inherited = false,
 }: TikTokConfigFieldsProps<TFieldValues>) {
   const { i18n } = useLingui();
 
@@ -94,6 +96,7 @@ export function TikTokConfigFields<TFieldValues extends FieldValues>({
               fieldName,
               'force_origin_quality',
             )}
+            inherited={inherited}
             title={<Trans>Force Origin Quality</Trans>}
             description={
               <Trans>

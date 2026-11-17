@@ -68,13 +68,14 @@ export function BigoConfigFields<TFieldValues extends FieldValues>({
         </ConfigSectionHeading>
         <FlagFormField
           fieldName={configPath<TFieldValues>(fieldName, 'native_stream')}
+          inherited={inherited}
           title={<Trans>Record the original stream</Trans>}
           description={
             inherited ? (
               <Trans>
-                Turn off to record only the website's stream for these
-                streamers, or on to record the original stream even while it is
-                off in the Bigo platform settings.
+                Off records only the website's stream for these streamers. On
+                records the original stream even while it is off in the Bigo
+                platform settings.
               </Trans>
             ) : (
               <Trans>
@@ -86,10 +87,8 @@ export function BigoConfigFields<TFieldValues extends FieldValues>({
               </Trans>
             )
           }
-          // A template or streamer shows only its own choice, as Batch Detection does: unset
-          // follows the platform, which this form does not know. The platform's own unset
-          // value is the default, on.
-          checked={(value) => (inherited ? value === true : value !== false)}
+          // The extractor records the original stream unless this is `false`.
+          checked={(value) => value !== false}
         />
       </section>
 
@@ -135,12 +134,13 @@ export function BigoConfigFields<TFieldValues extends FieldValues>({
         </ConfigSectionHeading>
         <FlagFormField
           fieldName={configPath<TFieldValues>(fieldName, 'batch_detection')}
+          inherited={inherited}
           title={<Trans>Batch Detection</Trans>}
           description={
             inherited ? (
               <Trans>
-                Turn off to poll these streamers even while BIGO live
-                notifications are on in the Bigo platform settings.
+                Off polls these streamers even while BIGO live notifications are
+                on in the Bigo platform settings.
               </Trans>
             ) : (
               <Trans>

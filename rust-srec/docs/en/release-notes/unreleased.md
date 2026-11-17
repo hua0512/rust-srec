@@ -27,6 +27,10 @@
 - Fixed rclone uploads trying more times than the preset's Max Retries allowed. rclone retried each failed upload up to 3 times on its own before the next retry started, so a failing upload could run up to three times as often as configured, with no sign of it in the job's progress. Now each try shown in the job's progress is a single upload, and Max Retries limits the total. Presets can still pass `--retries` in their extra arguments to restore rclone's own retries.
 - Fixed deleting or renaming a job preset or workflow that a pipeline still uses. Pipelines in the global settings, platforms, templates, streamers and other workflows refer to presets and workflows by name, so deleting or renaming one left those pipelines failing when they ran. Now the change is refused and a dialog lists where it is still used, with a link to each. A replace-mode configuration import also keeps omitted presets and workflows that the imported pipelines still use, listing them as warnings.
 
+## Configuration
+
+- Fixed on/off platform options in a template's platform override or a streamer's **Platform options** tab, such as **Batch Detection**, **Force Origin Quality** and **End Stream On Danmu Close**, showing as on or off when the template or streamer had not set them, whatever the platform used. Once an option was switched there, the only way to make it follow the platform again was to edit the tab's JSON. These options now offer **Inherit**, **On** and **Off**; **Inherit** uses the template's or the platform's setting. See [Configuration layers](https://docs.srec.rs/en/concepts/configuration#important-merge-rules).
+
 ## Web interface
 
 - The global settings page now warns when **Max Uploads**, **Max CPU Jobs** or **Max IO Jobs** is raised. Lowering these limits applies right away, but raising one above the value rust-srec started with only takes effect after a restart, which was previously mentioned only in the server log.

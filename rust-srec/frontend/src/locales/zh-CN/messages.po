@@ -1012,11 +1012,11 @@ msgstr "全部时间"
 msgid "All Types"
 msgstr "所有类型"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:57
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:58
 msgid "Allow AV1"
 msgstr "允许 AV1"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:52
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:53
 msgid "Allow H.265 (HEVC)"
 msgstr "允许 H.265 (HEVC)"
 
@@ -1106,11 +1106,11 @@ msgstr "API 密钥已吊销"
 msgid "API Keys"
 msgstr "API 密钥"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:103
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:105
 msgid "API protocol to use for live stream extraction. WUP is the standard protocol for the PC app. Note that WUP and MP only work with numeric room IDs."
 msgstr "用于直播流提取的 API 协议。WUP 是 PC 客户端的标准协议。请注意，WUP 和 MP 仅适用于数字房间 ID。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:343
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:344
 msgid "API Request Retries"
 msgstr "API 请求重试次数"
 
@@ -1246,7 +1246,7 @@ msgstr "第 {attempt} 次尝试，共 {maxAttempts} 次"
 msgid "Attempts (including the first run)"
 msgstr "尝试次数（含首次运行）"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:45
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:48
 msgid "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 msgstr "尝试通过替换音频流获取原画质量。如果失败，可能会导致仅有音频。"
 
@@ -1310,7 +1310,7 @@ msgid "Authentication"
 msgstr "认证"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:257
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:68
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:70
 #: src/components/player/player-card.tsx:285
 msgid "Auto"
 msgstr "自动"
@@ -1327,7 +1327,7 @@ msgstr "自动重新登录"
 msgid "Auto Thumbnail"
 msgstr "自动封面"
 
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:82
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:84
 msgid "Auto tries the signature-free Web API first and falls back to parsing the live page. The live page is more likely to hit bot checks."
 msgstr "自动模式优先使用无需签名的 Web API，失败时回退到解析直播页面。直播页面更容易触发风控检测。"
 
@@ -1551,8 +1551,8 @@ msgid "Basic settings for the streamer."
 msgstr "主播的基础设置。"
 
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:138
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:149
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:131
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:150
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:134
 msgid "Batch Detection"
 msgstr "批量检测"
 
@@ -1823,7 +1823,7 @@ msgstr "采集模式"
 msgid "Capture real-time comments and chat messages if available."
 msgstr "如果可用，采集实时评论和聊天消息。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:58
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:62
 msgid "Capture separate stream data."
 msgstr "采集分离的流数据。"
 
@@ -1960,8 +1960,8 @@ msgstr "检查能否访问"
 msgid "Check this streamer and record when it goes live."
 msgstr "检查该主播，并在开播时自动录制。"
 
-#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:151
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:133
+#: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:152
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:136
 msgid "Check up to 100 streamers in one request and skip the individual check of those still offline. Uses fewer requests, but a stream start can be noticed up to a quarter of the check interval later."
 msgstr "每次请求最多检测 100 位主播，并跳过对仍未开播主播的单独检测。请求更少，但开播最多可能晚四分之一个检查间隔才被发现。"
 
@@ -2080,11 +2080,11 @@ msgstr "清除选择"
 msgid "Click to add. You can reorder steps in the editor."
 msgstr "点击添加。你可以在编辑器中重新排序步骤。"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:146
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:148
 msgid "Client platform type used for stream authentication signing. Different platforms use different signing methods."
 msgstr "用于流认证签名的客户端平台类型。不同平台使用不同的签名方式。"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:119
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:121
 msgid "Client Type (ctype)"
 msgstr "客户端类型 (ctype)"
 
@@ -2935,8 +2935,8 @@ msgstr "弹幕转 ASS 字幕"
 msgid "Danmu"
 msgstr "弹幕"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:140
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:114
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:146
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:116
 msgid "Danmu Control"
 msgstr "弹幕控制"
 
@@ -3024,9 +3024,9 @@ msgstr "解密密钥缓存 TTL（毫秒）"
 msgid "default"
 msgstr "默认"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:85
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:138
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:70
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:87
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:140
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:72
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:100
 #: src/components/player/stream-info-card.tsx:47
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:340
@@ -3054,7 +3054,7 @@ msgstr "默认值为 1（无突发）。当服务方容忍短时突发流量时�
 msgid "Default password for password-protected rooms (can be overridden per-streamer with ?pwd= in the URL)."
 msgstr "密码锁房的默认密码（可在主播 URL 上用 ?pwd= 覆盖）。"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:121
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:120
 msgid "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
 msgstr "密码锁房的默认密码。可在主播 URL 上用 ?pwd= 覆盖。"
 
@@ -3524,7 +3524,7 @@ msgstr "已完成"
 msgid "Double click to edit items."
 msgstr "双击以编辑项目。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:57
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:61
 msgid "Double Screen Data"
 msgstr "双屏数据"
 
@@ -3884,7 +3884,7 @@ msgstr "结束"
 msgid "End of History"
 msgstr "历史结束"
 
-#: src/components/config/shared/end-stream-on-danmu-close-field.tsx:29
+#: src/components/config/shared/end-stream-on-danmu-close-field.tsx:18
 msgid "End Stream On Danmu Close"
 msgstr "弹幕关闭时结束录制"
 
@@ -4182,7 +4182,7 @@ msgid "Expand sidebar"
 msgstr "展开侧边栏"
 
 #: src/components/config/engines/forms/lossless-cutting-field.tsx:52
-#: src/components/ui/flag-form-field.tsx:58
+#: src/components/ui/flag-form-field.tsx:118
 msgid "Experimental"
 msgstr "实验性"
 
@@ -4251,8 +4251,8 @@ msgstr "提取高质量音频用于播客分发并上传。"
 msgid "Extract MP3"
 msgstr "提取 MP3"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:70
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:55
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:72
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:57
 msgid "Extraction API Mode"
 msgstr "API 模式"
 
@@ -4261,9 +4261,9 @@ msgid "Extraction Method"
 msgstr "提取方式"
 
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:65
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:34
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:36
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:68
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:45
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:47
 msgid "Extraction Settings"
 msgstr "提取设置"
 
@@ -4766,7 +4766,7 @@ msgstr "过滤器删除成功"
 msgid "Filter events below this priority"
 msgstr "过滤低于此优先级的事件"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:323
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:324
 msgid "Filter Interactive Games"
 msgstr "过滤互动玩法"
 
@@ -4915,13 +4915,13 @@ msgstr "强制 IPv4"
 msgid "Force IPv6"
 msgstr "强制 IPv6"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:67
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:72
 msgid "Force Mobile API"
 msgstr "强制使用移动端 API"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:43
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:169
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:97
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:46
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:172
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:100
 msgid "Force Origin Quality"
 msgstr "强制原画质量"
 
@@ -4929,7 +4929,7 @@ msgstr "强制原画质量"
 msgid "Force overwrite if output exists"
 msgstr "若输出已存在则强制覆盖"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:171
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:174
 msgid "Force requesting the highest origin quality available (Direct stream)."
 msgstr "强制请求可用的最高原画质量（直连流）。"
 
@@ -5103,7 +5103,7 @@ msgstr "正在生成二维码..."
 msgid "Gift items"
 msgstr "礼物数"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:115
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:121
 #: src/components/layout/site-header.tsx:71
 #: src/components/pipeline/step-in-use-dialog.tsx:105
 #: src/components/proxies/proxy-references.tsx:68
@@ -5619,6 +5619,11 @@ msgstr "包含录制元数据"
 msgid "Inherit"
 msgstr "继承"
 
+#: src/components/ui/flag-form-field.tsx:139
+msgctxt "inherited flag"
+msgid "Inherit"
+msgstr "继承"
+
 #: src/components/config/shared/proxy-route-picker.tsx:114
 msgid "Inherit — {resolved}"
 msgstr "继承 — {resolved}"
@@ -5743,7 +5748,7 @@ msgstr "IO 任务"
 msgid "IO Job Timeout"
 msgstr "IO 任务超时"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:127
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:133
 msgid "Isolation level for tracking identifiers. Global is usually best."
 msgstr "追踪标识符的隔离级别。全局通常是最佳选择。"
 
@@ -6053,7 +6058,7 @@ msgstr "开播通知已关闭"
 msgid "Live notifications need a signed-in BIGO account. rust-srec signs this account in to BIGO's app service and makes it <0>follow every Bigo streamer you monitor (they can see it)</0>, with live alerts on. Turn on live notifications in that account's BIGO settings. Use a dedicated account: opening BIGO with the same account disconnects rust-srec, and the other way round."
 msgstr "开播通知需要一个已登录的 BIGO 账号。rust-srec 会用此账号登录 BIGO 的应用服务，并让它<0>关注你监控的每一位 Bigo 主播（对方能看到）</0>，同时打开开播提醒。请在该账号的 BIGO 设置中打开开播通知。请使用专用账号：用同一账号打开 BIGO 会让 rust-srec 断开连接，反之亦然。"
 
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:77
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:79
 msgid "Live page HTML"
 msgstr "直播页 HTML"
 
@@ -6452,7 +6457,7 @@ msgstr "最大上传数"
 msgid "Maximum attempts (1–10)"
 msgstr "最大尝试次数（1–10）"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:358
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:359
 msgid "Maximum attempts for metadata and App playback requests."
 msgstr "元数据及 App 播放请求的最大尝试次数。"
 
@@ -6676,7 +6681,7 @@ msgstr "移动文件"
 msgid "Move the file to another location. Removes the original file."
 msgstr "将文件移动到其他位置，并移除原始文件。"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:89
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:91
 msgid "MP"
 msgstr "MP"
 
@@ -7415,8 +7420,8 @@ msgstr "在数据库中保留已完成、失败或已取消的任务及工作流
 msgid "Number of days to keep the notification event log. Set to 0 to retain events indefinitely."
 msgstr "保留通知事件日志的天数。设置为 0 可无限期保留事件。"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:91
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:97
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:93
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:99
 msgid "Numeric Room IDs Only"
 msgstr "仅限数字房间 ID"
 
@@ -7458,9 +7463,22 @@ msgctxt "bigo notifications"
 msgid "Off"
 msgstr "已关闭"
 
+#: src/components/ui/flag-form-field.tsx:149
+msgctxt "inherited flag"
+msgid "Off"
+msgstr "关"
+
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:362
 msgid "Off Canvas"
 msgstr "侧滑"
+
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:141
+msgid "Off polls these streamers even while BIGO live notifications are on in the Bigo platform settings."
+msgstr "选择“关”时，即使 Bigo 平台设置中已开启 BIGO 开播通知，这些主播仍会通过轮询检查。"
+
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:75
+msgid "Off records only the website's stream for these streamers. On records the original stream even while it is off in the Bigo platform settings."
+msgstr "选择“关”时，这些主播只录制网页版直播流；选择“开”时，即使 Bigo 平台设置中已关闭，也会录制原始直播流。"
 
 #: src/components/proxies/proxy-editor-dialog.tsx:239
 msgid "Office proxy"
@@ -7516,6 +7534,11 @@ msgstr "正常"
 msgid "On"
 msgstr "开"
 
+#: src/components/ui/flag-form-field.tsx:144
+msgctxt "inherited flag"
+msgid "On"
+msgstr "开"
+
 #: src/components/config/shared/danmu-statistics-card.tsx:87
 msgid "One word per line"
 msgstr "每行一个词"
@@ -7528,7 +7551,7 @@ msgstr "进行中"
 msgid "Only include files with this extension (without dot)"
 msgstr "仅包含具有该扩展名的文件（不含点号）"
 
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:99
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:102
 msgid "Only keep the original-quality stream when TikTok offers one; other qualities are ignored."
 msgstr "当 TikTok 提供原画流时只保留原画，忽略其他画质。"
 
@@ -7872,7 +7895,7 @@ msgstr "密码至少需要 8 个字符"
 msgid "password saved"
 msgstr "已保存密码"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:117
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:116
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:53
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:27
 msgid "Password..."
@@ -7977,7 +8000,7 @@ msgstr "逐段"
 msgid "Per-segment Pipeline"
 msgstr "逐段处理管道"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:121
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:127
 msgid "Per-Streamer"
 msgstr "按主播"
 
@@ -8561,12 +8584,12 @@ msgstr "进度更新间隔（毫秒）"
 msgid "Progress:"
 msgstr "进度："
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:98
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:97
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:25
 msgid "Protection Settings"
 msgstr "保护设置"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:60
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:62
 msgid "Protocol Settings"
 msgstr "协议设置"
 
@@ -8609,8 +8632,8 @@ msgstr "质量控制"
 msgid "Quality Rate"
 msgstr "画质等级"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:160
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:73
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:162
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:75
 msgid "Quality Settings"
 msgstr "画质设置"
 
@@ -8781,15 +8804,15 @@ msgstr "录制弹幕"
 msgid "Record Separate Audio"
 msgstr "录制独立音频"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:71
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:72
 msgid "Record the original stream"
 msgstr "录制原始直播流"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:58
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:59
 msgid "Record the qualities some channels stream only in AV1. H.264 qualities stay available. Turn on only if your players and post-processing handle AV1."
 msgstr "录制部分频道仅以 AV1 提供的画质。H.264 画质仍然可用。请仅在你的播放器和后期处理支持 AV1 时开启。"
 
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:53
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:54
 msgid "Record the qualities some channels stream only in H.265. H.264 qualities stay available. Turn on only if your players and post-processing handle H.265."
 msgstr "录制部分频道仅以 H.265 提供的画质。H.264 画质仍然可用。请仅在你的播放器和后期处理支持 H.265 时开启。"
 
@@ -8864,7 +8887,7 @@ msgstr "录制内容"
 msgid "Recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
 msgstr "录制内容会先写入临时分块，并在分割、达到大小或时长限制或录制停止后合并为最终文件。只有这一步完成后，最终文件才可用。"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:80
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:81
 msgid "Records the broadcaster's own stream from BIGO's app servers, in its original quality (HEVC or H.264), without an account. The website's stream is recorded instead when this fails, for rooms with several hosts, and when a stream password is set (the platform's default applies to every streamer)."
 msgstr "从 BIGO 的 App 服务器录制主播推送的原始直播流，保持原画质（HEVC 或 H.264），无需账号。失败时、多人连麦的直播间以及设置了直播间密码时（平台的默认密码适用于所有主播），会改为录制网页版直播流。"
 
@@ -9701,7 +9724,7 @@ msgstr "secret"
 msgid "Secs"
 msgstr "秒"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:92
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:98
 msgid "Security & Identity"
 msgstr "安全与身份"
 
@@ -9794,8 +9817,8 @@ msgstr "全选"
 msgid "Select an engine"
 msgstr "选择引擎"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:78
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:63
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:80
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:65
 msgid "Select API Mode"
 msgstr "选择 API 模式"
 
@@ -9811,7 +9834,7 @@ msgstr "选择行为"
 msgid "Select category"
 msgstr "选择类别"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:128
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:130
 msgid "Select Client Type"
 msgstr "选择客户端类型"
 
@@ -10253,7 +10276,7 @@ msgstr "达到时长后跳过"
 msgid "Skip existing files (default)"
 msgstr "跳过已存在的文件（默认）"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:78
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:84
 msgid "Skip Interactive Games"
 msgstr "跳过互动玩法"
 
@@ -10398,9 +10421,9 @@ msgstr "状态"
 msgid "Status"
 msgstr "状态"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:134
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:133
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:145
-#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:127
+#: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:129
 msgid "Status Checks"
 msgstr "状态检测"
 
@@ -10453,7 +10476,7 @@ msgstr "STOKEN（可选）"
 msgid "STOKEN comes from the same netdisk page cookies as BDUSS. Some features fail without it."
 msgstr "STOKEN 与 BDUSS 来自同一个网盘页面的 Cookie。缺少它时部分功能会失败。"
 
-#: src/components/config/shared/end-stream-on-danmu-close-field.tsx:32
+#: src/components/config/shared/end-stream-on-danmu-close-field.tsx:20
 msgid "Stop recording when danmu control signals stream closed."
 msgstr "当弹幕控制信号指示直播已关闭时，停止录制。"
 
@@ -10509,7 +10532,7 @@ msgstr "开播"
 msgid "Stream parsed successfully"
 msgstr "流解析成功"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:108
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:107
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:35
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:44
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:26
@@ -11491,11 +11514,11 @@ msgstr "瞬时错误"
 msgid "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
 msgstr "在持续的下载进度确认流状态健康之前，暂时的监控错误会继续保留。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:80
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:86
 msgid "Treat interactive game streams (互动玩法) as offline."
 msgstr "将互动玩法直播视为离线。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:325
+#: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:326
 msgid "Treat interactive games as offline platforms during extraction checks."
 msgstr "在提取检查期间，将互动玩法视为离线平台。"
 
@@ -11606,21 +11629,13 @@ msgstr "重试"
 msgid "Try server proxy"
 msgstr "尝试服务器代理"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:102
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:108
 msgid "TTWID Management Mode"
 msgstr "TTWID 管理模式"
 
 #: src/components/filters/filter-types.ts:89
 msgid "Tuesday"
 msgstr "星期二"
-
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:141
-msgid "Turn off to poll these streamers even while BIGO live notifications are on in the Bigo platform settings."
-msgstr "关闭后，即使 Bigo 平台设置中已开启 BIGO 开播通知，这些主播仍会通过轮询检查。"
-
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:74
-msgid "Turn off to record only the website's stream for these streamers, or on to record the original stream even while it is off in the Bigo platform settings."
-msgstr "关闭后，这些主播只录制网页版直播流；打开后，即使 Bigo 平台设置中已关闭，也会录制原始直播流。"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:64
 msgid "Twitch (ttv-lol)"
@@ -11877,7 +11892,7 @@ msgstr "使用引擎设置（{inherited}）"
 msgid "Use engine settings"
 msgstr "使用引擎设置"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:68
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:73
 msgid "Use mobile endpoint for extraction."
 msgstr "使用移动端端点进行提取。"
 
@@ -12157,7 +12172,7 @@ msgstr "处理队列过长时发出警告。"
 msgid "Watch"
 msgstr "观看"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:83
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:85
 msgid "WEB"
 msgstr "WEB"
 
@@ -12165,7 +12180,7 @@ msgstr "WEB"
 msgid "Web (deprecated)"
 msgstr "Web（已弃用）"
 
-#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:74
+#: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:76
 msgid "Web API"
 msgstr "Web API"
 
@@ -12325,7 +12340,7 @@ msgstr "最差"
 msgid "Write Timeout (ms)"
 msgstr "写入超时（毫秒）"
 
-#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:95
+#: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:97
 msgid "WUP"
 msgstr "WUP"
 

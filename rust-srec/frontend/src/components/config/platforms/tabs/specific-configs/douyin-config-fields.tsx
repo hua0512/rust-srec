@@ -20,11 +20,13 @@ interface DouyinConfigFieldsProps<TFieldValues extends FieldValues> {
   form: UseFormReturn<TFieldValues>;
   /** Path to the object holding this platform's options. */
   fieldName: Path<TFieldValues>;
+  inherited?: boolean;
 }
 
 export function DouyinConfigFields<TFieldValues extends FieldValues>({
   form,
   fieldName,
+  inherited = false,
 }: DouyinConfigFieldsProps<TFieldValues>) {
   return (
     <div className="space-y-12">
@@ -40,6 +42,7 @@ export function DouyinConfigFields<TFieldValues extends FieldValues>({
               fieldName,
               'force_origin_quality',
             )}
+            inherited={inherited}
             title={<Trans>Force Origin Quality</Trans>}
             description={
               <Trans>
@@ -54,6 +57,7 @@ export function DouyinConfigFields<TFieldValues extends FieldValues>({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <FlagFormField
               fieldName={configPath<TFieldValues>(fieldName, 'double_screen')}
+              inherited={inherited}
               title={<Trans>Double Screen Data</Trans>}
               description={<Trans>Capture separate stream data.</Trans>}
               checked={(value) => !!value}
@@ -64,6 +68,7 @@ export function DouyinConfigFields<TFieldValues extends FieldValues>({
                 fieldName,
                 'force_mobile_api',
               )}
+              inherited={inherited}
               title={<Trans>Force Mobile API</Trans>}
               description={<Trans>Use mobile endpoint for extraction.</Trans>}
               checked={(value) => !!value}
@@ -75,6 +80,7 @@ export function DouyinConfigFields<TFieldValues extends FieldValues>({
               fieldName,
               'skip_interactive_games',
             )}
+            inherited={inherited}
             title={<Trans>Skip Interactive Games</Trans>}
             description={
               <Trans>
@@ -141,11 +147,11 @@ export function DouyinConfigFields<TFieldValues extends FieldValues>({
         </ConfigSectionHeading>
 
         <EndStreamOnDanmuCloseField
-          form={form}
           name={configPath<TFieldValues>(
             fieldName,
             'end_stream_on_danmu_stream_closed',
           )}
+          inherited={inherited}
         />
       </section>
     </div>

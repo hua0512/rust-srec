@@ -131,11 +131,11 @@ export function BilibiliConfigFields<TFieldValues extends FieldValues>({
           />
 
           <EndStreamOnDanmuCloseField
-            form={form}
             name={configPath<TFieldValues>(
               fieldName,
               'end_stream_on_danmu_stream_closed',
             )}
+            inherited={inherited}
           />
         </div>
       </section>
@@ -146,6 +146,7 @@ export function BilibiliConfigFields<TFieldValues extends FieldValues>({
         </ConfigSectionHeading>
         <FlagFormField
           fieldName={configPath<TFieldValues>(fieldName, 'batch_detection')}
+          inherited={inherited}
           title={<Trans>Batch Detection</Trans>}
           description={
             <Trans>
