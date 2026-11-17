@@ -94,6 +94,8 @@ prost = { workspace = true }
 [dev-dependencies]
 prost-build = { workspace = true }
 protox = { workspace = true }
+# Paused time, for the timer tests.
+tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber = { workspace = true }
 
 [features]

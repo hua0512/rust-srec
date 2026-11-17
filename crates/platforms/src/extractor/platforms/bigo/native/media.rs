@@ -9,11 +9,12 @@
 
 use std::io;
 use std::net::Ipv4Addr;
+use std::pin::Pin;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::time::{Instant, sleep_until, timeout};
+use tokio::time::{Instant, Sleep, sleep_until, timeout};
 use tracing::debug;
 
 use super::linkd::{Channel, STATUS_OK, frame_len, put_blob, put_frame};
@@ -68,8 +69,17 @@ pub(super) struct MediaConnection {
     /// meanwhile would need a new buffer.
     input: BytesMut,
     output: BytesMut,
-    keepalive_at: Instant,
-    audio_deadline: Option<Instant>,
+    /// Whether the transport may still hold written bytes: TLS to a proxy
+    /// can accept them and keep them until it is flushed, and a cancelled
+    /// flush leaves them there with `output` empty.
+    unflushed: bool,
+    /// When the next keepalive is due. The timers last as long as the
+    /// connection, so that a packet costs no new timer.
+    keepalive: Pin<Box<Sleep>>,
+    /// When audio counts as dead: armed by the first audio, and pushed back
+    /// by each.
+    audio_timeout: Pin<Box<Sleep>>,
+    audio_armed: bool,
     /// The id of the video subscription once sent.
     subscription: Option<u64>,
     /// Whether the server confirmed the subscription. Video before that is
@@ -94,20 +104,7 @@ impl MediaConnection {
         route: &Route,
     ) -> Result<Self, NativeError> {
         let io = route.open(&ip.to_string(), port).await?;
-        let now = Instant::now();
-        let mut connection = Self {
-            io,
-            track,
-            source: channel.source,
-            sid: channel.sid,
-            timestamp: channel.timestamp,
-            input: BytesMut::new(),
-            output: BytesMut::new(),
-            keepalive_at: now + KEEPALIVE_INTERVAL,
-            audio_deadline: None,
-            subscription: None,
-            subscribed: false,
-        };
+        let mut connection = Self::new(io, track, channel.source, channel.sid, channel.timestamp);
         let (uri, body) = match track {
             Track::Video => (VIDEO_LOGIN, video_login_body(channel, owner_uid, unix_ms())),
             Track::Audio => (AUDIO_LOGIN, audio_login_body(channel)),
@@ -118,6 +115,26 @@ impl MediaConnection {
         Ok(connection)
     }
 
+    /// A connection over `io`, before its login.
+    fn new(io: BoxedTransport, track: Track, source: u32, sid: u32, timestamp: u32) -> Self {
+        let now = Instant::now();
+        Self {
+            io,
+            track,
+            source,
+            sid,
+            timestamp,
+            input: BytesMut::new(),
+            output: BytesMut::new(),
+            unflushed: false,
+            keepalive: Box::pin(sleep_until(now + KEEPALIVE_INTERVAL)),
+            audio_timeout: Box::pin(sleep_until(now + AUDIO_TIMEOUT)),
+            audio_armed: false,
+            subscription: None,
+            subscribed: false,
+        }
+    }
+
     /// The next media packet of this connection's track, from its first
     /// byte. Meanwhile it answers control messages and sends keepalives, so
     /// the stream only flows while this is awaited.
@@ -125,30 +142,37 @@ impl MediaConnection {
     /// Cancel-safe.
     pub(super) async fn next_packet(&mut self) -> Result<Bytes, NativeError> {
         loop {
-            let now = Instant::now();
-            if now >= self.keepalive_at {
-                let body = keepalive_body(self.source, self.sid, self.timestamp, unix_ms());
-                put_frame(&mut self.output, KEEPALIVE, &body);
-                self.keepalive_at = now + KEEPALIVE_INTERVAL;
+            if !self.output.is_empty() || self.unflushed {
+                timeout(WRITE_TIMEOUT, self.flush())
+                    .await
+                    .map_err(|_| NativeError::Timeout("a media server to accept data"))??;
             }
-            timeout(WRITE_TIMEOUT, self.flush())
-                .await
-                .map_err(|_| NativeError::Timeout("a media server to accept data"))??;
 
-            let keepalive_at = self.keepalive_at;
-            let audio_deadline = self.audio_deadline;
+            // The timers first, so that packets arriving back to back cannot
+            // hold them up.
             let packet = tokio::select! {
-                packet = self.read_packet() => packet?,
-                () = sleep_until(keepalive_at) => continue,
-                () = sleep_until(audio_deadline.unwrap_or(keepalive_at)), if audio_deadline.is_some() => {
+                biased;
+                () = &mut self.keepalive => {
+                    let body = keepalive_body(self.source, self.sid, self.timestamp, unix_ms());
+                    put_frame(&mut self.output, KEEPALIVE, &body);
+                    self.keepalive
+                        .as_mut()
+                        .reset(Instant::now() + KEEPALIVE_INTERVAL);
+                    continue;
+                }
+                () = &mut self.audio_timeout, if self.audio_armed => {
                     return Err(NativeError::Timeout("audio"));
                 }
+                packet = Self::read_packet(&mut self.io, &mut self.input) => packet?,
             };
             match packet {
                 Packet::Media { kind, data } => match self.track {
                     Track::Video if kind == VIDEO_PACKET && self.subscribed => return Ok(data),
                     Track::Audio if kind == AUDIO_PACKET => {
-                        self.audio_deadline = Some(Instant::now() + AUDIO_TIMEOUT);
+                        self.audio_timeout
+                            .as_mut()
+                            .reset(Instant::now() + AUDIO_TIMEOUT);
+                        self.audio_armed = true;
                         return Ok(data);
                     }
                     _ => {}
@@ -238,19 +262,25 @@ impl MediaConnection {
                 return Err(io::Error::from(io::ErrorKind::WriteZero).into());
             }
         }
+        self.unflushed = true;
         self.io.flush().await?;
+        self.unflushed = false;
         Ok(())
     }
 
-    /// The next packet. Cancel-safe: bytes stay buffered until their packet
-    /// is complete.
-    async fn read_packet(&mut self) -> Result<Packet, NativeError> {
+    /// The next packet from `io`. Cancel-safe: bytes stay buffered in `input`
+    /// until their packet is complete. It borrows only these two fields, so
+    /// that [`Self::next_packet`] can wait on its timers meanwhile.
+    async fn read_packet(
+        io: &mut BoxedTransport,
+        input: &mut BytesMut,
+    ) -> Result<Packet, NativeError> {
         loop {
-            if let Some(packet) = self.take_packet()? {
+            if let Some(packet) = Self::take_packet(input)? {
                 return Ok(packet);
             }
-            self.input.reserve(64 * 1024);
-            if self.io.read_buf(&mut self.input).await? == 0 {
+            input.reserve(64 * 1024);
+            if io.read_buf(input).await? == 0 {
                 return Err(io::Error::new(
                     io::ErrorKind::UnexpectedEof,
                     "the media server closed the connection",
@@ -260,8 +290,8 @@ impl MediaConnection {
         }
     }
 
-    fn take_packet(&mut self) -> Result<Option<Packet>, NativeError> {
-        let Ok(word) = (&self.input[..]).try_get_u32_le() else {
+    fn take_packet(input: &mut BytesMut) -> Result<Option<Packet>, NativeError> {
+        let Ok(word) = (&input[..]).try_get_u32_le() else {
             return Ok(None);
         };
         if word & 0x8000_0000 != 0 {
@@ -269,22 +299,22 @@ impl MediaConnection {
             if size < 4 {
                 return Err(NativeError::Protocol(format!("media packet size {size}")));
             }
-            if self.input.len() < size {
+            if input.len() < size {
                 return Ok(None);
             }
-            let data = Bytes::copy_from_slice(&self.input[..size]);
-            self.input.advance(size);
+            let data = Bytes::copy_from_slice(&input[..size]);
+            input.advance(size);
             return Ok(Some(Packet::Media {
                 kind: word & 0xf,
                 data,
             }));
         }
         let len = frame_len(word)?;
-        if self.input.len() < len {
+        if input.len() < len {
             return Ok(None);
         }
-        let mut frame = Bytes::copy_from_slice(&self.input[..len]);
-        self.input.advance(len);
+        let mut frame = Bytes::copy_from_slice(&input[..len]);
+        input.advance(len);
         frame.advance(4);
         let uri = frame.try_get_u32_le()?;
         let status = frame.try_get_u16_le()?;
@@ -400,4 +430,66 @@ fn unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_millis() as u64)
+}
+
+#[cfg(test)]
+impl MediaConnection {
+    /// A connection over `io` whose login and video subscription are done.
+    pub(super) fn logged_in(io: BoxedTransport, track: Track) -> Self {
+        let mut connection = Self::new(io, track, 1, 2, 3);
+        connection.subscribed = true;
+        connection
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::time::sleep;
+
+    use super::*;
+
+    /// The timers outlive the packets: keepalives go out every 5 s, and
+    /// audio times out 20 s after its last packet.
+    #[tokio::test(start_paused = true)]
+    async fn keepalives_repeat_and_audio_times_out_after_its_last_packet() {
+        // Room for the keepalives expected, but not for a flood of them.
+        let (io, server) = tokio::io::duplex(1024);
+        let (mut written, mut to_client) = tokio::io::split(server);
+        // A packed audio packet, whose content is not read here.
+        let packet = [
+            (0x8000_0000 | (8 << 4) | AUDIO_PACKET).to_le_bytes(),
+            [0; 4],
+        ]
+        .concat();
+        tokio::spawn(async move {
+            to_client.write_all(&packet).await.unwrap();
+            sleep(Duration::from_secs(12)).await;
+            to_client.write_all(&packet).await.unwrap();
+            // Keeps the connection open.
+            std::future::pending::<()>().await;
+        });
+        let start = Instant::now();
+        let mut connection = MediaConnection::logged_in(Box::new(io), Track::Audio);
+
+        connection.next_packet().await.unwrap();
+        connection.next_packet().await.unwrap();
+        assert_eq!(start.elapsed().as_secs(), 12);
+        let error = connection.next_packet().await.unwrap_err();
+        assert!(matches!(error, NativeError::Timeout("audio")), "{error}");
+        assert_eq!(start.elapsed().as_secs(), 32);
+
+        // Closed, so that reading what it wrote cannot wait for more.
+        drop(connection);
+        let mut frames = Vec::new();
+        written.read_to_end(&mut frames).await.unwrap();
+        let mut frames = &frames[..];
+        let mut keepalives = 0;
+        while let Ok(len) = frames.try_get_u32_le() {
+            keepalives += usize::from(frames.get_u32_le() == KEEPALIVE);
+            frames.advance(len as usize - 8);
+        }
+        // At 5, 10, ..., 30 s.
+        assert_eq!(keepalives, 6);
+    }
 }

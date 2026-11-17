@@ -3,6 +3,7 @@
 
 use std::collections::VecDeque;
 use std::net::Ipv4Addr;
+use std::pin::Pin;
 use std::sync::LazyLock;
 use std::time::Duration;
 
@@ -11,7 +12,7 @@ use bytes::Bytes;
 use futures::Stream;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
-use tokio::time::{Instant, sleep, sleep_until, timeout};
+use tokio::time::{Instant, Sleep, sleep, sleep_until, timeout};
 use tracing::{debug, info, warn};
 use url::Url;
 
@@ -192,6 +193,10 @@ struct Session {
     video_frames: u64,
     /// When this session fails unless it writes video.
     video_deadline: Instant,
+    /// Fires at the next deadline: the video deadline, or the end of the
+    /// wait for audio. It lasts as long as the session, so that a packet
+    /// costs no new timer.
+    deadline: Pin<Box<Sleep>>,
     /// When this session will have delivered media long enough to restore
     /// the reconnects.
     healthy_at: Option<Instant>,
@@ -313,17 +318,23 @@ impl Recorder {
             Startup::Audio(at) => at.min(session.video_deadline),
             Startup::Keyframe | Startup::Done => session.video_deadline,
         };
+        if session.deadline.deadline() != deadline {
+            session.deadline.as_mut().reset(deadline);
+        }
         let received = tokio::select! {
             packet = session.video.next_packet() => Some(Received::Video(packet?)),
             packet = session.audio.next_packet() => Some(Received::Audio(packet?)),
-            () = sleep_until(deadline) => None,
+            () = &mut session.deadline => None,
         };
+        // Read once for the whole step: on some machines a clock read is a
+        // system call.
+        let now = Instant::now();
 
         let mut tags = Vec::new();
         match received {
             None => match session.startup {
                 Startup::Keyframe => return Err(NativeError::Timeout("a keyframe")),
-                _ if Instant::now() >= session.video_deadline => {
+                _ if now >= session.video_deadline => {
                     return Err(NativeError::Timeout("video"));
                 }
                 _ => {
@@ -345,7 +356,6 @@ impl Recorder {
             }
         }
 
-        let now = Instant::now();
         if self.muxer.video_frames() > session.video_frames {
             session.video_frames = self.muxer.video_frames();
             session.video_deadline = now + VIDEO_TIMEOUT;
@@ -425,15 +435,35 @@ impl Recorder {
         .await
         .map_err(|_| NativeError::Timeout("the media servers"))??;
         self.muxer.wait_for_keyframe();
-        Ok(Session {
+        Ok(Session::new(
             video,
             audio,
-            depacketizer: VideoDepacketizer::new(self.owner_uid),
+            self.owner_uid,
+            self.muxer.video_frames(),
+        ))
+    }
+}
+
+impl Session {
+    /// A session on fresh media connections, waiting for a keyframe.
+    /// `video_frames` is the muxer's video frame count so far.
+    fn new(
+        video: MediaConnection,
+        audio: MediaConnection,
+        owner_uid: u32,
+        video_frames: u64,
+    ) -> Self {
+        let video_deadline = Instant::now() + KEYFRAME_TIMEOUT;
+        Self {
+            video,
+            audio,
+            depacketizer: VideoDepacketizer::new(owner_uid),
             startup: Startup::Keyframe,
-            video_frames: self.muxer.video_frames(),
-            video_deadline: Instant::now() + KEYFRAME_TIMEOUT,
+            video_frames,
+            video_deadline,
+            deadline: Box::pin(sleep_until(video_deadline)),
             healthy_at: None,
-        })
+        }
     }
 }
 
@@ -471,9 +501,14 @@ mod tests {
     use ::flv::FlvWriter;
     use futures::StreamExt;
     use serde_json::Value;
+    use tokio::io::AsyncWriteExt;
 
     use super::*;
     use crate::extractor::default::{DEFAULT_UA, create_client_builder};
+    use crate::extractor::platforms::bigo::native::depacketize::tests::{
+        H264_KEY_FIRST, H264_KEY_LAST, OWNER, frame_start, numbered, packet, second_and_last,
+    };
+    use crate::extractor::platforms::bigo::native::flv::tests::{AVC_PPS, AVC_SPS, annex_b};
 
     /// A stream that once had 30 s of media ends without an error when its
     /// reconnects run out on timeouts, as after a broadcast ends. Before
@@ -512,6 +547,72 @@ mod tests {
         let next = recorder.after_error(timeout());
         assert!(matches!(next, AfterError::Fail(_)), "{next:?}");
         assert!(recently_failed(STARTING));
+    }
+
+    /// An H.264 keyframe of two fragments, as packed media packets.
+    fn h264_keyframe(frame: u32, dts: u32) -> Vec<u8> {
+        let access_unit = annex_b(&[AVC_SPS, AVC_PPS, b"\x65\xb8\x04\x13"]);
+        [
+            packet(H264_KEY_FIRST, &frame_start(dts, dts, &access_unit)),
+            second_and_last(H264_KEY_LAST, b"frame"),
+        ]
+        .into_iter()
+        .flat_map(|fragment| {
+            let mut packet = numbered(fragment, frame).to_vec();
+            // The packet size, in bits 4-15 of the first word.
+            let word = (u32::from_le_bytes(packet[..4].try_into().unwrap()) & !0xfff0)
+                | ((packet.len() as u32) << 4);
+            packet[..4].copy_from_slice(&word.to_le_bytes());
+            packet
+        })
+        .collect()
+    }
+
+    /// The session's deadline moves with the stream: a room without audio
+    /// starts 2 s after its first keyframe, and fails 20 s after its last
+    /// video.
+    #[tokio::test(start_paused = true)]
+    async fn a_room_without_audio_starts_after_the_audio_wait_and_fails_without_video() {
+        let (video, mut server) = tokio::io::duplex(64 * 1024);
+        let (audio, _audio_server) = tokio::io::duplex(1024);
+        tokio::spawn(async move {
+            sleep(Duration::from_secs(1)).await;
+            server.write_all(&h264_keyframe(1, 1_000)).await.unwrap();
+            sleep(Duration::from_secs(9)).await;
+            server.write_all(&h264_keyframe(2, 10_000)).await.unwrap();
+            // Keeps the connection open.
+            std::future::pending::<()>().await;
+        });
+        let start = Instant::now();
+        let route = Route {
+            client: reqwest::Client::new(),
+            proxy: None,
+        };
+        let mut recorder = Recorder::new(1, OWNER, route);
+        recorder.session = Some(Session::new(
+            MediaConnection::logged_in(Box::new(video), Track::Video),
+            MediaConnection::logged_in(Box::new(audio), Track::Audio),
+            OWNER,
+            0,
+        ));
+
+        let mut started_at = None;
+        let mut steps = 0;
+        let error = loop {
+            // Two steps a keyframe and one a deadline; many more mean that
+            // the deadline fires when it should not.
+            steps += 1;
+            assert!(steps < 10, "still stepping at {:?}", start.elapsed());
+            if let Err(error) = recorder.step().await {
+                break error;
+            }
+            if recorder.started && started_at.is_none() {
+                started_at = Some(start.elapsed().as_secs());
+            }
+        };
+        assert_eq!(started_at, Some(3));
+        assert!(matches!(error, NativeError::Timeout("video")), "{error}");
+        assert_eq!(start.elapsed().as_secs(), 30);
     }
 
     /// Records 20 s of `room_id` to `path`, returning the keyframes, the

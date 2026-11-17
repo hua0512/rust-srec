@@ -77,7 +77,7 @@ struct Fragment {
 }
 
 impl Fragment {
-    fn parse(packet: Bytes) -> Result<Self, NativeError> {
+    fn parse(mut packet: Bytes) -> Result<Self, NativeError> {
         let mut header = &packet[..];
 
         // The packet word's top byte holds the frame kind; then two bytes
@@ -204,6 +204,7 @@ impl Fragment {
         if !split || last {
             count = Some(u32::from(index) + 1);
         }
+        packet.advance(payload_start);
         Ok(Self {
             frame,
             keyframe,
@@ -213,7 +214,7 @@ impl Fragment {
             index,
             count,
             combined,
-            payload: packet.slice(payload_start..),
+            payload: packet,
         })
     }
 }
@@ -605,11 +606,11 @@ fn read_audio(packet: &Bytes, owner_uid: u32) -> Result<Vec<AudioFrame>, NativeE
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
 
     /// The streamer in the captured headers below, whose ids are made up.
-    const OWNER: u32 = 0x0102_0304;
+    pub(crate) const OWNER: u32 = 0x0102_0304;
 
     // Headers of fragments from a live room: the first and last of an HEVC
     // keyframe in the default substream, the three of the next frame but
@@ -622,8 +623,8 @@ mod tests {
         "a533d0c3de6ebd890200251d040302013700e803fe018430800104030201000000000d0c0b0a000000000000000000000000",
         "9533d0c3e06ebd890200253d040302013800e803fe028430800104030201000000000d0c0b0a000000000000000000000000",
     ];
-    const H264_KEY_FIRST: &str = "b54bd0c162daeb890200229d040302013a01e803ff000d0c0b0a86a05a9d096801000058020000000000006701000000000000570200000000000030000000008104030201000000000d0c0b0a00000000000000008a008b0084ac00";
-    const H264_KEY_LAST: &str = "e548d0c190daeb890200223d040302015101e803ff1786a033808104030201000000000d0c0b0a00000000000000000000000004ac";
+    pub(crate) const H264_KEY_FIRST: &str = "b54bd0c162daeb890200229d040302013a01e803ff000d0c0b0a86a05a9d096801000058020000000000006701000000000000570200000000000030000000008104030201000000000d0c0b0a00000000000000008a008b0084ac00";
+    pub(crate) const H264_KEY_LAST: &str = "e548d0c190daeb890200223d040302015101e803ff1786a033808104030201000000000d0c0b0a00000000000000000000000004ac";
     /// Where the frame number and the fragment index sit in these headers.
     const FRAME_AT: usize = 6;
     const INDEX_AT: usize = 21;
@@ -635,19 +636,19 @@ mod tests {
             .collect()
     }
 
-    fn packet(header: &str, payload: &[u8]) -> Bytes {
+    pub(crate) fn packet(header: &str, payload: &[u8]) -> Bytes {
         [hex(header), payload.to_vec()].concat().into()
     }
 
     /// A last fragment renumbered as the second, so that the keyframe has
     /// two fragments.
-    fn second_and_last(header: &str, payload: &[u8]) -> Bytes {
+    pub(crate) fn second_and_last(header: &str, payload: &[u8]) -> Bytes {
         let mut packet = [hex(header), payload.to_vec()].concat();
         packet[INDEX_AT] = 1;
         packet.into()
     }
 
-    fn numbered(packet: Bytes, frame: u32) -> Bytes {
+    pub(crate) fn numbered(packet: Bytes, frame: u32) -> Bytes {
         let mut packet = packet.to_vec();
         packet[FRAME_AT..FRAME_AT + 4].copy_from_slice(&frame.to_le_bytes());
         packet.into()
@@ -655,7 +656,7 @@ mod tests {
 
     /// The start of a frame's first fragment: pts, dts, one byte, then the
     /// access unit.
-    fn frame_start(pts: u32, dts: u32, access_unit: &[u8]) -> Vec<u8> {
+    pub(crate) fn frame_start(pts: u32, dts: u32, access_unit: &[u8]) -> Vec<u8> {
         [
             &pts.to_le_bytes()[..],
             &dts.to_le_bytes(),
