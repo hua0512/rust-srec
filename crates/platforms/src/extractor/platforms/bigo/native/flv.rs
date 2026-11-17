@@ -482,7 +482,7 @@ fn annex_b_nalus(data: &[u8]) -> Vec<&[u8]> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use ::flv::avc::AvcPacket;
     use ::flv::hevc::HevcPacket;
     use ::flv::tag::SequenceHeader;
@@ -496,8 +496,8 @@ mod tests {
     const VPS: &[u8] = b"\x40\x01\x0c\x01\xff\xff\x01\x60\x00\x00\x03\x00\xb0\x00\x00\x03\x00\x00\x03\x00\x5a\x17\x02\x40";
     const SPS: &[u8] = b"\x42\x01\x01\x01\x60\x00\x00\x03\x00\xb0\x00\x00\x03\x00\x00\x03\x00\x5a\xa0\x04\x42\x00\xe4\x77\x3e\x20\x5e\xe4\x59\x14\xbf\xf2\xe7\xf1\x3f\xa9\xa8\x08\x08\x08\x04";
     const PPS: &[u8] = b"\x44\x01\xc0\x72\xf0\x53\x24";
-    const AVC_SPS: &[u8] = b"\x67\x4d\x40\x1e\x95\x90\x17\x04\xde\x59\x70\x16\xa0\x20\x20\x28\x00\x00\x1f\x40\x00\x05\xdc\x04\x20";
-    const AVC_PPS: &[u8] = b"\x68\xeb\x8f\x20";
+    pub(crate) const AVC_SPS: &[u8] = b"\x67\x4d\x40\x1e\x95\x90\x17\x04\xde\x59\x70\x16\xa0\x20\x20\x28\x00\x00\x1f\x40\x00\x05\xdc\x04\x20";
+    pub(crate) const AVC_PPS: &[u8] = b"\x68\xeb\x8f\x20";
 
     fn video(codec: VideoCodec, keyframe: bool, pts: u32, dts: u32, data: &[u8]) -> VideoFrame {
         VideoFrame {
@@ -519,7 +519,7 @@ mod tests {
         }
     }
 
-    fn annex_b(nalus: &[&[u8]]) -> Vec<u8> {
+    pub(crate) fn annex_b(nalus: &[&[u8]]) -> Vec<u8> {
         nalus
             .iter()
             .enumerate()

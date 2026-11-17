@@ -69,6 +69,10 @@ pub(super) struct MediaConnection {
     /// meanwhile would need a new buffer.
     input: BytesMut,
     output: BytesMut,
+    /// Whether the transport may still hold written bytes: TLS to a proxy
+    /// can accept them and keep them until it is flushed, and a cancelled
+    /// flush leaves them there with `output` empty.
+    unflushed: bool,
     /// When the next keepalive is due. The timers last as long as the
     /// connection, so that a packet costs no new timer.
     keepalive: Pin<Box<Sleep>>,
@@ -122,6 +126,7 @@ impl MediaConnection {
             timestamp,
             input: BytesMut::new(),
             output: BytesMut::new(),
+            unflushed: false,
             keepalive: Box::pin(sleep_until(now + KEEPALIVE_INTERVAL)),
             audio_timeout: Box::pin(sleep_until(now + AUDIO_TIMEOUT)),
             audio_armed: false,
@@ -137,7 +142,7 @@ impl MediaConnection {
     /// Cancel-safe.
     pub(super) async fn next_packet(&mut self) -> Result<Bytes, NativeError> {
         loop {
-            if !self.output.is_empty() {
+            if !self.output.is_empty() || self.unflushed {
                 timeout(WRITE_TIMEOUT, self.flush())
                     .await
                     .map_err(|_| NativeError::Timeout("a media server to accept data"))??;
@@ -257,7 +262,9 @@ impl MediaConnection {
                 return Err(io::Error::from(io::ErrorKind::WriteZero).into());
             }
         }
+        self.unflushed = true;
         self.io.flush().await?;
+        self.unflushed = false;
         Ok(())
     }
 

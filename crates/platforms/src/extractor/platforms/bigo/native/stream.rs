@@ -435,17 +435,35 @@ impl Recorder {
         .await
         .map_err(|_| NativeError::Timeout("the media servers"))??;
         self.muxer.wait_for_keyframe();
-        let video_deadline = Instant::now() + KEYFRAME_TIMEOUT;
-        Ok(Session {
+        Ok(Session::new(
             video,
             audio,
-            depacketizer: VideoDepacketizer::new(self.owner_uid),
+            self.owner_uid,
+            self.muxer.video_frames(),
+        ))
+    }
+}
+
+impl Session {
+    /// A session on fresh media connections, waiting for a keyframe.
+    /// `video_frames` is the muxer's video frame count so far.
+    fn new(
+        video: MediaConnection,
+        audio: MediaConnection,
+        owner_uid: u32,
+        video_frames: u64,
+    ) -> Self {
+        let video_deadline = Instant::now() + KEYFRAME_TIMEOUT;
+        Self {
+            video,
+            audio,
+            depacketizer: VideoDepacketizer::new(owner_uid),
             startup: Startup::Keyframe,
-            video_frames: self.muxer.video_frames(),
+            video_frames,
             video_deadline,
             deadline: Box::pin(sleep_until(video_deadline)),
             healthy_at: None,
-        })
+        }
     }
 }
 
@@ -487,6 +505,10 @@ mod tests {
 
     use super::*;
     use crate::extractor::default::{DEFAULT_UA, create_client_builder};
+    use crate::extractor::platforms::bigo::native::depacketize::tests::{
+        H264_KEY_FIRST, H264_KEY_LAST, OWNER, frame_start, numbered, packet, second_and_last,
+    };
+    use crate::extractor::platforms::bigo::native::flv::tests::{AVC_PPS, AVC_SPS, annex_b};
 
     /// A stream that once had 30 s of media ends without an error when its
     /// reconnects run out on timeouts, as after a broadcast ends. Before
@@ -527,49 +549,23 @@ mod tests {
         assert!(recently_failed(STARTING));
     }
 
-    /// An H.264 keyframe of two fragments, as packed media packets, from
-    /// captured fragment headers with made-up ids.
+    /// An H.264 keyframe of two fragments, as packed media packets.
     fn h264_keyframe(frame: u32, dts: u32) -> Vec<u8> {
-        const FIRST: &str = "b54bd0c162daeb890200229d040302013a01e803ff000d0c0b0a86a05a9d096801000058020000000000006701000000000000570200000000000030000000008104030201000000000d0c0b0a00000000000000008a008b0084ac00";
-        const LAST: &str = "e548d0c190daeb890200223d040302015101e803ff1786a033808104030201000000000d0c0b0a00000000000000000000000004ac";
-        const SPS: &[u8] = b"\x67\x4d\x40\x1e\x95\x90\x17\x04\xde\x59\x70\x16\xa0\x20\x20\x28\x00\x00\x1f\x40\x00\x05\xdc\x04\x20";
-        const PPS: &[u8] = b"\x68\xeb\x8f\x20";
-        const IDR: &[u8] = b"\x65\xb8\x04\x13";
-        let hex = |text: &str| -> Vec<u8> {
-            (0..text.len())
-                .step_by(2)
-                .map(|at| u8::from_str_radix(&text[at..at + 2], 16).unwrap())
-                .collect()
-        };
-        let start_code = b"\0\0\0\x01";
-        // The pts, the dts, a byte, then the access unit.
-        let first = [
-            &hex(FIRST)[..],
-            &dts.to_le_bytes(),
-            &dts.to_le_bytes(),
-            &[0],
-            start_code,
-            SPS,
-            start_code,
-            PPS,
-            start_code,
-            IDR,
+        let access_unit = annex_b(&[AVC_SPS, AVC_PPS, b"\x65\xb8\x04\x13"]);
+        [
+            packet(H264_KEY_FIRST, &frame_start(dts, dts, &access_unit)),
+            second_and_last(H264_KEY_LAST, b"frame"),
         ]
-        .concat();
-        let mut last = [&hex(LAST)[..], b"frame"].concat();
-        // Renumbered as the second fragment.
-        last[21] = 1;
-        [first, last]
-            .into_iter()
-            .flat_map(|mut packet| {
-                packet[6..10].copy_from_slice(&frame.to_le_bytes());
-                // The packet size, in bits 4-15 of the first word.
-                let word = (u32::from_le_bytes(packet[..4].try_into().unwrap()) & !0xfff0)
-                    | ((packet.len() as u32) << 4);
-                packet[..4].copy_from_slice(&word.to_le_bytes());
-                packet
-            })
-            .collect()
+        .into_iter()
+        .flat_map(|fragment| {
+            let mut packet = numbered(fragment, frame).to_vec();
+            // The packet size, in bits 4-15 of the first word.
+            let word = (u32::from_le_bytes(packet[..4].try_into().unwrap()) & !0xfff0)
+                | ((packet.len() as u32) << 4);
+            packet[..4].copy_from_slice(&word.to_le_bytes());
+            packet
+        })
+        .collect()
     }
 
     /// The session's deadline moves with the stream: a room without audio
@@ -577,8 +573,6 @@ mod tests {
     /// video.
     #[tokio::test(start_paused = true)]
     async fn a_room_without_audio_starts_after_the_audio_wait_and_fails_without_video() {
-        // The streamer of the fragment headers.
-        const OWNER: u32 = 0x0102_0304;
         let (video, mut server) = tokio::io::duplex(64 * 1024);
         let (audio, _audio_server) = tokio::io::duplex(1024);
         tokio::spawn(async move {
@@ -595,16 +589,12 @@ mod tests {
             proxy: None,
         };
         let mut recorder = Recorder::new(1, OWNER, route);
-        recorder.session = Some(Session {
-            video: MediaConnection::logged_in(Box::new(video), Track::Video),
-            audio: MediaConnection::logged_in(Box::new(audio), Track::Audio),
-            depacketizer: VideoDepacketizer::new(OWNER),
-            startup: Startup::Keyframe,
-            video_frames: 0,
-            video_deadline: start + KEYFRAME_TIMEOUT,
-            deadline: Box::pin(sleep_until(start + KEYFRAME_TIMEOUT)),
-            healthy_at: None,
-        });
+        recorder.session = Some(Session::new(
+            MediaConnection::logged_in(Box::new(video), Track::Video),
+            MediaConnection::logged_in(Box::new(audio), Track::Audio),
+            OWNER,
+            0,
+        ));
 
         let mut started_at = None;
         let mut steps = 0;
