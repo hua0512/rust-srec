@@ -10,8 +10,7 @@ use tracing::{debug, info, warn};
 use crate::config::ConfigService;
 use crate::danmu::DanmuService;
 use crate::database::repositories::{
-    config::SqlxConfigRepository, filter::SqlxFilterRepository, session::SqlxSessionRepository,
-    streamer::SqlxStreamerRepository,
+    config::SqlxConfigRepository, session::SqlxSessionRepository, streamer::SqlxStreamerRepository,
 };
 use crate::domain::StreamerState;
 use crate::downloader::DownloadManager;
@@ -62,12 +61,8 @@ where
 }
 
 type RuntimeConfigService = ConfigService<SqlxConfigRepository, SqlxStreamerRepository>;
-type RuntimeStreamMonitor = StreamMonitor<
-    SqlxStreamerRepository,
-    SqlxFilterRepository,
-    SqlxSessionRepository,
-    SqlxConfigRepository,
->;
+type RuntimeStreamMonitor =
+    StreamMonitor<SqlxStreamerRepository, SqlxSessionRepository, SqlxConfigRepository>;
 
 /// Whether [`RuntimeCoordinator::stop_streamer_work`] returns as soon as the
 /// stops are requested or only once every download attempt has published its

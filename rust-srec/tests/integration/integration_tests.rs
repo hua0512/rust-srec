@@ -1372,12 +1372,8 @@ mod end_to_end_tests {
     }
 
     type TestStreamerManager = StreamerManager<SqlxStreamerRepository>;
-    type TestStreamMonitor = StreamMonitor<
-        SqlxStreamerRepository,
-        SqlxFilterRepository,
-        SqlxSessionRepository,
-        SqlxConfigRepository,
-    >;
+    type TestStreamMonitor =
+        StreamMonitor<SqlxStreamerRepository, SqlxSessionRepository, SqlxConfigRepository>;
 
     async fn setup_monitor(pool: &DbPool) -> (Arc<TestStreamerManager>, TestStreamMonitor) {
         let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
@@ -1399,7 +1395,8 @@ mod end_to_end_tests {
             config_service,
             pool.clone(),
             make_session_lifecycle(pool),
-        );
+        )
+        .unwrap();
 
         (streamer_manager, monitor)
     }

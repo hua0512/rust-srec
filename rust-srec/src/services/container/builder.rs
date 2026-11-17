@@ -275,7 +275,7 @@ impl ServiceContainer {
                 required_event_sender: Some(required_monitor_event_sender),
                 task_supervisor: task_supervisor.clone(),
             },
-        );
+        )?;
 
         // Build credential refresh service (shared between StreamMonitor + API).
         let credential_service = CredentialProviderRegistry::new()

@@ -189,14 +189,8 @@ pub struct ServiceContainer {
     /// Asks streamer actors for checks while the runtime task owns the scheduler.
     scheduler_feedback: Arc<crate::scheduler::feedback::SchedulerFeedback>,
     /// Stream monitor for real status detection
-    pub(crate) stream_monitor: Arc<
-        StreamMonitor<
-            SqlxStreamerRepository,
-            SqlxFilterRepository,
-            SqlxSessionRepository,
-            SqlxConfigRepository,
-        >,
-    >,
+    pub(crate) stream_monitor:
+        Arc<StreamMonitor<SqlxStreamerRepository, SqlxSessionRepository, SqlxConfigRepository>>,
     /// Bigo's live notifications, read by the monitor and the API.
     pub(crate) bigo_notifications: Arc<crate::monitor::BigoNotifications>,
     /// Credential refresh service (shared between monitor + API).

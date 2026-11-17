@@ -29,7 +29,7 @@ use crate::database::repositories::{
 use crate::database::retry::retry_on_sqlite_busy;
 use crate::domain::StreamerState;
 use crate::streamer::{
-    StreamerManager, StreamerMetadata, download_failure_threshold, manager::ReloadPublish,
+    CommittedStreamerState, StreamerManager, StreamerMetadata, download_failure_threshold,
 };
 use crate::utils::task_supervisor::TaskSupervisor;
 use crate::{Error, Result};
@@ -151,7 +151,6 @@ impl Default for StreamMonitorConfig {
 /// The Stream Monitor service.
 pub struct StreamMonitor<
     SR: StreamerRepository + Send + Sync + 'static,
-    FR: FilterRepository + Send + Sync + 'static,
     SSR: SessionRepository + Send + Sync + 'static,
     CR: ConfigRepository + Send + Sync + 'static,
 > {
@@ -159,7 +158,6 @@ pub struct StreamMonitor<
     streamer_manager: Arc<StreamerManager<SR>>,
     /// Filter repository for loading filters.
     filter_store: Arc<crate::database::filter_store::FilterStore>,
-    _filter_repository: std::marker::PhantomData<FR>,
     /// Session repository for session management.
     session_repo: Arc<SSR>,
     /// Config service for resolving streamer configuration.
@@ -181,6 +179,7 @@ pub struct StreamMonitor<
     /// bundle, the in-memory session map, and the `hard_ended` suppression
     /// cache.
     session_lifecycle: Arc<crate::session::SessionLifecycle>,
+    committed_state: Arc<CommittedStreamerState>,
     /// Database pool for transactional updates + outbox (serialized write pool).
     write_pool: SqlitePool,
     /// Notifies the outbox publisher that new events are available.
@@ -266,33 +265,11 @@ pub(crate) struct LiveStatusDetails {
     pub media_extras: Option<std::collections::HashMap<String, String>>,
 }
 
-/// Reconcile legacy/custom repository integrations that do not participate in
-/// the committed streamer writer. Concrete runtime repositories publish their
-/// complete rows before releasing the writer lease and do not use this readback.
-async fn reload_streamer_metadata<SR>(
-    streamer_manager: &StreamerManager<SR>,
-    streamer_id: &str,
-    context: &str,
-) where
-    SR: StreamerRepository + Send + Sync,
-{
-    if let Err(error) = streamer_manager
-        .reload_from_repo(streamer_id, ReloadPublish::StateOnly)
-        .await
-    {
-        warn!(
-            "Failed to reload streamer {} after {}: {}. Cache may be stale.",
-            streamer_id, context, error
-        );
-    }
-}
-
 impl<
     SR: StreamerRepository + Send + Sync + 'static,
-    FR: FilterRepository + Send + Sync + 'static,
     SSR: SessionRepository + Send + Sync + 'static,
     CR: ConfigRepository + Send + Sync + 'static,
-> StreamMonitor<SR, FR, SSR, CR>
+> StreamMonitor<SR, SSR, CR>
 {
     pub(crate) fn config_service(&self) -> Arc<crate::config::ConfigService<CR, SR>> {
         self.config_service.clone()
@@ -306,19 +283,9 @@ impl<
             + Send
             + 'static,
     {
-        let state = if let Some(state) = self.streamer_manager.committed_state() {
-            state
-        } else {
-            self.streamer_manager.state_store_with_writer(Arc::new(
-                crate::database::CommittedWriter::new(
-                    self.write_pool.clone(),
-                    self._task_supervisor.clone(),
-                )?,
-            ))
-        };
-        state.writer.require_same_pool(&self.write_pool)?;
         retry_on_sqlite_busy(label, || {
-            state.transaction(label, StatePublication::StateOnly, operation.clone())
+            self.committed_state
+                .transaction(label, StatePublication::StateOnly, operation.clone())
         })
         .await
     }
@@ -352,12 +319,6 @@ impl<
         .await
     }
 
-    async fn reload_streamer_cache(&self, streamer_id: &str, context: &str) {
-        if self.streamer_manager.committed_state().is_none() {
-            reload_streamer_metadata(&self.streamer_manager, streamer_id, context).await;
-        }
-    }
-
     fn notify_outbox(&self) {
         self.outbox_notify.notify_one();
     }
@@ -365,33 +326,12 @@ impl<
     /// Create a new stream monitor.
     pub fn new(
         streamer_manager: Arc<StreamerManager<SR>>,
-        filter_repo: Arc<FR>,
+        filter_repo: Arc<dyn FilterRepository>,
         session_repo: Arc<SSR>,
         config_service: Arc<crate::config::ConfigService<CR, SR>>,
         write_pool: SqlitePool,
         session_lifecycle: Arc<crate::session::SessionLifecycle>,
-    ) -> Self {
-        Self::with_config(
-            streamer_manager,
-            filter_repo,
-            session_repo,
-            config_service,
-            write_pool,
-            session_lifecycle,
-            StreamMonitorConfig::default(),
-        )
-    }
-
-    /// Create a new stream monitor with custom configuration.
-    pub fn with_config(
-        streamer_manager: Arc<StreamerManager<SR>>,
-        filter_repo: Arc<FR>,
-        session_repo: Arc<SSR>,
-        config_service: Arc<crate::config::ConfigService<CR, SR>>,
-        write_pool: SqlitePool,
-        session_lifecycle: Arc<crate::session::SessionLifecycle>,
-        config: StreamMonitorConfig,
-    ) -> Self {
+    ) -> Result<Self> {
         Self::with_runtime(
             streamer_manager,
             filter_repo,
@@ -400,7 +340,7 @@ impl<
             write_pool,
             session_lifecycle,
             StreamMonitorRuntimeConfig {
-                monitor: config,
+                monitor: StreamMonitorConfig::default(),
                 admission: None,
                 required_event_sender: None,
                 task_supervisor: Arc::new(TaskSupervisor::new()),
@@ -410,16 +350,19 @@ impl<
 
     pub(crate) fn with_runtime(
         streamer_manager: Arc<StreamerManager<SR>>,
-        filter_repo: Arc<FR>,
+        filter_repo: Arc<dyn FilterRepository>,
         session_repo: Arc<SSR>,
         config_service: Arc<crate::config::ConfigService<CR, SR>>,
         write_pool: SqlitePool,
         session_lifecycle: Arc<crate::session::SessionLifecycle>,
         runtime: StreamMonitorRuntimeConfig,
-    ) -> Self {
-        if let Some(state) = streamer_manager.committed_state() {
-            session_lifecycle.bind_committed_streamers(state);
-        }
+    ) -> Result<Self> {
+        let committed_state = streamer_manager
+            .committed_state()
+            .ok_or_else(|| Error::config("Stream monitor requires committed streamer state"))?;
+        committed_state.writer.require_serialized()?;
+        committed_state.writer.require_same_pool(&write_pool)?;
+        session_lifecycle.bind_committed_streamers(committed_state.clone());
         let StreamMonitorRuntimeConfig {
             monitor: config,
             admission,
@@ -446,7 +389,6 @@ impl<
         let monitor = Self {
             streamer_manager,
             filter_store,
-            _filter_repository: std::marker::PhantomData,
             session_repo,
             config_service,
             detector,
@@ -456,6 +398,7 @@ impl<
             event_broadcaster: MonitorEventBroadcaster::new(),
             required_event_sender,
             session_lifecycle,
+            committed_state,
             write_pool,
             outbox_notify: outbox_notify.clone(),
             cancellation: cancellation.clone(),
@@ -475,7 +418,7 @@ impl<
         );
         Self::spawn_cleanup_worker(in_flight, cleanup_rx, cancellation, task_supervisor);
 
-        monitor
+        Ok(monitor)
     }
 
     /// Subscribe to monitor events.
@@ -1331,8 +1274,6 @@ impl<
             })
             .await?;
 
-        self.reload_streamer_cache(&streamer.id, "state update")
-            .await;
         self.notify_outbox();
 
         Ok(())
@@ -1410,8 +1351,6 @@ impl<
                 );
             }
 
-            self.reload_streamer_cache(&streamer.id, "offline update")
-                .await;
             if outcome.offline_event_emitted {
                 self.notify_outbox();
             }
@@ -1509,8 +1448,6 @@ impl<
                 .end_for_out_of_schedule(&streamer.id, &streamer.name, streamer.state)
                 .await?;
 
-            self.reload_streamer_cache(&streamer.id, "state update")
-                .await;
             self.notify_outbox();
 
             return Ok(());
@@ -2301,12 +2238,7 @@ mod tests {
 
     async fn build_test_monitor(
         pool: &SqlitePool,
-    ) -> StreamMonitor<
-        SqlxStreamerRepository,
-        SqlxFilterRepository,
-        SqlxSessionRepository,
-        SqlxConfigRepository,
-    > {
+    ) -> StreamMonitor<SqlxStreamerRepository, SqlxSessionRepository, SqlxConfigRepository> {
         let session_lifecycle = Arc::new(crate::session::SessionLifecycle::with_default_capacity(
             Arc::new(crate::database::repositories::SessionLifecycleRepository::new(pool.clone())),
             Arc::new(crate::session::OfflineClassifier::new()),
@@ -2318,12 +2250,7 @@ mod tests {
     async fn build_test_monitor_with_lifecycle(
         pool: &SqlitePool,
         session_lifecycle: Arc<crate::session::SessionLifecycle>,
-    ) -> StreamMonitor<
-        SqlxStreamerRepository,
-        SqlxFilterRepository,
-        SqlxSessionRepository,
-        SqlxConfigRepository,
-    > {
+    ) -> StreamMonitor<SqlxStreamerRepository, SqlxSessionRepository, SqlxConfigRepository> {
         let streamer_repo = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
         let filter_repo = Arc::new(SqlxFilterRepository::new(pool.clone(), pool.clone()));
         let session_repo = Arc::new(SqlxSessionRepository::new(pool.clone(), pool.clone()));
@@ -2343,6 +2270,7 @@ mod tests {
             pool.clone(),
             session_lifecycle,
         )
+        .unwrap()
     }
 
     async fn insert_streamer(

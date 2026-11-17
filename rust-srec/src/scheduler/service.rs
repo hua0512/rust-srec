@@ -21,9 +21,7 @@ use tracing::{debug, error, info, trace, warn};
 
 use crate::Result;
 use crate::config::{ConfigEventBroadcaster, ConfigUpdateEvent};
-use crate::database::repositories::{
-    ConfigRepository, FilterRepository, SessionRepository, StreamerRepository,
-};
+use crate::database::repositories::{ConfigRepository, SessionRepository, StreamerRepository};
 use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent};
 use crate::monitor::StreamMonitor;
 use crate::streamer::metadata::{DEFAULT_OFFLINE_CHECK_COUNT, DEFAULT_OFFLINE_CHECK_DELAY_MS};
@@ -259,16 +257,15 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     /// * `monitor` - The StreamMonitor for real status detection
     /// * `config` - Custom scheduler configuration
     /// * `cancellation_token` - Shared cancellation token for graceful shutdown
-    pub fn with_monitor_and_config<SR, FR, SSR, CR>(
+    pub fn with_monitor_and_config<SR, SSR, CR>(
         streamer_manager: Arc<StreamerManager<R>>,
         event_broadcaster: ConfigEventBroadcaster,
-        monitor: Arc<StreamMonitor<SR, FR, SSR, CR>>,
+        monitor: Arc<StreamMonitor<SR, SSR, CR>>,
         config: SchedulerConfig,
         cancellation_token: CancellationToken,
     ) -> Self
     where
         SR: StreamerRepository + Send + Sync + 'static,
-        FR: FilterRepository + Send + Sync + 'static,
         SSR: SessionRepository + Send + Sync + 'static,
         CR: ConfigRepository + Send + Sync + 'static,
     {
@@ -289,17 +286,16 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
     ///
     /// Pass `history_writer = None` to disable persistence (the polling path
     /// is unaffected either way; the writer is purely diagnostic).
-    pub(crate) fn with_monitor_history_and_config<SR, FR, SSR, CR>(
+    pub(crate) fn with_monitor_history_and_config<SR, SSR, CR>(
         streamer_manager: Arc<StreamerManager<R>>,
         event_broadcaster: ConfigEventBroadcaster,
-        monitor: Arc<StreamMonitor<SR, FR, SSR, CR>>,
+        monitor: Arc<StreamMonitor<SR, SSR, CR>>,
         history_writer: Option<crate::monitor::CheckHistoryWriter>,
         config: SchedulerConfig,
         cancellation_token: CancellationToken,
     ) -> Self
     where
         SR: StreamerRepository + Send + Sync + 'static,
-        FR: FilterRepository + Send + Sync + 'static,
         SSR: SessionRepository + Send + Sync + 'static,
         CR: ConfigRepository + Send + Sync + 'static,
     {

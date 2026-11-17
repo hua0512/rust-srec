@@ -15,7 +15,7 @@ use crate::danmu::test_support::FakeProvider;
 use crate::danmu::{CollectionSpec, ProviderRegistry};
 use crate::database::models::StreamerDbModel;
 use crate::database::repositories::{
-    SessionLifecycleRepository, SessionRepository, StreamerRepository,
+    SessionLifecycleRepository, SessionRepository, SqlxFilterRepository, StreamerRepository,
 };
 use crate::downloader::engine::{EngineStartError, EngineType};
 use crate::downloader::{
@@ -176,20 +176,23 @@ impl Fixture {
             })),
         );
         let task_supervisor = Arc::new(TaskSupervisor::new());
-        let stream_monitor = Arc::new(StreamMonitor::with_runtime(
-            streamer_manager.clone(),
-            Arc::new(SqlxFilterRepository::new(pool.clone(), pool.clone())),
-            session_repository.clone(),
-            config_service.clone(),
-            pool.clone(),
-            session_lifecycle.clone(),
-            crate::monitor::StreamMonitorRuntimeConfig {
-                monitor: Default::default(),
-                admission: None,
-                required_event_sender: None,
-                task_supervisor: task_supervisor.clone(),
-            },
-        ));
+        let stream_monitor = Arc::new(
+            StreamMonitor::with_runtime(
+                streamer_manager.clone(),
+                Arc::new(SqlxFilterRepository::new(pool.clone(), pool.clone())),
+                session_repository.clone(),
+                config_service.clone(),
+                pool.clone(),
+                session_lifecycle.clone(),
+                crate::monitor::StreamMonitorRuntimeConfig {
+                    monitor: Default::default(),
+                    admission: None,
+                    required_event_sender: None,
+                    task_supervisor: task_supervisor.clone(),
+                },
+            )
+            .unwrap(),
+        );
         let (sender, mut receiver) = crate::downloader::download_coordination_channel();
         let download_manager = Arc::new(
             DownloadManager::with_config(DownloadManagerConfig {
