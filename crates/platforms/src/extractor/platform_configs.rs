@@ -178,9 +178,6 @@ pub struct BigoConfig {
     /// Password for password-protected rooms
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream_password: Option<String>,
-    /// Mint integrity token for studio API (default: true when None)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mint_token: Option<bool>,
 }
 
 /// Streamlink *extractor* configuration.

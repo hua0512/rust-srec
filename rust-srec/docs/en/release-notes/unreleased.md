@@ -2,12 +2,17 @@
 
 ## `unreleased`
 
+## Before you upgrade
+
+- **Removed settings:** The Bigo **Mint Integrity Token** setting has been removed, because Bigo checks no longer send that token. Updating removes it from saved platform, template and streamer settings. See [Recording and recovery](#recording-and-recovery).
+
 ## New features
 
 - **Batch detection for Bilibili and Twitch:** A new **Batch Detection** platform setting asks Bilibili or Twitch whether up to 100 streamers are live in one request, so streamers that are still offline are not checked one by one and monitoring many streamers is less likely to be rate limited. It is off by default and can be set differently for a template or streamer. In exchange, a stream start can be noticed up to a quarter of the check interval later, and because that request does not use an account, an expired login may only be noticed once the streamer goes live. Checks answered this way are drawn differently in the streamer's check history. See [Batch detection](https://docs.srec.rs/en/platforms/#batch-detection).
 
 ## Recording and recovery
 
+- Fixed Bigo checks being refused with a login request before they could tell whether a room was live, and fixed restricted Bigo accounts making live rooms show as offline, so they were never recorded. Whether a Bigo room is live now comes from the room's public profile, which Bigo shows without an account, so an offline room is checked with a single request that Bigo does not refuse. An account is used only to get the stream once a room is live, where Bigo can still ask for a login. Bigo sometimes restricts an account without signing it out, and that account then sees every room as offline: when the public profile still shows the room as live a few seconds later and the account still sees it offline, the account now rests for 30 minutes like one Bigo turned away, and a pool with failover moves on to its next account. See [Bigo](https://docs.srec.rs/en/platforms/bigo).
 - Fixed recordings that could keep running without recording anything. A live HLS stream whose playlist kept updating while every segment was refused, and an FLV stream whose server kept the connection open without sending audio or video, were never treated as failed, so the recording stayed active with an empty file or none at all. Such a recording now ends with a network error after 60 seconds without media for HLS, or 90 seconds for FLV. The FLV limit is the new **Max Stall Duration** setting under **Advanced → Download** on the Mesio engine's FLV tab. See [Stalled streams](https://docs.srec.rs/en/concepts/mesio#stalled-streams).
 - An HLS segment that keeps failing is now skipped after 45 seconds of retries instead of holding the recording for about two minutes. A retry that is already running finishes first, and time spent waiting out rate limiting is not counted. The limit is the new **Segment Retry Deadline** setting under **Advanced → Segment downloads** on the Mesio engine's HLS tab; DASH recordings use the same 45 seconds.
 

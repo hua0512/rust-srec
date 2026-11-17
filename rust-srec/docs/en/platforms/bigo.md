@@ -18,21 +18,20 @@ Examples:
 ## Features
 
 - ✅ HLS streams (single public quality, usually labeled `live`, typically ~540p portrait)
+- ✅ Live status from the room's public profile, without an account
 - ✅ Danmaku collection (guest WebSocket: public chat and gifts)
 - ✅ Password-protected rooms
-- ✅ Integrity token minting for website-parity API requests (enabled by default)
 - ❌ Multi-quality / multi-bitrate selection on the public API path
-- ✅ Signed-in session from pasted cookies (for when Bigo asks for a login)
+- ✅ Signed-in session from pasted cookies (for when Bigo asks for a login before handing out a stream)
 - ❌ Browser-only paths that may offer higher quality (e.g. 1080p HEVC)
 
 ## Configuration
 
-Platform options are under **Settings** → **Platforms** → **Bigo**. Public rooms usually need nothing — add a URL and record. If checks fail with a login-required error, add an [account profile](../concepts/configuration.md#account-profiles-and-selection) with cookies from a logged-in browser; see **Authentication** below.
+Platform options are under **Settings** → **Platforms** → **Bigo**. Public rooms usually need nothing — add a URL and record. If checks of a live room fail with a login-required error, add an [account profile](../concepts/configuration.md#account-profiles-and-selection) with cookies from a logged-in browser; see **Authentication** below.
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | **Stream Password** (`stream_password`) | empty | Default password for locked rooms. Override per streamer with `?pwd=...` on the URL. |
-| **Mint Integrity Token** (`mint_token`) | on | Sends a website-style integrity token with studio requests. Without it, Bigo asks for a login before it reports whether a room is live, so turn it off only if minting fails on your network and an account is configured. Checks with an account mint a token only when a live room comes back without its stream, which saves two requests per check. |
 
 ### Password rooms
 
@@ -49,7 +48,9 @@ When danmaku is enabled for the streamer:
 - **Not supported**: sending chat, enter notices, hearts, follow/share notices.
 
 ::: info
-- **Quality**: The public API exposes one media playlist per room (labeled `live`). That stream is usually mid-quality portrait video around **480p–540p** (for example ~480×854 H.264). There is no multi-bitrate ladder on this path, and integrity tokens do not provide access to a higher-quality public stream. Browser-reported 1080p HEVC, when present, is not available through this API.
-- **Authentication**: Anonymous checks rely on the integrity token, and Bigo can still ask for a login, for example after many requests from the same network. Such checks fail with a login-required error instead of showing the room as offline; add an account to fix them. Copy the `bigo.tv` cookies from a browser where you are logged in; they must include `tid` and `yyuid`. Bigo logins last a short time, so accounts are refreshed every hour the way the website does it. When Bigo asks an account to log in, rust-srec checks whether the login still works. An expired login is marked as needing a new login. A working one, which Bigo sometimes turns away for a while, for example after many requests, rests for 30 minutes and is then tried again. Because Bigo may need a login on some days and not on others, you can put the account in a pool and turn on **Check without an account when no account can be used**, so checks carry on without an account while none works, on days when Bigo allows that. Receiving chat does not need an account.
-- **Network**: If integrity token minting is blocked, add an account and disable **Mint Integrity Token**.
+- **Quality**: The public API exposes one media playlist per room (labeled `live`). That stream is usually mid-quality portrait video around **480p–540p** (for example ~480×854 H.264). There is no multi-bitrate ladder on this path. Browser-reported 1080p HEVC, when present, is not available through this API.
+- **Live status**: Whether a room is live comes from its public profile, which Bigo answers without an account and is never sent one, so an account never makes a live room read as offline. A check of an offline room is one request.
+- **Authentication**: Once a room is live, its stream comes from a second request, which uses the account if one is selected and the room password if one is set. Bigo may ask for a login there, for example on some networks or after many requests from the same network. Such checks fail with a login-required error instead of showing the room as offline; add an account to fix them. Copy the `bigo.tv` cookies from a browser where you are logged in; they must include `tid` and `yyuid`. Bigo logins last a short time, so accounts are refreshed every hour the way the website does it. When Bigo asks an account to log in, rust-srec checks whether the login still works. An expired login is marked as needing a new login. A working one, which Bigo sometimes turns away for a while, for example after many requests, rests for 30 minutes and is then tried again. Receiving chat does not need an account.
+- **Restricted accounts**: Bigo sometimes restricts an account without signing it out, and such an account sees every room as offline. When the public profile shows a room as live but the account sees it offline, rust-srec asks both again a few seconds later. If the profile still shows the room as live and the account still sees it offline, the account is treated like one Bigo turned away: it rests for 30 minutes and is then tried again, and a pool with failover moves on to its next account.
+- **Checking without an account**: While no selected account can be used, for example because it is resting or needs a new login, checks of the streamers using it stop, including whether they are live. Select Bigo accounts as a pool, even a pool with a single account, and turn on **Check without an account when no account can be used**, so live status keeps being checked and live rooms are tried without an account, on days when Bigo allows that. A **Fixed** selection cannot do this.
 :::

@@ -237,7 +237,7 @@ async fn enabled_streamers_on_every_built_in_platform_fail_through_a_dead_end_ro
             "https://play.sooplive.co.kr/someone/123",
             &["sooplive.co.kr", "sooplive.com"],
         ),
-        ("https://www.bigo.tv/123456", &["bigo.tv", "bigo.sg"]),
+        ("https://www.bigo.tv/123456", &["bigo.tv"]),
     ];
     let mut ids = Vec::new();
     for (url, _) in platforms {

@@ -7,10 +7,9 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Trans } from '@lingui/react/macro';
-import { FlagFormField } from '@/components/ui/flag-form-field';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
-import { Lock, Shield } from 'lucide-react';
+import { Lock } from 'lucide-react';
 import {
   ConfigFieldLabel,
   ConfigSectionHeading,
@@ -63,27 +62,6 @@ export function BigoConfigFields<TFieldValues extends FieldValues>({
                 </FormDescription>
               </FormItem>
             )}
-          />
-        </div>
-      </section>
-
-      <section className="space-y-6">
-        <ConfigSectionHeading icon={Shield} accent="sky">
-          <Trans>API Settings</Trans>
-        </ConfigSectionHeading>
-
-        <div className="grid gap-6">
-          <FlagFormField
-            fieldName={configPath<TFieldValues>(fieldName, 'mint_token')}
-            title={<Trans>Mint Integrity Token</Trans>}
-            description={
-              <Trans>
-                Send a website-style integrity token with studio requests.
-                Enabled by default; disable only if minting fails in your
-                network.
-              </Trans>
-            }
-            checked={(value) => value !== false && value !== 'false'}
           />
         </div>
       </section>
