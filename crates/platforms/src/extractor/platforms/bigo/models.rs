@@ -1,8 +1,3 @@
-#![expect(
-    dead_code,
-    reason = "API response models include fields not consumed by the extractor"
-)]
-
 //! Serde models for the Bigo profile, studio and WebSocket link APIs.
 
 use serde::Deserialize;
@@ -31,9 +26,12 @@ pub struct Presence {
     pub nickname: Option<String>,
     #[serde(default)]
     pub room_topic: Option<String>,
-    /// The room's cover picture.
+    /// The broadcaster's profile picture, also while offline.
     #[serde(default)]
     pub og_image: Option<String>,
+    /// The room's broadcast state, read through [`Presence::is_app_only`].
+    #[serde(default, deserialize_with = "de_opt_i64ish")]
+    room_status: Option<i64>,
     /// App link to the room,
     /// `bigolive://livevideoshow?roomid=<room id>&uid=<uid>&visitor=1`, with
     /// `roomid=0` while offline.
@@ -41,7 +39,16 @@ pub struct Presence {
     pub ali_os_url: Option<String>,
 }
 
+/// The profile's `roomStatus` for a room broadcast for the app only: the
+/// website reads it as offline or without a stream.
+const APP_ONLY_ROOM: i64 = 4;
+
 impl Presence {
+    /// Whether the room is broadcast for the app only, without a web stream.
+    pub fn is_app_only(&self) -> bool {
+        self.room_status == Some(APP_ONLY_ROOM)
+    }
+
     /// The id of the broadcaster's live room, read from the app link.
     ///
     /// Only a `bigolive://livevideoshow` link whose `uid` is this
@@ -94,12 +101,8 @@ pub struct StudioData {
     pub alive: Option<i64>,
     #[serde(rename = "roomId", default, deserialize_with = "de_opt_stringish")]
     pub room_id: Option<String>,
-    #[serde(default, deserialize_with = "de_opt_stringish")]
-    pub sid: Option<String>,
     #[serde(default)]
     pub hls_src: Option<String>,
-    #[serde(default)]
-    pub avatar: Option<String>,
     #[serde(rename = "passRoom", default)]
     pub pass_room: Option<bool>,
     /// Set when Bigo wants a signed-in session before it answers; `alive`
@@ -154,8 +157,6 @@ pub struct WsLinkData {
     pub user_name: Option<String>,
     #[serde(rename = "deviceId", default)]
     pub device_id: Option<String>,
-    #[serde(rename = "seqId", default, deserialize_with = "de_opt_stringish")]
-    pub seq_id: Option<String>,
     /// The signed-in account's identity, in the same fields; absent unless
     /// the request carried a signed-in session.
     #[serde(rename = "realUser", default)]
@@ -213,6 +214,7 @@ mod tests {
             nickname: None,
             room_topic: None,
             og_image: None,
+            room_status: None,
             ali_os_url: Some(link.to_owned()),
         };
         assert_eq!(

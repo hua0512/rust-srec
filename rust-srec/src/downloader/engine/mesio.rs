@@ -7,6 +7,8 @@
 //! - `DashDownloader` - MPEG-DASH download orchestrator, writing through the
 //!   HLS fMP4 path
 //! - `FlvDownloader` - FLV-specific download orchestrator
+//! - `BigoDownloader` - native Bigo rooms, recorded over BIGO's own protocol
+//!   through the FLV writer
 //! - `config` - Configuration mapping utilities for mesio protocol configs
 //!
 //! # FLV Fix Configuration
@@ -28,6 +30,7 @@
 //! engine wrappers keep user-visible recording progress on the writer pipeline
 //! so byte accounting follows the actual persisted output.
 
+mod bigo_downloader;
 pub mod config;
 mod dash_downloader;
 mod engine;

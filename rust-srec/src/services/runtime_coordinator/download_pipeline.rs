@@ -4,11 +4,13 @@ use std::sync::Arc;
 
 use dashmap::DashMap;
 use pipeline_common::expand_path_template;
+use platforms_parser::extractor::platforms::bigo::native::stream::NativeRoom;
 use tracing::{debug, info, warn};
 
 use crate::danmu::CollectionSpec;
 use crate::database::repositories::SessionRepository;
 use crate::domain::{Priority, StreamerState};
+use crate::downloader::engine::EngineType;
 use crate::downloader::{DownloadConfig, DownloadProtocol};
 use crate::utils::filename::{sanitize_filename_for_template, sanitize_title_for_template};
 
@@ -284,9 +286,9 @@ pub(super) async fn run_live_download_pipeline(
     let preflight = tokio::select! {
         biased;
         _ = cancel.cancelled() => return PipelineExit::Finished,
-        engine = download_manager.preflight(preflight_req) => engine,
+        engine = download_manager.preflight(preflight_req.clone()) => engine,
     };
-    let engine = match preflight {
+    let mut engine = match preflight {
         Ok(e) => e,
         Err(e) => {
             warn!("Preflight failed for streamer {}: {}", streamer_id, e);
@@ -511,6 +513,37 @@ pub(super) async fn run_live_download_pipeline(
 
     // ── Build full DownloadConfig with possibly-refreshed URLs ──
     let best_stream = &streams[0];
+    // A native Bigo stream has no URL any other engine can open, so it is
+    // recorded by mesio: the configured engine when that is a mesio engine,
+    // the built-in one otherwise. The stream is only known here, after the
+    // freshness check, so the configured engine was preflighted above.
+    if NativeRoom::parse(&best_stream.url).is_some() && engine.engine_type != EngineType::Mesio {
+        info!(
+            streamer_id,
+            configured = %engine.engine_type,
+            "Recording the native Bigo stream with the mesio engine"
+        );
+        let request = PreflightRequest {
+            engine_id: Some(EngineType::Mesio.as_str().to_owned()),
+            ..preflight_req
+        };
+        let preflight = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => {
+                download_manager.emit_dequeued_for_slot(&slot, &streamer_id, &streamer_name);
+                return PipelineExit::Finished;
+            }
+            engine = download_manager.preflight(request) => engine,
+        };
+        match preflight {
+            Ok(mesio) => engine = mesio,
+            Err(error) => {
+                warn!(streamer_id, %error, "Preflight of the mesio engine failed");
+                download_manager.emit_dequeued_for_slot(&slot, &streamer_id, &streamer_name);
+                return PipelineExit::Finished;
+            }
+        }
+    }
     let stream_format = best_stream.stream_format.as_str();
     let media_format = best_stream.media_format.as_str();
     let next_index = tokio::select! {

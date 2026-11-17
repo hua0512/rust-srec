@@ -359,8 +359,15 @@ impl StreamDetector {
         let merged_extras =
             Self::merge_selection_config_into_extras(platform_extras, selection_config);
 
-        let extractor_factory =
+        let mut extractor_factory =
             ExtractorFactory::new(self.client_for_proxy(proxy)?).with_proxy(proxy.clone());
+        // Bigo's native stream connects through the route's tunnel. A proxy
+        // the tunnel cannot use leaves that stream out instead of connecting
+        // directly.
+        match crate::proxies::SystemProxy::current().danmu_proxy_for(proxy) {
+            Ok(tunnel) => extractor_factory = extractor_factory.with_tunnel(tunnel),
+            Err(error) => debug!(%error, "no tunnel for raw connections on this route"),
+        }
 
         // Create platform extractor for this streamer's URL
         let extractor = match extractor_factory.create_extractor(

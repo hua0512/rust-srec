@@ -319,7 +319,7 @@ msgstr "{first} 等 {others} 个文件"
 msgid "{free} free"
 msgstr "剩余 {free}"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:232
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:263
 msgid "{label} (disabled)"
 msgstr "{label}（已禁用）"
 
@@ -391,7 +391,7 @@ msgstr "{sessions, plural, other {请等待使用它的 # 个进行中的录制�
 msgid "{site} already belongs to the account {label}. A site can belong to one account only."
 msgstr "{site} 已属于账号 {label}。一个网站只能属于一个账号。"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:320
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:351
 msgid "{subscribed} of {total}"
 msgstr "{subscribed} / {total}"
 
@@ -725,7 +725,7 @@ msgstr "添加"
 msgid "Add a module above to configure its log level"
 msgstr "在上方添加模块以配置其日志级别"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:245
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:276
 msgid "Add a signed-in BIGO account on the Network tab first."
 msgstr "请先在“网络”选项卡中添加一个已登录的 BIGO 账号。"
 
@@ -1550,7 +1550,7 @@ msgstr "基础后处理：将 FLV 重封装为 MP4，并生成缩略图预览。
 msgid "Basic settings for the streamer."
 msgstr "主播的基础设置。"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:107
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:138
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:149
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:131
 msgid "Batch Detection"
@@ -1595,8 +1595,8 @@ msgid "BIGO refused to follow the streamer"
 msgstr "BIGO 拒绝关注该主播"
 
 #: src/components/shared/bigo-notifications.tsx:66
-msgid "Bigo streamers are checked by polling, which is inconsistent: stream starts are noticed late, short streams can be missed, and some networks need an account for checks."
-msgstr "Bigo 主播通过轮询检查，结果并不可靠：开播会较晚才被发现，短时直播可能被漏掉，而且某些网络需要账号才能检查。"
+msgid "Bigo streamers are checked by polling, which is inconsistent: stream starts are noticed late, and short streams can be missed."
+msgstr "Bigo 主播通过轮询检查，结果并不可靠：开播会较晚才被发现，短时直播可能被漏掉。"
 
 #: src/components/streamers/card/monitoring-method-badge.tsx:87
 msgid "BIGO tells rust-srec when this streamer goes live, and it is checked at once. Offline checks need no request of their own, apart from a real check at least every 10 minutes."
@@ -2383,7 +2383,7 @@ msgstr "连接超时 (ms)"
 msgid "Connected"
 msgstr "已连接"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:270
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:301
 msgctxt "bigo notifications"
 msgid "Connected"
 msgstr "已连接"
@@ -2392,7 +2392,7 @@ msgstr "已连接"
 msgid "Connecting"
 msgstr "连接中"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:268
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:299
 msgctxt "bigo notifications"
 msgid "Connecting"
 msgstr "连接中"
@@ -3054,7 +3054,7 @@ msgstr "默认值为 1（无突发）。当服务方容忍短时突发流量时�
 msgid "Default password for password-protected rooms (can be overridden per-streamer with ?pwd= in the URL)."
 msgstr "密码锁房的默认密码（可在主播 URL 上用 ?pwd= 覆盖）。"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:90
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:121
 msgid "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
 msgstr "密码锁房的默认密码。可在主播 URL 上用 ?pwd= 覆盖。"
 
@@ -5915,7 +5915,7 @@ msgstr "最近检查"
 msgid "Last checked {0}"
 msgstr "上次检查：{0}"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:339
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:370
 msgid "Last error"
 msgstr "最后错误"
 
@@ -6036,7 +6036,7 @@ msgstr "直播边缘"
 msgid "Live Gap Strategy"
 msgstr "直播缺口策略"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:298
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:329
 #: src/components/streamers/card/monitoring-method-badge.tsx:84
 msgid "Live notifications"
 msgstr "开播通知"
@@ -6049,7 +6049,7 @@ msgstr "开播通知不可用"
 msgid "Live notifications are off"
 msgstr "开播通知已关闭"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:165
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:196
 msgid "Live notifications need a signed-in BIGO account. rust-srec signs this account in to BIGO's app service and makes it <0>follow every Bigo streamer you monitor (they can see it)</0>, with live alerts on. Turn on live notifications in that account's BIGO settings. Use a dedicated account: opening BIGO with the same account disconnects rust-srec, and the other way round."
 msgstr "开播通知需要一个已登录的 BIGO 账号。rust-srec 会用此账号登录 BIGO 的应用服务，并让它<0>关注你监控的每一位 Bigo 主播（对方能看到）</0>，同时打开开播提醒。请在该账号的 BIGO 设置中打开开播通知。请使用专用账号：用同一账号打开 BIGO 会让 rust-srec 断开连接，反之亦然。"
 
@@ -7240,7 +7240,7 @@ msgctxt "no proxy login"
 msgid "None"
 msgstr "无"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:224
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:255
 msgctxt "notification account"
 msgid "None"
 msgstr "无"
@@ -7294,7 +7294,7 @@ msgstr "未校验"
 msgid "Not checked yet"
 msgstr "尚未检查"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:272
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:303
 msgctxt "bigo notifications"
 msgid "Not connected"
 msgstr "未连接"
@@ -7348,7 +7348,7 @@ msgstr "暂无屏蔽内容。"
 msgid "Nothing it inherits from chooses an account"
 msgstr "继承来源未选择任何账号"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:209
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:240
 msgid "Notification Account"
 msgstr "通知账号"
 
@@ -7453,7 +7453,7 @@ msgstr "NVENC HEVC 高质量"
 msgid "Off"
 msgstr "关"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:266
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:297
 msgctxt "bigo notifications"
 msgid "Off"
 msgstr "已关闭"
@@ -7872,7 +7872,7 @@ msgstr "密码至少需要 8 个字符"
 msgid "password saved"
 msgstr "已保存密码"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:86
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:117
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:53
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:27
 msgid "Password..."
@@ -8561,7 +8561,7 @@ msgstr "进度更新间隔（毫秒）"
 msgid "Progress:"
 msgstr "进度："
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:67
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:98
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:25
 msgid "Protection Settings"
 msgstr "保护设置"
@@ -8781,6 +8781,10 @@ msgstr "录制弹幕"
 msgid "Record Separate Audio"
 msgstr "录制独立音频"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:71
+msgid "Record the original stream"
+msgstr "录制原始直播流"
+
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:58
 msgid "Record the qualities some channels stream only in AV1. H.264 qualities stay available. Turn on only if your players and post-processing handle AV1."
 msgstr "录制部分频道仅以 AV1 提供的画质。H.264 画质仍然可用。请仅在你的播放器和后期处理支持 AV1 时开启。"
@@ -8793,6 +8797,7 @@ msgstr "录制部分频道仅以 H.265 提供的画质。H.264 画质仍然可�
 msgid "Record Video"
 msgstr "录制视频"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:67
 #: src/components/streamers/config/streamer-recording-fields.tsx:49
 #: src/components/streamers/edit/streamer-header.tsx:87
 msgid "Recording"
@@ -8858,6 +8863,10 @@ msgstr "录制内容"
 #: src/components/config/engines/forms/lossless-cutting-field.tsx:92
 msgid "Recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
 msgstr "录制内容会先写入临时分块，并在分割、达到大小或时长限制或录制停止后合并为最终文件。只有这一步完成后，最终文件才可用。"
+
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:80
+msgid "Records the broadcaster's own stream from BIGO's app servers, in its original quality (HEVC or H.264), without an account. The website's stream is recorded instead when this fails, for rooms with several hosts, and when a stream password is set (the platform's default applies to every streamer)."
+msgstr "从 BIGO 的 App 服务器录制主播推送的原始直播流，保持原画质（HEVC 或 H.264），无需账号。失败时、多人连麦的直播间以及设置了直播间密码时（平台的默认密码适用于所有主播），会改为录制网页版直播流。"
 
 #: src/components/streamers/card/use-streamer-status.tsx:158
 #: src/components/streamers/card/use-streamer-status.tsx:167
@@ -10077,8 +10086,8 @@ msgstr "设置新的录制工具配置"
 msgid "Set up live notifications"
 msgstr "设置开播通知"
 
-#: src/components/shared/bigo-notifications.tsx:77
-#: src/components/shared/bigo-notifications.tsx:80
+#: src/components/shared/bigo-notifications.tsx:76
+#: src/components/shared/bigo-notifications.tsx:79
 msgid "Set up live notifications."
 msgstr "设置开播通知。"
 
@@ -10368,11 +10377,11 @@ msgstr "已开始"
 msgid "STARTED"
 msgstr "已启动"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:332
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:363
 msgid "Starts BIGO did not notify: {missed}"
 msgstr "BIGO 未通知的开播：{missed}"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:328
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:359
 msgid "Starts BIGO did not notify: {missed}, the last {lastMissed}"
 msgstr "BIGO 未通知的开播：{missed}，最近一次在{lastMissed}"
 
@@ -10389,7 +10398,7 @@ msgstr "状态"
 msgid "Status"
 msgstr "状态"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:103
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:134
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:145
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:127
 msgid "Status Checks"
@@ -10500,7 +10509,7 @@ msgstr "开播"
 msgid "Stream parsed successfully"
 msgstr "流解析成功"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:77
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:108
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:35
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:44
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:26
@@ -10657,7 +10666,7 @@ msgstr "已提取流"
 msgid "Streams per file (--multi-thread-streams)."
 msgstr "每个文件的流数（--multi-thread-streams）。"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:317
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:348
 msgid "Subscribed streamers"
 msgstr "已订阅主播"
 
@@ -10897,7 +10906,7 @@ msgstr "当前录制使用的账号已无法使用。"
 msgid "The account the recording uses can no longer be used."
 msgstr "录制使用的账号已无法使用。"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:249
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:280
 msgid "The BIGO account that receives live notifications. Recording never signs in to BIGO's app service with it, but uses its cookies if it is also chosen on the Network tab."
 msgstr "接收开播通知的 BIGO 账号。录制从不使用它登录 BIGO 的应用服务，但如果在“网络”选项卡中也选择了它，录制会使用它的 Cookie。"
 
@@ -11605,9 +11614,13 @@ msgstr "TTWID 管理模式"
 msgid "Tuesday"
 msgstr "星期二"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:110
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:141
 msgid "Turn off to poll these streamers even while BIGO live notifications are on in the Bigo platform settings."
 msgstr "关闭后，即使 Bigo 平台设置中已开启 BIGO 开播通知，这些主播仍会通过轮询检查。"
+
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:74
+msgid "Turn off to record only the website's stream for these streamers, or on to record the original stream even while it is off in the Bigo platform settings."
+msgstr "关闭后，这些主播只录制网页版直播流；打开后，即使 Bigo 平台设置中已关闭，也会录制原始直播流。"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:64
 msgid "Twitch (ttv-lol)"
@@ -11677,7 +11690,7 @@ msgstr "Unix 时间戳"
 msgid "Unknown"
 msgstr "未知"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:238
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:269
 #: src/components/credentials/account-selection-section.tsx:176
 #: src/components/credentials/account-selection-section.tsx:407
 #: src/components/credentials/credential-selection-editor.tsx:177
@@ -11852,7 +11865,7 @@ msgstr "请使用语言标签，例如 'en' 或 'pt-BR'"
 msgid "Use an http, https, socks5 or socks5h address."
 msgstr "请使用 http、https、socks5 或 socks5h 地址。"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:115
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:146
 msgid "Use BIGO live notifications instead of checking each streamer: stream starts are noticed within seconds. Needs a signed-in account (below)."
 msgstr "使用 BIGO 开播通知代替逐个检查主播：开播在几秒内即可发现。需要一个已登录的账号（见下方）。"
 

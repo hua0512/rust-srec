@@ -50,6 +50,10 @@ impl Route {
 pub enum NativeError {
     #[error("ticket request failed: {0}")]
     Http(#[from] reqwest::Error),
+    /// BIGO's website refused the ticket request, with 403 or 429 (too many
+    /// requests).
+    #[error("BIGO refused the ticket request ({0})")]
+    TicketRefused(reqwest::StatusCode),
     #[error("the BIGO account is signed out")]
     SignedOut,
     #[error("BIGO refuses native logins from this IP address")]

@@ -202,11 +202,7 @@ impl ResolvedRoute {
     /// proxy environment variables, honouring `NO_PROXY`, and is direct
     /// when none is set.
     pub fn danmu_proxy(&self, system: &SystemProxy) -> Result<Option<DanmuProxy>, DanmakuError> {
-        match &self.target {
-            ProxyTarget::Direct => Ok(None),
-            ProxyTarget::System => system.danmu_proxy(),
-            ProxyTarget::Explicit(endpoint) => DanmuProxy::new(endpoint.clone()).map(Some),
-        }
+        system.danmu_proxy_for(&self.target)
     }
 }
 

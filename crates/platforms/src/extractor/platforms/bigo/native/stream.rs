@@ -3,13 +3,17 @@
 
 use std::collections::VecDeque;
 use std::net::Ipv4Addr;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use ::flv::FlvData;
 use bytes::Bytes;
 use futures::Stream;
+use parking_lot::Mutex;
+use rustc_hash::FxHashMap;
 use tokio::time::{Instant, sleep, sleep_until, timeout};
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
+use url::Url;
 
 use super::depacketize::{VideoDepacketizer, audio_frames};
 use super::flv::Muxer;
@@ -33,6 +37,73 @@ const RECONNECT_DELAY: Duration = Duration::from_secs(2);
 /// A connection that has delivered media this long restores the reconnects,
 /// so that a room whose connections start and then die runs out of them.
 const HEALTHY_AFTER: Duration = Duration::from_secs(30);
+/// How long a broadcaster whose native recording failed is left to the web
+/// stream, unless the profile reads offline first. A failure before the
+/// media became stable tends to repeat for the whole broadcast (an
+/// unsupported codec, servers that send no video), and each attempt costs up
+/// to a minute of recording; a passing problem gets the native stream again
+/// soon, and the broadcaster's next stream gets it at once.
+const FAILURE_MEMORY: Duration = Duration::from_secs(30 * 60);
+
+/// Broadcasters whose last native recording failed before its media became
+/// stable, by owner uid, with when it failed.
+static FAILED_OWNERS: LazyLock<Mutex<FxHashMap<u32, std::time::Instant>>> =
+    LazyLock::new(Mutex::default);
+
+/// Whether a native recording of `owner_uid`'s stream failed in the last 30
+/// minutes before its media became stable.
+pub(crate) fn recently_failed(owner_uid: u32) -> bool {
+    FAILED_OWNERS
+        .lock()
+        .get(&owner_uid)
+        .is_some_and(|at| at.elapsed() < FAILURE_MEMORY)
+}
+
+pub(crate) fn remember_failure(owner_uid: u32) {
+    let mut owners = FAILED_OWNERS.lock();
+    owners.retain(|_, at| at.elapsed() < FAILURE_MEMORY);
+    owners.insert(owner_uid, std::time::Instant::now());
+}
+
+/// Forgets a failed native recording of `owner_uid`'s stream, so that the
+/// next one is recorded natively again.
+pub(crate) fn forget_failure(owner_uid: u32) {
+    FAILED_OWNERS.lock().remove(&owner_uid);
+}
+
+/// A room to record natively, written as the stream URL
+/// `bigo://room/<room id>?uid=<owner uid>`. No HTTP client can open that URL;
+/// only [`open`] records it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct NativeRoom {
+    pub room_id: u64,
+    pub owner_uid: u32,
+}
+
+impl NativeRoom {
+    pub fn url(&self) -> String {
+        format!("bigo://room/{}?uid={}", self.room_id, self.owner_uid)
+    }
+
+    /// The room a native stream URL names; `None` for any other URL.
+    pub fn parse(url: &str) -> Option<Self> {
+        if !url.starts_with("bigo://") {
+            return None;
+        }
+        let url = Url::parse(url).ok()?;
+        if url.host_str() != Some("room") {
+            return None;
+        }
+        let room_id = url.path().strip_prefix('/')?.parse::<u64>().ok()?;
+        let owner_uid = url
+            .query_pairs()
+            .find(|(key, _)| key == "uid")?
+            .1
+            .parse::<u32>()
+            .ok()?;
+        (room_id != 0 && owner_uid != 0).then_some(Self { room_id, owner_uid })
+    }
+}
 
 /// What a room lookup says about recording a room natively.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -72,26 +143,20 @@ pub async fn probe(room_id: u64, route: &Route) -> Result<RoomKind, NativeError>
 /// media drops, stalls or is refused, the stream reconnects up to 3 times,
 /// 2 s apart, each time with a fresh ticket and room lookup, and continues
 /// as the same FLV stream, its video at the next keyframe; 30 s of media
-/// restore the reconnects. Packets that cannot be read are skipped. It ends
-/// without an error when the room ends, and after its first error.
+/// restore the reconnects. Packets that cannot be read are skipped.
+///
+/// It ends without an error when the room ends, and when a stream that once
+/// had 30 s of media runs out of reconnects on a timeout: after a broadcast
+/// ends, BIGO keeps answering the room lookup for about 45 s while its
+/// servers send nothing. Otherwise it ends after its first error that is not
+/// retried. An error before 30 s of media leaves the broadcaster to the web
+/// stream for up to 30 minutes.
 pub fn open(
     room_id: u64,
     owner_uid: u32,
     route: Route,
 ) -> impl Stream<Item = Result<FlvData, NativeError>> + Send + 'static {
-    let recorder = Recorder {
-        room_id,
-        owner_uid,
-        route,
-        muxer: Muxer::default(),
-        session: None,
-        started: false,
-        held: Vec::new(),
-        output: VecDeque::new(),
-        connects: 0,
-        reconnects: 0,
-        done: false,
-    };
+    let recorder = Recorder::new(room_id, owner_uid, route);
     futures::stream::unfold(recorder, |mut recorder| async move {
         let item = recorder.next().await?;
         Some((item, recorder))
@@ -112,6 +177,8 @@ struct Recorder {
     /// Connection attempts, which pick the servers.
     connects: usize,
     reconnects: u32,
+    /// Whether a connection has delivered media for [`HEALTHY_AFTER`].
+    stable: bool,
     done: bool,
 }
 
@@ -145,7 +212,32 @@ enum Received {
     Audio(Bytes),
 }
 
+/// How the stream goes on after an error.
+#[derive(Debug)]
+enum AfterError {
+    Reconnect,
+    End,
+    Fail(NativeError),
+}
+
 impl Recorder {
+    fn new(room_id: u64, owner_uid: u32, route: Route) -> Self {
+        Self {
+            room_id,
+            owner_uid,
+            route,
+            muxer: Muxer::default(),
+            session: None,
+            started: false,
+            held: Vec::new(),
+            output: VecDeque::new(),
+            connects: 0,
+            reconnects: 0,
+            stable: false,
+            done: false,
+        }
+    }
+
     async fn next(&mut self) -> Option<Result<FlvData, NativeError>> {
         loop {
             if let Some(data) = self.output.pop_front() {
@@ -158,30 +250,51 @@ impl Recorder {
                 continue;
             };
             self.session = None;
-            match error {
-                NativeError::RoomEnded => {
-                    debug!(room_id = self.room_id, "room ended");
-                    self.done = true;
-                }
-                error if is_transient(&error) && self.reconnects < MAX_RECONNECTS => {
-                    self.reconnects += 1;
-                    warn!(
-                        room_id = self.room_id,
-                        %error,
-                        attempt = self.reconnects,
-                        "native stream interrupted; reconnecting"
-                    );
-                    if !self.started {
-                        // Nothing went out yet, so start over cleanly.
-                        self.muxer = Muxer::default();
-                        self.held.clear();
-                    }
-                    sleep(RECONNECT_DELAY).await;
-                }
-                error => {
+            match self.after_error(error) {
+                AfterError::Reconnect => sleep(RECONNECT_DELAY).await,
+                AfterError::End => self.done = true,
+                AfterError::Fail(error) => {
                     self.done = true;
                     return Some(Err(error));
                 }
+            }
+        }
+    }
+
+    fn after_error(&mut self, error: NativeError) -> AfterError {
+        match error {
+            NativeError::RoomEnded => {
+                debug!(room_id = self.room_id, "room ended");
+                AfterError::End
+            }
+            error if is_transient(&error) && self.reconnects < MAX_RECONNECTS => {
+                self.reconnects += 1;
+                warn!(
+                    room_id = self.room_id,
+                    %error,
+                    attempt = self.reconnects,
+                    "native stream interrupted; reconnecting"
+                );
+                if !self.started {
+                    // Nothing went out yet, so start over cleanly.
+                    self.muxer = Muxer::default();
+                    self.held.clear();
+                }
+                AfterError::Reconnect
+            }
+            error @ NativeError::Timeout(_) if self.stable => {
+                info!(
+                    room_id = self.room_id,
+                    %error,
+                    "native stream out of reconnects; taking it as the end of the broadcast"
+                );
+                AfterError::End
+            }
+            error => {
+                if !self.stable {
+                    remember_failure(self.owner_uid);
+                }
+                AfterError::Fail(error)
             }
         }
     }
@@ -254,6 +367,10 @@ impl Recorder {
         if session.healthy_at.is_some_and(|at| now >= at) {
             session.healthy_at = None;
             self.reconnects = 0;
+            if !self.stable {
+                self.stable = true;
+                forget_failure(self.owner_uid);
+            }
         }
         if !self.started && matches!(session.startup, Startup::Done) {
             self.started = true;
@@ -338,6 +455,7 @@ fn is_transient(error: &NativeError) -> bool {
     matches!(
         error,
         NativeError::Http(_)
+            | NativeError::TicketRefused(_)
             | NativeError::Io(_)
             | NativeError::Timeout(_)
             | NativeError::Protocol(_)
@@ -356,6 +474,45 @@ mod tests {
 
     use super::*;
     use crate::extractor::default::{DEFAULT_UA, create_client_builder};
+
+    /// A stream that once had 30 s of media ends without an error when its
+    /// reconnects run out on timeouts, as after a broadcast ends. Before
+    /// that, the same is a failure, remembered for the broadcaster.
+    #[test]
+    fn running_out_of_reconnects_ends_a_stable_stream() {
+        // Broadcasters of their own: the memory is shared by the whole
+        // process.
+        const STABLE: u32 = 4_000_000_101;
+        const STARTING: u32 = 4_000_000_102;
+        let route = Route {
+            client: reqwest::Client::new(),
+            proxy: None,
+        };
+        let timeout = || NativeError::Timeout("a keyframe");
+
+        let mut recorder = Recorder::new(1, STABLE, route.clone());
+        recorder.stable = true;
+        for _ in 0..MAX_RECONNECTS {
+            let next = recorder.after_error(timeout());
+            assert!(matches!(next, AfterError::Reconnect), "{next:?}");
+        }
+        let next = recorder.after_error(timeout());
+        assert!(matches!(next, AfterError::End), "{next:?}");
+        // Only a timeout: servers that refuse the connection still fail it.
+        let refused = NativeError::Rejected {
+            request: "media login",
+            result: 1,
+        };
+        let next = recorder.after_error(refused);
+        assert!(matches!(next, AfterError::Fail(_)), "{next:?}");
+        assert!(!recently_failed(STABLE));
+
+        let mut recorder = Recorder::new(2, STARTING, route);
+        recorder.reconnects = MAX_RECONNECTS;
+        let next = recorder.after_error(timeout());
+        assert!(matches!(next, AfterError::Fail(_)), "{next:?}");
+        assert!(recently_failed(STARTING));
+    }
 
     /// Records 20 s of `room_id` to `path`, returning the keyframes, the
     /// audio tags and the last tag time.

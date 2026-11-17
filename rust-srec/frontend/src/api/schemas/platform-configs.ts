@@ -122,9 +122,11 @@ export const SoopConfigSchema = z
 // Bigo Live platform-specific configuration. For Bigo, `batch_detection` turns on live
 // notifications, which sign in with the account `notification_account` names. Only the platform
 // row's account is used; templates and streamers can only turn notifications off.
+// `native_stream` (on unless `false`) records the broadcaster's original stream.
 export const BigoConfigSchema = z
   .object({
     stream_password: z.string().nullable().optional(),
+    native_stream: z.boolean().nullable().optional(),
     batch_detection: z.boolean().nullable().optional(),
     notification_account: z.string().nullable().optional(),
   })

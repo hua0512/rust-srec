@@ -8,6 +8,8 @@ use super::batch_status::BatchStatusProbe;
 use super::error::ExtractorError;
 use super::platform_extractor::PlatformExtractor;
 use super::streamlink_extractor::StreamlinkExtractor;
+use crate::danmaku::DanmuProxy;
+use crate::extractor::platforms::bigo::native::Route;
 use crate::extractor::platforms::{
     self, acfun::Acfun, bigo::Bigo, bilibili::Bilibili, douyin::Douyin, douyu::Douyu, huya::Huya,
     pandatv::PandaTV, picarto::Picarto, redbook::RedBook, soop::Soop, tiktok::TikTok,
@@ -219,6 +221,9 @@ pub fn batch_probe_for_url(url: &str) -> Option<&'static dyn BatchStatusProbe> {
 pub struct ExtractorFactory {
     client: Client,
     proxy: ProxyTarget,
+    /// How Bigo's native connections reach BIGO, when the caller gave a
+    /// tunnel.
+    native_route: Option<Route>,
 }
 
 impl ExtractorFactory {
@@ -226,6 +231,7 @@ impl ExtractorFactory {
         Self {
             client,
             proxy: ProxyTarget::System,
+            native_route: None,
         }
     }
 
@@ -234,6 +240,17 @@ impl ExtractorFactory {
     /// one the environment decides, as it does for a client without a proxy.
     pub fn with_proxy(mut self, proxy: ProxyTarget) -> Self {
         self.proxy = proxy;
+        self
+    }
+
+    /// The tunnel raw TCP connections take on the client's route (`None`
+    /// connects directly). Bigo offers its native stream, which only the
+    /// mesio engine records, and looks rooms up only when given one.
+    pub fn with_tunnel(mut self, tunnel: Option<DanmuProxy>) -> Self {
+        self.native_route = Some(Route {
+            client: self.client.clone(),
+            proxy: tunnel,
+        });
         self
     }
 
@@ -269,7 +286,18 @@ impl ExtractorFactory {
             ));
         }
 
-        if let Some(PlatformMatch { constructor, .. }) = find_platform(url) {
+        if let Some(PlatformMatch {
+            name, constructor, ..
+        }) = find_platform(url)
+        {
+            if name == "Bigo"
+                && let Some(route) = &self.native_route
+            {
+                return Ok(Box::new(
+                    Bigo::new(url.to_string(), self.client.clone(), cookies, extras)
+                        .with_native_route(route.clone()),
+                ));
+            }
             return Ok(constructor(
                 url.to_string(),
                 self.client.clone(),

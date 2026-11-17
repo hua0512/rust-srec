@@ -319,7 +319,7 @@ msgstr "{first} and {others} more"
 msgid "{free} free"
 msgstr "{free} free"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:232
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:263
 msgid "{label} (disabled)"
 msgstr "{label} (disabled)"
 
@@ -391,7 +391,7 @@ msgstr "{sessions, plural, one {Wait for the active recording using it to end.} 
 msgid "{site} already belongs to the account {label}. A site can belong to one account only."
 msgstr "{site} already belongs to the account {label}. A site can belong to one account only."
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:320
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:351
 msgid "{subscribed} of {total}"
 msgstr "{subscribed} of {total}"
 
@@ -725,7 +725,7 @@ msgstr "Add"
 msgid "Add a module above to configure its log level"
 msgstr "Add a module above to configure its log level"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:245
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:276
 msgid "Add a signed-in BIGO account on the Network tab first."
 msgstr "Add a signed-in BIGO account on the Network tab first."
 
@@ -1550,7 +1550,7 @@ msgstr "Basic post-processing: Remux FLV to MP4 and generate a thumbnail preview
 msgid "Basic settings for the streamer."
 msgstr "Basic settings for the streamer."
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:107
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:138
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:149
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:131
 msgid "Batch Detection"
@@ -1595,8 +1595,8 @@ msgid "BIGO refused to follow the streamer"
 msgstr "BIGO refused to follow the streamer"
 
 #: src/components/shared/bigo-notifications.tsx:66
-msgid "Bigo streamers are checked by polling, which is inconsistent: stream starts are noticed late, short streams can be missed, and some networks need an account for checks."
-msgstr "Bigo streamers are checked by polling, which is inconsistent: stream starts are noticed late, short streams can be missed, and some networks need an account for checks."
+msgid "Bigo streamers are checked by polling, which is inconsistent: stream starts are noticed late, and short streams can be missed."
+msgstr "Bigo streamers are checked by polling, which is inconsistent: stream starts are noticed late, and short streams can be missed."
 
 #: src/components/streamers/card/monitoring-method-badge.tsx:87
 msgid "BIGO tells rust-srec when this streamer goes live, and it is checked at once. Offline checks need no request of their own, apart from a real check at least every 10 minutes."
@@ -2383,7 +2383,7 @@ msgstr "Connect Timeout (ms)"
 msgid "Connected"
 msgstr "Connected"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:270
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:301
 msgctxt "bigo notifications"
 msgid "Connected"
 msgstr "Connected"
@@ -2392,7 +2392,7 @@ msgstr "Connected"
 msgid "Connecting"
 msgstr "Connecting"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:268
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:299
 msgctxt "bigo notifications"
 msgid "Connecting"
 msgstr "Connecting"
@@ -3054,7 +3054,7 @@ msgstr "Default is 1 (no burst). Increase if the provider tolerates short bursts
 msgid "Default password for password-protected rooms (can be overridden per-streamer with ?pwd= in the URL)."
 msgstr "Default password for password-protected rooms (can be overridden per-streamer with ?pwd= in the URL)."
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:90
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:121
 msgid "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
 msgstr "Default password for password-protected rooms. Can be overridden per streamer with ?pwd= in the URL."
 
@@ -5915,7 +5915,7 @@ msgstr "Last checked"
 msgid "Last checked {0}"
 msgstr "Last checked {0}"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:339
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:370
 msgid "Last error"
 msgstr "Last error"
 
@@ -6036,7 +6036,7 @@ msgstr "Live edge"
 msgid "Live Gap Strategy"
 msgstr "Live Gap Strategy"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:298
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:329
 #: src/components/streamers/card/monitoring-method-badge.tsx:84
 msgid "Live notifications"
 msgstr "Live notifications"
@@ -6049,7 +6049,7 @@ msgstr "Live notifications are not available"
 msgid "Live notifications are off"
 msgstr "Live notifications are off"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:165
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:196
 msgid "Live notifications need a signed-in BIGO account. rust-srec signs this account in to BIGO's app service and makes it <0>follow every Bigo streamer you monitor (they can see it)</0>, with live alerts on. Turn on live notifications in that account's BIGO settings. Use a dedicated account: opening BIGO with the same account disconnects rust-srec, and the other way round."
 msgstr "Live notifications need a signed-in BIGO account. rust-srec signs this account in to BIGO's app service and makes it <0>follow every Bigo streamer you monitor (they can see it)</0>, with live alerts on. Turn on live notifications in that account's BIGO settings. Use a dedicated account: opening BIGO with the same account disconnects rust-srec, and the other way round."
 
@@ -7240,7 +7240,7 @@ msgctxt "no proxy login"
 msgid "None"
 msgstr "None"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:224
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:255
 msgctxt "notification account"
 msgid "None"
 msgstr "None"
@@ -7294,7 +7294,7 @@ msgstr "Not checked"
 msgid "Not checked yet"
 msgstr "Not checked yet"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:272
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:303
 msgctxt "bigo notifications"
 msgid "Not connected"
 msgstr "Not connected"
@@ -7348,7 +7348,7 @@ msgstr "Nothing blocked."
 msgid "Nothing it inherits from chooses an account"
 msgstr "Nothing it inherits from chooses an account"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:209
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:240
 msgid "Notification Account"
 msgstr "Notification Account"
 
@@ -7453,7 +7453,7 @@ msgstr "NVENC HEVC High Quality"
 msgid "Off"
 msgstr "Off"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:266
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:297
 msgctxt "bigo notifications"
 msgid "Off"
 msgstr "Off"
@@ -7872,7 +7872,7 @@ msgstr "Password must be at least 8 characters"
 msgid "password saved"
 msgstr "password saved"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:86
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:117
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:53
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:27
 msgid "Password..."
@@ -8561,7 +8561,7 @@ msgstr "Progress Update Interval (ms)"
 msgid "Progress:"
 msgstr "Progress:"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:67
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:98
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:25
 msgid "Protection Settings"
 msgstr "Protection Settings"
@@ -8781,6 +8781,10 @@ msgstr "Record Danmu"
 msgid "Record Separate Audio"
 msgstr "Record Separate Audio"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:71
+msgid "Record the original stream"
+msgstr "Record the original stream"
+
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:58
 msgid "Record the qualities some channels stream only in AV1. H.264 qualities stay available. Turn on only if your players and post-processing handle AV1."
 msgstr "Record the qualities some channels stream only in AV1. H.264 qualities stay available. Turn on only if your players and post-processing handle AV1."
@@ -8793,6 +8797,7 @@ msgstr "Record the qualities some channels stream only in H.265. H.264 qualities
 msgid "Record Video"
 msgstr "Record Video"
 
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:67
 #: src/components/streamers/config/streamer-recording-fields.tsx:49
 #: src/components/streamers/edit/streamer-header.tsx:87
 msgid "Recording"
@@ -8858,6 +8863,10 @@ msgstr "Recordings"
 #: src/components/config/engines/forms/lossless-cutting-field.tsx:92
 msgid "Recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
 msgstr "Recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
+
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:80
+msgid "Records the broadcaster's own stream from BIGO's app servers, in its original quality (HEVC or H.264), without an account. The website's stream is recorded instead when this fails, for rooms with several hosts, and when a stream password is set (the platform's default applies to every streamer)."
+msgstr "Records the broadcaster's own stream from BIGO's app servers, in its original quality (HEVC or H.264), without an account. The website's stream is recorded instead when this fails, for rooms with several hosts, and when a stream password is set (the platform's default applies to every streamer)."
 
 #: src/components/streamers/card/use-streamer-status.tsx:158
 #: src/components/streamers/card/use-streamer-status.tsx:167
@@ -10077,8 +10086,8 @@ msgstr "Set up a new download tool configuration"
 msgid "Set up live notifications"
 msgstr "Set up live notifications"
 
-#: src/components/shared/bigo-notifications.tsx:77
-#: src/components/shared/bigo-notifications.tsx:80
+#: src/components/shared/bigo-notifications.tsx:76
+#: src/components/shared/bigo-notifications.tsx:79
 msgid "Set up live notifications."
 msgstr "Set up live notifications."
 
@@ -10368,11 +10377,11 @@ msgstr "Started"
 msgid "STARTED"
 msgstr "STARTED"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:332
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:363
 msgid "Starts BIGO did not notify: {missed}"
 msgstr "Starts BIGO did not notify: {missed}"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:328
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:359
 msgid "Starts BIGO did not notify: {missed}, the last {lastMissed}"
 msgstr "Starts BIGO did not notify: {missed}, the last {lastMissed}"
 
@@ -10389,7 +10398,7 @@ msgstr "State"
 msgid "Status"
 msgstr "Status"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:103
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:134
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:145
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:127
 msgid "Status Checks"
@@ -10500,7 +10509,7 @@ msgstr "Stream online"
 msgid "Stream parsed successfully"
 msgstr "Stream parsed successfully"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:77
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:108
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:35
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:44
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:26
@@ -10657,7 +10666,7 @@ msgstr "Streams extracted"
 msgid "Streams per file (--multi-thread-streams)."
 msgstr "Streams per file (--multi-thread-streams)."
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:317
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:348
 msgid "Subscribed streamers"
 msgstr "Subscribed streamers"
 
@@ -10897,7 +10906,7 @@ msgstr "The account the active recording uses can no longer be used."
 msgid "The account the recording uses can no longer be used."
 msgstr "The account the recording uses can no longer be used."
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:249
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:280
 msgid "The BIGO account that receives live notifications. Recording never signs in to BIGO's app service with it, but uses its cookies if it is also chosen on the Network tab."
 msgstr "The BIGO account that receives live notifications. Recording never signs in to BIGO's app service with it, but uses its cookies if it is also chosen on the Network tab."
 
@@ -11605,9 +11614,13 @@ msgstr "TTWID Management Mode"
 msgid "Tuesday"
 msgstr "Tuesday"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:110
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:141
 msgid "Turn off to poll these streamers even while BIGO live notifications are on in the Bigo platform settings."
 msgstr "Turn off to poll these streamers even while BIGO live notifications are on in the Bigo platform settings."
+
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:74
+msgid "Turn off to record only the website's stream for these streamers, or on to record the original stream even while it is off in the Bigo platform settings."
+msgstr "Turn off to record only the website's stream for these streamers, or on to record the original stream even while it is off in the Bigo platform settings."
 
 #: src/components/config/engines/forms/streamlink-form.tsx:64
 msgid "Twitch (ttv-lol)"
@@ -11677,7 +11690,7 @@ msgstr "Unix timestamp"
 msgid "Unknown"
 msgstr "Unknown"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:238
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:269
 #: src/components/credentials/account-selection-section.tsx:176
 #: src/components/credentials/account-selection-section.tsx:407
 #: src/components/credentials/credential-selection-editor.tsx:177
@@ -11852,7 +11865,7 @@ msgstr "Use a language tag such as 'en' or 'pt-BR'"
 msgid "Use an http, https, socks5 or socks5h address."
 msgstr "Use an http, https, socks5 or socks5h address."
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:115
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:146
 msgid "Use BIGO live notifications instead of checking each streamer: stream starts are noticed within seconds. Needs a signed-in account (below)."
 msgstr "Use BIGO live notifications instead of checking each streamer: stream starts are noticed within seconds. Needs a signed-in account (below)."
 

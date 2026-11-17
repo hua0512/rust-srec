@@ -65,8 +65,7 @@ export function BigoPollingWarning({
     <Callout tone="warning" icon={AlertTriangle} role="status">
       <Trans>
         Bigo streamers are checked by polling, which is inconsistent: stream
-        starts are noticed late, short streams can be missed, and some networks
-        need an account for checks.
+        starts are noticed late, and short streams can be missed.
       </Trans>{' '}
       {platformId ? (
         <Link

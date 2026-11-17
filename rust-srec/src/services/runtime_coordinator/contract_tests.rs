@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::Utc;
+use platforms_parser::extractor::platforms::bigo::native::stream::NativeRoom;
 use tokio::sync::{Notify, mpsc};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
@@ -69,6 +70,8 @@ impl FreshnessCheck for FreshnessGate {
 
 #[derive(Default)]
 struct ScriptedEngine {
+    /// Registers as the mesio engine rather than ffmpeg.
+    mesio: bool,
     started: Notify,
     handles: parking_lot::Mutex<Vec<Arc<DownloadHandle>>>,
 }
@@ -76,7 +79,11 @@ struct ScriptedEngine {
 #[async_trait]
 impl DownloadEngine for ScriptedEngine {
     fn engine_type(&self) -> EngineType {
-        EngineType::Ffmpeg
+        if self.mesio {
+            EngineType::Mesio
+        } else {
+            EngineType::Ffmpeg
+        }
     }
 
     async fn run(&self, handle: Arc<DownloadHandle>) -> Result<(), EngineStartError> {
@@ -630,6 +637,40 @@ async fn freshness_equality_keeps_cached_media_and_long_wait_replaces_urls_heade
     })
     .await
     .expect("freshness contracts must use no real network");
+}
+
+/// No engine but mesio can open a native Bigo stream, so it starts on mesio
+/// although ffmpeg is configured.
+#[tokio::test]
+async fn native_bigo_streams_start_on_mesio() {
+    tokio::time::timeout(Duration::from_secs(30), async {
+        let fixture = Fixture::new().await;
+        let mesio = Arc::new(ScriptedEngine {
+            mesio: true,
+            ..Default::default()
+        });
+        fixture
+            .coordinator
+            .download_manager
+            .register_engine(mesio.clone());
+        let session = fixture.live().await;
+        let mut payload = payload(&session);
+        payload.streams[0].url = NativeRoom {
+            room_id: 1,
+            owner_uid: 2,
+        }
+        .url();
+        run_live_download_pipeline(fixture.coordinator.clone(), payload, false).await;
+        mesio.started.notified().await;
+        assert_eq!(
+            mesio.handles.lock()[0].config.read().url,
+            "bigo://room/1?uid=2"
+        );
+        assert!(fixture.engine.handles.lock().is_empty());
+        fixture.close().await;
+    })
+    .await
+    .expect("native startup must use no real network");
 }
 
 #[tokio::test]

@@ -7,16 +7,19 @@
 //! 1. Takes the protocol from the download configuration, or detects it from
 //!    the URL when the platform did not label the stream
 //! 2. Delegates to `HlsDownloader`, `DashDownloader` or `FlvDownloader` for
-//!    actual download logic
+//!    actual download logic, and a native Bigo room (`bigo://`) to
+//!    `BigoDownloader`
 //!
 //! Progress tracking is handled by the writers internally via `WriterTask` and
 //! `WriterState`, eliminating the need for duplicate tracking in the engine.
 
 use async_trait::async_trait;
 use mesio::{MesioDownloader, ProtocolType};
+use platforms_parser::extractor::platforms::bigo::native::stream::NativeRoom;
 use std::sync::Arc;
 use tracing::{debug, error, info};
 
+use super::bigo_downloader::BigoDownloader;
 use super::dash_downloader::DashDownloader;
 use super::flv_downloader::FlvDownloader;
 use super::hls_downloader::HlsDownloader;
@@ -111,39 +114,48 @@ impl DownloadEngine for MesioEngine {
 
         info!("Starting mesio download for streamer {}", streamer_id);
 
-        let protocol_type = Self::resolve_protocol(&config_snapshot)?;
+        let download_result = match NativeRoom::parse(&config_snapshot.url) {
+            // A native Bigo room is reached over BIGO's own protocol, not HTTP.
+            Some(room) => BigoDownloader::new(handle, self.config.clone(), room)
+                .run()
+                .await
+                .map(|_| ()),
+            None => {
+                let protocol_type = Self::resolve_protocol(&config_snapshot)?;
 
-        debug!(
-            "Using protocol {:?} for URL: {}",
-            protocol_type,
-            if config_snapshot.managed_credentials {
-                "[managed URL redacted]"
-            } else {
-                &config_snapshot.url
-            }
-        );
+                debug!(
+                    "Using protocol {:?} for URL: {}",
+                    protocol_type,
+                    if config_snapshot.managed_credentials {
+                        "[managed URL redacted]"
+                    } else {
+                        &config_snapshot.url
+                    }
+                );
 
-        // Delegate to appropriate downloader based on protocol type
-        let download_result = match protocol_type {
-            ProtocolType::Hls => HlsDownloader::new(handle, self.config.clone())
-                .run()
-                .await
-                .map(|_| ()),
-            ProtocolType::Dash => DashDownloader::new(handle, self.config.clone())
-                .run()
-                .await
-                .map(|_| ()),
-            ProtocolType::Flv => FlvDownloader::new(handle, self.config.clone())
-                .run()
-                .await
-                .map(|_| ()),
-            _ => {
-                let error_msg = format!("Unsupported protocol type: {:?}", protocol_type);
-                error!("{}", error_msg);
-                return Err(EngineStartError::new(
-                    DownloadFailureKind::Configuration,
-                    error_msg,
-                ));
+                // Delegate to appropriate downloader based on protocol type
+                match protocol_type {
+                    ProtocolType::Hls => HlsDownloader::new(handle, self.config.clone())
+                        .run()
+                        .await
+                        .map(|_| ()),
+                    ProtocolType::Dash => DashDownloader::new(handle, self.config.clone())
+                        .run()
+                        .await
+                        .map(|_| ()),
+                    ProtocolType::Flv => FlvDownloader::new(handle, self.config.clone())
+                        .run()
+                        .await
+                        .map(|_| ()),
+                    _ => {
+                        let error_msg = format!("Unsupported protocol type: {:?}", protocol_type);
+                        error!("{}", error_msg);
+                        return Err(EngineStartError::new(
+                            DownloadFailureKind::Configuration,
+                            error_msg,
+                        ));
+                    }
+                }
             }
         };
 
@@ -219,6 +231,37 @@ mod tests {
         assert_eq!(
             resolve("https://cdn.example/live/stream", DownloadProtocol::Flv),
             ProtocolType::Flv
+        );
+    }
+
+    /// A native Bigo room goes to its own downloader, which here refuses a
+    /// proxy its connections cannot take before connecting anywhere. The
+    /// HTTP FLV downloader, which the room's `Flv` label would pick, refuses
+    /// the URL instead.
+    #[tokio::test]
+    async fn native_bigo_rooms_are_recorded_over_their_own_protocol() {
+        let proxy = "ftp://127.0.0.1:9";
+        let output = tempfile::tempdir().unwrap();
+        let config = DownloadConfig::new(
+            "bigo://room/1?uid=2",
+            output.path(),
+            "streamer",
+            "streamer",
+            "session",
+        )
+        .with_protocol(DownloadProtocol::Flv)
+        .with_proxy(crate::proxies::ProxyTarget::Explicit(
+            crate::proxies::ProxyEndpoint::from_url(proxy),
+        ));
+        let (event_tx, _events) = tokio::sync::mpsc::channel(32);
+        let handle = DownloadHandle::new("download", EngineType::Mesio, config, event_tx);
+
+        let error = MesioEngine::new().run(Arc::new(handle)).await.unwrap_err();
+        assert_eq!(error.kind, DownloadFailureKind::Configuration);
+        assert!(
+            error.message.contains("native Bigo stream"),
+            "{}",
+            error.message
         );
     }
 
