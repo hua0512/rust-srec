@@ -4,6 +4,7 @@ use std::io::{
 
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use bytes::Bytes;
+use bytes_util::nal_emulation_prevention::EmulationPreventionIo;
 use bytes_util::{BitReader, BitWriter};
 
 use crate::{
@@ -161,6 +162,62 @@ impl HEVCDecoderConfigurationRecord {
             io::ErrorKind::InvalidData,
             "no SPS entries in HEVC decoder configuration record",
         ))
+    }
+
+    /// Builds the record for a stream from its parameter sets, each a NAL unit
+    /// without a start code. NAL units are 4-byte length-prefixed.
+    ///
+    /// Profile, tier, level and their flags are copied from the SPS's general
+    /// `profile_tier_level` as raw bits, because [`SpsNALUnit::parse`] keeps
+    /// neither the reserved constraint bits nor the compatibility flags it
+    /// does not interpret. Chroma format, bit depths and temporal layering
+    /// come from the parsed SPS. Fields the parameter sets do not determine
+    /// without parsing the VUI and PPS (spatial segmentation, parallelism,
+    /// frame rate) read as unknown.
+    ///
+    /// [`SpsNALUnit::parse`]: crate::SpsNALUnit::parse
+    pub fn from_parameter_sets(vps: Bytes, sps: Bytes, pps: Bytes) -> io::Result<Self> {
+        let parsed = crate::SpsNALUnit::parse(io::Cursor::new(&sps))?.rbsp;
+
+        // After the 2-byte NAL header: one byte of VPS id, sub-layer count and
+        // nesting flag, then the general profile, tier and level.
+        let mut general = EmulationPreventionIo::new(sps.get(2..).unwrap_or_default());
+        general.read_u8()?;
+        let profile = general.read_u8()?;
+        let compatibility = general.read_u32::<BigEndian>()?;
+        let constraints = general.read_u48::<BigEndian>()?;
+        let level = general.read_u8()?;
+
+        let array = |nal_unit_type, nalu| NaluArray {
+            array_completeness: false,
+            nal_unit_type,
+            nalus: vec![nalu],
+        };
+        Ok(Self {
+            general_profile_space: profile >> 6,
+            general_tier_flag: profile & 0x20 != 0,
+            general_profile_idc: profile & 0x1f,
+            general_profile_compatibility_flags: ProfileCompatibilityFlags::from_bits_retain(
+                compatibility,
+            ),
+            general_constraint_indicator_flags: constraints,
+            general_level_idc: level,
+            min_spatial_segmentation_idc: 0,
+            parallelism_type: ParallelismType::MixedOrUnknown,
+            chroma_format_idc: parsed.chroma_format_idc,
+            bit_depth_luma_minus8: parsed.bit_depth_luma_minus8,
+            bit_depth_chroma_minus8: parsed.bit_depth_chroma_minus8,
+            avg_frame_rate: 0,
+            constant_frame_rate: ConstantFrameRate::Unknown,
+            num_temporal_layers: NumTemporalLayers::from(parsed.sps_max_sub_layers_minus1 + 1),
+            temporal_id_nested: parsed.sps_temporal_id_nesting_flag,
+            length_size_minus_one: 3,
+            arrays: vec![
+                array(NALUnitType::VpsNut, vps),
+                array(NALUnitType::SpsNut, sps),
+                array(NALUnitType::PpsNut, pps),
+            ],
+        })
     }
 
     /// Demuxes an [`HEVCDecoderConfigurationRecord`] from a byte stream.
@@ -445,6 +502,37 @@ mod tests {
             .unwrap();
         assert!(!sps_array.nalus.is_empty());
         assert_eq!(sps_fast, sps_array.nalus[0]);
+    }
+
+    #[test]
+    fn builds_the_record_ffmpeg_writes_from_parameter_sets() {
+        // The parameter sets of a live HEVC Main stream, and the hvcC FFmpeg
+        // 9.0 writes for it. The SPS's flags contain emulation prevention
+        // bytes.
+        let vps: &[u8] = b"\x40\x01\x0c\x01\xff\xff\x01\x60\x00\x00\x03\x00\xb0\x00\x00\x03\x00\x00\x03\x00\x5a\x17\x02\x40";
+        let sps: &[u8] = b"\x42\x01\x01\x01\x60\x00\x00\x03\x00\xb0\x00\x00\x03\x00\x00\x03\x00\x5a\xa0\x04\x42\x00\xe4\x77\x3e\x20\x5e\xe4\x59\x14\xbf\xf2\xe7\xf1\x3f\xa9\xa8\x08\x08\x08\x04";
+        let pps: &[u8] = b"\x44\x01\xc0\x72\xf0\x53\x24";
+        let ffmpeg = [
+            &b"\x01\x01\x60\x00\x00\x00\xb0\x00\x00\x00\x00\x00\x5a\xf0\x00\xfc\xfd\xf8\xf8\x00\x00\x0f\x03"[..],
+            b"\x20\x00\x01\x00\x18",
+            vps,
+            b"\x21\x00\x01\x00\x29",
+            sps,
+            b"\x22\x00\x01\x00\x07",
+            pps,
+        ]
+        .concat();
+
+        let record = HEVCDecoderConfigurationRecord::from_parameter_sets(
+            Bytes::from_static(vps),
+            Bytes::from_static(sps),
+            Bytes::from_static(pps),
+        )
+        .unwrap();
+        let mut muxed = Vec::new();
+        record.mux(&mut muxed).unwrap();
+
+        assert_eq!(muxed, ffmpeg);
     }
 
     #[test]

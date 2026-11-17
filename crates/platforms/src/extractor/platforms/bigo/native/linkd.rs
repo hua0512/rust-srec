@@ -22,8 +22,7 @@ use tracing::debug;
 
 use super::ticket::Ticket;
 use super::{NativeError, Route};
-use crate::danmaku::error::DanmakuError;
-use crate::danmaku::proxy::{self, BoxedTransport};
+use crate::danmaku::proxy::BoxedTransport;
 
 /// Linkd's addresses, tried in order. The ticket answer lists none.
 const ADDRESSES: [(&str, u16); 2] = [("164.90.67.6", 54953), ("164.90.64.60", 1299)];
@@ -132,12 +131,7 @@ impl Linkd {
         route: &Route,
         ticket: &Ticket,
     ) -> Result<Self, NativeError> {
-        let mut io = proxy::open_transport(host, port, route.proxy.as_ref())
-            .await
-            .map_err(|error| match error {
-                DanmakuError::Io(error) => error,
-                error => io::Error::other(error),
-            })?;
+        let mut io = route.open(host, port).await?;
         let key = exchange_keys(&mut io).await?;
         let mut linkd = Self {
             io,
@@ -177,7 +171,7 @@ impl Linkd {
     }
 
     /// Looks up a room's media servers, then closes the connection. The
-    /// answer's media ticket must be used within about 2 s.
+    /// answer's media ticket must be used within a few seconds.
     pub async fn join_channel(mut self, room_id: u64) -> Result<Channel, NativeError> {
         let seq = rand::rng().random::<u32>();
         // The room's session id is the low 32 bits of its id.
@@ -279,7 +273,7 @@ pub struct Channel {
     pub source: u32,
     /// The room's session id: the low 32 bits of its id.
     pub sid: u32,
-    /// Admits the viewer to the media servers; valid for about 2 s.
+    /// Admits the viewer to the media servers; accepted only for a few seconds.
     pub media_ticket: Bytes,
     /// Goes to the media servers along with the ticket.
     pub timestamp: u32,
@@ -366,7 +360,7 @@ async fn exchange_keys(io: &mut BoxedTransport) -> Result<Vec<u8>, NativeError> 
     key.decrypt(get_blob(&mut frame)?)
 }
 
-fn frame_len(len: u32) -> Result<usize, NativeError> {
+pub(super) fn frame_len(len: u32) -> Result<usize, NativeError> {
     let len = len as usize;
     if (HEADER_LEN..=MAX_FRAME_LEN).contains(&len) {
         Ok(len)
@@ -504,13 +498,13 @@ pub(super) fn get_blob<'a>(body: &mut &'a [u8]) -> Result<&'a [u8], NativeError>
     take(body, len)
 }
 
-fn put_blob(out: &mut impl BufMut, data: &[u8]) {
+pub(super) fn put_blob(out: &mut impl BufMut, data: &[u8]) {
     let data = &data[..data.len().min(usize::from(u16::MAX))];
     out.put_u16_le(data.len() as u16);
     out.put_slice(data);
 }
 
-fn put_frame(out: &mut impl BufMut, uri: u32, body: &[u8]) {
+pub(super) fn put_frame(out: &mut impl BufMut, uri: u32, body: &[u8]) {
     out.put_u32_le((HEADER_LEN + body.len()) as u32);
     out.put_u32_le(uri);
     out.put_u16_le(STATUS_OK);

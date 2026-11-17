@@ -145,6 +145,50 @@ impl AVCDecoderConfigurationRecord {
         Ok(data.slice(offset..offset + sps_length))
     }
 
+    /// Builds the record for a stream from its parameter sets, each a NAL unit
+    /// without a start code. NAL units are 4-byte length-prefixed.
+    ///
+    /// Profile, compatibility and level are the SPS's first bytes after the
+    /// NAL header. The High profiles 100, 110, 122 and 244 carry the
+    /// extension with chroma format and bit depths, which come from the
+    /// parsed SPS.
+    pub fn from_parameter_sets(sps: Bytes, pps: Bytes) -> io::Result<Self> {
+        // These bytes start with a non-zero profile, so they hold no
+        // emulation prevention byte.
+        let Some(&[profile_indication, profile_compatibility, level_indication]) = sps.get(1..4)
+        else {
+            return Err(io::Error::from(io::ErrorKind::UnexpectedEof));
+        };
+        let extended_config = match profile_indication {
+            100 | 110 | 122 | 244 => {
+                let parsed = crate::Sps::parse_with_emulation_prevention(io::Cursor::new(&sps))?;
+                let ext = parsed.ext.ok_or_else(|| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        "High profile SPS without chroma format",
+                    )
+                })?;
+                Some(AvccExtendedConfig {
+                    chroma_format_idc: ext.chroma_format_idc,
+                    bit_depth_luma_minus8: ext.bit_depth_luma_minus8,
+                    bit_depth_chroma_minus8: ext.bit_depth_chroma_minus8,
+                    sequence_parameter_set_ext: Vec::new(),
+                })
+            }
+            _ => None,
+        };
+        Ok(Self {
+            configuration_version: 1,
+            profile_indication,
+            profile_compatibility,
+            level_indication,
+            length_size_minus_one: 3,
+            sps: vec![sps],
+            pps: vec![pps],
+            extended_config,
+        })
+    }
+
     /// Parses an AVCDecoderConfigurationRecord from a byte stream.
     /// Returns a parsed AVCDecoderConfigurationRecord.
     pub fn parse(reader: &mut io::Cursor<Bytes>) -> io::Result<Self> {
@@ -386,6 +430,53 @@ mod tests {
         config.build(&mut buf).unwrap();
 
         assert_eq!(buf, data.to_vec());
+    }
+
+    #[test]
+    fn builds_the_record_ffmpeg_writes_from_parameter_sets() {
+        // A live Main profile stream, and High profile x264 output, with the
+        // avcC FFmpeg 9.0 writes for each (High adds the chroma format and
+        // bit depth extension).
+        let main_sps: &[u8] = b"\x67\x4d\x40\x1e\x95\x90\x17\x04\xde\x59\x70\x16\xa0\x20\x20\x28\x00\x00\x1f\x40\x00\x05\xdc\x04\x20";
+        let main_pps: &[u8] = b"\x68\xeb\x8f\x20";
+        let high_sps: &[u8] = b"\x67\x64\x00\x0a\xac\xd9\x44\x26\xc0\x44\x00\x00\x03\x00\x04\x00\x00\x03\x00\x08\x3c\x48\x96\x58";
+        let high_pps: &[u8] = b"\x68\xeb\xe3\xcb\x22\xc0";
+        let cases = [
+            (
+                main_sps,
+                main_pps,
+                [
+                    &b"\x01\x4d\x40\x1e\xff\xe1\x00\x19"[..],
+                    main_sps,
+                    b"\x01\x00\x04",
+                    main_pps,
+                ]
+                .concat(),
+            ),
+            (
+                high_sps,
+                high_pps,
+                [
+                    &b"\x01\x64\x00\x0a\xff\xe1\x00\x18"[..],
+                    high_sps,
+                    b"\x01\x00\x06",
+                    high_pps,
+                    b"\xfd\xf8\xf8\x00",
+                ]
+                .concat(),
+            ),
+        ];
+
+        for (sps, pps, ffmpeg) in cases {
+            let record = AVCDecoderConfigurationRecord::from_parameter_sets(
+                Bytes::from_static(sps),
+                Bytes::from_static(pps),
+            )
+            .unwrap();
+            let mut built = Vec::new();
+            record.build(&mut built).unwrap();
+            assert_eq!(built, ffmpeg);
+        }
     }
 
     #[test]

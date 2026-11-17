@@ -4768,6 +4768,7 @@ checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 name = "platforms-parser"
 version = "0.4.0"
 dependencies = [
+ "aac",
  "aes",
  "async-trait",
  "base64 0.23.1",
@@ -4777,7 +4778,10 @@ dependencies = [
  "cbc",
  "chrono",
  "flate2",
+ "flv",
  "futures",
+ "h264",
+ "h265",
  "jieba-rs",
  "libsm",
  "m3u8-rs",
