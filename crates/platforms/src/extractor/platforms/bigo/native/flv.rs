@@ -5,12 +5,22 @@
 //! out as raw frames after an AudioSpecificConfig. The stream carries no
 //! `onMetaData`; the FLV processing that follows writes it.
 //!
+//! A video sequence header is written only when the decoder configuration
+//! changes: codec, picture size, profile, tier, level, chroma format or bit
+//! depth. The FLV processing that follows starts a new file at each one.
+//! Some sources rewrite their parameter sets every few seconds without such
+//! a change (an encoder noting its current frame rate, or alternating
+//! between two picture parameter sets), so keyframes also carry their own
+//! parameter sets in-band, and decoders use the ones each frame was coded
+//! with.
+//!
 //! Tag times are the source's ms clock, counted from the first video
 //! keyframe. The source clock is shared by both tracks and runs on across
 //! media reconnects, so a reconnect continues the same timeline and the
 //! frames it repeats are dropped.
 
 use std::collections::VecDeque;
+use std::io;
 
 use ::flv::audio::SoundFormat;
 use ::flv::avc::AvcPacketType;
@@ -39,7 +49,8 @@ const AAC_RAW: u8 = 1;
 #[derive(Default)]
 pub(super) struct Muxer {
     header_written: bool,
-    video_config: Option<VideoConfig>,
+    /// What the last video sequence header announced.
+    video_format: Option<VideoFormat>,
     audio_config: Option<[u8; 2]>,
     /// `None` until a keyframe starts the timeline, and again after a clock
     /// reset.
@@ -58,11 +69,24 @@ pub(super) struct Muxer {
     audio_frames: u64,
 }
 
-/// The parameter sets of a video sequence header.
-#[derive(PartialEq, Eq)]
-enum VideoConfig {
+/// The parameter sets of a keyframe.
+enum ParameterSets {
     H264 { sps: Bytes, pps: Bytes },
     Hevc { vps: Bytes, sps: Bytes, pps: Bytes },
+}
+
+/// What a decoder must be told before the frames that change it.
+#[derive(PartialEq, Eq)]
+struct VideoFormat {
+    codec: VideoCodec,
+    width: u64,
+    height: u64,
+    profile: u8,
+    tier: bool,
+    level: u8,
+    chroma_format: u8,
+    bit_depth_luma_minus8: u8,
+    bit_depth_chroma_minus8: u8,
 }
 
 /// Maps source times to tag times.
@@ -134,13 +158,17 @@ impl Muxer {
             return Ok(());
         }
         let nalus = annex_b_nalus(&frame.data);
-        let config = frame
+        let parameter_sets = frame
             .keyframe
-            .then(|| VideoConfig::find(frame.codec, &nalus))
+            .then(|| ParameterSets::find(frame.codec, &nalus))
             .flatten();
-        let config_changed = config.is_some() && config != self.video_config;
-        if self.video_config.as_ref().map(VideoConfig::codec) != Some(frame.codec)
-            && !config_changed
+        let format = parameter_sets
+            .as_ref()
+            .map(ParameterSets::format)
+            .transpose()?;
+        let format_changed = format.is_some() && format != self.video_format;
+        if self.video_format.as_ref().map(|format| format.codec) != Some(frame.codec)
+            && !format_changed
         {
             // Nothing describes this codec yet.
             return Ok(());
@@ -163,9 +191,9 @@ impl Muxer {
         };
 
         self.write_header(out);
-        if let Some(config) = config.filter(|_| config_changed) {
-            out.push(video_tag(time, config.sequence_header()?));
-            self.video_config = Some(config);
+        if format_changed && let Some(parameter_sets) = &parameter_sets {
+            out.push(video_tag(time, parameter_sets.sequence_header()?));
+            self.video_format = format;
         }
         let composition_time = frame.pts.wrapping_sub(frame.dts) as i32;
         out.push(video_tag(
@@ -252,7 +280,7 @@ impl Muxer {
     }
 }
 
-impl VideoConfig {
+impl ParameterSets {
     /// The parameter sets in an access unit, if it has a complete set.
     fn find(codec: VideoCodec, nalus: &[&[u8]]) -> Option<Self> {
         let find = |kind| {
@@ -274,17 +302,47 @@ impl VideoConfig {
         })
     }
 
-    fn codec(&self) -> VideoCodec {
-        match self {
-            Self::H264 { .. } => VideoCodec::H264,
-            Self::Hevc { .. } => VideoCodec::Hevc,
-        }
+    fn format(&self) -> Result<VideoFormat, NativeError> {
+        Ok(match self {
+            Self::H264 { sps, .. } => {
+                let sps = h264::Sps::parse_with_emulation_prevention(io::Cursor::new(sps))
+                    .map_err(invalid)?;
+                // Without the extension: 4:2:0 at 8 bits.
+                let ext = sps.ext.as_ref();
+                VideoFormat {
+                    codec: VideoCodec::H264,
+                    width: sps.width(),
+                    height: sps.height(),
+                    profile: sps.profile_idc,
+                    tier: false,
+                    level: sps.level_idc,
+                    chroma_format: ext.map_or(1, |ext| ext.chroma_format_idc),
+                    bit_depth_luma_minus8: ext.map_or(0, |ext| ext.bit_depth_luma_minus8),
+                    bit_depth_chroma_minus8: ext.map_or(0, |ext| ext.bit_depth_chroma_minus8),
+                }
+            }
+            Self::Hevc { sps, .. } => {
+                let sps = h265::SpsNALUnit::parse(io::Cursor::new(sps))
+                    .map_err(invalid)?
+                    .rbsp;
+                let general = &sps.profile_tier_level.general_profile;
+                VideoFormat {
+                    codec: VideoCodec::Hevc,
+                    width: sps.cropped_width(),
+                    height: sps.cropped_height(),
+                    profile: general.profile_idc,
+                    tier: general.tier_flag,
+                    level: general.level_idc.unwrap_or_default(),
+                    chroma_format: sps.chroma_format_idc,
+                    bit_depth_luma_minus8: sps.bit_depth_luma_minus8,
+                    bit_depth_chroma_minus8: sps.bit_depth_chroma_minus8,
+                }
+            }
+        })
     }
 
     /// The body of the sequence header tag.
     fn sequence_header(&self) -> Result<Vec<u8>, NativeError> {
-        let invalid =
-            |error: std::io::Error| NativeError::Protocol(format!("video parameter sets: {error}"));
         let mut body = Vec::with_capacity(256);
         match self {
             Self::H264 { sps, pps } => {
@@ -318,7 +376,7 @@ impl VideoConfig {
 }
 
 /// The body of a frame's tag: its NAL units, 4-byte length-prefixed, without
-/// the parameter sets and delimiters that the sequence header replaces.
+/// access unit delimiters. Parameter sets stay in-band.
 fn coded_frame(
     codec: VideoCodec,
     keyframe: bool,
@@ -348,27 +406,22 @@ fn coded_frame(
     // SI24.
     let composition_time = composition_time.clamp(-(1 << 23), (1 << 23) - 1);
     body.put_slice(&composition_time.to_be_bytes()[1..]);
-    let skipped: &[u8] = match codec {
-        VideoCodec::H264 => &[
-            AvcNal::SPS as u8,
-            AvcNal::PPS as u8,
-            AvcNal::AccessUnitDelimiter as u8,
-        ],
-        VideoCodec::Hevc => &[
-            HevcNal::VpsNut as u8,
-            HevcNal::SpsNut as u8,
-            HevcNal::PpsNut as u8,
-            HevcNal::AudNut as u8,
-        ],
+    let delimiter = match codec {
+        VideoCodec::H264 => AvcNal::AccessUnitDelimiter as u8,
+        VideoCodec::Hevc => HevcNal::AudNut as u8,
     };
     for nalu in nalus {
-        if nal_type(codec, nalu).is_some_and(|kind| skipped.contains(&kind)) {
+        if nal_type(codec, nalu) == Some(delimiter) {
             continue;
         }
         body.put_u32(nalu.len() as u32);
         body.put_slice(nalu);
     }
     body
+}
+
+fn invalid(error: io::Error) -> NativeError {
+    NativeError::Protocol(format!("video parameter sets: {error}"))
 }
 
 fn video_tag_byte(frame_type: VideoFrameType, codec_id: u8) -> u8 {
@@ -570,7 +623,7 @@ mod tests {
             video_body(&out[2]),
             VideoTagBody::Enhanced(EnhancedPacket::Hevc(HevcPacket::Nalu {
                 composition_time: Some(85),
-                data: length_prefixed(&[sei, idr]),
+                data: length_prefixed(&[VPS, SPS, PPS, sei, idr]),
             }))
         );
 
@@ -596,8 +649,70 @@ mod tests {
             video_body(&out[7]),
             VideoTagBody::Avc(AvcPacket::Nalu {
                 composition_time: 0,
-                data: length_prefixed(&[avc_idr]),
+                data: length_prefixed(&[AVC_SPS, AVC_PPS, avc_idr]),
             })
+        );
+    }
+
+    #[test]
+    fn parameter_sets_that_keep_the_format_go_in_band_without_a_new_header() {
+        // Parameter sets of a live HEVC source at 480x854. Its encoder
+        // rewrote the frame rate in the VPS and SPS every few seconds and
+        // alternated between two variants of them. Then it went to 540x900.
+        const VPS_A: &[u8] = b"\x40\x01\x0c\x01\xff\xff\x01\x60\x00\x00\x03\x00\x90\x00\x00\x03\x00\x00\x03\x00\x5a\xaa\x02\x40";
+        const VPS_B: &[u8] = b"\x40\x01\x0c\x01\xff\xff\x01\x60\x00\x00\x03\x00\x90\x00\x00\x03\x00\x00\x03\x00\x5a\x91\x90\x09";
+        const SPS_11_FPS: &[u8] = b"\x42\x01\x01\x01\x60\x00\x00\x03\x00\x90\x00\x00\x03\x00\x00\x03\x00\x5a\xa0\x0f\x08\x03\x59\xf5\x96\xaa\x49\x32\x99\xa8\x08\x08\x08\x20\x00\x00\x03\x00\x20\x00\x00\x03\x01\x61";
+        const SPS_12_FPS: &[u8] = b"\x42\x01\x01\x01\x60\x00\x00\x03\x00\x90\x00\x00\x03\x00\x00\x03\x00\x5a\xa0\x0f\x08\x03\x59\xf5\x96\xaa\x49\x32\x99\xa8\x08\x08\x08\x20\x00\x00\x03\x00\x20\x00\x00\x03\x01\x81";
+        const SPS_B_14_FPS: &[u8] = b"\x42\x01\x01\x01\x60\x00\x00\x03\x00\x90\x00\x00\x03\x00\x00\x03\x00\x5a\xa0\x0f\x08\x03\x59\xf5\x96\x46\x49\x24\xca\x66\xa0\x20\x20\x20\x80\x00\x00\x03\x00\x80\x00\x00\x07\x04";
+        const SPS_540X900: &[u8] = b"\x42\x01\x01\x01\x60\x00\x00\x03\x00\x90\x00\x00\x03\x00\x00\x03\x00\x5a\xa0\x04\x42\x00\xe2\x77\x79\x6a\xa4\x93\x29\x9a\x80\x80\x80\x82\x00\x00\x03\x00\x02\x00\x00\x03\x00\x18\x10";
+        const PPS_A: &[u8] = b"\x44\x01\xc0\x73\xc0\xec\x90";
+        const PPS_B: &[u8] = b"\x44\x01\xc0\x54\xf0\x3b\x24";
+        let idr: &[u8] = b"\x26\x01\xaf\x38\x74";
+        let keyframes: [[&[u8]; 3]; 5] = [
+            [VPS_A, SPS_11_FPS, PPS_A],
+            [VPS_A, SPS_12_FPS, PPS_A],
+            [VPS_B, SPS_B_14_FPS, PPS_B],
+            [VPS_A, SPS_11_FPS, PPS_A],
+            [VPS_A, SPS_540X900, PPS_A],
+        ];
+
+        let mut muxer = Muxer::default();
+        let mut out = Vec::new();
+        for (at, sets) in keyframes.iter().enumerate() {
+            let dts = 2000 * at as u32;
+            let frame = video(
+                VideoCodec::Hevc,
+                true,
+                dts,
+                dts,
+                &annex_b(&[&sets[..], &[idr]].concat()),
+            );
+            muxer.push_video(frame, &mut out).unwrap();
+        }
+
+        let (mut headers, mut frames) = (Vec::new(), Vec::new());
+        for data in &out[1..] {
+            match video_body(data) {
+                VideoTagBody::Enhanced(EnhancedPacket::Hevc(HevcPacket::SequenceStart(record))) => {
+                    assert!(record.arrays.iter().all(|array| !array.array_completeness));
+                    headers.push(
+                        record
+                            .arrays
+                            .into_iter()
+                            .map(|array| array.nalus[0].clone())
+                            .collect::<Vec<_>>(),
+                    );
+                }
+                VideoTagBody::Enhanced(EnhancedPacket::Hevc(HevcPacket::Nalu { data, .. })) => {
+                    frames.push(data)
+                }
+                other => panic!("unexpected {other:?}"),
+            }
+        }
+        assert_eq!(headers, [keyframes[0], keyframes[4]]);
+        assert_eq!(
+            frames,
+            keyframes.map(|sets| length_prefixed(&[&sets[..], &[idr]].concat()))
         );
     }
 
