@@ -77,7 +77,7 @@ struct Fragment {
 }
 
 impl Fragment {
-    fn parse(packet: Bytes) -> Result<Self, NativeError> {
+    fn parse(mut packet: Bytes) -> Result<Self, NativeError> {
         let mut header = &packet[..];
 
         // The packet word's top byte holds the frame kind; then two bytes
@@ -204,6 +204,7 @@ impl Fragment {
         if !split || last {
             count = Some(u32::from(index) + 1);
         }
+        packet.advance(payload_start);
         Ok(Self {
             frame,
             keyframe,
@@ -213,7 +214,7 @@ impl Fragment {
             index,
             count,
             combined,
-            payload: packet.slice(payload_start..),
+            payload: packet,
         })
     }
 }
