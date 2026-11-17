@@ -628,6 +628,7 @@ impl SegmentTranslator {
         let manual_request = info.manual_request_id();
         let split_reason_code = info.split_reason_code().map(str::to_owned);
         let split_reason_details_json = info.split_reason_details_json();
+        let split_by_format_change = info.split_by_format_change();
         let SegmentInfo {
             path,
             duration_secs,
@@ -668,6 +669,7 @@ impl SegmentTranslator {
                 size_bytes,
                 split_reason_code,
                 split_reason_details_json,
+                split_by_format_change,
             });
         if let Err(delivery_error) = self.events.publish_and_wait(completed_event).await {
             // The segment file is already closed on disk; only its row is

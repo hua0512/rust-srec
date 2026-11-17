@@ -770,6 +770,7 @@ impl DownloadEventProcessor {
                 segment_path,
                 segment_index,
                 size_bytes,
+                split_by_format_change,
                 ..
             }) => {
                 self.session_lifecycle.on_segment_completed(streamer_id);
@@ -791,8 +792,14 @@ impl DownloadEventProcessor {
                         let min = u64::try_from(config.min_segment_size_bytes)
                             .ok()
                             .filter(|v| *v > 0);
+                        // The minimum drops stray clips around a start, an end,
+                        // a reconnect or an ad break. A segment closed by a
+                        // format change (a quality switch) is content from a
+                        // stream that kept running; deleting it would leave a
+                        // gap in the middle of the recording.
                         if let Some(min) = min
                             && effective_size_bytes < min
+                            && !split_by_format_change
                         {
                             info!(
                                 "Segment {} is too small ({} bytes < min {}), discarding",

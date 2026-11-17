@@ -227,6 +227,9 @@ pub enum DownloadProgressEvent {
         size_bytes: u64,
         split_reason_code: Option<String>,
         split_reason_details_json: Option<String>,
+        /// The writer closed this segment because the stream's video codec,
+        /// audio codec or resolution changed while it kept running.
+        split_by_format_change: bool,
     },
 }
 

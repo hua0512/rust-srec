@@ -1116,6 +1116,7 @@ mod tests {
                 size_bytes: 1_024_000,
                 split_reason_code: None,
                 split_reason_details_json: None,
+                split_by_format_change: false,
             }),
             EventType::SegmentCompleted,
         ) else {

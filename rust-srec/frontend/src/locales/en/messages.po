@@ -5115,7 +5115,7 @@ msgstr "Global"
 #: src/components/config/platforms/tabs/general-tab.tsx:97
 #: src/components/config/shared/limits-card.tsx:67
 #: src/components/config/shared/limits-card.tsx:91
-#: src/components/config/shared/limits-card.tsx:115
+#: src/components/config/shared/limits-card.tsx:118
 #: src/components/config/shared/output-settings-card.tsx:140
 #: src/components/config/shared/record-danmu-card.tsx:96
 msgid "Global Default"
@@ -6417,7 +6417,7 @@ msgid "Max Key Retry Delay (ms)"
 msgstr "Max Key Retry Delay (ms)"
 
 #: src/components/config/global/resource-limits-card.tsx:74
-#: src/components/config/shared/limits-card.tsx:108
+#: src/components/config/shared/limits-card.tsx:111
 msgid "Max Part Size"
 msgstr "Max Part Size"
 
@@ -6561,10 +6561,6 @@ msgstr "Min Priority"
 #: src/components/config/shared/limits-card.tsx:84
 msgid "Min Segment Size"
 msgstr "Min Segment Size"
-
-#: src/components/config/shared/limits-card.tsx:96
-msgid "Min size to keep."
-msgstr "Min size to keep."
 
 #: src/components/notifications/desktop-channel-dialog.tsx:127
 #: src/components/notifications/desktop-channel-dialog.tsx:139
@@ -10297,6 +10293,10 @@ msgctxt "danmu speed"
 msgid "Slow"
 msgstr "Slow"
 
+#: src/components/config/shared/limits-card.tsx:96
+msgid "Smaller files are deleted, except those a quality change splits off."
+msgstr "Smaller files are deleted, except those a quality change splits off."
+
 #: src/components/player/player-card.tsx:328
 msgid "Smooth"
 msgstr "Smooth"
@@ -10335,7 +10335,7 @@ msgstr "Speed"
 msgid "Split after duration."
 msgstr "Split after duration."
 
-#: src/components/config/shared/limits-card.tsx:120
+#: src/components/config/shared/limits-card.tsx:123
 msgid "Split after size."
 msgstr "Split after size."
 

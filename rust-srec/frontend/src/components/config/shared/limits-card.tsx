@@ -93,7 +93,10 @@ function LimitsCardImpl<TFieldValues extends FieldValues>({
                 />
               </FormControl>
               <FormDescription className={CONFIG_DESCRIPTION}>
-                <Trans>Min size to keep.</Trans>
+                <Trans>
+                  Smaller files are deleted, except those a quality change
+                  splits off.
+                </Trans>
               </FormDescription>
               <FormMessage />
             </FormItem>
