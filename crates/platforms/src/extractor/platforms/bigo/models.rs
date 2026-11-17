@@ -205,24 +205,24 @@ mod tests {
     fn room_id_comes_only_from_the_broadcasters_own_room_link() {
         let presence = |link: &str| Presence {
             alive: 1,
-            uid: 509239070,
+            uid: 300000003,
             nickname: None,
             room_topic: None,
             og_image: None,
             ali_os_url: Some(link.to_owned()),
         };
         assert_eq!(
-            presence("bigolive://livevideoshow?roomid=6935768021135771674&uid=509239070&visitor=1")
+            presence("bigolive://livevideoshow?roomid=7000000000000000002&uid=300000003&visitor=1")
                 .room_id(),
-            Some(6935768021135771674)
+            Some(7000000000000000002)
         );
         for link in [
-            "bigolive://livevideoshow?roomid=0&uid=509239070&visitor=1",
-            "bigolive://livevideoshow?roomid=6935768021135771674&uid=1&visitor=1",
-            "bigolive://livevideoshow?roomid=6935768021135771674",
-            "bigolive://otherpage?roomid=6935768021135771674&uid=509239070",
-            "https://livevideoshow/?roomid=6935768021135771674&uid=509239070",
-            "bigolive://livevideoshow?roomid=abc&uid=509239070",
+            "bigolive://livevideoshow?roomid=0&uid=300000003&visitor=1",
+            "bigolive://livevideoshow?roomid=7000000000000000002&uid=1&visitor=1",
+            "bigolive://livevideoshow?roomid=7000000000000000002",
+            "bigolive://otherpage?roomid=7000000000000000002&uid=300000003",
+            "https://livevideoshow/?roomid=7000000000000000002&uid=300000003",
+            "bigolive://livevideoshow?roomid=abc&uid=300000003",
         ] {
             assert_eq!(presence(link).room_id(), None, "{link}");
         }

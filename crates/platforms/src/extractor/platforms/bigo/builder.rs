@@ -324,33 +324,33 @@ mod tests {
     use crate::extractor::default::default_client;
     use crate::extractor::test_support::{ReceivedRequests, serve_in_order};
 
-    const ROOM_ID: &str = "6935768021135771674";
-    const LIVE: &str = r#"{"code":0,"msg":"success","data":{"uid":509239070,
-        "nickname":"Passi","roomTopic":"","alive":1,"ogImage":"https://esx.bigo.sg/cover.jpg",
-        "aliOSUrl":"bigolive://livevideoshow?roomid=6935768021135771674&uid=509239070&visitor=1"}}"#;
+    const ROOM_ID: &str = "7000000000000000002";
+    const LIVE: &str = r#"{"code":0,"msg":"success","data":{"uid":300000003,
+        "nickname":"Streamer","roomTopic":"","alive":1,"ogImage":"https://esx.bigo.sg/cover.jpg",
+        "aliOSUrl":"bigolive://livevideoshow?roomid=7000000000000000002&uid=300000003&visitor=1"}}"#;
     /// Live, but without a link to the room.
-    const LIVE_WITHOUT_ROOM: &str = r#"{"code":0,"msg":"success","data":{"uid":509239070,
-        "nickname":"Passi","alive":1,"aliOSUrl":"bigolive://livevideoshow?roomid=0&uid=509239070"}}"#;
+    const LIVE_WITHOUT_ROOM: &str = r#"{"code":0,"msg":"success","data":{"uid":300000003,
+        "nickname":"Streamer","alive":1,"aliOSUrl":"bigolive://livevideoshow?roomid=0&uid=300000003"}}"#;
     /// Just ended: the link still names the last room.
-    const OFFLINE: &str = r#"{"code":0,"msg":"success","data":{"uid":509239070,
-        "nickname":"Passi","roomTopic":"Back soon","alive":0,"ogImage":"https://esx.bigo.sg/cover.jpg",
-        "aliOSUrl":"bigolive://livevideoshow?roomid=6935768021135771674&uid=509239070&visitor=1"}}"#;
-    const STUDIO_LIVE: &str = r#"{"code":0,"msg":"success","data":{"sid":2555365402,
-        "uid":509239070,"alive":1,"roomId":"6935768021135771674","needLogin":false,"passRoom":false,
+    const OFFLINE: &str = r#"{"code":0,"msg":"success","data":{"uid":300000003,
+        "nickname":"Streamer","roomTopic":"Back soon","alive":0,"ogImage":"https://esx.bigo.sg/cover.jpg",
+        "aliOSUrl":"bigolive://livevideoshow?roomid=7000000000000000002&uid=300000003&visitor=1"}}"#;
+    const STUDIO_LIVE: &str = r#"{"code":0,"msg":"success","data":{"sid":2478571522,
+        "uid":300000003,"alive":1,"roomId":"7000000000000000002","needLogin":false,"passRoom":false,
         "hls_src":"https://cdn.example.com/list_x.m3u8","avatar":"https://esx.bigo.sg/avatar.jpg"}}"#;
-    const STUDIO_OFFLINE: &str = r#"{"code":0,"msg":"success","data":{"sid":2555365402,
-        "uid":509239070,"alive":0,"roomId":"0","hls_src":"","needLogin":false,"passRoom":false}}"#;
-    const STUDIO_NEED_LOGIN: &str = r#"{"code":0,"msg":"success","data":{"sid":2555365402,
-        "uid":509239070,"alive":0,"roomId":"0","hls_src":"","needLogin":true,"passRoom":false}}"#;
-    const STUDIO_LOCKED: &str = r#"{"code":0,"msg":"success","data":{"sid":2555365402,
-        "uid":509239070,"alive":0,"roomId":"0","hls_src":"","needLogin":false,"passRoom":true}}"#;
+    const STUDIO_OFFLINE: &str = r#"{"code":0,"msg":"success","data":{"sid":2478571522,
+        "uid":300000003,"alive":0,"roomId":"0","hls_src":"","needLogin":false,"passRoom":false}}"#;
+    const STUDIO_NEED_LOGIN: &str = r#"{"code":0,"msg":"success","data":{"sid":2478571522,
+        "uid":300000003,"alive":0,"roomId":"0","hls_src":"","needLogin":true,"passRoom":false}}"#;
+    const STUDIO_LOCKED: &str = r#"{"code":0,"msg":"success","data":{"sid":2478571522,
+        "uid":300000003,"alive":0,"roomId":"0","hls_src":"","needLogin":false,"passRoom":true}}"#;
     /// Locked, yet carrying a playlist.
     const STUDIO_LOCKED_WITH_HLS: &str = r#"{"code":0,"msg":"success","data":{"alive":1,
-        "roomId":"6935768021135771674","hls_src":"https://cdn.example.com/list_x.m3u8",
+        "roomId":"7000000000000000002","hls_src":"https://cdn.example.com/list_x.m3u8",
         "needLogin":false,"passRoom":true}}"#;
     /// Live by `alive`/`roomId`, but without a playlist.
     const STUDIO_LIVE_WITHOUT_HLS: &str = r#"{"code":0,"msg":"success","data":{"alive":1,
-        "roomId":"6935768021135771674","hls_src":"","needLogin":false,"passRoom":false}}"#;
+        "roomId":"7000000000000000002","hls_src":"","needLogin":false,"passRoom":false}}"#;
     const ACCOUNT: &str = "uniqid=u; tid=t; yyuid=1";
 
     /// Runs a check whose profile requests are answered by `presence` and
@@ -364,7 +364,7 @@ mod tests {
     ) -> (Result<MediaInfo, ExtractorError>, ReceivedRequests) {
         let ok = |bodies: &[&'static str]| bodies.iter().map(|body| ("200 OK", *body)).collect();
         let mut bigo = Bigo::new(
-            "https://www.bigo.tv/725943857".to_string(),
+            "https://www.bigo.tv/400500600".to_string(),
             default_client(),
             cookies.map(str::to_owned),
             extras,
@@ -434,7 +434,7 @@ mod tests {
         media.unwrap();
 
         let request = received.lock().unwrap()[0].to_ascii_lowercase();
-        assert!(request.starts_with("get /?bigoid=725943857 "), "{request}");
+        assert!(request.starts_with("get /?bigoid=400500600 "), "{request}");
         assert!(!request.contains("\r\ncookie:"), "{request}");
     }
 
@@ -445,9 +445,9 @@ mod tests {
 
         assert!(!media.is_live);
         assert_eq!(media.title, "Back soon");
-        assert_eq!(media.artist, "Passi");
+        assert_eq!(media.artist, "Streamer");
         assert_eq!(extra(&media, "room_id"), None);
-        assert_eq!(metadata_uid(&media), "509239070");
+        assert_eq!(metadata_uid(&media), "300000003");
     }
 
     #[tokio::test]
@@ -488,7 +488,7 @@ mod tests {
         );
         assert_eq!(extra(&media, "room_id"), Some(ROOM_ID));
         assert_eq!(extra(&media, "stream_password"), Some("pw"));
-        assert_eq!(metadata_uid(&media), "509239070");
+        assert_eq!(metadata_uid(&media), "300000003");
     }
 
     #[tokio::test]
