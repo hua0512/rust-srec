@@ -2685,7 +2685,6 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-indicatif",
- "tracing-subscriber",
  "ts",
 ]
 
@@ -3741,7 +3740,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
- "tokio-util",
  "tracing",
  "tracing-appender",
  "tracing-indicatif",

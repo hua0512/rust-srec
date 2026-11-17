@@ -154,13 +154,6 @@ impl SessionOutputs {
         outputs.into_iter().map(|o| o.path).collect()
     }
 
-    /// Get all danmu outputs sorted by segment index.
-    pub fn get_sorted_danmu_outputs(&self) -> Vec<PathBuf> {
-        let mut outputs = self.danmu_outputs.to_vec();
-        outputs.sort_by_key(|o| o.segment_index);
-        outputs.into_iter().map(|o| o.path).collect()
-    }
-
     /// Video and danmu outputs grouped by segment, ascending by segment index.
     /// A segment that produced only one of the two kinds is still listed so its
     /// videos are never paired with a neighbouring segment's danmu.

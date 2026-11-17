@@ -345,11 +345,6 @@ impl MediaOutputDbModel {
             created_at: crate::database::time::now_ms(),
         }
     }
-
-    pub fn with_parent(mut self, parent_id: impl Into<String>) -> Self {
-        self.parent_media_output_id = Some(parent_id.into());
-        self
-    }
 }
 
 /// Media file types.

@@ -30,7 +30,6 @@ progress = ["dep:tracing-indicatif"]
 
 [dev-dependencies]
 criterion = { workspace = true }
-tracing-subscriber = { workspace = true }
 tokio-util = { workspace = true }
 tempfile = { workspace = true }
 mp4 = { path = "../mp4", features = ["test-utils"] }

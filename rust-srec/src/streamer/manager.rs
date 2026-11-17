@@ -566,9 +566,8 @@ where
     /// Only updates the fields that are provided (Some values).
     /// Persists to database first, then updates in-memory cache.
     ///
-    /// A `state` of [`StreamerState::Disabled`] additionally applies
-    /// [`StreamerMetadata::clear_error_tracking`] in the same write, so a re-enable
-    /// starts from a clean error history.
+    /// A `state` of [`StreamerState::Disabled`] also clears the error history
+    /// and backoff in the same write, so a re-enable can check immediately.
     ///
     /// # Events
     /// Always emits `ConfigUpdateEvent::StreamerMetadataUpdated`, including when the update changes

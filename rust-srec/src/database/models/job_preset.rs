@@ -134,34 +134,6 @@ impl JobPreset {
     }
 }
 
-/// Pipeline type identifier.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum PipelineType {
-    /// DAG pipeline with fan-in/fan-out support.
-    #[default]
-    Dag,
-}
-
-impl PipelineType {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Dag => "dag",
-        }
-    }
-}
-
-impl std::str::FromStr for PipelineType {
-    type Err = String;
-
-    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "dag" => Ok(Self::Dag),
-            _ => Err(format!("Unknown pipeline type: {}", s)),
-        }
-    }
-}
-
 /// Pipeline Preset configuration.
 ///
 /// Represents a reusable DAG pipeline configuration that supports
@@ -220,19 +192,6 @@ impl PipelinePreset {
     pub fn with_description(mut self, description: impl Into<String>) -> Self {
         self.description = Some(description.into());
         self
-    }
-
-    /// Get the pipeline type.
-    pub fn get_pipeline_type(&self) -> PipelineType {
-        self.pipeline_type
-            .as_ref()
-            .and_then(|s| s.parse::<PipelineType>().ok())
-            .unwrap_or(PipelineType::Dag)
-    }
-
-    /// Check if this is a DAG pipeline.
-    pub fn is_dag(&self) -> bool {
-        self.get_pipeline_type() == PipelineType::Dag
     }
 
     /// Get the DAG definition if this is a DAG pipeline.

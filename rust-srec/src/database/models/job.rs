@@ -332,29 +332,11 @@ impl JobDbModel {
         self.updated_at = crate::database::time::now_ms();
     }
 
-    /// Add an output path to this job.
-    pub fn add_output(&mut self, output: impl Into<String>) {
-        let mut outputs = self.get_outputs();
-        outputs.push(output.into());
-        self.set_outputs(&outputs);
-    }
-
     /// Mark the job as completed.
     pub fn mark_completed(&mut self) {
         let now = crate::database::time::now_ms();
         self.status = JobStatus::Completed.as_str().to_string();
         self.completed_at = Some(now);
-        self.updated_at = now;
-    }
-
-    /// Reset the job for retry.
-    pub fn reset_for_retry(&mut self) {
-        let now = crate::database::time::now_ms();
-        self.status = JobStatus::Pending.as_str().to_string();
-        self.started_at = None;
-        self.completed_at = None;
-        self.error = None;
-        self.retry_count += 1;
         self.updated_at = now;
     }
 
