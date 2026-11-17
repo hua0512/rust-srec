@@ -10294,8 +10294,8 @@ msgid "Slow"
 msgstr "较慢"
 
 #: src/components/config/shared/limits-card.tsx:96
-msgid "Smaller files are deleted, except those a quality change splits off."
-msgstr "小于此大小的文件会被删除，切换画质时切出的文件除外。"
+msgid "Smaller files are deleted unless they end because the resolution or codec changed."
+msgstr "小于此大小的文件会被删除，因分辨率或编码变化而结束的文件除外。"
 
 #: src/components/player/player-card.tsx:328
 msgid "Smooth"

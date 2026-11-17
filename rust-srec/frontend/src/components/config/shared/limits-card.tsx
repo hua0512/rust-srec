@@ -94,8 +94,8 @@ function LimitsCardImpl<TFieldValues extends FieldValues>({
               </FormControl>
               <FormDescription className={CONFIG_DESCRIPTION}>
                 <Trans>
-                  Smaller files are deleted, except those a quality change
-                  splits off.
+                  Smaller files are deleted unless they end because the
+                  resolution or codec changed.
                 </Trans>
               </FormDescription>
               <FormMessage />

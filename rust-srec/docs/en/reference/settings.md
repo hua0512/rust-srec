@@ -42,7 +42,7 @@ longer than what is tracked.
 ### Resource Limits {#resource-limits}
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `min_segment_size_bytes` | Minimum size before a segment is kept; smaller segments are deleted with their chat file. A piece that a change of resolution or codec (such as a quality switch) cuts out of a running recording is always kept | `1048576` (1 MiB) |
+| `min_segment_size_bytes` | Minimum size before a segment is kept; smaller segments are deleted with their chat file. A segment that ends because the stream's resolution or codec changed is kept even when it is smaller | `1048576` (1 MiB) |
 | `max_download_duration_secs` | Max duration in seconds before splitting the recording | `0` (disabled) |
 | `max_part_size_bytes` | Max size before splitting the recording | `8589934592` (8 GiB) |
 

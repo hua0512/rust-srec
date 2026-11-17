@@ -10294,8 +10294,8 @@ msgid "Slow"
 msgstr "Slow"
 
 #: src/components/config/shared/limits-card.tsx:96
-msgid "Smaller files are deleted, except those a quality change splits off."
-msgstr "Smaller files are deleted, except those a quality change splits off."
+msgid "Smaller files are deleted unless they end because the resolution or codec changed."
+msgstr "Smaller files are deleted unless they end because the resolution or codec changed."
 
 #: src/components/player/player-card.tsx:328
 msgid "Smooth"
