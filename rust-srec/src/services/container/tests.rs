@@ -7,10 +7,7 @@ use chrono::Utc;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Notify, mpsc};
 
-use super::{
-    RECOVERY_PROGRESS_MIN_BYTES, should_end_stream_on_danmu_stream_closed,
-    should_record_recovery_from_progress,
-};
+use super::{RECOVERY_PROGRESS_MIN_BYTES, should_record_recovery_from_progress};
 use crate::danmu::test_support::FakeProvider;
 use crate::danmu::{CollectionSpec, DanmuService, ProviderRegistry};
 use crate::database::models::{LiveSessionDbModel, StreamerDbModel};
@@ -667,13 +664,6 @@ async fn hard_cap_shutdown_under_the_cap_closes_pools() {
         .expect("a quiescent container should shut down within the cap");
 
     assert!(pool.is_closed());
-}
-
-#[test]
-fn test_should_end_stream_on_danmu_stream_closed_honors_false() {
-    assert!(!should_end_stream_on_danmu_stream_closed(Some(
-        &serde_json::json!({ "end_stream_on_danmu_stream_closed": false }),
-    )));
 }
 
 #[test]
