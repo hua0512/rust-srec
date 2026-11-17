@@ -600,6 +600,38 @@ async fn segments_smaller_than_the_minimum_are_discarded_and_not_pipelined() {
     app.shutdown().await;
 }
 
+/// A segment smaller than the minimum is kept when a mid-stream format change
+/// closed it; the small segment the broadcast's end closes is still discarded.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn segments_closed_by_a_format_change_are_kept_below_the_minimum() {
+    let fake = FakePlatform::start().await;
+    let room = fake.room("switching");
+    room.set_live(room.live("Switching quality"));
+    let app = TestApp::start_with(Seed::live()).await;
+    let token = app.admin_token().await;
+    let config = json!({ "min_segment_size_bytes": 10_000_000 });
+    let id = app.watch(&token, "Switching", &room, config).await;
+
+    room.wait_for_media_connection(1).await;
+    let mut flv = FlvLoop::tiny();
+    room.push(flv.stream(1));
+    room.push(flv.switch_to(FlvLoop::tiny_64(), 1));
+    room.set_offline();
+    room.end();
+
+    let session = app.ended_session(&token, &id).await;
+    let segments = app.segments(&token, session_id(&session)).await;
+    assert_eq!(segments.len(), 1, "{segments:?}");
+    assert_eq!(segments[0]["split_reason_code"], "video_codec_change");
+    assert_recorded(&segments[0]);
+    assert_eq!(
+        files_under(app.output_dir()),
+        [PathBuf::from(segment_path(&segments[0]))]
+    );
+
+    app.shutdown().await;
+}
+
 /// Platforms that name no CDN in a stream's extras are matched against
 /// preferred CDNs by URL; the preferred stream wins over one the platform
 /// ranks higher.

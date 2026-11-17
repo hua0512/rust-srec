@@ -5115,7 +5115,7 @@ msgstr "全局"
 #: src/components/config/platforms/tabs/general-tab.tsx:97
 #: src/components/config/shared/limits-card.tsx:67
 #: src/components/config/shared/limits-card.tsx:91
-#: src/components/config/shared/limits-card.tsx:115
+#: src/components/config/shared/limits-card.tsx:118
 #: src/components/config/shared/output-settings-card.tsx:140
 #: src/components/config/shared/record-danmu-card.tsx:96
 msgid "Global Default"
@@ -6417,7 +6417,7 @@ msgid "Max Key Retry Delay (ms)"
 msgstr "最大密钥重试延迟（毫秒）"
 
 #: src/components/config/global/resource-limits-card.tsx:74
-#: src/components/config/shared/limits-card.tsx:108
+#: src/components/config/shared/limits-card.tsx:111
 msgid "Max Part Size"
 msgstr "最大分片大小"
 
@@ -6561,10 +6561,6 @@ msgstr "最低优先级"
 #: src/components/config/shared/limits-card.tsx:84
 msgid "Min Segment Size"
 msgstr "最小分段大小"
-
-#: src/components/config/shared/limits-card.tsx:96
-msgid "Min size to keep."
-msgstr "保留的最小大小。"
 
 #: src/components/notifications/desktop-channel-dialog.tsx:127
 #: src/components/notifications/desktop-channel-dialog.tsx:139
@@ -10297,6 +10293,10 @@ msgctxt "danmu speed"
 msgid "Slow"
 msgstr "较慢"
 
+#: src/components/config/shared/limits-card.tsx:96
+msgid "Smaller files are deleted unless they end because the resolution or codec changed."
+msgstr "小于此大小的文件会被删除，因分辨率或编码变化而结束的文件除外。"
+
 #: src/components/player/player-card.tsx:328
 msgid "Smooth"
 msgstr "流畅"
@@ -10335,7 +10335,7 @@ msgstr "速度"
 msgid "Split after duration."
 msgstr "按时长分割。"
 
-#: src/components/config/shared/limits-card.tsx:120
+#: src/components/config/shared/limits-card.tsx:123
 msgid "Split after size."
 msgstr "按大小分割。"
 

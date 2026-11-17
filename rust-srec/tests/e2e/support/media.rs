@@ -7,6 +7,8 @@ use bytes::{BufMut, Bytes, BytesMut};
 /// Two seconds of 32x32, 1 fps H.264 with AAC audio, every video frame a
 /// keyframe.
 const TINY_FLV: &[u8] = include_bytes!("../../fixtures/media/tiny.flv");
+/// [`TINY_FLV`] at 64x64, so its video sequence header differs.
+const TINY_64_FLV: &[u8] = include_bytes!("../../fixtures/media/tiny64.flv");
 
 /// FLV file header (9 bytes) plus the first PreviousTagSize (4 bytes).
 const FLV_PREAMBLE_LEN: usize = 13;
@@ -25,17 +27,20 @@ struct Tag {
     bytes: Bytes,
 }
 
-/// An endless FLV stream made by repeating [`TINY_FLV`]'s media tags, each
+/// An endless FLV stream made by repeating a fixture's media tags, each
 /// repetition shifted by the fixture's length so timestamps keep rising.
 ///
 /// Each [`Self::stream`] starts with the file header, the script tag and the
 /// codec sequence headers, as a new connection does; every repetition, from
-/// either method, continues the timestamps where the previous one stopped.
+/// any method, continues the timestamps where the previous one stopped.
 pub struct FlvLoop {
-    header: Bytes,
+    preamble: Bytes,
+    /// The script tag and the codec sequence headers.
+    header_tags: Vec<Tag>,
     media: Vec<Tag>,
     period_ms: u32,
-    loops: u32,
+    /// Timestamp offset of the next repetition.
+    offset_ms: u32,
 }
 
 impl FlvLoop {
@@ -43,9 +48,14 @@ impl FlvLoop {
         Self::parse(TINY_FLV)
     }
 
+    /// [`Self::tiny`] at another resolution.
+    pub fn tiny_64() -> Self {
+        Self::parse(TINY_64_FLV)
+    }
+
     fn parse(file: &[u8]) -> Self {
         assert_eq!(&file[..3], b"FLV", "not an FLV file");
-        let mut header = BytesMut::from(&file[..FLV_PREAMBLE_LEN]);
+        let mut header_tags = Vec::new();
         let mut media = Vec::new();
         let mut offset = FLV_PREAMBLE_LEN;
         while offset < file.len() {
@@ -55,52 +65,73 @@ impl FlvLoop {
             let timestamp_ms =
                 u32::from_be_bytes([tag_header[7], tag_header[4], tag_header[5], tag_header[6]]);
             let end = offset + TAG_HEADER_LEN + size as usize + PREVIOUS_TAG_SIZE_LEN;
-            let tag = &file[offset..end];
-            let body = &tag[TAG_HEADER_LEN..];
+            let tag = Tag {
+                timestamp_ms,
+                bytes: Bytes::copy_from_slice(&file[offset..end]),
+            };
             // Byte 1 of an AVC or AAC body is its packet type: 0 is the
             // sequence header, 2 (AVC only) the end of the sequence.
-            match (kind, body[1]) {
-                (SCRIPT_TAG, _) | (VIDEO_TAG | AUDIO_TAG, 0) => header.extend_from_slice(tag),
+            match (kind, tag.bytes[TAG_HEADER_LEN + 1]) {
+                (SCRIPT_TAG, _) | (VIDEO_TAG | AUDIO_TAG, 0) => header_tags.push(tag),
                 (VIDEO_TAG, 2) => {}
-                (VIDEO_TAG | AUDIO_TAG, _) => media.push(Tag {
-                    timestamp_ms,
-                    bytes: Bytes::copy_from_slice(tag),
-                }),
+                (VIDEO_TAG | AUDIO_TAG, _) => media.push(tag),
                 (other, _) => panic!("unexpected FLV tag type {other}"),
             }
             offset = end;
         }
         let last = media.iter().map(|tag| tag.timestamp_ms).max().unwrap_or(0);
         Self {
-            header: header.freeze(),
+            preamble: Bytes::copy_from_slice(&file[..FLV_PREAMBLE_LEN]),
+            header_tags,
             media,
             period_ms: last + FRAME_GAP_MS,
-            loops: 0,
+            offset_ms: 0,
         }
     }
 
     /// The next repetition of the media tags, to continue a connection that
     /// [`Self::stream`] started.
     pub fn next_loop(&mut self) -> Bytes {
-        let offset = self.loops * self.period_ms;
-        self.loops += 1;
-        let mut out = BytesMut::with_capacity(self.media.iter().map(|tag| tag.bytes.len()).sum());
-        for tag in &self.media {
-            let timestamp = (tag.timestamp_ms + offset).to_be_bytes();
-            out.put_slice(&tag.bytes[..4]);
-            // FLV stores 24 timestamp bits, then the upper 8 bits.
-            out.put_slice(&[timestamp[1], timestamp[2], timestamp[3], timestamp[0]]);
-            out.put_slice(&tag.bytes[8..]);
-        }
+        let mut out = BytesMut::new();
+        put_shifted(&mut out, &self.media, self.offset_ms);
+        self.offset_ms += self.period_ms;
         out.freeze()
     }
 
     /// The header followed by the next `loops` repetitions.
     pub fn stream(&mut self, loops: u32) -> Bytes {
-        let mut out = BytesMut::from(&self.header[..]);
+        let mut out = BytesMut::from(&self.preamble[..]);
+        put_shifted(&mut out, &self.header_tags, 0);
         for _ in 0..loops {
             out.extend_from_slice(&self.next_loop());
         }
         out.freeze()
+    }
+
+    /// Continue the open connection with `next`'s script tag and sequence
+    /// headers, then `loops` repetitions of its media, as a source does when
+    /// it switches quality mid-stream. Later repetitions repeat `next`.
+    pub fn switch_to(&mut self, next: Self, loops: u32) -> Bytes {
+        *self = Self {
+            offset_ms: self.offset_ms,
+            ..next
+        };
+        let mut out = BytesMut::new();
+        put_shifted(&mut out, &self.header_tags, self.offset_ms);
+        for _ in 0..loops {
+            out.extend_from_slice(&self.next_loop());
+        }
+        out.freeze()
+    }
+}
+
+/// Append `tags` with `offset_ms` added to their timestamps.
+fn put_shifted(out: &mut BytesMut, tags: &[Tag], offset_ms: u32) {
+    for tag in tags {
+        let timestamp = (tag.timestamp_ms + offset_ms).to_be_bytes();
+        out.put_slice(&tag.bytes[..4]);
+        // FLV stores 24 timestamp bits, then the upper 8 bits.
+        out.put_slice(&[timestamp[1], timestamp[2], timestamp[3], timestamp[0]]);
+        out.put_slice(&tag.bytes[8..]);
     }
 }

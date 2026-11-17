@@ -42,7 +42,7 @@ For a retention or erasure policy this means removing a streamer is not the eras
 
 A pipeline can still change remote data, just not as part of a deletion the application offers: an `rclone` step set to `sync` removes files at the destination that are absent from the source, `args` passes arbitrary flags through to rclone, and an `execute` step runs whatever command it is given. Treat those steps as having the full reach of the credentials they run with.
 
-Three cases delete a file without a per-file request: a recorded segment below `min_segment_size_bytes` is removed from disk with its sibling chat file while the session is still running; a failed pipeline job's partial outputs are cleaned up; and [output retention](../reference/settings.md#retention), when enabled with **Delete records and files**, removes the tracked files of expired outputs. Output retention covers registered media outputs only, not every derivative or remote copy, so none of these substitutes for a complete retention policy.
+Three cases delete a file without a per-file request: a recorded segment below `min_segment_size_bytes` is removed from disk with its sibling chat file while the session is still running, unless it ended because the stream's resolution or codec changed; a failed pipeline job's partial outputs are cleaned up; and [output retention](../reference/settings.md#retention), when enabled with **Delete records and files**, removes the tracked files of expired outputs. Output retention covers registered media outputs only, not every derivative or remote copy, so none of these substitutes for a complete retention policy.
 
 Database changes roll back together if a media-record deletion fails. Optional filesystem deletion is not transactional.
 

@@ -365,6 +365,20 @@ impl SegmentInfo {
             _ => None,
         }
     }
+
+    /// Whether the writer closed this segment because the stream's video
+    /// codec, audio codec or resolution changed while it kept running, as it
+    /// does when the source switches quality.
+    pub(crate) fn split_by_format_change(&self) -> bool {
+        matches!(
+            self.split_reason,
+            Some(
+                SplitReason::VideoCodecChange { .. }
+                    | SplitReason::AudioCodecChange { .. }
+                    | SplitReason::ResolutionChange { .. }
+            )
+        )
+    }
 }
 
 fn split_reason_code(reason: &SplitReason) -> &'static str {

@@ -227,6 +227,7 @@ pub enum DownloadProgressEvent {
         size_bytes: u64,
         split_reason_code: Option<String>,
         split_reason_details_json: Option<String>,
+        split_by_format_change: bool,
     },
 }
 

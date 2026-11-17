@@ -40,7 +40,7 @@
 ### 资源限制 (Resource Limits) {#资源限制-resource-limits}
 | 设置 | 说明 | 默认值 |
 |------|------|--------|
-| `min_segment_size_bytes` | 保留分段的最小大小 | `1048576`（1 MiB） |
+| `min_segment_size_bytes` | 保留分段的最小大小，更小的分段会连同弹幕文件一起删除。因直播分辨率或编码变化而结束的分段即使更小也会保留 | `1048576`（1 MiB） |
 | `max_download_duration_secs` | 分段的最大时长（秒） | `0` (不限制) |
 | `max_part_size_bytes` | 分段的最大大小 | `8589934592`（8 GiB） |
 

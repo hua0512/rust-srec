@@ -22,6 +22,12 @@ ffmpeg -y \
   -f flv tiny.flv
 ```
 
+## `tiny64.flv`
+
+The same as `tiny.flv` at 64x64, so a stream that switches to it mid-recording
+changes its video sequence header; about 9 KB. Made with the `tiny.flv`
+command, with `size=64x64` and the output named `tiny64.flv`.
+
 ## `tiny0.ts`, `tiny1.ts`
 
 The same two seconds as `tiny.flv`, as two one-second MPEG-TS segments of an
