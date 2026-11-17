@@ -24,7 +24,10 @@
 //! lookup keeps finding a room for a while after it ends. If they still
 //! disagree about a room that exists (the lookup found it, or without a
 //! lookup the profile still links it), a signed-in check fails with
-//! `account_restricted`, so the account is set aside.
+//! `account_restricted`, so the account is set aside. A room the profile marks
+//! as broadcast for the app only is the exception: the website has no stream
+//! for it whatever the account, so that check fails without blaming the
+//! account.
 //!
 //! [`get_url`]: PlatformExtractor::get_url
 
@@ -67,17 +70,18 @@ const UNKNOWN_ID: i64 = 1;
 /// studio reads a live room as offline. Around a stream's start and end the
 /// two can disagree for a moment.
 const RECHECK_DELAY: Duration = Duration::from_secs(5);
-/// How long room lookups skip a route on which one could not reach BIGO's app
-/// servers. A network that drops them would otherwise hold every live check
-/// for the lookup's timeouts, about 30 s, before the web stream.
+/// How long room lookups skip a route on which BIGO could not be reached or
+/// turned a lookup away. A network that drops them would otherwise hold every live
+/// check for the lookup's timeouts, about 30 s, before the web stream, and
+/// one that BIGO refuses would only be refused again.
 const UNREACHABLE_FOR: Duration = Duration::from_secs(5 * 60);
 
-/// Routes, by their tunnel (`None`: direct), on which a room lookup could not
-/// reach BIGO's app servers, with when.
+/// Routes, by their tunnel (`None`: direct), on which BIGO could not be
+/// reached or turned a room lookup away, with when.
 static UNREACHABLE: Mutex<Vec<(Option<DanmuProxy>, std::time::Instant)>> = Mutex::new(Vec::new());
 
-/// Whether a room lookup on `route` could not reach BIGO's app servers in the
-/// last 5 minutes.
+/// Whether BIGO could not be reached or turned a room lookup away on `route`
+/// in the last 5 minutes.
 fn unreachable_recently(route: &Route) -> bool {
     UNREACHABLE
         .lock()
@@ -85,15 +89,17 @@ fn unreachable_recently(route: &Route) -> bool {
         .any(|(proxy, at)| *proxy == route.proxy && at.elapsed() < UNREACHABLE_FOR)
 }
 
-/// The room lookup `probe` on `route`, skipped while lookups on the route
-/// could not reach BIGO's app servers. One that cannot reach them, or that
-/// they turn away for its address, makes lookups skip the route for a while.
+/// The room lookup `probe` on `route`. One that cannot reach BIGO's app
+/// servers, that they turn away for its address, or whose ticket request the
+/// website refuses makes later lookups skip the route for a while.
 async fn lookup_on(
     route: &Route,
     probe: impl Future<Output = Result<RoomKind, NativeError>>,
 ) -> Lookup {
     if unreachable_recently(route) {
-        return Lookup::Failed("BIGO's app servers could not be reached a moment ago".to_owned());
+        return Lookup::Failed(
+            "BIGO could not be reached or refused a lookup a moment ago".to_owned(),
+        );
     }
     match probe.await {
         Ok(kind) => Lookup::Room(kind),
@@ -101,7 +107,10 @@ async fn lookup_on(
         Err(error) => {
             if matches!(
                 error,
-                NativeError::Io(_) | NativeError::Timeout(_) | NativeError::IpRestricted
+                NativeError::Io(_)
+                    | NativeError::Timeout(_)
+                    | NativeError::IpRestricted
+                    | NativeError::TicketRefused(_)
             ) {
                 let mut routes = UNREACHABLE.lock();
                 routes
@@ -291,7 +300,7 @@ impl Bigo {
         )
     }
 
-    /// Title, artist, cover and identity, all from the profile.
+    /// Title, artist, avatar and identity, all from the profile.
     fn media_info(&self, presence: &Presence, site_id: &str) -> MediaInfo {
         let nickname = presence.nickname.as_deref().filter(|s| !s.is_empty());
         let title = presence
@@ -301,7 +310,7 @@ impl Bigo {
             .or(nickname)
             .unwrap_or(site_id);
         let mut media = MediaInfo::builder(Self::BASE_URL, title, nickname.unwrap_or(site_id))
-            .cover_url_opt(presence.og_image.clone().filter(|s| !s.is_empty()))
+            .artist_url_opt(presence.og_image.clone().filter(|s| !s.is_empty()))
             .headers(self.extractor.get_platform_headers_map())
             .build();
         media.platform_metadata = metadata(presence.uid);
@@ -446,6 +455,13 @@ impl Bigo {
             stream.url = url;
             return Ok(());
         }
+        // The website reads a room broadcast for the app only as offline,
+        // whatever the account.
+        if presence.is_app_only() {
+            return Err(ExtractorError::Other(format!(
+                "bigo room {site_id} is broadcast for the app only and has no web stream"
+            )));
+        }
         // Without a lookup, a live profile without a link to its room is not
         // definite enough to set an account aside.
         let room_exists = match lookup {
@@ -515,14 +531,18 @@ mod tests {
 
     const ROOM_ID: u64 = 7000000000000000002;
     const LIVE: &str = r#"{"code":0,"msg":"success","data":{"uid":300000003,
-        "nickname":"Streamer","roomTopic":"","alive":1,"ogImage":"https://esx.bigo.sg/cover.jpg",
+        "nickname":"Streamer","roomTopic":"","alive":1,"ogImage":"https://esx.bigo.sg/profile_avatar.jpg",
+        "aliOSUrl":"bigolive://livevideoshow?roomid=7000000000000000002&uid=300000003&visitor=1"}}"#;
+    /// Live, broadcast for the app only.
+    const LIVE_APP_ONLY: &str = r#"{"code":0,"msg":"success","data":{"uid":300000003,
+        "nickname":"Streamer","alive":1,"roomStatus":4,
         "aliOSUrl":"bigolive://livevideoshow?roomid=7000000000000000002&uid=300000003&visitor=1"}}"#;
     /// Live, but without a link to the room.
     const LIVE_WITHOUT_ROOM: &str = r#"{"code":0,"msg":"success","data":{"uid":300000003,
         "nickname":"Streamer","alive":1,"aliOSUrl":"bigolive://livevideoshow?roomid=0&uid=300000003"}}"#;
     /// Just ended: the link still names the last room.
     const OFFLINE: &str = r#"{"code":0,"msg":"success","data":{"uid":300000003,
-        "nickname":"Streamer","roomTopic":"Back soon","alive":0,"ogImage":"https://esx.bigo.sg/cover.jpg",
+        "nickname":"Streamer","roomTopic":"Back soon","alive":0,"ogImage":"https://esx.bigo.sg/profile_avatar.jpg",
         "aliOSUrl":"bigolive://livevideoshow?roomid=7000000000000000002&uid=300000003&visitor=1"}}"#;
     const STUDIO_LIVE: &str = r#"{"code":0,"msg":"success","data":{"sid":2478571522,
         "uid":300000003,"alive":1,"roomId":"7000000000000000002","needLogin":false,"passRoom":false,
@@ -674,6 +694,11 @@ mod tests {
         assert!(!media.is_live);
         assert_eq!(media.title, "Back soon");
         assert_eq!(media.artist, "Streamer");
+        assert_eq!(
+            media.artist_url.as_deref(),
+            Some("https://esx.bigo.sg/profile_avatar.jpg")
+        );
+        assert_eq!(media.cover_url, None);
         assert_eq!(extra(&media, "room_id"), None);
         assert_eq!(metadata_uid(&media), "300000003");
     }
@@ -794,9 +819,10 @@ mod tests {
         check_native(&ended, room).await.unwrap();
     }
 
-    /// A room lookup that could not reach BIGO's app servers makes the
-    /// lookups on its route, and with them the native stream, wait a while.
-    /// Other failures and other routes still look rooms up.
+    /// A room lookup that could not reach BIGO's app servers, or whose ticket
+    /// request the website refused, makes the lookups on its route, and with
+    /// them the native stream, wait a while. Other failures and other routes
+    /// still look rooms up.
     #[tokio::test]
     async fn lookups_skip_a_route_that_could_not_reach_bigo() {
         // Routes of their own: the memory is shared by the whole process.
@@ -810,8 +836,11 @@ mod tests {
             ),
         };
         let (unreachable, refused, other) = (route(2), route(3), route(4));
+        let ticket_refused = route(5);
         let reset = std::io::Error::from(std::io::ErrorKind::ConnectionReset);
         lookup_on(&unreachable, async { Err(NativeError::Io(reset)) }).await;
+        let too_many = NativeError::TicketRefused(reqwest::StatusCode::TOO_MANY_REQUESTS);
+        lookup_on(&ticket_refused, async { Err(too_many) }).await;
         let rejected = NativeError::Rejected {
             request: "room lookup",
             result: 1,
@@ -819,8 +848,10 @@ mod tests {
         lookup_on(&refused, async { Err(rejected) }).await;
 
         let host = || async { Ok(RoomKind::Host) };
-        let skipped = lookup_on(&unreachable, host()).await;
-        assert!(matches!(skipped, Lookup::Failed(_)), "{skipped:?}");
+        for route in [unreachable, ticket_refused] {
+            let skipped = lookup_on(&route, host()).await;
+            assert!(matches!(skipped, Lookup::Failed(_)), "{skipped:?}");
+        }
         for route in [refused, other] {
             let found = lookup_on(&route, host()).await;
             assert!(matches!(found, Lookup::Room(RoomKind::Host)), "{found:?}");
@@ -871,6 +902,12 @@ mod tests {
         let caught_up = [STUDIO_OFFLINE, STUDIO_LIVE];
         let started = bigo(&[LIVE, LIVE], &caught_up, Some(ACCOUNT), None, exists()).await;
         assert_eq!(web_url(&started).await.unwrap(), PLAYLIST);
+
+        // A room broadcast for the app only has no web stream for any account.
+        let app_only = [LIVE_APP_ONLY, LIVE_APP_ONLY];
+        let app_only = bigo(&app_only, &both, Some(ACCOUNT), None, exists()).await;
+        let error = web_url(&app_only).await.unwrap_err();
+        assert_eq!(error.category(), "other", "{error:?}");
 
         let anonymous = bigo(&[LIVE, LIVE], &both, None, None, exists()).await;
         let error = web_url(&anonymous).await.unwrap_err();

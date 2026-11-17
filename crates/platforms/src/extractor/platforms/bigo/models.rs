@@ -26,9 +26,12 @@ pub struct Presence {
     pub nickname: Option<String>,
     #[serde(default)]
     pub room_topic: Option<String>,
-    /// The room's cover picture.
+    /// The broadcaster's profile picture, also while offline.
     #[serde(default)]
     pub og_image: Option<String>,
+    /// The room's broadcast state, read through [`Presence::is_app_only`].
+    #[serde(default, deserialize_with = "de_opt_i64ish")]
+    room_status: Option<i64>,
     /// App link to the room,
     /// `bigolive://livevideoshow?roomid=<room id>&uid=<uid>&visitor=1`, with
     /// `roomid=0` while offline.
@@ -36,7 +39,16 @@ pub struct Presence {
     pub ali_os_url: Option<String>,
 }
 
+/// The profile's `roomStatus` for a room broadcast for the app only: the
+/// website reads it as offline or without a stream.
+const APP_ONLY_ROOM: i64 = 4;
+
 impl Presence {
+    /// Whether the room is broadcast for the app only, without a web stream.
+    pub fn is_app_only(&self) -> bool {
+        self.room_status == Some(APP_ONLY_ROOM)
+    }
+
     /// The id of the broadcaster's live room, read from the app link.
     ///
     /// Only a `bigolive://livevideoshow` link whose `uid` is this
@@ -202,6 +214,7 @@ mod tests {
             nickname: None,
             room_topic: None,
             og_image: None,
+            room_status: None,
             ali_os_url: Some(link.to_owned()),
         };
         assert_eq!(

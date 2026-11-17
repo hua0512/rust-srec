@@ -11,6 +11,7 @@ use std::time::Duration;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD_PAD_INDIFFERENT;
 use rand::RngExt;
+use reqwest::StatusCode;
 use reqwest::header::{COOKIE, ORIGIN, REFERER, USER_AGENT};
 
 use super::{NativeError, Route};
@@ -51,7 +52,7 @@ pub fn device_id() -> String {
 /// so the ticket never belongs to an account.
 pub async fn guest(route: &Route) -> Result<Ticket, NativeError> {
     let device_id = device_id();
-    let data = request(route, None, &device_id).await?;
+    let data = request(route, WS_LINK_URL, None, &device_id).await?;
     Ticket::from_answer(&data, &device_id)
 }
 
@@ -62,19 +63,20 @@ pub async fn guest(route: &Route) -> Result<Ticket, NativeError> {
 /// The caller keeps one stable device id per account, however it derives
 /// it, so BIGO sees the same device across the listener's reconnects.
 pub async fn account(route: &Route, cookies: &str, device_id: &str) -> Result<Ticket, NativeError> {
-    let data = request(route, Some(cookies), device_id).await?;
+    let data = request(route, WS_LINK_URL, Some(cookies), device_id).await?;
     let user = data.real_user.as_deref().ok_or(NativeError::SignedOut)?;
     Ticket::from_answer(user, device_id)
 }
 
 async fn request(
     route: &Route,
+    url: &str,
     cookies: Option<&str>,
     device_id: &str,
 ) -> Result<WsLinkData, NativeError> {
     let mut request = route
         .client
-        .post(WS_LINK_URL)
+        .post(url)
         .header(USER_AGENT, DEFAULT_UA)
         .header(ORIGIN, "https://www.bigo.tv")
         .header(REFERER, "https://www.bigo.tv/")
@@ -83,7 +85,15 @@ async fn request(
     if let Some(cookies) = cookies {
         request = request.header(COOKIE, cookies);
     }
-    let answer: WsLinkResponse = request.send().await?.error_for_status()?.json().await?;
+    let response = request.send().await?;
+    let status = response.status();
+    if matches!(
+        status,
+        StatusCode::FORBIDDEN | StatusCode::TOO_MANY_REQUESTS
+    ) {
+        return Err(NativeError::TicketRefused(status));
+    }
+    let answer: WsLinkResponse = response.error_for_status()?.json().await?;
     if !answer.is_success() {
         return Err(NativeError::Protocol(format!(
             "ticket answer code {}",
@@ -128,4 +138,33 @@ fn non_empty(field: &Option<String>) -> Option<&str> {
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::extractor::test_support::serve_once;
+
+    /// A ticket request BIGO refuses is told apart from other HTTP failures,
+    /// so that room lookups can set its route aside.
+    #[tokio::test]
+    async fn refused_ticket_requests_are_told_apart() {
+        let route = Route {
+            client: reqwest::Client::new(),
+            proxy: None,
+        };
+        for (status, refused) in [
+            ("429 Too Many Requests", true),
+            ("403 Forbidden", true),
+            ("500 Internal Server Error", false),
+        ] {
+            let url = serve_once(status, "{}").await;
+            let error = request(&route, &url, None, &device_id()).await.unwrap_err();
+            assert_eq!(
+                matches!(error, NativeError::TicketRefused(_)),
+                refused,
+                "{status}: {error:?}"
+            );
+        }
+    }
 }

@@ -455,6 +455,7 @@ fn is_transient(error: &NativeError) -> bool {
     matches!(
         error,
         NativeError::Http(_)
+            | NativeError::TicketRefused(_)
             | NativeError::Io(_)
             | NativeError::Timeout(_)
             | NativeError::Protocol(_)
