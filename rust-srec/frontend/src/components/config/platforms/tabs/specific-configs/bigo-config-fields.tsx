@@ -37,6 +37,8 @@ import {
 import { bigoNotificationStatusQueryOptions } from '@/api/platform-configs';
 import { platformAccountsQueryOptions } from '@/api/credential-profiles';
 import type { BigoNotificationStatus } from '@/api/schemas/platform-configs';
+import { useHydrated } from '@/hooks/use-hydrated';
+import { formatRelativeTime } from '@/lib/datetime';
 
 interface BigoConfigFieldsProps<TFieldValues extends FieldValues> {
   form: UseFormReturn<TFieldValues>;
@@ -44,6 +46,8 @@ interface BigoConfigFieldsProps<TFieldValues extends FieldValues> {
   fieldName: Path<TFieldValues>;
   /** A template or streamer layer, which can only turn notifications off. */
   inherited?: boolean;
+  /** The platform row's ID, on the platform's own editor. */
+  platformId?: string;
 }
 
 /** The `notification_account` select's value for "no account". */
@@ -53,6 +57,7 @@ export function BigoConfigFields<TFieldValues extends FieldValues>({
   form,
   fieldName,
   inherited = false,
+  platformId,
 }: BigoConfigFieldsProps<TFieldValues>) {
   const { i18n } = useLingui();
   return (
@@ -103,8 +108,8 @@ export function BigoConfigFields<TFieldValues extends FieldValues>({
           description={
             inherited ? (
               <Trans>
-                Turned off, this streamer is checked by polling even while BIGO
-                live notifications are on in the Bigo platform settings.
+                Turn off to poll these streamers even while BIGO live
+                notifications are on in the Bigo platform settings.
               </Trans>
             ) : (
               <Trans>
@@ -117,7 +122,11 @@ export function BigoConfigFields<TFieldValues extends FieldValues>({
           checked={(value) => !!value}
         />
         {!inherited && (
-          <NotificationSettings form={form} fieldName={fieldName} />
+          <NotificationSettings
+            form={form}
+            fieldName={fieldName}
+            platformId={platformId}
+          />
         )}
       </section>
     </div>
@@ -131,9 +140,11 @@ export function BigoConfigFields<TFieldValues extends FieldValues>({
 function NotificationSettings<TFieldValues extends FieldValues>({
   form,
   fieldName,
+  platformId,
 }: {
   form: UseFormReturn<TFieldValues>;
   fieldName: Path<TFieldValues>;
+  platformId: string | undefined;
 }) {
   const enabledPath = configPath<TFieldValues>(fieldName, 'batch_detection');
   const accountPath = configPath<TFieldValues>(
@@ -147,11 +158,7 @@ function NotificationSettings<TFieldValues extends FieldValues>({
   return (
     <div className="space-y-4">
       {enabled && (
-        <AccountPicker
-          form={form}
-          name={accountPath}
-          platformId={status?.platform_id ?? undefined}
-        />
+        <AccountPicker form={form} name={accountPath} platformId={platformId} />
       )}
       {enabled && !account && (
         <Callout tone="info" icon={BellRing}>
@@ -241,7 +248,8 @@ function AccountPicker<TFieldValues extends FieldValues>({
               ) : (
                 <Trans>
                   The BIGO account that receives live notifications. Recording
-                  does not use it.
+                  never signs in to BIGO's app service with it, but uses its
+                  cookies if it is also chosen on the Network tab.
                 </Trans>
               )}
             </FormDescription>
@@ -269,9 +277,17 @@ function listenerStateLabel(state: BigoNotificationStatus['state']): ReactNode {
 
 /** The saved listener's state, as the server reports it. */
 function ListenerStatus({ status }: { status: BigoNotificationStatus }) {
+  const { i18n } = useLingui();
+  // Times relative to now wait for hydration, so they never differ from the server's render.
+  const hydrated = useHydrated();
   const subscribed = status.subscribed;
   const total = status.total;
   const connected = status.state === 'connected';
+  const missed = status.missed_pushes;
+  const lastMissed =
+    hydrated && status.last_missed_at
+      ? formatRelativeTime(status.last_missed_at, i18n.locale)
+      : null;
   return (
     <div
       role="status"
@@ -306,6 +322,17 @@ function ListenerStatus({ status }: { status: BigoNotificationStatus }) {
           </Trans>
         </span>
       </div>
+      {missed > 0 && (
+        <p className="text-amber-700 dark:text-amber-400">
+          {lastMissed ? (
+            <Trans>
+              Starts BIGO did not notify: {missed}, the last {lastMissed}
+            </Trans>
+          ) : (
+            <Trans>Starts BIGO did not notify: {missed}</Trans>
+          )}
+        </p>
+      )}
       {status.message && (
         <div className="space-y-1">
           <p className="font-medium text-muted-foreground">

@@ -227,19 +227,7 @@ async fn bigo_notifications(app: &TestApp, token: &str, settled: impl Fn(&Value)
     .await
 }
 
-#[tokio::test]
-async fn bigo_notifications_are_off_until_batch_detection_is_on() {
-    let app = TestApp::start().await;
-    let token = app.admin_token().await;
-
-    let status = bigo_notifications(&app, &token, |status| !status["platform_id"].is_null()).await;
-    assert_eq!(status["platform_id"], "platform-bigo", "{status}");
-    assert_eq!(status["state"], "disabled", "{status}");
-    assert_eq!(status["reason"], "notifications_off", "{status}");
-
-    app.shutdown().await;
-}
-
+/// Notifications are off until the platform turns batch detection on.
 /// Without a notification account the listener cannot sign in, so every Bigo
 /// streamer is polled, and the socket tells clients to refetch the status.
 #[tokio::test]
@@ -250,6 +238,11 @@ async fn bigo_streamers_are_polled_without_a_notification_account() {
     let id = app
         .disabled_streamer(&token, "Bigo", "https://www.bigo.tv/100000001")
         .await;
+
+    let status = bigo_notifications(&app, &token, |status| !status["platform_id"].is_null()).await;
+    assert_eq!(status["platform_id"], "platform-bigo", "{status}");
+    assert_eq!(status["state"], "disabled", "{status}");
+    assert_eq!(status["reason"], "notifications_off", "{status}");
 
     let path = "/api/config/platforms/platform-bigo";
     let mut platform = app.get_ok(path, &token).await;

@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
-import { useQuery } from '@tanstack/react-query';
 import {
   Clock,
   Calendar,
@@ -14,27 +13,11 @@ import {
   UserX,
   Hourglass,
   KeyRound,
-  BellRing,
-  Radar,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
 import { StreamerSchema } from '@/api/schemas';
 import type { UnavailableReason } from '@/api/schemas/credential-profiles';
-import type {
-  BigoNotificationStatus,
-  BigoStreamerReason,
-} from '@/api/schemas/platform-configs';
-import type { CredentialBlock, Streamer } from '@/api/schemas/streamer';
-import { bigoNotificationStatusQueryOptions } from '@/api/platform-configs';
-import { bigoReasonLabel } from '@/components/shared/bigo-notifications';
-import { getPlatformFromUrl } from '@/lib/platform';
-import { cn } from '@/lib/utils';
+import type { CredentialBlock } from '@/api/schemas/streamer';
 import { z } from 'zod';
 import { useMemo } from 'react';
 import { StatusInfoTooltip } from '@/components/shared/status-info-tooltip';
@@ -554,134 +537,4 @@ export function useStreamerStatus(
     i18n,
     hydrated,
   ]);
-}
-
-/** How a Bigo streamer is monitored, and why when it is polled. */
-export interface MonitoringMethod {
-  method: 'notifications' | 'polling';
-  reason: BigoStreamerReason | null;
-  /** The Bigo platform, for a link to its settings. */
-  platformId: string | null;
-}
-
-/**
- * The streamer's row of the shared Bigo notification status. A streamer the status does not list
- * yet (added since it was read) is polled for the listener's reason.
- */
-function monitoringMethodOf(
-  status: BigoNotificationStatus,
-  streamerId: string,
-): MonitoringMethod {
-  const row = status.streamers.find(
-    (entry) => entry.streamer_id === streamerId,
-  );
-  return row
-    ? { method: row.method, reason: row.reason, platformId: status.platform_id }
-    : {
-        method: 'polling',
-        reason: status.reason ?? 'unknown',
-        platformId: status.platform_id,
-      };
-}
-
-/**
- * How a Bigo streamer is monitored: live notifications, or polling. `null` for other platforms'
- * streamers, disabled ones, and until the status has loaded. Every caller shares one query.
- */
-export function useMonitoringMethod(
-  streamer: Pick<Streamer, 'id' | 'url' | 'enabled'>,
-): MonitoringMethod | null {
-  const isBigo =
-    streamer.enabled && getPlatformFromUrl(streamer.url) === 'bigo';
-  const { data } = useQuery({
-    ...bigoNotificationStatusQueryOptions,
-    enabled: isBigo,
-    select: (status) => monitoringMethodOf(status, streamer.id),
-  });
-  return isBigo ? (data ?? null) : null;
-}
-
-/** The Bigo monitoring method beside a streamer's status, with what it means. */
-export function MonitoringMethodBadge({
-  streamer,
-}: {
-  streamer: Pick<Streamer, 'id' | 'url' | 'enabled'>;
-}) {
-  const method = useMonitoringMethod(streamer);
-  if (!method) return null;
-  const notifications = method.method === 'notifications';
-  return (
-    <TooltipProvider delayDuration={200}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div
-            className={cn(
-              'flex items-center gap-1 h-6 px-2 rounded-full border text-[10px] font-medium cursor-help select-none',
-              notifications
-                ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20 dark:text-emerald-400 dark:border-emerald-400/30'
-                : 'bg-amber-500/10 text-amber-600 border-amber-500/20 dark:text-amber-400 dark:border-amber-400/30',
-            )}
-          >
-            {notifications ? (
-              <BellRing className="h-3 w-3" aria-hidden="true" />
-            ) : (
-              <Radar className="h-3 w-3" aria-hidden="true" />
-            )}
-            {notifications ? (
-              <Trans context="monitoring method">Notifications</Trans>
-            ) : (
-              <Trans context="monitoring method">Polling · inconsistent</Trans>
-            )}
-          </div>
-        </TooltipTrigger>
-        <TooltipContent
-          className="p-0 border-border/50 shadow-xl bg-background/95 backdrop-blur-md overflow-hidden"
-          arrowClassName="bg-background fill-background"
-          side="bottom"
-          align="start"
-        >
-          {notifications ? (
-            <StatusInfoTooltip
-              theme="blue"
-              icon={<BellRing className="h-3.5 w-3.5" />}
-              title={<Trans>Live notifications</Trans>}
-            >
-              <div className="text-xs text-muted-foreground leading-relaxed">
-                <Trans>
-                  BIGO tells rust-srec when this streamer goes live, and it is
-                  checked at once. Offline checks need no request of their own,
-                  apart from a real check at least every 10 minutes.
-                </Trans>
-              </div>
-            </StatusInfoTooltip>
-          ) : (
-            <StatusInfoTooltip
-              theme="amber"
-              icon={<Radar className="h-3.5 w-3.5" />}
-              title={<Trans context="monitoring method">Polling</Trans>}
-              subtitle={method.reason && bigoReasonLabel(method.reason)}
-            >
-              <div className="text-xs text-muted-foreground leading-relaxed">
-                <Trans>
-                  Every check asks BIGO whether the streamer is live. A stream
-                  start is noticed up to one check interval late, so short
-                  streams can be missed.
-                </Trans>
-              </div>
-              {method.platformId && (
-                <Link
-                  to="/config/platforms/$platformId"
-                  params={{ platformId: method.platformId }}
-                  className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-700 hover:underline dark:text-amber-400"
-                >
-                  <BellRing className="h-3 w-3" />
-                  <Trans>Set up live notifications</Trans>
-                </Link>
-              )}
-            </StatusInfoTooltip>
-          )}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
 }

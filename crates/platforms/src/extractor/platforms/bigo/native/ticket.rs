@@ -59,9 +59,8 @@ pub async fn guest(route: &Route) -> Result<Ticket, NativeError> {
 /// `device_id`. [`NativeError::SignedOut`] when BIGO does not see the
 /// cookies as signed in.
 ///
-/// The caller keeps one stable device id per account (made once with
-/// [`device_id`]), so BIGO sees the same device across the listener's
-/// reconnects.
+/// The caller keeps one stable device id per account, however it derives
+/// it, so BIGO sees the same device across the listener's reconnects.
 pub async fn account(route: &Route, cookies: &str, device_id: &str) -> Result<Ticket, NativeError> {
     let data = request(route, Some(cookies), device_id).await?;
     let user = data.real_user.as_deref().ok_or(NativeError::SignedOut)?;

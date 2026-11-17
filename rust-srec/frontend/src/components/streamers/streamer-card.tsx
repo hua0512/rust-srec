@@ -6,10 +6,8 @@ import { cn } from '../../lib/utils';
 import { useShallow } from 'zustand/react/shallow';
 import { ProgressIndicator } from './progress-indicator';
 import { StatusBadge } from './card/stream-status-badge';
-import {
-  MonitoringMethodBadge,
-  useStreamerStatus,
-} from './card/use-streamer-status';
+import { useStreamerStatus } from './card/use-streamer-status';
+import { MonitoringMethodBadge } from './card/monitoring-method-badge';
 import { StreamActionsMenu } from './card/stream-actions-menu';
 import { LosslessCutBadge } from './card/lossless-cut-action';
 import { StreamAvatarInfo } from './card/stream-avatar-info';

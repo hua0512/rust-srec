@@ -7,7 +7,7 @@ import { Trans } from '@lingui/react/macro';
 import { cn } from '@/lib/utils';
 import { useGoBack } from '@/hooks/use-go-back';
 import type { Streamer } from '@/api/schemas/streamer';
-import { MonitoringMethodBadge } from '@/components/streamers/card/use-streamer-status';
+import { MonitoringMethodBadge } from '@/components/streamers/card/monitoring-method-badge';
 
 interface StreamerHeaderProps {
   streamer: Pick<Streamer, 'id' | 'name' | 'url' | 'enabled'>;

@@ -5,7 +5,10 @@ import { Trans } from '@lingui/react/macro';
 import { AlertTriangle } from 'lucide-react';
 
 import { bigoNotificationStatusQueryOptions } from '@/api/platform-configs';
-import type { BigoStreamerReason } from '@/api/schemas/platform-configs';
+import type {
+  BigoNotificationStatus,
+  BigoStreamerReason,
+} from '@/api/schemas/platform-configs';
 import { Callout } from '@/components/shared/callout';
 import { getPlatformFromUrl } from '@/lib/platform';
 
@@ -80,17 +83,51 @@ export function BigoPollingWarning({
   );
 }
 
+/** Polling reasons that pass on their own or make monitoring moot, which need no warning. */
+const UNWARNED: ReadonlySet<BigoStreamerReason> = new Set([
+  'subscribing',
+  'streamer_disabled',
+]);
+
 /**
- * The polling warning for a streamer being added or edited, while its URL is a Bigo one and Bigo
- * live notifications are not connected. Decided from the listener alone: a streamer that is not
- * saved yet has no row of its own.
+ * Why the streamer is polled, or `null` when it uses notifications. A saved streamer is judged by
+ * its own row; one the status does not list yet, by the listener's state.
  */
-export function BigoPollingNotice({ url }: { url: string | undefined }) {
+function pollingReason(
+  status: BigoNotificationStatus,
+  streamerId: string | undefined,
+): BigoStreamerReason | null {
+  const row = streamerId
+    ? status.streamers.find((entry) => entry.streamer_id === streamerId)
+    : undefined;
+  if (row) return row.method === 'polling' ? (row.reason ?? 'unknown') : null;
+  return status.state === 'connected' ? null : (status.reason ?? 'unknown');
+}
+
+/**
+ * The polling warning for a streamer being added or edited, while its URL is a Bigo one and the
+ * streamer would be polled. A listener that is connecting warns about nothing yet.
+ */
+export function BigoPollingNotice({
+  url,
+  streamerId,
+}: {
+  url: string | undefined;
+  streamerId?: string;
+}) {
   const isBigo = !!url && getPlatformFromUrl(url) === 'bigo';
   const { data: status } = useQuery({
     ...bigoNotificationStatusQueryOptions,
     enabled: isBigo,
   });
-  if (!isBigo || !status || status.state === 'connected') return null;
+  if (!isBigo || !status) return null;
+  const reason = pollingReason(status, streamerId);
+  if (
+    !reason ||
+    UNWARNED.has(reason) ||
+    (reason === 'disconnected' && status.state === 'connecting')
+  ) {
+    return null;
+  }
   return <BigoPollingWarning platformId={status.platform_id} />;
 }

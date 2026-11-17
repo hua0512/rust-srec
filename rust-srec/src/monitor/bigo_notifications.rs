@@ -28,9 +28,11 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use platforms_parser::extractor::error::ExtractorError;
 use platforms_parser::extractor::factory::ExtractorSelection;
+use platforms_parser::extractor::platforms::bigo::metadata_uid;
 use platforms_parser::extractor::platforms::bigo::native::listener::{Event, Listener};
 use platforms_parser::extractor::platforms::bigo::native::{NativeError, Route, ticket};
 use serde::Serialize;
@@ -41,16 +43,16 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
 
 use crate::config::{ConfigService, ConfigUpdateEvent};
-use crate::credentials::{CredentialExecutionService, OperationDeadline};
+use crate::credentials::{CredentialExecutionService, CredentialValidity, OperationDeadline};
 use crate::database::repositories::config::SqlxConfigRepository;
 use crate::database::repositories::streamer::SqlxStreamerRepository;
+use crate::proxies::ResolvedRoute;
 use crate::scheduler::feedback::SchedulerFeedback;
 use crate::streamer::StreamerManager;
 use crate::streamer::platform_metadata::StoredPlatformMetadata;
 use crate::utils::task_supervisor::TaskSupervisor;
 
-/// The `platform_name` of the Bigo platform row, and the platform of the
-/// metadata its checks store.
+/// The `platform_name` of the Bigo platform row.
 const PLATFORM: &str = "bigo";
 
 /// The longest a streamer goes without a real check while its offline polls
@@ -94,9 +96,17 @@ const MAX_BACKOFF: Duration = Duration::from_secs(30);
 /// account do not evict each other every few seconds.
 const STABLE_CONNECTION: Duration = Duration::from_secs(60);
 
-/// Retry period while BIGO sees the account as signed out. A new login or any
-/// other edit of the profile retries at once.
-const SIGNED_OUT_RETRY: Duration = Duration::from_secs(15 * 60);
+/// Retry period after an answer that trying again soon would not change: BIGO
+/// still sees the account as signed out after a refresh, or refuses its login.
+/// A settings change, a new login included, retries at once.
+const SLOW_RETRY: Duration = Duration::from_secs(15 * 60);
+
+/// A check that finds a subscribed streamer live without a push for it this
+/// recent counts as a missed push. The profile API can read a pushed start
+/// offline through every real check of [`PENDING_LIMIT`], and polls are then
+/// answered for up to [`SAFETY_CHECK`], so the window covers both.
+const MISSED_PUSH_WINDOW: Duration =
+    Duration::from_secs(PENDING_LIMIT.as_secs() + SAFETY_CHECK.as_secs());
 
 /// Bound on refreshing a signed-out account.
 const REFRESH_DEADLINE: Duration = Duration::from_secs(60);
@@ -180,6 +190,12 @@ pub struct BigoNotificationStatus {
     pub total: usize,
     /// Every Bigo streamer, disabled ones included.
     pub streamers: Vec<StreamerNotificationMethod>,
+    /// Starts that a check found on a subscribed streamer without a push from
+    /// BIGO, since rust-srec started. Usually the account's own live
+    /// notification setting in BIGO is off.
+    pub missed_pushes: u64,
+    /// When the latest of those was found.
+    pub last_missed_at: Option<DateTime<Utc>>,
 }
 
 /// The listener's state as the status reports it.
@@ -189,6 +205,8 @@ struct ListenerStatus {
     state: ListenerState,
     reason: Option<PollingReason>,
     message: Option<String>,
+    missed_pushes: u64,
+    last_missed_at: Option<DateTime<Utc>>,
 }
 
 /// The Bigo platform's notification settings as the listener acts on them.
@@ -199,13 +217,17 @@ enum Settings {
     /// `batch_detection` is off, or there is no Bigo platform.
     Off,
     NoAccount,
-    /// The account's profile id and row version, or no version when the
-    /// profile is missing, disabled or not a Bigo account. Any edit of the
-    /// profile, a new login included, changes the version and starts the
-    /// connection over.
+    /// The chosen profile is missing, disabled or not a Bigo account.
+    Unusable {
+        id: String,
+    },
+    /// The account's profile id, row version and route. Any edit of the
+    /// profile, a new login included, changes the version, and a proxy
+    /// change the route; either starts the connection over.
     Account {
         id: String,
-        version: Option<i64>,
+        version: i64,
+        route: ResolvedRoute,
     },
 }
 
@@ -226,6 +248,19 @@ struct Entry {
     /// Ends are not pushed, so such a streamer is checked for real until a
     /// check finds it offline.
     last_live: bool,
+    /// When the latest push that may have been this streamer's arrived.
+    last_push: Option<Instant>,
+}
+
+impl Entry {
+    fn new(member: Member) -> Self {
+        Self {
+            member,
+            last_check: None,
+            last_live: false,
+            last_push: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -248,7 +283,6 @@ struct Pending {
 /// is passed in, so the rule is tested without a clock.
 #[derive(Debug, Default)]
 struct Rule {
-    connected: bool,
     streamers: HashMap<String, Entry>,
     /// Subscriptions on the current connection, by uid.
     subscriptions: HashMap<u32, Subscription>,
@@ -271,34 +305,40 @@ impl Rule {
         let Some(entry) = self.streamers.get(streamer_id) else {
             return false;
         };
-        // Subscriptions belong to the current connection, so none is
-        // acknowledged while disconnected.
-        let Some(Subscription::Acknowledged(subscribed_at)) = entry
-            .member
-            .uid
-            .filter(|_| entry.member.excluded.is_none())
-            .and_then(|uid| self.subscriptions.get(&uid))
-        else {
+        let Some(subscribed_at) = subscribed_at(&self.subscriptions, entry) else {
             return false;
         };
         // A check from before the subscription may have missed a start that
         // happened while the connection was down.
         !entry.last_live
             && entry.last_check.is_some_and(|checked| {
-                checked >= *subscribed_at && now.saturating_duration_since(checked) < SAFETY_CHECK
+                checked >= subscribed_at && now.saturating_duration_since(checked) < SAFETY_CHECK
             })
     }
 
-    fn checked(&mut self, streamer_id: &str, started: Instant, live: bool) {
+    /// Records a successful individual check. Returns whether it found a
+    /// start BIGO did not push: the streamer is subscribed, its previous
+    /// check after the subscription read it offline, and no push that may
+    /// have been its own came within [`MISSED_PUSH_WINDOW`].
+    fn checked(&mut self, streamer_id: &str, started: Instant, live: bool) -> bool {
+        let mut missed = false;
         if let Some(entry) = self.streamers.get_mut(streamer_id)
             && entry.last_check.is_none_or(|last| started >= last)
         {
+            missed = live
+                && !entry.last_live
+                && subscribed_at(&self.subscriptions, entry)
+                    .is_some_and(|at| entry.last_check.is_some_and(|last| last >= at))
+                && entry.last_push.is_none_or(|push| {
+                    started.saturating_duration_since(push) >= MISSED_PUSH_WINDOW
+                });
             entry.last_check = Some(started);
             entry.last_live = live;
         }
         if live {
             self.pending.remove(streamer_id);
         }
+        missed
     }
 
     fn pushed(&mut self, uid: Option<u32>, now: Instant) {
@@ -313,8 +353,9 @@ impl Rule {
         };
         self.last_named_push = Some(now);
         self.wake_all_at = None;
-        for (id, entry) in &self.streamers {
+        for (id, entry) in &mut self.streamers {
             if entry.member.uid == Some(uid) && entry.member.excluded.is_none() {
+                entry.last_push = Some(now);
                 self.pending.insert(
                     id.clone(),
                     Pending {
@@ -344,6 +385,9 @@ impl Rule {
             // PENDING_LIMIT. Rechecking everyone on every start would be
             // polling again.
             for id in self.subscribed_ids() {
+                if let Some(entry) = self.streamers.get_mut(&id) {
+                    entry.last_push = Some(now);
+                }
                 self.pending.entry(id).or_insert_with(|| Pending {
                     until: now + PENDING_LIMIT,
                     checks: VecDeque::from([now]),
@@ -366,34 +410,27 @@ impl Rule {
     fn subscribed_ids(&self) -> Vec<String> {
         self.streamers
             .iter()
-            .filter(|(_, entry)| {
-                entry.member.excluded.is_none()
-                    && entry.member.uid.is_some_and(|uid| {
-                        matches!(
-                            self.subscriptions.get(&uid),
-                            Some(Subscription::Acknowledged(_))
-                        )
-                    })
-            })
+            .filter(|(_, entry)| subscribed_at(&self.subscriptions, entry).is_some())
             .map(|(id, _)| id.clone())
             .collect()
     }
 
     /// Replaces the streamer set, keeping what is known about streamers that
-    /// stay. Returns whether a uid that needs subscribing appeared.
+    /// stay unchanged. Returns whether a uid that needs subscribing appeared.
     fn set_streamers(&mut self, members: HashMap<String, Member>) -> bool {
         let before = self.wanted_uids();
         self.streamers.retain(|id, _| members.contains_key(id));
         self.pending.retain(|id, _| members.contains_key(id));
         for (id, member) in members {
-            self.streamers
-                .entry(id)
-                .and_modify(|entry| entry.member = member.clone())
-                .or_insert(Entry {
-                    member,
-                    last_check: None,
-                    last_live: false,
-                });
+            // A streamer that was excluded got no follow-up checks for a
+            // push meanwhile, so its last check says nothing about now.
+            if self
+                .streamers
+                .get(&id)
+                .is_none_or(|entry| entry.member != member)
+            {
+                self.streamers.insert(id, Entry::new(member));
+            }
         }
         !self.wanted_uids().is_subset(&before)
     }
@@ -406,13 +443,9 @@ impl Rule {
             .collect()
     }
 
-    fn connected(&mut self) {
-        self.connected = true;
-        self.subscriptions.clear();
-    }
-
+    /// Ends the connection's subscriptions. Every connection starts after
+    /// this, so it starts with none.
     fn disconnected(&mut self) {
-        self.connected = false;
         self.subscriptions.clear();
         self.wake_all_at = None;
     }
@@ -428,24 +461,20 @@ impl Rule {
     }
 
     fn has_unsent(&self) -> bool {
-        self.connected
-            && self
-                .wanted_uids()
-                .iter()
-                .any(|uid| !self.subscriptions.contains_key(uid))
+        self.wanted_uids()
+            .iter()
+            .any(|uid| !self.subscriptions.contains_key(uid))
     }
 
     fn subscribed(&mut self, uid: u32, accepted: bool, now: Instant) {
-        if self.connected {
-            self.subscriptions.insert(
-                uid,
-                if accepted {
-                    Subscription::Acknowledged(now)
-                } else {
-                    Subscription::Refused
-                },
-            );
-        }
+        self.subscriptions.insert(
+            uid,
+            if accepted {
+                Subscription::Acknowledged(now)
+            } else {
+                Subscription::Refused
+            },
+        );
     }
 
     /// Each streamer's method, and the subscribed and total counts. `listener`
@@ -499,6 +528,19 @@ impl Rule {
     }
 }
 
+/// When BIGO confirmed the streamer's subscription on the current connection,
+/// if it did and the streamer is not excluded.
+fn subscribed_at(subscriptions: &HashMap<u32, Subscription>, entry: &Entry) -> Option<Instant> {
+    let uid = entry
+        .member
+        .uid
+        .filter(|_| entry.member.excluded.is_none())?;
+    match subscriptions.get(&uid) {
+        Some(Subscription::Acknowledged(at)) => Some(*at),
+        _ => None,
+    }
+}
+
 /// What the listener needs from the rest of the backend.
 #[derive(Clone)]
 pub(crate) struct BigoNotificationDeps {
@@ -532,6 +574,8 @@ impl Default for BigoNotifications {
                 state: ListenerState::Disabled,
                 reason: Some(PollingReason::NotificationsOff),
                 message: None,
+                missed_pushes: 0,
+                last_missed_at: None,
             }),
             schedule: Notify::new(),
             subscriptions: Notify::new(),
@@ -552,7 +596,19 @@ impl BigoNotifications {
 
     /// Records a successful individual check that started at `started`.
     pub(crate) fn checked(&self, streamer_id: &str, started: Instant, live: bool) {
-        self.rule.lock().checked(streamer_id, started, live);
+        if !self.rule.lock().checked(streamer_id, started, live) {
+            return;
+        }
+        warn!(
+            streamer_id,
+            "A Bigo streamer went live without a notification from BIGO; check that live notifications are on in the notification account's BIGO settings"
+        );
+        {
+            let mut listener = self.listener.lock();
+            listener.missed_pushes += 1;
+            listener.last_missed_at = Some(Utc::now());
+        }
+        self.status_changed.notify_one();
     }
 
     pub fn status(&self) -> BigoNotificationStatus {
@@ -566,6 +622,8 @@ impl BigoNotifications {
             subscribed,
             total,
             streamers,
+            missed_pushes: listener.missed_pushes,
+            last_missed_at: listener.last_missed_at,
         }
     }
 
@@ -597,15 +655,24 @@ impl BigoNotifications {
         cancel: CancellationToken,
     ) {
         let (settings_tx, settings_rx) = watch::channel(Settings::Unknown);
+        // Either task ending stops the other.
+        let cancel = cancel.child_token();
+        let stop = Stop {
+            notifications: self.clone(),
+            cancel: cancel.clone(),
+        };
         let this = self.clone();
         let housekeeping_deps = deps.clone();
         let housekeeping_cancel = cancel.clone();
+        let housekeeping_stop = stop.clone();
         supervisor.spawn("bigo notification housekeeping", async move {
+            let _stop = housekeeping_stop;
             this.housekeeping(housekeeping_deps, settings_tx, housekeeping_cancel)
                 .await;
         });
         let this = self.clone();
         supervisor.spawn("bigo notification listener", async move {
+            let _stop = stop;
             this.listen(deps, settings_rx, cancel).await;
         });
     }
@@ -651,10 +718,10 @@ impl BigoNotifications {
                 () = self.schedule.notified() => {}
                 event = events.recv(), if events_open => match event {
                     Ok(event) => {
-                        dirty = affects_notifications(&event);
+                        dirty = self.affects(&deps, &event);
                         // A burst of events costs one reconciliation.
                         while let Ok(event) = events.try_recv() {
-                            dirty |= affects_notifications(&event);
+                            dirty = dirty || self.affects(&deps, &event);
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(_)) => dirty = true,
@@ -707,17 +774,27 @@ impl BigoNotifications {
             (false, _) => Settings::Off,
             (true, None) => Settings::NoAccount,
             (true, Some(id)) => {
-                let version = match deps.credentials.repository().get(&id).await {
-                    Ok(profile) if profile.enabled && profile.platform_config_id == platform.id => {
-                        Some(profile.version)
+                let repository = deps.credentials.repository();
+                let read = async {
+                    match repository.get(&id).await {
+                        Ok(profile)
+                            if profile.enabled && profile.platform_config_id == platform.id =>
+                        {
+                            let route = repository.account_route(&profile, None).await?;
+                            Ok(Some((profile.version, route)))
+                        }
+                        Ok(_) | Err(crate::Error::NotFound { .. }) => Ok(None),
+                        Err(error) => Err(error),
                     }
-                    Ok(_) | Err(crate::Error::NotFound { .. }) => None,
+                };
+                match read.await {
+                    Ok(Some((version, route))) => Settings::Account { id, version, route },
+                    Ok(None) => Settings::Unusable { id },
                     Err(error) => {
                         warn!(profile_id = %id, %error, "Could not read the notification account");
                         return None;
                     }
-                };
-                Settings::Account { id, version }
+                }
             }
         };
 
@@ -776,6 +853,7 @@ impl BigoNotifications {
         cancel: CancellationToken,
     ) {
         let mut backoff = FIRST_BACKOFF;
+        let mut last_refresh = None;
         loop {
             let current = settings.borrow_and_update().clone();
             // How long to wait before trying again; `None` waits for a
@@ -794,7 +872,7 @@ impl BigoNotifications {
                     self.set_listener(ListenerState::Error, Some(PollingReason::NoAccount), None);
                     None
                 }
-                Settings::Account { version: None, .. } => {
+                Settings::Unusable { .. } => {
                     self.set_listener(
                         ListenerState::Error,
                         Some(PollingReason::AccountUnusable),
@@ -802,33 +880,36 @@ impl BigoNotifications {
                     );
                     None
                 }
-                Settings::Account {
-                    id,
-                    version: Some(_),
-                } => {
+                Settings::Account { id, route, .. } => {
                     let message = self.listener.lock().message.clone();
                     self.set_listener(
                         ListenerState::Connecting,
                         Some(PollingReason::Disconnected),
                         message,
                     );
-                    let mut connected_at = None;
+                    let mut session = Session {
+                        profile_id: &id,
+                        route: &route,
+                        connected_at: None,
+                        last_refresh: &mut last_refresh,
+                    };
                     let ended = tokio::select! {
                         () = cancel.cancelled() => return,
-                        ended = self.session(&deps, &id, &mut settings, &mut connected_at) => ended,
+                        ended = self.session(&deps, &mut session, &mut settings) => ended,
                     };
                     self.rule.lock().disconnected();
-                    let lived = connected_at.map(|at: Instant| at.elapsed());
+                    let lived = session.connected_at.map(|at| at.elapsed());
                     match ended {
                         Ended::SettingsChanged => {
                             backoff = FIRST_BACKOFF;
                             continue;
                         }
-                        Ended::Unusable(message) => {
+                        Ended::NeedsLogin => {
+                            warn!(profile_id = %id, "Bigo notification account needs a new login");
                             self.set_listener(
                                 ListenerState::Error,
-                                Some(PollingReason::AccountUnusable),
-                                Some(message),
+                                Some(PollingReason::SignedOut),
+                                Some("The account needs a new login".to_owned()),
                             );
                             None
                         }
@@ -840,7 +921,17 @@ impl BigoNotifications {
                                 Some(message),
                             );
                             backoff = FIRST_BACKOFF;
-                            Some(SIGNED_OUT_RETRY)
+                            Some(SLOW_RETRY)
+                        }
+                        Ended::Refused(message) => {
+                            warn!(profile_id = %id, %message, retry_in = ?SLOW_RETRY, "BIGO refused the notification login");
+                            self.set_listener(
+                                ListenerState::Error,
+                                Some(PollingReason::Disconnected),
+                                Some(message),
+                            );
+                            backoff = FIRST_BACKOFF;
+                            Some(SLOW_RETRY)
                         }
                         Ended::Failed(message) => {
                             if lived.is_some_and(|lived| lived >= STABLE_CONNECTION) {
@@ -867,36 +958,23 @@ impl BigoNotifications {
         }
     }
 
-    /// One connection with the account `profile_id`: sign in, subscribe, and
-    /// relay events until it fails or the settings change. `connected_at` is
-    /// set once Linkd accepted the login.
+    /// One connection: sign in, subscribe, and relay events until it fails or
+    /// the settings change.
     async fn session(
         &self,
         deps: &BigoNotificationDeps,
-        profile_id: &str,
+        session: &mut Session<'_>,
         settings: &mut watch::Receiver<Settings>,
-        connected_at: &mut Option<Instant>,
     ) -> Ended {
+        let profile_id = session.profile_id;
         let connect = async {
-            let (route, cookies) = self.account(deps, profile_id).await?;
+            let route = native_route(session.route)?;
             let device_id = device_id(profile_id);
+            let cookies = account_cookies(deps, profile_id).await?;
             let ticket = match ticket::account(&route, &cookies, &device_id).await {
                 Err(NativeError::SignedOut) => {
-                    // The website may only need the login refreshed. A
-                    // refresh that finds it signed out marks the account as
-                    // needing a new login, which the account list shows.
-                    deps.credentials
-                        .refresh_profile(profile_id, OperationDeadline::new(REFRESH_DEADLINE))
-                        .await
-                        .map_err(|error| match error {
-                            crate::Error::Extractor(ExtractorError::Authentication { .. }) => {
-                                Ended::SignedOut(error.to_string())
-                            }
-                            error => Ended::Failed(format!(
-                                "BIGO sees the account as signed out, and refreshing it failed: {error}"
-                            )),
-                        })?;
-                    let (route, cookies) = self.account(deps, profile_id).await?;
+                    self.refresh(deps, profile_id, session.last_refresh).await?;
+                    let cookies = account_cookies(deps, profile_id).await?;
                     ticket::account(&route, &cookies, &device_id)
                         .await
                         .map_err(|error| match error {
@@ -911,7 +989,12 @@ impl BigoNotifications {
             };
             Listener::connect(&route, &ticket)
                 .await
-                .map_err(|error| Ended::Failed(error.to_string()))
+                .map_err(|error| match error {
+                    NativeError::IpRestricted | NativeError::Rejected { .. } => {
+                        Ended::Refused(error.to_string())
+                    }
+                    error => Ended::Failed(error.to_string()),
+                })
         };
         let mut listener = tokio::select! {
             biased;
@@ -922,8 +1005,7 @@ impl BigoNotifications {
             },
         };
         info!(profile_id, "Bigo notification listener connected");
-        *connected_at = Some(Instant::now());
-        self.rule.lock().connected();
+        session.connected_at = Some(Instant::now());
         self.set_listener(ListenerState::Connected, None, None);
 
         let mut pace = tokio::time::interval(SUBSCRIBE_INTERVAL);
@@ -960,49 +1042,144 @@ impl BigoNotifications {
         }
     }
 
-    /// The account's native route and cookies, checked to be usable.
-    async fn account(
+    /// Refreshes the login of an account BIGO sees as signed out, unless
+    /// only a new login can help or the listener refreshed it within
+    /// [`SLOW_RETRY`]: a refresh that changes the cookies starts the
+    /// connection over, which must not refresh again at once.
+    async fn refresh(
         &self,
         deps: &BigoNotificationDeps,
         profile_id: &str,
-    ) -> Result<(Route, String), Ended> {
-        let repository = deps.credentials.repository();
-        let profile = repository
-            .get(profile_id)
+        last_refresh: &mut Option<Instant>,
+    ) -> Result<(), Ended> {
+        let health = deps
+            .credentials
+            .repository()
+            .health(profile_id)
             .await
             .map_err(|error| Ended::Failed(error.to_string()))?;
-        let platform_id = self.listener.lock().platform_id.clone();
-        if !profile.enabled || platform_id.as_deref() != Some(profile.platform_config_id.as_str()) {
-            return Err(Ended::Unusable(
-                "The account is disabled or not a Bigo account".to_owned(),
+        if health.is_some_and(|health| health.validity == CredentialValidity::Invalid) {
+            return Err(Ended::NeedsLogin);
+        }
+        if last_refresh.is_some_and(|at| at.elapsed() < SLOW_RETRY) {
+            return Err(Ended::SignedOut(
+                "BIGO still sees the account as signed out after a refresh".to_owned(),
             ));
         }
-        let cookies = profile
-            .material()
-            .map_err(|error| Ended::Failed(error.to_string()))?
-            .cookies;
-        let route = repository
-            .account_route(&profile, None)
+        *last_refresh = Some(Instant::now());
+        deps.credentials
+            .refresh_profile(profile_id, OperationDeadline::new(REFRESH_DEADLINE))
             .await
-            .map_err(|error| Ended::Failed(error.to_string()))?;
-        let client = crate::credentials::provider_client(&route.target)
-            .map_err(|error| Ended::Failed(error.to_string()))?;
-        let proxy = route
-            .danmu_proxy(crate::proxies::SystemProxy::current())
-            .map_err(|error| Ended::Failed(error.to_string()))?;
-        Ok((Route { client, proxy }, cookies))
+            .map_err(|error| match error {
+                // The refresh marked the account as needing a new login,
+                // which the account list shows.
+                crate::Error::Extractor(ExtractorError::Authentication { .. }) => Ended::NeedsLogin,
+                error => Ended::Failed(format!(
+                    "BIGO sees the account as signed out, and refreshing it failed: {error}"
+                )),
+            })?;
+        Ok(())
     }
+
+    /// Whether the config event may change the streamer set or the settings.
+    /// Streamer events count only for Bigo streamers: every state change of
+    /// any streamer publishes one.
+    fn affects(&self, deps: &BigoNotificationDeps, event: &ConfigUpdateEvent) -> bool {
+        match event {
+            ConfigUpdateEvent::EngineUpdated { .. }
+            | ConfigUpdateEvent::StreamerFiltersUpdated { .. }
+            | ConfigUpdateEvent::StreamerErrorCleared { .. } => false,
+            ConfigUpdateEvent::StreamerMetadataUpdated { streamer_id }
+            | ConfigUpdateEvent::StreamerDeleted { streamer_id }
+            | ConfigUpdateEvent::StreamerStateSyncedFromDb { streamer_id, .. } => {
+                if self.rule.lock().streamers.contains_key(streamer_id) {
+                    return true;
+                }
+                let platform_id = self.listener.lock().platform_id.clone();
+                platform_id.is_some_and(|platform_id| {
+                    deps.streamer_manager
+                        .get_streamer_snapshot(streamer_id)
+                        .is_some_and(|streamer| streamer.platform_config_id == platform_id)
+                })
+            }
+            ConfigUpdateEvent::CredentialMaterialChanged { .. }
+            | ConfigUpdateEvent::GlobalUpdated
+            | ConfigUpdateEvent::PlatformUpdated { .. }
+            | ConfigUpdateEvent::TemplateUpdated { .. } => true,
+        }
+    }
+}
+
+/// What one connection works with.
+struct Session<'a> {
+    profile_id: &'a str,
+    route: &'a ResolvedRoute,
+    /// Set once Linkd accepted the login.
+    connected_at: Option<Instant>,
+    /// When the listener last refreshed the account, across connections.
+    last_refresh: &'a mut Option<Instant>,
 }
 
 /// Why a connection ended.
 enum Ended {
     SettingsChanged,
-    /// The account cannot be used until its settings change.
-    Unusable(String),
-    /// BIGO sees the account as signed out, even after a refresh.
+    /// BIGO sees the account as signed out, and the account is marked as
+    /// needing a new login; waits for a settings change.
+    NeedsLogin,
+    /// BIGO sees the account as signed out after a refresh.
     SignedOut(String),
+    /// BIGO refused the login: it restricts this IP address or rejected the
+    /// account.
+    Refused(String),
     /// Anything else; retried after the backoff.
     Failed(String),
+}
+
+/// Held by both tasks. When either ends, on shutdown or by a panic, it stops
+/// the other and drops the connection's subscriptions, so every streamer is
+/// polled rather than answered from a connection no task runs any more.
+#[derive(Clone)]
+struct Stop {
+    notifications: Arc<BigoNotifications>,
+    cancel: CancellationToken,
+}
+
+impl Drop for Stop {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+        self.notifications.rule.lock().disconnected();
+        // Only shutdown and a panic end the tasks, and after shutdown no one
+        // reads the status.
+        self.notifications.set_listener(
+            ListenerState::Error,
+            Some(PollingReason::Disconnected),
+            Some("Live notifications stopped after an internal error; restarting rust-srec resumes them".to_owned()),
+        );
+    }
+}
+
+/// The account's cookies.
+async fn account_cookies(deps: &BigoNotificationDeps, profile_id: &str) -> Result<String, Ended> {
+    let profile = deps
+        .credentials
+        .repository()
+        .get(profile_id)
+        .await
+        .map_err(|error| Ended::Failed(error.to_string()))?;
+    Ok(profile
+        .material()
+        .map_err(|error| Ended::Failed(error.to_string()))?
+        .cookies)
+}
+
+/// The native connection's route for the account's resolved one.
+fn native_route(route: &ResolvedRoute) -> Result<Route, Ended> {
+    let client = crate::credentials::provider_client(&route.target)
+        .map_err(|error| Ended::Failed(error.to_string()))?;
+    let proxy = route
+        .danmu_proxy(crate::proxies::SystemProxy::current())
+        .map_err(|error| Ended::Failed(error.to_string()))?;
+    Ok(Route { client, proxy })
 }
 
 /// Waits for a new settings value. Never returns once the housekeeping task
@@ -1011,17 +1188,6 @@ async fn settings_changed(settings: &mut watch::Receiver<Settings>) {
     if settings.changed().await.is_err() {
         std::future::pending::<()>().await;
     }
-}
-
-/// Config events after which the streamer set or the settings may differ.
-fn affects_notifications(event: &ConfigUpdateEvent) -> bool {
-    !matches!(
-        event,
-        ConfigUpdateEvent::GlobalUpdated
-            | ConfigUpdateEvent::EngineUpdated { .. }
-            | ConfigUpdateEvent::StreamerFiltersUpdated { .. }
-            | ConfigUpdateEvent::StreamerErrorCleared { .. }
-    )
 }
 
 /// `batch_detection` and `notification_account` from the platform row's
@@ -1046,17 +1212,7 @@ fn notification_settings(platform_specific_config: Option<&str>) -> (bool, Optio
 /// change, and a wrong one only costs a follow.
 fn stored_uid(raw: Option<&str>) -> Option<u32> {
     let stored: StoredPlatformMetadata = serde_json::from_str(raw?).ok()?;
-    let metadata = stored.metadata;
-    if metadata.platform != PLATFORM || metadata.schema_version != 1 {
-        return None;
-    }
-    metadata
-        .data
-        .get("uid")?
-        .as_str()?
-        .parse()
-        .ok()
-        .filter(|&uid| uid != 0)
+    metadata_uid(&stored.metadata)
 }
 
 /// A device id in the website's form, derived from the profile id so it stays
@@ -1079,15 +1235,14 @@ mod tests {
         }
     }
 
-    /// A connected rule with streamers `a` (uid 1) and `b` (uid 2), both
-    /// subscribed and checked at `now`, so their offline polls are answered.
+    /// A rule with streamers `a` (uid 1) and `b` (uid 2), both subscribed
+    /// and checked at `now`, so their offline polls are answered.
     fn subscribed(now: Instant) -> Rule {
         let mut rule = Rule::default();
         rule.set_streamers(HashMap::from([
             ("a".to_owned(), member(1)),
             ("b".to_owned(), member(2)),
         ]));
-        rule.connected();
         while let Some(uid) = rule.next_subscription() {
             rule.subscribed(uid, true, now);
         }
@@ -1108,9 +1263,8 @@ mod tests {
         let mut rule = Rule::default();
         rule.set_streamers(HashMap::from([("a".to_owned(), member(1))]));
         rule.checked("a", start, false);
-        assert!(!rule.answers_offline("a", start), "disconnected");
+        assert!(!rule.answers_offline("a", start), "not subscribed");
 
-        rule.connected();
         assert_eq!(rule.next_subscription(), Some(1));
         let acked = start + Duration::from_secs(1);
         rule.subscribed(1, true, acked);
@@ -1127,13 +1281,32 @@ mod tests {
 
         rule.disconnected();
         assert!(!rule.answers_offline("a", checked));
-        rule.connected();
         rule.next_subscription();
-        rule.subscribed(1, true, checked + Duration::from_secs(1));
+        let resubscribed = checked + Duration::from_secs(1);
+        rule.subscribed(1, true, resubscribed);
+        assert!(!rule.answers_offline("a", resubscribed), "reconnected");
         assert!(
-            !rule.answers_offline("a", checked + Duration::from_secs(1)),
-            "reconnected"
+            !rule.checked("a", resubscribed, true),
+            "the start may predate the subscription, so it is no missed push"
         );
+    }
+
+    #[test]
+    fn a_streamer_that_was_excluded_is_answered_only_after_a_new_check() {
+        let start = Instant::now();
+        let mut rule = subscribed(start);
+        let streamers = |a| HashMap::from([("a".to_owned(), a), ("b".to_owned(), member(2))]);
+        rule.set_streamers(streamers(Member {
+            uid: Some(1),
+            excluded: Some(PollingReason::StreamerDisabled),
+        }));
+        rule.set_streamers(streamers(member(1)));
+        // A start while it was excluded got no follow-up checks.
+        assert!(!rule.answers_offline("a", start));
+        assert!(rule.answers_offline("b", start), "b did not change");
+        let checked = start + Duration::from_secs(1);
+        rule.checked("a", checked, false);
+        assert!(rule.answers_offline("a", checked));
     }
 
     #[test]
@@ -1163,8 +1336,10 @@ mod tests {
 
         let again = push + PENDING_LIMIT;
         rule.pushed(Some(1), again);
-        rule.checked("a", again, true);
+        assert!(!rule.checked("a", again, true), "pushed");
         assert_eq!(rule.next_due(), None, "a live check ends the follow-ups");
+        assert!(rule.checked("b", again, true), "b went live without a push");
+        assert!(!rule.checked("b", again, true), "b was live already");
         // Ends are not pushed, so polls stay real until one reads offline.
         assert!(!rule.answers_offline("a", again));
         let ended = again + Duration::from_secs(1);
@@ -1194,5 +1369,9 @@ mod tests {
         // Streamers an earlier push still holds are not woken again.
         rule.pushed(None, seconds(10));
         assert_eq!(due(&mut rule, seconds(20)), Vec::<String>::new());
+        assert!(
+            !rule.checked("b", seconds(20), true),
+            "a nameless push may have been b's"
+        );
     }
 }

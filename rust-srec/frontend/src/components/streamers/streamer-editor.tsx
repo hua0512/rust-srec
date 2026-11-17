@@ -160,7 +160,7 @@ export function StreamerEditor({
           description={<Trans>Basic settings for the streamer.</Trans>}
         >
           <div className="mb-6 empty:hidden">
-            <BigoPollingNotice url={url} />
+            <BigoPollingNotice url={url} streamerId={streamer?.id} />
           </div>
           <StreamerGeneralSettings
             form={form}

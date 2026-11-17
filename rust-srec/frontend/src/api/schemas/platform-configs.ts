@@ -179,6 +179,10 @@ export const BigoNotificationStatusSchema = z.object({
       reason: BigoStreamerReasonSchema.nullable(),
     }),
   ),
+  /** Starts a check found on a subscribed streamer without a notification from BIGO. */
+  missed_pushes: z.number().int(),
+  /** When the latest of those was found. */
+  last_missed_at: z.string().nullable(),
 });
 export type BigoNotificationStatus = z.infer<
   typeof BigoNotificationStatusSchema

@@ -15,14 +15,18 @@ vi.mock('@tanstack/react-router', async () => ({
 
 type Values = { platform_specific_config: Record<string, unknown> };
 
+// The picker lists the editor's own platform's accounts, so a status that names no platform
+// changes nothing.
 const status: BigoNotificationStatus = {
-  platform_id: 'platform-bigo',
+  platform_id: null,
   state: 'disabled',
   reason: 'notifications_off',
   message: null,
   subscribed: 0,
   total: 0,
   streamers: [],
+  missed_pushes: 0,
+  last_missed_at: null,
 };
 
 function renderFields(
@@ -44,6 +48,7 @@ function renderFields(
         <PlatformSpecificTab
           form={form}
           platformName="bigo"
+          platformId="platform-bigo"
           inherited={inherited}
         />
       </Form>
@@ -69,6 +74,9 @@ describe('Bigo live notification settings', () => {
     renderFields({ batch_detection: true });
 
     expect(picker()).toBeInTheDocument();
+    expect(
+      screen.getByText(/Add a signed-in BIGO account/),
+    ).toBeInTheDocument();
     expect(notice()).toBeInTheDocument();
     expect(warning()).toBeInTheDocument();
   });

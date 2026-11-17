@@ -13,7 +13,6 @@ vi.mock('@/store/downloads', () => ({
 
 vi.mock('@/components/streamers/card/use-streamer-status', () => ({
   useStreamerStatus: () => ({ label: 'offline' }),
-  MonitoringMethodBadge: () => null,
 }));
 
 vi.mock('@/components/streamers/card/stream-status-badge', () => ({

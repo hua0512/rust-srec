@@ -1,30 +1,15 @@
 import type { ReactNode } from 'react';
-import { renderHook, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderHook } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { CredentialBlock, Streamer } from '@/api/schemas/streamer';
 import type { QueuedEntry } from '@/store/downloads';
-import type { BigoNotificationStatus } from '@/api/schemas/platform-configs';
-import { getBigoNotificationStatus } from '@/server/functions';
 import { monitoringState } from './recovery-state';
-import {
-  MonitoringMethodBadge,
-  useMonitoringMethod,
-  useStreamerStatus,
-} from './use-streamer-status';
-import {
-  newQueryClient,
-  providersWrapper,
-  renderWithProviders,
-} from '@/test/render';
+import { useStreamerStatus } from './use-streamer-status';
+import { providersWrapper, renderWithProviders } from '@/test/render';
 
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/router')).MockLink,
-}));
-
-vi.mock('@/server/functions', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/server/functions')>()),
-  getBigoNotificationStatus: vi.fn(),
 }));
 
 const loginRequired: CredentialBlock = {
@@ -170,82 +155,5 @@ describe('useStreamerStatus credential blocks', () => {
     expect(text(status(streamer({ credential_blocked: null })).label)).toBe(
       'Offline',
     );
-  });
-});
-
-describe('Bigo monitoring method', () => {
-  const bigo = (overrides: Partial<Streamer> = {}) =>
-    streamer({
-      id: 'bigo-1',
-      url: 'https://www.bigo.tv/100000001',
-      platform_config_id: 'platform-bigo',
-      credential_blocked: null,
-      ...overrides,
-    });
-
-  const listener: BigoNotificationStatus = {
-    platform_id: 'platform-bigo',
-    state: 'connected',
-    reason: null,
-    message: null,
-    subscribed: 1,
-    total: 2,
-    streamers: [
-      { streamer_id: 'bigo-1', method: 'notifications', reason: null },
-      { streamer_id: 'bigo-2', method: 'polling', reason: 'uid_unknown' },
-    ],
-  };
-
-  beforeEach(() => vi.mocked(getBigoNotificationStatus).mockReset());
-
-  function withStatus(status: BigoNotificationStatus) {
-    vi.mocked(getBigoNotificationStatus).mockResolvedValue(status);
-    return newQueryClient();
-  }
-
-  async function methodOf(value: Streamer, status = listener) {
-    const { result } = renderHook(() => useMonitoringMethod(value), {
-      wrapper: providersWrapper(withStatus(status)),
-    });
-    await waitFor(() => expect(result.current).not.toBeNull());
-    return result.current;
-  }
-
-  it('polls a streamer the status does not list yet, for the listener reason', async () => {
-    expect(
-      await methodOf(bigo({ id: 'bigo-new' }), {
-        ...listener,
-        state: 'error',
-        reason: 'no_account',
-      }),
-    ).toMatchObject({ method: 'polling', reason: 'no_account' });
-  });
-
-  it('labels the badge by method', async () => {
-    vi.mocked(getBigoNotificationStatus).mockResolvedValue(listener);
-    const notifications = renderWithProviders(
-      <MonitoringMethodBadge streamer={bigo()} />,
-    );
-    expect(await notifications.findByText('Notifications')).toBeInTheDocument();
-
-    const polling = renderWithProviders(
-      <MonitoringMethodBadge streamer={bigo({ id: 'bigo-2' })} />,
-    );
-    expect(
-      await polling.findByText('Polling · inconsistent'),
-    ).toBeInTheDocument();
-  });
-
-  it('is absent for other platforms and disabled streamers', async () => {
-    const client = withStatus(listener);
-    for (const value of [streamer(), bigo({ enabled: false })]) {
-      const { container } = renderWithProviders(
-        <MonitoringMethodBadge streamer={value} />,
-        { client },
-      );
-      expect(container).toBeEmptyDOMElement();
-    }
-    // Neither asks for the status.
-    expect(getBigoNotificationStatus).not.toHaveBeenCalled();
   });
 });

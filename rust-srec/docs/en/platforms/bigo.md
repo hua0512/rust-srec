@@ -26,9 +26,9 @@ Bigo has no request that reports many rooms at once. Instead, rust-srec can list
 ### Requirements
 
 - **A signed-in BIGO account**, added on the Bigo platform's **Network** tab like any other [account profile](../concepts/configuration.md#account-profiles-and-selection). Use a dedicated account.
-- rust-srec makes that account **follow every Bigo streamer you monitor** and turns on their live alerts. Streamers can see who follows them. Streamers you remove from rust-srec stay followed.
+- rust-srec makes that account **follow every Bigo streamer you monitor** and turns on their live alerts. Streamers can see who follows them. rust-srec never unfollows: streamers you remove, turning notifications off and choosing another account all leave the follows in place.
 - Turn on live notifications in that account's settings in the BIGO app.
-- BIGO keeps one app session per account: opening the BIGO app with the same account disconnects rust-srec, and the other way round. Recordings never use this account, so they do not disconnect it.
+- BIGO keeps one app session per account: opening the BIGO app with the same account disconnects rust-srec, and the other way round. Recordings never sign in to BIGO's app service with this account, so they do not disconnect it. They do use its cookies if it is also chosen for recordings on the **Network** tab.
 
 ### Turning them on
 
@@ -36,9 +36,9 @@ Bigo has no request that reports many rooms at once. Instead, rust-srec can list
 2. Turn on **Batch Detection**. For Bigo, this switch turns on live notifications.
 3. Choose the account under **Notification Account**, then save.
 
-The same section shows whether rust-srec is connected, how many streamers BIGO has confirmed, and the last error. Each Bigo streamer card shows how the streamer is monitored: **Notifications**, or **Polling · inconsistent** with the reason in its tooltip. A newly added streamer starts on polling: its BIGO account is learned by its first check, and BIGO then has to confirm the follow.
+The same section shows whether rust-srec is connected, how many streamers BIGO has confirmed, and the last error. It also counts streams that checks found started without a notification; if that count grows, turn on live notifications in the account's BIGO settings. Each Bigo streamer card shows how the streamer is monitored: **Notifications**, or **Polling · inconsistent** with the reason in its tooltip. A newly added streamer starts on polling: its BIGO account is learned by its first check, and BIGO then has to confirm the follow.
 
-While rust-srec is not connected to BIGO, every Bigo streamer is polled as without notifications. rust-srec reconnects after 2 seconds, waiting longer after each failure, up to 30 seconds. If BIGO reports the account as signed out, rust-srec refreshes its login. If the login has expired, the account is marked as needing a new login, like any account that needs attention. Either way, notifications are tried again every 15 minutes, and at once when the account is changed, for example signed in again.
+While rust-srec is not connected to BIGO, every Bigo streamer is polled as without notifications. rust-srec reconnects after 2 seconds, waiting longer after each failure, up to 30 seconds. If BIGO reports the account as signed out, rust-srec refreshes its login. If the login has expired, the account is marked as needing a new login, like any account that needs attention, and notifications wait until it is signed in again. If BIGO still reports the account as signed out after a refresh, or refuses its login, for example from this IP address, notifications are tried again every 15 minutes. Any change to the account or its proxy tries again at once.
 
 A template's platform override or a streamer's **Platform options** tab can turn **Batch Detection** off: those streamers are then polled and not followed. Turning it on there has no effect while it is off for the platform.
 

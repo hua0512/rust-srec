@@ -18,18 +18,37 @@ vi.mock('@/server/functions', async (importOriginal) => ({
 
 const BIGO_URL = 'https://www.bigo.tv/100000001';
 
+const REASONS = {
+  connected: null,
+  connecting: 'disconnected',
+  error: 'no_account',
+  disabled: 'notifications_off',
+} as const;
+
 function listener(
   state: BigoNotificationStatus['state'],
+  streamers: BigoNotificationStatus['streamers'] = [],
 ): BigoNotificationStatus {
   return {
     platform_id: 'platform-bigo',
     state,
-    reason: state === 'connected' ? null : 'disconnected',
+    reason: REASONS[state],
     message: null,
     subscribed: 0,
     total: 0,
-    streamers: [],
+    streamers,
+    missed_pushes: 0,
+    last_missed_at: null,
   };
+}
+
+function renderNotice(status: BigoNotificationStatus, streamerId?: string) {
+  const client = newQueryClient();
+  client.setQueryData(bigoNotificationStatusQueryOptions.queryKey, status);
+  return renderWithProviders(
+    <BigoPollingNotice url={BIGO_URL} streamerId={streamerId} />,
+    { client },
+  );
 }
 
 const warning = /checked by polling, which is inconsistent/;
@@ -38,9 +57,7 @@ describe('BigoPollingNotice', () => {
   beforeEach(() => vi.mocked(getBigoNotificationStatus).mockReset());
 
   it('warns about a Bigo URL while notifications are not connected', async () => {
-    vi.mocked(getBigoNotificationStatus).mockResolvedValue(
-      listener('connecting'),
-    );
+    vi.mocked(getBigoNotificationStatus).mockResolvedValue(listener('error'));
     renderWithProviders(<BigoPollingNotice url={BIGO_URL} />);
 
     expect(await screen.findByText(warning)).toBeInTheDocument();
@@ -49,23 +66,26 @@ describe('BigoPollingNotice', () => {
     ).toHaveAttribute('href', '/config/platforms/platform-bigo');
   });
 
-  it('stays hidden while notifications are connected', () => {
+  it('stays hidden while notifications are connected or connecting', () => {
     for (const state of ['connected', 'connecting'] as const) {
-      const client = newQueryClient();
-      client.setQueryData(
-        bigoNotificationStatusQueryOptions.queryKey,
-        listener(state),
-      );
-      const { container, unmount } = renderWithProviders(
-        <BigoPollingNotice url={BIGO_URL} />,
-        { client },
-      );
-      // The same render shows the warning for a listener that is not connected.
-      expect(container.textContent).toMatch(
-        state === 'connected' ? /^$/ : warning,
-      );
+      const { container, unmount } = renderNotice(listener(state));
+      expect(container).toBeEmptyDOMElement();
       unmount();
     }
+  });
+
+  it('judges a saved streamer by its own row', () => {
+    const status = listener('connected', [
+      { streamer_id: 'bigo-1', method: 'polling', reason: 'uid_unknown' },
+      { streamer_id: 'bigo-2', method: 'polling', reason: 'subscribing' },
+    ]);
+
+    const unknown = renderNotice(status, 'bigo-1');
+    expect(unknown.container.textContent).toMatch(warning);
+    unknown.unmount();
+
+    // A follow BIGO has not confirmed yet passes on its own.
+    expect(renderNotice(status, 'bigo-2').container).toBeEmptyDOMElement();
   });
 
   it('ignores other platforms without asking for the status', () => {
