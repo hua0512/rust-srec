@@ -1,8 +1,3 @@
-#![expect(
-    dead_code,
-    reason = "API response models include fields not consumed by the extractor"
-)]
-
 //! Serde models for the Bigo profile, studio and WebSocket link APIs.
 
 use serde::Deserialize;
@@ -94,12 +89,8 @@ pub struct StudioData {
     pub alive: Option<i64>,
     #[serde(rename = "roomId", default, deserialize_with = "de_opt_stringish")]
     pub room_id: Option<String>,
-    #[serde(default, deserialize_with = "de_opt_stringish")]
-    pub sid: Option<String>,
     #[serde(default)]
     pub hls_src: Option<String>,
-    #[serde(default)]
-    pub avatar: Option<String>,
     #[serde(rename = "passRoom", default)]
     pub pass_room: Option<bool>,
     /// Set when Bigo wants a signed-in session before it answers; `alive`
@@ -154,8 +145,6 @@ pub struct WsLinkData {
     pub user_name: Option<String>,
     #[serde(rename = "deviceId", default)]
     pub device_id: Option<String>,
-    #[serde(rename = "seqId", default, deserialize_with = "de_opt_stringish")]
-    pub seq_id: Option<String>,
     /// The signed-in account's identity, in the same fields; absent unless
     /// the request carried a signed-in session.
     #[serde(rename = "realUser", default)]

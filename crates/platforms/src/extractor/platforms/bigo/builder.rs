@@ -18,11 +18,13 @@
 //!
 //! Bigo restricts some accounts without signing them out: the studio then
 //! answers every room as offline. When the studio reads a room as offline that
-//! the profile reports live, the guest room lookup decides, as it does not
-//! depend on an account: a room that exists means a signed-in check fails
-//! with `account_restricted`, so the account is set aside; an ended room is
-//! offline. Without a lookup, the profile and the studio are asked again a few
-//! seconds later.
+//! the profile reports live, a room the guest lookup finds ended is offline.
+//! Otherwise the profile and the studio are asked again a few seconds later,
+//! as they can disagree for a moment around a stream's start and end, and the
+//! lookup keeps finding a room for a while after it ends. If they still
+//! disagree about a room that exists (the lookup found it, or without a
+//! lookup the profile still links it), a signed-in check fails with
+//! `account_restricted`, so the account is set aside.
 //!
 //! [`get_url`]: PlatformExtractor::get_url
 
@@ -32,6 +34,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use md5::{Digest, Md5};
+use parking_lot::Mutex;
 use regex::Regex;
 use reqwest::Client;
 use rustc_hash::FxHashMap;
@@ -39,6 +42,7 @@ use tokio::sync::OnceCell;
 use tracing::debug;
 use url::Url;
 
+use crate::danmaku::DanmuProxy;
 use crate::digest_to_hex;
 use crate::extractor::error::ExtractorError;
 use crate::extractor::platform_extractor::{Extractor, PlatformExtractor};
@@ -60,9 +64,55 @@ const STUDIO_API: &str = "https://ta.bigo.tv/official_website/studio/getInternal
 /// The profile API's code for an id that names no account.
 const UNKNOWN_ID: i64 = 1;
 /// How long to wait before asking the profile and the studio again when the
-/// studio reads a live room as offline and the room lookup cannot settle it.
-/// Around a stream's start and end the two can disagree for a moment.
+/// studio reads a live room as offline. Around a stream's start and end the
+/// two can disagree for a moment.
 const RECHECK_DELAY: Duration = Duration::from_secs(5);
+/// How long room lookups skip a route on which one could not reach BIGO's app
+/// servers. A network that drops them would otherwise hold every live check
+/// for the lookup's timeouts, about 30 s, before the web stream.
+const UNREACHABLE_FOR: Duration = Duration::from_secs(5 * 60);
+
+/// Routes, by their tunnel (`None`: direct), on which a room lookup could not
+/// reach BIGO's app servers, with when.
+static UNREACHABLE: Mutex<Vec<(Option<DanmuProxy>, std::time::Instant)>> = Mutex::new(Vec::new());
+
+/// Whether a room lookup on `route` could not reach BIGO's app servers in the
+/// last 5 minutes.
+fn unreachable_recently(route: &Route) -> bool {
+    UNREACHABLE
+        .lock()
+        .iter()
+        .any(|(proxy, at)| *proxy == route.proxy && at.elapsed() < UNREACHABLE_FOR)
+}
+
+/// The room lookup `probe` on `route`, skipped while lookups on the route
+/// could not reach BIGO's app servers. One that cannot reach them, or that
+/// they turn away for its address, makes lookups skip the route for a while.
+async fn lookup_on(
+    route: &Route,
+    probe: impl Future<Output = Result<RoomKind, NativeError>>,
+) -> Lookup {
+    if unreachable_recently(route) {
+        return Lookup::Failed("BIGO's app servers could not be reached a moment ago".to_owned());
+    }
+    match probe.await {
+        Ok(kind) => Lookup::Room(kind),
+        Err(NativeError::RoomEnded) => Lookup::Ended,
+        Err(error) => {
+            if matches!(
+                error,
+                NativeError::Io(_) | NativeError::Timeout(_) | NativeError::IpRestricted
+            ) {
+                let mut routes = UNREACHABLE.lock();
+                routes
+                    .retain(|(proxy, at)| *proxy != route.proxy && at.elapsed() < UNREACHABLE_FOR);
+                routes.push((route.proxy.clone(), std::time::Instant::now()));
+            }
+            Lookup::Failed(error.to_string())
+        }
+    }
+}
+
 /// Both streams carry the same quality label, so a quality preference never
 /// outranks a format preference between them: `preferred_formats` alone
 /// chooses, and the native stream comes first otherwise.
@@ -236,13 +286,7 @@ impl Bigo {
         let route = self.native_route.as_ref()?;
         Some(
             self.lookup
-                .get_or_init(|| async move {
-                    match stream::probe(room_id, route).await {
-                        Ok(kind) => Lookup::Room(kind),
-                        Err(NativeError::RoomEnded) => Lookup::Ended,
-                        Err(error) => Lookup::Failed(error.to_string()),
-                    }
-                })
+                .get_or_init(|| lookup_on(route, stream::probe(room_id, route)))
                 .await,
         )
     }
@@ -331,7 +375,7 @@ impl Bigo {
                 "bigo native stream unavailable: {reason}"
             )))
         };
-        if stream::recently_failed(room.room_id) {
+        if stream::recently_failed(room.owner_uid) {
             return unavailable("it failed to record recently".to_owned());
         }
         match self.lookup(room.room_id).await {
@@ -378,22 +422,21 @@ impl Bigo {
             return Ok(());
         }
 
-        // The studio reads a room the profile reports live as offline. The
-        // guest lookup tells a restricted account from a room that ended.
+        // The studio reads a room the profile reports live as offline. A room
+        // the guest lookup finds ended is offline.
         let room_id = extras_get_str(stream.extras.as_ref(), ROOM_ID_EXTRA)
             .and_then(|room_id| room_id.parse::<u64>().ok());
         let lookup = match room_id {
             Some(room_id) => self.lookup(room_id).await,
             None => None,
         };
-        match lookup {
-            Some(Lookup::Ended) => return Err(ExtractorError::NoStreamsFound),
-            Some(Lookup::Room(_)) => return Err(self.studio_disagrees(&site_id)),
-            Some(Lookup::Failed(_)) | None => {}
+        if let Some(Lookup::Ended) = lookup {
+            return Err(ExtractorError::NoStreamsFound);
         }
 
-        // Without a lookup, both are asked again: around a stream's start or
-        // end the profile and the studio can disagree for a while.
+        // Otherwise both are asked again: around a stream's start or end the
+        // profile and the studio can disagree for a while, and the lookup
+        // finds a room for a while after it ends.
         tokio::time::sleep(self.recheck_delay).await;
         let presence = self.presence(&site_id).await?;
         if presence.alive != 1 {
@@ -403,9 +446,13 @@ impl Bigo {
             stream.url = url;
             return Ok(());
         }
-        // A live profile without a link to its room is not definite enough
-        // to set an account aside.
-        if presence.room_id().is_some() {
+        // Without a lookup, a live profile without a link to its room is not
+        // definite enough to set an account aside.
+        let room_exists = match lookup {
+            Some(Lookup::Room(_)) => true,
+            _ => presence.room_id().is_some(),
+        };
+        if room_exists {
             return Err(self.studio_disagrees(&site_id));
         }
         Err(ExtractorError::ValidationError(format!(
@@ -440,6 +487,10 @@ impl PlatformExtractor for Bigo {
 
         let presence = self.presence(&site_id).await?;
         if presence.alive != 1 {
+            // The broadcast that failed to record natively is over.
+            if let Ok(owner_uid) = u32::try_from(presence.uid) {
+                stream::forget_failure(owner_uid);
+            }
             return Ok(self.offline_media(&presence, &site_id));
         }
         self.live_media(&presence, &site_id)
@@ -720,21 +771,60 @@ mod tests {
         }
     }
 
-    /// A room whose native recording just failed is left to the web stream,
-    /// whatever the lookup says.
+    /// A broadcaster whose native recording just failed is left to the web
+    /// stream, whatever the lookup says, until the profile reads offline.
     #[tokio::test]
-    async fn native_stream_skips_a_room_that_failed_to_record() {
-        // A room of its own: the memory is shared by the whole process.
+    async fn native_stream_skips_a_broadcaster_that_failed_to_record() {
+        // A broadcaster of its own: the memory is shared by the whole process.
+        const OWNER_OFFLINE: &str = r#"{"code":0,"msg":"success","data":{"uid":17,"alive":0}}"#;
         let room = NativeRoom {
-            room_id: 4_000_000_000_017,
+            room_id: ROOM_ID,
             owner_uid: 17,
         };
-        let bigo = bigo(&[], &[], None, None, Some(Lookup::Room(RoomKind::Host))).await;
-        check_native(&bigo, room).await.unwrap();
+        let host = || Some(Lookup::Room(RoomKind::Host));
+        let live = bigo(&[], &[], None, None, host()).await;
+        check_native(&live, room).await.unwrap();
 
-        stream::remember_failure(room.room_id);
-        let error = check_native(&bigo, room).await.unwrap_err();
+        stream::remember_failure(room.owner_uid);
+        let error = check_native(&live, room).await.unwrap_err();
         assert_eq!(error.category(), "other", "{error:?}");
+
+        let ended = bigo(&[OWNER_OFFLINE], &[], None, None, host()).await;
+        assert!(!extract(&ended).await.unwrap().is_live);
+        check_native(&ended, room).await.unwrap();
+    }
+
+    /// A room lookup that could not reach BIGO's app servers makes the
+    /// lookups on its route, and with them the native stream, wait a while.
+    /// Other failures and other routes still look rooms up.
+    #[tokio::test]
+    async fn lookups_skip_a_route_that_could_not_reach_bigo() {
+        // Routes of their own: the memory is shared by the whole process.
+        let route = |tunnel_port: u16| Route {
+            client: default_client(),
+            proxy: Some(
+                DanmuProxy::new(crate::proxy::ProxyEndpoint::from_url(&format!(
+                    "http://127.0.0.1:{tunnel_port}"
+                )))
+                .unwrap(),
+            ),
+        };
+        let (unreachable, refused, other) = (route(2), route(3), route(4));
+        let reset = std::io::Error::from(std::io::ErrorKind::ConnectionReset);
+        lookup_on(&unreachable, async { Err(NativeError::Io(reset)) }).await;
+        let rejected = NativeError::Rejected {
+            request: "room lookup",
+            result: 1,
+        };
+        lookup_on(&refused, async { Err(rejected) }).await;
+
+        let host = || async { Ok(RoomKind::Host) };
+        let skipped = lookup_on(&unreachable, host()).await;
+        assert!(matches!(skipped, Lookup::Failed(_)), "{skipped:?}");
+        for route in [refused, other] {
+            let found = lookup_on(&route, host()).await;
+            assert!(matches!(found, Lookup::Room(RoomKind::Host)), "{found:?}");
+        }
     }
 
     #[tokio::test]
@@ -760,47 +850,38 @@ mod tests {
         }
     }
 
-    /// When the studio reads a live room as offline, the guest lookup
-    /// decides at once: a room that exists means a restricted account when
-    /// signed in, and an ended room is offline.
+    /// When the studio reads a live room as offline, a room the guest lookup
+    /// finds ended is offline at once. A room it finds is asked about again,
+    /// as the studio can lag behind the profile, and only then means a
+    /// restricted account when signed in, also for a profile that no longer
+    /// links the room.
     #[tokio::test]
-    async fn studio_offline_is_settled_by_the_room_lookup() {
-        let lookup = |exists| {
-            Some(if exists {
-                Lookup::Room(RoomKind::Host)
-            } else {
-                Lookup::Ended
-            })
-        };
-        let restricted = bigo(
-            &[LIVE],
-            &[STUDIO_OFFLINE],
-            Some(ACCOUNT),
-            None,
-            lookup(true),
-        )
-        .await;
-        let error = web_url(&restricted).await.unwrap_err();
-        assert!(
-            matches!(&error, ExtractorError::Authentication { code } if code == "account_restricted"),
-            "{error:?}"
-        );
+    async fn studio_offline_is_settled_with_the_room_lookup() {
+        let exists = || Some(Lookup::Room(RoomKind::Host));
+        let both = [STUDIO_OFFLINE, STUDIO_OFFLINE];
+        for presence in [[LIVE, LIVE], [LIVE, LIVE_WITHOUT_ROOM]] {
+            let restricted = bigo(&presence, &both, Some(ACCOUNT), None, exists()).await;
+            let error = web_url(&restricted).await.unwrap_err();
+            assert!(
+                matches!(&error, ExtractorError::Authentication { code } if code == "account_restricted"),
+                "{error:?}"
+            );
+        }
 
-        let anonymous = bigo(&[LIVE], &[STUDIO_OFFLINE], None, None, lookup(true)).await;
+        let caught_up = [STUDIO_OFFLINE, STUDIO_LIVE];
+        let started = bigo(&[LIVE, LIVE], &caught_up, Some(ACCOUNT), None, exists()).await;
+        assert_eq!(web_url(&started).await.unwrap(), PLAYLIST);
+
+        let anonymous = bigo(&[LIVE, LIVE], &both, None, None, exists()).await;
         let error = web_url(&anonymous).await.unwrap_err();
         assert!(
             matches!(error, ExtractorError::ValidationError(_)),
             "{error:?}"
         );
 
-        let ended = bigo(
-            &[LIVE],
-            &[STUDIO_OFFLINE],
-            Some(ACCOUNT),
-            None,
-            lookup(false),
-        )
-        .await;
+        // No more answers: an ended room is not asked about again.
+        let ended = Some(Lookup::Ended);
+        let ended = bigo(&[LIVE], &[STUDIO_OFFLINE], Some(ACCOUNT), None, ended).await;
         let error = web_url(&ended).await.unwrap_err();
         assert!(matches!(error, ExtractorError::NoStreamsFound), "{error:?}");
     }

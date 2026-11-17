@@ -366,7 +366,7 @@ impl StreamDetector {
         // directly.
         match crate::proxies::SystemProxy::current().danmu_proxy_for(proxy) {
             Ok(tunnel) => extractor_factory = extractor_factory.with_tunnel(tunnel),
-            Err(error) => trace!(%error, "no tunnel for raw connections on this route"),
+            Err(error) => debug!(%error, "no tunnel for raw connections on this route"),
         }
 
         // Create platform extractor for this streamer's URL

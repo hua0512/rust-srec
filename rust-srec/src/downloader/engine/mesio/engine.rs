@@ -234,16 +234,13 @@ mod tests {
         );
     }
 
-    /// A native Bigo room goes to its own downloader. The HTTP FLV
-    /// downloader, which its `Flv` label would pick, refuses the URL as a
-    /// configuration error.
+    /// A native Bigo room goes to its own downloader, which here refuses a
+    /// proxy its connections cannot take before connecting anywhere. The
+    /// HTTP FLV downloader, which the room's `Flv` label would pick, refuses
+    /// the URL instead.
     #[tokio::test]
     async fn native_bigo_rooms_are_recorded_over_their_own_protocol() {
-        // A proxy on a closed port, so that reaching BIGO fails as a network
-        // error.
-        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let proxy = format!("http://{}", closed.local_addr().unwrap());
-        drop(closed);
+        let proxy = "ftp://127.0.0.1:9";
         let output = tempfile::tempdir().unwrap();
         let config = DownloadConfig::new(
             "bigo://room/1?uid=2",
@@ -254,17 +251,18 @@ mod tests {
         )
         .with_protocol(DownloadProtocol::Flv)
         .with_proxy(crate::proxies::ProxyTarget::Explicit(
-            crate::proxies::ProxyEndpoint::from_url(&proxy),
+            crate::proxies::ProxyEndpoint::from_url(proxy),
         ));
-        let (event_tx, mut events) = tokio::sync::mpsc::channel(32);
+        let (event_tx, _events) = tokio::sync::mpsc::channel(32);
         let handle = DownloadHandle::new("download", EngineType::Mesio, config, event_tx);
 
-        MesioEngine::new().run(Arc::new(handle)).await.unwrap_err();
-        let failure = std::iter::from_fn(|| events.try_recv().ok()).find_map(|event| match event {
-            crate::downloader::SegmentEvent::DownloadFailed { kind, .. } => Some(kind),
-            _ => None,
-        });
-        assert_eq!(failure, Some(DownloadFailureKind::Network));
+        let error = MesioEngine::new().run(Arc::new(handle)).await.unwrap_err();
+        assert_eq!(error.kind, DownloadFailureKind::Configuration);
+        assert!(
+            error.message.contains("native Bigo stream"),
+            "{}",
+            error.message
+        );
     }
 
     /// With no label, a URL mesio cannot recognise is a configuration error,

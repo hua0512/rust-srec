@@ -34,8 +34,10 @@ impl BigoDownloader {
         }
     }
 
-    /// Records the room until it ends (a clean disconnect) or its stream
-    /// fails.
+    /// Records the room until it ends or its stream fails. The end of a
+    /// broadcast, including a stream that stops sending media after it ran
+    /// stably, is a clean disconnect, which leaves the session's end to the
+    /// next status check.
     pub(super) async fn run(self) -> Result<DownloadStats, EngineStartError> {
         let route = route(&self.handle.config_snapshot().proxy)?;
         let token = self.handle.cancellation_token.child_token();

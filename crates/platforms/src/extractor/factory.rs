@@ -221,8 +221,9 @@ pub fn batch_probe_for_url(url: &str) -> Option<&'static dyn BatchStatusProbe> {
 pub struct ExtractorFactory {
     client: Client,
     proxy: ProxyTarget,
-    /// The tunnel raw TCP connections take, `Some(None)` for direct ones.
-    tunnel: Option<Option<DanmuProxy>>,
+    /// How Bigo's native connections reach BIGO, when the caller gave a
+    /// tunnel.
+    native_route: Option<Route>,
 }
 
 impl ExtractorFactory {
@@ -230,7 +231,7 @@ impl ExtractorFactory {
         Self {
             client,
             proxy: ProxyTarget::System,
-            tunnel: None,
+            native_route: None,
         }
     }
 
@@ -246,7 +247,10 @@ impl ExtractorFactory {
     /// connects directly). Bigo offers its native stream, which only the
     /// mesio engine records, and looks rooms up only when given one.
     pub fn with_tunnel(mut self, tunnel: Option<DanmuProxy>) -> Self {
-        self.tunnel = Some(tunnel);
+        self.native_route = Some(Route {
+            client: self.client.clone(),
+            proxy: tunnel,
+        });
         self
     }
 
@@ -287,15 +291,11 @@ impl ExtractorFactory {
         }) = find_platform(url)
         {
             if name == "Bigo"
-                && let Some(tunnel) = &self.tunnel
+                && let Some(route) = &self.native_route
             {
-                let route = Route {
-                    client: self.client.clone(),
-                    proxy: tunnel.clone(),
-                };
                 return Ok(Box::new(
                     Bigo::new(url.to_string(), self.client.clone(), cookies, extras)
-                        .with_native_route(route),
+                        .with_native_route(route.clone()),
                 ));
             }
             return Ok(constructor(

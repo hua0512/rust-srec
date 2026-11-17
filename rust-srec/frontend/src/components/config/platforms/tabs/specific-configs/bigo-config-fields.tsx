@@ -70,14 +70,26 @@ export function BigoConfigFields<TFieldValues extends FieldValues>({
           fieldName={configPath<TFieldValues>(fieldName, 'native_stream')}
           title={<Trans>Record the original stream</Trans>}
           description={
-            <Trans>
-              Records the broadcaster's own stream from BIGO's app servers, in
-              its original quality (HEVC or H.264), without an account. The
-              website's stream is recorded instead when this fails, for
-              password-protected rooms and for rooms with several hosts.
-            </Trans>
+            inherited ? (
+              <Trans>
+                Turn off to record only the website's stream for these
+                streamers, or on to record the original stream even while it is
+                off in the Bigo platform settings.
+              </Trans>
+            ) : (
+              <Trans>
+                Records the broadcaster's own stream from BIGO's app servers, in
+                its original quality (HEVC or H.264), without an account. The
+                website's stream is recorded instead when this fails, for rooms
+                with several hosts, and when a stream password is set (the
+                platform's default applies to every streamer).
+              </Trans>
+            )
           }
-          checked={(value) => value !== false}
+          // A template or streamer shows only its own choice, as Batch Detection does: unset
+          // follows the platform, which this form does not know. The platform's own unset
+          // value is the default, on.
+          checked={(value) => (inherited ? value === true : value !== false)}
         />
       </section>
 
