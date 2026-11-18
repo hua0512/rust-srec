@@ -425,14 +425,10 @@ where
 
     /// Check if session already has a thumbnail by querying media outputs.
     pub(super) async fn session_has_thumbnail(&self, session_id: &str) -> bool {
-        if let Some(repo) = &self.session_repo
-            && let Ok(outputs) = repo.get_media_outputs_for_session(session_id).await
-        {
-            return outputs
-                .iter()
-                .any(|o| o.file_type == MediaFileType::Thumbnail.as_str());
-        }
-        false
+        let Some(repo) = &self.session_repo else {
+            return false;
+        };
+        matches!(repo.first_thumbnail_id(session_id).await, Ok(Some(_)))
     }
 
     /// Create the built-in thumbnail DAG for the first segment when needed.
@@ -442,7 +438,6 @@ where
         session_id: &str,
         segment_path: &str,
     ) {
-        // Check if session already has a thumbnail (reuses existing query)
         if self.session_has_thumbnail(session_id).await {
             debug!("Session {} already has a thumbnail, skipping", session_id);
             return;
