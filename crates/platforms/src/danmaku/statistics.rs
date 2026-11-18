@@ -892,7 +892,9 @@ impl StatisticsAggregator {
     fn process_words(&mut self, content: &str) {
         for run in content
             .split(|c: char| !c.is_alphanumeric())
-            .filter(|s| !s.is_empty())
+            // `record_word` discards single-character words, so dropping such
+            // runs here keeps a lone CJK character from loading the dictionary.
+            .filter(|run| run.chars().nth(1).is_some())
         {
             if contains_cjk(run) {
                 // HMM inference on: the bundled dictionary is general Chinese, and
