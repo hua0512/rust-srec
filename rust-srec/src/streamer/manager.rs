@@ -745,18 +745,30 @@ where
         self.get_filtered(|_| true)
     }
 
-    /// Clone only the streamers `predicate` accepts, skipping ones marked
-    /// deleted. `list_streamers` pages a filtered view of the map, so filtering
-    /// during the shard walk copies the matching entries instead of every
-    /// `StreamerMetadata`.
-    pub fn get_filtered(
+    /// Clone matching streamer metadata, skipping streamers marked deleted.
+    fn get_filtered(&self, predicate: impl Fn(&StreamerMetadata) -> bool) -> Vec<StreamerMetadata> {
+        self.collect_filtered(predicate, |metadata| metadata.as_ref().clone())
+    }
+
+    /// Share the snapshots of matching streamers, skipping streamers marked
+    /// deleted. No metadata is copied, which suits a caller that sorts every
+    /// match and reads only some of them, as a paged list does.
+    pub(crate) fn get_filtered_snapshots(
         &self,
         predicate: impl Fn(&StreamerMetadata) -> bool,
-    ) -> Vec<StreamerMetadata> {
+    ) -> Vec<Arc<StreamerMetadata>> {
+        self.collect_filtered(predicate, Arc::clone)
+    }
+
+    fn collect_filtered<T>(
+        &self,
+        predicate: impl Fn(&StreamerMetadata) -> bool,
+        project: impl Fn(&Arc<StreamerMetadata>) -> T,
+    ) -> Vec<T> {
         self.metadata
             .iter()
             .filter(|entry| !entry.is_deleted() && predicate(entry.value()))
-            .map(|entry| entry.value().as_ref().clone())
+            .map(|entry| project(entry.value()))
             .collect()
     }
 

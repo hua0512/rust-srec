@@ -685,9 +685,12 @@ impl DownloadEventProcessor {
             ..
         }) = download_event
             && should_record_recovery_from_progress(progress)
-            && let Some(metadata) = self.streamer_manager.get_streamer(streamer_id)
-            && metadata.is_active()
-            && has_transient_error_state(&metadata)
+            && self
+                .streamer_manager
+                .get_streamer_snapshot(streamer_id)
+                .is_some_and(|metadata| {
+                    metadata.is_active() && has_transient_error_state(&metadata)
+                })
             && let Err(e) = self
                 .streamer_manager
                 .record_success(streamer_id, true)

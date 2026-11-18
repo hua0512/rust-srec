@@ -443,9 +443,9 @@ pub async fn list_streamers(
     // Get streamer manager from state
     let streamer_manager = &state.streamer_manager;
 
-    // Resolve every filter once, then clone only the matching entries out of
-    // the manager's map: a narrow filter (the dashboard's `state=LIVE`) must
-    // not copy every streamer first.
+    // Resolve every filter once and apply them while walking the manager's map.
+    // The matches are shared snapshots, so filtering, sorting and paging copy
+    // no streamer metadata.
     let platform = filters.platform.as_deref();
     let template = filters.template.as_deref();
     let template_unassigned = filters.template_unassigned == Some(true);
@@ -467,7 +467,7 @@ pub async fn list_streamers(
         .filter(|search| !search.is_empty())
         .map(str::to_lowercase);
 
-    let mut streamers = streamer_manager.get_filtered(|s| {
+    let mut streamers = streamer_manager.get_filtered_snapshots(|s| {
         platform.is_none_or(|platform| s.platform_config_id == platform)
             && template.is_none_or(|template| s.template_config_id.as_deref() == Some(template))
             && (!template_unassigned || s.template_config_id.is_none())
