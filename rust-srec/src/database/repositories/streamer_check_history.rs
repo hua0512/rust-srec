@@ -47,20 +47,18 @@ const INSERT_SQL: &str = r#"
 
 /// Trim to the most-recent `KEEP_PER_STREAMER` rows for a given streamer.
 ///
-/// The subquery pins the IDs we want to keep (newest first); the outer
-/// DELETE removes everything else. Cheap because `idx_streamer_check_history
-/// _streamer_id_checked_at` covers both the SELECT and the DELETE filter.
+/// The covering index supplies the recent order, and only the IDs beyond the
+/// retention cap are sent to DELETE.
 ///
 /// Run after every insert so the steady-state row count is bounded without
 /// needing a periodic maintenance task.
 const TRIM_SQL: &str = r#"
     DELETE FROM streamer_check_history
-    WHERE streamer_id = ?1
-      AND id NOT IN (
+    WHERE id IN (
           SELECT id FROM streamer_check_history
           WHERE streamer_id = ?1
           ORDER BY checked_at DESC, id DESC
-          LIMIT ?2
+          LIMIT -1 OFFSET ?2
       )
 "#;
 
@@ -116,7 +114,6 @@ impl StreamerCheckHistoryRepository for SqlxStreamerCheckHistoryRepository {
         retry_on_sqlite_busy("insert_streamer_check_history", || async {
             // Use a tx so the insert + trim are atomic — otherwise a reader
             // snapping in between would briefly see KEEP_PER_STREAMER+1 rows.
-            // Cheap because both statements hit the same covering index.
             let mut tx = self.write_pool.begin().await?;
             sqlx::query(INSERT_SQL)
                 .bind(&row.streamer_id)
