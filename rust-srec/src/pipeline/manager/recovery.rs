@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 use crate::database::models::DagExecutionDbModel;
 use crate::pipeline::JobFailureOutcome;
 
-const COORDINATOR_RECOVERY_PAGE_LIMIT: u32 = 500;
+pub(super) const COORDINATOR_RECOVERY_PAGE_LIMIT: u32 = 500;
 
 pub(crate) struct RecoveryReport {
     pub recovered_jobs: usize,
@@ -105,57 +105,59 @@ where
     /// jobs already persisted, whose step's DAG is failed through `DagScheduler::on_job_failed`
     /// so its dependents are cancelled instead of waiting.
     ///
-    /// Returns the number of jobs failed. `complete` is cleared when the sweep may have missed
-    /// one: more jobs were pending than it listed, or a job or its workflow could not be failed.
+    /// Returns the number of jobs failed. `complete` is cleared if a job or its workflow
+    /// could not be failed.
     async fn fail_unclaimable_jobs_with_status(&self, complete: &mut bool) -> Result<usize> {
-        let supported = self.supported_job_types();
-        let filters = JobFilters {
-            status: Some(JobStatus::Pending),
-            ..Default::default()
-        };
-        let (jobs, total) = self
-            .job_queue
-            .list_jobs(&filters, &Pagination::new(10_000, 0))
-            .await?;
-        if total > jobs.len() as u64 {
-            *complete = false;
-        }
-
+        let supported: Vec<_> = self.supported_job_types().into_iter().collect();
+        let mut after_id = None;
         let mut failed = 0usize;
-        for job in jobs {
-            if supported.contains(job.job_type.as_str()) {
-                continue;
-            }
+        loop {
+            let jobs = self
+                .job_repository
+                .list_unclaimable_pending_jobs(
+                    &supported,
+                    after_id.as_deref(),
+                    COORDINATOR_RECOVERY_PAGE_LIMIT,
+                )
+                .await?;
+            let full_page = jobs.len() == COORDINATOR_RECOVERY_PAGE_LIMIT as usize;
+            after_id = jobs.last().map(|job| job.id.clone());
 
-            let reason = format!("No processor is registered for job type '{}'", job.job_type);
-            warn!(
-                job_id = %job.id,
-                job_type = %job.job_type,
-                "Failing pending job that no worker pool can claim"
-            );
-
-            match self.job_queue.fail(&job.id, &reason).await {
-                Ok(JobFailureOutcome::Transitioned) => {}
-                Ok(JobFailureOutcome::Unchanged) => continue,
-                Err(e) => {
-                    *complete = false;
-                    warn!(job_id = %job.id, error = %e, "Failed to mark unclaimable job as failed");
-                    continue;
-                }
-            }
-            failed += 1;
-
-            if let Some(step_id) = job.dag_step_execution_id.as_deref()
-                && let Some(scheduler) = &self.dag_scheduler
-                && let Err(e) = scheduler.on_job_failed(step_id, &reason).await
-            {
-                *complete = false;
+            for job in jobs {
+                let reason = format!("No processor is registered for job type '{}'", job.job_type);
                 warn!(
                     job_id = %job.id,
-                    dag_step_execution_id = %step_id,
-                    error = %e,
-                    "Failed to fail the DAG of an unclaimable job"
+                    job_type = %job.job_type,
+                    "Failing pending job that no worker pool can claim"
                 );
+
+                match self.job_queue.fail(&job.id, &reason).await {
+                    Ok(JobFailureOutcome::Transitioned) => {}
+                    Ok(JobFailureOutcome::Unchanged) => continue,
+                    Err(e) => {
+                        *complete = false;
+                        warn!(job_id = %job.id, error = %e, "Failed to mark unclaimable job as failed");
+                        continue;
+                    }
+                }
+                failed += 1;
+
+                if let Some(step_id) = job.dag_step_execution_id.as_deref()
+                    && let Some(scheduler) = &self.dag_scheduler
+                    && let Err(e) = scheduler.on_job_failed(step_id, &reason).await
+                {
+                    *complete = false;
+                    warn!(
+                        job_id = %job.id,
+                        dag_step_execution_id = %step_id,
+                        error = %e,
+                        "Failed to fail the DAG of an unclaimable job"
+                    );
+                }
+            }
+
+            if !full_page {
+                break;
             }
         }
 

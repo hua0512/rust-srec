@@ -43,19 +43,60 @@ async fn recovery_report_confirms_success_but_retains_partial_dag_recovery_failu
 async fn recovery_report_does_not_hide_per_job_persistence_failure() {
     let pool = pool().await;
     let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
-    let job = JobDbModel::new_with_input("missing-processor", "/input.flv", 0, None, None, "{}");
-    jobs.create_job(&job).await.unwrap();
+    // One job more than a sweep page, none of which can be failed: the sweep has to move
+    // past the jobs it leaves pending rather than list the same page again.
+    let unfailable = u64::from(recovery::COORDINATOR_RECOVERY_PAGE_LIMIT) + 1;
+    sqlx::query(
+        "WITH RECURSIVE backlog(n) AS (
+             VALUES (1) UNION ALL SELECT n + 1 FROM backlog WHERE n < ?
+         )
+         INSERT INTO job (id, job_type, status, config, state, created_at, updated_at)
+         SELECT 'unfailable-' || n, 'missing-processor', 'PENDING', '{}', '{}', n, n FROM backlog",
+    )
+    .bind(unfailable.cast_signed())
+    .execute(&pool)
+    .await
+    .unwrap();
     sqlx::query("CREATE TRIGGER reject_recovery_failure BEFORE UPDATE OF status ON job WHEN NEW.status = 'FAILED' BEGIN SELECT RAISE(ABORT, 'injected failure'); END")
         .execute(&pool).await.unwrap();
     let manager: PipelineManager =
         PipelineManager::with_repository(PipelineManagerConfig::default(), jobs.clone());
-    let report = manager.recover_jobs_with_status().await.unwrap();
+    let report = tokio::time::timeout(Duration::from_secs(60), manager.recover_jobs_with_status())
+        .await
+        .expect("the sweep must end when jobs cannot be failed")
+        .unwrap();
     assert!(!report.complete);
-    assert_eq!(
-        jobs.get_job(&job.id).await.unwrap().status,
-        JobStatus::Pending.as_str()
-    );
+    assert_eq!(jobs.count_pending_jobs(None).await.unwrap(), unfailable);
     pool.close().await;
+}
+
+#[tokio::test]
+async fn recovery_fails_unsupported_job_behind_large_pending_backlog() {
+    let pool = pool().await;
+    let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+    sqlx::query(
+        "WITH RECURSIVE backlog(n) AS (
+             VALUES (1) UNION ALL SELECT n + 1 FROM backlog WHERE n < 10000
+         )
+         INSERT INTO job (id, job_type, status, config, state, created_at, updated_at)
+         SELECT 'supported-' || n, 'remux', 'PENDING', '{}', '{}', n, n FROM backlog",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mut unsupported = JobDbModel::new("missing-processor", "{}");
+    unsupported.created_at = 0;
+    jobs.create_job(&unsupported).await.unwrap();
+    let manager: PipelineManager =
+        PipelineManager::with_repository(PipelineManagerConfig::default(), jobs.clone());
+
+    let report = manager.recover_jobs_with_status().await.unwrap();
+    assert!(report.complete);
+    assert_eq!(
+        jobs.get_job(&unsupported.id).await.unwrap().status,
+        JobStatus::Failed.as_str()
+    );
+    assert_eq!(jobs.count_pending_jobs(None).await.unwrap(), 10_000);
 }
 
 #[tokio::test]
