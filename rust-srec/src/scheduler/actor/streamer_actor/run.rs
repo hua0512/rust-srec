@@ -70,15 +70,15 @@ impl StreamerActor {
 
                 live = Self::wait_for_batch_live(batch_live) => {
                     self.discard_batch_hint();
-                    if live && self.can_advance_batch_poll() {
-                        self.state.schedule_immediate_check();
+                    if live {
+                        self.advance_for_batch_live();
                     }
                 }
 
                 // Self-scheduled check timer
                 _ = check_timer => {
                     trace!(streamer_id = %self.id, "check timer fired");
-                    if let Err(e) = self.initiate_check().await {
+                    if let Err(e) = self.run_scheduled_check().await {
                         warn!("StreamerActor {} check failed: {}", self.id, e);
 
                         // Fatal (non-recoverable) errors should stop the actor - the scheduler
@@ -115,6 +115,27 @@ impl StreamerActor {
             }
         }
         false
+    }
+
+    /// Brings the next check forward for a batch live report, remembering the routine poll it
+    /// replaces.
+    pub(super) fn advance_for_batch_live(&mut self) {
+        if !self.can_advance_batch_poll() {
+            return;
+        }
+        self.batch_wake_routine_deadline = self.state.next_check;
+        self.state.schedule_immediate_check();
+    }
+
+    /// Runs the check the timer fired for. After a check a batch live report brought forward,
+    /// the routine poll stays at its earlier deadline when that is still ahead.
+    pub(super) async fn run_scheduled_check(&mut self) -> Result<(), ActorError> {
+        let routine = self.batch_wake_routine_deadline.take();
+        let result = self.initiate_check().await;
+        if let Some(routine) = routine {
+            self.state.keep_routine_deadline(routine);
+        }
+        result
     }
 
     pub(super) fn discard_batch_hint(&mut self) {

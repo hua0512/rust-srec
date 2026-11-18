@@ -15,6 +15,12 @@
 //! of the interval or the duration of that call (bounded by the request timeout) old, whichever is
 //! longer.
 //!
+//! A member's live hint fires when a result first reports it live, and again on every later result
+//! that still does while it has been live for less than a check interval. The room's own page can
+//! lag the batch call, so an individual check woken by the first report may still find the room
+//! offline; the repeats retry it at the batch cadence until the streamer's routine poll would have
+//! come anyway.
+//!
 //! Polling is the registration. A streamer joins the first chunk with a free slot the first time it
 //! polls and keeps that slot while it keeps polling. One that stops (deleted, disabled, recording,
 //! backing off, moved to another route) is dropped once it has gone [`EXPIRY_INTERVALS`] check
@@ -104,6 +110,8 @@ struct Member {
     key: String,
     last_poll: Instant,
     live: watch::Sender<bool>,
+    /// When a result first reported the member live; cleared by one that does not.
+    live_since: Option<Instant>,
 }
 
 #[derive(Default)]
@@ -131,13 +139,28 @@ fn expiry(interval: Duration) -> Duration {
 }
 
 impl ChunkState {
-    fn publish(&mut self, result: Option<Cached>) {
-        for member in self.members.values() {
-            let reports_live =
-                |cached: &Cached| cached.presence.get(&member.key) == Some(&BatchPresence::Live);
-            let live = result.as_ref().is_some_and(reports_live);
-            if live != self.result.as_ref().is_some_and(reports_live) {
-                member.live.send_replace(live);
+    /// Stores `result` and sends each member's live hint: when the member turns live or stops
+    /// being live, and on every result while it has been live for less than `interval`.
+    fn publish(&mut self, result: Option<Cached>, interval: Duration, now: Instant) {
+        for member in self.members.values_mut() {
+            let live = result.as_ref().is_some_and(|cached| {
+                cached.presence.get(&member.key) == Some(&BatchPresence::Live)
+            });
+            match (live, member.live_since) {
+                (true, None) => {
+                    member.live_since = Some(now);
+                    member.live.send_replace(true);
+                }
+                (true, Some(since)) => {
+                    if now.saturating_duration_since(since) < interval {
+                        member.live.send_replace(true);
+                    }
+                }
+                (false, Some(_)) => {
+                    member.live_since = None;
+                    member.live.send_replace(false);
+                }
+                (false, None) => {}
             }
         }
         self.result = result;
@@ -260,18 +283,23 @@ impl BatchPrecheck {
                 );
                 state.failures = 0;
                 state.backoff_until = None;
-                state.publish(Some(Cached {
-                    at: started,
-                    completed_at: Instant::now(),
-                    presence,
-                }));
+                let now = Instant::now();
+                state.publish(
+                    Some(Cached {
+                        at: started,
+                        completed_at: now,
+                        presence,
+                    }),
+                    poll.interval,
+                    now,
+                );
                 state.answer(&poll, state.offline(&poll.key))
             }
             Err(error) => {
                 state.failures = state.failures.saturating_add(1);
                 let backoff = backoff_after(state.failures, &error);
                 state.backoff_until = Some(Instant::now() + backoff);
-                state.publish(None);
+                state.publish(None, poll.interval, Instant::now());
                 if state.failures == 1 {
                     warn!(
                         platform = poll.group.platform,
@@ -306,6 +334,7 @@ impl BatchPrecheck {
                 if member.key != poll.key {
                     member.key.clone_from(&poll.key);
                     member.live = watch::Sender::new(false);
+                    member.live_since = None;
                 }
                 member.last_poll = now;
                 return chunk.clone();
@@ -334,6 +363,7 @@ impl BatchPrecheck {
                 key: poll.key.clone(),
                 last_poll: now,
                 live: watch::Sender::new(false),
+                live_since: None,
             },
         );
         chunk
@@ -453,7 +483,7 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
-    async fn a_slow_refresh_wakes_the_peer_once_without_a_second_batch_request() {
+    async fn a_slow_refresh_wakes_the_peer_without_a_second_batch_request() {
         let precheck = BatchPrecheck::default();
         let calls = FakeCalls::default();
         let mut peer = precheck
@@ -475,9 +505,38 @@ mod tests {
             .check(poll("peer", 100), |_| async { panic!("redundant refresh") })
             .await;
         assert!(!answer.offline);
-        tokio::time::advance(INTERVAL).await;
-        precheck.check(poll("trigger", 100), live_peer).await;
-        assert!(!peer.has_changed().unwrap());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_peer_reported_live_is_woken_again_until_its_routine_poll_is_due() {
+        let precheck = BatchPrecheck::default();
+        let calls = FakeCalls::default();
+        let mut peer = precheck
+            .check(poll("peer", 100), |keys| calls.call(keys))
+            .await
+            .live_hint
+            .unwrap();
+        let presence = |presence| {
+            move |_: Vec<String>| async move {
+                Ok(BatchResult::from([("key-peer".to_owned(), presence)]))
+            }
+        };
+        let mut refresh = async |result: BatchPresence| {
+            tokio::time::advance(INTERVAL / 4 + Duration::from_secs(1)).await;
+            precheck.check(poll("trigger", 100), presence(result)).await;
+            let woken = peer.has_changed().unwrap();
+            peer.borrow_and_update();
+            woken
+        };
+
+        assert!(refresh(BatchPresence::Live).await);
+        assert!(refresh(BatchPresence::Live).await);
+        assert!(refresh(BatchPresence::Live).await);
+        assert!(refresh(BatchPresence::Live).await);
+        // Live for longer than an interval: the routine poll is due, so no further wake.
+        assert!(!refresh(BatchPresence::Live).await);
+        assert!(refresh(BatchPresence::Offline).await);
+        assert!(refresh(BatchPresence::Live).await);
     }
 
     #[tokio::test(start_paused = true)]

@@ -119,6 +119,10 @@ pub struct StreamerActor {
     /// to this instant so a failing check does not busy-retry against the stall
     /// timer. Cleared on the next successful check.
     live_watchdog_backoff_until: Option<Instant>,
+    /// The routine offline poll that was pending when a batch live report brought a check forward.
+    /// A woken check that still finds the streamer offline reschedules no later than this, so
+    /// repeated wakes cannot postpone the routine poll.
+    batch_wake_routine_deadline: Option<Instant>,
     /// Shared metadata store for fetching fresh streamer data.
     metadata_store: Arc<DashMap<String, Arc<StreamerMetadata>>>,
     /// Configuration.
@@ -182,6 +186,7 @@ impl StreamerActor {
             state,
             initial_status_pending: true,
             live_watchdog_backoff_until: None,
+            batch_wake_routine_deadline: None,
             metadata_store,
             config,
             cancellation_token,
