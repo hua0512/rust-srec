@@ -12,7 +12,8 @@
     "windows": [],
     "security": {
       "capabilities": [
-        "default"
+        "default",
+        "external-web-links"
       ],
       "csp": "default-src 'self' asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost http://127.0.0.1:* ws://127.0.0.1:*; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost data: https: http://127.0.0.1:* http://localhost:*; font-src 'self' asset: http://asset.localhost data:; media-src 'self' asset: http://asset.localhost data: blob:;",
       "dangerousDisableAssetCspModification": ["style-src"],
