@@ -794,6 +794,17 @@ impl StreamerActorState {
     /// Force schedule a check (used when download fails or streamer goes offline).
     ///
     /// This bypasses the live state check and schedules an immediate check.
+    /// Moves a recurring offline poll back to `deadline` when that is earlier and still ahead.
+    pub(crate) fn keep_routine_deadline(&mut self, deadline: Instant) {
+        if self.streamer_state == StreamerState::NotLive
+            && self.recurring_interval_ms.is_some()
+            && deadline > Instant::now()
+            && self.next_check.is_some_and(|next| next > deadline)
+        {
+            self.next_check = Some(deadline);
+        }
+    }
+
     pub fn schedule_immediate_check(&mut self) {
         self.set_next_check(Some(Instant::now()));
     }

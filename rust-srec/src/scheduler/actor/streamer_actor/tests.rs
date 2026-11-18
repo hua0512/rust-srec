@@ -1,6 +1,32 @@
 use super::*;
 
 #[tokio::test]
+async fn a_batch_woken_check_that_finds_the_room_offline_keeps_the_routine_deadline() {
+    let config = StreamerConfig {
+        check_interval_ms: 60_000,
+        ..create_test_config()
+    };
+    let (mut actor, _) = StreamerActor::new(
+        "test-streamer".to_owned(),
+        create_test_metadata_store(),
+        config.clone(),
+        CancellationToken::new(),
+        create_noop_checker(),
+    );
+    actor.state.schedule_next_check(&config, 0);
+    // Half an interval left, so a check now would otherwise reschedule past it.
+    let routine = Instant::now().checked_add(Duration::from_secs(30));
+    actor.state.next_check = routine;
+
+    for _ in 0..2 {
+        actor.advance_for_batch_live();
+        assert!(actor.state.next_check < routine);
+        actor.run_scheduled_check().await.unwrap();
+        assert_eq!(actor.state.next_check, routine);
+    }
+}
+
+#[tokio::test]
 async fn config_messages_preserve_recurring_and_authoritative_retry_deadlines() {
     let config = create_test_config();
     let (mut actor, _) = StreamerActor::new(
