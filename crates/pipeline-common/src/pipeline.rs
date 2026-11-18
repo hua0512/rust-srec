@@ -125,7 +125,7 @@ impl<T> Pipeline<T> {
         O: FnMut(Result<T, E>),
         E: Into<PipelineError> + From<PipelineError>,
     {
-        let processing_result = self.process_items(input, output);
+        let processing_result = self.process_items(input, output, &mut Self::stage_buffers());
 
         // Finalize processing for all processors in the chain. This runs even if processing was
         // cancelled or errored.
@@ -138,20 +138,23 @@ impl<T> Pipeline<T> {
         processing_result
     }
 
+    pub(crate) fn stage_buffers() -> [Vec<T>; 2] {
+        std::array::from_fn(|_| Vec::with_capacity(DEFAULT_STAGE_CAPACITY))
+    }
+
     /// Process input items through the pipeline
     pub(crate) fn process_items<I, O, E>(
         &mut self,
         input: I,
         output: &mut O,
+        stage_buffers: &mut [Vec<T>; 2],
     ) -> Result<(), PipelineError>
     where
         I: Iterator<Item = Result<T, E>>,
         O: FnMut(Result<T, E>),
         E: Into<PipelineError> + From<PipelineError>,
     {
-        // Pre-allocate vectors for stage processing - these will be reused
-        let mut current_stage_items: Vec<T> = Vec::with_capacity(DEFAULT_STAGE_CAPACITY);
-        let mut next_stage_items: Vec<T> = Vec::with_capacity(DEFAULT_STAGE_CAPACITY);
+        let [current_stage_items, next_stage_items] = stage_buffers;
 
         for item_result in input {
             // Check for cancellation before processing each input item
@@ -194,7 +197,7 @@ impl<T> Pipeline<T> {
                         }
 
                         // Swap vectors for next iteration (avoids reallocation)
-                        std::mem::swap(&mut current_stage_items, &mut next_stage_items);
+                        std::mem::swap(current_stage_items, next_stage_items);
 
                         // Early exit if stage produced no output
                         if current_stage_items.is_empty() {
