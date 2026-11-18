@@ -193,7 +193,7 @@ mod tests {
         let events = repo.list_for_session("s1").await.unwrap();
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].kind, "session_started");
-        assert_eq!(events[0].occurred_at.timestamp_millis(), 100);
+        assert_eq!(events[0].occurred_at.as_millisecond(), 100);
         assert!(
             events[0].payload.is_none(),
             "malformed JSON should degrade to a kind-only domain event"

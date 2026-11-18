@@ -175,13 +175,13 @@ where
         streamer: &StreamerMetadata,
     ) -> Result<(CheckResult, LiveStatus), CheckError> {
         // Time the check so the strip's tooltip can surface slow extractor
-        // responses. `Instant::now()` rather than `Utc::now()` for the
+        // responses. `Instant::now()` rather than `jiff::Timestamp::now()` for the
         // duration measurement so we don't get hit by wall-clock jumps.
         let started = std::time::Instant::now();
-        let checked_at = chrono::Utc::now();
+        let checked_at = jiff::Timestamp::now();
         let outcome = self.monitor.check_streamer_for_actor(streamer).await;
         let duration =
-            chrono::Duration::from_std(started.elapsed()).unwrap_or(chrono::Duration::MAX);
+            jiff::SignedDuration::try_from(started.elapsed()).unwrap_or(jiff::SignedDuration::MAX);
 
         // Record the per-poll diagnostic record (best-effort — drops on full
         // channel, never blocks the polling loop). Both the success and
@@ -251,8 +251,8 @@ where
 
 fn check_record_from_live_status(
     streamer_id: &str,
-    checked_at: chrono::DateTime<chrono::Utc>,
-    duration: chrono::Duration,
+    checked_at: jiff::Timestamp,
+    duration: jiff::SignedDuration,
     status: &LiveStatus,
     source: CheckSource,
 ) -> CheckRecord {
@@ -325,7 +325,7 @@ fn convert_live_status_to_check_result(status: &LiveStatus) -> CheckResult {
             state: StreamerState::Live,
             stream_url: None,
             title: Some(title.clone()),
-            checked_at: chrono::Utc::now(),
+            checked_at: jiff::Timestamp::now(),
             next_check_hint: *next_check_hint,
             batch_live: None,
         },
@@ -339,7 +339,7 @@ fn convert_live_status_to_check_result(status: &LiveStatus) -> CheckResult {
                 state: StreamerState::OutOfSchedule,
                 stream_url: None,
                 title: Some(title.clone()),
-                checked_at: chrono::Utc::now(),
+                checked_at: jiff::Timestamp::now(),
                 next_check_hint,
                 batch_live: None,
             }
@@ -357,7 +357,7 @@ fn convert_live_status_to_check_result(status: &LiveStatus) -> CheckResult {
             },
             stream_url: None,
             title: None,
-            checked_at: chrono::Utc::now(),
+            checked_at: jiff::Timestamp::now(),
             next_check_hint: None,
             batch_live: None,
         },

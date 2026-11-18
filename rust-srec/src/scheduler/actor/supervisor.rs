@@ -564,7 +564,6 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
 
     use async_trait::async_trait;
-    use chrono::Utc;
 
     use super::*;
     use crate::domain::{Priority, StreamerState};
@@ -695,9 +694,9 @@ mod tests {
             platform_metadata: None,
             offline_check_count: 3,
             offline_check_delay_ms: 20_000,
-            created_at: Utc::now(),
+            created_at: jiff::Timestamp::now(),
             deleted_at: None,
-            updated_at: Utc::now(),
+            updated_at: jiff::Timestamp::now(),
         }
     }
 

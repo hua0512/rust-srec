@@ -6,7 +6,7 @@
 //! - Reconnection when the provider's transport gives up
 //! - Periodic buffer flushing
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -598,7 +598,7 @@ impl CollectionRunner {
         &mut self,
         segment_id: String,
         output_path: PathBuf,
-        start_time: DateTime<Utc>,
+        start_time: Timestamp,
     ) -> Result<()> {
         // Flush buffer to old segment before switching
         self.flush_buffer().await?;
@@ -845,7 +845,7 @@ mod tests {
             .send(CollectionCommand::StartSegment {
                 segment_id: "0".to_string(),
                 output_path: first.clone(),
-                start_time: Utc::now(),
+                start_time: Timestamp::now(),
             })
             .await
             .expect("start first segment");
@@ -870,7 +870,7 @@ mod tests {
             .send(CollectionCommand::StartSegment {
                 segment_id: "1".to_string(),
                 output_path: second.clone(),
-                start_time: Utc::now(),
+                start_time: Timestamp::now(),
             })
             .await
             .expect("start second segment");
@@ -940,8 +940,8 @@ mod tests {
         let (command_tx, command_rx) = mpsc::channel(8);
         let first = temp_xml_path("queued-boundary-0");
         let second = temp_xml_path("queued-boundary-1");
-        let first_start = Utc::now();
-        let second_start = first_start + chrono::Duration::seconds(5);
+        let first_start = Timestamp::now();
+        let second_start = first_start + jiff::SignedDuration::from_secs(5);
 
         command_tx
             .send(CollectionCommand::StartSegment {
@@ -1013,7 +1013,7 @@ mod tests {
         let (command_tx, command_rx) = mpsc::channel(8);
         let first = temp_xml_path("boundary-closed-0");
         let second = temp_xml_path("boundary-closed-1");
-        let first_start = Utc::now();
+        let first_start = Timestamp::now();
 
         command_tx
             .send(CollectionCommand::StartSegment {
@@ -1038,7 +1038,7 @@ mod tests {
             .send(CollectionCommand::StartSegment {
                 segment_id: "seg-1".to_string(),
                 output_path: second.clone(),
-                start_time: first_start + chrono::Duration::seconds(5),
+                start_time: first_start + jiff::SignedDuration::from_secs(5),
             })
             .await
             .expect("start second segment");
@@ -1104,7 +1104,7 @@ mod tests {
             .send(CollectionCommand::StartSegment {
                 segment_id: "0".to_string(),
                 output_path: blocker.join("child").join("seg.xml"),
-                start_time: Utc::now(),
+                start_time: Timestamp::now(),
             })
             .await
             .expect("start segment");
@@ -1142,7 +1142,7 @@ mod tests {
             .send(CollectionCommand::StartSegment {
                 segment_id: "seg-0".to_string(),
                 output_path: path.clone(),
-                start_time: Utc::now(),
+                start_time: Timestamp::now(),
             })
             .await
             .expect("send start segment");
@@ -1272,7 +1272,7 @@ mod tests {
             .send(CollectionCommand::StartSegment {
                 segment_id: "0".to_string(),
                 output_path: path.clone(),
-                start_time: Utc::now(),
+                start_time: Timestamp::now(),
             })
             .await
             .expect("start segment");

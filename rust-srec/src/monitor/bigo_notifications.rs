@@ -28,7 +28,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use parking_lot::Mutex;
 use platforms_parser::extractor::error::ExtractorError;
 use platforms_parser::extractor::factory::ExtractorSelection;
@@ -195,7 +195,7 @@ pub struct BigoNotificationStatus {
     /// notification setting in BIGO is off.
     pub missed_pushes: u64,
     /// When the latest of those was found.
-    pub last_missed_at: Option<DateTime<Utc>>,
+    pub last_missed_at: Option<Timestamp>,
 }
 
 /// The listener's state as the status reports it.
@@ -206,7 +206,7 @@ struct ListenerStatus {
     reason: Option<PollingReason>,
     message: Option<String>,
     missed_pushes: u64,
-    last_missed_at: Option<DateTime<Utc>>,
+    last_missed_at: Option<Timestamp>,
 }
 
 /// The Bigo platform's notification settings as the listener acts on them.
@@ -606,7 +606,7 @@ impl BigoNotifications {
         {
             let mut listener = self.listener.lock();
             listener.missed_pushes += 1;
-            listener.last_missed_at = Some(Utc::now());
+            listener.last_missed_at = Some(Timestamp::now());
         }
         self.status_changed.notify_one();
     }

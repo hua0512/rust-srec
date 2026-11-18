@@ -9,7 +9,6 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use chrono::Utc;
 
 use crate::api::error::{ApiError, ApiResult};
 use crate::api::extract::ApiJson;
@@ -50,7 +49,7 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
 
     let filename = format!(
         "rust-srec-backup-{}.json",
-        Utc::now().format("%Y%m%d-%H%M%S")
+        jiff::Timestamp::now().strftime("%Y%m%d-%H%M%S")
     );
     let content_disposition = format!("attachment; filename=\"{}\"", filename);
 

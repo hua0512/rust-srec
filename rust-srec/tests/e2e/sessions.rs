@@ -13,9 +13,10 @@ use serde_json::{Value, json};
 use crate::support::{TestApp, assert_fields, millis, now_ms};
 
 fn rfc3339(ms: i64) -> String {
-    chrono::DateTime::from_timestamp_millis(ms)
+    jiff::Timestamp::from_millisecond(ms)
         .expect("valid timestamp")
-        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+        .strftime("%Y-%m-%dT%H:%M:%S%.3fZ")
+        .to_string()
 }
 
 /// A SQL string literal, or `NULL`.

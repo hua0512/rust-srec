@@ -151,7 +151,7 @@ async fn committed_observation_is_silent_hydrates_and_rejects_old_snapshot() {
     let saved = repository.get_streamer(&id).await.unwrap();
     let cached = manager.get_streamer_snapshot(&id).unwrap();
     assert_eq!(saved.platform_metadata, cached.platform_metadata);
-    assert_eq!(saved.updated_at, source.updated_at.timestamp_millis());
+    assert_eq!(saved.updated_at, source.updated_at.as_millisecond());
     assert!(receiver.try_recv().is_err());
     assert!(
         !manager

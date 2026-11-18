@@ -2,59 +2,59 @@
 //!
 //! We store timestamps as `INTEGER` Unix epoch milliseconds (UTC) in SQLite.
 
-use chrono::{DateTime, TimeZone, Utc};
+use jiff::Timestamp;
 
 /// SQLx adapter for date-time fields backed by INTEGER epoch milliseconds.
 ///
-/// SQLx's native SQLite DateTime decoder interprets integers as seconds.
+/// SQLite timestamp columns in this application store integer milliseconds, not seconds.
 #[derive(sqlx::Type)]
 #[sqlx(transparent)]
 pub struct EpochMillis(i64);
 
 #[derive(Debug, thiserror::Error)]
-#[error("epoch millisecond timestamp {0} is outside chrono's supported range")]
+#[error("epoch millisecond timestamp {0} is outside Jiff's supported range")]
 pub struct InvalidEpochMillis(i64);
 
-impl TryFrom<EpochMillis> for DateTime<Utc> {
+impl TryFrom<EpochMillis> for Timestamp {
     type Error = InvalidEpochMillis;
 
     fn try_from(value: EpochMillis) -> Result<Self, Self::Error> {
-        DateTime::from_timestamp_millis(value.0).ok_or(InvalidEpochMillis(value.0))
+        Timestamp::from_millisecond(value.0).map_err(|_| InvalidEpochMillis(value.0))
     }
 }
 
 /// Current time as Unix epoch milliseconds (UTC).
 #[inline]
 pub fn now_ms() -> i64 {
-    Utc::now().timestamp_millis()
+    datetime_to_ms(Timestamp::now())
 }
 
-/// Convert a `DateTime<Utc>` to Unix epoch milliseconds.
+/// Convert a `Timestamp` to Unix epoch milliseconds, rounding down.
 #[inline]
-pub fn datetime_to_ms(dt: DateTime<Utc>) -> i64 {
-    dt.timestamp_millis()
+pub fn datetime_to_ms(dt: Timestamp) -> i64 {
+    dt.as_nanosecond().div_euclid(1_000_000) as i64
 }
 
-/// Convert Unix epoch milliseconds to `DateTime<Utc>`.
+/// Convert Unix epoch milliseconds to `Timestamp`.
 ///
-/// Values outside chrono's supported range will clamp to the nearest representable timestamp.
+/// Values outside Jiff's supported range clamp to the nearest representable timestamp.
 #[inline]
-pub fn ms_to_datetime(ms: i64) -> DateTime<Utc> {
-    // Prefer timestamp_millis_opt to avoid panics.
-    match Utc.timestamp_millis_opt(ms) {
-        chrono::LocalResult::Single(dt) => dt,
-        chrono::LocalResult::Ambiguous(dt, _) => dt,
-        chrono::LocalResult::None => {
-            // Clamp to nearest representable value.
-            if ms.is_negative() {
-                Utc.timestamp_millis_opt(i64::MIN)
-                    .earliest()
-                    .unwrap_or_else(Utc::now)
-            } else {
-                Utc.timestamp_millis_opt(i64::MAX)
-                    .latest()
-                    .unwrap_or_else(Utc::now)
-            }
-        }
+pub fn ms_to_datetime(ms: i64) -> Timestamp {
+    Timestamp::from_millisecond(ms).unwrap_or(if ms.is_negative() {
+        Timestamp::MIN
+    } else {
+        Timestamp::MAX
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sub_millisecond_timestamp_before_epoch_uses_preceding_millisecond() {
+        let time = "1969-12-31T23:59:59.999999Z".parse().unwrap();
+        assert_eq!(datetime_to_ms(time), -1);
+        assert!(ms_to_datetime(-1) <= time && time < ms_to_datetime(0));
     }
 }

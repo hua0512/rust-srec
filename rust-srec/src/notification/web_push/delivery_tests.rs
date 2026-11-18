@@ -109,7 +109,7 @@ impl Fixture {
 fn event() -> NotificationEvent {
     NotificationEvent::SystemStartup {
         version: "test".into(),
-        timestamp: Utc::now(),
+        timestamp: jiff::Timestamp::now(),
     }
 }
 
@@ -234,7 +234,7 @@ async fn throttling_skips_http_and_first_success_clears_persisted_backoff() {
         assert_eq!(fixture.metrics.snapshot().web_push_skipped_backoff_total, 1);
 
         sqlx::query("UPDATE web_push_subscription SET next_attempt_at = ? WHERE endpoint = ?")
-            .bind(Utc::now().timestamp_millis() - 1)
+            .bind(jiff::Timestamp::now().as_millisecond() - 1)
             .bind(&fixture.endpoint)
             .execute(&fixture.service.write_pool)
             .await

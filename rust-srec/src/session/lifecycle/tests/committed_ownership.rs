@@ -80,7 +80,7 @@ impl Fixture {
     async fn start(&mut self) -> String {
         let sid = self
             .lifecycle
-            .on_live_detected(live_args(Utc::now()))
+            .on_live_detected(live_args(jiff::Timestamp::now()))
             .await
             .unwrap()
             .session_id()
@@ -132,7 +132,9 @@ impl Mutation {
     async fn apply(self, lifecycle: Arc<SessionLifecycle>, sid: String) -> Result<()> {
         match self {
             Self::Live | Self::Resume => {
-                lifecycle.on_live_detected(live_args(Utc::now())).await?;
+                lifecycle
+                    .on_live_detected(live_args(jiff::Timestamp::now()))
+                    .await?;
             }
             Self::Offline => {
                 lifecycle
@@ -143,7 +145,7 @@ impl Mutation {
                         state_was_live: true,
                         clear_errors: true,
                         signal: None,
-                        now: Utc::now(),
+                        now: jiff::Timestamp::now(),
                     })
                     .await?;
             }
@@ -432,7 +434,7 @@ async fn hysteresis_memory_publication_and_resume_audit_keep_their_completion_ow
         let caller = tokio::spawn(async move {
             if resume {
                 lifecycle
-                    .on_live_detected(live_args(Utc::now()))
+                    .on_live_detected(live_args(jiff::Timestamp::now()))
                     .await
                     .map(|_| ())
             } else {
@@ -608,7 +610,7 @@ async fn retrying_timer_stops_on_resume_shutdown_or_handle_replacement() {
             "resume" => {
                 let resumed = f
                     .lifecycle
-                    .on_live_detected(live_args(Utc::now()))
+                    .on_live_detected(live_args(jiff::Timestamp::now()))
                     .await
                     .unwrap();
                 assert_eq!(resumed.session_id(), sid);

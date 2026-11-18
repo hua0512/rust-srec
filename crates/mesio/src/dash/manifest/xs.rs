@@ -9,7 +9,8 @@
 
 use std::time::Duration;
 
-use chrono::{DateTime, NaiveDateTime, TimeDelta, Utc};
+use jiff::civil::DateTime;
+use jiff::{SignedDuration, Timestamp};
 
 use super::timeline::AvailabilityTimeOffset;
 
@@ -186,7 +187,7 @@ fn decimal_nanos(integer: &str, fraction: &str, exponent: i64) -> Result<u128, &
 /// attributes (`MPD@availabilityStartTime`, `MPD@publishTime`, ISO/IEC 23009-1
 /// §5.3.1.2) are UTC times, and the reference players read them that way.
 /// Fractional seconds are rounded to the nearest nanosecond, ties up.
-pub(crate) fn parse_date_time(input: &str) -> Result<DateTime<Utc>, &'static str> {
+pub(crate) fn parse_date_time(input: &str) -> Result<Timestamp, &'static str> {
     const INVALID: &str = "expected an xs:dateTime such as 2024-01-01T00:00:00Z";
     let s = input.trim();
     // `YYYY-MM-DDThh:mm:ss`, then an optional fraction and timezone.
@@ -202,17 +203,29 @@ pub(crate) fn parse_date_time(input: &str) -> Result<DateTime<Utc>, &'static str
         rest = &after_point[digits..];
     }
     let whole = if rest.is_empty() {
-        NaiveDateTime::parse_from_str(head, "%Y-%m-%dT%H:%M:%S")
-            .map(|time| time.and_utc())
+        DateTime::strptime("%Y-%m-%dT%H:%M:%S", head)
+            .and_then(|time| jiff::tz::TimeZone::UTC.to_timestamp(time))
             .map_err(|_| INVALID)?
     } else {
-        DateTime::parse_from_rfc3339(&format!("{head}{rest}"))
-            .map(|time| time.with_timezone(&Utc))
+        match rest.as_bytes() {
+            [b'Z' | b'z'] => {}
+            [
+                b'+' | b'-',
+                hour_tens @ b'0'..=b'2',
+                hour_units @ b'0'..=b'9',
+                b':',
+                b'0'..=b'5',
+                b'0'..=b'9',
+            ] if (*hour_tens - b'0') * 10 + (*hour_units - b'0') < 24 => {}
+            _ => return Err(INVALID),
+        }
+        format!("{head}{rest}")
+            .parse::<Timestamp>()
             .map_err(|_| INVALID)?
     };
     // At most one second after rounding.
-    let fraction = TimeDelta::nanoseconds(i64::try_from(nanos).map_err(|_| INVALID)?);
-    whole.checked_add_signed(fraction).ok_or(INVALID)
+    let fraction = SignedDuration::from_nanos(i64::try_from(nanos).map_err(|_| INVALID)?);
+    whole.checked_add(fraction).map_err(|_| INVALID)
 }
 
 /// A parsed `@availabilityTimeOffset`.
@@ -313,17 +326,8 @@ pub(crate) fn duration_nanos(duration: Duration) -> i128 {
     i128::from(duration.as_secs()) * i128::from(NANOS_PER_SEC) + i128::from(duration.subsec_nanos())
 }
 
-/// Converts a UTC instant to nanoseconds since the Unix epoch, without the
-/// `i64` range limit of `timestamp_nanos_opt`.
-pub(crate) fn instant_nanos(time: DateTime<Utc>) -> i128 {
-    i128::from(time.timestamp()) * i128::from(NANOS_PER_SEC)
-        + i128::from(time.timestamp_subsec_nanos())
-}
-
 #[cfg(test)]
 mod tests {
-    use chrono::TimeZone;
-
     use super::*;
 
     #[test]
@@ -407,7 +411,7 @@ mod tests {
 
     #[test]
     fn date_times() {
-        let epoch = Utc.timestamp_opt(0, 0).unwrap();
+        let epoch = jiff::Timestamp::from_second(0).unwrap();
         assert_eq!(parse_date_time("1970-01-01T00:00:00Z"), Ok(epoch));
         assert_eq!(parse_date_time("1970-01-01T00:00:00"), Ok(epoch));
         assert_eq!(
@@ -417,17 +421,17 @@ mod tests {
         );
         assert_eq!(
             parse_date_time("2024-05-06T07:08:09.123Z"),
-            Ok(Utc.timestamp_opt(1_714_979_289, 123_000_000).unwrap())
+            Ok(jiff::Timestamp::new(1_714_979_289, 123_000_000).unwrap())
         );
         assert_eq!(
             parse_date_time("2024-05-06T07:08:09.5"),
-            Ok(Utc.timestamp_opt(1_714_979_289, 500_000_000).unwrap())
+            Ok(jiff::Timestamp::new(1_714_979_289, 500_000_000).unwrap())
         );
     }
 
     #[test]
     fn date_time_fractions_round_to_the_nearest_nanosecond() {
-        let at = |nanos| Utc.timestamp_opt(1_714_979_289, nanos).unwrap();
+        let at = |nanos| jiff::Timestamp::new(1_714_979_289, nanos).unwrap();
         assert_eq!(
             parse_date_time("2024-05-06T07:08:09.1234567894Z"),
             Ok(at(123_456_789))
@@ -438,7 +442,7 @@ mod tests {
         );
         assert_eq!(
             parse_date_time("2024-05-06T07:08:09.9999999999+00:00"),
-            Ok(Utc.timestamp_opt(1_714_979_290, 0).unwrap()),
+            Ok(jiff::Timestamp::from_second(1_714_979_290).unwrap()),
             "rounding carries into the seconds"
         );
     }

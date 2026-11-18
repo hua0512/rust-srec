@@ -10,7 +10,8 @@
 use std::fmt;
 use std::time::Duration;
 
-use chrono::{DateTime, NaiveDateTime, TimeDelta, Utc};
+use jiff::civil::DateTime;
+use jiff::{SignedDuration, Timestamp};
 use parking_lot::Mutex;
 use url::Url;
 
@@ -28,7 +29,7 @@ pub enum UtcTiming {
     HttpHead { urls: Vec<Url> },
     /// `urn:mpeg:dash:utc:direct:2014`: the time is the descriptor's value,
     /// valid at the moment the MPD was fetched.
-    Direct { time: DateTime<Utc> },
+    Direct { time: Timestamp },
 }
 
 impl UtcTiming {
@@ -70,7 +71,7 @@ impl UtcTiming {
     /// Reads the server time from an `http-iso` or `http-xsdate` response
     /// body. Both carry the extended ISO 8601 / `xs:dateTime` form; a
     /// timezone-less value is UTC.
-    pub fn parse_body(body: &[u8]) -> Result<DateTime<Utc>, ManifestError> {
+    pub fn parse_body(body: &[u8]) -> Result<Timestamp, ManifestError> {
         const CONTEXT: &str = "UTCTiming response";
         let text = std::str::from_utf8(body)
             .map_err(|_| ManifestError::InvalidTime { context: CONTEXT })?;
@@ -83,7 +84,7 @@ impl UtcTiming {
 ///
 /// The header has one-second resolution, which bounds the accuracy of an
 /// offset derived from it.
-pub fn parse_http_date(value: &str) -> Result<DateTime<Utc>, ManifestError> {
+pub fn parse_http_date(value: &str) -> Result<Timestamp, ManifestError> {
     let value = value.trim();
     let invalid = || ManifestError::InvalidTime {
         context: "HTTP Date header",
@@ -91,56 +92,57 @@ pub fn parse_http_date(value: &str) -> Result<DateTime<Utc>, ManifestError> {
     let fixdate = value
         .strip_suffix(" GMT")
         .and_then(|time| {
-            NaiveDateTime::parse_from_str(time, "%a, %d %b %Y %H:%M:%S")
-                .or_else(|_| NaiveDateTime::parse_from_str(time, "%A, %d-%b-%y %H:%M:%S"))
+            DateTime::strptime("%a, %d %b %Y %H:%M:%S", time)
+                .or_else(|_| DateTime::strptime("%A, %d-%b-%y %H:%M:%S", time))
                 .ok()
         })
-        .or_else(|| NaiveDateTime::parse_from_str(value, "%a %b %e %H:%M:%S %Y").ok());
-    fixdate.map(|time| time.and_utc()).ok_or_else(invalid)
+        .or_else(|| DateTime::strptime("%a %b %e %H:%M:%S %Y", value).ok());
+    fixdate
+        .and_then(|time| jiff::tz::TimeZone::UTC.to_timestamp(time).ok())
+        .ok_or_else(invalid)
 }
 
 /// The difference between the server's clock and the local clock.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct ClockOffset(TimeDelta);
+pub struct ClockOffset(SignedDuration);
 
 impl ClockOffset {
-    pub const ZERO: Self = Self(TimeDelta::zero());
+    pub const ZERO: Self = Self(SignedDuration::ZERO);
 
     /// The offset implied by `server_time`, read from a response to a request
     /// sent at `request_sent` and completed at `response_received` (local
     /// clock). The server time is assumed to correspond to the midpoint of the
     /// exchange, which halves the error a one-way delay would cause.
     pub fn from_exchange(
-        server_time: DateTime<Utc>,
-        request_sent: DateTime<Utc>,
-        response_received: DateTime<Utc>,
+        server_time: Timestamp,
+        request_sent: Timestamp,
+        response_received: Timestamp,
     ) -> Self {
         // A local clock that stepped backwards mid-request leaves no usable
         // midpoint; the receive time is the better estimate then.
         let local = if response_received >= request_sent {
-            request_sent + (response_received - request_sent) / 2
+            request_sent + response_received.duration_since(request_sent) / 2
         } else {
             response_received
         };
-        Self(server_time - local)
+        Self(server_time.duration_since(local))
     }
 
     /// The server's current time for a local time.
     ///
-    /// Saturates to `local` only beyond chrono's representable range (about
-    /// ±262 000 years), which no real offset reaches.
-    pub fn apply(self, local: DateTime<Utc>) -> DateTime<Utc> {
-        local.checked_add_signed(self.0).unwrap_or(local)
+    /// Returns `local` if the corrected time is out of range.
+    pub fn apply(self, local: Timestamp) -> Timestamp {
+        local.checked_add(self.0).unwrap_or(local)
     }
 
-    pub fn as_time_delta(self) -> TimeDelta {
+    pub fn as_time_delta(self) -> SignedDuration {
         self.0
     }
 }
 
 /// A source of the current local time, injectable for tests.
 pub trait Clock: Send + Sync + fmt::Debug {
-    fn now(&self) -> DateTime<Utc>;
+    fn now(&self) -> Timestamp;
 }
 
 /// The system clock.
@@ -148,56 +150,54 @@ pub trait Clock: Send + Sync + fmt::Debug {
 pub struct SystemClock;
 
 impl Clock for SystemClock {
-    fn now(&self) -> DateTime<Utc> {
-        Utc::now()
+    fn now(&self) -> Timestamp {
+        Timestamp::now()
     }
 }
 
 /// A clock that only moves when told to.
 #[derive(Debug)]
 pub struct ManualClock {
-    now: Mutex<DateTime<Utc>>,
+    now: Mutex<Timestamp>,
 }
 
 impl ManualClock {
-    pub fn new(start: DateTime<Utc>) -> Self {
+    pub fn new(start: Timestamp) -> Self {
         Self {
             now: Mutex::new(start),
         }
     }
 
-    pub fn set(&self, time: DateTime<Utc>) {
+    pub fn set(&self, time: Timestamp) {
         *self.now.lock() = time;
     }
 
-    /// Moves the clock forward; saturates at chrono's maximum time.
+    /// Moves the clock forward; saturates at the maximum timestamp.
     pub fn advance(&self, by: Duration) {
         let mut now = self.now.lock();
-        *now = TimeDelta::from_std(by)
+        *now = SignedDuration::try_from(by)
             .ok()
-            .and_then(|by| now.checked_add_signed(by))
-            .unwrap_or(DateTime::<Utc>::MAX_UTC);
+            .and_then(|by| now.checked_add(by).ok())
+            .unwrap_or(Timestamp::MAX);
     }
 }
 
 impl Clock for ManualClock {
-    fn now(&self) -> DateTime<Utc> {
+    fn now(&self) -> Timestamp {
         *self.now.lock()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use chrono::TimeZone;
-
     use super::*;
 
     fn document() -> Url {
         Url::parse("https://example.com/live/manifest.mpd").unwrap()
     }
 
-    fn at(secs: i64, millis: u32) -> DateTime<Utc> {
-        Utc.timestamp_opt(secs, millis * 1_000_000).unwrap()
+    fn at(secs: i64, millis: u32) -> Timestamp {
+        jiff::Timestamp::new(secs, millis as i32 * 1_000_000).unwrap()
     }
 
     #[test]
@@ -235,7 +235,7 @@ mod tests {
                 Some("2024-01-01T00:00:00Z")
             ),
             Some(UtcTiming::Direct {
-                time: Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap()
+                time: "2024-01-01T00:00:00Z".parse::<jiff::Timestamp>().unwrap()
             })
         );
         assert_eq!(
@@ -271,7 +271,7 @@ mod tests {
 
     #[test]
     fn http_dates() {
-        let expected = Utc.with_ymd_and_hms(1994, 11, 6, 8, 49, 37).unwrap();
+        let expected = "1994-11-06T08:49:37Z".parse::<jiff::Timestamp>().unwrap();
         for value in [
             "Sun, 06 Nov 1994 08:49:37 GMT",
             "Sunday, 06-Nov-94 08:49:37 GMT",
@@ -294,14 +294,14 @@ mod tests {
         // Request at 100.000, response at 100.400, server says 105.200 → the
         // server time corresponds to local 100.200 → offset +5 s.
         let offset = ClockOffset::from_exchange(at(105, 200), at(100, 0), at(100, 400));
-        assert_eq!(offset.as_time_delta(), TimeDelta::seconds(5));
+        assert_eq!(offset.as_time_delta(), SignedDuration::from_secs(5));
         assert_eq!(offset.apply(at(200, 0)), at(205, 0));
 
         let behind = ClockOffset::from_exchange(at(90, 0), at(100, 0), at(100, 0));
         assert_eq!(behind.apply(at(200, 0)), at(190, 0));
 
         let stepped_back = ClockOffset::from_exchange(at(50, 0), at(100, 0), at(40, 0));
-        assert_eq!(stepped_back.as_time_delta(), TimeDelta::seconds(10));
+        assert_eq!(stepped_back.as_time_delta(), SignedDuration::from_secs(10));
         assert_eq!(ClockOffset::ZERO.apply(at(1, 0)), at(1, 0));
     }
 }

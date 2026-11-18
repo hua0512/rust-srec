@@ -506,7 +506,7 @@ impl JobPresetRepository for SqliteJobPresetRepository {
             &mut *self.write_pool.acquire().await?,
             preset,
             super::row_write::WriteMode::Insert,
-            preset.updated_at.timestamp_millis(),
+            preset.updated_at.as_millisecond(),
         )
         .await?;
 
@@ -663,7 +663,7 @@ impl PipelinePresetRepository for SqlitePipelinePresetRepository {
             &mut *self.write_pool.acquire().await?,
             preset,
             super::row_write::WriteMode::Insert,
-            preset.updated_at.timestamp_millis(),
+            preset.updated_at.as_millisecond(),
         )
         .await?;
 

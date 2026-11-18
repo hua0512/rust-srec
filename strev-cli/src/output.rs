@@ -295,7 +295,7 @@ impl OutputManager {
         }
 
         if let Some(ref start_time) = media_info.live_start_time {
-            let time_str = start_time.format("%Y-%m-%d %H:%M:%S UTC").to_string();
+            let time_str = start_time.strftime("%Y-%m-%d %H:%M:%S UTC").to_string();
             output.push_str(&format!(
                 "  {}: {}\n",
                 self.colorize("Live Started", &Color::Yellow, false),
@@ -485,7 +485,7 @@ impl OutputManager {
         if let Some(ref start_time) = media_info.live_start_time {
             rows.push(TableRow {
                 property: "Live Started",
-                value: Cow::Owned(start_time.format("%Y-%m-%d %H:%M:%S UTC").to_string()),
+                value: Cow::Owned(start_time.strftime("%Y-%m-%d %H:%M:%S UTC").to_string()),
             });
         }
 
@@ -584,7 +584,7 @@ impl OutputManager {
             if let Some(ref start_time) = media_info.live_start_time {
                 output.push_str(&format!(
                     "live_started,\"{}\"\n",
-                    start_time.format("%Y-%m-%d %H:%M:%S UTC")
+                    start_time.strftime("%Y-%m-%d %H:%M:%S UTC")
                 ));
             }
 
@@ -670,7 +670,7 @@ impl OutputManager {
                     Cow::Owned(
                         media_info
                             .live_start_time
-                            .map(|t| t.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+                            .map(|t| t.strftime("%Y-%m-%d %H:%M:%S UTC").to_string())
                             .unwrap_or_default(),
                     ),
                     Self::escape_csv(media_info.cover_url.as_deref().unwrap_or("")),
@@ -712,7 +712,7 @@ impl OutputManager {
                         Cow::Owned(
                             media_info
                                 .live_start_time
-                                .map(|t| t.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+                                .map(|t| t.strftime("%Y-%m-%d %H:%M:%S UTC").to_string())
                                 .unwrap_or_default(),
                         ),
                         Self::escape_csv(media_info.cover_url.as_deref().unwrap_or("")),

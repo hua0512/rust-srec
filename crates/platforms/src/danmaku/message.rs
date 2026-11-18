@@ -2,7 +2,7 @@
 //!
 //! Core message structures for representing chat messages from streaming platforms.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -44,7 +44,7 @@ pub struct DanmuMessage {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
     /// Timestamp when the message was sent
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Type of message
     pub message_type: DanmuType,
     /// Platform-specific metadata (optional)
@@ -66,7 +66,7 @@ impl DanmuMessage {
             username: username.into(),
             content: content.into(),
             color: None,
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             message_type: DanmuType::Chat,
             metadata: None,
         }
@@ -93,7 +93,7 @@ impl DanmuMessage {
             username: username.into(),
             content,
             color: None,
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             message_type: DanmuType::Gift,
             metadata: Some(metadata),
         }
@@ -116,7 +116,7 @@ impl DanmuMessage {
             username: username.into(),
             content: content.into(),
             color: None,
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             message_type: DanmuType::SuperChat,
             metadata: Some(metadata),
         }
@@ -157,7 +157,7 @@ impl DanmuMessage {
     }
 
     /// Set the timestamp.
-    pub fn with_timestamp(mut self, timestamp: DateTime<Utc>) -> Self {
+    pub fn with_timestamp(mut self, timestamp: Timestamp) -> Self {
         self.timestamp = timestamp;
         self
     }

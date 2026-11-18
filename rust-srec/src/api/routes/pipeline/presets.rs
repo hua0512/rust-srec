@@ -162,7 +162,7 @@ pub async fn update_pipeline_preset(
         dag_definition: Some(dag_json),
         pipeline_type: Some("dag".to_string()),
         created_at: existing.created_at,
-        updated_at: chrono::Utc::now(),
+        updated_at: jiff::Timestamp::now(),
     };
 
     preset_repo.update_pipeline_preset(&preset).await?;

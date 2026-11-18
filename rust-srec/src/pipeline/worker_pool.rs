@@ -57,7 +57,7 @@ pub struct StalledOperation {
     pub input_file_name: Option<String>,
     pub input_count: usize,
     /// When the attempt's outcome was decided.
-    pub ended_at: chrono::DateTime<chrono::Utc>,
+    pub ended_at: jiff::Timestamp,
     ended: tokio::time::Instant,
 }
 
@@ -77,7 +77,7 @@ impl StalledOperation {
                     .unwrap_or_else(|| first.clone())
             }),
             input_count: input.inputs.len(),
-            ended_at: chrono::Utc::now(),
+            ended_at: jiff::Timestamp::now(),
             ended: tokio::time::Instant::now(),
         }
     }
@@ -219,9 +219,9 @@ fn progress_clause(snapshot: &JobProgressSnapshot) -> String {
 
     // A reading from the future means the clock moved; report it as current rather than
     // as a negative age.
-    let age = (chrono::Utc::now() - snapshot.updated_at)
-        .to_std()
-        .unwrap_or_default();
+    let age =
+        std::time::Duration::try_from(jiff::Timestamp::now().duration_since(snapshot.updated_at))
+            .unwrap_or_default();
     parts.push(format!(
         "last updated {} ago",
         crate::utils::text::format_duration(age.as_secs_f64())
@@ -1970,10 +1970,10 @@ mod tests {
         );
         // Distinct creation times fix the claim order, so a pool that claims the
         // second serial job before the parallel one always fails below.
-        let created = chrono::Utc::now();
+        let created = jiff::Timestamp::now();
         for (i, job_type) in ["serial", "serial", "parallel"].into_iter().enumerate() {
             let mut job = Job::new(job_type, vec![], vec![], "streamer", "session");
-            job.created_at = created + chrono::Duration::milliseconds(i as i64);
+            job.created_at = created + jiff::SignedDuration::from_millis(i as i64);
             queue.enqueue(job).await.unwrap();
         }
         let (started_tx, mut started_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -3226,7 +3226,7 @@ mod tests {
     fn timeout_progress_clause_names_the_phase() {
         let mut snapshot = JobProgressSnapshot::new(crate::pipeline::ProgressKind::BaiduPcs);
         snapshot.phase = Some(JobPhase::Retrying);
-        snapshot.updated_at = chrono::Utc::now() - chrono::Duration::minutes(59);
+        snapshot.updated_at = jiff::Timestamp::now() - jiff::SignedDuration::from_mins(59);
 
         let clause = progress_clause(&snapshot);
         assert!(

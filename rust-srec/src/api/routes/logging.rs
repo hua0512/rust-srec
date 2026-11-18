@@ -204,15 +204,15 @@ async fn authorize_headers(state: &LoggingRouteState, headers: &HeaderMap) -> Re
     .await
     .map(|_| ())
 }
-fn parse_yyyy_mm_dd(s: &str) -> Result<chrono::NaiveDate, ApiError> {
-    chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
+fn parse_yyyy_mm_dd(s: &str) -> Result<jiff::civil::Date, ApiError> {
+    jiff::civil::Date::strptime("%Y-%m-%d", s)
         .map_err(|_| ApiError::bad_request("Invalid date; expected YYYY-MM-DD"))
 }
 
 fn parse_range(
     from: Option<&str>,
     to: Option<&str>,
-) -> Result<(Option<chrono::NaiveDate>, Option<chrono::NaiveDate>), ApiError> {
+) -> Result<(Option<jiff::civil::Date>, Option<jiff::civil::Date>), ApiError> {
     let from = match from {
         Some(s) => Some(parse_yyyy_mm_dd(s)?),
         None => None,
@@ -235,7 +235,7 @@ fn parse_range(
 
 #[derive(Debug, Clone)]
 struct LogFileInternal {
-    date: chrono::NaiveDate,
+    date: jiff::civil::Date,
     filename: String,
     path: PathBuf,
     size_bytes: u64,
@@ -280,12 +280,14 @@ fn scan_log_files_matching(
 
         let date = crate::logging::store::managed_log_date(&filename)
             .or_else(|| {
-                meta.modified().ok().map(|t| {
-                    let dt: chrono::DateTime<chrono::Utc> = t.into();
-                    dt.date_naive()
-                })
+                let timestamp = jiff::Timestamp::try_from(meta.modified().ok()?).ok()?;
+                Some(timestamp.to_zoned(jiff::tz::TimeZone::UTC).date())
             })
-            .unwrap_or_else(|| chrono::Utc::now().date_naive());
+            .unwrap_or_else(|| {
+                jiff::Timestamp::now()
+                    .to_zoned(jiff::tz::TimeZone::UTC)
+                    .date()
+            });
 
         let file = LogFileInternal {
             date,
@@ -313,8 +315,8 @@ fn scan_log_files_matching(
 
 fn filter_by_range(
     items: Vec<LogFileInternal>,
-    from: Option<chrono::NaiveDate>,
-    to: Option<chrono::NaiveDate>,
+    from: Option<jiff::civil::Date>,
+    to: Option<jiff::civil::Date>,
 ) -> Vec<LogFileInternal> {
     items
         .into_iter()
@@ -421,21 +423,21 @@ fn list_log_lines(
 }
 
 fn format_archive_filename(
-    from: Option<chrono::NaiveDate>,
-    to: Option<chrono::NaiveDate>,
+    from: Option<jiff::civil::Date>,
+    to: Option<jiff::civil::Date>,
 ) -> String {
     match (from, to) {
         (Some(from), Some(to)) if from == to => {
-            format!("rust-srec-logs-{}.zip", from.format("%Y-%m-%d"))
+            format!("rust-srec-logs-{}.zip", from.strftime("%Y-%m-%d"))
         }
         (Some(from), Some(to)) => format!(
             "rust-srec-logs-{}-to-{}.zip",
-            from.format("%Y-%m-%d"),
-            to.format("%Y-%m-%d")
+            from.strftime("%Y-%m-%d"),
+            to.strftime("%Y-%m-%d")
         ),
         _ => format!(
             "rust-srec-logs-{}.zip",
-            chrono::Utc::now().format("%Y-%m-%d")
+            jiff::Timestamp::now().strftime("%Y-%m-%d")
         ),
     }
 }
@@ -451,7 +453,7 @@ fn cleanup_expired_download_tokens(tokens: &dashmap::DashMap<String, LoggingArch
     if tokens.len() < 1000 {
         return;
     }
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     tokens.retain(|_, grant| grant.expires_at > now);
 }
 
@@ -462,7 +464,7 @@ fn issue_download_token(
     cleanup_expired_download_tokens(tokens);
 
     let token = generate_download_token();
-    let expires_at = chrono::Utc::now() + chrono::Duration::minutes(5);
+    let expires_at = jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5);
     tokens.insert(
         token.clone(),
         LoggingArchiveGrant {
@@ -473,7 +475,7 @@ fn issue_download_token(
 
     Ok(ArchiveTokenResponse {
         token,
-        expires_at: expires_at.to_rfc3339(),
+        expires_at: expires_at.to_string(),
     })
 }
 
@@ -482,7 +484,7 @@ async fn consume_download_token(
     token: &str,
     auth_service: Option<&std::sync::Arc<crate::api::auth_service::AuthService>>,
 ) -> Result<(), ApiError> {
-    let now = chrono::Utc::now();
+    let now = jiff::Timestamp::now();
     match tokens.remove(token) {
         Some((_, grant)) if grant.expires_at > now => tokio::time::timeout(
             Duration::from_secs(3),
@@ -529,7 +531,7 @@ pub async fn list_log_files(
             .skip(offset as usize)
             .take(limit as usize)
             .map(|f| LogFileInfo {
-                date: f.date.format("%Y-%m-%d").to_string(),
+                date: f.date.strftime("%Y-%m-%d").to_string(),
                 filename: f.filename,
                 size_bytes: f.size_bytes,
             })
@@ -772,7 +774,7 @@ async fn logging_stream_ws(
 
 fn encode_log_event(event: &crate::logging::LogEvent) -> Bytes {
     let proto_event = log_event::LogEvent {
-        timestamp_ms: event.timestamp.timestamp_millis(),
+        timestamp_ms: event.timestamp.as_millisecond(),
         level: parse_log_level(&event.level) as i32,
         target: event.target.clone(),
         message: event.message.clone(),

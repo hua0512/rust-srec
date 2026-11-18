@@ -37,7 +37,6 @@ use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::time::Duration;
 
 use arc_swap::ArcSwap;
-use chrono::Utc;
 use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
 use tokio_util::sync::CancellationToken;
@@ -322,7 +321,7 @@ impl GpuHealthMonitor {
         )
         .await;
 
-        let now = Some(Utc::now().to_rfc3339());
+        let now = Some(jiff::Timestamp::now().to_string());
         let dur_ms = Some(started.elapsed().as_millis() as u64);
 
         let build_health = |status, message: String| ComponentHealth {
@@ -439,7 +438,7 @@ impl GpuHealthMonitor {
             let event = NotificationEvent::GpuUnavailable {
                 error_kind: failure.kind.as_str().to_string(),
                 message: failure.message.clone(),
-                timestamp: Utc::now(),
+                timestamp: jiff::Timestamp::now(),
             };
             if let Err(e) = service.notify(event).await {
                 warn!(

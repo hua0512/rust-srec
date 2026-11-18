@@ -6,8 +6,8 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
-use chrono::{DateTime, Utc};
 use futures::StreamExt;
+use jiff::Timestamp;
 use pipeline_common::{PipelineError, PipelineSender, WriterCallbacks, WriterError, WriterStats};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -60,8 +60,8 @@ pub(super) fn setup_writer_callbacks(
     let started_at_reader = started_at_ms;
 
     writer.set_on_segment_start_callback(move |path, sequence| {
-        let started_at = Utc::now();
-        started_at_writer.store(started_at.timestamp_millis(), Ordering::Release);
+        let started_at = Timestamp::now();
+        started_at_writer.store(started_at.as_millisecond(), Ordering::Release);
         let event = SegmentEvent::SegmentStarted {
             path: path.to_path_buf(),
             sequence,
@@ -78,7 +78,7 @@ pub(super) fn setup_writer_callbacks(
 
             let ms = started_at_reader.swap(0, Ordering::Acquire);
             let started_at = if ms != 0 {
-                DateTime::from_timestamp_millis(ms)
+                Timestamp::from_millisecond(ms).ok()
             } else {
                 None
             };
@@ -89,7 +89,7 @@ pub(super) fn setup_writer_callbacks(
                 size_bytes,
                 index: sequence,
                 started_at,
-                completed_at: Utc::now(),
+                completed_at: Timestamp::now(),
                 split_reason: split_reason.cloned(),
             });
             if let Err(error) = event_tx_complete.blocking_send(event) {

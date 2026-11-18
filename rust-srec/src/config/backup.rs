@@ -1,6 +1,6 @@
 //! Versioned configuration backup contract shared by transport and application layers.
 
-use chrono::{DateTime, NaiveDateTime, Utc};
+use jiff::{Timestamp, civil::DateTime};
 use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
 
@@ -43,23 +43,16 @@ fn parse_timestamp_ms_str(value: &str) -> Result<i64, String> {
         return Err("timestamp string is empty".to_string());
     }
 
-    if let Ok(dt) = DateTime::parse_from_rfc3339(value) {
-        return Ok(dt.with_timezone(&Utc).timestamp_millis());
+    if let Ok(timestamp) = value.parse::<Timestamp>() {
+        return Ok(crate::database::time::datetime_to_ms(timestamp));
     }
-
-    // Accept common legacy/SQLite-ish formats.
-    // Note: if the timestamp has no timezone, we assume UTC.
-    if let Ok(dt) = DateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%:z") {
-        return Ok(dt.with_timezone(&Utc).timestamp_millis());
+    if let Ok(timestamp) = Timestamp::strptime("%Y-%m-%d %H:%M:%S%.f%:z", value) {
+        return Ok(crate::database::time::datetime_to_ms(timestamp));
     }
-    if let Ok(dt) = DateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f%:z") {
-        return Ok(dt.with_timezone(&Utc).timestamp_millis());
-    }
-    if let Ok(naive) = NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S") {
-        return Ok(DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc).timestamp_millis());
-    }
-    if let Ok(naive) = NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.f") {
-        return Ok(DateTime::<Utc>::from_naive_utc_and_offset(naive, Utc).timestamp_millis());
+    if let Ok(timestamp) = DateTime::strptime("%Y-%m-%d %H:%M:%S%.f", value)
+        .and_then(|wall| jiff::tz::TimeZone::UTC.to_timestamp(wall))
+    {
+        return Ok(crate::database::time::datetime_to_ms(timestamp));
     }
 
     if let Ok(ms) = value.parse::<i64>() {

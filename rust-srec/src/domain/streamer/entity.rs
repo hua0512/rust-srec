@@ -1,6 +1,6 @@
 //! Streamer entity.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
 use super::StreamerState;
@@ -16,12 +16,12 @@ pub struct Streamer {
     pub template_config_id: Option<String>,
     pub state: StreamerState,
     pub priority: Priority,
-    pub last_live_time: Option<DateTime<Utc>>,
+    pub last_live_time: Option<Timestamp>,
     pub streamer_specific_config: Option<serde_json::Value>,
     pub consecutive_error_count: i32,
-    pub disabled_until: Option<DateTime<Utc>>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub disabled_until: Option<Timestamp>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
 }
 
 impl Streamer {
@@ -31,7 +31,7 @@ impl Streamer {
         url: StreamerUrl,
         platform_config_id: impl Into<String>,
     ) -> Self {
-        let now = Utc::now();
+        let now = Timestamp::now();
         Self {
             id: uuid::Uuid::new_v4().to_string(),
             name: name.into(),

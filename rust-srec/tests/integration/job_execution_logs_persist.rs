@@ -204,7 +204,7 @@ async fn retry_terminal_updates_preserve_history_and_extension_metadata() {
 #[tokio::test]
 async fn disjoint_batches_preserve_same_timestamp_and_identical_messages() {
     let (_dir, queue, repo, job_id) = log_queue().await;
-    let timestamp = chrono::Utc::now();
+    let timestamp = jiff::Timestamp::now();
     let entry = |message: &str| {
         let mut entry = JobLogEntry::info(message);
         entry.timestamp = timestamp;
@@ -415,7 +415,7 @@ async fn completion_snapshot_does_not_replay_streamed_logs_after_ring_trimming()
     const CAP: usize = 5000;
     let (_dir, queue, repo, job_id) = log_queue().await;
     queue.dequeue(None).await.unwrap().unwrap();
-    let base = chrono::Utc::now();
+    let base = jiff::Timestamp::now();
     let mut retained_warning = JobLogEntry::warn("early warning");
     retained_warning.timestamp = base;
     queue
@@ -425,13 +425,13 @@ async fn completion_snapshot_does_not_replay_streamed_logs_after_ring_trimming()
     let batch: Vec<_> = (1..=CAP + 1)
         .map(|i| {
             let mut entry = JobLogEntry::info(format!("line-{i}"));
-            entry.timestamp = base + chrono::Duration::milliseconds(i as i64);
+            entry.timestamp = base + jiff::SignedDuration::from_millis(i as i64);
             entry
         })
         .collect();
     queue.append_log_entry(&job_id, &batch).await.unwrap();
     let mut final_entry = JobLogEntry::info("completion only");
-    final_entry.timestamp = base + chrono::Duration::milliseconds((CAP + 2) as i64);
+    final_entry.timestamp = base + jiff::SignedDuration::from_millis((CAP + 2) as i64);
     queue
         .complete(
             &job_id,
@@ -675,10 +675,10 @@ async fn persisted_logs_are_ring_buffered_per_job() {
 
     // Strictly increasing timestamps so "oldest" is well-defined for the
     // trim's created_at ordering.
-    let base = chrono::Utc::now();
+    let base = jiff::Timestamp::now();
     let entry_at = |i: usize| {
         let mut entry = JobLogEntry::new(LogLevel::Info, format!("line-{i:04}"));
-        entry.timestamp = base + chrono::Duration::milliseconds(i as i64);
+        entry.timestamp = base + jiff::SignedDuration::from_millis(i as i64);
         entry
     };
 

@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use parking_lot::Mutex;
 use serde::Serialize;
 use tokio::sync::broadcast;
@@ -27,7 +27,7 @@ pub struct CredentialBlock {
     pub platform_id: String,
     /// The first check of the current blocked run; a change of reason on the
     /// same platform keeps it.
-    pub since: DateTime<Utc>,
+    pub since: Timestamp,
 }
 
 /// A streamer's block appeared, changed or was lifted (`block` is `None`).
@@ -73,7 +73,7 @@ impl CredentialBlocks {
                 }
                 current.since
             }
-            _ => Utc::now(),
+            _ => Timestamp::now(),
         };
         let block = CredentialBlock {
             reason,

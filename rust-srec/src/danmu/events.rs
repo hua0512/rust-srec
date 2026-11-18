@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use tokio::sync::broadcast;
 use tracing::{debug, error, trace};
 
@@ -42,7 +42,7 @@ pub enum DanmuEvent {
         segment_id: String,
         output_path: PathBuf,
         /// The start time of this segment (for danmu timestamp offset calculation).
-        start_time: DateTime<Utc>,
+        start_time: Timestamp,
     },
     /// Segment file completed
     SegmentCompleted {
@@ -164,7 +164,7 @@ pub(crate) enum CollectionCommand {
         segment_id: String,
         output_path: PathBuf,
         /// The start time of this segment (for danmu timestamp offset calculation).
-        start_time: DateTime<Utc>,
+        start_time: Timestamp,
     },
     /// End the current segment file
     EndSegment { segment_id: String },

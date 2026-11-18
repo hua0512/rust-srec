@@ -78,7 +78,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use chrono::{DateTime, TimeDelta, Utc};
+use jiff::{SignedDuration, Timestamp};
 use tracing::{debug, info, warn};
 use url::Url;
 
@@ -310,7 +310,7 @@ const TIMELINE_LEAD_SLACK: Duration = Duration::from_secs(10);
 struct Availability<'a> {
     window: SegmentWindow<'a>,
     /// The instant (server time) the window was evaluated at.
-    at: DateTime<Utc>,
+    at: Timestamp,
     /// How far past the clock `at` lies, when the timeline contradicted it.
     lead: Option<Duration>,
 }
@@ -338,7 +338,7 @@ struct Availability<'a> {
 ///   question, so nothing says those resources exist.
 fn timeline_contradicts_clock(
     representation: &Representation,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Result<Option<Duration>, ManifestError> {
     if representation.addressing_kind() != AddressingKind::Number {
         return Ok(None);
@@ -356,7 +356,7 @@ fn timeline_contradicts_clock(
 /// time-shift buffer relative to the listed segments.
 fn available(
     representation: &Representation,
-    now: DateTime<Utc>,
+    now: Timestamp,
     overrule: bool,
 ) -> Result<Availability<'_>, ManifestError> {
     let lead = match overrule {
@@ -364,8 +364,8 @@ fn available(
         false => None,
     };
     let at = lead
-        .and_then(|lead| TimeDelta::from_std(lead).ok())
-        .and_then(|lead| now.checked_add_signed(lead));
+        .and_then(|lead| SignedDuration::try_from(lead).ok())
+        .and_then(|lead| now.checked_add(lead).ok());
     let (at, lead) = match at {
         Some(at) => (at, lead),
         None => (now, None),
@@ -399,7 +399,7 @@ struct PeriodScope<'a> {
     key: &'a PeriodKey,
     representation: &'a Representation,
     /// The instant (server time) the window was evaluated at.
-    at: DateTime<Utc>,
+    at: Timestamp,
     /// How far ahead of the clock the Representation's timeline was
     /// evaluated (see [`available`]).
     lead: Option<Duration>,
@@ -451,7 +451,7 @@ pub(crate) struct DashPlanner {
     /// `availabilityStartTime`; replaced when it moves.
     presentation_withdrawal: AnchorWithdrawal,
     /// `availabilityStartTime` and Periods of the last dynamic MPD planned.
-    last_anchor: Option<(Option<DateTime<Utc>>, Vec<PeriodKey>)>,
+    last_anchor: Option<(Option<Timestamp>, Vec<PeriodKey>)>,
     /// How far behind the live edge recording starts; also where a new
     /// epoch starts when nothing else can place it.
     live_start: LiveStartPolicy,
@@ -583,10 +583,10 @@ impl DashPlanner {
         for period in &moved {
             self.record_contradiction(period);
         }
-        let from = from.map(|time| time.to_rfc3339());
+        let from = from.map(|time| time.to_string());
         let to = manifest
             .availability_start_time
-            .map(|time| time.to_rfc3339());
+            .map(|time| time.to_string());
         if self.first_conflict(TimingConflict::AnchorMoved) {
             warn!(
                 from = ?from,
@@ -804,7 +804,7 @@ impl DashPlanner {
     fn reissue(
         &mut self,
         snapshot: &MpdSnapshot,
-        now: DateTime<Utc>,
+        now: Timestamp,
         outcome: &mut PlanOutcome,
     ) -> Result<(), ManifestError> {
         for index in 0..self.epochs.len() {
@@ -1041,7 +1041,7 @@ impl DashPlanner {
     /// Period from `lower` on that has begun offers it, whether a later
     /// Period or an update of one already planned. Runs on every snapshot,
     /// whatever gets planned; each track is reported once.
-    fn note_late_tracks(&mut self, manifest: &Manifest, lower: &PeriodKey, now: DateTime<Utc>) {
+    fn note_late_tracks(&mut self, manifest: &Manifest, lower: &PeriodKey, now: Timestamp) {
         if self.absent_tracks.is_empty() {
             return;
         }
@@ -1118,8 +1118,7 @@ impl DashPlanner {
         let elapsed = scope
             .manifest()
             .availability_start_time
-            .and_then(|ast| (scope.at - ast).num_nanoseconds())
-            .map(i128::from);
+            .map(|ast| scope.at.duration_since(ast).as_nanos());
         let target = live_start_target(
             self.live_start,
             scope.manifest(),
@@ -1268,7 +1267,7 @@ impl DashPlanner {
 /// track (video when recorded, else audio).
 pub(crate) fn decide_start(
     manifest: &Manifest,
-    now: DateTime<Utc>,
+    now: Timestamp,
     live_start: LiveStartPolicy,
     selection_config: &DashSelectionConfig,
 ) -> Result<Option<StartPosition>, ManifestError> {
@@ -1287,13 +1286,8 @@ pub(crate) fn decide_start(
             attribute: "availabilityStartTime",
         });
     };
-    let elapsed_at = |at: DateTime<Utc>| {
-        (at - availability_start)
-            .num_nanoseconds()
-            .map(i128::from)
-            .ok_or(ManifestError::overflow("live start"))
-    };
-    let elapsed = elapsed_at(now)?;
+    let elapsed_at = |at: Timestamp| at.duration_since(availability_start).as_nanos();
+    let elapsed = elapsed_at(now);
 
     // The newest Period with an available reference segment that starts at
     // or before the target time.
@@ -1308,7 +1302,7 @@ pub(crate) fn decide_start(
         };
         let last = last?;
         let bounds = segment_bounds(&last, representation, period);
-        let target = live_start_target(live_start, manifest, bounds, Some(elapsed_at(at)?));
+        let target = live_start_target(live_start, manifest, bounds, Some(elapsed_at(at)));
         let period_start = i128::try_from(period.start.as_nanos()).unwrap_or(i128::MAX);
         if target >= period_start || index == 0 {
             return Ok(Some(StartPosition {
@@ -1366,15 +1360,14 @@ fn live_start_target(
 }
 
 /// Whether `period` has begun at `now` (always, for static presentations).
-fn has_started(manifest: &Manifest, period: &Period, now: DateTime<Utc>) -> bool {
+fn has_started(manifest: &Manifest, period: &Period, now: Timestamp) -> bool {
     let Some(availability_start) = manifest
         .availability_start_time
         .filter(|_| manifest.presentation_type == PresentationType::Dynamic)
     else {
         return true;
     };
-    (now - availability_start)
-        .to_std()
+    Duration::try_from(now.duration_since(availability_start))
         .is_ok_and(|elapsed| elapsed >= period.start)
 }
 
@@ -1666,15 +1659,13 @@ fn media_descriptor(
 
 #[cfg(test)]
 mod tests {
-    use chrono::TimeZone;
-
     use super::*;
     use crate::dash::manifest::ManualClock;
 
     const MPD_URL: &str = "https://cdn.example.com/live/manifest.mpd?token=abc";
 
-    fn ast() -> DateTime<Utc> {
-        Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap()
+    fn ast() -> Timestamp {
+        "2024-01-01T00:00:00Z".parse::<jiff::Timestamp>().unwrap()
     }
 
     /// A planner driven like the engine drives it: the start is decided
@@ -1700,7 +1691,7 @@ mod tests {
                 track,
                 live_start,
                 clock: Arc::new(ManualClock::new(
-                    ast() + chrono::TimeDelta::seconds(elapsed_secs),
+                    ast() + jiff::SignedDuration::from_secs(elapsed_secs),
                 )),
                 frontier: Arc::new(ConsumedFrontier::default()),
                 planner: None,
@@ -1792,7 +1783,7 @@ mod tests {
     }
 
     /// The wall-clock anchor a segment's output would carry now.
-    fn wall_clock(meta: &DashSegmentMeta) -> Option<DateTime<Utc>> {
+    fn wall_clock(meta: &DashSegmentMeta) -> Option<Timestamp> {
         meta.availability_start_time
             .as_ref()
             .and_then(WallClockAnchor::get)
@@ -2725,7 +2716,7 @@ mod tests {
         // though the newest Period that has begun (p1) has none.
         let start = decide_start(
             &manifest,
-            ast() + chrono::TimeDelta::seconds(12),
+            ast() + jiff::SignedDuration::from_secs(12),
             LiveStartPolicy::PresentationDelay(Some(Duration::from_secs(6))),
             &DashSelectionConfig::default(),
         )
@@ -3037,12 +3028,12 @@ mod tests {
     ];
 
     /// The server time a fixture MPD was served at.
-    fn served(mpd: &str) -> DateTime<Utc> {
+    fn served(mpd: &str) -> Timestamp {
         let (_, rest) = mpd.split_once("<!-- served: ").expect("served comment");
         let (time, _) = rest.split_once(" -->").expect("served comment end");
-        DateTime::parse_from_rfc3339(time)
+        jiff::fmt::temporal::DateTimeParser::new()
+            .parse_timestamp(time)
             .expect("served time")
-            .with_timezone(&Utc)
     }
 
     /// `(ordinal, number)` of every media descriptor, checking that a
@@ -3074,7 +3065,7 @@ mod tests {
             for mpd in TIKTOK_LIVE {
                 fixture
                     .clock
-                    .set(served(mpd) + chrono::TimeDelta::milliseconds(500));
+                    .set(served(mpd) + jiff::SignedDuration::from_millis(500));
                 let outcome = fixture.plan(mpd);
                 assert!(
                     outcome.terminal.is_none(),
@@ -3131,7 +3122,7 @@ mod tests {
         media_dir: &str,
         representation: &str,
     ) -> String {
-        let ast = (ast() + chrono::TimeDelta::seconds(ast_secs)).to_rfc3339();
+        let ast = (ast() + jiff::SignedDuration::from_secs(ast_secs)).to_string();
         let entries: String = times
             .iter()
             .map(|time| format!(r#"<S t="{time}" d="2000"/>"#))
@@ -3165,7 +3156,7 @@ mod tests {
         let at = |fixture: &Fixture, secs: i64| {
             fixture
                 .clock
-                .set(ast() + chrono::TimeDelta::milliseconds(secs * 1000 + 500));
+                .set(ast() + jiff::SignedDuration::from_millis(secs * 1000 + 500));
         };
         // The newest segment starts at the anchor, as the response time.
         at(&fixture, 100);
@@ -3173,7 +3164,7 @@ mod tests {
         assert_eq!(planned_numbers(&first), [(0, 50)]);
         assert_eq!(
             wall_clock(media(&first)[0].1),
-            Some(ast() + chrono::TimeDelta::seconds(100))
+            Some(ast() + jiff::SignedDuration::from_secs(100))
         );
 
         // Real media times, ~16 minutes past the anchor: followed anyway.
@@ -3278,7 +3269,7 @@ mod tests {
         // Consistent with the clock: segment n (from 1) ends at 2n s.
         fixture
             .clock
-            .set(ast() + chrono::TimeDelta::milliseconds(8_100));
+            .set(ast() + jiff::SignedDuration::from_millis(8_100));
         let first = fixture.plan(&number_timeline(0, 1, &[0, 2000, 4000, 6000]));
         assert_eq!(planned_numbers(&first), [(0, 4)]);
         fixture.consume_all();
@@ -3349,7 +3340,9 @@ mod tests {
     fn a_timeline_listing_the_segment_in_production_waits_for_the_clock() {
         let mut fixture = Fixture::new(MediaTrack::Video, LiveStartPolicy::LiveEdge, 0);
         // Available segments end by 9 + 1.95 s: 1–5 end at 2–10 s.
-        fixture.clock.set(ast() + chrono::TimeDelta::seconds(9));
+        fixture
+            .clock
+            .set(ast() + jiff::SignedDuration::from_secs(9));
         let mpd = number_timeline(0, 1, &[0, 2000, 4000, 6000, 8000]);
         let first = fixture.plan(&mpd);
         assert_eq!(planned_numbers(&first), [(0, 5)]);
@@ -3369,7 +3362,7 @@ mod tests {
     fn set_clock(fixture: &Fixture, millis: i64) {
         fixture
             .clock
-            .set(ast() + chrono::TimeDelta::milliseconds(millis));
+            .set(ast() + jiff::SignedDuration::from_millis(millis));
     }
 
     #[test]
@@ -3814,7 +3807,7 @@ mod tests {
                 .replace(r#"id="p""#, &format!(r#"id="p{index}""#))
                 .replace(
                     "2024-01-01T00:00:00Z",
-                    &(ast() + chrono::TimeDelta::seconds(ast_secs as i64)).to_rfc3339(),
+                    &(ast() + jiff::SignedDuration::from_secs(ast_secs as i64)).to_string(),
                 );
             set_clock(&fixture, (start as i64 + 11) * 1000);
             let outcome = fixture.plan(&mpd);
@@ -3915,7 +3908,7 @@ mod tests {
         let moved = periods_mpd(&[("p1", 10, "v", 1, r#"<S t="0" d="2" r="4"/>"#)])
             .replace("2024-01-01T00:00:00Z", "2024-01-01T00:00:01Z");
         let p1 = fixture.plan(&moved);
-        let anchor = Some(ast() + chrono::TimeDelta::seconds(1));
+        let anchor = Some(ast() + jiff::SignedDuration::from_secs(1));
         assert!(!media(&p1).is_empty());
         assert_eq!(wall_clock(media(&first)[0].1), None, "p0's anchor moved");
         assert_eq!(wall_clock(media(&p1)[0].1), anchor);

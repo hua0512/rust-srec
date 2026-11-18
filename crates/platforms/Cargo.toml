@@ -75,7 +75,7 @@ base64 = { workspace = true }
 tokio-tungstenite = { workspace = true, default-features = false, features = [
     "connect",
 ] }
-chrono = { workspace = true, features = ["serde"] }
+jiff = { workspace = true }
 futures = { workspace = true }
 # tokio-rustls = { version = "0.26", default-features = false, features = ["aws-lc-rs", "logging", "tls12"] }
 # webpki-roots = "0.26"

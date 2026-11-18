@@ -11,7 +11,6 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
-use chrono::Utc;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, instrument};
@@ -28,7 +27,7 @@ use platforms_parser::extractor::platforms::douyu::passport::{
 
 /// Renewal leaves two days of the main-site session's lifetime to retry in.
 const RENEW_AFTER: Duration = Duration::from_secs(4 * 24 * 60 * 60);
-const SESSION_LIFETIME: chrono::Duration = chrono::Duration::days(6);
+const SESSION_LIFETIME: jiff::SignedDuration = jiff::SignedDuration::from_hours(24 * 6);
 
 pub struct DouyuProvider;
 
@@ -112,7 +111,7 @@ impl CredentialProvider for DouyuProvider {
                 .as_ref()
                 .and(renewal.passport_credential),
             access_token: None,
-            expires_at: Some(Utc::now() + SESSION_LIFETIME),
+            expires_at: Some(jiff::Timestamp::now() + SESSION_LIFETIME),
         })
     }
 

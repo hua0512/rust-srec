@@ -12,8 +12,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
 use dashmap::DashMap;
+use jiff::Timestamp;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Semaphore, SemaphorePermit, broadcast, mpsc};
@@ -106,7 +106,7 @@ struct CircuitBreakerState {
     /// Whether the circuit is open (disabled).
     is_open: bool,
     /// When the circuit was opened.
-    opened_at: Option<DateTime<Utc>>,
+    opened_at: Option<Timestamp>,
     /// Cooldown duration.
     cooldown: Duration,
 }
@@ -127,13 +127,13 @@ impl CircuitBreakerState {
         // If already open (or in the "cooldown passed but not yet recovered" state),
         // restart the cooldown on any failure so we don't allow unlimited attempts.
         if self.is_open {
-            self.opened_at = Some(Utc::now());
+            self.opened_at = Some(Timestamp::now());
             return;
         }
 
         if self.failures >= threshold && !self.is_open {
             self.is_open = true;
-            self.opened_at = Some(Utc::now());
+            self.opened_at = Some(Timestamp::now());
             warn!("Circuit breaker opened after {} failures", self.failures);
         }
     }
@@ -151,8 +151,8 @@ impl CircuitBreakerState {
 
         // Check if cooldown has passed (half-open state)
         if let Some(opened_at) = self.opened_at {
-            let elapsed = Utc::now().signed_duration_since(opened_at);
-            if elapsed.num_seconds().max(0) as u64 >= self.cooldown.as_secs() {
+            let elapsed = Timestamp::now().duration_since(opened_at);
+            if elapsed.as_secs().max(0) as u64 >= self.cooldown.as_secs() {
                 return true; // Allow one request to test recovery
             }
         }
@@ -172,7 +172,7 @@ enum DeliveryStatus {
 struct ChannelDeliveryState {
     status: DeliveryStatus,
     attempts: u32,
-    last_attempt: Option<DateTime<Utc>>,
+    last_attempt: Option<Timestamp>,
     last_error: Option<String>,
 }
 
@@ -181,7 +181,7 @@ struct ChannelDeliveryState {
 struct PendingNotification {
     _id: u64,
     event: NotificationEvent,
-    created_at: DateTime<Utc>,
+    created_at: Timestamp,
     channel_state: HashMap<String, ChannelDeliveryState>,
     /// Delivery and retries keep the instance selected at admission, across reloads.
     targets: Vec<Arc<RuntimeChannel>>,
@@ -189,7 +189,7 @@ struct PendingNotification {
     delivery_lock: Arc<tokio::sync::Mutex<()>>,
     retry_generation: u64,
     retry_cancel: CancellationToken,
-    next_retry_at: Option<DateTime<Utc>>,
+    next_retry_at: Option<Timestamp>,
 }
 
 impl PendingNotification {
@@ -209,7 +209,7 @@ impl PendingNotification {
         Self {
             _id: id,
             event,
-            created_at: Utc::now(),
+            created_at: Timestamp::now(),
             channel_state,
             targets,
             delivery_lock: Default::default(),
@@ -243,9 +243,9 @@ pub struct DeadLetterEntry {
     /// Last error message.
     pub error: String,
     /// When the notification was created.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// When it was moved to dead letter.
-    pub dead_lettered_at: DateTime<Utc>,
+    pub dead_lettered_at: Timestamp,
 }
 
 /// The notification service.
@@ -489,7 +489,7 @@ impl NotificationService {
                 priority: event.priority().as_int() as i32,
                 payload: serde_json::to_string(&event).unwrap_or_else(|_| "{}".to_string()),
                 streamer_id: event.streamer_id().map(|s| s.to_string()),
-                created_at: event.timestamp().timestamp_millis(),
+                created_at: event.timestamp().as_millisecond(),
             };
             if let Err(e) = repo.add_event_log(&entry).await {
                 warn!(error = %e, "Failed to persist notification event log (non-fatal)");
@@ -725,7 +725,7 @@ mod tests {
         service
             .notify(NotificationEvent::SystemStartup {
                 version: "test".to_string(),
-                timestamp: Utc::now(),
+                timestamp: Timestamp::now(),
             })
             .await
             .unwrap();
@@ -940,7 +940,7 @@ mod tests {
         service
             .notify(NotificationEvent::SystemStartup {
                 version: "test".to_string(),
-                timestamp: Utc::now(),
+                timestamp: Timestamp::now(),
             })
             .await
             .unwrap();
@@ -995,7 +995,7 @@ mod tests {
         }
         let event = NotificationEvent::SystemStartup {
             version: "test".into(),
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
         };
         service.dead_letters.insert(
             0,
@@ -1008,8 +1008,8 @@ mod tests {
                 channel_type: "test".into(),
                 attempts: 2,
                 error: "old failure".into(),
-                created_at: Utc::now() - chrono::Duration::days(9),
-                dead_lettered_at: Utc::now() - chrono::Duration::days(8),
+                created_at: Timestamp::now() - jiff::SignedDuration::from_hours(24 * 9),
+                dead_lettered_at: Timestamp::now() - jiff::SignedDuration::from_hours(24 * 8),
             },
         );
         service

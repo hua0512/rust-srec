@@ -17,8 +17,8 @@ use argon2::{
     Argon2, Params,
     password_hash::{PasswordHasher, PasswordVerifier, phc::PasswordHash},
 };
-use chrono::{DateTime, Duration, Utc};
 use dashmap::DashMap;
+use jiff::{SignedDuration, Timestamp};
 use sha2::{Digest, Sha256};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tracing::{debug, info, warn};
@@ -804,7 +804,7 @@ impl AuthService {
             return Err(AuthError::AccountDisabled);
         }
 
-        let now = Utc::now();
+        let now = Timestamp::now();
         let roles = user.get_roles();
         let session_id = uuid::Uuid::new_v4().to_string();
         let (access_token, access_expires_at) = self
@@ -828,7 +828,7 @@ impl AuthService {
         let session = AuthSessionDbModel {
             id: session_id,
             user_id: user.id.clone(),
-            created_at: now.timestamp_millis(),
+            created_at: now.as_millisecond(),
             expires_at: session_expiration(access_expires_at, token_model.expires_at).inspect_err(
                 |_| {
                     self.login_rate_limiter.release(&rate_keys, reserved_at);
@@ -956,7 +956,7 @@ impl AuthService {
 
         let new_refresh_token = Self::generate_refresh_token();
         let new_refresh_token_hash = Self::hash_token(&new_refresh_token);
-        let now = Utc::now();
+        let now = Timestamp::now();
         let refresh_expires_at = self.refresh_expiration(now)?;
 
         // All fallible user lookup and token generation happens before consumption. The
@@ -1014,14 +1014,14 @@ impl AuthService {
         })
     }
 
-    fn refresh_expiration(&self, now: DateTime<Utc>) -> Result<DateTime<Utc>, AuthError> {
+    fn refresh_expiration(&self, now: Timestamp) -> Result<Timestamp, AuthError> {
         let duration = i64::try_from(self.config.refresh_token_expiration_secs)
             .ok()
-            .and_then(Duration::try_seconds)
+            .map(SignedDuration::from_secs)
             .ok_or_else(|| {
                 AuthError::Internal("Refresh token expiration exceeds supported range".to_owned())
             })?;
-        now.checked_add_signed(duration).ok_or_else(|| {
+        now.checked_add(duration).map_err(|_| {
             AuthError::Internal("Refresh token expiration exceeds supported range".to_owned())
         })
     }

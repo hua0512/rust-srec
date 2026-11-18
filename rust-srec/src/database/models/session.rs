@@ -1,6 +1,6 @@
 //! Session and media output database models.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -67,9 +67,9 @@ pub struct SessionFilters {
     /// Filter by streamer ID.
     pub streamer_id: Option<String>,
     /// Filter sessions started after this date.
-    pub from_date: Option<DateTime<Utc>>,
+    pub from_date: Option<Timestamp>,
     /// Filter sessions started before this date.
-    pub to_date: Option<DateTime<Utc>>,
+    pub to_date: Option<Timestamp>,
     /// Filter for active sessions only (sessions without an end_time).
     pub active_only: Option<bool>,
     /// Search query.
@@ -104,11 +104,7 @@ impl SessionFilters {
     }
 
     /// Filter by date range.
-    pub fn with_date_range(
-        mut self,
-        from: Option<DateTime<Utc>>,
-        to: Option<DateTime<Utc>>,
-    ) -> Self {
+    pub fn with_date_range(mut self, from: Option<Timestamp>, to: Option<Timestamp>) -> Self {
         self.from_date = from;
         self.to_date = to;
         self

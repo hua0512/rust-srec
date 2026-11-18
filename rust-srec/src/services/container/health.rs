@@ -110,7 +110,7 @@ impl DiskSpaceProbe {
             path: self.display_path.clone(),
             available_bytes: available,
             threshold_bytes: (total as f64 * (1.0 - self.critical_threshold)) as u64,
-            timestamp: chrono::Utc::now(),
+            timestamp: jiff::Timestamp::now(),
         })
     }
 
@@ -166,7 +166,7 @@ impl HealthProbe for DiskSpaceProbe {
                 name: self.component_name.clone(),
                 status: crate::metrics::HealthStatus::Unknown,
                 message: Some("Unable to resolve disk for path".to_string()),
-                last_check: Some(chrono::Utc::now().to_rfc3339()),
+                last_check: Some(jiff::Timestamp::now().to_string()),
                 check_duration_ms: None,
                 disk: None,
             },
@@ -354,7 +354,7 @@ impl DanmuServiceProbe {
     /// Downloads younger than this are ignored: `run_live_download_pipeline`
     /// starts the engine before `DanmuService::start_collection`, so a brand-new
     /// session legitimately has a download and no collector for a moment.
-    const STARTUP_GRACE: chrono::Duration = chrono::Duration::seconds(60);
+    const STARTUP_GRACE: jiff::SignedDuration = jiff::SignedDuration::from_secs(60);
 
     /// A link must stay down this long before it is reported, so an ordinary
     /// reconnect between two provider cycles does not flap the health status.
@@ -372,12 +372,12 @@ impl HealthProbe for DanmuServiceProbe {
     }
 
     async fn probe(&self, _metrics: SystemMetricsSnapshot) -> ComponentHealth {
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         let mut stopped_early = Vec::new();
 
         for download in self.download_manager.get_active_downloads() {
             if download.session_id.is_empty()
-                || now - download.started_at < Self::STARTUP_GRACE
+                || now.duration_since(download.started_at) < Self::STARTUP_GRACE
                 || self.danmu_service.is_collecting(&download.session_id)
             {
                 continue;

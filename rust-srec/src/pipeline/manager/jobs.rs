@@ -171,7 +171,11 @@ where
     /// recovery, deleted) is dropped instead of being run into a dead step.
     /// Returns the number of jobs re-queued.
     pub async fn run_due_retries(&self) -> usize {
-        let due = match self.job_queue.list_due_retries(chrono::Utc::now()).await {
+        let due = match self
+            .job_queue
+            .list_due_retries(jiff::Timestamp::now())
+            .await
+        {
             Ok(due) => due,
             Err(error) => {
                 warn!(%error, "Failed to list jobs due for an automatic retry");
@@ -555,8 +559,8 @@ where
                 category: source.category,
                 processor: source.processor,
                 config: source.config,
-                created_at: chrono::Utc::now(),
-                updated_at: chrono::Utc::now(),
+                created_at: jiff::Timestamp::now(),
+                updated_at: jiff::Timestamp::now(),
             };
 
             repo.create_preset(&cloned).await?;

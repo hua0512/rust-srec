@@ -194,7 +194,7 @@ impl WebhookChannel {
             "priority_label": event.priority().to_string(),
             "title": rendered.title,
             "description": rendered.description,
-            "timestamp": event.timestamp().to_rfc3339(),
+            "timestamp": event.timestamp().to_string(),
             "streamer_id": event.streamer_id(),
             "data": event
         })

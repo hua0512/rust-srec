@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{DateTime, Local, Utc};
+use jiff::{Timestamp, Zoned};
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
@@ -38,7 +38,7 @@ pub const DEFAULT_LOG_FILTER: &str = "rust_srec=info,sqlx=warn,mesio_engine=info
 /// Broadcast channel capacity for log events.
 const LOG_BROADCAST_CAPACITY: usize = 1024;
 
-/// Custom timer that uses the local timezone via chrono.
+/// Custom timer that uses the local timezone.
 ///
 /// This timer formats timestamps using the server's local timezone
 /// instead of UTC, making logs easier to correlate with local time.
@@ -47,8 +47,8 @@ struct LocalTimer;
 
 impl FormatTime for LocalTimer {
     fn format_time(&self, w: &mut Writer<'_>) -> std::fmt::Result {
-        let now = Local::now();
-        write!(w, "{}", now.format("%Y-%m-%dT%H:%M:%S%.3f%:z"))
+        let now = Zoned::now();
+        write!(w, "{}", now.strftime("%Y-%m-%dT%H:%M:%S%.3f%:z"))
     }
 }
 
@@ -58,7 +58,7 @@ pub type FilterHandle = Handle<EnvFilter, tracing_subscriber::Registry>;
 /// A single log event for broadcasting to clients.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogEvent {
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     pub level: String,
     pub target: String,
     pub message: String,
@@ -181,7 +181,7 @@ impl LoggingConfig {
             // after the supervised cleanup task reports that it has stopped.
             match tokio::task::spawn_blocking({
                 let store = self.store.clone();
-                move || store.reconcile(Utc::now())
+                move || store.reconcile(Timestamp::now())
             })
             .await
             {
@@ -247,7 +247,7 @@ where
         event.record(&mut visitor);
 
         let log_event = LogEvent {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             level: metadata.level().to_string(),
             target: metadata.target().to_string(),
             message,
@@ -413,9 +413,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let old = dir.path().join("rust-srec.log.2000-01-01");
         let unrelated = dir.path().join("other.log.2000-01-01");
-        let today = dir
-            .path()
-            .join(format!("rust-srec.log.{}", Utc::now().format("%Y-%m-%d")));
+        let today = dir.path().join(format!(
+            "rust-srec.log.{}",
+            Timestamp::now().strftime("%Y-%m-%d")
+        ));
         for path in [&old, &unrelated, &today] {
             tokio::fs::write(path, b"keep unless expired")
                 .await

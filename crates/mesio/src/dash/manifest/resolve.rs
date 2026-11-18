@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use url::Url;
 
 use crate::error::SharedError;
@@ -68,11 +68,11 @@ pub struct Manifest {
     pub presentation_type: PresentationType,
     /// Anchor of the MPD timeline for dynamic presentations; always present
     /// when `presentation_type` is [`PresentationType::Dynamic`].
-    pub availability_start_time: Option<DateTime<Utc>>,
+    pub availability_start_time: Option<Timestamp>,
     /// After this time no segment is available
     /// ([`Representation::segments`] is empty): the presentation has ended.
-    pub availability_end_time: Option<DateTime<Utc>>,
-    pub publish_time: Option<DateTime<Utc>>,
+    pub availability_end_time: Option<Timestamp>,
+    pub publish_time: Option<Timestamp>,
     pub media_presentation_duration: Option<Duration>,
     pub minimum_update_period: Option<Duration>,
     pub min_buffer_time: Option<Duration>,
@@ -258,7 +258,7 @@ impl Representation {
     ///
     /// Fails while the Segment Index is unread (see
     /// [`Self::pending_segment_index`]).
-    pub fn segments(&self, now: DateTime<Utc>) -> Result<SegmentWindow<'_>, ManifestError> {
+    pub fn segments(&self, now: Timestamp) -> Result<SegmentWindow<'_>, ManifestError> {
         if let Some(error) = self.unread_segment_index_error() {
             return Err(error);
         }
@@ -285,10 +285,7 @@ impl Representation {
     /// An MPD may describe segments before they become available, so this
     /// alone does not prove the clock wrong; what it means is the caller's
     /// decision.
-    pub fn timeline_ahead(
-        &self,
-        now: DateTime<Utc>,
-    ) -> Result<Option<TimelineLead>, ManifestError> {
+    pub fn timeline_ahead(&self, now: Timestamp) -> Result<Option<TimelineLead>, ManifestError> {
         self.addressing
             .timeline_ahead(&self.timing, self.effective_offset(), now)
     }
@@ -480,11 +477,11 @@ impl Resolver {
             };
             let timing = PeriodTiming {
                 presentation_type: raw.presentation_type,
-                availability_start: raw.availability_start_time.map(xs::instant_nanos),
+                availability_start: raw.availability_start_time.map(Timestamp::as_nanosecond),
                 period_start: xs::duration_nanos(start),
                 period_duration: duration.map(xs::duration_nanos),
                 time_shift_buffer_depth: raw.time_shift_buffer_depth.map(xs::duration_nanos),
-                availability_end: raw.availability_end_time.map(xs::instant_nanos),
+                availability_end: raw.availability_end_time.map(Timestamp::as_nanosecond),
             };
             periods.push(self.resolve_period(period, start, duration, timing, &mpd_base)?);
         }
@@ -1272,8 +1269,6 @@ struct BuiltAddressing {
 
 #[cfg(test)]
 mod tests {
-    use chrono::TimeZone;
-
     use super::*;
 
     fn url() -> Url {
@@ -1284,8 +1279,8 @@ mod tests {
         Manifest::parse(xml.as_bytes(), &url()).unwrap()
     }
 
-    fn at(secs: i64) -> DateTime<Utc> {
-        Utc.timestamp_opt(secs, 0).unwrap()
+    fn at(secs: i64) -> Timestamp {
+        jiff::Timestamp::from_second(secs).unwrap()
     }
 
     #[test]

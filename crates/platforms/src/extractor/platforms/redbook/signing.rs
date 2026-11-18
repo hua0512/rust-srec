@@ -39,7 +39,7 @@ pub(super) fn sign(content: &str, a1: &str) -> String {
     sign_with_parameters(
         content,
         a1,
-        chrono::Utc::now().timestamp_millis() as u64,
+        jiff::Timestamp::now().as_millisecond() as u64,
         rand::random(),
         rand::random_range(10..=50),
         rand::random_range(15..=50),

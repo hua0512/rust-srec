@@ -4,7 +4,7 @@
 //! the account's username and password when the session is no longer valid.
 
 use async_trait::async_trait;
-use chrono::{Duration, Utc};
+use jiff::SignedDuration;
 use reqwest::Client;
 use tracing::{debug, instrument, warn};
 
@@ -103,7 +103,7 @@ impl CredentialProvider for SoopProvider {
                 cookies: material.cookies.clone(),
                 refresh_token: None,
                 access_token: None,
-                expires_at: Some(Utc::now() + Duration::days(7)),
+                expires_at: Some(jiff::Timestamp::now() + SignedDuration::from_hours(24 * 7)),
             });
         }
 
@@ -116,7 +116,7 @@ impl CredentialProvider for SoopProvider {
             cookies,
             refresh_token: None,
             access_token: None,
-            expires_at: Some(Utc::now() + Duration::days(7)),
+            expires_at: Some(jiff::Timestamp::now() + SignedDuration::from_hours(24 * 7)),
         })
     }
 }

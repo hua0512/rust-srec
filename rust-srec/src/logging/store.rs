@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use chrono::{DateTime, NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 
 const PREFIX: &str = "rust-srec.log.";
 const LOCK_NAME: &str = ".rust-srec.log.lock";
@@ -87,15 +88,15 @@ impl LogPolicy {
 
 /// Both legacy daily files and numbered rotations have their UTC date in the name.
 /// Other names remain outside managed retention, even if the API lists them.
-pub(crate) fn managed_log_date(filename: &str) -> Option<NaiveDate> {
+pub(crate) fn managed_log_date(filename: &str) -> Option<Date> {
     parse_name(filename).map(|(date, _)| date)
 }
 
-fn parse_name(filename: &str) -> Option<(NaiveDate, u64)> {
+fn parse_name(filename: &str) -> Option<(Date, u64)> {
     let suffix = filename.strip_prefix(PREFIX)?;
     let date_text = suffix.get(..10)?;
-    let date = NaiveDate::parse_from_str(date_text, "%Y-%m-%d").ok()?;
-    if date.format("%Y-%m-%d").to_string() != date_text {
+    let date = Date::strptime("%Y-%m-%d", date_text).ok()?;
+    if date.strftime("%Y-%m-%d").to_string() != date_text {
         return None;
     }
     let index = match suffix.get(10..)? {
@@ -115,17 +116,17 @@ fn parse_name(filename: &str) -> Option<(NaiveDate, u64)> {
     Some((date, index))
 }
 
-fn filename(date: NaiveDate, index: u64) -> String {
+fn filename(date: Date, index: u64) -> String {
     if index == 0 {
-        format!("{PREFIX}{}", date.format("%Y-%m-%d"))
+        format!("{PREFIX}{}", date.strftime("%Y-%m-%d"))
     } else {
-        format!("{PREFIX}{}.{index:020}", date.format("%Y-%m-%d"))
+        format!("{PREFIX}{}.{index:020}", date.strftime("%Y-%m-%d"))
     }
 }
 
 struct LogFile {
     path: PathBuf,
-    date: NaiveDate,
+    date: Date,
     index: u64,
     bytes: u64,
 }
@@ -267,16 +268,19 @@ impl LogStore {
     fn prune(
         &self,
         files: &mut Vec<LogFile>,
-        now: DateTime<Utc>,
+        now: Timestamp,
         protected: Option<&Path>,
         limit: usize,
     ) -> io::Result<()> {
-        let cutoff = now - chrono::Duration::days(RETENTION_DAYS);
+        let cutoff = jiff::tz::TimeZone::UTC.to_datetime(
+            now.checked_sub(jiff::SignedDuration::from_hours(24 * RETENTION_DAYS))
+                .unwrap_or(Timestamp::MIN),
+        );
         let mut index = 0;
         while index < files.len() {
             let file = &files[index];
-            let expired = file.date < cutoff.date_naive()
-                || (file.date == cutoff.date_naive() && cutoff.time() > chrono::NaiveTime::MIN);
+            let expired = file.date < cutoff.date()
+                || (file.date == cutoff.date() && cutoff.time() > jiff::civil::Time::MIN);
             if protected != Some(file.path.as_path())
                 && (expired || file.bytes > self.policy.max_file_bytes || files.len() > limit)
             {
@@ -298,7 +302,7 @@ impl LogStore {
         Ok(())
     }
 
-    pub(super) fn reconcile(&self, now: DateTime<Utc>) -> io::Result<()> {
+    pub(super) fn reconcile(&self, now: Timestamp) -> io::Result<()> {
         #[cfg(test)]
         self.reconcile_started.store(true, Ordering::Release);
         let mut lock = self.lock(false)?;
@@ -313,10 +317,10 @@ impl LogStore {
     }
 
     pub(super) fn initialize(&self) -> io::Result<()> {
-        self.append(&[], Utc::now(), false)
+        self.append(&[], Timestamp::now(), false)
     }
 
-    fn append(&self, bytes: &[u8], now: DateTime<Utc>, nonblocking: bool) -> io::Result<()> {
+    fn append(&self, bytes: &[u8], now: Timestamp, nonblocking: bool) -> io::Result<()> {
         self.append_batch(&mut std::iter::once((bytes, now)), nonblocking)
     }
 
@@ -324,7 +328,7 @@ impl LogStore {
     /// iterator so the worker can continue without replaying successful writes.
     fn append_batch<'a>(
         &self,
-        records: &mut impl Iterator<Item = (&'a [u8], DateTime<Utc>)>,
+        records: &mut impl Iterator<Item = (&'a [u8], Timestamp)>,
         nonblocking: bool,
     ) -> io::Result<()> {
         let Some(first) = records.next() else {
@@ -345,7 +349,7 @@ impl LogStore {
     fn append_record(
         &self,
         bytes: &[u8],
-        now: DateTime<Utc>,
+        now: Timestamp,
         lock: &mut File,
         files: &mut Vec<LogFile>,
         active: &mut Option<OpenLogFile>,
@@ -367,7 +371,7 @@ impl LogStore {
         } else {
             std::borrow::Cow::Borrowed(bytes)
         };
-        let date = now.date_naive();
+        let date = now.to_zoned(jiff::tz::TimeZone::UTC).date();
         let current = files.iter().rev().find(|file| file.date == date);
         let append_path = current
             .filter(|file| file.bytes <= self.policy.max_file_bytes - record.len() as u64)
@@ -449,13 +453,13 @@ impl LogStore {
     /// Panic-path ownership must never wait behind the logging worker or another
     /// process. The panic hook falls back to stderr if this attempt cannot write.
     pub(crate) fn try_append_emergency(&self, record: &str) -> io::Result<()> {
-        self.append(record.as_bytes(), Utc::now(), true)
+        self.append(record.as_bytes(), Timestamp::now(), true)
     }
 }
 
 struct BufferedRecord {
     bytes: Vec<u8>,
-    now: DateTime<Utc>,
+    now: Timestamp,
 }
 
 /// Batches only the existing nonblocking worker's current queue drain. Its
@@ -497,7 +501,7 @@ impl LogWriter {
         self.buffered_bytes = 0;
     }
 
-    fn write_at(&mut self, bytes: &[u8], now: DateTime<Utc>) -> io::Result<usize> {
+    fn write_at(&mut self, bytes: &[u8], now: Timestamp) -> io::Result<usize> {
         if bytes.len() > BATCH_BYTES {
             self.flush_records();
             if let Err(error) = self.store.append(bytes, now, false) {
@@ -524,7 +528,7 @@ impl LogWriter {
 
 impl Write for LogWriter {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.write_at(bytes, Utc::now())
+        self.write_at(bytes, Timestamp::now())
     }
 
     fn flush(&mut self) -> io::Result<()> {

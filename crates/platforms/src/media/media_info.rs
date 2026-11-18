@@ -1,4 +1,4 @@
-use chrono::{DateTime, TimeZone, Utc};
+use jiff::Timestamp;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 
@@ -45,7 +45,7 @@ pub struct MediaInfo {
     pub artist: String,
     #[serde(default, deserialize_with = "deserialize_category")]
     pub category: Option<Vec<String>>,
-    pub live_start_time: Option<DateTime<Utc>>,
+    pub live_start_time: Option<Timestamp>,
     pub cover_url: Option<String>,
     pub artist_url: Option<String>,
     pub is_live: bool,
@@ -63,7 +63,7 @@ pub struct MediaInfoBuilder {
     title: String,
     artist: String,
     category: Option<Vec<String>>,
-    live_start_time: Option<DateTime<Utc>>,
+    live_start_time: Option<Timestamp>,
     cover_url: Option<String>,
     artist_url: Option<String>,
     is_live: bool,
@@ -231,7 +231,7 @@ impl MediaInfo {
 
         // Live Start Time (if present)
         if let Some(ref start_time) = self.live_start_time {
-            let time_str = start_time.format("%Y-%m-%d %H:%M:%S UTC").to_string();
+            let time_str = start_time.strftime("%Y-%m-%d %H:%M:%S UTC").to_string();
             let _ = writeln!(output, "{}", format_line("⏰ Started:", &time_str));
         }
 
@@ -350,23 +350,23 @@ impl MediaInfoBuilder {
         self
     }
 
-    pub fn live_start_time(mut self, live_start_time: DateTime<Utc>) -> Self {
+    pub fn live_start_time(mut self, live_start_time: Timestamp) -> Self {
         self.live_start_time = Some(live_start_time);
         self
     }
 
-    pub fn live_start_time_opt(mut self, live_start_time: Option<DateTime<Utc>>) -> Self {
+    pub fn live_start_time_opt(mut self, live_start_time: Option<Timestamp>) -> Self {
         self.live_start_time = live_start_time;
         self
     }
 
     pub fn live_start_time_unix_seconds(mut self, unix_seconds: i64) -> Self {
-        self.live_start_time = Utc.timestamp_opt(unix_seconds, 0).single();
+        self.live_start_time = jiff::Timestamp::from_second(unix_seconds).ok();
         self
     }
 
     pub fn live_start_time_unix_millis(mut self, unix_millis: i64) -> Self {
-        self.live_start_time = Utc.timestamp_millis_opt(unix_millis).single();
+        self.live_start_time = jiff::Timestamp::from_millisecond(unix_millis).ok();
         self
     }
 
@@ -374,9 +374,9 @@ impl MediaInfoBuilder {
         // Heuristic: "seconds since epoch" is currently ~1.7e9. Anything above
         // 1e10 is almost certainly milliseconds.
         if unix_timestamp.abs() > 10_000_000_000 {
-            self.live_start_time = Utc.timestamp_millis_opt(unix_timestamp).single();
+            self.live_start_time = jiff::Timestamp::from_millisecond(unix_timestamp).ok();
         } else {
-            self.live_start_time = Utc.timestamp_opt(unix_timestamp, 0).single();
+            self.live_start_time = jiff::Timestamp::from_second(unix_timestamp).ok();
         }
         self
     }

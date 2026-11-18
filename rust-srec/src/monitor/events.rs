@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, oneshot};
 
@@ -40,7 +40,7 @@ pub enum MonitorEvent {
         media_headers: Option<HashMap<String, String>>,
         /// Additional platform-specific metadata extracted from MediaInfo.extras.
         media_extras: Option<Box<HashMap<String, String>>>,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// Streamer went offline.
     StreamerOffline {
@@ -48,7 +48,7 @@ pub enum MonitorEvent {
         streamer_name: String,
         /// Session ID if a session was active.
         session_id: Option<String>,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// Fatal error occurred - monitoring stopped.
     FatalError {
@@ -57,7 +57,7 @@ pub enum MonitorEvent {
         error_type: FatalErrorType,
         message: String,
         new_state: StreamerState,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// Transient error occurred - will retry.
     TransientError {
@@ -65,7 +65,7 @@ pub enum MonitorEvent {
         streamer_name: String,
         error_message: String,
         consecutive_errors: i32,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// Streamer state changed.
     StateChanged {
@@ -80,7 +80,7 @@ pub enum MonitorEvent {
         /// (e.g., stop an active download) without conflating it with Offline.
         #[serde(default)]
         reason: Option<String>,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
 }
 

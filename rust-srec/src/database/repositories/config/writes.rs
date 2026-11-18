@@ -207,7 +207,7 @@ pub(crate) async fn write_template(
     )?;
     row.field("offline_check_count", model.offline_check_count, true)?;
     row.field("offline_check_delay_ms", model.offline_check_delay_ms, true)?;
-    row.field("created_at", model.created_at.timestamp_millis(), false)?;
+    row.field("created_at", model.created_at.as_millisecond(), false)?;
     row.field("updated_at", updated_at, true)?;
     row.execute(&mut *connection).await?;
     credential_selections::write_template(connection, &model.id, selections).await
@@ -221,7 +221,7 @@ pub(crate) async fn import_template(
         connection,
         model,
         WriteMode::Import,
-        model.updated_at.timestamp_millis(),
+        model.updated_at.as_millisecond(),
     )
     .await
 }

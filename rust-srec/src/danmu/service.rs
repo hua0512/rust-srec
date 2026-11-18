@@ -67,7 +67,7 @@ impl CollectionHandle {
         &self,
         segment_id: &str,
         output_path: PathBuf,
-        start_time: chrono::DateTime<chrono::Utc>,
+        start_time: jiff::Timestamp,
     ) -> Result<()> {
         self.command_tx
             .send(CollectionCommand::StartSegment {
@@ -1362,7 +1362,7 @@ mod tests {
             .await
             .expect("collection should start");
         handle
-            .start_segment("0", xml_path.clone(), chrono::Utc::now())
+            .start_segment("0", xml_path.clone(), jiff::Timestamp::now())
             .await
             .expect("segment start should be accepted");
         loop {
@@ -1502,7 +1502,7 @@ mod tests {
             .start_segment(
                 "0",
                 blocker.join("child").join("segment.xml"),
-                chrono::Utc::now(),
+                jiff::Timestamp::now(),
             )
             .await
             .expect("failing segment command should be admitted");
@@ -1860,7 +1860,7 @@ mod tests {
             .start_segment(
                 "0",
                 blocker.join("child").join("seg.xml"),
-                chrono::Utc::now(),
+                jiff::Timestamp::now(),
             )
             .await
             .expect("command is accepted; the failure happens in the runner");

@@ -4,7 +4,6 @@
 //! WebSocket provider with TARS protocol for message encoding/decoding.
 
 use bytes::{Bytes, BytesMut};
-use chrono::Utc;
 use rustc_hash::FxHashMap;
 use std::time::Duration;
 use tars_codec::{
@@ -102,7 +101,10 @@ impl DanmuProtocol for HuyaDanmuProtocol {
             .map_err(|_| DanmakuError::connection("Invalid room ID".to_string()))?;
 
         // 2512200523
-        let ua = format!("webh5&{}&websocket", Utc::now().format("%y%m%d%H%M"));
+        let ua = format!(
+            "webh5&{}&websocket",
+            jiff::Timestamp::now().strftime("%y%m%d%H%M")
+        );
         // let ua = "webh5&2512200523&websocket";
         // debug!("ua: {}", ua);
         let device = "chrome";

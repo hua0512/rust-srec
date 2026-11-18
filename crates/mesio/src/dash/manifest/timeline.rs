@@ -27,7 +27,7 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use url::Url;
 
 use super::error::{ManifestError, UnsupportedFeature};
@@ -289,14 +289,14 @@ impl Addressing {
         &self,
         timing: &PeriodTiming,
         offset: AvailabilityTimeOffset,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Range<u64>, ManifestError> {
         let overflow = || ManifestError::overflow("segment availability");
         let timescale = i128::from(self.timescale);
         let pto = i128::from(self.presentation_time_offset);
 
         if let Some(end) = timing.availability_end
-            && xs::instant_nanos(now) > end
+            && now.as_nanosecond() > end
         {
             return Ok(0..0);
         }
@@ -340,7 +340,8 @@ impl Addressing {
                         element: "MPD",
                         attribute: "availabilityStartTime",
                     })?;
-                let elapsed = xs::instant_nanos(now)
+                let elapsed = now
+                    .as_nanosecond()
                     .checked_sub(ast)
                     .and_then(|x| x.checked_sub(timing.period_start))
                     .ok_or_else(overflow)?;
@@ -444,7 +445,7 @@ impl Addressing {
         &self,
         timing: &PeriodTiming,
         offset: AvailabilityTimeOffset,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Option<TimelineLead>, ManifestError> {
         let overflow = || ManifestError::overflow("timeline lead");
         if !self.has_timeline || timing.presentation_type == PresentationType::Static {
@@ -459,9 +460,7 @@ impl Addressing {
                 attribute: "availabilityStartTime",
             });
         };
-        let elapsed = xs::instant_nanos(now)
-            .checked_sub(ast)
-            .ok_or_else(overflow)?;
+        let elapsed = now.as_nanosecond().checked_sub(ast).ok_or_else(overflow)?;
         let into_period = elapsed
             .checked_sub(timing.period_start)
             .ok_or_else(overflow)?;
@@ -532,7 +531,7 @@ impl Addressing {
         // available by then.
         if let Some(availability_end) = timing.availability_end {
             let remaining = availability_end
-                .checked_sub(xs::instant_nanos(now))
+                .checked_sub(now.as_nanosecond())
                 .ok_or_else(overflow)?;
             if remaining < earliest {
                 return Ok(None);
@@ -588,7 +587,7 @@ impl Addressing {
         &self,
         timing: &PeriodTiming,
         offset: AvailabilityTimeOffset,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<SegmentWindow<'_>, ManifestError> {
         let positions = self.window(timing, offset, now)?;
         SegmentWindow::new(self, timing.period_start, positions)
@@ -806,8 +805,6 @@ impl DoubleEndedIterator for SegmentIter<'_> {
 
 #[cfg(test)]
 mod tests {
-    use chrono::TimeZone;
-
     use super::super::template::TemplateKind;
     use super::*;
 
@@ -863,8 +860,8 @@ mod tests {
         }
     }
 
-    fn at(secs: i64, nanos: u32) -> DateTime<Utc> {
-        Utc.timestamp_opt(secs, nanos).unwrap()
+    fn at(secs: i64, nanos: u32) -> Timestamp {
+        jiff::Timestamp::new(secs, nanos as i32).unwrap()
     }
 
     fn finite(secs: u64) -> AvailabilityTimeOffset {
@@ -1169,7 +1166,7 @@ mod tests {
         let addressing = grid(1, u64::MAX, 0);
         let timing = dynamic(0, None);
         assert!(matches!(
-            addressing.window(&timing, finite(0), DateTime::<Utc>::MAX_UTC),
+            addressing.window(&timing, finite(0), Timestamp::MAX),
             Err(ManifestError::Overflow { .. })
         ));
         let mut addressing = grid(2, 1, 0);
@@ -1236,12 +1233,12 @@ mod tests {
         assert_eq!(ahead.newest, Duration::from_nanos(991_000_081_381));
         assert_eq!(ahead.segment_duration, Duration::from_secs(1));
 
-        let reached = now + chrono::TimeDelta::from_std(ahead.newest).unwrap();
+        let reached = now + jiff::SignedDuration::try_from(ahead.newest).unwrap();
         assert_eq!(
             addressing.window(&timing, finite(1), reached).unwrap(),
             0..2
         );
-        let before = reached - chrono::TimeDelta::nanoseconds(1);
+        let before = reached - jiff::SignedDuration::from_nanos(1);
         assert_eq!(addressing.window(&timing, finite(1), before).unwrap(), 0..1);
         assert_eq!(
             addressing
@@ -1330,7 +1327,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(ahead.newest, Duration::from_secs(985));
-        let reached = at(20, 0) + chrono::TimeDelta::from_std(ahead.newest).unwrap();
+        let reached = at(20, 0) + jiff::SignedDuration::try_from(ahead.newest).unwrap();
         assert_eq!(
             addressing.window(&ending, finite(0), reached).unwrap(),
             0..2

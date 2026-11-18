@@ -398,8 +398,8 @@ pub struct PipelinePresetResponse {
     pub description: Option<String>,
     /// DAG definition.
     pub dag: DagPipelineDefinition,
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub created_at: jiff::Timestamp,
+    pub updated_at: jiff::Timestamp,
 }
 
 impl From<crate::database::models::PipelinePreset> for PipelinePresetResponse {
@@ -849,7 +849,7 @@ mod tests {
                 streamer_id: "streamer-1".to_string(),
                 input_file_name: Some("part.flv".to_string()),
                 input_count: 2,
-                ended_at: chrono::DateTime::from_timestamp_millis(1_767_323_045_123).unwrap(),
+                ended_at: jiff::Timestamp::from_millisecond(1_767_323_045_123).unwrap(),
                 stalled_secs: 95,
             }],
         };

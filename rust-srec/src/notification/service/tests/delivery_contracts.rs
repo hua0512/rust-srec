@@ -5,7 +5,7 @@ use super::*;
 fn event() -> NotificationEvent {
     NotificationEvent::SystemStartup {
         version: "test".into(),
-        timestamp: Utc::now(),
+        timestamp: jiff::Timestamp::now(),
     }
 }
 
@@ -30,7 +30,7 @@ fn pending(id: u64) -> PendingNotification {
     PendingNotification {
         _id: id,
         event: event(),
-        created_at: DateTime::from_timestamp(0, 0).unwrap(),
+        created_at: Timestamp::new(0, 0).unwrap(),
         channel_state: HashMap::new(),
         targets: Vec::new(),
         delivery_lock: Default::default(),
@@ -137,7 +137,7 @@ async fn breaker_cooldown_preserves_attempts_and_retry_floor() {
         ..Default::default()
     });
     let attempts = channel(&service, "one", u32::MAX);
-    let before = Utc::now();
+    let before = jiff::Timestamp::now();
     service
         .notify_channel_instance("one", event())
         .await
@@ -150,7 +150,7 @@ async fn breaker_cooldown_preserves_attempts_and_retry_floor() {
             .unwrap()
             .next_retry_at
             .unwrap()
-            >= before + chrono::Duration::seconds(60)
+            >= before + jiff::SignedDuration::from_secs(60)
     );
     service.process_notification(id).await;
     assert_eq!(attempts.load(Ordering::SeqCst), 1);
@@ -159,21 +159,25 @@ async fn breaker_cooldown_preserves_attempts_and_retry_floor() {
         1
     );
     let runtime = service.registry.read().by_key["one"].clone();
-    runtime.breaker.lock().opened_at = Some(Utc::now() + chrono::Duration::seconds(120));
+    runtime.breaker.lock().opened_at =
+        Some(jiff::Timestamp::now() + jiff::SignedDuration::from_secs(120));
     service.process_notification(id).await;
     assert_eq!(
         attempts.load(Ordering::SeqCst),
         1,
         "clock rollback cannot bypass cooldown"
     );
-    runtime.breaker.lock().opened_at = Some(Utc::now() - chrono::Duration::seconds(61));
-    let recovery_attempt = Utc::now();
+    runtime.breaker.lock().opened_at =
+        Some(jiff::Timestamp::now() - jiff::SignedDuration::from_secs(61));
+    let recovery_attempt = jiff::Timestamp::now();
     service.process_notification(id).await;
     assert_eq!(attempts.load(Ordering::SeqCst), 2);
     let pending = service.pending_queue.get(&id).unwrap();
     assert_eq!(pending.channel_state["one"].attempts, 2);
     assert!(pending.channel_state["one"].last_error.is_some());
-    assert!(pending.next_retry_at.unwrap() >= recovery_attempt + chrono::Duration::seconds(60));
+    assert!(
+        pending.next_retry_at.unwrap() >= recovery_attempt + jiff::SignedDuration::from_secs(60)
+    );
     drop(pending);
     service.cancellation_token.cancel();
     assert!(

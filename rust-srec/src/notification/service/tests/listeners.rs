@@ -7,7 +7,7 @@ fn ended(cause: TerminalCause) -> SessionTransition {
         streamer_id: "streamer".into(),
         streamer_name: "Name".into(),
         started_at: None,
-        ended_at: DateTime::from_timestamp_millis(1_788_784_496_123).unwrap(),
+        ended_at: jiff::Timestamp::from_millisecond(1_788_784_496_123).unwrap(),
         cause,
         via_hysteresis: false,
     }
@@ -27,7 +27,7 @@ async fn session_listener_applies_mapping_and_closes_without_duplicate_notificat
         streamer_name: "Name".into(),
         title: "Title".into(),
         category: Some("Category".into()),
-        started_at: DateTime::from_timestamp_millis(123).unwrap(),
+        started_at: jiff::Timestamp::from_millisecond(123).unwrap(),
         from_hysteresis: true,
         download_start: None,
     })
@@ -37,7 +37,7 @@ async fn session_listener_applies_mapping_and_closes_without_duplicate_notificat
         .unwrap()
         .unwrap();
     assert!(
-        matches!(notification, NotificationEvent::StreamOnline { timestamp, category: Some(category), .. } if timestamp.timestamp_millis() == 123 && category == "Category")
+        matches!(notification, NotificationEvent::StreamOnline { timestamp, category: Some(category), .. } if timestamp.as_millisecond() == 123 && category == "Category")
     );
     drop(tx);
     assert!(

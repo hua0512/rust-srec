@@ -15,7 +15,7 @@
 //! - **Health**: System health checks
 //! - **Utilities**: URL metadata extraction
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
 use crate::database::models::JobStatus;
@@ -257,15 +257,15 @@ pub struct StreamerResponse {
     pub priority: Priority,
     pub enabled: bool,
     pub consecutive_error_count: i32,
-    pub disabled_until: Option<DateTime<Utc>>,
+    pub disabled_until: Option<Timestamp>,
     pub last_error: Option<String>,
-    pub last_live_time: Option<DateTime<Utc>>,
+    pub last_live_time: Option<Timestamp>,
     /// Set while the streamer's latest check, queued start or recovery found
     /// no usable account on its platform, so nothing records until an account
     /// is fixed. Absent for streamers that are not monitored.
     pub credential_blocked: Option<crate::credentials::CredentialBlock>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
     pub streamer_specific_config: Option<serde_json::Value>,
 }
 
@@ -667,8 +667,8 @@ pub struct TemplateResponse {
     pub offline_check_count: Option<i32>,
     pub offline_check_delay_ms: Option<i64>,
     pub usage_count: u32,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
 }
 
 // ============================================================================
@@ -726,9 +726,9 @@ pub struct JobResponse {
     pub input_path: Vec<String>,
     pub output_path: Option<Vec<String>>,
     pub error_message: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub started_at: Option<DateTime<Utc>>,
-    pub completed_at: Option<DateTime<Utc>>,
+    pub created_at: Timestamp,
+    pub started_at: Option<Timestamp>,
+    pub completed_at: Option<Timestamp>,
     pub execution_info: Option<JobExecutionInfo>,
     /// Processing duration in seconds (from processor).
     pub duration_secs: Option<f64>,
@@ -738,7 +738,7 @@ pub struct JobResponse {
     /// step's retry policy; `null` when no automatic retry is pending. The job
     /// lists can still report a retry of a step that has since been cancelled
     /// or failed, which never runs; `GET /api/pipeline/jobs/{id}` does not.
-    pub retry_after: Option<DateTime<Utc>>,
+    pub retry_after: Option<Timestamp>,
     /// Times the job was run again after failing or being cancelled, by an
     /// automatic or a manual retry; the latest run is attempt `retry_count + 1`.
     pub retry_count: i32,
@@ -773,7 +773,7 @@ pub struct JobExecutionInfo {
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct JobLogEntry {
     /// Log timestamp.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Log level: `DEBUG`, `INFO`, `WARN` or `ERROR`.
     pub level: String,
     /// Log message.
@@ -816,9 +816,9 @@ pub struct JobFilterParams {
     /// Filter by pipeline ID
     pub pipeline_id: Option<String>,
     /// Filter by date range start
-    pub from_date: Option<DateTime<Utc>>,
+    pub from_date: Option<Timestamp>,
     /// Filter by date range end
-    pub to_date: Option<DateTime<Utc>>,
+    pub to_date: Option<Timestamp>,
     /// Literal substring of ID, streamer ID, session ID, or job type; ASCII case-insensitive.
     pub search: Option<String>,
 }
@@ -870,7 +870,7 @@ pub struct StalledOperationResponse {
     pub input_file_name: Option<String>,
     pub input_count: usize,
     /// When the job ended.
-    pub ended_at: DateTime<Utc>,
+    pub ended_at: Timestamp,
     /// Seconds the blocking work has outlived its job.
     pub stalled_secs: u64,
 }
@@ -917,7 +917,7 @@ pub struct MediaOutputResponse {
     pub file_size_bytes: u64,
     pub duration_secs: Option<f64>,
     pub format: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// Upload results whose `local_path` matches `file_path` — one entry
     /// per uploader, newest record wins (DAG retries produce rows under
     /// fresh job ids). Empty (and omitted from JSON) when the file was
@@ -934,7 +934,7 @@ pub struct MediaOutputUploadInfo {
     pub remote_path: Option<String>,
     /// `COMPLETED` | `FAILED` | `SKIPPED`.
     pub status: String,
-    pub completed_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<Timestamp>,
 }
 
 /// One durable per-file upload result (`upload_records` row).
@@ -950,9 +950,9 @@ pub struct UploadRecordResponse {
     pub status: String,
     pub size_bytes: Option<i64>,
     pub error: Option<String>,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
-    pub completed_at: Option<DateTime<Utc>>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
+    pub completed_at: Option<Timestamp>,
 }
 
 /// Response for `GET /api/pipeline/jobs/{id}/uploads`.
@@ -971,9 +971,9 @@ pub struct SessionSegmentResponse {
     pub size_bytes: u64,
     pub split_reason_code: Option<String>,
     pub split_reason_details: Option<serde_json::Value>,
-    pub created_at: Option<DateTime<Utc>>,
-    pub completed_at: Option<DateTime<Utc>>,
-    pub persisted_at: DateTime<Utc>,
+    pub created_at: Option<Timestamp>,
+    pub completed_at: Option<Timestamp>,
+    pub persisted_at: Timestamp,
 }
 
 // ============================================================================
@@ -1035,8 +1035,8 @@ pub struct SessionResponse {
     /// before the `session_events` migration ran.
     #[serde(default)]
     pub events: Vec<SessionEventResponse>,
-    pub start_time: DateTime<Utc>,
-    pub end_time: Option<DateTime<Utc>>,
+    pub start_time: Timestamp,
+    pub end_time: Option<Timestamp>,
     /// `true` when the recording is still in progress (`end_time` is null).
     ///
     /// Lets the frontend render "live" status without parsing `end_time`,
@@ -1062,7 +1062,7 @@ pub struct SessionEventResponse {
     /// Stable string discriminator: `session_started`, `hysteresis_entered`,
     /// `session_resumed`, or `session_ended`.
     pub kind: String,
-    pub occurred_at: DateTime<Utc>,
+    pub occurred_at: Timestamp,
     /// Typed payload. `None` when the underlying row had no payload or when
     /// the payload failed to parse. The frontend still renders a known
     /// lifecycle kind and marks only its extra details unavailable.
@@ -1080,7 +1080,7 @@ pub struct SessionEventResponse {
 /// returned, which one we picked).
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct StreamerCheckHistoryEntry {
-    pub checked_at: DateTime<Utc>,
+    pub checked_at: Timestamp,
     pub duration_ms: i64,
     /// `live` | `offline` | `filtered` | `transient_error` | `fatal_error`.
     pub outcome: String,
@@ -1134,9 +1134,9 @@ pub struct SessionDanmuStatisticsResponse {
     /// timeseries alone cannot provide because silent buckets are absent.
     pub duration_secs: Option<u64>,
     /// First message time.
-    pub start_time: Option<DateTime<Utc>>,
+    pub start_time: Option<Timestamp>,
     /// Collection end time; `None` while the session is still recording.
-    pub end_time: Option<DateTime<Utc>>,
+    pub end_time: Option<Timestamp>,
     /// Width of one `danmu_rate_timeseries` bucket. Long sessions are coarsened,
     /// so this varies within a session and must be read rather than assumed.
     pub rate_bucket_secs: Option<u64>,
@@ -1199,7 +1199,7 @@ pub struct DanmuWordFrequency {
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct TitleChange {
     pub title: String,
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
 }
 
 /// Filter parameters for listing sessions.
@@ -1223,9 +1223,9 @@ pub struct SessionFilterParams {
     /// Filter by streamer ID
     pub streamer_id: Option<String>,
     /// Filter by date range start
-    pub from_date: Option<DateTime<Utc>>,
+    pub from_date: Option<Timestamp>,
     /// Filter by date range end
-    pub to_date: Option<DateTime<Utc>>,
+    pub to_date: Option<Timestamp>,
     /// Only include active sessions
     pub active_only: Option<bool>,
     /// Literal substring of streamer name, stored titles JSON, or session ID; ASCII case-insensitive.

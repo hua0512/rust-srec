@@ -99,7 +99,7 @@ impl Seed {
     }
 
     pub(super) fn sql(&self, dead_end: &ConnectRecorder) -> String {
-        let now = chrono::Utc::now().timestamp_millis();
+        let now = jiff::Timestamp::now().as_millisecond();
         let mut global = self.global.clone();
         set(&mut global, "proxy_route", sql_text("proxy"));
         set(&mut global, "proxy_id", sql_text(DEAD_END_PROXY_ID));

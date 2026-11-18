@@ -1,6 +1,6 @@
 use super::*;
 use crate::pipeline::manifest::ManifestScope;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use std::collections::HashSet;
 
 /// The coordinator entity a finished DAG settles.
@@ -547,7 +547,7 @@ where
     pub(super) async fn lookup_session_meta(
         &self,
         session_id: &str,
-    ) -> (Option<String>, Option<DateTime<Utc>>) {
+    ) -> (Option<String>, Option<Timestamp>) {
         let Some(repo) = self.session_repo.as_ref() else {
             return (None, None);
         };

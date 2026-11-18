@@ -153,9 +153,9 @@ fn create_test_metadata() -> StreamerMetadata {
         platform_metadata: None,
         offline_check_count: 3,
         offline_check_delay_ms: 20_000,
-        created_at: chrono::Utc::now(),
+        created_at: jiff::Timestamp::now(),
         deleted_at: None,
-        updated_at: chrono::Utc::now(),
+        updated_at: jiff::Timestamp::now(),
     }
 }
 
@@ -520,7 +520,7 @@ async fn test_suppressed_live_restores_notlive_grace_hysteresis_context() {
         stream_url: None,
         title: Some("Previous offline".to_string()),
         batch_live: None,
-        checked_at: chrono::Utc::now(),
+        checked_at: jiff::Timestamp::now(),
         next_check_hint: None,
     });
 
@@ -583,7 +583,7 @@ async fn test_suppressed_live_restores_out_of_schedule_smart_wake_context() {
         checker,
     );
 
-    let smart_wake_hint = chrono::Utc::now() + chrono::Duration::minutes(15);
+    let smart_wake_hint = jiff::Timestamp::now() + jiff::SignedDuration::from_mins(15);
     actor.state.streamer_state = StreamerState::OutOfSchedule;
     actor.state.hysteresis.mark_live();
     actor.state.last_check = Some(CheckResult {
@@ -591,7 +591,7 @@ async fn test_suppressed_live_restores_out_of_schedule_smart_wake_context() {
         stream_url: None,
         title: Some("Out of schedule".to_string()),
         batch_live: None,
-        checked_at: chrono::Utc::now(),
+        checked_at: jiff::Timestamp::now(),
         next_check_hint: Some(smart_wake_hint),
     });
 

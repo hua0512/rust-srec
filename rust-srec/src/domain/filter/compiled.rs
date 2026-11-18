@@ -55,15 +55,15 @@ impl<K: Eq, V> DefinitionCache<K, V> {
     }
 }
 
-pub(super) fn cron(expression: &str) -> Result<Arc<cron::Schedule>, FilterEvalError> {
+pub(super) fn cron(expression: &str) -> Result<Arc<jiff_cron::Schedule>, FilterEvalError> {
     let compile = || {
-        cron::Schedule::from_str(expression)
+        jiff_cron::Schedule::from_str(expression)
             .map_err(|error| FilterEvalError::InvalidCronExpression(error.to_string()))
     };
     if expression.len() > MAX_CACHED_SOURCE_BYTES {
         return compile().map(Arc::new);
     }
-    static CACHE: OnceLock<DefinitionCache<String, cron::Schedule>> = OnceLock::new();
+    static CACHE: OnceLock<DefinitionCache<String, jiff_cron::Schedule>> = OnceLock::new();
     CACHE
         .get_or_init(|| DefinitionCache::new(CACHE_ENTRIES))
         .get_or_compile(expression.to_owned(), compile)

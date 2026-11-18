@@ -270,7 +270,7 @@ fn start() -> StartSessionInputs {
         streams: Vec::new(),
         media_headers: None,
         media_extras: None,
-        now: chrono::Utc::now(),
+        now: jiff::Timestamp::now(),
     }
 }
 

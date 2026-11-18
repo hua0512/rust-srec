@@ -48,7 +48,7 @@ async fn init_stress_pool(database_url: &str) -> DbPool {
 async fn mark_completed_retry(pool: &DbPool, job_id: &str) {
     let mut attempt: u32 = 0;
     loop {
-        let now = chrono::Utc::now().to_rfc3339();
+        let now = jiff::Timestamp::now().to_string();
         let res = sqlx::query(
             "UPDATE job SET status = 'COMPLETED', completed_at = ?, updated_at = ? WHERE id = ? AND status = 'PROCESSING'",
         )

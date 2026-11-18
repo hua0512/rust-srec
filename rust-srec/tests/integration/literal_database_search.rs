@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use rust_srec::database::models::{
     JobDbModel, JobFilters, JobPreset, JobStatus, LiveSessionDbModel, MediaFileType,
     MediaOutputDbModel, NotificationEventLogDbModel, OutputFilters, Pagination, PipelinePreset,
@@ -136,8 +136,8 @@ async fn job_search_literals_apply_to_every_column_count_page_and_combined_filte
             streamer_id: target.streamer_id.clone(),
             session_id: target.session_id.clone(),
             pipeline_id: target.pipeline_id.clone(),
-            from_date: DateTime::from_timestamp_millis(target.created_at),
-            to_date: DateTime::from_timestamp_millis(target.created_at),
+            from_date: Some(Timestamp::from_millisecond(target.created_at).unwrap()),
+            to_date: Some(Timestamp::from_millisecond(target.created_at).unwrap()),
             job_type: Some(target.job_type.clone()),
             job_types: Some(vec![target.job_type.clone(), "other".to_owned()]),
             search: Some("%".to_owned()),
@@ -233,8 +233,8 @@ async fn session_search_literals_cover_live_and_retained_names_titles_ids_and_fi
         let target = &models[2];
         let filters = SessionFilters {
             streamer_id: target.streamer_id.clone(),
-            from_date: DateTime::from_timestamp_millis(target.start_time),
-            to_date: DateTime::from_timestamp_millis(target.start_time),
+            from_date: Some(Timestamp::from_millisecond(target.start_time).unwrap()),
+            to_date: Some(Timestamp::from_millisecond(target.start_time).unwrap()),
             active_only: Some(true),
             include_empty: Some(true),
             search: Some("%".to_owned()),
@@ -472,8 +472,8 @@ async fn preset_search_literals_cover_both_fields_numbered_binds_and_pagination(
                 description: Some(description.to_owned()),
                 dag_definition: Some(r#"{"steps":[]}"#.to_owned()),
                 pipeline_type: Some("dag".to_owned()),
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
+                created_at: Timestamp::now(),
+                updated_at: Timestamp::now(),
             };
             pipelines.create_pipeline_preset(&pipeline).await.unwrap();
             ids.push(job.id);

@@ -85,7 +85,7 @@ impl SessionRepository for TestSessionRepository {
             id: id.to_string(),
             streamer_id: Some("streamer-1".to_string()),
             streamer_name: Some("Streamer One".to_string()),
-            start_time: chrono::Utc::now().timestamp_millis(),
+            start_time: jiff::Timestamp::now().as_millisecond(),
             end_time: *self.end_time.lock().expect("lock poisoned"),
             titles: Some("[]".to_string()),
             total_size_bytes: 0,
@@ -490,7 +490,7 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
             return Ok(0);
         }
 
-        let now = chrono::Utc::now().timestamp_millis();
+        let now = jiff::Timestamp::now().as_millisecond();
         job.status = JobStatus::Failed.as_str().to_string();
         job.error = Some(error.to_string());
         job.retry_after = retry_after;
@@ -511,7 +511,7 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
             return Ok(0);
         }
 
-        let now = chrono::Utc::now().timestamp_millis();
+        let now = jiff::Timestamp::now().as_millisecond();
         job.status = JobStatus::Cancelled.as_str().to_string();
         job.completed_at = Some(now);
         job.updated_at = now;
@@ -519,7 +519,7 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
     }
 
     async fn reset_job_for_retry(&self, id: &str) -> Result<()> {
-        let now = chrono::Utc::now().timestamp_millis();
+        let now = jiff::Timestamp::now().as_millisecond();
         let mut jobs = self.jobs.lock().expect("lock poisoned");
         let job = jobs
             .get_mut(id)
@@ -652,7 +652,7 @@ impl crate::database::repositories::JobRepository for TestJobRepository {
     }
 
     async fn cancel_jobs_by_pipeline(&self, pipeline_id: &str) -> Result<u64> {
-        let now = chrono::Utc::now().timestamp_millis();
+        let now = jiff::Timestamp::now().as_millisecond();
         let mut cancelled = 0;
         for job in self.jobs.lock().expect("lock poisoned").values_mut() {
             if job.pipeline_id.as_deref() != Some(pipeline_id)
@@ -859,7 +859,7 @@ impl DagRepository for TestDagRepositoryForRetry {
         dag.status = crate::database::models::DagExecutionStatus::Cancelled
             .as_str()
             .to_string();
-        dag.completed_at = Some(chrono::Utc::now().timestamp_millis());
+        dag.completed_at = Some(jiff::Timestamp::now().as_millisecond());
         dag.error = Some(error.to_string());
         Ok(Vec::new())
     }
@@ -1112,7 +1112,7 @@ impl DagRepository for TestDagRepository {
                 return Ok(Vec::new());
             }
             dag.status = DagExecutionStatus::Cancelled.as_str().to_string();
-            dag.completed_at = Some(chrono::Utc::now().timestamp_millis());
+            dag.completed_at = Some(jiff::Timestamp::now().as_millisecond());
             dag.error = Some(error.to_string());
         }
 
@@ -1807,7 +1807,7 @@ async fn test_cancel_dag_step_job_allows_terminal_parent() {
 #[tokio::test]
 async fn test_cancel_pipeline_cancels_dag_and_releases_session_complete() {
     let session_repo = Arc::new(TestSessionRepository::new(Some(
-        chrono::Utc::now().timestamp_millis(),
+        jiff::Timestamp::now().as_millisecond(),
     )));
     let dag_repo = Arc::new(TestDagRepository::new());
     let job_repo = Arc::new(TestJobRepository::new());
@@ -2459,7 +2459,7 @@ fn test_session(id: &str, streamer_id: &str, end_time: Option<i64>) -> LiveSessi
         id: id.to_string(),
         streamer_id: Some(streamer_id.to_string()),
         streamer_name: Some(format!("Name of {streamer_id}")),
-        start_time: chrono::Utc::now().timestamp_millis(),
+        start_time: jiff::Timestamp::now().as_millisecond(),
         end_time,
         titles: Some("[]".to_string()),
         total_size_bytes: 1024,
@@ -2549,7 +2549,7 @@ async fn test_recovery_ignores_historical_ended_sessions() {
     session_repo.insert_session(test_session(
         "old-session",
         "streamer-1",
-        Some(chrono::Utc::now().timestamp_millis()),
+        Some(jiff::Timestamp::now().as_millisecond()),
     ));
     session_repo.insert_segment(test_segment("old-session", 0, "/missing-old.flv"));
 
@@ -2606,7 +2606,7 @@ async fn recovery_recreates_missing_segment_dag_once_after_artifact_persistence(
     session_repo.insert_session(test_session(
         session_id,
         streamer_id,
-        Some(chrono::Utc::now().timestamp_millis()),
+        Some(jiff::Timestamp::now().as_millisecond()),
     ));
     session_repo.insert_segment(test_segment(session_id, 0, "/persisted.flv"));
     let dag_repo = Arc::new(TestDagRepository::new());
@@ -2650,7 +2650,7 @@ async fn recovery_recreates_missing_session_complete_dag_with_durable_marker() {
     session_repo.insert_session(test_session(
         session_id,
         streamer_id,
-        Some(chrono::Utc::now().timestamp_millis()),
+        Some(jiff::Timestamp::now().as_millisecond()),
     ));
     session_repo.insert_segment(test_segment(session_id, 0, "/persisted.flv"));
     let dag_repo = Arc::new(TestDagRepository::new());
@@ -2700,7 +2700,7 @@ async fn recovery_finishes_an_ended_session_reached_only_through_an_in_flight_da
     session_repo.insert_session(test_session(
         session_id,
         streamer_id,
-        Some(chrono::Utc::now().timestamp_millis()),
+        Some(jiff::Timestamp::now().as_millisecond()),
     ));
     let dag_repo = Arc::new(TestDagRepository::new());
     let in_flight = test_coordination_dag(

@@ -11,7 +11,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use pipeline_common::SplitReason;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
@@ -204,8 +204,8 @@ struct Group {
     recovery: PathBuf,
     chunks: Vec<Chunk>,
     bytes: u64,
-    started_at: DateTime<Utc>,
-    ended_at: DateTime<Utc>,
+    started_at: Timestamp,
+    ended_at: Timestamp,
     reason: Option<SplitReason>,
     published: bool,
 }
@@ -239,7 +239,7 @@ impl Group {
         handle: &DownloadHandle,
         directory: &Path,
         index: u32,
-        started_at: DateTime<Utc>,
+        started_at: Timestamp,
     ) -> Result<Self, EngineStartError> {
         let config = handle.config_snapshot();
         let name = pipeline_common::expand_filename_template(

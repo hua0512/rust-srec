@@ -15,9 +15,8 @@ arc-swap = { workspace = true }
 axum = { workspace = true }
 serde = { workspace = true }
 uuid = { workspace = true }
-chrono = { workspace = true }
-chrono-tz = { workspace = true }
-cron = { workspace = true }
+jiff = { workspace = true, features = ["tzdb-bundle-always"] }
+jiff-cron = { workspace = true }
 bytes = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }

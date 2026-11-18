@@ -836,7 +836,7 @@ async fn a_start_rejected_by_a_changed_account_re_extracts_once() {
                     streams: handoff.streams,
                     media_headers: handoff.media_headers,
                     media_extras: None,
-                    timestamp: Utc::now(),
+                    timestamp: jiff::Timestamp::now(),
                 },
                 false,
             )
@@ -945,7 +945,7 @@ async fn managed_hysteresis_resume_keeps_the_binding_and_extracts_fresh_media() 
                 streams: &cached,
                 media_headers: None,
                 media_extras: None,
-                now: Utc::now(),
+                now: jiff::Timestamp::now(),
             })
             .await
             .unwrap();
@@ -958,7 +958,7 @@ async fn managed_hysteresis_resume_keeps_the_binding_and_extracts_fresh_media() 
                 streamer_name: "Coordinator".into(),
                 title: "Contract".into(),
                 category: None,
-                started_at: Utc::now(),
+                started_at: jiff::Timestamp::now(),
                 from_hysteresis: true,
                 download_start: Some(Box::new(crate::session::DownloadStartPayload {
                     credential_binding: Some(binding.clone()),

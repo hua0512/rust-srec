@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use platforms_parser::extractor::error::ExtractorError;
 use platforms_parser::extractor::factory::{ExtractorFactory, ExtractorSelection};
 use platforms_parser::extractor::platform_extractor::PlatformExtractor;
@@ -56,7 +56,7 @@ pub enum LiveStatus {
         /// Stream category (if available).
         category: Option<String>,
         /// Stream start time (if available).
-        started_at: Option<DateTime<Utc>>,
+        started_at: Option<Timestamp>,
         /// Viewer count (if available).
         viewer_count: Option<u64>,
         // Avatar url (if available)
@@ -74,7 +74,7 @@ pub enum LiveStatus {
         ///
         /// This is currently used to stop recording exactly at the end of a time-based
         /// schedule window while a download is active.
-        next_check_hint: Option<DateTime<Utc>>,
+        next_check_hint: Option<Timestamp>,
 
         /// Total number of stream candidates the platform extractor returned
         /// for this poll, before selection narrowed the list to one. The
@@ -146,7 +146,7 @@ pub enum FilterReason {
     /// Outside scheduled time window.
     OutOfSchedule {
         /// Next time the schedule window opens.
-        next_available: Option<DateTime<Utc>>,
+        next_available: Option<Timestamp>,
     },
     /// Title doesn't match keyword filter.
     TitleMismatch,
@@ -646,8 +646,8 @@ impl StreamDetector {
             title, category, ..
         } = &status
         {
-            let now = Utc::now();
-            let mut next_check_hint: Option<DateTime<Utc>> = None;
+            let now = Timestamp::now();
+            let mut next_check_hint: Option<Timestamp> = None;
 
             for filter in filters {
                 let matches = filter.matches(title, category.as_deref().unwrap_or(""), now);

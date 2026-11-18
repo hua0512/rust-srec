@@ -2,7 +2,7 @@
 //!
 //! Defines the events that can trigger notifications and their priority levels.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
 use crate::credentials::CredentialEvent;
@@ -151,14 +151,14 @@ pub enum NotificationEvent {
         streamer_name: String,
         title: String,
         category: Option<String>,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// Streamer went offline.
     StreamOffline {
         streamer_id: String,
         streamer_name: String,
         duration_secs: Option<f64>,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
 
     // ========== Download Events ==========
@@ -167,7 +167,7 @@ pub enum NotificationEvent {
         streamer_id: String,
         streamer_name: String,
         session_id: String,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// Download completed successfully.
     DownloadCompleted {
@@ -176,7 +176,7 @@ pub enum NotificationEvent {
         session_id: String,
         file_size_bytes: u64,
         duration_secs: f64,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// Download failed with error.
     DownloadError {
@@ -184,7 +184,7 @@ pub enum NotificationEvent {
         streamer_name: String,
         error_message: String,
         recoverable: bool,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// Segment started - a new segment file has begun recording.
     SegmentStarted {
@@ -193,7 +193,7 @@ pub enum NotificationEvent {
         session_id: String,
         segment_path: String,
         segment_index: u32,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// Segment completed - a segment file has finished recording.
     SegmentCompleted {
@@ -204,14 +204,14 @@ pub enum NotificationEvent {
         segment_index: u32,
         size_bytes: u64,
         duration_secs: f64,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// Download was cancelled by user.
     DownloadCancelled {
         streamer_id: String,
         streamer_name: String,
         session_id: String,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// Download was rejected before starting (e.g., circuit breaker open).
     DownloadRejected {
@@ -219,7 +219,7 @@ pub enum NotificationEvent {
         streamer_name: String,
         session_id: String,
         reason: String,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
 
     // ========== Pipeline Events ==========
@@ -228,7 +228,7 @@ pub enum NotificationEvent {
         job_id: String,
         job_type: String,
         streamer_id: String,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// Pipeline job completed.
     PipelineCompleted {
@@ -236,21 +236,21 @@ pub enum NotificationEvent {
         job_type: String,
         output_path: Option<String>,
         duration_secs: f64,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// Pipeline job failed.
     PipelineFailed {
         job_id: String,
         job_type: String,
         error_message: String,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// Pipeline job cancelled.
     PipelineCancelled {
         job_id: String,
         job_type: String,
         pipeline_id: Option<String>,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
 
     // ========== System Events ==========
@@ -260,14 +260,14 @@ pub enum NotificationEvent {
         streamer_name: String,
         error_type: String,
         message: String,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// Disk space running low.
     OutOfSpace {
         path: String,
         available_bytes: u64,
         threshold_bytes: u64,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// Recording output path is unwritable (caught at the filesystem boundary
     /// by the output-root write gate). Distinct from `OutOfSpace`, which is a
@@ -281,7 +281,7 @@ pub enum NotificationEvent {
         /// `notification.output_path_inaccessible.description.<kind>` i18n key
         /// via [`crate::downloader::IoErrorKindSer::as_str`].
         error_kind: String,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// GPU became unavailable to the container (caught by the GPU health
     /// monitor probing nvidia-smi). Most often the NVIDIA Container Toolkit
@@ -298,29 +298,29 @@ pub enum NotificationEvent {
         /// Truncated stderr / diagnostic line from the failed probe (≤ 256
         /// chars). Useful for ops; not used for routing.
         message: String,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// Pipeline queue depth warning.
     PipelineQueueWarning {
         queue_depth: usize,
         threshold: usize,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// Pipeline queue depth critical.
     PipelineQueueCritical {
         queue_depth: usize,
         threshold: usize,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// System startup.
     SystemStartup {
         version: String,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// System shutdown.
     SystemShutdown {
         reason: String,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
 
     /// A platform answered with a rate limit, so every check, refresh and
@@ -334,8 +334,8 @@ pub enum NotificationEvent {
         /// The saved proxy's name, for a `proxy` route.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         proxy_name: Option<String>,
-        retry_at: DateTime<Utc>,
-        timestamp: DateTime<Utc>,
+        retry_at: Timestamp,
+        timestamp: Timestamp,
     },
 
     // ========== Credential Events ==========
@@ -354,7 +354,7 @@ pub enum NotificationEvent {
         config_dir: String,
         /// Scrubbed, truncated BaiduPCS-Go output tail.
         message: String,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
 }
 
@@ -437,7 +437,7 @@ impl NotificationEvent {
     }
 
     /// Get the timestamp of this event.
-    pub fn timestamp(&self) -> DateTime<Utc> {
+    pub fn timestamp(&self) -> Timestamp {
         match self {
             Self::StreamOnline { timestamp, .. }
             | Self::StreamOffline { timestamp, .. }

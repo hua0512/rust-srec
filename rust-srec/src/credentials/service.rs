@@ -8,7 +8,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
-use chrono::Utc;
 use tracing::warn;
 
 use crate::notification::{NotificationEvent, NotificationService};
@@ -147,7 +146,7 @@ impl CredentialProviderRegistry {
                 scope,
                 platform: platform.to_owned(),
                 error: error.to_string(),
-                timestamp: Utc::now(),
+                timestamp: jiff::Timestamp::now(),
             });
         }
     }

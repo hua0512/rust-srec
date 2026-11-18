@@ -773,7 +773,6 @@ mod tests {
     use super::*;
     use crate::domain::StreamerState;
     use crate::scheduler::actor::ActorRemovalOutcome;
-    use chrono::Utc;
 
     /// A scheduler whose actors use `NoOpStatusChecker`, with `streamer_ids`
     /// already in the shared metadata store so initial reconciliation gives each
@@ -824,9 +823,9 @@ mod tests {
                     platform_metadata: None,
                     offline_check_count: 3,
                     offline_check_delay_ms: 20_000,
-                    created_at: Utc::now(),
+                    created_at: jiff::Timestamp::now(),
                     deleted_at: None,
-                    updated_at: Utc::now(),
+                    updated_at: jiff::Timestamp::now(),
                 }),
             );
         }

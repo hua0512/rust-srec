@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use chrono::{DateTime, TimeZone, Utc};
+use jiff::Timestamp;
 use mesio_engine::DownloadError;
 use mesio_engine::dash::manifest::{
     AddressingKind, AvailabilityTimeOffset, ByteRange, ContentType, Manifest, ManifestError,
@@ -20,8 +20,8 @@ fn parse(xml: &str, document: &str) -> Manifest {
     Manifest::parse(xml.as_bytes(), &Url::parse(document).unwrap()).unwrap()
 }
 
-fn at(secs: i64, nanos: u32) -> DateTime<Utc> {
-    Utc.timestamp_opt(secs, nanos).unwrap()
+fn at(secs: i64, nanos: u32) -> Timestamp {
+    jiff::Timestamp::new(secs, nanos as i32).unwrap()
 }
 
 fn representation<'a>(manifest: &'a Manifest, period: usize, id: &str) -> &'a Representation {
@@ -542,7 +542,7 @@ fn availability_end_time_ends_the_presentation() {
     );
     assert_eq!(
         manifest.availability_end_time,
-        Some(Utc.timestamp_opt(NEW_YEAR_2024 + 60, 0).unwrap())
+        Some(jiff::Timestamp::from_second(NEW_YEAR_2024 + 60).unwrap())
     );
     let video = representation(&manifest, 0, "v");
     assert_eq!(video.segments(at(NEW_YEAR_2024 + 60, 0)).unwrap().len(), 30);

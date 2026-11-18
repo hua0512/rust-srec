@@ -25,7 +25,6 @@ use crate::extractor::platforms::douyin::douyin_proto;
 use crate::extractor::platforms::douyin::generate_xbogus;
 use crate::extractor::platforms::douyin::utils::{DEFAULT_TTWID, get_common_params};
 use crate::extractor::utils::capture_group_1_owned;
-use chrono::{TimeZone, Utc};
 use tokio_tungstenite::tungstenite::http::HeaderMap;
 
 use super::URL_REGEX;
@@ -241,8 +240,8 @@ impl DouyinDanmuProtocol {
                         let timestamp = Some(chat_msg.event_time * 1000)
                             .filter(|&t| t != 0)
                             .or_else(|| Some(create_time).filter(|&t| t != 0))
-                            .and_then(|t| Utc.timestamp_millis_opt(t as i64).single())
-                            .unwrap_or_else(Utc::now);
+                            .and_then(|t| jiff::Timestamp::from_millisecond(t as i64).ok())
+                            .unwrap_or_else(jiff::Timestamp::now);
 
                         let danmu = DanmuMessage::chat(msg_id, user_id, username, content)
                             .with_timestamp(timestamp)

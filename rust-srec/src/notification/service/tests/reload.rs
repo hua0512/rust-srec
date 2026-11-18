@@ -12,7 +12,7 @@ fn db_channel(id: &str, name: &str) -> NotificationChannelDbModel {
 fn event() -> NotificationEvent {
     NotificationEvent::SystemStartup {
         version: "test".to_owned(),
-        timestamp: Utc::now(),
+        timestamp: jiff::Timestamp::now(),
     }
 }
 
@@ -188,7 +188,7 @@ async fn admitted_targets_survive_removal_before_delivery_begins() {
         PendingNotification {
             _id: 99,
             event: event(),
-            created_at: Utc::now(),
+            created_at: jiff::Timestamp::now(),
             targets: vec![captured],
             channel_state: HashMap::from([(
                 "stable".to_owned(),

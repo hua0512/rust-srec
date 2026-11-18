@@ -45,7 +45,7 @@ fn channels(
 fn event() -> NotificationEvent {
     NotificationEvent::SystemStartup {
         version: "contract".into(),
-        timestamp: chrono::Utc::now(),
+        timestamp: jiff::Timestamp::now(),
     }
 }
 

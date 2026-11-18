@@ -140,7 +140,7 @@ pub struct BaiduPcsConfig {
 
     /// Remote destination directory (e.g. `/records/{streamer}/%Y-%m`).
     /// Supports placeholder expansion for `{streamer}`, `{title}`,
-    /// `{streamer_id}`, `{session_id}`, `{platform}`, and chrono-style
+    /// `{streamer_id}`, `{session_id}`, `{platform}`, and strftime-style
     /// time tokens (`%Y`, `%m`, `%d`, ...). Normalized to a
     /// forward-slash, leading-`/` Netdisk path.
     pub destination_root: Option<String>,
@@ -909,7 +909,7 @@ impl BaiduPcsProcessor {
             String::new()
         };
 
-        let reference_timestamp_ms = config.time_anchor.reference_time(input).timestamp_millis();
+        let reference_timestamp_ms = config.time_anchor.reference_time(input).as_millisecond();
         let expanded = input.expand_placeholders(&raw, Some(reference_timestamp_ms));
         Self::normalize_remote_dir(&expanded)
     }
@@ -2176,7 +2176,7 @@ mod tests {
         let created_at = utc_datetime(2026, 8, 5, 12, 0, 0);
         let expected_dir = format!(
             "/rec/StreamerName/{}",
-            pipeline_common::expand_path_template_at("%Y%m", Some(created_at.timestamp_millis()))
+            pipeline_common::expand_path_template_at("%Y%m", Some(created_at.as_millisecond()))
         );
         let runner = Arc::new(MockBaiduPcsCommandRunner::new(vec![MockAttempt {
             exit_ok: true,

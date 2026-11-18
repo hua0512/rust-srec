@@ -1,6 +1,6 @@
 //! Job Preset database models.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -61,10 +61,10 @@ pub struct JobPreset {
     pub config: String,
     /// Creation timestamp.
     #[sqlx(try_from = "crate::database::time::EpochMillis")]
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// Last update timestamp.
     #[sqlx(try_from = "crate::database::time::EpochMillis")]
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: Timestamp,
 }
 
 impl JobPreset {
@@ -81,8 +81,8 @@ impl JobPreset {
             category: None,
             processor: processor.into(),
             config: config.to_string(),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: Timestamp::now(),
+            updated_at: Timestamp::now(),
         }
     }
 
@@ -157,10 +157,10 @@ pub struct PipelinePreset {
     pub pipeline_type: Option<String>,
     /// Creation timestamp.
     #[sqlx(try_from = "crate::database::time::EpochMillis")]
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// Last update timestamp.
     #[sqlx(try_from = "crate::database::time::EpochMillis")]
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: Timestamp,
 }
 
 use crate::database::models::job::DagPipelineDefinition;
@@ -183,8 +183,8 @@ impl PipelinePreset {
                 "Failed to serialize dag_definition; storing empty object",
             )),
             pipeline_type: Some("dag".to_string()),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: Timestamp::now(),
+            updated_at: Timestamp::now(),
         }
     }
 

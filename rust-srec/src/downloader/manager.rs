@@ -22,8 +22,8 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 
-use chrono::{DateTime, Utc};
 use dashmap::DashMap;
+use jiff::Timestamp;
 use parking_lot::{Mutex, RwLock};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -131,7 +131,7 @@ struct ActiveDownload {
     current_segment_index: Option<u32>,
     current_engine_segment_index: Option<u32>,
     current_segment_path: Option<String>,
-    current_segment_started_at: Option<DateTime<Utc>>,
+    current_segment_started_at: Option<Timestamp>,
     /// Queue slot held by the download. Released (and the next waiter
     /// woken) when this `ActiveDownload` entry is removed from the
     /// active map.

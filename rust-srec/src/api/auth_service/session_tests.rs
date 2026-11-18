@@ -186,7 +186,7 @@ async fn password_change_trigger_is_atomic_and_stale_login_cannot_create_session
     let mut token = RefreshTokenDbModel::new(
         &fixture.user.id,
         "stale-login-token",
-        Utc::now() + Duration::days(1),
+        jiff::Timestamp::now() + jiff::SignedDuration::from_hours(24),
         None,
     );
     token.session_id = Some("stale-login-session".to_owned());
@@ -234,7 +234,7 @@ async fn disabled_account_cannot_restore_old_session_or_finish_stale_login() {
     let mut token = RefreshTokenDbModel::new(
         &fixture.user.id,
         "disabled-login",
-        Utc::now() + Duration::days(1),
+        jiff::Timestamp::now() + jiff::SignedDuration::from_hours(24),
         None,
     );
     token.session_id = Some("disabled-session".to_owned());

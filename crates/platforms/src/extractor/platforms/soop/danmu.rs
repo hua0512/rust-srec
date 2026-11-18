@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 use bytes::Bytes;
-use chrono::Utc;
 use tokio_tungstenite::tungstenite::http::{HeaderMap, HeaderValue, header};
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
@@ -172,10 +171,10 @@ impl SoopDanmuProtocol {
             .map(String::as_str)
             .filter(|s| !s.is_empty())
             .unwrap_or(uid);
-        let id = format!("soop-{}-{}", uid, Utc::now().timestamp_millis());
+        let id = format!("soop-{}-{}", uid, jiff::Timestamp::now().as_millisecond());
         Some(
             DanmuMessage::chat(&id, uid, nickname, content)
-                .with_timestamp(Utc::now())
+                .with_timestamp(jiff::Timestamp::now())
                 .with_metadata("platform", serde_json::json!("soop")),
         )
     }
@@ -221,10 +220,13 @@ impl SoopDanmuProtocol {
                 (uid, nick, count)
             }
         };
-        let id = format!("soop-gift-{svc}-{}", Utc::now().timestamp_millis());
+        let id = format!(
+            "soop-gift-{svc}-{}",
+            jiff::Timestamp::now().as_millisecond()
+        );
         Some(
             DanmuMessage::gift(&id, uid, nickname, gift_name, count)
-                .with_timestamp(Utc::now())
+                .with_timestamp(jiff::Timestamp::now())
                 .with_metadata("platform", serde_json::json!("soop"))
                 .with_metadata("soop_svc", serde_json::json!(svc)),
         )

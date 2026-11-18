@@ -1,7 +1,7 @@
 use super::*;
-use chrono::{DateTime, Utc};
+use jiff::{Timestamp, civil::DateTime, tz::TimeZone};
 
-fn utc(value: &str) -> DateTime<Utc> {
+fn utc(value: &str) -> Timestamp {
     value.parse().unwrap()
 }
 
@@ -88,7 +88,7 @@ fn overlapping_overnight_fold_windows_stop_at_the_end_of_the_continuous_run() {
         assert!(time.matches(now));
         assert_eq!(time.next_unmatch_time(now), Some(actual_end));
     }
-    assert!(time.matches(actual_end - chrono::Duration::nanoseconds(1)));
+    assert!(time.matches(actual_end - jiff::SignedDuration::from_nanos(1)));
     assert!(!time.matches(actual_end));
 }
 
@@ -107,7 +107,7 @@ fn touching_gap_adjusted_windows_have_no_false_stop_at_the_shared_boundary() {
     assert!(time.matches(shared));
     assert_eq!(time.next_unmatch_time(now), Some(actual_end));
     assert_eq!(time.next_unmatch_time(shared), Some(actual_end));
-    assert!(time.matches(actual_end - chrono::Duration::nanoseconds(1)));
+    assert!(time.matches(actual_end - jiff::SignedDuration::from_nanos(1)));
     assert!(!time.matches(actual_end));
 }
 
@@ -172,6 +172,15 @@ fn cron_fold_next_start_is_strictly_future_and_both_copies_match() {
 }
 
 #[test]
+fn cron_resumes_at_a_later_valid_time_on_the_day_of_a_gap() {
+    let cron = CronFilter::with_timezone("0 30 2,3 * * Sun", "Europe/Madrid");
+    assert_eq!(
+        cron.next_match_time(utc("2024-03-31T00:59:00Z")),
+        Some(utc("2024-03-31T01:30:00Z"))
+    );
+}
+
+#[test]
 fn cron_second_occurrence_opens_its_entire_matching_minute() {
     let cron = CronFilter::with_timezone("45 30 2 * * *", "UTC");
     let start = utc("2024-01-01T02:30:00Z");
@@ -191,10 +200,7 @@ fn cron_second_occurrence_opens_its_entire_matching_minute() {
 
 #[test]
 fn omitted_defaults_are_utc_for_all_matching_and_wake_operations() {
-    assert!(matches!(
-        super::FilterTimezone::parse(None).unwrap(),
-        super::FilterTimezone::Named(chrono_tz::UTC)
-    ));
+    assert_eq!(super::FilterTimezone::parse(None).unwrap().0, TimeZone::UTC);
     let time = TimeBasedFilter::new(vec!["Monday".into()], "16:00", "17:00");
     let cron = CronFilter::new("0 * 16 * * Mon");
     for moment in [
@@ -220,11 +226,7 @@ fn omitted_defaults_are_utc_for_all_matching_and_wake_operations() {
 
 #[test]
 fn explicit_local_uses_system_calendar_rules_for_match_and_wakes() {
-    use chrono::{Local, TimeZone};
-    assert!(matches!(
-        super::FilterTimezone::parse(Some("local")).unwrap(),
-        super::FilterTimezone::Local
-    ));
+    let timezone = TimeZone::system();
     let days = [
         "Monday",
         "Tuesday",
@@ -242,11 +244,8 @@ fn explicit_local_uses_system_calendar_rules_for_match_and_wakes() {
     // never stand in for the system's winter/summer timezone rules.
     for month in [1, 7] {
         let local = |hour, minute| {
-            Local
-                .with_ymd_and_hms(2024, month, 15, hour, minute, 0)
-                .single()
-                .unwrap()
-                .with_timezone(&Utc)
+            let wall = DateTime::new(2024, month, 15, hour, minute, 0, 0).unwrap();
+            timezone.to_ambiguous_timestamp(wall).unambiguous().unwrap()
         };
         let before = local(11, 59);
         let start = local(12, 0);

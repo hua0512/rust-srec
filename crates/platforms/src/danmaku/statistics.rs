@@ -2,8 +2,8 @@
 //!
 //! Provides statistics aggregation for danmu messages during a session.
 
-use chrono::{DateTime, Utc};
 use jieba_rs::Jieba;
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::cmp::Ordering;
@@ -93,9 +93,9 @@ pub struct DanmuStatistics {
     /// Danmu rate timeseries (timestamp -> count)
     pub rate_timeseries: Vec<RateDataPoint>,
     /// Session start time
-    pub start_time: Option<DateTime<Utc>>,
+    pub start_time: Option<Timestamp>,
     /// Session end time
-    pub end_time: Option<DateTime<Utc>>,
+    pub end_time: Option<Timestamp>,
     /// Duration in seconds
     pub duration_secs: u64,
     /// Width of one `rate_timeseries` bucket.
@@ -140,7 +140,7 @@ pub struct GiftCount {
 /// A rate timeseries data point.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RateDataPoint {
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     pub count: u64,
 }
 
@@ -646,9 +646,9 @@ pub struct AggregatorState {
     unique_hll: HyperLogLog,
     word_hh: WordHeavyHitters,
     rate_data: VecDeque<RateDataPoint>,
-    current_bucket: Option<(DateTime<Utc>, u64)>,
+    current_bucket: Option<(Timestamp, u64)>,
     bucket_duration_secs: u64,
-    start_time: Option<DateTime<Utc>>,
+    start_time: Option<Timestamp>,
 }
 
 impl AggregatorState {
@@ -684,11 +684,11 @@ pub struct StatisticsAggregator {
     /// Rate data points.
     rate_data: VecDeque<RateDataPoint>,
     /// Current rate bucket
-    current_bucket: Option<(DateTime<Utc>, u64)>,
+    current_bucket: Option<(Timestamp, u64)>,
     /// Current bucket width; doubled by `coarsen_rate_data`.
     bucket_duration_secs: u64,
     /// Session start time
-    start_time: Option<DateTime<Utc>>,
+    start_time: Option<Timestamp>,
     /// Maximum number of rate points kept in memory.
     max_rate_points: usize,
     /// Reporting sizes, capacities and stop-word additions.
@@ -934,7 +934,7 @@ impl StatisticsAggregator {
     }
 
     /// Update the rate bucket.
-    fn update_rate_bucket(&mut self, timestamp: DateTime<Utc>) {
+    fn update_rate_bucket(&mut self, timestamp: Timestamp) {
         let bucket_start = self.get_bucket_start(timestamp);
 
         match &mut self.current_bucket {
@@ -985,15 +985,15 @@ impl StatisticsAggregator {
     }
 
     /// Get the bucket start time for a timestamp.
-    fn get_bucket_start(&self, timestamp: DateTime<Utc>) -> DateTime<Utc> {
-        let secs = timestamp.timestamp();
+    fn get_bucket_start(&self, timestamp: Timestamp) -> Timestamp {
+        let secs = timestamp.as_second();
         let bucket_secs =
             (secs / self.bucket_duration_secs as i64) * self.bucket_duration_secs as i64;
-        DateTime::from_timestamp(bucket_secs, 0).unwrap_or(timestamp)
+        Timestamp::new(bucket_secs, 0).unwrap_or(timestamp)
     }
 
     /// Finalize and return statistics.
-    pub fn finalize(mut self, end_time: DateTime<Utc>) -> DanmuStatistics {
+    pub fn finalize(mut self, end_time: Timestamp) -> DanmuStatistics {
         // Flush current bucket
         if let Some((start, count)) = self.current_bucket.take() {
             self.rate_data.push_back(RateDataPoint {
@@ -1005,7 +1005,7 @@ impl StatisticsAggregator {
         // Calculate duration
         let duration_secs = self
             .start_time
-            .map(|start| (end_time - start).num_seconds().max(0) as u64)
+            .map(|start| end_time.duration_since(start).as_secs().max(0) as u64)
             .unwrap_or(0);
 
         let top_talkers = self.talker_hh.into_top_n(self.config.top_talkers);
@@ -1048,7 +1048,7 @@ impl StatisticsAggregator {
 
         let duration_secs = self
             .start_time
-            .map(|start| (Utc::now() - start).num_seconds().max(0) as u64)
+            .map(|start| Timestamp::now().duration_since(start).as_secs().max(0) as u64)
             .unwrap_or(0);
 
         DanmuStatistics {
@@ -1100,15 +1100,9 @@ fn default_stop_words() -> HashSet<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::TimeZone;
     use std::time::Instant;
 
-    fn chat_at(
-        user_id: &str,
-        username: &str,
-        content: &str,
-        timestamp: DateTime<Utc>,
-    ) -> DanmuMessage {
+    fn chat_at(user_id: &str, username: &str, content: &str, timestamp: Timestamp) -> DanmuMessage {
         DanmuMessage::chat("test-id", user_id, username, content).with_timestamp(timestamp)
     }
 
@@ -1117,7 +1111,7 @@ mod tests {
         username: &str,
         gift_name: &str,
         gift_count: u32,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     ) -> DanmuMessage {
         DanmuMessage::gift("test-id", user_id, username, gift_name, gift_count)
             .with_timestamp(timestamp)
@@ -1126,7 +1120,7 @@ mod tests {
     #[test]
     fn test_record_message() {
         let mut agg = StatisticsAggregator::new();
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         agg.record_message(&chat_at("user1", "User One", "Hello world!", now));
         agg.record_message(&chat_at("user2", "User Two", "Hi there!", now));
@@ -1142,7 +1136,7 @@ mod tests {
     #[test]
     fn test_top_talkers() {
         let mut agg = StatisticsAggregator::with_config(3, 10, 10);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // User1: 5 messages, User2: 3 messages, User3: 1 message
         for _ in 0..5 {
@@ -1164,7 +1158,7 @@ mod tests {
     #[test]
     fn test_word_frequency() {
         let mut agg = StatisticsAggregator::with_config(10, 10, 10);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         agg.record_message(&chat_at("user1", "User", "hello world hello", now));
         agg.record_message(&chat_at("user2", "User", "hello rust world", now));
@@ -1180,7 +1174,7 @@ mod tests {
     #[test]
     fn test_rate_timeseries() {
         let mut agg = StatisticsAggregator::with_config(10, 10, 10);
-        let base = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
+        let base = "2024-01-01T12:00:00Z".parse::<jiff::Timestamp>().unwrap();
 
         // Messages in first bucket
         agg.record_message(&chat_at("user1", "User", "msg1", base));
@@ -1188,7 +1182,7 @@ mod tests {
             "user1",
             "User",
             "msg2",
-            base + chrono::Duration::seconds(5),
+            base + jiff::SignedDuration::from_secs(5),
         ));
 
         // Messages in second bucket
@@ -1196,10 +1190,10 @@ mod tests {
             "user1",
             "User",
             "msg3",
-            base + chrono::Duration::seconds(15),
+            base + jiff::SignedDuration::from_secs(15),
         ));
 
-        let end_time = base + chrono::Duration::seconds(20);
+        let end_time = base + jiff::SignedDuration::from_secs(20);
         let stats = agg.finalize(end_time);
 
         assert_eq!(stats.rate_timeseries.len(), 2);
@@ -1212,7 +1206,7 @@ mod tests {
     #[test]
     fn test_word_frequency_splits_on_cjk_punctuation() {
         let mut agg = StatisticsAggregator::with_config(10, 10, 10);
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         agg.record_message(&chat_at("u1", "User", "加油,主播!加油", now));
         agg.record_message(&chat_at("u2", "User", "主播。牛逼🤣牛逼", now));
@@ -1246,7 +1240,7 @@ mod tests {
     #[test]
     fn test_rate_timeseries_coarsens_instead_of_dropping() {
         let mut agg = StatisticsAggregator::with_config(10, 10, 10);
-        let base = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        let base = "2024-01-01T00:00:00Z".parse::<jiff::Timestamp>().unwrap();
 
         // One message per 10s bucket, spanning well past max_rate_points buckets.
         let buckets = agg.max_rate_points as i64 + 100;
@@ -1255,11 +1249,11 @@ mod tests {
                 "user1",
                 "User",
                 "msg",
-                base + chrono::Duration::seconds(i * 10),
+                base + jiff::SignedDuration::from_secs(i * 10),
             ));
         }
 
-        let end_time = base + chrono::Duration::seconds(buckets * 10);
+        let end_time = base + jiff::SignedDuration::from_secs(buckets * 10);
         let max_points = agg.max_rate_points;
         let stats = agg.finalize(end_time);
 
@@ -1280,8 +1274,8 @@ mod tests {
     #[test]
     fn test_finalize() {
         let mut agg = StatisticsAggregator::new();
-        let start = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
-        let end = start + chrono::Duration::minutes(30);
+        let start = "2024-01-01T12:00:00Z".parse::<jiff::Timestamp>().unwrap();
+        let end = start + jiff::SignedDuration::from_mins(30);
 
         agg.record_message(&chat_at("user1", "User", "Hello", start));
 
@@ -1295,7 +1289,7 @@ mod tests {
     #[test]
     fn test_gift_counting() {
         let mut agg = StatisticsAggregator::new();
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         agg.record_message(&chat_at("user1", "User", "chat", now));
         agg.record_message(&gift_at("user2", "User", "Rocket", 1, now));
@@ -1313,7 +1307,7 @@ mod tests {
     #[test]
     fn test_gift_aggregation() {
         let mut agg = StatisticsAggregator::new();
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // whale: one message of 10 rockets; regular: three single flowers.
         agg.record_message(&gift_at("whale", "Whale", "Rocket", 10, now));
@@ -1362,7 +1356,7 @@ mod tests {
             word_capacity: 64,
             ..StatisticsConfig::default()
         });
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let noise = 20_000usize;
         for i in 0..noise {
@@ -1411,7 +1405,7 @@ mod tests {
             word_capacity: 64,
             ..StatisticsConfig::default()
         });
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // "hot" appears in every message so it is never the batch minimum; each
         // "noise" word appears exactly once.
@@ -1518,7 +1512,7 @@ mod tests {
             talker_capacity: 64,
             ..StatisticsConfig::default()
         });
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         for i in 0..32 {
             let user = format!("user-{i}");
@@ -1551,7 +1545,7 @@ mod tests {
     #[test]
     fn snapshots_report_the_rate_bucket_width() {
         let mut agg = StatisticsAggregator::with_config(10, 10, 10);
-        let base = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
+        let base = "2024-01-01T00:00:00Z".parse::<jiff::Timestamp>().unwrap();
         agg.record_message(&chat_at("u1", "User", "msg", base));
         assert_eq!(agg.current_stats().bucket_duration_secs, 10);
 
@@ -1562,11 +1556,11 @@ mod tests {
                 "u1",
                 "User",
                 "msg",
-                base + chrono::Duration::seconds(i * 10),
+                base + jiff::SignedDuration::from_secs(i * 10),
             ));
         }
 
-        let stats = agg.finalize(base + chrono::Duration::seconds(buckets * 10));
+        let stats = agg.finalize(base + jiff::SignedDuration::from_secs(buckets * 10));
         assert!(
             stats.bucket_duration_secs > 10,
             "coarsening must be visible to consumers, got {}",
@@ -1581,7 +1575,7 @@ mod tests {
     fn checkpoint_round_trip_continues_counting() {
         let config = StatisticsConfig::default();
         let mut first = StatisticsAggregator::with_settings(config.clone());
-        let base = Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap();
+        let base = "2024-01-01T12:00:00Z".parse::<jiff::Timestamp>().unwrap();
 
         for i in 0..40 {
             let user = format!("user-{}", i % 4);
@@ -1589,7 +1583,7 @@ mod tests {
                 &user,
                 "User",
                 "hello world",
-                base + chrono::Duration::seconds(i),
+                base + jiff::SignedDuration::from_secs(i),
             ));
         }
         let before = first.current_stats();
@@ -1618,7 +1612,7 @@ mod tests {
             "user-9",
             "User",
             "extra",
-            base + chrono::Duration::seconds(41),
+            base + jiff::SignedDuration::from_secs(41),
         ));
         assert_eq!(resumed.current_stats().total_count, before.total_count + 1);
     }
@@ -1629,7 +1623,7 @@ mod tests {
     #[test]
     fn checkpoint_from_another_version_is_refused() {
         let mut agg = StatisticsAggregator::new();
-        agg.record_message(&chat_at("u1", "User", "hi", Utc::now()));
+        agg.record_message(&chat_at("u1", "User", "hi", Timestamp::now()));
 
         let mut state = agg.export_state();
         state.version = AggregatorState::VERSION + 1;
@@ -1648,7 +1642,7 @@ mod tests {
             talker_capacity: 512,
             ..StatisticsConfig::default()
         });
-        let now = Utc::now();
+        let now = Timestamp::now();
         for i in 0..200 {
             let user = format!("user-{i}");
             for _ in 0..=i {
@@ -1679,7 +1673,7 @@ mod tests {
     #[test]
     fn test_unique_talkers_estimate() {
         let mut agg = StatisticsAggregator::new();
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let total_users = 5_000usize;
         for i in 0..total_users {
@@ -1709,7 +1703,7 @@ mod tests {
             word_capacity: 200,
             ..StatisticsConfig::default()
         });
-        let now = Utc::now();
+        let now = Timestamp::now();
         let total_messages = 50_000usize;
 
         let start = Instant::now();

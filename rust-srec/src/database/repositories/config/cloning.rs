@@ -22,9 +22,9 @@ impl SqlxConfigRepository {
                 .bind(&source_id).fetch_optional(&mut *connection).await?.ok_or_else(|| Error::not_found("TemplateConfig", &source_id))?;
             cloned.id = uuid::Uuid::new_v4().to_string();
             cloned.name = new_name;
-            cloned.created_at = chrono::Utc::now();
+            cloned.created_at = jiff::Timestamp::now();
             cloned.updated_at = cloned.created_at;
-            writes::write_template(connection, &cloned, WriteMode::Insert, cloned.updated_at.timestamp_millis()).await?;
+            writes::write_template(connection, &cloned, WriteMode::Insert, cloned.updated_at.as_millisecond()).await?;
             // Profiles belong to the platform, so the copy selects the same accounts.
             credential_selections::copy_owner(
                 connection,

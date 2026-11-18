@@ -1,7 +1,7 @@
 use super::*;
 
-fn now() -> DateTime<Utc> {
-    DateTime::from_timestamp_millis(1_788_784_496_123).unwrap()
+fn now() -> jiff::Timestamp {
+    jiff::Timestamp::from_millisecond(1_788_784_496_123).unwrap()
 }
 
 #[test]

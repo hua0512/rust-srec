@@ -814,7 +814,7 @@ mod tests {
                         crate::danmaku::DanmuItem::Message(danmu) => {
                             println!(
                                 "[{}] {}: {}",
-                                danmu.timestamp.format("%H:%M:%S"),
+                                danmu.timestamp.strftime("%H:%M:%S"),
                                 danmu.username,
                                 danmu.content
                             );

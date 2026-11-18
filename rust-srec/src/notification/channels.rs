@@ -52,7 +52,7 @@ pub trait NotificationChannel: Send + Sync {
         }
         let event = NotificationEvent::SystemStartup {
             version: "test".to_string(),
-            timestamp: chrono::Utc::now(),
+            timestamp: jiff::Timestamp::now(),
         };
         self.send_rendered(&event, &rendered_for(self, &event))
             .await

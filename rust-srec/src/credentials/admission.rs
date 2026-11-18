@@ -215,7 +215,7 @@ impl PlatformAdmission {
                 .platform_names
                 .get(platform_id)
                 .map_or_else(|| platform_id.to_owned(), |name| name.clone());
-            let now = chrono::Utc::now();
+            let now = jiff::Timestamp::now();
             service.dispatch_notification(NotificationEvent::PlatformThrottled {
                 platform,
                 route: route.kind().as_str().to_owned(),
@@ -391,7 +391,7 @@ mod tests {
             (platform.as_str(), route.as_str(), proxy_name.as_deref()),
             ("bilibili", "proxy", Some("one name"))
         );
-        assert_eq!((retry_at - timestamp).num_seconds(), 300);
+        assert_eq!(retry_at.duration_since(timestamp).as_secs(), 300);
         admission.observe("platform", &direct(), &throttled(30));
         let NotificationEvent::PlatformThrottled {
             route, proxy_name, ..

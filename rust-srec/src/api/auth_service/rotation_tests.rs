@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use chrono::Utc;
 use tokio::sync::Barrier;
 
 use super::{AuthConfig, AuthError, AuthService};
@@ -25,7 +24,7 @@ fn token(user_id: &str, raw: &str) -> RefreshTokenDbModel {
     RefreshTokenDbModel::new(
         user_id,
         token_hash(raw),
-        Utc::now() + chrono::Duration::days(7),
+        jiff::Timestamp::now() + jiff::SignedDuration::from_hours(24 * 7),
         Some("test-device".to_string()),
     )
 }

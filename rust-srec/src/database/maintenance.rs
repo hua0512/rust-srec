@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, NaiveTime, Utc};
+use jiff::Timestamp;
+use jiff::civil::Time;
 use sysinfo::Disks;
 use tokio::task::JoinHandle;
 use tokio::time::MissedTickBehavior;
@@ -39,9 +40,9 @@ pub struct MaintenanceConfig {
     /// Maximum number of delete statements run per task during one sweep.
     pub max_batches_per_task: u32,
     /// Start of the window for potentially blocking maintenance.
-    pub window_start: NaiveTime,
+    pub window_start: Time,
     /// End of the window for potentially blocking maintenance.
-    pub window_end: NaiveTime,
+    pub window_end: Time,
     /// Minimum reusable database space required before vacuuming.
     pub vacuum_threshold_bytes: i64,
     /// Maximum active downloads allowed while vacuuming.
@@ -66,8 +67,8 @@ impl Default for MaintenanceConfig {
             sweep_interval: Duration::from_secs(30 * 60),
             batch_size: 500,
             max_batches_per_task: 20,
-            window_start: NaiveTime::from_hms_opt(2, 0, 0).unwrap_or(NaiveTime::MIN),
-            window_end: NaiveTime::from_hms_opt(5, 0, 0).unwrap_or(NaiveTime::MIN),
+            window_start: Time::new(2, 0, 0, 0).unwrap_or(Time::MIN),
+            window_end: Time::new(5, 0, 0, 0).unwrap_or(Time::MIN),
             vacuum_threshold_bytes: 100 * 1024 * 1024,
             max_active_downloads_for_vacuum: 0,
             dead_letter_retention: RetentionDays::try_from(7).unwrap_or(RetentionDays::Forever),
@@ -655,8 +656,8 @@ impl MaintenanceScheduler {
                         return;
                     }
 
-                    let now = Utc::now();
-                    if self.is_in_maintenance_window(now.time()) {
+                    let now = Timestamp::now();
+                    if self.is_in_maintenance_window(jiff::tz::TimeZone::UTC.to_datetime(now).time()) {
                         if is_due(last_wal_checkpoint, now, self.config.wal_checkpoint_interval) {
                             match self.run_wal_checkpoint().await {
                                 Ok(()) => last_wal_checkpoint = Some(now),
@@ -682,7 +683,7 @@ impl MaintenanceScheduler {
         }
     }
 
-    fn is_in_maintenance_window(&self, now: NaiveTime) -> bool {
+    fn is_in_maintenance_window(&self, now: Time) -> bool {
         if self.config.window_start <= self.config.window_end {
             now >= self.config.window_start && now <= self.config.window_end
         } else {
@@ -859,11 +860,9 @@ impl MaintenanceScheduler {
     }
 }
 
-fn is_due(last: Option<DateTime<Utc>>, now: DateTime<Utc>, interval: Duration) -> bool {
+fn is_due(last: Option<Timestamp>, now: Timestamp, interval: Duration) -> bool {
     last.is_none_or(|last| {
-        now.signed_duration_since(last)
-            .to_std()
-            .is_ok_and(|elapsed| elapsed >= interval)
+        Duration::try_from(now.duration_since(last)).is_ok_and(|elapsed| elapsed >= interval)
     })
 }
 
@@ -1244,34 +1243,18 @@ mod tests {
             sqlx::SqlitePool::connect_lazy("sqlite::memory:").expect("valid test URL"),
             config.clone(),
         );
-        assert!(
-            scheduler.is_in_maintenance_window(
-                NaiveTime::from_hms_opt(3, 0, 0).unwrap_or(NaiveTime::MIN)
-            )
-        );
-        assert!(
-            !scheduler.is_in_maintenance_window(
-                NaiveTime::from_hms_opt(10, 0, 0).unwrap_or(NaiveTime::MIN)
-            )
-        );
+        assert!(scheduler.is_in_maintenance_window(Time::new(3, 0, 0, 0).unwrap_or(Time::MIN)));
+        assert!(!scheduler.is_in_maintenance_window(Time::new(10, 0, 0, 0).unwrap_or(Time::MIN)));
 
-        config.window_start = NaiveTime::from_hms_opt(22, 0, 0).unwrap_or(NaiveTime::MIN);
-        config.window_end = NaiveTime::from_hms_opt(2, 0, 0).unwrap_or(NaiveTime::MIN);
+        config.window_start = Time::new(22, 0, 0, 0).unwrap_or(Time::MIN);
+        config.window_end = Time::new(2, 0, 0, 0).unwrap_or(Time::MIN);
         let scheduler = MaintenanceScheduler::new(
             sqlx::SqlitePool::connect_lazy("sqlite::memory:").expect("valid test URL"),
             sqlx::SqlitePool::connect_lazy("sqlite::memory:").expect("valid test URL"),
             config,
         );
-        assert!(
-            scheduler.is_in_maintenance_window(
-                NaiveTime::from_hms_opt(23, 0, 0).unwrap_or(NaiveTime::MIN)
-            )
-        );
-        assert!(
-            scheduler.is_in_maintenance_window(
-                NaiveTime::from_hms_opt(1, 0, 0).unwrap_or(NaiveTime::MIN)
-            )
-        );
+        assert!(scheduler.is_in_maintenance_window(Time::new(23, 0, 0, 0).unwrap_or(Time::MIN)));
+        assert!(scheduler.is_in_maintenance_window(Time::new(1, 0, 0, 0).unwrap_or(Time::MIN)));
     }
 
     #[tokio::test]

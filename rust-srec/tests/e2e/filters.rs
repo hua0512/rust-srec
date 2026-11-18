@@ -5,7 +5,6 @@
 //! A held-back streamer is checked as usual but gets no session: its check
 //! history records the check as `filtered` with the reason.
 
-use chrono::Timelike;
 use reqwest::StatusCode;
 use serde_json::{Value, json};
 
@@ -128,7 +127,11 @@ async fn a_schedule_that_excludes_now_ends_a_recording_as_out_of_schedule() {
 
     // A window two hours from now on every day. Days are stored by their
     // full name, times exactly as written, seconds included.
-    let hour = (chrono::Utc::now().hour() + 2) % 24;
+    let hour = (jiff::tz::TimeZone::UTC
+        .to_datetime(jiff::Timestamp::now())
+        .hour()
+        + 2)
+        % 24;
     let (start, end) = (format!("{hour:02}:00:00"), format!("{hour:02}:30:59"));
     let schedule = json!({
         "days_of_week": ["Mon", "tue", "WED", "Thu", "Fri", "Sat", "Sun"],

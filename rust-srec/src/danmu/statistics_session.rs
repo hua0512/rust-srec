@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use chrono::Utc;
 use platforms_parser::danmaku::{DanmuMessage, DanmuStatistics, StatisticsAggregator};
 use tracing::warn;
 
@@ -84,7 +83,7 @@ impl StatisticsSession {
             checkpoint::discard(self.repository.as_ref(), &self.session_id).await;
         }
 
-        let statistics = self.aggregator.finalize(Utc::now());
+        let statistics = self.aggregator.finalize(jiff::Timestamp::now());
         persist_statistics(self.repository.as_deref(), &self.session_id, &statistics).await;
         statistics
     }
@@ -126,7 +125,7 @@ async fn persist_statistics(
         .rate_timeseries
         .iter()
         .map(|entry| DanmuRateEntry {
-            ts: entry.timestamp.timestamp_millis(),
+            ts: entry.timestamp.as_millisecond(),
             count: saturating_u64_to_i64(entry.count),
         })
         .collect::<Vec<_>>();
@@ -171,8 +170,8 @@ async fn persist_statistics(
     model.chat_count = Some(saturating_u64_to_i64(statistics.chat_count));
     model.gift_count = Some(saturating_u64_to_i64(statistics.gift_count));
     model.duration_secs = Some(saturating_u64_to_i64(statistics.duration_secs));
-    model.start_time = statistics.start_time.map(|time| time.timestamp_millis());
-    model.end_time = statistics.end_time.map(|time| time.timestamp_millis());
+    model.start_time = statistics.start_time.map(|time| time.as_millisecond());
+    model.end_time = statistics.end_time.map(|time| time.as_millisecond());
     model.rate_bucket_secs = Some(saturating_u64_to_i64(statistics.bucket_duration_secs));
     model.danmu_rate_timeseries = to_json_field(session_id, "rate_timeseries", &rate_timeseries);
     model.top_talkers = to_json_field(session_id, "top_talkers", &top_talkers);

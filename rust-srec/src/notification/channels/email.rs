@@ -195,7 +195,7 @@ impl EmailChannel {
             description: rendered.description.clone(),
             priority: event.priority(),
             event_type: event.event_type(),
-            timestamp: event.timestamp().to_rfc3339(),
+            timestamp: event.timestamp().to_string(),
         };
         let mut builder = Message::builder()
             .from(from)

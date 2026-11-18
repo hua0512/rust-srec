@@ -37,8 +37,8 @@ impl LogArchiveService {
     pub(super) async fn download(
         &self,
         log_dir: PathBuf,
-        from: Option<chrono::NaiveDate>,
-        to: Option<chrono::NaiveDate>,
+        from: Option<jiff::civil::Date>,
+        to: Option<jiff::civil::Date>,
     ) -> Result<Body, ApiError> {
         let permit = self.slots.clone().try_acquire_owned().map_err(|_| {
             ApiError::too_many_requests("Log archive downloads are busy. Try again shortly.", 5)
