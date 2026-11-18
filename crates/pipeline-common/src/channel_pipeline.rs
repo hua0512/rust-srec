@@ -9,6 +9,9 @@ use crate::{Pipeline, PipelineError};
 
 const DEFAULT_CHANNEL_CAPACITY: usize = 32;
 const DEFAULT_MAX_BATCH_ITEMS: usize = 64;
+/// Stage buffer capacity kept between batches. A burst that expands one input
+/// into more items than this grows the buffers for that batch only, so an idle
+/// pipeline does not hold a burst-sized allocation.
 const MAX_RETAINED_STAGE_ITEMS: usize = 512;
 
 #[derive(Clone, Copy)]
@@ -299,6 +302,8 @@ where
             input_permits.clear();
 
             if let Err(source) = process_result {
+                // Free the items the failed stage left behind before the send
+                // below, which can block on a slow consumer.
                 drop(stage_buffers);
                 if matches!(source, PipelineError::Cancelled) {
                     return Err(PipelineError::Cancelled);
@@ -333,6 +338,8 @@ where
             )?;
         }
 
+        // Finalization uses its own buffers, so release these before it and
+        // the final send.
         drop(stage_buffers);
         let mut outputs = Vec::new();
         if let Err(source) = pipeline.finalize_processors(&mut |item| outputs.push(item)) {
@@ -384,7 +391,7 @@ fn send_output_items<T>(
     if outputs.is_empty() {
         return Ok(());
     }
-    if limiter.is_none() && outputs.capacity() <= max_batch_items {
+    if limiter.is_none() && outputs.len() <= max_batch_items {
         return send_output_batch(output_tx, None, runtime, outputs, 0, channel_name);
     }
 
