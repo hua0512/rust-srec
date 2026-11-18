@@ -442,6 +442,15 @@ impl TestJobRepository {
 
 #[async_trait]
 impl crate::database::repositories::JobRepository for TestJobRepository {
+    async fn list_unclaimable_pending_jobs(
+        &self,
+        _supported_types: &[&str],
+        _after_id: Option<&str>,
+        _limit: u32,
+    ) -> Result<Vec<crate::database::repositories::UnclaimableJob>> {
+        unimplemented!("not needed for these tests")
+    }
+
     async fn get_job(&self, id: &str) -> Result<JobDbModel> {
         self.jobs
             .lock()

@@ -24,6 +24,7 @@
 
 ## Workflows and file processing
 
+- Fixed a restart leaving jobs whose processor is no longer available waiting in the queue when more than 10,000 jobs were pending. They are now marked as failed at startup however large the backlog is.
 - Fixed the **Max Uploads** setting having no effect. rclone uploads were limited only by **Max IO Jobs** and took slots from moves and copies, and Baidu Netdisk uploads were not limited by either, so setting Max Uploads to 1 could still run several uploads at once. Now Max Uploads limits rclone and Baidu Netdisk uploads together, and uploads no longer count against Max IO Jobs. Baidu Netdisk uploads still run one at a time. Max Uploads defaults to 3, so if more uploads than that used to run at once, raise it. Lowering either limit applies right away; raising it above the value rust-srec started with needs a restart.
 - Fixed a workflow step's own timeout not applying to **execute** steps. The command was still stopped at the global **Execute** timeout (1 hour by default), so a step allowed to run for longer failed early. A step's timeout now replaces the Execute timeout for that step.
 - Fixed a cancelled or timed-out Baidu Netdisk upload overlapping with the next one. The next upload could start while the stopped BaiduPCS-Go was still shutting down, and two BaiduPCS-Go processes writing its local state at once can damage it. Now the next upload waits until the stopped one has exited, saying so in its log, and signing in from the account card reports that BaiduPCS-Go is busy until then.

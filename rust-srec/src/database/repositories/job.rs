@@ -96,6 +96,14 @@ fn push_job_filters(query: &mut QueryBuilder<Sqlite>, filters: &JobFilters) {
     }
 }
 
+/// Pending job whose type has no registered processor.
+#[derive(sqlx::FromRow)]
+pub struct UnclaimableJob {
+    pub id: String,
+    pub job_type: String,
+    pub dag_step_execution_id: Option<String>,
+}
+
 /// Job repository trait.
 #[async_trait]
 pub trait JobRepository: Send + Sync {
@@ -128,6 +136,13 @@ pub trait JobRepository: Send + Sync {
     /// Pending job counts grouped by exact `job_type`, for callers that
     /// classify job types with rules SQL cannot express.
     async fn count_pending_jobs_by_type(&self) -> Result<Vec<(String, u64)>>;
+    /// List unclaimable pending jobs by ID, starting after the supplied cursor.
+    async fn list_unclaimable_pending_jobs(
+        &self,
+        supported_types: &[&str],
+        after_id: Option<&str>,
+        limit: u32,
+    ) -> Result<Vec<UnclaimableJob>>;
     /// Atomically claim (transition) the next pending job to PROCESSING.
     /// Returns the claimed job, if any.
     ///
@@ -232,6 +247,32 @@ impl JobRepository for SqlxJobRepository {
             .fetch_optional(&self.pool)
             .await?
             .ok_or_else(|| Error::not_found("Job", id))
+    }
+
+    async fn list_unclaimable_pending_jobs(
+        &self,
+        supported_types: &[&str],
+        after_id: Option<&str>,
+        limit: u32,
+    ) -> Result<Vec<UnclaimableJob>> {
+        let mut query = QueryBuilder::new(
+            "SELECT id, job_type, dag_step_execution_id FROM job WHERE status = 'PENDING'",
+        );
+        if !supported_types.is_empty() {
+            query.push(" AND job_type NOT IN (");
+            let mut types = query.separated(", ");
+            for job_type in supported_types {
+                types.push_bind(*job_type);
+            }
+            types.push_unseparated(")");
+        }
+        if let Some(after_id) = after_id {
+            query.push(" AND id > ").push_bind(after_id);
+        }
+        query
+            .push(" ORDER BY id LIMIT ")
+            .push_bind(i64::from(limit));
+        Ok(query.build_query_as().fetch_all(&self.pool).await?)
     }
 
     async fn list_jobs_by_status(&self, status: JobStatus) -> Result<Vec<JobDbModel>> {

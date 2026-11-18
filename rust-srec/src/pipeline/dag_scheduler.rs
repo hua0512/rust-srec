@@ -1920,6 +1920,15 @@ mod tests {
 
     #[async_trait::async_trait]
     impl JobRepository for NoopJobRepository {
+        async fn list_unclaimable_pending_jobs(
+            &self,
+            _supported_types: &[&str],
+            _after_id: Option<&str>,
+            _limit: u32,
+        ) -> Result<Vec<crate::database::repositories::UnclaimableJob>> {
+            unimplemented!("not needed for these tests")
+        }
+
         async fn create_job(&self, _job: &crate::database::models::JobDbModel) -> Result<()> {
             unimplemented!("not needed for these tests")
         }
