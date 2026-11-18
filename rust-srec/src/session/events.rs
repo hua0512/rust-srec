@@ -18,7 +18,7 @@
 //! wire — the domain type stays serde-free so we don't accidentally couple
 //! its on-disk JSON shape to other call sites.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
 use crate::downloader::DownloadFailureKind;
@@ -31,7 +31,7 @@ pub struct SessionEvent {
     pub session_id: String,
     pub streamer_id: String,
     pub kind: String,
-    pub occurred_at: DateTime<Utc>,
+    pub occurred_at: Timestamp,
     pub payload: Option<SessionEventPayload>,
 }
 
@@ -83,7 +83,7 @@ pub enum SessionEventPayload {
     /// committing `Ended`.
     HysteresisEntered {
         cause: TerminalCauseDto,
-        resume_deadline: DateTime<Utc>,
+        resume_deadline: Timestamp,
     },
     /// A `LiveDetected` arrived inside the hysteresis window — the session
     /// continues with the same `session_id`.

@@ -36,9 +36,9 @@ pub struct SessionListParams {
     /// Filter by streamer ID
     pub streamer_id: Option<String>,
     /// Only sessions started after this RFC 3339 timestamp (e.g. "2026-08-01T00:00:00Z")
-    pub from_date: Option<chrono::DateTime<chrono::Utc>>,
+    pub from_date: Option<jiff::Timestamp>,
     /// Only sessions started before this RFC 3339 timestamp
-    pub to_date: Option<chrono::DateTime<chrono::Utc>>,
+    pub to_date: Option<jiff::Timestamp>,
     /// Only sessions still recording (no end time)
     pub active_only: Option<bool>,
     /// Search query (matches title, streamer name, ...)

@@ -6,7 +6,7 @@
 //! - Account check: via the NAV API, which accepts the recording cookies
 
 use async_trait::async_trait;
-use chrono::{Duration, Utc};
+use jiff::SignedDuration;
 use reqwest::Client;
 use tracing::{debug, instrument, warn};
 
@@ -132,7 +132,7 @@ impl CredentialProvider for BilibiliProvider {
                     cookies: material.cookies.clone(),
                     refresh_token: Some(refresh_token.clone()),
                     access_token: Some(access_token.clone()),
-                    expires_at: Some(Utc::now() + Duration::days(30)),
+                    expires_at: Some(jiff::Timestamp::now() + SignedDuration::from_hours(24 * 30)),
                 });
             }
             Ok(true) => {}
@@ -157,7 +157,9 @@ impl CredentialProvider for BilibiliProvider {
             cookies: result.cookies,
             refresh_token: Some(result.refresh_token),
             access_token: Some(result.access_token),
-            expires_at: Some(Utc::now() + Duration::seconds(result.expires_in as i64)),
+            expires_at: Some(
+                jiff::Timestamp::now() + SignedDuration::from_secs(result.expires_in as i64),
+            ),
         })
     }
 

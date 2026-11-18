@@ -35,7 +35,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use parking_lot::Mutex;
 use rand::RngExt;
 use reqwest::StatusCode;
@@ -123,7 +123,7 @@ pub(crate) fn is_rate_limited(status: StatusCode, has_retry_after: bool) -> bool
 /// An HTTP date is measured against the response's own `Date` when it has
 /// one, so a skewed local clock does not shift it; `now` is the fallback. A
 /// date in the past means no wait. `None` when absent or unparseable.
-pub(crate) fn retry_after(headers: &HeaderMap, now: DateTime<Utc>) -> Option<Duration> {
+pub(crate) fn retry_after(headers: &HeaderMap, now: Timestamp) -> Option<Duration> {
     let value = headers.get(RETRY_AFTER)?.to_str().ok()?.trim();
     if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) {
         // Only an overflow fails to parse: all digits.
@@ -139,7 +139,7 @@ pub(crate) fn retry_after(headers: &HeaderMap, now: DateTime<Utc>) -> Option<Dur
         .and_then(|date| date.to_str().ok())
         .and_then(|date| parse_http_date(date).ok())
         .unwrap_or(now);
-    Some((at - reference).to_std().unwrap_or(Duration::ZERO))
+    Some(Duration::try_from(at.duration_since(reference)).unwrap_or(Duration::ZERO))
 }
 
 /// A request held back because its origin is cooling down.
@@ -329,7 +329,7 @@ impl RateLimiter {
         headers: &HeaderMap,
     ) -> Option<Duration> {
         let has_retry_after = headers.contains_key(RETRY_AFTER);
-        let retry_after = retry_after(headers, Utc::now());
+        let retry_after = retry_after(headers, Timestamp::now());
         let answered = origin_key(answered);
         let mut origins = vec![admission.origin.as_str()];
         if answered != admission.origin {
@@ -452,7 +452,7 @@ mod tests {
         headers
     }
 
-    fn at(value: &str) -> DateTime<Utc> {
+    fn at(value: &str) -> Timestamp {
         parse_http_date(value).unwrap()
     }
 

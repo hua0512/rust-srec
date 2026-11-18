@@ -150,7 +150,7 @@ impl ComponentHealth {
             name: name.into(),
             status: HealthStatus::Healthy,
             message: None,
-            last_check: Some(chrono::Utc::now().to_rfc3339()),
+            last_check: Some(jiff::Timestamp::now().to_string()),
             check_duration_ms: None,
             disk: None,
         }
@@ -162,7 +162,7 @@ impl ComponentHealth {
             name: name.into(),
             status: HealthStatus::Unhealthy,
             message: Some(message.into()),
-            last_check: Some(chrono::Utc::now().to_rfc3339()),
+            last_check: Some(jiff::Timestamp::now().to_string()),
             check_duration_ms: None,
             disk: None,
         }
@@ -174,7 +174,7 @@ impl ComponentHealth {
             name: name.into(),
             status: HealthStatus::Degraded,
             message: Some(message.into()),
-            last_check: Some(chrono::Utc::now().to_rfc3339()),
+            last_check: Some(jiff::Timestamp::now().to_string()),
             check_duration_ms: None,
             disk: None,
         }
@@ -327,7 +327,7 @@ impl HealthChecker {
             components: HashMap::new(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             uptime_secs: 0,
-            timestamp: chrono::Utc::now().to_rfc3339(),
+            timestamp: jiff::Timestamp::now().to_string(),
             cpu_usage: 0.0,
             memory_usage: 0.0,
         });
@@ -579,7 +579,7 @@ impl HealthChecker {
             components: new_components,
             version: self.version.clone(),
             uptime_secs: self.start_time.elapsed().as_secs(),
-            timestamp: chrono::Utc::now().to_rfc3339(),
+            timestamp: jiff::Timestamp::now().to_string(),
             cpu_usage,
             memory_usage,
         });

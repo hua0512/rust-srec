@@ -206,8 +206,12 @@ impl Douyu {
                     .headers()
                     .get(header::DATE)
                     .and_then(|date| date.to_str().ok())
-                    .and_then(|date| chrono::DateTime::parse_from_rfc2822(date).ok())
-                    .and_then(|date| u64::try_from(date.timestamp()).ok());
+                    .and_then(|date| {
+                        jiff::fmt::rfc2822::DateTimeParser::new()
+                            .parse_timestamp(date)
+                            .ok()
+                    })
+                    .and_then(|date| u64::try_from(date.as_second()).ok());
                 let response: AppResponse = response.json().await?;
                 if response.error == -9 {
                     server_time = date;

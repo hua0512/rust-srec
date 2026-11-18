@@ -12,7 +12,7 @@ use sqlx::SqlitePool;
 use crate::database::models::StreamerDbModel;
 use crate::{Error, Result};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 /// Streamer repository trait.
 #[async_trait]
@@ -89,7 +89,7 @@ pub trait StreamerRepository: Send + Sync {
     async fn record_streamer_success(
         &self,
         id: &str,
-        last_live_time: Option<DateTime<Utc>>,
+        last_live_time: Option<Timestamp>,
     ) -> Result<()>;
 }
 
@@ -506,20 +506,20 @@ impl StreamerRepository for SqlxStreamerRepository {
     async fn record_streamer_success(
         &self,
         id: &str,
-        last_live_time: Option<DateTime<Utc>>,
+        last_live_time: Option<Timestamp>,
     ) -> Result<()> {
         if let Some(store) = self.mutation_owner()? {
             return committed::write(
                 store.clone(),
                 id.to_owned(),
-                committed::Mutation::Success(last_live_time.map(|time| time.timestamp_millis())),
+                committed::Mutation::Success(last_live_time.map(|time| time.as_millisecond())),
             )
             .await
             .map(|_| ());
         }
 
         if let Some(time) = last_live_time {
-            let time_ms = time.timestamp_millis();
+            let time_ms = time.as_millisecond();
             sqlx::query(
                 "UPDATE streamers SET state = 'LIVE', consecutive_error_count = 0, disabled_until = NULL, last_error = NULL, last_live_time = ? WHERE id = ?",
             )

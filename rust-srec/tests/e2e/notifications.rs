@@ -1169,9 +1169,11 @@ async fn logged_event_types(app: &TestApp, token: &str, streamer_id: &str) -> Ve
     types
 }
 
-fn timestamp(value: &Value) -> chrono::DateTime<chrono::FixedOffset> {
+fn timestamp(value: &Value) -> jiff::Timestamp {
     let text = value.as_str().expect("an RFC 3339 timestamp");
-    chrono::DateTime::parse_from_rfc3339(text).expect("an RFC 3339 timestamp")
+    jiff::fmt::temporal::DateTimeParser::new()
+        .parse_timestamp(text)
+        .expect("an RFC 3339 timestamp")
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

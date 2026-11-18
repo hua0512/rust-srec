@@ -44,7 +44,7 @@ pub enum RcloneOperation {
 pub struct RcloneConfig {
     /// Base remote path (e.g. `gdrive:/videos`). Supports placeholder
     /// expansion for `{streamer}`, `{title}`, `{streamer_id}`,
-    /// `{session_id}`, and chrono-style time tokens (`%Y`, `%m`, `%d`, ...).
+    /// `{session_id}`, and strftime-style time tokens (`%Y`, `%m`, `%d`, ...).
     pub destination_root: Option<String>,
 
     /// Path to a custom `rclone.conf`. If unset, rclone uses its default.
@@ -1104,7 +1104,7 @@ impl RcloneProcessor {
             String::new()
         };
 
-        let reference_timestamp_ms = config.time_anchor.reference_time(input).timestamp_millis();
+        let reference_timestamp_ms = config.time_anchor.reference_time(input).as_millisecond();
 
         // Debug: Log all placeholder-related values before expansion
         tracing::debug!(
@@ -1557,10 +1557,10 @@ mod tests {
         }
     }
 
-    fn expected_local_destination(dt: chrono::DateTime<chrono::Utc>) -> String {
+    fn expected_local_destination(dt: jiff::Timestamp) -> String {
         format!(
             "remote:/{}/StreamerName",
-            pipeline_common::expand_path_template_at("%Y/%m/%d", Some(dt.timestamp_millis()))
+            pipeline_common::expand_path_template_at("%Y/%m/%d", Some(dt.as_millisecond()))
         )
     }
 

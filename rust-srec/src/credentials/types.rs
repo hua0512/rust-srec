@@ -1,6 +1,6 @@
 //! Core credential types.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
 use crate::notification::NotificationPriority;
@@ -73,7 +73,7 @@ pub enum CredentialEvent {
         scope: CredentialScope,
         platform: String,
         reason_code: super::UnavailableReason,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
     /// Credentials were successfully refreshed.
     Refreshed {
@@ -83,8 +83,8 @@ pub enum CredentialEvent {
         profile_label: Option<String>,
         scope: CredentialScope,
         platform: String,
-        expires_at: Option<DateTime<Utc>>,
-        timestamp: DateTime<Utc>,
+        expires_at: Option<Timestamp>,
+        timestamp: Timestamp,
     },
 
     /// Credential refresh failed - action may be required.
@@ -100,7 +100,7 @@ pub enum CredentialEvent {
         requires_relogin: bool,
         /// Number of consecutive failures.
         failure_count: u32,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
 
     /// Credentials are invalid - manual re-login required.
@@ -114,7 +114,7 @@ pub enum CredentialEvent {
         reason: String,
         /// Error code from platform API (e.g., -101 for Bilibili).
         error_code: Option<i32>,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
 
     /// Credentials are expiring soon - proactive warning.
@@ -125,9 +125,9 @@ pub enum CredentialEvent {
         profile_label: Option<String>,
         scope: CredentialScope,
         platform: String,
-        expires_at: DateTime<Utc>,
+        expires_at: Timestamp,
         days_remaining: u32,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
 
     /// Session cookies obtained during a check (e.g. SOOP reactive login)
@@ -140,7 +140,7 @@ pub enum CredentialEvent {
         scope: CredentialScope,
         platform: String,
         error: String,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     },
 }
 
@@ -293,7 +293,7 @@ impl CredentialEvent {
                 expires_at,
                 ..
             } => {
-                let expires_at = expires_at.format("%Y-%m-%d").to_string();
+                let expires_at = expires_at.strftime("%Y-%m-%d").to_string();
                 crate::t_str_in!(
                     locale,
                     "notification.credential.expiring_soon.message",
@@ -358,7 +358,7 @@ mod tests {
                     scope: scope.clone(),
                     platform: "bilibili".to_string(),
                     reason_code: *code,
-                    timestamp: chrono::Utc::now(),
+                    timestamp: jiff::Timestamp::now(),
                 }
                 .to_message_in(locale);
                 let code = code.as_str();
@@ -376,7 +376,7 @@ mod tests {
                 platform: "bilibili".to_string(),
                 reason: "login_required".to_string(),
                 error_code: None,
-                timestamp: chrono::Utc::now(),
+                timestamp: jiff::Timestamp::now(),
             };
             let text = invalid.scope_text_in(locale);
             assert!(text.contains("Template: Night shift"), "{text}");

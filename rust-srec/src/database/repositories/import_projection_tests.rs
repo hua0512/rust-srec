@@ -33,7 +33,7 @@ fn distinctive<T: Serialize + DeserializeOwned>(seed: &T, generation: i64) -> T 
             "created_at" | "updated_at" | "last_login_at" | "last_live_time" | "disabled_until" => {
                 let at = 1_700_000_000_000 + integer;
                 if field.is_string() {
-                    json!(chrono::DateTime::from_timestamp_millis(at).unwrap())
+                    json!(jiff::Timestamp::from_millisecond(at).unwrap())
                 } else {
                     json!(at)
                 }
@@ -141,7 +141,7 @@ async fn complete_row_projections_match_repository_and_import_modes() {
                 let actual_json = serde_json::to_value(&actual).unwrap();
                 if $clock {
                     let at = &actual_json["updated_at"];
-                    let at = at.as_i64().unwrap_or_else(|| chrono::DateTime::parse_from_rfc3339(at.as_str().unwrap()).unwrap().timestamp_millis());
+                    let at = at.as_i64().unwrap_or_else(|| jiff::fmt::temporal::DateTimeParser::new().parse_timestamp(at.as_str().unwrap()).unwrap().as_millisecond());
                     assert!((before..=after).contains(&at));
                     expected["updated_at"] = actual_json["updated_at"].clone();
                 }

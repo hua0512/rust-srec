@@ -3,7 +3,7 @@
 //! Defines the interface for platform-specific danmu providers.
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use std::collections::HashMap;
 use tokio::sync::mpsc;
 
@@ -24,7 +24,7 @@ pub struct DanmuConnection {
     /// Whether the connection is active
     pub is_connected: bool,
     /// Connection start time
-    pub connected_at: DateTime<Utc>,
+    pub connected_at: Timestamp,
     /// Number of reconnection attempts
     pub reconnect_count: u32,
 }
@@ -41,7 +41,7 @@ impl DanmuConnection {
             platform: platform.into(),
             room_id: room_id.into(),
             is_connected: false,
-            connected_at: Utc::now(),
+            connected_at: Timestamp::now(),
             reconnect_count: 0,
         }
     }
@@ -49,7 +49,7 @@ impl DanmuConnection {
     /// Mark the connection as connected.
     pub fn set_connected(&mut self) {
         self.is_connected = true;
-        self.connected_at = Utc::now();
+        self.connected_at = Timestamp::now();
     }
 
     /// Mark the connection as disconnected.

@@ -4,7 +4,6 @@
 //! WebSocket provider with STT (Serialized Text Transport) protocol for message encoding/decoding.
 
 use bytes::Bytes;
-use chrono::Utc;
 use std::time::Duration;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
@@ -61,7 +60,7 @@ impl DouyuDanmuProtocol {
         let chat = DouyuChatMessage::from_map(map)?;
 
         let mut danmu = DanmuMessage::chat(&chat.id, &chat.uid, &chat.nickname, &chat.content)
-            .with_timestamp(Utc::now());
+            .with_timestamp(jiff::Timestamp::now());
 
         if let Some(color) = chat.color {
             danmu = danmu.with_color(color);
@@ -106,7 +105,7 @@ impl DouyuDanmuProtocol {
             &gift.gift_name,
             gift.gift_count,
         )
-        .with_timestamp(Utc::now())
+        .with_timestamp(jiff::Timestamp::now())
         .with_metadata("room_id", serde_json::json!(gift.room_id))
         .with_metadata("hits", serde_json::json!(gift.hits));
 
@@ -368,7 +367,7 @@ mod tests {
                         crate::danmaku::DanmuItem::Message(danmu) => {
                             println!(
                                 "[{}] {}: {}",
-                                danmu.timestamp.format("%H:%M:%S"),
+                                danmu.timestamp.strftime("%H:%M:%S"),
                                 danmu.username,
                                 danmu.content
                             );

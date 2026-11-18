@@ -94,7 +94,7 @@ use crate::streamer::StreamerManager;
 /// A one-shot archive capability retains the issuing identity, never its raw credential.
 #[derive(Clone)]
 pub struct LoggingArchiveGrant {
-    pub(crate) expires_at: chrono::DateTime<chrono::Utc>,
+    pub(crate) expires_at: jiff::Timestamp,
     pub(crate) principal: Option<AuthPrincipal>,
 }
 

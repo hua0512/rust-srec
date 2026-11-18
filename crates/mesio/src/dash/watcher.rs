@@ -25,8 +25,8 @@ use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use bytes::{Bytes, BytesMut};
-use chrono::{DateTime, Utc};
 use futures::StreamExt;
+use jiff::Timestamp;
 use reqwest::header::DATE;
 use tokio::sync::watch;
 use tokio::time::Instant;
@@ -91,7 +91,7 @@ pub struct MpdSnapshot {
     /// that do not carry them.
     pub parent_params: Arc<[(String, String)]>,
     /// Local time of the fetch.
-    pub fetched_at: DateTime<Utc>,
+    pub fetched_at: Timestamp,
     /// Server clock minus local clock.
     pub clock_offset: ClockOffset,
     pub terminal: Option<TerminalCause>,
@@ -102,7 +102,7 @@ pub(crate) struct FetchedMpd {
     pub manifest: Arc<Manifest>,
     pub document_url: Arc<Url>,
     pub body: Bytes,
-    pub fetched_at: DateTime<Utc>,
+    pub fetched_at: Timestamp,
     pub clock_offset: ClockOffset,
     /// Whether `clock_offset` came from a `UTCTiming` source.
     pub utc_synced: bool,
@@ -309,9 +309,9 @@ impl MpdFetcher {
     async fn measure_clock(
         &self,
         manifest: &Manifest,
-        date: Option<DateTime<Utc>>,
-        sent: DateTime<Utc>,
-        received: DateTime<Utc>,
+        date: Option<Timestamp>,
+        sent: Timestamp,
+        received: Timestamp,
         previous: Option<&FetchedMpd>,
         utc_timing_due: bool,
     ) -> (ClockOffset, bool) {
@@ -333,7 +333,7 @@ impl MpdFetcher {
             .await;
             if let Ok(Some(offset)) = synced {
                 debug!(
-                    offset_ms = offset.as_time_delta().num_milliseconds(),
+                    offset_ms = offset.as_time_delta().as_millis(),
                     "clock synchronized from UTCTiming"
                 );
                 return (offset, true);
@@ -349,8 +349,8 @@ impl MpdFetcher {
     async fn query_timing(
         &self,
         timing: &UtcTiming,
-        mpd_sent: DateTime<Utc>,
-        mpd_received: DateTime<Utc>,
+        mpd_sent: Timestamp,
+        mpd_received: Timestamp,
     ) -> Option<ClockOffset> {
         let urls = match timing {
             UtcTiming::Direct { time } => {

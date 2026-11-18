@@ -31,8 +31,8 @@ where
                     duration_secs,
                     size_bytes,
                     SessionSegmentLifecycle::new(
-                        started_at.as_ref().map(chrono::DateTime::timestamp_millis),
-                        Some(completed_at.timestamp_millis()),
+                        started_at.map(crate::database::time::datetime_to_ms),
+                        Some(completed_at.as_millisecond()),
                     ),
                     SessionSegmentSplitReason::new(
                         split_reason_code.clone(),
@@ -293,7 +293,7 @@ where
                 };
                 match repo.get_session(&session_id).await {
                     Ok(session) => {
-                        let now = chrono::Utc::now();
+                        let now = jiff::Timestamp::now();
                         let mut titles: Vec<TitleEntry> = match session.titles.as_deref() {
                             Some(json) => serde_json::from_str(json).unwrap_or_default(),
                             None => Vec::new(),
@@ -302,7 +302,7 @@ where
                         let needs_update = titles.last().map(|t| t.title != title).unwrap_or(true);
                         if needs_update {
                             titles.push(TitleEntry {
-                                ts: now.timestamp_millis(),
+                                ts: now.as_millisecond(),
                                 title: title.clone(),
                             });
                             match serde_json::to_string(&titles) {

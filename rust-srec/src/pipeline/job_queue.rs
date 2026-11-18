@@ -1,9 +1,9 @@
 //! Database-backed job queue implementation.
 
-use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use futures::FutureExt;
 use futures::future::{BoxFuture, OptionFuture};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::collections::hash_map::DefaultHasher;
@@ -75,7 +75,10 @@ fn upload_started_event(job: &Job) -> Option<UploadStatusEvent> {
         session_id: non_empty(&job.session_id),
         uploader,
         files_total: job.inputs.len() as u32,
-        started_at_ms: job.started_at.unwrap_or_else(Utc::now).timestamp_millis(),
+        started_at_ms: job
+            .started_at
+            .unwrap_or_else(jiff::Timestamp::now)
+            .as_millisecond(),
     })
 }
 
@@ -83,11 +86,10 @@ fn upload_started_event(job: &Job) -> Option<UploadStatusEvent> {
 /// `long_job_after` (see [`JobQueueConfig::long_job_after`]) at `now`. Only
 /// such jobs reach the WebSocket, which keeps per-segment thumbnails and quick
 /// renames off it.
-fn is_long_job(job: &Job, now: DateTime<Utc>, long_job_after: std::time::Duration) -> bool {
+fn is_long_job(job: &Job, now: Timestamp, long_job_after: std::time::Duration) -> bool {
     upload_kind_for_job_type(&job.job_type).is_none()
         && job.started_at.is_some_and(|started| {
-            (now - started)
-                .to_std()
+            std::time::Duration::try_from(now.duration_since(started))
                 .is_ok_and(|elapsed| elapsed >= long_job_after)
         })
 }
@@ -98,7 +100,10 @@ fn long_job_started_event(job: &Job) -> UploadStatusEvent {
         streamer_id: non_empty(&job.streamer_id),
         streamer_name: job.streamer_name.clone(),
         job_type: job.job_type.clone(),
-        started_at_ms: job.started_at.unwrap_or_else(Utc::now).timestamp_millis(),
+        started_at_ms: job
+            .started_at
+            .unwrap_or_else(jiff::Timestamp::now)
+            .as_millisecond(),
     }
 }
 
@@ -134,7 +139,7 @@ fn heartbeat_events(
     jobs_cache: &DashMap<String, Job>,
     cancellation_tokens: &DashMap<String, AttemptToken>,
     progress_cache: &DashMap<String, JobProgressSnapshot>,
-    now: DateTime<Utc>,
+    now: Timestamp,
     long_job_after: std::time::Duration,
 ) -> Vec<UploadStatusEvent> {
     // Collected before touching jobs_cache: cancel_pipeline locks jobs_cache
@@ -383,7 +388,7 @@ impl LogLevel {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JobLogEntry {
     /// Timestamp of the log entry.
-    pub timestamp: DateTime<Utc>,
+    pub timestamp: Timestamp,
     /// Log level.
     pub level: LogLevel,
     /// Log message.
@@ -399,7 +404,7 @@ impl JobLogEntry {
     /// Create a new log entry with the current timestamp.
     pub fn new(level: LogLevel, message: impl Into<String>) -> Self {
         Self {
-            timestamp: Utc::now(),
+            timestamp: Timestamp::now(),
             level,
             message: message.into(),
             persisted_for: Arc::default(),
@@ -498,21 +503,21 @@ pub struct Job {
     /// Platform name (e.g., "Twitch", "Huya").
     pub platform: Option<String>,
     /// live_sessions.start_time of the session this job belongs to; None for jobs whose session_id does not reference a real session row.
-    pub session_start: Option<DateTime<Utc>>,
+    pub session_start: Option<Timestamp>,
     /// Additional configuration as JSON.
     pub config: Option<String>,
     /// When the job was created.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// When the job started processing.
-    pub started_at: Option<DateTime<Utc>>,
+    pub started_at: Option<Timestamp>,
     /// When the job completed.
-    pub completed_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<Timestamp>,
     /// Error message if failed.
     pub error: Option<String>,
     /// Number of retry attempts.
     pub retry_count: i32,
     /// When a scheduled automatic retry of this failed job may run.
-    pub retry_after: Option<DateTime<Utc>>,
+    pub retry_after: Option<Timestamp>,
     /// Timeout for one attempt, in seconds, set by the workflow step; the
     /// worker pool's default applies when absent.
     pub timeout_secs: Option<u64>,
@@ -555,7 +560,7 @@ impl Job {
             platform: None,
             session_start: None,
             config: None,
-            created_at: Utc::now(),
+            created_at: Timestamp::now(),
             started_at: None,
             completed_at: None,
             error: None,
@@ -594,7 +599,7 @@ impl Job {
             platform: None,
             session_start: None,
             config: None,
-            created_at: Utc::now(),
+            created_at: Timestamp::now(),
             started_at: None,
             completed_at: None,
             error: None,
@@ -647,7 +652,7 @@ impl Job {
     }
 
     /// Set the session start timestamp.
-    pub fn with_session_start(mut self, session_start: DateTime<Utc>) -> Self {
+    pub fn with_session_start(mut self, session_start: Timestamp) -> Self {
         self.session_start = Some(session_start);
         self
     }
@@ -687,7 +692,7 @@ pub struct ActiveJobInfo {
     pub uploader: Option<&'static str>,
     pub job_type: String,
     pub files_total: u32,
-    pub started_at: Option<DateTime<Utc>>,
+    pub started_at: Option<Timestamp>,
     /// Latest in-memory progress snapshot, when the processor has reported one.
     pub progress: Option<JobProgressSnapshot>,
 }
@@ -956,12 +961,12 @@ impl JobQueue {
     /// Publish `JobEnded` when `job` ran long enough to have been announced
     /// (see [`is_long_job`]); shorter jobs never reach the socket.
     fn emit_long_job_ended(&self, job: &Job) {
-        if is_long_job(job, Utc::now(), self.config.long_job_after)
+        if is_long_job(job, Timestamp::now(), self.config.long_job_after)
             && let Some(started_at) = job.started_at
         {
             self.emit_upload_event(UploadStatusEvent::JobEnded {
                 job_id: job.id.clone(),
-                started_at_ms: started_at.timestamp_millis(),
+                started_at_ms: started_at.as_millisecond(),
             });
         }
     }
@@ -1020,7 +1025,7 @@ impl JobQueue {
     /// snapshots. Feeds the WebSocket
     /// `DownloadSnapshot`.
     pub async fn list_active_jobs(&self) -> Result<Vec<ActiveJobInfo>> {
-        let now = Utc::now();
+        let now = Timestamp::now();
         let mut infos = Vec::new();
         for db_job in self
             .job_repository
@@ -1037,7 +1042,7 @@ impl JobQueue {
         count_pending_uploads(self.job_repository.as_ref()).await
     }
 
-    fn active_job_info(&self, job: &Job, now: DateTime<Utc>) -> Option<ActiveJobInfo> {
+    fn active_job_info(&self, job: &Job, now: Timestamp) -> Option<ActiveJobInfo> {
         let uploader = upload_kind_for_job_type(&job.job_type);
         if uploader.is_none() && !is_long_job(job, now, self.config.long_job_after) {
             return None;
@@ -1253,7 +1258,7 @@ impl JobQueue {
                         },
                         "Failed to serialize execution log entry; using fallback",
                     ),
-                    created_at: entry.timestamp.timestamp_millis(),
+                    created_at: entry.timestamp.as_millisecond(),
                     level: Some(entry.level.as_str().to_string()),
                     message: Some(entry.message.clone()),
                 })
@@ -1469,7 +1474,7 @@ impl JobQueue {
         let mut job = db_model_to_job(&db_job);
         job.status = JobStatus::Processing;
         if job.started_at.is_none() {
-            job.started_at = Some(Utc::now());
+            job.started_at = Some(Timestamp::now());
         }
 
         // Resolve missing metadata (streamer_name, session_title)
@@ -1695,7 +1700,7 @@ impl JobQueue {
         &self,
         job_id: &str,
         error: &str,
-        retry_after: Option<DateTime<Utc>>,
+        retry_after: Option<Timestamp>,
         processor_name: Option<&str>,
         uploads: &[UploadResultItem],
     ) -> Result<JobFailureOutcome> {
@@ -1860,10 +1865,10 @@ impl JobQueue {
     }
 
     /// Failed jobs whose scheduled retry is due at `now`, earliest first.
-    pub async fn list_due_retries(&self, now: DateTime<Utc>) -> Result<Vec<Job>> {
+    pub async fn list_due_retries(&self, now: Timestamp) -> Result<Vec<Job>> {
         Ok(self
             .job_repository
-            .list_jobs_due_for_retry(now.timestamp_millis())
+            .list_jobs_due_for_retry(now.as_millisecond())
             .await?
             .iter()
             .map(db_model_to_job)
@@ -1935,13 +1940,13 @@ impl JobQueue {
         let cancelled_job = {
             if let Some(mut cached_job) = self.jobs_cache.get_mut(id) {
                 cached_job.status = JobStatus::Cancelled;
-                cached_job.completed_at = Some(Utc::now());
+                cached_job.completed_at = Some(Timestamp::now());
                 cached_job.clone()
             } else {
                 // Job not in cache, return original with updated status
                 let mut updated = job.clone();
                 updated.status = JobStatus::Cancelled;
-                updated.completed_at = Some(Utc::now());
+                updated.completed_at = Some(Timestamp::now());
                 updated
             }
         };
@@ -2051,7 +2056,7 @@ impl JobQueue {
             ) {
                 let mut job = db_model_to_job(&db_job);
                 job.status = JobStatus::Cancelled;
-                job.completed_at = Some(Utc::now());
+                job.completed_at = Some(Timestamp::now());
                 cancelled_jobs.push(job);
             }
         }
@@ -2526,7 +2531,7 @@ impl JobQueue {
         &self,
         job_id: &str,
         error: &str,
-        retry_after: Option<DateTime<Utc>>,
+        retry_after: Option<Timestamp>,
         processor_name: Option<&str>,
         metadata: FailureMetadata,
         uploads: &[UploadResultItem],
@@ -2554,7 +2559,7 @@ impl JobQueue {
             .mark_job_failed(
                 job_id,
                 error,
-                retry_after.map(|retry_after| retry_after.timestamp_millis()),
+                retry_after.map(|retry_after| retry_after.as_millisecond()),
             )
             .await?;
         if updated == 0 {
@@ -2703,7 +2708,7 @@ fn spawn_progress_aggregator(
                             &jobs_cache,
                             &cancellation_tokens,
                             &progress_cache,
-                            Utc::now(),
+                            Timestamp::now(),
                             long_job_after,
                         ) {
                             broadcaster.send(event);
@@ -2747,7 +2752,7 @@ fn spawn_progress_aggregator(
                     let Some(broadcaster) = upload_broadcaster.get() else {
                         continue;
                     };
-                    let now = Utc::now();
+                    let now = Timestamp::now();
                     for (job_id, snapshot) in pending.drain() {
                         // A job can reach a terminal state between receive and
                         // this flush tick, and its terminal WS event is already
@@ -2839,7 +2844,7 @@ pub(crate) struct JobStateMeta {
     pub(crate) streamer_name: Option<String>,
     pub(crate) session_title: Option<String>,
     pub(crate) platform: Option<String>,
-    pub(crate) session_start: Option<DateTime<Utc>>,
+    pub(crate) session_start: Option<Timestamp>,
     pub(crate) manifest: Option<Arc<PipelineInputManifest>>,
     /// Per-attempt timeout of a workflow step job; not a placeholder source.
     pub(crate) timeout_secs: Option<u64>,
@@ -2874,7 +2879,7 @@ pub(crate) fn job_state_json(job: &Job) -> String {
             "streamer_name": job.streamer_name.clone(),
             "session_title": job.session_title.clone(),
             "platform": job.platform.clone(),
-            "session_start_ms": job.session_start.as_ref().map(|dt| dt.timestamp_millis()),
+            "session_start_ms": job.session_start.as_ref().map(|dt| dt.as_millisecond()),
         });
         if let Some(timeout_secs) = job.timeout_secs {
             state["timeout_secs"] = serde_json::json!(timeout_secs);
@@ -2975,15 +2980,15 @@ fn job_to_db_model(job: &Job) -> JobDbModel {
         status: job.status.as_str().to_string(),
         config: job.config.clone().unwrap_or_else(|| "{}".to_string()),
         state,
-        created_at: job.created_at.timestamp_millis(),
+        created_at: job.created_at.as_millisecond(),
         updated_at: crate::database::time::now_ms(),
         input: Some(inputs_json),
         outputs: Some(outputs_json),
         priority: job.priority,
         streamer_id: Some(job.streamer_id.clone()),
         session_id: Some(job.session_id.clone()),
-        started_at: job.started_at.map(|dt| dt.timestamp_millis()),
-        completed_at: job.completed_at.map(|dt| dt.timestamp_millis()),
+        started_at: job.started_at.map(|dt| dt.as_millisecond()),
+        completed_at: job.completed_at.map(|dt| dt.as_millisecond()),
         error: job.error.clone(),
         retry_count: job.retry_count,
         pipeline_id: job.pipeline_id.clone(),
@@ -2991,7 +2996,7 @@ fn job_to_db_model(job: &Job) -> JobDbModel {
         duration_secs: job.duration_secs,
         queue_wait_secs: job.queue_wait_secs,
         dag_step_execution_id: job.dag_step_execution_id.clone(),
-        retry_after: job.retry_after.map(|at| at.timestamp_millis()),
+        retry_after: job.retry_after.map(|at| at.as_millisecond()),
     }
 }
 
@@ -3407,7 +3412,7 @@ mod tests {
 
         queue.resolve_job_metadata(&mut job).await;
         assert_eq!(
-            job.session_start.map(|dt| dt.timestamp_millis()),
+            job.session_start.map(|dt| dt.as_millisecond()),
             Some(session_start_ms)
         );
 
@@ -3871,7 +3876,7 @@ mod tests {
         let mut failure = std::pin::pin!(queue.fail_with_step_info(
             &job_id,
             "boom",
-            Some(Utc::now()),
+            Some(Timestamp::now()),
             Some("rclone"),
             &[],
         ));
@@ -4036,7 +4041,7 @@ mod tests {
                 .insert(id.clone(), JobProgressSnapshot::new(ProgressKind::Ffmpeg));
         }
         queue.cancellation_tokens.get(cancelling).unwrap().cancel();
-        let now = Utc::now();
+        let now = Timestamp::now();
         queue.jobs_cache.get_mut(long).unwrap().started_at = Some(now - LONG_JOB_AFTER);
 
         let events = heartbeat_events(

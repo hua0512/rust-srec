@@ -2,7 +2,6 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use argon2::password_hash::phc::PasswordHash;
-use chrono::Utc;
 use sqlx::SqlitePool;
 use tracing::warn;
 
@@ -1603,7 +1602,7 @@ fn template_model(
     model.paired_segment_pipeline = paired_segment_pipeline.clone().map(db_json);
     model.offline_check_count = *offline_check_count;
     model.offline_check_delay_ms = *offline_check_delay_ms;
-    model.updated_at = Utc::now();
+    model.updated_at = jiff::Timestamp::now();
     model
 }
 
@@ -1838,7 +1837,7 @@ async fn apply_job_presets(
         model.category = item.category.clone();
         model.processor = item.processor.clone();
         model.config = crate::config::backup::unwrap_json_value(item.config.clone()).to_string();
-        model.updated_at = Utc::now();
+        model.updated_at = jiff::Timestamp::now();
         persist_job_preset(tx, &model).await?;
         if existing.is_some() {
             stats.job_presets_updated += 1;
@@ -1891,7 +1890,7 @@ async fn apply_pipeline_presets(
             .pipeline_type
             .clone()
             .or_else(|| Some("dag".to_string()));
-        model.updated_at = Utc::now();
+        model.updated_at = jiff::Timestamp::now();
         persist_pipeline_preset(tx, &model).await?;
         if existing.is_some() {
             stats.pipeline_presets_updated += 1;
@@ -2066,9 +2065,9 @@ mod tests {
     async fn timestamp_import_persistence_and_snapshot_use_integer_milliseconds() {
         let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
         run_migrations(&pool).await.unwrap();
-        let at = chrono::DateTime::parse_from_rfc3339("2026-01-02T03:04:05.123456Z")
-            .unwrap()
-            .with_timezone(&Utc);
+        let at = jiff::fmt::temporal::DateTimeParser::new()
+            .parse_timestamp("2026-01-02T03:04:05.123456Z")
+            .unwrap();
         let mut template = TemplateConfigDbModel::new("timestamp-import-template");
         template.created_at = at;
         template.updated_at = at;
@@ -2082,7 +2081,7 @@ mod tests {
         pipeline.created_at = at;
         pipeline.updated_at = at;
         let mut tx = begin_immediate(&pool).await.unwrap();
-        for updated in [at, at + chrono::Duration::milliseconds(7)] {
+        for updated in [at, at + jiff::SignedDuration::from_millis(7)] {
             template.updated_at = updated;
             job.updated_at = updated;
             pipeline.updated_at = updated;
@@ -2110,8 +2109,8 @@ mod tests {
                     snapshot.pipeline_presets[&pipeline.name].updated_at,
                 ),
             ] {
-                assert_eq!(created_at.timestamp_millis(), at.timestamp_millis());
-                assert_eq!(updated_at.timestamp_millis(), updated.timestamp_millis());
+                assert_eq!(created_at.as_millisecond(), at.as_millisecond());
+                assert_eq!(updated_at.as_millisecond(), updated.as_millisecond());
                 let storage: (String, String) = sqlx::query_as(sqlx::AssertSqlSafe(format!(
                     "SELECT typeof(created_at), typeof(updated_at) FROM {table} WHERE id = ?"
                 )))
@@ -2134,7 +2133,7 @@ mod tests {
     fn import_config(global: &GlobalConfigDbModel) -> ConfigExport {
         ConfigExport {
             version: "0.1.7".to_string(),
-            exported_at: Utc::now().to_rfc3339(),
+            exported_at: jiff::Timestamp::now().to_string(),
             global_config: GlobalConfigExport {
                 output_folder: global.output_folder.clone(),
                 output_filename_template: global.output_filename_template.clone(),

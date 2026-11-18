@@ -66,7 +66,7 @@ async fn archive_route_rejects_expired_tokens_and_invalid_ranges() {
     tokens.insert(
         "expired".into(),
         LoggingArchiveGrant {
-            expires_at: chrono::Utc::now() - chrono::Duration::seconds(1),
+            expires_at: jiff::Timestamp::now() - jiff::SignedDuration::from_secs(1),
             principal: None,
         },
     );
@@ -153,7 +153,7 @@ fn numbered_segments_use_filename_dates_and_preserve_file_selection() {
     for name in names {
         std::fs::write(dir.path().join(name), b"line\n").unwrap();
     }
-    let date = chrono::NaiveDate::from_ymd_opt(2001, 1, 1).unwrap();
+    let date = jiff::civil::Date::new(2001, 1, 1).unwrap();
     let files = filter_by_range(scan_log_files(dir.path()).unwrap(), Some(date), Some(date));
     assert_eq!(
         files

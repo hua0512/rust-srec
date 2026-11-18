@@ -3,7 +3,7 @@
 //! This module defines the lightweight metadata structure used for
 //! in-memory streamer state management.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
 use crate::domain::{Priority, StreamerState};
@@ -49,9 +49,9 @@ pub struct StreamerMetadata {
     /// Consecutive error count for backoff calculation.
     pub consecutive_error_count: i32,
     /// Disabled until timestamp (for exponential backoff).
-    pub disabled_until: Option<DateTime<Utc>>,
+    pub disabled_until: Option<Timestamp>,
     /// Last time the streamer was live.
-    pub last_live_time: Option<DateTime<Utc>>,
+    pub last_live_time: Option<Timestamp>,
     /// Last recorded error message.
     pub last_error: Option<String>,
     /// Streamer specific configuration override (JSON string).
@@ -79,10 +79,10 @@ pub struct StreamerMetadata {
         alias = "effective_offline_check_delay_ms"
     )]
     pub offline_check_delay_ms: u64,
-    #[serde(default = "Utc::now")]
-    pub created_at: DateTime<Utc>,
-    #[serde(default = "Utc::now")]
-    pub updated_at: DateTime<Utc>,
+    #[serde(default = "jiff::Timestamp::now")]
+    pub created_at: Timestamp,
+    #[serde(default = "jiff::Timestamp::now")]
+    pub updated_at: Timestamp,
     /// When the streamer was deleted, mirroring `streamers.deleted_at`.
     ///
     /// Set while `RuntimeCoordinator::retire_streamer` stands the streamer's
@@ -90,7 +90,7 @@ pub struct StreamerMetadata {
     /// [`Self::is_active`] reads it, which is the single point every owner
     /// consults.
     #[serde(default)]
-    pub deleted_at: Option<DateTime<Utc>>,
+    pub deleted_at: Option<Timestamp>,
 }
 
 fn default_offline_check_count() -> u32 {
@@ -147,7 +147,7 @@ impl StreamerMetadata {
     /// Check if the streamer is currently disabled (in backoff).
     pub fn is_disabled(&self) -> bool {
         self.disabled_until
-            .map(|until| Utc::now() < until)
+            .map(|until| Timestamp::now() < until)
             .unwrap_or(false)
     }
 
@@ -180,10 +180,14 @@ impl StreamerMetadata {
     }
 
     /// Get the remaining backoff duration, if any.
-    pub fn remaining_backoff(&self) -> Option<chrono::Duration> {
+    pub fn remaining_backoff(&self) -> Option<jiff::SignedDuration> {
         self.disabled_until.and_then(|until| {
-            let now = Utc::now();
-            if until > now { Some(until - now) } else { None }
+            let now = Timestamp::now();
+            if until > now {
+                Some(until.duration_since(now))
+            } else {
+                None
+            }
         })
     }
 
@@ -191,7 +195,8 @@ impl StreamerMetadata {
     /// scheduling timers or filling wire payloads. `None` when no backoff
     /// is active.
     pub fn remaining_backoff_std(&self) -> Option<std::time::Duration> {
-        self.remaining_backoff().and_then(|d| d.to_std().ok())
+        self.remaining_backoff()
+            .and_then(|duration| duration.try_into().ok())
     }
 
     /// Get the platform name derived from platform_config_id.
@@ -227,8 +232,8 @@ mod tests {
             platform_metadata: None,
             offline_check_count: default_offline_check_count(),
             offline_check_delay_ms: default_offline_check_delay_ms(),
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: Timestamp::now(),
+            updated_at: Timestamp::now(),
             deleted_at: None,
         }
     }

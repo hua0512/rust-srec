@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use chrono::Utc;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{Notify, mpsc};
 
@@ -41,7 +40,7 @@ impl DownloadEngine for ShutdownFlushEngine {
     }
 
     async fn run(&self, handle: Arc<DownloadHandle>) -> std::result::Result<(), EngineStartError> {
-        let started_at = Utc::now();
+        let started_at = jiff::Timestamp::now();
         let mut file = tokio::fs::File::create(&self.segment_path)
             .await
             .map_err(|error| {
@@ -117,7 +116,7 @@ impl DownloadEngine for ShutdownFlushEngine {
                 size_bytes,
                 index: 0,
                 started_at: Some(started_at),
-                completed_at: Utc::now(),
+                completed_at: jiff::Timestamp::now(),
                 split_reason: None,
             }))
             .await
@@ -539,7 +538,7 @@ async fn graceful_shutdown_flushes_and_persists_the_final_segment_before_pool_cl
 
     let hydrated = resumed_container
         .session_lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .expect("active persisted session should hydrate into the lifecycle");
     assert_eq!(hydrated.session_id(), SHUTDOWN_SESSION_ID);
@@ -561,7 +560,7 @@ async fn graceful_shutdown_flushes_and_persists_the_final_segment_before_pool_cl
         .expect("clean disconnect should enter hysteresis");
     let resumed = resumed_container
         .session_lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .expect("hysteresis resume should publish the production restart payload");
     assert_eq!(resumed.session_id(), SHUTDOWN_SESSION_ID);

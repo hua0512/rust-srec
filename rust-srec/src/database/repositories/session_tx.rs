@@ -4,7 +4,7 @@
 //! Use these when you need to manage sessions as part of a larger transaction
 //! (e.g., combined with streamer state updates and outbox events).
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use sqlx::{Row, SqliteConnection};
 use tracing::warn;
 
@@ -84,11 +84,11 @@ impl SessionTxOps {
         session_id: &str,
         streamer_id: &str,
         streamer_name: &str,
-        start_time: DateTime<Utc>,
+        start_time: Timestamp,
         initial_title: &str,
     ) -> Result<()> {
         let initial_titles = vec![TitleEntry {
-            ts: start_time.timestamp_millis(),
+            ts: start_time.as_millisecond(),
             title: initial_title.to_string(),
         }];
         let titles_json = serde_json::to_string(&initial_titles)?;
@@ -97,7 +97,7 @@ impl SessionTxOps {
             id: session_id.to_owned(),
             streamer_id: Some(streamer_id.to_owned()),
             streamer_name: Some(streamer_name.to_owned()),
-            start_time: start_time.timestamp_millis(),
+            start_time: start_time.as_millisecond(),
             end_time: None,
             titles: Some(titles_json),
             total_size_bytes: 0,
@@ -111,12 +111,12 @@ impl SessionTxOps {
     pub async fn end_session(
         tx: &mut SqliteConnection,
         session_id: &str,
-        end_time: DateTime<Utc>,
+        end_time: Timestamp,
     ) -> Result<u64> {
         writes::end_session(
             tx,
             session_id,
-            end_time.timestamp_millis(),
+            end_time.as_millisecond(),
             writes::EndCondition::ActiveOnly,
         )
         .await
@@ -128,7 +128,7 @@ impl SessionTxOps {
     pub async fn end_active_session(
         tx: &mut SqliteConnection,
         streamer_id: &str,
-        end_time: DateTime<Utc>,
+        end_time: Timestamp,
     ) -> Result<Option<String>> {
         let session_id = Self::get_active_session_id(tx, streamer_id).await?;
 
@@ -160,7 +160,7 @@ impl SessionTxOps {
         tx: &mut SqliteConnection,
         streamer_id: &str,
         keep: Option<&str>,
-        end_time: DateTime<Utc>,
+        end_time: Timestamp,
     ) -> Result<Vec<String>> {
         // Two query shapes — keeping them separate is easier to read than
         // splicing a placeholder for the optional `keep` clause.
@@ -203,7 +203,7 @@ impl SessionTxOps {
         session_id: &str,
         current_titles_json: Option<&str>,
         new_title: &str,
-        timestamp: DateTime<Utc>,
+        timestamp: Timestamp,
     ) -> Result<bool> {
         let mut titles: Vec<TitleEntry> = match current_titles_json {
             Some(json) => match serde_json::from_str(json) {
@@ -225,7 +225,7 @@ impl SessionTxOps {
 
         if needs_update {
             titles.push(TitleEntry {
-                ts: timestamp.timestamp_millis(),
+                ts: timestamp.as_millisecond(),
                 title: new_title.to_string(),
             });
             let titles_json = serde_json::to_string(&titles)?;

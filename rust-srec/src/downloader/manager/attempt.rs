@@ -8,9 +8,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use futures::FutureExt;
+use jiff::Timestamp;
 use parking_lot::Mutex;
 use tokio::sync::{Notify, mpsc};
 use tokio::task::JoinSet;
@@ -804,7 +804,7 @@ impl SegmentTranslator {
         &mut self,
         path: &Path,
         sequence: u32,
-        started_at: DateTime<Utc>,
+        started_at: Timestamp,
     ) -> Option<DownloadTerminalEvent> {
         let segment_path = resolve_segment_path(path);
         self.engine_segment_paths

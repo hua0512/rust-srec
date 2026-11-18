@@ -191,7 +191,7 @@ async fn malformed_expired_and_forged_credentials_are_rejected() {
     let app = TestApp::start().await;
     let token = app.admin_token().await;
     let claims = decode_claims(&token);
-    let now = chrono::Utc::now().timestamp();
+    let now = jiff::Timestamp::now().as_second();
 
     let mut expired = claims.clone();
     expired["iat"] = json!(now - 7200);

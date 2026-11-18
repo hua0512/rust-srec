@@ -84,7 +84,7 @@ impl ExtractorError {
                 .headers()
                 .get(reqwest::header::RETRY_AFTER)
                 .and_then(|value| value.to_str().ok())
-                .and_then(|value| parse_retry_after(value, chrono::Utc::now()));
+                .and_then(|value| parse_retry_after(value, jiff::Timestamp::now()));
             return Err(Self::RateLimited {
                 code: Some("429".to_owned()),
                 retry_after,
@@ -94,18 +94,15 @@ impl ExtractorError {
     }
 }
 
-fn parse_retry_after(value: &str, now: chrono::DateTime<chrono::Utc>) -> Option<Duration> {
+fn parse_retry_after(value: &str, now: jiff::Timestamp) -> Option<Duration> {
     let value = value.trim();
     if let Ok(seconds) = value.parse::<u64>() {
         return Some(Duration::from_secs(seconds));
     }
-    chrono::DateTime::parse_from_rfc2822(value)
+    jiff::fmt::rfc2822::DateTimeParser::new()
+        .parse_timestamp(value)
         .ok()
-        .map(|deadline| {
-            (deadline.with_timezone(&chrono::Utc) - now)
-                .to_std()
-                .unwrap_or_default()
-        })
+        .map(|deadline| Duration::try_from(deadline.duration_since(now)).unwrap_or_default())
 }
 
 #[cfg(test)]
@@ -114,9 +111,9 @@ mod tests {
 
     #[test]
     fn retry_after_honors_seconds_dates_and_long_provider_delays() {
-        let now = chrono::DateTime::parse_from_rfc2822("Wed, 21 Oct 2015 07:28:00 GMT")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let now = jiff::fmt::rfc2822::DateTimeParser::new()
+            .parse_timestamp("Wed, 21 Oct 2015 07:28:00 GMT")
+            .unwrap();
         assert_eq!(
             parse_retry_after("7200", now),
             Some(Duration::from_secs(7200))

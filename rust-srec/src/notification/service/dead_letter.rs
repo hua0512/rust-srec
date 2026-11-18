@@ -1,7 +1,7 @@
 use std::sync::atomic::Ordering;
 
-use chrono::{DateTime, Utc};
 use dashmap::DashMap;
+use jiff::Timestamp;
 
 use super::{DEAD_LETTER_CLEANUP_INTERVAL_SECS, DeadLetterEntry, NotificationService};
 
@@ -10,9 +10,9 @@ impl NotificationService {
         dead_letters: &DashMap<u64, DeadLetterEntry>,
         retention_days: u32,
         dead_letter_cleanup_ts: &std::sync::atomic::AtomicU64,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) {
-        let now_ts = now.timestamp().max(0) as u64;
+        let now_ts = now.as_second().max(0) as u64;
         let last = dead_letter_cleanup_ts.load(Ordering::Relaxed);
         if now_ts.saturating_sub(last) < DEAD_LETTER_CLEANUP_INTERVAL_SECS {
             return;
@@ -29,7 +29,7 @@ impl NotificationService {
             return;
         }
 
-        let cutoff = now - chrono::Duration::days(retention_days as i64);
+        let cutoff = now - jiff::SignedDuration::from_hours(24 * (retention_days as i64));
         dead_letters.retain(|_, entry| entry.dead_lettered_at > cutoff);
     }
 }

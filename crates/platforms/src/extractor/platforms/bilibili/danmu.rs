@@ -12,7 +12,6 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use byteorder::{BigEndian, ByteOrder};
 use bytes::Bytes;
-use chrono::{TimeZone, Utc};
 use flate2::read::ZlibDecoder;
 use prost::Message as ProstMessage;
 use reqwest::Client;
@@ -571,9 +570,9 @@ impl BilibiliDanmuProtocol {
             // Timestamp belongs to each gift, not the outer JSON envelope.
             // Missing/nonpositive or out-of-range values keep reception time.
             let timestamp = if gift.timestamp > 1_000_000_000_000 {
-                Utc.timestamp_millis_opt(gift.timestamp).single()
+                jiff::Timestamp::from_millisecond(gift.timestamp).ok()
             } else if gift.timestamp > 0 {
-                Utc.timestamp_opt(gift.timestamp, 0).single()
+                jiff::Timestamp::from_second(gift.timestamp).ok()
             } else {
                 None
             };
@@ -726,7 +725,7 @@ impl BilibiliDanmuProtocol {
         .with_metadata("price", serde_json::json!(price));
 
         if let Some(ts_ms) = timestamp_ms
-            && let Some(dt) = Utc.timestamp_millis_opt(ts_ms).single()
+            && let Some(dt) = jiff::Timestamp::from_millisecond(ts_ms).ok()
         {
             msg = msg.with_timestamp(dt);
         }
@@ -774,7 +773,7 @@ impl BilibiliDanmuProtocol {
         .with_super_chat_keep_time(keep_time);
 
         if let Some(ts_ms) = timestamp_ms
-            && let Some(dt) = Utc.timestamp_millis_opt(ts_ms).single()
+            && let Some(dt) = jiff::Timestamp::from_millisecond(ts_ms).ok()
         {
             msg = msg.with_timestamp(dt);
         }
@@ -1037,7 +1036,7 @@ mod tests {
             assert_eq!(msg.user_id, "9007199254740993");
             assert_eq!(msg.username, "GiftUser");
             assert_eq!(msg.content, format!("赠送 {name} x{count}"));
-            assert_eq!(msg.timestamp.timestamp_millis(), timestamp);
+            assert_eq!(msg.timestamp.as_millisecond(), timestamp);
             let meta = msg.metadata.as_ref().unwrap();
             assert_eq!(meta["gift_name"], name);
             assert_eq!(meta["gift_count"], count);
@@ -1121,7 +1120,7 @@ mod tests {
         assert_eq!(msg.user_id, "0");
         assert_eq!(msg.username, "匿名用户");
         assert_eq!(msg.content, "赠送 Flower x2");
-        assert_eq!(msg.timestamp.timestamp_millis(), 1_757_066_308_000);
+        assert_eq!(msg.timestamp.as_millisecond(), 1_757_066_308_000);
         let meta = msg.metadata.unwrap();
         assert_eq!(meta["gift_count"], 2);
         assert_eq!(meta["price"], 100);
@@ -1215,9 +1214,9 @@ mod tests {
         for timestamp in [0, -1, i64::MIN, i64::MAX] {
             let mut batch = gift_v2_fixture();
             batch.gift_list[0].timestamp = timestamp;
-            let before = Utc::now();
+            let before = jiff::Timestamp::now();
             let items = parse_gift_v2_batch(&batch);
-            let after = Utc::now();
+            let after = jiff::Timestamp::now();
             assert_eq!(items.len(), 2);
             let DanmuItem::Message(msg) = &items[0] else {
                 panic!("expected gift");

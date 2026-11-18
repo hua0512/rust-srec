@@ -712,7 +712,7 @@ mod session_repository_tests {
             .expect("Failed to create session");
 
         // End session
-        let end_time = chrono::Utc::now().timestamp_millis();
+        let end_time = jiff::Timestamp::now().as_millisecond();
         repo.end_session(&session_id, end_time)
             .await
             .expect("Failed to end session");
@@ -735,13 +735,13 @@ mod session_repository_tests {
 
         // Insert multiple sessions (all ended - unique constraint requires only one active session per streamer)
         for i in 0..5 {
-            let start_time =
-                chrono::DateTime::parse_from_rfc3339(&format!("2024-01-{:02}T12:00:00Z", i + 1))
-                    .unwrap()
-                    .timestamp_millis();
+            let start_time = jiff::fmt::temporal::DateTimeParser::new()
+                .parse_timestamp(format!("2024-01-{:02}T12:00:00Z", i + 1))
+                .unwrap()
+                .as_millisecond();
             let mut session = LiveSessionDbModel::new(streamer_id.clone());
             session.start_time = start_time;
-            session.end_time = Some(start_time + chrono::Duration::hours(2).num_milliseconds());
+            session.end_time = Some(start_time + 2 * 60 * 60 * 1_000);
             repo.create_session(&session)
                 .await
                 .expect("Failed to create session");
@@ -789,7 +789,7 @@ mod session_repository_tests {
         let pool = setup_test_db().await;
         let streamer_id = setup_streamer(&pool).await;
 
-        let now_ms = chrono::Utc::now().timestamp_millis();
+        let now_ms = jiff::Timestamp::now().as_millisecond();
         let _empty_id = insert_session_with_size(&pool, &streamer_id, 0, Some(now_ms)).await;
         let real_id =
             insert_session_with_size(&pool, &streamer_id, 1_500_000_000, Some(now_ms)).await;
@@ -821,7 +821,7 @@ mod session_repository_tests {
         let pool = setup_test_db().await;
         let streamer_id = setup_streamer(&pool).await;
 
-        let now_ms = chrono::Utc::now().timestamp_millis();
+        let now_ms = jiff::Timestamp::now().as_millisecond();
         insert_session_with_size(&pool, &streamer_id, 0, Some(now_ms)).await;
         insert_session_with_size(&pool, &streamer_id, 1_500_000_000, Some(now_ms)).await;
 
@@ -1276,7 +1276,7 @@ mod streamer_manager_tests {
             insert_streamer(&pool, &platform_id, "TestStreamer", "NOT_LIVE", "NORMAL").await;
 
         sqlx::query("UPDATE streamers SET state = 'TEMPORAL_DISABLED', consecutive_error_count = 2, last_error = 'fixture error', disabled_until = ? WHERE id = ?")
-            .bind((chrono::Utc::now() + chrono::Duration::minutes(30)).timestamp_millis())
+            .bind((jiff::Timestamp::now() + jiff::SignedDuration::from_mins(30)).as_millisecond())
             .bind(&streamer_id)
             .execute(&pool)
             .await
@@ -1313,7 +1313,6 @@ mod streamer_manager_tests {
 /// End-to-end status processing tests.
 mod end_to_end_tests {
     use super::*;
-    use chrono::Utc;
     use rust_srec::config::{ConfigCache, ConfigEventBroadcaster, ConfigService};
     use rust_srec::database::repositories::SessionLifecycleRepository;
     use rust_srec::database::repositories::config::SqlxConfigRepository;
@@ -1365,9 +1364,9 @@ mod end_to_end_tests {
             last_error: None,
             offline_check_count: 3,
             offline_check_delay_ms: 20_000,
-            created_at: Utc::now(),
+            created_at: jiff::Timestamp::now(),
             deleted_at: None,
-            updated_at: Utc::now(),
+            updated_at: jiff::Timestamp::now(),
         }
     }
 
@@ -1436,7 +1435,7 @@ mod end_to_end_tests {
             title: "Playing Rust!".to_string(),
             category: Some("Gaming".to_string()),
             avatar: None,
-            started_at: Some(Utc::now()),
+            started_at: Some(jiff::Timestamp::now()),
             viewer_count: Some(1000),
             streams: vec![],
             media_headers: None,
@@ -1615,7 +1614,7 @@ mod end_to_end_tests {
 
         let lifecycle = make_session_lifecycle(&pool);
 
-        let now = Utc::now();
+        let now = jiff::Timestamp::now();
         let streams = Vec::new();
         let live_args = LiveDetectedArgs {
             credential_binding: None,
@@ -1672,7 +1671,7 @@ mod end_to_end_tests {
         // in-memory state is Ended (not Hysteresis), the lifecycle's
         // `on_live_detected` falls through to `start_or_resume` which
         // creates a fresh session_id.
-        let later = now + chrono::Duration::seconds(5);
+        let later = now + jiff::SignedDuration::from_secs(5);
         let streams2 = Vec::new();
         let relive_args = LiveDetectedArgs {
             credential_binding: None,

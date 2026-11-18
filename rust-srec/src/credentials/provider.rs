@@ -13,7 +13,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use parking_lot::RwLock;
 use reqwest::Client;
 use serde::Serialize;
@@ -64,7 +64,7 @@ pub struct RefreshedCredentials {
     pub refresh_token: Option<String>,
     pub access_token: Option<String>,
     /// Expected expiration time, if known.
-    pub expires_at: Option<DateTime<Utc>>,
+    pub expires_at: Option<Timestamp>,
 }
 
 impl std::fmt::Debug for RefreshedCredentials {

@@ -337,7 +337,7 @@ impl RemuxConfig {
             .or_else(|| (!input.streamer_id.is_empty()).then_some(input.streamer_id.as_str()));
         let date = TimeAnchor::SessionStart
             .reference_time(input)
-            .format("%Y-%m-%d")
+            .strftime("%Y-%m-%d")
             .to_string();
         // These are tag values, not filename templates. Keep braces, percent
         // signs and Unicode unchanged, and never expand literal custom tags.

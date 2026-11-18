@@ -5,8 +5,8 @@
 
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
 use dashmap::DashMap;
+use jiff::Timestamp;
 use tracing::{debug, info, warn};
 
 use crate::Result;
@@ -814,7 +814,7 @@ where
         &self,
         error_count: i32,
         offline_check_count: u32,
-    ) -> Option<DateTime<Utc>> {
+    ) -> Option<Timestamp> {
         let error_threshold = download_failure_threshold(offline_check_count);
         if error_count >= error_threshold {
             Some(self.calculate_backoff(error_count, error_threshold))
@@ -831,7 +831,7 @@ where
         debug!("Recording success for streamer {}", id);
 
         let last_live_time = if is_going_live {
-            Some(Utc::now())
+            Some(Timestamp::now())
         } else {
             None
         };
@@ -897,14 +897,14 @@ where
     // ========== Private Helpers ==========
 
     /// Calculate backoff duration based on error count.
-    fn calculate_backoff(&self, error_count: i32, error_threshold: i32) -> DateTime<Utc> {
+    fn calculate_backoff(&self, error_count: i32, error_threshold: i32) -> Timestamp {
         // Once the delay reaches the cap, larger persisted counts must not
         // overflow the power or multiplication before that cap is applied.
         let cap_exponent = (MAX_BACKOFF_SECS / BASE_BACKOFF_SECS).ilog2() + 1;
         let exponent =
             (error_count.saturating_sub(error_threshold).max(0) as u32).min(cap_exponent);
         let backoff_secs = (BASE_BACKOFF_SECS * 2u64.pow(exponent)).min(MAX_BACKOFF_SECS);
-        Utc::now() + chrono::Duration::seconds(backoff_secs as i64)
+        Timestamp::now() + jiff::SignedDuration::from_secs(backoff_secs as i64)
     }
 
     /// Convert metadata to database model.
@@ -923,13 +923,13 @@ where
             avatar: metadata.avatar_url.clone(),
             consecutive_error_count: Some(metadata.consecutive_error_count),
             last_error: metadata.last_error.clone(),
-            disabled_until: metadata.disabled_until.map(|dt| dt.timestamp_millis()),
-            last_live_time: metadata.last_live_time.map(|dt| dt.timestamp_millis()),
+            disabled_until: metadata.disabled_until.map(|dt| dt.as_millisecond()),
+            last_live_time: metadata.last_live_time.map(|dt| dt.as_millisecond()),
             streamer_specific_config: metadata.streamer_specific_config.clone(),
             platform_metadata: metadata.platform_metadata.clone(),
-            created_at: metadata.created_at.timestamp_millis(),
-            updated_at: metadata.updated_at.timestamp_millis(),
-            deleted_at: metadata.deleted_at.map(|dt| dt.timestamp_millis()),
+            created_at: metadata.created_at.as_millisecond(),
+            updated_at: metadata.updated_at.as_millisecond(),
+            deleted_at: metadata.deleted_at.map(|dt| dt.as_millisecond()),
         }
     }
 }
@@ -965,11 +965,11 @@ mod tests {
             (i32::MAX - 1, u32::MAX, None),
             (i32::MAX, u32::MAX, Some(60)),
         ] {
-            let before = Utc::now();
+            let before = Timestamp::now();
             let actual = manager.disabled_until_for_error_count(count, offline_checks);
-            let after = Utc::now();
+            let after = Timestamp::now();
             if let Some(seconds) = expected_seconds {
-                let duration = chrono::Duration::seconds(seconds);
+                let duration = jiff::SignedDuration::from_secs(seconds);
                 let actual = actual.expect("threshold reached");
                 assert!(actual >= before + duration, "count={count}");
                 assert!(actual <= after + duration, "count={count}");
@@ -1098,7 +1098,7 @@ mod tests {
         async fn record_streamer_success(
             &self,
             _id: &str,
-            _last_live_time: Option<DateTime<Utc>>,
+            _last_live_time: Option<Timestamp>,
         ) -> Result<()> {
             Ok(())
         }

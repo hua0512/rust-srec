@@ -70,7 +70,7 @@ regex = { version = "1.13.1", default-features = false, features = ["std", "unic
 # needed; `tfidf`/`textrank` stay off since only segmentation is used.
 jieba-rs = "0.11.0"
 futures = "0.3.34"
-chrono = { version = "0.4.45", features = ["serde"] }
+jiff = { version = "0.2.43", features = ["serde"] }
 uuid = { version = "1.29.0", features = ["v4", "serde"] }
 prost = "0.14.4"
 prost-build = "0.14.4"
@@ -84,19 +84,18 @@ anyhow = "1.0.104"
 tower-http = { version = "0.7.1", features = ["cors", "trace", "request-id", "fs"] }
 tempfile = "3.27.0"
 axum = { version = "0.8.9", features = ["ws"] }
-sqlx = { version = "0.9.0", features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "sqlite", "macros", "uuid", "chrono", "json"] }
-utoipa = { version = "6", features = ["axum_extras", "chrono", "uuid"] }
+sqlx = { version = "0.9.0", features = ["runtime-tokio", "tls-rustls-aws-lc-rs", "sqlite", "macros", "uuid", "json"] }
+utoipa = { version = "6", features = ["axum_extras", "jiff_0_2", "uuid"] }
 utoipa-swagger-ui = { version = "10", features = ["axum"] }
 rmcp = { version = "3.8.0", features = ["transport-streamable-http-server"] }
-schemars = "1.2.3"
+schemars = { version = "1.2.3", features = ["jiff02"] }
 jsonwebtoken = { version = "11", features = ["aws_lc_rs"] }
 lettre = { version = "0.11.23", default-features = false, features = ["aws-lc-rs", "builder", "pool", "smtp-transport", "tokio1-rustls", "webpki-roots"] }
 mimalloc = "0.1.52"
 argon2 = "0.6.0"
 zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
 tar = "0.4.46"
-chrono-tz = "0.10.4"
-cron = "0.17"
+jiff-cron = "0.3"
 dotenvy = "0.15.7"
 # Health sampling and disk maintenance use only CPU/memory and disk inventory.
 sysinfo = { version = "0.40.1", default-features = false, features = ["system", "disk"] }

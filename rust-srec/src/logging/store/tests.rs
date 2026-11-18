@@ -3,12 +3,8 @@ use std::time::Duration;
 
 use super::*;
 
-fn instant(day: u32) -> DateTime<Utc> {
-    NaiveDate::from_ymd_opt(2026, 9, day)
-        .unwrap()
-        .and_hms_opt(12, 0, 0)
-        .unwrap()
-        .and_utc()
+fn instant(day: i8) -> Timestamp {
+    format!("2026-09-{day:02}T12:00:00Z").parse().unwrap()
 }
 
 fn store(dir: &tempfile::TempDir) -> LogStore {
@@ -111,7 +107,7 @@ fn batch_failure_does_not_replay_successes_or_drop_unattempted_records() {
 fn worker_guard_finishes_when_shutdown_flush_cannot_reclaim_capacity() {
     let dir = tempfile::tempdir().unwrap();
     let store = Arc::new(store(&dir));
-    let now = Utc::now();
+    let now = jiff::Timestamp::now();
     for _ in 0..3 {
         store.append(&[b'x'; 128], now, false).unwrap();
     }
@@ -152,7 +148,7 @@ fn policy_rejects_unbounded_invalid_and_extreme_settings() {
 
 #[test]
 fn filename_grammar_excludes_unrelated_suffixes() {
-    let date = instant(8).date_naive();
+    let date = instant(8).to_zoned(jiff::tz::TimeZone::UTC).date();
     assert_eq!(managed_log_date("rust-srec.log.2026-09-08"), Some(date));
     assert_eq!(parse_name(&filename(date, 42)), Some((date, 42)));
     for name in [
@@ -195,7 +191,7 @@ fn count_pressure_restart_and_clock_rollback_do_not_reuse_deleted_names() {
             .inventory()
             .unwrap()
             .into_iter()
-            .filter(|file| file.date == instant(day).date_naive())
+            .filter(|file| file.date == instant(day).to_zoned(jiff::tz::TimeZone::UTC).date())
             .max_by_key(|file| file.index)
             .unwrap();
         assert!(seen.insert(current.path));
@@ -207,7 +203,7 @@ fn count_pressure_restart_and_clock_rollback_do_not_reuse_deleted_names() {
         .inventory()
         .unwrap()
         .into_iter()
-        .filter(|file| file.date == instant(8).date_naive())
+        .filter(|file| file.date == instant(8).to_zoned(jiff::tz::TimeZone::UTC).date())
         .max_by_key(|file| file.index)
         .unwrap();
     assert!(seen.insert(file.path));
@@ -221,7 +217,10 @@ fn reconciliation_removes_oversized_and_expired_logs_but_preserves_unrelated_pat
     let old = dir.path().join("rust-srec.log.2000-01-01");
     let oversized = dir.path().join("rust-srec.log.2026-09-08");
     let unrelated = dir.path().join("rust-srec.log.2000-01-01.backup");
-    let directory = dir.path().join(filename(instant(8).date_naive(), 1));
+    let directory = dir.path().join(filename(
+        instant(8).to_zoned(jiff::tz::TimeZone::UTC).date(),
+        1,
+    ));
     std::fs::write(&old, b"old").unwrap();
     std::fs::write(&oversized, [b'x'; 256]).unwrap();
     std::fs::write(&unrelated, b"keep").unwrap();
@@ -241,7 +240,10 @@ fn reconciliation_removes_oversized_and_expired_logs_but_preserves_unrelated_pat
 fn reconciling_imported_oversized_segments_does_not_reuse_their_names() {
     let dir = tempfile::tempdir().unwrap();
     let store = store(&dir);
-    let imported = dir.path().join(filename(instant(8).date_naive(), 42));
+    let imported = dir.path().join(filename(
+        instant(8).to_zoned(jiff::tz::TimeZone::UTC).date(),
+        42,
+    ));
     std::fs::write(&imported, [b'x'; 256]).unwrap();
     store.reconcile(instant(8)).unwrap();
     store.append(b"fresh", instant(8), false).unwrap();
@@ -256,7 +258,10 @@ fn managed_looking_symlinks_are_never_followed_or_deleted() {
     let dir = tempfile::tempdir().unwrap();
     let store = store(&dir);
     let target = dir.path().join("private");
-    let link = dir.path().join(filename(instant(8).date_naive(), 1));
+    let link = dir.path().join(filename(
+        instant(8).to_zoned(jiff::tz::TimeZone::UTC).date(),
+        1,
+    ));
     std::fs::write(&target, b"unrelated").unwrap();
     std::os::unix::fs::symlink(&target, &link).unwrap();
     store.append(b"log\n", instant(8), false).unwrap();

@@ -3,7 +3,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use chrono::Utc;
 use platforms_parser::extractor::platforms::bigo::native::stream::NativeRoom;
 use tokio::sync::{Notify, mpsc};
 use tokio_util::sync::CancellationToken;
@@ -286,7 +285,7 @@ impl Fixture {
                 streams: &streams,
                 media_headers: None,
                 media_extras: None,
-                now: Utc::now(),
+                now: jiff::Timestamp::now(),
             })
             .await
             .unwrap();
@@ -822,7 +821,7 @@ async fn resumed_started_requires_active_session_payload_and_resume_flag() {
                     streamer_name: "Coordinator".into(),
                     title: "Resumed".into(),
                     category: None,
-                    started_at: Utc::now(),
+                    started_at: jiff::Timestamp::now(),
                     from_hysteresis: resumed,
                     download_start: payload_present.then(|| {
                         Box::new(crate::session::DownloadStartPayload {
@@ -924,7 +923,7 @@ async fn live_and_offline_calls_serialize_memory_database_and_transition_order()
                     credential_binding: None,
                     streamer_id: STREAMER, streamer_name: "Coordinator", streamer_url: FakeProvider::URL,
                     current_avatar: None, new_avatar: None, title: "Race", category: None,
-                    streams: &streams, media_headers: None, media_extras: None, now: Utc::now(),
+                    streams: &streams, media_headers: None, media_extras: None, now: jiff::Timestamp::now(),
                 }).await.unwrap().session_id().to_owned()
             };
             let offline_owner = lifecycle.clone();
@@ -932,7 +931,7 @@ async fn live_and_offline_calls_serialize_memory_database_and_transition_order()
             let offline = async move {
                 offline_owner.on_offline_detected(crate::session::OfflineDetectedArgs {
                     streamer_id: STREAMER, streamer_name: "Coordinator", session_id: Some(&offline_session),
-                    state_was_live: true, clear_errors: false, signal: None, now: Utc::now(),
+                    state_was_live: true, clear_errors: false, signal: None, now: jiff::Timestamp::now(),
                 }).await.unwrap()
             };
             tokio::pin!(live, offline);
@@ -1007,7 +1006,10 @@ async fn hysteresis_uses_resolved_window_or_fallback_and_abort_preserves_open_se
             else {
                 panic!("ambiguous completion must enter hysteresis");
             };
-            assert_eq!((resume_deadline - observed_at).to_std().unwrap(), expected);
+            assert_eq!(
+                std::time::Duration::try_from(resume_deadline.duration_since(observed_at)).unwrap(),
+                expected
+            );
             assert!(
                 lifecycle
                     .session_snapshot(&session)
@@ -1310,7 +1312,7 @@ fn outside_schedule() -> MonitorEvent {
         old_state: StreamerState::Live,
         new_state: StreamerState::OutOfSchedule,
         reason: Some("out_of_schedule".into()),
-        timestamp: Utc::now(),
+        timestamp: jiff::Timestamp::now(),
     }
 }
 
@@ -1358,7 +1360,7 @@ async fn delayed_old_offline_does_not_stop_successor_download_or_danmu() {
                     streamer_id: STREAMER.into(),
                     streamer_name: "Coordinator".into(),
                     session_id: Some(old.clone()),
-                    timestamp: Utc::now(),
+                    timestamp: jiff::Timestamp::now(),
                 },
                 false,
             )

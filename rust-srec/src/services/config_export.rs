@@ -3,7 +3,6 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use chrono::Utc;
 use sqlx::SqlitePool;
 
 use crate::config::ConfigService;
@@ -482,7 +481,7 @@ impl ConfigurationExportService {
             super::config_import::export_profiles(&self.write_pool, &proxy_names).await?;
         let mut export = ConfigExport {
             version: EXPORT_SCHEMA_VERSION.to_string(),
-            exported_at: Utc::now().to_rfc3339(),
+            exported_at: jiff::Timestamp::now().to_string(),
             global_config: global_export(global_config, global_route),
             templates: templates
                 .into_iter()

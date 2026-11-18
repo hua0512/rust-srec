@@ -2,7 +2,7 @@
 
 use std::num::NonZeroU32;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -272,9 +272,9 @@ pub struct TemplateConfigDbModel {
     pub offline_check_count: Option<i32>,
     pub offline_check_delay_ms: Option<i64>,
     #[sqlx(try_from = "crate::database::time::EpochMillis")]
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     #[sqlx(try_from = "crate::database::time::EpochMillis")]
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: Timestamp,
 }
 
 impl TemplateConfigDbModel {
@@ -301,8 +301,8 @@ impl TemplateConfigDbModel {
             paired_segment_pipeline: None,
             offline_check_count: None,
             offline_check_delay_ms: None,
-            created_at: Utc::now(),
-            updated_at: Utc::now(),
+            created_at: Timestamp::now(),
+            updated_at: Timestamp::now(),
         }
     }
 }

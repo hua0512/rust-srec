@@ -1,6 +1,6 @@
 //! Domain representation of one monitor poll outcome.
 
-use chrono::{DateTime, Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 
 /// Maximum length in bytes of a persisted transient-error message.
@@ -118,8 +118,8 @@ impl CheckSource {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CheckRecord {
     pub streamer_id: String,
-    pub checked_at: DateTime<Utc>,
-    pub duration: Duration,
+    pub checked_at: Timestamp,
+    pub duration: SignedDuration,
     pub outcome: CheckOutcome,
     pub source: CheckSource,
 }
@@ -127,8 +127,8 @@ pub struct CheckRecord {
 impl CheckRecord {
     pub fn new(
         streamer_id: impl Into<String>,
-        checked_at: DateTime<Utc>,
-        duration: Duration,
+        checked_at: Timestamp,
+        duration: SignedDuration,
         outcome: CheckOutcome,
         source: CheckSource,
     ) -> Self {
@@ -143,8 +143,8 @@ impl CheckRecord {
 
     pub fn from_error(
         streamer_id: impl Into<String>,
-        checked_at: DateTime<Utc>,
-        duration: Duration,
+        checked_at: Timestamp,
+        duration: SignedDuration,
         error: &str,
     ) -> Self {
         Self::new(

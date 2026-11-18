@@ -233,13 +233,13 @@ pub async fn run<R>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::{Duration as ChronoDuration, Utc};
+    use jiff::SignedDuration;
 
     fn record(streamer_id: &str, msg: &str) -> CheckRecord {
         CheckRecord::from_error(
             streamer_id,
-            Utc::now(),
-            ChronoDuration::milliseconds(1),
+            jiff::Timestamp::now(),
+            SignedDuration::from_millis(1),
             msg,
         )
     }

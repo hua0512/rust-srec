@@ -956,7 +956,7 @@ mod tests {
         assert_eq!((video, audio), (false, true));
         // Needing the audio later fails with what the read failed with.
         let audio = &manifest.periods[0].adaptation_sets[1].representations[0];
-        let error = DownloadError::from(audio.segments(chrono::Utc::now()).unwrap_err());
+        let error = DownloadError::from(audio.segments(jiff::Timestamp::now()).unwrap_err());
         assert!(
             matches!(error, DownloadError::HttpStatus { status, .. } if status == 410),
             "{error}"
@@ -1066,7 +1066,7 @@ mod tests {
         assert_eq!(pending(&manifest), ["high", "a"]);
         let low = &manifest.periods[0].adaptation_sets[0].representations[0];
         let segment = low
-            .segments(chrono::Utc::now())
+            .segments(jiff::Timestamp::now())
             .unwrap()
             .first()
             .unwrap()

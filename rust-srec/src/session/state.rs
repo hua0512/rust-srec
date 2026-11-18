@@ -24,7 +24,7 @@
 //! and `rust-srec/src/session/lifecycle.rs` for the FSM driver.
 
 use crate::downloader::{DownloadFailureKind, DownloadStopCause};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
@@ -48,16 +48,16 @@ pub enum SessionState {
     Recording {
         streamer_id: String,
         session_id: String,
-        started_at: DateTime<Utc>,
+        started_at: Timestamp,
     },
     /// Engine reported a non-authoritative end. Holding the session for a
     /// quiet-period before committing.
     Hysteresis {
         streamer_id: String,
         session_id: String,
-        started_at: DateTime<Utc>,
+        started_at: Timestamp,
         /// When the terminal event arrived.
-        observed_at: DateTime<Utc>,
+        observed_at: Timestamp,
         /// What caused us to enter hysteresis.
         cause: TerminalCause,
         /// Monotonic deadline; the timer task wakes at this point. If still
@@ -68,8 +68,8 @@ pub enum SessionState {
     Ended {
         streamer_id: String,
         session_id: String,
-        started_at: DateTime<Utc>,
-        ended_at: DateTime<Utc>,
+        started_at: Timestamp,
+        ended_at: Timestamp,
         cause: TerminalCause,
     },
 }
@@ -79,7 +79,7 @@ impl SessionState {
     pub fn recording(
         streamer_id: impl Into<String>,
         session_id: impl Into<String>,
-        started_at: DateTime<Utc>,
+        started_at: Timestamp,
     ) -> Self {
         Self::Recording {
             streamer_id: streamer_id.into(),
@@ -93,8 +93,8 @@ impl SessionState {
     pub fn hysteresis(
         streamer_id: impl Into<String>,
         session_id: impl Into<String>,
-        started_at: DateTime<Utc>,
-        observed_at: DateTime<Utc>,
+        started_at: Timestamp,
+        observed_at: Timestamp,
         cause: TerminalCause,
         deadline: Instant,
     ) -> Self {
@@ -112,8 +112,8 @@ impl SessionState {
     pub fn ended(
         streamer_id: impl Into<String>,
         session_id: impl Into<String>,
-        started_at: DateTime<Utc>,
-        ended_at: DateTime<Utc>,
+        started_at: Timestamp,
+        ended_at: Timestamp,
         cause: TerminalCause,
     ) -> Self {
         Self::Ended {
@@ -144,7 +144,7 @@ impl SessionState {
     }
 
     /// When the recording started, present on every variant.
-    pub fn started_at(&self) -> DateTime<Utc> {
+    pub fn started_at(&self) -> Timestamp {
         match self {
             Self::Recording { started_at, .. }
             | Self::Hysteresis { started_at, .. }

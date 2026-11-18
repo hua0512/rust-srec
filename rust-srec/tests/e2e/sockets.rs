@@ -223,7 +223,7 @@ async fn log_file_and_entry_queries_validate_dates_limits_and_file_names() {
     for item in items {
         let date = item["date"].as_str().expect("date string");
         assert!(
-            chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok(),
+            jiff::civil::Date::strptime("%Y-%m-%d", date).is_ok(),
             "{item}"
         );
         assert!(
@@ -334,13 +334,13 @@ async fn log_archive_tokens_download_once_and_die_with_the_credential_that_issue
         grant.len() == 64 && grant.chars().all(|c| matches!(c, '0'..='9' | 'a'..='f')),
         "{grant}"
     );
-    let expires_at = chrono::DateTime::parse_from_rfc3339(
-        issued.body["expires_at"].as_str().expect("expires_at"),
-    )
-    .expect("RFC 3339 expires_at");
-    let lifetime = expires_at.with_timezone(&chrono::Utc) - chrono::Utc::now();
+    let expires_at = jiff::fmt::temporal::DateTimeParser::new()
+        .parse_timestamp(issued.body["expires_at"].as_str().expect("expires_at"))
+        .expect("RFC 3339 expires_at");
+    let lifetime = expires_at.duration_since(jiff::Timestamp::now());
     assert!(
-        (chrono::Duration::minutes(4)..=chrono::Duration::minutes(5)).contains(&lifetime),
+        (jiff::SignedDuration::from_mins(4)..=jiff::SignedDuration::from_mins(5))
+            .contains(&lifetime),
         "{lifetime}"
     );
 

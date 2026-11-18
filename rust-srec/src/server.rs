@@ -137,7 +137,7 @@ async fn run_worker() -> anyhow::Result<()> {
 
     let startup_event = NotificationEvent::SystemStartup {
         version: env!("CARGO_PKG_VERSION").to_string(),
-        timestamp: chrono::Utc::now(),
+        timestamp: jiff::Timestamp::now(),
     };
     if let Err(error) = container.notification_service().notify(startup_event).await {
         warn!(%error, "Failed to send startup notification");
@@ -179,7 +179,7 @@ async fn run_worker() -> anyhow::Result<()> {
 
     let shutdown_event = NotificationEvent::SystemShutdown {
         reason: shutdown_reason.description().to_string(),
-        timestamp: chrono::Utc::now(),
+        timestamp: jiff::Timestamp::now(),
     };
     let notification_deadline = tokio::time::Instant::from_std(schedule.cooperative_at())
         .min(tokio::time::Instant::now() + Duration::from_secs(1));

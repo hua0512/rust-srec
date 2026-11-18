@@ -83,8 +83,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
-use chrono::{DateTime, TimeDelta, Utc};
 use hls::{HlsData, M4sData, M4sInitSegmentData, M4sSegmentData, SplitReason};
+use jiff::{SignedDuration, Timestamp};
 use mp4::merge::{
     FragmentWriter, MergeError, MergedInit, SourceFragment, merge_init, validate_init,
 };
@@ -2239,7 +2239,7 @@ fn media_segment(
         .and_then(|meta| meta.availability_start_time.as_ref())
         .and_then(WallClockAnchor::get)
         .and_then(|anchor| presentation_instant(anchor, start, timescale))
-        .map(|time| time.fixed_offset());
+        .and_then(|time| time.to_string().parse().ok());
     m3u8_rs::MediaSegment {
         uri: redact_url(&descriptor.parsed_url).to_string(),
         duration,
@@ -2248,17 +2248,13 @@ fn media_segment(
     }
 }
 
-fn presentation_instant(
-    anchor: DateTime<Utc>,
-    ticks: i128,
-    timescale: u32,
-) -> Option<DateTime<Utc>> {
+fn presentation_instant(anchor: Timestamp, ticks: i128, timescale: u32) -> Option<Timestamp> {
     if timescale == 0 {
         return None;
     }
     let nanos = ticks.checked_mul(NANOS_PER_SEC)? / i128::from(timescale);
-    let delta = TimeDelta::nanoseconds(i64::try_from(nanos).ok()?);
-    anchor.checked_add_signed(delta)
+    let delta = SignedDuration::from_nanos(i64::try_from(nanos).ok()?);
+    anchor.checked_add(delta).ok()
 }
 
 #[cfg(test)]

@@ -13,7 +13,6 @@ use std::io::Read;
 use std::time::Duration;
 
 use bytes::Bytes;
-use chrono::{TimeZone, Utc};
 use flate2::read::GzDecoder;
 use prost::Message as ProstMessage;
 use reqwest::Client;
@@ -251,12 +250,12 @@ impl TikTokDanmuProtocol {
         true
     }
 
-    fn timestamp_from_common(common: Option<&proto::Common>) -> chrono::DateTime<Utc> {
+    fn timestamp_from_common(common: Option<&proto::Common>) -> jiff::Timestamp {
         common
             .map(|c| c.create_time)
             .filter(|&t| t > 0)
-            .and_then(|t| Utc.timestamp_millis_opt(t).single())
-            .unwrap_or_else(Utc::now)
+            .and_then(|t| jiff::Timestamp::from_millisecond(t).ok())
+            .unwrap_or_else(jiff::Timestamp::now)
     }
 
     fn user_parts(user: Option<&proto::User>) -> (String, String) {
@@ -674,7 +673,7 @@ mod tests {
         assert_eq!(msg.content, "hola ✈️");
         assert_eq!(msg.username, "Pili");
         assert_eq!(msg.user_id, "6935366370146911237");
-        assert_eq!(msg.timestamp.timestamp_millis(), 1_789_308_623_396);
+        assert_eq!(msg.timestamp.as_millisecond(), 1_789_308_623_396);
         assert_eq!(msg.message_type, DanmuType::Chat);
 
         assert_eq!(outbound.len(), 1);

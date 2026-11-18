@@ -1,6 +1,6 @@
 //! Job database models.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -25,9 +25,9 @@ pub struct JobFilters {
     /// Filter by pipeline ID.
     pub pipeline_id: Option<String>,
     /// Filter jobs created after this date.
-    pub from_date: Option<DateTime<Utc>>,
+    pub from_date: Option<Timestamp>,
     /// Filter jobs created before this date.
-    pub to_date: Option<DateTime<Utc>>,
+    pub to_date: Option<Timestamp>,
     /// Filter by job type.
     pub job_type: Option<String>,
     /// Filter by multiple job types.
@@ -73,11 +73,7 @@ impl JobFilters {
     }
 
     /// Filter by date range.
-    pub fn with_date_range(
-        mut self,
-        from: Option<DateTime<Utc>>,
-        to: Option<DateTime<Utc>>,
-    ) -> Self {
+    pub fn with_date_range(mut self, from: Option<Timestamp>, to: Option<Timestamp>) -> Self {
         self.from_date = from;
         self.to_date = to;
         self

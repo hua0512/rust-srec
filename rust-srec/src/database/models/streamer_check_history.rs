@@ -107,8 +107,8 @@ impl From<&crate::domain::streamer::CheckRecord> for StreamerCheckHistoryDbModel
         let mut row = Self {
             id: 0,
             streamer_id: record.streamer_id.clone(),
-            checked_at: record.checked_at.timestamp_millis(),
-            duration_ms: record.duration.num_milliseconds(),
+            checked_at: record.checked_at.as_millisecond(),
+            duration_ms: i64::try_from(record.duration.as_millis()).unwrap_or(i64::MAX),
             outcome: record.outcome.as_str().to_string(),
             fatal_kind: None,
             filter_reason: None,

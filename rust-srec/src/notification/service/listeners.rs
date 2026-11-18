@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use chrono::Utc;
 use tokio::sync::broadcast;
 use tracing::{debug, warn};
 
@@ -134,7 +133,7 @@ impl NotificationService {
                                     continue;
                                 }
 
-                                let notification = download_notification(event, Utc::now());
+                                let notification = download_notification(event, jiff::Timestamp::now());
 
                                 if let Some(notification) = notification {
                                     service.dispatch_notification_wait(notification).await;
@@ -179,7 +178,7 @@ impl NotificationService {
                                     continue;
                                 }
 
-                                let notification = mapper.map(event, Utc::now());
+                                let notification = mapper.map(event, jiff::Timestamp::now());
 
                                 if let Some(notification) = notification {
                                     service.dispatch_notification_wait(notification).await;

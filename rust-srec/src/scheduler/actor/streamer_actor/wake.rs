@@ -10,7 +10,7 @@ fn wake_delay(
     interval_ms: u64,
     backoff: Option<Instant>,
     now: Instant,
-    wall_now: chrono::DateTime<chrono::Utc>,
+    wall_now: jiff::Timestamp,
 ) -> Option<Duration> {
     // Explicit checks retain their authority, including retry and immediate
     // deadlines. Only a parked Live actor uses the watchdog decision.
@@ -32,10 +32,8 @@ fn wake_delay(
         .as_ref()
         .and_then(|last| last.next_check_hint)
     {
-        let until_hint = hint
-            .signed_duration_since(wall_now)
-            .to_std()
-            .unwrap_or(Duration::ZERO);
+        let until_hint =
+            Duration::try_from(hint.duration_since(wall_now)).unwrap_or(Duration::ZERO);
         delay = delay.min(until_hint);
     }
     // A failed watchdog must not spin on an already-expired stall or hint.
@@ -74,7 +72,7 @@ impl StreamerActor {
             self.config.check_interval_ms,
             self.live_watchdog_backoff_until,
             Instant::now(),
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         )
     }
 
@@ -103,7 +101,7 @@ mod tests {
     #[test]
     fn explicit_deadlines_and_parked_states_keep_precedence_over_watchdogs() {
         let now = Instant::now();
-        let wall = chrono::Utc::now();
+        let wall = jiff::Timestamp::now();
         for state in [
             StreamerState::Live,
             StreamerState::NotLive,
@@ -137,12 +135,12 @@ mod tests {
     #[test]
     fn live_stall_hint_and_error_floor_edges_are_clock_controlled() {
         let now = Instant::now();
-        let wall = chrono::Utc::now();
+        let wall = jiff::Timestamp::now();
         for age in [0, 299, 300, 301] {
             for hint in [-1, 0, 1, 500] {
                 for backoff in [None, Some(0), Some(60)] {
                     let mut check = CheckResult::success(StreamerState::Live);
-                    check.next_check_hint = Some(wall + chrono::Duration::seconds(hint));
+                    check.next_check_hint = Some(wall + jiff::SignedDuration::from_secs(hint));
                     let runtime = StreamerActorState {
                         streamer_state: StreamerState::Live,
                         last_download_activity_at: Some(now - Duration::from_secs(age)),

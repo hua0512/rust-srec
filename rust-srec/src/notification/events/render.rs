@@ -415,7 +415,7 @@ impl NotificationEvent {
                 platform = platform.as_str(),
                 route = throttled_route(locale, route, proxy_name.as_deref()).as_str(),
                 retry_at = retry_at
-                    .format("%Y-%m-%d %H:%M:%S UTC")
+                    .strftime("%Y-%m-%d %H:%M:%S UTC")
                     .to_string()
                     .as_str(),
             ),

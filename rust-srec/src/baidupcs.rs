@@ -502,7 +502,7 @@ impl StoredLoginAuthenticator {
                 key.to_string()
             },
             message: crate::utils::text::truncate_chars(message.trim(), 300),
-            timestamp: chrono::Utc::now(),
+            timestamp: jiff::Timestamp::now(),
         });
     }
 }
@@ -530,7 +530,7 @@ impl BaiduPcsAuthenticator for StoredLoginAuthenticator {
         let payload = serde_json::to_string(material).map_err(|e| {
             crate::Error::Other(format!("Failed to serialize BaiduPCS-Go credentials: {e}"))
         })?;
-        let now_ms = chrono::Utc::now().timestamp_millis();
+        let now_ms = jiff::Timestamp::now().as_millisecond();
         self.repository
             .upsert(&ToolCredentialDbModel {
                 tool: CREDENTIAL_TOOL.to_string(),

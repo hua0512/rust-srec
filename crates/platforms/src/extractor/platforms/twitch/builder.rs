@@ -11,7 +11,6 @@ use crate::extractor::utils::{capture_group_1_or_invalid_url, extras_get_str};
 use crate::media::StreamInfo;
 use crate::media::media_info::MediaInfo;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use rand::RngExt;
 use regex::Regex;
 use reqwest::Client;
@@ -266,8 +265,7 @@ impl Twitch {
 
         let live_start_time = stream
             .and_then(|s| s.created_at.as_deref())
-            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
-            .map(|dt| dt.with_timezone(&Utc));
+            .and_then(|s| s.parse().ok());
 
         let streams = if is_live {
             self.get_streams(room_id).await?

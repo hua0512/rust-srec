@@ -27,7 +27,7 @@ reqwest = { workspace = true, features = [
     "deflate",
 ] }
 url = { workspace = true }
-chrono = { workspace = true }
+jiff = { workspace = true }
 roxmltree = { workspace = true }
 thiserror = { workspace = true }
 m3u8-rs = { workspace = true }

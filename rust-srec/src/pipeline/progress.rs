@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use parking_lot::Mutex;
 use serde::Serialize;
 use tokio::sync::mpsc;
@@ -40,7 +40,7 @@ pub enum JobPhase {
 #[derive(Debug, Clone, Serialize, utoipa::ToSchema)]
 pub struct JobProgressSnapshot {
     pub kind: ProgressKind,
-    pub updated_at: DateTime<Utc>,
+    pub updated_at: Timestamp,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub percent: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -87,7 +87,7 @@ impl JobProgressSnapshot {
     pub fn new(kind: ProgressKind) -> Self {
         Self {
             kind,
-            updated_at: Utc::now(),
+            updated_at: Timestamp::now(),
             percent: None,
             bytes_done: None,
             bytes_total: None,
@@ -174,7 +174,7 @@ impl ProgressReporter {
     }
 
     pub fn report(&self, mut snapshot: JobProgressSnapshot) {
-        snapshot.updated_at = Utc::now();
+        snapshot.updated_at = Timestamp::now();
         {
             let state = self.state.lock();
             if let Some((done, total)) = state.batch_item {

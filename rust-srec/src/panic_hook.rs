@@ -5,7 +5,7 @@ use std::{
     thread,
 };
 
-use chrono::Local;
+use jiff::Zoned;
 
 /// Installs a global panic hook that logs panics via `tracing` and also appends
 /// a panic record through the bounded log store in `log_dir` for abort builds.
@@ -59,7 +59,7 @@ fn format_panic_record(panic_info: &PanicHookInfo<'_>) -> String {
         .unwrap_or_else(|| "<unnamed>".to_string());
 
     let backtrace = Backtrace::force_capture();
-    let ts = Local::now().format("%Y-%m-%dT%H:%M:%S%.3f%:z");
+    let ts = Zoned::now().strftime("%Y-%m-%dT%H:%M:%S%.3f%:z");
 
     format!(
         "{ts} PANIC thread={thread_name} location={location} payload={payload}\nBacktrace:\n{backtrace}"

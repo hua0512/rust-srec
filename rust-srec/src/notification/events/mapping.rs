@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 use super::NotificationEvent;
 use crate::downloader::{DownloadManagerEvent, DownloadProgressEvent, DownloadTerminalEvent};
@@ -71,7 +71,7 @@ pub(crate) fn session_notification(transition: SessionTransition) -> Option<Noti
             streamer_id,
             streamer_name,
             duration_secs: started_at.map(|started_at| {
-                (ended_at - started_at).num_milliseconds().max(0) as f64 / 1000.0
+                ended_at.duration_since(started_at).as_millis().max(0) as f64 / 1000.0
             }),
             timestamp: ended_at,
         }),
@@ -88,7 +88,7 @@ pub(crate) fn session_notification(transition: SessionTransition) -> Option<Noti
 
 pub(crate) fn download_notification(
     event: DownloadManagerEvent,
-    now: DateTime<Utc>,
+    now: Timestamp,
 ) -> Option<NotificationEvent> {
     match event {
         DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
@@ -203,7 +203,7 @@ impl PipelineNotifications {
     pub(crate) fn map(
         &mut self,
         event: PipelineEvent,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Option<NotificationEvent> {
         match event {
             PipelineEvent::JobEnqueued {

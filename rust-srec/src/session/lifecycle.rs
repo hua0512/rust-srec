@@ -30,9 +30,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use dashmap::mapref::entry::Entry;
+use jiff::Timestamp;
 use parking_lot::Mutex;
 use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard, OwnedRwLockReadGuard, RwLock, broadcast};
 use tokio::task::JoinSet;
@@ -489,7 +489,7 @@ impl SessionLifecycle {
         session_id: &str,
         streamer_id: &str,
         payload: SessionEventPayload,
-        occurred_at: DateTime<Utc>,
+        occurred_at: Timestamp,
     ) {
         let Some(repo) = self.event_repo.as_ref() else {
             return;
@@ -513,7 +513,7 @@ impl SessionLifecycle {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             kind: kind.to_string(),
-            occurred_at: occurred_at.timestamp_millis(),
+            occurred_at: occurred_at.as_millisecond(),
             payload: Some(encoded_payload),
         };
         if let Err(e) = repo.insert(&row).await {
@@ -843,7 +843,7 @@ impl SessionLifecycle {
 
     /// When the session started: from its in-memory state, else from its
     /// row, which is all a restart leaves. `None` when neither has it.
-    async fn known_started_at(&self, session_id: &str) -> Option<DateTime<Utc>> {
+    async fn known_started_at(&self, session_id: &str) -> Option<Timestamp> {
         let in_memory = self.sessions.get(session_id).map(|e| e.started_at());
         if in_memory.is_some() {
             return in_memory;
@@ -1060,7 +1060,7 @@ impl SessionLifecycle {
         let session_id = event.session_id();
         let streamer_id = event.streamer_id();
         let streamer_name = event.streamer_name();
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // Step 1: The control-plane stop owner applies cancellation policy.
         if matches!(
@@ -1211,7 +1211,7 @@ impl SessionLifecycle {
         streamer_id: &str,
         streamer_name: &str,
         cause: TerminalCause,
-        observed_at: DateTime<Utc>,
+        observed_at: Timestamp,
     ) {
         if self.hysteresis_shutdown.load(Ordering::Acquire) {
             debug!(
@@ -1275,7 +1275,7 @@ impl SessionLifecycle {
         self.hysteresis.insert(session_id.to_string(), handle);
 
         let resume_deadline = observed_at
-            + chrono::Duration::from_std(window).unwrap_or(chrono::Duration::seconds(90));
+            + jiff::SignedDuration::try_from(window).unwrap_or(jiff::SignedDuration::from_secs(90));
         self.publish_transition(SessionTransition::Ending {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
@@ -1359,7 +1359,7 @@ impl SessionLifecycle {
                                 streamer_id: &attempt_id,
                                 streamer_name: &attempt_name,
                                 cause: attempt_cause,
-                                ended_at: Utc::now(),
+                                ended_at: Timestamp::now(),
                                 via_hysteresis: true,
                                 db_write: DbWritePath::EndSessionOnly,
                             })
@@ -1475,7 +1475,7 @@ impl SessionLifecycle {
         };
         handle.cancel();
         let hysteresis_duration =
-            chrono::Duration::from_std(handle.elapsed()).unwrap_or(chrono::Duration::zero());
+            jiff::SignedDuration::try_from(handle.elapsed()).unwrap_or(jiff::SignedDuration::ZERO);
 
         // The session API and the session-complete jobs name a session by its
         // latest title, and a resume is where a title changed mid-session is
@@ -1518,13 +1518,13 @@ impl SessionLifecycle {
         info!(
             streamer_id = %args.streamer_id,
             session_id,
-            hysteresis_secs = hysteresis_duration.num_seconds(),
+            hysteresis_secs = hysteresis_duration.as_secs(),
             "Session resumed from hysteresis"
         );
 
         // Best-effort `session_resumed` audit row. We're already on an
         // async path so awaiting is fine; any failure is non-fatal.
-        let resumed_secs = u64::try_from(hysteresis_duration.num_seconds()).unwrap_or(0);
+        let resumed_secs = u64::try_from(hysteresis_duration.as_secs()).unwrap_or(0);
         self.record_event_best_effort(
             session_id,
             args.streamer_id,
@@ -1747,7 +1747,7 @@ impl SessionLifecycle {
         streamer_id: &str,
         streamer_name: &str,
     ) -> Result<Option<String>> {
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // Step 1: find the session in memory via the deterministic
         // per-streamer index (`current_session_for_streamer`); `sessions`
@@ -1868,7 +1868,7 @@ impl SessionLifecycle {
         streamer_name: &str,
         old_state: StreamerState,
     ) -> Result<Option<String>> {
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let in_memory = self.current_session_for_streamer(streamer_id);
         let session_id_hint = in_memory.as_ref().map(|(sid, _)| sid.clone());
@@ -1976,7 +1976,7 @@ impl SessionLifecycle {
         session_id: &str,
         streamer_id: &str,
         _streamer_name: &str,
-        _now: DateTime<Utc>,
+        _now: Timestamp,
         lost_cas: bool,
     ) -> Result<Option<String>> {
         let updated = self
@@ -2038,7 +2038,7 @@ struct EndedStateTransition<'a> {
     streamer_id: &'a str,
     streamer_name: &'a str,
     cause: TerminalCause,
-    ended_at: DateTime<Utc>,
+    ended_at: Timestamp,
     via_hysteresis: bool,
     db_write: DbWritePath,
 }
@@ -2056,7 +2056,7 @@ pub struct LiveDetectedArgs<'a> {
     pub streams: &'a Vec<crate::monitor::StreamInfo>,
     pub media_headers: Option<&'a std::collections::HashMap<String, String>>,
     pub media_extras: Option<&'a std::collections::HashMap<String, String>>,
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
 }
 
 /// Arguments for [`SessionLifecycle::on_offline_detected`].
@@ -2074,7 +2074,7 @@ pub struct OfflineDetectedArgs<'a> {
     /// of the default [`TerminalCause::StreamerOffline`] — which preserves
     /// the trigger detail in the audit log and downstream telemetry.
     pub signal: Option<crate::session::state::OfflineSignal>,
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
 }
 
 fn terminal_cause_from(event: &DownloadTerminalEvent) -> TerminalCause {

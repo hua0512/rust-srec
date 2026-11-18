@@ -824,7 +824,7 @@ pub fn file_name(path: &Path) -> &str {
 }
 
 pub fn now_ms() -> i64 {
-    chrono::Utc::now().timestamp_millis()
+    jiff::Timestamp::now().as_millisecond()
 }
 
 /// Panics unless `ms`, in epoch milliseconds, is within a minute of now. The
@@ -844,9 +844,10 @@ pub fn millis(value: &Value) -> i64 {
     let text = value
         .as_str()
         .unwrap_or_else(|| panic!("expected an RFC 3339 string, got {value}"));
-    chrono::DateTime::parse_from_rfc3339(text)
+    jiff::fmt::temporal::DateTimeParser::new()
+        .parse_timestamp(text)
         .unwrap_or_else(|error| panic!("{text} is not RFC 3339: {error}"))
-        .timestamp_millis()
+        .as_millisecond()
 }
 
 /// Poll `check` until it returns `Some`, failing after `timeout`.

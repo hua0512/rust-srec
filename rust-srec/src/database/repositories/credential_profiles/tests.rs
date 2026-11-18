@@ -63,7 +63,7 @@ async fn session_binding_and_outbox_are_atomic_revision_checked_and_secret_free(
             "session_cookies".into(),
             "secret-sentinel".into(),
         )])),
-        now: chrono::Utc::now(),
+        now: jiff::Timestamp::now(),
     };
     let lifecycle = SessionLifecycleRepository::new(pool.clone());
     let mut forged = inputs.clone();

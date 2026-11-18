@@ -5,7 +5,6 @@ use crate::{Error, Result};
 use aes_gcm::aead::Aead;
 use aes_gcm::{Aes128Gcm, KeyInit};
 use base64::Engine as _;
-use chrono::Utc;
 use dashmap::DashMap;
 use futures::stream::{self, StreamExt};
 use hkdf::Hkdf;
@@ -197,7 +196,7 @@ impl WebPushService {
         min_priority: NotificationPriority,
     ) -> Result<WebPushSubscriptionDbModel> {
         let id = uuid::Uuid::new_v4().to_string();
-        let now = Utc::now().timestamp_millis();
+        let now = jiff::Timestamp::now().as_millisecond();
         let min_priority = min_priority.as_int() as i32;
 
         sqlx::query(
@@ -302,7 +301,7 @@ impl WebPushService {
             return;
         }
 
-        let now_ms = Utc::now().timestamp_millis();
+        let now_ms = jiff::Timestamp::now().as_millisecond();
         let priority = event.priority();
         let event_log_id = event_log_id.map(|s| s.to_string());
 
@@ -476,7 +475,7 @@ impl WebPushService {
     }
 
     fn get_or_build_vapid_jwt(&self, aud: &str) -> Result<String> {
-        let now = Utc::now().timestamp();
+        let now = jiff::Timestamp::now().as_second();
         if let Some(entry) = self.vapid_jwt_cache.get(aud)
             && entry.exp_unix - VAPID_JWT_SKEW_SECS > now
         {
@@ -500,11 +499,12 @@ impl WebPushService {
     }
 
     async fn mark_throttled(&self, endpoint: &str, delay: Duration) -> Result<()> {
-        let now = Utc::now();
+        let now = jiff::Timestamp::now();
         let next = now
-            + chrono::Duration::from_std(delay).unwrap_or_else(|_| chrono::Duration::seconds(60));
-        let now_ms = now.timestamp_millis();
-        let next_ms = next.timestamp_millis();
+            + jiff::SignedDuration::try_from(delay)
+                .unwrap_or_else(|_| jiff::SignedDuration::from_secs(60));
+        let now_ms = now.as_millisecond();
+        let next_ms = next.as_millisecond();
 
         sqlx::query(
             "UPDATE web_push_subscription SET next_attempt_at = ?, last_429_at = ?, updated_at = ? WHERE endpoint = ?",
@@ -521,7 +521,7 @@ impl WebPushService {
     }
 
     async fn clear_backoff(&self, endpoint: &str) -> Result<()> {
-        let now_ms = Utc::now().timestamp_millis();
+        let now_ms = jiff::Timestamp::now().as_millisecond();
         sqlx::query(
             "UPDATE web_push_subscription SET next_attempt_at = NULL, last_429_at = NULL, updated_at = ? WHERE endpoint = ?",
         )
@@ -555,7 +555,7 @@ impl WebPushPayload {
             url: "/notifications/events".to_string(),
             event_type: event.event_type().to_string(),
             priority: event.priority().as_int(),
-            created_at: event.timestamp().to_rfc3339(),
+            created_at: event.timestamp().to_string(),
             event_log_id: event_log_id.map(|s| s.to_string()),
         }
     }
@@ -726,7 +726,7 @@ fn build_vapid_jwt_with_exp(
     }
 
     let header = serde_json::json!({ "typ": "JWT", "alg": "ES256" });
-    let exp_unix = (Utc::now() + chrono::Duration::seconds(exp_secs)).timestamp();
+    let exp_unix = (jiff::Timestamp::now() + jiff::SignedDuration::from_secs(exp_secs)).as_second();
     let claims = Claims {
         aud,
         exp: exp_unix as u64,

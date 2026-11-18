@@ -259,8 +259,8 @@ pub async fn list_sessions(
             let start_time = crate::database::time::ms_to_datetime(session.start_time);
             let end_time = session.end_time.map(crate::database::time::ms_to_datetime);
 
-            let duration_secs =
-                end_time.map(|end| u64::try_from((end - start_time).num_seconds()).unwrap_or(0));
+            let duration_secs = end_time
+                .map(|end| u64::try_from(end.duration_since(start_time).as_secs()).unwrap_or(0));
 
             // Parse titles JSON
             let (titles, title) = parse_titles(&session.titles);
@@ -379,7 +379,7 @@ pub async fn get_session(
 
     // Calculate duration
     let duration_secs =
-        end_time.map(|end| u64::try_from((end - start_time).num_seconds()).unwrap_or(0));
+        end_time.map(|end| u64::try_from(end.duration_since(start_time).as_secs()).unwrap_or(0));
 
     // Parse titles JSON
     let (titles, title) = parse_titles(&session.titles);

@@ -25,8 +25,8 @@ use crate::streamer::state_store::{StateChange, StatePublication};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
 use futures::future::BoxFuture;
+use jiff::Timestamp;
 use sqlx::SqliteConnection;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
@@ -61,7 +61,7 @@ pub struct StartSessionInputs {
     pub media_headers: Option<HashMap<String, String>>,
     pub media_extras: Option<HashMap<String, String>>,
     /// Reference time for the session `start_time` and event `timestamp`.
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
 }
 
 /// Outcome of [`SessionLifecycleRepository::start_or_resume`].
@@ -116,7 +116,7 @@ pub struct EndSessionInputs {
     /// observation arrived. Recorded on the audit row so operators can tell
     /// "ended via timer expiry" vs "ended directly by authoritative event."
     pub via_hysteresis: bool,
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
 }
 
 /// Outcome of [`SessionLifecycleRepository::end`].
@@ -138,7 +138,7 @@ pub struct EndForOutOfScheduleInputs {
     /// `MonitorEvent::StateChanged` outbox event.
     pub old_state: StreamerState,
     pub via_hysteresis: bool,
-    pub now: DateTime<Utc>,
+    pub now: Timestamp,
 }
 
 /// Atomic transactional bundles for session lifecycle.
@@ -151,25 +151,22 @@ impl SessionLifecycleRepository {
     pub(crate) async fn active_session_started_at(
         &self,
         session_id: &str,
-    ) -> Result<Option<DateTime<Utc>>> {
+    ) -> Result<Option<Timestamp>> {
         let started: Option<i64> = sqlx::query_scalar(
             "SELECT start_time FROM live_sessions WHERE id = ? AND end_time IS NULL",
         )
         .bind(session_id)
         .fetch_optional(&self.write_pool)
         .await?;
-        Ok(started.and_then(DateTime::from_timestamp_millis))
+        Ok(started.and_then(|ms| Timestamp::from_millisecond(ms).ok()))
     }
-    pub(crate) async fn session_started_at(
-        &self,
-        session_id: &str,
-    ) -> Result<Option<DateTime<Utc>>> {
+    pub(crate) async fn session_started_at(&self, session_id: &str) -> Result<Option<Timestamp>> {
         let started: Option<i64> =
             sqlx::query_scalar("SELECT start_time FROM live_sessions WHERE id = ?")
                 .bind(session_id)
                 .fetch_optional(&self.write_pool)
                 .await?;
-        Ok(started.and_then(DateTime::from_timestamp_millis))
+        Ok(started.and_then(|ms| Timestamp::from_millisecond(ms).ok()))
     }
     pub(crate) async fn credential_binding_is_retiring(
         &self,
@@ -302,7 +299,7 @@ impl SessionLifecycleRepository {
         session_id: &str,
         streamer_id: &str,
         payload: &SessionEventPayload,
-        occurred_at: DateTime<Utc>,
+        occurred_at: Timestamp,
     ) -> Result<SessionEventDbModel> {
         let encoded_payload = serde_json::to_string(payload)?;
         Ok(SessionEventDbModel {
@@ -310,7 +307,7 @@ impl SessionLifecycleRepository {
             session_id: session_id.to_string(),
             streamer_id: streamer_id.to_string(),
             kind: payload.kind().as_str().to_string(),
-            occurred_at: occurred_at.timestamp_millis(),
+            occurred_at: occurred_at.as_millisecond(),
             payload: Some(encoded_payload),
         })
     }
@@ -574,7 +571,7 @@ impl SessionLifecycleRepository {
     pub async fn mark_streamer_live(
         &self,
         streamer_id: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Option<StreamerState>> {
         let streamer_id = streamer_id.to_owned();
         self.state_transaction("session mark_streamer_live", move |tx| {
@@ -588,7 +585,7 @@ impl SessionLifecycleRepository {
     async fn mark_streamer_live_in_connection(
         tx: &mut sqlx::SqliteConnection,
         streamer_id: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<StateChange<Option<StreamerState>>> {
         let mut committed_row = None;
         if let Some(state) = Self::inactive_state(&mut *tx, streamer_id).await? {
@@ -608,7 +605,7 @@ impl SessionLifecycleRepository {
         &self,
         session_id: &str,
         title: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<bool> {
         let session_id = session_id.to_owned();
         let title = title.to_owned();
@@ -624,7 +621,7 @@ impl SessionLifecycleRepository {
         tx: &mut sqlx::SqliteConnection,
         session_id: &str,
         title: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<bool> {
         let titles: Option<Option<String>> = sqlx::query_scalar(
             "SELECT titles FROM live_sessions WHERE id = ? AND end_time IS NULL",
@@ -664,7 +661,7 @@ impl SessionLifecycleRepository {
         session_id: Option<&str>,
         cause: TerminalCauseDto,
         via_hysteresis: bool,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Option<String>> {
         let streamer_id = streamer_id.to_owned();
         let session_id = session_id.map(str::to_owned);
@@ -690,7 +687,7 @@ impl SessionLifecycleRepository {
         session_id: Option<&str>,
         cause: TerminalCauseDto,
         via_hysteresis: bool,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Option<String>> {
         let resolved = if let Some(id) = session_id {
             (SessionTxOps::end_session(&mut *tx, id, now).await? > 0).then(|| id.to_string())
@@ -737,7 +734,7 @@ impl SessionLifecycleRepository {
         streamer_id: &str,
         session_id: Option<&str>,
         via_hysteresis: bool,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Option<String>> {
         let streamer_id = streamer_id.to_owned();
         let session_id = session_id.map(str::to_owned);
@@ -761,7 +758,7 @@ impl SessionLifecycleRepository {
         streamer_id: &str,
         session_id: Option<&str>,
         via_hysteresis: bool,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Option<String>> {
         // Resolve the active session id. When the caller named one, only
         // proceed if its `end_time IS NULL` — that's the idempotency guard
@@ -1090,7 +1087,7 @@ mod tests {
             .unwrap();
     }
 
-    fn start_inputs(now: DateTime<Utc>) -> StartSessionInputs {
+    fn start_inputs(now: Timestamp) -> StartSessionInputs {
         StartSessionInputs {
             credential_binding: None,
             streamer_id: STREAMER_ID.to_string(),
@@ -1110,7 +1107,7 @@ mod tests {
     fn end_inputs(
         session_id: Option<String>,
         state_was_live: bool,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> EndSessionInputs {
         EndSessionInputs {
             streamer_id: STREAMER_ID.to_string(),
@@ -1156,7 +1153,7 @@ mod tests {
     async fn repeated_end_preserves_timestamp_audit_and_offline_observation() {
         let pool = setup_pool().await;
         let repo = SessionLifecycleRepository::new(pool.clone());
-        let now = Utc::now();
+        let now = Timestamp::now();
         let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
         let sid = started.session_id();
         assert_eq!(
@@ -1172,7 +1169,7 @@ mod tests {
             .as_deref(),
             Some(sid)
         );
-        let later = now + chrono::Duration::seconds(10);
+        let later = now + jiff::SignedDuration::from_secs(10);
         assert!(
             repo.end_session_only(
                 STREAMER_ID,
@@ -1203,7 +1200,7 @@ mod tests {
             .fetch_one(&pool)
             .await
             .unwrap();
-        assert_eq!(end_time, now.timestamp_millis());
+        assert_eq!(end_time, now.as_millisecond());
         let count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM session_events WHERE session_id = ? AND kind = 'session_ended'",
         )
@@ -1219,7 +1216,7 @@ mod tests {
         let pool = setup_pool().await;
         let repo = SessionLifecycleRepository::new(pool.clone());
         create_streamer(&pool, "other-streamer", "Other").await;
-        let now = Utc::now();
+        let now = Timestamp::now();
         let mut inputs = start_inputs(now);
         inputs.streamer_id = "other-streamer".to_string();
         let started = repo.start_or_resume(inputs).await.unwrap();
@@ -1244,7 +1241,7 @@ mod tests {
     async fn offline_preserves_inactive_streamer_state() {
         let pool = setup_pool().await;
         let repo = SessionLifecycleRepository::new(pool.clone());
-        let now = Utc::now();
+        let now = Timestamp::now();
         let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
         set_streamer_state(&pool, "DISABLED").await;
         let outcome = repo
@@ -1271,7 +1268,7 @@ mod tests {
             (TerminalCauseDto::StreamerOffline, true),
             (TerminalCauseDto::Completed, false),
         ] {
-            let now = Utc::now();
+            let now = Timestamp::now();
             let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
             repo.end_session_only(
                 STREAMER_ID,
@@ -1303,12 +1300,16 @@ mod tests {
     async fn end_with_no_id_falls_back_to_active_session() {
         let pool = setup_pool().await;
         let repo = SessionLifecycleRepository::new(pool.clone());
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
 
         let outcome = repo
-            .end(end_inputs(None, true, now + chrono::Duration::seconds(10)))
+            .end(end_inputs(
+                None,
+                true,
+                now + jiff::SignedDuration::from_secs(10),
+            ))
             .await
             .unwrap();
 
@@ -1323,7 +1324,7 @@ mod tests {
     async fn end_session_only_closes_row_without_touching_streamer_or_outbox() {
         let pool = setup_pool().await;
         let repo = SessionLifecycleRepository::new(pool.clone());
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
         let id = started.session_id().to_string();
@@ -1334,7 +1335,7 @@ mod tests {
                 Some(&id),
                 TerminalCauseDto::Completed,
                 false,
-                now + chrono::Duration::seconds(5),
+                now + jiff::SignedDuration::from_secs(5),
             )
             .await
             .unwrap();
@@ -1351,7 +1352,7 @@ mod tests {
     async fn end_for_out_of_schedule_updates_state_and_state_changed_outbox() {
         let pool = setup_pool().await;
         let repo = SessionLifecycleRepository::new(pool.clone());
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
         let sid = started.session_id().to_string();
@@ -1363,7 +1364,7 @@ mod tests {
                 session_id: Some(sid.clone()),
                 old_state: StreamerState::Live,
                 via_hysteresis: false,
-                now: now + chrono::Duration::seconds(5),
+                now: now + jiff::SignedDuration::from_secs(5),
             })
             .await
             .unwrap();
@@ -1414,7 +1415,7 @@ mod tests {
                 session_id: None,
                 old_state: StreamerState::OutOfSchedule,
                 via_hysteresis: false,
-                now: Utc::now(),
+                now: Timestamp::now(),
             })
             .await
             .unwrap();
@@ -1429,7 +1430,7 @@ mod tests {
     async fn end_for_out_of_schedule_already_out_of_schedule_with_session_still_emits_event() {
         let pool = setup_pool().await;
         let repo = SessionLifecycleRepository::new(pool.clone());
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
         let sid = started.session_id().to_string();
@@ -1442,7 +1443,7 @@ mod tests {
                 session_id: Some(sid.clone()),
                 old_state: StreamerState::OutOfSchedule,
                 via_hysteresis: false,
-                now: now + chrono::Duration::seconds(5),
+                now: now + jiff::SignedDuration::from_secs(5),
             })
             .await
             .unwrap();
@@ -1462,7 +1463,7 @@ mod tests {
     async fn start_or_resume_cleans_all_stale_active_when_most_recent_is_ended() {
         let pool = setup_pool().await;
         let repo = SessionLifecycleRepository::new(pool.clone());
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         sqlx::query("DROP INDEX live_sessions_one_active_per_streamer")
             .execute(&pool)
@@ -1475,15 +1476,15 @@ mod tests {
             ("stale-B", -120, false),
             ("stale-C", -60, true),
         ] {
-            let end_time =
-                ended.then(|| (now + chrono::Duration::seconds(offset + 30)).timestamp_millis());
+            let end_time = ended
+                .then(|| (now + jiff::SignedDuration::from_secs(offset + 30)).as_millisecond());
             sqlx::query(
                 "INSERT INTO live_sessions (id, streamer_id, start_time, end_time, titles, total_size_bytes)
                  VALUES (?, ?, ?, ?, '[]', 0)",
             )
             .bind(id)
             .bind(STREAMER_ID)
-            .bind((now + chrono::Duration::seconds(offset)).timestamp_millis())
+            .bind((now + jiff::SignedDuration::from_secs(offset)).as_millisecond())
             .bind(end_time)
             .execute(&pool)
             .await
@@ -1530,7 +1531,7 @@ mod tests {
     async fn start_or_resume_cleans_stale_active_keeping_most_recent() {
         let pool = setup_pool().await;
         let repo = SessionLifecycleRepository::new(pool.clone());
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         // Drop the unique index, seed two stale active rows, then leave
         // the index off (recreating it would fail with two active rows).
@@ -1547,7 +1548,7 @@ mod tests {
             )
             .bind(id)
             .bind(STREAMER_ID)
-            .bind((now + chrono::Duration::seconds(offset)).timestamp_millis())
+            .bind((now + jiff::SignedDuration::from_secs(offset)).as_millisecond())
             .execute(&pool)
             .await
             .unwrap();
@@ -1612,7 +1613,7 @@ mod tests {
     async fn end_for_disable_atomic_writes() {
         let pool = setup_pool().await;
         let repo = SessionLifecycleRepository::new(pool.clone());
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
         let sid = started.session_id().to_string();
@@ -1622,7 +1623,7 @@ mod tests {
                 STREAMER_ID,
                 Some(&sid),
                 false,
-                now + chrono::Duration::seconds(5),
+                now + jiff::SignedDuration::from_secs(5),
             )
             .await
             .unwrap();
@@ -1663,7 +1664,7 @@ mod tests {
     async fn end_for_disable_idempotent_on_already_ended_id() {
         let pool = setup_pool().await;
         let repo = SessionLifecycleRepository::new(pool.clone());
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
         let sid = started.session_id().to_string();
@@ -1700,7 +1701,7 @@ mod tests {
     async fn or4_rewrite_session_ended_cause_updates_only_latest() {
         let pool = setup_pool().await;
         let repo = SessionLifecycleRepository::new(pool.clone());
-        let now = Utc::now();
+        let now = Timestamp::now();
 
         let started = repo.start_or_resume(start_inputs(now)).await.unwrap();
         let sid = started.session_id().to_string();

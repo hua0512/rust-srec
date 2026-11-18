@@ -220,8 +220,8 @@ pub async fn create_preset(
         category: payload.category,
         processor: payload.processor,
         config: payload.config,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
+        created_at: jiff::Timestamp::now(),
+        updated_at: jiff::Timestamp::now(),
     };
 
     // Validate the preset
@@ -276,7 +276,7 @@ pub async fn update_preset(
         processor: payload.processor,
         config: payload.config,
         created_at: existing.created_at, // Preserve original creation time
-        updated_at: chrono::Utc::now(),
+        updated_at: jiff::Timestamp::now(),
     };
 
     // Validate the preset

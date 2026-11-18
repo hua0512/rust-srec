@@ -18,7 +18,7 @@ pub(crate) async fn write_job_preset(
     row.field("category", &model.category, true)?;
     row.field("processor", &model.processor, true)?;
     row.field("config", &model.config, true)?;
-    row.field("created_at", model.created_at.timestamp_millis(), false)?;
+    row.field("created_at", model.created_at.as_millisecond(), false)?;
     row.field("updated_at", updated_at, true)?;
     row.execute(connection).await
 }
@@ -31,7 +31,7 @@ pub(crate) async fn import_job_preset(
         connection,
         model,
         WriteMode::Import,
-        model.updated_at.timestamp_millis(),
+        model.updated_at.as_millisecond(),
     )
     .await
 }
@@ -52,7 +52,7 @@ pub(crate) async fn write_pipeline_preset(
     row.field("description", &model.description, true)?;
     row.field("dag_definition", &model.dag_definition, true)?;
     row.field("pipeline_type", &model.pipeline_type, true)?;
-    row.field("created_at", model.created_at.timestamp_millis(), false)?;
+    row.field("created_at", model.created_at.as_millisecond(), false)?;
     row.field("updated_at", updated_at, true)?;
     row.execute(connection).await
 }
@@ -65,7 +65,7 @@ pub(crate) async fn import_pipeline_preset(
         connection,
         model,
         WriteMode::Import,
-        model.updated_at.timestamp_millis(),
+        model.updated_at.as_millisecond(),
     )
     .await
 }

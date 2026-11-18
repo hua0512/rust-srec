@@ -120,7 +120,7 @@ async fn serve_connection(stream: TcpStream, id: usize, deliveries: mpsc::Unboun
 fn event() -> NotificationEvent {
     NotificationEvent::SystemStartup {
         version: "test".into(),
-        timestamp: chrono::Utc::now(),
+        timestamp: jiff::Timestamp::now(),
     }
 }
 

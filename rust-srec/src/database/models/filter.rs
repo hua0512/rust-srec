@@ -305,7 +305,7 @@ pub struct CronFilterConfig {
 impl FilterConfigValidator for CronFilterConfig {
     fn validate(&self) -> Result<(), FilterValidationError> {
         // Validate cron expression using the cron crate parser
-        cron::Schedule::from_str(&self.expression)
+        jiff_cron::Schedule::from_str(&self.expression)
             .map_err(|e| FilterValidationError::InvalidCronExpression(e.to_string()))?;
 
         crate::domain::filter::FilterTimezone::parse(self.timezone.as_deref())
@@ -375,7 +375,7 @@ fn normalize_day_of_week(raw: &str) -> Option<Cow<'static, str>> {
 }
 
 fn normalize_time_hh_mm_ss(raw: &str) -> Option<String> {
-    use chrono::NaiveTime;
+    use jiff::civil::Time;
 
     let trimmed = raw.trim();
     if trimmed.is_empty() {
@@ -384,11 +384,11 @@ fn normalize_time_hh_mm_ss(raw: &str) -> Option<String> {
 
     // Accept both HH:MM and HH:MM:SS, but normalize storage to HH:MM:SS so the
     // evaluator can support second-level precision end-to-end.
-    let parsed = NaiveTime::parse_from_str(trimmed, "%H:%M")
-        .or_else(|_| NaiveTime::parse_from_str(trimmed, "%H:%M:%S"))
+    let parsed = Time::strptime("%H:%M", trimmed)
+        .or_else(|_| Time::strptime("%H:%M:%S", trimmed))
         .ok()?;
 
-    Some(parsed.format("%H:%M:%S").to_string())
+    Some(parsed.strftime("%H:%M:%S").to_string())
 }
 
 #[cfg(test)]
@@ -403,9 +403,9 @@ mod tests {
         let stored = FilterDbModel::new("streamer", FilterType::TimeBased, raw);
         let domain = crate::domain::filter::Filter::try_from(&stored).unwrap();
         let utc = |value: &str| {
-            chrono::DateTime::parse_from_rfc3339(value)
+            jiff::fmt::temporal::DateTimeParser::new()
+                .parse_timestamp(value)
                 .unwrap()
-                .with_timezone(&chrono::Utc)
         };
         assert!(domain.matches("", "", utc("2024-01-01T02:00:00Z")));
         assert!(!domain.matches("", "", utc("2024-01-01T09:00:00Z")));
@@ -433,9 +433,7 @@ mod tests {
                 let filter = crate::domain::filter::Filter::try_from(&model).expect(
                     "invalid timezone must not turn the entire restrictive filter into a skipped row",
                 );
-                let now = "2024-01-01T12:00:00Z"
-                    .parse::<chrono::DateTime<chrono::Utc>>()
-                    .unwrap();
+                let now = "2024-01-01T12:00:00Z".parse::<jiff::Timestamp>().unwrap();
                 assert!(!filter.matches("title", "category", now));
                 assert!(filter.next_match_time(now).is_none());
                 assert!(filter.next_unmatch_time(now).is_none());

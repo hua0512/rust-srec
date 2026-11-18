@@ -4,7 +4,7 @@
 //! Use these when you need to update streamer state as part of a larger transaction
 //! (e.g., session management, outbox events).
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use sqlx::SqliteConnection;
 
 use crate::Result;
@@ -100,7 +100,7 @@ impl StreamerTxOps {
     pub async fn set_live(
         tx: &mut SqliteConnection,
         streamer_id: &str,
-        last_live_time: DateTime<Utc>,
+        last_live_time: Timestamp,
     ) -> Result<u64> {
         Ok(u64::from(
             Self::set_live_row(tx, streamer_id, last_live_time)
@@ -112,7 +112,7 @@ impl StreamerTxOps {
     pub async fn set_live_row(
         tx: &mut SqliteConnection,
         streamer_id: &str,
-        last_live_time: DateTime<Utc>,
+        last_live_time: Timestamp,
     ) -> Result<Option<StreamerDbModel>> {
         let result = sqlx::query_as::<_, StreamerDbModel>(
             r#"
@@ -122,7 +122,7 @@ impl StreamerTxOps {
             WHERE id = ? RETURNING *
             "#,
         )
-        .bind(last_live_time.timestamp_millis())
+        .bind(last_live_time.as_millisecond())
         .bind(streamer_id)
         .fetch_optional(tx)
         .await?;
@@ -196,7 +196,7 @@ impl StreamerTxOps {
     pub async fn set_disabled_until(
         tx: &mut SqliteConnection,
         streamer_id: &str,
-        disabled_until: Option<DateTime<Utc>>,
+        disabled_until: Option<Timestamp>,
     ) -> Result<u64> {
         Ok(u64::from(
             Self::set_disabled_until_row(tx, streamer_id, disabled_until)
@@ -208,9 +208,9 @@ impl StreamerTxOps {
     pub async fn set_disabled_until_row(
         tx: &mut SqliteConnection,
         streamer_id: &str,
-        disabled_until: Option<DateTime<Utc>>,
+        disabled_until: Option<Timestamp>,
     ) -> Result<Option<StreamerDbModel>> {
-        let disabled_until_ms = disabled_until.map(|dt| dt.timestamp_millis());
+        let disabled_until_ms = disabled_until.map(|dt| dt.as_millisecond());
         let state = if disabled_until.is_some() {
             "TEMPORAL_DISABLED"
         } else {
@@ -308,7 +308,7 @@ mod tests {
         let pool = setup_test_db().await;
         let mut tx = pool.begin().await.unwrap();
 
-        let until = Utc::now() + chrono::Duration::hours(1);
+        let until = Timestamp::now() + jiff::SignedDuration::from_hours(1);
         StreamerTxOps::set_disabled_until(&mut tx, "test-1", Some(until))
             .await
             .unwrap();

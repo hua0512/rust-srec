@@ -1,6 +1,6 @@
 //! Refresh token database model.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -33,7 +33,7 @@ impl RefreshTokenDbModel {
     pub fn new(
         user_id: impl Into<String>,
         token_hash: impl Into<String>,
-        expires_at: DateTime<Utc>,
+        expires_at: Timestamp,
         device_info: Option<String>,
     ) -> Self {
         let now = crate::database::time::now_ms();

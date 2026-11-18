@@ -96,15 +96,19 @@ async fn chunked_output_names_preserve_sequence_templates_in_events_and_recovery
     );
     let staging = directory.path().join(".srec-chunks-attempt-a");
     tokio::fs::create_dir(&staging).await.unwrap();
-    let first = Group::new(&handle, &staging, 0, Utc::now()).await.unwrap();
-    let second = Group::new(&handle, &staging, 1, Utc::now()).await.unwrap();
+    let first = Group::new(&handle, &staging, 0, jiff::Timestamp::now())
+        .await
+        .unwrap();
+    let second = Group::new(&handle, &staging, 1, jiff::Timestamp::now())
+        .await
+        .unwrap();
     assert_eq!(first.path, directory.path().join("recording.007.mp4"));
     assert_eq!(second.path, directory.path().join("recording.008.mp4"));
 
     let other = DownloadHandle::new("attempt-b", EngineType::Ffmpeg, config, events);
     let other_staging = directory.path().join(".srec-chunks-attempt-b");
     tokio::fs::create_dir(&other_staging).await.unwrap();
-    let collision = Group::new(&other, &other_staging, 0, Utc::now())
+    let collision = Group::new(&other, &other_staging, 0, jiff::Timestamp::now())
         .await
         .unwrap();
     assert_eq!(
@@ -736,7 +740,7 @@ async fn manual_cut_finalizer_failure_stops_acquisition_and_keeps_recovery_files
                     SegmentEvent::SegmentStarted {
                         path: path.clone(),
                         sequence: 0,
-                        started_at: Utc::now(),
+                        started_at: jiff::Timestamp::now(),
                     },
                 )
                 .await?;
@@ -749,8 +753,8 @@ async fn manual_cut_finalizer_failure_stops_acquisition_and_keeps_recovery_files
                         index: 0,
                         duration_secs: 2.0,
                         size_bytes: 22,
-                        started_at: Some(Utc::now()),
-                        completed_at: Utc::now(),
+                        started_at: Some(jiff::Timestamp::now()),
+                        completed_at: jiff::Timestamp::now(),
                         split_reason: None,
                     }),
                 )
@@ -760,7 +764,7 @@ async fn manual_cut_finalizer_failure_stops_acquisition_and_keeps_recovery_files
                     SegmentEvent::SegmentStarted {
                         path: dir.join("chunk-00000001.mkv"),
                         sequence: 1,
-                        started_at: Utc::now(),
+                        started_at: jiff::Timestamp::now(),
                     },
                 )
                 .await?;
@@ -1136,13 +1140,17 @@ async fn unpublished_group_releases_only_an_empty_reservation() {
     let staging = directory.path().join(".srec-chunks-attempt");
     tokio::fs::create_dir(&staging).await.unwrap();
 
-    let empty = Group::new(&handle, &staging, 0, Utc::now()).await.unwrap();
+    let empty = Group::new(&handle, &staging, 0, jiff::Timestamp::now())
+        .await
+        .unwrap();
     let empty_path = empty.path.clone();
     assert!(empty_path.exists());
     drop(empty);
     assert!(!empty_path.exists());
 
-    let replaced = Group::new(&handle, &staging, 1, Utc::now()).await.unwrap();
+    let replaced = Group::new(&handle, &staging, 1, jiff::Timestamp::now())
+        .await
+        .unwrap();
     let replaced_path = replaced.path.clone();
     tokio::fs::write(&replaced_path, b"someone else's media")
         .await
@@ -1160,8 +1168,8 @@ fn chunk_info(path: PathBuf, index: u32) -> SegmentInfo {
         index,
         duration_secs: 2.0,
         size_bytes: 10,
-        started_at: Some(Utc::now()),
-        completed_at: Utc::now(),
+        started_at: Some(jiff::Timestamp::now()),
+        completed_at: jiff::Timestamp::now(),
         split_reason: None,
     }
 }
@@ -1201,7 +1209,7 @@ async fn produce_chunks(
             SegmentEvent::SegmentStarted {
                 path: path.clone(),
                 sequence: index,
-                started_at: Utc::now(),
+                started_at: jiff::Timestamp::now(),
             },
         )
         .await?;

@@ -5,7 +5,6 @@ use std::future::Future;
 use std::sync::{Arc, Weak};
 use std::time::{Duration, Instant};
 
-use chrono::Utc;
 use parking_lot::Mutex;
 use platforms_parser::extractor::error::ExtractorError;
 use serde::Serialize;
@@ -189,7 +188,7 @@ impl CredentialExecutionService {
                     platform: platform.to_owned(),
                     reason: "login_required".into(),
                     error_code: None,
-                    timestamp: Utc::now(),
+                    timestamp: jiff::Timestamp::now(),
                 });
         }
         Ok(())
@@ -286,7 +285,7 @@ impl CredentialExecutionService {
                     scope: self.display_scope(&policy.owner).await,
                     platform,
                     reason_code: reason,
-                    timestamp: Utc::now(),
+                    timestamp: jiff::Timestamp::now(),
                 });
         } else {
             tracing::debug!(
@@ -500,7 +499,7 @@ impl CredentialExecutionService {
                             scope: self.display_scope(&updated.owner()).await,
                             platform: platform.to_owned(),
                             expires_at: replacement.expires_at,
-                            timestamp: Utc::now(),
+                            timestamp: jiff::Timestamp::now(),
                         },
                     );
                 }
@@ -542,7 +541,7 @@ impl CredentialExecutionService {
                             .to_owned(),
                             requires_relogin: requires_login,
                             failure_count: count.min(u32::MAX as i64) as u32,
-                            timestamp: Utc::now(),
+                            timestamp: jiff::Timestamp::now(),
                         },
                     );
                 }
@@ -625,13 +624,15 @@ impl CredentialExecutionService {
         if !capabilities.check {
             return Ok(profile);
         }
-        let today = Utc::now().date_naive();
+        let today = jiff::Timestamp::now()
+            .to_zoned(jiff::tz::TimeZone::UTC)
+            .date();
         let status = if let Some(health) = health.as_ref().filter(|health| {
             health.validity == CredentialValidity::Invalid
                 || health
                     .last_check_at
-                    .and_then(chrono::DateTime::from_timestamp_millis)
-                    .is_some_and(|time| time.date_naive() == today)
+                    .and_then(|ms| jiff::Timestamp::from_millisecond(ms).ok())
+                    .is_some_and(|time| time.to_zoned(jiff::tz::TimeZone::UTC).date() == today)
         }) {
             match health.validity {
                 CredentialValidity::Valid => return Ok(profile),

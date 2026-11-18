@@ -121,7 +121,7 @@ fn completed_segment(path: std::path::PathBuf, index: u32) -> SegmentEvent {
         size_bytes: 128,
         index,
         started_at: None,
-        completed_at: Utc::now(),
+        completed_at: jiff::Timestamp::now(),
         split_reason: None,
     })
 }
@@ -146,7 +146,7 @@ async fn manual_cut_completes_after_both_segment_events_in_either_order() {
         let started = |sequence| SegmentEvent::SegmentStarted {
             path: directory.path().join(format!("{sequence}.flv")),
             sequence,
-            started_at: Utc::now(),
+            started_at: jiff::Timestamp::now(),
         };
         let mut closed = completed_segment(directory.path().join("0.flv"), 0);
         if let SegmentEvent::SegmentCompleted(info) = &mut closed {
@@ -563,7 +563,7 @@ async fn segment_completion_preserves_engine_reported_path() {
             SegmentEvent::SegmentStarted {
                 path: segment_path.clone(),
                 sequence: 0,
-                started_at: Utc::now(),
+                started_at: jiff::Timestamp::now(),
             },
             completed_segment(segment_path, 0),
         ],
@@ -623,7 +623,7 @@ async fn segment_completed_after_stop_keeps_session_index() {
         vec![SegmentEvent::SegmentStarted {
             path: segment_path.clone(),
             sequence: 0,
-            started_at: Utc::now(),
+            started_at: jiff::Timestamp::now(),
         }],
         release_tail.clone(),
         vec![SegmentEvent::SegmentCompleted(SegmentInfo {
@@ -632,7 +632,7 @@ async fn segment_completed_after_stop_keeps_session_index() {
             size_bytes: 128,
             index: 0,
             started_at: None,
-            completed_at: Utc::now(),
+            completed_at: jiff::Timestamp::now(),
             split_reason: None,
         })],
     );
@@ -731,7 +731,7 @@ async fn shutdown_waits_for_trailing_segment_and_emits_one_terminal_outcome() {
         vec![SegmentEvent::SegmentStarted {
             path: segment_path.clone(),
             sequence: 0,
-            started_at: Utc::now(),
+            started_at: jiff::Timestamp::now(),
         }],
         vec![completed_segment(segment_path, 0)],
     );
@@ -922,13 +922,13 @@ async fn segment_completed_after_session_cleanup_keeps_index() {
             SegmentEvent::SegmentStarted {
                 path: first_path.clone(),
                 sequence: 0,
-                started_at: Utc::now(),
+                started_at: jiff::Timestamp::now(),
             },
             completed_segment(first_path, 0),
             SegmentEvent::SegmentStarted {
                 path: second_path.clone(),
                 sequence: 1,
-                started_at: Utc::now(),
+                started_at: jiff::Timestamp::now(),
             },
         ],
         release_tail.clone(),
@@ -1004,7 +1004,7 @@ async fn abort_attempts_reclaims_attempts_left_by_a_dropped_shutdown() {
         vec![SegmentEvent::SegmentStarted {
             path: segment_path.clone(),
             sequence: 0,
-            started_at: Utc::now(),
+            started_at: jiff::Timestamp::now(),
         }],
         wedged,
         Vec::new(),

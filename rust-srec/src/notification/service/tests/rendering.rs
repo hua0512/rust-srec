@@ -58,7 +58,7 @@ async fn delivery_shares_locale_rendering_and_retry_skips_successful_recipients(
     }
     let event = NotificationEvent::SystemStartup {
         version: "shared".into(),
-        timestamp: Utc::now(),
+        timestamp: jiff::Timestamp::now(),
     };
     service.notify(event.clone()).await.unwrap();
     let first = observations

@@ -1,7 +1,7 @@
 //! Download engine trait and related types.
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use parking_lot::RwLock;
 use pipeline_common::SplitReason;
 use pipeline_common::config::PipelineConfig;
@@ -338,9 +338,9 @@ pub struct SegmentInfo {
     /// Segment index (0-based).
     pub index: u32,
     /// Timestamp when segment recording started (from the start callback).
-    pub started_at: Option<DateTime<Utc>>,
+    pub started_at: Option<Timestamp>,
     /// Timestamp when segment was completed.
-    pub completed_at: DateTime<Utc>,
+    pub completed_at: Timestamp,
     /// Why the writer closed this segment, if it was split rather than ended.
     pub split_reason: Option<SplitReason>,
 }
@@ -705,7 +705,7 @@ pub enum SegmentEvent {
         path: PathBuf,
         /// Sequence number of the segment (0-based).
         sequence: u32,
-        started_at: DateTime<Utc>,
+        started_at: Timestamp,
     },
     /// A segment was completed.
     SegmentCompleted(SegmentInfo),
@@ -762,7 +762,7 @@ pub struct DownloadHandle {
     /// Event sender for segment events.
     pub event_tx: mpsc::Sender<SegmentEvent>,
     /// Start time.
-    pub started_at: DateTime<Utc>,
+    pub started_at: Timestamp,
     /// Absolute instant by which this download must have finished finalizing,
     /// published by `DownloadManager::shutdown_until` before it cancels.
     ///
@@ -806,7 +806,7 @@ impl DownloadHandle {
             config: Arc::new(RwLock::new(config)),
             cancellation_token: CancellationToken::new(),
             event_tx,
-            started_at: Utc::now(),
+            started_at: Timestamp::now(),
             stop_deadline: tokio::sync::watch::channel(None).0,
         }
     }
@@ -892,7 +892,7 @@ pub struct DownloadInfo {
     /// Progress information.
     pub progress: DownloadProgress,
     /// Start time.
-    pub started_at: DateTime<Utc>,
+    pub started_at: Timestamp,
 }
 
 /// Trait for download engines.

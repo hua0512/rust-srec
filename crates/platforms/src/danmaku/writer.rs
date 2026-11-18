@@ -27,7 +27,7 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use tokio::fs::File;
 use tokio::io::{AsyncWriteExt, BufWriter};
 
@@ -71,7 +71,7 @@ pub struct XmlDanmuWriter {
     message_count: u64,
     /// The start time of the current segment.
     /// Timestamps are written as second offsets from this time.
-    segment_start_time: DateTime<Utc>,
+    segment_start_time: Timestamp,
     /// Optional header comments (metadata).
     header_comments: Vec<String>,
 }
@@ -82,20 +82,20 @@ impl XmlDanmuWriter {
     /// This will create the file and write the XML header.
     /// The segment start time is set to the current time.
     pub async fn new(path: &Path) -> Result<Self> {
-        Self::with_start_time_and_comments(path, Utc::now(), Vec::new()).await
+        Self::with_start_time_and_comments(path, Timestamp::now(), Vec::new()).await
     }
 
     /// Create a new XML writer with a specific segment start time.
     ///
     /// This is useful when the segment start time is known
-    pub async fn with_start_time(path: &Path, segment_start_time: DateTime<Utc>) -> Result<Self> {
+    pub async fn with_start_time(path: &Path, segment_start_time: Timestamp) -> Result<Self> {
         Self::with_start_time_and_comments(path, segment_start_time, Vec::new()).await
     }
 
     /// Create a new XML writer with a specific segment start time and header comments.
     pub async fn with_start_time_and_comments(
         path: &Path,
-        segment_start_time: DateTime<Utc>,
+        segment_start_time: Timestamp,
         header_comments: Vec<String>,
     ) -> Result<Self> {
         let file = BufWriter::with_capacity(FILE_BUFFER_CAPACITY, File::create(path).await?);
@@ -124,7 +124,7 @@ impl XmlDanmuWriter {
     }
 
     /// Get the segment start time.
-    pub fn segment_start_time(&self) -> DateTime<Utc> {
+    pub fn segment_start_time(&self) -> Timestamp {
         self.segment_start_time
     }
 
@@ -159,8 +159,10 @@ impl XmlDanmuWriter {
     pub async fn write_message(&mut self, message: &DanmuMessage) -> Result<()> {
         if let Some(file) = &mut self.file {
             // Calculate offset from segment start in seconds (3 decimal places)
-            let offset_ms = (message.timestamp - self.segment_start_time)
-                .num_milliseconds()
+            let offset_ms = message
+                .timestamp
+                .duration_since(self.segment_start_time)
+                .as_millis()
                 .max(0);
             let offset_secs = offset_ms as f64 / 1000.0;
 
@@ -168,7 +170,7 @@ impl XmlDanmuWriter {
             let uid_crc32 = crc32_hash(&message.user_id);
 
             // Unix timestamp in milliseconds
-            let unix_timestamp_ms = message.timestamp.timestamp_millis();
+            let unix_timestamp_ms = message.timestamp.as_millisecond();
 
             // Row ID is the message count + 1
             let row_id = self.message_count + 1;
@@ -503,7 +505,7 @@ mod tests {
     async fn xml_writer_emits_strictly_parseable_chat_gift_superchat_and_comments() {
         let path =
             std::env::temp_dir().join(format!("danmu-integrity-{}.xml", uuid::Uuid::new_v4()));
-        let start = Utc::now();
+        let start = Timestamp::now();
         let mut writer = XmlDanmuWriter::with_start_time_and_comments(
             &path,
             start,
@@ -573,22 +575,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_xml_writer_writes_gift_and_super_chat_content() {
-        use chrono::TimeZone;
-
         let tmp =
             std::env::temp_dir().join(format!("rust-srec-xml-writer-{}.xml", uuid::Uuid::new_v4()));
-        let start = Utc.timestamp_opt(1_700_000_000, 0).single().unwrap();
+        let start = jiff::Timestamp::from_second(1_700_000_000).ok().unwrap();
         let mut writer = XmlDanmuWriter::with_start_time(&tmp, start)
             .await
             .expect("writer");
 
         let gift = DanmuMessage::gift("g1", "u1", "GiftUser", "Rocket", 5)
-            .with_timestamp(start + chrono::Duration::milliseconds(1500))
+            .with_timestamp(start + jiff::SignedDuration::from_millis(1500))
             .with_color("#FF0000");
         writer.write_message(&gift).await.expect("gift write");
 
         let super_chat = DanmuMessage::super_chat("s1", "u2", "SCUser", "Hello", 30)
-            .with_timestamp(start + chrono::Duration::milliseconds(2500));
+            .with_timestamp(start + jiff::SignedDuration::from_millis(2500));
         writer.write_message(&super_chat).await.expect("sc write");
 
         writer.finalize().await.expect("finalize");

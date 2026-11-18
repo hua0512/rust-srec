@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-use chrono::Utc;
 use dashmap::DashMap;
 use futures::StreamExt;
 use tokio::sync::Semaphore;
@@ -236,7 +235,7 @@ impl NotificationService {
                             && let Some(state) = pending.channel_state.get_mut(channel_key)
                         {
                             state.status = DeliveryStatus::Delivered;
-                            state.last_attempt = Some(Utc::now());
+                            state.last_attempt = Some(jiff::Timestamp::now());
                             state.last_error = None;
                         }
                         debug!(notification_id = id, channel = %channel.channel_type, "Notification delivered");
@@ -248,7 +247,7 @@ impl NotificationService {
                             circuit_blocked |= breaker.is_open;
                         }
 
-                        let now = Utc::now();
+                        let now = jiff::Timestamp::now();
                         let mut attempts = 0;
                         let mut dead_lettered = false;
                         if let Some(mut pending) = pending_queue.get_mut(&id)
@@ -305,7 +304,7 @@ impl NotificationService {
                                             payload,
                                             error.to_string(),
                                             attempts as i32,
-                                            pending_snapshot.created_at.timestamp_millis(),
+                                            pending_snapshot.created_at.as_millisecond(),
                                         );
                                         if let Err(persist_error) =
                                             repo.add_to_dead_letter(&entry).await
@@ -364,9 +363,10 @@ impl NotificationService {
             Some(mut pending) => {
                 pending.retry_generation = pending.retry_generation.saturating_add(1);
                 pending.next_retry_at = Some(
-                    Utc::now()
-                        + chrono::Duration::from_std(delay)
-                            .unwrap_or_else(|_| chrono::Duration::seconds(delay.as_secs() as i64)),
+                    jiff::Timestamp::now()
+                        + jiff::SignedDuration::try_from(delay).unwrap_or_else(|_| {
+                            jiff::SignedDuration::from_secs(delay.as_secs() as i64)
+                        }),
                 );
                 pending.retry_generation
             }

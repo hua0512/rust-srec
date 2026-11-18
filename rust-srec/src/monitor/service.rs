@@ -1228,7 +1228,7 @@ impl<
             "status=LIVE (monitor)"
         );
 
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
 
         // Delegate the atomic session+streamer+outbox bundle to
         // `SessionLifecycle`. It owns the in-memory session map and the
@@ -1304,7 +1304,7 @@ impl<
             streamer.state,
             StreamerState::Live | StreamerState::TemporalDisabled | StreamerState::NotLive
         ) {
-            let now = chrono::Utc::now();
+            let now = jiff::Timestamp::now();
 
             let outcome = self
                 .session_lifecycle
@@ -1430,7 +1430,7 @@ impl<
             return Ok(());
         }
 
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
 
         let streamer = streamer.clone();
         self.write_streamer_row("monitor handle_filtered", streamer.id.clone(), move |tx| {
@@ -1481,7 +1481,7 @@ impl<
             "fatal; updating state"
         );
 
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
 
         let streamer = streamer.clone();
         let reason = reason.to_owned();
@@ -1545,7 +1545,7 @@ impl<
             return Ok(());
         }
 
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
 
         let streamer = streamer.clone();
         let error = error.to_owned();
@@ -1620,8 +1620,9 @@ impl<
             return Ok(());
         }
 
-        let now = chrono::Utc::now();
-        let disabled_until = now + chrono::Duration::seconds(reason.retry_after_secs() as i64);
+        let now = jiff::Timestamp::now();
+        let disabled_until =
+            now + jiff::SignedDuration::from_secs(reason.retry_after_secs() as i64);
         let target_state = reason.target_state();
         let last_error_update = reason.last_error_override();
 
@@ -1857,12 +1858,10 @@ async fn flush_outbox_once(
                     }
                     Err(e) => {
                         // No receivers available - keep events briefly to handle listener startup.
-                        let now = chrono::Utc::now();
+                        let now = jiff::Timestamp::now();
                         let age_secs = now
-                            .signed_duration_since(crate::database::time::ms_to_datetime(
-                                entry.created_at,
-                            ))
-                            .num_seconds();
+                            .duration_since(crate::database::time::ms_to_datetime(entry.created_at))
+                            .as_secs();
 
                         let should_drop = entry.attempts >= OUTBOX_NO_RECEIVER_MAX_ATTEMPTS
                             || age_secs >= OUTBOX_NO_RECEIVER_MAX_AGE_SECS;
@@ -2118,7 +2117,7 @@ mod tests {
                 SessionLifecycleRepository::new(pool.clone()).with_committed_state(state);
             let mut error_write = Box::pin(monitor.handle_error(&stale, "late check error"));
             let mut live_write =
-                Box::pin(lifecycle.mark_streamer_live("authority", chrono::Utc::now()));
+                Box::pin(lifecycle.mark_streamer_live("authority", jiff::Timestamp::now()));
             // Both operations start while the cache still shows the pre-commit
             // active row, then wait for the administrator's retained writer lease.
             assert!(futures::poll!(&mut error_write).is_pending());
@@ -2339,7 +2338,7 @@ mod tests {
             old_state: StreamerState::NotLive,
             new_state: StreamerState::Live,
             reason: None,
-            timestamp: chrono::Utc::now(),
+            timestamp: jiff::Timestamp::now(),
         };
         let payload = serde_json::to_string(&event).unwrap();
         sqlx::query(
@@ -2443,7 +2442,7 @@ mod tests {
                 streams: &streams,
                 media_headers: None,
                 media_extras: None,
-                now: chrono::Utc::now(),
+                now: jiff::Timestamp::now(),
             })
             .await
             .unwrap();
@@ -2645,7 +2644,7 @@ mod tests {
             "streamer-live-suppressed",
             StreamerState::TemporalDisabled,
             3,
-            Some(chrono::Utc::now().timestamp_millis() + 60_000),
+            Some(jiff::Timestamp::now().as_millisecond() + 60_000),
         )
         .await;
 

@@ -375,8 +375,8 @@ pub async fn create_streamer(
         }),
         offline_check_count: crate::streamer::metadata::DEFAULT_OFFLINE_CHECK_COUNT,
         offline_check_delay_ms: crate::streamer::metadata::DEFAULT_OFFLINE_CHECK_DELAY_MS,
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
+        created_at: jiff::Timestamp::now(),
+        updated_at: jiff::Timestamp::now(),
         deleted_at: None,
     };
 
@@ -966,11 +966,11 @@ mod tests {
             streamer_specific_config: None,
             offline_check_count: 3,
             offline_check_delay_ms: 20_000,
-            created_at: chrono::Utc::now(),
+            created_at: jiff::Timestamp::now(),
             deleted_at: None,
-            updated_at: chrono::Utc::now(),
+            updated_at: jiff::Timestamp::now(),
         };
-        let since = chrono::DateTime::from_timestamp_millis(1_700_000_000_000).unwrap();
+        let since = jiff::Timestamp::from_millisecond(1_700_000_000_000).unwrap();
         let block = crate::credentials::CredentialBlock {
             reason: crate::credentials::UnavailableReason::LoginRequired,
             platform_id: "platform-twitch".to_string(),
@@ -1000,7 +1000,7 @@ mod tests {
                 .is_none()
         );
         metadata.state = StreamerState::NotLive;
-        metadata.deleted_at = Some(chrono::Utc::now());
+        metadata.deleted_at = Some(jiff::Timestamp::now());
         assert!(
             metadata_to_response(&metadata, None, None, Some(block))
                 .credential_blocked

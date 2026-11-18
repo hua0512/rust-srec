@@ -17,9 +17,9 @@ use axum::extract::State;
 use axum::http::{StatusCode, Uri};
 use axum::response::Response;
 use bytes::Bytes;
-use chrono::{DateTime, TimeZone, Utc};
 use futures::StreamExt;
 use hls::{HlsData, M4sData, SplitReason};
+use jiff::Timestamp;
 use mp4::independent::IndependentFragmentCheck;
 
 use mesio_engine::dash::manifest::ManualClock;
@@ -76,7 +76,7 @@ struct OriginState {
     mpd: String,
     /// Replaces `mpd` when the MPD is next requested, and sets `clock` to
     /// the given server time then.
-    next_mpd: Option<(String, DateTime<Utc>)>,
+    next_mpd: Option<(String, Timestamp)>,
     clock: Option<Arc<ManualClock>>,
     /// Numbered media `n` requested with a query `d` at most `description`
     /// answers 404 (see [`Origin::hold`]).
@@ -144,7 +144,7 @@ impl Origin {
     fn serve_next_mpd(
         &self,
         body: impl Into<String>,
-        server_time: DateTime<Utc>,
+        server_time: Timestamp,
         clock: &Arc<ManualClock>,
     ) {
         let mut state = self.0.lock().unwrap();
@@ -412,8 +412,8 @@ fn double_timescale_segment(segment: &[u8]) -> Vec<u8> {
 
 // --- MPDs ---
 
-fn ast() -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap()
+fn ast() -> Timestamp {
+    "2024-01-01T00:00:00Z".parse::<jiff::Timestamp>().unwrap()
 }
 
 /// A/V `$Number$` templates of one-second segments. `kind` is `dynamic` or
@@ -501,7 +501,7 @@ fn config(clock: Option<Arc<ManualClock>>) -> DashConfig {
 
 fn live_clock(elapsed_secs: i64) -> Arc<ManualClock> {
     Arc::new(ManualClock::new(
-        ast() + chrono::TimeDelta::seconds(elapsed_secs),
+        ast() + jiff::SignedDuration::from_secs(elapsed_secs),
     ))
 }
 
@@ -849,12 +849,12 @@ async fn live_number_template_follows_the_clock_and_drains_when_static() {
             "one audio fragment per second"
         );
         assert!((segment.segment.duration - 1.0).abs() < 1e-3);
-        let expected = ast() + chrono::TimeDelta::seconds(number as i64 - 1);
+        let expected = ast() + jiff::SignedDuration::from_secs(number as i64 - 1);
         assert_eq!(
             segment
                 .segment
                 .program_date_time
-                .map(|time| time.with_timezone(&Utc)),
+                .and_then(|time| time.to_rfc3339().parse::<Timestamp>().ok()),
             Some(expected)
         );
         assert!(!segment.segment.uri.contains("tok"), "URI is redacted");
@@ -2637,12 +2637,12 @@ const TIKTOK_LIVE: [&str; 18] = [
 ];
 
 /// The server time a fixture MPD was served at.
-fn served(mpd: &str) -> DateTime<Utc> {
+fn served(mpd: &str) -> Timestamp {
     let (_, rest) = mpd.split_once("<!-- served: ").expect("served comment");
     let (time, _) = rest.split_once(" -->").expect("served comment end");
-    DateTime::parse_from_rfc3339(time)
+    jiff::fmt::temporal::DateTimeParser::new()
+        .parse_timestamp(time)
         .expect("served time")
-        .with_timezone(&Utc)
 }
 
 /// The newest segment number a fixture MPD lists (both of its timelines
@@ -2677,7 +2677,7 @@ async fn alternating_live_mpd_descriptions_record_every_segment_once_in_one_epoc
     };
     // Half a second into each response's second, as the `Date` header
     // truncates.
-    let at = |mpd: &str| served(mpd) + chrono::TimeDelta::milliseconds(500);
+    let at = |mpd: &str| served(mpd) + jiff::SignedDuration::from_millis(500);
     let newest: Vec<u64> = TIKTOK_LIVE.iter().map(|mpd| newest_listed(mpd)).collect();
     // Each description must be observably planned (see below): one that
     // offers nothing new is seen through the newest segment held back since
@@ -2790,7 +2790,7 @@ async fn alternating_live_mpd_descriptions_record_every_segment_once_in_one_epoc
 /// A/V `$Number$` timelines of one-second segments from `start_number`,
 /// the first at `first_secs`, anchored `ast_secs` after [`ast`].
 fn numbered_timeline_mpd(ast_secs: i64, start_number: u64, first_secs: u64) -> String {
-    let ast = (ast() + chrono::TimeDelta::seconds(ast_secs)).to_rfc3339();
+    let ast = (ast() + jiff::SignedDuration::from_secs(ast_secs)).to_string();
     let t = first_secs * 1000;
     let template = |track: &str| {
         format!(

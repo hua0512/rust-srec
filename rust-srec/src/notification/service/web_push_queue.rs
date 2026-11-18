@@ -143,7 +143,6 @@ async fn run_web_push_worker<F, Fut>(
 
 #[cfg(test)]
 mod tests {
-    use chrono::Utc;
     use tokio::sync::mpsc;
 
     use super::*;
@@ -153,7 +152,7 @@ mod tests {
         WebPushQueuedEvent {
             event: NotificationEvent::SystemStartup {
                 version: index.to_string(),
-                timestamp: Utc::now(),
+                timestamp: jiff::Timestamp::now(),
             },
             event_log_id: Some(index.to_string()),
         }
@@ -246,7 +245,7 @@ mod tests {
             event: NotificationEvent::PipelineQueueCritical {
                 queue_depth: 1_000,
                 threshold: 200,
-                timestamp: Utc::now(),
+                timestamp: jiff::Timestamp::now(),
             },
             event_log_id: None,
         });

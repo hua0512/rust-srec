@@ -56,13 +56,13 @@ fn push_job_filters(query: &mut QueryBuilder<Sqlite>, filters: &JobFilters) {
         query
             .push(next_separator())
             .push("created_at >= ")
-            .push_bind(from_date.timestamp_millis());
+            .push_bind(crate::database::time::datetime_to_ms(from_date));
     }
     if let Some(to_date) = filters.to_date {
         query
             .push(next_separator())
             .push("created_at <= ")
-            .push_bind(to_date.timestamp_millis());
+            .push_bind(crate::database::time::datetime_to_ms(to_date));
     }
     if let Some(job_type) = &filters.job_type {
         query

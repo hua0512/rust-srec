@@ -1,6 +1,6 @@
 //! Evaluation of typed domain filters.
 
-use chrono::{DateTime, TimeZone, Timelike, Utc};
+use jiff::{Timestamp, civil::DateTime};
 
 use super::{CronFilter, RegexFilter};
 
@@ -24,18 +24,14 @@ pub enum FilterEvalError {
 pub struct FilterEvaluator;
 
 impl FilterEvaluator {
-    pub fn evaluate_cron(filter: &CronFilter, now: DateTime<Utc>) -> Result<bool, FilterEvalError> {
+    pub fn evaluate_cron(filter: &CronFilter, now: Timestamp) -> Result<bool, FilterEvalError> {
         let schedule = super::compiled::cron(&filter.expression)?;
         let timezone = super::timezone::FilterTimezone::parse(filter.timezone.as_deref())
             .map_err(|error| FilterEvalError::InvalidTimezone(error.to_string()))?;
-        match timezone {
-            super::timezone::FilterTimezone::Named(timezone) => {
-                Self::time_matches_schedule(&schedule, now.with_timezone(&timezone))
-            }
-            super::timezone::FilterTimezone::Local => {
-                Self::time_matches_schedule(&schedule, now.with_timezone(&chrono::Local))
-            }
-        }
+        Ok(Self::time_matches_schedule(
+            &schedule,
+            timezone.0.to_datetime(now),
+        ))
     }
 
     /// Whether `now` falls inside a minute the schedule fires on.
@@ -43,28 +39,17 @@ impl FilterEvaluator {
     /// Also called by `CronFilter::next_unmatch_time`, which must agree
     /// with `CronFilter::matches` on the current minute before scanning
     /// for the end of the matching run.
-    pub(super) fn time_matches_schedule<T: TimeZone>(
-        schedule: &cron::Schedule,
-        now: DateTime<T>,
-    ) -> Result<bool, FilterEvalError>
-    where
-        T::Offset: std::fmt::Display,
-    {
-        // Membership is a wall-clock rule. Inspect it as a naive UTC calendar value to
-        // avoid reconstructing an ambiguous zoned DateTime during a fall-back minute.
-        use cron::TimeUnitSpec;
-        let Some(second) = schedule.seconds().iter().next() else {
-            return Ok(false);
-        };
-        let wall_minute = now
-            .naive_local()
-            .and_utc()
-            .with_second(second)
-            .and_then(|time| time.with_nanosecond(0))
-            .ok_or_else(|| {
-                FilterEvalError::CronScheduleError("Failed to truncate time".to_string())
-            })?;
-        Ok(schedule.includes(wall_minute))
+    pub(super) fn time_matches_schedule(schedule: &jiff_cron::Schedule, now: DateTime) -> bool {
+        use jiff_cron::TimeUnitSpec;
+
+        schedule.minutes().includes(now.minute() as u32)
+            && schedule.hours().includes(now.hour() as u32)
+            && schedule.days_of_month().includes(now.day() as u32)
+            && schedule.months().includes(now.month() as u32)
+            && schedule
+                .days_of_week()
+                .includes(now.weekday().to_sunday_one_offset() as u32)
+            && schedule.years().includes(now.year() as u32)
     }
 
     pub fn evaluate_regex(filter: &RegexFilter, title: &str) -> Result<bool, FilterEvalError> {
@@ -76,8 +61,6 @@ impl FilterEvaluator {
 
 #[cfg(test)]
 mod tests {
-    use chrono::TimeZone;
-
     use super::*;
 
     #[test]
@@ -85,10 +68,10 @@ mod tests {
         let filter = CronFilter::new("0 0 20 * * Sat");
 
         // 2024-12-07 was a Saturday, 2024-12-08 a Sunday.
-        let saturday = Utc.with_ymd_and_hms(2024, 12, 7, 20, 0, 10).unwrap();
+        let saturday = "2024-12-07T20:00:10Z".parse().unwrap();
         assert!(FilterEvaluator::evaluate_cron(&filter, saturday).unwrap());
 
-        let sunday = Utc.with_ymd_and_hms(2024, 12, 8, 20, 0, 10).unwrap();
+        let sunday = "2024-12-08T20:00:10Z".parse().unwrap();
         assert!(!FilterEvaluator::evaluate_cron(&filter, sunday).unwrap());
     }
 

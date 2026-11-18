@@ -1,6 +1,6 @@
 //! Download event and terminal outcome contracts.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 use crate::downloader::engine::{
     DownloadFailureKind, DownloadProgress, DownloadProtocol, DownloadStatus, EngineType,
@@ -211,7 +211,7 @@ pub enum DownloadProgressEvent {
         session_id: String,
         segment_path: String,
         segment_index: u32,
-        started_at: DateTime<Utc>,
+        started_at: Timestamp,
     },
     /// Segment completed.
     SegmentCompleted {
@@ -221,8 +221,8 @@ pub enum DownloadProgressEvent {
         session_id: String,
         segment_path: String,
         segment_index: u32,
-        started_at: Option<DateTime<Utc>>,
-        completed_at: DateTime<Utc>,
+        started_at: Option<Timestamp>,
+        completed_at: Timestamp,
         duration_secs: f64,
         size_bytes: u64,
         split_reason_code: Option<String>,

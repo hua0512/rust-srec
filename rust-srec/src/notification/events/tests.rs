@@ -10,7 +10,7 @@ fn baidupcs_relogin_failed_metadata_and_localization() {
     let event = NotificationEvent::BaiduPcsReloginFailed {
         config_dir: "default".to_string(),
         message: "帐号登录失败".to_string(),
-        timestamp: Utc::now(),
+        timestamp: jiff::Timestamp::now(),
     };
     assert_eq!(event.priority(), NotificationPriority::High);
     assert_eq!(event.event_type(), "baidupcs_relogin_failed");
@@ -44,7 +44,7 @@ fn output_path_inaccessible_all_error_kinds_resolve() {
         let event = NotificationEvent::OutputPathInaccessible {
             path: "/rec".to_string(),
             error_kind: kind.to_string(),
-            timestamp: Utc::now(),
+            timestamp: jiff::Timestamp::now(),
         };
         let en = event.description_in("en");
         let zh = event.description_in("zh-CN");
@@ -73,7 +73,7 @@ fn output_path_inaccessible_all_error_kinds_resolve() {
 /// the exhaustive count assertion.
 fn sample_events() -> Vec<NotificationEvent> {
     use crate::credentials::{CredentialEvent, CredentialScope};
-    let now = Utc::now();
+    let now = jiff::Timestamp::now();
     vec![
         NotificationEvent::StreamOnline {
             streamer_id: "s1".into(),

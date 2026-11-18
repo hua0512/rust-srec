@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use chrono::{DateTime, Utc};
 use sqlx::{SqlitePool, migrate::Migrator, sqlite::SqlitePoolOptions};
 
 use rust_srec::database::models::{
@@ -155,9 +154,10 @@ async fn timestamp_migration_preserves_seeds_and_normalizes_historical_text() {
         assert_eq!(timestamps(&pool, &table, &id).await, (created, updated));
     }
     for (index, (_, expected)) in fixtures.iter().enumerate() {
-        let expected = DateTime::parse_from_rfc3339(expected)
+        let expected = jiff::fmt::temporal::DateTimeParser::new()
+            .parse_timestamp(expected)
             .unwrap()
-            .timestamp_millis();
+            .as_millisecond();
         for table in ["job_presets", "pipeline_presets", "template_config"] {
             assert_eq!(
                 timestamps(&pool, table, &format!("historical-{index}")).await,
@@ -200,9 +200,10 @@ async fn timestamp_migration_preserves_seeds_and_normalizes_historical_text() {
         jobs.iter()
             .find(|job| job.id == "historical-0")
             .unwrap()
-            .created_at
-            .to_rfc3339(),
+            .created_at,
         "2026-09-07T10:04:56.123+00:00"
+            .parse::<jiff::Timestamp>()
+            .unwrap()
     );
 }
 
@@ -370,10 +371,10 @@ async fn timestamp_repository_writes_keep_integer_storage_and_string_contracts()
     let pipeline_repo =
         SqlitePipelinePresetRepository::new(Arc::new(pool.clone()), Arc::new(pool.clone()));
     let config_repo = SqlxConfigRepository::new(pool.clone(), pool.clone());
-    let at = DateTime::parse_from_rfc3339("2026-01-02T03:04:05.123456Z")
-        .unwrap()
-        .with_timezone(&Utc);
-    let expected = at.timestamp_millis();
+    let at = jiff::fmt::temporal::DateTimeParser::new()
+        .parse_timestamp("2026-01-02T03:04:05.123456Z")
+        .unwrap();
+    let expected = at.as_millisecond();
     let mut job = JobPreset::new("timestamp-job", "remux", serde_json::json!({}));
     job.created_at = at;
     job.updated_at = at;

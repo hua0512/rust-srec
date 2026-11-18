@@ -11,7 +11,7 @@ fn log_file(dir: &TempDir, contents: &[u8]) -> LogFileInternal {
     let path = dir.path().join("rust-srec.log.2026-09-07");
     std::fs::write(&path, contents).unwrap();
     LogFileInternal {
-        date: chrono::NaiveDate::from_ymd_opt(2026, 9, 7).unwrap(),
+        date: jiff::civil::Date::new(2026, 9, 7).unwrap(),
         filename: path.file_name().unwrap().to_str().unwrap().to_owned(),
         path,
         size_bytes: contents.len() as u64,

@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 use std::future::Future;
 use std::path::PathBuf;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use tokio::io::AsyncRead;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Duration, Instant};
@@ -60,7 +60,7 @@ struct ActiveSegment {
     index: u32,
     path: PathBuf,
     started_media_at: f64,
-    started_at: DateTime<Utc>,
+    started_at: Timestamp,
     // A sample belongs to this path only. A new segment must fall back to parsed
     // progress until its own metadata lookup has succeeded.
     filesystem_bytes: Option<u64>,
@@ -116,7 +116,7 @@ impl SegmentTracker {
         }
     }
 
-    fn start(&mut self, path: PathBuf, now: Instant, wall: DateTime<Utc>) -> SegmentEvent {
+    fn start(&mut self, path: PathBuf, now: Instant, wall: Timestamp) -> SegmentEvent {
         let index = self.next_index;
         self.next_index = self.next_index.saturating_add(1);
         self.active = Some(ActiveSegment {
@@ -134,7 +134,7 @@ impl SegmentTracker {
         }
     }
 
-    async fn complete(&mut self, wall: DateTime<Utc>) -> Option<SegmentEvent> {
+    async fn complete(&mut self, wall: Timestamp) -> Option<SegmentEvent> {
         let active = self.active.take()?;
         let size_bytes = tokio::fs::metadata(&active.path)
             .await
@@ -162,7 +162,7 @@ impl SegmentTracker {
         }))
     }
 
-    async fn observe(&mut self, line: &str, now: Instant, wall: DateTime<Utc>) -> RecordEvents {
+    async fn observe(&mut self, line: &str, now: Instant, wall: Timestamp) -> RecordEvents {
         let mut events = RecordEvents::default();
         if self.segment_mode
             && is_segment_start(line)
@@ -261,7 +261,7 @@ impl FfmpegEvents {
         let mut output_io_kind = None;
         let mut cleanup_unconfirmed = false;
         if let Some(path) = self.single_output_path.take() {
-            self.send(tracker.start(path, Instant::now(), Utc::now()))
+            self.send(tracker.start(path, Instant::now(), Timestamp::now()))
                 .await;
         }
         loop {
@@ -275,7 +275,7 @@ impl FfmpegEvents {
                 record = reader.next_record() => match record {
                     Ok(Some(line)) => {
                         if !self.ignored_output_path.as_ref().is_some_and(|ignored| parse_opened_path(&line).as_ref() == Some(ignored)) {
-                            for event in tracker.observe(&line, Instant::now(), Utc::now()).await.into_events() { self.send(event).await; }
+                            for event in tracker.observe(&line, Instant::now(), Timestamp::now()).await.into_events() { self.send(event).await; }
                         }
                         let safe_line = sanitize_engine_message(&line, self.managed_credentials);
                         if !line.starts_with("frame=") { debug!(streamer_id = %self.streamer_id, line = %safe_line, "FFmpeg stderr"); }
@@ -306,7 +306,7 @@ impl FfmpegEvents {
             }
         };
         cleanup_unconfirmed |= self.forced_settlement.is_cancelled();
-        if !cleanup_unconfirmed && let Some(event) = tracker.complete(Utc::now()).await {
+        if !cleanup_unconfirmed && let Some(event) = tracker.complete(Timestamp::now()).await {
             self.send(event).await;
         }
         if matches!(exit, RecordingExit::Status(Some(228))) && output_io_kind.is_none() {
@@ -618,7 +618,7 @@ mod tests {
     async fn chunked_progress_smooths_buffered_writes_and_expires_stalled_samples() {
         let directory = tempfile::tempdir().unwrap();
         let now = Instant::now();
-        let wall = Utc::now();
+        let wall = Timestamp::now();
         let mut tracker = SegmentTracker::new(true, now);
         tracker.continuous_timestamps = true;
         let mut path = directory.path().join("chunk-0.mkv");
@@ -676,7 +676,7 @@ mod tests {
         tokio::fs::write(&first, vec![0; 100]).await.unwrap();
         tokio::fs::write(&second, vec![0; 7]).await.unwrap();
         let now = Instant::now();
-        let wall = Utc::now();
+        let wall = Timestamp::now();
         let mut tracker = SegmentTracker::new(true, now);
         tracker
             .observe(

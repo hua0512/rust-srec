@@ -277,7 +277,7 @@ mod tests {
             streamer_name: name.to_string(),
             title: title.to_string(),
             category: None,
-            timestamp: chrono::Utc::now(),
+            timestamp: jiff::Timestamp::now(),
         }
     }
 

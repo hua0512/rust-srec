@@ -50,7 +50,6 @@ use std::sync::Weak;
 use std::sync::atomic::{AtomicU8, AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use chrono::Utc;
 use dashmap::DashMap;
 use parking_lot::Mutex;
 use tracing::{debug, info, warn};
@@ -379,7 +378,7 @@ impl OutputRootGate {
         service.dispatch_notification(NotificationEvent::OutputPathInaccessible {
             path: path_str,
             error_kind: kind_str,
-            timestamp: Utc::now(),
+            timestamp: jiff::Timestamp::now(),
         });
     }
 

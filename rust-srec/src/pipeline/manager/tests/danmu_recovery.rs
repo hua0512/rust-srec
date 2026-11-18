@@ -189,7 +189,7 @@ async fn danmu_recovery_stops_ended_collection_even_when_paths_cannot_be_matched
         sessions.insert_session(test_session(
             SESSION,
             STREAMER,
-            Some(chrono::Utc::now().timestamp_millis()),
+            Some(jiff::Timestamp::now().as_millisecond()),
         ));
         let video = dir.path().join("same-title-90.flv");
         sessions.insert_segment(test_segment(SESSION, 4, &video.to_string_lossy()));

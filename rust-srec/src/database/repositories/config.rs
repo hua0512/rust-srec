@@ -315,7 +315,7 @@ impl SqlxConfigRepository {
                         let (mode, updated_at) = if create {
                             (
                                 super::row_write::WriteMode::Insert,
-                                model.updated_at.timestamp_millis(),
+                                model.updated_at.as_millisecond(),
                             )
                         } else {
                             (

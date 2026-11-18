@@ -6,7 +6,7 @@
 //! - Cancelling the steps downstream of a failed job while other branches settle
 //! - Tracking DAG execution progress
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::future::Future;
 use std::sync::Arc;
@@ -45,7 +45,7 @@ pub struct DagRunContext {
     pub streamer_name: Option<String>,
     pub session_title: Option<String>,
     pub platform: Option<String>,
-    pub session_start: Option<DateTime<Utc>>,
+    pub session_start: Option<Timestamp>,
     /// Copied into every step job; taken from `DagExecutionMetadata` at
     /// publication and from the DAG row afterwards.
     pub manifest: Option<Arc<PipelineInputManifest>>,
@@ -116,7 +116,7 @@ pub struct DagJobFailedUpdate {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PlannedRetry {
     /// When the manager's retry sweeper may re-queue the job.
-    pub retry_after: DateTime<Utc>,
+    pub retry_after: Timestamp,
     /// Number of the attempt that will run next; the first run is attempt 1.
     pub next_attempt: u32,
     /// The step's attempt budget, including the first run.
@@ -134,8 +134,7 @@ impl PlannedRetry {
             "{error}; attempt {} of {} failed, retrying at {}",
             self.next_attempt - 1,
             self.max_attempts,
-            self.retry_after
-                .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+            self.retry_after.strftime("%Y-%m-%dT%H:%M:%SZ")
         )
     }
 }
@@ -549,7 +548,7 @@ impl DagScheduler {
         streamer_name: Option<&str>,
         session_title: Option<&str>,
         platform: Option<&str>,
-        session_start: Option<DateTime<Utc>>,
+        session_start: Option<Timestamp>,
     ) -> Result<DagJobCompletedUpdate> {
         match self
             .on_job_completed(
@@ -663,7 +662,7 @@ impl DagScheduler {
         streamer_name: Option<&str>,
         session_title: Option<&str>,
         platform: Option<&str>,
-        session_start: Option<DateTime<Utc>>,
+        session_start: Option<Timestamp>,
     ) -> Result<DagJobCompletedUpdate> {
         let streamer_name = streamer_name.map(ToString::to_string);
         let session_title = session_title.map(ToString::to_string);
@@ -874,14 +873,14 @@ impl DagScheduler {
             return Ok(None);
         }
         let next_attempt = attempts_made.saturating_add(1);
-        let wait =
-            chrono::Duration::from_std(policy.backoff_before(next_attempt)).unwrap_or_else(|_| {
-                chrono::Duration::seconds(
+        let wait = jiff::SignedDuration::try_from(policy.backoff_before(next_attempt))
+            .unwrap_or_else(|_| {
+                jiff::SignedDuration::from_secs(
                     crate::database::models::StepRetryPolicy::MAX_BACKOFF_SECS as i64,
                 )
             });
         Ok(Some(PlannedRetry {
-            retry_after: Utc::now() + wait,
+            retry_after: Timestamp::now() + wait,
             next_attempt,
             max_attempts: policy.max_attempts,
         }))
@@ -983,7 +982,7 @@ impl DagScheduler {
             platform: context.platform.clone(),
             session_start: context.session_start,
             config: Some(job_db.config.clone()),
-            created_at: chrono::Utc::now(),
+            created_at: jiff::Timestamp::now(),
             started_at: None,
             completed_at: None,
             error: None,
@@ -2146,9 +2145,9 @@ mod tests {
             dag_repo,
             job_repo.clone(),
         );
-        let session_start = chrono::DateTime::parse_from_rfc3339("2024-01-01T23:30:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let session_start = jiff::fmt::temporal::DateTimeParser::new()
+            .parse_timestamp("2024-01-01T23:30:00Z")
+            .unwrap();
         let dag_def = DagPipelineDefinition::new(
             "session start propagation",
             vec![
@@ -2192,7 +2191,7 @@ mod tests {
             root_state
                 .get("session_start_ms")
                 .and_then(|value| value.as_i64()),
-            Some(session_start.timestamp_millis())
+            Some(session_start.as_millisecond())
         );
 
         let update = scheduler
@@ -2215,7 +2214,7 @@ mod tests {
             downstream_state
                 .get("session_start_ms")
                 .and_then(|value| value.as_i64()),
-            Some(session_start.timestamp_millis())
+            Some(session_start.as_millisecond())
         );
     }
 
@@ -2314,9 +2313,9 @@ mod tests {
             dag_repo,
             job_repo.clone(),
         );
-        let session_start = chrono::DateTime::parse_from_rfc3339("2024-01-01T23:30:00Z")
-            .unwrap()
-            .with_timezone(&chrono::Utc);
+        let session_start = jiff::fmt::temporal::DateTimeParser::new()
+            .parse_timestamp("2024-01-01T23:30:00Z")
+            .unwrap();
         let dag_def = DagPipelineDefinition::new(
             "retry fanout metadata recovery",
             vec![
@@ -2378,7 +2377,7 @@ mod tests {
         let state: serde_json::Value = serde_json::from_str(&recovered_job.state).unwrap();
         assert_eq!(
             state.get("session_start_ms").and_then(|v| v.as_i64()),
-            Some(session_start.timestamp_millis())
+            Some(session_start.as_millisecond())
         );
         assert_eq!(
             state.get("streamer_name").and_then(|v| v.as_str()),
@@ -3331,16 +3330,17 @@ mod tests {
                 .unwrap()
         };
 
-        let before = Utc::now();
+        let before = Timestamp::now();
         let first = scheduler
             .plan_step_retry(&step_id("A"), 0)
             .await
             .unwrap()
             .expect("first retry");
         assert_eq!((first.next_attempt, first.max_attempts), (2, 3));
-        let wait = first.retry_after - before;
+        let wait = first.retry_after.duration_since(before);
         assert!(
-            wait >= chrono::Duration::seconds(10) && wait < chrono::Duration::seconds(12),
+            wait >= jiff::SignedDuration::from_secs(10)
+                && wait < jiff::SignedDuration::from_secs(12),
             "{wait}"
         );
         let second = scheduler
@@ -3349,7 +3349,7 @@ mod tests {
             .unwrap()
             .expect("second retry");
         assert_eq!(second.next_attempt, 3);
-        assert!(second.retry_after - before >= chrono::Duration::seconds(20));
+        assert!(second.retry_after.duration_since(before) >= jiff::SignedDuration::from_secs(20));
         assert!(
             scheduler
                 .plan_step_retry(&step_id("A"), 2)
@@ -3520,7 +3520,7 @@ mod tests {
                 if matches!(recorded, Ok(JobFailureOutcome::Transitioned)) {
                     assert_eq!(
                         job_repo.get_job(&job_id).await.unwrap().retry_after,
-                        retry_after.map(|retry_after| retry_after.timestamp_millis())
+                        retry_after.map(|retry_after| retry_after.as_millisecond())
                     );
                 }
                 recorded
@@ -3551,10 +3551,7 @@ mod tests {
         assert_eq!((planned.next_attempt, planned.max_attempts), (2, 2));
         let row = job_repo.get_job(&job_a).await.unwrap();
         assert_eq!(row.status, JobStatus::Failed.as_str());
-        assert_eq!(
-            row.retry_after,
-            Some(planned.retry_after.timestamp_millis())
-        );
+        assert_eq!(row.retry_after, Some(planned.retry_after.as_millisecond()));
         assert_eq!(
             step_statuses(&dag_repo, &created.dag_id).await,
             [
@@ -3945,7 +3942,7 @@ mod tests {
             assert_eq!(stored.get_status(), Some(JobStatus::Failed));
             assert_eq!(
                 stored.retry_after,
-                Some(planned.retry_after.timestamp_millis())
+                Some(planned.retry_after.as_millisecond())
             );
             assert_eq!(queue.depth(), 0);
             assert!(queue.get_cancellation_token(&job.id).await.is_none());
@@ -4286,7 +4283,7 @@ mod tests {
             .fail_with_step_info(
                 &created.root_job_ids[0],
                 "boom",
-                Some(Utc::now() + chrono::Duration::seconds(30)),
+                Some(Timestamp::now() + jiff::SignedDuration::from_secs(30)),
                 Some("noop"),
                 &[],
             )

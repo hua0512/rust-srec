@@ -17,7 +17,7 @@ async fn lifecycle_entrypoints_wait_for_streamer_serialization() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle(pool.clone());
     let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     let sid = started.session_id();
@@ -26,7 +26,7 @@ async fn lifecycle_entrypoints_wait_for_streamer_serialization() {
     let mut operations: Vec<std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>>> = vec![
         Box::pin(async {
             lifecycle
-                .on_live_detected(live_args(Utc::now()))
+                .on_live_detected(live_args(jiff::Timestamp::now()))
                 .await
                 .unwrap();
         }),
@@ -39,7 +39,7 @@ async fn lifecycle_entrypoints_wait_for_streamer_serialization() {
                     state_was_live: true,
                     clear_errors: false,
                     signal: None,
-                    now: Utc::now(),
+                    now: jiff::Timestamp::now(),
                 })
                 .await
                 .unwrap();
@@ -89,7 +89,7 @@ async fn expired_timer_cannot_claim_replacement_after_resume() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle_with_window(pool.clone(), Duration::from_secs(1));
     let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     let sid = started.session_id();
@@ -100,7 +100,7 @@ async fn expired_timer_cannot_claim_replacement_after_resume() {
             STREAMER_ID,
             "Test",
             TerminalCause::Completed,
-            Utc::now(),
+            jiff::Timestamp::now(),
         )
         .await;
     tokio::time::pause();
@@ -112,7 +112,7 @@ async fn expired_timer_cannot_claim_replacement_after_resume() {
     assert!(lifecycle.hysteresis.contains_key(sid));
     assert!(
         lifecycle
-            .resume_from_hysteresis(sid, &live_args(Utc::now()))
+            .resume_from_hysteresis(sid, &live_args(jiff::Timestamp::now()))
             .await
             .is_some()
     );
@@ -125,8 +125,8 @@ async fn expired_timer_cannot_claim_replacement_after_resume() {
         SessionState::hysteresis(
             STREAMER_ID,
             sid,
-            Utc::now(),
-            Utc::now(),
+            jiff::Timestamp::now(),
+            jiff::Timestamp::now(),
             TerminalCause::Completed,
             replacement.deadline,
         ),
@@ -153,7 +153,7 @@ async fn duplicate_terminal_after_eviction_preserves_end_and_audit() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle(pool.clone());
     let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     let sid = started.session_id();
@@ -190,7 +190,7 @@ async fn delayed_offline_for_old_session_preserves_live_successor() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle(pool.clone());
     let first = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     lifecycle
@@ -199,7 +199,7 @@ async fn delayed_offline_for_old_session_preserves_live_successor() {
         .unwrap();
     let first_end = db_session_end_time(&pool, first.session_id()).await;
     let second = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     assert_ne!(first.session_id(), second.session_id());
@@ -215,7 +215,7 @@ async fn delayed_offline_for_old_session_preserves_live_successor() {
             state_was_live: true,
             clear_errors: true,
             signal: None,
-            now: Utc::now(),
+            now: jiff::Timestamp::now(),
         })
         .await
         .unwrap();
@@ -325,7 +325,7 @@ async fn wait_for_hysteresis_to_expire() {
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 }
 
-fn live_args<'a>(now: DateTime<Utc>) -> LiveDetectedArgs<'a> {
+fn live_args<'a>(now: Timestamp) -> LiveDetectedArgs<'a> {
     // Static empty collections keep the test signatures simple.
     static EMPTY_STREAMS: std::sync::OnceLock<Vec<crate::monitor::StreamInfo>> =
         std::sync::OnceLock::new();
@@ -351,7 +351,7 @@ async fn on_download_terminal_is_idempotent() {
     let pool = setup_pool().await;
     let lifecycle = make_lifecycle(pool);
     let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
 
@@ -420,7 +420,7 @@ async fn cancelled_keeps_session_recording_and_emits_nothing() {
     let mut rx = lifecycle.subscribe();
 
     let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     let _ = rx.recv().await.unwrap(); // drain Started
@@ -455,7 +455,7 @@ async fn rejected_start_ends_the_session_at_once_without_the_pipeline() {
     let mut rx = lifecycle.subscribe();
 
     let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     let _ = rx.recv().await.unwrap(); // drain Started
@@ -519,7 +519,7 @@ async fn non_mesio_network_failures_do_not_promote() {
         let mut rx = lifecycle.subscribe();
 
         let started = lifecycle
-            .on_live_detected(live_args(Utc::now()))
+            .on_live_detected(live_args(jiff::Timestamp::now()))
             .await
             .unwrap();
         let _ = rx.recv().await.unwrap(); // drain Started
@@ -592,7 +592,8 @@ async fn definitive_offline_bypasses_streamer_disabled_until() {
     let pool = setup_pool().await;
 
     // Place the streamer in a long backoff window.
-    let backoff_until_ms = (Utc::now() + chrono::Duration::seconds(240)).timestamp_millis();
+    let backoff_until_ms =
+        (jiff::Timestamp::now() + jiff::SignedDuration::from_secs(240)).as_millisecond();
     let streamer_repo = SqlxStreamerRepository::new(pool.clone(), pool.clone());
     let mut streamer = streamer_repo.get_streamer(STREAMER_ID).await.unwrap();
     streamer.disabled_until = Some(backoff_until_ms);
@@ -607,7 +608,7 @@ async fn definitive_offline_bypasses_streamer_disabled_until() {
     let mut rx = lifecycle.subscribe();
 
     let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     let _ = rx.recv().await.unwrap(); // drain Started
@@ -745,7 +746,7 @@ async fn shutdown_cancels_and_joins_hysteresis_without_ending_session() {
     let mut rx = lifecycle.subscribe();
 
     let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     let _ = rx.recv().await.unwrap();
@@ -798,7 +799,7 @@ async fn shutdown_drains_admitted_operations_and_rejects_late_mutations() {
     shutdown.await.expect("shutdown task should join");
 
     let error = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .expect_err("a lifecycle mutation after shutdown must be rejected");
     assert!(error.to_string().contains("shutting down"));
@@ -863,7 +864,7 @@ async fn on_live_detected_suppressed_for_disabled_streamer() {
         .unwrap();
 
     let outcome = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
 
@@ -893,7 +894,7 @@ async fn resume_suppressed_for_disabled_streamer_leaves_hysteresis_armed() {
     let mut rx = lifecycle.subscribe();
 
     let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     let _ = rx.recv().await.unwrap(); // Started
@@ -913,7 +914,7 @@ async fn resume_suppressed_for_disabled_streamer_leaves_hysteresis_armed() {
         .unwrap();
 
     let outcome = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
 
@@ -970,7 +971,7 @@ async fn cas_blocks_enter_ended_when_resume_already_claimed_hysteresis() {
     let mut rx = lifecycle.subscribe();
 
     let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     let _ = rx.recv().await.unwrap(); // Started (fresh)
@@ -1004,7 +1005,7 @@ async fn cas_blocks_enter_ended_when_resume_already_claimed_hysteresis() {
             streamer_id: STREAMER_ID,
             streamer_name: "Test",
             cause: TerminalCause::StreamerOffline,
-            ended_at: Utc::now(),
+            ended_at: jiff::Timestamp::now(),
             via_hysteresis: true,
             db_write: DbWritePath::EndSessionOnly,
         })
@@ -1056,7 +1057,7 @@ async fn authoritative_end_during_hysteresis_cancels_timer() {
     let mut rx = lifecycle.subscribe();
 
     let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     let _ = rx.recv().await.unwrap(); // Started
@@ -1080,7 +1081,7 @@ async fn authoritative_end_during_hysteresis_cancels_timer() {
             state_was_live: true,
             clear_errors: false,
             signal: None,
-            now: Utc::now(),
+            now: jiff::Timestamp::now(),
         })
         .await
         .unwrap();
@@ -1170,11 +1171,11 @@ async fn session_ended_dedup_persists_one_row() {
     let lifecycle = make_lifecycle_with_events(pool.clone());
 
     let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     let sid = started.session_id().to_string();
-    let now = Utc::now();
+    let now = jiff::Timestamp::now();
     let mk_args = || OfflineDetectedArgs {
         streamer_id: STREAMER_ID,
         streamer_name: "Test",
@@ -1228,7 +1229,7 @@ async fn end_for_disable_cancels_hysteresis_handle() {
     let mut rx = lifecycle.subscribe();
 
     let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     let _ = rx.recv().await.unwrap(); // Started
@@ -1287,7 +1288,7 @@ async fn end_for_disable_loses_cas_to_resume() {
     let mut rx = lifecycle.subscribe();
 
     let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     let _ = rx.recv().await.unwrap(); // Started
@@ -1329,7 +1330,7 @@ async fn end_for_disable_overwrites_cause_when_timer_wins() {
     let mut rx = lifecycle.subscribe();
 
     let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     let _ = rx.recv().await.unwrap(); // Started
@@ -1399,7 +1400,7 @@ async fn end_for_out_of_schedule_updates_lifecycle_and_outbox() {
     let mut rx = lifecycle.subscribe();
 
     let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     let _ = rx.recv().await.unwrap(); // Started
@@ -1468,7 +1469,7 @@ async fn end_for_out_of_schedule_cancels_hysteresis() {
     let mut rx = lifecycle.subscribe();
 
     let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     let _ = rx.recv().await.unwrap(); // Started
@@ -1512,7 +1513,7 @@ async fn session_ended_persisted_with_definitive_offline_signal() {
     let lifecycle = make_lifecycle_with_events(pool.clone());
 
     let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     let sid = started.session_id().to_string();
@@ -1525,7 +1526,7 @@ async fn session_ended_persisted_with_definitive_offline_signal() {
             state_was_live: true,
             clear_errors: false,
             signal: Some(crate::session::OfflineSignal::DanmuStreamClosed),
-            now: Utc::now(),
+            now: jiff::Timestamp::now(),
         })
         .await
         .unwrap();
@@ -1561,7 +1562,7 @@ async fn end_for_disable_idempotent_under_concurrency() {
     let lifecycle = make_lifecycle(pool.clone());
 
     let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     let sid = started.session_id().to_string();
@@ -1605,7 +1606,7 @@ async fn end_for_disable_broadcast_after_commit_and_memory_update() {
     let mut rx = lifecycle.subscribe();
 
     let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     let _ = rx.recv().await.unwrap(); // Started
@@ -1661,8 +1662,8 @@ async fn required_transition_survives_lagged_observer() {
         lifecycle.publish_transition(SessionTransition::Resumed {
             session_id: format!("session-{index}"),
             streamer_id: STREAMER_ID.to_string(),
-            resumed_at: Utc::now(),
-            hysteresis_duration: chrono::Duration::seconds(1),
+            resumed_at: jiff::Timestamp::now(),
+            hysteresis_duration: jiff::SignedDuration::from_secs(1),
         });
     }
 
@@ -1672,7 +1673,7 @@ async fn required_transition_survives_lagged_observer() {
         streamer_id: STREAMER_ID.to_string(),
         streamer_name: "Test".to_string(),
         started_at: None,
-        ended_at: Utc::now(),
+        ended_at: jiff::Timestamp::now(),
         cause: TerminalCause::Completed,
         via_hysteresis: false,
     });
@@ -1708,7 +1709,7 @@ async fn ended_lifecycle_with_long_retention() -> (Arc<SessionLifecycle>, String
         .with_ended_retention(Duration::from_secs(3600)),
     );
     let started = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     let session_id = started.session_id().to_string();
@@ -1767,7 +1768,7 @@ async fn forced_shutdown_joins_eviction_futures() {
 async fn owned_eviction_preserves_the_live_successor() {
     let (lifecycle, old_id) = ended_lifecycle_with_long_retention().await;
     let next = lifecycle
-        .on_live_detected(live_args(Utc::now()))
+        .on_live_detected(live_args(jiff::Timestamp::now()))
         .await
         .unwrap();
     let next_id = next.session_id().to_string();

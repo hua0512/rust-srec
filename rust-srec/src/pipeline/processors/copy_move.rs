@@ -369,7 +369,7 @@ impl Processor for CopyMoveProcessor {
             dest_template,
             config
                 .time_anchor
-                .map(|anchor| anchor.reference_time(input).timestamp_millis()),
+                .map(|anchor| anchor.reference_time(input).as_millisecond()),
         );
 
         debug!(
@@ -1206,7 +1206,7 @@ mod tests {
         let expected_dest = dest_root
             .join(pipeline_common::expand_path_template_at(
                 "%Y/%m/%d",
-                Some(session_start.timestamp_millis()),
+                Some(session_start.as_millisecond()),
             ))
             .join("source.txt");
         assert!(expected_dest.exists());

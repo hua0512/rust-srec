@@ -248,7 +248,7 @@ fn jsonp_error(body: &str) -> Option<i64> {
 }
 
 fn now_ms() -> String {
-    chrono::Utc::now().timestamp_millis().to_string()
+    jiff::Timestamp::now().as_millisecond().to_string()
 }
 
 /// Starts a QR login with a new device ID.

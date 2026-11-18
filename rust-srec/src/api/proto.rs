@@ -32,9 +32,9 @@ impl From<&DownloadInfo> for DownloadMeta {
             streamer_id: info.streamer_id.clone(),
             session_id: info.session_id.clone(),
             engine_type: info.engine_type.as_str().to_string(),
-            started_at_ms: info.started_at.timestamp_millis(),
+            started_at_ms: info.started_at.as_millisecond(),
             // Identity metadata is immutable; manual_split has its own revision.
-            updated_at_ms: info.started_at.timestamp_millis(),
+            updated_at_ms: info.started_at.as_millisecond(),
             cdn_host: crate::utils::url::extract_host(&info.url).unwrap_or_default(),
             download_url: info.url.clone(),
         }
@@ -112,7 +112,7 @@ pub fn upload_progress_to_proto(
         bytes_total: snapshot.bytes_total,
         speed_bytes_per_sec: snapshot.speed_bytes_per_sec,
         eta_secs: snapshot.eta_secs,
-        updated_at_ms: snapshot.updated_at.timestamp_millis(),
+        updated_at_ms: snapshot.updated_at.as_millisecond(),
         files_done: snapshot.files_done.map(saturating_u32),
         files_total: snapshot.files_total.map(saturating_u32),
         out_time_ms: snapshot.out_time_ms,
@@ -193,7 +193,7 @@ pub fn create_snapshot_message(
             .map(|s| upload_progress_to_proto(&info.job_id, Some(&streamer_id), s));
         let started_at_ms = info
             .started_at
-            .map(|dt| dt.timestamp_millis())
+            .map(|dt| dt.as_millisecond())
             .unwrap_or_default();
         let streamer_name = info.streamer_name.unwrap_or_default();
         match info.uploader {

@@ -112,7 +112,7 @@ impl DiscordChannel {
             "title": rendered.title,
             "description": rendered.description,
             "color": Self::get_color(event.priority()),
-            "timestamp": event.timestamp().to_rfc3339(),
+            "timestamp": event.timestamp().to_string(),
             "footer": {
                 "text": format!("Priority: {} | Type: {}", event.priority(), event.event_type())
             }

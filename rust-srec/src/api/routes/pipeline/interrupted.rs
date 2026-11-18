@@ -14,7 +14,7 @@ use axum::{
     Json,
     extract::{FromRef, State},
 };
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use tracing::warn;
 
 use super::dag::validate_batch_ids;
@@ -95,9 +95,9 @@ pub struct InterruptedOutputResponse {
     /// The output it would have been published as.
     pub output_path: String,
     pub job_id: String,
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// When startup found the job interrupted.
-    pub interrupted_at: DateTime<Utc>,
+    pub interrupted_at: Timestamp,
     /// File size, when the file system answered in time.
     pub size_bytes: Option<u64>,
     /// Whether the file is present; `null` when its folder is unavailable, the

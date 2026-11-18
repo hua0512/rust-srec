@@ -504,8 +504,8 @@ async fn failed_final_dispatch_stays_recoverable_until_its_preset_is_restored() 
             category: None,
             processor: "remux".to_string(),
             config: "{}".to_string(),
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
+            created_at: jiff::Timestamp::now(),
+            updated_at: jiff::Timestamp::now(),
         })
         .await
         .unwrap();

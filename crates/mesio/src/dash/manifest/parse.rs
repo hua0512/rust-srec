@@ -8,7 +8,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use roxmltree::{Document, Node, ParsingOptions};
 
 use super::error::ManifestError;
@@ -26,9 +26,9 @@ const XLINK_NS: &str = "http://www.w3.org/1999/xlink";
 #[derive(Debug)]
 pub(crate) struct RawMpd {
     pub presentation_type: PresentationType,
-    pub availability_start_time: Option<DateTime<Utc>>,
-    pub availability_end_time: Option<DateTime<Utc>>,
-    pub publish_time: Option<DateTime<Utc>>,
+    pub availability_start_time: Option<Timestamp>,
+    pub availability_end_time: Option<Timestamp>,
+    pub publish_time: Option<Timestamp>,
     pub media_presentation_duration: Option<Duration>,
     pub minimum_update_period: Option<Duration>,
     pub min_buffer_time: Option<Duration>,

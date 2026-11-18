@@ -611,7 +611,7 @@ fn map_event_to_protobuf(event: &DownloadManagerEvent) -> Option<WsMessage> {
             download_url,
             ..
         }) => {
-            let now_ms = chrono::Utc::now().timestamp_millis();
+            let now_ms = jiff::Timestamp::now().as_millisecond();
             let meta = crate::api::proto::DownloadMeta {
                 manual_split: None,
                 download_id: download_id.clone(),
@@ -674,9 +674,9 @@ fn map_event_to_protobuf(event: &DownloadManagerEvent) -> Option<WsMessage> {
                 split_reason: split_reason_code.clone().unwrap_or_default(),
                 started_at_ms: started_at
                     .as_ref()
-                    .map(chrono::DateTime::timestamp_millis)
+                    .map(|time| crate::database::time::datetime_to_ms(*time))
                     .unwrap_or_default(),
-                completed_at_ms: completed_at.timestamp_millis(),
+                completed_at_ms: completed_at.as_millisecond(),
             };
             Some(WsMessage {
                 event_type: EventType::SegmentCompleted as i32,
@@ -783,10 +783,10 @@ fn map_event_to_protobuf(event: &DownloadManagerEvent) -> Option<WsMessage> {
 pub fn map_check_record_to_protobuf(record: &CheckRecord) -> WsMessage {
     let mut payload = StreamerCheckRecorded {
         streamer_id: record.streamer_id.clone(),
-        checked_at_ms: record.checked_at.timestamp_millis(),
+        checked_at_ms: record.checked_at.as_millisecond(),
         // proto3 int32 is plenty for millisecond durations (max 2.1B ms ≈
         // 24 days). Saturate rather than wrap.
-        duration_ms: i32::try_from(record.duration.num_milliseconds()).unwrap_or(i32::MAX),
+        duration_ms: i32::try_from(record.duration.as_millis()).unwrap_or(i32::MAX),
         outcome: record.outcome.as_str().to_string(),
         fatal_kind: String::new(),
         filter_reason: String::new(),
@@ -857,7 +857,7 @@ pub fn map_credential_block_to_protobuf(
         payload.blocked = true;
         payload.reason = block.reason.as_str().to_owned();
         payload.platform_id = block.platform_id.clone();
-        payload.since_ms = block.since.timestamp_millis();
+        payload.since_ms = block.since.as_millisecond();
     }
     WsMessage {
         event_type: EventType::StreamerCredentialBlock as i32,
@@ -1111,7 +1111,7 @@ mod tests {
                 segment_path: "/rec/segment.ts".to_string(),
                 segment_index: 5,
                 started_at: None,
-                completed_at: chrono::Utc::now(),
+                completed_at: jiff::Timestamp::now(),
                 duration_secs: 10.5,
                 size_bytes: 1_024_000,
                 split_reason_code: None,
@@ -1567,7 +1567,7 @@ mod tests {
         assert_eq!(blocked.platform_id, "platform-a");
         assert_eq!(
             blocked.since_ms,
-            blocks.get("watched").unwrap().since.timestamp_millis()
+            blocks.get("watched").unwrap().since.as_millisecond()
         );
 
         blocks.clear("watched");

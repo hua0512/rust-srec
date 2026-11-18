@@ -337,13 +337,13 @@ fn push_session_filters(query: &mut QueryBuilder<Sqlite>, filters: &SessionFilte
         query
             .push(next_separator())
             .push("s.start_time >= ")
-            .push_bind(from_date.timestamp_millis());
+            .push_bind(crate::database::time::datetime_to_ms(*from_date));
     }
     if let Some(to_date) = &filters.to_date {
         query
             .push(next_separator())
             .push("s.start_time <= ")
-            .push_bind(to_date.timestamp_millis());
+            .push_bind(crate::database::time::datetime_to_ms(*to_date));
     }
     if filters.active_only == Some(true) {
         query.push(next_separator()).push("s.end_time IS NULL");
@@ -789,7 +789,7 @@ impl SessionRepository for SqlxSessionRepository {
             )
             .bind(session_id)
             .bind(version)
-            .bind(chrono::Utc::now().timestamp_millis())
+            .bind(jiff::Timestamp::now().as_millisecond())
             .bind(state)
             .execute(&self.write_pool)
             .await?;

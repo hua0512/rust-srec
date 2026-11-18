@@ -1,6 +1,5 @@
 //! Full-row and transaction contracts exercised through the repository entrypoints.
 
-use chrono::{DateTime, Utc};
 use serde::Serialize;
 use sqlx::SqlitePool;
 
@@ -441,7 +440,7 @@ async fn session_creation_and_end_modes_preserve_raw_values_defaults_and_idempot
         0
     );
     repo.end_session("session", 1000).await.unwrap();
-    let started = DateTime::<Utc>::from_timestamp_millis(1_710_000_007_123).unwrap();
+    let started = jiff::Timestamp::from_millisecond(1_710_000_007_123).unwrap();
     let mut tx = crate::database::begin_immediate(&pool).await.unwrap();
     SessionTxOps::create_session(
         &mut tx,
@@ -458,11 +457,11 @@ async fn session_creation_and_end_modes_preserve_raw_values_defaults_and_idempot
         id: "live".into(),
         streamer_id: Some("streamer".into()),
         streamer_name: Some("Snapshot 名称".into()),
-        start_time: started.timestamp_millis(),
+        start_time: started.as_millisecond(),
         end_time: None,
         titles: Some(
             serde_json::to_string(&[crate::database::models::TitleEntry {
-                ts: started.timestamp_millis(),
+                ts: started.as_millisecond(),
                 title: "Title 名称".into(),
             }])
             .unwrap(),
@@ -470,7 +469,7 @@ async fn session_creation_and_end_modes_preserve_raw_values_defaults_and_idempot
         total_size_bytes: 0,
     };
     assert_row(&repo.get_session("live").await.unwrap(), &live);
-    let ended = started + chrono::Duration::milliseconds(321);
+    let ended = started + jiff::SignedDuration::from_millis(321);
     let mut tx = crate::database::begin_immediate(&pool).await.unwrap();
     assert_eq!(
         SessionTxOps::end_session(&mut tx, "live", ended)
@@ -495,7 +494,7 @@ async fn session_creation_and_end_modes_preserve_raw_values_defaults_and_idempot
     sqlx::query("UPDATE live_sessions SET total_size_bytes = 999, session_complete_dispatched = 1 WHERE id = 'live'").execute(&pool).await.unwrap();
     let mut tx = crate::database::begin_immediate(&pool).await.unwrap();
     assert_eq!(
-        SessionTxOps::end_session(&mut tx, "live", ended + chrono::Duration::seconds(1))
+        SessionTxOps::end_session(&mut tx, "live", ended + jiff::SignedDuration::from_secs(1))
             .await
             .unwrap(),
         0

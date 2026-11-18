@@ -1,6 +1,6 @@
 //! Shared helpers for processor unit tests.
 
-use chrono::{DateTime, TimeZone, Utc};
+use jiff::Timestamp;
 
 #[cfg(unix)]
 pub(super) fn test_exit_status(succeeds: bool) -> std::process::ExitStatus {
@@ -18,13 +18,14 @@ pub(super) fn test_exit_status(succeeds: bool) -> std::process::ExitStatus {
 
 /// Construct a fixed UTC instant from calendar components.
 pub(super) fn utc_datetime(
-    year: i32,
-    month: u32,
-    day: u32,
-    hour: u32,
-    minute: u32,
-    second: u32,
-) -> DateTime<Utc> {
-    Utc.with_ymd_and_hms(year, month, day, hour, minute, second)
+    year: i16,
+    month: i8,
+    day: i8,
+    hour: i8,
+    minute: i8,
+    second: i8,
+) -> Timestamp {
+    jiff::civil::DateTime::new(year, month, day, hour, minute, second, 0)
+        .and_then(|wall| jiff::tz::TimeZone::UTC.to_timestamp(wall))
         .unwrap()
 }

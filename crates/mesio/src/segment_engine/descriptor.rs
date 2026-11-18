@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use url::Url;
 
 use crate::session::ResourceId;
@@ -203,14 +203,14 @@ impl AnchorWithdrawal {
 /// those of epochs the planner has retired.
 #[derive(Debug, Clone)]
 pub struct WallClockAnchor {
-    time: DateTime<Utc>,
+    time: Timestamp,
     presentation: AnchorWithdrawal,
     period: AnchorWithdrawal,
 }
 
 impl WallClockAnchor {
     pub(crate) fn new(
-        time: DateTime<Utc>,
+        time: Timestamp,
         presentation: &AnchorWithdrawal,
         period: &AnchorWithdrawal,
     ) -> Self {
@@ -222,7 +222,7 @@ impl WallClockAnchor {
     }
 
     /// The anchor, unless it was withdrawn.
-    pub fn get(&self) -> Option<DateTime<Utc>> {
+    pub fn get(&self) -> Option<Timestamp> {
         (!self.presentation.is_withdrawn() && !self.period.is_withdrawn()).then_some(self.time)
     }
 }

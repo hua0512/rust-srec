@@ -5,7 +5,7 @@
 
 use std::time::Instant;
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use rand::RngExt;
 use tokio::sync::oneshot;
 
@@ -294,9 +294,9 @@ pub struct CheckResult {
     /// Stream title if available.
     pub title: Option<String>,
     /// Timestamp of the check.
-    pub checked_at: DateTime<Utc>,
+    pub checked_at: Timestamp,
     /// Hint for when to check next (used for smart wake).
-    pub next_check_hint: Option<DateTime<Utc>>,
+    pub next_check_hint: Option<Timestamp>,
     pub(crate) batch_live: Option<tokio::sync::watch::Receiver<bool>>,
 }
 
@@ -307,7 +307,7 @@ impl CheckResult {
             state,
             stream_url: None,
             title: None,
-            checked_at: Utc::now(),
+            checked_at: Timestamp::now(),
             next_check_hint: None,
             batch_live: None,
         }
@@ -319,7 +319,7 @@ impl CheckResult {
             state: StreamerState::Error,
             stream_url: None,
             title: None,
-            checked_at: Utc::now(),
+            checked_at: Timestamp::now(),
             next_check_hint: None,
             batch_live: None,
         }
@@ -673,7 +673,7 @@ impl StreamerActorState {
             config,
             error_count,
             Instant::now(),
-            Utc::now(),
+            Timestamp::now(),
             rand::rng().random_range(9000..=11000),
         );
     }
@@ -704,7 +704,7 @@ impl StreamerActorState {
         config: &StreamerConfig,
         error_count: u32,
         now: Instant,
-        wall_now: DateTime<Utc>,
+        wall_now: Timestamp,
         basis_points: u16,
     ) {
         self.recurring_interval_ms = None;
@@ -725,9 +725,7 @@ impl StreamerActorState {
             && self.streamer_state == StreamerState::OutOfSchedule
             && hint > wall_now
         {
-            let delay = hint
-                .signed_duration_since(wall_now)
-                .to_std()
+            let delay = std::time::Duration::try_from(hint.duration_since(wall_now))
                 .unwrap_or(std::time::Duration::ZERO);
             // Add a small buffer (5s) to ensure we wake up inside the window
             let buffer = std::time::Duration::from_secs(5);
@@ -826,7 +824,7 @@ mod tests {
     #[test]
     fn recurring_poll_jitter_is_bounded_for_normal_and_post_live_cadence() {
         let now = Instant::now();
-        let wall = Utc::now();
+        let wall = Timestamp::now();
         let config = StreamerConfig::default();
         let mut state = StreamerActorState::default();
         for (sample, normal, offline) in [(9000, 54, 18), (10000, 60, 20), (11000, 66, 22)] {
@@ -854,7 +852,7 @@ mod tests {
     #[test]
     fn config_updates_preserve_deadlines_unless_effective_cadence_can_bring_polling_forward() {
         let now = Instant::now();
-        let wall = Utc::now();
+        let wall = Timestamp::now();
         let config = StreamerConfig::default();
         let mut state = StreamerActorState::default();
         state.schedule_next_check_at(&config, 0, now, wall, 11000);
@@ -908,10 +906,10 @@ mod tests {
     #[test]
     fn jitter_and_config_updates_leave_smart_wake_retry_and_parked_deadlines_authoritative() {
         let now = Instant::now();
-        let wall = Utc::now();
+        let wall = Timestamp::now();
         let config = StreamerConfig::default();
         let mut check = CheckResult::success(StreamerState::OutOfSchedule);
-        check.next_check_hint = Some(wall + chrono::Duration::hours(1));
+        check.next_check_hint = Some(wall + jiff::SignedDuration::from_hours(1));
         let mut state = StreamerActorState {
             streamer_state: StreamerState::OutOfSchedule,
             last_check: Some(check),

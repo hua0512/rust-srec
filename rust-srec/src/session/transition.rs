@@ -17,7 +17,7 @@
 //! Consumers interested in final state filter on `Ended`. The notification
 //! listener builds channel payloads from these transitions.
 
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 use crate::session::download_start::DownloadStartPayload;
 use crate::session::state::TerminalCause;
@@ -51,7 +51,7 @@ pub enum SessionTransition {
         /// Preserves byte-identical parity with `MonitorEvent::StreamerLive`
         /// for notification payload consumers.
         category: Option<String>,
-        started_at: DateTime<Utc>,
+        started_at: Timestamp,
         /// `true` when this `Started` is a resume out of `Hysteresis`
         /// (same `session_id` continues); `false` for a fresh session.
         from_hysteresis: bool,
@@ -77,10 +77,10 @@ pub enum SessionTransition {
         streamer_name: String,
         cause: TerminalCause,
         /// When the terminal event was observed (engine emitted Completed/Failed).
-        observed_at: DateTime<Utc>,
+        observed_at: Timestamp,
         /// Wall-clock deadline by which a `LiveDetected` resume must arrive
         /// to absorb the session. After this, the timer fires `Ended`.
-        resume_deadline: DateTime<Utc>,
+        resume_deadline: Timestamp,
     },
     /// Emitted when `Hysteresis` is cancelled by a `LiveDetected` arriving
     /// before the deadline. The session continues recording with the same
@@ -89,9 +89,9 @@ pub enum SessionTransition {
     Resumed {
         session_id: String,
         streamer_id: String,
-        resumed_at: DateTime<Utc>,
+        resumed_at: Timestamp,
         /// How long we spent in `Hysteresis` before the resume arrived.
-        hysteresis_duration: chrono::Duration,
+        hysteresis_duration: jiff::SignedDuration,
     },
     /// Emitted after a session is moved to `Ended`. The session row's
     /// `end_time` has been written; the streamer's `is_live` flag is also
@@ -106,8 +106,8 @@ pub enum SessionTransition {
         streamer_name: String,
         /// When the session started, if known; `None` when neither the
         /// in-memory session nor its row could provide it.
-        started_at: Option<DateTime<Utc>>,
-        ended_at: DateTime<Utc>,
+        started_at: Option<Timestamp>,
+        ended_at: Timestamp,
         cause: TerminalCause,
         /// `true` when the end was reached via `Hysteresis` timer expiry;
         /// `false` for a direct `Recording → Ended` transition (authoritative

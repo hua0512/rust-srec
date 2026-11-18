@@ -1,7 +1,7 @@
 //! Processor trait and related types.
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -43,7 +43,7 @@ impl TimeAnchor {
     /// `SessionStart` falls back to `input.created_at` when the job carries
     /// no session start (empty/synthetic `session_id`, or the session row
     /// was gone when the job's metadata was resolved).
-    pub fn reference_time(self, input: &ProcessorInput) -> DateTime<Utc> {
+    pub fn reference_time(self, input: &ProcessorInput) -> Timestamp {
         match self {
             TimeAnchor::JobCreated => input.created_at,
             TimeAnchor::SessionStart => input.session_start.unwrap_or_else(|| {
@@ -77,10 +77,10 @@ pub struct ProcessorInput {
     /// Platform name (e.g., "Twitch", "Huya").
     pub platform: Option<String>,
     /// live_sessions.start_time of the session this job belongs to.
-    pub session_start: Option<DateTime<Utc>>,
+    pub session_start: Option<Timestamp>,
     /// When the job was originally created.
     /// Used for time-based placeholder expansion to ensure consistency across retries.
-    pub created_at: DateTime<Utc>,
+    pub created_at: Timestamp,
     /// Per-segment video/danmu pairing of a paired-segment or session-complete
     /// pipeline. `None` for segment, thumbnail and API-created DAGs and for
     /// standalone jobs.
@@ -99,7 +99,7 @@ impl Default for ProcessorInput {
             session_title: None,
             platform: None,
             session_start: None,
-            created_at: Utc::now(),
+            created_at: Timestamp::now(),
             manifest: None,
         }
     }
@@ -123,7 +123,7 @@ impl ProcessorInput {
             session_title: None,
             platform: None,
             session_start: None,
-            created_at: Utc::now(),
+            created_at: Timestamp::now(),
             manifest: None,
         }
     }
@@ -172,13 +172,13 @@ impl ProcessorInput {
     }
 
     /// Set the created_at timestamp.
-    pub fn with_created_at(mut self, created_at: DateTime<Utc>) -> Self {
+    pub fn with_created_at(mut self, created_at: Timestamp) -> Self {
         self.created_at = created_at;
         self
     }
 
     /// Set the session start timestamp.
-    pub fn with_session_start(mut self, session_start: DateTime<Utc>) -> Self {
+    pub fn with_session_start(mut self, session_start: Timestamp) -> Self {
         self.session_start = Some(session_start);
         self
     }
