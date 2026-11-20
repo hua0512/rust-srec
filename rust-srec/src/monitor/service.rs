@@ -1296,9 +1296,7 @@ impl<
 
         // Check if we have accumulated errors that should be cleared on successful check
         let has_errors = streamer.consecutive_error_count > 0 || streamer.disabled_until.is_some();
-        // The cleared run reached the threshold, so it sent `ChecksFailing`.
-        let checks_restored = streamer.consecutive_error_count
-            >= download_failure_threshold(streamer.offline_check_count);
+        let checks_restored_threshold = download_failure_threshold(streamer.offline_check_count);
 
         // The actor applies an initial offline observation after restart even
         // when hydration has reset metadata to NotLive. The database may still
@@ -1317,7 +1315,7 @@ impl<
                     session_id: session_id.as_deref(),
                     state_was_live: streamer.state == StreamerState::Live,
                     clear_errors: has_errors,
-                    checks_restored,
+                    checks_restored_threshold: Some(checks_restored_threshold),
                     signal,
                     now,
                 })
@@ -1332,7 +1330,7 @@ impl<
                 );
             }
 
-            if outcome.offline_event_emitted || checks_restored {
+            if outcome.offline_event_emitted || has_errors {
                 self.notify_outbox();
             }
         } else if has_errors {
@@ -1346,6 +1344,13 @@ impl<
             let streamer = streamer.clone();
             self.write_streamer_row("monitor clear errors", streamer.id.clone(), move |tx| {
                 Box::pin(async move {
+                    MonitorOutboxTxOps::enqueue_checks_restored(
+                        &mut *tx,
+                        &streamer.id,
+                        checks_restored_threshold,
+                        jiff::Timestamp::now(),
+                    )
+                    .await?;
                     // Clear error state: reset consecutive_error_count, disabled_until, last_error
                     let mut committed_row =
                         StreamerTxOps::clear_error_state_row(&mut *tx, &streamer.id).await?;
@@ -1356,22 +1361,11 @@ impl<
                             StreamerTxOps::set_offline_row(&mut *tx, &streamer.id).await?;
                     }
 
-                    if checks_restored {
-                        let event = MonitorEvent::ChecksRestored {
-                            streamer_id: streamer.id.clone(),
-                            streamer_name: streamer.name.clone(),
-                            timestamp: jiff::Timestamp::now(),
-                        };
-                        MonitorOutboxTxOps::enqueue_event(&mut *tx, &streamer.id, &event).await?;
-                    }
-
                     Ok(committed_row)
                 })
             })
             .await?;
-            if checks_restored {
-                self.notify_outbox();
-            }
+            self.notify_outbox();
         }
 
         Ok(())
@@ -2484,26 +2478,55 @@ mod tests {
         assert_eq!(current("flaky").consecutive_error_count, 0);
         assert!(check_alerts(&pool).await.is_empty());
 
-        // Reaching the threshold alerts once; failures past it add nothing.
+        // The failure that reaches the threshold alerts, and clearing that
+        // run reports the recovery once, even when two offline observations
+        // race to clear it.
+        for _ in 1..threshold {
+            monitor
+                .handle_error(&current("flaky"), "boom")
+                .await
+                .unwrap();
+        }
+        assert!(check_alerts(&pool).await.is_empty());
+        monitor
+            .handle_error(&current("flaky"), "boom")
+            .await
+            .unwrap();
+        assert_eq!(check_alerts(&pool).await, ["ChecksFailing"]);
+        let stale = current("flaky");
+        monitor.handle_offline(&stale).await.unwrap();
+        monitor.handle_offline(&stale).await.unwrap();
+        assert_eq!(
+            check_alerts(&pool).await,
+            ["ChecksFailing", "ChecksRestored"]
+        );
+
+        // Failures past the threshold add nothing, and a recording making
+        // progress also reports the recovery.
         for _ in 0..=threshold {
             monitor
                 .handle_error(&current("flaky"), "boom")
                 .await
                 .unwrap();
         }
-        assert_eq!(check_alerts(&pool).await, ["ChecksFailing"]);
-        monitor.handle_offline(&current("flaky")).await.unwrap();
+        monitor
+            .streamer_manager
+            .record_success("flaky", true)
+            .await
+            .unwrap();
         assert_eq!(
             check_alerts(&pool).await,
-            ["ChecksFailing", "ChecksRestored"]
+            [
+                "ChecksFailing",
+                "ChecksRestored",
+                "ChecksFailing",
+                "ChecksRestored"
+            ]
         );
 
         monitor.handle_offline(&current("flaky-oos")).await.unwrap();
         assert_eq!(current("flaky-oos").consecutive_error_count, 0);
-        assert_eq!(
-            check_alerts(&pool).await,
-            ["ChecksFailing", "ChecksRestored", "ChecksRestored"]
-        );
+        assert_eq!(check_alerts(&pool).await[4..], ["ChecksRestored"]);
 
         monitor.stop();
     }

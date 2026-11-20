@@ -826,7 +826,8 @@ where
     /// Record a successful operation for a streamer.
     ///
     /// Resets consecutive_error_count and clears disabled_until.
-    /// Updates last_live_time if the streamer is going live.
+    /// Updates last_live_time if the streamer is going live. Clearing a run
+    /// of failures that sent `ChecksFailing` reports the recovery.
     pub async fn record_success(&self, id: &str, is_going_live: bool) -> Result<()> {
         debug!("Recording success for streamer {}", id);
 
@@ -837,8 +838,12 @@ where
         };
 
         // Persist to database
+        let checks_restored_threshold = self
+            .metadata
+            .get(id)
+            .map(|entry| download_failure_threshold(entry.offline_check_count));
         self.repo
-            .record_streamer_success(id, last_live_time)
+            .record_streamer_success(id, last_live_time, checks_restored_threshold)
             .await?;
         if self.committed.is_some() {
             return Ok(());
@@ -1099,6 +1104,7 @@ mod tests {
             &self,
             _id: &str,
             _last_live_time: Option<Timestamp>,
+            _checks_restored_threshold: Option<i32>,
         ) -> Result<()> {
             Ok(())
         }

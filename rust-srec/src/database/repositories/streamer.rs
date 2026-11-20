@@ -10,6 +10,7 @@ use async_trait::async_trait;
 use sqlx::SqlitePool;
 
 use crate::database::models::StreamerDbModel;
+use crate::database::repositories::MonitorOutboxTxOps;
 use crate::{Error, Result};
 
 use jiff::Timestamp;
@@ -86,10 +87,14 @@ pub trait StreamerRepository: Send + Sync {
     // Methods for StreamerManager
     async fn clear_streamer_error_state(&self, id: &str) -> Result<()>;
     async fn clear_streamer_last_error(&self, id: &str) -> Result<()>;
+    /// Clears the error state after a success. With a threshold, a cleared
+    /// run that reached it also enqueues
+    /// [`crate::monitor::MonitorEvent::ChecksRestored`] in the same write.
     async fn record_streamer_success(
         &self,
         id: &str,
         last_live_time: Option<Timestamp>,
+        checks_restored_threshold: Option<i32>,
     ) -> Result<()>;
 }
 
@@ -507,34 +512,41 @@ impl StreamerRepository for SqlxStreamerRepository {
         &self,
         id: &str,
         last_live_time: Option<Timestamp>,
+        checks_restored_threshold: Option<i32>,
     ) -> Result<()> {
+        let last_live_time = last_live_time.map(|time| time.as_millisecond());
         if let Some(store) = self.mutation_owner()? {
             return committed::write(
                 store.clone(),
                 id.to_owned(),
-                committed::Mutation::Success(last_live_time.map(|time| time.as_millisecond())),
+                committed::Mutation::Success(last_live_time, checks_restored_threshold),
             )
             .await
             .map(|_| ());
         }
 
-        if let Some(time) = last_live_time {
-            let time_ms = time.as_millisecond();
+        let mut tx = self.write_pool.begin().await?;
+        if let Some(threshold) = checks_restored_threshold {
+            MonitorOutboxTxOps::enqueue_checks_restored(&mut tx, id, threshold, Timestamp::now())
+                .await?;
+        }
+        if let Some(time_ms) = last_live_time {
             sqlx::query(
                 "UPDATE streamers SET state = 'LIVE', consecutive_error_count = 0, disabled_until = NULL, last_error = NULL, last_live_time = ? WHERE id = ?",
             )
             .bind(time_ms)
             .bind(id)
-            .execute(&self.write_pool)
+            .execute(&mut *tx)
             .await?;
         } else {
             sqlx::query(
                 "UPDATE streamers SET state = 'NOT_LIVE', consecutive_error_count = 0, disabled_until = NULL, last_error = NULL WHERE id = ?",
             )
             .bind(id)
-            .execute(&self.write_pool)
+            .execute(&mut *tx)
             .await?;
         }
+        tx.commit().await?;
         Ok(())
     }
 }

@@ -107,9 +107,10 @@ pub struct EndSessionInputs {
     pub state_was_live: bool,
     /// `true` to clear accumulated transient errors on a clean offline obs.
     pub clear_errors: bool,
-    /// With `clear_errors`, also enqueue [`MonitorEvent::ChecksRestored`]
-    /// when the errors are cleared.
-    pub checks_restored: bool,
+    /// With `clear_errors`, the failure count at which the streamer's checks
+    /// alerted; clearing a run that reached it enqueues
+    /// [`MonitorEvent::ChecksRestored`]. `None` never does.
+    pub checks_restored_threshold: Option<i32>,
     /// Wire-format cause for the `session_ended` audit row. Pre-computed by
     /// the caller (typically `SessionLifecycle::on_offline_detected`) so the
     /// audit row is written inside the same `BEGIN IMMEDIATE` boundary as
@@ -1027,16 +1028,17 @@ impl SessionLifecycleRepository {
         }
 
         if inputs.clear_errors && is_active {
+            if let Some(threshold) = inputs.checks_restored_threshold {
+                MonitorOutboxTxOps::enqueue_checks_restored(
+                    &mut *tx,
+                    &inputs.streamer_id,
+                    threshold,
+                    inputs.now,
+                )
+                .await?;
+            }
             committed_row =
                 StreamerTxOps::clear_error_state_row(&mut *tx, &inputs.streamer_id).await?;
-            if inputs.checks_restored {
-                let event = MonitorEvent::ChecksRestored {
-                    streamer_id: inputs.streamer_id.clone(),
-                    streamer_name: inputs.streamer_name.clone(),
-                    timestamp: inputs.now,
-                };
-                MonitorOutboxTxOps::enqueue_event(&mut *tx, &inputs.streamer_id, &event).await?;
-            }
         }
 
         if should_emit {
@@ -1126,7 +1128,7 @@ mod tests {
             session_id,
             state_was_live,
             clear_errors: false,
-            checks_restored: false,
+            checks_restored_threshold: None,
             cause: TerminalCauseDto::StreamerOffline,
             via_hysteresis: false,
             now,

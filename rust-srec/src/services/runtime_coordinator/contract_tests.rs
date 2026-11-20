@@ -931,7 +931,7 @@ async fn live_and_offline_calls_serialize_memory_database_and_transition_order()
             let offline = async move {
                 offline_owner.on_offline_detected(crate::session::OfflineDetectedArgs {
                     streamer_id: STREAMER, streamer_name: "Coordinator", session_id: Some(&offline_session),
-                    state_was_live: true, clear_errors: false, checks_restored: false, signal: None, now: jiff::Timestamp::now(),
+                    state_was_live: true, clear_errors: false, checks_restored_threshold: None, signal: None, now: jiff::Timestamp::now(),
                 }).await.unwrap()
             };
             tokio::pin!(live, offline);

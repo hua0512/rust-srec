@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::database::models::StreamerDbModel;
+use crate::database::repositories::MonitorOutboxTxOps;
 use crate::database::repositories::row_write::WriteMode;
 use crate::streamer::CommittedStreamerState;
 use crate::streamer::state_store::{StateChange, StatePublication};
@@ -17,7 +18,9 @@ pub(super) enum Mutation {
     DeleteMarked,
     ClearErrors,
     ClearLastError,
-    Success(Option<i64>),
+    /// Last live time, and the threshold for
+    /// [`MonitorOutboxTxOps::enqueue_checks_restored`].
+    Success(Option<i64>, Option<i32>),
     Patch(crate::streamer::manager::StreamerUpdateParams),
 }
 
@@ -85,8 +88,15 @@ async fn write_with_publication(
             // or live streamer keeps its state.
             Mutation::ClearErrors => row!("UPDATE streamers SET consecutive_error_count = 0, disabled_until = NULL, last_error = NULL, state = CASE WHEN state IN ('FATAL_ERROR', 'OUT_OF_SPACE', 'NOT_FOUND', 'TEMPORAL_DISABLED', 'ERROR') THEN 'NOT_LIVE' ELSE state END WHERE id = ? RETURNING *"),
             Mutation::ClearLastError => row!("UPDATE streamers SET last_error = NULL WHERE id = ? RETURNING *"),
-            Mutation::Success(Some(time)) => row!("UPDATE streamers SET state = 'LIVE', consecutive_error_count = 0, disabled_until = NULL, last_error = NULL, last_live_time = ? WHERE id = ? RETURNING *", time),
-            Mutation::Success(None) => row!("UPDATE streamers SET state = 'NOT_LIVE', consecutive_error_count = 0, disabled_until = NULL, last_error = NULL WHERE id = ? RETURNING *"),
+            Mutation::Success(time, threshold) => {
+                if let Some(threshold) = threshold {
+                    MonitorOutboxTxOps::enqueue_checks_restored(&mut *connection, &id, threshold, jiff::Timestamp::now()).await?;
+                }
+                match time {
+                    Some(time) => row!("UPDATE streamers SET state = 'LIVE', consecutive_error_count = 0, disabled_until = NULL, last_error = NULL, last_live_time = ? WHERE id = ? RETURNING *", time),
+                    None => row!("UPDATE streamers SET state = 'NOT_LIVE', consecutive_error_count = 0, disabled_until = NULL, last_error = NULL WHERE id = ? RETURNING *"),
+                }
+            }
             Mutation::Patch(patch) => {
                 let mut model = sqlx::query_as::<_, StreamerDbModel>("SELECT * FROM streamers WHERE id = ?").bind(&id).fetch_optional(&mut *connection).await?.ok_or_else(|| Error::not_found("Streamer", &id))?;
                 apply_patch(&mut model, patch);

@@ -283,8 +283,8 @@ pub enum NotificationEvent {
         consecutive_errors: i32,
         timestamp: Timestamp,
     },
-    /// A successful check ended a run of failures that sent
-    /// [`Self::StreamerChecksFailing`].
+    /// A successful check or recording progress ended a run of failures
+    /// that sent [`Self::StreamerChecksFailing`].
     StreamerChecksRestored {
         streamer_id: String,
         streamer_name: String,

@@ -78,8 +78,8 @@ pub enum MonitorEvent {
         consecutive_errors: i32,
         timestamp: Timestamp,
     },
-    /// A successful status check cleared a run of failures that had sent
-    /// [`Self::ChecksFailing`].
+    /// A successful status check or recording progress cleared a run of
+    /// failures that had sent [`Self::ChecksFailing`].
     ChecksRestored {
         streamer_id: String,
         streamer_name: String,

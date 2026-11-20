@@ -777,10 +777,10 @@ impl SessionLifecycle {
             args.streamer_name.to_owned(),
             args.session_id.map(str::to_owned),
         );
-        let (state_was_live, clear_errors, checks_restored, signal, now) = (
+        let (state_was_live, clear_errors, checks_restored_threshold, signal, now) = (
             args.state_was_live,
             args.clear_errors,
-            args.checks_restored,
+            args.checks_restored_threshold,
             args.signal,
             args.now,
         );
@@ -793,7 +793,7 @@ impl SessionLifecycle {
                     session_id: session.as_deref(),
                     state_was_live,
                     clear_errors,
-                    checks_restored,
+                    checks_restored_threshold,
                     signal,
                     now,
                 })
@@ -1006,7 +1006,7 @@ impl SessionLifecycle {
             session_id: args.session_id.map(|s| s.to_string()),
             state_was_live: args.state_was_live,
             clear_errors: args.clear_errors,
-            checks_restored: args.checks_restored,
+            checks_restored_threshold: args.checks_restored_threshold,
             cause: (&cause).into(),
             via_hysteresis: was_in_hysteresis,
             now: args.now,
@@ -2069,9 +2069,8 @@ pub struct OfflineDetectedArgs<'a> {
     pub session_id: Option<&'a str>,
     pub state_was_live: bool,
     pub clear_errors: bool,
-    /// The errors being cleared had reached the alert threshold, so clearing
-    /// them also enqueues [`crate::monitor::MonitorEvent::ChecksRestored`].
-    pub checks_restored: bool,
+    /// See [`EndSessionInputs::checks_restored_threshold`].
+    pub checks_restored_threshold: Option<i32>,
     /// Optional definitive-offline signal that originated this call. Set by
     /// the danmu observer (`DanmuStreamClosed`) and other engine-boundary
     /// detectors that can confidently say "the stream is over." When
