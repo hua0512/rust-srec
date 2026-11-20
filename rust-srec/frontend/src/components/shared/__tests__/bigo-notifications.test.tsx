@@ -106,7 +106,9 @@ describe('BigoNotificationsAlert', () => {
   function renderAlert(status: BigoNotificationStatus) {
     const client = newQueryClient();
     client.setQueryData(bigoNotificationStatusQueryOptions.queryKey, status);
-    return renderWithProviders(<BigoNotificationsAlert />, { client });
+    return renderWithProviders(<BigoNotificationsAlert hasBigoStreamers />, {
+      client,
+    });
   }
 
   it('warns while BIGO sends no notifications or the listener stays disconnected', () => {

@@ -327,10 +327,8 @@ function ListenerStatus({ status }: { status: BigoNotificationStatus }) {
     mutationFn: () => reconnectBigoNotifications(),
     onError: () => toast.error(i18n._(msg`Failed to reconnect`)),
   });
-  // Waiting for another attempt, rather than for a settings change.
-  const waiting =
-    status.state === 'error' &&
-    (status.reason === 'disconnected' || status.reason === 'signed_out');
+  // Waiting for another attempt that a manual one can bring forward.
+  const waiting = status.state === 'error' && status.reason === 'disconnected';
   return (
     <div
       role="status"

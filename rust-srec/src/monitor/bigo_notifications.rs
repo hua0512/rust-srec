@@ -104,9 +104,10 @@ const MAX_BACKOFF: Duration = Duration::from_secs(30);
 /// [`SLOW_RETRY`], but a lasting one at most this often.
 const MAX_REFUSED_BACKOFF: Duration = Duration::from_secs(5 * 60);
 
-/// A connection that lived this long resets the backoff. Shorter-lived ones
-/// keep doubling it, so rust-srec and the BIGO app signed in with the same
-/// account do not evict each other every few seconds.
+/// A connection that lived this long resets the backoff and ends an outage.
+/// Shorter-lived ones keep doubling the backoff, so rust-srec and the BIGO app
+/// signed in with the same account do not evict each other every few seconds,
+/// and keep the outage running, so such a cycle still alerts.
 const STABLE_CONNECTION: Duration = Duration::from_secs(60);
 
 /// Retry period after an answer that trying again soon would not change: BIGO
@@ -378,16 +379,35 @@ struct Rule {
     /// comes first.
     wake_all_at: Option<Instant>,
     last_named_push: Option<Instant>,
-    /// Starts found without a push since the last push of any kind. It
-    /// concerns the account rather than a connection, so reconnecting keeps
-    /// it; choosing another account resets it.
+    /// Starts found without a push since the last push of any kind, and the
+    /// streamers they were found on. They concern the account rather than a
+    /// connection, so reconnecting keeps them; choosing another account
+    /// clears them.
     missed_in_a_row: u32,
+    missed_streamers: HashSet<String>,
 }
 
 impl Rule {
-    /// Whether BIGO sends the account no pushes; see [`NOT_ARRIVING_AFTER`].
+    /// Whether BIGO sends the account no pushes: [`NOT_ARRIVING_AFTER`]
+    /// misses in a row, on at least two streamers, or on every streamer when
+    /// fewer are followed. One streamer whose stream drops and resumes, or
+    /// that a check reads offline for a moment, adds a miss at each resume
+    /// and so cannot trip it alone.
     fn not_arriving(&self) -> bool {
-        self.missed_in_a_row >= NOT_ARRIVING_AFTER
+        self.missed_in_a_row >= NOT_ARRIVING_AFTER && {
+            let followed = self
+                .streamers
+                .values()
+                .filter(|entry| entry.member.excluded.is_none() && entry.member.uid.is_some())
+                .count();
+            self.missed_streamers.len() >= followed.min(2)
+        }
+    }
+
+    /// Forgets the misses: a push arrived, or the account changed.
+    fn clear_missed(&mut self) {
+        self.missed_in_a_row = 0;
+        self.missed_streamers.clear();
     }
 
     fn answers_offline(&self, streamer_id: &str, now: Instant) -> bool {
@@ -437,6 +457,7 @@ impl Rule {
         }
         if missed {
             self.missed_in_a_row = self.missed_in_a_row.saturating_add(1);
+            self.missed_streamers.insert(streamer_id.to_owned());
         }
         missed
     }
@@ -444,7 +465,7 @@ impl Rule {
     /// Records a push. Any push, with or without a streamer, shows that BIGO
     /// sends the account notifications.
     fn pushed(&mut self, uid: Option<u32>, now: Instant) {
-        self.missed_in_a_row = 0;
+        self.clear_missed();
         let Some(uid) = uid else {
             let paired = self
                 .last_named_push
@@ -769,9 +790,11 @@ impl BigoNotifications {
             streamers,
             missed_pushes: listener.missed_pushes,
             last_missed_at: listener.last_missed_at,
+            // A connection younger than STABLE_CONNECTION keeps the outage
+            // running but is not reported as down.
             down_since: listener
                 .outage
-                .filter(|outage| outage.alerted)
+                .filter(|outage| outage.alerted && listener.state != ListenerState::Connected)
                 .map(|outage| outage.since),
         }
     }
@@ -806,8 +829,8 @@ impl BigoNotifications {
     }
 
     /// Ends the running outage, if any. Only an alerted outage that ends
-    /// because the listener connected, rather than because the settings
-    /// turned notifications off, sends an alert that it ended.
+    /// because a connection lasted [`STABLE_CONNECTION`], rather than because
+    /// the settings turned notifications off, sends an alert that it ended.
     fn end_outage(&self, connected: bool) {
         let alerted = self.listener.lock().up();
         if alerted && connected {
@@ -1070,7 +1093,7 @@ impl BigoNotifications {
             };
             if current_account != account {
                 account = current_account;
-                self.rule.lock().missed_in_a_row = 0;
+                self.rule.lock().clear_missed();
             }
             if !matches!(current, Settings::Account { .. } | Settings::Unknown) {
                 self.end_outage(false);
@@ -1121,6 +1144,9 @@ impl BigoNotifications {
                         ended = self.session(&deps, &mut session, &mut settings) => ended,
                     };
                     self.rule.lock().disconnected();
+                    // The outage starts when the connection is lost, not
+                    // after the wait before the next attempt.
+                    self.listener.lock().down(Instant::now());
                     let lived = session.connected_at.map(|at| at.elapsed());
                     match ended {
                         Ended::SettingsChanged => {
@@ -1238,8 +1264,9 @@ impl BigoNotifications {
         info!(profile_id, "Bigo notification listener connected");
         session.connected_at = Some(Instant::now());
         self.set_listener(ListenerState::Connected, None, None);
-        self.end_outage(true);
 
+        let stable_at = Instant::now() + STABLE_CONNECTION;
+        let mut stable = false;
         let mut pace = tokio::time::interval(SUBSCRIBE_INTERVAL);
         pace.set_missed_tick_behavior(MissedTickBehavior::Delay);
         loop {
@@ -1247,6 +1274,10 @@ impl BigoNotifications {
             tokio::select! {
                 biased;
                 () = settings_changed(settings) => return Ended::SettingsChanged,
+                () = sleep_until(stable_at), if !stable => {
+                    stable = true;
+                    self.end_outage(true);
+                }
                 event = listener.next_event() => match event {
                     Ok(Event::Live { uid }) => {
                         debug!(?uid, "BIGO reported a stream start");
@@ -1620,10 +1651,11 @@ mod tests {
         );
     }
 
-    /// `b` goes live without a push, and offline again a second later.
-    fn missed(rule: &mut Rule, at: Instant) {
-        assert!(rule.checked("b", at, true), "missed push");
-        rule.checked("b", at + Duration::from_secs(1), false);
+    /// The streamer goes live without a push, and offline again a second
+    /// later.
+    fn missed(rule: &mut Rule, streamer_id: &str, at: Instant) {
+        assert!(rule.checked(streamer_id, at, true), "missed push");
+        rule.checked(streamer_id, at + Duration::from_secs(1), false);
     }
 
     fn reason(rule: &Rule, streamer_id: &str) -> Option<PollingReason> {
@@ -1639,15 +1671,24 @@ mod tests {
         let start = Instant::now();
         let seconds = |n| start + Duration::from_secs(n);
         let mut rule = subscribed(start);
-        missed(&mut rule, seconds(10));
-        missed(&mut rule, seconds(20));
+        missed(&mut rule, "b", seconds(10));
+        missed(&mut rule, "b", seconds(20));
+        assert!(rule.answers_offline("a", seconds(25)));
+        missed(&mut rule, "a", seconds(30));
+        assert!(!rule.answers_offline("a", seconds(35)));
+
         // Any push, even a nameless one, shows that pushes arrive.
-        rule.pushed(None, seconds(30));
-        missed(&mut rule, seconds(40));
-        missed(&mut rule, seconds(50));
-        assert!(rule.answers_offline("a", seconds(50)));
-        missed(&mut rule, seconds(60));
-        assert!(!rule.answers_offline("a", seconds(60)));
+        rule.pushed(None, seconds(40));
+        assert!(rule.answers_offline("a", seconds(40)));
+        missed(&mut rule, "b", seconds(50));
+        missed(&mut rule, "b", seconds(60));
+        missed(&mut rule, "b", seconds(70));
+        assert!(
+            rule.answers_offline("a", seconds(75)),
+            "one streamer that keeps resuming does not trip it"
+        );
+        missed(&mut rule, "a", seconds(80));
+        assert!(!rule.answers_offline("a", seconds(85)));
         assert_eq!(
             reason(&rule, "a"),
             Some(PollingReason::NotificationsNotArriving)
@@ -1656,18 +1697,18 @@ mod tests {
         // It concerns the account, so a new connection keeps it.
         rule.disconnected();
         while let Some(uid) = rule.next_subscription() {
-            rule.subscribed(uid, true, seconds(70));
+            rule.subscribed(uid, true, seconds(90));
         }
-        rule.checked("a", seconds(80), false);
-        rule.checked("b", seconds(80), false);
-        assert!(!rule.answers_offline("a", seconds(80)), "reconnected");
+        rule.checked("a", seconds(100), false);
+        rule.checked("b", seconds(100), false);
+        assert!(!rule.answers_offline("a", seconds(100)), "reconnected");
         assert!(
-            rule.checked("b", seconds(90), true),
+            rule.checked("b", seconds(110), true),
             "real polls still find missed pushes"
         );
 
-        rule.pushed(None, seconds(100));
-        assert!(rule.answers_offline("a", seconds(100)));
+        rule.pushed(None, seconds(120));
+        assert!(rule.answers_offline("a", seconds(120)));
         assert_eq!(reason(&rule, "a"), None);
     }
 

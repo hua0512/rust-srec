@@ -391,7 +391,7 @@ msgstr "{sessions, plural, one {Wait for the active recording using it to end.} 
 msgid "{site} already belongs to the account {label}. A site can belong to one account only."
 msgstr "{site} already belongs to the account {label}. A site can belong to one account only."
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:371
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:369
 msgid "{subscribed} of {total}"
 msgstr "{subscribed} of {total}"
 
@@ -411,11 +411,11 @@ msgstr "{succeeded, plural, one {Processed # pipeline} other {Processed # pipeli
 msgid "{succeeded, plural, one {Processed # pipeline} other {Processed # pipelines}}; {failed} failed"
 msgstr "{succeeded, plural, one {Processed # pipeline} other {Processed # pipelines}}; {failed} failed"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:268
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:269
 msgid "{succeeded, plural, one {Processed # streamer} other {Processed # streamers}}"
 msgstr "{succeeded, plural, one {Processed # streamer} other {Processed # streamers}}"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:275
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:276
 msgid "{succeeded, plural, one {Processed # streamer} other {Processed # streamers}}; {failed} failed"
 msgstr "{succeeded, plural, one {Processed # streamer} other {Processed # streamers}}; {failed} failed"
 
@@ -882,8 +882,8 @@ msgstr "Add Step"
 msgid "Add Stream"
 msgstr "Add Stream"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:691
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:710
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:697
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:716
 msgid "Add Streamer"
 msgstr "Add Streamer"
 
@@ -974,7 +974,7 @@ msgstr "Alerts when disk space is running low."
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:286
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:237
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:163
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:93
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:94
 msgid "All"
 msgstr "All"
 
@@ -987,7 +987,7 @@ msgstr "All"
 msgid "All Levels"
 msgstr "All Levels"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:367
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:368
 msgid "All Platforms"
 msgstr "All Platforms"
 
@@ -999,7 +999,7 @@ msgstr "All selected accounts are disabled. Enable one or change the selection."
 msgid "All selected accounts need a new login. Log in again to one of them or replace its cookies."
 msgstr "All selected accounts need a new login. Log in again to one of them or replace its cookies."
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:401
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:402
 msgid "All Templates"
 msgstr "All Templates"
 
@@ -1084,7 +1084,7 @@ msgstr "Any header change splits whenever the stream header bytes change, which 
 msgid "Any language"
 msgstr "Any language"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:488
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:489
 msgid "Any priority"
 msgstr "Any priority"
 
@@ -1590,7 +1590,7 @@ msgstr "Best"
 msgid "Best quality"
 msgstr "Best quality"
 
-#: src/components/shared/bigo-notifications.tsx:159
+#: src/components/shared/bigo-notifications.tsx:170
 msgid "BIGO is not sending live notifications"
 msgstr "BIGO is not sending live notifications"
 
@@ -1598,7 +1598,7 @@ msgstr "BIGO is not sending live notifications"
 msgid "BIGO is not sending live notifications; polled until one arrives"
 msgstr "BIGO is not sending live notifications; polled until one arrives"
 
-#: src/components/shared/bigo-notifications.tsx:161
+#: src/components/shared/bigo-notifications.tsx:172
 msgid "Bigo live notifications are disconnected"
 msgstr "Bigo live notifications are disconnected"
 
@@ -1618,7 +1618,7 @@ msgstr "BIGO refused to follow the streamer"
 msgid "Bigo streamers are checked by polling, which is inconsistent: stream starts are noticed late, and short streams can be missed."
 msgstr "Bigo streamers are checked by polling, which is inconsistent: stream starts are noticed late, and short streams can be missed."
 
-#: src/components/shared/bigo-notifications.tsx:177
+#: src/components/shared/bigo-notifications.tsx:188
 msgid "Bigo streamers are polled until a notification arrives, so stream starts are noticed late. Check that the notification account is not signed in to the BIGO app and that live notifications are on in its BIGO settings."
 msgstr "Bigo streamers are polled until a notification arrives, so stream starts are noticed late. Check that the notification account is not signed in to the BIGO app and that live notifications are on in its BIGO settings."
 
@@ -1980,7 +1980,7 @@ msgstr "Check size after copy"
 msgid "Check that it reaches"
 msgstr "Check that it reaches"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:360
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:358
 msgid "Check that the notification account is not signed in to the BIGO app and that live notifications are on in its BIGO settings."
 msgstr "Check that the notification account is not signed in to the BIGO app and that live notifications are on in its BIGO settings."
 
@@ -2083,7 +2083,7 @@ msgstr "Cleanup"
 #: src/components/logging/log-viewer.tsx:362
 #: src/components/notifications/desktop-channel-dialog.tsx:177
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:248
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:458
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:459
 msgid "Clear"
 msgstr "Clear"
 
@@ -3058,7 +3058,7 @@ msgstr "default"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:100
 #: src/components/player/stream-info-card.tsx:47
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:340
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:527
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:528
 msgid "Default"
 msgstr "Default"
 
@@ -3500,7 +3500,7 @@ msgstr "Disable selected"
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:297
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:320
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:329
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:97
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:98
 msgid "Disabled"
 msgstr "Disabled"
 
@@ -4059,7 +4059,7 @@ msgstr "Enter your credentials to access your account"
 
 #: src/components/notifications/events/payload-preview.tsx:34
 #: src/components/streamers/card/use-streamer-status.tsx:131
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:96
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:97
 msgid "Error"
 msgstr "Error"
 
@@ -4131,7 +4131,7 @@ msgstr "Exact user name"
 msgid "Examples:"
 msgstr "Examples:"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:554
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:555
 msgid "Exceptional states"
 msgstr "Exceptional states"
 
@@ -4528,7 +4528,7 @@ msgstr "Failed to load presets"
 msgid "Failed to load sessions"
 msgstr "Failed to load sessions"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:624
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:630
 msgid "Failed to load streamers"
 msgstr "Failed to load streamers"
 
@@ -4561,7 +4561,7 @@ msgstr "Failed to parse URL"
 msgid "Failed to process selected pipelines"
 msgstr "Failed to process selected pipelines"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:280
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:281
 msgid "Failed to process selected streamers"
 msgstr "Failed to process selected streamers"
 
@@ -4695,7 +4695,7 @@ msgstr "Fastest"
 #: src/components/streamers/edit/status-check-history.tsx:411
 #: src/components/streamers/edit/status-check-history.tsx:432
 #: src/lib/notification-event-types.ts:33
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:117
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:118
 msgid "Fatal error"
 msgstr "Fatal error"
 
@@ -4826,7 +4826,7 @@ msgstr "Filtered:"
 
 #: src/components/config/shared-config-editor.tsx:157
 #: src/components/config/templates/template-card.tsx:136
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:428
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:429
 msgid "Filters"
 msgstr "Filters"
 
@@ -5286,7 +5286,7 @@ msgstr "Hide password"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:107
 #: src/components/streamers/streamer-batch-action-bar.tsx:172
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:491
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:492
 msgid "High"
 msgstr "High"
 
@@ -5952,7 +5952,7 @@ msgstr "Last checked"
 msgid "Last checked {0}"
 msgstr "Last checked {0}"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:390
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:388
 msgid "Last error"
 msgstr "Last error"
 
@@ -6055,7 +6055,7 @@ msgstr "List"
 #: src/components/streamers/edit/status-check-history.tsx:489
 #: src/components/streamers/edit/streamer-header.tsx:89
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:164
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:94
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:95
 msgid "Live"
 msgstr "Live"
 
@@ -6073,7 +6073,7 @@ msgstr "Live edge"
 msgid "Live Gap Strategy"
 msgstr "Live Gap Strategy"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:341
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:339
 #: src/components/streamers/card/monitoring-method-badge.tsx:84
 msgid "Live notifications"
 msgstr "Live notifications"
@@ -6281,7 +6281,7 @@ msgstr "Lossless Split"
 #: src/components/player/player-card.tsx:326
 #: src/components/streamers/config/streamer-recording-fields.tsx:113
 #: src/components/streamers/streamer-batch-action-bar.tsx:176
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:497
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:498
 msgid "Low"
 msgstr "Low"
 
@@ -6372,7 +6372,7 @@ msgstr "Manage where system notifications are sent"
 msgid "Manage your application configuration."
 msgstr "Manage your application configuration."
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:297
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:298
 msgid "Manage your monitored channels and downloads"
 msgstr "Manage your monitored channels and downloads"
 
@@ -6672,8 +6672,8 @@ msgstr "More"
 msgid "More actions for {0}"
 msgstr "More actions for {0}"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:419
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:444
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:420
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:445
 msgid "More filters"
 msgstr "More filters"
 
@@ -6789,7 +6789,7 @@ msgstr "My Template"
 msgid "Name"
 msgstr "Name"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:533
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:534
 msgid "Name A-Z"
 msgstr "Name A-Z"
 
@@ -6812,7 +6812,7 @@ msgstr "Name autofilled successfully"
 msgid "Name is required"
 msgstr "Name is required"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:536
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:537
 msgid "Name Z-A"
 msgstr "Name Z-A"
 
@@ -7207,7 +7207,7 @@ msgstr "No steps defined"
 msgid "No streamers"
 msgstr "No streamers"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:678
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:684
 msgid "No streamers found"
 msgstr "No streamers found"
 
@@ -7224,7 +7224,7 @@ msgid "No talker data"
 msgstr "No talker data"
 
 #: src/components/streamers/streamer-batch-action-bar.tsx:128
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:404
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:405
 msgid "No template assigned"
 msgstr "No template assigned"
 
@@ -7296,7 +7296,7 @@ msgstr "None of the selected accounts could sign in within the attempt limit. Ch
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:110
 #: src/components/streamers/streamer-batch-action-bar.tsx:174
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:494
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:495
 msgid "Normal"
 msgstr "Normal"
 
@@ -7518,7 +7518,7 @@ msgstr "Office proxy"
 #: src/components/streamers/edit/status-check-history.tsx:405
 #: src/components/streamers/edit/status-check-history.tsx:426
 #: src/components/streamers/edit/streamer-header.tsx:91
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:95
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:96
 msgid "Offline"
 msgstr "Offline"
 
@@ -7610,7 +7610,7 @@ msgstr "Open platform settings"
 msgid "Open quality options"
 msgstr "Open quality options"
 
-#: src/components/shared/bigo-notifications.tsx:171
+#: src/components/shared/bigo-notifications.tsx:182
 msgid "Open the Bigo settings"
 msgstr "Open the Bigo settings"
 
@@ -7665,7 +7665,7 @@ msgctxt "terminal-cause"
 msgid "Out of Schedule"
 msgstr "Out of Schedule"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:116
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:117
 msgid "Out of space"
 msgstr "Out of space"
 
@@ -8166,8 +8166,8 @@ msgstr "Pipeline Timeouts"
 
 #: src/components/notifications/events/payload-preview.tsx:48
 #: src/components/streamers/config/streamer-identity-fields.tsx:169
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:345
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:361
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:346
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:362
 msgid "Platform"
 msgstr "Platform"
 
@@ -8506,7 +8506,7 @@ msgstr "Prioritize specific streaming protocols. Press Enter to add."
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:97
 #: src/components/streamers/streamer-batch-action-bar.tsx:158
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:466
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:467
 msgid "Priority"
 msgstr "Priority"
 
@@ -8515,11 +8515,11 @@ msgstr "Priority"
 msgid "Priority Filter"
 msgstr "Priority Filter"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:539
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:540
 msgid "Priority high-low"
 msgstr "Priority high-low"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:542
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:543
 msgid "Priority low-high"
 msgstr "Priority low-high"
 
@@ -8811,7 +8811,7 @@ msgstr "Recent notification events persisted by the backend"
 msgid "Recent Sessions"
 msgstr "Recent Sessions"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:530
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:531
 msgid "Recently updated"
 msgstr "Recently updated"
 
@@ -8819,7 +8819,7 @@ msgstr "Recently updated"
 msgid "Recommended"
 msgstr "Recommended"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:406
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:404
 msgid "Reconnect now"
 msgstr "Reconnect now"
 
@@ -8932,7 +8932,7 @@ msgstr "Records the broadcaster's own stream from BIGO's app servers, in its ori
 msgid "Recovering"
 msgstr "Recovering"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:447
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:448
 msgid "Refine and sort streamers"
 msgstr "Refine and sort streamers"
 
@@ -9477,7 +9477,7 @@ msgstr "Rust regex syntax supported."
 msgid "Rust-Srec"
 msgstr "Rust-Srec"
 
-#: src/components/shared/bigo-notifications.tsx:184
+#: src/components/shared/bigo-notifications.tsx:195
 msgid "rust-srec keeps trying to reconnect. Meanwhile Bigo streamers are polled, so stream starts are noticed late."
 msgstr "rust-srec keeps trying to reconnect. Meanwhile Bigo streamers are polled, so stream starts are noticed late."
 
@@ -9735,7 +9735,7 @@ msgstr "Search sessions..."
 msgid "Search streamer..."
 msgstr "Search streamer..."
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:305
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:306
 msgid "Search streamers..."
 msgstr "Search streamers..."
 
@@ -9816,7 +9816,7 @@ msgid "Segments downloaded at once."
 msgstr "Segments downloaded at once."
 
 #: src/components/shared/page-actions.tsx:67
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:607
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:608
 msgid "Select"
 msgstr "Select"
 
@@ -9945,7 +9945,7 @@ msgstr "Select sessions"
 msgid "Select strategy"
 msgstr "Select strategy"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:598
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:599
 msgid "Select streamers"
 msgstr "Select streamers"
 
@@ -10357,7 +10357,7 @@ msgstr "Some referenced presets could not be resolved. This step may delete a co
 msgid "Something went wrong!"
 msgstr "Something went wrong!"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:505
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:506
 msgid "Sort by"
 msgstr "Sort by"
 
@@ -10444,15 +10444,15 @@ msgstr "Started"
 msgid "STARTED"
 msgstr "STARTED"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:383
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:381
 msgid "Starts BIGO did not notify: {missed}"
 msgstr "Starts BIGO did not notify: {missed}"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:379
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:377
 msgid "Starts BIGO did not notify: {missed}, the last {lastMissed}"
 msgstr "Starts BIGO did not notify: {missed}, the last {lastMissed}"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:545
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:546
 msgid "State"
 msgstr "State"
 
@@ -10656,7 +10656,7 @@ msgstr "Streamer no longer exists on the platform"
 
 #: src/components/streamers/card/use-streamer-status.tsx:252
 #: src/components/streamers/card/use-streamer-status.tsx:261
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:118
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:119
 msgid "Streamer not found"
 msgstr "Streamer not found"
 
@@ -10665,7 +10665,7 @@ msgctxt "terminal-cause"
 msgid "Streamer Offline"
 msgstr "Streamer Offline"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:704
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:710
 msgid "Streamer pagination"
 msgstr "Streamer pagination"
 
@@ -10684,7 +10684,7 @@ msgstr "Streamer updated successfully"
 #: src/components/pipeline/step-in-use-dialog.tsx:108
 #: src/components/proxies/proxy-references.tsx:105
 #: src/lib/menu-list.ts:58
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:296
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:297
 msgid "Streamers"
 msgstr "Streamers"
 
@@ -10733,7 +10733,7 @@ msgstr "Streams extracted"
 msgid "Streams per file (--multi-thread-streams)."
 msgstr "Streams per file (--multi-thread-streams)."
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:368
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:366
 msgid "Subscribed streamers"
 msgstr "Subscribed streamers"
 
@@ -10865,8 +10865,8 @@ msgstr "TB"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:59
 #: src/components/streamers/streamer-batch-action-bar.tsx:115
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:379
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:395
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:380
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:396
 msgid "Template"
 msgstr "Template"
 
@@ -10916,7 +10916,7 @@ msgstr "templates"
 msgid "Templates"
 msgstr "Templates"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:121
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:122
 msgid "Temporarily disabled"
 msgstr "Temporarily disabled"
 
@@ -11489,7 +11489,7 @@ msgstr "Top Talkers"
 msgid "Top Words"
 msgstr "Top Words"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:313
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:314
 msgid "total"
 msgstr "total"
 
@@ -11647,7 +11647,7 @@ msgstr "Try adjusting your filters or limit"
 msgid "Try adjusting your search or filters"
 msgstr "Try adjusting your search or filters"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:680
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:686
 msgid "Try adjusting your search or filters, or add a new streamer to start monitoring."
 msgstr "Try adjusting your search or filters, or add a new streamer to start monitoring."
 

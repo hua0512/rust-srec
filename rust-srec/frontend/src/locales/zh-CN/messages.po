@@ -391,7 +391,7 @@ msgstr "{sessions, plural, other {请等待使用它的 # 个进行中的录制�
 msgid "{site} already belongs to the account {label}. A site can belong to one account only."
 msgstr "{site} 已属于账号 {label}。一个网站只能属于一个账号。"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:371
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:369
 msgid "{subscribed} of {total}"
 msgstr "{subscribed} / {total}"
 
@@ -411,11 +411,11 @@ msgstr "{succeeded, plural, other {已处理 # 个流水线}}"
 msgid "{succeeded, plural, one {Processed # pipeline} other {Processed # pipelines}}; {failed} failed"
 msgstr "{succeeded, plural, other {已处理 # 个流水线}}；{failed} 个失败"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:268
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:269
 msgid "{succeeded, plural, one {Processed # streamer} other {Processed # streamers}}"
 msgstr "{succeeded, plural, other {已处理 # 个主播}}"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:275
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:276
 msgid "{succeeded, plural, one {Processed # streamer} other {Processed # streamers}}; {failed} failed"
 msgstr "{succeeded, plural, other {已处理 # 个主播}}；{failed} 个失败"
 
@@ -882,8 +882,8 @@ msgstr "添加步骤"
 msgid "Add Stream"
 msgstr "添加流"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:691
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:710
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:697
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:716
 msgid "Add Streamer"
 msgstr "添加主播"
 
@@ -974,7 +974,7 @@ msgstr "磁盘空间不足时发出警报。"
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:286
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:237
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:163
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:93
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:94
 msgid "All"
 msgstr "全部"
 
@@ -987,7 +987,7 @@ msgstr "全部"
 msgid "All Levels"
 msgstr "所有级别"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:367
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:368
 msgid "All Platforms"
 msgstr "所有平台"
 
@@ -999,7 +999,7 @@ msgstr "所选账号均已禁用。请启用其中一个，或更改账号选择
 msgid "All selected accounts need a new login. Log in again to one of them or replace its cookies."
 msgstr "所选账号都需要重新登录。请重新登录其中一个，或替换其 Cookie。"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:401
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:402
 msgid "All Templates"
 msgstr "所有模板"
 
@@ -1084,7 +1084,7 @@ msgstr "“任何头部变化”会在流头部字节变化时分割，较安全
 msgid "Any language"
 msgstr "任意语言"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:488
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:489
 msgid "Any priority"
 msgstr "任意优先级"
 
@@ -1590,7 +1590,7 @@ msgstr "最佳"
 msgid "Best quality"
 msgstr "最佳质量"
 
-#: src/components/shared/bigo-notifications.tsx:159
+#: src/components/shared/bigo-notifications.tsx:170
 msgid "BIGO is not sending live notifications"
 msgstr "BIGO 没有发送开播通知"
 
@@ -1598,7 +1598,7 @@ msgstr "BIGO 没有发送开播通知"
 msgid "BIGO is not sending live notifications; polled until one arrives"
 msgstr "BIGO 没有发送开播通知；收到通知前改为轮询"
 
-#: src/components/shared/bigo-notifications.tsx:161
+#: src/components/shared/bigo-notifications.tsx:172
 msgid "Bigo live notifications are disconnected"
 msgstr "Bigo 开播通知已断开"
 
@@ -1618,7 +1618,7 @@ msgstr "BIGO 拒绝关注该主播"
 msgid "Bigo streamers are checked by polling, which is inconsistent: stream starts are noticed late, and short streams can be missed."
 msgstr "Bigo 主播通过轮询检查，结果并不可靠：开播会较晚才被发现，短时直播可能被漏掉。"
 
-#: src/components/shared/bigo-notifications.tsx:177
+#: src/components/shared/bigo-notifications.tsx:188
 msgid "Bigo streamers are polled until a notification arrives, so stream starts are noticed late. Check that the notification account is not signed in to the BIGO app and that live notifications are on in its BIGO settings."
 msgstr "收到开播通知之前，Bigo 主播改为轮询检测，开播会较晚才被发现。请确认通知账号没有同时登录 BIGO App，并且其 BIGO 设置中已打开开播通知。"
 
@@ -1980,7 +1980,7 @@ msgstr "复制后检查大小"
 msgid "Check that it reaches"
 msgstr "检查能否访问"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:360
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:358
 msgid "Check that the notification account is not signed in to the BIGO app and that live notifications are on in its BIGO settings."
 msgstr "请确认通知账号没有同时登录 BIGO App，并且其 BIGO 设置中已打开开播通知。"
 
@@ -2083,7 +2083,7 @@ msgstr "清理"
 #: src/components/logging/log-viewer.tsx:362
 #: src/components/notifications/desktop-channel-dialog.tsx:177
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:248
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:458
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:459
 msgid "Clear"
 msgstr "清空"
 
@@ -3058,7 +3058,7 @@ msgstr "默认"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:100
 #: src/components/player/stream-info-card.tsx:47
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:340
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:527
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:528
 msgid "Default"
 msgstr "默认"
 
@@ -3500,7 +3500,7 @@ msgstr "禁用所选"
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:297
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:320
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:329
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:97
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:98
 msgid "Disabled"
 msgstr "已禁用"
 
@@ -4059,7 +4059,7 @@ msgstr "输入你的凭据以登录账户"
 
 #: src/components/notifications/events/payload-preview.tsx:34
 #: src/components/streamers/card/use-streamer-status.tsx:131
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:96
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:97
 msgid "Error"
 msgstr "错误"
 
@@ -4131,7 +4131,7 @@ msgstr "完整用户名"
 msgid "Examples:"
 msgstr "示例："
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:554
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:555
 msgid "Exceptional states"
 msgstr "异常状态"
 
@@ -4528,7 +4528,7 @@ msgstr "加载预设失败"
 msgid "Failed to load sessions"
 msgstr "加载录制会话失败"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:624
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:630
 msgid "Failed to load streamers"
 msgstr "加载主播失败"
 
@@ -4561,7 +4561,7 @@ msgstr "解析 URL 失败"
 msgid "Failed to process selected pipelines"
 msgstr "处理所选流水线失败"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:280
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:281
 msgid "Failed to process selected streamers"
 msgstr "处理所选主播失败"
 
@@ -4695,7 +4695,7 @@ msgstr "最快"
 #: src/components/streamers/edit/status-check-history.tsx:411
 #: src/components/streamers/edit/status-check-history.tsx:432
 #: src/lib/notification-event-types.ts:33
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:117
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:118
 msgid "Fatal error"
 msgstr "致命错误"
 
@@ -4826,7 +4826,7 @@ msgstr "过滤原因："
 
 #: src/components/config/shared-config-editor.tsx:157
 #: src/components/config/templates/template-card.tsx:136
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:428
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:429
 msgid "Filters"
 msgstr "过滤器"
 
@@ -5286,7 +5286,7 @@ msgstr "隐藏密码"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:107
 #: src/components/streamers/streamer-batch-action-bar.tsx:172
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:491
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:492
 msgid "High"
 msgstr "高"
 
@@ -5952,7 +5952,7 @@ msgstr "最近检查"
 msgid "Last checked {0}"
 msgstr "上次检查：{0}"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:390
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:388
 msgid "Last error"
 msgstr "最后错误"
 
@@ -6055,7 +6055,7 @@ msgstr "列表"
 #: src/components/streamers/edit/status-check-history.tsx:489
 #: src/components/streamers/edit/streamer-header.tsx:89
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:164
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:94
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:95
 msgid "Live"
 msgstr "直播"
 
@@ -6073,7 +6073,7 @@ msgstr "直播边缘"
 msgid "Live Gap Strategy"
 msgstr "直播缺口策略"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:341
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:339
 #: src/components/streamers/card/monitoring-method-badge.tsx:84
 msgid "Live notifications"
 msgstr "开播通知"
@@ -6281,7 +6281,7 @@ msgstr "无损分割"
 #: src/components/player/player-card.tsx:326
 #: src/components/streamers/config/streamer-recording-fields.tsx:113
 #: src/components/streamers/streamer-batch-action-bar.tsx:176
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:497
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:498
 msgid "Low"
 msgstr "低"
 
@@ -6372,7 +6372,7 @@ msgstr "管理系统通知发送到哪里"
 msgid "Manage your application configuration."
 msgstr "管理应用配置。"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:297
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:298
 msgid "Manage your monitored channels and downloads"
 msgstr "管理你监控的主播及录制"
 
@@ -6672,8 +6672,8 @@ msgstr "更多"
 msgid "More actions for {0}"
 msgstr "{0} 的更多操作"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:419
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:444
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:420
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:445
 msgid "More filters"
 msgstr "更多筛选"
 
@@ -6789,7 +6789,7 @@ msgstr "我的模板"
 msgid "Name"
 msgstr "名称"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:533
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:534
 msgid "Name A-Z"
 msgstr "名称 A-Z"
 
@@ -6812,7 +6812,7 @@ msgstr "名称自动填充成功"
 msgid "Name is required"
 msgstr "必须填写名称"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:536
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:537
 msgid "Name Z-A"
 msgstr "名称 Z-A"
 
@@ -7207,7 +7207,7 @@ msgstr "未定义步骤"
 msgid "No streamers"
 msgstr "无主播"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:678
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:684
 msgid "No streamers found"
 msgstr "未找到主播"
 
@@ -7224,7 +7224,7 @@ msgid "No talker data"
 msgstr "暂无发言用户数据"
 
 #: src/components/streamers/streamer-batch-action-bar.tsx:128
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:404
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:405
 msgid "No template assigned"
 msgstr "未分配模板"
 
@@ -7296,7 +7296,7 @@ msgstr "所选账号在尝试次数内都未能登录。请检查它们的状态
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:110
 #: src/components/streamers/streamer-batch-action-bar.tsx:174
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:494
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:495
 msgid "Normal"
 msgstr "正常"
 
@@ -7518,7 +7518,7 @@ msgstr "办公室代理"
 #: src/components/streamers/edit/status-check-history.tsx:405
 #: src/components/streamers/edit/status-check-history.tsx:426
 #: src/components/streamers/edit/streamer-header.tsx:91
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:95
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:96
 msgid "Offline"
 msgstr "离线"
 
@@ -7610,7 +7610,7 @@ msgstr "打开平台设置"
 msgid "Open quality options"
 msgstr "打开画质选项"
 
-#: src/components/shared/bigo-notifications.tsx:171
+#: src/components/shared/bigo-notifications.tsx:182
 msgid "Open the Bigo settings"
 msgstr "打开 Bigo 设置"
 
@@ -7665,7 +7665,7 @@ msgctxt "terminal-cause"
 msgid "Out of Schedule"
 msgstr "不在计划时间内"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:116
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:117
 msgid "Out of space"
 msgstr "空间不足"
 
@@ -8166,8 +8166,8 @@ msgstr "流水线超时"
 
 #: src/components/notifications/events/payload-preview.tsx:48
 #: src/components/streamers/config/streamer-identity-fields.tsx:169
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:345
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:361
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:346
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:362
 msgid "Platform"
 msgstr "平台"
 
@@ -8506,7 +8506,7 @@ msgstr "优先选择特定流媒体协议。按 Enter 添加。"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:97
 #: src/components/streamers/streamer-batch-action-bar.tsx:158
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:466
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:467
 msgid "Priority"
 msgstr "优先级"
 
@@ -8515,11 +8515,11 @@ msgstr "优先级"
 msgid "Priority Filter"
 msgstr "优先级过滤器"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:539
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:540
 msgid "Priority high-low"
 msgstr "优先级从高到低"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:542
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:543
 msgid "Priority low-high"
 msgstr "优先级从低到高"
 
@@ -8811,7 +8811,7 @@ msgstr "后端持久化的最近通知事件"
 msgid "Recent Sessions"
 msgstr "最近录制会话"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:530
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:531
 msgid "Recently updated"
 msgstr "最近更新"
 
@@ -8819,7 +8819,7 @@ msgstr "最近更新"
 msgid "Recommended"
 msgstr "推荐"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:406
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:404
 msgid "Reconnect now"
 msgstr "立即重新连接"
 
@@ -8932,7 +8932,7 @@ msgstr "从 BIGO 的 App 服务器录制主播推送的原始直播流，保持�
 msgid "Recovering"
 msgstr "恢复中"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:447
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:448
 msgid "Refine and sort streamers"
 msgstr "筛选并排序主播"
 
@@ -9477,7 +9477,7 @@ msgstr "支持 Rust 正则语法。"
 msgid "Rust-Srec"
 msgstr "Rust-Srec"
 
-#: src/components/shared/bigo-notifications.tsx:184
+#: src/components/shared/bigo-notifications.tsx:195
 msgid "rust-srec keeps trying to reconnect. Meanwhile Bigo streamers are polled, so stream starts are noticed late."
 msgstr "rust-srec 会继续尝试重新连接。在此期间 Bigo 主播改为轮询检测，开播会较晚才被发现。"
 
@@ -9735,7 +9735,7 @@ msgstr "搜索录制会话..."
 msgid "Search streamer..."
 msgstr "搜索主播..."
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:305
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:306
 msgid "Search streamers..."
 msgstr "搜索主播..."
 
@@ -9816,7 +9816,7 @@ msgid "Segments downloaded at once."
 msgstr "同时下载的分段数。"
 
 #: src/components/shared/page-actions.tsx:67
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:607
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:608
 msgid "Select"
 msgstr "选择"
 
@@ -9945,7 +9945,7 @@ msgstr "选择录制会话"
 msgid "Select strategy"
 msgstr "选择策略"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:598
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:599
 msgid "Select streamers"
 msgstr "选择主播"
 
@@ -10357,7 +10357,7 @@ msgstr "部分引用的预设无法解析。此步骤可能删除转换后的结
 msgid "Something went wrong!"
 msgstr "发生错误！"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:505
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:506
 msgid "Sort by"
 msgstr "排序方式"
 
@@ -10444,15 +10444,15 @@ msgstr "已开始"
 msgid "STARTED"
 msgstr "已启动"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:383
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:381
 msgid "Starts BIGO did not notify: {missed}"
 msgstr "BIGO 未通知的开播：{missed}"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:379
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:377
 msgid "Starts BIGO did not notify: {missed}, the last {lastMissed}"
 msgstr "BIGO 未通知的开播：{missed}，最近一次在{lastMissed}"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:545
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:546
 msgid "State"
 msgstr "状态"
 
@@ -10656,7 +10656,7 @@ msgstr "主播在平台上已不存在"
 
 #: src/components/streamers/card/use-streamer-status.tsx:252
 #: src/components/streamers/card/use-streamer-status.tsx:261
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:118
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:119
 msgid "Streamer not found"
 msgstr "主播不存在"
 
@@ -10665,7 +10665,7 @@ msgctxt "terminal-cause"
 msgid "Streamer Offline"
 msgstr "主播离线"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:704
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:710
 msgid "Streamer pagination"
 msgstr "主播分页"
 
@@ -10684,7 +10684,7 @@ msgstr "主播更新成功"
 #: src/components/pipeline/step-in-use-dialog.tsx:108
 #: src/components/proxies/proxy-references.tsx:105
 #: src/lib/menu-list.ts:58
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:296
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:297
 msgid "Streamers"
 msgstr "主播"
 
@@ -10733,7 +10733,7 @@ msgstr "已提取流"
 msgid "Streams per file (--multi-thread-streams)."
 msgstr "每个文件的流数（--multi-thread-streams）。"
 
-#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:368
+#: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:366
 msgid "Subscribed streamers"
 msgstr "已订阅主播"
 
@@ -10865,8 +10865,8 @@ msgstr "TB"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:59
 #: src/components/streamers/streamer-batch-action-bar.tsx:115
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:379
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:395
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:380
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:396
 msgid "Template"
 msgstr "模板"
 
@@ -10916,7 +10916,7 @@ msgstr "模板"
 msgid "Templates"
 msgstr "模板"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:121
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:122
 msgid "Temporarily disabled"
 msgstr "暂时禁用"
 
@@ -11489,7 +11489,7 @@ msgstr "活跃发言用户"
 msgid "Top Words"
 msgstr "高频词"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:313
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:314
 msgid "total"
 msgstr "总计"
 
@@ -11647,7 +11647,7 @@ msgstr "尝试调整过滤器或限制"
 msgid "Try adjusting your search or filters"
 msgstr "尝试调整搜索或过滤器"
 
-#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:680
+#: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:686
 msgid "Try adjusting your search or filters, or add a new streamer to start monitoring."
 msgstr "尝试调整搜索或过滤器，或添加新主播以开始监控。"
 

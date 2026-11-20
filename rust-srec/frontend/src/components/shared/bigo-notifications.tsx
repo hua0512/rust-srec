@@ -96,7 +96,8 @@ const UNWARNED: ReadonlySet<BigoStreamerReason> = new Set([
 
 /**
  * Why the streamer is polled, or `null` when it uses notifications. A saved streamer is judged by
- * its own row; one the status does not list yet, by the listener's state.
+ * its own row; one the status does not list yet, by the listener's state and reason, which while
+ * connected is set only when BIGO sends no notifications.
  */
 function pollingReason(
   status: BigoNotificationStatus,
@@ -106,7 +107,8 @@ function pollingReason(
     ? status.streamers.find((entry) => entry.streamer_id === streamerId)
     : undefined;
   if (row) return row.method === 'polling' ? (row.reason ?? 'unknown') : null;
-  return status.state === 'connected' ? null : (status.reason ?? 'unknown');
+  if (status.state === 'connected') return status.reason;
+  return status.reason ?? 'unknown';
 }
 
 /**
@@ -140,11 +142,20 @@ export function BigoPollingNotice({
 /**
  * The warning on the streamers page while Bigo live notifications have stopped working: BIGO sends
  * the account none, or the listener has stayed disconnected past the server's grace period for
- * brief drops.
+ * brief drops. Without Bigo streamers on the page it shows nothing, without asking for the status.
  */
-export function BigoNotificationsAlert({ className }: { className?: string }) {
-  const { data: status } = useQuery(bigoNotificationStatusQueryOptions);
-  if (!status) return null;
+export function BigoNotificationsAlert({
+  hasBigoStreamers,
+  className,
+}: {
+  hasBigoStreamers: boolean;
+  className?: string;
+}) {
+  const { data: status } = useQuery({
+    ...bigoNotificationStatusQueryOptions,
+    enabled: hasBigoStreamers,
+  });
+  if (!hasBigoStreamers || !status) return null;
   const notArriving = status.reason === 'notifications_not_arriving';
   if (!notArriving && !status.down_since) return null;
   const platformId = status.platform_id;
