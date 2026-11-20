@@ -5,7 +5,10 @@ import type { BigoNotificationStatus } from '@/api/schemas/platform-configs';
 import { getBigoNotificationStatus } from '@/server/functions';
 import { bigoNotificationStatusQueryOptions } from '@/api/platform-configs';
 import { newQueryClient, renderWithProviders } from '@/test/render';
-import { BigoPollingNotice } from '../bigo-notifications';
+import {
+  BigoNotificationsAlert,
+  BigoPollingNotice,
+} from '../bigo-notifications';
 
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/router')).MockLink,
@@ -39,6 +42,7 @@ function listener(
     streamers,
     missed_pushes: 0,
     last_missed_at: null,
+    down_since: null,
   };
 }
 
@@ -95,5 +99,43 @@ describe('BigoPollingNotice', () => {
 
     expect(container).toBeEmptyDOMElement();
     expect(getBigoNotificationStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe('BigoNotificationsAlert', () => {
+  function renderAlert(status: BigoNotificationStatus) {
+    const client = newQueryClient();
+    client.setQueryData(bigoNotificationStatusQueryOptions.queryKey, status);
+    return renderWithProviders(<BigoNotificationsAlert hasBigoStreamers />, {
+      client,
+    });
+  }
+
+  it('warns while BIGO sends no notifications or the listener stays disconnected', () => {
+    // A brief disconnection, which the server does not report as down yet.
+    const brief = renderAlert({ ...listener('error'), reason: 'disconnected' });
+    expect(brief.container).toBeEmptyDOMElement();
+    brief.unmount();
+
+    const notArriving = renderAlert({
+      ...listener('connected'),
+      reason: 'notifications_not_arriving',
+    });
+    expect(
+      screen.getByText('BIGO is not sending live notifications'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Open the Bigo settings' }),
+    ).toHaveAttribute('href', '/config/platforms/platform-bigo');
+    notArriving.unmount();
+
+    renderAlert({
+      ...listener('error'),
+      reason: 'disconnected',
+      down_since: '2026-01-01T00:00:00Z',
+    });
+    expect(
+      screen.getByText('Bigo live notifications are disconnected'),
+    ).toBeInTheDocument();
   });
 });

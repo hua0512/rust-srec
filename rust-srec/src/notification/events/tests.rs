@@ -201,6 +201,29 @@ fn sample_events() -> Vec<NotificationEvent> {
             reason: "SIGTERM".into(),
             timestamp: now,
         },
+        NotificationEvent::BigoNotificationsFailing {
+            problem: BigoNotificationProblem::NotArriving,
+            message: None,
+            timestamp: now,
+        },
+        NotificationEvent::BigoNotificationsFailing {
+            problem: BigoNotificationProblem::Disconnected,
+            message: Some("connection reset".into()),
+            timestamp: now,
+        },
+        NotificationEvent::BigoNotificationsFailing {
+            problem: BigoNotificationProblem::Disconnected,
+            message: None,
+            timestamp: now,
+        },
+        NotificationEvent::BigoNotificationsRestored {
+            problem: BigoNotificationProblem::NotArriving,
+            timestamp: now,
+        },
+        NotificationEvent::BigoNotificationsRestored {
+            problem: BigoNotificationProblem::Disconnected,
+            timestamp: now,
+        },
         NotificationEvent::Credential {
             event: CredentialEvent::Refreshed {
                 profile_id: None,
@@ -303,7 +326,7 @@ fn all_notification_variants_localize_in_both_locales() {
     // self-doc; bump it alongside the match arms in title/description.
     assert_eq!(
         events.len(),
-        26,
+        31,
         "sample_events is out of sync with NotificationEvent; add a sample for the new variant so its localization is covered"
     );
 

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Trans } from '@lingui/react/macro';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, BellOff } from 'lucide-react';
 
 import { bigoNotificationStatusQueryOptions } from '@/api/platform-configs';
 import type {
@@ -45,6 +45,12 @@ export function bigoReasonLabel(reason: BigoStreamerReason): ReactNode {
       return <Trans>Waiting for BIGO to confirm the follow</Trans>;
     case 'follow_refused':
       return <Trans>BIGO refused to follow the streamer</Trans>;
+    case 'notifications_not_arriving':
+      return (
+        <Trans>
+          BIGO is not sending live notifications; polled until one arrives
+        </Trans>
+      );
     case 'unknown':
       return <Trans>Live notifications are not available</Trans>;
     default:
@@ -90,7 +96,8 @@ const UNWARNED: ReadonlySet<BigoStreamerReason> = new Set([
 
 /**
  * Why the streamer is polled, or `null` when it uses notifications. A saved streamer is judged by
- * its own row; one the status does not list yet, by the listener's state.
+ * its own row; one the status does not list yet, by the listener's state and reason, which while
+ * connected is set only when BIGO sends no notifications.
  */
 function pollingReason(
   status: BigoNotificationStatus,
@@ -100,7 +107,8 @@ function pollingReason(
     ? status.streamers.find((entry) => entry.streamer_id === streamerId)
     : undefined;
   if (row) return row.method === 'polling' ? (row.reason ?? 'unknown') : null;
-  return status.state === 'connected' ? null : (status.reason ?? 'unknown');
+  if (status.state === 'connected') return status.reason;
+  return status.reason ?? 'unknown';
 }
 
 /**
@@ -129,4 +137,67 @@ export function BigoPollingNotice({
     return null;
   }
   return <BigoPollingWarning platformId={status.platform_id} />;
+}
+
+/**
+ * The warning on the streamers page while Bigo live notifications have stopped working: BIGO sends
+ * the account none, or the listener has stayed disconnected past the server's grace period for
+ * brief drops. Without Bigo streamers on the page it shows nothing, without asking for the status.
+ */
+export function BigoNotificationsAlert({
+  hasBigoStreamers,
+  className,
+}: {
+  hasBigoStreamers: boolean;
+  className?: string;
+}) {
+  const { data: status } = useQuery({
+    ...bigoNotificationStatusQueryOptions,
+    enabled: hasBigoStreamers,
+  });
+  if (!hasBigoStreamers || !status) return null;
+  const notArriving = status.reason === 'notifications_not_arriving';
+  if (!notArriving && !status.down_since) return null;
+  const platformId = status.platform_id;
+  return (
+    <div className={className}>
+      <Callout
+        tone="warning"
+        icon={BellOff}
+        role="status"
+        title={
+          notArriving ? (
+            <Trans>BIGO is not sending live notifications</Trans>
+          ) : (
+            <Trans>Bigo live notifications are disconnected</Trans>
+          )
+        }
+        action={
+          platformId && (
+            <Link
+              to="/config/platforms/$platformId"
+              params={{ platformId }}
+              className="font-medium underline underline-offset-2"
+            >
+              <Trans>Open the Bigo settings</Trans>
+            </Link>
+          )
+        }
+      >
+        {notArriving ? (
+          <Trans>
+            Bigo streamers are polled until a notification arrives, so stream
+            starts are noticed late. Check that the notification account is not
+            signed in to the BIGO app and that live notifications are on in its
+            BIGO settings.
+          </Trans>
+        ) : (
+          <Trans>
+            rust-srec keeps trying to reconnect. Meanwhile Bigo streamers are
+            polled, so stream starts are noticed late.
+          </Trans>
+        )}
+      </Callout>
+    </div>
+  );
 }

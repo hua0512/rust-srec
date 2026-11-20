@@ -36,6 +36,8 @@ import { useLingui } from '@lingui/react';
 import { msg, plural } from '@lingui/core/macro';
 import { StreamerCard } from '@/components/streamers/streamer-card';
 import { SearchInput } from '@/components/shared/search-input';
+import { BigoNotificationsAlert } from '@/components/shared/bigo-notifications';
+import { getPlatformFromUrl } from '@/lib/platform';
 import { useUpdateSearch } from '@/hooks/use-update-search';
 import {
   useBatchActionMutation,
@@ -612,6 +614,12 @@ function StreamersPage() {
 
       {/* Content Content */}
       <div className="p-4 md:px-8 pb-20">
+        <BigoNotificationsAlert
+          hasBigoStreamers={streamers.some(
+            (streamer) => getPlatformFromUrl(streamer.url) === 'bigo',
+          )}
+          className="mb-6"
+        />
         {/* initial={false}: a list already there on the first render (server
             rendered, or loaded while hovering the link) shows at once rather
             than fading in from invisible; later swaps still animate. */}

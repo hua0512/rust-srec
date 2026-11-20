@@ -1,13 +1,15 @@
 import type { ReactNode } from 'react';
 import { useWatch } from 'react-hook-form';
 import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import {
   FormControl,
   FormDescription,
   FormField,
   FormItem,
 } from '@/components/ui/form';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -19,7 +21,7 @@ import {
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
-import { BellRing, Lock, Radar, Video } from 'lucide-react';
+import { BellRing, Lock, Radar, RefreshCw, Video } from 'lucide-react';
 import { FlagFormField } from '@/components/ui/flag-form-field';
 import {
   ConfigFieldLabel,
@@ -39,6 +41,7 @@ import { platformAccountsQueryOptions } from '@/api/credential-profiles';
 import type { BigoNotificationStatus } from '@/api/schemas/platform-configs';
 import { useHydrated } from '@/hooks/use-hydrated';
 import { formatRelativeTime } from '@/lib/datetime';
+import { reconnectBigoNotifications } from '@/server/functions';
 
 interface BigoConfigFieldsProps<TFieldValues extends FieldValues> {
   form: UseFormReturn<TFieldValues>;
@@ -319,6 +322,13 @@ function ListenerStatus({ status }: { status: BigoNotificationStatus }) {
     hydrated && status.last_missed_at
       ? formatRelativeTime(status.last_missed_at, i18n.locale)
       : null;
+  // The status's websocket notice refreshes it once the attempt starts.
+  const reconnect = useMutation({
+    mutationFn: () => reconnectBigoNotifications(),
+    onError: () => toast.error(i18n._(msg`Failed to reconnect`)),
+  });
+  // Waiting for another attempt that a manual one can bring forward.
+  const waiting = status.state === 'error' && status.reason === 'disconnected';
   return (
     <div
       role="status"
@@ -341,6 +351,14 @@ function ListenerStatus({ status }: { status: BigoNotificationStatus }) {
       {status.reason && (
         <p className="text-muted-foreground">
           {bigoReasonLabel(status.reason)}
+        </p>
+      )}
+      {status.reason === 'notifications_not_arriving' && (
+        <p className="text-amber-700 dark:text-amber-400">
+          <Trans>
+            Check that the notification account is not signed in to the BIGO app
+            and that live notifications are on in its BIGO settings.
+          </Trans>
         </p>
       )}
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -373,6 +391,18 @@ function ListenerStatus({ status }: { status: BigoNotificationStatus }) {
             {status.message}
           </div>
         </div>
+      )}
+      {waiting && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={reconnect.isPending}
+          onClick={() => reconnect.mutate()}
+        >
+          <RefreshCw className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+          <Trans>Reconnect now</Trans>
+        </Button>
       )}
     </div>
   );

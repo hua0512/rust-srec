@@ -435,6 +435,7 @@ impl ServiceContainer {
                 streamer_manager: self.streamer_manager.clone(),
                 credentials: self.credential_execution.clone(),
                 feedback: self.scheduler_feedback.clone(),
+                notifications: self.notification_service.clone(),
             },
             &self.task_supervisor,
             self.cancellation_token.child_token(),

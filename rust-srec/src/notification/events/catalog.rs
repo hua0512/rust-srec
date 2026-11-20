@@ -180,6 +180,26 @@ const NOTIFICATION_EVENT_TYPES: &[NotificationEventTypeInfo] = &[
             "PlatformThrottled",
         ],
     },
+    NotificationEventTypeInfo {
+        event_type: "bigo_notifications_failing",
+        label: "Bigo Live Notifications Failing",
+        priority: NotificationPriority::High,
+        aliases: &[
+            "bigo_notifications_failing",
+            "bigo.notifications_failing",
+            "BigoNotificationsFailing",
+        ],
+    },
+    NotificationEventTypeInfo {
+        event_type: "bigo_notifications_restored",
+        label: "Bigo Live Notifications Restored",
+        priority: NotificationPriority::Normal,
+        aliases: &[
+            "bigo_notifications_restored",
+            "bigo.notifications_restored",
+            "BigoNotificationsRestored",
+        ],
+    },
     // ========== Credential Events ==========
     NotificationEventTypeInfo {
         event_type: "credential_refreshed",
