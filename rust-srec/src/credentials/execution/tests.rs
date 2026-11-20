@@ -2044,6 +2044,38 @@ async fn an_unusable_account_never_stops_a_platform_that_works_without_one() {
             } if id == profiles[0].id
         ));
         assert_eq!(extract_cookies(&service, &revoked).await.unwrap(), "");
+        // A recording bound to the account keeps being polled, without it.
+        let bound = CredentialBinding {
+            identity: CredentialIdentity::Profile {
+                profile_id: profiles[0].id.clone(),
+            },
+            revision: repository.get(&profiles[0].id).await.unwrap().revision as u64,
+            policy: revoked.clone(),
+            epoch: 1,
+        };
+        let polled = service
+            .execute(
+                &revoked,
+                Some(&bound),
+                false,
+                OperationDeadline::new(Duration::from_secs(5)),
+                direct(),
+                |snapshot| async move {
+                    Ok(Extracted {
+                        preserve_health: false,
+                        value: snapshot.material.cookies,
+                        session_cookies: None,
+                    })
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(polled.value, "");
+        assert!(matches!(
+            polled.snapshot.binding.identity,
+            CredentialIdentity::Anonymous
+        ));
+        assert_eq!(polled.snapshot.binding.epoch, 1);
         // A check without a verdict leaves the account in use.
         let unchecked = fixed(&policy, &profiles[1]);
         assert_eq!(

@@ -52,22 +52,19 @@ impl Jar {
     /// The Cookie header a browser sends to `url` at `now` (Unix seconds).
     pub(super) fn header_for(&self, url: &Url, now: i64) -> Option<String> {
         let host = url.host_str()?;
-        let header = self
-            .0
-            .iter()
-            .filter(|cookie| cookie.alive(now) && cookie.sent_to(host))
-            .map(|cookie| format!("{}={}", cookie.name, cookie.value))
-            .collect::<Vec<_>>()
-            .join("; ");
-        (!header.is_empty()).then_some(header)
+        self.header(|cookie| cookie.alive(now) && cookie.sent_to(host))
     }
 
     /// The live cookies kept for exactly `domain`, as a Cookie header.
     pub(super) fn domain_header(&self, domain: &str, now: i64) -> Option<String> {
+        self.header(|cookie| cookie.domain == domain && cookie.alive(now))
+    }
+
+    fn header(&self, sent: impl Fn(&Cookie) -> bool) -> Option<String> {
         let header = self
             .0
             .iter()
-            .filter(|cookie| cookie.domain == domain && cookie.alive(now))
+            .filter(|cookie| sent(cookie))
             .map(|cookie| format!("{}={}", cookie.name, cookie.value))
             .collect::<Vec<_>>()
             .join("; ");
@@ -151,7 +148,7 @@ fn parse_set_cookie(header: &str, host: &str, now: i64) -> Option<Cookie> {
     Some(Cookie {
         domain,
         name: name.to_owned(),
-        value: value.trim().trim_matches('"').to_owned(),
+        value: value.trim().to_owned(),
         // `Max-Age` takes precedence over `Expires`, as in a browser.
         expires: max_age.map(|age| now.saturating_add(age)).or(expires),
     })

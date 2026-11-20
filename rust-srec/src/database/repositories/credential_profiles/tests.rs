@@ -142,6 +142,68 @@ async fn session_binding_and_outbox_are_atomic_revision_checked_and_secret_free(
     );
 }
 
+/// Weibo checks work without an account, so a recording under a fixed
+/// selection may start without one when the account cannot be used.
+#[tokio::test]
+async fn a_fixed_selection_records_without_its_account_where_accounts_are_optional() {
+    let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+        .await
+        .unwrap();
+    crate::database::run_migrations(&pool).await.unwrap();
+    sqlx::query("INSERT INTO streamers(id,name,url,platform_config_id,state) VALUES ('recording','Recording','https://weibo.com/u/1000000001','platform-weibo','NOT_LIVE')").execute(&pool).await.unwrap();
+    let profiles = CredentialProfileRepository::new(pool.clone(), pool.clone());
+    let owner = CredentialOwner::Platform {
+        platform_id: "platform-weibo".into(),
+    };
+    let profile = profiles
+        .create(
+            owner.id(),
+            "A",
+            true,
+            &CredentialMaterial {
+                cookies: "SUB=account-sub".into(),
+                refresh_token: None,
+                access_token: None,
+                reauth_config: None,
+            },
+            &crate::proxies::ProxyRoute::Inherit,
+        )
+        .await
+        .unwrap();
+    let selection = CredentialSelection::Fixed {
+        credential_id: profile.id.clone(),
+    };
+    crate::database::repositories::credential_selections::test_support::set_platform_selection(
+        &pool,
+        owner.id(),
+        &selection,
+    )
+    .await;
+    let inputs = StartSessionInputs {
+        credential_binding: Some(CredentialBinding {
+            identity: CredentialIdentity::Anonymous,
+            revision: 0,
+            policy: ResolvedCredentialPolicy::new(owner.id().into(), owner, selection).unwrap(),
+            epoch: 0,
+        }),
+        streamer_id: "recording".into(),
+        streamer_name: "Recording".into(),
+        streamer_url: "https://weibo.com/u/1000000001".into(),
+        current_avatar: None,
+        new_avatar: None,
+        title: "Live".into(),
+        category: None,
+        streams: Vec::new(),
+        media_headers: None,
+        media_extras: None,
+        now: jiff::Timestamp::now(),
+    };
+    SessionLifecycleRepository::new(pool.clone())
+        .start_or_resume(inputs)
+        .await
+        .unwrap();
+}
+
 #[tokio::test]
 async fn cancelling_profile_request_after_commit_does_not_skip_publication() {
     tokio::time::timeout(std::time::Duration::from_secs(5), async {

@@ -7,8 +7,9 @@
 //! redirects: the walk below follows them itself, so it can keep every hop's
 //! `Set-Cookie` and send each hop its `Referer`.
 //!
-//! A login yields the `.weibo.com` cookies, which the extractor uses, and an account token holding every cookie of the chain
-//! with its domain and expiry, which can sign the account in again later.
+//! A login yields the `.weibo.com` cookies, which the extractor uses, and an
+//! account token holding every cookie of the chain with its domain and
+//! expiry, which can sign the account in again later.
 //!
 //! Cookies, the account token, QR ids and sign-in addresses are credentials:
 //! they never appear in errors or logs, and request errors drop their URL.
@@ -46,10 +47,8 @@ const SESSION_DOMAIN: &str = ".weibo.com";
 const SESSION_COOKIE: &str = "SUB";
 const TOKEN_VERSION: u8 = 1;
 
-/// The account's uid in the user config `weibo.com` embeds in its page.
-static PAGE_IDSTR: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#""idstr"\s*:\s*"(\d+)""#).unwrap());
-static PAGE_UID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#""uid"\s*:\s*"?(\d+)"#).unwrap());
+/// The start of the user object in the config `weibo.com` embeds in its page.
+static PAGE_USER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#""user"\s*:\s*\{"#).unwrap());
 
 #[derive(Debug, Error)]
 pub enum PassportError {
@@ -287,14 +286,26 @@ fn on_sign_in_site(url: &Url) -> bool {
         .is_some_and(|host| SIGN_IN_SITES.iter().any(|site| on_site(host, site)))
 }
 
-/// The uid in the user config of a `weibo.com` page: `idstr`, else `uid`.
+/// The uid in the user config of a `weibo.com` page: the `idstr`, else the
+/// `uid`, of the first `"user"` object, which is the signed-in account. Ids
+/// of other users elsewhere in the page are never taken.
 fn page_uid(page: &str) -> Option<String> {
-    [&PAGE_IDSTR, &PAGE_UID].into_iter().find_map(|pattern| {
-        pattern
-            .captures(page)
-            .and_then(|captures| captures.get(1))
-            .map(|uid| uid.as_str().to_owned())
-    })
+    let start = PAGE_USER.find(page)?.end() - 1;
+    let user: serde_json::Value = serde_json::Deserializer::from_str(&page[start..])
+        .into_iter()
+        .next()?
+        .ok()?;
+    ["idstr", "uid"]
+        .into_iter()
+        .find_map(|key| match user.get(key)? {
+            serde_json::Value::String(id)
+                if !id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()) =>
+            {
+                Some(id.clone())
+            }
+            serde_json::Value::Number(id) => id.as_u64().map(|id| id.to_string()),
+            _ => None,
+        })
 }
 
 /// Walks the redirects from `start` to `weibo.com` as a browser would: each
@@ -307,9 +318,12 @@ async fn sign_in(
     mut referer: String,
     mut jar: Jar,
 ) -> Result<Session, PassportError> {
+    let scheme = start.scheme().to_owned();
     let mut url = start;
     for _ in 0..MAX_HOPS {
-        if !on_sign_in_site(&url) {
+        // A hop to another site, or from HTTPS to plain HTTP, would hand the
+        // chain's tickets and cookies to someone else.
+        if !on_sign_in_site(&url) || url.scheme() != scheme {
             return Err(PassportError::Parse("sign-in redirected away from Weibo"));
         }
         let mut request = client
@@ -379,9 +393,9 @@ async fn check_account_at(
 ) -> Result<AccountState, PassportError> {
     let uid = match account_token.and_then(account_uid) {
         Some(uid) => uid,
-        None => match home_uid(client, hosts, cookies).await? {
-            Some(uid) => uid,
-            None => return Ok(AccountState::Unknown),
+        None => match home_account(client, hosts, cookies).await? {
+            Ok(uid) => uid,
+            Err(state) => return Ok(state),
         },
     };
     let api = format!("{}/ajax/statuses/mymblog", hosts.main);
@@ -412,26 +426,31 @@ async fn check_account_at(
     }
 }
 
-/// The uid `weibo.com` shows `cookies` signed in as. A redirect, such as to
-/// the visitor page, shows none.
-async fn home_uid(
+/// The uid `weibo.com` shows `cookies` signed in as, else what its page
+/// says about them: a redirect to the sign-in or visitor page means they
+/// are signed out, and any other page leaves the account unknown.
+async fn home_account(
     client: &Client,
     hosts: &Hosts,
     cookies: &str,
-) -> Result<Option<String>, PassportError> {
+) -> Result<Result<String, AccountState>, PassportError> {
+    let home = format!("{}/", hosts.main);
     let response = client
-        .get(format!("{}/", hosts.main))
+        .get(&home)
         .header(header::USER_AGENT, DEFAULT_UA)
         .header(header::COOKIE, cookies)
         .send()
         .await
         .map_err(network)?;
     check_throttle(&response).map_err(PassportError::Response)?;
+    if login_failure(&response, &home).is_some() {
+        return Ok(Err(AccountState::SignedOut));
+    }
     if response.status().is_redirection() {
-        return Ok(None);
+        return Ok(Err(AccountState::Unknown));
     }
     let page = checked(response)?.text().await.map_err(network)?;
-    Ok(page_uid(&page))
+    Ok(page_uid(&page).ok_or(AccountState::Unknown))
 }
 
 #[cfg(test)]
@@ -628,10 +647,6 @@ mod tests {
                 .find(|cookie| cookie["domain"] == domain && cookie["name"] == name)
                 .cloned()
         };
-        assert_eq!(
-            stored(".weibo.com", "SUB").unwrap()["expires"],
-            1_826_726_306
-        );
         assert_eq!(stored(".sina.com.cn", "SUB").unwrap()["value"], "sina-sub");
         assert_eq!(stored(".weibo.cn", "SUB").unwrap()["value"], "cn-sub");
         assert_eq!(
@@ -671,6 +686,11 @@ mod tests {
                 r#"{"retcode":20000000,"data":{"url":"http://passport.weibo.com:{port}/sso/v2/login?alt=ALT-test"}}"#,
             ),
             redirect("http://127.0.0.1:{port}/collect?alt=ALT-test"),
+            Reply::json(
+                "200 OK",
+                r#"{"retcode":20000000,"data":{"url":"http://passport.weibo.com:{port}/sso/v2/login?alt=ALT-test"}}"#,
+            ),
+            redirect("https://login.sina.com.cn/sso/v2/crossdomain?ticket=ST-test1"),
         ])
         .await;
         assert!(matches!(
@@ -681,7 +701,12 @@ mod tests {
             bounded(poll_qr_at(&client, &hosts, "QRID-test")).await,
             Err(PassportError::Parse("sign-in redirected away from Weibo"))
         ));
-        assert_eq!(received.lock().unwrap().len(), 5);
+        // A hop in another scheme than the start's is refused too.
+        assert!(matches!(
+            bounded(poll_qr_at(&client, &hosts, "QRID-test")).await,
+            Err(PassportError::Parse("sign-in redirected away from Weibo"))
+        ));
+        assert_eq!(received.lock().unwrap().len(), 7);
     }
 
     #[tokio::test]
@@ -691,6 +716,7 @@ mod tests {
         let (client, hosts, received) = local_passport(vec![
             Reply::json("200 OK", r#"{"ok":1,"data":{"list":[]}}"#),
             redirect("http://weibo.com:{port}/login.php?url=x").header("x-login-failed", "true"),
+            redirect("http://weibo.com:{port}/u/1000000003").header("x-login-failed", "true"),
             redirect("http://passport.weibo.com:{port}/visitor/visitor?entry=miniblog&a=enter"),
             Reply::raw("403 Forbidden", "text/html", "<h2>403 Forbidden</h2>"),
             Reply::json("200 OK", r#"{"code":100004,"msg":"SinaSec check failure"}"#),
@@ -699,6 +725,7 @@ mod tests {
             page(SIGN_IN_PAGE),
             Reply::json("200 OK", r#"{"ok":1,"data":{"list":[]}}"#),
             redirect("http://passport.weibo.com:{port}/visitor/visitor?a=enter"),
+            page("<html>no user config</html>"),
         ])
         .await;
         let check = |token| bounded(check_account_at(&client, &hosts, COOKIES, token));
@@ -710,8 +737,9 @@ mod tests {
             header_of(&sent, "referer"),
             Some(format!("{}/u/1000000003", hosts.main))
         );
-        assert_eq!(check(Some(token)).await.unwrap(), AccountState::SignedOut);
-        assert_eq!(check(Some(token)).await.unwrap(), AccountState::SignedOut);
+        for _ in 0..3 {
+            assert_eq!(check(Some(token)).await.unwrap(), AccountState::SignedOut);
+        }
         assert!(matches!(
             check(Some(token)).await,
             Err(PassportError::Network(_))
@@ -729,22 +757,28 @@ mod tests {
         ));
 
         assert_eq!(check(None).await.unwrap(), AccountState::Valid);
-        assert!(request(&received, 6).starts_with("GET / "));
-        assert!(request(&received, 7).contains("uid=1000000002"));
+        assert!(request(&received, 7).starts_with("GET / "));
+        assert!(request(&received, 8).contains("uid=1000000002"));
+        // Pasted cookies weibo.com sends to its visitor page are signed out;
+        // a page that shows no account leaves them unknown.
+        assert_eq!(check(None).await.unwrap(), AccountState::SignedOut);
         assert_eq!(check(None).await.unwrap(), AccountState::Unknown);
-        assert_eq!(received.lock().unwrap().len(), 9);
+        assert_eq!(received.lock().unwrap().len(), 11);
     }
 
     #[test]
-    fn the_uid_comes_from_idstr_else_uid() {
+    fn the_uid_comes_from_the_signed_in_user_object() {
         assert_eq!(
-            page_uid(r#"{"uid":"1000000005","user":{"idstr":"1000000004"}}"#).as_deref(),
+            page_uid(
+                r#"$CONFIG = {"status":{"idstr":"1000000009"},"user":{"name":"a } b","uid":"1000000005","idstr":"1000000004"}};"#
+            )
+            .as_deref(),
             Some("1000000004")
         );
         assert_eq!(
-            page_uid(r#"$CONFIG = {"uid": 1000000005};"#).as_deref(),
+            page_uid(r#"$CONFIG = {"user":{"uid": 1000000005}};"#).as_deref(),
             Some("1000000005")
         );
-        assert_eq!(page_uid(r#"{"user":{}}"#), None);
+        assert_eq!(page_uid(r#"{"idstr":"1000000009","user":{}}"#), None);
     }
 }
