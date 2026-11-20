@@ -67,6 +67,24 @@ pub enum MonitorEvent {
         consecutive_errors: i32,
         timestamp: Timestamp,
     },
+    /// Checks for a streamer failed often enough to start the error backoff.
+    /// Emitted once per run of failures, by the failure that reaches the
+    /// backoff threshold.
+    ChecksFailing {
+        streamer_id: String,
+        streamer_name: String,
+        platform: String,
+        last_error: String,
+        consecutive_errors: i32,
+        timestamp: Timestamp,
+    },
+    /// A successful status check cleared a run of failures that had sent
+    /// [`Self::ChecksFailing`].
+    ChecksRestored {
+        streamer_id: String,
+        streamer_name: String,
+        timestamp: Timestamp,
+    },
     /// Streamer state changed.
     StateChanged {
         streamer_id: String,
@@ -140,6 +158,20 @@ impl MonitorEvent {
                     "{}: {} (attempt {})",
                     streamer_name, error_message, consecutive_errors
                 )
+            }
+            MonitorEvent::ChecksFailing {
+                streamer_name,
+                last_error,
+                consecutive_errors,
+                ..
+            } => {
+                format!(
+                    "{}: checks keep failing after {} attempts: {}",
+                    streamer_name, consecutive_errors, last_error
+                )
+            }
+            MonitorEvent::ChecksRestored { streamer_name, .. } => {
+                format!("{}: checks work again", streamer_name)
             }
             MonitorEvent::StateChanged {
                 streamer_name,

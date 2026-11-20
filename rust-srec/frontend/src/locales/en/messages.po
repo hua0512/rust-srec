@@ -1485,7 +1485,7 @@ msgstr "Baidu Netdisk login failed"
 msgid "Baidu Netdisk logout failed"
 msgstr "Baidu Netdisk logout failed"
 
-#: src/lib/notification-event-types.ts:48
+#: src/lib/notification-event-types.ts:50
 msgid "Baidu Netdisk re-login failed"
 msgstr "Baidu Netdisk re-login failed"
 
@@ -1602,11 +1602,11 @@ msgstr "BIGO is not sending live notifications; polled until one arrives"
 msgid "Bigo live notifications are disconnected"
 msgstr "Bigo live notifications are disconnected"
 
-#: src/lib/notification-event-types.ts:40
+#: src/lib/notification-event-types.ts:42
 msgid "Bigo live notifications failing"
 msgstr "Bigo live notifications failing"
 
-#: src/lib/notification-event-types.ts:41
+#: src/lib/notification-event-types.ts:43
 msgid "Bigo live notifications restored"
 msgstr "Bigo live notifications restored"
 
@@ -2772,19 +2772,19 @@ msgstr "Creating…"
 msgid "Creation Mode"
 msgstr "Creation Mode"
 
-#: src/lib/notification-event-types.ts:46
+#: src/lib/notification-event-types.ts:48
 msgid "Credential expiring soon"
 msgstr "Credential expiring soon"
 
-#: src/lib/notification-event-types.ts:44
+#: src/lib/notification-event-types.ts:46
 msgid "Credential invalid"
 msgstr "Credential invalid"
 
-#: src/lib/notification-event-types.ts:43
+#: src/lib/notification-event-types.ts:45
 msgid "Credential refresh failed"
 msgstr "Credential refresh failed"
 
-#: src/lib/notification-event-types.ts:42
+#: src/lib/notification-event-types.ts:44
 msgid "Credential refreshed"
 msgstr "Credential refreshed"
 
@@ -2804,7 +2804,7 @@ msgstr "Credentials remembered for automatic re-login"
 msgid "Credentials saved successfully"
 msgstr "Credentials saved successfully"
 
-#: src/lib/notification-event-types.ts:45
+#: src/lib/notification-event-types.ts:47
 msgid "Credentials unavailable"
 msgstr "Credentials unavailable"
 
@@ -5199,7 +5199,7 @@ msgstr "GPU HQ Archive"
 msgid "GPU Standard"
 msgstr "GPU Standard"
 
-#: src/lib/notification-event-types.ts:36
+#: src/lib/notification-event-types.ts:38
 msgid "GPU unavailable"
 msgstr "GPU unavailable"
 
@@ -7656,7 +7656,7 @@ msgstr "Original (10000)"
 msgid "Original / Blu-ray"
 msgstr "Original / Blu-ray"
 
-#: src/lib/notification-event-types.ts:34
+#: src/lib/notification-event-types.ts:36
 msgid "Out of disk space"
 msgstr "Out of disk space"
 
@@ -7712,7 +7712,7 @@ msgstr "Output Detection"
 msgid "Output Folder"
 msgstr "Output Folder"
 
-#: src/lib/notification-event-types.ts:35
+#: src/lib/notification-event-types.ts:37
 msgid "Output folder unavailable"
 msgstr "Output folder unavailable"
 
@@ -8203,7 +8203,7 @@ msgstr "Platform Override Settings"
 msgid "Platform Overrides"
 msgstr "Platform Overrides"
 
-#: src/lib/notification-event-types.ts:39
+#: src/lib/notification-event-types.ts:41
 msgid "Platform rate limited"
 msgstr "Platform rate limited"
 
@@ -10053,7 +10053,7 @@ msgstr "Session Complete Pipeline"
 msgid "Session complete pipeline is not supported for this entity."
 msgstr "Session complete pipeline is not supported for this entity."
 
-#: src/lib/notification-event-types.ts:47
+#: src/lib/notification-event-types.ts:49
 msgid "Session cookies not saved"
 msgstr "Session cookies not saved"
 
@@ -10633,6 +10633,14 @@ msgstr "Streamer Check"
 msgid "Streamer check history"
 msgstr "Streamer check history"
 
+#: src/lib/notification-event-types.ts:34
+msgid "Streamer checks failing"
+msgstr "Streamer checks failing"
+
+#: src/lib/notification-event-types.ts:35
+msgid "Streamer checks restored"
+msgstr "Streamer checks restored"
+
 #: src/routes/_authed/_dashboard/streamers/new.lazy.tsx:23
 msgid "Streamer created successfully"
 msgstr "Streamer created successfully"
@@ -10816,11 +10824,11 @@ msgstr "System proxy"
 msgid "System proxy: <0>{url}</0>"
 msgstr "System proxy: <0>{url}</0>"
 
-#: src/lib/notification-event-types.ts:38
+#: src/lib/notification-event-types.ts:40
 msgid "System shutting down"
 msgstr "System shutting down"
 
-#: src/lib/notification-event-types.ts:37
+#: src/lib/notification-event-types.ts:39
 msgid "System started"
 msgstr "System started"
 

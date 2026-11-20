@@ -31,6 +31,8 @@ const EVENT_TYPE_LABELS: Record<string, MessageDescriptor> = {
   pipeline_queue_warning: msg`Pipeline queue backing up`,
   pipeline_queue_critical: msg`Pipeline queue critical`,
   fatal_error: msg`Fatal error`,
+  streamer_checks_failing: msg`Streamer checks failing`,
+  streamer_checks_restored: msg`Streamer checks restored`,
   out_of_space: msg`Out of disk space`,
   output_path_inaccessible: msg`Output folder unavailable`,
   gpu_unavailable: msg`GPU unavailable`,

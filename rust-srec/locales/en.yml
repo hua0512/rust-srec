@@ -66,6 +66,12 @@ notification:
   fatal_error:
     title: "🚨 Fatal error for %{streamer_name}: %{error_type}"
     description: "%{message}"
+  streamer_checks_failing:
+    title: "⚠️ Checks for %{streamer_name} keep failing"
+    description: "%{count} attempts in a row failed on %{platform}, so rust-srec now waits longer between retries, up to an hour, until one succeeds. Last error: %{last_error}"
+  streamer_checks_restored:
+    title: "✅ Checks for %{streamer_name} work again"
+    description: "A status check succeeded after repeated failures, so monitoring is back to its normal interval."
   out_of_space:
     title: "💾 Low disk space on %{path}"
     description: "Available: %{available} (threshold: %{threshold})"

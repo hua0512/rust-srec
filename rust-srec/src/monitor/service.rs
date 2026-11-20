@@ -1296,6 +1296,9 @@ impl<
 
         // Check if we have accumulated errors that should be cleared on successful check
         let has_errors = streamer.consecutive_error_count > 0 || streamer.disabled_until.is_some();
+        // The cleared run reached the threshold, so it sent `ChecksFailing`.
+        let checks_restored = streamer.consecutive_error_count
+            >= download_failure_threshold(streamer.offline_check_count);
 
         // The actor applies an initial offline observation after restart even
         // when hydration has reset metadata to NotLive. The database may still
@@ -1314,6 +1317,7 @@ impl<
                     session_id: session_id.as_deref(),
                     state_was_live: streamer.state == StreamerState::Live,
                     clear_errors: has_errors,
+                    checks_restored,
                     signal,
                     now,
                 })
@@ -1328,7 +1332,7 @@ impl<
                 );
             }
 
-            if outcome.offline_event_emitted {
+            if outcome.offline_event_emitted || checks_restored {
                 self.notify_outbox();
             }
         } else if has_errors {
@@ -1352,10 +1356,22 @@ impl<
                             StreamerTxOps::set_offline_row(&mut *tx, &streamer.id).await?;
                     }
 
+                    if checks_restored {
+                        let event = MonitorEvent::ChecksRestored {
+                            streamer_id: streamer.id.clone(),
+                            streamer_name: streamer.name.clone(),
+                            timestamp: jiff::Timestamp::now(),
+                        };
+                        MonitorOutboxTxOps::enqueue_event(&mut *tx, &streamer.id, &event).await?;
+                    }
+
                     Ok(committed_row)
                 })
             })
             .await?;
+            if checks_restored {
+                self.notify_outbox();
+            }
         }
 
         Ok(())
@@ -1585,6 +1601,20 @@ impl<
                     timestamp: now,
                 };
                 MonitorOutboxTxOps::enqueue_event(&mut *tx, &streamer.id, &event).await?;
+
+                // The count rises by one per failure and only a clear resets
+                // it, so equality alerts once per run of failures.
+                if new_error_count == download_failure_threshold(streamer.offline_check_count) {
+                    let event = MonitorEvent::ChecksFailing {
+                        streamer_id: streamer.id.clone(),
+                        streamer_name: streamer.name.clone(),
+                        platform: streamer.platform().to_owned(),
+                        last_error: error.clone(),
+                        consecutive_errors: new_error_count,
+                        timestamp: now,
+                    };
+                    MonitorOutboxTxOps::enqueue_event(&mut *tx, &streamer.id, &event).await?;
+                }
 
                 Ok(committed_row)
             })
@@ -2415,8 +2445,67 @@ mod tests {
             MonitorEvent::StreamerOffline { .. } => "StreamerOffline",
             MonitorEvent::FatalError { .. } => "FatalError",
             MonitorEvent::TransientError { .. } => "TransientError",
+            MonitorEvent::ChecksFailing { .. } => "ChecksFailing",
+            MonitorEvent::ChecksRestored { .. } => "ChecksRestored",
             MonitorEvent::StateChanged { .. } => "StateChanged",
         }
+    }
+
+    /// The `ChecksFailing` / `ChecksRestored` kinds in the outbox, oldest first.
+    async fn check_alerts(pool: &SqlitePool) -> Vec<&'static str> {
+        MonitorOutboxOps::fetch_undelivered(pool, 100)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|entry| serde_json::from_str(&entry.payload).unwrap())
+            .map(|event: MonitorEvent| outbox_event_type(&event))
+            .filter(|kind| kind.starts_with("Checks"))
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn check_failure_alert_fires_once_per_run_and_recovery_follows_it() {
+        let pool = setup_monitor_test_db().await;
+        insert_streamer(&pool, "flaky", StreamerState::NotLive, 0, None).await;
+        // A failing run cleared from a state the session end does not own.
+        insert_streamer(&pool, "flaky-oos", StreamerState::OutOfSchedule, 100, None).await;
+        let monitor = build_test_monitor(&pool).await;
+        let current = |id| monitor.streamer_manager.get_streamer(id).unwrap();
+        let threshold = download_failure_threshold(current("flaky").offline_check_count);
+
+        // A run that stops short of the threshold alerts neither way.
+        for _ in 1..threshold {
+            monitor
+                .handle_error(&current("flaky"), "boom")
+                .await
+                .unwrap();
+        }
+        monitor.handle_offline(&current("flaky")).await.unwrap();
+        assert_eq!(current("flaky").consecutive_error_count, 0);
+        assert!(check_alerts(&pool).await.is_empty());
+
+        // Reaching the threshold alerts once; failures past it add nothing.
+        for _ in 0..=threshold {
+            monitor
+                .handle_error(&current("flaky"), "boom")
+                .await
+                .unwrap();
+        }
+        assert_eq!(check_alerts(&pool).await, ["ChecksFailing"]);
+        monitor.handle_offline(&current("flaky")).await.unwrap();
+        assert_eq!(
+            check_alerts(&pool).await,
+            ["ChecksFailing", "ChecksRestored"]
+        );
+
+        monitor.handle_offline(&current("flaky-oos")).await.unwrap();
+        assert_eq!(current("flaky-oos").consecutive_error_count, 0);
+        assert_eq!(
+            check_alerts(&pool).await,
+            ["ChecksFailing", "ChecksRestored", "ChecksRestored"]
+        );
+
+        monitor.stop();
     }
 
     #[tokio::test]

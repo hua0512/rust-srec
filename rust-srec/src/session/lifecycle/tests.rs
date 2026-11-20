@@ -38,6 +38,7 @@ async fn lifecycle_entrypoints_wait_for_streamer_serialization() {
                     session_id: Some(sid),
                     state_was_live: true,
                     clear_errors: false,
+                    checks_restored: false,
                     signal: None,
                     now: jiff::Timestamp::now(),
                 })
@@ -214,6 +215,7 @@ async fn delayed_offline_for_old_session_preserves_live_successor() {
             session_id: Some(first.session_id()),
             state_was_live: true,
             clear_errors: true,
+            checks_restored: false,
             signal: None,
             now: jiff::Timestamp::now(),
         })
@@ -282,6 +284,8 @@ async fn outbox_event_types(pool: &SqlitePool) -> Vec<String> {
                 MonitorEvent::StreamerOffline { .. } => "StreamerOffline",
                 MonitorEvent::FatalError { .. } => "FatalError",
                 MonitorEvent::TransientError { .. } => "TransientError",
+                MonitorEvent::ChecksFailing { .. } => "ChecksFailing",
+                MonitorEvent::ChecksRestored { .. } => "ChecksRestored",
                 MonitorEvent::StateChanged { .. } => "StateChanged",
             }
             .to_string()
@@ -1080,6 +1084,7 @@ async fn authoritative_end_during_hysteresis_cancels_timer() {
             session_id: Some(started.session_id()),
             state_was_live: true,
             clear_errors: false,
+            checks_restored: false,
             signal: None,
             now: jiff::Timestamp::now(),
         })
@@ -1182,6 +1187,7 @@ async fn session_ended_dedup_persists_one_row() {
         session_id: Some(&sid),
         state_was_live: true,
         clear_errors: false,
+        checks_restored: false,
         signal: None,
         now,
     };
@@ -1525,6 +1531,7 @@ async fn session_ended_persisted_with_definitive_offline_signal() {
             session_id: Some(&sid),
             state_was_live: true,
             clear_errors: false,
+            checks_restored: false,
             signal: Some(crate::session::OfflineSignal::DanmuStreamClosed),
             now: jiff::Timestamp::now(),
         })

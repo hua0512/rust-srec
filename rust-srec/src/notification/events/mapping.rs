@@ -24,6 +24,30 @@ pub(crate) fn monitor_notification(event: MonitorEvent) -> Option<NotificationEv
             message,
             timestamp,
         }),
+        MonitorEvent::ChecksFailing {
+            streamer_id,
+            streamer_name,
+            platform,
+            last_error,
+            consecutive_errors,
+            timestamp,
+        } => Some(NotificationEvent::StreamerChecksFailing {
+            streamer_id,
+            streamer_name,
+            platform,
+            last_error,
+            consecutive_errors,
+            timestamp,
+        }),
+        MonitorEvent::ChecksRestored {
+            streamer_id,
+            streamer_name,
+            timestamp,
+        } => Some(NotificationEvent::StreamerChecksRestored {
+            streamer_id,
+            streamer_name,
+            timestamp,
+        }),
         _ => None,
     }
 }

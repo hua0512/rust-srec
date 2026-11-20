@@ -66,6 +66,12 @@ notification:
   fatal_error:
     title: "🚨 %{streamer_name} 致命错误:%{error_type}"
     description: "%{message}"
+  streamer_checks_failing:
+    title: "⚠️ %{streamer_name} 的检测持续失败"
+    description: "%{platform} 上已连续 %{count} 次尝试失败,rust-srec 会逐步拉长重试间隔(最长 1 小时),直到成功为止。最后的错误:%{last_error}"
+  streamer_checks_restored:
+    title: "✅ %{streamer_name} 的检测已恢复"
+    description: "连续失败后状态检测已成功,监控恢复正常间隔。"
   out_of_space:
     title: "💾 %{path} 磁盘空间不足"
     description: "可用空间:%{available}(阈值:%{threshold})"

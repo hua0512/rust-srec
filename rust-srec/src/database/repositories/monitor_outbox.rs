@@ -30,6 +30,8 @@ impl MonitorOutboxTxOps {
             MonitorEvent::StreamerOffline { .. } => "StreamerOffline",
             MonitorEvent::FatalError { .. } => "FatalError",
             MonitorEvent::TransientError { .. } => "TransientError",
+            MonitorEvent::ChecksFailing { .. } => "ChecksFailing",
+            MonitorEvent::ChecksRestored { .. } => "ChecksRestored",
             MonitorEvent::StateChanged { .. } => "StateChanged",
         };
 

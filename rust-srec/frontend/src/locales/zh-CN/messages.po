@@ -1485,7 +1485,7 @@ msgstr "百度网盘登录失败"
 msgid "Baidu Netdisk logout failed"
 msgstr "百度网盘退出登录失败"
 
-#: src/lib/notification-event-types.ts:48
+#: src/lib/notification-event-types.ts:50
 msgid "Baidu Netdisk re-login failed"
 msgstr "百度网盘重新登录失败"
 
@@ -1602,11 +1602,11 @@ msgstr "BIGO 没有发送开播通知；收到通知前改为轮询"
 msgid "Bigo live notifications are disconnected"
 msgstr "Bigo 开播通知已断开"
 
-#: src/lib/notification-event-types.ts:40
+#: src/lib/notification-event-types.ts:42
 msgid "Bigo live notifications failing"
 msgstr "Bigo 开播通知失效"
 
-#: src/lib/notification-event-types.ts:41
+#: src/lib/notification-event-types.ts:43
 msgid "Bigo live notifications restored"
 msgstr "Bigo 开播通知已恢复"
 
@@ -2772,19 +2772,19 @@ msgstr "创建中…"
 msgid "Creation Mode"
 msgstr "创建模式"
 
-#: src/lib/notification-event-types.ts:46
+#: src/lib/notification-event-types.ts:48
 msgid "Credential expiring soon"
 msgstr "凭据即将过期"
 
-#: src/lib/notification-event-types.ts:44
+#: src/lib/notification-event-types.ts:46
 msgid "Credential invalid"
 msgstr "凭据无效"
 
-#: src/lib/notification-event-types.ts:43
+#: src/lib/notification-event-types.ts:45
 msgid "Credential refresh failed"
 msgstr "凭据刷新失败"
 
-#: src/lib/notification-event-types.ts:42
+#: src/lib/notification-event-types.ts:44
 msgid "Credential refreshed"
 msgstr "凭据已刷新"
 
@@ -2804,7 +2804,7 @@ msgstr "已保存凭据，可自动重新登录"
 msgid "Credentials saved successfully"
 msgstr "凭据保存成功"
 
-#: src/lib/notification-event-types.ts:45
+#: src/lib/notification-event-types.ts:47
 msgid "Credentials unavailable"
 msgstr "凭据不可用"
 
@@ -5199,7 +5199,7 @@ msgstr "GPU 高质量归档"
 msgid "GPU Standard"
 msgstr "GPU 标准"
 
-#: src/lib/notification-event-types.ts:36
+#: src/lib/notification-event-types.ts:38
 msgid "GPU unavailable"
 msgstr "GPU 不可用"
 
@@ -7656,7 +7656,7 @@ msgstr "原画 (10000)"
 msgid "Original / Blu-ray"
 msgstr "原画 / 蓝光"
 
-#: src/lib/notification-event-types.ts:34
+#: src/lib/notification-event-types.ts:36
 msgid "Out of disk space"
 msgstr "磁盘空间不足"
 
@@ -7712,7 +7712,7 @@ msgstr "输出检测"
 msgid "Output Folder"
 msgstr "输出文件夹"
 
-#: src/lib/notification-event-types.ts:35
+#: src/lib/notification-event-types.ts:37
 msgid "Output folder unavailable"
 msgstr "输出目录不可用"
 
@@ -8203,7 +8203,7 @@ msgstr "平台覆盖设置"
 msgid "Platform Overrides"
 msgstr "平台覆盖项"
 
-#: src/lib/notification-event-types.ts:39
+#: src/lib/notification-event-types.ts:41
 msgid "Platform rate limited"
 msgstr "平台限流"
 
@@ -10053,7 +10053,7 @@ msgstr "会话完成处理管道"
 msgid "Session complete pipeline is not supported for this entity."
 msgstr "该实体不支持会话完成处理管道。"
 
-#: src/lib/notification-event-types.ts:47
+#: src/lib/notification-event-types.ts:49
 msgid "Session cookies not saved"
 msgstr "会话 Cookie 未保存"
 
@@ -10633,6 +10633,14 @@ msgstr "主播检查"
 msgid "Streamer check history"
 msgstr "主播检查历史"
 
+#: src/lib/notification-event-types.ts:34
+msgid "Streamer checks failing"
+msgstr "主播检测持续失败"
+
+#: src/lib/notification-event-types.ts:35
+msgid "Streamer checks restored"
+msgstr "主播检测已恢复"
+
 #: src/routes/_authed/_dashboard/streamers/new.lazy.tsx:23
 msgid "Streamer created successfully"
 msgstr "主播创建成功"
@@ -10816,11 +10824,11 @@ msgstr "系统代理"
 msgid "System proxy: <0>{url}</0>"
 msgstr "系统代理：<0>{url}</0>"
 
-#: src/lib/notification-event-types.ts:38
+#: src/lib/notification-event-types.ts:40
 msgid "System shutting down"
 msgstr "系统正在关闭"
 
-#: src/lib/notification-event-types.ts:37
+#: src/lib/notification-event-types.ts:39
 msgid "System started"
 msgstr "系统已启动"
 

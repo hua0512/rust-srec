@@ -272,6 +272,24 @@ pub enum NotificationEvent {
         message: String,
         timestamp: Timestamp,
     },
+    /// A streamer's checks failed often enough to start the error backoff.
+    /// Emitted once per run of failures.
+    StreamerChecksFailing {
+        streamer_id: String,
+        streamer_name: String,
+        platform: String,
+        /// The latest failure, as shown in the streamer's check history.
+        last_error: String,
+        consecutive_errors: i32,
+        timestamp: Timestamp,
+    },
+    /// A successful check ended a run of failures that sent
+    /// [`Self::StreamerChecksFailing`].
+    StreamerChecksRestored {
+        streamer_id: String,
+        streamer_name: String,
+        timestamp: Timestamp,
+    },
     /// Disk space running low.
     OutOfSpace {
         path: String,
@@ -414,6 +432,8 @@ impl NotificationEvent {
 
             // System events
             Self::FatalError { .. } => NotificationPriority::Critical,
+            Self::StreamerChecksFailing { .. } => NotificationPriority::High,
+            Self::StreamerChecksRestored { .. } => NotificationPriority::Normal,
             Self::OutOfSpace { .. } => NotificationPriority::Critical,
             Self::OutputPathInaccessible { .. } => NotificationPriority::Critical,
             Self::GpuUnavailable { .. } => NotificationPriority::Critical,
@@ -450,6 +470,8 @@ impl NotificationEvent {
             Self::PipelineFailed { .. } => "pipeline_failed",
             Self::PipelineCancelled { .. } => "pipeline_cancelled",
             Self::FatalError { .. } => "fatal_error",
+            Self::StreamerChecksFailing { .. } => "streamer_checks_failing",
+            Self::StreamerChecksRestored { .. } => "streamer_checks_restored",
             Self::OutOfSpace { .. } => "out_of_space",
             Self::OutputPathInaccessible { .. } => "output_path_inaccessible",
             Self::GpuUnavailable { .. } => "gpu_unavailable",
@@ -482,6 +504,8 @@ impl NotificationEvent {
             | Self::PipelineFailed { timestamp, .. }
             | Self::PipelineCancelled { timestamp, .. }
             | Self::FatalError { timestamp, .. }
+            | Self::StreamerChecksFailing { timestamp, .. }
+            | Self::StreamerChecksRestored { timestamp, .. }
             | Self::OutOfSpace { timestamp, .. }
             | Self::OutputPathInaccessible { timestamp, .. }
             | Self::GpuUnavailable { timestamp, .. }
@@ -517,7 +541,9 @@ impl NotificationEvent {
             | Self::DownloadCancelled { streamer_id, .. }
             | Self::DownloadRejected { streamer_id, .. }
             | Self::PipelineStarted { streamer_id, .. }
-            | Self::FatalError { streamer_id, .. } => Some(streamer_id),
+            | Self::FatalError { streamer_id, .. }
+            | Self::StreamerChecksFailing { streamer_id, .. }
+            | Self::StreamerChecksRestored { streamer_id, .. } => Some(streamer_id),
             _ => None,
         }
     }

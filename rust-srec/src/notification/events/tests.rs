@@ -172,6 +172,19 @@ fn sample_events() -> Vec<NotificationEvent> {
             message: "connection reset".into(),
             timestamp: now,
         },
+        NotificationEvent::StreamerChecksFailing {
+            streamer_id: "s1".into(),
+            streamer_name: "Alice".into(),
+            platform: "twitch".into(),
+            last_error: "connection reset".into(),
+            consecutive_errors: 3,
+            timestamp: now,
+        },
+        NotificationEvent::StreamerChecksRestored {
+            streamer_id: "s1".into(),
+            streamer_name: "Alice".into(),
+            timestamp: now,
+        },
         NotificationEvent::OutOfSpace {
             path: "/rec".into(),
             available_bytes: 1024 * 1024,
@@ -326,7 +339,7 @@ fn all_notification_variants_localize_in_both_locales() {
     // self-doc; bump it alongside the match arms in title/description.
     assert_eq!(
         events.len(),
-        31,
+        33,
         "sample_events is out of sync with NotificationEvent; add a sample for the new variant so its localization is covered"
     );
 
