@@ -12,7 +12,7 @@ export function getPlatformFromUrl(url: string) {
   if (url.includes('picarto.tv')) return 'picarto';
   if (url.includes('xhslink.com')) return 'redbook';
   if (url.includes('twitcasting.tv')) return 'twitcasting';
-  if (url.includes('weibo.com')) return 'weibo';
+  if (url.includes('weibo.com') || url.includes('weibo.cn')) return 'weibo';
   if (
     url.includes('sooplive.co.kr') ||
     url.includes('sooplive.com') ||

@@ -3,7 +3,7 @@ use std::sync::{Arc, LazyLock, Once};
 
 use async_trait::async_trait;
 use regex::Regex;
-use reqwest::header::{HeaderMap, HeaderValue, LOCATION, REFERER, RETRY_AFTER};
+use reqwest::header::{HeaderMap, HeaderValue, REFERER, RETRY_AFTER};
 use reqwest::{Client, Method, RequestBuilder, Response, StatusCode};
 use tracing::{debug, info, warn};
 
@@ -12,7 +12,7 @@ use crate::{
         error::{ExtractorError, parse_retry_after},
         platform_extractor::{Extractor, PlatformExtractor},
         platforms::weibo::{
-            guest::{GLOBAL_GUEST, GuestSession, VisitorApi},
+            guest::{GLOBAL_GUEST, GUEST_SESSION_UNAVAILABLE, GuestSession, VisitorApi},
             models::{ContainerResponse, ContainerUser, LiveData, LiveResponse, Pull},
         },
     },
@@ -51,7 +51,6 @@ const GATEWAY_CHECK: i64 = 100_004;
 /// Account failure codes for [`ExtractorError::Authentication`].
 const LOGIN_EXPIRED: &str = "weibo_login_expired";
 const LOGIN_REQUIRED: &str = "weibo_login_required";
-const GUEST_SESSION_UNAVAILABLE: &str = "weibo_guest_session_unavailable";
 
 /// The room a link leads to, as far as the user lookup can tell.
 #[derive(Debug, PartialEq)]
@@ -154,55 +153,46 @@ impl Weibo {
             Target::User(uid) => uid,
         };
         debug!(uid, "weibo: looking up the user's room");
-        if let Some(room) = self.lookup_with_guest(&uid).await? {
-            return Ok(room);
+        match self.lookup_with_guest(&uid).await {
+            Ok(room) => Ok(room),
+            // A throttle applies to the route, so the account would be
+            // throttled too.
+            Err(error @ ExtractorError::RateLimited { .. }) => Err(error),
+            Err(error) if self.has_user_cookies => {
+                debug!(
+                    error = error.category(),
+                    "weibo: guest lookup failed; using the account"
+                );
+                self.lookup_with_account(&uid).await
+            }
+            Err(error) => Err(error),
         }
-        if self.has_user_cookies {
-            debug!("weibo: guest session unavailable; using the account");
-            return self.lookup_with_account(&uid).await;
-        }
-        Err(ExtractorError::Other(GUEST_SESSION_UNAVAILABLE.to_owned()))
     }
 
     /// Looks the user up on m.weibo.cn with the guest session, refreshing a
-    /// rejected session once. `None` when no guest session is accepted.
-    async fn lookup_with_guest(&self, uid: &str) -> Result<Option<WeiboRoom>, ExtractorError> {
-        let Some(sub) = self.guest_sub().await else {
-            return Ok(None);
-        };
+    /// rejected session once.
+    async fn lookup_with_guest(&self, uid: &str) -> Result<WeiboRoom, ExtractorError> {
+        let sub = self.guest_sub().await?;
         if let Container::Room(room) = self.lookup_container(uid, &sub).await? {
-            return Ok(Some(room));
+            return Ok(room);
         }
         debug!("weibo: guest session rejected; refreshing it");
         self.guest.invalidate(&sub);
-        let Some(sub) = self.guest_sub().await else {
-            return Ok(None);
-        };
+        let sub = self.guest_sub().await?;
         match self.lookup_container(uid, &sub).await? {
-            Container::Room(room) => Ok(Some(room)),
+            Container::Room(room) => Ok(room),
             Container::SessionRejected => {
                 warn!("weibo: a fresh guest session was rejected too");
-                Ok(None)
+                Err(ExtractorError::Other(GUEST_SESSION_UNAVAILABLE.to_owned()))
             }
         }
     }
 
-    async fn guest_sub(&self) -> Option<String> {
+    async fn guest_sub(&self) -> Result<String, ExtractorError> {
         let headers = self.extractor.get_platform_headers();
-        match self
-            .guest
+        self.guest
             .sub(&self.extractor.client, headers, &self.visitor_api)
             .await
-        {
-            Ok(sub) => Some(sub),
-            Err(error) => {
-                warn!(
-                    error = error.category(),
-                    "weibo: could not get a guest session"
-                );
-                None
-            }
-        }
     }
 
     async fn lookup_container(&self, uid: &str, sub: &str) -> Result<Container, ExtractorError> {
@@ -415,39 +405,25 @@ fn check_gateway(code: Option<i64>) -> Result<(), ExtractorError> {
     Ok(())
 }
 
-/// Whether the request to `api` was redirected. The client may follow
-/// redirects, in which case the response comes from elsewhere, or return
-/// the 3xx itself.
+/// Whether the request to `api` was redirected, judged by where the response
+/// came from: the shared client follows redirects.
 fn redirected(response: &Response, api: &str) -> bool {
-    response.status().is_redirection() || !response.url().as_str().starts_with(api)
+    !response.url().as_str().starts_with(api)
 }
 
 /// The account failure a `mymblog` response shows, if any. An expired login
-/// is answered with `X-Login-failed` and a redirect to `login.php`, which goes
-/// on to `passport.weibo.com/sso/signin`; cookies without a login at all are
-/// redirected to the visitor page. Only these count: a 403, an HTML page or a
-/// gateway check is a block, and taking it for a failed login would mark a
-/// working account invalid.
+/// is redirected through `login.php` to `passport.weibo.com/sso/signin`;
+/// cookies without a login at all are redirected to the visitor page. Only
+/// these count: a 403, an HTML page or a gateway check is a block, and taking
+/// it for a failed login would mark a working account invalid.
 fn login_failure(response: &Response, api: &str) -> Option<&'static str> {
-    let login_failed = response
-        .headers()
-        .get("x-login-failed")
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.eq_ignore_ascii_case("true"));
-    if login_failed {
-        return Some(LOGIN_EXPIRED);
-    }
+    // The shared client follows redirects, so only the final URL is
+    // observable, not the first hop's status or headers. It is matched by
+    // path: every hop of these redirects stays on Weibo's hosts.
     if !redirected(response, api) {
         return None;
     }
-    let target = if response.status().is_redirection() {
-        let location = response.headers().get(LOCATION)?.to_str().ok()?;
-        response.url().join(location).ok()?
-    } else {
-        response.url().clone()
-    };
-    // Matched by path: every hop of these redirects stays on Weibo's hosts.
-    let path = target.path();
+    let path = response.url().path();
     if path == "/login.php" || path.starts_with("/sso/signin") {
         Some(LOGIN_EXPIRED)
     } else if path.starts_with("/visitor/visitor") {
@@ -727,16 +703,17 @@ mod tests {
         );
     }
 
-    /// With the guest session unavailable, the account's answer decides: only
-    /// a sign-in redirect is an account failure.
+    /// When the guest lookup fails, the account's answer decides: only a
+    /// sign-in redirect is an account failure.
     #[tokio::test]
     async fn account_fallback_reports_only_sign_in_redirects_as_account_failures() {
+        // The visitor page names no request id, so there is no guest session.
+        let no_guest = || vec![Reply::raw("200 OK", "text/html", "<html></html>")];
         let cases = [
             (
+                no_guest(),
                 vec![
-                    Reply::raw("302 Found", "text/html", "")
-                        .header("location", "/login.php?url=x")
-                        .header("x-login-failed", "true"),
+                    Reply::raw("302 Found", "text/html", "").header("location", "/login.php?url=x"),
                     Reply::raw("302 Found", "text/html", "")
                         .header("location", "/sso/signin?entry=miniblog"),
                     Reply::raw("200 OK", "text/html", "<html>sign in</html>"),
@@ -744,6 +721,12 @@ mod tests {
                 Some(LOGIN_EXPIRED),
             ),
             (
+                // m.weibo.cn refuses the guest lookup.
+                vec![
+                    enter_page(),
+                    guest(GUEST_1),
+                    Reply::raw("403 Forbidden", "text/html", "<h2>403 Forbidden</h2>"),
+                ],
                 vec![
                     Reply::raw("302 Found", "text/html", "")
                         .header("location", "/visitor/visitor?entry=miniblog&a=enter"),
@@ -752,6 +735,7 @@ mod tests {
                 Some(LOGIN_REQUIRED),
             ),
             (
+                no_guest(),
                 vec![Reply::raw(
                     "403 Forbidden",
                     "text/html",
@@ -760,10 +744,8 @@ mod tests {
                 None,
             ),
         ];
-        for (account_replies, expected) in cases {
-            // The visitor page names no request id, so there is no guest
-            // session.
-            let mut replies = vec![Reply::raw("200 OK", "text/html", "<html></html>")];
+        for (mut replies, account_replies, expected) in cases {
+            let account_request = replies.len();
             replies.extend(account_replies);
             let (weibo, received) = local_weibo(USER_URL, Some(ACCOUNT), replies).await;
 
@@ -778,7 +760,7 @@ mod tests {
                 }
                 (_, None) => {}
             }
-            assert!(request(&received, 1).contains("account-sub"));
+            assert!(request(&received, account_request).contains("account-sub"));
         }
     }
 

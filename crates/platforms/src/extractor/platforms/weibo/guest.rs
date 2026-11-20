@@ -18,6 +18,15 @@ const RETURN_URL: &str = "https://m.weibo.cn/";
 /// The visitor page's script version, sent as `ver`.
 const VISITOR_VERSION: &str = "20250916";
 const RETCODE_OK: i64 = 20_000_000;
+/// The error when Weibo answers but grants no usable guest session: the
+/// visitor service refuses or changes its answer, or m.weibo.cn rejects a
+/// fresh session. Network failures keep their own error.
+pub(super) const GUEST_SESSION_UNAVAILABLE: &str = "weibo_guest_session_unavailable";
+
+fn unavailable(reason: &'static str) -> ExtractorError {
+    warn!(reason, "weibo: the visitor service gave no guest session");
+    ExtractorError::Other(GUEST_SESSION_UNAVAILABLE.to_owned())
+}
 
 static REQUEST_ID: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r#"request_id\s*=\s*"([0-9a-f]+)""#).unwrap());
@@ -122,7 +131,7 @@ async fn fetch_visitor_sub(
     let request_id = REQUEST_ID
         .captures(&page)
         .and_then(|captures| captures.get(1))
-        .ok_or_else(|| ExtractorError::Other("weibo_visitor_request_id_missing".to_owned()))?
+        .ok_or_else(|| unavailable("the visitor page names no request id"))?
         .as_str();
 
     let mut generate_headers = headers.clone();
@@ -158,8 +167,9 @@ fn parse_visitor_sub(body: &str) -> Result<String, ExtractorError> {
         .find('{')
         .zip(body.rfind('}'))
         .and_then(|(start, end)| body.get(start..=end))
-        .ok_or_else(|| ExtractorError::Other("weibo_visitor_response_unreadable".to_owned()))?;
-    let value: serde_json::Value = serde_json::from_str(json)?;
+        .ok_or_else(|| unavailable("the visitor response is not JSONP"))?;
+    let value: serde_json::Value =
+        serde_json::from_str(json).map_err(|_| unavailable("the visitor response is not JSON"))?;
     let retcode = value.get("retcode").and_then(serde_json::Value::as_i64);
     match value
         .pointer("/data/sub")
@@ -174,7 +184,7 @@ fn parse_visitor_sub(body: &str) -> Result<String, ExtractorError> {
                 ?retcode,
                 "weibo: the visitor service refused a guest session"
             );
-            Err(ExtractorError::Other("weibo_visitor_refused".to_owned()))
+            Err(ExtractorError::Other(GUEST_SESSION_UNAVAILABLE.to_owned()))
         }
     }
 }
