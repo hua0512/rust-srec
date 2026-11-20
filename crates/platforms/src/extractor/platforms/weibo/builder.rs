@@ -155,8 +155,8 @@ impl Weibo {
         debug!(uid, "weibo: looking up the user's room");
         match self.lookup_with_guest(&uid).await {
             Ok(room) => Ok(room),
-            // A throttle applies to the route, so the account would be
-            // throttled too.
+            // While Weibo throttles us, back off instead of adding account
+            // requests on top.
             Err(error @ ExtractorError::RateLimited { .. }) => Err(error),
             Err(error) if self.has_user_cookies => {
                 debug!(
@@ -379,7 +379,7 @@ fn with_referer(request: RequestBuilder, referer: &str) -> RequestBuilder {
 }
 
 /// Throttling: HTTP 429 or 418, or any response asking to retry later.
-fn check_throttle(response: &Response) -> Result<(), ExtractorError> {
+pub(super) fn check_throttle(response: &Response) -> Result<(), ExtractorError> {
     let status = response.status();
     let retry_after = response.headers().get(RETRY_AFTER);
     if status == StatusCode::TOO_MANY_REQUESTS

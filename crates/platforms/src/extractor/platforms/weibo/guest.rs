@@ -111,7 +111,7 @@ async fn fetch_visitor_sub(
     let now_ms = jiff::Timestamp::now().as_millisecond();
     let mut enter_headers = headers.clone();
     enter_headers.insert(REFERER, HeaderValue::from_static(RETURN_URL));
-    let page = client
+    let response = client
         .get(api.enter.as_ref())
         .headers(enter_headers)
         .query(&[
@@ -124,10 +124,9 @@ async fn fetch_visitor_sub(
             ("_rand", &format!("{}.{:03}", now_ms / 1000, now_ms % 1000)),
         ])
         .send()
-        .await?
-        .error_for_status()?
-        .text()
         .await?;
+    super::builder::check_throttle(&response)?;
+    let page = response.error_for_status()?.text().await?;
     let request_id = REQUEST_ID
         .captures(&page)
         .and_then(|captures| captures.get(1))
@@ -139,7 +138,7 @@ async fn fetch_visitor_sub(
     if let Ok(referer) = HeaderValue::from_str(&referer) {
         generate_headers.insert(REFERER, referer);
     }
-    let body = client
+    let response = client
         .post(api.generate.as_ref())
         .headers(generate_headers)
         .header("X-Requested-With", "XMLHttpRequest")
@@ -154,10 +153,9 @@ async fn fetch_visitor_sub(
             ("return_url", RETURN_URL),
         ])
         .send()
-        .await?
-        .error_for_status()?
-        .text()
         .await?;
+    super::builder::check_throttle(&response)?;
+    let body = response.error_for_status()?.text().await?;
     parse_visitor_sub(&body)
 }
 
