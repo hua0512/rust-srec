@@ -1,7 +1,7 @@
 //! Weibo account provider.
 //!
-//! A QR login holds the cookies a browser sends to `weibo.com`, which the
-//! extractor uses, and, as its refresh token, an account token with the
+//! A QR login holds the `.weibo.com` cookies, which the extractor uses,
+//! and, as its refresh token, an account token with the
 //! account's uid and every cookie the sign-in set on Weibo's and Sina's
 //! sites. The check asks Weibo's post timeline whether the cookies are still
 //! signed in. The provider calls get a client that does not follow
@@ -52,6 +52,12 @@ impl CredentialProvider for WeiboProvider {
         false
     }
 
+    /// User links resolve through a guest session; the account is only a
+    /// fallback.
+    fn accounts_optional(&self) -> bool {
+        true
+    }
+
     /// Cookies pasted without a QR login have no account token, so their uid
     /// comes from the `weibo.com` page they open.
     #[instrument(skip_all)]
@@ -63,6 +69,8 @@ impl CredentialProvider for WeiboProvider {
         let state =
             passport::check_account(client, &material.cookies, material.refresh_token.as_deref())
                 .await
+                // Passport errors name no cookie, token or address.
+                .inspect_err(|error| debug!(%error, "Weibo account check failed"))
                 .map_err(map_error)?;
         debug!(?state, "Weibo account checked");
         Ok(match state {

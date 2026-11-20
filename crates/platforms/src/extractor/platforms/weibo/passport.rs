@@ -7,8 +7,7 @@
 //! redirects: the walk below follows them itself, so it can keep every hop's
 //! `Set-Cookie` and send each hop its `Referer`.
 //!
-//! A login yields the cookies a browser sends to `weibo.com`, which the
-//! extractor uses, and an account token holding every cookie of the chain
+//! A login yields the `.weibo.com` cookies, which the extractor uses, and an account token holding every cookie of the chain
 //! with its domain and expiry, which can sign the account in again later.
 //!
 //! Cookies, the account token, QR ids and sign-in addresses are credentials:
@@ -40,8 +39,9 @@ const MAX_HOPS: usize = 10;
 /// Sites the sign-in chain may visit. A redirect elsewhere is refused, so
 /// the chain's tickets never leave Weibo.
 const SIGN_IN_SITES: [&str; 3] = ["weibo.com", "weibo.cn", "sina.com.cn"];
-/// The host the chain ends on, whose cookies the extractor sends.
+/// The host the chain ends on.
 const MAIN_HOST: &str = "weibo.com";
+/// The domain of the cookies the extractor sends.
 const SESSION_DOMAIN: &str = ".weibo.com";
 const SESSION_COOKIE: &str = "SUB";
 const TOKEN_VERSION: u8 = 1;
@@ -114,7 +114,9 @@ impl std::fmt::Debug for QrCode {
 
 /// A signed-in account.
 pub struct Session {
-    /// The cookies a browser sends to `weibo.com`.
+    /// The `.weibo.com` cookies, which the extractor sends. Cookies only
+    /// `weibo.com` itself receives, such as its one-day `WBPSESS`, stay in
+    /// the account token with their expiry, so a stale one is never sent.
     pub cookies: String,
     /// The account token: the account's uid and every cookie of the sign-in
     /// chain, with its domain and expiry.
@@ -340,7 +342,7 @@ async fn sign_in(
         }
         let uid = page_uid(&page).ok_or(PassportError::Parse("sign-in page without a user id"))?;
         let cookies = jar
-            .header_for(&url, now())
+            .domain_header(SESSION_DOMAIN, now())
             .ok_or(PassportError::Parse("sign-in returned no session"))?;
         let account_token = serde_json::to_string(&AccountToken {
             v: TOKEN_VERSION,
@@ -586,10 +588,7 @@ mod tests {
         else {
             panic!("the login was confirmed");
         };
-        assert_eq!(
-            session.cookies,
-            "SUB=com-sub; SUBP=com-subp; ALF=com-alf; WBPSESS=main-session; XSRF-TOKEN=xsrf"
-        );
+        assert_eq!(session.cookies, "SUB=com-sub; SUBP=com-subp; ALF=com-alf");
         assert!(!format!("{session:?}").contains("com-sub"));
         assert_eq!(
             account_uid(&session.account_token).as_deref(),
@@ -654,6 +653,7 @@ mod tests {
                 .is_none()
         );
         assert!(stored(".weibo.cn", "SUHB").is_none());
+        assert!(stored("weibo.com", "WBPSESS").unwrap()["expires"].is_i64());
     }
 
     #[tokio::test]

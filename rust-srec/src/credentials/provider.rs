@@ -110,6 +110,16 @@ pub trait CredentialProvider: Send + Sync {
         true
     }
 
+    /// Whether the platform's checks work without an account. Then no
+    /// account problem stops a check: when no selected account can be used,
+    /// the check runs without one, as for a pool that falls back to no
+    /// account, and an account check that fails without a verdict leaves
+    /// the account unchecked. Accounts are still marked invalid and
+    /// notified as usual.
+    fn accounts_optional(&self) -> bool {
+        false
+    }
+
     /// Extractor settings the account supplies besides its cookies.
     fn extractor_authentication(
         &self,

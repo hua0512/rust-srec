@@ -1971,3 +1971,102 @@ async fn a_pool_with_anonymous_fallback_checks_without_an_account_when_none_work
         CredentialIdentity::Anonymous
     ));
 }
+
+/// A platform whose checks work without an account: its check revokes
+/// `account=A` and cannot reach a verdict for any other account.
+struct OptionalAccounts {
+    optional: bool,
+}
+
+#[async_trait::async_trait]
+impl super::super::CredentialProvider for OptionalAccounts {
+    fn capabilities(&self) -> super::super::ProviderCapabilities {
+        super::super::ProviderCapabilities {
+            check: true,
+            ..Default::default()
+        }
+    }
+    fn accounts_optional(&self) -> bool {
+        self.optional
+    }
+    async fn check(
+        &self,
+        _client: &reqwest::Client,
+        material: &CredentialMaterial,
+    ) -> std::result::Result<AccountStatus, CredentialError> {
+        match material.cookies.as_str() {
+            "account=A" => Ok(AccountStatus::Revoked),
+            _ => Err(CredentialError::RefreshFailed("blocked".into())),
+        }
+    }
+}
+
+#[tokio::test]
+async fn an_unusable_account_never_stops_a_platform_that_works_without_one() {
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let fixed = |policy: &ResolvedCredentialPolicy, profile: &CredentialProfile| {
+            ResolvedCredentialPolicy::new(
+                policy.platform_id.clone(),
+                policy.owner.clone(),
+                CredentialSelection::Fixed {
+                    credential_id: profile.id.clone(),
+                },
+            )
+            .unwrap()
+        };
+        let (repository, mut service, policy, profiles) = fixture().await;
+        Arc::get_mut(&mut service.providers)
+            .unwrap()
+            .register_provider("huya", Arc::new(OptionalAccounts { optional: true }));
+        let notifications = Arc::new(crate::notification::NotificationService::new());
+        let mut received = notifications.subscribe();
+        service
+            .providers
+            .set_notification_service(notifications.clone());
+
+        // The revoked account is marked invalid and notified, and the check
+        // runs without it, now and once it is known to be invalid.
+        let revoked = fixed(&policy, &profiles[0]);
+        assert_eq!(extract_cookies(&service, &revoked).await.unwrap(), "");
+        assert_eq!(
+            repository
+                .health(&profiles[0].id)
+                .await
+                .unwrap()
+                .unwrap()
+                .validity,
+            CredentialValidity::Invalid
+        );
+        assert!(matches!(
+            received.recv().await.unwrap(),
+            crate::notification::NotificationEvent::Credential {
+                event: super::super::CredentialEvent::Invalid { profile_id: Some(id), .. }
+            } if id == profiles[0].id
+        ));
+        assert_eq!(extract_cookies(&service, &revoked).await.unwrap(), "");
+        // A check without a verdict leaves the account in use.
+        let unchecked = fixed(&policy, &profiles[1]);
+        assert_eq!(
+            extract_cookies(&service, &unchecked).await.unwrap(),
+            "account=B"
+        );
+        notifications.stop().await;
+        assert!(
+            received.try_recv().is_err(),
+            "no account was reported unavailable"
+        );
+
+        // Elsewhere the failed check ends the operation.
+        let (_, mut service, policy, profiles) = fixture().await;
+        Arc::get_mut(&mut service.providers)
+            .unwrap()
+            .register_provider("huya", Arc::new(OptionalAccounts { optional: false }));
+        assert!(
+            extract_cookies(&service, &fixed(&policy, &profiles[1]))
+                .await
+                .is_err()
+        );
+    })
+    .await
+    .unwrap();
+}

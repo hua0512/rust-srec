@@ -646,8 +646,31 @@ impl CredentialExecutionService {
                 }
             }
         } else if checked.insert(id.to_owned()) {
-            self.provider_check(provider, &profile, route, deadline)
-                .await?
+            match self
+                .provider_check(provider, &profile, route, deadline)
+                .await
+            {
+                Ok(status) => status,
+                // Checks work without the account, so an account check that
+                // cannot finish must not stop one. A throttle still pauses
+                // the platform.
+                Err(error)
+                    if provider.accounts_optional()
+                        && !matches!(
+                            error,
+                            Error::Extractor(ExtractorError::RateLimited { .. })
+                        ) =>
+                {
+                    tracing::warn!(
+                        profile_id = %profile.id,
+                        platform,
+                        %error,
+                        "Could not check the credential profile; using it unchecked"
+                    );
+                    AccountStatus::Unverifiable
+                }
+                Err(error) => return Err(error),
+            }
         } else {
             return Ok(profile);
         };
@@ -726,16 +749,24 @@ impl CredentialExecutionService {
         if matches!(
             policy.selection,
             CredentialSelection::Inherit | CredentialSelection::None
-        ) || (policy.selection.anonymous_fallback() && bound_anonymous && !allow_switch)
-        {
+        ) {
+            return self
+                .execute_anonymous(policy, binding, deadline, route, &mut extract)
+                .await;
+        }
+        let platform = self.repository.platform_name(&policy.platform_id).await?;
+        // On platforms whose checks work without an account, every selection
+        // falls back to no account like a pool that allows it.
+        let falls_back = policy.selection.anonymous_fallback()
+            || self.providers.provider(&platform).accounts_optional();
+        if falls_back && bound_anonymous && !allow_switch {
             return self
                 .execute_anonymous(policy, binding, deadline, route, &mut extract)
                 .await;
         }
         // Switching to no account is a switch like any other, so a bound poll
         // that cannot switch keeps reporting its account unavailable.
-        let anonymous_fallback =
-            policy.selection.anonymous_fallback() && (binding.is_none() || allow_switch);
+        let anonymous_fallback = falls_back && (binding.is_none() || allow_switch);
         match self
             .execute_pool(
                 policy,
@@ -744,6 +775,7 @@ impl CredentialExecutionService {
                 deadline,
                 route,
                 &mut extract,
+                platform,
                 anonymous_fallback,
             )
             .await
@@ -780,6 +812,7 @@ impl CredentialExecutionService {
         deadline: OperationDeadline,
         route: &ResolvedRoute,
         extract: &mut F,
+        platform: String,
         anonymous_fallback: bool,
     ) -> Result<CredentialExecution<T>>
     where
@@ -797,7 +830,6 @@ impl CredentialExecutionService {
                 anonymous_fallback,
             )
             .await?;
-        let platform = self.repository.platform_name(&policy.platform_id).await?;
         let mut attempts = Attempts {
             candidates,
             exclusions,

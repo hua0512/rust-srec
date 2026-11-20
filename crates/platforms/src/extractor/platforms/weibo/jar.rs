@@ -62,6 +62,18 @@ impl Jar {
         (!header.is_empty()).then_some(header)
     }
 
+    /// The live cookies kept for exactly `domain`, as a Cookie header.
+    pub(super) fn domain_header(&self, domain: &str, now: i64) -> Option<String> {
+        let header = self
+            .0
+            .iter()
+            .filter(|cookie| cookie.domain == domain && cookie.alive(now))
+            .map(|cookie| format!("{}={}", cookie.name, cookie.value))
+            .collect::<Vec<_>>()
+            .join("; ");
+        (!header.is_empty()).then_some(header)
+    }
+
     /// Whether a live cookie `name` is kept for exactly `domain`.
     pub(super) fn contains(&self, domain: &str, name: &str, now: i64) -> bool {
         self.0
