@@ -330,7 +330,7 @@ impl CommandExecutor {
             ("PandaTV", "pandalive.co.kr/play/{user_id}"),
             (
                 "Weibo",
-                "weibo.com/u/{user_id}, weibo.com/l/wblive/p/show/{live_id}",
+                "weibo.com/u/{user_id}, m.weibo.cn/u/{user_id}, weibo.com/l/wblive/p/show/{live_id}",
             ),
             (
                 "Redbook",

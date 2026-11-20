@@ -44,9 +44,11 @@
 
 ## 微博
 
-- **URL**: `https://weibo.com/l/wblive/p/show/{id}`, `https://weibo.com/u/{uid}`
+- **URL**: `https://weibo.com/u/{uid}`, `https://weibo.com/{uid}`, `https://m.weibo.cn/u/{uid}`, `https://m.weibo.cn/profile/{uid}`, `https://weibo.com/l/wblive/p/show/{id}`
 - **协议**: FLV/HLS
 - **弹幕**: ❌ 不支持
 ::: info
-未配置账号时，会使用内置的访客会话访问微博，该会话可能失效。如果链接（尤其是 `https://weibo.com/u/{uid}`）无法解析，请添加已登录的[账号凭据配置](../concepts/configuration.md#账号配置与选择)。
+用户主页链接无需账号：rust-srec 会像手机网页版对待访客那样，以游客身份查询该用户。不支持用自定义名称代替数字用户 ID 的链接（例如 `https://weibo.com/{name}`），请打开主页后复制带数字 ID 的链接。
+
+[账号凭据配置](../concepts/configuration.md#账号配置与选择)是可选的，只在微博不接受游客查询时使用。此时如果微博提示该账号已退出登录，账号会被标记为需要重新登录，并发送账号通知。
 :::

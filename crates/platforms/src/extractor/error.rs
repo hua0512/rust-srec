@@ -94,7 +94,7 @@ impl ExtractorError {
     }
 }
 
-fn parse_retry_after(value: &str, now: jiff::Timestamp) -> Option<Duration> {
+pub(crate) fn parse_retry_after(value: &str, now: jiff::Timestamp) -> Option<Duration> {
     let value = value.trim();
     if let Ok(seconds) = value.parse::<u64>() {
         return Some(Duration::from_secs(seconds));

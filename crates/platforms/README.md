@@ -23,7 +23,7 @@ This library provides a unified interface to extract streaming media information
 | TikTok      | `tiktok.com/@{username}/live`                    | Yes |
 | TwitCasting | `twitcasting.tv/{username}`                      | Yes |
 | Twitch      | `twitch.tv/{channel_name}`                       | Yes |
-| Weibo       | `weibo.com/u/{user_id}` or `weibo.com/l/wblive/p/show/{live_id}` | |
+| Weibo       | `weibo.com/u/{user_id}`, `m.weibo.cn/u/{user_id}` or `weibo.com/l/wblive/p/show/{live_id}` | |
 
 URLs that match no built-in extractor fall back to a [Streamlink](https://streamlink.github.io/)
 extractor when the `streamlink` executable is available. Pass

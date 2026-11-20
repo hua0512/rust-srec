@@ -438,6 +438,24 @@ impl Extractor {
             .query(&self.platform_params)
     }
 
+    /// Like [`Extractor::request`], but sends `cookie` as the whole `Cookie`
+    /// header in place of the stored cookies, for a host that must not
+    /// receive them, such as another domain of the same platform.
+    pub fn request_with_cookie(&self, method: Method, url: &str, cookie: &str) -> RequestBuilder {
+        let mut headers = self.platform_headers.clone();
+        match HeaderValue::from_str(cookie) {
+            Ok(mut value) => {
+                value.set_sensitive(true);
+                headers.insert(reqwest::header::COOKIE, value);
+            }
+            Err(e) => debug!(error = %e, "Failed to build Cookie header"),
+        }
+        self.client
+            .request(method, url)
+            .headers(headers)
+            .query(&self.platform_params)
+    }
+
     pub fn get_platform_headers(&self) -> &HeaderMap {
         &self.platform_headers
     }
