@@ -37,6 +37,7 @@ const listener: BigoNotificationStatus = {
   ],
   missed_pushes: 0,
   last_missed_at: null,
+  down_since: null,
 };
 
 describe('Bigo monitoring method', () => {

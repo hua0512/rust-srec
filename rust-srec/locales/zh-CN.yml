@@ -84,6 +84,22 @@ notification:
       system: "系统代理"
       proxy: "代理「%{name}」"
 
+  bigo_notifications_failing:
+    title:
+      not_arriving: "🔕 BIGO 没有发送开播通知"
+      disconnected: "🔕 Bigo 开播通知连接已断开"
+    description:
+      not_arriving: "BIGO 已确认关注,但检测发现的最近几次 Bigo 开播都没有收到开播通知,因此在收到通知之前 Bigo 主播改为轮询检测。请确认通知账号没有同时登录 BIGO App,并且其 BIGO 设置中已打开开播通知。"
+      disconnected: "rust-srec 与 BIGO 开播通知的连接已断开超过 5 分钟,期间 Bigo 主播改为轮询检测。rust-srec 会继续尝试重新连接,Bigo 平台设置中可查看状态。"
+      disconnected_with_error: "rust-srec 与 BIGO 开播通知的连接已断开超过 5 分钟,期间 Bigo 主播改为轮询检测。rust-srec 会继续尝试重新连接,Bigo 平台设置中可查看状态。最后的错误:%{message}"
+  bigo_notifications_restored:
+    title:
+      not_arriving: "🔔 BIGO 已恢复发送开播通知"
+      disconnected: "🔔 Bigo 开播通知已重新连接"
+    description:
+      not_arriving: "已收到 BIGO 的开播通知,Bigo 主播重新使用开播通知。"
+      disconnected: "rust-srec 已重新连接到 BIGO 开播通知。"
+
   # ============ 输出根写入门(#508) ============
   # 已在写入门 PR 中本地化并发布,保持不变。
   output_path_inaccessible:

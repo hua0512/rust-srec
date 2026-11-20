@@ -37,6 +37,8 @@ const EVENT_TYPE_LABELS: Record<string, MessageDescriptor> = {
   system_startup: msg`System started`,
   system_shutdown: msg`System shutting down`,
   platform_throttled: msg`Platform rate limited`,
+  bigo_notifications_failing: msg`Bigo live notifications failing`,
+  bigo_notifications_restored: msg`Bigo live notifications restored`,
   credential_refreshed: msg`Credential refreshed`,
   credential_refresh_failed: msg`Credential refresh failed`,
   credential_invalid: msg`Credential invalid`,

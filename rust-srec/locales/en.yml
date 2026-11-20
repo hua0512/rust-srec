@@ -84,6 +84,22 @@ notification:
       system: "the system proxy"
       proxy: "proxy “%{name}”"
 
+  bigo_notifications_failing:
+    title:
+      not_arriving: "🔕 BIGO is not sending live notifications"
+      disconnected: "🔕 Bigo live notifications disconnected"
+    description:
+      not_arriving: "BIGO confirmed the follows but sent no live notification for the latest Bigo stream starts that checks found, so Bigo streamers are polled until a notification arrives. Check that the notification account is not signed in to the BIGO app, and that live notifications are on in its BIGO settings."
+      disconnected: "rust-srec has not been connected to BIGO's live notifications for more than 5 minutes, so Bigo streamers are polled meanwhile. It keeps trying to reconnect; the Bigo platform settings show the status."
+      disconnected_with_error: "rust-srec has not been connected to BIGO's live notifications for more than 5 minutes, so Bigo streamers are polled meanwhile. It keeps trying to reconnect; the Bigo platform settings show the status. Last error: %{message}"
+  bigo_notifications_restored:
+    title:
+      not_arriving: "🔔 BIGO is sending live notifications again"
+      disconnected: "🔔 Bigo live notifications reconnected"
+    description:
+      not_arriving: "A live notification arrived from BIGO, so Bigo streamers use notifications again."
+      disconnected: "rust-srec is connected to BIGO's live notifications again."
+
   # ============ Output-root write gate (#508) ============
   # Already localized and shipped in the gate PR; preserved verbatim.
   output_path_inaccessible:

@@ -56,7 +56,12 @@ pub enum NativeError {
     TicketRefused(reqwest::StatusCode),
     #[error("the BIGO account is signed out")]
     SignedOut,
-    #[error("BIGO refuses native logins from this IP address")]
+    /// Prepare-login result 10. BIGO does not document it; it has followed a
+    /// change of the client's network or proxy address, and for an account
+    /// it may also mean the account is signed in elsewhere.
+    #[error(
+        "BIGO refused the native login (result 10), which usually follows a change of network or proxy address"
+    )]
     IpRestricted,
     #[error("BIGO rejected the {request} (result {result})")]
     Rejected { request: &'static str, result: i32 },

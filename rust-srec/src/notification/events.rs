@@ -141,6 +141,16 @@ impl std::fmt::Display for NotificationPriority {
     }
 }
 
+/// What stopped Bigo live notifications.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BigoNotificationProblem {
+    /// BIGO accepted the subscriptions but sends the account no pushes.
+    NotArriving,
+    /// The listener has been disconnected for several minutes.
+    Disconnected,
+}
+
 /// Events that can trigger notifications.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum NotificationEvent {
@@ -337,6 +347,21 @@ pub enum NotificationEvent {
         retry_at: Timestamp,
         timestamp: Timestamp,
     },
+    /// Bigo live notifications stopped working, so Bigo streamers are polled.
+    /// Emitted once when the problem starts.
+    BigoNotificationsFailing {
+        problem: BigoNotificationProblem,
+        /// The listener's last error, for [`BigoNotificationProblem::Disconnected`].
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+        timestamp: Timestamp,
+    },
+    /// Bigo live notifications work again after a
+    /// [`Self::BigoNotificationsFailing`] with the same `problem`.
+    BigoNotificationsRestored {
+        problem: BigoNotificationProblem,
+        timestamp: Timestamp,
+    },
 
     // ========== Credential Events ==========
     /// Credentials subsystem event (refresh, invalidation, etc.).
@@ -397,6 +422,8 @@ impl NotificationEvent {
             Self::SystemStartup { .. } => NotificationPriority::Normal,
             Self::SystemShutdown { .. } => NotificationPriority::Normal,
             Self::PlatformThrottled { .. } => NotificationPriority::High,
+            Self::BigoNotificationsFailing { .. } => NotificationPriority::High,
+            Self::BigoNotificationsRestored { .. } => NotificationPriority::Normal,
 
             // Credential events
             Self::Credential { event } => event.severity(),
@@ -431,6 +458,8 @@ impl NotificationEvent {
             Self::SystemStartup { .. } => "system_startup",
             Self::SystemShutdown { .. } => "system_shutdown",
             Self::PlatformThrottled { .. } => "platform_throttled",
+            Self::BigoNotificationsFailing { .. } => "bigo_notifications_failing",
+            Self::BigoNotificationsRestored { .. } => "bigo_notifications_restored",
             Self::Credential { event } => event.event_name(),
             Self::BaiduPcsReloginFailed { .. } => "baidupcs_relogin_failed",
         }
@@ -461,6 +490,8 @@ impl NotificationEvent {
             | Self::SystemStartup { timestamp, .. }
             | Self::SystemShutdown { timestamp, .. }
             | Self::PlatformThrottled { timestamp, .. }
+            | Self::BigoNotificationsFailing { timestamp, .. }
+            | Self::BigoNotificationsRestored { timestamp, .. }
             | Self::BaiduPcsReloginFailed { timestamp, .. } => *timestamp,
             Self::Credential { event } => match event {
                 CredentialEvent::Unavailable { timestamp, .. }

@@ -47,7 +47,8 @@ const LOGIN_ANSWER: u32 = 513_047;
 const JOIN_CHANNEL: u32 = 5064;
 const JOIN_CHANNEL_ANSWER: u32 = 1224;
 
-/// Prepare-login result for an IP address BIGO refuses native logins from.
+/// Prepare-login result for a refused native login; see
+/// [`NativeError::IpRestricted`].
 const IP_RESTRICTED: i32 = 10;
 /// The app state prepare-login reports.
 const FOREGROUND: i16 = 0;
@@ -86,10 +87,10 @@ pub(super) struct Frame {
 
 impl Linkd {
     /// Signs in with `ticket` at the first address that accepts it. An
-    /// address that is unreachable, times out or restricts this IP moves on
-    /// to the next; a rejected login or an unexpected answer ends the
-    /// attempt. When one address restricted this IP and the rest could not
-    /// be reached, the error is [`NativeError::IpRestricted`].
+    /// address that is unreachable, times out or answers
+    /// [`NativeError::IpRestricted`] moves on to the next; a rejected login
+    /// or an unexpected answer ends the attempt. When one address answered
+    /// `IpRestricted` and the rest could not be reached, that is the error.
     pub async fn connect(route: &Route, ticket: &Ticket) -> Result<Self, NativeError> {
         let [first, others @ ..] = ADDRESSES;
         let mut result = Self::connect_to(first, route, ticket).await;

@@ -137,6 +137,7 @@ pub struct MessageResponse {
         crate::api::routes::config::get_platform_config,
         crate::api::routes::config::replace_platform_config,
         crate::api::routes::config::get_bigo_notifications,
+        crate::api::routes::config::reconnect_bigo_notifications,
         // Session endpoints
         crate::api::routes::sessions::list_sessions,
         crate::api::routes::sessions::get_session,

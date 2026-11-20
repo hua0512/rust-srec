@@ -39,7 +39,7 @@ pub mod service;
 pub mod web_push;
 
 pub use channels::{ChannelConfig, DiscordConfig, EmailConfig, NotificationChannel, WebhookConfig};
-pub use events::{NotificationEvent, NotificationPriority};
+pub use events::{BigoNotificationProblem, NotificationEvent, NotificationPriority};
 pub use service::{
     DeadLetterEntry, NotificationChannelInstance, NotificationChannelSource, NotificationService,
     NotificationServiceConfig, NotificationStats,

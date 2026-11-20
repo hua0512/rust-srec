@@ -3,7 +3,8 @@
 use axum::{
     Json, Router,
     extract::{FromRef, State},
-    routing::{get, patch, put},
+    http::StatusCode,
+    routing::{get, patch, post, put},
 };
 use tracing::debug;
 
@@ -231,6 +232,10 @@ pub fn router() -> Router<AppState> {
         .route("/platforms/{id}", get(get_platform_config))
         .route("/platforms/{id}", put(replace_platform_config))
         .route("/platforms/bigo/notifications", get(get_bigo_notifications))
+        .route(
+            "/platforms/bigo/notifications/reconnect",
+            post(reconnect_bigo_notifications),
+        )
 }
 
 /// Map GlobalConfigDbModel and the global route to GlobalConfigResponse.
@@ -521,6 +526,23 @@ pub async fn get_bigo_notifications(
     State(state): State<AppState>,
 ) -> Json<crate::monitor::BigoNotificationStatus> {
     Json(state.bigo_notifications.status())
+}
+
+/// Makes Bigo's live-notification listener try to connect now if it is
+/// waiting between attempts. A connected or connecting listener is left as it
+/// is.
+#[utoipa::path(
+    post,
+    path = "/api/config/platforms/bigo/notifications/reconnect",
+    tag = "config",
+    responses(
+        (status = 204, description = "A waiting listener tries to connect now")
+    ),
+    security(("bearer_auth" = []))
+)]
+pub async fn reconnect_bigo_notifications(State(state): State<AppState>) -> StatusCode {
+    state.bigo_notifications.reconnect();
+    StatusCode::NO_CONTENT
 }
 
 /// Each platform's own stored account selection, by platform ID.

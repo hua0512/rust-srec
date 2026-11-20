@@ -154,6 +154,7 @@ export const BigoStreamerReasonSchema = z
     'uid_unknown',
     'subscribing',
     'follow_refused',
+    'notifications_not_arriving',
     'unknown',
   ])
   .catch('unknown');
@@ -166,6 +167,10 @@ export const BigoNotificationStatusSchema = z.object({
   state: z
     .enum(['disabled', 'connecting', 'connected', 'error'])
     .catch('error'),
+  /**
+   * Why the listener is not connected, or `notifications_not_arriving` while it is connected but
+   * BIGO sends no notifications.
+   */
   reason: BigoStreamerReasonSchema.nullable(),
   /** The listener's last error, as the server wrote it. */
   message: z.string().nullable(),
@@ -185,6 +190,11 @@ export const BigoNotificationStatusSchema = z.object({
   missed_pushes: z.number().int(),
   /** When the latest of those was found. */
   last_missed_at: z.string().nullable(),
+  /**
+   * When the listener lost its connection, set only once the server's grace period for brief drops
+   * has passed.
+   */
+  down_since: z.string().nullable(),
 });
 export type BigoNotificationStatus = z.infer<
   typeof BigoNotificationStatusSchema

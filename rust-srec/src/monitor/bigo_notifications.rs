@@ -18,14 +18,21 @@
 //!
 //! Stream ends are not pushed, so they still come from checks. While the
 //! connection is down nothing is answered offline, and every streamer is
-//! polled as without the setting.
+//! polled as without the setting. The same holds while BIGO connects and
+//! confirms the subscriptions but sends no pushes: after
+//! [`NOT_ARRIVING_AFTER`] starts in a row that real checks found without a
+//! push, polls are real until the next push of any kind arrives.
+//!
+//! The notification channels hear once when pushes stop arriving and once
+//! when the listener stays disconnected for [`DOWN_ALERT_AFTER`], and once
+//! again when either recovers.
 //!
 //! BIGO keeps one app session per account, so only this listener signs in to
 //! BIGO's app service with the account; other native connections use guest
 //! tickets.
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use jiff::Timestamp;
@@ -46,6 +53,7 @@ use crate::config::{ConfigService, ConfigUpdateEvent};
 use crate::credentials::{CredentialExecutionService, CredentialValidity, OperationDeadline};
 use crate::database::repositories::config::SqlxConfigRepository;
 use crate::database::repositories::streamer::SqlxStreamerRepository;
+use crate::notification::{BigoNotificationProblem, NotificationEvent, NotificationService};
 use crate::proxies::ResolvedRoute;
 use crate::scheduler::feedback::SchedulerFeedback;
 use crate::streamer::StreamerManager;
@@ -91,14 +99,19 @@ const RECONCILE_INTERVAL: Duration = Duration::from_secs(30);
 const FIRST_BACKOFF: Duration = Duration::from_secs(2);
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
 
+/// The backoff's cap while BIGO refuses the login. A refusal that follows an
+/// address change can pass within minutes, so it is retried well before
+/// [`SLOW_RETRY`], but a lasting one at most this often.
+const MAX_REFUSED_BACKOFF: Duration = Duration::from_secs(5 * 60);
+
 /// A connection that lived this long resets the backoff. Shorter-lived ones
 /// keep doubling it, so rust-srec and the BIGO app signed in with the same
 /// account do not evict each other every few seconds.
 const STABLE_CONNECTION: Duration = Duration::from_secs(60);
 
 /// Retry period after an answer that trying again soon would not change: BIGO
-/// still sees the account as signed out after a refresh, or refuses its login.
-/// A settings change, a new login included, retries at once.
+/// still sees the account as signed out after a refresh. A settings change, a
+/// new login included, or a manual reconnect retries at once.
 const SLOW_RETRY: Duration = Duration::from_secs(15 * 60);
 
 /// A check that finds a subscribed streamer live without a push for it this
@@ -107,6 +120,20 @@ const SLOW_RETRY: Duration = Duration::from_secs(15 * 60);
 /// answered for up to [`SAFETY_CHECK`], so the window covers both.
 const MISSED_PUSH_WINDOW: Duration =
     Duration::from_secs(PENDING_LIMIT.as_secs() + SAFETY_CHECK.as_secs());
+
+/// Starts in a row that real checks found on subscribed streamers without a
+/// push, after which pushes count as not arriving. BIGO may drop a single
+/// notice; several in a row with none in between mean the account receives
+/// none, usually because it is also signed in to the BIGO app or its live
+/// notifications are off.
+const NOT_ARRIVING_AFTER: u32 = 3;
+
+/// How long the listener may stay disconnected before the notification
+/// channels hear of it. Reconnecting after a dropped connection takes
+/// seconds, so only an outage that the backoff or [`SLOW_RETRY`] keeps going
+/// alerts. The alert's text in `locales/` and the status's `down_since`
+/// documentation name this duration.
+const DOWN_ALERT_AFTER: Duration = Duration::from_secs(5 * 60);
 
 /// Bound on refreshing a signed-out account.
 const REFRESH_DEADLINE: Duration = Duration::from_secs(60);
@@ -138,7 +165,8 @@ pub enum MonitoringMethod {
 }
 
 /// Why a Bigo streamer is polled. The first five also say why the listener is
-/// not connected.
+/// not connected; `NotificationsNotArriving` why a connected one's streamers
+/// are polled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PollingReason {
@@ -163,6 +191,9 @@ pub enum PollingReason {
     Subscribing,
     /// BIGO refused the follow or the live notices.
     FollowRefused,
+    /// BIGO confirmed the subscription but sent no push for the latest
+    /// starts that checks found; polls are real until a push arrives.
+    NotificationsNotArriving,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
@@ -179,7 +210,8 @@ pub struct BigoNotificationStatus {
     /// The Bigo platform configuration, absent when there is none.
     pub platform_id: Option<String>,
     pub state: ListenerState,
-    /// Why the listener is not connected; absent while connected.
+    /// Why the listener is not connected, or `notifications_not_arriving`
+    /// while it is connected but BIGO sends no pushes; absent otherwise.
     pub reason: Option<PollingReason>,
     /// The last error, absent while connected.
     pub message: Option<String>,
@@ -196,6 +228,10 @@ pub struct BigoNotificationStatus {
     pub missed_pushes: u64,
     /// When the latest of those was found.
     pub last_missed_at: Option<Timestamp>,
+    /// When the listener lost its connection, or began connecting, once it
+    /// has been disconnected for more than 5 minutes; absent before then and
+    /// while connected.
+    pub down_since: Option<Timestamp>,
 }
 
 /// The listener's state as the status reports it.
@@ -207,6 +243,57 @@ struct ListenerStatus {
     message: Option<String>,
     missed_pushes: u64,
     last_missed_at: Option<Timestamp>,
+    /// Set while the settings name an account and the listener is not
+    /// connected.
+    outage: Option<Outage>,
+}
+
+/// A stretch of time an account's listener spends disconnected.
+#[derive(Debug, Clone, Copy)]
+struct Outage {
+    started: Instant,
+    since: Timestamp,
+    /// Whether the notification channels heard of it.
+    alerted: bool,
+}
+
+impl ListenerStatus {
+    /// Starts an outage unless one is running.
+    fn down(&mut self, now: Instant) {
+        self.outage.get_or_insert(Outage {
+            started: now,
+            since: Timestamp::now(),
+            alerted: false,
+        });
+    }
+
+    /// When the running outage is due an alert, unless it had one.
+    fn alert_at(&self) -> Option<Instant> {
+        self.outage
+            .filter(|outage| !outage.alerted)
+            .map(|outage| outage.started + DOWN_ALERT_AFTER)
+    }
+
+    /// Marks the running outage as alerted if it lasted [`DOWN_ALERT_AFTER`]
+    /// and had no alert yet. Returns whether it did.
+    fn take_alert(&mut self, now: Instant) -> bool {
+        match &mut self.outage {
+            Some(outage)
+                if !outage.alerted
+                    && now.saturating_duration_since(outage.started) >= DOWN_ALERT_AFTER =>
+            {
+                outage.alerted = true;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Ends the running outage. Returns whether it had an alert, which its
+    /// end then answers.
+    fn up(&mut self) -> bool {
+        self.outage.take().is_some_and(|outage| outage.alerted)
+    }
 }
 
 /// The Bigo platform's notification settings as the listener acts on them.
@@ -291,14 +378,24 @@ struct Rule {
     /// comes first.
     wake_all_at: Option<Instant>,
     last_named_push: Option<Instant>,
+    /// Starts found without a push since the last push of any kind. It
+    /// concerns the account rather than a connection, so reconnecting keeps
+    /// it; choosing another account resets it.
+    missed_in_a_row: u32,
 }
 
 impl Rule {
+    /// Whether BIGO sends the account no pushes; see [`NOT_ARRIVING_AFTER`].
+    fn not_arriving(&self) -> bool {
+        self.missed_in_a_row >= NOT_ARRIVING_AFTER
+    }
+
     fn answers_offline(&self, streamer_id: &str, now: Instant) -> bool {
-        if self
-            .pending
-            .get(streamer_id)
-            .is_some_and(|pending| pending.until > now)
+        if self.not_arriving()
+            || self
+                .pending
+                .get(streamer_id)
+                .is_some_and(|pending| pending.until > now)
         {
             return false;
         }
@@ -338,10 +435,16 @@ impl Rule {
         if live {
             self.pending.remove(streamer_id);
         }
+        if missed {
+            self.missed_in_a_row = self.missed_in_a_row.saturating_add(1);
+        }
         missed
     }
 
+    /// Records a push. Any push, with or without a streamer, shows that BIGO
+    /// sends the account notifications.
     fn pushed(&mut self, uid: Option<u32>, now: Instant) {
+        self.missed_in_a_row = 0;
         let Some(uid) = uid else {
             let paired = self
                 .last_named_push
@@ -507,7 +610,8 @@ impl Rule {
                             Some(Subscription::Refused) => Some(PollingReason::FollowRefused),
                             Some(Subscription::Acknowledged(_)) => {
                                 subscribed += 1;
-                                None
+                                self.not_arriving()
+                                    .then_some(PollingReason::NotificationsNotArriving)
                             }
                         },
                     }),
@@ -548,6 +652,7 @@ pub(crate) struct BigoNotificationDeps {
     pub streamer_manager: Arc<StreamerManager<SqlxStreamerRepository>>,
     pub credentials: Arc<CredentialExecutionService>,
     pub feedback: Arc<SchedulerFeedback>,
+    pub notifications: Arc<NotificationService>,
 }
 
 /// Live notifications for Bigo streamers; see the module documentation.
@@ -558,11 +663,16 @@ pub struct BigoNotifications {
     schedule: Notify,
     /// New uids to subscribe.
     subscriptions: Notify,
+    /// A manual request to stop waiting between connection attempts. Only a
+    /// listener waiting at that moment hears it.
+    reconnect: Notify,
     /// The status may have changed.
     status_changed: Notify,
     /// Bumped when the status changed, at most every
     /// [`STATUS_PUBLISH_INTERVAL`].
     changes: watch::Sender<u64>,
+    /// Where alerts go; set when the listener starts.
+    alerts: OnceLock<Arc<NotificationService>>,
 }
 
 impl Default for BigoNotifications {
@@ -576,11 +686,14 @@ impl Default for BigoNotifications {
                 message: None,
                 missed_pushes: 0,
                 last_missed_at: None,
+                outage: None,
             }),
             schedule: Notify::new(),
             subscriptions: Notify::new(),
+            reconnect: Notify::new(),
             status_changed: Notify::new(),
             changes: watch::Sender::new(0),
+            alerts: OnceLock::new(),
         }
     }
 }
@@ -596,13 +709,38 @@ impl BigoNotifications {
 
     /// Records a successful individual check that started at `started`.
     pub(crate) fn checked(&self, streamer_id: &str, started: Instant, live: bool) {
-        if !self.rule.lock().checked(streamer_id, started, live) {
+        let (missed, was_arriving, arriving) = {
+            let mut rule = self.rule.lock();
+            let was_arriving = !rule.not_arriving();
+            let missed = rule.checked(streamer_id, started, live);
+            (missed, was_arriving, !rule.not_arriving())
+        };
+        if !missed {
             return;
         }
-        warn!(
-            streamer_id,
-            "A Bigo streamer went live without a notification from BIGO; check that live notifications are on in the notification account's BIGO settings"
-        );
+        if was_arriving && !arriving {
+            warn!(
+                streamer_id,
+                missed = NOT_ARRIVING_AFTER,
+                "BIGO sent no live notification for the latest Bigo stream starts, so Bigo streamers are polled until one arrives; check that the notification account is not signed in to the BIGO app and that its live notifications are on"
+            );
+            self.alert(NotificationEvent::BigoNotificationsFailing {
+                problem: BigoNotificationProblem::NotArriving,
+                message: None,
+                timestamp: Timestamp::now(),
+            });
+        } else if arriving {
+            warn!(
+                streamer_id,
+                "A Bigo streamer went live without a notification from BIGO; check that live notifications are on in the notification account's BIGO settings"
+            );
+        } else {
+            // Reported once, when polling took over.
+            debug!(
+                streamer_id,
+                "A Bigo streamer went live without a notification from BIGO"
+            );
+        }
         {
             let mut listener = self.listener.lock();
             listener.missed_pushes += 1;
@@ -613,18 +751,80 @@ impl BigoNotifications {
 
     pub fn status(&self) -> BigoNotificationStatus {
         let listener = self.listener.lock().clone();
-        let (streamers, subscribed, total) = self.rule.lock().methods(listener.reason);
+        let (streamers, subscribed, total, not_arriving) = {
+            let rule = self.rule.lock();
+            let (streamers, subscribed, total) = rule.methods(listener.reason);
+            (streamers, subscribed, total, rule.not_arriving())
+        };
         BigoNotificationStatus {
             platform_id: listener.platform_id,
             state: listener.state,
-            reason: listener.reason,
+            reason: listener
+                .reason
+                .or((listener.state == ListenerState::Connected && not_arriving)
+                    .then_some(PollingReason::NotificationsNotArriving)),
             message: listener.message,
             subscribed,
             total,
             streamers,
             missed_pushes: listener.missed_pushes,
             last_missed_at: listener.last_missed_at,
+            down_since: listener
+                .outage
+                .filter(|outage| outage.alerted)
+                .map(|outage| outage.since),
         }
+    }
+
+    /// Sends `event` to the notification channels.
+    fn alert(&self, event: NotificationEvent) {
+        if let Some(service) = self.alerts.get() {
+            service.dispatch_notification(event);
+        }
+    }
+
+    /// Alerts about the running outage once it lasted [`DOWN_ALERT_AFTER`].
+    fn alert_outage(&self) {
+        let message = {
+            let mut listener = self.listener.lock();
+            if !listener.take_alert(Instant::now()) {
+                return;
+            }
+            listener.message.clone()
+        };
+        warn!(
+            after = ?DOWN_ALERT_AFTER,
+            message = message.as_deref().unwrap_or_default(),
+            "Bigo live notifications have been disconnected for a while; Bigo streamers are polled meanwhile"
+        );
+        self.alert(NotificationEvent::BigoNotificationsFailing {
+            problem: BigoNotificationProblem::Disconnected,
+            message,
+            timestamp: Timestamp::now(),
+        });
+        self.status_changed.notify_one();
+    }
+
+    /// Ends the running outage, if any. Only an alerted outage that ends
+    /// because the listener connected, rather than because the settings
+    /// turned notifications off, sends an alert that it ended.
+    fn end_outage(&self, connected: bool) {
+        let alerted = self.listener.lock().up();
+        if alerted && connected {
+            info!("Bigo live notifications reconnected");
+            self.alert(NotificationEvent::BigoNotificationsRestored {
+                problem: BigoNotificationProblem::Disconnected,
+                timestamp: Timestamp::now(),
+            });
+        }
+        self.status_changed.notify_one();
+    }
+
+    /// Makes a listener that waits between connection attempts try again
+    /// now, with the backoff reset. A connected or connecting one is left as
+    /// it is.
+    pub fn reconnect(&self) {
+        self.reconnect.notify_waiters();
     }
 
     /// Wakes when [`Self::status`] may have changed.
@@ -654,6 +854,7 @@ impl BigoNotifications {
         supervisor: &TaskSupervisor,
         cancel: CancellationToken,
     ) {
+        self.alerts.get_or_init(|| deps.notifications.clone());
         let (settings_tx, settings_rx) = watch::channel(Settings::Unknown);
         // Either task ending stops the other.
         let cancel = cancel.child_token();
@@ -705,9 +906,13 @@ impl BigoNotifications {
                 }
             }
             let due = self.rule.lock().next_due();
+            let alert_at = self.listener.lock().alert_at();
             tokio::select! {
                 biased;
                 () = cancel.cancelled() => break,
+                () = sleep_until(alert_at.unwrap_or_else(Instant::now)), if alert_at.is_some() => {
+                    self.alert_outage();
+                }
                 () = sleep_until(due.unwrap_or_else(Instant::now)), if due.is_some() => {
                     let due = self.rule.lock().take_due(Instant::now());
                     for streamer_id in due {
@@ -854,8 +1059,22 @@ impl BigoNotifications {
     ) {
         let mut backoff = FIRST_BACKOFF;
         let mut last_refresh = None;
+        let mut account = None;
         loop {
             let current = settings.borrow_and_update().clone();
+            // Whether pushes arrive is a property of the account, so only
+            // choosing another one, or none, starts its count over.
+            let current_account = match &current {
+                Settings::Account { id, .. } | Settings::Unusable { id } => Some(id.clone()),
+                Settings::Unknown | Settings::Off | Settings::NoAccount => None,
+            };
+            if current_account != account {
+                account = current_account;
+                self.rule.lock().missed_in_a_row = 0;
+            }
+            if !matches!(current, Settings::Account { .. } | Settings::Unknown) {
+                self.end_outage(false);
+            }
             // How long to wait before trying again; `None` waits for a
             // settings change.
             let retry = match current {
@@ -881,7 +1100,11 @@ impl BigoNotifications {
                     None
                 }
                 Settings::Account { id, route, .. } => {
-                    let message = self.listener.lock().message.clone();
+                    let message = {
+                        let mut listener = self.listener.lock();
+                        listener.down(Instant::now());
+                        listener.message.clone()
+                    };
                     self.set_listener(
                         ListenerState::Connecting,
                         Some(PollingReason::Disconnected),
@@ -924,27 +1147,30 @@ impl BigoNotifications {
                             Some(SLOW_RETRY)
                         }
                         Ended::Refused(message) => {
-                            warn!(profile_id = %id, %message, retry_in = ?SLOW_RETRY, "BIGO refused the notification login");
+                            let wait = backoff;
+                            backoff = (backoff * 2).min(MAX_REFUSED_BACKOFF);
+                            warn!(profile_id = %id, %message, retry_in = ?wait, "BIGO refused the notification login");
                             self.set_listener(
                                 ListenerState::Error,
                                 Some(PollingReason::Disconnected),
                                 Some(message),
                             );
-                            backoff = FIRST_BACKOFF;
-                            Some(SLOW_RETRY)
+                            Some(wait)
                         }
                         Ended::Failed(message) => {
                             if lived.is_some_and(|lived| lived >= STABLE_CONNECTION) {
                                 backoff = FIRST_BACKOFF;
                             }
-                            warn!(%message, retry_in = ?backoff, "Bigo notification connection failed");
+                            // A refusal before may have raised the backoff
+                            // past this cap.
+                            let wait = backoff.min(MAX_BACKOFF);
+                            backoff = (wait * 2).min(MAX_BACKOFF);
+                            warn!(%message, retry_in = ?wait, "Bigo notification connection failed");
                             self.set_listener(
                                 ListenerState::Error,
                                 Some(PollingReason::Disconnected),
                                 Some(message),
                             );
-                            let wait = backoff;
-                            backoff = (backoff * 2).min(MAX_BACKOFF);
                             Some(wait)
                         }
                     }
@@ -953,6 +1179,7 @@ impl BigoNotifications {
             tokio::select! {
                 () = cancel.cancelled() => return,
                 () = settings_changed(&mut settings) => backoff = FIRST_BACKOFF,
+                () = self.reconnect.notified() => backoff = FIRST_BACKOFF,
                 () = tokio::time::sleep(retry.unwrap_or_default()), if retry.is_some() => {}
             }
         }
@@ -990,9 +1217,13 @@ impl BigoNotifications {
             Listener::connect(&route, &ticket)
                 .await
                 .map_err(|error| match error {
-                    NativeError::IpRestricted | NativeError::Rejected { .. } => {
-                        Ended::Refused(error.to_string())
-                    }
+                    // BIGO allows one app session per account, so for an
+                    // account the refusal can also come from a sign-in
+                    // elsewhere.
+                    NativeError::IpRestricted => Ended::Refused(format!(
+                        "{error}, or the account being signed in elsewhere, such as in the BIGO app"
+                    )),
+                    NativeError::Rejected { .. } => Ended::Refused(error.to_string()),
                     error => Ended::Failed(error.to_string()),
                 })
         };
@@ -1007,6 +1238,7 @@ impl BigoNotifications {
         info!(profile_id, "Bigo notification listener connected");
         session.connected_at = Some(Instant::now());
         self.set_listener(ListenerState::Connected, None, None);
+        self.end_outage(true);
 
         let mut pace = tokio::time::interval(SUBSCRIBE_INTERVAL);
         pace.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -1018,8 +1250,21 @@ impl BigoNotifications {
                 event = listener.next_event() => match event {
                     Ok(Event::Live { uid }) => {
                         debug!(?uid, "BIGO reported a stream start");
-                        self.rule.lock().pushed(uid, Instant::now());
+                        let restored = {
+                            let mut rule = self.rule.lock();
+                            let not_arriving = rule.not_arriving();
+                            rule.pushed(uid, Instant::now());
+                            not_arriving
+                        };
                         self.schedule.notify_one();
+                        if restored {
+                            info!("BIGO sends live notifications again, so Bigo streamers use them again");
+                            self.alert(NotificationEvent::BigoNotificationsRestored {
+                                problem: BigoNotificationProblem::NotArriving,
+                                timestamp: Timestamp::now(),
+                            });
+                            self.status_changed.notify_one();
+                        }
                     }
                     Ok(Event::Subscribed { uid, result }) => {
                         if let Err(refusal) = result {
@@ -1128,8 +1373,8 @@ enum Ended {
     NeedsLogin,
     /// BIGO sees the account as signed out after a refresh.
     SignedOut(String),
-    /// BIGO refused the login: it restricts this IP address or rejected the
-    /// account.
+    /// BIGO refused the login, as it does after an address change or a
+    /// sign-in elsewhere, or rejected the account.
     Refused(String),
     /// Anything else; retried after the backoff.
     Failed(String),
@@ -1373,5 +1618,85 @@ mod tests {
             !rule.checked("b", seconds(20), true),
             "a nameless push may have been b's"
         );
+    }
+
+    /// `b` goes live without a push, and offline again a second later.
+    fn missed(rule: &mut Rule, at: Instant) {
+        assert!(rule.checked("b", at, true), "missed push");
+        rule.checked("b", at + Duration::from_secs(1), false);
+    }
+
+    fn reason(rule: &Rule, streamer_id: &str) -> Option<PollingReason> {
+        let (methods, _, _) = rule.methods(None);
+        methods
+            .into_iter()
+            .find(|method| method.streamer_id == streamer_id)
+            .and_then(|method| method.reason)
+    }
+
+    #[test]
+    fn polls_are_real_after_starts_in_a_row_without_a_push_until_one_arrives() {
+        let start = Instant::now();
+        let seconds = |n| start + Duration::from_secs(n);
+        let mut rule = subscribed(start);
+        missed(&mut rule, seconds(10));
+        missed(&mut rule, seconds(20));
+        // Any push, even a nameless one, shows that pushes arrive.
+        rule.pushed(None, seconds(30));
+        missed(&mut rule, seconds(40));
+        missed(&mut rule, seconds(50));
+        assert!(rule.answers_offline("a", seconds(50)));
+        missed(&mut rule, seconds(60));
+        assert!(!rule.answers_offline("a", seconds(60)));
+        assert_eq!(
+            reason(&rule, "a"),
+            Some(PollingReason::NotificationsNotArriving)
+        );
+
+        // It concerns the account, so a new connection keeps it.
+        rule.disconnected();
+        while let Some(uid) = rule.next_subscription() {
+            rule.subscribed(uid, true, seconds(70));
+        }
+        rule.checked("a", seconds(80), false);
+        rule.checked("b", seconds(80), false);
+        assert!(!rule.answers_offline("a", seconds(80)), "reconnected");
+        assert!(
+            rule.checked("b", seconds(90), true),
+            "real polls still find missed pushes"
+        );
+
+        rule.pushed(None, seconds(100));
+        assert!(rule.answers_offline("a", seconds(100)));
+        assert_eq!(reason(&rule, "a"), None);
+    }
+
+    #[test]
+    fn only_an_outage_past_the_grace_period_alerts_once_and_reports_its_end() {
+        let start = Instant::now();
+        let mut listener = ListenerStatus {
+            platform_id: None,
+            state: ListenerState::Connecting,
+            reason: Some(PollingReason::Disconnected),
+            message: None,
+            missed_pushes: 0,
+            last_missed_at: None,
+            outage: None,
+        };
+        listener.down(start);
+        assert!(!listener.take_alert(start + DOWN_ALERT_AFTER - Duration::from_secs(1)));
+        assert!(!listener.up(), "a brief drop ends without an alert");
+
+        listener.down(start);
+        // Each retry of the same outage keeps its start.
+        listener.down(start + Duration::from_secs(60));
+        assert_eq!(listener.alert_at(), Some(start + DOWN_ALERT_AFTER));
+        assert!(listener.take_alert(start + DOWN_ALERT_AFTER));
+        assert!(
+            !listener.take_alert(start + DOWN_ALERT_AFTER * 2),
+            "once per outage"
+        );
+        assert_eq!(listener.alert_at(), None);
+        assert!(listener.up(), "reconnecting answers the alert");
     }
 }

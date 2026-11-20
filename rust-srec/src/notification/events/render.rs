@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::NotificationEvent;
+use super::{BigoNotificationProblem, NotificationEvent};
 use crate::credentials::CredentialEvent;
 use crate::utils::text::{format_bytes, format_duration};
 
@@ -165,6 +165,34 @@ impl NotificationEvent {
                 "notification.platform_throttled.title",
                 platform = platform.as_str(),
             ),
+            Self::BigoNotificationsFailing { problem, .. } => match problem {
+                BigoNotificationProblem::NotArriving => {
+                    crate::t_str_in!(
+                        locale,
+                        "notification.bigo_notifications_failing.title.not_arriving"
+                    )
+                }
+                BigoNotificationProblem::Disconnected => {
+                    crate::t_str_in!(
+                        locale,
+                        "notification.bigo_notifications_failing.title.disconnected"
+                    )
+                }
+            },
+            Self::BigoNotificationsRestored { problem, .. } => match problem {
+                BigoNotificationProblem::NotArriving => {
+                    crate::t_str_in!(
+                        locale,
+                        "notification.bigo_notifications_restored.title.not_arriving"
+                    )
+                }
+                BigoNotificationProblem::Disconnected => {
+                    crate::t_str_in!(
+                        locale,
+                        "notification.bigo_notifications_restored.title.disconnected"
+                    )
+                }
+            },
             Self::Credential { event } => credential_title(event, locale),
             Self::BaiduPcsReloginFailed { config_dir, .. } => crate::t_str_in!(
                 locale,
@@ -419,6 +447,33 @@ impl NotificationEvent {
                     .to_string()
                     .as_str(),
             ),
+            Self::BigoNotificationsFailing {
+                problem, message, ..
+            } => match (problem, message) {
+                (BigoNotificationProblem::NotArriving, _) => crate::t_str_in!(
+                    locale,
+                    "notification.bigo_notifications_failing.description.not_arriving"
+                ),
+                (BigoNotificationProblem::Disconnected, Some(message)) => crate::t_str_in!(
+                    locale,
+                    "notification.bigo_notifications_failing.description.disconnected_with_error",
+                    message = message.as_str(),
+                ),
+                (BigoNotificationProblem::Disconnected, None) => crate::t_str_in!(
+                    locale,
+                    "notification.bigo_notifications_failing.description.disconnected"
+                ),
+            },
+            Self::BigoNotificationsRestored { problem, .. } => match problem {
+                BigoNotificationProblem::NotArriving => crate::t_str_in!(
+                    locale,
+                    "notification.bigo_notifications_restored.description.not_arriving"
+                ),
+                BigoNotificationProblem::Disconnected => crate::t_str_in!(
+                    locale,
+                    "notification.bigo_notifications_restored.description.disconnected"
+                ),
+            },
             Self::Credential { event } => event.to_message_in(locale),
             Self::BaiduPcsReloginFailed { message, .. } => crate::t_str_in!(
                 locale,

@@ -27,6 +27,7 @@ const status: BigoNotificationStatus = {
   streamers: [],
   missed_pushes: 0,
   last_missed_at: null,
+  down_since: null,
 };
 
 function renderFields(

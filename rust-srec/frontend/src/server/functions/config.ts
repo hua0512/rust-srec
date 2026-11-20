@@ -76,6 +76,17 @@ export const getBigoNotificationStatus = createServerFn({
   ),
 );
 
+/**
+ * Makes the Bigo live-notification listener try to connect now if it is waiting between attempts.
+ */
+export const reconnectBigoNotifications = createServerFn({
+  method: 'POST',
+}).handler(async () => {
+  await fetchBackend('/config/platforms/bigo/notifications/reconnect', {
+    method: 'POST',
+  });
+});
+
 // Helper to convert empty strings to null
 const emptyStringToNull = z
   .string()
