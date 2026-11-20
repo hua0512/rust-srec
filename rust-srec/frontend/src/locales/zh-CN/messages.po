@@ -9638,9 +9638,13 @@ msgstr "使用哔哩哔哩移动端 App 扫码"
 msgid "Scan with the Douyu app"
 msgstr "使用斗鱼 App 扫码"
 
-#: src/components/credentials/credential-login-dialog.tsx:224
+#: src/components/credentials/credential-login-dialog.tsx:226
 msgid "Scan with the platform's mobile app"
 msgstr "使用该平台的移动端 App 扫码"
+
+#: src/components/credentials/credential-login-dialog.tsx:224
+msgid "Scan with the Weibo app"
+msgstr "使用微博 App 扫码"
 
 #: src/components/credentials/credential-login-dialog.tsx:167
 msgid "Scanned! Please confirm on your phone"

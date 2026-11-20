@@ -439,7 +439,7 @@ impl CredentialExecutionService {
             .map_err(provider_error)?;
         provider
             .check(
-                &super::provider_client(&route.target)?,
+                &super::provider_client_for(provider, &route.target)?,
                 &profile.material()?,
             )
             .await
@@ -484,7 +484,7 @@ impl CredentialExecutionService {
             .map_err(provider_error)?;
         match provider
             .refresh(
-                &super::provider_client(&route.target)?,
+                &super::provider_client_for(provider, &route.target)?,
                 &profile.material()?,
             )
             .await

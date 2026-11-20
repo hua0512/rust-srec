@@ -187,7 +187,7 @@ impl CredentialLoginSessions {
         )
         .await?;
         Ok(LoginTarget {
-            client: super::provider_client(&route.target)?,
+            client: super::provider_client_for(provider, &route.target)?,
             route,
             platform_id,
             provider,

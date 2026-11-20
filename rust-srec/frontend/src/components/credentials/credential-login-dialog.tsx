@@ -220,6 +220,8 @@ function ScanPrompt({ platformName }: { platformName?: string }) {
       return <Trans>Scan with Bilibili mobile app</Trans>;
     case 'douyu':
       return <Trans>Scan with the Douyu app</Trans>;
+    case 'weibo':
+      return <Trans>Scan with the Weibo app</Trans>;
     default:
       return <Trans>Scan with the platform&apos;s mobile app</Trans>;
   }

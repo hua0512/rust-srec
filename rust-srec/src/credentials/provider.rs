@@ -19,7 +19,7 @@ use reqwest::Client;
 use serde::Serialize;
 
 use super::platforms::{
-    BigoProvider, BilibiliProvider, DouyuProvider, SoopProvider, TwitchProvider,
+    BigoProvider, BilibiliProvider, DouyuProvider, SoopProvider, TwitchProvider, WeiboProvider,
 };
 use super::{CredentialError, CredentialMaterial};
 
@@ -102,6 +102,13 @@ pub enum QrLoginPoll {
 #[async_trait]
 pub trait CredentialProvider: Send + Sync {
     fn capabilities(&self) -> ProviderCapabilities;
+
+    /// Whether the client given to the provider calls follows redirects. A
+    /// provider that needs each redirect's `Set-Cookie` follows them itself
+    /// and returns `false`.
+    fn follows_redirects(&self) -> bool {
+        true
+    }
 
     /// Extractor settings the account supplies besides its cookies.
     fn extractor_authentication(
@@ -238,6 +245,8 @@ pub fn provider(platform: &str) -> &'static dyn CredentialProvider {
         &SoopProvider
     } else if platform.eq_ignore_ascii_case("twitch") {
         &TwitchProvider
+    } else if platform.eq_ignore_ascii_case("weibo") {
+        &WeiboProvider
     } else {
         &CookieProvider
     }
