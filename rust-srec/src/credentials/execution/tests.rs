@@ -1973,9 +1973,11 @@ async fn a_pool_with_anonymous_fallback_checks_without_an_account_when_none_work
 }
 
 /// A platform whose checks work without an account: its check revokes
-/// `account=A` and cannot reach a verdict for any other account.
+/// `account=A`, finds `account=C` signed out but repairable, and cannot
+/// reach a verdict for any other account. Every repair fails.
 struct OptionalAccounts {
     optional: bool,
+    refreshes: std::sync::atomic::AtomicUsize,
 }
 
 #[async_trait::async_trait]
@@ -1983,6 +1985,7 @@ impl super::super::CredentialProvider for OptionalAccounts {
     fn capabilities(&self) -> super::super::ProviderCapabilities {
         super::super::ProviderCapabilities {
             check: true,
+            refresh: true,
             ..Default::default()
         }
     }
@@ -1996,8 +1999,18 @@ impl super::super::CredentialProvider for OptionalAccounts {
     ) -> std::result::Result<AccountStatus, CredentialError> {
         match material.cookies.as_str() {
             "account=A" => Ok(AccountStatus::Revoked),
+            "account=C" => Ok(AccountStatus::Repairable),
             _ => Err(CredentialError::RefreshFailed("blocked".into())),
         }
+    }
+    async fn refresh(
+        &self,
+        _client: &reqwest::Client,
+        _material: &CredentialMaterial,
+    ) -> std::result::Result<RefreshedCredentials, CredentialError> {
+        self.refreshes
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Err(CredentialError::RefreshFailed("refused".into()))
     }
 }
 
@@ -2015,9 +2028,13 @@ async fn an_unusable_account_never_stops_a_platform_that_works_without_one() {
             .unwrap()
         };
         let (repository, mut service, policy, profiles) = fixture().await;
+        let accounts = Arc::new(OptionalAccounts {
+            optional: true,
+            refreshes: Default::default(),
+        });
         Arc::get_mut(&mut service.providers)
             .unwrap()
-            .register_provider("huya", Arc::new(OptionalAccounts { optional: true }));
+            .register_provider("huya", accounts.clone());
         let notifications = Arc::new(crate::notification::NotificationService::new());
         let mut received = notifications.subscribe();
         service
@@ -2082,6 +2099,34 @@ async fn an_unusable_account_never_stops_a_platform_that_works_without_one() {
             extract_cookies(&service, &unchecked).await.unwrap(),
             "account=B"
         );
+        // A failed repair is notified, and the check runs without the
+        // account, which is not repaired again on the next check.
+        let unrepaired = fixed(&policy, &profiles[2]);
+        assert_eq!(extract_cookies(&service, &unrepaired).await.unwrap(), "");
+        assert!(matches!(
+            received.recv().await.unwrap(),
+            crate::notification::NotificationEvent::Credential {
+                event: super::super::CredentialEvent::RefreshFailed {
+                    profile_id: Some(id),
+                    requires_relogin: false,
+                    ..
+                }
+            } if id == profiles[2].id
+        ));
+        assert_eq!(extract_cookies(&service, &unrepaired).await.unwrap(), "");
+        assert_eq!(
+            accounts.refreshes.load(std::sync::atomic::Ordering::SeqCst),
+            1
+        );
+        assert_eq!(
+            repository
+                .health(&profiles[2].id)
+                .await
+                .unwrap()
+                .unwrap()
+                .validity,
+            CredentialValidity::NeedsRefresh
+        );
         notifications.stop().await;
         assert!(
             received.try_recv().is_err(),
@@ -2092,7 +2137,13 @@ async fn an_unusable_account_never_stops_a_platform_that_works_without_one() {
         let (_, mut service, policy, profiles) = fixture().await;
         Arc::get_mut(&mut service.providers)
             .unwrap()
-            .register_provider("huya", Arc::new(OptionalAccounts { optional: false }));
+            .register_provider(
+                "huya",
+                Arc::new(OptionalAccounts {
+                    optional: false,
+                    refreshes: Default::default(),
+                }),
+            );
         assert!(
             extract_cookies(&service, &fixed(&policy, &profiles[1]))
                 .await

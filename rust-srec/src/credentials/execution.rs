@@ -1175,6 +1175,17 @@ impl CredentialExecutionService {
         if self.excluded_while_resting(&profile, &mut attempts.exclusions) {
             return Ok(None);
         }
+        // Checks work without the account, so one whose repair just failed
+        // is passed over until the repair is due again, not repaired anew
+        // on every check.
+        let accounts_optional = self
+            .providers
+            .provider(&attempts.platform)
+            .accounts_optional();
+        if accounts_optional && refresh_failed_recently(health.as_ref()) {
+            attempts.previous = Some((id.to_owned(), "refresh_failed"));
+            return Ok(None);
+        }
         let prepared = self
             .prepare(
                 step,
@@ -1198,6 +1209,22 @@ impl CredentialExecutionService {
             // The provider call already paused the route it was throttled on.
             Err(error @ Error::Extractor(ExtractorError::RateLimited { .. })) => {
                 fail_over_throttle(step, attempts, error)?;
+                Ok(None)
+            }
+            // A repair the platform refused has been recorded and notified,
+            // so the check goes on without the account. Failures before the
+            // platform was asked, such as the deadline, still end it.
+            Err(error @ Error::Monitor(_))
+                if accounts_optional
+                    && refresh_failed_recently(self.repository.health(id).await?.as_ref()) =>
+            {
+                tracing::warn!(
+                    profile_id = %id,
+                    platform = %attempts.platform,
+                    %error,
+                    "Could not repair the credential profile; checking without it"
+                );
+                attempts.previous = Some((id.to_owned(), "refresh_failed"));
                 Ok(None)
             }
             Err(error) => Err(error),
@@ -1497,6 +1524,18 @@ pub fn next_renewal_at(
         .and_then(|health| health.last_failure_at)
         .map_or(i64::MIN, |failed| after(failed, RENEWAL_RETRY));
     Ok(Some(after(since, age).max(retry)))
+}
+
+/// Whether the account's last refresh failed less than [`RENEWAL_RETRY`] ago
+/// and has not succeeded since.
+fn refresh_failed_recently(health: Option<&CredentialProfileHealth>) -> bool {
+    health.is_some_and(|health| {
+        health.validity == CredentialValidity::NeedsRefresh
+            && health.last_failure_at.is_some_and(|failed| {
+                crate::database::time::now_ms()
+                    < failed.saturating_add(RENEWAL_RETRY.as_millis() as i64)
+            })
+    })
 }
 
 /// After a throttle on the step's route, the operation continues only with

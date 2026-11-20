@@ -4,9 +4,12 @@
 //! and, as its refresh token, an account token with the
 //! account's uid and every cookie the sign-in set on Weibo's and Sina's
 //! sites. The check asks Weibo's post timeline whether the cookies are still
-//! signed in. The provider calls get a client that does not follow
-//! redirects: the sign-in keeps the cookies each redirect sets, and the check
-//! tells a sign-in redirect from a block.
+//! signed in. An account Weibo signed out is renewed from its account token,
+//! which only a QR login holds: a pasted Cookie header names no domains, so
+//! it cannot rebuild the per-site cookies a renewal sends. The provider
+//! calls get a client that does not follow redirects: the sign-in keeps the
+//! cookies each redirect sets, and the check tells a sign-in redirect from a
+//! block.
 
 use async_trait::async_trait;
 use reqwest::Client;
@@ -16,6 +19,7 @@ use crate::credentials::CredentialMaterial;
 use crate::credentials::error::CredentialError;
 use crate::credentials::provider::{
     AccountStatus, CredentialProvider, ProviderCapabilities, QrLoginPoll, QrLoginStart,
+    RefreshedCredentials,
 };
 
 use platforms_parser::extractor::platforms::weibo::passport::{
@@ -34,7 +38,32 @@ fn map_error(error: PassportError) -> CredentialError {
         PassportError::Api(code) => {
             CredentialError::RefreshFailed(format!("Weibo passport error {code}"))
         }
+        PassportError::LoginRequired => CredentialError::InvalidRefreshToken,
+        // A spent account token and Weibo's request checks both answer 403,
+        // so a refusal is retried later instead of asking for a new login.
+        error @ (PassportError::Refused | PassportError::AccountMismatch) => {
+            CredentialError::RefreshFailed(error.to_string())
+        }
     }
+}
+
+/// A signed-out account that can renew is repaired; only one that cannot
+/// needs a new login.
+fn account_status(state: AccountState, material: &CredentialMaterial) -> AccountStatus {
+    match state {
+        AccountState::Valid => AccountStatus::Valid,
+        AccountState::SignedOut if account_token(material).is_some() => AccountStatus::Repairable,
+        AccountState::SignedOut => AccountStatus::Revoked,
+        AccountState::Unknown => AccountStatus::Unverifiable,
+    }
+}
+
+/// The account token of a QR login, while it can still renew the account.
+fn account_token(material: &CredentialMaterial) -> Option<&str> {
+    material
+        .refresh_token
+        .as_deref()
+        .filter(|token| passport::renewable(token))
 }
 
 #[async_trait]
@@ -44,8 +73,36 @@ impl CredentialProvider for WeiboProvider {
             refresh_token: true,
             qr_login: true,
             check: true,
+            refresh: true,
             ..ProviderCapabilities::default()
         }
+    }
+
+    fn refreshable(&self, material: &CredentialMaterial) -> bool {
+        account_token(material).is_some()
+    }
+
+    /// Renews an account Weibo signed out. The renewal replaces the account
+    /// token's 30-day cookies; once the new ones expire, no renewal can
+    /// work, so that is the material's expiry.
+    #[instrument(skip_all)]
+    async fn refresh(
+        &self,
+        client: &Client,
+        material: &CredentialMaterial,
+    ) -> Result<RefreshedCredentials, CredentialError> {
+        let token = account_token(material).ok_or(CredentialError::MissingRefreshToken)?;
+        let session = passport::renew_session(client, token)
+            .await
+            .inspect_err(|error| debug!(%error, "Weibo account renewal failed"))
+            .map_err(map_error)?;
+        debug!("Weibo account renewed");
+        Ok(RefreshedCredentials {
+            cookies: session.cookies,
+            refresh_token: Some(session.account_token),
+            access_token: None,
+            expires_at: session.renewable_until,
+        })
     }
 
     fn follows_redirects(&self) -> bool {
@@ -73,11 +130,7 @@ impl CredentialProvider for WeiboProvider {
                 .inspect_err(|error| debug!(%error, "Weibo account check failed"))
                 .map_err(map_error)?;
         debug!(?state, "Weibo account checked");
-        Ok(match state {
-            AccountState::Valid => AccountStatus::Valid,
-            AccountState::SignedOut => AccountStatus::Revoked,
-            AccountState::Unknown => AccountStatus::Unverifiable,
-        })
+        Ok(account_status(state, material))
     }
 
     #[instrument(skip_all)]
@@ -117,10 +170,48 @@ impl CredentialProvider for WeiboProvider {
 mod tests {
     use super::*;
 
+    fn material(refresh_token: Option<&str>) -> CredentialMaterial {
+        CredentialMaterial {
+            cookies: "SUB=com-sub".into(),
+            refresh_token: refresh_token.map(str::to_owned),
+            access_token: None,
+            reauth_config: None,
+        }
+    }
+
     #[test]
-    fn a_passport_refusal_is_not_a_revoked_login() {
-        let refused = map_error(PassportError::Api(50_114_099));
-        assert!(matches!(refused, CredentialError::RefreshFailed(_)));
-        assert!(!refused.requires_relogin());
+    fn only_a_qr_login_that_can_renew_is_repaired_when_signed_out() {
+        let renewable = r#"{"v":1,"uid":"1000000002","jar":[{"domain":".weibo.com","name":"ALF","value":"a","expires":4102444800}]}"#;
+        let spent = r#"{"v":1,"uid":"1000000002","jar":[{"domain":".weibo.com","name":"SCF","value":"s"}]}"#;
+        assert!(WeiboProvider.capabilities().refresh);
+        assert!(WeiboProvider.refreshable(&material(Some(renewable))));
+        assert_eq!(
+            account_status(AccountState::SignedOut, &material(Some(renewable))),
+            AccountStatus::Repairable
+        );
+        for unrenewable in [material(None), material(Some(spent))] {
+            assert!(!WeiboProvider.refreshable(&unrenewable));
+            assert_eq!(
+                account_status(AccountState::SignedOut, &unrenewable),
+                AccountStatus::Revoked
+            );
+        }
+    }
+
+    #[test]
+    fn only_the_sign_in_page_asks_for_a_new_login() {
+        assert!(matches!(
+            map_error(PassportError::LoginRequired),
+            CredentialError::InvalidRefreshToken
+        ));
+        for refused in [
+            PassportError::Api(50_114_099),
+            PassportError::Refused,
+            PassportError::AccountMismatch,
+        ] {
+            let refused = map_error(refused);
+            assert!(matches!(refused, CredentialError::RefreshFailed(_)));
+            assert!(!refused.requires_relogin());
+        }
     }
 }
