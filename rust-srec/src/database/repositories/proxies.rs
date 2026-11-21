@@ -551,7 +551,10 @@ pub(crate) async fn resolve_over_global(
     system: &SystemProxy,
 ) -> Result<ResolvedRoute> {
     let mut layers = vec![(RouteSource::Global, own.clone())];
-    layers.extend(scope_layers(connection, None).await?);
+    // A route of its own decides without the global route.
+    if own.is_inherit() {
+        layers.extend(scope_layers(connection, None).await?);
+    }
     resolve_layers(connection, &layers, system).await
 }
 

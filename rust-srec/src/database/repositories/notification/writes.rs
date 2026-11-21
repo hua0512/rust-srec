@@ -17,17 +17,28 @@ pub struct ChannelPatch {
     pub proxy_route: Option<ProxyRoute>,
 }
 
-/// Writes a channel, with its route unless `route` keeps the stored one, and
-/// returns the row as written. The type is stored in its canonical
-/// spelling. Only HTTP channels can take a route other than `inherit`, and a
-/// route must name an existing saved proxy. Inserts and imports always write
-/// the route.
+/// Writes a channel, with its route unless `route` keeps the stored one. The
+/// type is stored in its canonical spelling. Only HTTP channels can take a
+/// route other than `inherit`, and a route must name an existing saved
+/// proxy. Inserts and imports always write the route.
 pub(crate) async fn write_channel(
     connection: &mut sqlx::SqliteConnection,
     model: &NotificationChannelDbModel,
     mode: WriteMode,
     route: RouteWrite,
-) -> crate::Result<Option<NotificationChannelDbModel>> {
+) -> crate::Result<()> {
+    channel_row(model, mode, route)?
+        .execute(connection)
+        .await
+        .map_err(|error| channel_write_error(model, error))
+}
+
+/// The statement [`write_channel`] runs, once the rules are checked.
+fn channel_row(
+    model: &NotificationChannelDbModel,
+    mode: WriteMode,
+    route: RouteWrite,
+) -> crate::Result<RowWrite> {
     let channel_type = ChannelType::parse(&model.channel_type);
     let write_route = route == RouteWrite::Write || mode != WriteMode::Update;
     if write_route
@@ -55,22 +66,26 @@ pub(crate) async fn write_channel(
         row.field("proxy_route", model.proxy_route.kind(), true)?;
         row.field("proxy_id", model.proxy_route.proxy_id(), true)?;
     }
-    match row.fetch_optional(connection).await {
-        Ok(row) => Ok(row),
+    Ok(row)
+}
+
+fn channel_write_error(model: &NotificationChannelDbModel, error: sqlx::Error) -> crate::Error {
+    match error {
         // The saved proxy is the channel's only foreign key.
-        Err(sqlx::Error::Database(error)) if error.is_foreign_key_violation() => {
+        sqlx::Error::Database(error) if error.is_foreign_key_violation() => {
             match model.proxy_route.proxy_id() {
-                Some(id) => Err(ProxyError::Missing(id.to_owned()).into()),
-                None => Err(sqlx::Error::Database(error).into()),
+                Some(id) => ProxyError::Missing(id.to_owned()).into(),
+                None => sqlx::Error::Database(error).into(),
             }
         }
-        Err(error) => Err(error.into()),
+        error => error.into(),
     }
 }
 
 /// Applies `patch` to the stored channel `id` and returns it as written.
 /// The caller's transaction covers the read and the write, so the rules
-/// are checked against the row being updated.
+/// are checked against the row being updated, and a failed commit cannot
+/// leave the returned row unwritten.
 pub(crate) async fn patch_channel(
     connection: &mut sqlx::SqliteConnection,
     id: &str,
@@ -93,8 +108,10 @@ pub(crate) async fn patch_channel(
         }
         None => RouteWrite::Keep,
     };
-    write_channel(connection, &model, WriteMode::Update, route)
-        .await?
+    channel_row(&model, WriteMode::Update, route)?
+        .fetch_optional(connection)
+        .await
+        .map_err(|error| channel_write_error(&model, error))?
         .ok_or_else(not_found)
 }
 
@@ -102,8 +119,7 @@ pub(crate) async fn import_channel(
     connection: &mut sqlx::SqliteConnection,
     model: &NotificationChannelDbModel,
 ) -> crate::Result<()> {
-    write_channel(connection, model, WriteMode::Import, RouteWrite::Write).await?;
-    Ok(())
+    write_channel(connection, model, WriteMode::Import, RouteWrite::Write).await
 }
 
 #[derive(Clone, Copy)]

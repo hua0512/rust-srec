@@ -131,8 +131,7 @@ impl NotificationRepository for SqlxNotificationRepository {
             super::row_write::WriteMode::Insert,
             writes::RouteWrite::Write,
         )
-        .await?;
-        Ok(())
+        .await
     }
 
     async fn update_channel(&self, channel: &NotificationChannelDbModel) -> Result<()> {
@@ -142,8 +141,7 @@ impl NotificationRepository for SqlxNotificationRepository {
             super::row_write::WriteMode::Update,
             writes::RouteWrite::Write,
         )
-        .await?;
-        Ok(())
+        .await
     }
 
     async fn patch_channel(

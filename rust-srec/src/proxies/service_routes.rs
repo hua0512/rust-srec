@@ -26,14 +26,16 @@ impl ServiceRoutes {
     }
 
     /// The connection a route `own` takes now. A route naming a saved proxy
-    /// that no longer exists fails rather than connecting directly.
+    /// that no longer exists fails rather than connecting directly. The
+    /// global route and the saved proxy it names are read in one
+    /// transaction, so a concurrent change replacing both is seen whole.
     pub async fn target(&self, own: &ProxyRoute) -> Result<ProxyTarget> {
-        let mut connection = self.pool.acquire().await?;
-        Ok(
-            proxies::resolve_over_global(&mut connection, own, SystemProxy::current())
-                .await?
-                .target,
-        )
+        let mut transaction = self.pool.begin().await?;
+        let target = proxies::resolve_over_global(&mut transaction, own, SystemProxy::current())
+            .await?
+            .target;
+        transaction.commit().await?;
+        Ok(target)
     }
 
     /// A shared HTTP client on the connection `own` takes now; callers set

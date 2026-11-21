@@ -12,8 +12,22 @@ use super::{ProxyError, SystemProxy};
 ///
 /// Requests must not carry fields a route does not have: a misspelt route
 /// would otherwise be read as another one.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize, utoipa::ToSchema)]
+// Tool schemas describe the variants, not `RouteWire`, whose shape is
+// looser than what it accepts.
+#[derive(
+    Debug,
+    Clone,
+    Default,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    utoipa::ToSchema,
+    schemars::JsonSchema,
+)]
 #[serde(tag = "kind", rename_all = "snake_case", try_from = "RouteWire")]
+#[schemars(!try_from, deny_unknown_fields)]
 pub enum ProxyRoute {
     #[default]
     Inherit,
@@ -22,29 +36,10 @@ pub enum ProxyRoute {
     /// Use the proxy the environment configures, if any.
     System,
     /// Connect through a saved proxy.
-    Proxy { id: String },
-}
-
-/// The shape of [`ProxyRoute`] tool schemas describe. Routes are read
-/// through [`RouteWire`], whose own shape is looser.
-#[derive(schemars::JsonSchema)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-#[expect(dead_code, reason = "only describes the schema")]
-enum RouteSchema {
-    Inherit,
-    Direct,
-    System,
-    Proxy { id: String },
-}
-
-impl schemars::JsonSchema for ProxyRoute {
-    fn schema_name() -> std::borrow::Cow<'static, str> {
-        "ProxyRoute".into()
-    }
-
-    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
-        RouteSchema::json_schema(generator)
-    }
+    Proxy {
+        #[schemars(regex(pattern = r"\S"))]
+        id: String,
+    },
 }
 
 /// The wire form a route is read from.
