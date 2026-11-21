@@ -1,4 +1,4 @@
-import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
+import { createLazyFileRoute } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/api/query-keys';
 import { invalidateCredentialQueries } from '@/api/credential-profiles';
@@ -24,7 +24,6 @@ export const Route = createLazyFileRoute(
 
 function EditPlatformPage() {
   const { platformId } = Route.useParams();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { i18n } = useLingui();
 
@@ -48,15 +47,18 @@ function EditPlatformPage() {
           data: { ...values, id: platformId, name },
         },
       }),
-    onSuccess: () => {
+    onSuccess: (saved) => {
       toast.success(i18n._(msg`Platform configuration updated successfully`));
+      queryClient.setQueryData(
+        queryKeys.platformConfigs.detail(platformId),
+        saved,
+      );
       void queryClient.invalidateQueries({
         queryKey: queryKeys.platformConfigs.all,
       });
       // The form also saves the platform's account selection, which every
       // scope on the platform inherits.
       void invalidateCredentialQueries(queryClient, platformId);
-      void navigate({ to: '/config/platforms' });
     },
     onError: (error) =>
       toast.error(i18n._(msg`Failed to update platform: ${error.message}`)),
@@ -94,8 +96,11 @@ function EditPlatformPage() {
   return (
     <PlatformEditor
       platform={platform}
-      onSubmit={(values) =>
-        updateMutation.mutate({ values, name: platform.name })
+      onSubmit={(values, onSaved) =>
+        updateMutation.mutate(
+          { values, name: platform.name },
+          { onSuccess: onSaved },
+        )
       }
       isUpdating={updateMutation.isPending}
     />

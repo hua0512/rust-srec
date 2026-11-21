@@ -66,3 +66,4 @@
 - Fixed the **Top Talkers**, **Top Words**, **Top Gifters** and **Top Gifts** charts in a session's **Danmu Statistics** drawing every bar in black, which made them hard to read in dark mode. Each chart has its own colour again.
 - Redesigned the **Engines** and **Proxies** settings pages with full-width settings cards and structured lists matching the rest of the settings section, adding engine configuration hints, direct row actions, a dedicated **System proxy** card, and expandable usage details on each proxy row.
 - Fixed the QR code login dialog staying open after a scan succeeded. It now closes automatically shortly after the account is saved.
+- Saving changes on a platform, template or engine settings page now stays on that page instead of returning to the list, so you can keep adjusting other tabs or settings and use **Back** when finished.

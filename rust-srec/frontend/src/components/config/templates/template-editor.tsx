@@ -30,6 +30,7 @@ import { INHERIT_ROUTE } from '@/api/schemas/proxies';
 import { enginesQueryOptions } from '@/api/engines';
 import { withEngineOverrideChecks } from './engine-override-checks';
 import { UnsavedChangesGuard } from '@/components/shared/unsaved-changes-guard';
+import { useGoBack } from '@/hooks/use-go-back';
 
 export type TemplateFormValues = z.input<typeof UpdateTemplateRequestSchema>;
 
@@ -90,7 +91,10 @@ function toTemplateFormValues(
 
 interface TemplateEditorProps {
   template?: z.infer<typeof TemplateSchema>;
-  onSubmit: (data: TemplateFormValues) => void;
+  onSubmit: (
+    data: TemplateFormValues,
+    onSaved?: (saved: z.infer<typeof TemplateSchema>) => void,
+  ) => void;
   isSubmitting: boolean;
   mode: 'create' | 'edit';
 }
@@ -102,6 +106,7 @@ export function TemplateEditor({
   mode,
 }: TemplateEditorProps) {
   const { i18n } = useLingui();
+  const goBack = useGoBack('/config/templates');
   const { data: engines = [] } = useQuery(enginesQueryOptions);
   // The resolver is created once; it reads the engines current at validation time.
   const enginesRef = useRef(engines);
@@ -134,12 +139,21 @@ export function TemplateEditor({
     }
   }, [template, reset]);
 
+  const handleSubmit = (data: TemplateFormValues) => {
+    onSubmit(data, (saved) => {
+      // Reset explicitly from the server response: a save that leaves the stored
+      // template unchanged keeps the same cached reference, so the effect above
+      // would not run and the form would stay dirty.
+      reset(toTemplateFormValues(saved));
+    });
+  };
+
   return (
     <Form {...form}>
       <UnsavedChangesGuard when={form.formState.isDirty && !isSubmitting} />
       <form
         id="template-form"
-        onSubmit={form.handleSubmit((data) => onSubmit(data))}
+        onSubmit={form.handleSubmit(handleSubmit)}
         className="min-h-screen pb-20"
       >
         <motion.div
@@ -179,7 +193,7 @@ export function TemplateEditor({
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => window.history.back()}
+                  onClick={() => goBack()}
                   className="gap-2 shrink-0 h-9 sm:h-10"
                 >
                   <ArrowLeft className="w-4 h-4" />
