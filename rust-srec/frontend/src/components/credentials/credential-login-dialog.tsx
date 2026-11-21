@@ -28,6 +28,8 @@ import {
 } from '@/server/functions/credential-profiles';
 import type { CredentialLoginTarget } from '@/api/schemas/credential-profiles';
 
+const AUTO_CLOSE_DELAY_MS = 1500;
+
 export function CredentialLoginDialog({
   target,
   accountLabel,
@@ -49,6 +51,8 @@ export function CredentialLoginDialog({
   const [error, setError] = useState<string>();
   const onSuccessRef = useRef(onSuccess);
   onSuccessRef.current = onSuccess;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   const targetKey = JSON.stringify(target);
   useEffect(() => {
     let canceled = false;
@@ -74,6 +78,9 @@ export function CredentialLoginDialog({
             if (result.status === 'completed') {
               setUrl(undefined);
               onSuccessRef.current();
+              timer = setTimeout(() => {
+                if (!canceled) onCloseRef.current();
+              }, AUTO_CLOSE_DELAY_MS);
             } else if (
               result.status === 'expired' ||
               result.status === 'conflict'
