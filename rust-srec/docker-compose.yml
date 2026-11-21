@@ -13,13 +13,14 @@ services:
       - "com.centurylinklabs.watchtower.enable=true"
       - "com.centurylinklabs.watchtower.lifecycle.pre-update=/app/watchtower-pre-update.sh"
     ports:
-      - "${API_PORT:-8080}:8080"
+      - "${API_PORT:-12555}:8080"
     volumes:
       - ${DATA_DIR:-./data}:/app/data
       - ${CONFIG_DIR:-./config}:/app/config
       - ${OUTPUT_DIR:-./output}:/app/output
       - ${LOG_DIR:-./logs}:/app/logs
     environment:
+      - TZ=${TZ:-UTC}
       - RUST_LOG=${RUST_LOG:-info}
       - DATABASE_URL=${DATABASE_URL:-sqlite:///app/data/rust-srec.db}
       - RUST_SREC_SHUTDOWN_TIMEOUT_SECS=${RUST_SREC_SHUTDOWN_TIMEOUT_SECS:-30}
@@ -46,6 +47,11 @@ services:
       - WEB_PUSH_VAPID_PUBLIC_KEY=${WEB_PUSH_VAPID_PUBLIC_KEY:-}
       - WEB_PUSH_VAPID_PRIVATE_KEY=${WEB_PUSH_VAPID_PRIVATE_KEY:-}
       - WEB_PUSH_VAPID_SUBJECT=${WEB_PUSH_VAPID_SUBJECT:-}
+      # Proxy Configuration
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      - NO_PROXY=${NO_PROXY:-}
+      # - ALL_PROXY=${ALL_PROXY:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/health/live"]
       interval: 30s
@@ -77,8 +83,9 @@ services:
       - "com.centurylinklabs.watchtower.enable=true"
       - "com.centurylinklabs.watchtower.lifecycle.pre-update=/bin/sh -c 'wget -q -O /dev/null http://rust-srec:8080/api/health/idle || exit 75'"
     ports:
-      - "${FRONTEND_PORT:-80}:80"
+      - "${FRONTEND_PORT:-15275}:80"
     environment:
+      - TZ=${TZ:-UTC}
       - BACKEND_URL=${BACKEND_URL:-http://rust-srec:8080}
       # Session cookie configuration
       - SESSION_SECRET=${SESSION_SECRET:?SESSION_SECRET is required (min 32 chars)}
