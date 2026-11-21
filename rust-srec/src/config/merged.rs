@@ -512,19 +512,19 @@ impl MergedConfigBuilder {
             }
 
             // Parse pipeline config from streamer-specific config (Flexible: Enum untagged)
-            if let Some(pipeline_val) = config.get("pipeline")
+            if let Some(pipeline_val) = config.get(super::PIPELINE_FIELD)
                 && let Ok(v) = serde_json::from_value::<DagPipelineDefinition>(pipeline_val.clone())
             {
                 self.pipeline = Some(v);
             }
 
-            if let Some(pipeline_val) = config.get("session_complete_pipeline")
+            if let Some(pipeline_val) = config.get(super::SESSION_COMPLETE_PIPELINE_FIELD)
                 && let Ok(v) = serde_json::from_value::<DagPipelineDefinition>(pipeline_val.clone())
             {
                 self.session_complete_pipeline = Some(v);
             }
 
-            if let Some(pipeline_val) = config.get("paired_segment_pipeline")
+            if let Some(pipeline_val) = config.get(super::PAIRED_SEGMENT_PIPELINE_FIELD)
                 && let Ok(v) = serde_json::from_value::<DagPipelineDefinition>(pipeline_val.clone())
             {
                 self.paired_segment_pipeline = Some(v);

@@ -257,9 +257,7 @@ impl FfmpegEngine {
 /// ffmpeg's `-http_proxy` speaks only plain HTTP to the proxy. Any other
 /// proxy would be misread, so the download fails instead of guessing.
 fn require_http_proxy(proxy: &ProxyTarget) -> std::result::Result<(), EngineStartError> {
-    if let Some(endpoint) = proxy.endpoint()
-        && url::Url::parse(endpoint.url.trim()).map_or(true, |url| url.scheme() != "http")
-    {
+    if !proxy.supports_schemes(&["http"]) {
         return Err(EngineStartError::new(
             DownloadFailureKind::Configuration,
             "ffmpeg can only use http:// proxies; choose an http proxy for this recording or use the mesio or streamlink engine",

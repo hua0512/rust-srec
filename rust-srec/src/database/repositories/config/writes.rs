@@ -1,15 +1,26 @@
 use super::super::credential_selections;
+use super::super::proxies::StepDocument;
 use super::super::row_write::{Mutation, RowWrite, WriteMode};
 use crate::credentials::{CredentialOwner, CredentialSelection};
 use crate::database::models::{
     EngineConfigurationDbModel, GlobalConfigDbModel, PlatformConfigDbModel, TemplateConfigDbModel,
 };
+use crate::pipeline::step_routes::Layout;
 
 pub(crate) async fn write_global(
     connection: &mut sqlx::SqliteConnection,
     model: &GlobalConfigDbModel,
     mode: WriteMode,
-) -> Result<(), sqlx::Error> {
+) -> crate::Result<()> {
+    super::super::proxies::require_step_routes(
+        connection,
+        &[
+            StepDocument::Pipelines(Layout::Pipeline, model.pipeline.as_deref()),
+            StepDocument::Pipelines(Layout::Pipeline, model.session_complete_pipeline.as_deref()),
+            StepDocument::Pipelines(Layout::Pipeline, model.paired_segment_pipeline.as_deref()),
+        ],
+    )
+    .await?;
     let mutation = match mode {
         WriteMode::Insert => Mutation::Insert,
         WriteMode::Update => Mutation::Update,
@@ -116,13 +127,13 @@ pub(crate) async fn write_global(
         model.stream_proxy_allow_private_targets,
         true,
     )?;
-    row.execute(connection).await
+    Ok(row.execute(connection).await?)
 }
 
 pub(crate) async fn import_global(
     connection: &mut sqlx::SqliteConnection,
     model: &GlobalConfigDbModel,
-) -> Result<(), sqlx::Error> {
+) -> crate::Result<()> {
     write_global(connection, model, WriteMode::Import).await
 }
 
@@ -164,6 +175,16 @@ pub(crate) async fn write_template(
         WriteMode::Import => Mutation::Upsert,
     };
     super::super::proxies::reject_legacy_overrides(model.platform_overrides.as_deref())?;
+    super::super::proxies::require_step_routes(
+        connection,
+        &[
+            StepDocument::Pipelines(Layout::Pipeline, model.pipeline.as_deref()),
+            StepDocument::Pipelines(Layout::Pipeline, model.session_complete_pipeline.as_deref()),
+            StepDocument::Pipelines(Layout::Pipeline, model.paired_segment_pipeline.as_deref()),
+            StepDocument::Pipelines(Layout::Overrides, model.platform_overrides.as_deref()),
+        ],
+    )
+    .await?;
     let mut platform_overrides = model.platform_overrides.clone();
     let selections = credential_selections::take_overrides(&mut platform_overrides)?;
     let mut row = RowWrite::new("template_config", mutation, &model.id)?;
@@ -239,6 +260,15 @@ pub(crate) async fn write_platform(
         WriteMode::Update => Mutation::Update,
         WriteMode::Import => Mutation::Update,
     };
+    super::super::proxies::require_step_routes(
+        connection,
+        &[
+            StepDocument::Pipelines(Layout::Pipeline, model.pipeline.as_deref()),
+            StepDocument::Pipelines(Layout::Pipeline, model.session_complete_pipeline.as_deref()),
+            StepDocument::Pipelines(Layout::Pipeline, model.paired_segment_pipeline.as_deref()),
+        ],
+    )
+    .await?;
     let mut row = RowWrite::new("platform_config", mutation, &model.id)?;
     row.field("platform_name", &model.platform_name, true)?;
     row.field("fetch_delay_ms", model.fetch_delay_ms, true)?;

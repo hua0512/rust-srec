@@ -436,6 +436,77 @@ impl ConfigExport {
 }
 
 impl ConfigExport {
+    /// Applies `map` to the route of every upload step in the bundle: the
+    /// inline steps of each pipeline, template platform override, streamer
+    /// configuration and workflow, and each upload job preset's config.
+    /// Documents encoded as JSON strings are decoded first.
+    pub fn map_step_routes<E>(
+        &mut self,
+        mut map: impl FnMut(&mut serde_json::Value) -> Result<(), E>,
+    ) -> Result<(), E> {
+        use crate::pipeline::step_routes::{Layout, pipeline_routes_mut, preset_route_mut};
+        fn pipelines(
+            documents: [&mut Option<serde_json::Value>; 3],
+        ) -> impl Iterator<Item = (Layout, &mut serde_json::Value)> {
+            documents
+                .into_iter()
+                .flatten()
+                .map(|document| (Layout::Pipeline, document))
+        }
+        let global = &mut self.global_config;
+        let mut documents: Vec<(Layout, &mut serde_json::Value)> = pipelines([
+            &mut global.pipeline,
+            &mut global.session_complete_pipeline,
+            &mut global.paired_segment_pipeline,
+        ])
+        .collect();
+        for template in &mut self.templates {
+            documents.extend(pipelines([
+                &mut template.pipeline,
+                &mut template.session_complete_pipeline,
+                &mut template.paired_segment_pipeline,
+            ]));
+            documents.extend(
+                template
+                    .platform_overrides
+                    .as_mut()
+                    .map(|overrides| (Layout::Overrides, overrides)),
+            );
+        }
+        for platform in &mut self.platforms {
+            documents.extend(pipelines([
+                &mut platform.pipeline,
+                &mut platform.session_complete_pipeline,
+                &mut platform.paired_segment_pipeline,
+            ]));
+        }
+        documents.extend(self.streamers.iter_mut().filter_map(|streamer| {
+            streamer
+                .streamer_specific_config
+                .as_mut()
+                .map(|config| (Layout::Config, config))
+        }));
+        documents.extend(self.pipeline_presets.iter_mut().filter_map(|preset| {
+            preset
+                .dag_definition
+                .as_mut()
+                .map(|definition| (Layout::Pipeline, definition))
+        }));
+        for (layout, document) in documents {
+            *document = unwrap_json_value(std::mem::take(document));
+            for route in pipeline_routes_mut(document, layout) {
+                map(route)?;
+            }
+        }
+        for preset in &mut self.job_presets {
+            preset.config = unwrap_json_value(std::mem::take(&mut preset.config));
+            if let Some(route) = preset_route_mut(&preset.processor, &mut preset.config) {
+                map(route)?;
+            }
+        }
+        Ok(())
+    }
+
     fn write_legacy_proxy_settings(&mut self) {
         let legacy =
             |route: &mut Option<BackupRoute>| route.take().and_then(|route| route.legacy_config());

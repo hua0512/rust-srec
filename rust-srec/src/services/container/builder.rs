@@ -416,6 +416,7 @@ impl ServiceContainer {
                 ),
                 upload_broadcaster: upload_status_broadcaster.clone(),
                 download_limit_adjuster: download_manager.clone(),
+                routes: crate::proxies::ServiceRoutes::new(pool.clone()),
             },
         ));
 

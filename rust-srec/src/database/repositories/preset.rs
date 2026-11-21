@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use crate::Result;
 use crate::database::models::{JobPreset, Pagination};
+use crate::pipeline::step_routes::Layout;
 use async_trait::async_trait;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
@@ -103,20 +104,8 @@ pub(crate) enum Owners {
     Kept,
 }
 
-/// Whether the JSON column `column` holds a pipeline step
-/// `{"type": ?1, "name": ?2}`. Steps sit at `steps[N].step` of a pipeline,
-/// which is the column itself or a `*pipeline` key nested in it (template
-/// platform overrides and streamer-specific configs).
-fn names_step(column: &str) -> String {
-    format!(
-        "EXISTS(SELECT 1 FROM json_tree(CASE WHEN json_valid({column}) THEN {column} ELSE 'null' END) j \
-         WHERE j.key = 'step' AND (j.fullkey GLOB '$.steps[[]*].step' OR j.fullkey GLOB '*pipeline.steps[[]*].step') \
-         AND j.type = 'object' AND json_extract(j.value, '$.type') = ?1 AND json_extract(j.value, '$.name') = ?2)"
-    )
-}
-
 /// What kind of configuration owns a pipeline that names a step.
-#[derive(Debug, serde::Serialize, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, sqlx::Type, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(rename_all = "snake_case")]
 pub enum StepUserKind {
@@ -128,7 +117,7 @@ pub enum StepUserKind {
 }
 
 /// A stored pipeline owner that names a step definition.
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, utoipa::ToSchema)]
 pub struct StepUser {
     pub kind: StepUserKind,
     /// The owner's id; empty for the global config.
@@ -166,55 +155,99 @@ pub(crate) async fn step_users(
     name: &str,
     owners: Owners,
 ) -> std::result::Result<Vec<StepUser>, sqlx::Error> {
-    const PIPELINES: [&str; 3] = [
-        "pipeline",
-        "session_complete_pipeline",
-        "paired_segment_pipeline",
-    ];
+    let names_step = |step_value: &serde_json::Value| {
+        step_value.get("type").and_then(serde_json::Value::as_str) == Some(step.tag())
+            && step_value.get("name").and_then(serde_json::Value::as_str) == Some(name)
+    };
+    Ok(pipeline_owners(conn, owners)
+        .await?
+        .into_iter()
+        .filter(|owner| {
+            !(matches!(step, StepRef::Workflow)
+                && owner.user.kind == StepUserKind::Workflow
+                && owner.user.id == id)
+        })
+        .filter_map(|mut owner| {
+            owner
+                .documents
+                .iter_mut()
+                .any(|(layout, document)| {
+                    crate::pipeline::step_routes::pipeline_steps_mut(document, *layout)
+                        .into_iter()
+                        .any(|step_value| names_step(step_value))
+                })
+                .then_some(owner.user)
+        })
+        .collect())
+}
+
+/// A stored configuration that keeps pipelines, with its documents that
+/// hold them.
+pub(crate) struct PipelineOwner {
+    pub user: StepUser,
+    pub documents: Vec<(Layout, serde_json::Value)>,
+}
+
+/// Every stored pipeline owner `owners` covers, ordered by kind, then name.
+/// A document that is not JSON holds no steps.
+pub(crate) async fn pipeline_owners(
+    conn: &mut sqlx::SqliteConnection,
+    owners: Owners,
+) -> std::result::Result<Vec<PipelineOwner>, sqlx::Error> {
     const TEMPLATE_REMOVING: &str = "EXISTS(SELECT 1 FROM retirement_config_deletions r WHERE r.kind = 'template' AND r.config_id = template_config.id)";
     const WORKFLOW_REMOVING: &str = "EXISTS(SELECT 1 FROM retirement_config_deletions r WHERE r.kind = 'pipeline_preset' AND r.config_id = pipeline_presets.id)";
     const STREAMER_REMOVING: &str = "deleted_at IS NOT NULL";
-    let any_names_step = |columns: &[&str]| {
-        columns
-            .iter()
-            .map(|column| names_step(column))
-            .collect::<Vec<_>>()
-            .join(" OR ")
-    };
     let kept = |removing: &str| match owners {
-        Owners::All => String::new(),
-        Owners::Kept => format!("NOT {removing} AND "),
+        Owners::All => "1".to_owned(),
+        Owners::Kept => format!("NOT {removing}"),
     };
     let query = format!(
-        "SELECT 'global', '', '', 0 FROM global_config WHERE {global} \
-         UNION ALL SELECT 'platform', id, platform_name, 0 FROM platform_config WHERE {platform} \
-         UNION ALL SELECT 'template', id, name, {TEMPLATE_REMOVING} FROM template_config WHERE {kept_template}({template}) \
-         UNION ALL SELECT 'streamer', id, name, {STREAMER_REMOVING} FROM streamers WHERE {kept_streamer}({streamer}) \
-         UNION ALL SELECT 'workflow', id, name, {WORKFLOW_REMOVING} FROM pipeline_presets WHERE {kept_workflow}(?3 IS NULL OR id <> ?3) AND ({workflow}) \
-         ORDER BY 1, 3",
-        global = any_names_step(&PIPELINES),
-        platform = any_names_step(&PIPELINES),
-        template = any_names_step(&[&PIPELINES[..], &["platform_overrides"]].concat()),
-        streamer = names_step("streamer_specific_config"),
-        workflow = names_step("dag_definition"),
+        "SELECT 'global', '', '', 0, pipeline, session_complete_pipeline, paired_segment_pipeline, NULL FROM global_config \
+         UNION ALL SELECT 'platform', id, platform_name, 0, pipeline, session_complete_pipeline, paired_segment_pipeline, NULL FROM platform_config \
+         UNION ALL SELECT 'template', id, name, {TEMPLATE_REMOVING}, pipeline, session_complete_pipeline, paired_segment_pipeline, platform_overrides FROM template_config WHERE {kept_template} \
+         UNION ALL SELECT 'streamer', id, name, {STREAMER_REMOVING}, streamer_specific_config, NULL, NULL, NULL FROM streamers WHERE {kept_streamer} \
+         UNION ALL SELECT 'workflow', id, name, {WORKFLOW_REMOVING}, dag_definition, NULL, NULL, NULL FROM pipeline_presets WHERE {kept_workflow} \
+         ORDER BY 1, 3, 2",
         kept_template = kept(TEMPLATE_REMOVING),
         kept_streamer = kept(STREAMER_REMOVING),
         kept_workflow = kept(WORKFLOW_REMOVING),
     );
-    let rows: Vec<(StepUserKind, String, String, bool)> =
-        sqlx::query_as(sqlx::AssertSqlSafe(query))
-            .bind(step.tag())
-            .bind(name)
-            .bind(matches!(step, StepRef::Workflow).then_some(id))
-            .fetch_all(conn)
-            .await?;
+    type Row = (
+        StepUserKind,
+        String,
+        String,
+        bool,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    );
+    let rows: Vec<Row> = sqlx::query_as(sqlx::AssertSqlSafe(query))
+        .fetch_all(conn)
+        .await?;
     Ok(rows
         .into_iter()
-        .map(|(kind, id, name, removing)| StepUser {
-            kind,
-            id,
-            name,
-            removing,
+        .map(|(kind, id, name, removing, a, b, c, d)| {
+            // The first column is a streamer's config or a pipeline; a
+            // template's fourth holds its platform overrides.
+            let first = match kind {
+                StepUserKind::Streamer => Layout::Config,
+                _ => Layout::Pipeline,
+            };
+            let layouts = [first, Layout::Pipeline, Layout::Pipeline, Layout::Overrides];
+            PipelineOwner {
+                user: StepUser {
+                    kind,
+                    id,
+                    name,
+                    removing,
+                },
+                documents: layouts
+                    .into_iter()
+                    .zip([a, b, c, d])
+                    .filter_map(|(layout, text)| Some((layout, serde_json::from_str(&text?).ok()?)))
+                    .collect(),
+            }
         })
         .collect())
 }

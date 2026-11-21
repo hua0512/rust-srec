@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { StepUserSchema } from './pipeline';
 
 /**
  * How a scope connects. Platforms, templates and streamers may inherit from the
@@ -39,8 +40,8 @@ export const ProxySchema = z.object({
   created_at: z.number().int(),
   updated_at: z.number().int(),
   /**
-   * Routes on global settings, platforms, templates, streamers, accounts and
-   * notification channels naming it.
+   * Routes on global settings, platforms, templates, streamers, accounts,
+   * notification channels and upload steps naming it.
    */
   usage_count: z.number().int(),
 });
@@ -68,6 +69,10 @@ export const ProxyReferencesSchema = z.object({
     }),
   ),
   notification_channels: z.array(NamedReferenceSchema),
+  /** Job presets whose upload step chooses the proxy. */
+  job_presets: z.array(NamedReferenceSchema),
+  /** Configurations and workflows with an inline upload step choosing it. */
+  pipelines: z.array(StepUserSchema),
 });
 export type ProxyReferences = z.infer<typeof ProxyReferencesSchema>;
 

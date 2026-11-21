@@ -1,6 +1,7 @@
 import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/api/query-keys';
+import { invalidateProxyQueries } from '@/api/proxies';
 import { createPipelinePreset } from '@/server/functions/pipeline';
 import { toast } from 'sonner';
 import { msg } from '@lingui/core/macro';
@@ -28,6 +29,8 @@ function CreateWorkflowPage() {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.pipeline.workflows.all,
       });
+      // Saved proxies count the upload steps that choose them.
+      void invalidateProxyQueries(queryClient);
       void navigate({ to: '/pipeline/workflows' });
     },
     onError: (error) => {

@@ -14,8 +14,8 @@
 | `thumbnail` | 从视频中提取画面作为图片 | `timestamp_secs`, `width`, `quality`, `preserve_resolution` |
 | `audio_extract` | 提取音轨 | `format`, `bitrate`, `sample_rate`, `channels`, `output_path` |
 | `compression` | 将文件打包为 ZIP 或 tar.gz 归档 | `format`, `compression_level`, `output_path`, `overwrite`, `preserve_paths` |
-| `rclone` | 云端同步 | `destination_root`, `operation`, `time_anchor`, `max_retries`, `args` |
-| `baidupcs` | 通过 BaiduPCS-Go 上传到百度网盘 | `destination_root`, `policy`, `norapid`, `time_anchor`, `args` |
+| `rclone` | 云端同步 | `destination_root`, `operation`, `time_anchor`, `max_retries`, `args`, `proxy_route` |
+| `baidupcs` | 通过 BaiduPCS-Go 上传到百度网盘 | `destination_root`, `policy`, `norapid`, `time_anchor`, `args`, `proxy_route` |
 | `copy_move` | 复制或移动本地文件 | `operation`, `destination`, `time_anchor`, `overwrite`, `exclude_patterns` |
 | `metadata` | 使用 FFmpeg 将元数据标签写入媒体文件 | `title`, `artist`, `date`, `album`, `comment`, `custom` |
 | `delete` | 删除它收到的文件，即其所依赖步骤的输出 | `max_retries`, `retry_delay_ms` |
@@ -24,6 +24,12 @@
 基于 FFmpeg 的处理器在设置了 `FFMPEG_PATH` 时使用该路径，调用外部工具的处理器读取各自的[路径变量](./environment.md#外部工具)。
 
 `rclone` 和 `baidupcs` 会在同一次任务运行中重试失败的上传；每次重试都会记入任务日志，任务进度和顶栏会显示当前是第几次尝试。
+
+### 上传代理 {#upload-proxy}
+
+每个 `rclone` 和 `baidupcs` 步骤都可以在 **代理**（`proxy_route`）中选择连接方式：**继承**（默认）跟随全局 **默认代理**，也可以为该步骤选择 **直连**、**系统代理** 或某个[已保存的代理](../concepts/configuration.md#saved-proxies)。上传的目标是云存储而不是平台，因此平台、模板和主播的代理设置不适用于上传。这些工具从环境变量读取代理：**直连** 时启动它们不带任何代理变量，**系统代理** 时沿用服务器的变量，已保存的代理则以 `HTTP_PROXY` 和 `HTTPS_PROXY`（含登录信息）传入。`http`、`https`、`socks5` 和 `socks5h` 代理均可使用。连接方式在任务开始时确定；所选的已保存代理被删除后，任务会失败而不会改为直连。仍被任务预设或流水线步骤选用的已保存代理不能删除，其密码在任务日志和工具输出中会被隐藏。BaiduPCS-Go 预设账号卡片上的登录和容量查询跟随默认代理，上传过程中的自动重新登录使用该步骤的代理；退出登录等只读取本地账号的命令不使用代理。
+
+选择 **系统代理** 以外的方式时，工具自身的代理设置不能覆盖它。rclone 会忽略 `RCLONE_HTTP_PROXY`，**额外参数** 中含有 `--http-proxy` 的步骤会失败。对 rclone 而言，步骤的代理只用于通过 HTTP 连接的远程（例如大多数云存储）；SFTP、FTP 等不使用 HTTP 的远程以及本机上的远程不经由该代理，而是使用 rclone 配置文件中该远程自己的代理选项。BaiduPCS-Go 会优先使用其自身配置中设置的代理（`config set -proxy`），因此在清除该设置之前，步骤、登录或容量查询都会失败；账号卡片仍会显示已登录的账号以及无法读取容量的原因。
 
 ### 执行程序（`execute`） {#execute-execute}
 

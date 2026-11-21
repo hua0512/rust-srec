@@ -13,7 +13,8 @@ use crate::database::repositories::{
 };
 
 use super::{
-    ProxyEndpoint, ProxyEntry, ProxyReferences, ResolvedRoute, RouteKey, RouteSource, SystemProxy,
+    ProxyEndpoint, ProxyEntry, ProxyReferences, ResolvedRoute, RouteKey, RouteSource,
+    ServiceRoutes, SystemProxy,
 };
 
 type RuntimeConfigService = ConfigService<SqlxConfigRepository, SqlxStreamerRepository>;
@@ -78,6 +79,11 @@ impl ProxyService {
     ) -> Self {
         self.supervisor = supervisor;
         self
+    }
+
+    /// Resolves routes of traffic that serves no platform.
+    pub fn routes(&self) -> ServiceRoutes {
+        ServiceRoutes::new(self.pool.clone())
     }
 
     /// Every entry with how many routes name it.

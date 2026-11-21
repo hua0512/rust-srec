@@ -413,3 +413,15 @@ export const BatchDeleteInterruptedOutputsRequestSchema = withUniqueIds(
   }),
   'Interrupted output IDs must be unique',
 );
+
+/**
+ * A configuration or workflow whose stored pipeline has a matching step: one
+ * naming a job preset or workflow, or an upload step choosing a saved proxy.
+ */
+export const StepUserSchema = z.object({
+  kind: z.enum(['global', 'platform', 'template', 'streamer', 'workflow']),
+  id: z.string(),
+  name: z.string(),
+  removing: z.boolean(),
+});
+export type StepUser = z.infer<typeof StepUserSchema>;

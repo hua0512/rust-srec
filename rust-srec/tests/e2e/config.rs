@@ -842,7 +842,7 @@ async fn saved_proxies_never_return_their_password_and_report_conflicts_by_code(
     assert_eq!(detail.body["proxy"], proxy);
     assert_eq!(
         detail.body["references"],
-        json!({"global": false, "platforms": [], "templates": [], "streamers": [], "accounts": [], "notification_channels": []})
+        json!({"global": false, "platforms": [], "templates": [], "streamers": [], "accounts": [], "notification_channels": [], "job_presets": [], "pipelines": []})
     );
     app.patch(
         "/api/config/global",
@@ -1031,6 +1031,8 @@ async fn a_proxy_in_use_cannot_be_deleted_and_the_refusal_lists_every_user() {
             "platform_name": "bilibili",
         }],
         "notification_channels": [{"id": channel["id"], "name": "Routed channel"}],
+        "job_presets": [],
+        "pipelines": [],
     });
     let refused = app.delete(&proxy_path, &token).await;
     refused.assert_error(StatusCode::CONFLICT, "PROXY_REFERENCED");
@@ -1045,6 +1047,110 @@ async fn a_proxy_in_use_cannot_be_deleted_and_the_refusal_lists_every_user() {
     let detail = app.get_ok(&proxy_path, &token).await;
     assert_eq!(detail["references"], expected_references);
     assert_eq!(detail["proxy"]["usage_count"], 6);
+
+    app.shutdown().await;
+}
+
+/// Upload steps keep their route in JSON, which no foreign key covers: a
+/// saved proxy a job preset or a stored pipeline's inline upload step
+/// chooses, including a pipeline nested in a template's platform override,
+/// is listed among its users and cannot be deleted, and a step naming a
+/// proxy that does not exist is refused like any other route, in a saved
+/// pipeline or one started directly.
+#[tokio::test]
+async fn a_proxy_chosen_by_upload_steps_is_in_use_and_steps_must_name_one_that_exists() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    let proxy = app
+        .post(
+            "/api/proxies",
+            &token,
+            &json!({"name": "Uploads", "url": "socks5://10.9.8.6:1080"}),
+        )
+        .await
+        .created();
+    let route = |id: &Value| json!({"kind": "proxy", "id": id});
+    let preset = |name: &str, id: &Value| {
+        json!({
+            "id": name.to_lowercase(), "name": name, "category": "upload", "processor": "rclone",
+            "config": json!({"destination_root": "remote:/", "proxy_route": route(id)}).to_string(),
+        })
+    };
+    let pipeline = |id: &Value| {
+        json!({"name": "Ship", "steps": [{"id": "upload", "step": {
+            "type": "inline", "processor": "baidupcs", "config": {"proxy_route": route(id)},
+        }}]})
+    };
+
+    let missing = json!("missing-proxy");
+    app.post("/api/job/presets", &token, &preset("Lost", &missing))
+        .await
+        .assert_error(StatusCode::UNPROCESSABLE_ENTITY, "PROXY_NOT_FOUND");
+    app.post(
+        "/api/pipeline/presets",
+        &token,
+        &json!({"name": "Lost", "dag": pipeline(&missing)}),
+    )
+    .await
+    .assert_error(StatusCode::UNPROCESSABLE_ENTITY, "PROXY_NOT_FOUND");
+    let input = app.write_output_file("uploads/a.flv", "recorded");
+    app.post(
+        "/api/pipeline/create",
+        &token,
+        &json!({
+            "session_id": "session-e2e", "streamer_id": "streamer-e2e",
+            "input_paths": [input], "dag": pipeline(&missing),
+        }),
+    )
+    .await
+    .assert_error(StatusCode::UNPROCESSABLE_ENTITY, "PROXY_NOT_FOUND");
+
+    let job_preset = app
+        .post("/api/job/presets", &token, &preset("Upload", &proxy["id"]))
+        .await
+        .created();
+    let workflow = app
+        .post(
+            "/api/pipeline/presets",
+            &token,
+            &json!({"name": "Ship", "dag": pipeline(&proxy["id"])}),
+        )
+        .await
+        .created();
+    let template = app
+        .post(
+            "/api/templates",
+            &token,
+            &json!({
+                "name": "Shipping",
+                "platform_overrides": {"huya": {
+                    "session_complete_pipeline": pipeline(&proxy["id"]),
+                    "paired_segment_pipeline": pipeline(&proxy["id"]),
+                }},
+            }),
+        )
+        .await
+        .created();
+
+    let proxy_path = format!("/api/proxies/{}", id_of(&proxy));
+    let refused = app.delete(&proxy_path, &token).await;
+    refused.assert_error(StatusCode::CONFLICT, "PROXY_REFERENCED");
+    let references = &refused.body["details"]["references"];
+    assert_eq!(
+        references["job_presets"],
+        json!([{"id": job_preset["id"], "name": "Upload"}])
+    );
+    assert_eq!(
+        references["pipelines"],
+        json!([
+            {"kind": "template", "id": template["id"], "name": "Shipping", "removing": false},
+            {"kind": "workflow", "id": workflow["id"], "name": "Ship", "removing": false},
+        ])
+    );
+    assert_eq!(
+        app.get_ok(&proxy_path, &token).await["proxy"]["usage_count"],
+        3
+    );
 
     app.shutdown().await;
 }

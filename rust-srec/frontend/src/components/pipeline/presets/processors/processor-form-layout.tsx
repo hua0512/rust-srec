@@ -29,6 +29,12 @@ import {
   CONFIG_SELECT_TRIGGER,
   ConfigFieldLabel,
 } from '@/components/config/shared/config-field';
+import {
+  GLOBAL_ROUTE_INHERIT,
+  ProxyRoutePicker,
+} from '@/components/config/shared/proxy-route-picker';
+import type { ProxyRoute } from '@/api/schemas/proxies';
+import { Shield } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TimeAnchorSchema, type TimeAnchor } from '../processor-schemas';
 
@@ -368,5 +374,43 @@ export function TimeAnchorField({
         </FormItem>
       )}
     />
+  );
+}
+
+/**
+ * How an upload tool connects: Inherit follows the global Default proxy, as
+ * platform, template and streamer proxies do not apply to uploads.
+ */
+export function UploadProxySection({
+  control,
+  name,
+}: Pick<ProcessorFieldProps, 'control' | 'name'>) {
+  return (
+    <ProcessorSection
+      icon={Shield}
+      iconClassName="text-primary"
+      title={<Trans>Proxy</Trans>}
+    >
+      <FormField
+        control={control}
+        name={name}
+        render={({ field }) => (
+          <FormItem>
+            <ProxyRoutePicker
+              value={field.value as ProxyRoute | undefined}
+              onChange={field.onChange}
+              inherit={GLOBAL_ROUTE_INHERIT}
+            />
+            <ProcessorFieldDescription>
+              <Trans>
+                How the upload connects. Platform and streamer proxies do not
+                apply to uploads.
+              </Trans>
+            </ProcessorFieldDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </ProcessorSection>
   );
 }

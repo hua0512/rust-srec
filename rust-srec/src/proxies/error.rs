@@ -48,6 +48,11 @@ pub struct ProxyReferences {
     pub streamers: Vec<NamedReference>,
     pub accounts: Vec<AccountReference>,
     pub notification_channels: Vec<NamedReference>,
+    /// Job presets whose upload step chooses the entry.
+    pub job_presets: Vec<NamedReference>,
+    /// Configurations and workflows whose pipelines have an inline upload
+    /// step choosing the entry.
+    pub pipelines: Vec<crate::database::repositories::preset::StepUser>,
 }
 
 impl ProxyReferences {
@@ -63,6 +68,8 @@ impl ProxyReferences {
             + self.streamers.len()
             + self.accounts.len()
             + self.notification_channels.len()
+            + self.job_presets.len()
+            + self.pipelines.len()
     }
 }
 
@@ -97,11 +104,22 @@ impl std::fmt::Display for ProxyReferences {
                 .iter()
                 .map(|channel| format!("notification channel {:?}", channel.name)),
         );
+        parts.extend(
+            self.job_presets
+                .iter()
+                .map(|preset| format!("job preset {:?}", preset.name)),
+        );
+        parts.extend(
+            self.pipelines
+                .iter()
+                .map(|owner| format!("a pipeline of {owner}")),
+        );
         f.write_str(&parts.join(", "))
     }
 }
 
-/// A platform, streamer or notification channel whose route names the entry.
+/// A platform, streamer, notification channel or job preset whose route
+/// names the entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 pub struct NamedReference {
     pub id: String,

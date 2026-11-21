@@ -106,6 +106,9 @@ pub async fn import_config(
         crate::services::config_import::ConfigurationImportError::Validation(message) => {
             ApiError::bad_request(message)
         }
+        crate::services::config_import::ConfigurationImportError::MissingProxy(error) => {
+            ApiError::from(error)
+        }
         crate::services::config_import::ConfigurationImportError::Database(error) => {
             ApiError::from(error)
         }

@@ -1,3 +1,4 @@
+use super::super::proxies::{StepDocument, require_step_routes};
 use super::super::row_write::{Mutation, RowWrite, WriteMode};
 use crate::database::models::{JobPreset, PipelinePreset};
 
@@ -6,7 +7,15 @@ pub(crate) async fn write_job_preset(
     model: &JobPreset,
     mode: WriteMode,
     updated_at: i64,
-) -> Result<(), sqlx::Error> {
+) -> crate::Result<()> {
+    require_step_routes(
+        connection,
+        &[StepDocument::PresetConfig {
+            processor: &model.processor,
+            config: &model.config,
+        }],
+    )
+    .await?;
     let mutation = match mode {
         WriteMode::Insert => Mutation::Insert,
         WriteMode::Update => Mutation::Update,
@@ -20,13 +29,13 @@ pub(crate) async fn write_job_preset(
     row.field("config", &model.config, true)?;
     row.field("created_at", model.created_at.as_millisecond(), false)?;
     row.field("updated_at", updated_at, true)?;
-    row.execute(connection).await
+    Ok(row.execute(connection).await?)
 }
 
 pub(crate) async fn import_job_preset(
     connection: &mut sqlx::SqliteConnection,
     model: &JobPreset,
-) -> Result<(), sqlx::Error> {
+) -> crate::Result<()> {
     write_job_preset(
         connection,
         model,
@@ -41,7 +50,15 @@ pub(crate) async fn write_pipeline_preset(
     model: &PipelinePreset,
     mode: WriteMode,
     updated_at: i64,
-) -> Result<(), sqlx::Error> {
+) -> crate::Result<()> {
+    require_step_routes(
+        connection,
+        &[StepDocument::Pipelines(
+            crate::pipeline::step_routes::Layout::Pipeline,
+            model.dag_definition.as_deref(),
+        )],
+    )
+    .await?;
     let mutation = match mode {
         WriteMode::Insert => Mutation::Insert,
         WriteMode::Update => Mutation::Update,
@@ -54,13 +71,13 @@ pub(crate) async fn write_pipeline_preset(
     row.field("pipeline_type", &model.pipeline_type, true)?;
     row.field("created_at", model.created_at.as_millisecond(), false)?;
     row.field("updated_at", updated_at, true)?;
-    row.execute(connection).await
+    Ok(row.execute(connection).await?)
 }
 
 pub(crate) async fn import_pipeline_preset(
     connection: &mut sqlx::SqliteConnection,
     model: &PipelinePreset,
-) -> Result<(), sqlx::Error> {
+) -> crate::Result<()> {
     write_pipeline_preset(
         connection,
         model,

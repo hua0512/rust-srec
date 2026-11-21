@@ -41,7 +41,7 @@ msgstr "“{conflictName}”已在使用相同的地址和用户名。"
 msgid "\"{label}\" cannot be deleted while it is selected or recording."
 msgstr "“{label}”正被选择策略选中或正在录制中使用，无法删除。"
 
-#: src/components/pipeline/step-in-use-dialog.tsx:151
+#: src/components/pipeline/step-in-use-dialog.tsx:144
 msgid "\"{name}\" cannot be deleted while these pipelines use it. Remove it from each of them first."
 msgstr "以下处理管道正在使用“{name}”，因此无法删除。请先从这些处理管道中移除它。"
 
@@ -49,7 +49,7 @@ msgstr "以下处理管道正在使用“{name}”，因此无法删除。请先
 msgid "\"{name}\" cannot be deleted while these settings use it. Choose another proxy in each of them first."
 msgstr "以下设置仍在使用“{name}”，暂时无法删除。请先在这些设置中改选其他代理。"
 
-#: src/components/pipeline/step-in-use-dialog.tsx:144
+#: src/components/pipeline/step-in-use-dialog.tsx:137
 msgid "\"{name}\" cannot be renamed while these pipelines use it, because they refer to it by name. Remove it from each of them first, or keep the current name."
 msgstr "以下处理管道按名称引用“{name}”，因此无法重命名。请先从这些处理管道中移除它，或保留当前名称。"
 
@@ -57,12 +57,12 @@ msgstr "以下处理管道按名称引用“{name}”，因此无法重命名。
 msgid "(+{pausedCount} paused)"
 msgstr "（+{pausedCount} 条已暂停）"
 
-#: src/components/pipeline/step-in-use-dialog.tsx:80
-#: src/components/proxies/proxy-references.tsx:27
+#: src/components/pipeline/step-in-use-dialog.tsx:73
+#: src/components/proxies/proxy-references.tsx:31
 msgid "(being removed)"
 msgstr "（正在移除）"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:63
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:64
 msgid "(Delete source)"
 msgstr "（删除源文件）"
 
@@ -70,11 +70,11 @@ msgstr "（删除源文件）"
 msgid "(empty)"
 msgstr "（空）"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:77
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:78
 msgid "(Mirror source)"
 msgstr "（镜像源端）"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:49
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:50
 msgid "(Preserve source)"
 msgstr "（保留源文件）"
 
@@ -206,7 +206,7 @@ msgstr "{0} 帧/秒"
 
 #. placeholder {0}: formatBytes(status.quota_used_bytes)
 #. placeholder {1}: formatBytes(status.quota_total_bytes)
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:204
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:205
 msgid "{0} of {1} used"
 msgstr "已使用 {0} / {1}"
 
@@ -447,7 +447,7 @@ msgstr "^Started.*"
 msgid "<0>{selectedCount}</0><1>selected</1>"
 msgstr "<1>已选</1><0>{selectedCount}</0>"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:362
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:365
 msgid "<0>0</0> means unlimited (rclone default). Example: set to <1>10</1> if the provider caps you at 10 requests/second."
 msgstr "<0>0</0> 表示不限速（rclone 默认值）。例如：当服务方将你限制为每秒 10 次请求时，可设为 <1>10</1>。"
 
@@ -468,7 +468,7 @@ msgstr "约剩 {eta}"
 msgid "0 (None) - 9 (Best)"
 msgstr "0（无）- 9（最佳）"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:377
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:380
 msgid "0 = unlimited"
 msgstr "0 = 不限"
 
@@ -650,7 +650,7 @@ msgctxt "platform badge"
 msgid "Accounts"
 msgstr "账号"
 
-#: src/components/proxies/proxy-references.tsx:129
+#: src/components/proxies/proxy-references.tsx:135
 msgctxt "proxy references"
 msgid "Accounts"
 msgstr "账号"
@@ -776,7 +776,7 @@ msgstr "至少添加一个步骤"
 msgid "Add at most {count, plural, one {# item} other {# items}}"
 msgstr "最多添加 {count} 项"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:447
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:465
 msgid "Add BaiduPCS-Go argument"
 msgstr "添加 BaiduPCS-Go 参数"
 
@@ -868,7 +868,7 @@ msgstr "添加代理…"
 msgid "Add randomness to retry delays to prevent thundering herd."
 msgstr "为重试延迟添加随机性，避免“惊群”。"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:484
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:487
 msgid "Add rclone argument"
 msgstr "添加 rclone 参数"
 
@@ -930,8 +930,8 @@ msgstr "调整 UI 元素的圆角程度。"
 
 #: src/components/config/engines/forms/setting-sections.tsx:551
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:46
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:290
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:104
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:303
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:105
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:208
 #: src/components/streamers/streamer-editor.tsx:178
 msgid "Advanced"
@@ -972,7 +972,7 @@ msgstr "磁盘空间不足时发出警报。"
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:171
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:83
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:286
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:237
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:242
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:163
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:94
 msgid "All"
@@ -1204,7 +1204,7 @@ msgstr "参数 {number}"
 msgid "Arguments"
 msgstr "参数列表"
 
-#: src/components/pipeline/presets/processor-schemas.ts:237
+#: src/components/pipeline/presets/processor-schemas.ts:240
 msgid "Arguments require program mode"
 msgstr "只有程序模式才能设置参数"
 
@@ -1319,7 +1319,7 @@ msgstr "自动"
 msgid "Auto Layout"
 msgstr "自动布局"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:195
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:196
 msgid "Auto re-login"
 msgstr "自动重新登录"
 
@@ -1415,7 +1415,7 @@ msgid "Back to platforms"
 msgstr "返回平台列表"
 
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:103
-#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:103
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:106
 msgid "Back to presets"
 msgstr "返回预设列表"
 
@@ -1433,7 +1433,7 @@ msgid "Back to templates"
 msgstr "返回模板列表"
 
 #: src/components/pipeline/workflows/workflow-editor.tsx:128
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:110
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:113
 msgid "Back to workflows"
 msgstr "返回工作流列表"
 
@@ -1463,11 +1463,11 @@ msgstr "备份与恢复"
 msgid "Backward Jump Threshold (ms)"
 msgstr "回跳阈值（毫秒）"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:120
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:121
 msgid "Baidu Netdisk Account"
 msgstr "百度网盘账号"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:320
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:333
 msgid "Baidu Netdisk folder the files are uploaded into. Defaults to the netdisk root when empty."
 msgstr "文件将上传到的网盘文件夹。留空时上传到网盘根目录。"
 
@@ -1480,8 +1480,8 @@ msgstr "登录百度网盘"
 msgid "Baidu Netdisk login failed"
 msgstr "百度网盘登录失败"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:92
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:100
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:93
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:101
 msgid "Baidu Netdisk logout failed"
 msgstr "百度网盘退出登录失败"
 
@@ -1498,11 +1498,11 @@ msgid "BAIDUID=...; BDUSS=...; STOKEN=...; ..."
 msgstr "BAIDUID=...; BDUSS=...; STOKEN=...; ..."
 
 #. placeholder {0}: status?.resolved_binary_path
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:151
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:152
 msgid "BaiduPCS-Go binary not available at <0>{0}</0>. Install it or set the binary path in the Advanced tab."
 msgstr "未找到 BaiduPCS-Go 可执行文件（<0>{0}</0>）。请先安装，或在「高级」标签页中设置其路径。"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:407
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:425
 msgid "BaiduPCS-Go Executable (Optional)"
 msgstr "BaiduPCS-Go 可执行文件（可选）"
 
@@ -1510,15 +1510,15 @@ msgstr "BaiduPCS-Go 可执行文件（可选）"
 msgid "Balanced"
 msgstr "均衡"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:206
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:209
 msgid "Bandwidth"
 msgstr "带宽"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:211
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:214
 msgid "Bandwidth Limit"
 msgstr "带宽限制"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:213
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:216
 msgid "Bandwidth Limit help"
 msgstr "带宽限制帮助"
 
@@ -1526,7 +1526,7 @@ msgstr "带宽限制帮助"
 msgid "Base delay between retries"
 msgstr "重试之间的基础延迟"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:152
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:153
 msgid "Base path for remote storage. Supports metadata and time placeholders."
 msgstr "远端存储的基础路径。支持元数据和时间占位符。"
 
@@ -1683,7 +1683,7 @@ msgstr "机器人名称"
 msgid "Bot Token"
 msgstr "机器人令牌"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:226
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:229
 msgid "both directions at 10 MiB/s"
 msgstr "双向均为 10 MiB/s"
 
@@ -1751,7 +1751,7 @@ msgstr "当前播放方式不支持缓冲预设。"
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Pairs per segment and is batch-safe."
 msgstr "将 .ass 字幕内嵌到视频中（默认生成 *_burnin.mp4）。按分段配对，支持批量处理。"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:400
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:403
 msgid "Burst capacity for TPS Limit (--tpslimit-burst)."
 msgstr "TPS 限制的突发容量（--tpslimit-burst）。"
 
@@ -1796,7 +1796,7 @@ msgstr "缓存与进度"
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:499
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:236
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:175
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:384
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:389
 msgid "Cancel"
 msgstr "取消"
 
@@ -1835,7 +1835,7 @@ msgctxt "terminal-cause"
 msgid "Cancelled"
 msgstr "已取消"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:243
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:246
 msgid "Caps overall transfer bandwidth (rclone --bwlimit)."
 msgstr "限制整体传输带宽（rclone --bwlimit）。"
 
@@ -1956,7 +1956,7 @@ msgstr "聊天 ID"
 msgid "Chatters tracked"
 msgstr "跟踪发言人数"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:327
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:330
 msgid "Cheap operations, so the default of 8 is usually fine. Increase if you have many small files against a slow remote."
 msgstr "此操作开销较低，默认值 8 通常已足够。如果远端较慢且有大量小文件，可适当调高。"
 
@@ -2001,11 +2001,11 @@ msgstr "没有可用账号时以未登录状态检测"
 msgid "checked {when}"
 msgstr "{when}检查"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:317
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:320
 msgid "Checkers"
 msgstr "校验数"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:319
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:322
 msgid "Checkers help"
 msgstr "校验数帮助"
 
@@ -2042,11 +2042,11 @@ msgstr "请选择单个平台以管理其账号。"
 msgid "Choose an account or raw cookies, not both"
 msgstr "请选择账号或手动 Cookie，不能同时使用"
 
-#: src/components/pipeline/presets/processor-schemas.ts:230
+#: src/components/pipeline/presets/processor-schemas.ts:233
 msgid "Choose either a command or a program"
 msgstr "请选择命令或程序其中之一"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:120
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:121
 msgid "Choose how files are transferred to the remote."
 msgstr "选择将文件传输到远程的方式。"
 
@@ -2119,11 +2119,11 @@ msgstr "客户端类型 (ctype)"
 #: src/components/config/templates/template-card.tsx:152
 #: src/components/pipeline/presets/preset-card.tsx:103
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:245
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:393
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:398
 msgid "Clone"
 msgstr "克隆"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:358
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:363
 msgid "Clone Preset"
 msgstr "克隆预设"
 
@@ -2132,7 +2132,7 @@ msgid "Clone Template"
 msgstr "克隆模板"
 
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:243
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:391
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:396
 msgid "Cloning..."
 msgstr "正在克隆..."
 
@@ -2141,7 +2141,7 @@ msgstr "正在克隆..."
 #: src/components/credentials/delete-profile-dialog.tsx:123
 #: src/components/notifications/browser-channel-dialog.tsx:206
 #: src/components/notifications/desktop-channel-dialog.tsx:231
-#: src/components/pipeline/step-in-use-dialog.tsx:207
+#: src/components/pipeline/step-in-use-dialog.tsx:200
 #: src/components/proxies/delete-proxy-dialog.tsx:82
 #: src/components/ui/dialog.tsx:77
 #: src/components/ui/sheet.tsx:77
@@ -2248,7 +2248,7 @@ msgstr "组件"
 msgid "Component Status"
 msgstr "组件状态"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:263
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:266
 msgid "Composes with Bandwidth Limit — useful to keep one big file from saturating the whole link while still allowing many small ones to run in parallel."
 msgstr "与带宽限制叠加生效——可避免单个大文件占满整条链路，同时仍允许多个小文件并行传输。"
 
@@ -2269,7 +2269,7 @@ msgid "Compression Level"
 msgstr "压缩级别"
 
 #: src/components/config/global/concurrency-card.tsx:97
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:284
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:287
 msgid "Concurrency"
 msgstr "并发"
 
@@ -2281,11 +2281,11 @@ msgstr "已达到并发限制"
 msgid "Concurrency limits, pipeline timeouts, and engine defaults."
 msgstr "并发限制、流水线超时与引擎默认值。"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:335
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:338
 msgid "Concurrent checkers (--checkers)."
 msgstr "并发校验数（--checkers）。"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:308
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:311
 msgid "Concurrent file transfers (--transfers)."
 msgstr "并发文件传输数（--transfers）。"
 
@@ -2293,15 +2293,15 @@ msgstr "并发文件传输数（--transfers）。"
 msgid "Config"
 msgstr "配置"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:420
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:438
 msgid "Config Directory (Optional)"
 msgstr "配置目录（可选）"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:422
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:440
 msgid "Config Directory help"
 msgstr "配置目录说明"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:173
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:174
 msgid "Config Path (Optional)"
 msgstr "配置路径（可选）"
 
@@ -2505,7 +2505,7 @@ msgstr "已复制"
 msgid "Copied!"
 msgstr "已复制！"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:46
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:47
 msgid "Copy"
 msgstr "复制"
 
@@ -2616,6 +2616,10 @@ msgstr "无法加载预设：{0}"
 msgid "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
 msgstr "无法加载预设 <0>{presetName}</0>。请确认服务器可访问后重试。"
 
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:217
+msgid "Could not read the storage quota."
+msgstr "无法读取存储容量。"
+
 #: src/components/streamers/card/lossless-cut-action.tsx:67
 msgid "Could not request lossless cutting. Refresh the recording status and try again."
 msgstr "无法请求无损分段。请刷新录制状态后重试。"
@@ -2665,7 +2669,7 @@ msgstr "创建"
 #. placeholder {0}: presetToClone?.name
 #. placeholder {0}: templateToClone?.name
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:216
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:361
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:366
 msgid "Create a copy of \"{0}\" with a new name."
 msgstr "创建“{0}”的副本并使用新名称。"
 
@@ -2714,11 +2718,11 @@ msgstr "创建缺失的文件夹"
 msgid "Create New Pipeline Job"
 msgstr "创建新处理任务"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/create.lazy.tsx:44
+#: src/routes/_authed/_dashboard/pipeline/presets/create.lazy.tsx:47
 msgid "Create New Preset"
 msgstr "创建新预设"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/create.lazy.tsx:55
+#: src/routes/_authed/_dashboard/pipeline/workflows/create.lazy.tsx:58
 msgid "Create New Workflow"
 msgstr "创建新工作流"
 
@@ -2726,8 +2730,8 @@ msgstr "创建新工作流"
 msgid "Create Pipeline"
 msgstr "创建处理管道"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:337
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:400
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:342
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:405
 msgid "Create Preset"
 msgstr "创建预设"
 
@@ -2740,16 +2744,16 @@ msgstr "创建主播"
 msgid "Create Template"
 msgstr "创建模板"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:236
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:253
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:239
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:256
 msgid "Create Workflow"
 msgstr "创建工作流"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:327
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:332
 msgid "Create your first job preset to define reusable processor configurations for your pipelines."
 msgstr "创建你的第一个预设，用于为处理管道定义可复用的处理器配置。"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:226
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:229
 msgid "Create your first workflow to define a sequence of processing steps for your recordings."
 msgstr "创建你的第一个工作流，用于定义录制内容的处理步骤序列。"
 
@@ -2933,7 +2937,7 @@ msgstr "为此模板自定义特定的引擎设置。"
 msgid "Customize the application theme and sidebar layout."
 msgstr "自定义应用主题和侧边栏布局。"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:446
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:449
 msgid "Cutoff"
 msgstr "阈值"
 
@@ -3022,7 +3026,7 @@ msgstr "数据库查询"
 msgid "Date"
 msgstr "日期"
 
-#: src/components/pipeline/presets/processors/processor-form-layout.tsx:334
+#: src/components/pipeline/presets/processors/processor-form-layout.tsx:340
 msgid "Date placeholder anchor"
 msgstr "日期占位符锚点"
 
@@ -3074,7 +3078,7 @@ msgstr "斗鱼默认画质"
 msgid "Default Engine"
 msgstr "默认引擎"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:392
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:395
 msgid "Default is 1 (no burst). Increase if the provider tolerates short bursts of activity."
 msgstr "默认值为 1（无突发）。当服务方容忍短时突发流量时可适当调高。"
 
@@ -3114,7 +3118,7 @@ msgstr "定义此步骤如何标识自身以及如何连接到其他步骤。"
 msgid "Define rules to automatically record or skip streams based on title, time, or language."
 msgstr "根据标题、时间或语言定义自动录制或跳过的规则。"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:132
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:135
 msgid "Define sequences of processing steps for your recordings"
 msgstr "为录制内容定义处理步骤序列"
 
@@ -3201,7 +3205,7 @@ msgstr "删除过滤器"
 msgid "Delete Job"
 msgstr "删除处理任务"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:370
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:383
 msgid "Delete local files after upload"
 msgstr "上传后删除本地文件"
 
@@ -3329,8 +3333,8 @@ msgstr "已删除“{name}”"
 msgid "Deleted template \"{0}\""
 msgstr "已删除模板“{0}”"
 
-#: src/components/pipeline/step-in-use-dialog.tsx:75
-#: src/components/proxies/proxy-references.tsx:22
+#: src/components/pipeline/step-in-use-dialog.tsx:68
+#: src/components/proxies/proxy-references.tsx:26
 msgid "Deleted; kept until the recordings using it finish"
 msgstr "已删除；保留至使用它的录制结束"
 
@@ -3386,7 +3390,7 @@ msgstr "桌面通知"
 msgid "Desktop notifications are shown by the operating system even when the app is minimized."
 msgstr "即使应用已最小化，操作系统仍会显示桌面通知。"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:298
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:311
 msgid "Destination"
 msgstr "上传目标"
 
@@ -3398,23 +3402,23 @@ msgstr "已复制目标路径"
 msgid "Destination Directory"
 msgstr "目标文件夹"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:303
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:316
 msgid "Destination Folder"
 msgstr "目标文件夹"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:305
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:318
 msgid "Destination Folder help"
 msgstr "目标文件夹说明"
 
-#: src/components/pipeline/presets/processor-schemas.ts:179
+#: src/components/pipeline/presets/processor-schemas.ts:182
 msgid "Destination is required"
 msgstr "必须填写目标文件夹"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:134
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:135
 msgid "Destination Root"
 msgstr "目标根目录"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:136
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:137
 msgid "Destination Root help"
 msgstr "目标根目录帮助"
 
@@ -3463,7 +3467,7 @@ msgstr "尺寸与滤镜"
 msgid "Direct"
 msgstr "直连"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:424
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:442
 msgid "Directory holding BaiduPCS-Go's login session (BAIDUPCS_GO_CONFIG_DIR). Logging in via the account card above stores the session in the same directory configured here."
 msgstr "存放 BaiduPCS-Go 登录会话的目录（BAIDUPCS_GO_CONFIG_DIR）。通过上方账号卡片登录时，会话也会保存到这里配置的目录。"
 
@@ -3481,7 +3485,7 @@ msgstr "命令执行后扫描新文件的目录"
 msgid "Disable"
 msgstr "禁用"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:360
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:373
 msgid "Disable rapid upload"
 msgstr "禁用秒传"
 
@@ -3547,8 +3551,8 @@ msgstr "杜比视界 (30000)"
 msgid "Done"
 msgstr "已完成"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:446
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:483
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:464
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:486
 msgid "Double click to edit items."
 msgstr "双击以编辑项目。"
 
@@ -3683,7 +3687,7 @@ msgstr "时长限制"
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgstr "例如 'best'、'worst'、'720p'、'audio_only'"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:433
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:451
 msgid "e.g. /app/config/BaiduPCS-Go"
 msgstr "例如 /app/config/BaiduPCS-Go"
 
@@ -3691,7 +3695,7 @@ msgstr "例如 /app/config/BaiduPCS-Go"
 msgid "e.g. /output/processed/"
 msgstr "例如 /output/processed/"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:325
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:338
 msgid "e.g. /rust-srec/{streamer}/%Y-%m"
 msgstr "例如 /rust-srec/{streamer}/%Y-%m"
 
@@ -3703,7 +3707,7 @@ msgstr "列如: 0:v:0, 0:a:0"
 msgid "e.g. 1080p, source, 原画"
 msgstr "例如 1080p, source, 原画"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:247
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:250
 msgid "e.g. 10M"
 msgstr "例如 10M"
 
@@ -3719,11 +3723,11 @@ msgstr "例如 1920:1080"
 msgid "e.g. 192k"
 msgstr "例如 192k"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:277
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:280
 msgid "e.g. 1M"
 msgstr "例如 1M"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:467
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:470
 msgid "e.g. 250M"
 msgstr "例如 250M"
 
@@ -3755,7 +3759,7 @@ msgstr "例如 en, pt-BR"
 msgid "e.g. flv, hls, dash"
 msgstr "例如 flv, hls, dash"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:157
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:158
 msgid "e.g. gdrive:/videos"
 msgstr "例如 gdrive:/videos"
 
@@ -3834,7 +3838,7 @@ msgid "Edit filter"
 msgstr "编辑过滤器"
 
 #. placeholder {0}: preset.name
-#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:113
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:116
 msgid "Edit Preset: {0}"
 msgstr "编辑预设：{0}"
 
@@ -3843,7 +3847,7 @@ msgid "Edit proxy"
 msgstr "编辑代理"
 
 #. placeholder {0}: workflow.name
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:120
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:123
 msgid "Edit Workflow: {0}"
 msgstr "编辑工作流：{0}"
 
@@ -4005,7 +4009,7 @@ msgid "Enter a number"
 msgstr "请输入数字"
 
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:230
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:375
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:380
 msgid "Enter a unique name"
 msgstr "输入唯一名称"
 
@@ -4089,7 +4093,7 @@ msgstr "加载处理管道失败"
 msgid "Error loading platform"
 msgstr "加载平台失败"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:98
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:101
 msgid "Error loading preset"
 msgstr "加载预设失败"
 
@@ -4101,7 +4105,7 @@ msgstr "加载录制会话失败"
 msgid "Error loading template"
 msgstr "加载模板失败"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:105
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:108
 msgid "Error loading workflow"
 msgstr "加载工作流失败"
 
@@ -4131,7 +4135,7 @@ msgstr "每次检查都会向 BIGO 询问该主播是否在直播。开播最多
 msgid "Exact user name"
 msgstr "完整用户名"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:221
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:224
 msgid "Examples:"
 msgstr "示例："
 
@@ -4191,7 +4195,7 @@ msgstr "执行模式"
 msgid "Execution Settings"
 msgstr "执行设置"
 
-#: src/components/pipeline/presets/processors/processor-form-layout.tsx:352
+#: src/components/pipeline/presets/processors/processor-form-layout.tsx:358
 msgid "Execution time (default)"
 msgstr "执行时间（默认）"
 
@@ -4249,9 +4253,9 @@ msgid "Exports include all global settings, platforms, templates, streamers, eng
 msgstr "导出内容包含所有全局设置、平台、模板、主播、引擎和通知渠道。敏感数据（如密码）可能会根据平台设置被脱敏或加密。"
 
 #: src/components/config/engines/forms/streamlink-form.tsx:30
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:441
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:459
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:70
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:478
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:481
 msgid "Extra Arguments"
 msgstr "额外参数"
 
@@ -4352,7 +4356,7 @@ msgid "Failed to check this link. Please try again."
 msgstr "检查该链接失败，请重试。"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:167
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:172
 msgid "Failed to clone preset: {0}"
 msgstr "克隆预设失败：{0}"
 
@@ -4378,7 +4382,7 @@ msgid "Failed to create pipeline job"
 msgstr "创建处理任务失败"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/create.lazy.tsx:35
+#: src/routes/_authed/_dashboard/pipeline/presets/create.lazy.tsx:38
 msgid "Failed to create preset: {0}"
 msgstr "创建预设失败：{0}"
 
@@ -4392,7 +4396,7 @@ msgid "Failed to create template: {0}"
 msgstr "创建模板失败：{0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/workflows/create.lazy.tsx:35
+#: src/routes/_authed/_dashboard/pipeline/workflows/create.lazy.tsx:38
 msgid "Failed to create workflow: {0}"
 msgstr "创建工作流失败：{0}"
 
@@ -4421,7 +4425,7 @@ msgid "Failed to delete pipeline"
 msgstr "删除处理管道失败"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:142
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:145
 msgid "Failed to delete preset: {0}"
 msgstr "删除预设失败：{0}"
 
@@ -4447,7 +4451,7 @@ msgid "Failed to delete template: {0}"
 msgstr "删除模板失败：{0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:101
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:104
 msgid "Failed to delete workflow: {0}"
 msgstr "删除工作流失败：{0}"
 
@@ -4524,7 +4528,7 @@ msgstr "加载处理管道统计失败"
 msgid "Failed to load platforms"
 msgstr "加载平台失败"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:264
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:269
 msgid "Failed to load presets"
 msgstr "加载预设失败"
 
@@ -4549,7 +4553,7 @@ msgstr "加载系统状态失败"
 msgid "Failed to load templates"
 msgstr "加载模板失败"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:161
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:164
 msgid "Failed to load workflows"
 msgstr "加载工作流失败"
 
@@ -4569,7 +4573,7 @@ msgstr "处理所选流水线失败"
 msgid "Failed to process selected streamers"
 msgstr "处理所选主播失败"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:145
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:146
 msgid "Failed to query BaiduPCS-Go status."
 msgstr "查询 BaiduPCS-Go 状态失败。"
 
@@ -4620,7 +4624,7 @@ msgid "Failed to update platform: {0}"
 msgstr "更新平台失败：{0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:65
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:68
 msgid "Failed to update preset: {0}"
 msgstr "更新预设失败：{0}"
 
@@ -4647,7 +4651,7 @@ msgid "Failed to update template: {0}"
 msgstr "更新模板失败：{0}"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:68
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:71
 msgid "Failed to update workflow: {0}"
 msgstr "更新工作流失败：{0}"
 
@@ -4659,7 +4663,7 @@ msgstr "故障切换关闭"
 msgid "Failover on"
 msgstr "故障切换开启"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:409
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:427
 msgid "Falls back to the BAIDUPCS_PATH environment variable, then PATH lookup."
 msgstr "留空时依次使用 BAIDUPCS_PATH 环境变量和 PATH 查找。"
 
@@ -4765,7 +4769,7 @@ msgstr "文件操作"
 msgid "File path copied to clipboard"
 msgstr "文件路径已复制到剪贴板"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:465
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:468
 msgid "File size threshold (--multi-thread-cutoff)."
 msgstr "文件大小阈值（--multi-thread-cutoff）。"
 
@@ -4778,7 +4782,7 @@ msgstr "文件名模板"
 msgid "files"
 msgstr "文件"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:450
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:453
 msgid "Files smaller than this stay single-threaded. Examples: <0>250M</0>, <1>1G</1>."
 msgstr "小于此值的文件仍以单线程传输。示例：<0>250M</0>、<1>1G</1>。"
 
@@ -5087,8 +5091,8 @@ msgstr "GB"
 #: src/components/config/platforms/platform-editor.tsx:220
 #: src/components/config/templates/template-editor.tsx:240
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:43
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:284
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:98
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:297
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:99
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:204
 #: src/components/streamers/streamer-editor.tsx:155
 msgid "General"
@@ -5141,8 +5145,8 @@ msgstr "礼物数"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:116
 #: src/components/layout/site-header.tsx:71
-#: src/components/pipeline/step-in-use-dialog.tsx:105
-#: src/components/proxies/proxy-references.tsx:76
+#: src/components/pipeline/step-in-use-dialog.tsx:98
+#: src/components/proxies/proxy-references.tsx:82
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:44
 msgid "Global"
 msgstr "全局"
@@ -5157,8 +5161,8 @@ msgstr "全局"
 msgid "Global Default"
 msgstr "全局默认"
 
-#: src/components/pipeline/step-in-use-dialog.tsx:122
-#: src/components/proxies/proxy-references.tsx:79
+#: src/components/pipeline/step-in-use-dialog.tsx:115
+#: src/components/proxies/proxy-references.tsx:85
 msgid "Global settings"
 msgstr "全局设置"
 
@@ -5344,7 +5348,7 @@ msgstr "高优先级槽位等待中（已达到并发限制）"
 msgid "High+"
 msgstr "高+"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:299
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:302
 msgid "Higher = faster on fast connections, but more aggressive on the remote and your CPU. Increase only if your network and provider can handle it."
 msgstr "数值越高，在高速网络下越快，但对远端和本机 CPU 的压力也更大。仅在网络与服务方能承受时才建议调高。"
 
@@ -5410,7 +5414,7 @@ msgstr "此处的检查、录制、弹幕和播放的连接方式。设置了自
 msgid "How far playback trails the available stream, not the total broadcast delay."
 msgstr "播放进度落后于可用直播流的时长，而不是直播的总延迟。"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:351
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:364
 msgid "How files that already exist at the destination are handled (--policy). Skip also makes job retries cheap."
 msgstr "目标位置已有同名文件时的处理方式（--policy）。选择跳过还能让任务重试的开销更小。"
 
@@ -5450,7 +5454,7 @@ msgstr "可同时运行的 CPU 密集型流水线步骤（如转码）数量。�
 msgid "How many disk-bound pipeline steps, such as moves and copies, may run at the same time."
 msgstr "可同时运行的磁盘密集型流水线步骤（如移动、复制）数量。"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:294
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:297
 msgid "How many files rclone uploads in parallel."
 msgstr "rclone 并行上传的文件数量。"
 
@@ -5458,7 +5462,7 @@ msgstr "rclone 并行上传的文件数量。"
 msgid "How many pipeline upload steps may run at the same time."
 msgstr "可同时运行的流水线上传步骤数量。"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:386
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:389
 msgid "How many requests can briefly burst above TPS Limit before throttling kicks in."
 msgstr "在节流生效之前，可短时超出 TPS 限制的请求数量。"
 
@@ -5481,6 +5485,10 @@ msgstr "rust-srec 通过运行 nvidia-smi 来检测容器是否失去 GPU 访问
 #: src/components/config/shared/output-settings-card.tsx:230
 msgid "How the stream address is found. Switch to Streamlink when a site stops working; it needs the Streamlink tool installed."
 msgstr "获取直播地址的方式。当某个站点失效时可切换为 Streamlink，该方式需要已安装 Streamlink 工具。"
+
+#: src/components/pipeline/presets/processors/processor-form-layout.tsx:405
+msgid "How the upload connects. Platform and streamer proxies do not apply to uploads."
+msgstr "上传的连接方式。平台和主播的代理不适用于上传。"
 
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:88
 msgid "How to pair video files with .ass subtitles"
@@ -5808,11 +5816,11 @@ msgstr "处理任务配置"
 msgid "Job configurations"
 msgstr "任务配置"
 
-#: src/components/pipeline/presets/processors/processor-form-layout.tsx:305
+#: src/components/pipeline/presets/processors/processor-form-layout.tsx:311
 msgid "Job creation time"
 msgstr "任务创建时间"
 
-#: src/components/pipeline/presets/processors/processor-form-layout.tsx:358
+#: src/components/pipeline/presets/processors/processor-form-layout.tsx:364
 msgid "Job creation time (default)"
 msgstr "任务创建时间（默认）"
 
@@ -5827,6 +5835,10 @@ msgstr "处理任务详情"
 #: src/routes/_authed/_dashboard/pipeline/jobs/$jobId.lazy.tsx:211
 msgid "Job not found"
 msgstr "未找到处理任务"
+
+#: src/components/proxies/proxy-references.tsx:164
+msgid "Job presets"
+msgstr "任务预设"
 
 #: src/components/pipeline/workflows/step-library.tsx:278
 msgid "Job Presets"
@@ -5874,7 +5886,7 @@ msgstr "KB"
 msgid "Keep"
 msgstr "保留"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:144
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:145
 msgid "Keep date and time tokens in your filename template when multiple sessions share one destination folder."
 msgstr "多个会话共用同一目标文件夹时，请在文件名模板中保留日期和时间标记。"
 
@@ -6044,7 +6056,7 @@ msgstr "限制"
 msgid "Limits & Validation"
 msgstr "限制与校验"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:257
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:260
 msgid "Limits each individual file's transfer rate rather than the overall total."
 msgstr "限制单个文件的传输速率，而非整体总量。"
 
@@ -6172,7 +6184,7 @@ msgstr "本地生成"
 msgid "Log Files"
 msgstr "日志文件"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:241
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:254
 #: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:247
 msgid "Log in"
 msgstr "登录"
@@ -6205,11 +6217,11 @@ msgstr "{module} 的日志级别"
 msgid "Log levels & modules"
 msgstr "日志级别与模块"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:232
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:245
 msgid "Log out"
 msgstr "退出登录"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:176
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:177
 msgid "Logged in"
 msgstr "已登录"
 
@@ -6226,7 +6238,7 @@ msgstr "已登录百度网盘"
 msgid "Logged in to Baidu Netdisk as {0}"
 msgstr "已以 {0} 登录百度网盘"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:90
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:91
 msgid "Logged out of Baidu Netdisk"
 msgstr "已退出百度网盘"
 
@@ -6412,7 +6424,7 @@ msgstr "匹配策略"
 msgid "Matching resolution"
 msgstr "匹配分辨率"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:383
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:396
 msgid "Max Attempts"
 msgstr "最大尝试次数"
 
@@ -6467,7 +6479,7 @@ msgstr "最高质量缩略图"
 
 #: src/components/config/shared/retry-policy-form.tsx:53
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:35
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:188
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:191
 msgid "Max Retries"
 msgstr "最大重试次数"
 
@@ -6480,7 +6492,7 @@ msgstr "最大重试延迟（毫秒）"
 msgid "Max Stall Duration (ms)"
 msgstr "最大停顿时间（毫秒）"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:371
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:374
 msgid "Max transactions/second to the remote API (--tpslimit)."
 msgstr "对远端 API 的每秒最大事务数（--tpslimit）。"
 
@@ -6616,7 +6628,7 @@ msgstr "分钟"
 msgid "Minute (00-59)"
 msgstr "分 (00-59)"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:313
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:326
 msgid "Missing folders are created by BaiduPCS-Go during upload."
 msgstr "上传时 BaiduPCS-Go 会自动创建不存在的文件夹。"
 
@@ -6689,7 +6701,7 @@ msgstr "更多页面"
 msgid "Morning"
 msgstr "上午"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:60
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:61
 msgid "Move"
 msgstr "移动"
 
@@ -6721,19 +6733,19 @@ msgstr "MP"
 msgid "ms"
 msgstr "毫秒"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:413
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:416
 msgid "Multi-Thread Copy"
 msgstr "多线程复制"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:448
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:451
 msgid "Multi-Thread Cutoff help"
 msgstr "多线程阈值帮助"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:421
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:424
 msgid "Multi-Thread Streams help"
 msgstr "多线程流数帮助"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:456
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:459
 msgid "Multi-thread upload only helps on large files; on small ones the splitting overhead outweighs the benefit."
 msgstr "多线程上传仅对大文件有效；对小文件而言，分块开销会超过其收益。"
 
@@ -6844,7 +6856,7 @@ msgstr "需要重新登录"
 msgid "Needs refresh"
 msgstr "需要刷新"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:307
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:320
 msgid "Netdisk folder path. Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 msgstr "网盘文件夹路径。支持占位符：{PLACEHOLDER_TOKENS}，以及 %Y/%m/%d 等时间标记。"
 
@@ -6888,7 +6900,7 @@ msgstr "新密码"
 msgid "New password (min 8 chars)"
 msgstr "新密码（至少 8 个字符）"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:369
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:374
 msgid "New Preset Name"
 msgstr "新预设名称"
 
@@ -7139,11 +7151,11 @@ msgid "No preset named <0>{presetName}</0> is defined. If a processor goes by th
 msgstr "没有名为 <0>{presetName}</0> 的预设。如果存在同名的处理器，此步骤会以其默认设置运行该处理器；否则管道将无法启动。请将此步骤指向一个现有预设，即可在这里查看和编辑它的设置。"
 
 #: src/components/pipeline/workflows/step-library.tsx:440
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:318
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:323
 msgid "No presets found"
 msgstr "未找到预设"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:320
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:325
 msgid "No presets yet"
 msgstr "暂无预设"
 
@@ -7253,11 +7265,11 @@ msgid "No word data"
 msgstr "暂无词频数据"
 
 #: src/components/pipeline/workflows/step-library.tsx:578
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:217
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:220
 msgid "No workflows found"
 msgstr "未找到工作流"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:219
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:222
 msgid "No workflows yet"
 msgstr "暂无工作流"
 
@@ -7344,7 +7356,7 @@ msgstr "未连接到 BIGO"
 msgid "Not installed"
 msgstr "未安装"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:187
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:188
 msgid "Not logged in"
 msgstr "未登录"
 
@@ -7365,7 +7377,7 @@ msgstr "此浏览器不支持"
 msgid "not used"
 msgstr "未使用"
 
-#: src/components/proxies/proxy-references.tsx:159
+#: src/components/proxies/proxy-references.tsx:198
 msgid "Not used anywhere"
 msgstr "未被任何设置使用"
 
@@ -7389,7 +7401,7 @@ msgstr "继承来源未选择任何账号"
 msgid "Notification Account"
 msgstr "通知账号"
 
-#: src/components/proxies/proxy-references.tsx:141
+#: src/components/proxies/proxy-references.tsx:147
 msgid "Notification channels"
 msgstr "通知渠道"
 
@@ -7440,7 +7452,7 @@ msgstr "第 N 个输入：{input0}, {input1}..."
 msgid "Nth output: {output0}, {output1}..."
 msgstr "第 N 个输出：{output0}, {output1}..."
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:190
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:193
 msgid "Number of attempts before failing the upload."
 msgstr "上传失败前的重试次数。"
 
@@ -7591,7 +7603,7 @@ msgstr "仅包含具有该扩展名的文件（不含点号）"
 msgid "Only keep the original-quality stream when TikTok offers one; other qualities are ignored."
 msgstr "当 TikTok 提供原画流时只保留原画，忽略其他画质。"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:429
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:432
 msgid "Only kicks in for files above the Cutoff size. Default is 4. Set to 0 to disable."
 msgstr "仅对超过阈值大小的文件生效。默认值为 4，设为 0 可禁用。"
 
@@ -7623,11 +7635,11 @@ msgid "Open the Bigo settings"
 msgstr "打开 Bigo 设置"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:50
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:117
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:118
 msgid "Operation"
 msgstr "操作"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:112
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:113
 msgid "Operation Mode"
 msgstr "操作模式"
 
@@ -7814,7 +7826,7 @@ msgstr "覆盖已存在文件"
 msgid "Overwrite existing .ass files"
 msgstr "覆盖现有的 .ass 文件"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:51
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:52
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:229
 msgid "Overwrite existing files"
 msgstr "覆盖现有文件"
@@ -7824,7 +7836,7 @@ msgstr "覆盖现有文件"
 msgid "Overwrite Files"
 msgstr "覆盖文件"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:52
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:53
 msgid "Overwrite only when size changed"
 msgstr "仅在文件大小变化时覆盖"
 
@@ -7861,7 +7873,7 @@ msgstr "配对分段"
 msgid "Paired Segment Pipeline"
 msgstr "配对分段处理管道"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:321
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:324
 msgid "Parallel integrity checks (e.g. comparing source / destination hashes)."
 msgstr "并行完整性校验（例如比较源/目标哈希值）。"
 
@@ -8019,15 +8031,15 @@ msgstr "待处理任务"
 msgid "Per page:"
 msgstr "每页："
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:253
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:256
 msgid "Per-File Bandwidth Limit"
 msgstr "单文件带宽限制"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:255
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:258
 msgid "Per-File Bandwidth Limit help"
 msgstr "单文件带宽限制帮助"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:272
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:275
 msgid "Per-file cap (rclone --bwlimit-file). Same syntax as Bandwidth Limit; composes with it."
 msgstr "单文件上限（rclone --bwlimit-file）。语法与带宽限制相同，并与之叠加生效。"
 
@@ -8172,6 +8184,10 @@ msgstr "处理管道结构"
 msgid "Pipeline Timeouts"
 msgstr "流水线超时"
 
+#: src/components/proxies/proxy-references.tsx:185
+msgid "Pipeline upload steps"
+msgstr "流水线上传步骤"
+
 #: src/components/notifications/events/payload-preview.tsx:48
 #: src/components/streamers/config/streamer-identity-fields.tsx:169
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:346
@@ -8230,8 +8246,8 @@ msgstr "平台"
 #: src/components/config/global/backup-restore-card.tsx:415
 #: src/components/config/templates/template-editor.tsx:260
 #: src/components/layout/site-header.tsx:68
-#: src/components/pipeline/step-in-use-dialog.tsx:106
-#: src/components/proxies/proxy-references.tsx:85
+#: src/components/pipeline/step-in-use-dialog.tsx:99
+#: src/components/proxies/proxy-references.tsx:91
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:50
 msgid "Platforms"
 msgstr "平台"
@@ -8415,15 +8431,15 @@ msgstr "保留路径"
 msgid "preset"
 msgstr "预设"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:153
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:156
 msgid "Preset cloned successfully"
 msgstr "预设克隆成功"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/create.lazy.tsx:28
+#: src/routes/_authed/_dashboard/pipeline/presets/create.lazy.tsx:29
 msgid "Preset created successfully"
 msgstr "预设创建成功"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:134
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:135
 msgid "Preset deleted successfully"
 msgstr "预设删除成功"
 
@@ -8431,7 +8447,7 @@ msgstr "预设删除成功"
 msgid "Preset Details"
 msgstr "预设详情"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:100
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:103
 msgid "Preset not found"
 msgstr "未找到预设"
 
@@ -8439,11 +8455,11 @@ msgstr "未找到预设"
 msgid "Preset Step"
 msgstr "预设步骤"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:47
+#: src/routes/_authed/_dashboard/pipeline/presets/$presetId.lazy.tsx:48
 msgid "Preset updated successfully"
 msgstr "预设更新成功"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:222
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:227
 msgid "presets"
 msgstr "预设"
 
@@ -8451,7 +8467,7 @@ msgstr "预设"
 #: src/components/filters/forms/TimeBasedFilterForm.tsx:225
 #: src/components/layout/site-header.tsx:75
 #: src/lib/menu-list.ts:75
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:204
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:209
 msgid "Presets"
 msgstr "预设"
 
@@ -8595,7 +8611,7 @@ msgstr "程序"
 msgid "Program and arguments"
 msgstr "程序和参数"
 
-#: src/components/pipeline/presets/processor-schemas.ts:214
+#: src/components/pipeline/presets/processor-schemas.ts:217
 msgid "Program is required"
 msgstr "必须填写程序"
 
@@ -8645,6 +8661,7 @@ msgstr "代理"
 #: src/components/credentials/account-usage.tsx:420
 #: src/components/credentials/profile-editor-dialog.tsx:373
 #: src/components/notifications/channel-form.tsx:418
+#: src/components/pipeline/presets/processors/processor-form-layout.tsx:392
 msgid "Proxy"
 msgstr "代理"
 
@@ -8716,11 +8733,11 @@ msgstr "随机"
 msgid "Random model"
 msgstr "随机机型"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:345
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:348
 msgid "Rate Limiting"
 msgstr "速率限制"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:355
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:358
 msgid "Rate-limits API calls to the remote. Useful when a provider returns 429 \"too many requests\" under heavy load."
 msgstr "对远端的 API 调用进行限速。当服务方在高负载下返回 429 \"请求过多\" 时较为有用。"
 
@@ -8733,16 +8750,16 @@ msgstr "比例"
 msgid "Raw JSON Editor"
 msgstr "原始 JSON 编辑器"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:406
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:409
 msgid "rclone default: 1"
 msgstr "rclone 默认值：1"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:312
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:441
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:315
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:444
 msgid "rclone default: 4"
 msgstr "rclone 默认值：4"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:338
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:341
 msgid "rclone default: 8"
 msgstr "rclone 默认值：8"
 
@@ -8969,7 +8986,7 @@ msgstr "刷新重试次数"
 msgid "Refresh Retry Delay (ms)"
 msgstr "刷新重试延迟（毫秒）"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:127
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:128
 msgid "Refresh status"
 msgstr "刷新状态"
 
@@ -9086,7 +9103,7 @@ msgstr "移除步骤"
 msgid "Remove this filter from the streamer? This cannot be undone."
 msgstr "确定要从该主播移除此过滤器吗？此操作无法撤销。"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:373
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:386
 msgid "Removes each local file once its upload (or skip) is confirmed. The local copy is gone afterwards — keep this off unless Netdisk is the final destination."
 msgstr "每个文件在确认上传成功（或已跳过）后删除本地副本，删除后本地将不再保留。除非网盘就是最终存储位置，否则请保持关闭。"
 
@@ -9373,7 +9390,7 @@ msgid "Retry Pipeline"
 msgstr "重试处理管道"
 
 #: src/components/pipeline/presets/processors/delete-config-form.tsx:29
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:183
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:186
 msgid "Retry Policy"
 msgstr "重试策略"
 
@@ -9401,7 +9418,7 @@ msgstr "即将重试"
 msgid "Retrying..."
 msgstr "等待重试…"
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:206
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:211
 msgid "Reusable processor configurations for pipeline steps"
 msgstr "处理管道步骤可复用的处理器配置"
 
@@ -9508,7 +9525,7 @@ msgstr "日"
 msgid "Same as server"
 msgstr "与服务端一致"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:348
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:361
 msgid "Same-name policy"
 msgstr "同名文件策略"
 
@@ -9592,8 +9609,8 @@ msgid "Saved proxies can be chosen in global, platform, template, streamer and a
 msgstr "已保存的代理可在全局、平台、模板、主播和账号设置中选用。"
 
 #: src/components/proxies/proxies-panel.tsx:169
-msgid "Saved proxies that global, platform, template, streamer, account and notification channel settings can route requests through. Changes are saved right away."
-msgstr "全局、平台、模板、主播、账号和通知渠道设置可选用这些已保存的代理来转发请求。更改会立即保存。"
+msgid "Saved proxies that global, platform, template, streamer, account, notification channel and upload step settings can route requests through. Changes are saved right away."
+msgstr "全局、平台、模板、主播、账号、通知渠道和上传步骤设置可选用这些已保存的代理来转发请求。更改会立即保存。"
 
 #: src/components/config/shared/proxy-route-picker.tsx:101
 #: src/components/config/shared/proxy-route-picker.tsx:191
@@ -9736,7 +9753,7 @@ msgstr "搜索平台…"
 msgid "Search platforms..."
 msgstr "搜索平台..."
 
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:215
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:220
 msgid "Search presets..."
 msgstr "搜索预设..."
 
@@ -9756,7 +9773,7 @@ msgstr "搜索主播..."
 msgid "Search templates..."
 msgstr "搜索模板..."
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:143
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:146
 msgid "Search workflows..."
 msgstr "搜索工作流..."
 
@@ -9901,7 +9918,7 @@ msgstr "选择编解码器"
 msgid "Select current page"
 msgstr "选择当前页"
 
-#: src/components/pipeline/presets/processors/processor-form-layout.tsx:346
+#: src/components/pipeline/presets/processors/processor-form-layout.tsx:352
 msgid "Select date anchor"
 msgstr "选择日期锚点"
 
@@ -9918,7 +9935,7 @@ msgid "Select format"
 msgstr "选择格式"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:57
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:118
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:119
 msgid "Select operation"
 msgstr "选择操作"
 
@@ -9938,7 +9955,7 @@ msgstr "选择解析模式"
 msgid "Select pipelines"
 msgstr "选择流水线"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:349
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:362
 msgid "Select policy"
 msgstr "选择策略"
 
@@ -10174,7 +10191,7 @@ msgstr "设置开播通知。"
 msgid "Settings"
 msgstr "设置"
 
-#: src/components/pipeline/step-in-use-dialog.tsx:195
+#: src/components/pipeline/step-in-use-dialog.tsx:188
 msgid "Settings being removed let go of it once the recordings using them finish."
 msgstr "正在移除的配置会在使用它们的录制结束后释放它。"
 
@@ -10325,7 +10342,7 @@ msgstr "达到次数后跳过"
 msgid "Skip after duration"
 msgstr "达到时长后跳过"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:50
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:51
 msgid "Skip existing files (default)"
 msgstr "跳过已存在的文件（默认）"
 
@@ -10341,7 +10358,7 @@ msgstr "已跳过"
 msgid "Skipped {skippedCount} duplicate stream(s)"
 msgstr "跳过了 {skippedCount} 个重复的流"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:362
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:375
 msgid "Skips the rapid-upload (秒传) hash check before transferring (--norapid)."
 msgstr "上传前跳过秒传哈希检测（--norapid）。"
 
@@ -10412,7 +10429,7 @@ msgstr "分割原因：{formattedReason}"
 msgid "Split recordings without reconnecting or re-encoding. Changes apply to new recordings."
 msgstr "无需重新连接或重新编码即可分割录制。修改仅对新开始的录制生效。"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:423
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:426
 msgid "Splits a single large file into N parallel chunks for faster upload."
 msgstr "将单个大文件拆分为 N 个并行分块，加快上传速度。"
 
@@ -10604,7 +10621,7 @@ msgstr "流播放器"
 msgid "Stream source"
 msgstr "直播源"
 
-#: src/components/pipeline/presets/processors/processor-form-layout.tsx:306
+#: src/components/pipeline/presets/processors/processor-form-layout.tsx:312
 msgid "Stream start time"
 msgstr "直播开始时间"
 
@@ -10702,8 +10719,8 @@ msgstr "主播更新成功"
 #: src/components/config/global/backup-restore-card.tsx:386
 #: src/components/config/global/backup-restore-card.tsx:391
 #: src/components/layout/site-header.tsx:55
-#: src/components/pipeline/step-in-use-dialog.tsx:108
-#: src/components/proxies/proxy-references.tsx:113
+#: src/components/pipeline/step-in-use-dialog.tsx:101
+#: src/components/proxies/proxy-references.tsx:119
 #: src/lib/menu-list.ts:58
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:297
 msgid "Streamers"
@@ -10737,7 +10754,7 @@ msgstr "Streamlink 支持许多不同的网站，因此每个账号需注明其�
 msgid "Streamlink serves many different sites, so its accounts are chosen by site or on each streamer, not in a template."
 msgstr "Streamlink 支持许多不同的网站，因此其账号按网站或在每个主播上选择，而不是在模板中选择。"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:419
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:422
 msgid "Streams"
 msgstr "流数"
 
@@ -10750,7 +10767,7 @@ msgstr "流与元数据"
 msgid "Streams extracted"
 msgstr "已提取流"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:437
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:440
 msgid "Streams per file (--multi-thread-streams)."
 msgstr "每个文件的流数（--multi-thread-streams）。"
 
@@ -10784,7 +10801,7 @@ msgid "Super chats"
 msgstr "醒目留言"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:65
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:138
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:139
 msgid "Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 msgstr "支持占位符：{PLACEHOLDER_TOKENS}，以及 %Y/%m/%d 等时间占位符。"
 
@@ -10806,7 +10823,7 @@ msgstr "账号失效时切换到下一个账号"
 msgid "Switching modes clears the previous command or program and arguments."
 msgstr "切换模式会清除之前的命令，或程序和参数。"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:74
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:75
 msgid "Sync"
 msgstr "同步"
 
@@ -10876,7 +10893,7 @@ msgstr "目标码率"
 msgid "Target Bitrate"
 msgstr "目标比特率"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:129
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:130
 msgid "Target Configuration"
 msgstr "目标配置"
 
@@ -10931,8 +10948,8 @@ msgstr "模板"
 #: src/components/config/global/backup-restore-card.tsx:369
 #: src/components/config/global/backup-restore-card.tsx:374
 #: src/components/layout/site-header.tsx:69
-#: src/components/pipeline/step-in-use-dialog.tsx:107
-#: src/components/proxies/proxy-references.tsx:101
+#: src/components/pipeline/step-in-use-dialog.tsx:100
+#: src/components/proxies/proxy-references.tsx:107
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:56
 msgid "Templates"
 msgstr "模板"
@@ -11237,7 +11254,7 @@ msgstr "该平台还没有账号，请在平台设置中添加。"
 msgid "This platform has no accounts yet. Use Add account above to create one."
 msgstr "该平台还没有账号。请使用上方的“添加账号”创建一个。"
 
-#: src/components/pipeline/step-in-use-dialog.tsx:184
+#: src/components/pipeline/step-in-use-dialog.tsx:177
 msgid "This preset is in use"
 msgstr "此预设正在使用中"
 
@@ -11332,11 +11349,11 @@ msgstr "这将永久删除预设“{0}”。若不更新，使用该预设的处
 msgid "This will permanently delete the workflow \"{0}\". Streamers using this workflow will need to be updated."
 msgstr "这将永久删除工作流“{0}”。使用该工作流的主播需要更新。"
 
-#: src/components/pipeline/step-in-use-dialog.tsx:182
+#: src/components/pipeline/step-in-use-dialog.tsx:175
 msgid "This workflow is in use"
 msgstr "此工作流正在使用中"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:201
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:204
 msgid "Throughput"
 msgstr "吞吐量"
 
@@ -11375,7 +11392,7 @@ msgstr "时间范围"
 msgid "Time to wait for ffmpeg to finalize the file before force-killing it"
 msgstr "等待 ffmpeg 完成文件写入的时间，超时后将强制终止进程"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:234
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:237
 msgid "time-of-day timetable"
 msgstr "按时间段调度"
 
@@ -11429,7 +11446,7 @@ msgstr "时区：{label}"
 msgid "Timing & Delays"
 msgstr "时间与延迟"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:238
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:241
 msgid "Tip: 1 Mbit/s ≈ 0.125M (divide bits by 8)."
 msgstr "提示：1 Mbit/s ≈ 0.125M（将比特数除以 8）。"
 
@@ -11476,7 +11493,7 @@ msgstr "切换侧边栏"
 msgid "Token"
 msgstr "令牌"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:402
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:420
 msgid "Tool Location"
 msgstr "工具位置"
 
@@ -11538,19 +11555,19 @@ msgstr "总步骤数"
 msgid "Total system load"
 msgstr "系统总负载"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:382
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:385
 msgid "TPS Burst"
 msgstr "TPS 突发"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:384
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:387
 msgid "TPS Burst help"
 msgstr "TPS 突发帮助"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:351
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:354
 msgid "TPS Limit"
 msgstr "TPS 限制"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:353
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:356
 msgid "TPS Limit help"
 msgstr "TPS 限制帮助"
 
@@ -11562,11 +11579,11 @@ msgstr "轨道信息"
 msgid "Tracks"
 msgstr "轨道"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:290
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:293
 msgid "Transfers"
 msgstr "传输数"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:292
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:295
 msgid "Transfers help"
 msgstr "传输数帮助"
 
@@ -11674,13 +11691,13 @@ msgstr "尝试调整搜索或过滤器，或添加新主播以开始监控。"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:515
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:389
-#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:325
+#: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:330
 msgid "Try adjusting your search or filters."
 msgstr "尝试调整搜索或过滤器。"
 
 #: src/routes/_authed/_dashboard/config/platforms/index.lazy.tsx:125
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:187
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:224
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:227
 msgid "Try adjusting your search."
 msgstr "尝试调整搜索。"
 
@@ -11758,7 +11775,7 @@ msgstr "互动人数"
 msgid "Unit"
 msgstr "单位"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:215
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:218
 msgid "Units are bytes (default base KiB/s). Use suffixes B, K, M, G, T, P for larger sizes."
 msgstr "单位为字节（默认基准为 KiB/s）。可使用 B、K、M、G、T、P 等后缀表示更大的容量。"
 
@@ -11843,7 +11860,7 @@ msgstr "上传"
 msgid "Upload"
 msgstr "上传"
 
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:230
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:233
 msgid "upload : download (asymmetric)"
 msgstr "上传 : 下载（不对称）"
 
@@ -11863,11 +11880,11 @@ msgstr "上传并删除"
 msgid "Upload attempt {attempt} of {max}"
 msgstr "第 {attempt} 次上传尝试，共 {max} 次"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:385
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:398
 msgid "Upload attempts per job before failing. Retries only re-send files without a confirmed result."
 msgstr "每个任务在判定失败前的上传尝试次数。重试时只会重新上传尚未确认结果的文件。"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:343
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:356
 msgid "Upload Behavior"
 msgstr "上传行为"
 
@@ -11961,8 +11978,8 @@ msgstr "使用引擎设置"
 msgid "Use mobile endpoint for extraction."
 msgstr "使用移动端端点进行提取。"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:332
-#: src/components/pipeline/presets/processors/rclone-config-form.tsx:164
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:345
+#: src/components/pipeline/presets/processors/rclone-config-form.tsx:165
 msgid "Use stream start time to keep a midnight-crossing stream in one dated folder and group all segments of a session together."
 msgstr "使用直播开始时间可让跨午夜直播保存在同一个日期文件夹中，并将同一会话的所有分段归组到一起。"
 
@@ -12360,15 +12377,15 @@ msgstr "要屏蔽的关键词"
 msgid "workflow"
 msgstr "工作流"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/create.lazy.tsx:27
+#: src/routes/_authed/_dashboard/pipeline/workflows/create.lazy.tsx:28
 msgid "Workflow created successfully"
 msgstr "工作流创建成功"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:93
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:94
 msgid "Workflow deleted successfully"
 msgstr "工作流删除成功"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:107
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:110
 msgid "Workflow not found"
 msgstr "未找到工作流"
 
@@ -12380,19 +12397,19 @@ msgstr "已开始重试工作流"
 msgid "Workflow Step"
 msgstr "工作流步骤"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:49
+#: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:50
 msgid "Workflow updated successfully"
 msgstr "工作流更新成功"
 
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:150
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:153
 msgid "workflows"
 msgstr "工作流"
 
 #: src/components/layout/site-header.tsx:76
-#: src/components/pipeline/step-in-use-dialog.tsx:109
+#: src/components/pipeline/step-in-use-dialog.tsx:102
 #: src/components/pipeline/workflows/step-library.tsx:281
 #: src/lib/menu-list.ts:80
-#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:130
+#: src/routes/_authed/_dashboard/pipeline/workflows/index.lazy.tsx:133
 msgid "Workflows"
 msgstr "工作流"
 

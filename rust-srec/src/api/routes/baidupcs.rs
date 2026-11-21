@@ -5,11 +5,11 @@
 //! quota, and log out. BaiduPCS-Go keeps its active session in its config
 //! directory; rust-srec separately retains the supplied login material
 //! only when the request opts into automatic re-login. Every response
-//! passes relayed CLI output through `baidupcs::scrub` so credentials are
+//! passes relayed CLI output through `utils::text::scrub` so credentials are
 //! never echoed back. The CLI exits 0 even when login fails, so success is
 //! detected from `baidupcs::LOGIN_SUCCESS_MARKER`.
 
-use axum::{Json, Router, routing::post};
+use axum::{Json, Router, extract::State, routing::post};
 use std::time::Duration;
 
 use crate::api::error::{ApiError, ApiResult};
@@ -57,6 +57,10 @@ pub struct BaiduPcsStatusResponse {
     pub username: Option<String>,
     pub quota_used_bytes: Option<u64>,
     pub quota_total_bytes: Option<u64>,
+    /// Why the quota could not be read for a logged-in account, such as a
+    /// proxy route BaiduPCS-Go cannot use. The account status above stays
+    /// valid.
+    pub quota_error: Option<String>,
     /// Login material is stored for this config dir, so the pipeline can
     /// re-login automatically. The material itself is never returned.
     pub has_stored_credentials: bool,
@@ -112,6 +116,16 @@ fn output_tail(text: &str) -> String {
         .collect()
 }
 
+/// The connection of account commands from the tools page: they serve no
+/// upload step, so they follow the global route.
+async fn account_proxy(state: &AppState) -> crate::Result<crate::proxies::ProxyTarget> {
+    state
+        .proxies
+        .routes()
+        .target(&crate::proxies::ProxyRoute::Inherit)
+        .await
+}
+
 fn non_empty(value: Option<&str>) -> Option<&str> {
     value.map(str::trim).filter(|v| !v.is_empty())
 }
@@ -127,6 +141,7 @@ fn non_empty(value: Option<&str>) -> Option<&str> {
     security(("bearer_auth" = []))
 )]
 pub async fn baidupcs_status(
+    State(state): State<AppState>,
     ApiJson(request): ApiJson<BaiduPcsToolRequest>,
 ) -> ApiResult<Json<BaiduPcsStatusResponse>> {
     let binary_path = baidupcs::resolve_binary_path(request.binary_path.as_deref());
@@ -145,6 +160,7 @@ pub async fn baidupcs_status(
         username: None,
         quota_used_bytes: None,
         quota_total_bytes: None,
+        quota_error: None,
         has_stored_credentials,
         detail: None,
     };
@@ -197,16 +213,33 @@ pub async fn baidupcs_status(
     }
 
     if response.logged_in {
-        let mut quota_cmd = baidupcs::base_command(&binary_path, config_dir);
-        quota_cmd.arg("quota");
-        if let Ok(output) = baidupcs::run_capture(quota_cmd, None, STATUS_PROBE_TIMEOUT).await {
-            match baidupcs::parse_quota(&output.stdout) {
+        let quota = match account_proxy(&state).await {
+            Ok(proxy) => {
+                let scrubber = crate::proxies::OutputScrubber::for_target(&proxy);
+                let output = async {
+                    let mut quota_cmd =
+                        baidupcs::connected_command(&binary_path, config_dir, &proxy).await?;
+                    quota_cmd.arg("quota");
+                    baidupcs::run_capture(quota_cmd, None, STATUS_PROBE_TIMEOUT).await
+                }
+                .await;
+                output
+                    .map(|output| (output, scrubber.clone()))
+                    .map_err(|error| scrubber.scrub(&error.to_string()))
+            }
+            Err(error) => Err(error.to_string()),
+        };
+        match quota {
+            Ok((output, scrubber)) => match baidupcs::parse_quota(&output.stdout) {
                 Some(quota) => {
                     response.quota_used_bytes = Some(quota.used_bytes);
                     response.quota_total_bytes = Some(quota.total_bytes);
                 }
-                None => response.detail = Some(output_tail(&output.combined())),
-            }
+                None => {
+                    response.detail = Some(output_tail(&scrubber.scrub(&output.combined())));
+                }
+            },
+            Err(message) => response.quota_error = Some(message),
         }
     }
 
@@ -227,10 +260,12 @@ pub async fn baidupcs_status(
 )]
 #[tracing::instrument(skip_all)]
 pub async fn baidupcs_login(
+    State(state): State<AppState>,
     ApiJson(request): ApiJson<BaiduPcsLoginRequest>,
 ) -> ApiResult<Json<BaiduPcsLoginResponse>> {
     let binary_path = baidupcs::resolve_binary_path(request.binary_path.as_deref());
     let config_dir = non_empty(request.config_dir.as_deref());
+    let proxy = account_proxy(&state).await?;
 
     // Credentials travel through private stdin/config staging and must never be
     // logged; this handler is skip_all-instrumented and `run_login` scrubs
@@ -258,6 +293,7 @@ pub async fn baidupcs_login(
     let outcome = baidupcs::run_login(
         &binary_path,
         config_dir,
+        &proxy,
         &material,
         baidupcs::LOGIN_TIMEOUT,
         lease.clone(),
