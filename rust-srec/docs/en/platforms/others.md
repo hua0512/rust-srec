@@ -52,3 +52,14 @@ User links work without an account: rust-srec looks the user up as a guest, the 
 
 An [account profile](../concepts/configuration.md#account-profiles-and-selection) is optional. It is used only when Weibo does not accept the guest lookup. If Weibo then reports that the account is signed out, the account is marked as needing a new login and you get the account notification.
 :::
+
+### QR code login
+
+1. Go to **Settings** → **Platforms** and open **Weibo**
+2. In the **Network** tab, click **Add account**, enter a label, keep **Scan QR code** selected and click **Show QR code** (to sign an existing account in again, use **Log in again** on its row or **Log in with QR code** in its **…** menu)
+3. Scan the QR code with the Weibo app and confirm the login
+4. The profile is saved when the login completes; to use it, click **Change** above the account list, select it under **Account selection** and save the page
+
+The account is optional, and a problem with it never stops monitoring or recording: whenever it cannot be used, Weibo streamers are checked without an account. The profile shows the login's weibo.com cookies; the rest of the login is kept with it in **Refresh token**, which you can leave as it is. Weibo accounts are checked with Weibo on their first use each day and when you choose **Validate** in the account's **…** menu. An account Weibo has signed out is marked invalid and you get the **Credential invalid** notification; recording goes on without it until you use **Log in again**. If Weibo blocks the daily check instead, the account is not marked invalid and is used as it is.
+
+Cookies pasted from a browser signed in to weibo.com are checked too. If weibo.com treats them as signed out, the account is marked invalid in the same way; if weibo.com shows a page without the account, **Validate** reports that the account cannot be checked.

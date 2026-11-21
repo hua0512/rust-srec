@@ -9638,9 +9638,13 @@ msgstr "Scan with Bilibili mobile app"
 msgid "Scan with the Douyu app"
 msgstr "Scan with the Douyu app"
 
-#: src/components/credentials/credential-login-dialog.tsx:224
+#: src/components/credentials/credential-login-dialog.tsx:226
 msgid "Scan with the platform's mobile app"
 msgstr "Scan with the platform's mobile app"
+
+#: src/components/credentials/credential-login-dialog.tsx:224
+msgid "Scan with the Weibo app"
+msgstr "Scan with the Weibo app"
 
 #: src/components/credentials/credential-login-dialog.tsx:167
 msgid "Scanned! Please confirm on your phone"

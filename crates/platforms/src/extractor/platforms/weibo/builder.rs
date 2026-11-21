@@ -396,7 +396,7 @@ pub(super) fn check_throttle(response: &Response) -> Result<(), ExtractorError> 
     Ok(())
 }
 
-fn check_gateway(code: Option<i64>) -> Result<(), ExtractorError> {
+pub(super) fn check_gateway(code: Option<i64>) -> Result<(), ExtractorError> {
     if code == Some(GATEWAY_CHECK) {
         return Err(ExtractorError::ValidationError(
             "weibo_gateway_check".to_owned(),
@@ -412,18 +412,35 @@ fn redirected(response: &Response, api: &str) -> bool {
 }
 
 /// The account failure a `mymblog` response shows, if any. An expired login
-/// is redirected through `login.php` to `passport.weibo.com/sso/signin`;
-/// cookies without a login at all are redirected to the visitor page. Only
-/// these count: a 403, an HTML page or a gateway check is a block, and taking
-/// it for a failed login would mark a working account invalid.
-fn login_failure(response: &Response, api: &str) -> Option<&'static str> {
-    // The shared client follows redirects, so only the final URL is
-    // observable, not the first hop's status or headers. It is matched by
-    // path: every hop of these redirects stays on Weibo's hosts.
-    if !redirected(response, api) {
-        return None;
+/// is answered with `X-Login-failed` and a redirect through `login.php` to
+/// `passport.weibo.com/sso/signin`; cookies without a login at all are
+/// redirected to the visitor page. Only these count: a 403, an HTML page or a
+/// gateway check is a block, and taking it for a failed login would mark a
+/// working account invalid.
+///
+/// The extractor's shared client follows redirects, so there only the final
+/// URL shows where the request went. The account check uses a client that
+/// does not, and sees the first response's header and `Location` instead.
+/// Paths are matched alone: every hop of these redirects stays on Weibo's
+/// hosts.
+pub(super) fn login_failure(response: &Response, api: &str) -> Option<&'static str> {
+    let login_failed = response
+        .headers()
+        .get("x-login-failed")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.eq_ignore_ascii_case("true"));
+    if login_failed {
+        return Some(LOGIN_EXPIRED);
     }
-    let path = response.url().path();
+    let target = if response.status().is_redirection() {
+        let location = response.headers().get(reqwest::header::LOCATION)?;
+        response.url().join(location.to_str().ok()?).ok()?
+    } else if redirected(response, api) {
+        response.url().clone()
+    } else {
+        return None;
+    };
+    let path = target.path();
     if path == "/login.php" || path.starts_with("/sso/signin") {
         Some(LOGIN_EXPIRED)
     } else if path.starts_with("/visitor/visitor") {

@@ -1042,7 +1042,8 @@ pub(crate) async fn commit_session_binding(
         || !(matches!(
             incoming.policy.selection,
             CredentialSelection::None | CredentialSelection::Inherit
-        ) || incoming.policy.selection.anonymous_fallback())
+        ) || incoming.policy.selection.anonymous_fallback()
+            || accounts_optional(connection, &platform_id).await?)
     {
         return Err(ProfileError::SourceChanged.into());
     }
@@ -1076,6 +1077,18 @@ pub(crate) async fn commit_session_binding(
     .execute(connection)
     .await?;
     Ok(binding)
+}
+
+/// Whether checks on the platform work without an account, so a recording
+/// under any selection may run without one
+/// (`CredentialProvider::accounts_optional`).
+async fn accounts_optional(connection: &mut SqliteConnection, platform_id: &str) -> Result<bool> {
+    let platform: String =
+        sqlx::query_scalar("SELECT platform_name FROM platform_config WHERE id = ?")
+            .bind(platform_id)
+            .fetch_one(&mut *connection)
+            .await?;
+    Ok(crate::credentials::provider(&platform).accounts_optional())
 }
 
 /// The selections that list the profile and the live recordings bound to it.

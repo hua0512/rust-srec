@@ -368,7 +368,7 @@ impl CredentialExecutionService {
             let route = self.repository.account_route(&profile, None).await?;
             let status = self
                 .provider_check(provider, &profile, &route, deadline)
-                .await?;
+                .await??;
             let validity = match status {
                 AccountStatus::Valid => CredentialValidity::Valid,
                 AccountStatus::Repairable => CredentialValidity::NeedsRefresh,
@@ -424,30 +424,29 @@ impl CredentialExecutionService {
         .map_err(management_error)
     }
 
-    /// Checks the account with its provider through `route`.
+    /// Checks the account with its provider through `route`. The outer
+    /// error is a failure before the platform is asked: admission, the
+    /// client or unreadable material. The inner result is the platform's
+    /// answer, or the error the provider met asking it.
     async fn provider_check(
         &self,
         provider: &dyn super::CredentialProvider,
         profile: &CredentialProfile,
         route: &ResolvedRoute,
         deadline: OperationDeadline,
-    ) -> Result<AccountStatus> {
+    ) -> Result<Result<AccountStatus>> {
         self.providers
             .admission()
             .admit(&profile.platform_config_id, &route.key, deadline)
             .await
             .map_err(provider_error)?;
-        provider
-            .check(
-                &super::provider_client(&route.target)?,
-                &profile.material()?,
-            )
-            .await
-            .map_err(|error| {
-                let error = provider_error(error);
-                self.defer_throttle(&profile.platform_config_id, route, &error);
-                error
-            })
+        let client = super::provider_client_for(provider, &route.target)?;
+        let material = profile.material()?;
+        Ok(provider.check(&client, &material).await.map_err(|error| {
+            let error = provider_error(error);
+            self.defer_throttle(&profile.platform_config_id, route, &error);
+            error
+        }))
     }
 
     async fn action(
@@ -484,7 +483,7 @@ impl CredentialExecutionService {
             .map_err(provider_error)?;
         match provider
             .refresh(
-                &super::provider_client(&route.target)?,
+                &super::provider_client_for(provider, &route.target)?,
                 &profile.material()?,
             )
             .await
@@ -646,8 +645,33 @@ impl CredentialExecutionService {
                 }
             }
         } else if checked.insert(id.to_owned()) {
-            self.provider_check(provider, &profile, route, deadline)
+            match self
+                .provider_check(provider, &profile, route, deadline)
                 .await?
+            {
+                Ok(status) => status,
+                // Checks work without the account, so a platform that
+                // answers its account check with no verdict must not stop
+                // one. A throttle still pauses the platform. This repeats on
+                // every check while the platform keeps refusing, so it is
+                // not a warning.
+                Err(error)
+                    if provider.accounts_optional()
+                        && !matches!(
+                            error,
+                            Error::Extractor(ExtractorError::RateLimited { .. })
+                        ) =>
+                {
+                    tracing::debug!(
+                        profile_id = %profile.id,
+                        platform,
+                        %error,
+                        "Could not check the credential profile; using it unchecked"
+                    );
+                    AccountStatus::Unverifiable
+                }
+                Err(error) => return Err(error),
+            }
         } else {
             return Ok(profile);
         };
@@ -726,16 +750,29 @@ impl CredentialExecutionService {
         if matches!(
             policy.selection,
             CredentialSelection::Inherit | CredentialSelection::None
-        ) || (policy.selection.anonymous_fallback() && bound_anonymous && !allow_switch)
-        {
+        ) {
+            return self
+                .execute_anonymous(policy, binding, deadline, route, &mut extract)
+                .await;
+        }
+        let platform = self.repository.platform_name(&policy.platform_id).await?;
+        // On platforms whose checks work without an account, every selection
+        // falls back to no account like a pool that allows it.
+        let accounts_optional = self.providers.provider(&platform).accounts_optional();
+        let falls_back = policy.selection.anonymous_fallback() || accounts_optional;
+        if falls_back && bound_anonymous && !allow_switch {
             return self
                 .execute_anonymous(policy, binding, deadline, route, &mut extract)
                 .await;
         }
         // Switching to no account is a switch like any other, so a bound poll
-        // that cannot switch keeps reporting its account unavailable.
+        // that cannot switch keeps reporting its account unavailable. Where
+        // checks work without an account, a bound poll falls back too: polls
+        // never move the recording's binding, which only a recovery or a
+        // download start commits, and the live status does not depend on the
+        // account.
         let anonymous_fallback =
-            policy.selection.anonymous_fallback() && (binding.is_none() || allow_switch);
+            falls_back && (binding.is_none() || allow_switch || accounts_optional);
         match self
             .execute_pool(
                 policy,
@@ -744,6 +781,7 @@ impl CredentialExecutionService {
                 deadline,
                 route,
                 &mut extract,
+                platform,
                 anonymous_fallback,
             )
             .await
@@ -780,6 +818,7 @@ impl CredentialExecutionService {
         deadline: OperationDeadline,
         route: &ResolvedRoute,
         extract: &mut F,
+        platform: String,
         anonymous_fallback: bool,
     ) -> Result<CredentialExecution<T>>
     where
@@ -797,7 +836,6 @@ impl CredentialExecutionService {
                 anonymous_fallback,
             )
             .await?;
-        let platform = self.repository.platform_name(&policy.platform_id).await?;
         let mut attempts = Attempts {
             candidates,
             exclusions,
@@ -967,7 +1005,11 @@ impl CredentialExecutionService {
             }
         } else if binding.is_some() && !allow_switch {
             return Err(self
-                .unavailable(policy, UnavailableReason::BindingPolicyChanged)
+                .exhausted(
+                    policy,
+                    UnavailableReason::BindingPolicyChanged,
+                    anonymous_fallback,
+                )
                 .await);
         } else if matches!(
             policy.selection,

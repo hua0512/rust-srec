@@ -56,7 +56,9 @@ pub(crate) async fn serve_once(status: &'static str, body: &'static str) -> Stri
 
 /// Serves one HTTP request per reply (a [`Reply`] or a `(status line, JSON
 /// body)` pair), in order, on a local port, returning the server's base URL
-/// and the requests it receives. Each response closes its connection. Once
+/// and the requests it receives. `{port}` in a header value or body becomes
+/// the server's port, so a reply can link to another host name that the
+/// client resolves to this server. Each response closes its connection. Once
 /// the replies run out the port closes, so a further request fails.
 pub(crate) async fn serve_in_order<R: Into<Reply>>(
     responses: Vec<R>,
@@ -68,6 +70,7 @@ pub(crate) async fn serve_in_order<R: Into<Reply>>(
     let addr = listener.local_addr().unwrap();
     let received = ReceivedRequests::default();
     let log = Arc::clone(&received);
+    let port = addr.port().to_string();
     tokio::spawn(async move {
         for reply in responses {
             let Ok((mut socket, _)) = listener.accept().await else {
@@ -87,13 +90,13 @@ pub(crate) async fn serve_in_order<R: Into<Reply>>(
             let headers: String = reply
                 .headers
                 .iter()
-                .map(|(name, value)| format!("{name}: {value}\r\n"))
+                .map(|(name, value)| format!("{name}: {}\r\n", value.replace("{port}", &port)))
                 .collect();
+            let body = reply.body.replace("{port}", &port);
             let response = format!(
-                "HTTP/1.1 {}\r\n{headers}content-length: {}\r\nconnection: close\r\n\r\n{}",
+                "HTTP/1.1 {}\r\n{headers}content-length: {}\r\nconnection: close\r\n\r\n{body}",
                 reply.status,
-                reply.body.len(),
-                reply.body,
+                body.len(),
             );
             let _ = socket.write_all(response.as_bytes()).await;
             let _ = socket.shutdown().await;

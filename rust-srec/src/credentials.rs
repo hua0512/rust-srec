@@ -36,7 +36,7 @@ pub mod platforms;
 pub use admission::{OperationDeadline, PlatformAdmission};
 pub use attention::{ATTENTION_REFRESH_FAILURES, AttentionReason, CredentialAttention};
 pub use blocks::{CredentialBlock, CredentialBlockChange, CredentialBlocks};
-pub(crate) use connection::provider_client;
+pub(crate) use connection::{provider_client, provider_client_for};
 pub use error::CredentialError;
 pub use execution::{
     CredentialExecution, CredentialExecutionService, CredentialSnapshot, Exclusions, Extracted,
