@@ -24,7 +24,7 @@ msgid "--flag value"
 msgstr "--flag value"
 
 #. placeholder {0}: engine.name
-#: src/components/config/engines/engines-panel.tsx:262
+#: src/components/config/engines/engines-panel.tsx:297
 msgid "\"{0}\" will be removed. Streamers using it fall back to the default engine."
 msgstr "将删除“{0}”。正在使用它的主播会回退到默认引擎。"
 
@@ -792,7 +792,7 @@ msgstr "添加自定义标签"
 msgid "Add email and press Enter"
 msgstr "添加邮箱地址并按 Enter"
 
-#: src/components/config/engines/engines-panel.tsx:297
+#: src/components/config/engines/engines-panel.tsx:351
 msgid "Add engine"
 msgstr "添加引擎"
 
@@ -833,7 +833,7 @@ msgstr "添加模块..."
 msgid "Add one by scanning a QR code with the platform's app or by pasting its cookies."
 msgstr "用平台 App 扫描二维码，或粘贴 Cookie 来添加账号。"
 
-#: src/components/proxies/proxies-panel.tsx:192
+#: src/components/proxies/proxies-panel.tsx:266
 msgid "Add one to send recordings, checks and danmu through it. Until then, requests connect directly or through the system proxy, as the global settings choose."
 msgstr "添加代理后，录制、检查和弹幕即可通过它连接。在此之前，请求按全局设置直连或使用系统代理。"
 
@@ -854,7 +854,7 @@ msgstr "添加参数"
 msgid "Add Pipeline Step"
 msgstr "添加处理管道步骤"
 
-#: src/components/proxies/proxies-panel.tsx:159
+#: src/components/proxies/proxies-panel.tsx:233
 #: src/components/proxies/proxy-editor-dialog.tsx:207
 #: src/components/proxies/proxy-editor-dialog.tsx:363
 msgid "Add proxy"
@@ -908,11 +908,11 @@ msgid "Additional arguments appended to the command."
 msgstr "附加到命令的额外参数。"
 
 #: src/components/proxies/proxy-editor-dialog.tsx:248
-#: src/components/proxies/proxy-row.tsx:216
+#: src/components/proxies/proxy-row.tsx:228
 msgid "Address"
 msgstr "地址"
 
-#: src/components/proxies/proxies-panel.tsx:149
+#: src/components/proxies/proxies-panel.tsx:224
 msgid "Address copied"
 msgstr "地址已复制"
 
@@ -1299,6 +1299,12 @@ msgstr "音频质量"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:444
 msgid "Audio Settings"
 msgstr "音频设置"
+
+#: src/components/proxies/proxies-panel.tsx:66
+#: src/components/proxies/proxy-row.tsx:142
+msgctxt "proxy auth badge"
+msgid "Auth"
+msgstr "认证"
 
 #: src/components/notifications/forms/webhook-form.tsx:164
 msgid "Auth Type"
@@ -1767,7 +1773,7 @@ msgstr "C:path1.flv,C:path2.flv"
 msgid "Caching and progress"
 msgstr "缓存与进度"
 
-#: src/components/config/engines/engines-panel.tsx:270
+#: src/components/config/engines/engines-panel.tsx:305
 #: src/components/config/global/backup-restore-card.tsx:523
 #: src/components/config/templates/template-card.tsx:281
 #: src/components/credentials/delete-profile-dialog.tsx:146
@@ -1964,7 +1970,7 @@ msgstr "此操作开销较低，默认值 8 通常已足够。如果远端较慢
 msgid "Check duration"
 msgstr "检查耗时"
 
-#: src/components/config/engines/engines-panel.tsx:96
+#: src/components/config/engines/engines-panel.tsx:105
 msgid "Check failed"
 msgstr "检测失败"
 
@@ -2009,7 +2015,7 @@ msgstr "校验数"
 msgid "Checkers help"
 msgstr "校验数帮助"
 
-#: src/components/config/engines/engines-panel.tsx:90
+#: src/components/config/engines/engines-panel.tsx:102
 msgid "Checking"
 msgstr "检查中"
 
@@ -2325,13 +2331,12 @@ msgstr "配置已成功导出"
 msgid "Configuration imported successfully"
 msgstr "配置已成功导入"
 
-#: src/components/config/engines/engines-panel.tsx:215
-#: src/components/config/engines/engines-panel.tsx:241
+#: src/components/config/engines/engines-panel.tsx:272
 #: src/components/pipeline/workflows/step-config-dialog.tsx:358
 msgid "Configure"
 msgstr "配置"
 
-#: src/components/config/engines/engines-panel.tsx:322
+#: src/components/config/engines/engines-panel.tsx:381
 msgid "Configure a download tool to record with."
 msgstr "配置一个用于录制的下载工具。"
 
@@ -2522,7 +2527,7 @@ msgstr "复制（流复制）"
 msgid "Copy / Move"
 msgstr "复制/移动"
 
-#: src/components/proxies/proxy-row.tsx:196
+#: src/components/proxies/proxy-row.tsx:210
 msgid "Copy address"
 msgstr "复制地址"
 
@@ -2579,7 +2584,7 @@ msgstr "在已登录的百度网盘页面中（浏览器开发者工具的 Netwo
 msgid "Copy this key now. For security reasons it is shown only once and cannot be recovered later."
 msgstr "请立即复制此密钥。出于安全考虑，它只显示一次，之后无法找回。"
 
-#: src/components/config/engines/engines-panel.tsx:147
+#: src/components/config/engines/engines-panel.tsx:205
 msgid "Could not check whether this tool is installed."
 msgstr "无法检测该工具是否已安装。"
 
@@ -3139,8 +3144,7 @@ msgstr "落后直播边缘的延迟"
 msgid "Delay between the re-checks used to confirm a streamer has really gone offline."
 msgstr "用于确认主播确实已下播的复查之间的间隔。"
 
-#: src/components/config/engines/engines-panel.tsx:250
-#: src/components/config/engines/engines-panel.tsx:276
+#: src/components/config/engines/engines-panel.tsx:311
 #: src/components/config/templates/template-card.tsx:160
 #: src/components/config/templates/template-card.tsx:290
 #: src/components/credentials/account-row.tsx:302
@@ -3159,7 +3163,7 @@ msgstr "用于确认主播确实已下播的复查之间的间隔。"
 #: src/components/pipeline/workflows/workflow-card.tsx:85
 #: src/components/pipeline/workflows/workflow-card.tsx:110
 #: src/components/proxies/delete-proxy-dialog.tsx:112
-#: src/components/proxies/proxy-row.tsx:204
+#: src/components/proxies/proxy-row.tsx:218
 #: src/components/sessions/session-batch-action-bar.tsx:62
 #: src/components/sessions/session-card.tsx:300
 #: src/components/shared/confirm-dialog.tsx:66
@@ -3174,6 +3178,11 @@ msgstr "删除“{label}”及其保存的凭据？此操作无法撤销。"
 #: src/components/proxies/delete-proxy-dialog.tsx:97
 msgid "Delete \"{name}\" and its saved login? This cannot be undone."
 msgstr "删除“{name}”及其保存的登录信息？此操作无法撤销。"
+
+#. placeholder {0}: engine.name
+#: src/components/config/engines/engines-panel.tsx:282
+msgid "Delete {0}"
+msgstr "删除 {0}"
 
 #: src/components/credentials/delete-profile-dialog.tsx:135
 msgid "Delete account"
@@ -3296,7 +3305,7 @@ msgstr "删除模板"
 msgid "Delete the converted result?"
 msgstr "删除转码后的结果文件？"
 
-#: src/components/config/engines/engines-panel.tsx:259
+#: src/components/config/engines/engines-panel.tsx:294
 msgid "Delete this engine?"
 msgstr "确定删除该引擎吗？"
 
@@ -3324,7 +3333,7 @@ msgstr "转换后删除检查尚未完成。"
 msgid "Deleted"
 msgstr "已删除"
 
-#: src/components/proxies/proxies-panel.tsx:120
+#: src/components/proxies/proxies-panel.tsx:193
 msgid "Deleted “{name}”"
 msgstr "已删除“{name}”"
 
@@ -3346,9 +3355,9 @@ msgstr "导入前删除所有现有配置。此操作无法撤销。"
 msgid "Deletes the files produced by the previous step. Safe after an Upload step. After a transcode/remux it deletes the converted result, not the original — use \"Remove Input on Success\" on the transcode step to delete the source instead."
 msgstr "删除上一步骤产出的文件。在上传步骤之后使用是安全的。在转码/remux 之后，它删除的是转码结果而非原始文件——若要删除源文件，请改为在转码步骤上启用“成功后移除输入”。"
 
-#: src/components/config/engines/engines-panel.tsx:193
+#: src/components/config/engines/engines-panel.tsx:255
 #: src/components/credentials/account-row.tsx:67
-#: src/components/proxies/proxy-row.tsx:147
+#: src/components/proxies/proxy-row.tsx:173
 msgid "Deleting…"
 msgstr "正在删除…"
 
@@ -3437,9 +3446,13 @@ msgstr "处理器详细设置"
 #. placeholder {0}: profile.label
 #. placeholder {0}: proxy.name
 #: src/components/credentials/account-row.tsx:231
-#: src/components/proxies/proxy-row.tsx:168
+#: src/components/proxies/proxy-row.tsx:156
 msgid "Details for {0}"
 msgstr "{0} 的详情"
+
+#: src/components/proxies/proxies-panel.tsx:85
+msgid "Detected"
+msgstr "已检测到"
 
 #: src/components/streamers/config/streamer-identity-fields.tsx:179
 msgid "Detecting…"
@@ -3815,7 +3828,7 @@ msgstr "之前的文件仍在收尾，本次未分段，录制仍在继续。"
 #: src/components/notifications/channel-card.tsx:145
 #: src/components/pipeline/presets/preset-card.tsx:99
 #: src/components/pipeline/workflows/workflow-card.tsx:77
-#: src/components/proxies/proxy-row.tsx:190
+#: src/components/proxies/proxy-row.tsx:207
 #: src/components/streamers/card/stream-actions-menu.tsx:101
 msgid "Edit"
 msgstr "编辑"
@@ -3962,7 +3975,7 @@ msgstr "引擎与硬件"
 msgid "Engine created successfully"
 msgstr "引擎创建成功"
 
-#: src/components/config/engines/engines-panel.tsx:132
+#: src/components/config/engines/engines-panel.tsx:184
 msgid "Engine deleted"
 msgstr "引擎已删除"
 
@@ -3990,7 +4003,7 @@ msgstr "引擎更新成功"
 msgid "Engine used for downloads when not specified by platform/streamer."
 msgstr "未在平台/主播中指定时使用的录制引擎。"
 
-#: src/components/config/engines/engines-panel.tsx:303
+#: src/components/config/engines/engines-panel.tsx:358
 #: src/components/config/global/backup-restore-card.tsx:398
 #: src/components/config/global/backup-restore-card.tsx:403
 #: src/components/config/global/backup-restore-card.tsx:408
@@ -4404,7 +4417,7 @@ msgstr "创建工作流失败：{0}"
 msgid "Failed to delete channel"
 msgstr "删除渠道失败"
 
-#: src/components/config/engines/engines-panel.tsx:135
+#: src/components/config/engines/engines-panel.tsx:187
 msgid "Failed to delete engine"
 msgstr "删除引擎失败"
 
@@ -4504,6 +4517,10 @@ msgstr "内容加载失败"
 msgid "Failed to load danmu statistics."
 msgstr "加载弹幕统计失败。"
 
+#: src/components/config/engines/engines-panel.tsx:370
+msgid "Failed to load engines"
+msgstr "加载引擎失败"
+
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:385
 msgid "Failed to load events"
 msgstr "加载事件失败"
@@ -4531,6 +4548,10 @@ msgstr "加载平台失败"
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:269
 msgid "Failed to load presets"
 msgstr "加载预设失败"
+
+#: src/components/proxies/proxies-panel.tsx:254
+msgid "Failed to load proxies"
+msgstr "加载代理失败"
 
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:389
 msgid "Failed to load sessions"
@@ -6166,7 +6187,7 @@ msgstr "正在加载预设..."
 msgid "Loading workflows..."
 msgstr "正在加载工作流..."
 
-#: src/components/proxies/proxy-row.tsx:92
+#: src/components/proxies/proxy-row.tsx:77
 #: src/components/streamers/edit/status-check-history.tsx:150
 msgid "Loading…"
 msgstr "加载中…"
@@ -6254,7 +6275,7 @@ msgstr "日志配置已更新"
 msgid "Logging paused"
 msgstr "日志已暂停"
 
-#: src/components/proxies/proxy-row.tsx:220
+#: src/components/proxies/proxy-row.tsx:232
 msgid "Login"
 msgstr "登录信息"
 
@@ -6679,12 +6700,10 @@ msgctxt "breadcrumb"
 msgid "More"
 msgstr "更多"
 
-#. placeholder {0}: engine.name
 #. placeholder {0}: profile.label
 #. placeholder {0}: proxy.name
-#: src/components/config/engines/engines-panel.tsx:226
 #: src/components/credentials/account-row.tsx:243
-#: src/components/proxies/proxy-row.tsx:179
+#: src/components/proxies/proxy-row.tsx:196
 msgid "More actions for {0}"
 msgstr "{0} 的更多操作"
 
@@ -6998,7 +7017,7 @@ msgstr "没有可用的详细错误信息"
 msgid "No engines found."
 msgstr "未找到引擎。"
 
-#: src/components/config/engines/engines-panel.tsx:321
+#: src/components/config/engines/engines-panel.tsx:380
 msgid "No engines yet"
 msgstr "暂无引擎"
 
@@ -7167,7 +7186,7 @@ msgstr "未生成预览"
 msgid "No progress for {quietFor}"
 msgstr "已 {quietFor} 无进度"
 
-#: src/components/proxies/proxies-panel.tsx:190
+#: src/components/proxies/proxies-panel.tsx:264
 msgid "No proxies yet"
 msgstr "暂无代理"
 
@@ -7227,7 +7246,7 @@ msgstr "无主播"
 msgid "No streamers found"
 msgstr "未找到主播"
 
-#: src/components/proxies/proxies-panel.tsx:53
+#: src/components/proxies/proxies-panel.tsx:106
 msgid "No system proxy detected"
 msgstr "未检测到系统代理"
 
@@ -7284,7 +7303,7 @@ msgstr "暂无工作流"
 msgid "None"
 msgstr "无"
 
-#: src/components/proxies/proxy-row.tsx:235
+#: src/components/proxies/proxy-row.tsx:247
 msgctxt "no proxy login"
 msgid "None"
 msgstr "无"
@@ -7352,7 +7371,11 @@ msgstr "未连接"
 msgid "Not connected to BIGO"
 msgstr "未连接到 BIGO"
 
-#: src/components/config/engines/engines-panel.tsx:94
+#: src/components/proxies/proxies-panel.tsx:87
+msgid "Not detected"
+msgstr "未检测到"
+
+#: src/components/config/engines/engines-panel.tsx:104
 msgid "Not installed"
 msgstr "未安装"
 
@@ -7373,7 +7396,7 @@ msgstr "未被任何配置选用"
 msgid "Not supported in this browser"
 msgstr "此浏览器不支持"
 
-#: src/components/proxies/proxy-row.tsx:124
+#: src/components/proxies/proxy-row.tsx:164
 msgid "not used"
 msgstr "未使用"
 
@@ -7943,7 +7966,7 @@ msgstr "必须填写密码"
 msgid "Password must be at least 8 characters"
 msgstr "密码至少需要 8 个字符"
 
-#: src/components/proxies/proxy-row.tsx:229
+#: src/components/proxies/proxy-row.tsx:241
 msgid "password saved"
 msgstr "已保存密码"
 
@@ -8650,7 +8673,7 @@ msgid "Protocol Settings"
 msgstr "协议设置"
 
 #: src/components/layout/site-header.tsx:67
-#: src/components/proxies/proxies-panel.tsx:165
+#: src/components/proxies/proxies-panel.tsx:241
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:68
 msgid "Proxies"
 msgstr "代理"
@@ -8775,6 +8798,10 @@ msgstr "可访问"
 msgid "Read Buffer Size (bytes)"
 msgstr "读取缓冲区大小（字节）"
 
+#: src/components/proxies/proxies-panel.tsx:49
+msgid "Read from the server's environment at startup. Used whenever a route is set to System proxy."
+msgstr "服务器启动时从环境变量读取。当路由设为系统代理时会使用该配置。"
+
 #: src/components/config/engines/forms/mesio-sections.tsx:463
 msgid "Read Timeout (ms)"
 msgstr "读取超时 (ms)"
@@ -8791,7 +8818,7 @@ msgstr "只读 — 会话和非敏感状态"
 msgid "Read-only keys can inspect sessions, danmu, pipeline totals, and notification events. Configuration and other sensitive tools require a full-access key."
 msgstr "只读密钥可以查看会话、弹幕、处理管道汇总和通知事件。配置及其他敏感工具需要完全访问密钥。"
 
-#: src/components/config/engines/engines-panel.tsx:92
+#: src/components/config/engines/engines-panel.tsx:103
 #: src/hooks/use-web-push-subscription.ts:164
 msgid "Ready"
 msgstr "就绪"
@@ -9231,7 +9258,7 @@ msgstr "请求超时（毫秒）"
 msgid "Request timeout duration"
 msgstr "请求超时时长"
 
-#: src/components/proxies/proxies-panel.tsx:83
+#: src/components/proxies/proxies-panel.tsx:137
 msgid "Requests a page once through <0>{address}</0> and reports whether it answered."
 msgstr "通过 <0>{address}</0> 请求一次页面，并报告是否有响应。"
 
@@ -9608,7 +9635,7 @@ msgstr "已保存的代理与系统代理"
 msgid "Saved proxies can be chosen in global, platform, template, streamer and account settings."
 msgstr "已保存的代理可在全局、平台、模板、主播和账号设置中选用。"
 
-#: src/components/proxies/proxies-panel.tsx:169
+#: src/components/proxies/proxies-panel.tsx:243
 msgid "Saved proxies that global, platform, template, streamer, account, notification channel and upload step settings can route requests through. Changes are saved right away."
 msgstr "全局、平台、模板、主播、账号、通知渠道和上传步骤设置可选用这些已保存的代理来转发请求。更改会立即保存。"
 
@@ -10842,13 +10869,10 @@ msgid "System Health"
 msgstr "系统健康"
 
 #: src/components/notifications/events/payload-preview.tsx:58
+#: src/components/proxies/proxies-panel.tsx:47
 #: src/components/proxies/proxy-route-label.tsx:34
 msgid "System proxy"
 msgstr "系统代理"
-
-#: src/components/proxies/proxies-panel.tsx:47
-msgid "System proxy: <0>{url}</0>"
-msgstr "系统代理：<0>{url}</0>"
 
 #: src/lib/notification-event-types.ts:40
 msgid "System shutting down"
@@ -10965,13 +10989,12 @@ msgid "Temporarily Paused"
 msgstr "暂时暂停"
 
 #: src/components/notifications/desktop-channel-dialog.tsx:228
-#: src/components/proxies/proxy-row.tsx:158
-#: src/components/proxies/proxy-row.tsx:193
+#: src/components/proxies/proxy-row.tsx:184
 #: src/components/proxies/proxy-test.tsx:163
 msgid "Test"
 msgstr "测试"
 
-#: src/components/proxies/proxies-panel.tsx:80
+#: src/components/proxies/proxies-panel.tsx:134
 msgid "Test “{name}”"
 msgstr "测试“{name}”"
 
@@ -11039,7 +11062,7 @@ msgstr "无法完成分段。"
 msgid "The direct link to the channel or stream."
 msgstr "频道或直播流的直接链接。"
 
-#: src/components/config/engines/engines-panel.tsx:305
+#: src/components/config/engines/engines-panel.tsx:360
 msgid "The download tools recordings can use. Each one is checked on the server to confirm it is installed."
 msgstr "录制可使用的下载工具。每个工具都会在服务器上检查是否已安装。"
 
@@ -11318,7 +11341,7 @@ msgstr "该主播当前正在直播，但不在你配置的录制时间表内。
 msgid "This streamer only uses disabled accounts."
 msgstr "该主播只使用已禁用的账号。"
 
-#: src/components/config/engines/engines-panel.tsx:143
+#: src/components/config/engines/engines-panel.tsx:199
 msgid "This tool was not found on the server."
 msgstr "服务器上未找到该工具。"
 
@@ -12003,7 +12026,7 @@ msgstr "{when}使用"
 msgid "Used by"
 msgstr "使用情况"
 
-#: src/components/proxies/proxy-row.tsx:124
+#: src/components/proxies/proxy-row.tsx:164
 msgid "used by {usage}"
 msgstr "被 {usage} 处使用"
 

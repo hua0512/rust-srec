@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Trans } from '@lingui/react/macro';
 import { msg, t } from '@lingui/core/macro';
@@ -8,6 +8,7 @@ import {
   Gauge,
   Globe,
   Loader2,
+  Lock,
   MoreHorizontal,
   Pencil,
   ShieldCheck,
@@ -15,7 +16,11 @@ import {
   Waypoints,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Disclosure, DisclosureContent } from '@/components/ui/disclosure';
+import {
+  Disclosure,
+  DisclosureContent,
+  DisclosureTrigger,
+} from '@/components/ui/disclosure';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,15 +28,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { DotSeparated } from '@/components/shared/list-panel';
 import { useMenuDialog } from '@/hooks/use-menu-dialog';
 import { cn } from '@/lib/utils';
 import { proxyDetailQueryOptions } from '@/api/proxies';
 import type { SavedProxy } from '@/api/schemas/proxies';
-import {
-  DotSeparated,
-  ROW_BUTTON,
-  RowExpandButton,
-} from '@/components/shared/list-panel';
 import { proxyAddress } from './proxy-route-label';
 import { ProxyReferencesList } from './proxy-references';
 
@@ -39,15 +40,15 @@ import { ProxyReferencesList } from './proxy-references';
 const SCHEME_STYLES = {
   http: {
     icon: Globe,
-    tone: 'bg-sky-500/15 text-sky-700 dark:text-sky-300',
+    tone: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
   },
   https: {
     icon: ShieldCheck,
-    tone: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
+    tone: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
   },
   socks: {
     icon: Waypoints,
-    tone: 'bg-violet-500/15 text-violet-700 dark:text-violet-300',
+    tone: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
   },
 } as const;
 
@@ -55,22 +56,6 @@ function schemeStyle(scheme: string) {
   if (scheme === 'https') return SCHEME_STYLES.https;
   if (scheme.startsWith('socks')) return SCHEME_STYLES.socks;
   return SCHEME_STYLES.http;
-}
-
-/** A proxy's scheme as an icon on its tint. Decorative: the row names it. */
-function ProxyAvatar({ scheme }: { scheme: string }) {
-  const { icon: Icon, tone } = schemeStyle(scheme);
-  return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        'flex size-9 shrink-0 items-center justify-center rounded-full',
-        tone,
-      )}
-    >
-      <Icon className="size-4" />
-    </span>
-  );
 }
 
 interface ProxyRowActions {
@@ -98,8 +83,9 @@ function ProxyUsage({ proxy }: { proxy: SavedProxy }) {
 }
 
 /**
- * One saved proxy: its scheme, name, address, login and usage, with where it
- * is used once expanded, a Test button and its menu.
+ * One saved proxy row: its protocol, name, address, login and usage pill that
+ * expands to show full details and references, plus a direct Test button and
+ * menu for secondary actions.
  */
 export function ProxyRow({
   proxy,
@@ -113,61 +99,92 @@ export function ProxyRow({
   // Where it is used loads on the first expansion and stays for the closing
   // animation.
   const [expanded, setExpanded] = useState(false);
-  const detailsId = useId();
   const usage = proxy.usage_count;
   const { menuButtonRef, openDialog, onCloseAutoFocus } = useMenuDialog();
-  const parts = [
-    { content: proxy.scheme },
+  const { icon: Icon, tone } = schemeStyle(proxy.scheme);
+
+  const subParts = [
     { content: proxyAddress(proxy), className: 'font-mono' },
     ...(proxy.username ? [{ content: proxy.username }] : []),
-    {
-      content: usage > 0 ? t(i18n)`used by ${usage}` : t(i18n)`not used`,
-    },
   ];
+
   return (
-    <li aria-busy={actions.deleting || undefined}>
-      <Disclosure open={open} onOpenChange={setOpen}>
-        <div className="relative flex items-center gap-x-2 px-3 py-2.5 transition-colors hover:bg-muted/30 sm:gap-x-3 sm:px-4">
-          <ProxyAvatar scheme={proxy.scheme} />
+    <li aria-busy={actions.deleting || undefined} data-proxy-id={proxy.id}>
+      <Disclosure
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (next) setExpanded(true);
+        }}
+      >
+        <div className="flex flex-wrap items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/35 sm:flex-nowrap">
+          <span
+            aria-hidden="true"
+            className={cn(
+              'flex size-9 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset ring-black/5 dark:ring-white/5',
+              tone,
+            )}
+          >
+            <Icon className="size-4" />
+          </span>
+
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{proxy.name}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="truncate text-sm font-semibold text-foreground">
+                {proxy.name}
+              </span>
+              <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {proxy.scheme}
+              </span>
+              {proxy.username && (
+                <span className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-400">
+                  <Lock className="size-2.5" aria-hidden="true" />
+                  <Trans context="proxy auth badge">Auth</Trans>
+                </span>
+              )}
+            </div>
             <p
-              className="mt-0.5 line-clamp-2 text-xs text-muted-foreground @md:line-clamp-1"
-              title={parts.map((part) => part.content).join(' · ')}
+              className="mt-0.5 text-xs text-muted-foreground"
+              title={subParts.map((part) => part.content).join(' · ')}
             >
-              <DotSeparated parts={parts} />
+              <DotSeparated parts={subParts} />
             </p>
           </div>
-          {actions.deleting ? (
-            <span
-              role="status"
-              className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground"
+
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <DisclosureTrigger
+              aria-label={i18n._(msg`Details for ${proxy.name}`)}
+              className={cn(
+                'w-auto gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors [&_svg]:size-3.5',
+                usage > 0
+                  ? 'bg-muted text-foreground hover:bg-muted/80'
+                  : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground',
+              )}
             >
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <Trans>Deleting…</Trans>
-            </span>
-          ) : (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className={cn(ROW_BUTTON, 'relative z-10 hidden @md:inline-flex')}
-              onClick={actions.onTest}
-            >
-              <Gauge className="h-3.5 w-3.5" />
-              <Trans>Test</Trans>
-            </Button>
-          )}
-          <RowExpandButton
-            open={open}
-            onToggle={() => {
-              setOpen(!open);
-              setExpanded(true);
-            }}
-            controls={detailsId}
-            label={i18n._(msg`Details for ${proxy.name}`)}
-          />
-          <div className="relative z-10 shrink-0">
+              {usage > 0 ? t(i18n)`used by ${usage}` : t(i18n)`not used`}
+            </DisclosureTrigger>
+
+            {actions.deleting ? (
+              <span
+                role="status"
+                className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground"
+              >
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Trans>Deleting…</Trans>
+              </span>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 gap-1.5 rounded-lg px-2.5 text-xs"
+                onClick={actions.onTest}
+              >
+                <Gauge className="h-3.5 w-3.5" />
+                <Trans>Test</Trans>
+              </Button>
+            )}
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -175,7 +192,7 @@ export function ProxyRow({
                   type="button"
                   size="icon"
                   variant="ghost"
-                  className="size-8 rounded-lg text-muted-foreground"
+                  className="size-8 shrink-0 rounded-lg text-muted-foreground"
                   aria-label={i18n._(msg`More actions for ${proxy.name}`)}
                 >
                   <MoreHorizontal className="h-4 w-4" />
@@ -188,9 +205,6 @@ export function ProxyRow({
               >
                 <DropdownMenuItem onSelect={openDialog(actions.onEdit)}>
                   <Pencil /> <Trans>Edit</Trans>
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={openDialog(actions.onTest)}>
-                  <Gauge /> <Trans>Test</Trans>
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={actions.onCopy}>
                   <Copy /> <Trans>Copy address</Trans>
@@ -207,10 +221,8 @@ export function ProxyRow({
             </DropdownMenu>
           </div>
         </div>
-        <DisclosureContent
-          id={detailsId}
-          className="space-y-2 pr-4 pb-3 pl-14 text-xs sm:pl-16"
-        >
+
+        <DisclosureContent className="space-y-2.5 border-t border-dashed border-border/60 bg-muted/20 px-4 py-3 text-xs sm:pl-16">
           <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5">
             <dt className="text-muted-foreground">
               <Trans>Address</Trans>

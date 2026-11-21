@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ElementType } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { toast } from 'sonner';
@@ -6,23 +6,22 @@ import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import {
-  AlertCircle,
-  CheckCircle2,
   Cpu,
+  Database,
   Loader2,
-  MoreHorizontal,
   Plus,
+  Radio,
   Settings2,
+  Terminal,
   Trash2,
-  XCircle,
 } from 'lucide-react';
 import { z } from 'zod';
 import { queryKeys } from '@/api/query-keys';
 import { EngineConfigSchema } from '@/api/schemas';
 import { enginesQueryOptions } from '@/api/engines';
 import { testEngine, deleteEngine } from '@/server/functions';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,79 +32,132 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-  ListPanel,
-  ListPanelEmpty,
-  ListPanelRows,
-  ROW_BUTTON,
-} from '@/components/shared/list-panel';
-import { useMenuDialog } from '@/hooks/use-menu-dialog';
+import { SettingsCard } from '@/components/config/settings-card';
+import { DotSeparated, ListPanelEmpty } from '@/components/shared/list-panel';
+import { QueryError } from '@/components/shared/query-error';
+import { formatBytes } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
 type Engine = z.infer<typeof EngineConfigSchema>;
 
 type EngineStatus = 'loading' | 'available' | 'unavailable' | 'error';
 
-const STATUS_STYLE: Record<EngineStatus, string> = {
-  loading: 'bg-muted text-muted-foreground border-border/50',
-  available:
-    'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20',
-  unavailable:
-    'bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20',
-  error:
-    'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20',
+const STATUS_STYLE: Record<EngineStatus, { pill: string; dot: string }> = {
+  loading: {
+    pill: 'bg-muted/60 text-muted-foreground',
+    dot: 'bg-muted-foreground',
+  },
+  available: {
+    pill: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+    dot: 'bg-emerald-500',
+  },
+  unavailable: {
+    pill: 'bg-rose-500/10 text-rose-700 dark:text-rose-400',
+    dot: 'bg-rose-500',
+  },
+  error: {
+    pill: 'bg-amber-500/10 text-amber-700 dark:text-amber-400',
+    dot: 'bg-amber-500',
+  },
 };
 
-/** The tint of an engine's avatar by its type. */
-const TYPE_TONE: Record<string, string> = {
-  FFMPEG: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
-  MESIO: 'bg-sky-500/15 text-sky-700 dark:text-sky-300',
-  STREAMLINK: 'bg-violet-500/15 text-violet-700 dark:text-violet-300',
+const ENGINE_META: Record<
+  Engine['engine_type'],
+  { label: string; icon: ElementType; tone: string }
+> = {
+  FFMPEG: {
+    label: 'FFmpeg',
+    icon: Terminal,
+    tone: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+  },
+  MESIO: {
+    label: 'Mesio',
+    icon: Database,
+    tone: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
+  },
+  STREAMLINK: {
+    label: 'Streamlink',
+    icon: Radio,
+    tone: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
+  },
 };
 
-function StatusIcon({ status }: { status: EngineStatus }) {
-  const className = 'h-3.5 w-3.5 shrink-0';
-  switch (status) {
-    case 'loading':
-      return <Loader2 className={cn(className, 'animate-spin')} />;
-    case 'available':
-      return <CheckCircle2 className={className} />;
-    case 'unavailable':
-      return <XCircle className={className} />;
-    case 'error':
-      return <AlertCircle className={className} />;
-  }
+function StatusBadge({ status }: { status: EngineStatus }) {
+  const style = STATUS_STYLE[status];
+  return (
+    <span
+      className={cn(
+        'inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium whitespace-nowrap',
+        style.pill,
+      )}
+    >
+      {status === 'loading' ? (
+        <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+      ) : (
+        <span
+          className={cn('size-1.5 rounded-full', style.dot)}
+          aria-hidden="true"
+        />
+      )}
+      {status === 'loading' && <Trans>Checking</Trans>}
+      {status === 'available' && <Trans>Ready</Trans>}
+      {status === 'unavailable' && <Trans>Not installed</Trans>}
+      {status === 'error' && <Trans>Check failed</Trans>}
+    </span>
+  );
 }
 
-function StatusLabel({ status }: { status: EngineStatus }) {
-  switch (status) {
-    case 'loading':
-      return <Trans>Checking</Trans>;
-    case 'available':
-      return <Trans>Ready</Trans>;
-    case 'unavailable':
-      return <Trans>Not installed</Trans>;
-    case 'error':
-      return <Trans>Check failed</Trans>;
+/** Concise inline config hints shown beside the detected engine version. */
+function engineConfigParts(engine: Engine) {
+  const parts: { content: string; className?: string }[] = [];
+  switch (engine.engine_type) {
+    case 'FFMPEG':
+      if (engine.config.binary_path) {
+        parts.push({
+          content: engine.config.binary_path,
+          className: 'font-mono',
+        });
+      }
+      if (engine.config.timeout_secs != null) {
+        parts.push({ content: `${engine.config.timeout_secs}s` });
+      }
+      break;
+    case 'STREAMLINK':
+      if (engine.config.quality) {
+        parts.push({ content: engine.config.quality, className: 'font-mono' });
+      }
+      if (engine.config.binary_path) {
+        parts.push({
+          content: engine.config.binary_path,
+          className: 'font-mono',
+        });
+      }
+      break;
+    case 'MESIO': {
+      const fixers: string[] = [];
+      if (engine.config.fix_flv !== false) fixers.push('FLV');
+      if (engine.config.fix_hls !== false) fixers.push('HLS');
+      if (engine.config.fix_dash !== false) fixers.push('DASH');
+      if (fixers.length > 0) {
+        parts.push({ content: fixers.join(' / '), className: 'font-mono' });
+      }
+      if (engine.config.buffer_size != null) {
+        parts.push({ content: formatBytes(engine.config.buffer_size) });
+      }
+      break;
+    }
   }
+  return parts;
 }
 
 /**
- * One engine: its type, name, installed version and status, with a Configure
- * button and a menu for deleting it.
+ * One engine row: its type, name, installed version, key settings and live
+ * availability, with direct Configure and Delete actions.
  */
 function EngineRow({ engine }: { engine: Engine }) {
   const { i18n } = useLingui();
   const queryClient = useQueryClient();
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const { menuButtonRef, openDialog, onCloseAutoFocus } = useMenuDialog();
 
   // Keyed on the config as well as the id, so editing an engine re-checks it. Going through
   // react-query rather than a bare effect also dedupes the probe and keeps the result cached
@@ -136,122 +188,105 @@ function EngineRow({ engine }: { engine: Engine }) {
     },
   });
 
-  const detail =
+  const meta = ENGINE_META[engine.engine_type];
+  const Icon = meta.icon;
+
+  const statusDetail =
     status === 'available' && data?.version
       ? { content: data.version, className: 'font-mono' }
       : status === 'unavailable'
-        ? { content: i18n._(msg`This tool was not found on the server.`) }
+        ? {
+            content: i18n._(msg`This tool was not found on the server.`),
+            className: 'text-rose-600 dark:text-rose-400',
+          }
         : status === 'error'
           ? {
               content: i18n._(
                 msg`Could not check whether this tool is installed.`,
               ),
+              className: 'text-amber-600 dark:text-amber-400',
             }
           : undefined;
 
+  const parts = [
+    ...(statusDetail ? [statusDetail] : []),
+    ...engineConfigParts(engine),
+  ];
+
   return (
     <li aria-busy={remove.isPending || undefined}>
-      <div className="flex items-center gap-x-2 px-3 py-2.5 transition-colors hover:bg-muted/30 sm:gap-x-3 sm:px-4">
+      <div className="flex flex-wrap items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/35 sm:flex-nowrap">
         <span
           aria-hidden="true"
           className={cn(
-            'flex size-9 shrink-0 items-center justify-center rounded-full',
-            TYPE_TONE[engine.engine_type] ?? 'bg-primary/10 text-primary',
+            'flex size-9 shrink-0 items-center justify-center rounded-xl ring-1 ring-inset ring-black/5 dark:ring-white/5',
+            meta.tone,
           )}
         >
-          <Cpu className="size-4" />
+          <Icon className="size-4" />
         </span>
+
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{engine.name}</p>
-          {/* The type stays whole and the detail truncates beside it: a long
-              version string such as ffmpeg's would otherwise wrap out of sight. */}
-          <p
-            className="mt-0.5 flex min-w-0 gap-1 text-xs text-muted-foreground"
-            title={
-              detail
-                ? `${engine.engine_type} · ${detail.content}`
-                : engine.engine_type
-            }
-          >
-            <span className="shrink-0">{engine.engine_type}</span>
-            {detail && (
-              <>
-                <span aria-hidden="true">·</span>
-                <span className={cn('truncate', detail.className)}>
-                  {detail.content}
-                </span>
-              </>
-            )}
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="truncate text-sm font-semibold text-foreground">
+              {engine.name}
+            </span>
+            <span className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              {meta.label}
+            </span>
+          </div>
+          {parts.length > 0 && (
+            <p
+              className="mt-0.5 text-xs text-muted-foreground"
+              title={parts.map((part) => part.content).join(' · ')}
+            >
+              <DotSeparated parts={parts} />
+            </p>
+          )}
         </div>
-        {remove.isPending ? (
-          <span
-            role="status"
-            className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground"
-          >
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            <Trans>Deleting…</Trans>
-          </span>
-        ) : (
-          <Badge
+
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          {remove.isPending ? (
+            <span
+              role="status"
+              className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground"
+            >
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Trans>Deleting…</Trans>
+            </span>
+          ) : (
+            <StatusBadge status={status} />
+          )}
+
+          <Button
+            asChild
+            size="sm"
             variant="outline"
-            className={cn(
-              'shrink-0 gap-1.5 whitespace-nowrap',
-              STATUS_STYLE[status],
-            )}
+            className="h-8 gap-1.5 rounded-lg px-3 text-xs"
           >
-            <StatusIcon status={status} />
-            <StatusLabel status={status} />
-          </Badge>
-        )}
-        <Button
-          asChild
-          size="sm"
-          variant="outline"
-          className={cn(ROW_BUTTON, 'hidden @md:inline-flex')}
-        >
-          <Link to="/config/engines/$engineId" params={{ engineId: engine.id }}>
-            <Settings2 className="h-3.5 w-3.5" />
-            <Trans>Configure</Trans>
-          </Link>
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              ref={menuButtonRef}
-              type="button"
-              size="icon"
-              variant="ghost"
-              className="size-8 shrink-0 rounded-lg text-muted-foreground"
-              aria-label={i18n._(msg`More actions for ${engine.name}`)}
+            <Link
+              to="/config/engines/$engineId"
+              params={{ engineId: engine.id }}
             >
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="end"
-            className="w-48 rounded-xl"
-            onCloseAutoFocus={onCloseAutoFocus}
+              <Settings2 className="h-3.5 w-3.5" />
+              <Trans>Configure</Trans>
+            </Link>
+          </Button>
+
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="size-8 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            disabled={remove.isPending}
+            aria-label={i18n._(msg`Delete ${engine.name}`)}
+            onClick={() => setConfirmDelete(true)}
           >
-            <DropdownMenuItem asChild>
-              <Link
-                to="/config/engines/$engineId"
-                params={{ engineId: engine.id }}
-              >
-                <Settings2 /> <Trans>Configure</Trans>
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              variant="destructive"
-              disabled={remove.isPending}
-              onSelect={openDialog(() => setConfirmDelete(true))}
-            >
-              <Trash2 /> <Trans>Delete</Trans>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
+
       <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -282,24 +317,44 @@ function EngineRow({ engine }: { engine: Engine }) {
   );
 }
 
+function EnginesListSkeleton() {
+  return (
+    <div className="divide-y divide-border/50 overflow-hidden rounded-xl border border-border/50">
+      {[0, 1, 2].map((index) => (
+        <div key={index} className="flex items-center gap-3 px-4 py-3.5">
+          <Skeleton className="size-9 shrink-0 rounded-xl" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <Skeleton className="h-4 w-36 max-w-full" />
+            <Skeleton className="h-3 w-64 max-w-full" />
+          </div>
+          <Skeleton className="h-6 w-16 rounded-full" />
+          <Skeleton className="h-8 w-20 rounded-lg" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** The configured download engines, each checked for being installed. */
 export function EnginesPanel() {
-  const engines = useQuery(enginesQueryOptions);
-  const addButton = (variant: 'outline' | 'default') => (
-    <Button
-      asChild
-      variant={variant}
-      size="sm"
-      className="h-8 shrink-0 gap-1.5 rounded-lg"
-    >
+  const {
+    data: engines,
+    isLoading,
+    error,
+    refetch,
+  } = useQuery(enginesQueryOptions);
+
+  const addButton = (
+    <Button asChild className="shrink-0 gap-2">
       <Link to="/config/engines/create">
         <Plus className="h-4 w-4" />
         <Trans>Add engine</Trans>
       </Link>
     </Button>
   );
+
   return (
-    <ListPanel
+    <SettingsCard
       title={<Trans>Engines</Trans>}
       description={
         <Trans>
@@ -307,24 +362,32 @@ export function EnginesPanel() {
           server to confirm it is installed.
         </Trans>
       }
-      // While the list loads or is empty, its own empty state offers the only
-      // add button.
-      action={
-        (engines.error || Boolean(engines.data?.length)) && addButton('outline')
-      }
+      icon={Cpu}
+      action={(error || Boolean(engines?.length)) && addButton}
     >
-      <ListPanelRows
-        query={engines}
-        empty={
-          <ListPanelEmpty
-            icon={Cpu}
-            title={<Trans>No engines yet</Trans>}
-            help={<Trans>Configure a download tool to record with.</Trans>}
-            action={addButton('default')}
-          />
-        }
-        renderRow={(engine) => <EngineRow key={engine.id} engine={engine} />}
-      />
-    </ListPanel>
+      {error && !engines ? (
+        <QueryError
+          title={<Trans>Failed to load engines</Trans>}
+          error={error}
+          onRetry={() => void refetch()}
+          className="mt-2"
+        />
+      ) : isLoading ? (
+        <EnginesListSkeleton />
+      ) : !engines || engines.length === 0 ? (
+        <ListPanelEmpty
+          icon={Cpu}
+          title={<Trans>No engines yet</Trans>}
+          help={<Trans>Configure a download tool to record with.</Trans>}
+          action={addButton}
+        />
+      ) : (
+        <ul className="divide-y divide-border/50 overflow-hidden rounded-xl border border-border/50">
+          {engines.map((engine) => (
+            <EngineRow key={engine.id} engine={engine} />
+          ))}
+        </ul>
+      )}
+    </SettingsCard>
   );
 }

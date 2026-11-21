@@ -1,6 +1,7 @@
 import { createLazyFileRoute } from '@tanstack/react-router';
 import { motion } from 'motion/react';
 import { ProxiesPanel } from '@/components/proxies/proxies-panel';
+import { containerVariants } from '@/lib/animation';
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/config/proxies')({
   component: ProxiesPage,
@@ -9,10 +10,10 @@ export const Route = createLazyFileRoute('/_authed/_dashboard/config/proxies')({
 function ProxiesPage() {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25 }}
-      className="max-w-4xl"
+      className="flex flex-col gap-6 pb-20"
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
     >
       <ProxiesPanel />
     </motion.div>
