@@ -13,8 +13,7 @@ use crate::database::repositories::{
 };
 
 use super::{
-    ProxyEndpoint, ProxyEntry, ProxyReferences, ProxyRoute, ProxyTarget, ResolvedRoute, RouteKey,
-    RouteSource, SystemProxy,
+    ProxyEndpoint, ProxyEntry, ProxyReferences, ResolvedRoute, RouteKey, RouteSource, SystemProxy,
 };
 
 type RuntimeConfigService = ConfigService<SqlxConfigRepository, SqlxStreamerRepository>;
@@ -217,18 +216,6 @@ impl ProxyService {
             }
         };
         proxies::resolve_layers(&mut connection, &layers, system).await
-    }
-
-    /// The connection traffic that serves no platform takes now, such as
-    /// notifications and uploads: `own`, else the global route; see
-    /// [`proxies::resolve_over_global`].
-    pub async fn resolve_over_global(&self, own: &ProxyRoute) -> Result<ProxyTarget> {
-        let mut connection = self.pool.acquire().await?;
-        Ok(
-            proxies::resolve_over_global(&mut connection, own, SystemProxy::current())
-                .await?
-                .target,
-        )
     }
 
     /// The saved login of an entry, for checks of an edited entry that keep

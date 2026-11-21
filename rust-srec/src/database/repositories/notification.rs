@@ -1,6 +1,7 @@
 //! Notification repository.
 
 mod writes;
+pub use writes::ChannelPatch;
 pub(crate) use writes::{
     SubscriptionInsert, delete_channel_dead_letters, delete_channel_row, delete_subscriptions,
     import_channel, insert_subscription,
@@ -24,13 +25,13 @@ pub trait NotificationRepository: Send + Sync {
     async fn list_channels(&self) -> Result<Vec<NotificationChannelDbModel>>;
     async fn create_channel(&self, channel: &NotificationChannelDbModel) -> Result<()>;
     async fn update_channel(&self, channel: &NotificationChannelDbModel) -> Result<()>;
-    /// [`Self::update_channel`] leaving the stored proxy route as it is.
-    async fn update_channel_keeping_route(
+    /// Applies `patch` to the channel `id` in one write transaction and
+    /// returns it as stored.
+    async fn patch_channel(
         &self,
-        channel: &NotificationChannelDbModel,
-    ) -> Result<()> {
-        self.update_channel(channel).await
-    }
+        id: &str,
+        patch: ChannelPatch,
+    ) -> Result<NotificationChannelDbModel>;
     async fn delete_channel(&self, id: &str) -> Result<()>;
 
     // Subscriptions
@@ -130,7 +131,8 @@ impl NotificationRepository for SqlxNotificationRepository {
             super::row_write::WriteMode::Insert,
             writes::RouteWrite::Write,
         )
-        .await
+        .await?;
+        Ok(())
     }
 
     async fn update_channel(&self, channel: &NotificationChannelDbModel) -> Result<()> {
@@ -140,20 +142,19 @@ impl NotificationRepository for SqlxNotificationRepository {
             super::row_write::WriteMode::Update,
             writes::RouteWrite::Write,
         )
-        .await
+        .await?;
+        Ok(())
     }
 
-    async fn update_channel_keeping_route(
+    async fn patch_channel(
         &self,
-        channel: &NotificationChannelDbModel,
-    ) -> Result<()> {
-        writes::write_channel(
-            &mut *self.write_pool.acquire().await?,
-            channel,
-            super::row_write::WriteMode::Update,
-            writes::RouteWrite::Keep,
-        )
-        .await
+        id: &str,
+        patch: ChannelPatch,
+    ) -> Result<NotificationChannelDbModel> {
+        let mut tx = crate::database::begin_immediate(&self.write_pool).await?;
+        let channel = writes::patch_channel(&mut tx, id, patch).await?;
+        tx.commit().await?;
+        Ok(channel)
     }
 
     async fn delete_channel(&self, id: &str) -> Result<()> {

@@ -84,23 +84,18 @@ pub struct GotifyChannel {
 
 impl GotifyChannel {
     /// Create a new Gotify channel.
-    pub fn new(config: GotifyConfig) -> Self {
+    pub fn new(config: GotifyConfig, route: DeliveryRoute) -> Self {
         let message_url = format!("{}/message", config.server_url.trim_end_matches('/'));
         let http = HttpDelivery::new(
             "gotify",
             std::time::Duration::from_secs(config.timeout_secs),
+            route,
         );
         Self {
             config,
             http,
             message_url,
         }
-    }
-
-    /// Delivers on `route` instead of the environment's proxy.
-    pub fn with_route(mut self, route: DeliveryRoute) -> Self {
-        self.http = self.http.with_route(route);
-        self
     }
 
     fn build_rendered_payload(

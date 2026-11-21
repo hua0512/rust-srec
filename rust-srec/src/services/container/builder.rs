@@ -451,7 +451,7 @@ impl ServiceContainer {
         }
         notification_service = notification_service
             .with_task_supervisor(task_supervisor.clone())
-            .with_proxies(proxies.clone());
+            .with_routes(crate::proxies::ServiceRoutes::new(pool.clone()));
         let notification_service = Arc::new(notification_service);
         notification_service.start_web_push_worker();
         credential_service.set_notification_service(Arc::clone(&notification_service));

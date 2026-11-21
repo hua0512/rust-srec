@@ -25,6 +25,28 @@ pub enum ProxyRoute {
     Proxy { id: String },
 }
 
+/// The shape of [`ProxyRoute`] tool schemas describe. Routes are read
+/// through [`RouteWire`], whose own shape is looser.
+#[derive(schemars::JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+#[expect(dead_code, reason = "only describes the schema")]
+enum RouteSchema {
+    Inherit,
+    Direct,
+    System,
+    Proxy { id: String },
+}
+
+impl schemars::JsonSchema for ProxyRoute {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "ProxyRoute".into()
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        RouteSchema::json_schema(generator)
+    }
+}
+
 /// The wire form a route is read from.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

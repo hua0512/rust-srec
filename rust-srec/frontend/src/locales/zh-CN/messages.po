@@ -685,7 +685,7 @@ msgstr "操作"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:232
 #: src/routes/_authed/_dashboard/config/language.lazy.tsx:113
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:272
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:275
 msgid "Active"
 msgstr "启用"
 
@@ -780,7 +780,7 @@ msgstr "最多添加 {count} 项"
 msgid "Add BaiduPCS-Go argument"
 msgstr "添加 BaiduPCS-Go 参数"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:207
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:210
 msgid "Add Channel"
 msgstr "添加渠道"
 
@@ -860,7 +860,7 @@ msgstr "添加处理管道步骤"
 msgid "Add proxy"
 msgstr "添加代理"
 
-#: src/components/config/shared/proxy-route-picker.tsx:260
+#: src/components/config/shared/proxy-route-picker.tsx:269
 msgid "Add proxy…"
 msgstr "添加代理…"
 
@@ -1718,7 +1718,7 @@ msgid "Browse generated media artifacts from pipeline jobs"
 msgstr "浏览处理任务生成的媒体文件"
 
 #: src/components/notifications/browser-channel-dialog.tsx:65
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:281
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:284
 msgid "Browser Notifications"
 msgstr "浏览器通知"
 
@@ -1774,7 +1774,7 @@ msgstr "缓存与进度"
 #: src/components/filters/FilterDialog.tsx:285
 #: src/components/layout/themes/import-modal.tsx:107
 #: src/components/notifications/channel-card.tsx:178
-#: src/components/notifications/channel-form.tsx:432
+#: src/components/notifications/channel-form.tsx:443
 #: src/components/notifications/subscription-manager.tsx:477
 #: src/components/pipeline/interrupted-output-list.tsx:259
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:118
@@ -1894,7 +1894,7 @@ msgstr "需要修改密码"
 msgid "Change source"
 msgstr "切换直播源"
 
-#: src/components/config/shared/proxy-route-picker.tsx:460
+#: src/components/config/shared/proxy-route-picker.tsx:469
 msgid "Changes apply to the next check or recording; ones already running keep their connection."
 msgstr "更改会在下一次检查或录制时生效，进行中的连接保持不变。"
 
@@ -1914,23 +1914,23 @@ msgstr "正在修改密码..."
 msgid "Changing this restarts the player."
 msgstr "更改后会重新启动播放器。"
 
-#: src/components/notifications/channel-form.tsx:330
+#: src/components/notifications/channel-form.tsx:341
 msgid "Channel"
 msgstr "渠道"
 
-#: src/components/notifications/channel-form.tsx:242
+#: src/components/notifications/channel-form.tsx:238
 msgid "Channel created"
 msgstr "渠道已创建"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:107
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:108
 msgid "Channel deleted"
 msgstr "渠道已删除"
 
-#: src/components/notifications/channel-form.tsx:258
+#: src/components/notifications/channel-form.tsx:267
 msgid "Channel updated"
 msgstr "渠道已更新"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:180
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:183
 msgid "channels"
 msgstr "个渠道"
 
@@ -2050,7 +2050,7 @@ msgstr "请选择命令或程序其中之一"
 msgid "Choose how files are transferred to the remote."
 msgstr "选择将文件传输到远程的方式。"
 
-#: src/components/config/shared/proxy-route-picker.tsx:204
+#: src/components/config/shared/proxy-route-picker.tsx:213
 msgid "Choose how to connect"
 msgstr "选择连接方式"
 
@@ -2190,7 +2190,7 @@ msgctxt "danmu"
 msgid "Coloured"
 msgstr "彩色"
 
-#: src/components/notifications/channel-form.tsx:454
+#: src/components/notifications/channel-form.tsx:465
 msgid "Coming soon"
 msgstr "即将推出"
 
@@ -2305,7 +2305,7 @@ msgstr "配置目录说明"
 msgid "Config Path (Optional)"
 msgstr "配置路径（可选）"
 
-#: src/components/notifications/channel-form.tsx:396
+#: src/components/notifications/channel-form.tsx:407
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:81
 #: src/components/pipeline/workflows/step-config-dialog.tsx:450
 #: src/components/pipeline/workflows/workflow-editor.tsx:196
@@ -2359,7 +2359,7 @@ msgstr "配置从所选备份文件导入数据的方式。"
 msgid "Configure native OS notifications for important events while running the desktop app."
 msgstr "在运行桌面应用时，配置重要事件的原生操作系统通知。"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:343
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:346
 msgid "Configure Settings"
 msgstr "配置设置"
 
@@ -2370,11 +2370,11 @@ msgstr "配置设置"
 msgid "Configure Step"
 msgstr "配置步骤"
 
-#: src/components/notifications/channel-form.tsx:314
+#: src/components/notifications/channel-form.tsx:325
 msgid "Configure where and how you receive notifications."
 msgstr "配置接收通知的位置和方式。"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:304
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:307
 msgid "Configured Events"
 msgstr "已配置的事件"
 
@@ -2686,7 +2686,7 @@ msgstr "为文件创建 ZIP 压缩包，适合与元数据一起打包。"
 msgid "Create API key"
 msgstr "创建 API 密钥"
 
-#: src/components/notifications/channel-form.tsx:439
+#: src/components/notifications/channel-form.tsx:450
 msgid "Create channel"
 msgstr "创建渠道"
 
@@ -3378,7 +3378,7 @@ msgid "Design your automation pipeline step by step"
 msgstr "逐步设计你的自动化处理管道"
 
 #: src/components/notifications/desktop-channel-dialog.tsx:73
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:279
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:282
 msgid "Desktop Notifications"
 msgstr "桌面通知"
 
@@ -3497,9 +3497,9 @@ msgstr "禁用所选"
 #: src/components/credentials/account-selection-section.tsx:157
 #: src/components/credentials/credential-selection-editor.tsx:107
 #: src/components/streamers/card/use-streamer-status.tsx:133
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:297
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:320
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:329
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:300
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:323
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:332
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:98
 msgid "Disabled"
 msgstr "已禁用"
@@ -3820,7 +3820,7 @@ msgstr "编辑"
 msgid "Edit account"
 msgstr "编辑账号"
 
-#: src/components/notifications/channel-form.tsx:308
+#: src/components/notifications/channel-form.tsx:319
 msgid "Edit channel"
 msgstr "编辑渠道"
 
@@ -3851,7 +3851,7 @@ msgstr "编辑工作流：{0}"
 msgid "Editing Mode"
 msgstr "编辑模式"
 
-#: src/components/notifications/channel-form.tsx:411
+#: src/components/notifications/channel-form.tsx:422
 msgid "Email always connects to the mail server directly; proxy settings do not apply to it."
 msgstr "邮件始终直接连接邮件服务器，不使用代理设置。"
 
@@ -3886,9 +3886,9 @@ msgstr "启用所选"
 #: src/components/notifications/desktop-channel-dialog.tsx:97
 #: src/components/notifications/desktop-channel-dialog.tsx:107
 #: src/components/notifications/forms/channel-delivery-fields.tsx:214
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:296
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:319
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:328
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:299
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:322
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:331
 msgid "Enabled"
 msgstr "启用"
 
@@ -4119,7 +4119,7 @@ msgid "Event Types"
 msgstr "事件类型"
 
 #: src/components/layout/site-header.tsx:62
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:185
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:188
 msgid "Events"
 msgstr "事件"
 
@@ -4365,7 +4365,7 @@ msgstr "克隆模板失败：{0}"
 msgid "Failed to create API key"
 msgstr "创建 API 密钥失败"
 
-#: src/components/notifications/channel-form.tsx:249
+#: src/components/notifications/channel-form.tsx:247
 msgid "Failed to create channel"
 msgstr "创建渠道失败"
 
@@ -4396,7 +4396,7 @@ msgstr "创建模板失败：{0}"
 msgid "Failed to create workflow: {0}"
 msgstr "创建工作流失败：{0}"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:113
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:116
 msgid "Failed to delete channel"
 msgstr "删除渠道失败"
 
@@ -4597,12 +4597,12 @@ msgstr "重试工作流失败"
 msgid "Failed to revoke API key"
 msgstr "吊销 API 密钥失败"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:123
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:389
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:126
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:392
 msgid "Failed to send test notification"
 msgstr "发送测试通知失败"
 
-#: src/components/notifications/channel-form.tsx:265
+#: src/components/notifications/channel-form.tsx:276
 msgid "Failed to update channel"
 msgstr "更新渠道失败"
 
@@ -4723,7 +4723,7 @@ msgstr "获取延迟"
 msgid "FFmpeg Audio Filter (-af)"
 msgstr "FFmpeg 音频滤镜（-af）"
 
-#: src/components/config/shared/proxy-route-picker.tsx:362
+#: src/components/config/shared/proxy-route-picker.tsx:371
 msgid "FFmpeg only supports http proxies, so FFmpeg recordings fail through this one. Choose an http proxy or another engine."
 msgstr "FFmpeg 仅支持 http 代理，通过此代理的 FFmpeg 录制会失败。请选择 http 代理或其他引擎。"
 
@@ -4919,7 +4919,7 @@ msgstr "文件夹无法访问"
 msgid "Follow Redirects"
 msgstr "跟随重定向"
 
-#: src/components/config/shared/proxy-route-picker.tsx:108
+#: src/components/config/shared/proxy-route-picker.tsx:117
 msgid "Follow the recording's proxy"
 msgstr "跟随录制的代理"
 
@@ -5402,7 +5402,7 @@ msgstr "小时"
 msgid "How chat activity is summarised on the session page."
 msgstr "场次页面如何汇总弹幕活跃度。"
 
-#: src/components/config/shared/proxy-route-picker.tsx:448
+#: src/components/config/shared/proxy-route-picker.tsx:457
 msgid "How checks, recordings, danmu and playback here connect. An account with its own proxy setting keeps it."
 msgstr "此处的检查、录制、弹幕和播放的连接方式。设置了自己代理的账号仍使用其自身设置。"
 
@@ -5616,7 +5616,7 @@ msgstr "正在导入..."
 msgid "In progress"
 msgstr "进行中"
 
-#: src/components/config/shared/proxy-route-picker.tsx:344
+#: src/components/config/shared/proxy-route-picker.tsx:353
 msgid "In the desktop app, the operating system's proxy setting reaches only some requests."
 msgstr "在桌面应用中，操作系统的代理设置只对部分请求生效。"
 
@@ -5628,7 +5628,7 @@ msgstr "当前录制正在使用"
 msgid "In: {inputSize}"
 msgstr "输入：{inputSize}"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:273
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:276
 msgid "Inactive"
 msgstr "未激活"
 
@@ -5649,8 +5649,8 @@ msgstr "在输出中包含原始文件"
 msgid "Include Recording Metadata"
 msgstr "包含录制元数据"
 
-#: src/components/config/shared/proxy-route-picker.tsx:116
-#: src/components/config/shared/proxy-route-picker.tsx:118
+#: src/components/config/shared/proxy-route-picker.tsx:125
+#: src/components/config/shared/proxy-route-picker.tsx:127
 #: src/components/credentials/credential-selection-editor.tsx:237
 msgid "Inherit"
 msgstr "继承"
@@ -5660,11 +5660,11 @@ msgctxt "inherited flag"
 msgid "Inherit"
 msgstr "继承"
 
-#: src/components/config/shared/proxy-route-picker.tsx:114
+#: src/components/config/shared/proxy-route-picker.tsx:123
 msgid "Inherit — {resolved}"
 msgstr "继承 — {resolved}"
 
-#: src/components/config/shared/proxy-route-picker.tsx:110
+#: src/components/config/shared/proxy-route-picker.tsx:119
 msgid "Inherit — each streamer's platform setting"
 msgstr "继承 — 各主播所在平台的设置"
 
@@ -5742,7 +5742,7 @@ msgstr "查看详情"
 msgid "Interactive 24-hour timeline selection."
 msgstr "24小时交互式时间线选择。"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:285
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:288
 msgid "Internal"
 msgstr "内部"
 
@@ -6100,11 +6100,11 @@ msgstr "直播页 HTML"
 
 #: src/components/notifications/browser-channel-dialog.tsx:83
 #: src/components/notifications/browser-channel-dialog.tsx:93
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:316
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:319
 msgid "Live Polling"
 msgstr "实时轮询"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:89
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:90
 msgid "Live polling notifications enabled"
 msgstr "实时轮询通知已启用"
 
@@ -6352,7 +6352,7 @@ msgstr "维护"
 msgid "Manage accounts"
 msgstr "管理账号"
 
-#: src/components/config/shared/proxy-route-picker.tsx:271
+#: src/components/config/shared/proxy-route-picker.tsx:280
 msgid "Manage proxies"
 msgstr "管理代理"
 
@@ -6368,7 +6368,7 @@ msgstr "管理存储路径和文件格式。"
 msgid "Manage Subscriptions"
 msgstr "管理订阅"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:176
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:179
 msgid "Manage where system notifications are sent"
 msgstr "管理系统通知发送到哪里"
 
@@ -6589,7 +6589,7 @@ msgstr "请求方法"
 msgid "Min Bitrate (bps)"
 msgstr "最小比特率（bps）"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:308
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:311
 msgid "Min Priority"
 msgstr "最低优先级"
 
@@ -6773,7 +6773,7 @@ msgstr "必须小于 {count}"
 msgid "My Archiving Workflow"
 msgstr "我的归档工作流"
 
-#: src/components/notifications/channel-form.tsx:344
+#: src/components/notifications/channel-form.tsx:355
 msgid "My Channel"
 msgstr "我的渠道"
 
@@ -6782,7 +6782,7 @@ msgid "My Template"
 msgstr "我的模板"
 
 #: src/components/config/engines/forms/setting-fields.tsx:969
-#: src/components/notifications/channel-form.tsx:339
+#: src/components/notifications/channel-form.tsx:350
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:200
 #: src/components/pipeline/workflows/workflow-editor.tsx:206
 #: src/components/proxies/proxy-editor-dialog.tsx:233
@@ -6876,7 +6876,7 @@ msgstr "从未"
 msgid "New"
 msgstr "新建"
 
-#: src/components/notifications/channel-form.tsx:310
+#: src/components/notifications/channel-form.tsx:321
 msgid "New notification channel"
 msgstr "新建通知渠道"
 
@@ -7159,7 +7159,7 @@ msgstr "已 {quietFor} 无进度"
 msgid "No proxies yet"
 msgstr "暂无代理"
 
-#: src/components/config/shared/proxy-route-picker.tsx:222
+#: src/components/config/shared/proxy-route-picker.tsx:231
 msgid "No proxy"
 msgstr "不使用代理"
 
@@ -7219,7 +7219,7 @@ msgstr "未找到主播"
 msgid "No system proxy detected"
 msgstr "未检测到系统代理"
 
-#: src/components/config/shared/proxy-route-picker.tsx:335
+#: src/components/config/shared/proxy-route-picker.tsx:344
 msgid "No system proxy was detected when the server started, so this connects directly, danmu included."
 msgstr "服务器启动时未检测到系统代理，因此会直连，弹幕也是如此。"
 
@@ -7290,7 +7290,7 @@ msgstr "无（默认）"
 msgid "None (Strip Audio)"
 msgstr "无（剥离音频）"
 
-#: src/components/config/shared/proxy-route-picker.tsx:228
+#: src/components/config/shared/proxy-route-picker.tsx:237
 msgid "none detected"
 msgstr "未检测到"
 
@@ -7419,7 +7419,7 @@ msgstr "通知服务"
 
 #: src/components/layout/site-header.tsx:61
 #: src/lib/menu-list.ts:119
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:175
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:178
 msgid "Notifications"
 msgstr "通知"
 
@@ -8641,10 +8641,10 @@ msgstr "代理"
 
 #: src/components/config/global/network-system-card.tsx:158
 #: src/components/config/shared-config-editor.tsx:190
-#: src/components/config/shared/proxy-route-picker.tsx:445
+#: src/components/config/shared/proxy-route-picker.tsx:454
 #: src/components/credentials/account-usage.tsx:420
 #: src/components/credentials/profile-editor-dialog.tsx:373
-#: src/components/notifications/channel-form.tsx:407
+#: src/components/notifications/channel-form.tsx:418
 msgid "Proxy"
 msgstr "代理"
 
@@ -9539,7 +9539,7 @@ msgstr "保存账号"
 
 #: src/components/config/engines/engine-editor.tsx:271
 #: src/components/filters/FilterDialog.tsx:299
-#: src/components/notifications/channel-form.tsx:437
+#: src/components/notifications/channel-form.tsx:448
 #: src/components/proxies/proxy-editor-dialog.tsx:363
 #: src/components/shared/save-fab.tsx:93
 #: src/components/streamers/streamer-editor.tsx:334
@@ -9579,7 +9579,7 @@ msgstr "保存工作流"
 msgid "Saved as {normalized}"
 msgstr "将保存为 {normalized}"
 
-#: src/components/config/shared/proxy-route-picker.tsx:237
+#: src/components/config/shared/proxy-route-picker.tsx:246
 msgid "Saved proxies"
 msgstr "已保存的代理"
 
@@ -9592,12 +9592,12 @@ msgid "Saved proxies can be chosen in global, platform, template, streamer and a
 msgstr "已保存的代理可在全局、平台、模板、主播和账号设置中选用。"
 
 #: src/components/proxies/proxies-panel.tsx:169
-msgid "Saved proxies that global, platform, template, streamer and account settings can route requests through. Changes are saved right away."
-msgstr "全局、平台、模板、主播和账号设置可选用这些已保存的代理来转发请求。更改会立即保存。"
+msgid "Saved proxies that global, platform, template, streamer, account and notification channel settings can route requests through. Changes are saved right away."
+msgstr "全局、平台、模板、主播、账号和通知渠道设置可选用这些已保存的代理来转发请求。更改会立即保存。"
 
-#: src/components/config/shared/proxy-route-picker.tsx:92
-#: src/components/config/shared/proxy-route-picker.tsx:182
-#: src/components/config/shared/proxy-route-picker.tsx:253
+#: src/components/config/shared/proxy-route-picker.tsx:101
+#: src/components/config/shared/proxy-route-picker.tsx:191
+#: src/components/config/shared/proxy-route-picker.tsx:262
 #: src/components/notifications/events/payload-preview.tsx:56
 #: src/components/proxies/proxy-route-label.tsx:68
 msgid "Saved proxy"
@@ -9984,7 +9984,7 @@ msgid "Select the steps that must complete successfully before this step runs."
 msgstr "选择必须在此步骤运行前成功完成的步骤。"
 
 #: src/components/config/engines/engine-editor.tsx:231
-#: src/components/notifications/channel-form.tsx:370
+#: src/components/notifications/channel-form.tsx:381
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:146
 msgid "Select type"
 msgstr "选择类型"
@@ -10471,7 +10471,7 @@ msgstr "状态"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:191
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:518
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:293
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:296
 #: src/routes/_authed/_dashboard/pipeline/executions.$pipelineId.lazy.tsx:402
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:153
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:230
@@ -10962,7 +10962,7 @@ msgstr "测试“{name}”"
 msgid "Test Notification"
 msgstr "测试通知"
 
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:120
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:123
 msgid "Test notification sent"
 msgstr "测试通知已发送"
 
@@ -11245,7 +11245,7 @@ msgstr "此预设正在使用中"
 msgid "This proxy is in use"
 msgstr "此代理正在使用中"
 
-#: src/components/config/shared/proxy-route-picker.tsx:354
+#: src/components/config/shared/proxy-route-picker.tsx:363
 msgid "This proxy no longer exists. Requests fail until another is chosen."
 msgstr "此代理已不存在。在改选其他代理前，请求都会失败。"
 
@@ -11714,7 +11714,7 @@ msgstr "Twitch 代理播放列表"
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch 代理播放列表排除"
 
-#: src/components/notifications/channel-form.tsx:360
+#: src/components/notifications/channel-form.tsx:371
 msgid "Type"
 msgstr "类型"
 
@@ -12255,7 +12255,7 @@ msgstr "网页优化"
 
 #: src/components/notifications/browser-channel-dialog.tsx:121
 #: src/components/notifications/browser-channel-dialog.tsx:131
-#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:325
+#: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:328
 msgid "Web Push"
 msgstr "Web 推送"
 

@@ -68,6 +68,7 @@ import {
   ProxyRoutePicker,
 } from '@/components/config/shared/proxy-route-picker';
 import { INHERIT_ROUTE, type ProxyRoute } from '@/api/schemas/proxies';
+import { sameRoute } from '@/components/proxies/proxy-route-label';
 
 interface ChannelFormProps {
   channel?: NotificationChannel | null;
@@ -249,7 +250,18 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
   const updateMutation = useMutation({
     mutationFn: ({ name, settings, proxy_route }: ChannelPayload) =>
       updateChannel({
-        data: { id: channel!.id, data: { name, settings, proxy_route } },
+        data: {
+          id: channel!.id,
+          data: {
+            name,
+            settings,
+            // Sent only when edited, so saving other fields cannot undo a
+            // route changed elsewhere since the channel was loaded.
+            ...(proxy_route && !sameRoute(proxy_route, channel!.proxy_route)
+              ? { proxy_route }
+              : {}),
+          },
+        },
       }),
     onSuccess: () => {
       toast.success(i18n._(msg`Channel updated`));

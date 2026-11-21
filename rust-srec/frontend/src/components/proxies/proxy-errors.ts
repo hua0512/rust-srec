@@ -40,13 +40,9 @@ export function proxyReferencesFromConflict(
   );
 }
 
-/** How many routes a set of references holds. */
-export function referenceCount(references: ProxyReferences): number {
-  return (
-    (references.global ? 1 : 0) +
-    references.platforms.length +
-    references.templates.length +
-    references.streamers.length +
-    references.accounts.length
+/** Whether anything in `references` still uses the proxy, of any kind. */
+export function inUse(references: ProxyReferences): boolean {
+  return Object.values(references).some((users) =>
+    Array.isArray(users) ? users.length > 0 : users === true,
   );
 }

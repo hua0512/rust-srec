@@ -108,17 +108,11 @@ pub struct TelegramChannel {
 
 impl TelegramChannel {
     /// Create a new Telegram channel.
-    pub fn new(config: TelegramConfig) -> Self {
+    pub fn new(config: TelegramConfig, route: DeliveryRoute) -> Self {
         Self {
             config,
-            http: HttpDelivery::new("telegram", DEFAULT_TIMEOUT),
+            http: HttpDelivery::new("telegram", DEFAULT_TIMEOUT, route),
         }
-    }
-
-    /// Delivers on `route` instead of the environment's proxy.
-    pub fn with_route(mut self, route: DeliveryRoute) -> Self {
-        self.http = self.http.with_route(route);
-        self
     }
 
     /// Build literal text plus entities, which Telegram accepts instead of parse_mode.
@@ -270,11 +264,14 @@ mod tests {
     use super::*;
 
     fn channel(mode: &str, locale: &str) -> TelegramChannel {
-        TelegramChannel::new(TelegramConfig {
-            parse_mode: mode.to_string(),
-            locale: Some(locale.to_string()),
-            ..Default::default()
-        })
+        TelegramChannel::new(
+            TelegramConfig {
+                parse_mode: mode.to_string(),
+                locale: Some(locale.to_string()),
+                ..Default::default()
+            },
+            crate::notification::channels::DeliveryRoute::environment(),
+        )
     }
 
     fn event(name: &str, title: &str) -> NotificationEvent {

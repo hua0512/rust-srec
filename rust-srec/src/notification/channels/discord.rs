@@ -86,17 +86,11 @@ pub struct DiscordChannel {
 
 impl DiscordChannel {
     /// Create a new Discord channel.
-    pub fn new(config: DiscordConfig) -> Self {
+    pub fn new(config: DiscordConfig, route: DeliveryRoute) -> Self {
         Self {
             config,
-            http: HttpDelivery::new("discord", DEFAULT_TIMEOUT),
+            http: HttpDelivery::new("discord", DEFAULT_TIMEOUT, route),
         }
-    }
-
-    /// Delivers on `route` instead of the environment's proxy.
-    pub fn with_route(mut self, route: DeliveryRoute) -> Self {
-        self.http = self.http.with_route(route);
-        self
     }
 
     /// Get the embed color based on priority.

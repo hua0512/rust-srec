@@ -258,7 +258,7 @@ pub struct NotificationService {
     web_push_service: Option<Arc<WebPushService>>,
     /// Resolves stored channels' routes; without it they use the
     /// environment's proxy.
-    proxies: Option<Arc<crate::proxies::ProxyService>>,
+    routes: Option<crate::proxies::ServiceRoutes>,
     web_push_tx: parking_lot::RwLock<Option<mpsc::Sender<WebPushQueuedEvent>>>,
     web_push_worker_started: AtomicBool,
     web_push_dropped: AtomicU64,
@@ -331,10 +331,10 @@ impl NotificationService {
         self
     }
 
-    /// Stored channels resolve their proxy route through `proxies` before
+    /// Stored channels resolve their proxy route through `routes` before
     /// each delivery.
-    pub fn with_proxies(mut self, proxies: Arc<crate::proxies::ProxyService>) -> Self {
-        self.proxies = Some(proxies);
+    pub fn with_routes(mut self, routes: crate::proxies::ServiceRoutes) -> Self {
+        self.routes = Some(routes);
         self
     }
 
@@ -352,7 +352,7 @@ impl NotificationService {
         let service = Self {
             notification_repo: None,
             web_push_service: None,
-            proxies: None,
+            routes: None,
             web_push_tx: parking_lot::RwLock::new(None),
             web_push_worker_started: AtomicBool::new(false),
             web_push_dropped: AtomicU64::new(0),
@@ -816,6 +816,14 @@ mod tests {
         }
 
         async fn update_channel(&self, _channel: &NotificationChannelDbModel) -> Result<()> {
+            unimplemented!()
+        }
+
+        async fn patch_channel(
+            &self,
+            _id: &str,
+            _patch: crate::database::repositories::notification::ChannelPatch,
+        ) -> Result<NotificationChannelDbModel> {
             unimplemented!()
         }
 

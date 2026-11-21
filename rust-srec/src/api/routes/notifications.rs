@@ -505,21 +505,20 @@ pub async fn update_channel(
     let repo = &state.notification_repository;
     let service = &state.notification_service;
 
-    let mut channel = repo.get_channel(&id).await?;
-
-    channel.name = req.name;
-    channel.settings = serde_json::to_string(&req.settings)
+    let settings = serde_json::to_string(&req.settings)
         .map_err(|e| ApiError::bad_request(format!("Invalid settings JSON: {}", e)))?;
     // An omitted route is left out of the write, so this edit cannot revert
-    // a route changed since the channel was read.
-    match req.proxy_route {
-        Some(route) => {
-            channel.proxy_route = route;
-            repo.update_channel(&channel).await?;
-        }
-        None => repo.update_channel_keeping_route(&channel).await?,
-    }
-    let channel = repo.get_channel(&id).await?;
+    // a route changed since the client read the channel.
+    let channel = repo
+        .patch_channel(
+            &id,
+            crate::database::repositories::notification::ChannelPatch {
+                name: req.name,
+                settings,
+                proxy_route: req.proxy_route,
+            },
+        )
+        .await?;
 
     // Reload service
     if let Err(e) = service.reload_from_db().await {

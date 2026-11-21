@@ -21,8 +21,7 @@ use std::time::Duration;
 use std::time::Instant;
 use url::Url;
 
-use crate::proxies::{ProxyRoute, SystemProxy};
-use crate::utils::http_client::service_client;
+use crate::proxies::{ProxyRoute, ServiceRoutes};
 
 const SALT_LEN: usize = 16;
 const PUBLIC_KEY_LEN: usize = 65;
@@ -288,16 +287,9 @@ impl WebPushService {
     /// A client on the global route as it is now. A route naming a saved
     /// proxy that no longer exists is an error, never a direct connection.
     async fn client(&self) -> Result<reqwest::Client> {
-        let mut connection = self.pool.acquire().await?;
-        let target = crate::database::repositories::proxies::resolve_over_global(
-            &mut connection,
-            &ProxyRoute::Inherit,
-            SystemProxy::current(),
-        )
-        .await?
-        .target;
-        drop(connection);
-        Ok(service_client(&target)?)
+        ServiceRoutes::new(self.pool.clone())
+            .client(&ProxyRoute::Inherit)
+            .await
     }
 
     pub async fn send_event(&self, event: &NotificationEvent, event_log_id: Option<&str>) {
@@ -398,19 +390,27 @@ impl WebPushService {
             NotificationPriority::Low => "very-low",
         };
 
-        let mut response = client
+        let request = client
             .post(&sub.endpoint)
             .header("TTL", "3600")
             // For aes128gcm, salt/server key are encoded in the payload body (RFC8291).
             .header("Content-Encoding", "aes128gcm")
             .header("Content-Type", "application/octet-stream")
-            .header("Authorization", authorization.clone())
+            .header("Authorization", authorization)
             .header("Urgency", urgency)
             .timeout(PUSH_TIMEOUT)
-            .body(body.clone())
-            .send()
-            .await
-            .map_err(|e| Error::Other(format!("Web push request failed: {}", e.without_url())))?;
+            .body(body);
+        let send = |request: &reqwest::RequestBuilder| {
+            let request = request
+                .try_clone()
+                .ok_or_else(|| Error::Other("Web push request cannot be retried".to_owned()));
+            async move {
+                request?.send().await.map_err(|e| {
+                    Error::Other(format!("Web push request failed: {}", e.without_url()))
+                })
+            }
+        };
+        let mut response = send(&request).await?;
 
         let status = response.status();
         if status.as_u16() == 429
@@ -418,20 +418,7 @@ impl WebPushService {
             && delay <= Duration::from_secs(30)
         {
             tokio::time::sleep(delay).await;
-            response = client
-                .post(&sub.endpoint)
-                .header("TTL", "3600")
-                .header("Content-Encoding", "aes128gcm")
-                .header("Content-Type", "application/octet-stream")
-                .header("Authorization", authorization)
-                .header("Urgency", urgency)
-                .timeout(PUSH_TIMEOUT)
-                .body(body)
-                .send()
-                .await
-                .map_err(|e| {
-                    Error::Other(format!("Web push request failed: {}", e.without_url()))
-                })?;
+            response = send(&request).await?;
         }
 
         let status = response.status();

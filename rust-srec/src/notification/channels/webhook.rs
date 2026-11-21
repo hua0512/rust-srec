@@ -135,19 +135,14 @@ pub struct WebhookChannel {
 
 impl WebhookChannel {
     /// Create a new Webhook channel.
-    pub fn new(config: WebhookConfig) -> Self {
+    pub fn new(config: WebhookConfig, route: DeliveryRoute) -> Self {
         let http = HttpDelivery::new(
             "webhook",
             std::time::Duration::from_secs(config.timeout_secs),
+            route,
         );
 
         Self { config, http }
-    }
-
-    /// Delivers on `route` instead of the environment's proxy.
-    pub fn with_route(mut self, route: DeliveryRoute) -> Self {
-        self.http = self.http.with_route(route);
-        self
     }
 
     /// Build the request headers.
