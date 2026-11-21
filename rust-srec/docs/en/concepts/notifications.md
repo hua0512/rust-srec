@@ -44,11 +44,13 @@ Priorities use a 0-10 numeric scale in the API and UI settings:
 | Level | Value | Examples |
 |---|---:|---|
 | Low | 2 | Stream offline, segment progress, pipeline start/completion |
-| Normal | 5 | Stream online, download completion, system startup/shutdown, Bigo live notifications restored |
-| High | 8 | Download error/rejection, pipeline failure, credential refresh failure, credentials unavailable, platform rate limited, Baidu Netdisk re-login failure, Bigo live notifications failing |
+| Normal | 5 | Stream online, download completion, system startup/shutdown, streamer checks restored, Bigo live notifications restored |
+| High | 8 | Download error/rejection, pipeline failure, credential refresh failure, credentials unavailable, platform rate limited, streamer checks failing, Baidu Netdisk re-login failure, Bigo live notifications failing |
 | Critical | 10 | Fatal error, output path inaccessible, out of space, invalid credential |
 
 *Platform rate limited* is sent when a platform starts limiting requests on one connection. It names the connection (direct connections, the system proxy, or a saved proxy by name) and the time requests on it resume; other connections keep working. See [rate limits per connection](./configuration.md#proxy-rate-limits).
+
+*Streamer checks failing* is sent once when a streamer's checks or recordings have failed enough times in a row that rust-srec starts waiting longer between retries, on any platform. The count is the streamer's [offline check count](../reference/configuration-overrides.md#offline-detection-and-download-failure-recovery-share-one-count), at least 2. It names the platform and the last error. *Streamer checks restored* follows when a status check succeeds again or a recording makes progress again. Clearing the errors by hand sends no restored notification. Going live alone doesn't send one either; it follows once the new recording makes progress.
 
 All five external channels apply the same enabled/priority policy. Their test action sends a Normal-priority startup event whatever the channel's minimum, so a channel set to High or Critical can still be tested; a disabled channel cannot.
 

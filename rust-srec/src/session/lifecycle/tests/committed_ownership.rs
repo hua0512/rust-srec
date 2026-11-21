@@ -144,6 +144,7 @@ impl Mutation {
                         session_id: Some(&sid),
                         state_was_live: true,
                         clear_errors: true,
+                        checks_restored_threshold: None,
                         signal: None,
                         now: jiff::Timestamp::now(),
                     })

@@ -123,6 +123,16 @@ impl NotificationEvent {
                 streamer_name = streamer_name.as_str(),
                 error_type = error_type.as_str(),
             ),
+            Self::StreamerChecksFailing { streamer_name, .. } => crate::t_str_in!(
+                locale,
+                "notification.streamer_checks_failing.title",
+                streamer_name = streamer_name.as_str(),
+            ),
+            Self::StreamerChecksRestored { streamer_name, .. } => crate::t_str_in!(
+                locale,
+                "notification.streamer_checks_restored.title",
+                streamer_name = streamer_name.as_str(),
+            ),
             Self::OutOfSpace { path, .. } => {
                 crate::t_str_in!(
                     locale,
@@ -339,6 +349,21 @@ impl NotificationEvent {
                 "notification.fatal_error.description",
                 message = message.as_str(),
             ),
+            Self::StreamerChecksFailing {
+                platform,
+                last_error,
+                consecutive_errors,
+                ..
+            } => crate::t_str_in!(
+                locale,
+                "notification.streamer_checks_failing.description",
+                platform = platform.as_str(),
+                count = consecutive_errors.to_string().as_str(),
+                last_error = last_error.as_str(),
+            ),
+            Self::StreamerChecksRestored { .. } => {
+                crate::t_str_in!(locale, "notification.streamer_checks_restored.description")
+            }
             Self::OutOfSpace {
                 available_bytes,
                 threshold_bytes,

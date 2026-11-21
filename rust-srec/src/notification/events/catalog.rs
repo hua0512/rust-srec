@@ -117,6 +117,26 @@ const NOTIFICATION_EVENT_TYPES: &[NotificationEventTypeInfo] = &[
         aliases: &["fatal_error", "fatal.error", "FatalError"],
     },
     NotificationEventTypeInfo {
+        event_type: "streamer_checks_failing",
+        label: "Streamer Checks Failing",
+        priority: NotificationPriority::High,
+        aliases: &[
+            "streamer_checks_failing",
+            "streamer.checks_failing",
+            "StreamerChecksFailing",
+        ],
+    },
+    NotificationEventTypeInfo {
+        event_type: "streamer_checks_restored",
+        label: "Streamer Checks Restored",
+        priority: NotificationPriority::Normal,
+        aliases: &[
+            "streamer_checks_restored",
+            "streamer.checks_restored",
+            "StreamerChecksRestored",
+        ],
+    },
+    NotificationEventTypeInfo {
         event_type: "out_of_space",
         label: "Out Of Space",
         priority: NotificationPriority::Critical,

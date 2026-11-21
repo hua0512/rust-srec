@@ -30,6 +30,8 @@ impl MonitorOutboxTxOps {
             MonitorEvent::StreamerOffline { .. } => "StreamerOffline",
             MonitorEvent::FatalError { .. } => "FatalError",
             MonitorEvent::TransientError { .. } => "TransientError",
+            MonitorEvent::ChecksFailing { .. } => "ChecksFailing",
+            MonitorEvent::ChecksRestored { .. } => "ChecksRestored",
             MonitorEvent::StateChanged { .. } => "StateChanged",
         };
 
@@ -46,6 +48,37 @@ impl MonitorOutboxTxOps {
         .execute(tx)
         .await?;
 
+        Ok(())
+    }
+
+    /// Enqueue [`MonitorEvent::ChecksRestored`] when the streamer's current
+    /// run of failures reached `threshold`, the count at which
+    /// [`MonitorEvent::ChecksFailing`] was sent.
+    ///
+    /// Call it in the transaction that clears the errors, before the clear:
+    /// reading the count there reports each cleared run exactly once, however
+    /// many writers race to clear it.
+    pub async fn enqueue_checks_restored(
+        tx: &mut SqliteConnection,
+        streamer_id: &str,
+        threshold: i32,
+        timestamp: jiff::Timestamp,
+    ) -> Result<()> {
+        let row: Option<(String, Option<i32>)> =
+            sqlx::query_as("SELECT name, consecutive_error_count FROM streamers WHERE id = ?")
+                .bind(streamer_id)
+                .fetch_optional(&mut *tx)
+                .await?;
+        if let Some((streamer_name, Some(count))) = row
+            && count >= threshold
+        {
+            let event = MonitorEvent::ChecksRestored {
+                streamer_id: streamer_id.to_owned(),
+                streamer_name,
+                timestamp,
+            };
+            Self::enqueue_event(tx, streamer_id, &event).await?;
+        }
         Ok(())
     }
 }
