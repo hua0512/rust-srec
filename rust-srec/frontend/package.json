@@ -49,7 +49,7 @@
     "@tanstack/react-router-devtools": "1.167.3",
     "@tanstack/react-start": "1.169.5",
     "@tanstack/router-plugin": "1.169.0",
-    "@tauri-apps/api": "2.12.4",
+    "@tauri-apps/api": "2.12.5",
     "@tauri-apps/plugin-opener": "2.7.3",
     "@xyflow/react": "^12.12.1",
     "artplayer": "^5.4.0",
