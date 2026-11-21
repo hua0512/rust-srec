@@ -575,7 +575,9 @@ mod tests {
         extras: Option<serde_json::Value>,
         lookup: Option<Lookup>,
     ) -> (Bigo, ReceivedRequests) {
-        let ok = |bodies: &[&'static str]| bodies.iter().map(|body| ("200 OK", *body)).collect();
+        let ok = |bodies: &[&'static str]| -> Vec<_> {
+            bodies.iter().map(|body| ("200 OK", *body)).collect()
+        };
         let mut bigo = Bigo::new(
             "https://www.bigo.tv/400500600".to_string(),
             default_client(),

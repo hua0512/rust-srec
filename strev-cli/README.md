@@ -241,7 +241,7 @@ Run `strev platforms` for the list built into the CLI. The extractor accepts the
 | TikTok      | `tiktok.com/@{username}/live`                    | Short-form video live streaming |
 | TwitCasting | `twitcasting.tv/{username}`                      | Live broadcasting service |
 | Twitch      | `twitch.tv/{channel_name}`                       | Gaming and creative content |
-| Weibo       | `weibo.com/u/{user_id}` or `weibo.com/l/wblive/p/show/{live_id}` | Social media live streaming |
+| Weibo       | `weibo.com/u/{user_id}`, `m.weibo.cn/u/{user_id}` or `weibo.com/l/wblive/p/show/{live_id}` | Social media live streaming |
 
 Other URLs are passed to Streamlink when the `streamlink` executable is installed. See
 [`crates/platforms/README.md`](../crates/platforms/README.md) for host variants.

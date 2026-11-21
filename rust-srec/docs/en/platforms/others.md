@@ -44,9 +44,11 @@ Set **Stream Password** in the Twitcasting platform settings, or add the passwor
 
 ## Weibo
 
-- **URL**: `https://weibo.com/l/wblive/p/show/{id}`, `https://weibo.com/u/{uid}`
+- **URL**: `https://weibo.com/u/{uid}`, `https://weibo.com/{uid}`, `https://m.weibo.cn/u/{uid}`, `https://m.weibo.cn/profile/{uid}`, `https://weibo.com/l/wblive/p/show/{id}`
 - **Protocol**: FLV/HLS
 - **Danmaku**: ❌ Not supported
 ::: info
-Without an account, Weibo is accessed with a built-in guest session, which can stop working. If links, especially `https://weibo.com/u/{uid}`, stop resolving, add a logged-in [account profile](../concepts/configuration.md#account-profiles-and-selection).
+User links work without an account: rust-srec looks the user up as a guest, the way the mobile site does for a visitor. Links with a custom name in place of the numeric user ID, such as `https://weibo.com/{name}`, are not supported; open the profile and copy the link with the number.
+
+An [account profile](../concepts/configuration.md#account-profiles-and-selection) is optional. It is used only when Weibo does not accept the guest lookup. If Weibo then reports that the account is signed out, the account is marked as needing a new login and you get the account notification.
 :::

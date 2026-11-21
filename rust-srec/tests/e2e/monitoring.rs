@@ -222,7 +222,7 @@ async fn enabled_streamers_on_every_built_in_platform_fail_through_a_dead_end_ro
             "https://www.pandalive.co.kr/play/someone",
             &["pandalive.co.kr"],
         ),
-        ("https://weibo.com/u/1234567890", &["weibo.com"]),
+        ("https://weibo.com/u/1234567890", &["weibo.com", "weibo.cn"]),
         ("https://www.twitch.tv/someone", &["twitch.tv"]),
         (
             "https://xhslink.com/m/844vKmW30jz",

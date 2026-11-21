@@ -14,7 +14,7 @@ rust-srec supports 14 streaming platforms with automatic stream detection and re
 | [AcFun](./others.md#acfun) | `live.acfun.cn/live/{room_id}` | FLV | ❌ |
 | [PandaTV](./others.md#pandatv) | `pandalive.co.kr/play/{id}` | HLS | ❌ |
 | [Redbook](./others.md#redbook-小红书) | `xhslink.com/m/{id}`, `xhslink.com/o/{id}` | FLV/HLS | ❌ |
-| [Weibo](./others.md#weibo) | `weibo.com/u/{uid}`, `weibo.com/l/wblive/p/show/{id}` | FLV/HLS | ❌ |
+| [Weibo](./others.md#weibo) | `weibo.com/u/{uid}`, `m.weibo.cn/u/{uid}`, `weibo.com/l/wblive/p/show/{id}` | FLV/HLS | ❌ |
 | [Twitch](./twitch.md) | `twitch.tv/{channel}` | HLS | ✅ |
 | [TikTok](./tiktok.md) | `tiktok.com/@{user}/live` | FLV/HLS/DASH | ✅ |
 | [Twitcasting](./others.md#twitcasting) | `twitcasting.tv/{user}` | HLS | ✅ |
