@@ -29,6 +29,7 @@ import { INHERIT_ROUTE } from '@/api/schemas/proxies';
 import type { CredentialOwner } from '@/api/schemas/credential-profiles';
 import { enginesQueryOptions } from '@/api/engines';
 import { UnsavedChangesGuard } from '@/components/shared/unsaved-changes-guard';
+import { useGoBack } from '@/hooks/use-go-back';
 
 const EditPlatformSchema = PlatformConfigFormSchema.partial();
 export type EditPlatformFormValues = z.infer<typeof EditPlatformSchema>;
@@ -86,7 +87,10 @@ function toPlatformFormValues(
 
 interface PlatformEditorProps {
   platform: z.infer<typeof PlatformConfigSchema>;
-  onSubmit: (data: EditPlatformFormValues) => void;
+  onSubmit: (
+    data: EditPlatformFormValues,
+    onSaved?: (saved: z.infer<typeof PlatformConfigSchema>) => void,
+  ) => void;
   isUpdating: boolean;
 }
 
@@ -95,6 +99,7 @@ export function PlatformEditor({
   onSubmit,
   isUpdating,
 }: PlatformEditorProps) {
+  const goBack = useGoBack('/config/platforms');
   const { data: engines = [] } = useQuery(enginesQueryOptions);
 
   const form = useForm({
@@ -107,6 +112,15 @@ export function PlatformEditor({
   useEffect(() => {
     reset(toPlatformFormValues(platform));
   }, [platform, reset]);
+
+  const handleSubmit = (values: EditPlatformFormValues) => {
+    onSubmit(values, (saved) => {
+      // Reset explicitly from the server response: a save that leaves the stored
+      // config unchanged keeps the same cached reference, so the effect above
+      // would not run and the form would stay dirty.
+      reset(toPlatformFormValues(saved));
+    });
+  };
 
   const Icon = getPlatformIcon(platform.name);
   const colorClass = getPlatformColor(platform.name);
@@ -126,7 +140,7 @@ export function PlatformEditor({
     <Form {...form}>
       <UnsavedChangesGuard when={form.formState.isDirty && !isUpdating} />
       <form
-        onSubmit={form.handleSubmit(onSubmit)}
+        onSubmit={form.handleSubmit(handleSubmit)}
         className="min-h-screen pb-20"
       >
         <motion.div
@@ -164,7 +178,7 @@ export function PlatformEditor({
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => window.history.back()}
+                onClick={() => goBack()}
                 className="gap-2 h-11 sm:h-10 order-2 sm:order-1"
               >
                 <ArrowLeft className="w-4 h-4" />

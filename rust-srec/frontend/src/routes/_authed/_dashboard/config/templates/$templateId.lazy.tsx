@@ -1,4 +1,4 @@
-import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
+import { createLazyFileRoute } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/api/query-keys';
 import { invalidateCredentialQueries } from '@/api/credential-profiles';
@@ -23,7 +23,6 @@ export const Route = createLazyFileRoute(
 
 function EditTemplatePage() {
   const { templateId } = Route.useParams();
-  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { i18n } = useLingui();
 
@@ -39,20 +38,16 @@ function EditTemplatePage() {
   const updateMutation = useMutation({
     mutationFn: (data: TemplateFormValues) =>
       updateTemplate({ data: { id: templateId, data } }),
-    onSuccess: () => {
+    onSuccess: (saved) => {
       toast.success(i18n._(msg`Template updated successfully`));
+      queryClient.setQueryData(queryKeys.templates.detail(templateId), saved);
       void queryClient.invalidateQueries({ queryKey: queryKeys.templates.all });
       // The form also saves an account selection per platform override.
       void invalidateCredentialQueries(queryClient);
-      void navigate({ to: '/config/templates' });
     },
     onError: (error) =>
       toast.error(i18n._(msg`Failed to update template: ${error.message}`)),
   });
-
-  const onSubmit = (data: TemplateFormValues) => {
-    updateMutation.mutate(data);
-  };
 
   if (isLoading) {
     return (
@@ -86,7 +81,9 @@ function EditTemplatePage() {
   return (
     <TemplateEditor
       template={template}
-      onSubmit={onSubmit}
+      onSubmit={(data, onSaved) =>
+        updateMutation.mutate(data, { onSuccess: onSaved })
+      }
       isSubmitting={updateMutation.isPending}
       mode="edit"
     />

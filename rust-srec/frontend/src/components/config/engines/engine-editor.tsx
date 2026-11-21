@@ -72,6 +72,22 @@ const ENGINE_NAMES: Record<string, string> = {
   MESIO: 'Mesio',
 };
 
+function toEngineFormValues(
+  engine?: z.infer<typeof EngineConfigSchema>,
+): z.infer<typeof CreateEngineRequestSchema> {
+  return engine
+    ? {
+        name: engine.name,
+        engine_type: engine.engine_type,
+        config: engineConfigFormValue(engine.engine_type, engine.config),
+      }
+    : {
+        name: '',
+        engine_type: 'FFMPEG',
+        config: engineConfigFormValue('FFMPEG', {}),
+      };
+}
+
 function EngineSettingsTitle({ engineType }: { engineType: string }) {
   const engine = ENGINE_NAMES[engineType] ?? engineType;
   return <Trans>{engine} Settings</Trans>;
@@ -139,15 +155,20 @@ function EngineForm({
   const updateMutation = useMutation({
     mutationFn: (data: z.infer<typeof UpdateEngineRequestSchema>) =>
       updateEngine({ data: { id: engineId!, data } }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: queryKeys.engines.all });
+    onSuccess: (saved) => {
+      queryClient.setQueryData(queryKeys.engines.detail(engineId!), saved);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.engines.all });
       onSuccess();
     },
   });
 
   const onSubmit = (data: z.infer<typeof CreateEngineRequestSchema>) => {
     if (isEdit) {
-      updateMutation.mutate(data);
+      updateMutation.mutate(data, {
+        onSuccess: (saved) => {
+          form.reset(toEngineFormValues(saved));
+        },
+      });
     } else {
       createMutation.mutate(data);
     }
@@ -282,17 +303,7 @@ export function EngineEditor({ engine, onSuccess }: EngineEditorProps) {
   const { i18n } = useLingui();
   const isEdit = !!engine;
 
-  const defaultValues = isEdit
-    ? {
-        name: engine.name,
-        engine_type: engine.engine_type,
-        config: engineConfigFormValue(engine.engine_type, engine.config),
-      }
-    : {
-        name: '',
-        engine_type: 'FFMPEG' as const,
-        config: engineConfigFormValue('FFMPEG', {}),
-      };
+  const defaultValues = toEngineFormValues(engine);
 
   return (
     <motion.div

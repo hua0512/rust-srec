@@ -1,4 +1,4 @@
-import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
+import { createLazyFileRoute } from '@tanstack/react-router';
 import { queryKeys } from '@/api/query-keys';
 import { EngineEditor } from '@/components/config/engines/engine-editor';
 import { useQuery } from '@tanstack/react-query';
@@ -18,7 +18,6 @@ export const Route = createLazyFileRoute(
 
 function EditEnginePage() {
   const { engineId } = Route.useParams();
-  const navigate = useNavigate();
   const { i18n } = useLingui();
 
   const {
@@ -60,7 +59,6 @@ function EditEnginePage() {
         engine={engine}
         onSuccess={() => {
           toast.success(i18n._(msg`Engine updated successfully`));
-          void navigate({ to: '/config/engines' });
         }}
       />
     </div>
