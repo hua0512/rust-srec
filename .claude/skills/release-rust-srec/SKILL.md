@@ -10,7 +10,7 @@ This is the canonical application release procedure. Paths below are relative to
 ## Select the requested outcome
 
 - **Plan**: Recommend a version and summarize release scope, compatibility implications, and unresolved evidence. Use read-only inspection; do not bump versions, reset unreleased notes, commit, or tag.
-- **Draft notes**: Write or refine the requested release-note draft. Preserve the workspace version and unreleased staging unless the user also requested release preparation.
+- **Draft notes**: Follow the [release-notes style guide](references/style.md) to write or refine the requested release-note draft. Preserve the workspace version and unreleased staging unless the user also requested release preparation.
 - **Prepare**: Follow [preparation and validation](references/prepare.md) to apply the version and release-document changes and deliver the reviewed result. If the request is only a version bump, update the version and lockfile without promoting or resetting notes. Commit/open a PR when that is part of the existing request.
 - **Publish**: Complete [preparation](references/prepare.md), then follow [publication](references/publish.md) for the explicitly authorized tag/push operations. Preparing or drafting a release does not by itself authorize publication. Existing explicit publication authorization remains valid; do not ask for it again. If the stage is unclear, perform read-only planning and only the preparation edits already authorized before asking about the dependent step.
 

@@ -17,7 +17,7 @@ With `--docs`, the helper creates versioned en/zh pages only if absent, updates 
 
 For full preparation:
 
-1. Promote the selected unreleased items to `rust-srec/docs/{en,zh}/release-notes/vX.Y.Z.md`. Follow the most recent published page's structure, reuse good existing translations, and keep both languages covering the same items in the same order. Include compatibility guidance when there is a real behavior change or migration.
+1. Promote the selected unreleased items to `rust-srec/docs/{en,zh}/release-notes/vX.Y.Z.md`. Follow the [release-notes style guide](style.md) and the most recent published page's structure, reuse good existing translations, and keep both languages covering the same items in the same order. Include compatibility guidance when there is a real behavior change or migration.
 2. After preserving the promoted content, reset the corresponding unreleased items. If all staged items are included, use the empty shells: en `# Release Notes` / ``## `unreleased` `` / `No staged changes yet for the next release.`; zh `# 更新日志` / ``## `unreleased` `` / `暂无下一个版本的待发布改动。`. Preserve any explicitly deferred items.
 3. Replace the helper's draft placeholders in both `index.md` files with an accurate Latest summary and the remaining Unreleased status. Remove incidental extra blank lines introduced by the helper.
 4. Fill `rust-srec/docs/release-notes-body.md` with `## rust-srec vX.Y.Z`, a short summary, highlights, any actual upgrade guidance, and links to `https://docs.srec.rs/en/release-notes/vX.Y.Z` and the matching zh page. Check that it agrees with the detailed notes.

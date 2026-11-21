@@ -32,6 +32,7 @@ VitePress-based documentation site for `rust-srec`. Multi-language (EN/ZH).
 - **Sidebars**: Add new navigable pages to the appropriate locale's `sidebar` in `config.mts`. Auxiliary or intentionally unlisted pages need no sidebar entry.
 - **Assets**: Reference assets in `public/` using root-relative paths (e.g., `/stream-rec.svg`).
 - **Audience**: Keep implementation ownership, synchronization, and Rust APIs in `development/`. User guides retain observable behavior, configuration choices, failure recovery, and data-loss constraints. Describe current behavior; keep refactoring history in release notes.
+- **Release notes style**: When editing `release-notes/` pages (including `unreleased.md`), follow [the release-notes style guide](../../.claude/skills/release-rust-srec/references/style.md) for user-facing wording, UI label formatting, and `en`/`zh` conventions.
 - **Moved sections**: Update internal links to the new destination and preserve old fragment IDs. A `legacy-section` block is visible only when its ID is targeted; its link must lead to the exact replacement section.
 - **Dead Links**: Localhost example links and downloadable static templates in `public/` (such as `/docker-compose.example.yml` and `/env.example`) are ignored via `ignoreDeadLinks` in `config.mts` (`/api/docs` is no longer in `ignoreDeadLinks`).
 
