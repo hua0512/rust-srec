@@ -65,3 +65,4 @@
 - Fixed the speed, size, segment and ratio figures of an active download on a streamer's page moving in jumps. Each figure raced to its new value and then sat still until the next update, which often arrived several seconds later for some streams. The figures now count steadily from one update to the next.
 - Fixed the **Top Talkers**, **Top Words**, **Top Gifters** and **Top Gifts** charts in a session's **Danmu Statistics** drawing every bar in black, which made them hard to read in dark mode. Each chart has its own colour again.
 - Redesigned the **Engines** and **Proxies** settings pages with full-width settings cards and structured lists matching the rest of the settings section, adding engine configuration hints, direct row actions, a dedicated **System proxy** card, and expandable usage details on each proxy row.
+- Fixed the QR code login dialog staying open after a scan succeeded. It now closes automatically shortly after the account is saved.
