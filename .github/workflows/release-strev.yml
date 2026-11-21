@@ -23,6 +23,7 @@ env:
 jobs:
   check-and-test:
     name: Check and Test
+    if: github.repository == 'hua0512/rust-srec'
     runs-on: ubuntu-latest
     env:
       RUSTC_WRAPPER: sccache
@@ -53,6 +54,7 @@ jobs:
 
   build:
     needs: check-and-test
+    if: github.repository == 'hua0512/rust-srec'
     uses: ./.github/workflows/build-binaries.yml
     with:
       packages: '-p strev'
@@ -62,6 +64,7 @@ jobs:
   release:
     name: Release
     needs: build
+    if: github.repository == 'hua0512/rust-srec'
     runs-on: ubuntu-latest
     permissions:
       contents: write

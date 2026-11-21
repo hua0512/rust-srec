@@ -23,6 +23,7 @@ env:
 jobs:
   changes:
     name: Detect Desktop Changes
+    if: github.repository == 'hua0512/rust-srec'
     runs-on: ubuntu-latest
     outputs:
       desktop_changed: ${{ steps.diff.outputs.desktop_changed }}
@@ -83,6 +84,7 @@ jobs:
 
   check-and-test:
     name: Check and Test
+    if: github.repository == 'hua0512/rust-srec'
     runs-on: ubuntu-latest
     env:
       RUSTC_WRAPPER: sccache
@@ -139,6 +141,7 @@ jobs:
 
   build:
     needs: check-and-test
+    if: github.repository == 'hua0512/rust-srec'
     uses: ./.github/workflows/build-binaries.yml
     with:
       packages: '-p rust-srec --bins'
@@ -147,7 +150,7 @@ jobs:
   desktop:
     name: Desktop
     needs: [check-and-test, changes]
-    if: needs.changes.outputs.desktop_changed == 'true'
+    if: github.repository == 'hua0512/rust-srec' && needs.changes.outputs.desktop_changed == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -314,6 +317,7 @@ jobs:
   docker-build:
     name: Build Docker
     needs: check-and-test
+    if: github.repository == 'hua0512/rust-srec'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -410,6 +414,7 @@ jobs:
     name: Merge Docker
     runs-on: ubuntu-latest
     needs: docker-build
+    if: github.repository == 'hua0512/rust-srec'
     permissions:
       contents: read
       packages: write
@@ -478,6 +483,7 @@ jobs:
     needs: [build, desktop, docker-merge]
     if: |
       always() &&
+      github.repository == 'hua0512/rust-srec' &&
       needs.build.result == 'success' &&
       needs.docker-merge.result == 'success' &&
       (needs.desktop.result == 'success' || needs.desktop.result == 'skipped')

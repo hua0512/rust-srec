@@ -20,6 +20,7 @@ env:
 jobs:
   clippy:
     name: Clippy
+    if: github.repository == 'hua0512/rust-srec'
     runs-on: ubuntu-latest
     env:
       RUSTC_WRAPPER: sccache
@@ -47,6 +48,7 @@ jobs:
 
   test:
     name: Test Suite
+    if: github.repository == 'hua0512/rust-srec'
     strategy:
       matrix:
         include:
@@ -101,6 +103,7 @@ jobs:
 
   build:
     needs: clippy
+    if: github.repository == 'hua0512/rust-srec'
     uses: ./.github/workflows/build-binaries.yml
     with:
       packages: '-p mesio -p strev -p rust-srec --bins'
@@ -111,6 +114,7 @@ jobs:
   docker-build:
     name: Build Docker
     needs: clippy
+    if: github.repository == 'hua0512/rust-srec'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -188,6 +192,7 @@ jobs:
     name: Merge Docker
     runs-on: ubuntu-latest
     needs: docker-build
+    if: github.repository == 'hua0512/rust-srec'
     permissions:
       contents: read
       packages: write

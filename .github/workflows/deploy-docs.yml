@@ -19,6 +19,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.repository == 'hua0512/rust-srec'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -58,6 +59,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     needs: build
+    if: github.repository == 'hua0512/rust-srec'
     runs-on: ubuntu-latest
     name: Deploy
     steps:
