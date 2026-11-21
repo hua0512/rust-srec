@@ -2,6 +2,8 @@
 
 Rust-Srec 监控已配置的频道，录制直播视频和弹幕，并运行后处理工作流。Web 界面和 API 控制同一个后端。
 
+<AnimatedFlowDemo compact />
+
 ```mermaid
 flowchart LR
     UI[Web 界面或 API] --> B[后端]

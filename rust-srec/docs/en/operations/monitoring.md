@@ -7,6 +7,7 @@ Monitor the process, its dependencies, the host, and recording outcomes. A runni
 | Endpoint | Authentication | Use |
 |---|---|---|
 | `GET /api/health/live` | Public | Process liveness and uptime; used by the Docker health check |
+| `GET /api/health/idle` | Public | Idle gate (`200` when idle, `503` when busy) returning `idle`, `active_recordings`, `pending_recordings`, and `processing_jobs`; used by Watchtower update hooks |
 | `GET /api/health/ready` | Bearer token when auth is enabled | Returns `200 ready` or `503 not ready` based on component health |
 | `GET /api/health` | Bearer token when auth is enabled | Version, uptime, component status, CPU usage, and memory usage |
 
@@ -31,7 +32,7 @@ these are not a Prometheus export.
 
 ### Startup Output Paths
 
-Disk-health paths are discovered at startup, with at most 16 initial write-probe targets, four probes at once, and a five-second wait per probe. This is not a continuously refreshed inventory. Changes to output settings do not rebuild the probe list; check the actual recording path and see [output-root probes](./storage.md#output-root-probes).
+Disk-health paths are discovered once at startup rather than continuously refreshed. Changing output settings does not rebuild the probe list; check the actual recording path and see [output-root probes](./storage.md#output-root-probes) for discovery caps and timeouts.
 
 ### Slow Filesystem Sampling
 

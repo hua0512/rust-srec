@@ -2,6 +2,8 @@
 
 A workflow connects processing steps with dependencies. A job preset stores the settings for one step; a workflow (pipeline preset) stores the steps and their connections.
 
+<WorkflowDagDemo />
+
 ## Example: MP4 recording and thumbnail
 
 Start with a successful recording and make sure FFmpeg is available to the backend.
@@ -27,7 +29,7 @@ Choose the trigger to match your inputs: a segment trigger can also receive chat
 Pipelines can run automatically at three stages:
 
 ### 1. Segment Pipeline
-- **Trigger**: When a single video segment (`.flv`, `.ts`) or danmaku file (`.xml`, `.json`) finishes downloading.
+- **Trigger**: When a single video segment (`.flv`, `.ts`, `.mp4`, `.mkv`, `.mov`, `.m4s`) or danmaku file (`.xml`) finishes downloading.
 - **Usage**: Remuxing, taking thumbnails, danmaku format conversion.
 - **Input**: A single file.
 

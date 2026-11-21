@@ -1,30 +1,15 @@
 # Support the Project
 
-If you find rust-srec useful, consider supporting its development!
+Rust-Srec is built and maintained in the open. If it helps you save streams, archive chat, or automate post-processing, your support helps keep platform extractors up to date and development moving forward.
 
-## Ways to Support
+<SupportCards />
 
-### ⭐ Star on GitHub
+## Open-Source Core & Upcoming Premium Tier
 
-The simplest way to support is to [star the repository](https://github.com/hua0512/rust-srec) on GitHub.
+Rust-Srec's self-hosted core is free and dual-licensed under **MIT / Apache-2.0**. Every core capability — recording, live stream repair, danmu capture, visual workflows, notifications, and the REST API / MCP server — stays open source.
 
-### 💖 Sponsor
-
-Support ongoing development:
-
-- [GitHub Sponsors](https://github.com/sponsors/hua0512)
-
-### 🐛 Contribute
-
-- Report bugs and issues
-- Submit pull requests
-- Help with translations
-- Improve documentation
+An optional **Premium** tier for high-scale monitoring enhancements is planned, though it is **not yet open**. You can preview what is planned in the [Community vs. Premium comparison](/en/#tiers).
 
 ## Thank You
 
-Thank you to all the contributors and supporters who make this project possible!
-
----
-
-*rust-srec is open source software licensed under MIT/Apache-2.0.*
+Thank you to every contributor, translator, tester, and sponsor who helps make Rust-Srec better!

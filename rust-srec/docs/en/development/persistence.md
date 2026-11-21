@@ -5,7 +5,7 @@ For contributors changing database transactions and import behavior. Operators s
 ## Import Persistence Ownership {#import-persistence-ownership}
 
 Import and ordinary repository writes share the same typed field bindings. Import
-reserves one SQLite write transaction for all ten configuration domains,
+reserves one SQLite write transaction for all eleven configuration domains,
 subscription/filter replacement, email-slot swaps and authentication invalidation.
 Existing IDs and creation times remain stable; caller-selected update times and
 raw JSON are preserved. A backup without an extractor setting sets it to
@@ -21,9 +21,13 @@ Concurrent deletions of the same media-output record subtract its size from the
 session total once. If updating that total fails, the record deletion rolls back.
 This database guarantee does not make optional filesystem deletion transactional.
 
-Template credential refresh reads and updates the template in one reserved write
-transaction, preserving other configuration edits committed before it. Concurrent
-streamer error increments each return the count produced by their own update.
+Credential refreshes (`CredentialExecutionService` / `CredentialProfileRepository`)
+commit updated cookies, tokens, and `credential_profile_health` inside one write
+transaction only when the `credential_profiles` row is still active and its
+material `revision` matches the snapshot that started the refresh; matching
+refreshes advance `revision` and `version` atomically, whereas stale refreshes
+are discarded instead of overwriting newer edits or imports. Concurrent streamer
+error increments each return the count produced by their own update.
 
 ## Query batching
 

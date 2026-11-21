@@ -54,13 +54,14 @@ longer than what is tracked.
 | `max_concurrent_cpu_jobs` | Max concurrent CPU-intensive tasks | `0` (Auto) |
 | `max_concurrent_io_jobs` | Max concurrent I/O-intensive tasks such as moves and copies, not counting uploads | `8` (0 = Auto) |
 | `default_download_engine` | Name of the [engine configuration](../concepts/engines.md) used for recording | `default-mesio` (the built-in Mesio configuration) |
+| `default_extractor` | Default extractor (`auto` or `streamlink`) used to resolve stream URLs unless overridden per platform, template, or streamer | `auto` (when unset/`null`) |
 | `queue_freshness_threshold_ms` | Milliseconds; when a recording has been waiting for a free slot longer than this, rust-srec re-checks the streamer to refresh stream URLs and headers before starting. Useful on platforms whose signed URLs expire within minutes. Set to `0` to refresh on every queue wait. | `60000` (60 s) |
 | `pipeline_cpu_job_timeout_secs` | Longest a single CPU-bound pipeline job may run before it is cancelled (minimum `1`) | `3600` |
 | `pipeline_io_job_timeout_secs` | Longest a single I/O-bound pipeline job, including uploads, may run before it is cancelled (minimum `1`) | `3600` |
 | `pipeline_execute_timeout_secs` | Longest an `execute` processor command may run, unless its workflow step sets `timeout_secs` (minimum `1`) | `3600` |
 | `gpu_health_probe_interval_secs` | Seconds between `nvidia-smi` probes by the GPU health monitor; changes apply on the next probe (minimum `1`) | `30` |
 
-Which extractor resolves the stream URL is a separate setting from `default_download_engine`, is not exposed here, and is set per platform, template, or streamer. See [Engine and extractor selection](./configuration-overrides.md#engine-and-extractor-selection).
+`default_extractor` is independent of `default_download_engine` and can also be overridden per platform, template, or streamer. See [Engine and extractor selection](./configuration-overrides.md#engine-and-extractor-selection).
 
 ### Network & System {#network-system}
 | Setting | Description | Default |
@@ -70,6 +71,7 @@ Which extractor resolves the stream URL is a separate setting from `default_down
 | `offline_check_count` | Consecutive offline signals before confirming the streamer is offline. A recording that ends cleanly counts as the first, so the default ends a session at the second offline check; see [Offline detection](configuration-overrides.md#offline-detection-and-download-failure-recovery-share-one-count). The same resolved count controls when consecutive download failures enter temporary cooldown. Download failures use a minimum threshold of `2`. | `3` |
 | `proxy_route` | **Default proxy**: how requests connect unless a platform, template, streamer or account chooses otherwise. **Direct**, **System proxy**, or a [saved proxy](#proxies). See [Proxies](../concepts/configuration.md#proxies). | **Direct**, or **System proxy** when proxy environment variables were set at the first start or the upgrade |
 | `stream_proxy_allow_private_targets` | Let the player's **Server proxy** and proxy tests reach addresses on private or local networks | `false` |
+| `log_filter_directive` | Persisted backend log filter directive (applied on startup and updated live through Logging settings or the logging API) | `rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info` |
 
 ### Proxies {#proxies}
 
@@ -78,7 +80,7 @@ Which extractor resolves the stream URL is a separate setting from `default_down
 | Field | Description |
 |-------|-------------|
 | Name | Shown wherever the proxy is chosen; unique, ignoring case |
-| Address | `http`, `https`, `socks5` or `socks5h` address as `scheme://host:port`, without a path or login |
+| Address | `http`, `https`, `socks5` or `socks5h` address as `scheme://host[:port]` (port optional), without a path or login |
 | Username, Password | Optional login. The username is shown; the password never is, and leaving it empty when editing keeps it. |
 
 Each row shows how many settings use the proxy and, expanded, which ones. **Test** checks that a platform's home page or another address answers through the proxy. A proxy in use cannot be deleted. The page header shows the system proxy detected from the server's [environment](./environment.md#network). See [Proxies](../concepts/configuration.md#proxies) for how the choices combine.
@@ -98,9 +100,9 @@ Configure output retention under **Global Settings → Retention**. Cleanup runs
 
 ### Pipeline Configuration {#pipeline-configuration}
 Rust-Srec supports custom pipeline steps (e.g., transcripts, notifications, custom scripts) at different stages:
-- **Per-segment**: Runs for each recorded segment.
-- **Paired Segment**: Runs for video/danmaku pairs.
-- **Session Complete**: Runs when the entire recording session ends.
+- **Per-segment** (`pipeline`): Runs for each recorded segment.
+- **Paired Segment** (`paired_segment_pipeline`): Runs for video/danmaku pairs.
+- **Session Complete** (`session_complete_pipeline`): Runs when the entire recording session ends.
 
 ::: info Folder Organization
 Set `output_folder` to `{streamer}/%Y-%m-%d` to organize recordings by streamer with date-based subfolders. The `output_filename_template` can then use `%H-%M-%S_{title}` for the filename itself.

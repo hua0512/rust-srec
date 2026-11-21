@@ -4,7 +4,7 @@ Mesio 是 rust-srec 的**进程内 Rust 下载引擎**。与 `FFMPEG` 和 `Strea
 
 ## 架构
 
-单一的 `MesioDownloader` 负责选择协议（HLS、MPEG-DASH 或 FLV）与来源，随后无论何种协议都产出一个统一的**下载会话（download session）**。该会话暴露两条流——保证交付的 **items**（媒体数据与终止标记）流，以及尽力而为的 **events**（进度／遥测）流——外加一个用于取消和可选指标的控制句柄。
+单一的 `MesioDownloader` 负责选择 HTTP 协议（HLS、MPEG-DASH 或 FLV）与来源，随后无论何种协议都产出一个统一的**下载会话（download session）**。该会话暴露两条流——保证交付的 **items**（媒体数据与终止标记）流，以及尽力而为的 **events**（进度／遥测）流——外加一个用于取消和可选指标的控制句柄。对于原生 Bigo Live 流（`bigo://`），`rust-srec` 的 `MesioEngine` 包装层会直接分派给 `BigoDownloader`，与上述 HTTP 下载器并行提供支持。
 
 ```mermaid
 flowchart LR
@@ -89,6 +89,10 @@ Mesio 可以录制 MPEG-DASH（`.mpd`）流，包括直播和已结束的点播�
 - 网页播放器无法播放 DASH 流，会提示该格式不受支持。录制得到的文件是普通的 MP4 文件。
 
 DASH 设置列在 [MPEG-DASH 录制](./engines.md#mpeg-dash)中。
+
+## 原生 Bigo 协议 {#bigo-protocol}
+
+对于使用 Bigo 原生传输协议（`bigo://` URL）的 Bigo Live 直播间，`rust-srec` 的 `MesioEngine` 包装层会在进入 `MesioDownloader` 前识别该协议并直接分派给 `BigoDownloader`。它与 HLS、MPEG-DASH 和 FLV 下载器一样在进程内运行，并通过相同的录制器流水线和下载引擎控制输出媒体与进度。
 
 ## 下载会话
 

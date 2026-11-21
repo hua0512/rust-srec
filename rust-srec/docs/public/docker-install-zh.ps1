@@ -1,4 +1,4 @@
-#
+﻿#
 # Rust-Srec 安装脚本 (中文版)
 # https://github.com/hua0512/rust-srec
 #
@@ -195,9 +195,9 @@ function Install-RustSrec {
                 # 设置 COMPOSE_FILE 以便 docker compose 自动加载两个文件
                 $envContent = Get-Content ".env" -Raw -Encoding UTF8
                 if ($envContent -match "(?m)^COMPOSE_FILE=") {
-                    $envContent = $envContent -replace "(?m)^COMPOSE_FILE=.*", "COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml"
+                    $envContent = $envContent -replace "(?m)^COMPOSE_FILE=.*", "COMPOSE_FILE=docker-compose.yml;docker-compose.gpu.yml"
                 } else {
-                    $envContent = $envContent.TrimEnd() + "`nCOMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml`n"
+                    $envContent = $envContent.TrimEnd() + "`nCOMPOSE_FILE=docker-compose.yml;docker-compose.gpu.yml`n"
                 }
                 Set-Content ".env" $envContent -NoNewline -Encoding UTF8
                 Write-Success "已启用 GPU 加速 (docker-compose.gpu.yml)"
@@ -207,7 +207,7 @@ function Install-RustSrec {
             }
         } else {
             Write-Info "未检测到 NVIDIA GPU。稍后可手动启用 GPU 加速。"
-            Write-Host "  参考: https://docs.srec.rs/zh/getting-started/docker#gpu-硬件加速-nvidia" -ForegroundColor Cyan
+            Write-Host "  参考: https://docs.srec.rs/zh/getting-started/docker#nvidia-gpu" -ForegroundColor Cyan
         }
 
         Write-Host ""

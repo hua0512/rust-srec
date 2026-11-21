@@ -6,20 +6,24 @@ import { withBase } from 'vitepress'
 
 你可以在 <a :href="withBase('/env.zh.example')" download=".env.example">.env</a> 文件中配置以下环境变量。
 
-数值类变量的值无效时（例如 `API_PORT=80800`），服务器会在启动时报错并停止，错误信息会注明是哪个变量。未设置或留空的变量使用默认值。
+大多数数值类变量的值无效时（例如 `API_PORT=80800`），服务器会在启动时报错并停止，错误信息会注明是哪个变量；未设置或留空时使用默认值。以下两组变量例外：
+
+- `API_LOGIN_MAX_FAILURES`、`API_LOGIN_IP_MAX_FAILURES` 和 `API_LOGIN_WINDOW_SECS` 在值无效时记录警告并回退到默认值。
+- `LOG_MAX_FILE_BYTES`、`LOG_MAX_FILES`、`RUST_SREC_SHUTDOWN_TIMEOUT_SECS` 和 `RUST_SREC_SHUTDOWN_FORCE_RESERVE_SECS` 在值无效或显式设为空值（`VAR=`）时都会导致启动失败；需取消设置才能使用默认值。
 
 ## 通用 {#通用}
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `TZ` | 容器时区 | `UTC` (建议 `Asia/Shanghai`) |
 | `VERSION` | Docker 镜像版本标签 | `latest` |
+| `WATCHTOWER_POLL_INTERVAL` | 可选的 Docker Compose `watchtower` 自动更新服务的轮询间隔（秒） | `3600` |
 
 ## 路径 {#路径}
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `DATA_DIR` | 应用数据目录 | `./data` |
-| `CONFIG_DIR` | 平台配置文件目录 | `./config` |
-| `OUTPUT_DIR` | 独立后端创建全新数据库时的初始录制文件夹，同时供启动和磁盘空间健康探测监视。在 Docker Compose 中它是宿主机绑定挂载目录，容器内使用 `OUTPUT_DIR=/app/output`。已有数据库设置会保留。 | `./output` |
+| `CONFIG_DIR` | Docker Compose 挂载到容器内 `/app/config` 的宿主机目录，用于存放外部工具配置（如 rclone、BaiduPCS-Go）；平台配置保存在 SQLite 中 | `./config` |
+| `OUTPUT_DIR` | 仅在独立后端创建全新数据库时用于初始化 `global_config.output_folder`；启动写入探测和磁盘空间健康检查读取已保存的 `global_config.output_folder` 及各层覆盖项。在 Docker Compose 中它是宿主机绑定挂载目录，容器内使用 `OUTPUT_DIR=/app/output`。已有数据库设置会保留。 | `./output` |
 | `LOG_DIR` | 日志文件目录。相对路径按进程工作目录解析；随附的系统服务单元会显式设为 `/var/log/rust-srec`，以免日志文件落进状态目录。参见[安装](../getting-started/installation.md)。 | `./logs` |
 | `LOG_MAX_FILE_BYTES` | 启动时读取的单个托管日志分段字节上限，整数范围 1024 至 1073741824；超大记录截断并添加标记。 | `16777216`（16 MiB） |
 | `LOG_MAX_FILES` | 启动时读取的托管日志分段数量上限，含当前文件，整数范围 2 至 1024。共享 `LOG_DIR` 的实例应保持设置一致；参见[保留上限](../operations/monitoring.md#日志)。 | `16` |
@@ -58,7 +62,7 @@ import { withBase } from 'vitepress'
 | `ALL_PROXY` | 未设置更具体的变量时，两者共用的代理 | - |
 | `NO_PROXY` | 绕过代理的主机列表（逗号分隔） | - |
 
-这些代理变量（大小写均可）只在全局、平台、模板、主播、账号、通知渠道或上传步骤的[代理设置](../concepts/configuration.md#choosing-a-proxy)为 **系统代理** 时生效。**直连** 会忽略它们，此时 FFmpeg 和 Streamlink 启动时也不会带上这些变量。服务器在启动时读取它们，修改后请重启。rclone 和 BaiduPCS-Go 启动时同样不带这些变量，已保存的代理则以 `HTTP_PROXY` 和 `HTTPS_PROXY` 传给它们。邮件通知从不使用代理。全新安装，或从全局代理处于关闭状态的旧版本升级时，若启动时设置了 `HTTP_PROXY`、`HTTPS_PROXY` 或 `ALL_PROXY`，全局默认代理会设为 **系统代理**；详见[从旧版代理设置升级](../concepts/configuration.md#upgrading-proxy-settings)。
+这些代理变量（大小写均可）只在全局、平台、模板、主播、账号、通知渠道或上传步骤的[代理设置](../concepts/configuration.md#choosing-a-proxy)为 **系统代理** 时生效。**直连** 会忽略它们，此时 FFmpeg 和 Streamlink 启动时也不会带上这些变量。服务器在启动时读取它们，修改后请重启。rclone 和 BaiduPCS-Go 启动时同样不带这些变量，已保存的代理则以 `HTTP_PROXY` 和 `HTTPS_PROXY` 传给它们。邮件通知从不使用代理。全新安装，或从全局代理处于关闭状态的旧版本升级时，若启动时设置了 `HTTP_PROXY`、`HTTPS_PROXY` 或 `ALL_PROXY`，全局默认代理会设为 **系统代理**；详见[升级代理设置](../operations/upgrading.md#proxy-settings)。
 
 ## 安全与认证 {#安全与认证}
 | 变量 | 说明 | 默认值 |
@@ -109,7 +113,7 @@ import { withBase } from 'vitepress'
 ## 后端服务 {#后端服务}
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `RUST_LOG` | 日志级别 (`trace`, `debug`, `info`, `warn`, `error`) | `info` |
+| `RUST_LOG` | 日志过滤指令（`trace`、`debug`、`info`、`warn`、`error` 或按模块指定的过滤规则）。Docker Compose 默认设为 `info`；独立二进制默认值为 `rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info`。 | `rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info`（独立二进制）/ `info`（Docker） |
 | `DATABASE_URL` | SQL 数据库连接字符串。表中所列是 Docker `.env` 设置的值。未设置时后端回退到 `sqlite:srec.db?mode=rwc`，相对工作目录解析；随附的系统服务单元则设为 `sqlite:///var/lib/rust-srec/rust-srec.db`。运行世代标记由该 URL 推导，与数据库文件放在一起。 | `sqlite:///app/data/rust-srec.db`（Docker） |
 | `RUST_SREC_LOCALE` | 后端通知字符串的语言环境。影响所有通知事件——直播上/下线、录制生命周期、分段、流水线任务、系统告警、凭据事件。支持：`en`、`zh-CN`。 | `en` |
 | `RUST_SREC_OUTPUT_ROOTS` | 以逗号分隔的**绝对**路径列表，作为写入门（write gate）的输出根边界。未设置时，写入门会对每个解析后的输出路径取前**两段有名分量**作为默认（例如 `/rec/huya/X/20260415` → `/rec/huya`，`/home/user/recordings/X/20260415` → `/home/user`）。两段是最小安全默认值——它可以避免意外将 `/home/...` 布局下不同用户合并到同一个门键。如果您是 `/rec` 这种单挂载布局，且希望一个挂载点对应一个门键（从而在故障时只收到一条聚合通知、而不是按平台分别通知），请显式设置：`RUST_SREC_OUTPUT_ROOTS=/rec`。 | - |
@@ -124,6 +128,7 @@ import { withBase } from 'vitepress'
 | `STREAMLINK_PATH` | 使用 Streamlink 获取直播流，以及添加主播时检查 Streamlink 能否处理该地址所用的 Streamlink 程序，平台设置中的 `streamlink.binary_path` 指定了其他程序时除外。Streamlink 下载引擎使用其自身配置中的程序路径。 | `streamlink` |
 | `RCLONE_PATH` | `rclone` 处理器使用的 rclone 程序 | `rclone` |
 | `BAIDUPCS_PATH` | 预设未设置 `binary_path` 时使用的 BaiduPCS-Go 程序 | `BaiduPCS-Go` |
+| `BAIDUPCS_GO_CONFIG_DIR` | BaiduPCS-Go 保存登录会话与 `pcs_config.json` 的配置目录（预设未设置 `config_dir` 时使用） | BaiduPCS-Go 默认路径（Docker 中为 `/app/config/BaiduPCS-Go`） |
 | `DANMAKU_FACTORY_PATH` | 预设未设置 `binary_path` 时使用的 DanmakuFactory 程序 | `DanmakuFactory` |
 
 只写程序名时在 `PATH` 中查找。Docker 镜像已内置这些工具。

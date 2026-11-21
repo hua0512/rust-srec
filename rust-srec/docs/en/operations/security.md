@@ -9,7 +9,7 @@ Rust-Srec handles access tokens, platform cookies, notification credentials, rec
 - Access tokens are short-lived. Refresh tokens are rotating session credentials and must be protected like passwords.
 - `AUTH_DISABLED=true` is only a local development escape hatch. The backend accepts it only with a loopback bind address; do not build production procedures around it. In that mode requests are refused unless their `Origin` is in the `API_CORS_ORIGINS` allowlist (or matches the request's own `Host`), and unless the `Host` is a loopback name or the configured bind address — the latter is what stops a DNS-rebinding page from reaching the unauthenticated API. Widen the allowlist only for origins you control.
 - Repeated failed logins are throttled per account (5 failures per 15 minutes by default) and, much more loosely, per source address; a throttled attempt is answered with `429` and a `Retry-After` delay instead of another password hash. The source address is the TCP peer and `X-Forwarded-For` is not trusted, so behind the bundled frontend or any reverse proxy every login is attributed to the proxy — do not rely on the per-address budget to isolate clients. See [Configuration](../reference/environment.md#login-throttling).
-- Tokens carry role names and exports include user accounts, but the route layer does not enforce a per-role authorization policy, and there is no identity-provider integration. See [Scope and Limits](./support.md#scope-and-limits).
+- There is no external identity-provider integration (SSO/OIDC/SAML/MFA), and token role names do not restrict backend authority; see [Full Backend Access Is Administrative Access](#full-backend-access-is-administrative-access) and [Scope and Limits](./support.md#scope-and-limits).
 
 Login attempts for unknown users perform the same bounded Argon2 verification
 work as current-format passwords. Unknown users and incorrect passwords return
@@ -21,17 +21,19 @@ correct password is supplied. Throttled requests still avoid password work.
 An authenticated login session or a full-access API key grants administrative
 authority over the backend's processes and files. Grant either only to people
 and integrations trusted to act as the operating-system account running the
-backend. Token role names do not restrict this authority; there is no separate
-operator role for managing recordings without executable configuration access.
+backend. Token role names do not restrict this authority, and there is no
+separate operator role for managing recordings without executable configuration
+access; see [Scope and Limits](./support.md#scope-and-limits).
 
 This authority includes direct execution through an `execute` pipeline step and
-request-supplied BaiduPCS executable paths. It also includes indirect execution:
-engine and processor settings can select tool binaries, presets can contain
-command steps, and configuration imports can introduce these settings for later
-recordings or jobs. File paths, upload destinations, and move/delete steps can
-read, transfer, replace or remove data accessible to the service account. A
-configuration import or preset from another source therefore needs the same
-review as code that will run on that account.
+request-supplied tool executable or config paths (such as custom BaiduPCS-Go
+binaries — configure only trusted executables). It also includes indirect
+execution: engine and processor settings can select tool binaries, presets can
+contain command steps, and configuration imports can introduce these settings
+for later recordings or jobs. File paths, upload destinations, and move/delete
+steps can read, transfer, replace or remove data accessible to the service
+account. A configuration import or preset from another source therefore needs
+the same review as code that will run on that account.
 
 Read-only API keys have a restricted endpoint/tool allowlist; use them when an
 integration only needs the supported read operations. They do not provide a
@@ -73,7 +75,7 @@ A request that loses the atomic rotation race follows the same reuse policy, so
 with default settings it also revokes the winner's access and refresh tokens. Clients must
 serialize refreshes, including across tabs or server instances.
 
-Download and log WebSockets revalidate their issuing session or API key every
+Download, log, and `/api/parse/danmu/ws` WebSockets revalidate their issuing session or API key every
 five seconds, with a three-second deadline for each check. Revocation, expiry,
 account restrictions, insufficient access, or a failed check closes the connection
 even if it is blocked sending data. Log archive download grants are single-use,
@@ -83,7 +85,7 @@ last five minutes, and revalidate their issuing identity when consumed.
 
 Terminate TLS before the frontend, set `COOKIE_SECURE=true` only if the proxy does not send `X-Forwarded-Proto: https`, and restrict both host ports with a firewall. Keep the backend private unless direct API consumers need it. Do not expose Swagger, media proxy routes, or logs to anonymous Internet clients.
 
-The bundled frontend container runs its application server under an unprivileged account (nginx still starts as root to bind port 80 and hands request handling to unprivileged workers) and answers every request, error responses included, with `X-Content-Type-Options: nosniff` and `Referrer-Policy: strict-origin-when-cross-origin`. If the reverse proxy in front of it also sends them, set them in one place only. The container does not restrict framing, so dashboards can embed the web interface; to forbid that, add `X-Frame-Options` or a CSP `frame-ancestors` directive at your reverse proxy.
+The bundled frontend container runs its application server under an unprivileged account (nginx still starts as root to bind port 80 and hands request handling to unprivileged workers) and answers every request, error responses included, with `Content-Security-Policy: object-src 'none'; base-uri 'self'; form-action 'self'`, `X-Content-Type-Options: nosniff`, and `Referrer-Policy: strict-origin-when-cross-origin`. If your reverse proxy sets those headers, configure them in one place only. The container does not restrict framing, so dashboards can embed the web interface; if you add a CSP `frame-ancestors` directive at the reverse proxy, account for the existing `Content-Security-Policy` header (for example, replace/merge it or add `X-Frame-Options`).
 
 The stream proxy blocks private-network targets by default. Enabling `stream_proxy_allow_private_targets` allows authenticated users to make the service fetch internal addresses; enable it only for an explicit LAN-camera or restream use case.
 
@@ -123,11 +125,7 @@ writes that include account fields are rejected rather than stored.
 - Run containers without unnecessary host mounts or device access. Add GPU devices only when the selected pipeline requires them.
 - Review any `execute`, upload, move, or delete-source pipeline step as code with filesystem and network access.
 
-The shipped [systemd unit](../getting-started/installation.md#systemd-service-linux) already runs the service unprivileged under `ProtectSystem=strict`, `NoNewPrivileges=yes`, an empty `CapabilityBoundingSet=`, and `SystemCallFilter=@system-service`, so the process sees the system read-only apart from its state, log, and `ReadWritePaths=` directories. Keep those in place and add write access one path at a time.
-
-`PrivateDevices=yes` hides `/dev/dri` and `/dev/nvidia*`: the System Health page shows no GPU section and ffmpeg falls back to software encoding. Hardware transcoding requires a drop-in setting `PrivateDevices=no` plus a `DeviceAllow=` entry for the render node; treat that as a deliberate relaxation of the sandbox.
-
-Full API credentials can select tool executables and config paths. Treat that access as permission to run programs with the backend's operating-system identity; it is not a restricted operator role. Only configure trusted BaiduPCS-Go binaries.
+The shipped [systemd unit](../getting-started/installation.md#systemd-service-linux) runs the service unprivileged with strict filesystem, capability, and syscall sandboxing — keep those unit hardening directives in place and grant write access one path at a time via `ReadWritePaths=`. Because `PrivateDevices=yes` hides `/dev/dri` and `/dev/nvidia*`, hardware transcoding requires a drop-in setting `PrivateDevices=no` plus a `DeviceAllow=` entry for the render node; treat that as a deliberate relaxation of the sandbox.
 
 ## Vulnerability Handling
 

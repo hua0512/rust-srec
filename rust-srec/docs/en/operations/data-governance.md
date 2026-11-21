@@ -16,12 +16,12 @@ Rust-Srec is a recording tool, not a source of rights to record or process a bro
 ## Required Decisions Before Use
 
 - Document the lawful basis and permission for each channel, including private, subscriber-only, or password-protected content.
-- Define retention separately for media, chat, session history, job history, notifications, and logs. Session history has a lifetime of its own: it is not bounded by how long the streamer that produced it exists. Per-check history is the exception — it is deleted with its streamer.
+- Define retention separately for media, chat, session history, job history, notifications, and logs.
 - Identify every external destination used by webhooks, email, Telegram, Gotify, Discord, rclone, Baidu Netdisk (BaiduPCS-Go), or custom pipeline commands.
 - Limit access to people with a defined operational or editorial need.
-- Define how deletion, legal hold, subject requests, and incident response apply to source files, derived files, backups, and remote copies. Name the operation that satisfies each of them; see [Deletion Semantics](#deletion-semantics) for what removing a streamer does and does not cover.
+- Define how deletion, legal hold, subject requests, and incident response apply to source files, derived files, backups, and remote copies; see [Deletion Semantics](#deletion-semantics) for what in-app deletions cover.
 
-Application history-retention settings do not constitute a complete deletion policy and do not remove every media copy. Pipelines may create derivatives or upload data beyond the host. Verify deletion end to end.
+Application history-retention settings do not constitute a complete deletion policy and do not remove every media copy. Sessions, pipeline jobs, notification events, and logs are operational tools rather than compliance evidence; add external audit, legal-hold, or subject-request controls where required (see [Scope and Limits](./support.md#scope-and-limits)). Verify deletion end to end.
 
 ## Deletion Semantics
 
@@ -46,13 +46,9 @@ Three cases delete a file without a per-file request: a recorded segment below `
 
 Database changes roll back together if a media-record deletion fails. Optional filesystem deletion is not transactional.
 
-## Auditability Limits
-
-Sessions, pipeline jobs, notification events, and logs are operational tools, not compliance evidence. If you need an audit trail, legal hold, or data-subject request handling, see [Scope and Limits](./support.md#scope-and-limits) and add those controls externally.
-
 ## Decommissioning
 
-Disable streamers, revoke platform and notification credentials, revoke user sessions, stop the service, inventory remote outputs, then erase or archive data according to policy. Neither disabling nor deleting streamers is a purge: recording history and the streamer names stored on it survive a streamer delete, and no delete removes a media file unless it is a media-output delete asked to remove the file too, or output retention set to delete files. Include configuration exports and backups; deleting the live database alone is insufficient.
+Disable streamers, revoke platform and notification credentials, revoke user sessions, stop the service, inventory remote outputs, then erase or archive data according to policy (following the media-file → session → remote-copy order in [Deletion Semantics](#deletion-semantics)). Include configuration exports and backups; deleting the live database alone is insufficient.
 
 <div id="concurrent-database-updates" class="legacy-section">
 

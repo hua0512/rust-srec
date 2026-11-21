@@ -50,19 +50,12 @@ Restrictions that always apply, regardless of access level:
 
 - API keys cannot call the key-management endpoints above, `POST /api/auth/change-password`, or `POST /api/auth/logout-all`.
 - Read-only keys cannot retrieve configuration, streamer overrides, saved proxies, job records, presets, engines, notification channels, backups, or other responses that can contain stored credentials or operational secrets.
-- Read-only keys may read authenticated health details and recorded media. Download/log WebSockets, stream proxy requests, and logging configuration or archive routes require `full` access.
+- Read-only keys may read authenticated health details and recorded media. Download, log, and `/api/parse/danmu/ws` WebSockets, stream proxy requests, and logging configuration or archive routes require `full` access.
 - Keys of a disabled user, or of a user in the forced-password-change state, are rejected.
 
-Media, stream proxy, and download/log WebSocket routes accept a session JWT or
-an API key with the required access level. `Authorization: Bearer <credential>`
-takes precedence. `?token=<credential>` is a fallback only when that header is
-absent; an invalid or malformed header never falls back to a query token. Prefer
-headers because URLs can appear in browser history and proxy access logs.
+Media, stream proxy, and download, log, and `/api/parse/danmu/ws` WebSocket routes accept a session JWT or an API key with the required access level using the header-first (`Authorization: Bearer`) / `?token=` fallback rules in [REST API authentication](./index.md#refresh-and-revoke). Prefer headers because URLs can appear in browser history and proxy access logs.
 
-Download/log WebSockets revalidate credentials every five seconds with a
-three-second lookup deadline. Log archive grants retain the issuing session or
-key identity and revalidate it on their one permitted use. Revoking a browser
-session does not revoke independently managed API keys; revoke those separately.
+Download, log, and `/api/parse/danmu/ws` WebSockets revalidate credentials every five seconds with a three-second lookup deadline. Log archive grants retain the issuing session or key identity and revalidate it on their one permitted use. Revoking a browser session does not revoke independently managed API keys; revoke those separately.
 
 ## MCP Server
 
@@ -113,7 +106,7 @@ For danmu analysis, prefer `session_danmu_statistics` (aggregated totals, rate t
 
 `session_read_danmu` returns complete UTF-8 characters within the requested byte limit (default 65,536; maximum 262,144). Continue with the returned `next_offset`; XML nodes may span pages. Use a limit of at least four bytes so any character can fit. Zero limits, offsets inside a character, insufficient space for the next character, and invalid or incomplete UTF-8 in the requested window return errors. Historical corrupt files are not repaired; a file still being written may require a later retry.
 
-Configuration-bearing tool groups (`config_*`, `template_*`, `engine_*`, `proxy_list`, `streamer_*`, `filter_*`, pipeline/job preset and execution-detail tools, notification channel/subscription tools, and `parse_url`) require a `full` key even for reads. This prevents a read-only assistant from retrieving platform cookies, processor configuration, notification credentials, stream access data, or other stored secrets.
+Configuration-bearing tool groups (`config_*`, `template_*`, `engine_*`, `proxy_list`, `streamer_*`, `filter_*`, pipeline/job preset and execution-detail tools, notification channel/subscription tools, and `parse_url`) require a `full` key even for reads. Platform cookies and account profiles live under `/api/credentials` and are not exposed over MCP, but these tools still expose or modify processor configurations, notification credentials, saved-proxy metadata, and signed stream data returned by `parse_url`.
 
 ## Security Notes
 

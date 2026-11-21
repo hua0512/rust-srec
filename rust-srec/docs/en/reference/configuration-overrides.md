@@ -251,7 +251,8 @@ that inherits is returned without `credential_selection`.
     "credential_ids": ["profile-uuid-a", "profile-uuid-b"],
     "strategy": "priority",
     "failover": true,
-    "max_attempts": 3
+    "max_attempts": 3,
+    "anonymous_fallback": false
   }
 }
 ```
@@ -259,7 +260,9 @@ that inherits is returned without `credential_selection`.
 Other policies are `{ "mode": "none" }`, `{ "mode": "inherit" }`, and
 `{ "mode": "fixed", "credential_id": "profile-uuid-a" }`. Pools accept `priority`
 or `round_robin`, require a nonempty unique ordered ID list, and accept 1–10 total attempts.
-Omitted `strategy`, `failover` and `max_attempts` default to `priority`, `true` and `3`.
+Omitted `strategy`, `failover`, `max_attempts`, and `anonymous_fallback` default to `priority`,
+`true`, `3`, and `false`. When `anonymous_fallback` is `true`, a check falls back to an
+unauthenticated request if every account in the pool is unavailable or fails.
 A one-member pool is valid. Unknown modes/fields are rejected. A selection that names a missing
 profile or another platform's profile fails with HTTP 409 `CREDENTIAL_REFERENCE_INACCESSIBLE`
 and lists the configuration that selects it. Disabled profiles may remain referenced, but are
@@ -284,8 +287,9 @@ its inherited account, and the profiles whose sites cover the host. See
 ## Proxy route JSON {#proxy-route-json}
 
 Each scope's proxy setting is `proxy_route`: a field of the global, platform and template
-configuration, and a key inside a streamer's `streamer_specific_config`. Accounts carry it too,
-when they are created or edited and when a QR login creates one.
+configuration, a key inside a streamer's `streamer_specific_config`, and a setting on
+accounts (when created, edited, or created by QR login), notification channels (except email),
+and upload steps (`rclone`, `baidupcs`).
 
 ```json
 { "proxy_route": { "kind": "proxy", "id": "proxy-uuid" } }

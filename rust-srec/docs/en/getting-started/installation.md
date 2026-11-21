@@ -8,7 +8,7 @@
 | [Desktop app](#desktop-app) | Recording on one personal computer | Built into the app | Internal to the app |
 | Pre-built binary | Backend-only or custom deployments | Deploy the frontend separately | Backend default: `http://localhost:12555/api` |
 | [systemd service](#systemd-service-linux) | Linux hosts running the backend without Docker | Deploy the frontend separately | `http://localhost:12555/api` |
-| Source checkout with the example `.env` files | Development and contribution | `http://localhost:15275` | `http://localhost:8080/api` |
+| Source checkout with the example `.env` files | Development and contribution | `http://localhost:15275` | `http://localhost:12555/api` |
 
 Docker maps the frontend's container port `80` and the backend's container port `8080` to the host ports shown above. Container ports are not addresses to open from the host.
 
@@ -67,7 +67,7 @@ The account's home directory has to be `/var/lib/rust-srec` and has to be writab
 
 `/etc/rust-srec/rust-srec.env` is loaded through `EnvironmentFile=`. The service refuses to start without `JWT_SECRET`, so that file is mandatory in practice. Web Push (VAPID) keys and any `*_PATH` override for ffmpeg, rclone, streamlink, or DanmakuFactory belong there too. Every assignment in it overrides the unit's own `Environment=` lines.
 
-`/opt/rust-srec` is also the directory the Docker Compose installer defaults to (`RUST_SREC_DIR`). Pick a different path for the binary if both deployments share a host.
+The Docker Compose installer defaults `RUST_SREC_DIR` to `./rust-srec`, though the [Docker guide](./docker.md#installer) shows `/opt/rust-srec` as an example. Pick a different path if both deployments share a host and you install Docker into `/opt/rust-srec`.
 
 Verify the service:
 
@@ -79,11 +79,7 @@ curl http://localhost:12555/api/health/live
 
 ### Set the Recording Directory
 
-Fresh databases use the unit's `OUTPUT_DIR=/var/lib/rust-srec/output` as their recording folder. Existing databases keep their saved `output_folder`, including an older `/app/output` default. For those installations, set **Settings → Global → Output Folder** to `/var/lib/rust-srec/output` or a volume listed under `ReadWritePaths=`; `ProtectSystem=strict` does not make `/app/output` writable.
-
-Keep `RUST_SREC_OUTPUT_ROOTS` consistent with that value, or the output-root write gate reports the service degraded. The unit sets both to `/var/lib/rust-srec/output`.
-
-Give a collection that grows past a few hundred GB its own volume and list it under `ReadWritePaths=` rather than nesting it inside `/var/lib/rust-srec`. Every `ReadWritePaths=` entry must already exist — `ProtectSystem=strict` fails the unit with `226/NAMESPACE` on a missing path — and systemd does not chown them, so create them owned by `rust-srec`.
+Fresh databases use `OUTPUT_DIR=/var/lib/rust-srec/output`. Existing databases keep their saved `output_folder` (including an older `/app/output` default from Docker); update **Settings → Global → Output Folder** to `/var/lib/rust-srec/output` or an existing, `rust-srec`-owned volume listed under `ReadWritePaths=`, and keep `RUST_SREC_OUTPUT_ROOTS` aligned so the output-root write gate stays healthy. For a collection past a few hundred GB, mount a separate volume under `ReadWritePaths=` rather than nesting it inside `/var/lib/rust-srec`.
 
 ### What the Unit Sets
 
@@ -97,12 +93,13 @@ Give a collection that grows past a few hundred GB its own volume and list it un
 | `API_PORT` | `12555` |
 | `RUST_LOG` | `info` |
 | `RUST_SREC_SHUTDOWN_TIMEOUT_SECS` | `30` |
+| `RUST_SREC_SHUTDOWN_FORCE_RESERVE_SECS` | `2` |
 
 Override any of them in `/etc/rust-srec/rust-srec.env`. `TimeoutStopSec=35` must stay larger than `RUST_SREC_SHUTDOWN_TIMEOUT_SECS`; raising one without the other lets systemd send `SIGKILL` while recordings are still being finalized.
 
-### File Permissions
+### File Permissions and Hardening {#file-permissions}
 
-`UMask=0027` writes recordings `-rw-r-----`, readable only by `rust-srec` and its group. Add any account that has to read them — a file server, a media scanner — to the `rust-srec` group, or lower `UMask=` in a drop-in. See [Security](../operations/security.md) for the rest of the unit's hardening and its effect on GPU transcoding.
+`UMask=0027` writes recordings `-rw-r-----`, readable only by `rust-srec` and its group. Add readers (such as a media scanner) to the `rust-srec` group, or override `UMask=` in a drop-in. See [Security](../operations/security.md) for the unit's full sandboxing rules, `ProtectSystem=strict` details, and GPU transcoding overrides.
 
 ## Build from Source
 
@@ -136,12 +133,19 @@ For the desktop app, the tool-gated tests and other contributor setup, see [Deve
 git clone https://github.com/hua0512/rust-srec.git
 cd rust-srec
 cargo build --locked --release -p rust-srec
-
-cd rust-srec
-cp .env.example .env
 ```
 
-Replace `JWT_SECRET` in `.env` with a random value of at least 32 characters. The checked-in example sets `API_PORT=8080`; without an `.env` file, the backend defaults to port `12555`.
+The backend loads `.env` using `dotenvy`, which searches the **current working directory** and parent directories upward — it does **not** search down into `rust-srec/`. Place `.env` where you plan to launch the binary:
+
+```bash
+# Option A: place .env in the repository root and run from the root
+cp rust-srec/.env.example .env
+
+# Option B: place .env inside rust-srec/ and run from rust-srec/
+cd rust-srec && cp .env.example .env
+```
+
+Replace `JWT_SECRET` in `.env` with a random value of at least 32 characters.
 
 Important backend settings:
 
@@ -150,8 +154,8 @@ Important backend settings:
 | `JWT_SECRET` | Signs access and refresh tokens; required | Replace the placeholder |
 | `DATABASE_URL` | SQLite database location | `sqlite:./srec.db` |
 | `API_BIND_ADDRESS` | Network interface to listen on | `0.0.0.0` |
-| `API_PORT` | API port | `8080` |
-| `OUTPUT_DIR` | Initial recording folder for a fresh standalone database; also an output root watched by health probes. Does not override saved settings | `./output` |
+| `API_PORT` | API port | `12555` |
+| `OUTPUT_DIR` | Initial recording folder for a fresh standalone database. Does not override saved settings | `./output` |
 | `RUST_LOG` | Log level | `info` |
 
 Generate a secret with `openssl rand -hex 32`. In PowerShell:
@@ -162,10 +166,14 @@ $bytes = New-Object Byte[] 32
 -join ($bytes | ForEach-Object { "{0:x2}" -f $_ })
 ```
 
-Start the backend from the repository root:
+Start the backend from the directory holding your `.env`:
 
 ```bash
+# If .env is in the repository root:
 ./target/release/rust-srec
+
+# If .env is inside rust-srec/:
+cd rust-srec && ../target/release/rust-srec
 ```
 
 ### Run the Frontend for Development
@@ -177,14 +185,16 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Replace `SESSION_SECRET` in the frontend `.env`. Its API settings already point to the example backend port `8080`; Vite serves the development UI on port `15275`.
+Replace `SESSION_SECRET` in the frontend `.env`. Its API settings already point to backend port `12555`; Vite serves the development UI on port `15275`.
 
 ## External Tools
 
 The built-in Mesio download engine does not require Streamlink. Install external tools only for features you select:
 
-- Install `ffmpeg` and make it available on `PATH` when using FFmpeg processors or an FFmpeg-based workflow outside the Docker image.
-- Install `streamlink` and make it available on `PATH` when selecting the Streamlink download engine.
+- Install `ffmpeg` and make it available on `PATH` (or set `FFMPEG_PATH`) when using FFmpeg processors or an FFmpeg-based workflow outside the Docker image.
+- Install `streamlink` and make it available on `PATH` when selecting the Streamlink download engine or extractor.
+- Install [rclone](https://rclone.org/) and make it available on `PATH` (or set `RCLONE_PATH`) when using the `rclone` cloud-storage upload processor.
+- Install [DanmakuFactory](https://github.com/hihkm/DanmakuFactory) and make it available on `PATH` (or set `DANMAKU_FACTORY_PATH`) when using the `danmaku_factory` XML-to-ASS subtitle conversion processor.
 - Install [BaiduPCS-Go](https://github.com/qjfoidnh/BaiduPCS-Go) and make it available on `PATH` (or set `BAIDUPCS_PATH`) when using the `baidupcs` Baidu Netdisk upload processor.
 - The Docker image contains its supported runtime tools; do not install them on the host for a standard Docker deployment.
 

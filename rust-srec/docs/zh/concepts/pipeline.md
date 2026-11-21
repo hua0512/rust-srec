@@ -2,6 +2,8 @@
 
 工作流通过依赖关系连接处理步骤。任务预设保存一个步骤的设置；工作流（管道预设）保存步骤及其连接。
 
+<WorkflowDagDemo />
+
 ## 示例：MP4 录制与缩略图
 
 先成功录制一次，并确认后端能够调用 FFmpeg。
@@ -27,7 +29,7 @@ flowchart LR
 管道可以在以下三个阶段自动运行：
 
 ### 1. 分段管道 (Segment Pipeline)
-- **触发时机**：单个视频分段（`.flv`, `.ts`）或弹幕文件（`.xml`, `.json`）下载完成后。
+- **触发时机**：单个视频分段（`.flv`、`.ts`、`.mp4`、`.mkv`、`.mov`、`.m4s`）或弹幕文件（`.xml`）下载完成后。
 - **典型用途**：转封装（Remux）、视频截图、弹幕格式转换。
 - **输入**：单个文件。
 
@@ -126,102 +128,102 @@ JSON 定义、执行状态和 API 取消见[工作流参考](../reference/workfl
 
 <div id="什么是-dag-管道" class="legacy-section">
 
-此节内容已移至[创建工作流](./pipeline.md#dag-管道).
+此节内容已移至[创建工作流](./pipeline.md#dag-管道)。
 
 </div>
 
 <div id="预设系统-presets" class="legacy-section">
 
-此节内容已移至[创建工作流](./pipeline.md#dag-管道).
+此节内容已移至[创建工作流](./pipeline.md#dag-管道)。
 
 </div>
 
 <div id="高级特性" class="legacy-section">
 
-此节内容已移至[创建工作流](./pipeline.md#dag-管道).
+此节内容已移至[创建工作流](./pipeline.md#dag-管道)。
 
 </div>
 
 <div id="核心概念" class="legacy-section">
 
-此节内容已移至[创建工作流](./pipeline.md#dag-管道).
+此节内容已移至[创建工作流](./pipeline.md#dag-管道)。
 
 </div>
 
 <div id="依赖关系" class="legacy-section">
 
-此节内容已移至[创建工作流](./pipeline.md#dag-管道).
+此节内容已移至[创建工作流](./pipeline.md#dag-管道)。
 
 </div>
 
 <div id="管道预设" class="legacy-section">
 
-此节内容已移至[创建工作流](./pipeline.md#dag-管道).
+此节内容已移至[创建工作流](./pipeline.md#dag-管道)。
 
 </div>
 
 <div id="内置处理器-processors" class="legacy-section">
 
-此节内容已移至[处理器参考](../reference/processors.md#内置处理器-processors).
+此节内容已移至[处理器参考](../reference/processors.md#内置处理器-processors)。
 
 </div>
 
 <div id="execute-execute" class="legacy-section">
 
-此节内容已移至[处理器参考](../reference/processors.md#execute-execute).
+此节内容已移至[处理器参考](../reference/processors.md#execute-execute)。
 
 </div>
 
 <div id="归档-compression" class="legacy-section">
 
-此节内容已移至[处理器参考](../reference/processors.md#归档-compression).
+此节内容已移至[处理器参考](../reference/processors.md#归档-compression)。
 
 </div>
 
 <div id="百度网盘-baidupcs" class="legacy-section">
 
-此节内容已移至[处理器参考](../reference/processors.md#百度网盘-baidupcs).
+此节内容已移至[处理器参考](../reference/processors.md#百度网盘-baidupcs)。
 
 </div>
 
 <div id="重启时恢复弹幕分段" class="legacy-section">
 
-此节内容已移至[管道执行约定](../development/pipeline.md#重启时恢复弹幕分段).
+此节内容已移至[管道执行约定](../development/pipeline.md#重启时恢复弹幕分段)。
 
 </div>
 
 <div id="处理器结果约定" class="legacy-section">
 
-此节内容已移至[管道执行约定](../development/pipeline.md#处理器结果约定).
+此节内容已移至[管道执行约定](../development/pipeline.md#处理器结果约定)。
 
 </div>
 
 <div id="步骤" class="legacy-section">
 
-此节内容已移至[工作流参考](../reference/workflows.md#步骤).
+此节内容已移至[工作流参考](../reference/workflows.md#步骤)。
 
 </div>
 
 <div id="执行状态" class="legacy-section">
 
-此节内容已移至[工作流参考](../reference/workflows.md#执行状态).
+此节内容已移至[工作流参考](../reference/workflows.md#执行状态)。
 
 </div>
 
 <div id="dag-定义" class="legacy-section">
 
-此节内容已移至[工作流参考](../reference/workflows.md#dag-定义).
+此节内容已移至[工作流参考](../reference/workflows.md#dag-定义)。
 
 </div>
 
 <div id="按步骤设置重试与超时" class="legacy-section">
 
-此节内容已移至[工作流参考](../reference/workflows.md#按步骤设置重试与超时).
+此节内容已移至[工作流参考](../reference/workflows.md#按步骤设置重试与超时)。
 
 </div>
 
 <div id="取消运行中的管道" class="legacy-section">
 
-此节内容已移至[工作流参考](../reference/workflows.md#取消运行中的管道).
+此节内容已移至[工作流参考](../reference/workflows.md#取消运行中的管道)。
 
 </div>

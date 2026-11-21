@@ -8,9 +8,13 @@
 https://play.sooplive.co.kr/{channel_id}
 https://play.sooplive.com/{channel_id}
 https://play.afreecatv.com/{channel_id}
+https://ch.sooplive.co.kr/{channel_id}
+https://ch.sooplive.com/{channel_id}
+https://m.sooplive.co.kr/{channel_id}
+https://m.sooplive.com/{channel_id}
 ```
 
-Broadcast URLs that include a broadcast number are also supported:
+The `ch.*` (channel page) and `m.*` (mobile) subdomains are accepted alongside `play.*`. Broadcast URLs that include a broadcast number are also supported:
 
 ```
 https://play.sooplive.com/{channel_id}/{broadcast_number}

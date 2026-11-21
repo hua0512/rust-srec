@@ -52,13 +52,14 @@
 | `max_concurrent_cpu_jobs` | 最大并发 CPU 密集型任务数 | `0` (Auto / 自动) |
 | `max_concurrent_io_jobs` | 最大并发 I/O 密集型任务数（如移动、复制），不含上传 | `8` (0 = Auto / 自动) |
 | `default_download_engine` | 录制使用的[引擎配置](../concepts/engines.md)名称 | `default-mesio`（内置的 Mesio 配置） |
+| `default_extractor` | 默认用于解析流地址的提取器（`auto` 或 `streamlink`），可在平台、模板或主播层级覆盖 | `auto`（未设置/`null` 时） |
 | `queue_freshness_threshold_ms` | 单位为毫秒。当某项录制在并发队列中等待时间超过该阈值时，rust-srec 会在启动前重新检查主播以刷新流地址和请求头。对签名 URL 会在几分钟内过期的平台尤其有用。设为 `0` 表示每次排队等待都刷新。 | `60000`（60 秒） |
 | `pipeline_cpu_job_timeout_secs` | 单个 CPU 密集型流水线任务的最长运行时间，超时即取消（最小 `1`） | `3600` |
 | `pipeline_io_job_timeout_secs` | 单个 I/O 密集型流水线任务（包括上传）的最长运行时间，超时即取消（最小 `1`） | `3600` |
 | `pipeline_execute_timeout_secs` | `execute` 处理器命令的最长运行时间，工作流步骤设置了 `timeout_secs` 时以后者为准（最小 `1`） | `3600` |
 | `gpu_health_probe_interval_secs` | GPU 健康监视器调用 `nvidia-smi` 探测的间隔秒数；修改在下一次探测时生效（最小 `1`） | `30` |
 
-由哪个提取器解析流地址是与 `default_download_engine` 相互独立的设置，此处不提供，需要在平台、模板或主播层级配置。参见[引擎与提取器选择](./configuration-overrides.md#引擎与提取器选择)。
+`default_extractor` 与 `default_download_engine` 相互独立，也可在平台、模板或主播层级覆盖。参见[引擎与提取器选择](./configuration-overrides.md#引擎与提取器选择)。
 
 ### 网络与系统 (Network & System) {#网络与系统-network-system}
 | 设置 | 说明 | 默认值 |
@@ -68,6 +69,7 @@
 | `offline_check_count` | 确认主播离线所需的连续离线信号次数。正常结束的录制计为第一次，因此按默认值会话在第二次离线检查时结束，详见[离线判定](configuration-overrides.md#离线判定和下载失败恢复共用同一个次数)。同一个最终配置值也决定连续下载失败多少次后进入临时冷却；下载失败阈值最低为 `2`。 | `3` |
 | `proxy_route` | **默认代理**：平台、模板、主播或账号未自行选择时的连接方式。可选 **直连**、**系统代理** 或[已保存的代理](#代理-proxies)。详见[代理](../concepts/configuration.md#proxies)。 | **直连**；首次启动或升级时设置了代理环境变量则为 **系统代理** |
 | `stream_proxy_allow_private_targets` | 允许播放器的 **服务器代理** 和代理测试访问私有或本地网络上的地址 | `false` |
+| `log_filter_directive` | 持久化的后端日志过滤指令（启动时应用，并可通过日志设置或日志 API 实时更新） | `rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info` |
 
 ### 代理 (Proxies) {#代理-proxies}
 
@@ -76,7 +78,7 @@
 | 字段 | 说明 |
 |------|------|
 | 名称 | 选择代理时显示的名称；不能重复（不区分大小写） |
-| 地址 | `http`、`https`、`socks5` 或 `socks5h` 地址，写成 `scheme://host:port`，不含路径和登录信息 |
+| 地址 | `http`、`https`、`socks5` 或 `socks5h` 地址，写成 `scheme://host[:port]`（端口可选），不含路径和登录信息 |
 | 用户名、密码 | 可选的登录信息。用户名会显示，密码从不显示；编辑时留空即保留原密码。 |
 
 每一行显示有多少设置在使用该代理，展开后可查看具体是哪些。**测试** 用于检查通过该代理能否访问某个平台的首页或其他地址。正在使用的代理不能删除。页面顶部会显示从服务器[环境变量](./environment.md#网络)中检测到的系统代理。各项选择如何组合，详见[代理](../concepts/configuration.md#proxies)。
@@ -96,9 +98,9 @@
 
 ### 流水线配置 (Pipeline Configuration) {#流水线配置-pipeline-configuration}
 Rust-Srec 支持在不同阶段添加自定义流水线步骤（如：转码、通知、自定义脚本）：
-- **Per-segment (分段后)**: 在每个视频分段录制完成后立即运行。
-- **Paired Segment (合并对)**: 在视频和弹幕配对后运行。
-- **Session Complete (会话结束)**: 在整个录制会话结束后运行。
+- **Per-segment（分段后，`pipeline`）**：在每个视频分段录制完成后立即运行。
+- **Paired Segment（合并对，`paired_segment_pipeline`）**：在视频和弹幕配对后运行。
+- **Session Complete（会话结束，`session_complete_pipeline`）**：在整个录制会话结束后运行。
 
 ::: info 目录组织
 将 `output_folder` 设置为 `{streamer}/%Y-%m-%d` 可按主播分类并按日期建立子文件夹。`output_filename_template` 则可使用 `%H-%M-%S_{title}` 作为文件名。

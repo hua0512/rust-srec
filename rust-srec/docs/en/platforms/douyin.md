@@ -18,7 +18,16 @@ https://live.douyin.com/{room_id}
 
 ## Authentication
 
-Douyin usually records without an account: when no `ttwid` cookie is supplied, one is obtained automatically. To use a logged-in session or your own `ttwid`, add its cookies as an [account profile](../concepts/configuration.md#account-profiles-and-selection) in **Settings** → **Platforms** → **Douyin**, on the **Network** tab, and select it.
+Douyin usually records without an account: when no `ttwid` cookie is supplied, one is obtained automatically. Control how automatically fetched `ttwid` cookies are managed with `ttwid_management_mode`:
+
+- `global` *(default)*: shares one automatically obtained `ttwid` across Douyin extractors.
+- `per_extractor`: fetches an independent `ttwid` per extractor instance.
+
+To use a logged-in session or your own `ttwid`, add its cookies as an [account profile](../concepts/configuration.md#account-profiles-and-selection) in **Settings** → **Platforms** → **Douyin**, on the **Network** tab, and select it.
+
+## Batch Detection <Badge type="tip" text="Premium · Coming Soon" />
+
+Douyin batch detection is planned for the upcoming Premium edition to improve multi-channel monitoring efficiency. Not yet open — see [editions](/en/#tiers) for updates.
 
 ::: warning
 - **Stream Quality**: Use `force_origin_quality` in configuration to attempt to force the highest available quality. (Experimental: may result in no video streams if the requested quality is unavailable).
@@ -27,6 +36,7 @@ Douyin usually records without an account: when no `ttwid` cookie is supplied, o
 :::
 
 ::: info
+- **Stream Format**: Strongly recommended to prefer **FLV** for better stability.
 - **Double Screen**: Support for double screen stream data is enabled by default.
 - **Interactive Games**: "Interactive Games" (互动玩法) rooms are treated as offline by default (`skip_interactive_games`); turn the option off to record them.
 - **Mobile API**: If the PC API fails, try enabling `force_mobile_api`.

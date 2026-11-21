@@ -10,7 +10,7 @@ VitePress-based documentation site for `rust-srec`. Multi-language (EN/ZH).
 - `getting-started/`: Installation, first recording, and basic setup.
 - `guides/` and `concepts/`: User workflows and explanations; existing `concepts/` URLs are retained for compatibility.
 - `reference/`: Settings, environment variables, filename templates, processors, and workflow definitions.
-- `operations/`: Deployment, storage, backup, monitoring, and security procedures.
+- `operations/`: Operations hub (`index.md`) plus deployment, storage, backup, monitoring, and security procedures.
 - `development/`: Runtime architecture and implementation contracts for contributors.
 - `platforms/`, `api/`: Per-platform pages and API/MCP access.
 - `release-notes/`: Versioned notes plus the `unreleased.md` staging page; at the docs root, `release-notes-body.md` is the GitHub release body and `release-notes.md` describes that workflow.
@@ -33,7 +33,7 @@ VitePress-based documentation site for `rust-srec`. Multi-language (EN/ZH).
 - **Assets**: Reference assets in `public/` using root-relative paths (e.g., `/stream-rec.svg`).
 - **Audience**: Keep implementation ownership, synchronization, and Rust APIs in `development/`. User guides retain observable behavior, configuration choices, failure recovery, and data-loss constraints. Describe current behavior; keep refactoring history in release notes.
 - **Moved sections**: Update internal links to the new destination and preserve old fragment IDs. A `legacy-section` block is visible only when its ID is targeted; its link must lead to the exact replacement section.
-- **Dead Links**: Backend-managed links (e.g., `/api/docs`) are ignored via `ignoreDeadLinks` in config.
+- **Dead Links**: Localhost example links and downloadable static templates in `public/` (such as `/docker-compose.example.yml` and `/env.example`) are ignored via `ignoreDeadLinks` in `config.mts` (`/api/docs` is no longer in `ignoreDeadLinks`).
 
 ## COMMANDS
 Run from `rust-srec/docs/`:

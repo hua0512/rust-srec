@@ -143,7 +143,7 @@ docker compose up -d
 
 Use [Upgrade and Rollback](../operations/upgrading.md) before changing `VERSION`. `docker compose down` removes containers and the network but leaves bind-mounted host data; verify exact paths before deleting any host directory.
 
-For an Internet-facing host, complete [Production Deployment](../operations/production.md) instead of publishing the example ports directly.
+For an Internet-facing host — including reverse proxy, TLS, secure cookies, and network hardening — follow [Production Deployment](../operations/production.md) and [Security](../operations/security.md) instead of publishing the example ports directly.
 
 <div id="gpu-hardware-acceleration-nvidia" class="legacy-section">
 

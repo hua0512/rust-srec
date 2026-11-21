@@ -2,8 +2,7 @@
 
 Rust-Srec exposes a JSON REST API under `/api`. The running backend generates the authoritative OpenAPI document for its exact build.
 
-- Docker default: [Swagger UI](http://localhost:12555/api/docs) and [OpenAPI JSON](http://localhost:12555/api/docs/openapi.json)
-- Source checkout using `rust-srec/.env.example`: change port `12555` in those links to `8080`
+- Default endpoints: [Swagger UI](http://localhost:12555/api/docs) and [OpenAPI JSON](http://localhost:12555/api/docs/openapi.json)
 
 The Swagger link belongs to the running Rust-Srec backend, not to `docs.srec.rs`.
 
@@ -75,11 +74,7 @@ refresh token to obtain a bound token pair, or sign in again.
 change on rotation, and sessions whose refresh token has expired or been cleaned
 up may be absent even while their access token is valid.
 
-Media, stream proxy, and download/log WebSocket routes use the Authorization
-header first and accept `?token=` only when it is absent. A malformed or invalid
-header never falls back to the query token. Read-only API keys may read health
-details and recorded media; download/log WebSockets, stream proxy, and logging
-configuration/archive routes require full keys. See [API Keys & MCP](./api-keys-mcp.md).
+Media, stream proxy, and download, log, and live-danmu (`/api/parse/danmu/ws`) WebSocket routes use the `Authorization: Bearer` header first and accept `?token=` only when it is absent; a malformed or invalid header never falls back to the query token. Read-only API keys may read health details and recorded media; download, log, and `/api/parse/danmu/ws` WebSockets (all of which revalidate credentials every five seconds), stream proxy, and logging configuration/archive routes require `full` access. See [API Keys & MCP](./api-keys-mcp.md).
 
 Treat access tokens, refresh tokens, cookies, and platform credentials as secrets. Do not place tokens in logs or source control.
 
@@ -115,7 +110,7 @@ Platform, template and streamer writes choose accounts with a [`credential_selec
 | Request | Purpose |
 |---|---|
 | `GET /api/proxies` | List saved proxies with `usage_count`, the number of settings choosing each |
-| `GET /api/proxies/{id}` | One proxy and its `references`: global settings, platforms, templates, streamers and accounts that choose it |
+| `GET /api/proxies/{id}` | One proxy and its `references`: `global`, `platforms`, `templates`, `streamers`, `accounts`, `notification_channels`, `job_presets`, and `pipelines` that choose it |
 | `POST /api/proxies` | Create from `name`, `url` (`http`, `https`, `socks5` or `socks5h`, as `scheme://host[:port]`) and an optional `username` with `password` |
 | `PATCH /api/proxies/{id}` | Edit with `expected_version`. An omitted `password` keeps the saved one; `"username": null` removes the login. |
 | `DELETE /api/proxies/{id}` | Delete, with an optional `expected_version` query parameter |
@@ -125,38 +120,32 @@ Platform, template and streamer writes choose accounts with a [`credential_selec
 
 Conflicts return `409` with `PROXY_NAME_TAKEN`, `PROXY_DUPLICATE` (another proxy has the same address and username), `PROXY_STALE_VERSION`, or `PROXY_REFERENCED` when deleting a proxy still in use, with `details.references` listing its users. An invalid address or login returns `422` `PROXY_INVALID`.
 
-Global, platform, template, streamer and account writes choose a proxy with a [`proxy_route`](../reference/configuration-overrides.md#proxy-route-json) object. The former `proxy_config` field is rejected with `422` `PROXY_CONFIG_REPLACED`.
+Global, platform, template, streamer, account, notification-channel (except email), and upload-step (`rclone`, `baidupcs`) writes choose a proxy with a [`proxy_route`](../reference/configuration-overrides.md#proxy-route-json) object. The former `proxy_config` field is rejected with `422` `PROXY_CONFIG_REPLACED`.
 
 ## Creation responses and job progress
 
-Creating streamers, templates, engines, filters, notification channels, job
+Creating streamers, templates, engines, filters, notification channels, saved proxies (`POST /api/proxies`), job
 presets, pipeline presets and pipelines returns **201 Created** with the created
 resource's JSON body. Cloning templates and job presets also returns 201 with
 the new resource. Clients should accept successful 2xx statuses rather than
 requiring 200 for every JSON response.
 
-The generated OpenAPI document includes session segment listing, template
-cloning and the four browser Web Push operations (public key, subscriptions,
-subscribe and unsubscribe), including their request and response schemas.
+Use `GET /api/pipeline/jobs/{id}/progress` for a job's latest processor-specific
+progress snapshot; it returns 404 when no snapshot is available. The snapshot's
+optional `phase` is `finalizing` while FFmpeg rewrites its output after the last
+frame and while an rclone upload that sent every byte waits for the destination
+to confirm its files, `retrying` while an upload waits to retry, and `preparing`
+for a BaiduPCS or rclone upload while none of the files it is working on has
+sent data yet, including rclone listing the destination before its first transfer
+(treat values you do not know as plain work), and `current_file` names the file
+in progress without its directories. After an upload's first failed attempt,
+`attempt` and `max_attempts` give its attempt within the current job run, which
+is unrelated to the job's retry count.
 
-Job list, job detail and pipeline-creation summaries return `progress: null`
-when progress is unavailable in that response. This does not mean zero percent
-complete. Use `GET /api/pipeline/jobs/{id}/progress` for the latest
-processor-specific snapshot; it returns 404 when no snapshot is available. The
-snapshot's optional `phase` is `finalizing` while FFmpeg rewrites its output
-after the last frame and while an rclone upload that sent every byte waits for
-the destination to confirm its files, `retrying` while an upload waits to retry
-and `preparing` for a BaiduPCS or rclone upload while none of the files it is
-working on has sent data yet, including rclone listing the destination before
-its first transfer (treat values you do not know as plain work), and
-`current_file` names
-the file in progress without its directories. After an upload's first failed
-attempt, `attempt` and `max_attempts` give its attempt within the current job
-run, which is unrelated to the job's retry count.
-
-`GET /api/pipeline/dag/{id}` gives each step `job_status`, `started_at` and
-`retry_after`, with times in epoch milliseconds. `retry_after` is null when no
-automatic retry will run, including for cancelled or failed workflows. Each
+Per-step `progress` is returned on `GET /api/pipeline/dag/{id}` (alongside
+`job_status`, `started_at`, and `retry_after` in epoch milliseconds), not on
+job list, job detail, or pipeline-creation summaries. `retry_after` is null when
+no automatic retry will run, including for cancelled or failed workflows. Each
 step's `progress` is its running job's snapshot as returned by
 `GET /api/pipeline/jobs/{id}/progress`, except that `raw` is always null. A
 step's `progress` is null unless its job is running and has reported progress,
@@ -197,9 +186,7 @@ API errors use one stable envelope:
 
 `details` is omitted when unavailable. Common statuses are `400` invalid input, `401` missing/expired credentials, `403` disabled account or required password change, `404` missing resource, `409` conflict, `422` validation failure, `429` too many failed login attempts, `500` internal failure, and `503` unavailable dependency.
 
-`POST /api/auth/login` is rate limited per account and per source address. After five failed attempts for one account it answers `429` with code `TOO_MANY_REQUESTS` and a `Retry-After` header holding the number of seconds to wait; a successful login clears that account's count. A second, much looser budget (100 failures per window) caps password-hashing work per source address.
-
-The source address is the peer of the TCP connection. `X-Forwarded-For` and `X-Real-IP` are not trusted, so **behind the bundled frontend container, nginx, or any other reverse proxy, every login is attributed to the proxy's address** — the per-address budget is a work cap, not a per-client lockout. Usernames longer than 128 characters — counted as characters, not bytes, so non-Latin names are not penalised — are rejected with `400` before either budget is consulted. A configuration import applies the same limit, so it cannot create an account that could never sign in. Both budgets are configurable; see [Configuration](../reference/environment.md#login-throttling).
+`POST /api/auth/login` returns `429` (`TOO_MANY_REQUESTS`) with a `Retry-After` header once its per-account or per-source-address failure budget is spent; see [Login throttling](../reference/environment.md#login-throttling) for budget defaults, window configuration, and proxy attribution. Usernames longer than 128 characters — counted as characters, not bytes, so non-Latin names are not penalised — are rejected with `400` before either budget is consulted; configuration imports apply the same limit.
 
 Deleting a template that streamers still use returns `409` `TEMPLATE_IN_USE` with `details.streamer_count`; `0` means only streamers that are still being removed use it. Deleting or renaming a job preset or workflow that a stored pipeline names returns `409` `PRESET_IN_USE` with `details.references`, one entry per user with its `kind` (`global`, `platform`, `template`, `streamer` or `workflow`), `id`, `name` and whether it is `removing`.
 

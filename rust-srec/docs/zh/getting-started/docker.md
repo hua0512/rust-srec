@@ -143,7 +143,7 @@ docker compose up -d
 
 修改 `VERSION` 前先阅读[升级与回滚](../operations/upgrading.md)。`docker compose down` 会移除容器和网络，但保留绑定挂载的宿主机数据；删除任何宿主机目录前必须核对准确路径。
 
-面向互联网的主机应完成[生产部署](../operations/production.md)，不要直接公开示例端口。
+面向互联网的主机（包括反向代理、TLS、安全 Cookie 和网络加固）请遵循[生产部署](../operations/production.md)与[安全](../operations/security.md)，不要直接公开示例端口。
 
 <div id="gpu-硬件加速-nvidia" class="legacy-section">
 

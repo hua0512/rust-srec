@@ -2,7 +2,7 @@
 
 ## 应该打开哪个地址？
 
-使用本站下载的 Docker 文件时，打开 `http://localhost:15275`，API 位于 `http://localhost:12555/api`。使用示例 `.env` 的源码开发环境则使用前端 `15275` 和 API `8080`。参见[安装方式对照表](./installation.md#选择部署方式)。
+使用默认 Docker 配置或示例 `.env` 文件的源码环境时，请打开 `http://localhost:15275`，后端 API 默认位于 `http://localhost:12555/api`。参见[安装方式对照表](./installation.md#选择部署方式)。
 
 ## 初始账号是什么？
 

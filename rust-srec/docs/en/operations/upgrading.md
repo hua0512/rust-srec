@@ -67,12 +67,16 @@ Caveats:
 - Database migrations still run at startup and are not reversible. Automatic updates skip the manual pre-upgrade snapshot, so keep scheduled backups (see [Backup and Restore](./backup-restore.md)) and read release notes regularly. If an upgrade must be reviewed before rollout, stay on manual upgrades with a pinned tag.
 - The idle check runs immediately before the container stops; a recording that starts in the few seconds in between is still interrupted.
 
-## Preset and Template Timestamps
+## Historical SQLite Migration Notes
+
+::: details Preset/template timestamps (`20260907120000`) and filter timezones (`20260909120000`)
+
+### Preset and Template Timestamps {#preset-and-template-timestamps}
 
 Migration `20260907120000` normalizes `created_at` and `updated_at` in `job_presets`,
 `pipeline_presets`, and `template_config` to integer Unix milliseconds. Existing integers are
-preserved. Historical date strings are converted with their timezone, truncating submillisecond
-precision. API dates remain strings.
+preserved; historical date strings are converted with their timezone (truncating submillisecond
+precision), and API dates remain strings.
 
 If startup reports `Cannot normalize preset/template timestamps`, one of these columns contains
 an invalid or unsupported historical value, such as an expanded-year date produced by an older
@@ -81,18 +85,17 @@ backend, retain a database backup, inspect those six columns, and repair only va
 time can be established from the backup or other records. Restart to retry the migration. Do not
 replace unknown dates with the current time or edit a shipped migration.
 
-## Filter Timezone Compatibility
+### Filter Timezone Compatibility {#filter-timezone-compatibility}
 
-Migration `20260909120000` preserves existing TimeBased schedules by materializing
-`"timezone":"local"` where an object configuration omitted timezone or used null.
-Explicit zones, Cron rules, row identities and unrelated configuration members are
-preserved. Malformed/non-object JSON is left unchanged; the migration does not
-repair historical invalid configurations.
+Migration `20260909120000` preserves existing `TimeBased` schedules by writing
+`"timezone":"local"` where an object configuration omitted `timezone` or used `null`, while
+leaving explicit zones, Cron rules, row identities, unrelated fields, and malformed JSON untouched.
 
-New omitted/null timezones mean UTC. Existing TimeBased editor updates that omit
-the member retain the stored zone; explicit null requests UTC. Backup exports
-use schema `0.1.8` and explicit zones, while older TimeBased backup omissions import
-as local. See [filter timezones](../guides/schedules.md#filter-timezones-and-boundaries).
+Backup exports write explicit filter timezones using schema `0.1.8`, or `1.0.0` when account
+profiles, credential selections, or saved proxies are present. For current filter timezone rules
+and older-backup import behavior, see [filter timezones and boundaries](../guides/schedules.md#filter-timezones-and-boundaries).
+
+:::
 
 ## Account credentials {#upgrading-from-configuration-cookies}
 

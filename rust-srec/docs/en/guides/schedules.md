@@ -36,7 +36,7 @@ For API clients, a same-type TimeBased update that omits the timezone member
 retains its stored value. Send explicit null or `"UTC"` to switch it to UTC.
 Replacing a Cron configuration without a timezone uses UTC.
 
-Backup schema `0.1.8` exports an explicit timezone for both types. Importing a
+Exported backups use schema `0.1.8` (or `1.0.0` when credential profiles, explicit credential selections, or saved proxies are present) and include an explicit timezone for both types. Importing a
 TimeBased omission from schema `0.1.7` or earlier retains local-time behavior;
 new-schema omissions mean UTC. `"local"` follows the destination
 server's timezone. Unknown JSON members are retained.

@@ -155,7 +155,7 @@ main() {
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             info "Generating VAPID keys via rust-srec-vapid (Docker)..."
-            VAPID_OUTPUT="$(docker run --rm "ghcr.io/hua0512/rust-srec:${VERSION}" /app/rust-srec-vapid 2>/dev/null || true)"
+            VAPID_OUTPUT="$(docker run --rm ghcr.io/hua0512/rust-srec-vapid:latest 2>/dev/null || true)"
             VAPID_PUBLIC_KEY="$(echo "$VAPID_OUTPUT" | awk -F': ' '/^Public Key:/{print $2}' | tail -n 1)"
             VAPID_PRIVATE_KEY="$(echo "$VAPID_OUTPUT" | awk -F': ' '/^Private Key:/{print $2}' | tail -n 1)"
 
@@ -214,7 +214,7 @@ main() {
         fi
     else
         info "No NVIDIA GPU detected. GPU acceleration can be enabled later."
-        echo "  See: ${BLUE}https://docs.srec.rs/en/getting-started/docker#gpu-hardware-acceleration-nvidia${NC}"
+        echo "  See: ${BLUE}https://docs.srec.rs/en/getting-started/docker#nvidia-gpu${NC}"
     fi
     
     echo ""
@@ -230,7 +230,7 @@ main() {
     echo "     ${BLUE}nano .env${NC}"
     echo ""
     echo "  2. Start the application:"
-    echo "     ${BLUE}docker-compose up -d${NC}"
+    echo "     ${BLUE}docker compose up -d${NC}"
     echo ""
     echo "  3. Access the web interface:"
     echo "     ${BLUE}http://localhost:15275${NC}"
@@ -258,7 +258,7 @@ main() {
         echo "Web Interface: ${BLUE}http://localhost:15275${NC}"
         echo "API Docs:      ${BLUE}http://localhost:12555/api/docs${NC}"
     else
-        info "You can start Rust-Srec later with: docker-compose up -d"
+        info "You can start Rust-Srec later with: docker compose up -d"
     fi
 }
 

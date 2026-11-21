@@ -8,16 +8,16 @@ Each pipeline step is executed by a specialized processor:
 
 | Processor ID | Function | Core Parameters |
 |--------------|----------|-----------------|
-| `remux` | Changes container format, optionally re-encoding | `format`, `video_codec`, `audio_codec`, `crf`, `preset`, `remove_input_on_success` |
+| `remux` | Changes container format, optionally re-encoding | `format`, `video_codec`, `audio_codec`, `crf`, `preset`, `hwaccel`, `start_time`, `duration`, `end_time`, `include_recording_metadata`, `remove_input_on_success` |
 | `danmaku_factory` | Converts danmaku XML to ASS subtitles with DanmakuFactory | `binary_path`, `args`, `extra_args`, `delete_source_xml_on_success` |
 | `ass_burnin` | Hard-burns ASS subtitles into the matching video | `match_strategy`, `video_codec`, `crf`, `preset`, `fonts_dir`, `delete_source_videos_on_success` |
 | `thumbnail` | Extracts a video frame as an image | `timestamp_secs`, `width`, `quality`, `preserve_resolution` |
 | `audio_extract` | Extracts an audio track | `format`, `bitrate`, `sample_rate`, `channels`, `output_path` |
 | `compression` | Bundles files into a ZIP or tar.gz archive | `format`, `compression_level`, `output_path`, `overwrite`, `preserve_paths` |
-| `rclone` | Cloud synchronization | `destination_root`, `operation`, `time_anchor`, `max_retries`, `args`, `proxy_route` |
-| `baidupcs` | Baidu Netdisk upload via BaiduPCS-Go | `destination_root`, `policy`, `norapid`, `time_anchor`, `args`, `proxy_route` |
+| `rclone` | Cloud synchronization | `destination_root`, `config_path`, `operation`, `time_anchor`, `max_retries`, `bwlimit`, `bwlimit_file`, `transfers`, `checkers`, `tpslimit`, `tpslimit_burst`, `multi_thread_streams`, `multi_thread_cutoff`, `args`, `proxy_route` |
+| `baidupcs` | Baidu Netdisk upload via BaiduPCS-Go | `destination_root`, `binary_path`, `config_dir`, `policy`, `norapid`, `max_retries`, `remove_source_after_upload`, `time_anchor`, `args`, `proxy_route` |
 | `copy_move` | Copies or moves local files | `operation`, `destination`, `time_anchor`, `overwrite`, `exclude_patterns` |
-| `metadata` | Embeds metadata tags into the media file with FFmpeg | `title`, `artist`, `date`, `album`, `comment`, `custom` |
+| `metadata` | Embeds metadata tags into the media file with FFmpeg | `title`, `artist`, `date`, `album`, `comment`, `custom`, `remove_input_on_success` |
 | `delete` | Deletes the files it receives, that is, the outputs of the steps it depends on | `max_retries`, `retry_delay_ms` |
 | `execute` | Runs a program or custom shell command | `program`, `args` or `command`, `scan_output_dir`, `scan_extension` |
 
@@ -69,7 +69,7 @@ Windows additionally rejects pipes, multiline templates, batch scripts, builtin 
 
 Windows assembles each complete argument before applying the backslash-quote encoding used by common C-style and Shell32 parsers. Programs with custom argument parsers must accept that encoding; follow the called program's argument or data-interface requirements. Redirect filenames use separate rules and cannot contain a double quote.
 
-Fixed Windows native paths accept 8.3 aliases such as `RUNNER~1` and literal brackets. Wildcard executable names and extended `\\?\` namespace paths remain unsupported. Value-bearing Windows commands are checked before launch against cmd's 8,191 UTF-16-unit limit: each inherited binding, the generated command and a conservative expanded command must fit, with 32 units reserved for the launcher. Large JSON arrays may therefore require `program`/`args` or a file data interface.
+Windows commands with placeholders require a normal native executable path (wildcards and `\\?\` extended paths are rejected) and must fit within Windows `cmd.exe`'s 8,191-character command-line limit. For large JSON arrays such as `{inputs_json}` or `{manifest_json}`, use `program` and `args` (or pass data via a file) instead.
 
 Use `program` and `args`, or a fixed script with a documented argument/data interface, for unsupported forms. Do not place untrusted values into that program's code or expression arguments: the called program still interprets its own options.
 
@@ -100,18 +100,4 @@ The `baidupcs` processor uploads recordings to Baidu Netdisk through the externa
 - **Retries**: BaiduPCS-Go's exit code does not reflect upload results, so rust-srec parses its per-file output markers. Retries (in-run and manual job retries) re-send only files without a confirmed result; with the default `skip` policy plus rapid-upload detection, retries avoid uploading files whose results are already confirmed. When some files of a batch fail, the step fails and each file's own result (uploaded, skipped or failed) is recorded. Two inputs with the same file name are rejected before uploading, because every file is uploaded directly to the destination folder. Files that Baidu rejects outright (an illegal name, a file over the size limit, an unreadable file or an exhausted quota) are recorded as failed and are not re-sent by later attempts. A large batch is uploaded through several BaiduPCS-Go invocations so the command line stays within the platform limit, and the login check that precedes an upload is not written to the job log.
 - **Limits**: single files above 128 GB are rejected by Baidu, and interrupted transfers restart from the beginning (BaiduPCS-Go v4 no longer supports resume). Upload jobs run one BaiduPCS-Go process at a time because the tool's local state store is single-writer; avoid running the CLI manually against the same config directory while jobs are active. Further upload jobs stay queued until the running one finishes, shown as queued uploads in the top bar; their timeout (the step's [`timeout_secs`](./workflows.md#per-step-retries-and-timeouts), otherwise the **IO Job** timeout) starts only when they start running. Baidu Netdisk uploads count toward **Max Uploads** together with rclone uploads, and not toward **Max IO Jobs**. Before sending a file, BaiduPCS-Go reads the whole file to check whether Baidu already has a copy, unless **Disable rapid upload** is on; for a large recording this can take minutes, and the job shows **Preparing…** meanwhile.
 
-Logins use the [BaiduPCS-Go v4.0.1 stdin command interface](https://github.com/qjfoidnh/BaiduPCS-Go/blob/v4.0.1/main.go)
-with an isolated copy of its standard `pcs_config.json`. This avoids exposing
-cookies, BDUSS or STOKEN in process arguments. The CLI's history path is blocked
-inside that private directory, so login commands are not saved to history. A
-successful result updates only the active account and selected UID in the original
-config; rejected logins leave it unchanged. External changes observed when the
-original bytes are checked before commit cause the update to be refused. External
-CLI/config writers do not share the backend lock and must not run concurrently.
-
-Custom binaries must support the same no-argument command interface, `env`
-config-directory report and standard account-config format. Incompatible binaries
-return an error; credentials are never retried through command-line flags. Login
-subprocesses keep a 60-second deadline, including stdin delivery, with up to five
-seconds for forced cleanup. A cancelled request retains the account lock until
-cleanup completes. Do not include line breaks or NUL characters in pasted credentials.
+- **Login caveats**: credentials are passed over stdin rather than command-line flags and are never written to BaiduPCS-Go's command history; only the active account entry in `pcs_config.json` is updated on success. Do not run external `BaiduPCS-Go` commands against the same config directory concurrently — if the config file changes externally during login, the update is rejected. Custom binaries must be compatible with BaiduPCS-Go v4's interactive stdin command interface and `pcs_config.json` layout. Login attempts time out after 60 seconds, and pasted credentials cannot contain line breaks or NUL characters.

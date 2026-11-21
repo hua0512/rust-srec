@@ -18,7 +18,16 @@ https://live.douyin.com/{房间号}
 
 ## 认证
 
-抖音通常无需账号即可正常录制：未提供 `ttwid` Cookie 时会自动获取。如需使用已登录的会话或自己的 `ttwid`，请在 **设置** → **平台** → **抖音** 的 **网络** 标签页中把这些 Cookie 添加为[账号凭据配置](../concepts/configuration.md#账号配置与选择)，并选中它。
+抖音通常无需账号即可正常录制：未提供 `ttwid` Cookie 时会自动获取。可通过 `ttwid_management_mode` 控制自动获取 `ttwid` 的方式：
+
+- `global`（默认）：在所有抖音提取器间共享同一个自动获取的 `ttwid`。
+- `per_extractor`：为每个提取器实例单独获取一份 `ttwid`。
+
+如需使用已登录的会话或自己的 `ttwid`，请在 **设置** → **平台** → **抖音** 的 **网络** 标签页中把这些 Cookie 添加为[账号凭据配置](../concepts/configuration.md#账号配置与选择)，并选中它。
+
+## 批量检测 <Badge type="tip" text="Premium · 即将开放" />
+
+抖音批量检测将在 Premium 版本开放后提供，用于提升多主播场景下的开播监测效率。当前尚未开放，详情请关注[版本方案](/zh/#tiers)。
 
 ::: warning
 - **画质选择**：可在配置中开启 `force_origin_quality` 以强制获取最高画质。（实验性：如果所请求的画质不可用，可能导致无法获取视频流）。

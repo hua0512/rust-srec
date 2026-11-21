@@ -8,7 +8,7 @@
 | [桌面应用](#桌面应用) | 在一台个人电脑上录制 | 内置于应用 | 仅供应用内部使用 |
 | 预编译二进制 | 仅后端或自定义部署 | 需单独部署前端 | 后端默认：`http://localhost:12555/api` |
 | [systemd 服务](#systemd-服务-linux) | 不使用 Docker 运行后端的 Linux 主机 | 需单独部署前端 | `http://localhost:12555/api` |
-| 使用示例 `.env` 的源码工作区 | 开发与贡献 | `http://localhost:15275` | `http://localhost:8080/api` |
+| 使用示例 `.env` 的源码工作区 | 开发与贡献 | `http://localhost:15275` | `http://localhost:12555/api` |
 
 Docker 会把前端容器的 `80` 端口和后端容器的 `8080` 端口映射到表中的宿主机端口。容器内部端口不是宿主机浏览器应访问的地址。
 
@@ -67,7 +67,7 @@ systemctl daemon-reload && systemctl enable --now rust-srec
 
 `/etc/rust-srec/rust-srec.env` 通过 `EnvironmentFile=` 加载。服务缺少 `JWT_SECRET` 会拒绝启动，因此该文件实际上是必需的。Web Push（VAPID）密钥，以及 ffmpeg、rclone、streamlink 或 DanmakuFactory 的 `*_PATH` 覆盖项也应写在这里。文件中的每一项都会覆盖 unit 自身的 `Environment=` 设置。
 
-`/opt/rust-srec` 同时也是 Docker Compose 安装脚本的默认目录（`RUST_SREC_DIR`）。两种部署共用一台主机时，请为二进制选择其他路径。
+Docker Compose 安装脚本默认将 `RUST_SREC_DIR` 设为 `./rust-srec`，但 [Docker 部署指南](./docker.md#安装脚本) 中也以 `/opt/rust-srec` 作为示例。两种部署共用一台主机且把 Docker 安装到 `/opt/rust-srec` 时，请为二进制选择其他路径。
 
 验证服务：
 
@@ -79,11 +79,7 @@ curl http://localhost:12555/api/health/live
 
 ### 设置录制目录
 
-全新数据库会使用 unit 的 `OUTPUT_DIR=/var/lib/rust-srec/output` 作为录制文件夹。已有数据库会保留已保存的 `output_folder`，包括旧的默认值 `/app/output`。这些安装需要在**设置 → 全局 → 输出文件夹**中填入 `/var/lib/rust-srec/output` 或 `ReadWritePaths=` 列出的卷；`ProtectSystem=strict` 不会让 `/app/output` 可写。
-
-`RUST_SREC_OUTPUT_ROOTS` 必须与该值保持一致，否则输出根写入门控会把服务报告为降级。unit 出厂时两者都指向 `/var/lib/rust-srec/output`。
-
-录制量超过几百 GB 时，应为其单独准备一个卷并写入 `ReadWritePaths=`，而不是嵌套在 `/var/lib/rust-srec` 内部。`ReadWritePaths=` 中的每个路径都必须已存在——路径缺失时 `ProtectSystem=strict` 会让 unit 以 `226/NAMESPACE` 失败——而且 systemd 不会为它们 chown，因此创建时就要归属 `rust-srec`。
+全新数据库会使用 `OUTPUT_DIR=/var/lib/rust-srec/output`。已有数据库会保留已保存的 `output_folder`（包括 Docker 旧默认路径 `/app/output`）；请把**设置 → 全局 → 输出文件夹**改为 `/var/lib/rust-srec/output` 或已存在、归属 `rust-srec` 且列在 `ReadWritePaths=` 下的卷，并保持 `RUST_SREC_OUTPUT_ROOTS` 一致，以免写入门控报告降级。录制量超过几百 GB 时，建议在 `ReadWritePaths=` 下使用独立卷，而不是嵌套在 `/var/lib/rust-srec` 内。
 
 ### unit 设置的变量
 
@@ -97,12 +93,13 @@ curl http://localhost:12555/api/health/live
 | `API_PORT` | `12555` |
 | `RUST_LOG` | `info` |
 | `RUST_SREC_SHUTDOWN_TIMEOUT_SECS` | `30` |
+| `RUST_SREC_SHUTDOWN_FORCE_RESERVE_SECS` | `2` |
 
 以上都可以在 `/etc/rust-srec/rust-srec.env` 中覆盖。`TimeoutStopSec=35` 必须始终大于 `RUST_SREC_SHUTDOWN_TIMEOUT_SECS`；只调整其中一个，会导致 systemd 在录制尚未收尾时就发送 `SIGKILL`。
 
-### 文件权限
+### 文件权限与安全加固 {#文件权限}
 
-`UMask=0027` 让录制文件写为 `-rw-r-----`，只有 `rust-srec` 及其用户组可读。需要读取这些文件的账号（文件服务、媒体库扫描器等）应加入 `rust-srec` 组，或在 drop-in 中调低 `UMask=`。unit 的其余加固措施及其对 GPU 转码的影响见[安全](../operations/security.md)。
+`UMask=0027` 让录制文件写为 `-rw-r-----`，只有 `rust-srec` 及其用户组可读。需要读取这些文件的账号（如媒体库扫描器）应加入 `rust-srec` 组，或在 drop-in 中调整 `UMask=`。unit 完整的沙盒加固规则、`ProtectSystem=strict` 说明以及 GPU 转码覆盖方式见[安全](../operations/security.md)。
 
 ## 从源码构建
 
@@ -136,12 +133,19 @@ Windows 请安装 [Visual Studio Build Tools](https://visualstudio.microsoft.com
 git clone https://github.com/hua0512/rust-srec.git
 cd rust-srec
 cargo build --locked --release -p rust-srec
-
-cd rust-srec
-cp .env.example .env
 ```
 
-把 `.env` 中的 `JWT_SECRET` 替换为至少 32 字符的随机值。仓库示例设置了 `API_PORT=8080`；不加载 `.env` 时，后端默认使用 `12555`。
+后端通过 `dotenvy` 加载 `.env`，它只会在**当前工作目录**及上级目录中向上查找，**不会**向下进入 `rust-srec/` 子目录。请把 `.env` 放在计划启动二进制的目录中：
+
+```bash
+# 方式 A：把 .env 放在仓库根目录，并从根目录启动
+cp rust-srec/.env.example .env
+
+# 方式 B：把 .env 放在 rust-srec/ 目录，并从 rust-srec/ 目录启动
+cd rust-srec && cp .env.example .env
+```
+
+把 `.env` 中的 `JWT_SECRET` 替换为至少 32 字符的随机值。
 
 主要后端设置：
 
@@ -150,8 +154,8 @@ cp .env.example .env
 | `JWT_SECRET` | 签发访问和刷新令牌；必填 | 必须替换占位值 |
 | `DATABASE_URL` | SQLite 数据库位置 | `sqlite:./srec.db` |
 | `API_BIND_ADDRESS` | 监听的网络接口 | `0.0.0.0` |
-| `API_PORT` | API 端口 | `8080` |
-| `OUTPUT_DIR` | 独立后端全新数据库的初始录制文件夹，同时供健康探测监视；不覆盖已保存的设置 | `./output` |
+| `API_PORT` | API 端口 | `12555` |
+| `OUTPUT_DIR` | 独立后端全新数据库的初始录制文件夹；不覆盖已保存的设置 | `./output` |
 | `RUST_LOG` | 日志级别 | `info` |
 
 可用 `openssl rand -hex 32` 生成密钥。PowerShell 命令如下：
@@ -162,10 +166,14 @@ $bytes = New-Object Byte[] 32
 -join ($bytes | ForEach-Object { "{0:x2}" -f $_ })
 ```
 
-从仓库根目录启动后端：
+在存放 `.env` 的目录中启动后端：
 
 ```bash
+# 若 .env 位于仓库根目录：
 ./target/release/rust-srec
+
+# 若 .env 位于 rust-srec/ 目录内：
+cd rust-srec && ../target/release/rust-srec
 ```
 
 ### 以开发模式运行前端
@@ -177,14 +185,16 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-请替换前端 `.env` 中的 `SESSION_SECRET`。其中 API 已指向示例后端端口 `8080`；Vite 开发界面使用 `15275` 端口。
+请替换前端 `.env` 中的 `SESSION_SECRET`。其中的 API 地址已指向后端 `12555` 端口；Vite 开发界面使用 `15275` 端口。
 
 ## 外部工具
 
 内置 Mesio 下载引擎不依赖 Streamlink。只有选择相应功能时才需要安装外部工具：
 
-- 非 Docker 环境使用 FFmpeg 处理器或基于 FFmpeg 的工作流时，安装 `ffmpeg` 并加入 `PATH`。
-- 选择 Streamlink 下载引擎时，安装 `streamlink` 并加入 `PATH`。
+- 非 Docker 环境使用 FFmpeg 处理器或基于 FFmpeg 的工作流时，安装 `ffmpeg` 并加入 `PATH`（或通过 `FFMPEG_PATH` 指定路径）。
+- 选择 Streamlink 下载引擎或提取器时，安装 `streamlink` 并加入 `PATH`。
+- 使用 `rclone` 云存储上传处理器时，安装 [rclone](https://rclone.org/) 并加入 `PATH`（或通过 `RCLONE_PATH` 指定路径）。
+- 使用 `danmaku_factory` 弹幕 XML 转 ASS 字幕处理器时，安装 [DanmakuFactory](https://github.com/hihkm/DanmakuFactory) 并加入 `PATH`（或通过 `DANMAKU_FACTORY_PATH` 指定路径）。
 - 使用 `baidupcs` 百度网盘上传处理器时，安装 [BaiduPCS-Go](https://github.com/qjfoidnh/BaiduPCS-Go) 并加入 `PATH`（或通过 `BAIDUPCS_PATH` 指定路径）。
 - Docker 镜像已经包含其支持的运行时工具，标准 Docker 部署不需要在宿主机重复安装。
 

@@ -1,4 +1,4 @@
-# 配置层级
+# 配置层级 {#configuration}
 
 全局设置用于默认值，平台设置用于某个平台，模板用于一组主播，主播覆盖用于个别例外。
 
@@ -12,6 +12,8 @@
 4. 主播
 
 例如，全局输出格式为 `flv`，模板设为 `mp4`，使用该模板的主播就录制为 MP4。某个主播显式设为 `flv` 时，则使用 FLV。删除该覆盖后重新继承模板。
+
+<ConfigLayersDemo />
 
 ## 创建并使用模板
 
@@ -38,11 +40,8 @@
 
 正在进行的下载会采纳：
 
-- `min_segment_size_bytes`，以及分段管道和会话完成管道的定义——每个分段结束时都会重新从
-  合并配置读取。在配置中清空某个管道并不会让已经在跑的会话也清空它：这次重读只会替换
-  「有值」的管道。
-- 保存全局设置后的 `max_concurrent_downloads`、排队刷新阈值、GPU 探测间隔和管道
-  工作线程并发数。
+- `min_segment_size_bytes`，分段（`pipeline`）、配对分段（`paired_segment_pipeline`）与会话完成（`session_complete_pipeline`）管道定义，以及 `auto_thumbnail`（在第 0 段评估）——每个分段结束时都会重新从合并配置读取。在配置中清空某个管道并不会让已经在跑的会话也清空它：这次重读只会替换「有值」的管道。
+- 保存全局设置后的 `max_concurrent_downloads`、排队刷新阈值、GPU 探测间隔和管道工作线程并发数。调低 `max_concurrent_cpu_jobs`、`max_concurrent_io_jobs` 或 `max_concurrent_uploads` 会及时生效，而**调高**到高于启动时的并发上限则需要重启。
 - 新的监控间隔，应用于每个在线主播——但仅当 `streamer_check_delay_ms`、
   `offline_check_delay_ms` 或 `offline_check_count` 确实发生了变化。已经到达检查时间的主播
   会先完成那次检查，之后才应用新的间隔。
@@ -53,132 +52,6 @@
 它们只对该主播的下一次下载生效，而不是当前下载的下一个分段。
 
 已经排队的管道任务会继续沿用创建时携带的 DAG 定义。
-
-<div id="_4-层配置层级" class="legacy-section">
-
-此节内容已移至[配置层级](./configuration.md#继承顺序).
-
-</div>
-
-<div id="合并结果-mergedconfig" class="legacy-section">
-
-此节内容已移至[配置解析](../development/configuration.md#合并结果-mergedconfig).
-
-</div>
-
-<div id="各项设置分别在哪一层配置" class="legacy-section">
-
-此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#各项设置分别在哪一层配置).
-
-</div>
-
-<div id="合并规则-重要细节" class="legacy-section">
-
-此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#合并规则-重要细节).
-
-</div>
-
-<div id="标量-高优先级层覆盖" class="legacy-section">
-
-此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#标量-高优先级层覆盖).
-
-</div>
-
-<div id="离线判定和下载失败恢复共用同一个次数" class="legacy-section">
-
-此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#离线判定和下载失败恢复共用同一个次数).
-
-</div>
-
-<div id="cookies-有值即覆盖-空字符串同样算有值" class="legacy-section">
-
-此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#cookies-有值即覆盖-空字符串同样算有值).
-
-</div>
-
-<div id="流选择-由-streamselectionconfig-merge-合并" class="legacy-section">
-
-此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#流选择-由-streamselectionconfig-merge-合并).
-
-</div>
-
-<div id="管道-高优先级层整体替换管道" class="legacy-section">
-
-此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#管道-高优先级层整体替换管道).
-
-</div>
-
-<div id="平台附加项-json-浅合并-null-不覆盖" class="legacy-section">
-
-此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#平台附加项-json-浅合并-null-不覆盖).
-
-</div>
-
-<div id="平台提取器选项-platform-extras" class="legacy-section">
-
-此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#平台提取器选项-platform-extras).
-
-</div>
-
-<div id="凭据-cookies-refresh-token-单独解析" class="legacy-section">
-
-此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#凭据-cookies-refresh-token-单独解析).
-
-</div>
-
-<div id="主播覆盖-streamer-specific-config" class="legacy-section">
-
-此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#主播覆盖-streamer-specific-config).
-
-</div>
-
-<div id="引擎与提取器选择" class="legacy-section">
-
-此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#引擎与提取器选择).
-
-</div>
-
-<div id="download-engine" class="legacy-section">
-
-此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#download-engine).
-
-</div>
-
-<div id="extractor" class="legacy-section">
-
-此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#extractor).
-
-</div>
-
-<div id="engines-override-仅模板层" class="legacy-section">
-
-此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#engines-override-仅模板层).
-
-</div>
-
-<div id="热重载、缓存与更新事件" class="legacy-section">
-
-此节内容已移至[配置层级](./configuration.md#修改何时影响正在进行的录制).
-
-</div>
-
-<div id="过滤器时区与边界" class="legacy-section">
-
-此节内容已移至[录制时间安排](../guides/schedules.md#过滤器时区与边界).
-
-</div>
-
-<div id="upgrading-from-configuration-cookies" class="legacy-section">
-
-此节内容已移至[升级与回滚](../operations/upgrading.md#upgrading-from-configuration-cookies)。
-
-</div>
-
-<div id="upgrading-proxy-settings" class="legacy-section">
-
-此节内容已移至[升级与回滚](../operations/upgrading.md#proxy-settings)。
-
-</div>
 
 ## 账号配置与选择
 
@@ -252,3 +125,129 @@
 ### 按连接限流 {#proxy-rate-limits}
 
 平台限流针对的是连接而不是账号。直连、系统代理以及每个已保存的代理各算一条连接；未设置代理环境变量时，系统代理与直连算同一条连接。平台限制请求时，只有该平台在这条连接上的请求会暂停，无论是哪个设置或账号选择了它。启用故障切换的账号池随后会改用另一条连接上的账号，跳过使用被限流连接的账号，并把连接仍在暂停中的账号放到最后尝试。每次暂停都会发送“平台限流”通知，并注明是哪条连接。修改已保存代理的地址或用户名会解除其暂停。
+
+<div id="_4-层配置层级" class="legacy-section">
+
+此节内容已移至[配置层级](./configuration.md#继承顺序)。
+
+</div>
+
+<div id="合并结果-mergedconfig" class="legacy-section">
+
+此节内容已移至[配置解析](../development/configuration.md#合并结果-mergedconfig)。
+
+</div>
+
+<div id="各项设置分别在哪一层配置" class="legacy-section">
+
+此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#各项设置分别在哪一层配置)。
+
+</div>
+
+<div id="合并规则-重要细节" class="legacy-section">
+
+此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#合并规则-重要细节)。
+
+</div>
+
+<div id="标量-高优先级层覆盖" class="legacy-section">
+
+此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#标量-高优先级层覆盖)。
+
+</div>
+
+<div id="离线判定和下载失败恢复共用同一个次数" class="legacy-section">
+
+此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#离线判定和下载失败恢复共用同一个次数)。
+
+</div>
+
+<div id="cookies-有值即覆盖-空字符串同样算有值" class="legacy-section">
+
+此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#cookies-有值即覆盖-空字符串同样算有值)。
+
+</div>
+
+<div id="流选择-由-streamselectionconfig-merge-合并" class="legacy-section">
+
+此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#流选择-由-streamselectionconfig-merge-合并)。
+
+</div>
+
+<div id="管道-高优先级层整体替换管道" class="legacy-section">
+
+此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#管道-高优先级层整体替换管道)。
+
+</div>
+
+<div id="平台附加项-json-浅合并-null-不覆盖" class="legacy-section">
+
+此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#平台附加项-json-浅合并-null-不覆盖)。
+
+</div>
+
+<div id="平台提取器选项-platform-extras" class="legacy-section">
+
+此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#平台提取器选项-platform-extras)。
+
+</div>
+
+<div id="凭据-cookies-refresh-token-单独解析" class="legacy-section">
+
+此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#凭据-cookies-refresh-token-单独解析)。
+
+</div>
+
+<div id="主播覆盖-streamer-specific-config" class="legacy-section">
+
+此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#主播覆盖-streamer-specific-config)。
+
+</div>
+
+<div id="引擎与提取器选择" class="legacy-section">
+
+此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#引擎与提取器选择)。
+
+</div>
+
+<div id="download-engine" class="legacy-section">
+
+此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#download-engine)。
+
+</div>
+
+<div id="extractor" class="legacy-section">
+
+此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#extractor)。
+
+</div>
+
+<div id="engines-override-仅模板层" class="legacy-section">
+
+此节内容已移至[覆盖配置参考](../reference/configuration-overrides.md#engines-override-仅模板层)。
+
+</div>
+
+<div id="热重载、缓存与更新事件" class="legacy-section">
+
+此节内容已移至[配置解析](../development/configuration.md#热重载、缓存与更新事件)。
+
+</div>
+
+<div id="过滤器时区与边界" class="legacy-section">
+
+此节内容已移至[录制时间安排](../guides/schedules.md#过滤器时区与边界)。
+
+</div>
+
+<div id="upgrading-from-configuration-cookies" class="legacy-section">
+
+此节内容已移至[升级与回滚](../operations/upgrading.md#upgrading-from-configuration-cookies)。
+
+</div>
+
+<div id="upgrading-proxy-settings" class="legacy-section">
+
+此节内容已移至[升级与回滚](../operations/upgrading.md#proxy-settings)。
+
+</div>

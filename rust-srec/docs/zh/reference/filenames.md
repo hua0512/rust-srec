@@ -8,7 +8,7 @@ Rust-Srec 支持在 `output_folder` 和 `output_filename_template` 中使用两�
 | 变量 | 说明 |
 |------|------|
 | `{streamer}` | 主播显示名称，文件名中不允许的字符会替换为 `_` |
-| `{title}` | 当前直播标题，同样经过字符替换 |
+| `{title}` | 当前直播标题，同样经过字符替换（在录制模板中限制为最多 150 字节；流水线目标路径模板不截断） |
 | `{platform}` | 平台名称 (如 bilibili) |
 | `{session_id}` | 录制会话的唯一 ID (仅适用于 `output_folder`) |
 
@@ -23,13 +23,13 @@ Rust-Srec 支持在 `output_folder` 和 `output_filename_template` 中使用两�
 | `%H` | 小时 (00-23) |
 | `%M` | 分钟 (00-59) |
 | `%S` | 秒数 (00-59) |
-| `%i` | 分段序列号；仅适用于 `output_filename_template` |
+| `%i` | 3 位补零的分段序列号（`001`，默认从 `1` 开始）；仅适用于 `output_filename_template` |
 | `%t` | Unix 时间戳 |
 | `%%` | 字面量百分号 |
 
 时间占位符按服务器本地时区渲染。无法识别的 `%` 序列保持原样。
 
-`output_filename_template` 命名的是文件而不是路径，目录层级请放在 `output_folder` 中。`/`、`:` 等文件名中不允许的字符可能会被替换为 `_`。
+`output_filename_template` 命名的是文件而不是路径，目录层级请放在 `output_folder` 中。`/`、`:` 等文件名中不允许的字符可能会被替换为 `_`。展开后，超过 200 字节的录制文件名主干会按 UTF-8 字符边界截断并附加 `...`，以满足文件系统限制。
 
 示例：将 `output_folder` 设为 `/rec/{streamer}/%Y-%m-%d`，`output_filename_template` 设为 `%H-%M-%S_{title}`。
 

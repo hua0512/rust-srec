@@ -42,50 +42,9 @@ services also contribute to memory use.
 
 ## Logs {#logs}
 
-In Docker:
+Operational log commands, retention limits, and segment naming live in [Monitoring: Logs](../operations/monitoring.md#logs). Contributor-facing implementation invariants:
 
-```bash
-docker compose logs --since=30m rust-srec
-docker compose logs --since=30m frontend
-```
-
-With the systemd service:
-
-```bash
-journalctl -u rust-srec --since "30 min ago"
-journalctl -u rust-srec -f
-```
-
-The example Compose file rotates container JSON logs. The unit sets `StandardOutput=journal` and `StandardError=journal` with `SyslogIdentifier=rust-srec`, so process output goes to the journal and is subject to the host's journald retention.
-
-In both deployments the application also writes its own daily-rotated log files to `LOG_DIR`, which the unit points at `/var/log/rust-srec`. Centralize logs when incident history must survive host loss, and filter access because paths and platform metadata may be sensitive even though credentials are redacted by the application.
-
-Application files rotate at UTC date changes and before a write exceeds
-`LOG_MAX_FILE_BYTES` (16 MiB by default). `LOG_MAX_FILES` defaults to 16 and includes
-the current segment. Oldest managed segments are removed to make room, so seven
-days is a maximum age, not a guaranteed retention window. Startup and daily
-cleanup also remove expired or oversized legacy segments. Oversized individual
-records retain a UTF-8 prefix and a truncation marker; stderr reports cumulative
-truncation and write-failure counts at increasing intervals.
-
-Legacy `rust-srec.log.YYYY-MM-DD` files remain readable and can be appended while
-they fit. New segments use `rust-srec.log.YYYY-MM-DD.<20-digit sequence>`. Listing,
-date filters and archives use the filename's UTC date for both forms. Rotation
-never truncates existing files. Archives retain their scanned-length snapshot;
-if retention removes a selected file before it is opened, the download fails
-explicitly rather than silently omitting that file.
-
-Independent instances may share `LOG_DIR`: a short file lock coordinates each
-append, rotation and cleanup. Keep their limits consistent. With matching limits,
-successful maintenance bounds managed named files to 16 × 16 MiB by default;
-unrelated names, symlinks, filesystem overhead and deleted files still held open
-by readers are outside that bound. Do not remove `.rust-srec.log.lock` while any
-instance is running; it also stores the rotation counter. Uncoordinated external
-writers or older application versions sharing the directory cannot honor these
-limits. If capacity cannot be reclaimed, file writes fail instead of exceeding
-the limits; console and live logging remain independent. Emergency panic writes in abort builds try the same ownership
-without waiting and fall back to stderr on failure.
-
-Invalid limit settings or file initialization failures return a startup error.
-Console colors are enabled only when stdout is a terminal, and live-log event
-formatting is skipped when no client is subscribed.
+- **Cross-instance coordination**: independent instances sharing `LOG_DIR` coordinate each append, rotation, and cleanup through the advisory file lock `.rust-srec.log.lock`, which also stores the rotation counter. Uncoordinated external writers or older application versions sharing the directory cannot honor these bounds.
+- **Abort-build emergency panic fallback**: emergency panic writes in `panic = "abort"` builds attempt to acquire the same lock without waiting and fall back to `stderr` if the lock cannot be acquired or the write fails.
+- **Console color detection**: ANSI colors on console output are enabled only when `stdout` is a terminal (TTY).
+- **Lazy live-log formatting**: live-log WebSocket event formatting is skipped whenever no client is subscribed.

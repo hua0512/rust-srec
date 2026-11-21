@@ -4,11 +4,11 @@ Track version updates, behavior changes, compatibility notes, and upgrade guidan
 
 ## Unreleased
 
-- [`unreleased`](./unreleased.md) — no changes staged yet for the next release
+- [`unreleased`](./unreleased.md) <Badge type="warning" text="Preview" /> — Batch Detection for Bilibili and Twitch, Bigo live notifications and original-quality app-server recording, Weibo QR code login and guest checks, streamer check-failure alerts, notification and upload proxies, plus recording, workflow, and web interface fixes
 
 ## Latest release
 
-- [`v0.8.0`](./v0.8.0.md) — recorded and live chat over the video, Twitch H.265 and AV1, a low disk space notification and checks without an account, plus fixes for Bigo login requests, Mesio FLV recordings, cross-site requests, backups and the web interface
+- [`v0.8.0`](./v0.8.0.md) <Badge type="tip" text="Latest" /> — recorded and live chat over the video, Twitch H.265 and AV1, a low disk space notification and checks without an account, plus fixes for Bigo login requests, Mesio FLV recordings, cross-site requests, backups and the web interface
 
 ## Archive
 
