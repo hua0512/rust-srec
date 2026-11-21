@@ -566,12 +566,15 @@ mod tests {
             users,
             Arc::new(SqlxRefreshTokenRepository::new(pool.clone(), pool.clone())),
             Arc::new(SqlxApiKeyRepository::new(pool.clone(), pool.clone())),
-            Arc::new(crate::api::jwt::JwtService::new(
-                "test-credential-profile-key-32-chars",
-                "test",
-                "test",
-                Some(3600),
-            )),
+            Arc::new(
+                crate::api::jwt::JwtService::new(
+                    "test-credential-profile-key-32-chars",
+                    "test",
+                    "test",
+                    Some(3600),
+                )
+                .unwrap(),
+            ),
             AuthConfig::default(),
         ));
         let (_, full_key) = auth

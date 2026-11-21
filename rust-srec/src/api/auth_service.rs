@@ -1644,12 +1644,15 @@ mod tests {
         user: UserDbModel,
     ) -> (AuthService, Arc<CountingUserRepository>, Arc<JwtService>) {
         let repo = Arc::new(CountingUserRepository::new(user));
-        let jwt_service = Arc::new(JwtService::new(
-            "test-secret-key-32-chars-long!!",
-            "test-issuer",
-            "test-audience",
-            Some(900),
-        ));
+        let jwt_service = Arc::new(
+            JwtService::new(
+                "test-secret-key-32-chars-long!!",
+                "test-issuer",
+                "test-audience",
+                Some(900),
+            )
+            .unwrap(),
+        );
         let service = AuthService::new(
             repo.clone(),
             Arc::new(MockRefreshTokenRepository),
@@ -1675,7 +1678,8 @@ mod tests {
         jsonwebtoken::encode(
             &jsonwebtoken::Header::default(),
             &claims,
-            &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
+            &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes())
+                .expect("valid test JWT secret"),
         )
         .expect("token encoding should succeed")
     }
@@ -1742,12 +1746,15 @@ mod tests {
         user.must_change_password = false;
         let user_id = user.id.clone();
         let user_repo = Arc::new(SpyUserRepository { user });
-        let jwt_service = Arc::new(JwtService::new(
-            "test-secret-key-32-chars-long!!",
-            "test-issuer",
-            "test-audience",
-            Some(900),
-        ));
+        let jwt_service = Arc::new(
+            JwtService::new(
+                "test-secret-key-32-chars-long!!",
+                "test-issuer",
+                "test-audience",
+                Some(900),
+            )
+            .unwrap(),
+        );
         let service = AuthService::new(
             user_repo,
             Arc::new(MockRefreshTokenRepository),

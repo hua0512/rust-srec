@@ -245,12 +245,15 @@ impl ServiceContainer {
         let auth_config = self.auth_config.clone();
 
         let (issuer, audience) = crate::api::jwt::issuer_and_audience_from_env();
-        let jwt_service = Arc::new(JwtService::new(
-            &jwt_secret,
-            &issuer,
-            &audience,
-            Some(auth_config.access_token_expiration_secs),
-        ));
+        let jwt_service = Arc::new(
+            JwtService::new(
+                &jwt_secret,
+                &issuer,
+                &audience,
+                Some(auth_config.access_token_expiration_secs),
+            )
+            .map_err(|e| crate::Error::Configuration(e.to_string()))?,
+        );
 
         let auth_svc = self.database_auth_service(jwt_service, auth_config);
         info!(
@@ -361,12 +364,15 @@ mod tests {
             Arc::new(SqlxUserRepository::new(pool.clone(), pool.clone())),
             Arc::new(SqlxRefreshTokenRepository::new(pool.clone(), pool.clone())),
             Arc::new(SqlxApiKeyRepository::new(pool.clone(), pool)),
-            Arc::new(JwtService::new(
-                "client-ip-test-secret-with-enough-entropy",
-                "rust-srec",
-                "rust-srec-api",
-                None,
-            )),
+            Arc::new(
+                JwtService::new(
+                    "client-ip-test-secret-with-enough-entropy",
+                    "rust-srec",
+                    "rust-srec-api",
+                    None,
+                )
+                .unwrap(),
+            ),
             AuthConfig::default(),
         )
         .with_login_rate_limiter(LoginRateLimiter::new(5, 1, Duration::from_secs(60), 8));

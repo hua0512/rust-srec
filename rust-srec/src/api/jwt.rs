@@ -29,6 +29,8 @@ pub struct Claims {
 /// JWT service error types.
 #[derive(Debug, thiserror::Error)]
 pub enum JwtError {
+    #[error("Invalid JWT secret: {0}")]
+    InvalidSecret(String),
     #[error("Token generation failed: {0}")]
     TokenGeneration(String),
     #[error("Token validation failed: {0}")]
@@ -70,18 +72,27 @@ impl JwtService {
     /// * `issuer` - The token issuer claim
     /// * `audience` - The token audience claim
     /// * `expiration_secs` - Token expiration time in seconds (default: 3600)
-    pub fn new(secret: &str, issuer: &str, audience: &str, expiration_secs: Option<u64>) -> Self {
+    pub fn new(
+        secret: &str,
+        issuer: &str,
+        audience: &str,
+        expiration_secs: Option<u64>,
+    ) -> Result<Self, JwtError> {
+        let encoding_key = EncodingKey::from_secret(secret.as_bytes())
+            .map_err(|e| JwtError::InvalidSecret(e.to_string()))?;
+        let decoding_key = DecodingKey::from_secret(secret.as_bytes())
+            .map_err(|e| JwtError::InvalidSecret(e.to_string()))?;
         let mut validation = Validation::default();
         validation.set_issuer(&[issuer]);
         validation.set_audience(&[audience]);
-        Self {
-            encoding_key: EncodingKey::from_secret(secret.as_bytes()),
-            decoding_key: DecodingKey::from_secret(secret.as_bytes()),
+        Ok(Self {
+            encoding_key,
+            decoding_key,
             issuer: issuer.to_string(),
             audience: audience.to_string(),
             expiration_secs: expiration_secs.unwrap_or(3600),
             validation,
-        }
+        })
     }
 
     /// Create a new JWT service from environment variables.
@@ -93,18 +104,14 @@ impl JwtService {
             .ok()
             .filter(|value| !value.trim().is_empty())?;
         let (issuer, audience) = issuer_and_audience_from_env();
+        let service = Self::new(&secret, &issuer, &audience, Some(expiration_secs)).ok()?;
 
         info!(
             "JWT service initialized (issuer: {}, audience: {}, expiration: {}s)",
             issuer, audience, expiration_secs
         );
 
-        Some(Self::new(
-            &secret,
-            &issuer,
-            &audience,
-            Some(expiration_secs),
-        ))
+        Some(service)
     }
 
     /// Generate a JWT token for a user.

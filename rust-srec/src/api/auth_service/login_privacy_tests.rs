@@ -33,12 +33,9 @@ async fn service() -> (sqlx::SqlitePool, AuthService) {
         users,
         Arc::new(SqlxRefreshTokenRepository::new(pool.clone(), pool.clone())),
         Arc::new(SqlxApiKeyRepository::new(pool.clone(), pool.clone())),
-        Arc::new(JwtService::new(
-            "test-secret-key-32-chars-long!!",
-            "test",
-            "test",
-            Some(900),
-        )),
+        Arc::new(
+            JwtService::new("test-secret-key-32-chars-long!!", "test", "test", Some(900)).unwrap(),
+        ),
         AuthConfig::default(),
     )
     .with_login_rate_limiter(LoginRateLimiter::new(

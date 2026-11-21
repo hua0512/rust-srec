@@ -37,12 +37,15 @@ impl Fixture {
             users,
             tokens.clone(),
             Arc::new(SqlxApiKeyRepository::new(pool.clone(), pool.clone())),
-            Arc::new(JwtService::new(
-                "session-test-secret-key-32-chars!!",
-                "test",
-                "test",
-                Some(config.access_token_expiration_secs),
-            )),
+            Arc::new(
+                JwtService::new(
+                    "session-test-secret-key-32-chars!!",
+                    "test",
+                    "test",
+                    Some(config.access_token_expiration_secs),
+                )
+                .unwrap(),
+            ),
             config,
         );
         Self {
@@ -299,12 +302,9 @@ async fn auth_session_migration_preserves_legacy_refresh_and_integrity() {
         users.clone(),
         tokens,
         Arc::new(SqlxApiKeyRepository::new(pool.clone(), pool.clone())),
-        Arc::new(JwtService::new(
-            "legacy-migration-secret-32-chars!!",
-            "test",
-            "test",
-            None,
-        )),
+        Arc::new(
+            JwtService::new("legacy-migration-secret-32-chars!!", "test", "test", None).unwrap(),
+        ),
         AuthConfig::default(),
     );
     let upgraded = service.refresh_tokens("legacy-valid").await.unwrap();

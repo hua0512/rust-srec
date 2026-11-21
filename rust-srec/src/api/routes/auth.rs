@@ -799,12 +799,15 @@ mod tests {
             let user = UserDbModel::new("forced-user", password_hash, vec!["user".to_string()]);
             let user_id = user.id.clone();
 
-            let jwt_service = Arc::new(JwtService::new(
-                "test-secret-key-32-chars-long!!",
-                "test-issuer",
-                "test-audience",
-                Some(3600),
-            ));
+            let jwt_service = Arc::new(
+                JwtService::new(
+                    "test-secret-key-32-chars-long!!",
+                    "test-issuer",
+                    "test-audience",
+                    Some(3600),
+                )
+                .expect("valid test JWT secret"),
+            );
             let auth_service = Arc::new(
                 AuthService::new(
                     Arc::new(ForcedChangeUserRepository { user }),

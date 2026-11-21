@@ -15,7 +15,7 @@ import {
   type DefaultEdgeOptions,
   type Edge,
   type Node,
-  type NodeChange,
+  type NodeChangeset,
 } from '@xyflow/react';
 import reactFlowStylesheet from '@xyflow/react/dist/style.css?url';
 
@@ -99,12 +99,8 @@ const WorkflowFlowEditorInner = memo(
     );
 
     const handleNodesChange = useCallback(
-      (changes: NodeChange<Node>[]) => {
-        if (
-          changes.some(
-            (change) => change.type === 'position' && change.dragging,
-          )
-        ) {
+      (changes: NodeChangeset<Node>) => {
+        if (changes.getByType('position').some((change) => change.dragging)) {
           hasManualPositionsRef.current = true;
         }
         onNodesChange(changes);
@@ -214,7 +210,7 @@ const WorkflowFlowEditorInner = memo(
         lastLayoutTopologyRef.current = topologyKey;
 
         window.requestAnimationFrame(() => {
-          void fitView({ padding: 0.2, duration: 200 });
+          void fitView({ padding: '20%', duration: 200 });
         });
       }
     }, [
@@ -281,7 +277,7 @@ const WorkflowFlowEditorInner = memo(
       setEdges([...layoutedEdges]);
       lastLayoutTopologyRef.current = topologyKey;
       window.requestAnimationFrame(() => {
-        void fitView({ padding: 0.2, duration: 200 });
+        void fitView({ padding: '20%', duration: 200 });
       });
     }, [nodes, edges, setNodes, setEdges, topologyKey, fitView]);
 
@@ -300,7 +296,6 @@ const WorkflowFlowEditorInner = memo(
             defaultEdgeOptions={defaultEdgeOptions}
             connectionMode={ConnectionMode.Loose}
             fitView={!hasLaidOut} // Only fit view on initial load
-            colorMode="system"
           >
             <Background
               variant={'dots' as any}

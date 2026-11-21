@@ -87,7 +87,7 @@ fn decode_claims(token: &str) -> Value {
     validation.set_audience(&["rust-srec-api"]);
     jsonwebtoken::decode::<Value>(
         token,
-        &DecodingKey::from_secret(JWT_SECRET.as_bytes()),
+        &DecodingKey::from_secret(JWT_SECRET.as_bytes()).expect("valid test JWT secret"),
         &validation,
     )
     .expect("decode a harness-issued token")
@@ -98,7 +98,7 @@ fn mint(claims: &Value, secret: &str) -> String {
     jsonwebtoken::encode(
         &Header::default(),
         claims,
-        &EncodingKey::from_secret(secret.as_bytes()),
+        &EncodingKey::from_secret(secret.as_bytes()).expect("valid test JWT secret"),
     )
     .expect("encode a JWT")
 }

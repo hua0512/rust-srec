@@ -140,12 +140,10 @@ impl Fixture {
             users,
             repository,
             Arc::new(SqlxApiKeyRepository::new(pool.clone(), pool.clone())),
-            Arc::new(JwtService::new(
-                "test-secret-key-32-chars-long!!",
-                "test",
-                "test",
-                Some(900),
-            )),
+            Arc::new(
+                JwtService::new("test-secret-key-32-chars-long!!", "test", "test", Some(900))
+                    .unwrap(),
+            ),
             config,
         );
         Self {

@@ -193,12 +193,15 @@ pub(crate) mod tests {
             users,
             Arc::new(SqlxRefreshTokenRepository::new(pool.clone(), pool.clone())),
             Arc::new(SqlxApiKeyRepository::new(pool.clone(), pool.clone())),
-            Arc::new(JwtService::new(
-                "manual-route-secret-long-enough",
-                "fixture",
-                "fixture",
-                Some(3600),
-            )),
+            Arc::new(
+                JwtService::new(
+                    "manual-route-secret-long-enough",
+                    "fixture",
+                    "fixture",
+                    Some(3600),
+                )
+                .unwrap(),
+            ),
             AuthConfig::default(),
         ));
         let login = service
