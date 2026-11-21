@@ -644,7 +644,7 @@ impl MesioDownloader {
         });
 
         let stream: BoxMediaStream<HlsData, DownloadError> = Box::pin(SessionCancelOnDropStream {
-            inner: Box::pin(ReceiverStream::new(item_rx)),
+            inner: ReceiverStream::new(item_rx),
             token: session_token.clone(),
         });
 
@@ -823,6 +823,11 @@ impl Failover {
 /// Runs attempts against the request's sources until one ends the stream,
 /// the consumer goes away, or every source has failed. Items of successive
 /// attempts are separated by a discontinuity marker once media was delivered.
+///
+/// A session whose consumer dropped the item stream ends with
+/// [`DownloadTerminal::DownstreamClosed`], wherever the task observed it.
+/// The drop also cancels the token, but it closes the channel first, so a
+/// cancellation seen while the channel is closed came from the consumer.
 #[allow(clippy::too_many_arguments)]
 async fn run_source_failover<E, F>(
     name: &'static str,
@@ -852,7 +857,25 @@ where
         attempted: HashSet::new(),
         delivered_media: false,
     };
+    match run_attempts(&mut failover, make_engine, request, request_cache).await {
+        DownloadTerminal::Cancelled if failover.item_tx.is_closed() => {
+            DownloadTerminal::DownstreamClosed
+        }
+        terminal => terminal,
+    }
+}
 
+async fn run_attempts<E, F>(
+    failover: &mut Failover,
+    make_engine: F,
+    request: DownloadRequest,
+    request_cache: Option<Arc<CacheManager>>,
+) -> DownloadTerminal
+where
+    E: MediaEngine<Item = HlsData>,
+    F: Fn() -> Result<E, DownloadError>,
+{
+    let name = failover.name;
     let mut last_error: Option<DownloadError> = None;
     let mut pending_discontinuity = false;
     let mut attempt = 0_u32;
@@ -973,8 +996,9 @@ enum Delivery {
 
 /// Sends `item` downstream unless `token` is cancelled first. A consumer
 /// that stops reading without dropping the stream would otherwise keep a
-/// cancelled session blocked here forever. A dropped stream (which also
-/// cancels the session) reports `Closed`.
+/// cancelled session blocked here forever. A dropped stream, which also
+/// cancels the session, may report either; `run_source_failover` tells the
+/// two apart.
 async fn deliver<T>(tx: &mpsc::Sender<T>, item: T, token: &CancellationToken) -> Delivery {
     if tx.is_closed() {
         return Delivery::Closed;
@@ -1040,8 +1064,12 @@ fn select_source_attempt(
     }))
 }
 
+/// The consumer's end of a failover session's items. Dropping it closes the
+/// channel before it cancels the session: the failover task can run as soon
+/// as the token is cancelled, and must then find the channel closed to end
+/// with [`DownloadTerminal::DownstreamClosed`] rather than `Cancelled`.
 struct SessionCancelOnDropStream<T> {
-    inner: BoxMediaStream<T, DownloadError>,
+    inner: ReceiverStream<Result<T, DownloadError>>,
     token: CancellationToken,
 }
 
@@ -1049,12 +1077,13 @@ impl<T> Stream for SessionCancelOnDropStream<T> {
     type Item = Result<T, DownloadError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.inner.as_mut().poll_next(cx)
+        Pin::new(&mut self.inner).poll_next(cx)
     }
 }
 
 impl<T> Drop for SessionCancelOnDropStream<T> {
     fn drop(&mut self) {
+        self.inner.close();
         self.token.cancel();
     }
 }
