@@ -72,8 +72,9 @@ struct Cursor {
 /// An account still to try in one operation.
 struct Candidate {
     id: String,
-    /// Repair the account before extracting with it.
-    repair: bool,
+    /// Repair the account before extracting with it, if it is still at this
+    /// revision, the one the platform rejected.
+    repair: Option<i64>,
     /// The route the account's requests take.
     route: ResolvedRoute,
 }
@@ -102,7 +103,7 @@ impl Attempts {
         if first {
             self.candidates.push_front(Candidate {
                 id: id.to_owned(),
-                repair: false,
+                repair: None,
                 route,
             });
         }
@@ -117,7 +118,7 @@ struct AttemptStep<'a> {
     deadline: OperationDeadline,
     attempt: u8,
     id: &'a str,
-    repair: bool,
+    repair: Option<i64>,
     route: &'a ResolvedRoute,
 }
 
@@ -587,13 +588,19 @@ impl CredentialExecutionService {
         checked: &mut HashSet<String>,
         repaired: &mut HashSet<String>,
     ) -> Result<CredentialProfile> {
-        let (id, route, deadline, force_repair) = (step.id, step.route, step.deadline, step.repair);
+        let (id, route, deadline) = (step.id, step.route, step.deadline);
         let lock = self.refresh_lock(id);
         let _guard = lock.lock().await;
         let profile = self.repository.get(id).await?;
         if !profile.enabled {
             return Err(ProfileError::SourceChanged.into());
         }
+        // Material that changed while this operation waited for the lock,
+        // such as through another operation's repair, is not what the
+        // platform rejected, so it is readied as usual. Repairing it again
+        // would spend its new refresh token, which some platforms accept
+        // only once.
+        let force_repair = step.repair == Some(profile.revision);
         let health = self.repository.health(id).await?;
         if !force_repair
             && health
@@ -1050,7 +1057,7 @@ impl CredentialExecutionService {
             .map(|id| Candidate {
                 route: route_of(&id),
                 id,
-                repair: false,
+                repair: None,
             })
             .collect())
     }
@@ -1141,7 +1148,7 @@ impl CredentialExecutionService {
             attempt = step.attempt + 1,
             platform_id = %step.policy.platform_id,
             strategy = step.policy.selection.strategy_name(),
-            repair = step.repair,
+            repair = step.repair.is_some(),
             "Executing credential-bound extraction"
         );
         match extract(snapshot.clone()).await {
@@ -1384,7 +1391,10 @@ impl CredentialExecutionService {
         match error {
             Error::Extractor(ExtractorError::Authentication { .. }) => {
                 let provider = self.providers.provider(&attempts.platform);
-                if !attempts.repaired.contains(id) && provider.capabilities().refresh {
+                if !attempts.repaired.contains(id)
+                    && provider.capabilities().refresh
+                    && provider.refreshable(&profile.material()?)
+                {
                     tracing::info!(
                         profile_id = %id,
                         platform_id = %step.policy.platform_id,
@@ -1401,7 +1411,7 @@ impl CredentialExecutionService {
                         .await?;
                     attempts.candidates.push_front(Candidate {
                         id: id.to_owned(),
-                        repair: true,
+                        repair: Some(profile.revision),
                         route: step.route.clone(),
                     });
                 } else if let Some(rest) = provider.rejection_rest() {

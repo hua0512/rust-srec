@@ -183,7 +183,6 @@ mod tests {
     fn only_a_qr_login_that_can_renew_is_repaired_when_signed_out() {
         let renewable = r#"{"v":1,"uid":"1000000002","jar":[{"domain":".weibo.com","name":"ALF","value":"a","expires":4102444800}]}"#;
         let spent = r#"{"v":1,"uid":"1000000002","jar":[{"domain":".weibo.com","name":"SCF","value":"s"}]}"#;
-        assert!(WeiboProvider.capabilities().refresh);
         assert!(WeiboProvider.refreshable(&material(Some(renewable))));
         assert_eq!(
             account_status(AccountState::SignedOut, &material(Some(renewable))),

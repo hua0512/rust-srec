@@ -1279,6 +1279,16 @@ async fn extract_cookies(
     service: &CredentialExecutionService,
     policy: &ResolvedCredentialPolicy,
 ) -> Result<String> {
+    extract_cookies_rejecting(service, policy, None).await
+}
+
+/// Extracts with the selected account; the platform turns `rejected`
+/// material away as signed out.
+async fn extract_cookies_rejecting(
+    service: &CredentialExecutionService,
+    policy: &ResolvedCredentialPolicy,
+    rejected: Option<&str>,
+) -> Result<String> {
     service
         .execute(
             policy,
@@ -1287,6 +1297,11 @@ async fn extract_cookies(
             OperationDeadline::new(Duration::from_secs(5)),
             direct(),
             |snapshot| async move {
+                if Some(snapshot.material.cookies.as_str()) == rejected {
+                    return Err(Error::Extractor(ExtractorError::Authentication {
+                        code: "need_login".into(),
+                    }));
+                }
                 Ok(Extracted {
                     preserve_health: false,
                     value: snapshot.material.cookies,
@@ -1507,6 +1522,23 @@ async fn aging_material_is_renewed_before_use_and_a_failed_renewal_keeps_it() {
                 .health
                 .is_none_or(|health| health.validity == CredentialValidity::Unknown)
         );
+        // Rejected, it needs a new login at once instead of a refresh that
+        // cannot work.
+        assert!(
+            extract_cookies_rejecting(&service, &cookies_policy, Some("account=B"))
+                .await
+                .is_err()
+        );
+        assert_eq!(refreshes(), 1);
+        assert_eq!(
+            repository
+                .health(&cookies_only.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .validity,
+            CredentialValidity::Invalid
+        );
 
         // The renewal age counts from the last refresh. A failed renewal keeps
         // the current material and is not retried within the retry window.
@@ -1553,6 +1585,36 @@ async fn aging_material_is_renewed_before_use_and_a_failed_renewal_keeps_it() {
                 .validity,
             CredentialValidity::Invalid
         );
+
+        // Two operations rejecting the same material repair it once: the
+        // second finds it already replaced when it gets the lock.
+        provider
+            .outcome
+            .store(0, std::sync::atomic::Ordering::SeqCst);
+        let rejected = create("C", Some("passport")).await;
+        let policy = fixed(&rejected);
+        assert_eq!(
+            extract_cookies_rejecting(&service, &policy, Some("account=C"))
+                .await
+                .unwrap(),
+            "account=renewed-3"
+        );
+        assert_eq!(refreshes(), 4);
+        let second = AttemptStep {
+            policy: &policy,
+            binding: None,
+            deadline: OperationDeadline::new(Duration::from_secs(5)),
+            attempt: 0,
+            id: &rejected.id,
+            repair: Some(rejected.revision),
+            route: direct(),
+        };
+        let prepared = service
+            .prepare(&second, "huya", &mut HashSet::new(), &mut HashSet::new())
+            .await
+            .unwrap();
+        assert_eq!(prepared.material().unwrap().cookies, "account=renewed-3");
+        assert_eq!(refreshes(), 4);
     })
     .await
     .expect("renewal test timed out");
