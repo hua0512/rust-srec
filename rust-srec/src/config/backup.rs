@@ -669,6 +669,10 @@ pub struct NotificationChannelExport {
     pub channel_type: String,
     pub settings: serde_json::Value,
     pub subscriptions: Vec<String>,
+    /// How deliveries connect; absent keeps the stored route on a merge and
+    /// inherits on a replace. Releases before channel routes ignore it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_route: Option<BackupRoute>,
 }
 
 /// Job preset configuration for export.

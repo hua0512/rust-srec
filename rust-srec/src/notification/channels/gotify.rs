@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::debug;
 
-use super::http::{HttpDelivery, RetryPolicy};
+use super::http::{DeliveryRoute, HttpDelivery, RetryPolicy};
 use super::{NotificationChannel, send_direct};
 use crate::Result;
 use crate::notification::events::{NotificationEvent, NotificationPriority, RenderedEvent};
@@ -84,11 +84,12 @@ pub struct GotifyChannel {
 
 impl GotifyChannel {
     /// Create a new Gotify channel.
-    pub fn new(config: GotifyConfig) -> Self {
+    pub fn new(config: GotifyConfig, route: DeliveryRoute) -> Self {
         let message_url = format!("{}/message", config.server_url.trim_end_matches('/'));
         let http = HttpDelivery::new(
             "gotify",
             std::time::Duration::from_secs(config.timeout_secs),
+            route,
         );
         Self {
             config,
@@ -147,7 +148,8 @@ impl NotificationChannel for GotifyChannel {
 
         let request = self
             .http
-            .request(Method::POST, &self.message_url)?
+            .request(Method::POST, &self.message_url)
+            .await?
             .query(&[("token", &self.config.app_token)])
             .json(&payload);
         self.http.send(request, RetryPolicy::None).await?;

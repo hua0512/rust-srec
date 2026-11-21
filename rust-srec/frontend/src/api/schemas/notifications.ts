@@ -3,6 +3,7 @@ import { msg } from '@lingui/core/macro';
 import { zodError, zodText } from '@/lib/zod-i18n';
 
 import { jsonTextField } from './common';
+import { ProxyRouteSchema } from './proxies';
 import { TimestampMsSchema } from './pipeline';
 
 const ChannelTypeSchema = z.enum([
@@ -118,6 +119,8 @@ export const NotificationChannelSchema = z.object({
     'notification channel settings',
     z.record(z.string(), z.json()),
   ),
+  /** How deliveries connect; email channels always connect directly. */
+  proxy_route: ProxyRouteSchema.default({ kind: 'inherit' }),
 });
 
 export type NotificationChannel = z.infer<typeof NotificationChannelSchema>;
@@ -126,11 +129,14 @@ export const CreateChannelRequestSchema = z.object({
   name: z.string().min(1),
   channel_type: ChannelTypeSchema,
   settings: z.string(),
+  proxy_route: ProxyRouteSchema.optional(),
 });
 
 export const UpdateChannelRequestSchema = z.object({
   name: z.string().min(1),
   settings: z.string(),
+  /** Omitted keeps the stored route. */
+  proxy_route: ProxyRouteSchema.optional(),
 });
 
 export const NotificationEventTypeInfoSchema = z.object({

@@ -366,12 +366,22 @@ pub(crate) async fn references_of(
         platform_name,
     })
     .collect();
+    let notification_channels = sqlx::query_as::<_, (String, String)>(
+        "SELECT id, name FROM notification_channel WHERE proxy_id = ? ORDER BY name, id",
+    )
+    .bind(id)
+    .fetch_all(&mut *connection)
+    .await?
+    .into_iter()
+    .map(|(id, name)| NamedReference { id, name })
+    .collect();
     Ok(ProxyReferences {
         global,
         platforms,
         templates,
         streamers,
         accounts,
+        notification_channels,
     })
 }
 
@@ -386,6 +396,7 @@ pub(crate) async fn usage_counts(
             UNION ALL SELECT proxy_id FROM template_config WHERE proxy_id IS NOT NULL
             UNION ALL SELECT proxy_id FROM streamers WHERE proxy_id IS NOT NULL AND deleted_at IS NULL
             UNION ALL SELECT proxy_id FROM credential_profiles WHERE proxy_id IS NOT NULL
+            UNION ALL SELECT proxy_id FROM notification_channel WHERE proxy_id IS NOT NULL
         ) GROUP BY proxy_id",
     )
     .fetch_all(connection)
@@ -527,6 +538,24 @@ pub(crate) async fn resolve_layers(
         |id| entry.as_ref().filter(|entry| entry.id == id),
         system,
     )?)
+}
+
+/// The route of traffic that serves no platform, such as notifications,
+/// browser push and uploads: `own`, else the global route, with the saved
+/// proxy as it is stored now. Platform, template and streamer routes do not
+/// apply. Callers use only the target, so `own` is not reported as a source
+/// of its own.
+pub(crate) async fn resolve_over_global(
+    connection: &mut SqliteConnection,
+    own: &ProxyRoute,
+    system: &SystemProxy,
+) -> Result<ResolvedRoute> {
+    let mut layers = vec![(RouteSource::Global, own.clone())];
+    // A route of its own decides without the global route.
+    if own.is_inherit() {
+        layers.extend(scope_layers(connection, None).await?);
+    }
+    resolve_layers(connection, &layers, system).await
 }
 
 /// A streamer's route: its own, then its template's, then its platform's,

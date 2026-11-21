@@ -42,6 +42,8 @@ async fn telegram_channel(
                     "locale": "en",
                     "enabled": true,
                 },
+                // Live apps send the global route to a dead end; the fake API is local.
+                "proxy_route": { "kind": "direct" },
             }),
         )
         .await

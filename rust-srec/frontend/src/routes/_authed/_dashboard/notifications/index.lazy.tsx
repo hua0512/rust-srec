@@ -2,6 +2,7 @@ import { useMemo, useState, useSyncExternalStore } from 'react';
 import { createLazyFileRoute } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/api/query-keys';
+import { invalidateProxyQueries } from '@/api/proxies';
 import {
   listChannels,
   deleteChannel,
@@ -108,6 +109,8 @@ function NotificationsPage() {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.notifications.channels(),
       });
+      // Saved proxies count the channels that choose them.
+      void invalidateProxyQueries(queryClient);
     },
     onError: (err) => {
       toast.error(err.message || i18n._(msg`Failed to delete channel`));

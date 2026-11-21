@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/dialog';
 import { DIALOG_NAME_LIMIT } from '@/components/shared/list-panel';
 import type { ProxyReferences, SavedProxy } from '@/api/schemas/proxies';
-import { referenceCount } from './proxy-errors';
+import { inUse } from './proxy-errors';
 import { ProxyReferencesList } from './proxy-references';
 
 /**
@@ -42,7 +42,7 @@ export function DeleteProxyDialog({
   const onOpenChange = (open: boolean) => {
     if (!open) onClose();
   };
-  if (references && referenceCount(references) > 0)
+  if (references && inUse(references))
     return (
       <Dialog open={Boolean(target)} onOpenChange={onOpenChange}>
         <DialogContent className="border-border/50">

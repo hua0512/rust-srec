@@ -17,6 +17,7 @@ use crate::database::models::notification::{
 use crate::notification::NotificationPriority;
 use crate::notification::events::{NotificationEventTypeInfo, notification_event_types};
 use crate::notification::service::NotificationChannelInstance;
+use crate::proxies::ProxyRoute;
 
 #[derive(Clone)]
 pub struct NotificationRouteState {
@@ -69,12 +70,20 @@ pub struct CreateChannelRequest {
     pub name: String,
     pub channel_type: ChannelType,
     pub settings: serde_json::Value,
+    /// How deliveries connect; `inherit`, the default, follows the global
+    /// route. Email channels always connect directly and accept only
+    /// `inherit`.
+    #[serde(default)]
+    pub proxy_route: ProxyRoute,
 }
 
 #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct UpdateChannelRequest {
     pub name: String,
     pub settings: serde_json::Value,
+    /// Replaces the channel's route; omitting it keeps it.
+    #[serde(default)]
+    pub proxy_route: Option<ProxyRoute>,
 }
 
 #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
@@ -445,7 +454,8 @@ pub async fn get_channel(
     tag = "notifications",
     request_body = CreateChannelRequest,
     responses(
-        (status = 201, description = "Channel created", body = crate::database::models::notification::NotificationChannelDbModel)
+        (status = 201, description = "Channel created", body = crate::database::models::notification::NotificationChannelDbModel),
+        (status = 422, description = "The route names a saved proxy that does not exist (`PROXY_NOT_FOUND`), or an email channel chooses a route other than inherit (`VALIDATION_ERROR`): email always connects directly", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]
@@ -460,7 +470,8 @@ pub async fn create_channel(
     let settings_str = serde_json::to_string(&req.settings)
         .map_err(|e| ApiError::bad_request(format!("Invalid settings JSON: {}", e)))?;
 
-    let channel = NotificationChannelDbModel::new(req.name, req.channel_type, settings_str);
+    let mut channel = NotificationChannelDbModel::new(req.name, req.channel_type, settings_str);
+    channel.proxy_route = req.proxy_route;
 
     // Save to DB
     repo.create_channel(&channel).await?;
@@ -481,7 +492,8 @@ pub async fn create_channel(
     request_body = UpdateChannelRequest,
     responses(
         (status = 200, description = "Channel updated", body = crate::database::models::notification::NotificationChannelDbModel),
-        (status = 404, description = "Channel not found", body = crate::api::error::ApiErrorResponse)
+        (status = 404, description = "Channel not found", body = crate::api::error::ApiErrorResponse),
+        (status = 422, description = "The route names a saved proxy that does not exist (`PROXY_NOT_FOUND`), or an email channel chooses a route other than inherit (`VALIDATION_ERROR`): email always connects directly", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]
@@ -493,13 +505,20 @@ pub async fn update_channel(
     let repo = &state.notification_repository;
     let service = &state.notification_service;
 
-    let mut channel = repo.get_channel(&id).await?;
-
-    channel.name = req.name;
-    channel.settings = serde_json::to_string(&req.settings)
+    let settings = serde_json::to_string(&req.settings)
         .map_err(|e| ApiError::bad_request(format!("Invalid settings JSON: {}", e)))?;
-
-    repo.update_channel(&channel).await?;
+    // An omitted route is left out of the write, so this edit cannot revert
+    // a route changed since the client read the channel.
+    let channel = repo
+        .patch_channel(
+            &id,
+            crate::database::repositories::notification::ChannelPatch {
+                name: req.name,
+                settings,
+                proxy_route: req.proxy_route,
+            },
+        )
+        .await?;
 
     // Reload service
     if let Err(e) = service.reload_from_db().await {

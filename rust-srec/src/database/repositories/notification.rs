@@ -1,6 +1,7 @@
 //! Notification repository.
 
 mod writes;
+pub use writes::ChannelPatch;
 pub(crate) use writes::{
     SubscriptionInsert, delete_channel_dead_letters, delete_channel_row, delete_subscriptions,
     import_channel, insert_subscription,
@@ -24,6 +25,13 @@ pub trait NotificationRepository: Send + Sync {
     async fn list_channels(&self) -> Result<Vec<NotificationChannelDbModel>>;
     async fn create_channel(&self, channel: &NotificationChannelDbModel) -> Result<()>;
     async fn update_channel(&self, channel: &NotificationChannelDbModel) -> Result<()>;
+    /// Applies `patch` to the channel `id` in one write transaction and
+    /// returns it as stored.
+    async fn patch_channel(
+        &self,
+        id: &str,
+        patch: ChannelPatch,
+    ) -> Result<NotificationChannelDbModel>;
     async fn delete_channel(&self, id: &str) -> Result<()>;
 
     // Subscriptions
@@ -121,9 +129,9 @@ impl NotificationRepository for SqlxNotificationRepository {
             &mut *self.write_pool.acquire().await?,
             channel,
             super::row_write::WriteMode::Insert,
+            writes::RouteWrite::Write,
         )
-        .await?;
-        Ok(())
+        .await
     }
 
     async fn update_channel(&self, channel: &NotificationChannelDbModel) -> Result<()> {
@@ -131,9 +139,20 @@ impl NotificationRepository for SqlxNotificationRepository {
             &mut *self.write_pool.acquire().await?,
             channel,
             super::row_write::WriteMode::Update,
+            writes::RouteWrite::Write,
         )
-        .await?;
-        Ok(())
+        .await
+    }
+
+    async fn patch_channel(
+        &self,
+        id: &str,
+        patch: ChannelPatch,
+    ) -> Result<NotificationChannelDbModel> {
+        let mut tx = crate::database::begin_immediate(&self.write_pool).await?;
+        let channel = writes::patch_channel(&mut tx, id, patch).await?;
+        tx.commit().await?;
+        Ok(channel)
     }
 
     async fn delete_channel(&self, id: &str) -> Result<()> {

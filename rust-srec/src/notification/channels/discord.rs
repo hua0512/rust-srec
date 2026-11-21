@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::debug;
 
-use super::http::{DEFAULT_TIMEOUT, HttpDelivery, RetryPolicy};
+use super::http::{DEFAULT_TIMEOUT, DeliveryRoute, HttpDelivery, RetryPolicy};
 use super::{NotificationChannel, send_direct};
 use crate::Result;
 use crate::notification::events::{NotificationEvent, NotificationPriority, RenderedEvent};
@@ -86,10 +86,10 @@ pub struct DiscordChannel {
 
 impl DiscordChannel {
     /// Create a new Discord channel.
-    pub fn new(config: DiscordConfig) -> Self {
+    pub fn new(config: DiscordConfig, route: DeliveryRoute) -> Self {
         Self {
             config,
-            http: HttpDelivery::new("discord", DEFAULT_TIMEOUT),
+            http: HttpDelivery::new("discord", DEFAULT_TIMEOUT, route),
         }
     }
 
@@ -135,7 +135,8 @@ impl DiscordChannel {
     async fn send_with_retry(&self, payload: &serde_json::Value) -> Result<()> {
         let request = self
             .http
-            .request(Method::POST, &self.config.webhook_url)?
+            .request(Method::POST, &self.config.webhook_url)
+            .await?
             .json(payload);
         self.http.send(request, RetryPolicy::Discord).await
     }

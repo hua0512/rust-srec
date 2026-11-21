@@ -16,7 +16,7 @@ flowchart LR
 
 1. Open **Notifications** and select **Add Channel**.
 2. Choose Webhook, Telegram, Gotify, or Email and enter a recognizable channel name.
-3. Set **Minimum Priority**, message language, and **Enabled**.
+3. Set **Minimum Priority**, message language, **Enabled**, and how the channel connects under **Proxy**.
 4. Save the channel, then use its test action. A saved channel is not proven until the receiver gets the test.
 5. Open the subscription manager and select the event types that should be sent to that channel.
 
@@ -59,6 +59,12 @@ A channel filters events below its minimum. The API also accepts the legacy labe
 ## Language
 
 Each external channel can follow the server language or override it with `en` or `zh-CN`. `RUST_SREC_LOCALE` sets the default for backend-rendered messages. This is independent of the language selected by a user in the web interface.
+
+## Proxy {#proxy}
+
+Webhook, Telegram, Gotify and Discord channels each choose how they connect under **Proxy**: **Inherit** (the default) follows the global **Default proxy**, or the channel uses **Direct**, **System proxy** or a [saved proxy](./configuration.md#saved-proxies) of its own. Use it where a destination is blocked, such as Telegram from mainland China. No restart is needed: a change to the channel applies to notifications queued after it and to tests, and the Default proxy and the saved proxy's details are read again before each delivery. A channel naming a proxy that no longer exists fails to deliver rather than connecting directly, and a saved proxy cannot be deleted while a channel uses it. See [Proxies](./configuration.md#choosing-a-proxy) for what each choice does.
+
+Email channels always connect to the mail server directly: SMTP cannot go through these proxies, so the email form shows no proxy choice and the API accepts only Inherit for them. Browser push always follows the Default proxy.
 
 ## Telegram Formatting
 

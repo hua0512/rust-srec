@@ -21,6 +21,8 @@ use std::time::Duration;
 use std::time::Instant;
 use url::Url;
 
+use crate::proxies::{ProxyRoute, ServiceRoutes};
+
 const SALT_LEN: usize = 16;
 const PUBLIC_KEY_LEN: usize = 65;
 const AUTH_SECRET_LEN: usize = 16;
@@ -30,6 +32,7 @@ const MAX_PAYLOAD_BYTES: usize = 3500;
 const SUBSCRIPTION_CACHE_TTL: Duration = Duration::from_secs(30);
 const VAPID_JWT_EXP_SECS: i64 = 12 * 60 * 60;
 const VAPID_JWT_SKEW_SECS: i64 = 60;
+const PUSH_TIMEOUT: Duration = Duration::from_secs(15);
 
 type SubscriptionCacheValue = Option<(Instant, Vec<WebPushSubscriptionDbModel>)>;
 type SubscriptionCache = std::sync::Arc<tokio::sync::RwLock<SubscriptionCacheValue>>;
@@ -133,7 +136,6 @@ pub struct WebPushService {
     pool: DbPool,
     write_pool: WritePool,
     config: WebPushConfig,
-    client: reqwest::Client,
     subscription_cache: SubscriptionCache,
     vapid_jwt_cache: DashMap<String, CachedVapidJwt>,
     metrics: std::sync::Arc<
@@ -155,17 +157,11 @@ impl std::fmt::Debug for WebPushService {
 
 impl WebPushService {
     pub fn new(pool: DbPool, write_pool: WritePool, config: WebPushConfig) -> Result<Self> {
-        // Stays on HTTP/1.1 like the other backend clients (see `build_client`).
-        let client = reqwest::Client::builder()
-            .http1_only()
-            .timeout(Duration::from_secs(15))
-            .build()
-            .map_err(|e| Error::Other(format!("Failed to build reqwest client: {}", e)))?;
+        crate::utils::http_client::install_rustls_provider();
         Ok(Self {
             pool,
             write_pool,
             config,
-            client,
             subscription_cache: std::sync::Arc::new(tokio::sync::RwLock::new(None)),
             vapid_jwt_cache: DashMap::new(),
             metrics: std::sync::Arc::new(parking_lot::RwLock::new(None)),
@@ -288,6 +284,14 @@ impl WebPushService {
         Ok(())
     }
 
+    /// A client on the global route as it is now. A route naming a saved
+    /// proxy that no longer exists is an error, never a direct connection.
+    async fn client(&self) -> Result<reqwest::Client> {
+        ServiceRoutes::new(self.pool.clone())
+            .client(&ProxyRoute::Inherit)
+            .await
+    }
+
     pub async fn send_event(&self, event: &NotificationEvent, event_log_id: Option<&str>) {
         let subscriptions = match self.list_all_subscriptions_cached().await {
             Ok(rows) => rows,
@@ -301,6 +305,14 @@ impl WebPushService {
             return;
         }
 
+        let client = match self.client().await {
+            Ok(client) => client,
+            Err(error) => {
+                tracing::warn!(%error, "Web push delivery skipped: no connection on the proxy route");
+                return;
+            }
+        };
+
         let now_ms = jiff::Timestamp::now().as_millisecond();
         let priority = event.priority();
         let event_log_id = event_log_id.map(|s| s.to_string());
@@ -308,6 +320,7 @@ impl WebPushService {
         stream::iter(subscriptions)
             .for_each_concurrent(DEFAULT_CONCURRENCY, |sub| {
                 let event_log_id = event_log_id.clone();
+                let client = &client;
                 async move {
                     if let Some(next_attempt_at_ms) = sub.next_attempt_at
                         && next_attempt_at_ms > now_ms
@@ -327,7 +340,7 @@ impl WebPushService {
                     }
 
                     if let Err(e) = self
-                        .send_to_subscription(&sub, event, event_log_id.as_deref())
+                        .send_to_subscription(client, &sub, event, event_log_id.as_deref())
                         .await
                     {
                         tracing::warn!(
@@ -343,6 +356,7 @@ impl WebPushService {
 
     async fn send_to_subscription(
         &self,
+        client: &reqwest::Client,
         sub: &WebPushSubscriptionDbModel,
         event: &NotificationEvent,
         event_log_id: Option<&str>,
@@ -376,19 +390,27 @@ impl WebPushService {
             NotificationPriority::Low => "very-low",
         };
 
-        let mut response = self
-            .client
+        let request = client
             .post(&sub.endpoint)
             .header("TTL", "3600")
             // For aes128gcm, salt/server key are encoded in the payload body (RFC8291).
             .header("Content-Encoding", "aes128gcm")
             .header("Content-Type", "application/octet-stream")
-            .header("Authorization", authorization.clone())
+            .header("Authorization", authorization)
             .header("Urgency", urgency)
-            .body(body.clone())
-            .send()
-            .await
-            .map_err(|e| Error::Other(format!("Web push request failed: {}", e.without_url())))?;
+            .timeout(PUSH_TIMEOUT)
+            .body(body);
+        let send = |request: &reqwest::RequestBuilder| {
+            let request = request
+                .try_clone()
+                .ok_or_else(|| Error::Other("Web push request cannot be retried".to_owned()));
+            async move {
+                request?.send().await.map_err(|e| {
+                    Error::Other(format!("Web push request failed: {}", e.without_url()))
+                })
+            }
+        };
+        let mut response = send(&request).await?;
 
         let status = response.status();
         if status.as_u16() == 429
@@ -396,20 +418,7 @@ impl WebPushService {
             && delay <= Duration::from_secs(30)
         {
             tokio::time::sleep(delay).await;
-            response = self
-                .client
-                .post(&sub.endpoint)
-                .header("TTL", "3600")
-                .header("Content-Encoding", "aes128gcm")
-                .header("Content-Type", "application/octet-stream")
-                .header("Authorization", authorization)
-                .header("Urgency", urgency)
-                .body(body)
-                .send()
-                .await
-                .map_err(|e| {
-                    Error::Other(format!("Web push request failed: {}", e.without_url()))
-                })?;
+            response = send(&request).await?;
         }
 
         let status = response.status();
@@ -462,15 +471,11 @@ impl WebPushService {
             return Ok(());
         }
 
-        let body_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "<failed to read response body>".to_string());
-        let body_text = crate::utils::text::truncate_chars(&body_text, 500);
-
+        // The body is not reported: a push service or proxy may echo the
+        // request's headers, VAPID token and proxy login included.
         Err(Error::Other(format!(
-            "Web push failed: status {} body {}",
-            status, body_text
+            "Web push failed: HTTP {}",
+            status.as_u16()
         )))
     }
 

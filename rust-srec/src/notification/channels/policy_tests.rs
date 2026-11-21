@@ -5,12 +5,15 @@ fn channels(
     min_priority: NotificationPriority,
 ) -> Vec<Box<dyn NotificationChannel>> {
     vec![
-        Box::new(DiscordChannel::new(DiscordConfig {
-            enabled,
-            min_priority,
-            webhook_url: "invalid://discord".into(),
-            ..Default::default()
-        })),
+        Box::new(DiscordChannel::new(
+            DiscordConfig {
+                enabled,
+                min_priority,
+                webhook_url: "invalid://discord".into(),
+                ..Default::default()
+            },
+            crate::notification::channels::DeliveryRoute::environment(),
+        )),
         Box::new(EmailChannel::new(EmailConfig {
             enabled,
             min_priority,
@@ -19,26 +22,35 @@ fn channels(
             to_addresses: vec!["receiver@example.test".into()],
             ..Default::default()
         })),
-        Box::new(GotifyChannel::new(GotifyConfig {
-            enabled,
-            min_priority,
-            server_url: "invalid://gotify".into(),
-            app_token: "test".into(),
-            ..Default::default()
-        })),
-        Box::new(TelegramChannel::new(TelegramConfig {
-            enabled,
-            min_priority,
-            bot_token: "test".into(),
-            chat_id: "test".into(),
-            ..Default::default()
-        })),
-        Box::new(WebhookChannel::new(WebhookConfig {
-            enabled,
-            min_priority,
-            url: "invalid://webhook".into(),
-            ..Default::default()
-        })),
+        Box::new(GotifyChannel::new(
+            GotifyConfig {
+                enabled,
+                min_priority,
+                server_url: "invalid://gotify".into(),
+                app_token: "test".into(),
+                ..Default::default()
+            },
+            crate::notification::channels::DeliveryRoute::environment(),
+        )),
+        Box::new(TelegramChannel::new(
+            TelegramConfig {
+                enabled,
+                min_priority,
+                bot_token: "test".into(),
+                chat_id: "test".into(),
+                ..Default::default()
+            },
+            crate::notification::channels::DeliveryRoute::environment(),
+        )),
+        Box::new(WebhookChannel::new(
+            WebhookConfig {
+                enabled,
+                min_priority,
+                url: "invalid://webhook".into(),
+                ..Default::default()
+            },
+            crate::notification::channels::DeliveryRoute::environment(),
+        )),
     ]
 }
 

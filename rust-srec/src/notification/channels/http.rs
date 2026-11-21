@@ -2,9 +2,11 @@
 
 use std::time::Duration;
 
-use reqwest::{Client, Method, RequestBuilder, Response, StatusCode, header::HeaderMap};
-use tracing::debug;
+use reqwest::{Method, RequestBuilder, Response, StatusCode, header::HeaderMap};
+use tracing::{debug, warn};
 
+use crate::proxies::{ProxyRoute, ProxyTarget, ServiceRoutes};
+use crate::utils::http_client::service_client;
 use crate::{Error, Result};
 
 pub(super) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -20,19 +22,43 @@ pub(super) enum RetryPolicy {
     Telegram,
 }
 
+/// How a channel finds the connection its deliveries take. Every HTTP
+/// channel is built with one.
+#[derive(Clone)]
+pub enum DeliveryRoute {
+    /// Always this connection, for channels configured outside the
+    /// database.
+    Fixed(ProxyTarget),
+    /// A stored channel's own route, kept with the settings it was loaded
+    /// with so a delivery never pairs one revision's destination with
+    /// another's route. Inheriting and the saved proxy's address and login
+    /// are resolved before each delivery, so edits to the global route or
+    /// to a saved proxy apply to the next one.
+    Stored {
+        routes: ServiceRoutes,
+        route: ProxyRoute,
+    },
+}
+
+impl DeliveryRoute {
+    /// The proxy the environment configures, if any.
+    pub fn environment() -> Self {
+        Self::Fixed(ProxyTarget::System)
+    }
+}
+
 pub(super) struct HttpDelivery {
     channel: &'static str,
-    client: std::result::Result<Client, reqwest::Error>,
+    route: DeliveryRoute,
     timeout: Duration,
 }
 
 impl HttpDelivery {
-    pub(super) fn new(channel: &'static str, timeout: Duration) -> Self {
+    pub(super) fn new(channel: &'static str, timeout: Duration, route: DeliveryRoute) -> Self {
         crate::utils::http_client::install_rustls_provider();
         Self {
             channel,
-            // Stays on HTTP/1.1 like the other backend clients (see `build_client`).
-            client: Client::builder().http1_only().build(),
+            route,
             timeout: if timeout.is_zero() {
                 DEFAULT_TIMEOUT
             } else {
@@ -48,11 +74,19 @@ impl HttpDelivery {
         }
     }
 
-    pub(super) fn request(&self, method: Method, url: &str) -> Result<RequestBuilder> {
-        let client = self
-            .client
-            .as_ref()
-            .map_err(|_| self.failure("HTTP client initialization failed"))?;
+    /// A request on the channel's current route. A route naming a saved
+    /// proxy that no longer exists fails rather than connecting directly.
+    pub(super) async fn request(&self, method: Method, url: &str) -> Result<RequestBuilder> {
+        let client = match &self.route {
+            DeliveryRoute::Fixed(target) => service_client(target)
+                .map_err(|_| self.failure("HTTP client initialization failed"))?,
+            DeliveryRoute::Stored { routes, route } => {
+                routes.client(route).await.map_err(|error| {
+                    warn!(channel = self.channel, %error, "Notification proxy route unavailable");
+                    self.failure(format!("proxy route unavailable: {error}"))
+                })?
+            }
+        };
         Ok(client.request(method, url).timeout(self.timeout))
     }
 
@@ -223,11 +257,16 @@ mod tests {
                     .unwrap()
             }))
             .await;
-            let http = HttpDelivery::new("telegram", Duration::from_millis(100));
+            let http = HttpDelivery::new(
+                "telegram",
+                Duration::from_millis(100),
+                DeliveryRoute::environment(),
+            );
             let error = tokio::time::timeout(
                 Duration::from_secs(5),
                 http.send(
                     http.request(Method::POST, &server.url)
+                        .await
                         .unwrap()
                         .json(&serde_json::json!({})),
                     RetryPolicy::Telegram,
@@ -241,7 +280,7 @@ mod tests {
 
             let later = server_ok().await;
             http.send(
-                http.request(Method::POST, &later.url).unwrap(),
+                http.request(Method::POST, &later.url).await.unwrap(),
                 RetryPolicy::None,
             )
             .await
@@ -261,11 +300,15 @@ mod tests {
             listener.local_addr().unwrap()
         );
         drop(listener);
-        let http = HttpDelivery::new("telegram", Duration::from_secs(2));
+        let http = HttpDelivery::new(
+            "telegram",
+            Duration::from_secs(2),
+            DeliveryRoute::environment(),
+        );
         for url in [endpoint.as_str(), "http://[PATH_SECRET/?token=QUERY_SECRET"] {
             let error = http
                 .send(
-                    http.request(Method::POST, url).unwrap(),
+                    http.request(Method::POST, url).await.unwrap(),
                     RetryPolicy::Telegram,
                 )
                 .await
@@ -284,32 +327,41 @@ mod tests {
         }))
         .await;
         let channels: Vec<Box<dyn NotificationChannel>> = vec![
-            Box::new(DiscordChannel::new(DiscordConfig {
-                enabled: true,
-                webhook_url: server.url.clone(),
-                ..Default::default()
-            })),
-            Box::new(GotifyChannel::new(GotifyConfig {
-                enabled: true,
-                server_url: server.url.clone(),
-                app_token: "QUERY_SECRET".into(),
-                ..Default::default()
-            })),
-            Box::new(WebhookChannel::new(WebhookConfig {
-                enabled: true,
-                url: server.url.clone(),
-                ..Default::default()
-            })),
+            Box::new(DiscordChannel::new(
+                DiscordConfig {
+                    enabled: true,
+                    webhook_url: server.url.clone(),
+                    ..Default::default()
+                },
+                crate::notification::channels::DeliveryRoute::environment(),
+            )),
+            Box::new(GotifyChannel::new(
+                GotifyConfig {
+                    enabled: true,
+                    server_url: server.url.clone(),
+                    app_token: "QUERY_SECRET".into(),
+                    ..Default::default()
+                },
+                crate::notification::channels::DeliveryRoute::environment(),
+            )),
+            Box::new(WebhookChannel::new(
+                WebhookConfig {
+                    enabled: true,
+                    url: server.url.clone(),
+                    ..Default::default()
+                },
+                crate::notification::channels::DeliveryRoute::environment(),
+            )),
         ];
         for channel in channels {
             let error = channel.test().await.unwrap_err();
             assert!(error.to_string().contains("HTTP 400"));
             assert!(!format!("{error:?} {error}").contains("SECRET"));
         }
-        let http = HttpDelivery::new("telegram", DEFAULT_TIMEOUT);
+        let http = HttpDelivery::new("telegram", DEFAULT_TIMEOUT, DeliveryRoute::environment());
         let error = http
             .send(
-                http.request(Method::POST, &server.url).unwrap(),
+                http.request(Method::POST, &server.url).await.unwrap(),
                 RetryPolicy::Telegram,
             )
             .await
@@ -336,10 +388,12 @@ mod tests {
                     }
                 }))
                 .await;
-                let http = HttpDelivery::new("test", Duration::from_secs(2));
+                let http =
+                    HttpDelivery::new("test", Duration::from_secs(2), DeliveryRoute::environment());
                 let result = http
                     .send(
                         http.request(Method::POST, &server.url)
+                            .await
                             .unwrap()
                             .json(&serde_json::json!({"text":"hello"})),
                         policy,
@@ -372,9 +426,10 @@ mod tests {
                 async move { (StatusCode::TOO_MANY_REQUESTS, body) }
             }))
             .await;
-            let http = HttpDelivery::new("telegram", DEFAULT_TIMEOUT);
+            let http = HttpDelivery::new("telegram", DEFAULT_TIMEOUT, DeliveryRoute::environment());
             let response = http
                 .request(Method::POST, &server.url)
+                .await
                 .unwrap()
                 .send()
                 .await
