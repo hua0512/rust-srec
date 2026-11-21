@@ -35,6 +35,7 @@ export const DouyinConfigSchema = z
     force_mobile_api: z.boolean().nullable().optional(),
     skip_interactive_games: z.boolean().nullable().optional(),
     end_stream_on_danmu_stream_closed: z.boolean().nullable().optional(),
+    batch_detection: z.boolean().nullable().optional(),
   })
   .strict();
 
@@ -50,6 +51,7 @@ export const DOUYIN_CONFIG_DISPLAY_DEFAULTS = {
   ttwid_management_mode: 'global',
   force_mobile_api: false,
   skip_interactive_games: true,
+  batch_detection: false,
 } as const;
 
 // Bilibili platform-specific configuration

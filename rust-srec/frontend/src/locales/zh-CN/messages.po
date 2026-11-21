@@ -1246,7 +1246,7 @@ msgstr "第 {attempt} 次尝试，共 {maxAttempts} 次"
 msgid "Attempts (including the first run)"
 msgstr "尝试次数（含首次运行）"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:48
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:52
 msgid "Attempts to get origin quality by replacing the audio stream. May result in audio-only streams if it fails."
 msgstr "尝试通过替换音频流获取原画质量。如果失败，可能会导致仅有音频。"
 
@@ -1558,6 +1558,7 @@ msgstr "主播的基础设置。"
 
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:141
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:150
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:178
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:134
 msgid "Batch Detection"
 msgstr "批量检测"
@@ -1853,7 +1854,7 @@ msgstr "采集模式"
 msgid "Capture real-time comments and chat messages if available."
 msgstr "如果可用，采集实时评论和聊天消息。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:61
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:65
 msgid "Capture separate stream data."
 msgstr "采集分离的流数据。"
 
@@ -1998,6 +1999,10 @@ msgstr "检查该主播，并在开播时自动录制。"
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:136
 msgid "Check up to 100 streamers in one request and skip the individual check of those still offline. Uses fewer requests, but a stream start can be noticed up to a quarter of the check interval later."
 msgstr "每次请求最多检测 100 位主播，并跳过对仍未开播主播的单独检测。请求更少，但开播最多可能晚四分之一个检查间隔才被发现。"
+
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:181
+msgid "Check up to 50 streamers in one request after an initial individual check."
+msgstr "首次单独检测后，每次请求最多检测 50 位主播。"
 
 #: src/components/credentials/credential-selection-editor.tsx:428
 msgid "Check without an account when no account can be used"
@@ -2972,7 +2977,7 @@ msgstr "弹幕转 ASS 字幕"
 msgid "Danmu"
 msgstr "弹幕"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:141
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:145
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:116
 msgid "Danmu Control"
 msgstr "弹幕控制"
@@ -3569,7 +3574,7 @@ msgstr "已完成"
 msgid "Double click to edit items."
 msgstr "双击以编辑项目。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:60
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:64
 msgid "Double Screen Data"
 msgstr "双屏数据"
 
@@ -3683,7 +3688,6 @@ msgstr "下次使用时续期"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:204
 #: src/components/config/engines/forms/mesio-sections.tsx:212
-#: src/components/notifications/__tests__/payload-preview.test.tsx:21
 #: src/components/notifications/events/payload-preview.tsx:82
 #: src/components/pipeline/jobs/job-progress-panel.tsx:109
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:631
@@ -4231,7 +4235,7 @@ msgid "Expand sidebar"
 msgstr "展开侧边栏"
 
 #: src/components/config/engines/forms/lossless-cutting-field.tsx:52
-#: src/components/ui/flag-form-field.tsx:112
+#: src/components/ui/flag-form-field.tsx:123
 msgid "Experimental"
 msgstr "实验性"
 
@@ -4310,7 +4314,7 @@ msgid "Extraction Method"
 msgstr "提取方式"
 
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:65
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:36
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:40
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:68
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:47
 msgid "Extraction Settings"
@@ -4976,11 +4980,11 @@ msgstr "强制 IPv4"
 msgid "Force IPv6"
 msgstr "强制 IPv6"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:68
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:72
 msgid "Force Mobile API"
 msgstr "强制使用移动端 API"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:46
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:50
 #: src/components/config/platforms/tabs/specific-configs/huya-config-fields.tsx:172
 #: src/components/config/platforms/tabs/specific-configs/tiktok-config-fields.tsx:100
 msgid "Force Origin Quality"
@@ -5164,7 +5168,7 @@ msgstr "正在生成二维码..."
 msgid "Gift items"
 msgstr "礼物数"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:116
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:120
 #: src/components/layout/site-header.tsx:71
 #: src/components/pipeline/step-in-use-dialog.tsx:98
 #: src/components/proxies/proxy-references.tsx:82
@@ -5684,7 +5688,7 @@ msgstr "包含录制元数据"
 msgid "Inherit"
 msgstr "继承"
 
-#: src/components/ui/flag-form-field.tsx:133
+#: src/components/ui/flag-form-field.tsx:152
 msgctxt "inherited flag"
 msgid "Inherit"
 msgstr "继承"
@@ -5813,7 +5817,7 @@ msgstr "IO 任务"
 msgid "IO Job Timeout"
 msgstr "IO 任务超时"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:128
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:132
 msgid "Isolation level for tracking identifiers. Global is usually best."
 msgstr "追踪标识符的隔离级别。全局通常是最佳选择。"
 
@@ -7534,7 +7538,7 @@ msgctxt "bigo notifications"
 msgid "Off"
 msgstr "已关闭"
 
-#: src/components/ui/flag-form-field.tsx:143
+#: src/components/ui/flag-form-field.tsx:162
 msgctxt "inherited flag"
 msgid "Off"
 msgstr "关"
@@ -7605,7 +7609,7 @@ msgstr "正常"
 msgid "On"
 msgstr "开"
 
-#: src/components/ui/flag-form-field.tsx:138
+#: src/components/ui/flag-form-field.tsx:157
 msgctxt "inherited flag"
 msgid "On"
 msgstr "开"
@@ -8075,7 +8079,7 @@ msgstr "逐段"
 msgid "Per-segment Pipeline"
 msgstr "逐段处理管道"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:122
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:126
 msgid "Per-Streamer"
 msgstr "按主播"
 
@@ -8174,7 +8178,6 @@ msgstr "处理管道必须至少包含一个步骤"
 msgid "Pipeline Name"
 msgstr "处理管道名称"
 
-#: src/routes/__tests__/create-pipeline-schema.test.ts:9
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:54
 msgid "Pipeline name is required"
 msgstr "处理管道名称是必填项"
@@ -8434,6 +8437,10 @@ msgstr "首选画质 (QN)"
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:119
 msgid "Preferred Video Codec"
 msgstr "首选视频编码"
+
+#: src/components/ui/flag-form-field.tsx:131
+msgid "Premium"
+msgstr "Premium"
 
 #: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:292
 msgid "Preparing download..."
@@ -9292,6 +9299,10 @@ msgstr "如果直播间被主播设置了密码保护，则为必填。"
 msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "需要启用“录制弹幕”。"
 
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:188
+msgid "Requires a Premium backend."
+msgstr "需要 Premium 后端。"
+
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:345
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:125
 msgid "Reset"
@@ -9821,7 +9832,7 @@ msgstr "secret"
 msgid "Secs"
 msgstr "秒"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:93
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:97
 msgid "Security & Identity"
 msgstr "安全与身份"
 
@@ -10343,7 +10354,6 @@ msgstr "单个 URL"
 msgid "Sites"
 msgstr "网站"
 
-#: src/components/notifications/__tests__/payload-preview.test.tsx:22
 #: src/components/notifications/events/payload-preview.tsx:92
 #: src/components/streamers/edit/active-download-card.tsx:130
 msgid "Size"
@@ -10373,7 +10383,7 @@ msgstr "达到时长后跳过"
 msgid "Skip existing files (default)"
 msgstr "跳过已存在的文件（默认）"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:79
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:83
 msgid "Skip Interactive Games"
 msgstr "跳过互动玩法"
 
@@ -10524,6 +10534,7 @@ msgstr "状态"
 
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:136
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:145
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:159
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:129
 msgid "Status Checks"
 msgstr "状态检测"
@@ -11480,7 +11491,6 @@ msgid "Title"
 msgstr "标题"
 
 #: src/components/notifications/channel-card.tsx:94
-#: src/lib/__tests__/split-reason.test.tsx:63
 msgid "To"
 msgstr "收件人"
 
@@ -11619,7 +11629,7 @@ msgstr "瞬时错误"
 msgid "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
 msgstr "在持续的下载进度确认流状态健康之前，暂时的监控错误会继续保留。"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:81
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:85
 msgid "Treat interactive game streams (互动玩法) as offline."
 msgstr "将互动玩法直播视为离线。"
 
@@ -11734,7 +11744,7 @@ msgstr "重试"
 msgid "Try server proxy"
 msgstr "尝试服务器代理"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:103
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:107
 msgid "TTWID Management Mode"
 msgstr "TTWID 管理模式"
 
@@ -11997,7 +12007,7 @@ msgstr "使用引擎设置（{inherited}）"
 msgid "Use engine settings"
 msgstr "使用引擎设置"
 
-#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:69
+#: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:73
 msgid "Use mobile endpoint for extraction."
 msgstr "使用移动端端点进行提取。"
 

@@ -60,6 +60,7 @@ impl SrecMcpServer {
             components,
             cpu_usage: system_health.cpu_usage,
             memory_usage: system_health.memory_usage,
+            capabilities: crate::api::routes::health::active_capabilities(),
         };
         Ok(CallToolResult::success(vec![ContentBlock::json(
             &response,

@@ -175,6 +175,7 @@ export const HealthSchema = z.object({
   cpu_usage: z.number(),
   memory_usage: z.number(),
   components: z.array(ComponentHealthSchema).default([]),
+  capabilities: z.array(z.string()).default([]),
 });
 
 // Pipeline counts by the status the pipeline list filters on: an unfinished

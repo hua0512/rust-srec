@@ -33,6 +33,11 @@ impl FromRef<AppState> for HealthRouteState {
     }
 }
 
+/// Active optional backend capabilities advertised through health endpoints.
+pub(crate) fn active_capabilities() -> Vec<String> {
+    Vec::new()
+}
+
 /// Create the health router.
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -94,6 +99,7 @@ pub async fn health_check(
         components,
         cpu_usage: system_health.cpu_usage,
         memory_usage: system_health.memory_usage,
+        capabilities: active_capabilities(),
     }))
 }
 

@@ -1,4 +1,5 @@
 import type { FieldValues, Path, UseFormReturn } from 'react-hook-form';
+import { get } from 'react-hook-form';
 import {
   FormControl,
   FormDescription,
@@ -7,7 +8,7 @@ import {
 } from '@/components/ui/form';
 import { Trans } from '@lingui/react/macro';
 import { FlagFormField } from '@/components/ui/flag-form-field';
-import { Zap, Shield } from 'lucide-react';
+import { Zap, Shield, Radar } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EndStreamOnDanmuCloseField } from '@/components/config/shared/end-stream-on-danmu-close-field';
 import {
@@ -15,6 +16,7 @@ import {
   ConfigSectionHeading,
 } from '@/components/config/shared/config-field';
 import { configPath } from '@/components/config/shared/form-path';
+import { useHasBackendCapability } from '@/hooks/use-backend-capabilities';
 
 interface DouyinConfigFieldsProps<TFieldValues extends FieldValues> {
   form: UseFormReturn<TFieldValues>;
@@ -28,6 +30,8 @@ export function DouyinConfigFields<TFieldValues extends FieldValues>({
   fieldName,
   inherited = false,
 }: DouyinConfigFieldsProps<TFieldValues>) {
+  const hasBatchDetection = useHasBackendCapability('douyin_batch_detection');
+
   return (
     <div className="space-y-12">
       {/* Extraction Settings Section */}
@@ -147,6 +151,46 @@ export function DouyinConfigFields<TFieldValues extends FieldValues>({
             'end_stream_on_danmu_stream_closed',
           )}
           inherited={inherited}
+        />
+      </section>
+
+      <section className="space-y-6">
+        <ConfigSectionHeading icon={Radar} accent="indigo">
+          <Trans>Status Checks</Trans>
+        </ConfigSectionHeading>
+        <FlagFormField
+          // Controllers retain their initial default when reset to undefined.
+          // Recreate this field when saved defaults change to keep inheritance unset.
+          key={
+            inherited
+              ? undefined
+              : (JSON.stringify(
+                  get(
+                    form.formState.defaultValues,
+                    `${fieldName}.batch_detection`,
+                  ),
+                ) ?? 'unset')
+          }
+          fieldName={configPath<TFieldValues>(fieldName, 'batch_detection')}
+          inherited={inherited}
+          disabled={!hasBatchDetection}
+          showPremiumBadge
+          title={<Trans>Batch Detection</Trans>}
+          description={
+            <>
+              <Trans>
+                Check up to 50 streamers in one request after an initial
+                individual check.
+              </Trans>
+              {!hasBatchDetection && (
+                <>
+                  {' '}
+                  <Trans>Requires a Premium backend.</Trans>
+                </>
+              )}
+            </>
+          }
+          checked={(value) => !!value}
         />
       </section>
     </div>

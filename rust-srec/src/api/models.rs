@@ -1251,6 +1251,9 @@ pub struct HealthResponse {
     pub cpu_usage: f32,
     pub memory_usage: f32,
     pub components: Vec<ComponentHealth>,
+    /// Optional backend capabilities active in this server instance.
+    #[serde(default)]
+    pub capabilities: Vec<String>,
 }
 
 /// Component health status.

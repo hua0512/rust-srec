@@ -32,7 +32,9 @@ type FlagFormFieldProps = {
   inherited?: boolean;
   /** The switch position for a stored value. Unused when `inherited`. */
   checked?: (value: unknown) => boolean;
+  disabled?: boolean;
   showExperimentalBadge?: boolean;
+  showPremiumBadge?: boolean;
   className?: string;
   children?: React.ReactNode;
 };
@@ -43,6 +45,7 @@ type FlagRowProps = Pick<
   | 'description'
   | 'info'
   | 'showExperimentalBadge'
+  | 'showPremiumBadge'
   | 'className'
   | 'children'
 > & {
@@ -60,11 +63,17 @@ export function FlagFormField({
   ariaLabel,
   inherited = false,
   checked,
+  disabled = false,
   ...row
 }: FlagFormFieldProps) {
   if (inherited) {
     return (
-      <InheritedFlagField name={fieldName} ariaLabel={ariaLabel} {...row} />
+      <InheritedFlagField
+        name={fieldName}
+        ariaLabel={ariaLabel}
+        disabled={disabled}
+        {...row}
+      />
     );
   }
   return (
@@ -78,6 +87,7 @@ export function FlagFormField({
               className="shrink-0"
               checked={checked ? checked(field.value) : field.value}
               onCheckedChange={field.onChange}
+              disabled={disabled}
               aria-label={ariaLabel}
             />
           }
@@ -92,6 +102,7 @@ function FlagRow({
   description,
   info,
   showExperimentalBadge,
+  showPremiumBadge,
   className,
   children,
   labelId,
@@ -110,6 +121,14 @@ function FlagRow({
             {showExperimentalBadge && (
               <Badge>
                 <Trans>Experimental</Trans>
+              </Badge>
+            )}
+            {showPremiumBadge && (
+              <Badge
+                variant="secondary"
+                className="border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+              >
+                <Trans>Premium</Trans>
               </Badge>
             )}
           </div>
@@ -153,9 +172,10 @@ const INHERITED_FLAG_CHOICES = [
 function InheritedFlagField({
   name,
   ariaLabel,
+  disabled = false,
   ...row
 }: Omit<FlagRowProps, 'labelId' | 'wrap' | 'control'> &
-  Pick<FlagFormFieldProps, 'ariaLabel'> & { name: string }) {
+  Pick<FlagFormFieldProps, 'ariaLabel' | 'disabled'> & { name: string }) {
   const { i18n } = useLingui();
   const labelId = useId();
   const { formState } = useFormContext();
@@ -179,14 +199,23 @@ function InheritedFlagField({
                 role="radiogroup"
                 aria-label={ariaLabel}
                 aria-labelledby={ariaLabel ? undefined : labelId}
-                className="inline-flex shrink-0 rounded-lg border border-border/50 bg-muted/30 p-0.5"
+                aria-disabled={disabled || undefined}
+                className={cn(
+                  'inline-flex shrink-0 rounded-lg border border-border/50 bg-muted/30 p-0.5',
+                  disabled && 'opacity-50',
+                )}
               >
                 {INHERITED_FLAG_CHOICES.map((choice) => (
                   <label
                     key={choice.id}
                     // The transparent outline shows only in forced colors, where the background
                     // that marks the selected choice is not drawn.
-                    className="cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground has-checked:bg-background has-checked:text-foreground has-checked:shadow-sm has-checked:outline has-checked:outline-transparent has-focus-visible:ring-2 has-focus-visible:ring-ring"
+                    className={cn(
+                      'rounded-md px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors has-checked:bg-background has-checked:text-foreground has-checked:shadow-sm has-checked:outline has-checked:outline-transparent has-focus-visible:ring-2 has-focus-visible:ring-ring',
+                      disabled
+                        ? 'cursor-not-allowed'
+                        : 'cursor-pointer hover:text-foreground',
+                    )}
                   >
                     <input
                       type="radio"
@@ -194,6 +223,7 @@ function InheritedFlagField({
                       name={name}
                       value={choice.id}
                       checked={selected === choice.value}
+                      disabled={disabled}
                       onChange={() => field.onChange(choice.value)}
                     />
                     {i18n._(choice.label)}

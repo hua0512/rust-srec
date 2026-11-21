@@ -57,6 +57,7 @@ async fn health_reports_every_core_component_to_admins_and_read_only_keys() {
     assert!(body["uptime_secs"].is_u64());
     assert!(body["cpu_usage"].is_number());
     assert!(body["memory_usage"].is_number());
+    assert_eq!(body["capabilities"], json!([]));
     let components = body["components"].as_array().expect("components");
     for name in [
         "database",
