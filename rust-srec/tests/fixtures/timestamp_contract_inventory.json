@@ -368,7 +368,9 @@
       "id",
       "name",
       "channel_type",
-      "settings"
+      "settings",
+      "proxy_route",
+      "proxy_id"
     ]
   },
   "notification_dead_letter": {

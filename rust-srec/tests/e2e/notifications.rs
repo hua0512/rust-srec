@@ -6,9 +6,9 @@ use reqwest::{Method, StatusCode};
 use serde_json::{Value, json};
 
 use crate::support::{
-    ADMIN_PASSWORD, ADMIN_USERNAME, FakePlatform, FlvLoop, LocalHttpServer, ReceivedRequest, Seed,
-    SmtpFixture, TestApp, WAIT, assert_recent, eventually, id_of, millis, now_ms, sorted_keys,
-    succeed,
+    ADMIN_PASSWORD, ADMIN_USERNAME, ClosedPort, FakePlatform, FlvLoop, LocalHttpServer,
+    ReceivedRequest, Seed, SmtpFixture, TestApp, WAIT, assert_recent, eventually, id_of, millis,
+    now_ms, sorted_keys, succeed,
 };
 
 /// `SystemStartup` rendered for the test button, whose event carries version `test`.
@@ -511,7 +511,7 @@ async fn channel_and_subscription_crud_read_back_what_the_edit_form_needs_and_de
         .expect_status(StatusCode::CREATED);
     assert_eq!(
         sorted_keys(&created.body),
-        ["channel_type", "id", "name", "settings"]
+        ["channel_type", "id", "name", "proxy_route", "settings"]
     );
     let id = created.body["id"].as_str().expect("channel id").to_owned();
     assert_eq!(id.len(), 36, "the id is a UUID: {id}");
@@ -671,6 +671,73 @@ async fn test_send_reports_disabled_and_failing_channels_without_leaking_the_rec
         1,
         "the test send is attempted once"
     );
+
+    app.shutdown().await;
+}
+
+/// A channel's route is read at each delivery: an inheriting channel follows
+/// the Default proxy as soon as it changes, and the channel's own route then
+/// overrides it. Email channels accept no route, since SMTP cannot use one.
+#[tokio::test]
+async fn channels_deliver_on_the_route_in_force_when_they_send() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    let forward_proxy = LocalHttpServer::start(200, "relayed").await;
+    // Reachable only through the proxy.
+    let unreachable = ClosedPort::reserve();
+    let hook = unreachable.url("/hook");
+    let proxy = app
+        .post(
+            "/api/proxies",
+            &token,
+            &json!({ "name": "Relay", "url": forward_proxy.url("") }),
+        )
+        .await
+        .created();
+    let id = create_channel(&app, &token, "Relayed", "Webhook", json!({ "url": hook })).await;
+
+    app.patch(
+        "/api/config/global",
+        &token,
+        &json!({ "proxy_route": { "kind": "proxy", "id": proxy["id"] } }),
+    )
+    .await
+    .ok();
+    test_send_ok(&app, &token, &id).await;
+    let relayed: Vec<String> = forward_proxy
+        .received()
+        .into_iter()
+        .map(|request| request.path)
+        .collect();
+    assert_eq!(relayed, [hook.as_str()]);
+
+    let direct = app
+        .put(
+            &format!("/api/notifications/channels/{id}"),
+            &token,
+            &json!({ "name": "Relayed", "settings": { "url": hook }, "proxy_route": { "kind": "direct" } }),
+        )
+        .await
+        .ok();
+    assert_eq!(direct["proxy_route"], json!({ "kind": "direct" }));
+    app.test_send(&token, &id)
+        .await
+        .assert_error(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR");
+    assert_eq!(forward_proxy.received().len(), 1, "direct skips the proxy");
+
+    let email = app
+        .post(
+            "/api/notifications/channels",
+            &token,
+            &json!({
+                "name": "Proxied mail",
+                "channel_type": "Email",
+                "settings": email_settings("127.0.0.1", 25, ""),
+                "proxy_route": { "kind": "proxy", "id": proxy["id"] },
+            }),
+        )
+        .await;
+    email.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
 
     app.shutdown().await;
 }
@@ -1100,15 +1167,21 @@ async fn subscribed_webhook(
     receiver: &LocalHttpServer,
     events: &[&str],
 ) {
-    let channel = create_channel(
-        app,
-        token,
-        "Recording alerts",
-        "Webhook",
-        json!({ "url": receiver.url("/hook"), "locale": "en", "min_priority": 2 }),
-    )
-    .await;
-    subscribe(app, token, &channel, events).await;
+    // Live apps send the global route to a dead end; the receiver is local.
+    let channel = app
+        .post(
+            "/api/notifications/channels",
+            token,
+            &json!({
+                "name": "Recording alerts",
+                "channel_type": "Webhook",
+                "settings": { "url": receiver.url("/hook"), "locale": "en", "min_priority": 2 },
+                "proxy_route": { "kind": "direct" },
+            }),
+        )
+        .await
+        .created();
+    subscribe(app, token, &id_of(&channel), events).await;
 }
 
 /// The webhook bodies `receiver` got for `event_type`, in arrival order.

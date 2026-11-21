@@ -20,6 +20,7 @@ const channel: NotificationChannel = {
   name: 'Ops',
   channel_type: 'Webhook',
   settings: {},
+  proxy_route: { kind: 'inherit' },
 };
 
 const eventTypes = [

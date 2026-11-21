@@ -58,7 +58,7 @@ msgid "(+{pausedCount} paused)"
 msgstr "（+{pausedCount} 条已暂停）"
 
 #: src/components/pipeline/step-in-use-dialog.tsx:80
-#: src/components/proxies/proxy-references.tsx:26
+#: src/components/proxies/proxy-references.tsx:27
 msgid "(being removed)"
 msgstr "（正在移除）"
 
@@ -650,7 +650,7 @@ msgctxt "platform badge"
 msgid "Accounts"
 msgstr "账号"
 
-#: src/components/proxies/proxy-references.tsx:121
+#: src/components/proxies/proxy-references.tsx:129
 msgctxt "proxy references"
 msgid "Accounts"
 msgstr "账号"
@@ -1774,7 +1774,7 @@ msgstr "缓存与进度"
 #: src/components/filters/FilterDialog.tsx:285
 #: src/components/layout/themes/import-modal.tsx:107
 #: src/components/notifications/channel-card.tsx:178
-#: src/components/notifications/channel-form.tsx:385
+#: src/components/notifications/channel-form.tsx:432
 #: src/components/notifications/subscription-manager.tsx:477
 #: src/components/pipeline/interrupted-output-list.tsx:259
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:118
@@ -1914,11 +1914,11 @@ msgstr "正在修改密码..."
 msgid "Changing this restarts the player."
 msgstr "更改后会重新启动播放器。"
 
-#: src/components/notifications/channel-form.tsx:303
+#: src/components/notifications/channel-form.tsx:330
 msgid "Channel"
 msgstr "渠道"
 
-#: src/components/notifications/channel-form.tsx:218
+#: src/components/notifications/channel-form.tsx:242
 msgid "Channel created"
 msgstr "渠道已创建"
 
@@ -1926,7 +1926,7 @@ msgstr "渠道已创建"
 msgid "Channel deleted"
 msgstr "渠道已删除"
 
-#: src/components/notifications/channel-form.tsx:232
+#: src/components/notifications/channel-form.tsx:258
 msgid "Channel updated"
 msgstr "渠道已更新"
 
@@ -2190,7 +2190,7 @@ msgctxt "danmu"
 msgid "Coloured"
 msgstr "彩色"
 
-#: src/components/notifications/channel-form.tsx:407
+#: src/components/notifications/channel-form.tsx:454
 msgid "Coming soon"
 msgstr "即将推出"
 
@@ -2305,7 +2305,7 @@ msgstr "配置目录说明"
 msgid "Config Path (Optional)"
 msgstr "配置路径（可选）"
 
-#: src/components/notifications/channel-form.tsx:369
+#: src/components/notifications/channel-form.tsx:396
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:81
 #: src/components/pipeline/workflows/step-config-dialog.tsx:450
 #: src/components/pipeline/workflows/workflow-editor.tsx:196
@@ -2370,7 +2370,7 @@ msgstr "配置设置"
 msgid "Configure Step"
 msgstr "配置步骤"
 
-#: src/components/notifications/channel-form.tsx:287
+#: src/components/notifications/channel-form.tsx:314
 msgid "Configure where and how you receive notifications."
 msgstr "配置接收通知的位置和方式。"
 
@@ -2686,7 +2686,7 @@ msgstr "为文件创建 ZIP 压缩包，适合与元数据一起打包。"
 msgid "Create API key"
 msgstr "创建 API 密钥"
 
-#: src/components/notifications/channel-form.tsx:392
+#: src/components/notifications/channel-form.tsx:439
 msgid "Create channel"
 msgstr "创建渠道"
 
@@ -3330,7 +3330,7 @@ msgid "Deleted template \"{0}\""
 msgstr "已删除模板“{0}”"
 
 #: src/components/pipeline/step-in-use-dialog.tsx:75
-#: src/components/proxies/proxy-references.tsx:21
+#: src/components/proxies/proxy-references.tsx:22
 msgid "Deleted; kept until the recordings using it finish"
 msgstr "已删除；保留至使用它的录制结束"
 
@@ -3820,7 +3820,7 @@ msgstr "编辑"
 msgid "Edit account"
 msgstr "编辑账号"
 
-#: src/components/notifications/channel-form.tsx:281
+#: src/components/notifications/channel-form.tsx:308
 msgid "Edit channel"
 msgstr "编辑渠道"
 
@@ -3850,6 +3850,10 @@ msgstr "编辑工作流：{0}"
 #: src/components/config/engines/engine-editor.tsx:342
 msgid "Editing Mode"
 msgstr "编辑模式"
+
+#: src/components/notifications/channel-form.tsx:411
+msgid "Email always connects to the mail server directly; proxy settings do not apply to it."
+msgstr "邮件始终直接连接邮件服务器，不使用代理设置。"
 
 #: src/components/filters/FilterCard.tsx:160
 msgid "Empty pattern"
@@ -4361,7 +4365,7 @@ msgstr "克隆模板失败：{0}"
 msgid "Failed to create API key"
 msgstr "创建 API 密钥失败"
 
-#: src/components/notifications/channel-form.tsx:225
+#: src/components/notifications/channel-form.tsx:249
 msgid "Failed to create channel"
 msgstr "创建渠道失败"
 
@@ -4598,7 +4602,7 @@ msgstr "吊销 API 密钥失败"
 msgid "Failed to send test notification"
 msgstr "发送测试通知失败"
 
-#: src/components/notifications/channel-form.tsx:239
+#: src/components/notifications/channel-form.tsx:265
 msgid "Failed to update channel"
 msgstr "更新渠道失败"
 
@@ -5138,7 +5142,7 @@ msgstr "礼物数"
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:116
 #: src/components/layout/site-header.tsx:71
 #: src/components/pipeline/step-in-use-dialog.tsx:105
-#: src/components/proxies/proxy-references.tsx:68
+#: src/components/proxies/proxy-references.tsx:76
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:44
 msgid "Global"
 msgstr "全局"
@@ -5154,7 +5158,7 @@ msgid "Global Default"
 msgstr "全局默认"
 
 #: src/components/pipeline/step-in-use-dialog.tsx:122
-#: src/components/proxies/proxy-references.tsx:71
+#: src/components/proxies/proxy-references.tsx:79
 msgid "Global settings"
 msgstr "全局设置"
 
@@ -6769,7 +6773,7 @@ msgstr "必须小于 {count}"
 msgid "My Archiving Workflow"
 msgstr "我的归档工作流"
 
-#: src/components/notifications/channel-form.tsx:317
+#: src/components/notifications/channel-form.tsx:344
 msgid "My Channel"
 msgstr "我的渠道"
 
@@ -6778,7 +6782,7 @@ msgid "My Template"
 msgstr "我的模板"
 
 #: src/components/config/engines/forms/setting-fields.tsx:969
-#: src/components/notifications/channel-form.tsx:312
+#: src/components/notifications/channel-form.tsx:339
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:200
 #: src/components/pipeline/workflows/workflow-editor.tsx:206
 #: src/components/proxies/proxy-editor-dialog.tsx:233
@@ -6799,11 +6803,11 @@ msgstr "名称自动填充成功"
 
 #: src/api/schemas/engine.ts:650
 #: src/api/schemas/engine.ts:662
-#: src/api/schemas/notifications.ts:168
 #: src/api/schemas/notifications.ts:174
 #: src/api/schemas/notifications.ts:180
 #: src/api/schemas/notifications.ts:186
 #: src/api/schemas/notifications.ts:192
+#: src/api/schemas/notifications.ts:198
 #: src/api/schemas/streamer.ts:261
 #: src/api/schemas/streamer.ts:296
 #: src/api/schemas/template.ts:80
@@ -6872,7 +6876,7 @@ msgstr "从未"
 msgid "New"
 msgstr "新建"
 
-#: src/components/notifications/channel-form.tsx:283
+#: src/components/notifications/channel-form.tsx:310
 msgid "New notification channel"
 msgstr "新建通知渠道"
 
@@ -7361,7 +7365,7 @@ msgstr "此浏览器不支持"
 msgid "not used"
 msgstr "未使用"
 
-#: src/components/proxies/proxy-references.tsx:134
+#: src/components/proxies/proxy-references.tsx:159
 msgid "Not used anywhere"
 msgstr "未被任何设置使用"
 
@@ -7384,6 +7388,10 @@ msgstr "继承来源未选择任何账号"
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:243
 msgid "Notification Account"
 msgstr "通知账号"
+
+#: src/components/proxies/proxy-references.tsx:141
+msgid "Notification channels"
+msgstr "通知渠道"
 
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:269
 msgid "Notification Events"
@@ -8223,7 +8231,7 @@ msgstr "平台"
 #: src/components/config/templates/template-editor.tsx:260
 #: src/components/layout/site-header.tsx:68
 #: src/components/pipeline/step-in-use-dialog.tsx:106
-#: src/components/proxies/proxy-references.tsx:77
+#: src/components/proxies/proxy-references.tsx:85
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:50
 msgid "Platforms"
 msgstr "平台"
@@ -8636,6 +8644,7 @@ msgstr "代理"
 #: src/components/config/shared/proxy-route-picker.tsx:445
 #: src/components/credentials/account-usage.tsx:420
 #: src/components/credentials/profile-editor-dialog.tsx:373
+#: src/components/notifications/channel-form.tsx:407
 msgid "Proxy"
 msgstr "代理"
 
@@ -9530,7 +9539,7 @@ msgstr "保存账号"
 
 #: src/components/config/engines/engine-editor.tsx:271
 #: src/components/filters/FilterDialog.tsx:299
-#: src/components/notifications/channel-form.tsx:390
+#: src/components/notifications/channel-form.tsx:437
 #: src/components/proxies/proxy-editor-dialog.tsx:363
 #: src/components/shared/save-fab.tsx:93
 #: src/components/streamers/streamer-editor.tsx:334
@@ -9975,7 +9984,7 @@ msgid "Select the steps that must complete successfully before this step runs."
 msgstr "选择必须在此步骤运行前成功完成的步骤。"
 
 #: src/components/config/engines/engine-editor.tsx:231
-#: src/components/notifications/channel-form.tsx:343
+#: src/components/notifications/channel-form.tsx:370
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:146
 msgid "Select type"
 msgstr "选择类型"
@@ -10128,7 +10137,7 @@ msgstr "会话缩略图"
 msgid "Sessions"
 msgstr "录制会话"
 
-#: src/api/schemas/notifications.ts:64
+#: src/api/schemas/notifications.ts:65
 msgid "Set both a username and a password, or leave both empty"
 msgstr "请同时填写用户名和密码，或都留空"
 
@@ -10694,7 +10703,7 @@ msgstr "主播更新成功"
 #: src/components/config/global/backup-restore-card.tsx:391
 #: src/components/layout/site-header.tsx:55
 #: src/components/pipeline/step-in-use-dialog.tsx:108
-#: src/components/proxies/proxy-references.tsx:105
+#: src/components/proxies/proxy-references.tsx:113
 #: src/lib/menu-list.ts:58
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:297
 msgid "Streamers"
@@ -10923,7 +10932,7 @@ msgstr "模板"
 #: src/components/config/global/backup-restore-card.tsx:374
 #: src/components/layout/site-header.tsx:69
 #: src/components/pipeline/step-in-use-dialog.tsx:107
-#: src/components/proxies/proxy-references.tsx:93
+#: src/components/proxies/proxy-references.tsx:101
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:56
 msgid "Templates"
 msgstr "模板"
@@ -11705,7 +11714,7 @@ msgstr "Twitch 代理播放列表"
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch 代理播放列表排除"
 
-#: src/components/notifications/channel-form.tsx:333
+#: src/components/notifications/channel-form.tsx:360
 msgid "Type"
 msgstr "类型"
 

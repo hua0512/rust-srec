@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm, useWatch, Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { queryKeys } from '@/api/query-keys';
@@ -39,7 +39,14 @@ import { useLingui } from '@lingui/react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createChannel, updateChannel } from '@/server/functions/notifications';
 import { toast } from 'sonner';
-import { Bell, Box, Loader2, SlidersHorizontal } from 'lucide-react';
+import {
+  Bell,
+  Box,
+  Info,
+  Loader2,
+  Shield,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { DiscordForm } from './forms/discord-form';
 import { EmailForm } from './forms/email-form';
 import { GotifyForm } from './forms/gotify-form';
@@ -54,6 +61,18 @@ import {
   ConfigSectionHeading,
 } from '@/components/config/shared/config-field';
 import { IconInput } from '@/components/ui/icon-input';
+import { Callout } from '@/components/shared/callout';
+import {
+  ProxyRoutePicker,
+  type ProxyRouteInherit,
+} from '@/components/config/shared/proxy-route-picker';
+import { INHERIT_ROUTE, type ProxyRoute } from '@/api/schemas/proxies';
+
+/** Inheriting follows the global route, which the picker shows. */
+const CHANNEL_INHERIT: ProxyRouteInherit = {
+  kind: 'scope',
+  query: { scope_type: 'global' },
+};
 
 interface ChannelFormProps {
   channel?: NotificationChannel | null;
@@ -125,6 +144,8 @@ interface ChannelPayload {
   name: string;
   channel_type: ChannelType;
   settings: Record<string, unknown>;
+  /** Left out for email, which always connects directly. */
+  proxy_route?: ProxyRoute;
 }
 
 /** A stored webhook `auth`, with every field of its type present so the inputs start filled. */
@@ -158,6 +179,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
   const { i18n } = useLingui();
   const queryClient = useQueryClient();
   const isEditing = !!channel;
+  const [proxyRoute, setProxyRoute] = useState<ProxyRoute>(INHERIT_ROUTE);
 
   const form = useForm<ChannelFormData>({
     resolver: zodResolver(ChannelFormSchema) as Resolver<ChannelFormData>,
@@ -203,12 +225,14 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
         channel_type: channel.channel_type,
         settings: settings as never,
       });
+      setProxyRoute(channel.proxy_route);
     } else if (!channel && open) {
       form.reset({
         name: '',
         channel_type: 'Webhook',
         settings: DEFAULT_SETTINGS.Webhook as never,
       });
+      setProxyRoute(INHERIT_ROUTE);
     }
   }, [channel, open, form]);
 
@@ -226,8 +250,10 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ name, settings }: ChannelPayload) =>
-      updateChannel({ data: { id: channel!.id, data: { name, settings } } }),
+    mutationFn: ({ name, settings, proxy_route }: ChannelPayload) =>
+      updateChannel({
+        data: { id: channel!.id, data: { name, settings, proxy_route } },
+      }),
     onSuccess: () => {
       toast.success(i18n._(msg`Channel updated`));
       void queryClient.invalidateQueries({
@@ -256,6 +282,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
       name: data.name,
       channel_type: data.channel_type,
       settings: removeEmpty(settings),
+      ...(data.channel_type === 'Email' ? {} : { proxy_route: proxyRoute }),
     };
 
     if (isEditing) {
@@ -373,6 +400,26 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
                 {selectedType === 'Email' && <EmailForm />}
                 {selectedType === 'Gotify' && <GotifyForm />}
                 {selectedType === 'Telegram' && <TelegramForm />}
+              </section>
+
+              <section className="space-y-4">
+                <ConfigSectionHeading icon={Shield}>
+                  <Trans>Proxy</Trans>
+                </ConfigSectionHeading>
+                {selectedType === 'Email' ? (
+                  <Callout tone="info" icon={Info}>
+                    <Trans>
+                      Email always connects to the mail server directly; proxy
+                      settings do not apply to it.
+                    </Trans>
+                  </Callout>
+                ) : (
+                  <ProxyRoutePicker
+                    value={proxyRoute}
+                    onChange={setProxyRoute}
+                    inherit={CHANNEL_INHERIT}
+                  />
+                )}
               </section>
             </div>
 

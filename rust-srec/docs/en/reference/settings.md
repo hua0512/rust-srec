@@ -73,7 +73,7 @@ Which extractor resolves the stream URL is a separate setting from `default_down
 
 ### Proxies {#proxies}
 
-**Settings → Proxies** lists the saved proxies that global, platform, template, streamer and account settings can choose. Changes there are saved at once.
+**Settings → Proxies** lists the saved proxies that global, platform, template, streamer, account and notification channel settings can choose. Changes there are saved at once.
 
 | Field | Description |
 |-------|-------------|

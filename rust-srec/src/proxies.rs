@@ -13,8 +13,10 @@
 //! global route. A route naming an entry that no longer exists fails rather
 //! than connecting directly.
 //!
-//! Notification channels, browser push and upload tools keep their own
-//! clients, which follow the environment.
+//! Notification channels choose a route too: their own, else the global
+//! route, resolved before each delivery. Browser push follows the global
+//! route. Email cannot use a proxy and always connects directly, and upload
+//! tools keep their own clients, which follow the environment.
 
 mod endpoint;
 mod error;

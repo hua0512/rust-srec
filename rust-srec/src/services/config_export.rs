@@ -297,18 +297,22 @@ async fn export_streamers(
 async fn export_channels(
     channels: &[NotificationChannelDbModel],
     repository: &dyn NotificationRepository,
+    proxy_names: &HashMap<String, String>,
 ) -> crate::Result<Vec<NotificationChannelExport>> {
     let ids: Vec<String> = channels.iter().map(|channel| channel.id.clone()).collect();
     let mut subscriptions = repository.get_subscriptions_for_channels(&ids).await?;
-    Ok(channels
+    channels
         .iter()
-        .map(|channel| NotificationChannelExport {
-            name: channel.name.clone(),
-            channel_type: channel.channel_type.clone(),
-            settings: parse_db_config(channel.settings.clone()),
-            subscriptions: subscriptions.remove(&channel.id).unwrap_or_default(),
+        .map(|channel| {
+            Ok(NotificationChannelExport {
+                name: channel.name.clone(),
+                channel_type: channel.channel_type.clone(),
+                settings: parse_db_config(channel.settings.clone()),
+                subscriptions: subscriptions.remove(&channel.id).unwrap_or_default(),
+                proxy_route: Some(BackupRoute::from_route(&channel.proxy_route, proxy_names)?),
+            })
         })
-        .collect())
+        .collect()
 }
 
 pub(crate) struct ConfigurationExportService {
@@ -444,9 +448,6 @@ impl ConfigurationExportService {
                 streamer_selections.get(&streamer.id),
             );
         }
-        let channel_exports =
-            export_channels(&channels, self.notification_repository.as_ref()).await?;
-
         // Backups name proxies; IDs stay local to each installation.
         let proxies =
             crate::database::repositories::proxies::list(&mut *self.write_pool.acquire().await?)
@@ -455,6 +456,12 @@ impl ConfigurationExportService {
             .iter()
             .map(|entry| (entry.id.clone(), entry.name.clone()))
             .collect();
+        let channel_exports = export_channels(
+            &channels,
+            self.notification_repository.as_ref(),
+            &proxy_names,
+        )
+        .await?;
         let backup_route =
             |route: &crate::proxies::ProxyRoute| BackupRoute::from_route(route, &proxy_names);
         let platform_routes = config_service
@@ -600,7 +607,7 @@ mod tests {
                 assert_eq!(export.filters[1].config, serde_json::json!({"value":2}));
             }
         }
-        let exported = export_channels(&channels, &notification_repo)
+        let exported = export_channels(&channels, &notification_repo, &HashMap::new())
             .await
             .unwrap();
         assert_eq!(queries.swap(0, Ordering::SeqCst), 3);
@@ -621,7 +628,7 @@ mod tests {
                 .is_empty()
         );
         assert!(
-            export_channels(&[], &notification_repo)
+            export_channels(&[], &notification_repo, &HashMap::new())
                 .await
                 .unwrap()
                 .is_empty()

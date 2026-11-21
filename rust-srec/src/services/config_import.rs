@@ -1038,6 +1038,17 @@ fn validate_notification_channel(
             channel.name, error
         ))
     })?;
+    if !channel_type.supports_proxy()
+        && channel
+            .proxy_route
+            .as_ref()
+            .is_some_and(|route| *route != crate::config::backup::BackupRoute::Inherit)
+    {
+        return validation(format!(
+            "Notification channel '{}' is an email channel, which always connects directly; its proxy_route must be inherit",
+            channel.name
+        ));
+    }
     validate_unique(
         &format!("subscription for channel '{}'", channel.name),
         channel.subscriptions.iter().map(String::as_str),
@@ -1145,9 +1156,17 @@ async fn apply_import(
     delete_unimported_templates(tx, snapshot, config, replace, &mut changes.stats).await?;
     profiles::retire_omitted(tx, config, mode).await?;
     profiles::write_sites(tx, config, replace).await?;
+    // Channels release the proxies they stop naming before unused ones go.
+    apply_notification_channels(
+        tx,
+        snapshot,
+        config,
+        replace,
+        &imported_proxies,
+        &mut changes.stats,
+    )
+    .await?;
     proxies::delete_omitted(tx, config, mode).await?;
-
-    apply_notification_channels(tx, snapshot, config, replace, &mut changes.stats).await?;
     apply_job_presets(tx, snapshot, config, &mut changes.stats).await?;
     apply_pipeline_presets(tx, snapshot, config, &mut changes.stats).await?;
     let kept_presets = if replace {
@@ -1750,6 +1769,7 @@ async fn apply_notification_channels(
     snapshot: &ImportSnapshot,
     config: &ConfigExport,
     replace: bool,
+    imported_proxies: &proxies::ImportedProxies,
     stats: &mut ImportStats,
 ) -> Result<(), ConfigurationImportError> {
     for item in &config.notification_channels {
@@ -1760,19 +1780,31 @@ async fn apply_notification_channels(
                 item.channel_type
             ))
         })?;
+        // A merge keeps the stored route of a channel the bundle gives none.
+        let proxy_route = match &item.proxy_route {
+            Some(route) => imported_proxies.route(route)?,
+            None if replace => crate::proxies::ProxyRoute::Inherit,
+            None => existing
+                .map(|existing| existing.proxy_route.clone())
+                .unwrap_or_default(),
+        };
         let model = if let Some(existing) = existing {
             NotificationChannelDbModel {
                 id: existing.id.clone(),
                 name: item.name.clone(),
                 channel_type: channel_type.as_str().to_string(),
                 settings: db_json(item.settings.clone()),
+                proxy_route,
             }
         } else {
-            NotificationChannelDbModel::new(
-                &item.name,
-                channel_type,
-                db_json(item.settings.clone()),
-            )
+            NotificationChannelDbModel {
+                proxy_route,
+                ..NotificationChannelDbModel::new(
+                    &item.name,
+                    channel_type,
+                    db_json(item.settings.clone()),
+                )
+            }
         };
         persist_channel(tx, &model).await?;
         crate::database::repositories::notification::delete_subscriptions(tx, &model.id).await?;

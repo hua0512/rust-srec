@@ -256,6 +256,9 @@ pub struct NotificationService {
     config: Arc<NotificationServiceConfig>,
     notification_repo: Option<Arc<dyn NotificationRepository>>,
     web_push_service: Option<Arc<WebPushService>>,
+    /// Resolves stored channels' routes; without it they use the
+    /// environment's proxy.
+    proxies: Option<Arc<crate::proxies::ProxyService>>,
     web_push_tx: parking_lot::RwLock<Option<mpsc::Sender<WebPushQueuedEvent>>>,
     web_push_worker_started: AtomicBool,
     web_push_dropped: AtomicU64,
@@ -328,6 +331,13 @@ impl NotificationService {
         self
     }
 
+    /// Stored channels resolve their proxy route through `proxies` before
+    /// each delivery.
+    pub fn with_proxies(mut self, proxies: Arc<crate::proxies::ProxyService>) -> Self {
+        self.proxies = Some(proxies);
+        self
+    }
+
     pub(crate) fn with_task_supervisor(mut self, task_supervisor: Arc<TaskSupervisor>) -> Self {
         self.task_supervisor = task_supervisor;
         self.owns_task_supervisor = false;
@@ -342,6 +352,7 @@ impl NotificationService {
         let service = Self {
             notification_repo: None,
             web_push_service: None,
+            proxies: None,
             web_push_tx: parking_lot::RwLock::new(None),
             web_push_worker_started: AtomicBool::new(false),
             web_push_dropped: AtomicU64::new(0),

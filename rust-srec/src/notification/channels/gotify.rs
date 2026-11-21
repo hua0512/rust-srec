@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::debug;
 
-use super::http::{HttpDelivery, RetryPolicy};
+use super::http::{DeliveryRoute, HttpDelivery, RetryPolicy};
 use super::{NotificationChannel, send_direct};
 use crate::Result;
 use crate::notification::events::{NotificationEvent, NotificationPriority, RenderedEvent};
@@ -97,6 +97,12 @@ impl GotifyChannel {
         }
     }
 
+    /// Delivers on `route` instead of the environment's proxy.
+    pub fn with_route(mut self, route: DeliveryRoute) -> Self {
+        self.http = self.http.with_route(route);
+        self
+    }
+
     fn build_rendered_payload(
         &self,
         event: &NotificationEvent,
@@ -147,7 +153,8 @@ impl NotificationChannel for GotifyChannel {
 
         let request = self
             .http
-            .request(Method::POST, &self.message_url)?
+            .request(Method::POST, &self.message_url)
+            .await?
             .query(&[("token", &self.config.app_token)])
             .json(&payload);
         self.http.send(request, RetryPolicy::None).await?;

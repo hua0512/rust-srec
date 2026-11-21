@@ -58,7 +58,7 @@ msgid "(+{pausedCount} paused)"
 msgstr "(+{pausedCount} paused)"
 
 #: src/components/pipeline/step-in-use-dialog.tsx:80
-#: src/components/proxies/proxy-references.tsx:26
+#: src/components/proxies/proxy-references.tsx:27
 msgid "(being removed)"
 msgstr "(being removed)"
 
@@ -650,7 +650,7 @@ msgctxt "platform badge"
 msgid "Accounts"
 msgstr "Accounts"
 
-#: src/components/proxies/proxy-references.tsx:121
+#: src/components/proxies/proxy-references.tsx:129
 msgctxt "proxy references"
 msgid "Accounts"
 msgstr "Accounts"
@@ -1774,7 +1774,7 @@ msgstr "Caching and progress"
 #: src/components/filters/FilterDialog.tsx:285
 #: src/components/layout/themes/import-modal.tsx:107
 #: src/components/notifications/channel-card.tsx:178
-#: src/components/notifications/channel-form.tsx:385
+#: src/components/notifications/channel-form.tsx:432
 #: src/components/notifications/subscription-manager.tsx:477
 #: src/components/pipeline/interrupted-output-list.tsx:259
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:118
@@ -1914,11 +1914,11 @@ msgstr "Changing Password..."
 msgid "Changing this restarts the player."
 msgstr "Changing this restarts the player."
 
-#: src/components/notifications/channel-form.tsx:303
+#: src/components/notifications/channel-form.tsx:330
 msgid "Channel"
 msgstr "Channel"
 
-#: src/components/notifications/channel-form.tsx:218
+#: src/components/notifications/channel-form.tsx:242
 msgid "Channel created"
 msgstr "Channel created"
 
@@ -1926,7 +1926,7 @@ msgstr "Channel created"
 msgid "Channel deleted"
 msgstr "Channel deleted"
 
-#: src/components/notifications/channel-form.tsx:232
+#: src/components/notifications/channel-form.tsx:258
 msgid "Channel updated"
 msgstr "Channel updated"
 
@@ -2190,7 +2190,7 @@ msgctxt "danmu"
 msgid "Coloured"
 msgstr "Coloured"
 
-#: src/components/notifications/channel-form.tsx:407
+#: src/components/notifications/channel-form.tsx:454
 msgid "Coming soon"
 msgstr "Coming soon"
 
@@ -2305,7 +2305,7 @@ msgstr "Config Directory help"
 msgid "Config Path (Optional)"
 msgstr "Config Path (Optional)"
 
-#: src/components/notifications/channel-form.tsx:369
+#: src/components/notifications/channel-form.tsx:396
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:81
 #: src/components/pipeline/workflows/step-config-dialog.tsx:450
 #: src/components/pipeline/workflows/workflow-editor.tsx:196
@@ -2370,7 +2370,7 @@ msgstr "Configure Settings"
 msgid "Configure Step"
 msgstr "Configure Step"
 
-#: src/components/notifications/channel-form.tsx:287
+#: src/components/notifications/channel-form.tsx:314
 msgid "Configure where and how you receive notifications."
 msgstr "Configure where and how you receive notifications."
 
@@ -2686,7 +2686,7 @@ msgstr "Create a ZIP archive of the file. Good for bundling with metadata."
 msgid "Create API key"
 msgstr "Create API key"
 
-#: src/components/notifications/channel-form.tsx:392
+#: src/components/notifications/channel-form.tsx:439
 msgid "Create channel"
 msgstr "Create channel"
 
@@ -3330,7 +3330,7 @@ msgid "Deleted template \"{0}\""
 msgstr "Deleted template \"{0}\""
 
 #: src/components/pipeline/step-in-use-dialog.tsx:75
-#: src/components/proxies/proxy-references.tsx:21
+#: src/components/proxies/proxy-references.tsx:22
 msgid "Deleted; kept until the recordings using it finish"
 msgstr "Deleted; kept until the recordings using it finish"
 
@@ -3820,7 +3820,7 @@ msgstr "Edit"
 msgid "Edit account"
 msgstr "Edit account"
 
-#: src/components/notifications/channel-form.tsx:281
+#: src/components/notifications/channel-form.tsx:308
 msgid "Edit channel"
 msgstr "Edit channel"
 
@@ -3850,6 +3850,10 @@ msgstr "Edit Workflow: {0}"
 #: src/components/config/engines/engine-editor.tsx:342
 msgid "Editing Mode"
 msgstr "Editing Mode"
+
+#: src/components/notifications/channel-form.tsx:411
+msgid "Email always connects to the mail server directly; proxy settings do not apply to it."
+msgstr "Email always connects to the mail server directly; proxy settings do not apply to it."
 
 #: src/components/filters/FilterCard.tsx:160
 msgid "Empty pattern"
@@ -4361,7 +4365,7 @@ msgstr "Failed to clone template: {0}"
 msgid "Failed to create API key"
 msgstr "Failed to create API key"
 
-#: src/components/notifications/channel-form.tsx:225
+#: src/components/notifications/channel-form.tsx:249
 msgid "Failed to create channel"
 msgstr "Failed to create channel"
 
@@ -4598,7 +4602,7 @@ msgstr "Failed to revoke API key"
 msgid "Failed to send test notification"
 msgstr "Failed to send test notification"
 
-#: src/components/notifications/channel-form.tsx:239
+#: src/components/notifications/channel-form.tsx:265
 msgid "Failed to update channel"
 msgstr "Failed to update channel"
 
@@ -5138,7 +5142,7 @@ msgstr "Gift items"
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:116
 #: src/components/layout/site-header.tsx:71
 #: src/components/pipeline/step-in-use-dialog.tsx:105
-#: src/components/proxies/proxy-references.tsx:68
+#: src/components/proxies/proxy-references.tsx:76
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:44
 msgid "Global"
 msgstr "Global"
@@ -5154,7 +5158,7 @@ msgid "Global Default"
 msgstr "Global Default"
 
 #: src/components/pipeline/step-in-use-dialog.tsx:122
-#: src/components/proxies/proxy-references.tsx:71
+#: src/components/proxies/proxy-references.tsx:79
 msgid "Global settings"
 msgstr "Global settings"
 
@@ -6769,7 +6773,7 @@ msgstr "Must be less than {count}"
 msgid "My Archiving Workflow"
 msgstr "My Archiving Workflow"
 
-#: src/components/notifications/channel-form.tsx:317
+#: src/components/notifications/channel-form.tsx:344
 msgid "My Channel"
 msgstr "My Channel"
 
@@ -6778,7 +6782,7 @@ msgid "My Template"
 msgstr "My Template"
 
 #: src/components/config/engines/forms/setting-fields.tsx:969
-#: src/components/notifications/channel-form.tsx:312
+#: src/components/notifications/channel-form.tsx:339
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:200
 #: src/components/pipeline/workflows/workflow-editor.tsx:206
 #: src/components/proxies/proxy-editor-dialog.tsx:233
@@ -6799,11 +6803,11 @@ msgstr "Name autofilled successfully"
 
 #: src/api/schemas/engine.ts:650
 #: src/api/schemas/engine.ts:662
-#: src/api/schemas/notifications.ts:168
 #: src/api/schemas/notifications.ts:174
 #: src/api/schemas/notifications.ts:180
 #: src/api/schemas/notifications.ts:186
 #: src/api/schemas/notifications.ts:192
+#: src/api/schemas/notifications.ts:198
 #: src/api/schemas/streamer.ts:261
 #: src/api/schemas/streamer.ts:296
 #: src/api/schemas/template.ts:80
@@ -6872,7 +6876,7 @@ msgstr "Never"
 msgid "New"
 msgstr "New"
 
-#: src/components/notifications/channel-form.tsx:283
+#: src/components/notifications/channel-form.tsx:310
 msgid "New notification channel"
 msgstr "New notification channel"
 
@@ -7361,7 +7365,7 @@ msgstr "Not supported in this browser"
 msgid "not used"
 msgstr "not used"
 
-#: src/components/proxies/proxy-references.tsx:134
+#: src/components/proxies/proxy-references.tsx:159
 msgid "Not used anywhere"
 msgstr "Not used anywhere"
 
@@ -7384,6 +7388,10 @@ msgstr "Nothing it inherits from chooses an account"
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:243
 msgid "Notification Account"
 msgstr "Notification Account"
+
+#: src/components/proxies/proxy-references.tsx:141
+msgid "Notification channels"
+msgstr "Notification channels"
 
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:269
 msgid "Notification Events"
@@ -8223,7 +8231,7 @@ msgstr "platforms"
 #: src/components/config/templates/template-editor.tsx:260
 #: src/components/layout/site-header.tsx:68
 #: src/components/pipeline/step-in-use-dialog.tsx:106
-#: src/components/proxies/proxy-references.tsx:77
+#: src/components/proxies/proxy-references.tsx:85
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:50
 msgid "Platforms"
 msgstr "Platforms"
@@ -8636,6 +8644,7 @@ msgstr "Proxies"
 #: src/components/config/shared/proxy-route-picker.tsx:445
 #: src/components/credentials/account-usage.tsx:420
 #: src/components/credentials/profile-editor-dialog.tsx:373
+#: src/components/notifications/channel-form.tsx:407
 msgid "Proxy"
 msgstr "Proxy"
 
@@ -9530,7 +9539,7 @@ msgstr "Save account"
 
 #: src/components/config/engines/engine-editor.tsx:271
 #: src/components/filters/FilterDialog.tsx:299
-#: src/components/notifications/channel-form.tsx:390
+#: src/components/notifications/channel-form.tsx:437
 #: src/components/proxies/proxy-editor-dialog.tsx:363
 #: src/components/shared/save-fab.tsx:93
 #: src/components/streamers/streamer-editor.tsx:334
@@ -9975,7 +9984,7 @@ msgid "Select the steps that must complete successfully before this step runs."
 msgstr "Select the steps that must complete successfully before this step runs."
 
 #: src/components/config/engines/engine-editor.tsx:231
-#: src/components/notifications/channel-form.tsx:343
+#: src/components/notifications/channel-form.tsx:370
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:146
 msgid "Select type"
 msgstr "Select type"
@@ -10128,7 +10137,7 @@ msgstr "Session thumbnail"
 msgid "Sessions"
 msgstr "Sessions"
 
-#: src/api/schemas/notifications.ts:64
+#: src/api/schemas/notifications.ts:65
 msgid "Set both a username and a password, or leave both empty"
 msgstr "Set both a username and a password, or leave both empty"
 
@@ -10694,7 +10703,7 @@ msgstr "Streamer updated successfully"
 #: src/components/config/global/backup-restore-card.tsx:391
 #: src/components/layout/site-header.tsx:55
 #: src/components/pipeline/step-in-use-dialog.tsx:108
-#: src/components/proxies/proxy-references.tsx:105
+#: src/components/proxies/proxy-references.tsx:113
 #: src/lib/menu-list.ts:58
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:297
 msgid "Streamers"
@@ -10923,7 +10932,7 @@ msgstr "templates"
 #: src/components/config/global/backup-restore-card.tsx:374
 #: src/components/layout/site-header.tsx:69
 #: src/components/pipeline/step-in-use-dialog.tsx:107
-#: src/components/proxies/proxy-references.tsx:93
+#: src/components/proxies/proxy-references.tsx:101
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:56
 msgid "Templates"
 msgstr "Templates"
@@ -11705,7 +11714,7 @@ msgstr "Twitch Proxy Playlist"
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch Proxy Playlist Exclude"
 
-#: src/components/notifications/channel-form.tsx:333
+#: src/components/notifications/channel-form.tsx:360
 msgid "Type"
 msgstr "Type"
 

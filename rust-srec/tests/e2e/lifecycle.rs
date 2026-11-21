@@ -85,7 +85,8 @@ fn recorded_part(session_id: &str) -> String {
 }
 
 /// A webhook channel to `receiver` subscribed to `events`, inserted before
-/// boot so it sees the first checks.
+/// boot so it sees the first checks. It connects directly: live apps send the
+/// global route to a dead end.
 fn webhook_channel(receiver: &LocalHttpServer, events: &[&str]) -> String {
     let settings = json!({
         "enabled": true,
@@ -94,8 +95,8 @@ fn webhook_channel(receiver: &LocalHttpServer, events: &[&str]) -> String {
         "locale": "en",
     });
     let mut sql = format!(
-        "INSERT INTO notification_channel (id, name, channel_type, settings) \
-         VALUES ('hook', 'Hook', 'Webhook', '{settings}');\n"
+        "INSERT INTO notification_channel (id, name, channel_type, settings, proxy_route) \
+         VALUES ('hook', 'Hook', 'Webhook', '{settings}', 'direct');\n"
     );
     for event in events {
         sql.push_str(&format!(

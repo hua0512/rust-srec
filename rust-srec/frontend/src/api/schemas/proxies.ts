@@ -3,7 +3,8 @@ import { z } from 'zod';
 /**
  * How a scope connects. Platforms, templates and streamers may inherit from the
  * next scope out; the global route never does. An account that inherits follows
- * the route of the recording using it.
+ * the route of the recording using it, and a notification channel that inherits
+ * follows the global route.
  *
  * The backend rejects fields a route does not have, so each kind is strict.
  */
@@ -37,7 +38,10 @@ export const ProxySchema = z.object({
   version: z.number().int(),
   created_at: z.number().int(),
   updated_at: z.number().int(),
-  /** Routes on global settings, platforms, templates, streamers and accounts naming it. */
+  /**
+   * Routes on global settings, platforms, templates, streamers, accounts and
+   * notification channels naming it.
+   */
   usage_count: z.number().int(),
 });
 export type SavedProxy = z.infer<typeof ProxySchema>;
@@ -63,6 +67,7 @@ export const ProxyReferencesSchema = z.object({
       platform_name: z.string(),
     }),
   ),
+  notification_channels: z.array(NamedReferenceSchema),
 });
 export type ProxyReferences = z.infer<typeof ProxyReferencesSchema>;
 

@@ -1,11 +1,14 @@
 //! Notification database models.
 
 use serde::{Deserialize, Serialize};
-use sqlx::FromRow;
+use sqlx::sqlite::SqliteRow;
+use sqlx::{FromRow, Row};
+
+use crate::proxies::ProxyRoute;
 
 /// Notification channel database model.
 /// Represents a configured destination for system event notifications.
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct NotificationChannelDbModel {
     pub id: String,
     pub name: String,
@@ -13,6 +16,31 @@ pub struct NotificationChannelDbModel {
     pub channel_type: String,
     /// JSON blob for channel-specific settings
     pub settings: String,
+    /// How deliveries connect; `inherit` follows the global route. Email
+    /// channels always connect directly and keep `inherit`.
+    #[serde(default)]
+    pub proxy_route: ProxyRoute,
+}
+
+impl<'r> FromRow<'r, SqliteRow> for NotificationChannelDbModel {
+    fn from_row(row: &'r SqliteRow) -> Result<Self, sqlx::Error> {
+        let kind: String = row.try_get("proxy_route")?;
+        let proxy_id: Option<String> = row.try_get("proxy_id")?;
+        let proxy_route =
+            ProxyRoute::from_columns(&kind, proxy_id.as_deref()).map_err(|error| {
+                sqlx::Error::ColumnDecode {
+                    index: "proxy_route".to_owned(),
+                    source: Box::new(error),
+                }
+            })?;
+        Ok(Self {
+            id: row.try_get("id")?,
+            name: row.try_get("name")?,
+            channel_type: row.try_get("channel_type")?,
+            settings: row.try_get("settings")?,
+            proxy_route,
+        })
+    }
 }
 
 impl NotificationChannelDbModel {
@@ -26,6 +54,7 @@ impl NotificationChannelDbModel {
             name: name.into(),
             channel_type: channel_type.as_str().to_string(),
             settings: settings.into(),
+            proxy_route: ProxyRoute::Inherit,
         }
     }
 }
@@ -50,6 +79,12 @@ impl ChannelType {
             Self::Telegram => "Telegram",
             Self::Webhook => "Webhook",
         }
+    }
+
+    /// Whether deliveries can take a proxy route. SMTP has no proxy
+    /// support, so email always connects directly.
+    pub fn supports_proxy(&self) -> bool {
+        !matches!(self, Self::Email)
     }
 
     pub fn parse(s: &str) -> Option<Self> {

@@ -17,6 +17,7 @@ use crate::database::models::notification::{
 use crate::notification::NotificationPriority;
 use crate::notification::events::{NotificationEventTypeInfo, notification_event_types};
 use crate::notification::service::NotificationChannelInstance;
+use crate::proxies::ProxyRoute;
 
 #[derive(Clone)]
 pub struct NotificationRouteState {
@@ -69,12 +70,20 @@ pub struct CreateChannelRequest {
     pub name: String,
     pub channel_type: ChannelType,
     pub settings: serde_json::Value,
+    /// How deliveries connect; `inherit`, the default, follows the global
+    /// route. Email channels always connect directly and accept only
+    /// `inherit`.
+    #[serde(default)]
+    pub proxy_route: ProxyRoute,
 }
 
 #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
 pub struct UpdateChannelRequest {
     pub name: String,
     pub settings: serde_json::Value,
+    /// Replaces the channel's route; omitting it keeps it.
+    #[serde(default)]
+    pub proxy_route: Option<ProxyRoute>,
 }
 
 #[derive(Debug, serde::Deserialize, utoipa::ToSchema)]
@@ -460,7 +469,8 @@ pub async fn create_channel(
     let settings_str = serde_json::to_string(&req.settings)
         .map_err(|e| ApiError::bad_request(format!("Invalid settings JSON: {}", e)))?;
 
-    let channel = NotificationChannelDbModel::new(req.name, req.channel_type, settings_str);
+    let mut channel = NotificationChannelDbModel::new(req.name, req.channel_type, settings_str);
+    channel.proxy_route = req.proxy_route;
 
     // Save to DB
     repo.create_channel(&channel).await?;
@@ -498,6 +508,9 @@ pub async fn update_channel(
     channel.name = req.name;
     channel.settings = serde_json::to_string(&req.settings)
         .map_err(|e| ApiError::bad_request(format!("Invalid settings JSON: {}", e)))?;
+    if let Some(route) = req.proxy_route {
+        channel.proxy_route = route;
+    }
 
     repo.update_channel(&channel).await?;
 

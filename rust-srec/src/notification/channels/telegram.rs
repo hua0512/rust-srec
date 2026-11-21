@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::debug;
 
-use super::http::{DEFAULT_TIMEOUT, HttpDelivery, RetryPolicy};
+use super::http::{DEFAULT_TIMEOUT, DeliveryRoute, HttpDelivery, RetryPolicy};
 use super::{NotificationChannel, send_direct};
 use crate::Result;
 use crate::notification::events::{NotificationEvent, NotificationPriority, RenderedEvent};
@@ -115,6 +115,12 @@ impl TelegramChannel {
         }
     }
 
+    /// Delivers on `route` instead of the environment's proxy.
+    pub fn with_route(mut self, route: DeliveryRoute) -> Self {
+        self.http = self.http.with_route(route);
+        self
+    }
+
     /// Build literal text plus entities, which Telegram accepts instead of parse_mode.
     /// https://core.telegram.org/bots/api#sendmessage
     #[cfg(test)]
@@ -189,7 +195,7 @@ impl TelegramChannel {
                 .map_or(TELEGRAM_API_BASE, String::as_str);
             format!("{api_base}/bot{token}/sendMessage")
         };
-        let request = self.http.request(Method::POST, &url)?.json(payload);
+        let request = self.http.request(Method::POST, &url).await?.json(payload);
         self.http.send(request, RetryPolicy::Telegram).await
     }
 }

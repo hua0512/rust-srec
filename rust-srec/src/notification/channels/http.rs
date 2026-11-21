@@ -1,10 +1,13 @@
 //! Bounded HTTP delivery with diagnostics that cannot retain endpoint credentials.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use reqwest::{Client, Method, RequestBuilder, Response, StatusCode, header::HeaderMap};
-use tracing::debug;
+use tracing::{debug, warn};
 
+use crate::proxies::{ProxyService, ProxyTarget};
+use crate::utils::http_client::{ClientCache, apply_proxy, build_client};
 use crate::{Error, Result};
 
 pub(super) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -13,6 +16,10 @@ const MAX_RETRY_DELAY: Duration = Duration::from_secs(30);
 const MAX_ATTEMPTS: usize = 3;
 const MAX_RETRY_BODY_BYTES: usize = 8192;
 
+/// Clients by connection, shared by every channel. Timeouts are set per
+/// request, so the connection is all a client depends on.
+static CLIENTS: ClientCache<ProxyTarget> = ClientCache::new(16);
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum RetryPolicy {
     None,
@@ -20,9 +27,30 @@ pub(super) enum RetryPolicy {
     Telegram,
 }
 
+/// How a channel finds the connection its deliveries take.
+#[derive(Clone)]
+pub enum DeliveryRoute {
+    /// Always this connection, for channels configured outside the
+    /// database.
+    Fixed(ProxyTarget),
+    /// A stored channel's route, resolved before each delivery so edits to
+    /// it, to the global route or to a saved proxy apply to the next one.
+    Stored {
+        proxies: Arc<ProxyService>,
+        channel_id: String,
+    },
+}
+
+impl Default for DeliveryRoute {
+    /// The proxy the environment configures, if any.
+    fn default() -> Self {
+        Self::Fixed(ProxyTarget::System)
+    }
+}
+
 pub(super) struct HttpDelivery {
     channel: &'static str,
-    client: std::result::Result<Client, reqwest::Error>,
+    route: DeliveryRoute,
     timeout: Duration,
 }
 
@@ -31,14 +59,18 @@ impl HttpDelivery {
         crate::utils::http_client::install_rustls_provider();
         Self {
             channel,
-            // Stays on HTTP/1.1 like the other backend clients (see `build_client`).
-            client: Client::builder().http1_only().build(),
+            route: DeliveryRoute::default(),
             timeout: if timeout.is_zero() {
                 DEFAULT_TIMEOUT
             } else {
                 timeout.min(MAX_TIMEOUT)
             },
         }
+    }
+
+    pub(super) fn with_route(mut self, route: DeliveryRoute) -> Self {
+        self.route = route;
+        self
     }
 
     fn failure(&self, message: impl Into<String>) -> Error {
@@ -48,10 +80,26 @@ impl HttpDelivery {
         }
     }
 
-    pub(super) fn request(&self, method: Method, url: &str) -> Result<RequestBuilder> {
-        let client = self
-            .client
-            .as_ref()
+    /// A request on the channel's current route. A route naming a saved
+    /// proxy that no longer exists fails rather than connecting directly.
+    pub(super) async fn request(&self, method: Method, url: &str) -> Result<RequestBuilder> {
+        let target = match &self.route {
+            DeliveryRoute::Fixed(target) => target.clone(),
+            DeliveryRoute::Stored {
+                proxies,
+                channel_id,
+            } => proxies
+                .notification_target(channel_id)
+                .await
+                .map_err(|error| {
+                    warn!(channel = self.channel, %channel_id, %error, "Notification proxy route unavailable");
+                    self.failure(format!("proxy route unavailable: {error}"))
+                })?,
+        };
+        let client = CLIENTS
+            .get_or_try_build(&target, || {
+                build_client(apply_proxy(Client::builder(), &target))
+            })
             .map_err(|_| self.failure("HTTP client initialization failed"))?;
         Ok(client.request(method, url).timeout(self.timeout))
     }
@@ -228,6 +276,7 @@ mod tests {
                 Duration::from_secs(5),
                 http.send(
                     http.request(Method::POST, &server.url)
+                        .await
                         .unwrap()
                         .json(&serde_json::json!({})),
                     RetryPolicy::Telegram,
@@ -241,7 +290,7 @@ mod tests {
 
             let later = server_ok().await;
             http.send(
-                http.request(Method::POST, &later.url).unwrap(),
+                http.request(Method::POST, &later.url).await.unwrap(),
                 RetryPolicy::None,
             )
             .await
@@ -265,7 +314,7 @@ mod tests {
         for url in [endpoint.as_str(), "http://[PATH_SECRET/?token=QUERY_SECRET"] {
             let error = http
                 .send(
-                    http.request(Method::POST, url).unwrap(),
+                    http.request(Method::POST, url).await.unwrap(),
                     RetryPolicy::Telegram,
                 )
                 .await
@@ -309,7 +358,7 @@ mod tests {
         let http = HttpDelivery::new("telegram", DEFAULT_TIMEOUT);
         let error = http
             .send(
-                http.request(Method::POST, &server.url).unwrap(),
+                http.request(Method::POST, &server.url).await.unwrap(),
                 RetryPolicy::Telegram,
             )
             .await
@@ -340,6 +389,7 @@ mod tests {
                 let result = http
                     .send(
                         http.request(Method::POST, &server.url)
+                            .await
                             .unwrap()
                             .json(&serde_json::json!({"text":"hello"})),
                         policy,
@@ -375,6 +425,7 @@ mod tests {
             let http = HttpDelivery::new("telegram", DEFAULT_TIMEOUT);
             let response = http
                 .request(Method::POST, &server.url)
+                .await
                 .unwrap()
                 .send()
                 .await

@@ -29,6 +29,7 @@ pub enum RouteOwner {
     Template(String),
     Streamer(String),
     Account(String),
+    NotificationChannel(String),
 }
 
 impl RouteOwner {
@@ -39,15 +40,18 @@ impl RouteOwner {
             Self::Template(_) => "template_config",
             Self::Streamer(_) => "streamers",
             Self::Account(_) => "credential_profiles",
+            Self::NotificationChannel(_) => "notification_channel",
         }
     }
 
     fn id(&self) -> Option<&str> {
         match self {
             Self::Global => None,
-            Self::Platform(id) | Self::Template(id) | Self::Streamer(id) | Self::Account(id) => {
-                Some(id)
-            }
+            Self::Platform(id)
+            | Self::Template(id)
+            | Self::Streamer(id)
+            | Self::Account(id)
+            | Self::NotificationChannel(id) => Some(id),
         }
     }
 }
@@ -366,12 +370,22 @@ pub(crate) async fn references_of(
         platform_name,
     })
     .collect();
+    let notification_channels = sqlx::query_as::<_, (String, String)>(
+        "SELECT id, name FROM notification_channel WHERE proxy_id = ? ORDER BY name, id",
+    )
+    .bind(id)
+    .fetch_all(&mut *connection)
+    .await?
+    .into_iter()
+    .map(|(id, name)| NamedReference { id, name })
+    .collect();
     Ok(ProxyReferences {
         global,
         platforms,
         templates,
         streamers,
         accounts,
+        notification_channels,
     })
 }
 
@@ -386,6 +400,7 @@ pub(crate) async fn usage_counts(
             UNION ALL SELECT proxy_id FROM template_config WHERE proxy_id IS NOT NULL
             UNION ALL SELECT proxy_id FROM streamers WHERE proxy_id IS NOT NULL AND deleted_at IS NULL
             UNION ALL SELECT proxy_id FROM credential_profiles WHERE proxy_id IS NOT NULL
+            UNION ALL SELECT proxy_id FROM notification_channel WHERE proxy_id IS NOT NULL
         ) GROUP BY proxy_id",
     )
     .fetch_all(connection)

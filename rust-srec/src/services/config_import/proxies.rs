@@ -20,7 +20,10 @@ pub(super) struct ImportedProxies {
 }
 
 impl ImportedProxies {
-    fn route(&self, route: &BackupRoute) -> Result<ProxyRoute, ConfigurationImportError> {
+    pub(super) fn route(
+        &self,
+        route: &BackupRoute,
+    ) -> Result<ProxyRoute, ConfigurationImportError> {
         route
             .to_route(&self.ids)
             .map_err(|name| validation_error(format!("Unknown proxy '{name}'")))

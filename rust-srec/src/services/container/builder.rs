@@ -449,7 +449,9 @@ impl ServiceContainer {
         if let Some(web_push) = web_push_service.clone() {
             notification_service = notification_service.with_web_push_service(web_push);
         }
-        notification_service = notification_service.with_task_supervisor(task_supervisor.clone());
+        notification_service = notification_service
+            .with_task_supervisor(task_supervisor.clone())
+            .with_proxies(proxies.clone());
         let notification_service = Arc::new(notification_service);
         notification_service.start_web_push_worker();
         credential_service.set_notification_service(Arc::clone(&notification_service));

@@ -2,11 +2,12 @@ import type { ReactNode } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
-import { KeyRound, LayoutTemplate } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { Bell, KeyRound, LayoutTemplate } from 'lucide-react';
 import { formatPlatformName } from '@/lib/platform';
 import { cn } from '@/lib/utils';
 import type { ProxyReferences } from '@/api/schemas/proxies';
-import { NameList } from '@/components/shared/list-panel';
+import { NAME_LINK, NameList } from '@/components/shared/list-panel';
 import { NAME_ICON, OwnerLink, TERM } from '@/components/shared/owner-link';
 
 type Template = ProxyReferences['templates'][number];
@@ -60,7 +61,14 @@ export function ProxyReferencesList({
   limit?: number;
   className?: string;
 }) {
-  const { global, platforms, templates, streamers, accounts } = references;
+  const {
+    global,
+    platforms,
+    templates,
+    streamers,
+    accounts,
+    notification_channels: channels,
+  } = references;
   const rows: { term: ReactNode; value: ReactNode }[] = [];
   const cap = (count: number) => limit ?? count;
   if (global)
@@ -125,6 +133,23 @@ export function ProxyReferencesList({
           limit={cap(accounts.length)}
           label={(account) => account.label}
           render={(account) => <AccountName account={account} />}
+        />
+      ),
+    });
+  if (channels.length)
+    rows.push({
+      term: <Trans>Notification channels</Trans>,
+      value: (
+        <NameList
+          items={channels}
+          limit={cap(channels.length)}
+          label={(channel) => channel.name}
+          render={(channel) => (
+            <Link to="/notifications" className={NAME_LINK}>
+              <Bell className={NAME_ICON} />
+              {channel.name}
+            </Link>
+          )}
         />
       ),
     });

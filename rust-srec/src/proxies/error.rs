@@ -47,6 +47,7 @@ pub struct ProxyReferences {
     pub templates: Vec<TemplateReference>,
     pub streamers: Vec<NamedReference>,
     pub accounts: Vec<AccountReference>,
+    pub notification_channels: Vec<NamedReference>,
 }
 
 impl ProxyReferences {
@@ -61,6 +62,7 @@ impl ProxyReferences {
             + self.templates.len()
             + self.streamers.len()
             + self.accounts.len()
+            + self.notification_channels.len()
     }
 }
 
@@ -90,11 +92,16 @@ impl std::fmt::Display for ProxyReferences {
                 .iter()
                 .map(|account| format!("account {:?} on {}", account.label, account.platform_name)),
         );
+        parts.extend(
+            self.notification_channels
+                .iter()
+                .map(|channel| format!("notification channel {:?}", channel.name)),
+        );
         f.write_str(&parts.join(", "))
     }
 }
 
-/// A platform or streamer whose route names the entry.
+/// A platform, streamer or notification channel whose route names the entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 pub struct NamedReference {
     pub id: String,
