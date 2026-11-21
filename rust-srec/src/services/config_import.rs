@@ -1100,8 +1100,10 @@ async fn apply_import(
     let replace = mode == ImportMode::Replace;
     let mut changes = ImportChanges::default();
 
-    // Routes written below name the bundle's proxies.
+    // Routes written below name the bundle's proxies. Upload steps carry
+    // theirs inside the documents, which are stored with entry IDs.
     let imported_proxies = proxies::upsert(tx, config).await?;
+    let config = &imported_proxies.store_step_routes(config)?;
     let global = global_model(&snapshot.global, config);
     persist_global(tx, &global).await?;
     imported_proxies
@@ -1166,7 +1168,6 @@ async fn apply_import(
         &mut changes.stats,
     )
     .await?;
-    proxies::delete_omitted(tx, config, mode).await?;
     apply_job_presets(tx, snapshot, config, &mut changes.stats).await?;
     apply_pipeline_presets(tx, snapshot, config, &mut changes.stats).await?;
     let kept_presets = if replace {
@@ -1174,6 +1175,8 @@ async fn apply_import(
     } else {
         Vec::new()
     };
+    // Only proxies nothing written above names are deleted.
+    proxies::delete_omitted(tx, config, mode).await?;
     apply_users(tx, snapshot, config, replace, &mut changes.stats).await?;
 
     crate::database::repositories::refresh_token::invalidate_all_for_import(tx).await?;

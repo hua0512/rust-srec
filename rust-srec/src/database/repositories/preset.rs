@@ -103,20 +103,77 @@ pub(crate) enum Owners {
     Kept,
 }
 
-/// Whether the JSON column `column` holds a pipeline step
-/// `{"type": ?1, "name": ?2}`. Steps sit at `steps[N].step` of a pipeline,
-/// which is the column itself or a `*pipeline` key nested in it (template
-/// platform overrides and streamer-specific configs).
-fn names_step(column: &str) -> String {
+/// The pipeline steps a search for their users matches.
+#[derive(Clone, Copy)]
+pub(crate) enum StepMatch<'a> {
+    /// Steps naming the job preset or workflow `name`. `id` keeps a
+    /// workflow from counting as its own user.
+    Named {
+        step: StepRef,
+        id: &'a str,
+        name: &'a str,
+    },
+    /// Inline steps whose config routes through the saved proxy `id`.
+    Proxy { id: &'a str },
+}
+
+impl<'a> StepMatch<'a> {
+    /// The step `type` tag, bound as `?1`.
+    fn tag(self) -> &'static str {
+        match self {
+            Self::Named { step, .. } => step.tag(),
+            Self::Proxy { .. } => "inline",
+        }
+    }
+
+    /// What a step of that type must also carry, comparing with `?2`.
+    fn condition(self) -> &'static str {
+        match self {
+            Self::Named { .. } => "json_extract(j.value, '$.name') = ?2",
+            Self::Proxy { .. } => {
+                "json_extract(j.value, '$.config.proxy_route.kind') = 'proxy' \
+                 AND json_extract(j.value, '$.config.proxy_route.id') = ?2"
+            }
+        }
+    }
+
+    /// The name or proxy id, bound as `?2`.
+    fn bound(self) -> &'a str {
+        match self {
+            Self::Named { name, .. } => name,
+            Self::Proxy { id } => id,
+        }
+    }
+
+    /// The workflow excluded from the users, bound as `?3`.
+    fn own_workflow(self) -> Option<&'a str> {
+        match self {
+            Self::Named {
+                step: StepRef::Workflow,
+                id,
+                ..
+            } => Some(id),
+            _ => None,
+        }
+    }
+}
+
+/// Whether the JSON column `column` holds a pipeline step `steps` matches.
+/// Steps sit at `steps[N].step` of a pipeline, which is the column itself or
+/// a `*pipeline` key nested in it (template platform overrides and
+/// streamer-specific configs); [`crate::pipeline::step_routes`] walks the
+/// same places.
+fn names_step(column: &str, steps: StepMatch<'_>) -> String {
     format!(
         "EXISTS(SELECT 1 FROM json_tree(CASE WHEN json_valid({column}) THEN {column} ELSE 'null' END) j \
          WHERE j.key = 'step' AND (j.fullkey GLOB '$.steps[[]*].step' OR j.fullkey GLOB '*pipeline.steps[[]*].step') \
-         AND j.type = 'object' AND json_extract(j.value, '$.type') = ?1 AND json_extract(j.value, '$.name') = ?2)"
+         AND j.type = 'object' AND json_extract(j.value, '$.type') = ?1 AND {})",
+        steps.condition()
     )
 }
 
 /// What kind of configuration owns a pipeline that names a step.
-#[derive(Debug, serde::Serialize, sqlx::Type)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, sqlx::Type, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(rename_all = "snake_case")]
 pub enum StepUserKind {
@@ -128,7 +185,7 @@ pub enum StepUserKind {
 }
 
 /// A stored pipeline owner that names a step definition.
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, utoipa::ToSchema)]
 pub struct StepUser {
     pub kind: StepUserKind,
     /// The owner's id; empty for the global config.
@@ -166,6 +223,15 @@ pub(crate) async fn step_users(
     name: &str,
     owners: Owners,
 ) -> std::result::Result<Vec<StepUser>, sqlx::Error> {
+    pipeline_users(conn, StepMatch::Named { step, id, name }, owners).await
+}
+
+/// The stored pipeline owners with a step `steps` matches.
+pub(crate) async fn pipeline_users(
+    conn: &mut sqlx::SqliteConnection,
+    steps: StepMatch<'_>,
+    owners: Owners,
+) -> std::result::Result<Vec<StepUser>, sqlx::Error> {
     const PIPELINES: [&str; 3] = [
         "pipeline",
         "session_complete_pipeline",
@@ -177,7 +243,7 @@ pub(crate) async fn step_users(
     let any_names_step = |columns: &[&str]| {
         columns
             .iter()
-            .map(|column| names_step(column))
+            .map(|column| names_step(column, steps))
             .collect::<Vec<_>>()
             .join(" OR ")
     };
@@ -195,17 +261,17 @@ pub(crate) async fn step_users(
         global = any_names_step(&PIPELINES),
         platform = any_names_step(&PIPELINES),
         template = any_names_step(&[&PIPELINES[..], &["platform_overrides"]].concat()),
-        streamer = names_step("streamer_specific_config"),
-        workflow = names_step("dag_definition"),
+        streamer = names_step("streamer_specific_config", steps),
+        workflow = names_step("dag_definition", steps),
         kept_template = kept(TEMPLATE_REMOVING),
         kept_streamer = kept(STREAMER_REMOVING),
         kept_workflow = kept(WORKFLOW_REMOVING),
     );
     let rows: Vec<(StepUserKind, String, String, bool)> =
         sqlx::query_as(sqlx::AssertSqlSafe(query))
-            .bind(step.tag())
-            .bind(name)
-            .bind(matches!(step, StepRef::Workflow).then_some(id))
+            .bind(steps.tag())
+            .bind(steps.bound())
+            .bind(steps.own_workflow())
             .fetch_all(conn)
             .await?;
     Ok(rows

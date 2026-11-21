@@ -550,6 +550,15 @@ impl ConfigurationExportService {
                 })
                 .collect(),
         };
+        // Upload steps name proxies like the scopes do. A stored route that
+        // does not parse is left as written.
+        export.map_step_routes(|route| {
+            if let Ok(stored) = serde_json::from_value::<crate::proxies::ProxyRoute>(route.clone())
+            {
+                *route = serde_json::to_value(backup_route(&stored)?)?;
+            }
+            crate::Result::Ok(())
+        })?;
         export.update_schema_version();
         export.validate_credential_graph()?;
         Ok(export)

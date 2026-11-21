@@ -3,12 +3,16 @@ import { Trans } from '@lingui/react/macro';
 import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { Link } from '@tanstack/react-router';
-import { Bell, KeyRound, LayoutTemplate } from 'lucide-react';
+import { Bell, KeyRound, LayoutTemplate, Upload } from 'lucide-react';
 import { formatPlatformName } from '@/lib/platform';
 import { cn } from '@/lib/utils';
 import type { ProxyReferences } from '@/api/schemas/proxies';
 import { NAME_LINK, NameList } from '@/components/shared/list-panel';
 import { NAME_ICON, OwnerLink, TERM } from '@/components/shared/owner-link';
+import {
+  UserName,
+  displayName,
+} from '@/components/pipeline/step-in-use-dialog';
 
 type Template = ProxyReferences['templates'][number];
 type Account = ProxyReferences['accounts'][number];
@@ -68,6 +72,8 @@ export function ProxyReferencesList({
     streamers,
     accounts,
     notification_channels: channels,
+    job_presets: presets,
+    pipelines,
   } = references;
   const rows: { term: ReactNode; value: ReactNode }[] = [];
   const cap = (count: number) => limit ?? count;
@@ -150,6 +156,39 @@ export function ProxyReferencesList({
               {channel.name}
             </Link>
           )}
+        />
+      ),
+    });
+  if (presets.length)
+    rows.push({
+      term: <Trans>Job presets</Trans>,
+      value: (
+        <NameList
+          items={presets}
+          limit={cap(presets.length)}
+          label={(preset) => preset.name}
+          render={(preset) => (
+            <Link
+              to="/pipeline/presets/$presetId"
+              params={{ presetId: preset.id }}
+              className={NAME_LINK}
+            >
+              <Upload className={NAME_ICON} />
+              {preset.name}
+            </Link>
+          )}
+        />
+      ),
+    });
+  if (pipelines.length)
+    rows.push({
+      term: <Trans>Pipeline upload steps</Trans>,
+      value: (
+        <NameList
+          items={pipelines}
+          limit={cap(pipelines.length)}
+          label={displayName}
+          render={(user) => <UserName user={user} />}
         />
       ),
     });

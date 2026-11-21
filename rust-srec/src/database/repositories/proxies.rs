@@ -375,6 +375,25 @@ pub(crate) async fn references_of(
     .into_iter()
     .map(|(id, name)| NamedReference { id, name })
     .collect();
+    // Upload steps keep their routes in JSON, where no foreign key reaches:
+    // job preset configs and the inline steps of stored pipelines.
+    let job_presets = sqlx::query_as::<_, (String, String)>(
+        "SELECT id, name FROM job_presets WHERE json_valid(config) \
+         AND json_extract(config, '$.proxy_route.kind') = 'proxy' \
+         AND json_extract(config, '$.proxy_route.id') = ? ORDER BY name, id",
+    )
+    .bind(id)
+    .fetch_all(&mut *connection)
+    .await?
+    .into_iter()
+    .map(|(id, name)| NamedReference { id, name })
+    .collect();
+    let pipelines = super::preset::pipeline_users(
+        connection,
+        super::preset::StepMatch::Proxy { id },
+        super::preset::Owners::All,
+    )
+    .await?;
     Ok(ProxyReferences {
         global,
         platforms,
@@ -382,29 +401,25 @@ pub(crate) async fn references_of(
         streamers,
         accounts,
         notification_channels,
+        job_presets,
+        pipelines,
     })
 }
 
-/// How many routes name each entry.
+/// How many routes name each entry, counted as [`references_of`] lists
+/// them.
 pub(crate) async fn usage_counts(
     connection: &mut SqliteConnection,
 ) -> Result<HashMap<String, usize>> {
-    let rows: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT proxy_id, COUNT(*) FROM (
-            SELECT proxy_id FROM global_config WHERE proxy_id IS NOT NULL
-            UNION ALL SELECT proxy_id FROM platform_config WHERE proxy_id IS NOT NULL
-            UNION ALL SELECT proxy_id FROM template_config WHERE proxy_id IS NOT NULL
-            UNION ALL SELECT proxy_id FROM streamers WHERE proxy_id IS NOT NULL AND deleted_at IS NULL
-            UNION ALL SELECT proxy_id FROM credential_profiles WHERE proxy_id IS NOT NULL
-            UNION ALL SELECT proxy_id FROM notification_channel WHERE proxy_id IS NOT NULL
-        ) GROUP BY proxy_id",
-    )
-    .fetch_all(connection)
-    .await?;
-    Ok(rows
-        .into_iter()
-        .map(|(id, count)| (id, usize::try_from(count).unwrap_or(usize::MAX)))
-        .collect())
+    let ids: Vec<String> = sqlx::query_scalar("SELECT id FROM proxies")
+        .fetch_all(&mut *connection)
+        .await?;
+    let mut counts = HashMap::with_capacity(ids.len());
+    for id in ids {
+        let count = references_of(connection, &id).await?.count();
+        counts.insert(id, count);
+    }
+    Ok(counts)
 }
 
 /// The route `owner` stores. A missing owner is not found.
@@ -489,11 +504,7 @@ pub(crate) async fn set_route(
     if *owner == RouteOwner::Global && route.is_inherit() {
         return Err(ProxyError::GlobalInherit.into());
     }
-    if let Some(id) = route.proxy_id()
-        && find(connection, id).await?.is_none()
-    {
-        return Err(ProxyError::Missing(id.to_owned()).into());
-    }
+    require_entry(connection, route).await?;
     let query = match owner.id() {
         Some(_) => format!(
             "UPDATE {} SET proxy_route = ?, proxy_id = ? WHERE id = ?",
@@ -513,6 +524,65 @@ pub(crate) async fn set_route(
             owner.table(),
             owner.id().unwrap_or("global"),
         ));
+    }
+    Ok(())
+}
+
+/// Refuses a route naming a saved proxy that does not exist.
+pub(crate) async fn require_entry(
+    connection: &mut SqliteConnection,
+    route: &ProxyRoute,
+) -> Result<()> {
+    if let Some(id) = route.proxy_id()
+        && find(connection, id).await?.is_none()
+    {
+        return Err(ProxyError::Missing(id.to_owned()).into());
+    }
+    Ok(())
+}
+
+/// Where a stored document keeps upload step routes.
+#[derive(Clone, Copy)]
+pub(crate) enum StepDocument<'a> {
+    /// A pipeline, or a configuration with pipelines nested in it.
+    Pipelines(Option<&'a str>),
+    /// A job preset's processor config.
+    PresetConfig(&'a str),
+}
+
+/// Refuses documents whose upload steps choose a malformed route or one
+/// naming a saved proxy that does not exist. Text that is not JSON has no
+/// steps to check.
+pub(crate) async fn require_step_routes(
+    connection: &mut SqliteConnection,
+    documents: &[StepDocument<'_>],
+) -> Result<()> {
+    for document in documents {
+        let text = match document {
+            StepDocument::Pipelines(text) => *text,
+            StepDocument::PresetConfig(text) => Some(*text),
+        };
+        let Some(mut value) =
+            text.and_then(|text| serde_json::from_str::<serde_json::Value>(text).ok())
+        else {
+            continue;
+        };
+        let routes = match document {
+            StepDocument::Pipelines(_) => {
+                crate::pipeline::step_routes::pipeline_routes_mut(&mut value)
+            }
+            StepDocument::PresetConfig(_) => {
+                crate::pipeline::step_routes::preset_route_mut(&mut value)
+                    .into_iter()
+                    .collect()
+            }
+        };
+        for route in routes {
+            let route: ProxyRoute = serde_json::from_value(route.clone()).map_err(|_| {
+                ProxyError::invalid("proxy_route must be inherit, direct, system or a saved proxy")
+            })?;
+            require_entry(connection, &route).await?;
+        }
     }
     Ok(())
 }

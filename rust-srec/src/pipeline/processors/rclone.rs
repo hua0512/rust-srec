@@ -20,6 +20,7 @@ use super::traits::{
 use super::utils::CommandOutput;
 use crate::Result;
 use crate::pipeline::progress::ProgressKind;
+use crate::proxies::{ProxyInput, ProxyRoute, ProxyTarget};
 
 /// Rclone operation type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -93,6 +94,10 @@ pub struct RcloneConfig {
     /// `--multi-thread-cutoff`: size threshold (e.g. `"250M"`) above
     /// which multi-thread copy kicks in.
     pub multi_thread_cutoff: Option<String>,
+
+    /// How rclone connects; `inherit`, the default, follows the global
+    /// route.
+    pub proxy_route: ProxyRoute,
 }
 
 impl RcloneConfig {
@@ -244,6 +249,8 @@ pub struct RcloneProcessor {
     command_runner: Arc<dyn RcloneCommandRunner>,
     /// Serializes destination directory creation across concurrent jobs.
     dir_gate: RemoteDirGate,
+    /// Resolves each step's proxy route; see [`crate::proxies::upload_tool_target`].
+    routes: Option<crate::proxies::ServiceRoutes>,
 }
 
 #[async_trait]
@@ -272,6 +279,7 @@ impl RcloneCommandRunner for ProcessRcloneCommandRunner {
 
 struct RcloneExecution<'a> {
     remote_destination: &'a str,
+    proxy: &'a ProxyTarget,
     operation: RcloneOperation,
     config_path: Option<&'a str>,
     throughput: &'a [String],
@@ -297,7 +305,26 @@ impl RcloneProcessor {
             rclone_path: path.into(),
             command_runner,
             dir_gate: RemoteDirGate::default(),
+            routes: None,
         }
+    }
+
+    /// Resolves each step's proxy route through `routes`.
+    pub fn with_routes(mut self, routes: crate::proxies::ServiceRoutes) -> Self {
+        self.routes = Some(routes);
+        self
+    }
+
+    /// An rclone command on the execution's connection and config file.
+    fn command(&self, execution: &RcloneExecution<'_>) -> Command {
+        let mut cmd = Command::new(&self.rclone_path);
+        execution
+            .proxy
+            .apply_environment(&mut cmd, ProxyInput::Environment);
+        if let Some(cfg) = execution.config_path {
+            cmd.arg("--config").arg(cfg);
+        }
+        cmd
     }
 
     /// Find the common base directory for a list of paths.
@@ -590,10 +617,7 @@ impl RcloneProcessor {
         loggable: &str,
         execution: &RcloneExecution<'_>,
     ) -> Result<()> {
-        let mut cmd = Command::new(&self.rclone_path);
-        if let Some(cfg) = execution.config_path {
-            cmd.arg("--config").arg(cfg);
-        }
+        let mut cmd = self.command(execution);
         cmd.args(["--use-json-log", "--log-level", "NOTICE", "mkdir", target]);
         // Extra args can carry backend flags (e.g. a root folder ID) that
         // change which directory the path names, so they apply here too.
@@ -635,11 +659,11 @@ impl RcloneProcessor {
         let RcloneExecution {
             remote_destination,
             operation,
-            config_path,
             throughput,
             extra_args,
             attempts,
             context,
+            ..
         } = execution;
         let start = std::time::Instant::now();
 
@@ -717,12 +741,7 @@ impl RcloneProcessor {
                 .await;
             }
 
-            let mut cmd = Command::new(&self.rclone_path);
-
-            if let Some(cfg) = *config_path {
-                cmd.arg("--config").arg(cfg);
-            }
-
+            let mut cmd = self.command(execution);
             cmd.args(JSON_STATS_ARGS);
             cmd.args(SINGLE_PASS_ARGS);
             cmd.args([cmd_op, input_path, remote_destination]);
@@ -798,11 +817,11 @@ impl RcloneProcessor {
         let RcloneExecution {
             remote_destination,
             operation,
-            config_path,
             throughput,
             extra_args,
             attempts,
             context,
+            ..
         } = execution;
         let start = std::time::Instant::now();
 
@@ -922,12 +941,7 @@ impl RcloneProcessor {
                     crate::Error::io_path("creating rclone files-from list", &base_dir, e)
                 })?;
             let files_from_path_str = files_from_path.to_string_lossy().to_string();
-            let mut cmd = Command::new(&self.rclone_path);
-
-            if let Some(cfg) = *config_path {
-                cmd.arg("--config").arg(cfg);
-            }
-
+            let mut cmd = self.command(execution);
             cmd.args(JSON_STATS_ARGS);
             cmd.args(SINGLE_PASS_ARGS);
             cmd.args([
@@ -1207,6 +1221,9 @@ impl Processor for RcloneProcessor {
         }
 
         let attempts = config.max_retries.unwrap_or(DEFAULT_ATTEMPTS).max(1);
+        let proxy =
+            crate::proxies::upload_tool_target(self.routes.as_ref(), &config.proxy_route, "rclone")
+                .await?;
 
         // Only a retried move can find inputs already consumed and uploaded.
         let skip_absent_inputs = matches!(config.operation, RcloneOperation::Move) && ctx.is_retry;
@@ -1228,6 +1245,7 @@ impl Processor for RcloneProcessor {
 
             let execution = RcloneExecution {
                 remote_destination: &full_destination,
+                proxy: &proxy,
                 operation: config.operation,
                 config_path: config.config_path.as_deref(),
                 throughput: &throughput,
@@ -1246,6 +1264,7 @@ impl Processor for RcloneProcessor {
 
             let execution = RcloneExecution {
                 remote_destination: &remote_destination,
+                proxy: &proxy,
                 operation: config.operation,
                 config_path: config.config_path.as_deref(),
                 throughput: &throughput,

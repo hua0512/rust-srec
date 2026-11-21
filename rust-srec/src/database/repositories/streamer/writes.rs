@@ -23,6 +23,13 @@ pub(crate) async fn write_streamer(
 ) -> crate::Result<WrittenStreamer> {
     super::super::credential_profiles::reject_streamer_authentication(connection, model).await?;
     super::super::proxies::reject_legacy_document(model.streamer_specific_config.as_deref())?;
+    super::super::proxies::require_step_routes(
+        connection,
+        &[super::super::proxies::StepDocument::Pipelines(
+            model.streamer_specific_config.as_deref(),
+        )],
+    )
+    .await?;
     let mutation = match mode {
         WriteMode::Insert => Mutation::Insert,
         WriteMode::Update => Mutation::Update,

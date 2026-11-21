@@ -1,6 +1,7 @@
 import { createLazyFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/api/query-keys';
+import { invalidateProxyQueries } from '@/api/proxies';
 import { getJobPreset, updateJobPreset } from '@/server/functions/job';
 import { useState } from 'react';
 import { toast } from 'sonner';
@@ -48,6 +49,8 @@ function EditPresetPage() {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.jobPresets.all,
       });
+      // Saved proxies count the upload steps that choose them.
+      void invalidateProxyQueries(queryClient);
       void navigate({ to: '/pipeline/presets' });
     },
     onError: (error) => {

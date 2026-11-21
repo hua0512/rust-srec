@@ -39,6 +39,7 @@ import {
   ProcessorListField,
   ProcessorNumberField,
   ProcessorSection,
+  UploadProxySection,
   ProcessorSelectField,
   ProcessorTextField,
   TimeAnchorField,
@@ -393,6 +394,11 @@ export function BaiduPcsConfigForm({
               placeholder="3"
             />
           </ProcessorSection>
+
+          <UploadProxySection
+            control={control}
+            name={fieldPath('proxy_route')}
+          />
         </TabsContent>
 
         <TabsContent value="advanced" className="space-y-4">

@@ -14,8 +14,8 @@ Each pipeline step is executed by a specialized processor:
 | `thumbnail` | Extracts a video frame as an image | `timestamp_secs`, `width`, `quality`, `preserve_resolution` |
 | `audio_extract` | Extracts an audio track | `format`, `bitrate`, `sample_rate`, `channels`, `output_path` |
 | `compression` | Bundles files into a ZIP or tar.gz archive | `format`, `compression_level`, `output_path`, `overwrite`, `preserve_paths` |
-| `rclone` | Cloud synchronization | `destination_root`, `operation`, `time_anchor`, `max_retries`, `args` |
-| `baidupcs` | Baidu Netdisk upload via BaiduPCS-Go | `destination_root`, `policy`, `norapid`, `time_anchor`, `args` |
+| `rclone` | Cloud synchronization | `destination_root`, `operation`, `time_anchor`, `max_retries`, `args`, `proxy_route` |
+| `baidupcs` | Baidu Netdisk upload via BaiduPCS-Go | `destination_root`, `policy`, `norapid`, `time_anchor`, `args`, `proxy_route` |
 | `copy_move` | Copies or moves local files | `operation`, `destination`, `time_anchor`, `overwrite`, `exclude_patterns` |
 | `metadata` | Embeds metadata tags into the media file with FFmpeg | `title`, `artist`, `date`, `album`, `comment`, `custom` |
 | `delete` | Deletes the files it receives, that is, the outputs of the steps it depends on | `max_retries`, `retry_delay_ms` |
@@ -24,6 +24,10 @@ Each pipeline step is executed by a specialized processor:
 FFmpeg-based processors use `FFMPEG_PATH` when it is set, and the external-tool processors read their own [path variables](./environment.md#external-tools).
 
 `rclone` and `baidupcs` retry a failed upload within the same job run; each retry is noted in the job log, and the job's progress and the top bar show which attempt is running.
+
+### Upload proxy {#upload-proxy}
+
+Each `rclone` and `baidupcs` step chooses how it connects under **Proxy** (`proxy_route`): **Inherit** (the default) follows the global **Default proxy**, or the step uses **Direct**, **System proxy** or a [saved proxy](../concepts/configuration.md#saved-proxies). Uploads go to cloud storage rather than a platform, so platform, template and streamer proxy settings do not apply to them. The tools read the proxy from their environment: **Direct** starts them without any proxy variable, **System proxy** passes on the server's, and a saved proxy is passed as `HTTP_PROXY` and `HTTPS_PROXY`, login included. `http`, `https`, `socks5` and `socks5h` proxies all work. The route is resolved when the job starts; a job whose saved proxy has been deleted fails instead of connecting directly. A saved proxy cannot be deleted while a job preset or a pipeline step chooses it. BaiduPCS-Go logins, logouts and account checks on the preset's account card follow the Default proxy, and an automatic re-login during an upload uses the step's proxy.
 
 ### Execute (`execute`) {#execute-execute}
 

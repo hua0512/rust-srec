@@ -13,10 +13,35 @@ use crate::database::repositories::{
 };
 
 use super::{
-    ProxyEndpoint, ProxyEntry, ProxyReferences, ResolvedRoute, RouteKey, RouteSource, SystemProxy,
+    ProxyEndpoint, ProxyEntry, ProxyReferences, ProxyRoute, ProxyTarget, ResolvedRoute, RouteKey,
+    RouteSource, ServiceRoutes, SystemProxy,
 };
 
 type RuntimeConfigService = ConfigService<SqlxConfigRepository, SqlxStreamerRepository>;
+
+/// The connection a Go-based upload tool (rclone, BaiduPCS-Go) whose own
+/// route is `route` takes now: that route, else the global route, as
+/// [`ServiceRoutes`] resolves it. A route naming a saved
+/// proxy that no longer exists fails rather than connecting directly, as
+/// does a proxy whose scheme the tools cannot read from the environment.
+/// Without the proxy service, as in unit tests of the processors, the
+/// tool keeps the server's environment.
+pub async fn upload_tool_target(
+    routes: Option<&ServiceRoutes>,
+    route: &ProxyRoute,
+    tool: &str,
+) -> Result<ProxyTarget> {
+    let Some(routes) = routes else {
+        return Ok(ProxyTarget::System);
+    };
+    let target = routes.target(route).await?;
+    if !target.supports_schemes(&super::ENVIRONMENT_PROXY_SCHEMES) {
+        return Err(crate::Error::Validation(format!(
+            "{tool} can only use http, https and SOCKS5 proxies; choose another proxy"
+        )));
+    }
+    Ok(target)
+}
 
 /// Which setting's effective route to report.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,6 +103,11 @@ impl ProxyService {
     ) -> Self {
         self.supervisor = supervisor;
         self
+    }
+
+    /// Resolves routes of traffic that serves no platform.
+    pub fn routes(&self) -> ServiceRoutes {
+        ServiceRoutes::new(self.pool.clone())
     }
 
     /// Every entry with how many routes name it.

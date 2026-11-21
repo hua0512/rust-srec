@@ -139,8 +139,9 @@ async fn settings_shown(app: &TestApp, token: &str, template_id: &str) -> Value 
 /// Configuration of each kind a bundle carries, created through the API:
 /// global settings, a proxy, a Huya account selected for the platform, the
 /// template "Backup template", the disabled streamer "Backup Alpha" on it with
-/// a time filter, and the webhook "Backup webhook" with subscriptions,
-/// delivering through the proxy. Returns
+/// a time filter, the webhook "Backup webhook" with subscriptions, delivering
+/// through the proxy, and the rclone job preset "Backup upload" uploading
+/// through it. Returns
 /// the streamer's id.
 ///
 /// The global, Huya and template settings differ from a fresh install's, so a
@@ -182,6 +183,17 @@ async fn create_backup_content(app: &TestApp, token: &str) -> String {
     )
     .await
     .ok();
+    let upload = json!({"destination_root": "remote:/backup", "proxy_route": {"kind": "proxy", "id": proxy.body["id"]}});
+    app.post(
+        "/api/job/presets",
+        token,
+        &json!({
+            "id": "backup-upload", "name": "Backup upload", "category": "upload",
+            "processor": "rclone", "config": upload.to_string(),
+        }),
+    )
+    .await
+    .created();
     let profile = app
         .post(
             "/api/credentials/profiles",
@@ -410,6 +422,18 @@ async fn the_export_carries_what_a_restore_needs_and_leaves_out_sessions_and_api
     assert_eq!(
         streamers[0]["streamer_specific_config"]["refresh_token"],
         "streamer-refresh-secret"
+    );
+
+    let upload = bundle["job_presets"]
+        .as_array()
+        .expect("job presets")
+        .iter()
+        .find(|preset| preset["name"] == "Backup upload")
+        .expect("the upload preset is exported");
+    assert_eq!(
+        upload["config"]["proxy_route"],
+        json!({"kind": "proxy", "name": "Backup proxy"}),
+        "upload steps name their proxy"
     );
 
     let global = &bundle["global_config"];

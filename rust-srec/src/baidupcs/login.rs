@@ -23,6 +23,7 @@ use super::{
     CONFIG_DIR_ENV, CliOutput, LOGIN_SUCCESS_MARKER, LoginMaterial, LoginOutcome, base_command,
     scrub,
 };
+use crate::proxies::ProxyTarget;
 use crate::{Error, Result};
 
 const CONFIG_FILE: &str = "pcs_config.json";
@@ -35,6 +36,7 @@ static UNCONFIRMED_CLEANUP_LEASE: OnceLock<Arc<OwnedRwLockWriteGuard<()>>> = Onc
 pub(super) async fn run(
     binary: &str,
     config_dir: Option<&str>,
+    proxy: &ProxyTarget,
     material: &LoginMaterial,
     timeout: Duration,
     lease: Arc<OwnedRwLockWriteGuard<()>>,
@@ -42,6 +44,7 @@ pub(super) async fn run(
     let input = material.login_input()?;
     let binary = binary.to_owned();
     let config_dir = config_dir.map(str::to_owned);
+    let proxy = proxy.clone();
     let material = material.clone();
     let (mut response, receiver) = oneshot::channel();
     let deadline = Instant::now() + timeout;
@@ -53,6 +56,7 @@ pub(super) async fn run(
         let result = perform(
             &binary,
             config_dir.as_deref(),
+            &proxy,
             &input,
             deadline,
             &mut response,
@@ -120,12 +124,13 @@ fn retain_cleanup_lease(
 async fn perform(
     binary: &str,
     config_dir: Option<&str>,
+    proxy: &ProxyTarget,
     input: &[u8],
     deadline: Instant,
     response: &mut oneshot::Sender<Result<LoginOutcome>>,
     preserve_stage: &mut bool,
 ) -> Result<LoginOutcome> {
-    let mut probe = base_command(binary, config_dir);
+    let mut probe = base_command(binary, config_dir, proxy);
     probe.arg("env");
     let output = capture(probe, &[], deadline, response, preserve_stage).await?;
     if !output.status.success() {
@@ -146,7 +151,7 @@ async fn perform(
     let staged = tokio::task::spawn_blocking(move || Stage::prepare(&target_dir))
         .await
         .map_err(|error| Error::Other(format!("BaiduPCS-Go staging task failed: {error}")))??;
-    let mut command = base_command(binary, None);
+    let mut command = base_command(binary, None, proxy);
     command.env(CONFIG_DIR_ENV, staged.directory.path());
     let result = capture(command, input, deadline, response, preserve_stage).await;
     if *preserve_stage {

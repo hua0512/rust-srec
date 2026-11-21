@@ -9,7 +9,7 @@
 //! never echoed back. The CLI exits 0 even when login fails, so success is
 //! detected from `baidupcs::LOGIN_SUCCESS_MARKER`.
 
-use axum::{Json, Router, routing::post};
+use axum::{Json, Router, extract::State, routing::post};
 use std::time::Duration;
 
 use crate::api::error::{ApiError, ApiResult};
@@ -127,10 +127,18 @@ fn non_empty(value: Option<&str>) -> Option<&str> {
     security(("bearer_auth" = []))
 )]
 pub async fn baidupcs_status(
+    State(state): State<AppState>,
     ApiJson(request): ApiJson<BaiduPcsToolRequest>,
 ) -> ApiResult<Json<BaiduPcsStatusResponse>> {
     let binary_path = baidupcs::resolve_binary_path(request.binary_path.as_deref());
     let config_dir = non_empty(request.config_dir.as_deref());
+    // Account commands serve no upload step, so they follow the global route.
+    let proxy = crate::proxies::upload_tool_target(
+        Some(&state.proxies.routes()),
+        &crate::proxies::ProxyRoute::Inherit,
+        "BaiduPCS-Go",
+    )
+    .await?;
 
     let has_stored_credentials = match baidupcs::authenticator() {
         Some(authenticator) => authenticator.has_credentials(config_dir).await,
@@ -153,7 +161,7 @@ pub async fn baidupcs_status(
     // only while a login/logout briefly holds the write side.
     let _guard = baidupcs::cli_lock().read().await;
 
-    let mut version_cmd = baidupcs::base_command(&binary_path, config_dir);
+    let mut version_cmd = baidupcs::base_command(&binary_path, config_dir, &proxy);
     version_cmd.arg("-v");
     match baidupcs::run_capture(version_cmd, None, STATUS_PROBE_TIMEOUT).await {
         Ok(output) if output.status.success() => {
@@ -175,7 +183,7 @@ pub async fn baidupcs_status(
         }
     }
 
-    let mut who_cmd = baidupcs::base_command(&binary_path, config_dir);
+    let mut who_cmd = baidupcs::base_command(&binary_path, config_dir, &proxy);
     who_cmd.arg("who");
     match baidupcs::run_capture(who_cmd, None, STATUS_PROBE_TIMEOUT).await {
         Ok(output) => match baidupcs::parse_who(&output.stdout) {
@@ -197,7 +205,7 @@ pub async fn baidupcs_status(
     }
 
     if response.logged_in {
-        let mut quota_cmd = baidupcs::base_command(&binary_path, config_dir);
+        let mut quota_cmd = baidupcs::base_command(&binary_path, config_dir, &proxy);
         quota_cmd.arg("quota");
         if let Ok(output) = baidupcs::run_capture(quota_cmd, None, STATUS_PROBE_TIMEOUT).await {
             match baidupcs::parse_quota(&output.stdout) {
@@ -227,10 +235,18 @@ pub async fn baidupcs_status(
 )]
 #[tracing::instrument(skip_all)]
 pub async fn baidupcs_login(
+    State(state): State<AppState>,
     ApiJson(request): ApiJson<BaiduPcsLoginRequest>,
 ) -> ApiResult<Json<BaiduPcsLoginResponse>> {
     let binary_path = baidupcs::resolve_binary_path(request.binary_path.as_deref());
     let config_dir = non_empty(request.config_dir.as_deref());
+    // Account commands serve no upload step, so they follow the global route.
+    let proxy = crate::proxies::upload_tool_target(
+        Some(&state.proxies.routes()),
+        &crate::proxies::ProxyRoute::Inherit,
+        "BaiduPCS-Go",
+    )
+    .await?;
 
     // Credentials travel through private stdin/config staging and must never be
     // logged; this handler is skip_all-instrumented and `run_login` scrubs
@@ -258,6 +274,7 @@ pub async fn baidupcs_login(
     let outcome = baidupcs::run_login(
         &binary_path,
         config_dir,
+        &proxy,
         &material,
         baidupcs::LOGIN_TIMEOUT,
         lease.clone(),
@@ -302,7 +319,7 @@ pub async fn baidupcs_login(
     };
 
     if outcome.success {
-        let mut who_cmd = baidupcs::base_command(&binary_path, config_dir);
+        let mut who_cmd = baidupcs::base_command(&binary_path, config_dir, &proxy);
         who_cmd.arg("who");
         if let Ok(who_output) = baidupcs::run_capture(who_cmd, None, STATUS_PROBE_TIMEOUT).await
             && let Some(account) = baidupcs::parse_who(&who_output.stdout)
@@ -328,10 +345,18 @@ pub async fn baidupcs_login(
     security(("bearer_auth" = []))
 )]
 pub async fn baidupcs_logout(
+    State(state): State<AppState>,
     ApiJson(request): ApiJson<BaiduPcsToolRequest>,
 ) -> ApiResult<Json<BaiduPcsLogoutResponse>> {
     let binary_path = baidupcs::resolve_binary_path(request.binary_path.as_deref());
     let config_dir = non_empty(request.config_dir.as_deref());
+    // Account commands serve no upload step, so they follow the global route.
+    let proxy = crate::proxies::upload_tool_target(
+        Some(&state.proxies.routes()),
+        &crate::proxies::ProxyRoute::Inherit,
+        "BaiduPCS-Go",
+    )
+    .await?;
 
     let Ok(_guard) = baidupcs::cli_lock().try_write() else {
         return Err(ApiError::conflict(
@@ -350,7 +375,7 @@ pub async fn baidupcs_logout(
         store_note = Some("(Forgetting stored credentials failed)");
     }
 
-    let mut cmd = baidupcs::base_command(&binary_path, config_dir);
+    let mut cmd = baidupcs::base_command(&binary_path, config_dir, &proxy);
     cmd.arg("logout");
     // `logout` asks `确认退出百度帐号: <name> ? (y/n) >` on stdin.
     let output = baidupcs::run_capture(cmd, Some(b"y\n"), LOGOUT_TIMEOUT).await?;

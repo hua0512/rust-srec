@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { z } from 'zod';
 import { useState, useMemo, useRef, useCallback } from 'react';
 import { queryKeys } from '@/api/query-keys';
+import { invalidateProxyQueries } from '@/api/proxies';
 import {
   listJobPresets,
   deleteJobPreset,
@@ -135,6 +136,8 @@ function PresetsPage() {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.jobPresets.all,
       });
+      // Saved proxies count the upload steps that choose them.
+      void invalidateProxyQueries(queryClient);
     },
     onError: (error, { data: id }) => {
       const users = stepUsersFromConflict(error);
@@ -154,6 +157,8 @@ function PresetsPage() {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.jobPresets.all,
       });
+      // Saved proxies count the upload steps that choose them.
+      void invalidateProxyQueries(queryClient);
       setCloneDialogOpen(false);
       setPresetToClone(null);
       setCloneName('');

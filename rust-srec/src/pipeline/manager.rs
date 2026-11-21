@@ -332,6 +332,37 @@ pub(crate) struct PipelineRuntimeDependencies<
     pub(crate) staged_output_repository: Arc<dyn StagedOutputRepository>,
     pub(crate) upload_broadcaster: UploadStatusBroadcaster,
     pub(crate) download_limit_adjuster: Arc<dyn DownloadLimitAdjuster>,
+    /// Resolves the proxy routes of upload steps.
+    pub(crate) routes: crate::proxies::ServiceRoutes,
+}
+
+/// Every processor the pools run. Upload processors resolve each step's
+/// proxy route through `routes`; without it they keep the server's
+/// environment.
+fn default_processors(
+    execute_timeout_secs: u64,
+    routes: Option<crate::proxies::ServiceRoutes>,
+) -> Vec<Arc<dyn Processor>> {
+    let mut rclone = RcloneProcessor::new();
+    let mut baidupcs = BaiduPcsProcessor::new();
+    if let Some(routes) = routes {
+        rclone = rclone.with_routes(routes.clone());
+        baidupcs = baidupcs.with_routes(routes);
+    }
+    vec![
+        Arc::new(RemuxProcessor::new()),
+        Arc::new(DanmakuFactoryProcessor::new()),
+        Arc::new(AssBurnInProcessor::new()),
+        Arc::new(rclone),
+        Arc::new(baidupcs),
+        Arc::new(ExecuteCommandProcessor::new().with_timeout(execute_timeout_secs)),
+        Arc::new(ThumbnailProcessor::new()),
+        Arc::new(CopyMoveProcessor::new()),
+        Arc::new(AudioExtractProcessor::new()),
+        Arc::new(CompressionProcessor::new()),
+        Arc::new(MetadataProcessor::new()),
+        Arc::new(DeleteProcessor::new()),
+    ]
 }
 
 impl<CR, SR> PipelineManager<CR, SR>
@@ -386,23 +417,7 @@ where
             job_repository.clone(),
         ));
 
-        let execute_timeout_secs = config.execute_timeout_secs;
-
-        // Create default processors
-        let processors: Vec<Arc<dyn Processor>> = vec![
-            Arc::new(RemuxProcessor::new()),
-            Arc::new(DanmakuFactoryProcessor::new()),
-            Arc::new(AssBurnInProcessor::new()),
-            Arc::new(RcloneProcessor::new()),
-            Arc::new(BaiduPcsProcessor::new()),
-            Arc::new(ExecuteCommandProcessor::new().with_timeout(execute_timeout_secs)),
-            Arc::new(ThumbnailProcessor::new()),
-            Arc::new(CopyMoveProcessor::new()),
-            Arc::new(AudioExtractProcessor::new()),
-            Arc::new(CompressionProcessor::new()),
-            Arc::new(MetadataProcessor::new()),
-            Arc::new(DeleteProcessor::new()),
-        ];
+        let processors = default_processors(config.execute_timeout_secs, None);
 
         // Create throttle controller if enabled
         let throttle_controller = if config.throttle.enabled {
@@ -461,9 +476,11 @@ where
             staged_output_repository,
             upload_broadcaster,
             download_limit_adjuster,
+            routes,
         } = dependencies;
 
-        Self::with_repository(config, job_repository)
+        let processors = default_processors(config.execute_timeout_secs, Some(routes));
+        let mut manager = Self::with_repository(config, job_repository)
             .with_session_repository(session_repository)
             .with_streamer_repository(streamer_repository)
             .with_preset_repository(preset_repository)
@@ -473,7 +490,9 @@ where
             .with_upload_record_repository(upload_record_repository)
             .with_staged_output_repository(staged_output_repository)
             .with_upload_broadcaster(upload_broadcaster)
-            .with_download_adjuster(download_limit_adjuster)
+            .with_download_adjuster(download_limit_adjuster);
+        manager.processors = processors;
+        manager
     }
 
     /// Set the session repository for persistence.

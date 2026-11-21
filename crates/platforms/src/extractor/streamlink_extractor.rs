@@ -173,7 +173,8 @@ impl StreamlinkExtractor {
     /// proxy, and no inherited proxy variables for a direct connection.
     fn apply_proxy(&self, cmd: &mut tokio::process::Command) {
         cmd.args(self.build_proxy_args());
-        self.proxy.apply_environment(cmd);
+        self.proxy
+            .apply_environment(cmd, crate::proxy::ProxyInput::Argument);
     }
 
     /// Account arguments for both the `--json` and `--stream-url` runs.

@@ -29,6 +29,26 @@ impl ImportedProxies {
             .map_err(|name| validation_error(format!("Unknown proxy '{name}'")))
     }
 
+    /// The bundle with its upload step routes naming entries by ID, as they
+    /// are stored.
+    pub(super) fn store_step_routes(
+        &self,
+        config: &ConfigExport,
+    ) -> Result<ConfigExport, ConfigurationImportError> {
+        let mut stored = config.clone();
+        stored.map_step_routes(|route| {
+            let named: BackupRoute = serde_json::from_value(route.clone()).map_err(|_| {
+                validation_error(
+                    "An upload step's proxy_route must be inherit, direct, system or a saved proxy by name",
+                )
+            })?;
+            *route = serde_json::to_value(self.route(&named)?)
+                .map_err(|error| validation_error(error.to_string()))?;
+            Ok::<(), ConfigurationImportError>(())
+        })?;
+        Ok(stored)
+    }
+
     /// Writes a scope's route. A merge keeps the stored route of a scope the
     /// bundle gives none; a replace makes it inherit, except the global
     /// route, which cannot.

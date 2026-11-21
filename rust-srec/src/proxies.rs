@@ -13,10 +13,11 @@
 //! global route. A route naming an entry that no longer exists fails rather
 //! than connecting directly.
 //!
-//! Notification channels choose a route too: their own, else the global
-//! route, resolved before each delivery. Browser push follows the global
-//! route. Email cannot use a proxy and always connects directly, and upload
-//! tools keep their own clients, which follow the environment.
+//! Traffic that serves no platform resolves with
+//! [`ServiceRoutes`]: notification channels and the
+//! rclone and BaiduPCS-Go upload steps choose a route of their own, else the
+//! global route, and browser push and BaiduPCS-Go account commands follow the
+//! global route. Email cannot use a proxy and always connects directly.
 
 mod endpoint;
 mod error;
@@ -30,10 +31,10 @@ mod system;
 
 pub use endpoint::{ProxyEndpoint, canonical};
 pub use error::{AccountReference, NamedReference, ProxyError, ProxyReferences, TemplateReference};
-pub use platforms_parser::proxy::ProxyTarget;
+pub use platforms_parser::proxy::{ENVIRONMENT_PROXY_SCHEMES, ProxyInput, ProxyTarget};
 pub use probe::{PROBE_TIMEOUT, ProbeErrorKind, ProbeOutcome, platform_homepage, probe};
 pub use resolve::{ProxyEntry, materialize, resolve};
 pub use route::{ProxyName, ProxyRoute, ResolvedRoute, RouteKey, RouteKind, RouteSource, name_key};
-pub use service::{ProxyService, RouteScope};
+pub use service::{ProxyService, RouteScope, upload_tool_target};
 pub use service_routes::ServiceRoutes;
 pub use system::{SystemProxy, SystemProxySummary};

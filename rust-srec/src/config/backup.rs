@@ -436,6 +436,69 @@ impl ConfigExport {
 }
 
 impl ConfigExport {
+    /// Applies `map` to the route of every upload step in the bundle: the
+    /// inline steps of each pipeline, template platform override, streamer
+    /// configuration and workflow, and each job preset's config.
+    pub fn map_step_routes<E>(
+        &mut self,
+        mut map: impl FnMut(&mut serde_json::Value) -> Result<(), E>,
+    ) -> Result<(), E> {
+        use crate::pipeline::step_routes::{pipeline_routes_mut, preset_route_mut};
+        let global = &mut self.global_config;
+        let mut pipelines: Vec<&mut serde_json::Value> = [
+            &mut global.pipeline,
+            &mut global.session_complete_pipeline,
+            &mut global.paired_segment_pipeline,
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        for template in &mut self.templates {
+            pipelines.extend(
+                [
+                    &mut template.pipeline,
+                    &mut template.session_complete_pipeline,
+                    &mut template.paired_segment_pipeline,
+                    &mut template.platform_overrides,
+                ]
+                .into_iter()
+                .flatten(),
+            );
+        }
+        for platform in &mut self.platforms {
+            pipelines.extend(
+                [
+                    &mut platform.pipeline,
+                    &mut platform.session_complete_pipeline,
+                    &mut platform.paired_segment_pipeline,
+                ]
+                .into_iter()
+                .flatten(),
+            );
+        }
+        pipelines.extend(
+            self.streamers
+                .iter_mut()
+                .filter_map(|streamer| streamer.streamer_specific_config.as_mut()),
+        );
+        pipelines.extend(
+            self.pipeline_presets
+                .iter_mut()
+                .filter_map(|preset| preset.dag_definition.as_mut()),
+        );
+        for document in pipelines {
+            for route in pipeline_routes_mut(document) {
+                map(route)?;
+            }
+        }
+        for preset in &mut self.job_presets {
+            if let Some(route) = preset_route_mut(&mut preset.config) {
+                map(route)?;
+            }
+        }
+        Ok(())
+    }
+
     fn write_legacy_proxy_settings(&mut self) {
         let legacy =
             |route: &mut Option<BackupRoute>| route.take().and_then(|route| route.legacy_config());

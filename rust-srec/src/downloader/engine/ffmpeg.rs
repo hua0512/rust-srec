@@ -20,7 +20,7 @@ use super::utils::{
     redact_download_process_args, settle_engine_tasks, terminate_and_reap,
 };
 use crate::database::models::engine::FfmpegEngineConfig;
-use crate::proxies::ProxyTarget;
+use crate::proxies::{ProxyInput, ProxyTarget};
 
 enum FfmpegProcessExit {
     Status(Option<i32>),
@@ -257,9 +257,7 @@ impl FfmpegEngine {
 /// ffmpeg's `-http_proxy` speaks only plain HTTP to the proxy. Any other
 /// proxy would be misread, so the download fails instead of guessing.
 fn require_http_proxy(proxy: &ProxyTarget) -> std::result::Result<(), EngineStartError> {
-    if let Some(endpoint) = proxy.endpoint()
-        && url::Url::parse(endpoint.url.trim()).map_or(true, |url| url.scheme() != "http")
-    {
+    if !proxy.supports_schemes(&["http"]) {
         return Err(EngineStartError::new(
             DownloadFailureKind::Configuration,
             "ffmpeg can only use http:// proxies; choose an http proxy for this recording or use the mesio or streamlink engine",
@@ -309,7 +307,9 @@ impl FfmpegEngine {
             command = fixture.command(false);
         }
         crate::utils::configure_ffmpeg_locale(&mut command);
-        config.proxy.apply_environment(&mut command);
+        config
+            .proxy
+            .apply_environment(&mut command, ProxyInput::Argument);
         command
             .stdin(Stdio::piped()) // allow graceful stop via 'q'
             .stdout(Stdio::null())

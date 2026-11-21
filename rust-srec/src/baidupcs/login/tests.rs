@@ -56,6 +56,7 @@ impl Fixture {
         run(
             self.mode(mode).to_str().unwrap(),
             self.target.to_str(),
+            &ProxyTarget::System,
             material,
             timeout,
             lease,
@@ -212,6 +213,7 @@ async fn cancelled_login_retains_account_lock_until_child_cleanup_finishes() {
         run(
             binary.to_str().unwrap(),
             directory.to_str(),
+            &ProxyTarget::System,
             &LoginMaterial {
                 bduss: Some("synthetic-BDUSS".to_owned()),
                 ..LoginMaterial::default()

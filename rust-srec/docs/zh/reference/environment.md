@@ -58,7 +58,7 @@ import { withBase } from 'vitepress'
 | `ALL_PROXY` | 未设置更具体的变量时，两者共用的代理 | - |
 | `NO_PROXY` | 绕过代理的主机列表（逗号分隔） | - |
 
-这些代理变量（大小写均可）只在全局、平台、模板、主播、账号或通知渠道的[代理设置](../concepts/configuration.md#choosing-a-proxy)为 **系统代理** 时生效。**直连** 会忽略它们，此时 FFmpeg 和 Streamlink 启动时也不会带上这些变量。服务器在启动时读取它们，修改后请重启。rclone、BaiduPCS-Go 等上传工具始终使用这些变量，邮件通知则从不使用代理。全新安装，或从全局代理处于关闭状态的旧版本升级时，若启动时设置了 `HTTP_PROXY`、`HTTPS_PROXY` 或 `ALL_PROXY`，全局默认代理会设为 **系统代理**；详见[从旧版代理设置升级](../concepts/configuration.md#upgrading-proxy-settings)。
+这些代理变量（大小写均可）只在全局、平台、模板、主播、账号、通知渠道或上传步骤的[代理设置](../concepts/configuration.md#choosing-a-proxy)为 **系统代理** 时生效。**直连** 会忽略它们，此时 FFmpeg 和 Streamlink 启动时也不会带上这些变量。服务器在启动时读取它们，修改后请重启。rclone 和 BaiduPCS-Go 启动时同样不带这些变量，已保存的代理则以 `HTTP_PROXY` 和 `HTTPS_PROXY` 传给它们。邮件通知从不使用代理。全新安装，或从全局代理处于关闭状态的旧版本升级时，若启动时设置了 `HTTP_PROXY`、`HTTPS_PROXY` 或 `ALL_PROXY`，全局默认代理会设为 **系统代理**；详见[从旧版代理设置升级](../concepts/configuration.md#upgrading-proxy-settings)。
 
 ## 安全与认证 {#安全与认证}
 | 变量 | 说明 | 默认值 |

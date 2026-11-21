@@ -167,9 +167,9 @@ export function ProxiesPanel() {
           <>
             <p>
               <Trans>
-                Saved proxies that global, platform, template, streamer, account
-                and notification channel settings can route requests through.
-                Changes are saved right away.
+                Saved proxies that global, platform, template, streamer,
+                account, notification channel and upload step settings can route
+                requests through. Changes are saved right away.
               </Trans>
             </p>
             <SystemProxyLine />
