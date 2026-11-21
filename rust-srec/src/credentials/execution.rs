@@ -72,8 +72,9 @@ struct Cursor {
 /// An account still to try in one operation.
 struct Candidate {
     id: String,
-    /// Repair the account before extracting with it.
-    repair: bool,
+    /// Repair the account before extracting with it, if it is still at this
+    /// revision, the one the platform rejected.
+    repair: Option<i64>,
     /// The route the account's requests take.
     route: ResolvedRoute,
 }
@@ -102,7 +103,7 @@ impl Attempts {
         if first {
             self.candidates.push_front(Candidate {
                 id: id.to_owned(),
-                repair: false,
+                repair: None,
                 route,
             });
         }
@@ -117,7 +118,7 @@ struct AttemptStep<'a> {
     deadline: OperationDeadline,
     attempt: u8,
     id: &'a str,
-    repair: bool,
+    repair: Option<i64>,
     route: &'a ResolvedRoute,
 }
 
@@ -587,13 +588,19 @@ impl CredentialExecutionService {
         checked: &mut HashSet<String>,
         repaired: &mut HashSet<String>,
     ) -> Result<CredentialProfile> {
-        let (id, route, deadline, force_repair) = (step.id, step.route, step.deadline, step.repair);
+        let (id, route, deadline) = (step.id, step.route, step.deadline);
         let lock = self.refresh_lock(id);
         let _guard = lock.lock().await;
         let profile = self.repository.get(id).await?;
         if !profile.enabled {
             return Err(ProfileError::SourceChanged.into());
         }
+        // Material that changed while this operation waited for the lock,
+        // such as through another operation's repair, is not what the
+        // platform rejected, so it is readied as usual. Repairing it again
+        // would spend its new refresh token, which some platforms accept
+        // only once.
+        let force_repair = step.repair == Some(profile.revision);
         let health = self.repository.health(id).await?;
         if !force_repair
             && health
@@ -1050,7 +1057,7 @@ impl CredentialExecutionService {
             .map(|id| Candidate {
                 route: route_of(&id),
                 id,
-                repair: false,
+                repair: None,
             })
             .collect())
     }
@@ -1141,7 +1148,7 @@ impl CredentialExecutionService {
             attempt = step.attempt + 1,
             platform_id = %step.policy.platform_id,
             strategy = step.policy.selection.strategy_name(),
-            repair = step.repair,
+            repair = step.repair.is_some(),
             "Executing credential-bound extraction"
         );
         match extract(snapshot.clone()).await {
@@ -1175,6 +1182,17 @@ impl CredentialExecutionService {
         if self.excluded_while_resting(&profile, &mut attempts.exclusions) {
             return Ok(None);
         }
+        // Checks work without the account, so one whose repair just failed
+        // is passed over until the repair is due again, not repaired anew
+        // on every check.
+        let accounts_optional = self
+            .providers
+            .provider(&attempts.platform)
+            .accounts_optional();
+        if accounts_optional && refresh_failed_recently(health.as_ref()) {
+            attempts.previous = Some((id.to_owned(), "refresh_failed"));
+            return Ok(None);
+        }
         let prepared = self
             .prepare(
                 step,
@@ -1198,6 +1216,22 @@ impl CredentialExecutionService {
             // The provider call already paused the route it was throttled on.
             Err(error @ Error::Extractor(ExtractorError::RateLimited { .. })) => {
                 fail_over_throttle(step, attempts, error)?;
+                Ok(None)
+            }
+            // A repair the platform refused has been recorded and notified,
+            // so the check goes on without the account. Failures before the
+            // platform was asked, such as the deadline, still end it.
+            Err(error @ Error::Monitor(_))
+                if accounts_optional
+                    && refresh_failed_recently(self.repository.health(id).await?.as_ref()) =>
+            {
+                tracing::warn!(
+                    profile_id = %id,
+                    platform = %attempts.platform,
+                    %error,
+                    "Could not repair the credential profile; checking without it"
+                );
+                attempts.previous = Some((id.to_owned(), "refresh_failed"));
                 Ok(None)
             }
             Err(error) => Err(error),
@@ -1357,7 +1391,10 @@ impl CredentialExecutionService {
         match error {
             Error::Extractor(ExtractorError::Authentication { .. }) => {
                 let provider = self.providers.provider(&attempts.platform);
-                if !attempts.repaired.contains(id) && provider.capabilities().refresh {
+                if !attempts.repaired.contains(id)
+                    && provider.capabilities().refresh
+                    && provider.refreshable(&profile.material()?)
+                {
                     tracing::info!(
                         profile_id = %id,
                         platform_id = %step.policy.platform_id,
@@ -1374,7 +1411,7 @@ impl CredentialExecutionService {
                         .await?;
                     attempts.candidates.push_front(Candidate {
                         id: id.to_owned(),
-                        repair: true,
+                        repair: Some(profile.revision),
                         route: step.route.clone(),
                     });
                 } else if let Some(rest) = provider.rejection_rest() {
@@ -1497,6 +1534,18 @@ pub fn next_renewal_at(
         .and_then(|health| health.last_failure_at)
         .map_or(i64::MIN, |failed| after(failed, RENEWAL_RETRY));
     Ok(Some(after(since, age).max(retry)))
+}
+
+/// Whether the account's last refresh failed less than [`RENEWAL_RETRY`] ago
+/// and has not succeeded since.
+fn refresh_failed_recently(health: Option<&CredentialProfileHealth>) -> bool {
+    health.is_some_and(|health| {
+        health.validity == CredentialValidity::NeedsRefresh
+            && health.last_failure_at.is_some_and(|failed| {
+                crate::database::time::now_ms()
+                    < failed.saturating_add(RENEWAL_RETRY.as_millis() as i64)
+            })
+    })
 }
 
 /// After a throttle on the step's route, the operation continues only with

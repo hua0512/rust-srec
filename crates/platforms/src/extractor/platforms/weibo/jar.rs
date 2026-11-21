@@ -78,6 +78,28 @@ impl Jar {
             .any(|cookie| cookie.domain == domain && cookie.name == name && cookie.alive(now))
     }
 
+    /// Whether a live cookie `name` is kept for any domain.
+    pub(super) fn holds(&self, name: &str, now: i64) -> bool {
+        self.0
+            .iter()
+            .any(|cookie| cookie.name == name && cookie.alive(now))
+    }
+
+    /// The earliest expiry of the live cookies named `name`; `None` when
+    /// none is kept or all of them last for the session.
+    pub(super) fn earliest_expiry(&self, name: &str, now: i64) -> Option<i64> {
+        self.0
+            .iter()
+            .filter(|cookie| cookie.name == name && cookie.alive(now))
+            .filter_map(|cookie| cookie.expires)
+            .min()
+    }
+
+    /// Forgets the cookies named `name` on every domain.
+    pub(super) fn remove(&mut self, name: &str) {
+        self.0.retain(|cookie| cookie.name != name);
+    }
+
     /// Applies the `Set-Cookie` headers of a response from `url`: a cookie
     /// replaces the one with the same domain and name, and an expired or
     /// empty one deletes it. Cookies for a domain other than the host's

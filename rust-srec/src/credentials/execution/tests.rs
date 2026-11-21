@@ -1279,6 +1279,16 @@ async fn extract_cookies(
     service: &CredentialExecutionService,
     policy: &ResolvedCredentialPolicy,
 ) -> Result<String> {
+    extract_cookies_rejecting(service, policy, None).await
+}
+
+/// Extracts with the selected account; the platform turns `rejected`
+/// material away as signed out.
+async fn extract_cookies_rejecting(
+    service: &CredentialExecutionService,
+    policy: &ResolvedCredentialPolicy,
+    rejected: Option<&str>,
+) -> Result<String> {
     service
         .execute(
             policy,
@@ -1287,6 +1297,11 @@ async fn extract_cookies(
             OperationDeadline::new(Duration::from_secs(5)),
             direct(),
             |snapshot| async move {
+                if Some(snapshot.material.cookies.as_str()) == rejected {
+                    return Err(Error::Extractor(ExtractorError::Authentication {
+                        code: "need_login".into(),
+                    }));
+                }
                 Ok(Extracted {
                     preserve_health: false,
                     value: snapshot.material.cookies,
@@ -1507,6 +1522,23 @@ async fn aging_material_is_renewed_before_use_and_a_failed_renewal_keeps_it() {
                 .health
                 .is_none_or(|health| health.validity == CredentialValidity::Unknown)
         );
+        // Rejected, it needs a new login at once instead of a refresh that
+        // cannot work.
+        assert!(
+            extract_cookies_rejecting(&service, &cookies_policy, Some("account=B"))
+                .await
+                .is_err()
+        );
+        assert_eq!(refreshes(), 1);
+        assert_eq!(
+            repository
+                .health(&cookies_only.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .validity,
+            CredentialValidity::Invalid
+        );
 
         // The renewal age counts from the last refresh. A failed renewal keeps
         // the current material and is not retried within the retry window.
@@ -1553,6 +1585,36 @@ async fn aging_material_is_renewed_before_use_and_a_failed_renewal_keeps_it() {
                 .validity,
             CredentialValidity::Invalid
         );
+
+        // Two operations rejecting the same material repair it once: the
+        // second finds it already replaced when it gets the lock.
+        provider
+            .outcome
+            .store(0, std::sync::atomic::Ordering::SeqCst);
+        let rejected = create("C", Some("passport")).await;
+        let policy = fixed(&rejected);
+        assert_eq!(
+            extract_cookies_rejecting(&service, &policy, Some("account=C"))
+                .await
+                .unwrap(),
+            "account=renewed-3"
+        );
+        assert_eq!(refreshes(), 4);
+        let second = AttemptStep {
+            policy: &policy,
+            binding: None,
+            deadline: OperationDeadline::new(Duration::from_secs(5)),
+            attempt: 0,
+            id: &rejected.id,
+            repair: Some(rejected.revision),
+            route: direct(),
+        };
+        let prepared = service
+            .prepare(&second, "huya", &mut HashSet::new(), &mut HashSet::new())
+            .await
+            .unwrap();
+        assert_eq!(prepared.material().unwrap().cookies, "account=renewed-3");
+        assert_eq!(refreshes(), 4);
     })
     .await
     .expect("renewal test timed out");
@@ -1973,9 +2035,11 @@ async fn a_pool_with_anonymous_fallback_checks_without_an_account_when_none_work
 }
 
 /// A platform whose checks work without an account: its check revokes
-/// `account=A` and cannot reach a verdict for any other account.
+/// `account=A`, finds `account=C` signed out but repairable, and cannot
+/// reach a verdict for any other account. Every repair fails.
 struct OptionalAccounts {
     optional: bool,
+    refreshes: std::sync::atomic::AtomicUsize,
 }
 
 #[async_trait::async_trait]
@@ -1983,6 +2047,7 @@ impl super::super::CredentialProvider for OptionalAccounts {
     fn capabilities(&self) -> super::super::ProviderCapabilities {
         super::super::ProviderCapabilities {
             check: true,
+            refresh: true,
             ..Default::default()
         }
     }
@@ -1996,8 +2061,18 @@ impl super::super::CredentialProvider for OptionalAccounts {
     ) -> std::result::Result<AccountStatus, CredentialError> {
         match material.cookies.as_str() {
             "account=A" => Ok(AccountStatus::Revoked),
+            "account=C" => Ok(AccountStatus::Repairable),
             _ => Err(CredentialError::RefreshFailed("blocked".into())),
         }
+    }
+    async fn refresh(
+        &self,
+        _client: &reqwest::Client,
+        _material: &CredentialMaterial,
+    ) -> std::result::Result<RefreshedCredentials, CredentialError> {
+        self.refreshes
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Err(CredentialError::RefreshFailed("refused".into()))
     }
 }
 
@@ -2015,9 +2090,13 @@ async fn an_unusable_account_never_stops_a_platform_that_works_without_one() {
             .unwrap()
         };
         let (repository, mut service, policy, profiles) = fixture().await;
+        let accounts = Arc::new(OptionalAccounts {
+            optional: true,
+            refreshes: Default::default(),
+        });
         Arc::get_mut(&mut service.providers)
             .unwrap()
-            .register_provider("huya", Arc::new(OptionalAccounts { optional: true }));
+            .register_provider("huya", accounts.clone());
         let notifications = Arc::new(crate::notification::NotificationService::new());
         let mut received = notifications.subscribe();
         service
@@ -2082,6 +2161,34 @@ async fn an_unusable_account_never_stops_a_platform_that_works_without_one() {
             extract_cookies(&service, &unchecked).await.unwrap(),
             "account=B"
         );
+        // A failed repair is notified, and the check runs without the
+        // account, which is not repaired again on the next check.
+        let unrepaired = fixed(&policy, &profiles[2]);
+        assert_eq!(extract_cookies(&service, &unrepaired).await.unwrap(), "");
+        assert!(matches!(
+            received.recv().await.unwrap(),
+            crate::notification::NotificationEvent::Credential {
+                event: super::super::CredentialEvent::RefreshFailed {
+                    profile_id: Some(id),
+                    requires_relogin: false,
+                    ..
+                }
+            } if id == profiles[2].id
+        ));
+        assert_eq!(extract_cookies(&service, &unrepaired).await.unwrap(), "");
+        assert_eq!(
+            accounts.refreshes.load(std::sync::atomic::Ordering::SeqCst),
+            1
+        );
+        assert_eq!(
+            repository
+                .health(&profiles[2].id)
+                .await
+                .unwrap()
+                .unwrap()
+                .validity,
+            CredentialValidity::NeedsRefresh
+        );
         notifications.stop().await;
         assert!(
             received.try_recv().is_err(),
@@ -2092,7 +2199,13 @@ async fn an_unusable_account_never_stops_a_platform_that_works_without_one() {
         let (_, mut service, policy, profiles) = fixture().await;
         Arc::get_mut(&mut service.providers)
             .unwrap()
-            .register_provider("huya", Arc::new(OptionalAccounts { optional: false }));
+            .register_provider(
+                "huya",
+                Arc::new(OptionalAccounts {
+                    optional: false,
+                    refreshes: Default::default(),
+                }),
+            );
         assert!(
             extract_cookies(&service, &fixed(&policy, &profiles[1]))
                 .await

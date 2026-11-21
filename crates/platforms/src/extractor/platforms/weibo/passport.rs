@@ -9,7 +9,9 @@
 //!
 //! A login yields the `.weibo.com` cookies, which the extractor uses, and an
 //! account token holding every cookie of the chain with its domain and
-//! expiry, which can sign the account in again later.
+//! expiry. When Weibo signs the account out, the token renews it: without
+//! any `SUB`, `weibo.com/login.php` starts the same kind of chain from the
+//! 30-day `ALF`/`ALC` cookies, and each renewal replaces them.
 //!
 //! Cookies, the account token, QR ids and sign-in addresses are credentials:
 //! they never appear in errors or logs, and request errors drop their URL.
@@ -18,7 +20,7 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 use reqwest::header::{self, LOCATION};
-use reqwest::{Client, Response};
+use reqwest::{Client, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::debug;
@@ -45,6 +47,10 @@ const MAIN_HOST: &str = "weibo.com";
 /// The domain of the cookies the extractor sends.
 const SESSION_DOMAIN: &str = ".weibo.com";
 const SESSION_COOKIE: &str = "SUB";
+/// The 30-day cookies that sign an account in again once its `SUB` is
+/// gone. Weibo replaces them on every sign-in, and a used one may not work
+/// twice.
+const RENEWAL_COOKIES: [&str; 2] = ["ALF", "ALC"];
 const TOKEN_VERSION: u8 = 1;
 
 /// The start of the user object in the config `weibo.com` embeds in its page.
@@ -62,6 +68,18 @@ pub enum PassportError {
     /// Weibo answered with an error code.
     #[error("Weibo passport error {0}")]
     Api(i64),
+    /// A 403 that is no throttle. A spent sign-in token and Weibo's request
+    /// checks both answer this way, so it is neither waited out as a
+    /// throttle nor taken to mean the login is gone.
+    #[error("Weibo passport refused the request")]
+    Refused,
+    /// The sign-in chain ended on the sign-in page: only a new login
+    /// recovers the account.
+    #[error("Weibo asked for a new login")]
+    LoginRequired,
+    /// The renewal signed in an account other than the stored one.
+    #[error("Weibo renewed a different account")]
+    AccountMismatch,
 }
 
 fn network(error: reqwest::Error) -> PassportError {
@@ -120,6 +138,9 @@ pub struct Session {
     /// The account token: the account's uid and every cookie of the sign-in
     /// chain, with its domain and expiry.
     pub account_token: String,
+    /// When the earliest of the account's `ALF` cookies expires, after which
+    /// the account may no longer renew.
+    pub renewable_until: Option<jiff::Timestamp>,
 }
 
 impl std::fmt::Debug for Session {
@@ -174,6 +195,16 @@ impl AccountToken {
 /// The uid of the account an account token belongs to.
 pub fn account_uid(account_token: &str) -> Option<String> {
     AccountToken::read(account_token, now()).map(|account| account.uid)
+}
+
+/// Whether an account token still holds the cookies a renewal starts from.
+pub fn renewable(account_token: &str) -> bool {
+    let now = now();
+    AccountToken::read(account_token, now).is_some_and(|account| {
+        RENEWAL_COOKIES
+            .iter()
+            .any(|name| account.jar.holds(name, now))
+    })
 }
 
 /// `retcode` and `data` of a passport response; Weibo sends the code as a
@@ -277,7 +308,8 @@ async fn poll_qr_at(client: &Client, hosts: &Hosts, qrid: &str) -> Result<QrStat
         ))?;
     let referer = format!("{}/", hosts.passport);
     sign_in(client, start, referer, jar)
-        .await
+        .await?
+        .into_session()
         .map(QrStatus::Confirmed)
 }
 
@@ -308,16 +340,28 @@ fn page_uid(page: &str) -> Option<String> {
         })
 }
 
+/// Whether `url` is Weibo's sign-in page, where a chain that cannot sign the
+/// account in ends.
+fn sign_in_page(url: &Url) -> bool {
+    let path = url.path();
+    path == "/login.php" || path.starts_with("/sso/signin")
+}
+
 /// Walks the redirects from `start` to `weibo.com` as a browser would: each
 /// hop is sent the jar's cookies for its host and the previous hop's origin
 /// as `Referer`, and its `Set-Cookie` headers go into the jar.
 /// `login.sina.com.cn` answers an empty 403 to a hop without a `Referer`.
+///
+/// The hops are not fixed, so the walk is judged by where it ends: signed
+/// in on a `weibo.com` page naming the account with a `.weibo.com` `SUB` in
+/// the jar, or on the sign-in page without one. `jar` must hold no
+/// `.weibo.com` `SUB` from before the walk.
 async fn sign_in(
     client: &Client,
     start: Url,
     mut referer: String,
     mut jar: Jar,
-) -> Result<Session, PassportError> {
+) -> Result<AccountToken, PassportError> {
     let scheme = start.scheme().to_owned();
     let mut url = start;
     for _ in 0..MAX_HOPS {
@@ -347,29 +391,78 @@ async fn sign_in(
             url = next;
             continue;
         }
+        if response.status() == StatusCode::FORBIDDEN {
+            return Err(PassportError::Refused);
+        }
         let page = checked(response)?.text().await.map_err(network)?;
+        let signed_in = jar.contains(SESSION_DOMAIN, SESSION_COOKIE, now());
+        if !signed_in && sign_in_page(&url) {
+            return Err(PassportError::LoginRequired);
+        }
         if url.host_str() != Some(MAIN_HOST) {
             return Err(PassportError::Parse("sign-in ended away from weibo.com"));
         }
-        if !jar.contains(SESSION_DOMAIN, SESSION_COOKIE, now()) {
+        if !signed_in {
             return Err(PassportError::Parse("sign-in returned no session"));
         }
         let uid = page_uid(&page).ok_or(PassportError::Parse("sign-in page without a user id"))?;
-        let cookies = jar
-            .domain_header(SESSION_DOMAIN, now())
-            .ok_or(PassportError::Parse("sign-in returned no session"))?;
-        let account_token = serde_json::to_string(&AccountToken {
+        return Ok(AccountToken {
             v: TOKEN_VERSION,
             uid,
             jar,
-        })
-        .map_err(|_| PassportError::Parse("sign-in could not be stored"))?;
-        return Ok(Session {
-            cookies,
-            account_token,
         });
     }
     Err(PassportError::Parse("sign-in redirected too many times"))
+}
+
+impl AccountToken {
+    fn into_session(self) -> Result<Session, PassportError> {
+        let now = now();
+        let cookies = self
+            .jar
+            .domain_header(SESSION_DOMAIN, now)
+            .ok_or(PassportError::Parse("sign-in returned no session"))?;
+        let renewable_until = self
+            .jar
+            .earliest_expiry("ALF", now)
+            .and_then(|expires| jiff::Timestamp::from_second(expires).ok());
+        let account_token = serde_json::to_string(&self)
+            .map_err(|_| PassportError::Parse("sign-in could not be stored"))?;
+        Ok(Session {
+            cookies,
+            account_token,
+            renewable_until,
+        })
+    }
+}
+
+/// Signs the account in `account_token` in again after Weibo signed it out,
+/// as a browser does at `weibo.com/login.php`: from a copy of the account's
+/// cookies without any `SUB`. Every other cookie is kept, because which ones
+/// the renewal needs is unknown. Only the stored account counts as renewed.
+/// `client` must not follow redirects.
+pub async fn renew_session(client: &Client, account_token: &str) -> Result<Session, PassportError> {
+    renew_session_at(client, &Hosts::weibo(), account_token).await
+}
+
+async fn renew_session_at(
+    client: &Client,
+    hosts: &Hosts,
+    account_token: &str,
+) -> Result<Session, PassportError> {
+    let AccountToken { uid, mut jar, .. } = AccountToken::read(account_token, now())
+        .ok_or(PassportError::Parse("unreadable account token"))?;
+    jar.remove(SESSION_COOKIE);
+    let start = Url::parse(&format!(
+        "{}/login.php?url=https%3A%2F%2Fweibo.com%2F",
+        hosts.main
+    ))
+    .map_err(|_| PassportError::Parse("renewal address"))?;
+    let renewed = sign_in(client, start, format!("{}/", hosts.main), jar).await?;
+    if renewed.uid != uid {
+        return Err(PassportError::AccountMismatch);
+    }
+    renewed.into_session()
 }
 
 /// Checks `cookies` on the post timeline of the account in `account_token`,
@@ -764,6 +857,169 @@ mod tests {
         assert_eq!(check(None).await.unwrap(), AccountState::SignedOut);
         assert_eq!(check(None).await.unwrap(), AccountState::Unknown);
         assert_eq!(received.lock().unwrap().len(), 11);
+    }
+
+    /// A signed-out account of uid 1000000002: its `SUB`s are still stored,
+    /// with the 30-day cookies a renewal starts from.
+    fn signed_out_token() -> String {
+        let expires = now() + 86_400;
+        let cookie = |domain: &str, name: &str, value: &str| serde_json::json!({"domain": domain, "name": name, "value": value, "expires": expires});
+        serde_json::json!({
+            "v": 1,
+            "uid": "1000000002",
+            "jar": [
+                cookie(".weibo.com", "SUB", "old-com-sub"),
+                cookie(".weibo.com", "ALF", "old-com-alf"),
+                cookie(".weibo.com", "SCF", "com-scf"),
+                cookie(".sina.com.cn", "SUB", "old-sina-sub"),
+                cookie(".sina.com.cn", "ALF", "old-sina-alf"),
+                cookie("login.sina.com.cn", "ALC", "old-sina-alc"),
+                cookie(".weibo.cn", "SUB", "old-cn-sub"),
+            ],
+        })
+        .to_string()
+    }
+
+    #[tokio::test]
+    async fn a_renewal_signs_the_account_in_again_without_its_sub() {
+        let (client, hosts, received) = local_passport(vec![
+            redirect("http://login.sina.com.cn:{port}/sso/login.php?url=x"),
+            redirect("http://passport.weibo.com:{port}/sso/crossdomain?entry=miniblog")
+                .header(
+                    "set-cookie",
+                    "SUB=new-sina-sub; Max-Age=31536000; path=/; domain=.sina.com.cn",
+                )
+                .header(
+                    "set-cookie",
+                    "ALF=new-sina-alf; Max-Age=2592000; path=/; domain=.sina.com.cn",
+                )
+                .header("set-cookie", "ALC=new-sina-alc; Max-Age=2592000; path=/"),
+            redirect("http://passport.weibo.cn:{port}/sso/crossdomain?entry=miniblog")
+                .header(
+                    "set-cookie",
+                    "SUB=new-com-sub; Max-Age=31536000; path=/; domain=.weibo.com",
+                )
+                .header(
+                    "set-cookie",
+                    "ALF=new-com-alf; Max-Age=2592000; path=/; domain=.weibo.com",
+                ),
+            redirect("http://weibo.com:{port}/login.php").header(
+                "set-cookie",
+                "SUB=new-cn-sub; Max-Age=31536000; path=/; domain=.weibo.cn",
+            ),
+            redirect("/u/1000000002/home?wvr=5"),
+            page(SIGN_IN_PAGE),
+        ])
+        .await;
+        let token = signed_out_token();
+        assert!(renewable(&token));
+        let session = bounded(renew_session_at(&client, &hosts, &token))
+            .await
+            .unwrap();
+        assert_eq!(
+            session.cookies,
+            "SCF=com-scf; SUB=new-com-sub; ALF=new-com-alf"
+        );
+        let renewable_until = session.renewable_until.unwrap().as_second();
+        assert!((renewable_until - (now() + 2_592_000)).abs() < 60);
+        assert_eq!(
+            account_uid(&session.account_token).as_deref(),
+            Some("1000000002")
+        );
+        let jar: Jar = serde_json::from_value(
+            serde_json::from_str::<serde_json::Value>(&session.account_token).unwrap()["jar"]
+                .take(),
+        )
+        .unwrap();
+        assert_eq!(
+            jar.domain_header(".sina.com.cn", now()).as_deref(),
+            Some("SUB=new-sina-sub; ALF=new-sina-alf")
+        );
+        assert_eq!(
+            jar.domain_header("login.sina.com.cn", now()).as_deref(),
+            Some("ALC=new-sina-alc")
+        );
+
+        // No hop is sent a `SUB` from before, and each only its own site's
+        // cookies, with the previous hop's origin.
+        let port = hosts.main.rsplit(':').next().unwrap().to_owned();
+        let hops = [
+            (
+                "/login.php?url=https%3A%2F%2Fweibo.com%2F ",
+                "weibo.com",
+                Some("ALF=old-com-alf; SCF=com-scf"),
+            ),
+            (
+                "/sso/login.php?",
+                "weibo.com",
+                Some("ALF=old-sina-alf; ALC=old-sina-alc"),
+            ),
+            (
+                "/sso/crossdomain?",
+                "login.sina.com.cn",
+                Some("ALF=old-com-alf; SCF=com-scf"),
+            ),
+            ("/sso/crossdomain?", "passport.weibo.com", None),
+            (
+                "/login.php ",
+                "passport.weibo.cn",
+                Some("SCF=com-scf; SUB=new-com-sub; ALF=new-com-alf"),
+            ),
+            (
+                "/u/1000000002/home?",
+                "weibo.com",
+                Some("SCF=com-scf; SUB=new-com-sub; ALF=new-com-alf"),
+            ),
+        ];
+        for (index, (path, referer_host, cookies)) in hops.into_iter().enumerate() {
+            let sent = request(&received, index);
+            assert!(sent.starts_with(&format!("GET {path}")), "{sent}");
+            assert_eq!(
+                header_of(&sent, "referer"),
+                Some(format!("http://{referer_host}:{port}/"))
+            );
+            assert_eq!(header_of(&sent, "cookie").as_deref(), cookies, "{sent}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_renewal_that_does_not_sign_the_account_in_says_why() {
+        let (client, hosts, received) = local_passport(vec![
+            // A spent token ends on the sign-in page.
+            redirect("http://login.sina.com.cn:{port}/sso/login.php?url=x"),
+            redirect("http://passport.weibo.com:{port}/sso/signin?entry=miniblog"),
+            page("<html>sign in</html>"),
+            // A refusal is not a throttle and not a lost login.
+            redirect("http://login.sina.com.cn:{port}/sso/login.php?url=x"),
+            Reply::raw("403 Forbidden", "text/html", ""),
+            // A throttle keeps its delay.
+            Reply::raw("429 Too Many Requests", "text/html", "").header("retry-after", "120"),
+            // Another account is not taken for the stored one.
+            redirect("http://weibo.com:{port}/u/1000000009/home")
+                .header("set-cookie", "SUB=other-sub; path=/; domain=.weibo.com"),
+            page(r#"{"user":{"idstr":"1000000009"}}"#),
+        ])
+        .await;
+        let token = signed_out_token();
+        let renew = || bounded(renew_session_at(&client, &hosts, &token));
+        assert!(matches!(renew().await, Err(PassportError::LoginRequired)));
+        assert!(matches!(renew().await, Err(PassportError::Refused)));
+        assert!(matches!(
+            renew().await,
+            Err(PassportError::Response(ExtractorError::RateLimited {
+                retry_after: Some(delay),
+                ..
+            })) if delay == Duration::from_secs(120)
+        ));
+        assert!(matches!(renew().await, Err(PassportError::AccountMismatch)));
+        assert_eq!(received.lock().unwrap().len(), 8);
+
+        // Cookies pasted without a QR login, or a token whose 30-day
+        // cookies expired, cannot renew.
+        assert!(!renewable("SUB=pasted"));
+        assert!(!renewable(
+            r#"{"v":1,"uid":"1000000002","jar":[{"domain":".weibo.com","name":"ALF","value":"a","expires":1}]}"#
+        ));
     }
 
     #[test]
