@@ -292,7 +292,7 @@ msgstr "{count} 项已更改"
 msgid "{count} overridden"
 msgstr "{count} 项已覆盖"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:265
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:269
 msgid "{displayName} Configuration"
 msgstr "{displayName} 配置"
 
@@ -1560,6 +1560,7 @@ msgstr "主播的基础设置。"
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:150
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:178
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:134
+#: src/components/config/platforms/tabs/specific-configs/weibo-config-fields.tsx:47
 msgid "Batch Detection"
 msgstr "批量检测"
 
@@ -1978,6 +1979,10 @@ msgstr "检测失败"
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:93
 msgid "Check if file exists after conversion"
 msgstr "转换后检查文件是否存在"
+
+#: src/components/config/platforms/tabs/specific-configs/weibo-config-fields.tsx:50
+msgid "Check monitored Weibo users together in one request using the public live list. Only covers public vertical app broadcasts."
+msgstr "通过公开直播列表在单次请求中一并检测监控的微博用户。仅覆盖公开竖屏 App 直播。"
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:102
 msgid "Check size after copy"
@@ -4239,7 +4244,7 @@ msgstr "展开侧边栏"
 msgid "Experimental"
 msgstr "实验性"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:185
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:189
 msgid "Expert mode: Edit the raw platform-specific configuration directly."
 msgstr "专家模式：直接编辑原始的平台特定配置。"
 
@@ -5002,7 +5007,7 @@ msgstr "强制请求可用的最高原画质量（直连流）。"
 msgid "Force specific output format."
 msgstr "强制指定输出格式。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:293
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:297
 msgid "Form"
 msgstr "表单"
 
@@ -5800,7 +5805,7 @@ msgstr "离线检查之间的间隔。"
 msgid "Invalid download URL"
 msgstr "下载链接无效"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:180
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:184
 msgid "Invalid JSON: {error}"
 msgstr "JSON 格式有误：{error}"
 
@@ -5887,7 +5892,7 @@ msgstr "处理任务"
 msgid "Jobs will appear here when recordings are processed."
 msgstr "处理录制内容后，处理任务将显示在此处。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:309
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:313
 msgid "JSON"
 msgstr "JSON"
 
@@ -6393,7 +6398,7 @@ msgstr "管理账号"
 msgid "Manage proxies"
 msgstr "管理代理"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:271
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:275
 msgid "Manage specialized extraction and identification options."
 msgstr "管理专门的提取和识别选项。"
 
@@ -7230,7 +7235,7 @@ msgstr "未找到会话"
 msgid "No sessions match the current search or filters."
 msgstr "没有符合当前搜索或筛选条件的会话。"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:322
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:326
 msgid "No specialized options available for this platform."
 msgstr "此平台没有可用的专门选项。"
 
@@ -8257,7 +8262,7 @@ msgstr "平台覆盖项"
 msgid "Platform rate limited"
 msgstr "平台限流"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:267
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:271
 msgid "Platform Specific Configuration"
 msgstr "平台专属配置"
 
@@ -8776,7 +8781,7 @@ msgstr "对远端的 API 调用进行限速。当服务方在高负载下返回 
 msgid "Ratio"
 msgstr "比例"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:165
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:169
 msgid "Raw JSON Editor"
 msgstr "原始 JSON 编辑器"
 
@@ -9300,6 +9305,7 @@ msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "需要启用“录制弹幕”。"
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:188
+#: src/components/config/platforms/tabs/specific-configs/weibo-config-fields.tsx:57
 msgid "Requires a Premium backend."
 msgstr "需要 Premium 后端。"
 
@@ -10536,6 +10542,7 @@ msgstr "状态"
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:145
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:159
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:129
+#: src/components/config/platforms/tabs/specific-configs/weibo-config-fields.tsx:28
 msgid "Status Checks"
 msgstr "状态检测"
 

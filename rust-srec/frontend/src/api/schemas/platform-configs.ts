@@ -202,6 +202,13 @@ export type BigoNotificationStatus = z.infer<
   typeof BigoNotificationStatusSchema
 >;
 
+// Weibo platform-specific configuration
+export const WeiboConfigSchema = z
+  .object({
+    batch_detection: z.boolean().nullable().optional(),
+  })
+  .strict();
+
 // Union of all platform configs
 export const AllPlatformConfigsSchema = z.union([
   HuyaConfigSchema,
@@ -213,6 +220,7 @@ export const AllPlatformConfigsSchema = z.union([
   TwitcastingConfigSchema,
   SoopConfigSchema,
   BigoConfigSchema,
+  WeiboConfigSchema,
   z.record(z.string(), z.any()), // Fallback for other platforms
 ]);
 

@@ -292,7 +292,7 @@ msgstr "{count} changed"
 msgid "{count} overridden"
 msgstr "{count} overridden"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:265
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:269
 msgid "{displayName} Configuration"
 msgstr "{displayName} Configuration"
 
@@ -1560,6 +1560,7 @@ msgstr "Basic settings for the streamer."
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:150
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:178
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:134
+#: src/components/config/platforms/tabs/specific-configs/weibo-config-fields.tsx:47
 msgid "Batch Detection"
 msgstr "Batch Detection"
 
@@ -1978,6 +1979,10 @@ msgstr "Check failed"
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:93
 msgid "Check if file exists after conversion"
 msgstr "Check if file exists after conversion"
+
+#: src/components/config/platforms/tabs/specific-configs/weibo-config-fields.tsx:50
+msgid "Check monitored Weibo users together in one request using the public live list. Only covers public vertical app broadcasts."
+msgstr "Check monitored Weibo users together in one request using the public live list. Only covers public vertical app broadcasts."
 
 #: src/components/pipeline/presets/processors/copy-move-config-form.tsx:102
 msgid "Check size after copy"
@@ -4239,7 +4244,7 @@ msgstr "Expand sidebar"
 msgid "Experimental"
 msgstr "Experimental"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:185
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:189
 msgid "Expert mode: Edit the raw platform-specific configuration directly."
 msgstr "Expert mode: Edit the raw platform-specific configuration directly."
 
@@ -5002,7 +5007,7 @@ msgstr "Force requesting the highest origin quality available (Direct stream)."
 msgid "Force specific output format."
 msgstr "Force specific output format."
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:293
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:297
 msgid "Form"
 msgstr "Form"
 
@@ -5800,7 +5805,7 @@ msgstr "Interval between offline checks."
 msgid "Invalid download URL"
 msgstr "Invalid download URL"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:180
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:184
 msgid "Invalid JSON: {error}"
 msgstr "Invalid JSON: {error}"
 
@@ -5887,7 +5892,7 @@ msgstr "Jobs"
 msgid "Jobs will appear here when recordings are processed."
 msgstr "Jobs will appear here when recordings are processed."
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:309
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:313
 msgid "JSON"
 msgstr "JSON"
 
@@ -6393,7 +6398,7 @@ msgstr "Manage accounts"
 msgid "Manage proxies"
 msgstr "Manage proxies"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:271
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:275
 msgid "Manage specialized extraction and identification options."
 msgstr "Manage specialized extraction and identification options."
 
@@ -7230,7 +7235,7 @@ msgstr "No sessions found"
 msgid "No sessions match the current search or filters."
 msgstr "No sessions match the current search or filters."
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:322
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:326
 msgid "No specialized options available for this platform."
 msgstr "No specialized options available for this platform."
 
@@ -8257,7 +8262,7 @@ msgstr "Platform Overrides"
 msgid "Platform rate limited"
 msgstr "Platform rate limited"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:267
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:271
 msgid "Platform Specific Configuration"
 msgstr "Platform Specific Configuration"
 
@@ -8776,7 +8781,7 @@ msgstr "Rate-limits API calls to the remote. Useful when a provider returns 429 
 msgid "Ratio"
 msgstr "Ratio"
 
-#: src/components/config/platforms/tabs/platform-specific-tab.tsx:165
+#: src/components/config/platforms/tabs/platform-specific-tab.tsx:169
 msgid "Raw JSON Editor"
 msgstr "Raw JSON Editor"
 
@@ -9300,6 +9305,7 @@ msgid "Requires \"Record Danmu\" to be enabled."
 msgstr "Requires \"Record Danmu\" to be enabled."
 
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:188
+#: src/components/config/platforms/tabs/specific-configs/weibo-config-fields.tsx:57
 msgid "Requires a Premium backend."
 msgstr "Requires a Premium backend."
 
@@ -10536,6 +10542,7 @@ msgstr "Status"
 #: src/components/config/platforms/tabs/specific-configs/bilibili-config-fields.tsx:145
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:159
 #: src/components/config/platforms/tabs/specific-configs/twitch-config-fields.tsx:129
+#: src/components/config/platforms/tabs/specific-configs/weibo-config-fields.tsx:28
 msgid "Status Checks"
 msgstr "Status Checks"
 

@@ -24,6 +24,7 @@ import {
   TwitcastingConfigSchema,
   SoopConfigSchema,
   BigoConfigSchema,
+  WeiboConfigSchema,
 } from '@/api/schemas';
 import { HuyaConfigFields } from './specific-configs/huya-config-fields';
 import { DouyinConfigFields } from './specific-configs/douyin-config-fields';
@@ -34,6 +35,7 @@ import { TikTokConfigFields } from './specific-configs/tiktok-config-fields';
 import { TwitcastingConfigFields } from './specific-configs/twitcasting-config-fields';
 import { SoopConfigFields } from './specific-configs/soop-config-fields';
 import { BigoConfigFields } from './specific-configs/bigo-config-fields';
+import { WeiboConfigFields } from './specific-configs/weibo-config-fields';
 import { configPath } from '@/components/config/shared/form-path';
 import { formatPlatformName } from '@/lib/platform';
 
@@ -47,6 +49,7 @@ const PLATFORM_SCHEMAS: Record<string, z.ZodType> = {
   twitcasting: TwitcastingConfigSchema,
   soop: SoopConfigSchema,
   bigo: BigoConfigSchema,
+  weibo: WeiboConfigSchema,
 };
 
 /**
@@ -71,6 +74,7 @@ const SPECIFIC_CONFIG_COMPONENTS: Record<string, PlatformConfigFields> = {
   twitcasting: TwitcastingConfigFields,
   soop: SoopConfigFields,
   bigo: BigoConfigFields,
+  weibo: WeiboConfigFields,
 };
 
 function toJsonText(value: unknown): string {
