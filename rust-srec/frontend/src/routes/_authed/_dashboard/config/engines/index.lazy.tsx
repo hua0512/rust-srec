@@ -1,6 +1,7 @@
 import { createLazyFileRoute } from '@tanstack/react-router';
 import { motion } from 'motion/react';
 import { EnginesPanel } from '@/components/config/engines/engines-panel';
+import { containerVariants, itemVariants } from '@/lib/animation';
 
 export const Route = createLazyFileRoute('/_authed/_dashboard/config/engines/')(
   {
@@ -11,12 +12,14 @@ export const Route = createLazyFileRoute('/_authed/_dashboard/config/engines/')(
 function EnginesConfigPage() {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.25 }}
-      className="max-w-4xl"
+      className="flex flex-col gap-6 pb-20"
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
     >
-      <EnginesPanel />
+      <motion.div variants={itemVariants}>
+        <EnginesPanel />
+      </motion.div>
     </motion.div>
   );
 }

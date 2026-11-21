@@ -24,7 +24,7 @@ msgid "--flag value"
 msgstr "--flag value"
 
 #. placeholder {0}: engine.name
-#: src/components/config/engines/engines-panel.tsx:262
+#: src/components/config/engines/engines-panel.tsx:297
 msgid "\"{0}\" will be removed. Streamers using it fall back to the default engine."
 msgstr "\"{0}\" will be removed. Streamers using it fall back to the default engine."
 
@@ -792,7 +792,7 @@ msgstr "Add Custom Tag"
 msgid "Add email and press Enter"
 msgstr "Add email and press Enter"
 
-#: src/components/config/engines/engines-panel.tsx:297
+#: src/components/config/engines/engines-panel.tsx:351
 msgid "Add engine"
 msgstr "Add engine"
 
@@ -833,7 +833,7 @@ msgstr "Add module..."
 msgid "Add one by scanning a QR code with the platform's app or by pasting its cookies."
 msgstr "Add one by scanning a QR code with the platform's app or by pasting its cookies."
 
-#: src/components/proxies/proxies-panel.tsx:192
+#: src/components/proxies/proxies-panel.tsx:266
 msgid "Add one to send recordings, checks and danmu through it. Until then, requests connect directly or through the system proxy, as the global settings choose."
 msgstr "Add one to send recordings, checks and danmu through it. Until then, requests connect directly or through the system proxy, as the global settings choose."
 
@@ -854,7 +854,7 @@ msgstr "Add parameter"
 msgid "Add Pipeline Step"
 msgstr "Add Pipeline Step"
 
-#: src/components/proxies/proxies-panel.tsx:159
+#: src/components/proxies/proxies-panel.tsx:233
 #: src/components/proxies/proxy-editor-dialog.tsx:207
 #: src/components/proxies/proxy-editor-dialog.tsx:363
 msgid "Add proxy"
@@ -908,11 +908,11 @@ msgid "Additional arguments appended to the command."
 msgstr "Additional arguments appended to the command."
 
 #: src/components/proxies/proxy-editor-dialog.tsx:248
-#: src/components/proxies/proxy-row.tsx:216
+#: src/components/proxies/proxy-row.tsx:228
 msgid "Address"
 msgstr "Address"
 
-#: src/components/proxies/proxies-panel.tsx:149
+#: src/components/proxies/proxies-panel.tsx:224
 msgid "Address copied"
 msgstr "Address copied"
 
@@ -1299,6 +1299,12 @@ msgstr "Audio Quality"
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:444
 msgid "Audio Settings"
 msgstr "Audio Settings"
+
+#: src/components/proxies/proxies-panel.tsx:66
+#: src/components/proxies/proxy-row.tsx:142
+msgctxt "proxy auth badge"
+msgid "Auth"
+msgstr "Auth"
 
 #: src/components/notifications/forms/webhook-form.tsx:164
 msgid "Auth Type"
@@ -1767,7 +1773,7 @@ msgstr "C:path1.flv,C:path2.flv"
 msgid "Caching and progress"
 msgstr "Caching and progress"
 
-#: src/components/config/engines/engines-panel.tsx:270
+#: src/components/config/engines/engines-panel.tsx:305
 #: src/components/config/global/backup-restore-card.tsx:523
 #: src/components/config/templates/template-card.tsx:281
 #: src/components/credentials/delete-profile-dialog.tsx:146
@@ -1964,7 +1970,7 @@ msgstr "Cheap operations, so the default of 8 is usually fine. Increase if you h
 msgid "Check duration"
 msgstr "Check duration"
 
-#: src/components/config/engines/engines-panel.tsx:96
+#: src/components/config/engines/engines-panel.tsx:105
 msgid "Check failed"
 msgstr "Check failed"
 
@@ -2009,7 +2015,7 @@ msgstr "Checkers"
 msgid "Checkers help"
 msgstr "Checkers help"
 
-#: src/components/config/engines/engines-panel.tsx:90
+#: src/components/config/engines/engines-panel.tsx:102
 msgid "Checking"
 msgstr "Checking"
 
@@ -2325,13 +2331,12 @@ msgstr "Configuration exported successfully"
 msgid "Configuration imported successfully"
 msgstr "Configuration imported successfully"
 
-#: src/components/config/engines/engines-panel.tsx:215
-#: src/components/config/engines/engines-panel.tsx:241
+#: src/components/config/engines/engines-panel.tsx:272
 #: src/components/pipeline/workflows/step-config-dialog.tsx:358
 msgid "Configure"
 msgstr "Configure"
 
-#: src/components/config/engines/engines-panel.tsx:322
+#: src/components/config/engines/engines-panel.tsx:381
 msgid "Configure a download tool to record with."
 msgstr "Configure a download tool to record with."
 
@@ -2522,7 +2527,7 @@ msgstr "Copy (Stream Copy)"
 msgid "Copy / Move"
 msgstr "Copy / Move"
 
-#: src/components/proxies/proxy-row.tsx:196
+#: src/components/proxies/proxy-row.tsx:210
 msgid "Copy address"
 msgstr "Copy address"
 
@@ -2579,7 +2584,7 @@ msgstr "Copy the full Cookie header from a logged-in Baidu Netdisk page (browser
 msgid "Copy this key now. For security reasons it is shown only once and cannot be recovered later."
 msgstr "Copy this key now. For security reasons it is shown only once and cannot be recovered later."
 
-#: src/components/config/engines/engines-panel.tsx:147
+#: src/components/config/engines/engines-panel.tsx:205
 msgid "Could not check whether this tool is installed."
 msgstr "Could not check whether this tool is installed."
 
@@ -3139,8 +3144,7 @@ msgstr "Delay behind the live edge"
 msgid "Delay between the re-checks used to confirm a streamer has really gone offline."
 msgstr "Delay between the re-checks used to confirm a streamer has really gone offline."
 
-#: src/components/config/engines/engines-panel.tsx:250
-#: src/components/config/engines/engines-panel.tsx:276
+#: src/components/config/engines/engines-panel.tsx:311
 #: src/components/config/templates/template-card.tsx:160
 #: src/components/config/templates/template-card.tsx:290
 #: src/components/credentials/account-row.tsx:302
@@ -3159,7 +3163,7 @@ msgstr "Delay between the re-checks used to confirm a streamer has really gone o
 #: src/components/pipeline/workflows/workflow-card.tsx:85
 #: src/components/pipeline/workflows/workflow-card.tsx:110
 #: src/components/proxies/delete-proxy-dialog.tsx:112
-#: src/components/proxies/proxy-row.tsx:204
+#: src/components/proxies/proxy-row.tsx:218
 #: src/components/sessions/session-batch-action-bar.tsx:62
 #: src/components/sessions/session-card.tsx:300
 #: src/components/shared/confirm-dialog.tsx:66
@@ -3174,6 +3178,11 @@ msgstr "Delete \"{label}\" and its saved credentials? This cannot be undone."
 #: src/components/proxies/delete-proxy-dialog.tsx:97
 msgid "Delete \"{name}\" and its saved login? This cannot be undone."
 msgstr "Delete \"{name}\" and its saved login? This cannot be undone."
+
+#. placeholder {0}: engine.name
+#: src/components/config/engines/engines-panel.tsx:282
+msgid "Delete {0}"
+msgstr "Delete {0}"
 
 #: src/components/credentials/delete-profile-dialog.tsx:135
 msgid "Delete account"
@@ -3296,7 +3305,7 @@ msgstr "Delete Template"
 msgid "Delete the converted result?"
 msgstr "Delete the converted result?"
 
-#: src/components/config/engines/engines-panel.tsx:259
+#: src/components/config/engines/engines-panel.tsx:294
 msgid "Delete this engine?"
 msgstr "Delete this engine?"
 
@@ -3324,7 +3333,7 @@ msgstr "Delete-after-transform checks are incomplete."
 msgid "Deleted"
 msgstr "Deleted"
 
-#: src/components/proxies/proxies-panel.tsx:120
+#: src/components/proxies/proxies-panel.tsx:193
 msgid "Deleted “{name}”"
 msgstr "Deleted “{name}”"
 
@@ -3346,9 +3355,9 @@ msgstr "Deletes all existing configurations before importing. This action cannot
 msgid "Deletes the files produced by the previous step. Safe after an Upload step. After a transcode/remux it deletes the converted result, not the original — use \"Remove Input on Success\" on the transcode step to delete the source instead."
 msgstr "Deletes the files produced by the previous step. Safe after an Upload step. After a transcode/remux it deletes the converted result, not the original — use \"Remove Input on Success\" on the transcode step to delete the source instead."
 
-#: src/components/config/engines/engines-panel.tsx:193
+#: src/components/config/engines/engines-panel.tsx:255
 #: src/components/credentials/account-row.tsx:67
-#: src/components/proxies/proxy-row.tsx:147
+#: src/components/proxies/proxy-row.tsx:173
 msgid "Deleting…"
 msgstr "Deleting…"
 
@@ -3437,9 +3446,13 @@ msgstr "Detailed processor settings"
 #. placeholder {0}: profile.label
 #. placeholder {0}: proxy.name
 #: src/components/credentials/account-row.tsx:231
-#: src/components/proxies/proxy-row.tsx:168
+#: src/components/proxies/proxy-row.tsx:156
 msgid "Details for {0}"
 msgstr "Details for {0}"
+
+#: src/components/proxies/proxies-panel.tsx:85
+msgid "Detected"
+msgstr "Detected"
 
 #: src/components/streamers/config/streamer-identity-fields.tsx:179
 msgid "Detecting…"
@@ -3815,7 +3828,7 @@ msgstr "Earlier files are still being finalized, so the cut was not made. Record
 #: src/components/notifications/channel-card.tsx:145
 #: src/components/pipeline/presets/preset-card.tsx:99
 #: src/components/pipeline/workflows/workflow-card.tsx:77
-#: src/components/proxies/proxy-row.tsx:190
+#: src/components/proxies/proxy-row.tsx:207
 #: src/components/streamers/card/stream-actions-menu.tsx:101
 msgid "Edit"
 msgstr "Edit"
@@ -3962,7 +3975,7 @@ msgstr "Engine & Hardware"
 msgid "Engine created successfully"
 msgstr "Engine created successfully"
 
-#: src/components/config/engines/engines-panel.tsx:132
+#: src/components/config/engines/engines-panel.tsx:184
 msgid "Engine deleted"
 msgstr "Engine deleted"
 
@@ -3990,7 +4003,7 @@ msgstr "Engine updated successfully"
 msgid "Engine used for downloads when not specified by platform/streamer."
 msgstr "Engine used for downloads when not specified by platform/streamer."
 
-#: src/components/config/engines/engines-panel.tsx:303
+#: src/components/config/engines/engines-panel.tsx:358
 #: src/components/config/global/backup-restore-card.tsx:398
 #: src/components/config/global/backup-restore-card.tsx:403
 #: src/components/config/global/backup-restore-card.tsx:408
@@ -4404,7 +4417,7 @@ msgstr "Failed to create workflow: {0}"
 msgid "Failed to delete channel"
 msgstr "Failed to delete channel"
 
-#: src/components/config/engines/engines-panel.tsx:135
+#: src/components/config/engines/engines-panel.tsx:187
 msgid "Failed to delete engine"
 msgstr "Failed to delete engine"
 
@@ -4504,6 +4517,10 @@ msgstr "Failed to load content"
 msgid "Failed to load danmu statistics."
 msgstr "Failed to load danmu statistics."
 
+#: src/components/config/engines/engines-panel.tsx:370
+msgid "Failed to load engines"
+msgstr "Failed to load engines"
+
 #: src/routes/_authed/_dashboard/notifications/events.lazy.tsx:385
 msgid "Failed to load events"
 msgstr "Failed to load events"
@@ -4531,6 +4548,10 @@ msgstr "Failed to load platforms"
 #: src/routes/_authed/_dashboard/pipeline/presets/index.lazy.tsx:269
 msgid "Failed to load presets"
 msgstr "Failed to load presets"
+
+#: src/components/proxies/proxies-panel.tsx:254
+msgid "Failed to load proxies"
+msgstr "Failed to load proxies"
 
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:389
 msgid "Failed to load sessions"
@@ -6166,7 +6187,7 @@ msgstr "Loading presets..."
 msgid "Loading workflows..."
 msgstr "Loading workflows..."
 
-#: src/components/proxies/proxy-row.tsx:92
+#: src/components/proxies/proxy-row.tsx:77
 #: src/components/streamers/edit/status-check-history.tsx:150
 msgid "Loading…"
 msgstr "Loading…"
@@ -6254,7 +6275,7 @@ msgstr "Logging configuration updated"
 msgid "Logging paused"
 msgstr "Logging paused"
 
-#: src/components/proxies/proxy-row.tsx:220
+#: src/components/proxies/proxy-row.tsx:232
 msgid "Login"
 msgstr "Login"
 
@@ -6679,12 +6700,10 @@ msgctxt "breadcrumb"
 msgid "More"
 msgstr "More"
 
-#. placeholder {0}: engine.name
 #. placeholder {0}: profile.label
 #. placeholder {0}: proxy.name
-#: src/components/config/engines/engines-panel.tsx:226
 #: src/components/credentials/account-row.tsx:243
-#: src/components/proxies/proxy-row.tsx:179
+#: src/components/proxies/proxy-row.tsx:196
 msgid "More actions for {0}"
 msgstr "More actions for {0}"
 
@@ -6998,7 +7017,7 @@ msgstr "No detailed error message available"
 msgid "No engines found."
 msgstr "No engines found."
 
-#: src/components/config/engines/engines-panel.tsx:321
+#: src/components/config/engines/engines-panel.tsx:380
 msgid "No engines yet"
 msgstr "No engines yet"
 
@@ -7167,7 +7186,7 @@ msgstr "No preview generated"
 msgid "No progress for {quietFor}"
 msgstr "No progress for {quietFor}"
 
-#: src/components/proxies/proxies-panel.tsx:190
+#: src/components/proxies/proxies-panel.tsx:264
 msgid "No proxies yet"
 msgstr "No proxies yet"
 
@@ -7227,7 +7246,7 @@ msgstr "No streamers"
 msgid "No streamers found"
 msgstr "No streamers found"
 
-#: src/components/proxies/proxies-panel.tsx:53
+#: src/components/proxies/proxies-panel.tsx:106
 msgid "No system proxy detected"
 msgstr "No system proxy detected"
 
@@ -7284,7 +7303,7 @@ msgstr "No workflows yet"
 msgid "None"
 msgstr "None"
 
-#: src/components/proxies/proxy-row.tsx:235
+#: src/components/proxies/proxy-row.tsx:247
 msgctxt "no proxy login"
 msgid "None"
 msgstr "None"
@@ -7352,7 +7371,11 @@ msgstr "Not connected"
 msgid "Not connected to BIGO"
 msgstr "Not connected to BIGO"
 
-#: src/components/config/engines/engines-panel.tsx:94
+#: src/components/proxies/proxies-panel.tsx:87
+msgid "Not detected"
+msgstr "Not detected"
+
+#: src/components/config/engines/engines-panel.tsx:104
 msgid "Not installed"
 msgstr "Not installed"
 
@@ -7373,7 +7396,7 @@ msgstr "Not selected anywhere"
 msgid "Not supported in this browser"
 msgstr "Not supported in this browser"
 
-#: src/components/proxies/proxy-row.tsx:124
+#: src/components/proxies/proxy-row.tsx:164
 msgid "not used"
 msgstr "not used"
 
@@ -7943,7 +7966,7 @@ msgstr "Password is required"
 msgid "Password must be at least 8 characters"
 msgstr "Password must be at least 8 characters"
 
-#: src/components/proxies/proxy-row.tsx:229
+#: src/components/proxies/proxy-row.tsx:241
 msgid "password saved"
 msgstr "password saved"
 
@@ -8650,7 +8673,7 @@ msgid "Protocol Settings"
 msgstr "Protocol Settings"
 
 #: src/components/layout/site-header.tsx:67
-#: src/components/proxies/proxies-panel.tsx:165
+#: src/components/proxies/proxies-panel.tsx:241
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:68
 msgid "Proxies"
 msgstr "Proxies"
@@ -8775,6 +8798,10 @@ msgstr "Reachable"
 msgid "Read Buffer Size (bytes)"
 msgstr "Read Buffer Size (bytes)"
 
+#: src/components/proxies/proxies-panel.tsx:49
+msgid "Read from the server's environment at startup. Used whenever a route is set to System proxy."
+msgstr "Read from the server's environment at startup. Used whenever a route is set to System proxy."
+
 #: src/components/config/engines/forms/mesio-sections.tsx:463
 msgid "Read Timeout (ms)"
 msgstr "Read Timeout (ms)"
@@ -8791,7 +8818,7 @@ msgstr "Read-only — sessions and non-sensitive status"
 msgid "Read-only keys can inspect sessions, danmu, pipeline totals, and notification events. Configuration and other sensitive tools require a full-access key."
 msgstr "Read-only keys can inspect sessions, danmu, pipeline totals, and notification events. Configuration and other sensitive tools require a full-access key."
 
-#: src/components/config/engines/engines-panel.tsx:92
+#: src/components/config/engines/engines-panel.tsx:103
 #: src/hooks/use-web-push-subscription.ts:164
 msgid "Ready"
 msgstr "Ready"
@@ -9231,7 +9258,7 @@ msgstr "Request Timeout (ms)"
 msgid "Request timeout duration"
 msgstr "Request timeout duration"
 
-#: src/components/proxies/proxies-panel.tsx:83
+#: src/components/proxies/proxies-panel.tsx:137
 msgid "Requests a page once through <0>{address}</0> and reports whether it answered."
 msgstr "Requests a page once through <0>{address}</0> and reports whether it answered."
 
@@ -9608,7 +9635,7 @@ msgstr "Saved proxies & system proxy"
 msgid "Saved proxies can be chosen in global, platform, template, streamer and account settings."
 msgstr "Saved proxies can be chosen in global, platform, template, streamer and account settings."
 
-#: src/components/proxies/proxies-panel.tsx:169
+#: src/components/proxies/proxies-panel.tsx:243
 msgid "Saved proxies that global, platform, template, streamer, account, notification channel and upload step settings can route requests through. Changes are saved right away."
 msgstr "Saved proxies that global, platform, template, streamer, account, notification channel and upload step settings can route requests through. Changes are saved right away."
 
@@ -10842,13 +10869,10 @@ msgid "System Health"
 msgstr "System Health"
 
 #: src/components/notifications/events/payload-preview.tsx:58
+#: src/components/proxies/proxies-panel.tsx:47
 #: src/components/proxies/proxy-route-label.tsx:34
 msgid "System proxy"
 msgstr "System proxy"
-
-#: src/components/proxies/proxies-panel.tsx:47
-msgid "System proxy: <0>{url}</0>"
-msgstr "System proxy: <0>{url}</0>"
 
 #: src/lib/notification-event-types.ts:40
 msgid "System shutting down"
@@ -10965,13 +10989,12 @@ msgid "Temporarily Paused"
 msgstr "Temporarily Paused"
 
 #: src/components/notifications/desktop-channel-dialog.tsx:228
-#: src/components/proxies/proxy-row.tsx:158
-#: src/components/proxies/proxy-row.tsx:193
+#: src/components/proxies/proxy-row.tsx:184
 #: src/components/proxies/proxy-test.tsx:163
 msgid "Test"
 msgstr "Test"
 
-#: src/components/proxies/proxies-panel.tsx:80
+#: src/components/proxies/proxies-panel.tsx:134
 msgid "Test “{name}”"
 msgstr "Test “{name}”"
 
@@ -11039,7 +11062,7 @@ msgstr "The cut could not be completed."
 msgid "The direct link to the channel or stream."
 msgstr "The direct link to the channel or stream."
 
-#: src/components/config/engines/engines-panel.tsx:305
+#: src/components/config/engines/engines-panel.tsx:360
 msgid "The download tools recordings can use. Each one is checked on the server to confirm it is installed."
 msgstr "The download tools recordings can use. Each one is checked on the server to confirm it is installed."
 
@@ -11318,7 +11341,7 @@ msgstr "This streamer is currently live, but outside your configured recording s
 msgid "This streamer only uses disabled accounts."
 msgstr "This streamer only uses disabled accounts."
 
-#: src/components/config/engines/engines-panel.tsx:143
+#: src/components/config/engines/engines-panel.tsx:199
 msgid "This tool was not found on the server."
 msgstr "This tool was not found on the server."
 
@@ -12003,7 +12026,7 @@ msgstr "used {when}"
 msgid "Used by"
 msgstr "Used by"
 
-#: src/components/proxies/proxy-row.tsx:124
+#: src/components/proxies/proxy-row.tsx:164
 msgid "used by {usage}"
 msgstr "used by {usage}"
 

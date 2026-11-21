@@ -58,7 +58,7 @@ async function show() {
 }
 
 function row(name: string) {
-  return screen.getByText(name, { selector: 'p' }).closest('li') as HTMLElement;
+  return screen.getByText(name).closest('li') as HTMLElement;
 }
 
 async function openMenuItem(proxy: string, item: string) {
@@ -77,12 +77,17 @@ async function openMenuItem(proxy: string, item: string) {
 
 it('lists saved proxies with their scheme, address, login and usage', async () => {
   await show();
-  expect(row('Office')).toHaveTextContent(
-    'http · proxy.example:8080 · alice · not used',
-  );
-  expect(row('Tunnel')).toHaveTextContent(
-    'socks5h · 10.0.0.2:1080 · used by 2',
-  );
+  const officeRow = row('Office');
+  expect(officeRow).toHaveTextContent('http');
+  expect(officeRow).toHaveTextContent('proxy.example:8080');
+  expect(officeRow).toHaveTextContent('alice');
+  expect(officeRow).toHaveTextContent('not used');
+
+  const tunnelRow = row('Tunnel');
+  expect(tunnelRow).toHaveTextContent('socks5h');
+  expect(tunnelRow).toHaveTextContent('10.0.0.2:1080');
+  expect(tunnelRow).toHaveTextContent('used by 2');
+
   expect(await screen.findByText('http://127.0.0.1:3128')).toBeInTheDocument();
 });
 
