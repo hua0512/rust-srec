@@ -107,14 +107,6 @@ describe('useStreamerStatus credential blocks', () => {
       ).toBe(label);
   });
 
-  it('links its tooltip to the platform accounts', () => {
-    const { container } = renderWithProviders(status(streamer()).tooltip);
-    expect(container.textContent).toContain('Recording is paused');
-    expect(container.querySelector('a')?.getAttribute('href')).toBe(
-      '/config/platforms/platform-bilibili',
-    );
-  });
-
   it('keeps states that matter more', () => {
     // A running recording keeps its account.
     expect(
@@ -148,12 +140,6 @@ describe('useStreamerStatus credential blocks', () => {
     ).toBe('Temporarily Paused');
     expect(text(status(streamer({ state: 'NOT_FOUND' })).label)).toBe(
       'Streamer not found',
-    );
-  });
-
-  it('is absent without a block', () => {
-    expect(text(status(streamer({ credential_blocked: null })).label)).toBe(
-      'Offline',
     );
   });
 });

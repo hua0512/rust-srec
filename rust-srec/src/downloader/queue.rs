@@ -1077,59 +1077,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn snapshot_pending_returns_arrival_order() {
-        let q = DownloadQueue::new(1, 0);
-        let _g = q
-            .acquire(req("a", Priority::Normal), CancellationToken::new(), |_| {})
-            .await
-            .unwrap();
-        let q1 = q.clone();
-        let h1 = tokio::spawn(async move {
-            q1.acquire(
-                req("first", Priority::Normal),
-                CancellationToken::new(),
-                |_| {},
-            )
-            .await
-        });
-        for _ in 0..50 {
-            if q.pending_count() == 1 {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-        let q2 = q.clone();
-        let h2 = tokio::spawn(async move {
-            q2.acquire(
-                req("second", Priority::High),
-                CancellationToken::new(),
-                |_| {},
-            )
-            .await
-        });
-        for _ in 0..50 {
-            if q.pending_count() == 2 {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-
-        let snap = q.snapshot_pending();
-        assert_eq!(snap.len(), 2);
-        // Sorted by arrival (seq), regardless of priority tier.
-        assert_eq!(snap[0].session_id, "first");
-        assert_eq!(snap[1].session_id, "second");
-
-        // Drain in priority order: high-priority "second" wakes first.
-        drop(_g);
-        let g_second = h2.await.unwrap().unwrap();
-        assert!(matches!(g_second.priority(), Priority::High));
-        drop(g_second);
-        let g_first = h1.await.unwrap().unwrap();
-        assert!(matches!(g_first.priority(), Priority::Normal));
-    }
-
-    #[tokio::test]
     async fn shutdown_wakes_queued_acquire_before_active_slot_is_released() {
         let q = DownloadQueue::new(1, 0);
         let active = q

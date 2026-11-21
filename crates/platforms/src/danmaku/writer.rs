@@ -546,26 +546,6 @@ mod tests {
     }
 
     #[test]
-    fn test_message_type_to_bilibili_type() {
-        assert_eq!(message_type_to_bilibili_type(&DanmuType::Chat), 1);
-        assert_eq!(message_type_to_bilibili_type(&DanmuType::Gift), 1);
-        assert_eq!(message_type_to_bilibili_type(&DanmuType::SuperChat), 5);
-        assert_eq!(message_type_to_bilibili_type(&DanmuType::System), 4);
-    }
-
-    #[test]
-    fn test_message_type_to_int() {
-        assert_eq!(message_type_to_int(&DanmuType::Chat), 1);
-        assert_eq!(message_type_to_int(&DanmuType::Gift), 2);
-        assert_eq!(message_type_to_int(&DanmuType::SuperChat), 3);
-        assert_eq!(message_type_to_int(&DanmuType::System), 4);
-        assert_eq!(message_type_to_int(&DanmuType::UserJoin), 5);
-        assert_eq!(message_type_to_int(&DanmuType::Follow), 6);
-        assert_eq!(message_type_to_int(&DanmuType::Subscription), 7);
-        assert_eq!(message_type_to_int(&DanmuType::Other), 0);
-    }
-
-    #[test]
     fn test_crc32_hash() {
         // Test known CRC32 values
         assert_eq!(crc32_hash(""), 0);

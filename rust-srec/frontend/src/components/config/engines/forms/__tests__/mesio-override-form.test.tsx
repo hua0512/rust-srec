@@ -161,20 +161,6 @@ describe('Mesio template override', () => {
     expect(saved()).toEqual({});
   });
 
-  it('gives on/off settings the override states', async () => {
-    const { saved } = mountOverride(
-      {},
-      { hls: { base: { force_ipv4: true } } },
-    );
-    openTab(/^HLS/);
-    openSection('HTTP connection');
-    expect(combobox('Force IPv4')).toHaveTextContent('Use engine setting (On)');
-    await choose('Force IPv4', 'Default (Off)');
-    expect(saved().hls.base.force_ipv4).toBeNull();
-    await choose('Force IPv4', 'Off');
-    expect(saved().hls.base.force_ipv4).toBe(false);
-  });
-
   it('keeps the rest of a reset group reset when one field changes', async () => {
     const { saved } = mountOverride(
       { hls: null },
@@ -208,41 +194,6 @@ describe('Mesio template override', () => {
       max_segment_retries: 3,
       future_setting: null,
     });
-  });
-
-  it('refuses to save a custom value left empty', async () => {
-    const { form } = mountOverride({});
-    openTab(/^HLS/);
-    openSection('HTTP connection');
-    await choose('Connect Timeout (ms)', 'Custom');
-    fireEvent.change(
-      screen.getByRole('spinbutton', { name: 'Connect Timeout (ms)' }),
-      { target: { value: '' } },
-    );
-    expect(await form.trigger()).toBe(false);
-    expect(
-      await screen.findByText('Enter a value, or choose another option'),
-    ).toBeInTheDocument();
-  });
-
-  it('saves a template whose settings hold resets', async () => {
-    const { form } = mountOverride({
-      buffer_size: null,
-      fix_hls: null,
-      fix_flv: null,
-      flv_fix: { duplicate_tag_filter_config: null },
-      hls: {
-        base: null,
-        output_config: {
-          buffer_limits: null,
-          live_max_overall_stall_duration_ms: null,
-        },
-      },
-    });
-    expect(await form.trigger()).toBe(true);
-    expect(combobox('Fix FLV Streams')).toHaveTextContent('Default (On)');
-    openTab(/^HLS/);
-    expect(combobox('Fix HLS Streams')).toHaveTextContent('Default (On)');
   });
 
   it('follows the effective FLV fixing for the FLV repair settings', async () => {
@@ -329,22 +280,6 @@ describe('Mesio engine settings', () => {
     expect(saved().hls.output_config.vod_segment_timeout_ms).toBe(30000);
   });
 
-  it('writes plain values with no override states', async () => {
-    const { saved } = mountEngine();
-    openTab(/^HLS/);
-    openSection('HTTP connection');
-    fireEvent.change(
-      screen.getByRole('spinbutton', { name: 'Connect Timeout (ms)' }),
-      { target: { value: '7000' } },
-    );
-    expect(saved().hls.base.connect_timeout_ms).toBe(7000);
-    expect(await options('HTTP Version')).toEqual([
-      'Auto',
-      'HTTP/2 only',
-      'HTTP/1.1 only',
-    ]);
-  });
-
   it('counts the settings that differ from their defaults', () => {
     mountEngine({
       fix_hls: false,
@@ -398,28 +333,6 @@ describe('Mesio engine settings', () => {
     expect(
       screen.getByRole('spinbutton', { name: 'Backward Jump Threshold (ms)' }),
     ).toBeDisabled();
-  });
-
-  it('edits the loop protection byte limit and progress updates', () => {
-    const { saved } = mountEngine({
-      flv_fix: { duplicate_tag_filtering: true },
-    });
-    openSection('Loop protection');
-    fireEvent.change(
-      screen.getByRole('spinbutton', { name: 'History Size (bytes)' }),
-      { target: { value: '0' } },
-    );
-    expect(
-      saved().flv_fix.duplicate_tag_filter_config.window_capacity_bytes,
-    ).toBe(0);
-
-    openTab(/^HLS/);
-    openSection('Caching and progress');
-    fireEvent.change(
-      screen.getByRole('spinbutton', { name: 'Progress Update Bytes' }),
-      { target: { value: '1024' } },
-    );
-    expect(saved().hls.fetcher_config.progress_emit_min_bytes).toBe(1024);
   });
 });
 

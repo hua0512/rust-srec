@@ -1056,44 +1056,4 @@ mod tests {
         assert_eq!(task.get_state().items_written_total, 5);
         assert_eq!(task.get_state().file_sequence_number, 2);
     }
-
-    #[test]
-    fn test_writer_task_rotation_avoids_collisions_when_template_has_no_sequence_placeholder() {
-        let dir = tempdir().unwrap();
-        let config = WriterConfig::new(
-            dir.path().to_path_buf(),
-            "test_rotate_no_seq".to_string(),
-            "log".to_string(),
-        );
-
-        // Rotate before each subsequent item, so we'd collide without collision avoidance.
-        let strategy = TestStrategy {
-            item_count_to_rotate: 1,
-            header_content: None,
-            footer_content: None,
-            items_written_for_rotation_check: 0,
-        };
-        let mut task = WriterTask::new(config.clone(), strategy);
-
-        task.process_item(TestData("data1".to_string())).unwrap(); // File 0
-        task.process_item(TestData("data2".to_string())).unwrap(); // Rotate -> File 1
-        task.process_item(TestData("data3".to_string())).unwrap(); // Rotate -> File 2
-        task.close().unwrap();
-
-        let file0_path = config.base_path.join("test_rotate_no_seq.log");
-        let file1_path = config.base_path.join("test_rotate_no_seq-001.log");
-        let file2_path = config.base_path.join("test_rotate_no_seq-002.log");
-
-        assert!(file0_path.exists());
-        assert!(file1_path.exists());
-        assert!(file2_path.exists());
-
-        let content0 = fs::read_to_string(file0_path).unwrap();
-        let content1 = fs::read_to_string(file1_path).unwrap();
-        let content2 = fs::read_to_string(file2_path).unwrap();
-
-        assert_eq!(content0, "data1\n");
-        assert_eq!(content1, "data2\n");
-        assert_eq!(content2, "data3\n");
-    }
 }

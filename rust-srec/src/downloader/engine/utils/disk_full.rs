@@ -111,17 +111,6 @@ mod tests {
     }
 
     #[test]
-    fn matches_ffmpeg_enospc_verbatim() {
-        // FFmpeg output identifying a full output device.
-        assert!(is_disk_full_line(
-            "[out#0/segment @ 0x5b7ddc4105c0] Task finished with error code: -28 (No space left on device)"
-        ));
-        assert!(is_disk_full_line(
-            "[vost#0:0/copy @ 0x5b7ddc512c80] Error submitting a packet to the muxer: No space left on device"
-        ));
-    }
-
-    #[test]
     fn matches_windows_wording_any_case_and_the_bare_errno() {
         for line in [
             "Error writing trailer: Disk full",

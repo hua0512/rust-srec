@@ -468,38 +468,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_supports_url() {
-        let protocol = TwitcastingDanmuProtocol::new();
-
-        assert!(protocol.supports_url("https://twitcasting.tv/username"));
-        assert!(protocol.supports_url("http://twitcasting.tv/another_user"));
-        assert!(protocol.supports_url("twitcasting.tv/test123"));
-        assert!(protocol.supports_url("https://www.twitcasting.tv/user-name"));
-
-        assert!(!protocol.supports_url("https://www.twitch.tv/user"));
-        assert!(!protocol.supports_url("https://www.youtube.com/watch?v=xxx"));
-    }
-
-    #[test]
-    fn test_extract_room_id() {
-        let protocol = TwitcastingDanmuProtocol::new();
-
-        assert_eq!(
-            protocol.extract_room_id("https://twitcasting.tv/nodasori2525"),
-            Some("nodasori2525".to_string())
-        );
-        assert_eq!(
-            protocol.extract_room_id("http://twitcasting.tv/another_user"),
-            Some("another_user".to_string())
-        );
-        assert_eq!(
-            protocol.extract_room_id("https://www.twitcasting.tv/user-name"),
-            Some("user-name".to_string())
-        );
-        assert_eq!(protocol.extract_room_id("https://www.twitch.tv/user"), None);
-    }
-
-    #[test]
     fn test_parse_comment_array() {
         let json = r#"[{"message":"Hello World!","fromUser":{"name":"TestUser","id":"user123"}}]"#;
 

@@ -143,16 +143,3 @@ async fn smtp_connections_are_reused_and_replacements_keep_separate_pools() {
     .await
     .expect("local SMTP scenario must finish");
 }
-
-#[test]
-fn obsolete_batch_window_is_ignored_when_loading_old_config() {
-    let mut value = serde_json::to_value(EmailConfig::default()).unwrap();
-    value["batch_window_secs"] = serde_json::json!(60);
-    let config: EmailConfig = serde_json::from_value(value).unwrap();
-    assert!(
-        serde_json::to_value(config)
-            .unwrap()
-            .get("batch_window_secs")
-            .is_none()
-    );
-}

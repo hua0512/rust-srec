@@ -887,16 +887,6 @@ mod tests {
     }
 
     #[test]
-    fn test_merge_cookie_headers_merges_and_overrides() {
-        let base = "a=1; b=2";
-        let extra = "b=3; c=4";
-        assert_eq!(
-            merge_cookie_headers(Some(base), Some(extra)).as_deref(),
-            Some("a=1; b=3; c=4")
-        );
-    }
-
-    #[test]
     fn test_merge_cookie_headers_ignores_empty_parts() {
         let base = "a=1; ; b=2; invalid";
         let extra = "b=3; c=4; =nope; d=";

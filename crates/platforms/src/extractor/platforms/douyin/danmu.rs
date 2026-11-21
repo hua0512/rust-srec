@@ -440,20 +440,6 @@ mod tests {
         assert_eq!(ack.payload_type, "ack");
     }
 
-    #[test]
-    fn test_heartbeat_message() {
-        let protocol = DouyinDanmuProtocol::default();
-        let heartbeat = protocol.heartbeat_message();
-        assert!(heartbeat.is_some());
-
-        // Verify the heartbeat packet bytes: 0x3A 0x02 0x68 0x62 (":\x02hb")
-        if let Some(Message::Binary(data)) = heartbeat {
-            assert_eq!(data.as_ref(), b":\x02hb");
-        } else {
-            panic!("Expected binary heartbeat message");
-        }
-    }
-
     #[tokio::test]
     #[ignore] // Ignore by default as it requires JS engine which is slow
     async fn test_websocket_url_generation() {

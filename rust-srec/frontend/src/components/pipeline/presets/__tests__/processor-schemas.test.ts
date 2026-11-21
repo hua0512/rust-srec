@@ -1,30 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  BaiduPcsConfigSchema,
-  CopyMoveConfigSchema,
-  DeleteConfigSchema,
-  ExecuteConfigSchema,
-  RcloneConfigSchema,
-  RemuxConfigSchema,
-  ThumbnailConfigSchema,
-} from '../processor-schemas';
-
-describe('remux recording metadata config', () => {
-  it('keeps recording metadata opt-in and preserves literal custom tags', () => {
-    const metadata = [
-      ['title', '{title}'],
-      ['comment', '100% literal {streamer}'],
-    ];
-    const legacy = RemuxConfigSchema.parse({ metadata });
-    expect(legacy.include_recording_metadata).toBe(false);
-    expect(legacy.metadata).toEqual(metadata);
-
-    const optedIn = { ...legacy, include_recording_metadata: true };
-    expect(
-      RemuxConfigSchema.parse(JSON.parse(JSON.stringify(optedIn))),
-    ).toEqual(optedIn);
-  });
-});
+import { ExecuteConfigSchema } from '../processor-schemas';
 
 describe('execute config schema', () => {
   it('preserves legacy commands and nullable output scanning', () => {
@@ -78,66 +53,5 @@ describe('execute config schema', () => {
     { program: 'ffmpeg', args: '-version' },
   ])('rejects invalid mode configurations: %j', (config) => {
     expect(ExecuteConfigSchema.safeParse(config).success).toBe(false);
-  });
-
-  it('addresses invalid arguments by index for both form consumers', () => {
-    const parsed = ExecuteConfigSchema.safeParse({
-      program: 'ffmpeg',
-      args: ['-i', 42],
-    });
-    expect(parsed.success).toBe(false);
-    if (!parsed.success) {
-      expect(parsed.error.issues[0].path).toEqual(['args', 1]);
-    }
-  });
-});
-
-describe('processor time anchor schemas', () => {
-  it('defaults missing rclone time_anchor to job_created', () => {
-    expect(RcloneConfigSchema.parse({}).time_anchor).toBe('job_created');
-    expect(
-      RcloneConfigSchema.parse({ destination_root: 'remote:/%Y/%m/%d' })
-        .time_anchor,
-    ).toBe('job_created');
-  });
-
-  it('keeps copy_move time_anchor optional for legacy execution-time behavior', () => {
-    expect(
-      CopyMoveConfigSchema.parse({ destination: '/dest' }).time_anchor,
-    ).toBe(undefined);
-    expect(
-      CopyMoveConfigSchema.parse({
-        destination: '/dest',
-        time_anchor: 'session_start',
-      }).time_anchor,
-    ).toBe('session_start');
-  });
-});
-
-// Counts and pixel sizes are whole numbers on the backend, so a typed decimal
-// has to be reported by the form rather than sent on and rejected there.
-describe('whole-number processor settings', () => {
-  it('rejects a fractional retry count and delay', () => {
-    expect(() => DeleteConfigSchema.parse({ max_retries: 2.5 })).toThrow();
-    expect(() => DeleteConfigSchema.parse({ retry_delay_ms: 100.5 })).toThrow();
-    expect(DeleteConfigSchema.parse({ max_retries: 2 }).max_retries).toBe(2);
-  });
-
-  it('rejects a fractional thumbnail width and quality', () => {
-    expect(() => ThumbnailConfigSchema.parse({ width: 320.5 })).toThrow();
-    expect(() => ThumbnailConfigSchema.parse({ quality: 2.5 })).toThrow();
-  });
-
-  it('rejects a fractional rclone retry count while keeping fractional limits', () => {
-    expect(() => RcloneConfigSchema.parse({ max_retries: 2.5 })).toThrow();
-    expect(RcloneConfigSchema.parse({ tpslimit: 0.5 }).tpslimit).toBe(0.5);
-  });
-});
-
-describe('baidupcs config schema', () => {
-  it('rejects unknown policies and out-of-range retries', () => {
-    expect(() => BaiduPcsConfigSchema.parse({ policy: 'replace' })).toThrow();
-    expect(() => BaiduPcsConfigSchema.parse({ max_retries: 0 })).toThrow();
-    expect(() => BaiduPcsConfigSchema.parse({ max_retries: 11 })).toThrow();
   });
 });

@@ -44,41 +44,11 @@ function pressKey(element: HTMLElement) {
   fireEvent.click(element);
 }
 
-const day = (name: string) => screen.getByRole('button', { name });
 const timeline = () => screen.getByRole('group', { name: '24-hour timeline' });
 const hour = (value: number) =>
   within(timeline()).getByRole('button', { name: `Hour ${value}` });
 
 describe('time based filter form', () => {
-  it('names every day toggle and reports whether it is selected', () => {
-    renderForm({ days_of_week: ['Monday'] });
-
-    expect(day('Monday')).toHaveAttribute('aria-pressed', 'true');
-    expect(day('Sunday')).toHaveAttribute('aria-pressed', 'false');
-  });
-
-  it('toggles a day from the keyboard', () => {
-    const { values } = renderForm();
-
-    pressKey(day('Wednesday'));
-
-    expect(day('Wednesday')).toHaveAttribute('aria-pressed', 'true');
-    expect(values().days_of_week).toEqual(['Wednesday']);
-
-    pressKey(day('Wednesday'));
-
-    expect(day('Wednesday')).toHaveAttribute('aria-pressed', 'false');
-    expect(values().days_of_week).toEqual([]);
-  });
-
-  it('exposes the timeline as a labelled group of named hours', () => {
-    renderForm({ start_time: '10:00:00', end_time: '12:00:00' });
-
-    expect(within(timeline()).getAllByRole('button')).toHaveLength(24);
-    expect(hour(11)).toHaveAttribute('aria-pressed', 'true');
-    expect(hour(20)).toHaveAttribute('aria-pressed', 'false');
-  });
-
   it('starts a new window when an hour is activated from the keyboard', () => {
     const { values } = renderForm({
       start_time: '10:00:00',

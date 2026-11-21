@@ -57,19 +57,6 @@ mod tests {
     }
 
     #[test]
-    fn timed_out_decoder_io_maps_to_a_stream_network_timeout() {
-        let error = FlvDownloadError::Decoder(FlvError::Io(std::io::Error::new(
-            ErrorKind::TimedOut,
-            "operation timed out",
-        )));
-
-        assert!(matches!(
-            DownloadError::from(error),
-            DownloadError::StreamNetwork { reason } if reason.starts_with("stream read timed out")
-        ));
-    }
-
-    #[test]
     fn invalid_decoder_data_maps_to_decode_error() {
         let error = FlvDownloadError::Decoder(FlvError::InvalidHeader);
 

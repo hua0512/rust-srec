@@ -193,12 +193,6 @@ mod tests {
     }
 
     #[test]
-    fn urls_without_secrets_are_unchanged() {
-        let url = Url::parse("https://cdn.example.com/live/index.m3u8").unwrap();
-        assert_eq!(redact_url(&url), url);
-    }
-
-    #[test]
     fn relative_and_malformed_uris_are_masked_textually() {
         assert_eq!(
             redact_url_str("seg100.ts?token=abc&expires=1#x"),

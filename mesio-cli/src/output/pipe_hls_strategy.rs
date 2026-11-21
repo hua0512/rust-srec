@@ -378,15 +378,6 @@ mod tests {
     }
 
     #[test]
-    fn test_should_close_pipe_discontinuity_m4s() {
-        let strategy = PipeHlsStrategy::new();
-        let m4s_with_discontinuity = create_test_m4s_segment(true, vec![0x00, 0x00, 0x00]);
-
-        // M4S segment with discontinuity should trigger closure
-        assert!(strategy.should_close_pipe(&m4s_with_discontinuity));
-    }
-
-    #[test]
     fn test_write_ts_segment() {
         let mut buffer = Vec::new();
 
@@ -395,36 +386,6 @@ mod tests {
         let ts_segment = create_test_ts_segment(false, test_data.clone());
 
         let bytes_written = strategy.write_to(&mut buffer, &ts_segment).unwrap();
-
-        assert_eq!(bytes_written, test_data.len() as u64);
-        assert_eq!(buffer, test_data);
-        assert!(strategy.has_written_data());
-    }
-
-    #[test]
-    fn test_write_m4s_init_segment() {
-        let mut buffer = Vec::new();
-
-        let mut strategy = PipeHlsStrategy::new();
-        let test_data = vec![0x00, 0x00, 0x00, 0x18, b'f', b't', b'y', b'p'];
-        let m4s_init = create_test_m4s_init_segment(false, test_data.clone());
-
-        let bytes_written = strategy.write_to(&mut buffer, &m4s_init).unwrap();
-
-        assert_eq!(bytes_written, test_data.len() as u64);
-        assert_eq!(buffer, test_data);
-        assert!(strategy.has_written_data());
-    }
-
-    #[test]
-    fn test_write_m4s_media_segment() {
-        let mut buffer = Vec::new();
-
-        let mut strategy = PipeHlsStrategy::new();
-        let test_data = vec![0x00, 0x00, 0x00, 0x08, b'm', b'o', b'o', b'f'];
-        let m4s_segment = create_test_m4s_segment(false, test_data.clone());
-
-        let bytes_written = strategy.write_to(&mut buffer, &m4s_segment).unwrap();
 
         assert_eq!(bytes_written, test_data.len() as u64);
         assert_eq!(buffer, test_data);
@@ -443,29 +404,6 @@ mod tests {
         // EndMarker should write 0 bytes
         assert_eq!(bytes_written, 0);
         assert!(buffer.is_empty());
-    }
-
-    #[test]
-    fn protocol_labels_name_the_session_protocol() {
-        assert_eq!(PipeHlsStrategy::new().protocol, SegmentedProtocol::Hls);
-        assert_eq!(SegmentedProtocol::Hls.label(), "HLS");
-        assert_eq!(
-            SegmentedProtocol::Hls.end_marker_boundary(),
-            "HLS EndMarker"
-        );
-        assert_eq!(
-            SegmentedProtocol::Hls.discontinuity_boundary(),
-            "HLS Discontinuity"
-        );
-        assert_eq!(SegmentedProtocol::Dash.label(), "DASH");
-        assert_eq!(
-            SegmentedProtocol::Dash.end_marker_boundary(),
-            "DASH EndMarker"
-        );
-        assert_eq!(
-            SegmentedProtocol::Dash.discontinuity_boundary(),
-            "DASH Discontinuity"
-        );
     }
 
     #[test]

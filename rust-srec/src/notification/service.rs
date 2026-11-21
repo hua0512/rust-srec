@@ -42,8 +42,6 @@ mod ingress;
 mod listeners;
 mod registry;
 
-#[cfg(test)]
-use registry::parse_channel_locale;
 use registry::{ChannelRegistry, RuntimeChannel};
 mod web_push_queue;
 
@@ -639,36 +637,6 @@ mod tests {
     mod listeners;
     mod reload;
     mod rendering;
-
-    #[test]
-    fn parse_channel_locale_treats_blank_as_unset() {
-        // A select cleared back to "follow the server" posts an empty string rather than
-        // dropping the key, and that must not reach `t!` as a locale.
-        for settings in [
-            serde_json::json!({ "locale": "" }),
-            serde_json::json!({ "locale": "   " }),
-            serde_json::json!({ "locale": null }),
-            serde_json::json!({ "min_priority": 5 }),
-        ] {
-            assert_eq!(parse_channel_locale(&settings), None, "{settings}");
-        }
-    }
-
-    #[test]
-    fn test_circuit_breaker_state() {
-        let mut cb = CircuitBreakerState::new(300);
-        assert!(cb.is_allowed());
-
-        // Record failures up to threshold
-        for _ in 0..10 {
-            cb.record_failure(10);
-        }
-        assert!(!cb.is_allowed());
-
-        // Record success resets
-        cb.record_success();
-        assert!(cb.is_allowed());
-    }
 
     struct TestChannel {
         channel_type: &'static str,

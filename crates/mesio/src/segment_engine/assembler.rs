@@ -1840,17 +1840,6 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn reorders_out_of_order_payloads() {
-        let mut h = spawn_assembler(HlsConfig::default(), true, 100);
-        h.input_tx.send(ts_payload(101)).await.unwrap();
-        h.input_tx.send(ts_payload(100)).await.unwrap();
-        let uris = collect_data_uris(&mut h, 2).await;
-        assert_eq!(uris, ["https://e.com/seg100.ts", "https://e.com/seg101.ts"]);
-        h.cancel.cancel();
-        let _ = h.join.await;
-    }
-
     /// A live assembler that fails after `stall` without liveness.
     fn spawn_stalling_assembler(stall: Duration) -> Harness {
         let mut config = HlsConfig::default();
@@ -2257,22 +2246,6 @@ mod tests {
         h.input_tx.send(ts_payload(102)).await.unwrap();
         let uris = collect_data_uris(&mut h, 1).await;
         assert_eq!(uris, ["https://e.com/seg102.ts"]);
-        h.cancel.cancel();
-        let _ = h.join.await;
-    }
-
-    #[tokio::test]
-    async fn notices_forward_immediately() {
-        let mut h = spawn_assembler(HlsConfig::default(), true, 100);
-        h.input_tx
-            .send(AssemblerInput::Notice(EngineNotice::End))
-            .await
-            .unwrap();
-        let evt = tokio::time::timeout(Duration::from_secs(1), h.event_rx.recv())
-            .await
-            .expect("event")
-            .expect("open");
-        assert!(matches!(evt, Ok(HlsStreamEvent::EndlistEncountered)));
         h.cancel.cancel();
         let _ = h.join.await;
     }

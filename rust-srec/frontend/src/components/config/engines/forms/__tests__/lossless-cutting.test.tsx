@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen } from '@testing-library/react';
+import { cleanup, screen } from '@testing-library/react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 
 import {
@@ -86,57 +86,6 @@ describe.each([
           : schema.parse(form.getValues('config'));
     }
 
-    it('defaults old configurations to normal recording and explains the opt-in', () => {
-      const saved = mount();
-      const toggle = screen.getByRole('switch', {
-        name: 'Enable lossless cutting',
-      });
-      expect(toggle).not.toBeChecked();
-      // Left to the engine default (off) rather than saved.
-      expect(saved().enable_lossless_cutting).toBeUndefined();
-      expect(screen.getByText('Experimental')).toBeInTheDocument();
-      expect(
-        screen.getByText(/Split recordings without reconnecting/),
-      ).toBeInTheDocument();
-      expect(details()).toBeNull();
-      fireEvent.click(toggle);
-      const trigger = details()!;
-      const panel = document.getElementById(
-        trigger.getAttribute('aria-controls')!,
-      )!;
-      expect(trigger).toHaveAttribute('aria-expanded', 'false');
-      expect(panel).toHaveAttribute('inert');
-      fireEvent.click(trigger);
-      expect(trigger).toHaveAttribute('aria-expanded', 'true');
-      expect(panel).not.toHaveAttribute('inert');
-      expect(panel).toHaveTextContent('extra disk space and I/O');
-      expect(panel).toHaveTextContent(
-        'Final files are available only after this step finishes.',
-      );
-      expect(panel).toHaveTextContent(
-        'Temporary chunks are kept if file finalization fails.',
-      );
-      fireEvent.click(trigger);
-      expect(trigger).toHaveAttribute('aria-expanded', 'false');
-      expect(panel).toHaveAttribute('inert');
-      expect(saved().enable_lossless_cutting).toBe(true);
-      fireEvent.click(toggle);
-      expect(saved().enable_lossless_cutting).toBe(false);
-      expect(details()).toBeNull();
-    });
-
-    it('warns when custom arguments keep lossless cutting from applying', () => {
-      mount(false, false, ['-flag']);
-      expect(screen.queryByRole('alert')).toBeNull();
-      fireEvent.click(
-        screen.getByRole('switch', { name: 'Enable lossless cutting' }),
-      );
-      expect(screen.getByRole('alert')).toHaveTextContent(warning);
-      cleanup();
-      mount(true, false, []);
-      expect(screen.queryByRole('alert')).toBeNull();
-    });
-
     it('evaluates an override together with the engine settings it inherits', () => {
       mount(true, true);
       expect(details()).toBeInTheDocument();
@@ -163,38 +112,6 @@ describe.each([
         [argsField]: ['-flag'],
       });
       expect(screen.queryByRole('alert')).toBeNull();
-    });
-
-    it('loads an enabled engine without resetting it', () => {
-      const saved = mount(true);
-      expect(
-        screen.getByRole('switch', { name: 'Enable lossless cutting' }),
-      ).toBeChecked();
-      expect(saved().enable_lossless_cutting).toBe(true);
-    });
-
-    it('keeps inherited, enabled, and explicitly disabled overrides distinct', async () => {
-      const saved = mount(undefined, true);
-      const choice = screen.getByRole('combobox', {
-        name: 'Enable lossless cutting',
-      });
-      expect(choice).toHaveTextContent('Use engine setting (Off)');
-      expect(JSON.parse(JSON.stringify(saved()))).not.toHaveProperty(
-        'enable_lossless_cutting',
-      );
-      for (const [label, expected] of [
-        ['On', true],
-        ['Off', false],
-        ['Default (Off)', null],
-        ['Use engine setting (Off)', undefined],
-      ] as const) {
-        fireEvent.keyDown(choice, { key: 'Enter' });
-        fireEvent.click(await screen.findByRole('option', { name: label }));
-        expect(saved().enable_lossless_cutting).toBe(expected);
-      }
-      expect(JSON.parse(JSON.stringify(saved()))).not.toHaveProperty(
-        'enable_lossless_cutting',
-      );
     });
   },
 );

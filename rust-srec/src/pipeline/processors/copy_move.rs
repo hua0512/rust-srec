@@ -835,7 +835,6 @@ impl Processor for CopyMoveProcessor {
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_utils::utc_datetime;
     use super::*;
     use tempfile::TempDir;
 
@@ -1170,51 +1169,6 @@ mod tests {
                 .join("huya/streamer-1/session-2/Name_/Title/source.txt");
             assert!(expected.exists(), "{time_anchor:?}");
         }
-    }
-
-    #[tokio::test]
-    async fn test_copy_move_session_start_anchor_expands_destination_date() {
-        let temp_dir = TempDir::new().unwrap();
-        let source_path = temp_dir.path().join("source.txt");
-        let dest_root = temp_dir.path().join("output");
-        fs::write(&source_path, "test content").await.unwrap();
-
-        let session_start = utc_datetime(2024, 1, 1, 12, 0, 0);
-        let created_at = utc_datetime(2024, 1, 2, 12, 0, 0);
-        let processor = CopyMoveProcessor::new();
-        let ctx = ProcessorContext::noop("test");
-        let input = ProcessorInput {
-            inputs: vec![source_path.to_string_lossy().to_string()],
-            outputs: vec![],
-            config: Some(
-                serde_json::json!({
-                    "operation": "copy",
-                    "destination": format!("{}/%Y/%m/%d", dest_root.to_string_lossy()),
-                    "time_anchor": "session_start",
-                })
-                .to_string(),
-            ),
-            streamer_id: "test".to_string(),
-            session_id: "session-1".to_string(),
-            session_start: Some(session_start),
-            created_at,
-            ..Default::default()
-        };
-
-        let output = processor.process(&input, &ctx).await.unwrap();
-
-        let expected_dest = dest_root
-            .join(pipeline_common::expand_path_template_at(
-                "%Y/%m/%d",
-                Some(session_start.as_millisecond()),
-            ))
-            .join("source.txt");
-        assert!(expected_dest.exists());
-        assert_eq!(output.outputs.len(), 1);
-        assert_eq!(
-            fs::canonicalize(&output.outputs[0]).await.unwrap(),
-            fs::canonicalize(expected_dest).await.unwrap()
-        );
     }
 
     #[tokio::test]

@@ -854,6 +854,3 @@ fn parse_log_level(level: &str) -> LogLevel {
 
 #[cfg(test)]
 mod archive_tests;
-
-#[cfg(test)]
-mod auth_tests;

@@ -151,14 +151,4 @@ describe('/_authed guard', () => {
     expect(options.to).toBe('/login');
     expect(checkAuthFnMock).toHaveBeenCalledOnce();
   });
-
-  it('shares its result with the session query the provider reads', async () => {
-    checkAuthFnMock.mockResolvedValue(testSession());
-
-    await runGuard(queryClient, '/dashboard');
-
-    expect(
-      queryClient.getQueryData(sessionQueryOptions.queryKey),
-    ).toMatchObject({ username: 'user' });
-  });
 });

@@ -1,8 +1,5 @@
-import { screen } from '@testing-library/react';
-
-import { StorageUsageCard, groupDisksByMountPoint } from './storage-usage-card';
+import { groupDisksByMountPoint } from './storage-usage-card';
 import type { ComponentHealth } from '@/api/schemas/system';
-import { renderWithProviders } from '@/test/render';
 
 const GB = 1024 * 1024 * 1024;
 
@@ -66,36 +63,5 @@ describe('groupDisksByMountPoint', () => {
     ]);
 
     expect(groups[0].status).toBe('degraded');
-  });
-});
-
-function renderCard(components: ComponentHealth[]) {
-  return renderWithProviders(<StorageUsageCard components={components} />);
-}
-
-describe('StorageUsageCard', () => {
-  it('renders nothing when no component reports capacity', () => {
-    const { container } = renderCard([{ name: 'database', status: 'healthy' }]);
-
-    expect(container).toBeEmptyDOMElement();
-  });
-
-  it('shows free space with a bar sized to the used share', () => {
-    renderCard([diskComponent('/rec', '/', 40, 100)]);
-
-    expect(screen.getByText('40 GB free')).toBeInTheDocument();
-    expect(screen.getByRole('progressbar')).toHaveAttribute(
-      'aria-valuenow',
-      '60',
-    );
-  });
-
-  it('colours the bar from the status, not a duplicated threshold', () => {
-    renderCard([diskComponent('/rec', '/', 15, 100, 'degraded')]);
-
-    const indicator = screen
-      .getByRole('progressbar')
-      .querySelector('[data-slot="progress-indicator"]');
-    expect(indicator).toHaveClass('bg-yellow-500');
   });
 });

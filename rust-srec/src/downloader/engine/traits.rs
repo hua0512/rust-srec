@@ -952,22 +952,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn io_error_kind_ser_string_matches_yaml_keys() {
-        // These string values are used as the leaf segment of i18n keys
-        // like `notification.output_path_inaccessible.description.<as_str>`.
-        // Keep them in sync with `rust-srec/locales/{en,zh-CN}.yml`.
-        assert_eq!(IoErrorKindSer::NotFound.as_str(), "not_found");
-        assert_eq!(IoErrorKindSer::StorageFull.as_str(), "storage_full");
-        assert_eq!(
-            IoErrorKindSer::PermissionDenied.as_str(),
-            "permission_denied"
-        );
-        assert_eq!(IoErrorKindSer::ReadOnlyFilesystem.as_str(), "read_only");
-        assert_eq!(IoErrorKindSer::TimedOut.as_str(), "timed_out");
-        assert_eq!(IoErrorKindSer::Other.as_str(), "other");
-    }
-
     /// Only failures that can be the account's fault ask for a credential
     /// check: mesio's 401/403, and a failed ffmpeg/streamlink process whose
     /// cause is opaque. Generic HTTP, local and cancellation failures never

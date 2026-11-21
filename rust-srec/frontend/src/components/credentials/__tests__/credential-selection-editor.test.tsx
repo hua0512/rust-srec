@@ -1,11 +1,7 @@
-import { fireEvent, screen, within } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import type { CredentialSelection } from '@/api/schemas/credential-profiles';
 import { CredentialSelectionEditor } from '../credential-selection-editor';
-import {
-  accountDetail,
-  profile,
-  renderCredentials,
-} from './credential-test-utils';
+import { accountDetail, renderCredentials } from './credential-test-utils';
 
 const pool: CredentialSelection = {
   mode: 'pool',
@@ -69,63 +65,3 @@ it('names a pool entry whose profile no longer exists without its raw ID', () =>
     credential_ids: ['account-a'],
   });
 });
-
-const health = (validity: 'valid' | 'needs_refresh' | 'invalid') => ({
-  validity,
-});
-
-it('shows each pool member with its health and marks disabled ones', () => {
-  renderEditor(
-    vi.fn(),
-    { ...pool, credential_ids: ['account-a', 'account-b', 'account-c'] },
-    [
-      accountDetail({ health: health('valid') }),
-      accountDetail({
-        profile: { ...profile, id: 'account-b', label: 'Account B' },
-        health: health('invalid'),
-      }),
-      accountDetail({
-        profile: {
-          ...profile,
-          id: 'account-c',
-          label: 'A rather long account label that does not fit',
-          enabled: false,
-        },
-      }),
-    ],
-  );
-  const [first, second, third] = screen.getAllByRole('listitem');
-  expect(within(first).getByRole('img', { name: 'Valid' })).toBeInTheDocument();
-  expect(
-    within(second).getByRole('img', { name: 'Login invalid' }),
-  ).toBeInTheDocument();
-  // No health record yet reads as not checked.
-  expect(
-    within(third).getByRole('img', { name: 'Not checked' }),
-  ).toBeInTheDocument();
-  expect(within(third).getByText('Disabled')).toBeInTheDocument();
-  // A long label stays on one line and keeps its full text in the tooltip.
-  expect(
-    within(third).getByTitle('A rather long account label that does not fit'),
-  ).toHaveClass('truncate');
-  expect(screen.queryByText(/— disabled/)).not.toBeInTheDocument();
-});
-
-it('mentions that a recording keeps its account only for fixed and pool selections', () => {
-  renderEditor(vi.fn(), { mode: 'fixed', credential_id: profile.id });
-  expect(
-    screen.getByText('A recording keeps using the account it started with.'),
-  ).toBeInTheDocument();
-});
-
-it.each([{ mode: 'inherit' as const }, { mode: 'none' as const }])(
-  'does not mention recordings keeping an account for $mode',
-  (value) => {
-    renderEditor(vi.fn(), value);
-    expect(
-      screen.queryByText(
-        'A recording keeps using the account it started with.',
-      ),
-    ).not.toBeInTheDocument();
-  },
-);

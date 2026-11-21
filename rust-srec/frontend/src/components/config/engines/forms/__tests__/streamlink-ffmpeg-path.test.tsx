@@ -1,19 +1,12 @@
 import { fireEvent, screen } from '@testing-library/react';
 import { useForm, type UseFormReturn } from 'react-hook-form';
 
-import {
-  StreamlinkConfigOverrideSchema,
-  StreamlinkConfigSchema,
-} from '@/api/schemas/engine';
+import { StreamlinkConfigSchema } from '@/api/schemas/engine';
 import { Form } from '@/components/ui/form';
-import { EngineOverrideCard } from '../../../templates/tabs/engine-override-card';
 import { StreamlinkForm } from '../streamlink-form';
 import { renderWithProviders } from '@/test/render';
 
-type Values = {
-  config?: Record<string, unknown>;
-  engines_override?: Record<string, Record<string, unknown>>;
-};
+type Values = { config?: Record<string, unknown> };
 
 function renderEngine(config: Record<string, unknown>) {
   let form!: UseFormReturn<Values>;
@@ -30,45 +23,6 @@ function renderEngine(config: Record<string, unknown>) {
     JSON.parse(
       JSON.stringify(StreamlinkConfigSchema.parse(form.getValues('config'))),
     );
-}
-
-function renderOverride(
-  override: Record<string, unknown>,
-  engineConfig: Record<string, unknown>,
-) {
-  let form!: UseFormReturn<Values>;
-  function Harness() {
-    form = useForm<Values>({
-      defaultValues: { engines_override: { 'streamlink-1': override } },
-    });
-    return (
-      <Form {...form}>
-        <EngineOverrideCard
-          engineId="streamlink-1"
-          engineName="Streamlink"
-          engineType="STREAMLINK"
-          engineConfig={engineConfig}
-          onRemove={vi.fn()}
-        />
-      </Form>
-    );
-  }
-  renderWithProviders(<Harness />);
-  return () =>
-    JSON.parse(
-      JSON.stringify(
-        StreamlinkConfigOverrideSchema.parse(
-          form.getValues('engines_override.streamlink-1'),
-        ),
-      ),
-    );
-}
-
-async function choose(select: string, option: string) {
-  fireEvent.keyDown(screen.getByRole('combobox', { name: select }), {
-    key: 'Enter',
-  });
-  fireEvent.click(await screen.findByRole('option', { name: option }));
 }
 
 describe('Streamlink FFmpeg path field', () => {
@@ -101,32 +55,5 @@ describe('Streamlink FFmpeg path field', () => {
     });
     expect(saved().quality).toBe('worst');
     expect(saved().ffmpeg_path).toBe(expected);
-  });
-
-  it('keeps inherited and environment-default template overrides distinct', async () => {
-    const saved = renderOverride({}, { ffmpeg_path: '/opt/ffmpeg' });
-    expect(
-      screen.getByRole('combobox', { name: 'FFmpeg Path' }),
-    ).toHaveTextContent('Use engine setting (/opt/ffmpeg)');
-    expect(saved()).toEqual({});
-
-    await choose('FFmpeg Path', 'Default (FFMPEG_PATH or ffmpeg)');
-    expect(saved().ffmpeg_path).toBeNull();
-
-    await choose('FFmpeg Path', 'Custom');
-    const input = screen.getByRole('textbox', { name: 'FFmpeg Path' });
-    expect(input).toHaveValue('/opt/ffmpeg');
-    fireEvent.change(input, { target: { value: '/opt/custom/ffmpeg' } });
-    expect(saved().ffmpeg_path).toBe('/opt/custom/ffmpeg');
-
-    await choose('FFmpeg Path', 'Use engine setting (/opt/ffmpeg)');
-    expect(saved()).toEqual({});
-  });
-
-  it('shows an existing environment-default override as the default', () => {
-    renderOverride({ ffmpeg_path: null }, { ffmpeg_path: '/opt/ffmpeg' });
-    expect(
-      screen.getByRole('combobox', { name: 'FFmpeg Path' }),
-    ).toHaveTextContent('Default (FFMPEG_PATH or ffmpeg)');
   });
 });

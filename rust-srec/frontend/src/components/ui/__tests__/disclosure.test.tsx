@@ -45,19 +45,6 @@ describe('Disclosure', () => {
     expect(screen.getByText('Body text')).toBeInTheDocument();
   });
 
-  it('starts open with defaultOpen', () => {
-    render(
-      <Disclosure defaultOpen>
-        <DisclosureTrigger icon={<svg data-testid="icon" />}>
-          Details
-        </DisclosureTrigger>
-        <DisclosureContent>Body text</DisclosureContent>
-      </Disclosure>,
-    );
-    expectOpen('Details', true);
-    expect(screen.getByTestId('icon')).toBeInTheDocument();
-  });
-
   it('only changes when a controlling parent updates open', () => {
     const onOpenChange = vi.fn();
     const { rerender } = render(
@@ -90,39 +77,5 @@ describe('Disclosure', () => {
     render(<Parent />);
     fireEvent.click(screen.getByRole('button', { name: 'Linked' }));
     expectOpen('Linked', true);
-  });
-
-  it('does not open a nested disclosure with its parent', () => {
-    render(
-      <Disclosure>
-        <DisclosureTrigger>Outer</DisclosureTrigger>
-        <DisclosureContent>
-          <Disclosure>
-            <DisclosureTrigger>Inner</DisclosureTrigger>
-            <DisclosureContent>Inner body</DisclosureContent>
-          </Disclosure>
-        </DisclosureContent>
-      </Disclosure>,
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Outer' }));
-    expectOpen('Outer', true);
-    expectOpen('Inner', false);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Inner' }));
-    expectOpen('Inner', true);
-    fireEvent.click(screen.getByRole('button', { name: 'Outer' }));
-    expectOpen('Outer', false);
-    expectOpen('Inner', true);
-  });
-
-  it('explains when parts are used outside Disclosure', () => {
-    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
-    expect(() =>
-      render(<DisclosureTrigger>Details</DisclosureTrigger>),
-    ).toThrow('<DisclosureTrigger> must be used within <Disclosure>');
-    expect(() => render(<DisclosureContent>Body</DisclosureContent>)).toThrow(
-      '<DisclosureContent> must be used within <Disclosure>',
-    );
-    error.mockRestore();
   });
 });

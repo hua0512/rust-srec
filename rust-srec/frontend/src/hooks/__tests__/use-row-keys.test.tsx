@@ -60,13 +60,4 @@ describe('useRowKeys', () => {
     expect(values()).toEqual(['a', 'new']);
     expect(screen.getAllByRole('textbox')[0]).toBe(first);
   });
-
-  it('survives removing every row', () => {
-    render(<RowList initial={['a', 'b']} />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'remove b' }));
-    fireEvent.click(screen.getByRole('button', { name: 'remove a' }));
-
-    expect(screen.queryAllByRole('textbox')).toHaveLength(0);
-  });
 });

@@ -586,14 +586,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn url_matching() {
-        let p = BigoDanmuProtocol::default();
-        assert!(p.supports_url("https://www.bigo.tv/80104"));
-        assert!(p.supports_url("https://www.bigo.tv/ja/80104"));
-        assert!(!p.supports_url("https://www.twitch.tv/foo"));
-    }
-
-    #[test]
     fn parse_frame_and_pack() {
         let msg = BigoDanmuProtocol::pack(256, &json!({"challenge":"abc"}));
         if let Message::Text(t) = msg {

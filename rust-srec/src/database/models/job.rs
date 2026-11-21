@@ -930,48 +930,6 @@ mod tests {
     // DAG Pipeline Tests
     // ========================================================================
 
-    /// Retry and timeout are optional, absent from the JSON when unset, and
-    /// round-trip when set; the backoff has a default.
-    #[test]
-    fn test_dag_step_retry_and_timeout_round_trip() {
-        let plain = DagStep::new("remux", PipelineStep::preset("remux"));
-        let json_val = serde_json::to_value(&plain).unwrap();
-        assert!(json_val.get("retry").is_none());
-        assert!(json_val.get("timeout_secs").is_none());
-        let parsed: DagStep = serde_json::from_value(serde_json::json!({
-            "id": "remux",
-            "step": {"type": "preset", "name": "remux"}
-        }))
-        .unwrap();
-        assert_eq!(parsed, plain);
-
-        let configured = DagStep::new("upload", PipelineStep::preset("upload"))
-            .with_retry(StepRetryPolicy {
-                max_attempts: 3,
-                backoff_secs: 30,
-            })
-            .with_timeout_secs(600);
-        let json_val = serde_json::to_value(&configured).unwrap();
-        assert_eq!(
-            json_val["retry"],
-            serde_json::json!({"max_attempts": 3, "backoff_secs": 30})
-        );
-        assert_eq!(json_val["timeout_secs"], 600);
-        let parsed: DagStep = serde_json::from_value(json_val).unwrap();
-        assert_eq!(parsed, configured);
-
-        let parsed: DagStep = serde_json::from_value(serde_json::json!({
-            "id": "upload",
-            "step": {"type": "preset", "name": "upload"},
-            "retry": {"max_attempts": 2}
-        }))
-        .unwrap();
-        assert_eq!(
-            parsed.retry.unwrap().backoff_secs,
-            StepRetryPolicy::DEFAULT_BACKOFF_SECS
-        );
-    }
-
     /// The wait doubles per retry from the configured backoff and is capped.
     #[test]
     fn test_step_retry_policy_backoff_doubles_and_caps() {

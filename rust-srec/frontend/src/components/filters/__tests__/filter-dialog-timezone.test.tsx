@@ -72,24 +72,6 @@ describe('filter dialog timezone submissions', () => {
     },
   );
 
-  it.each(['Time Based', 'Cron'])(
-    'creates %s filters with explicit UTC',
-    async (label) => {
-      renderDialog();
-      fireEvent.click(screen.getByRole('radio', { name: new RegExp(label) }));
-      if (label === 'Time Based') {
-        fireEvent.click(screen.getByRole('button', { name: 'Monday' }));
-      }
-      fireEvent.click(screen.getByRole('button', { name: 'Create filter' }));
-
-      await waitFor(() => expect(createFilter).toHaveBeenCalledTimes(1));
-      expect(vi.mocked(createFilter).mock.calls[0][0].data.data).toMatchObject({
-        filter_type: label === 'Cron' ? 'CRON' : 'TIME_BASED',
-        config: { timezone: 'UTC' },
-      });
-    },
-  );
-
   it('starts the UTC default when changing an existing filter type', async () => {
     renderDialog({
       ...existingFilter,

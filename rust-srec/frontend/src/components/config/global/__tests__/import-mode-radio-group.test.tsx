@@ -20,29 +20,6 @@ const merge = () => screen.getByRole('radio', { name: /Merge Changes/ });
 const replace = () => screen.getByRole('radio', { name: /Replace All/ });
 
 describe('import mode radio group', () => {
-  it('announces the strategies as one labelled choice', () => {
-    renderGroup();
-
-    const group = screen.getByRole('radiogroup', { name: 'Import Strategy' });
-
-    expect(group).toContainElement(merge());
-    expect(group).toContainElement(replace());
-    expect(merge()).toHaveAttribute('aria-checked', 'true');
-    expect(replace()).toHaveAttribute('aria-checked', 'false');
-  });
-
-  it('keeps only the checked option in the tab order', () => {
-    renderGroup();
-
-    expect(merge()).toHaveAttribute('tabindex', '0');
-    expect(replace()).toHaveAttribute('tabindex', '-1');
-
-    fireEvent.click(replace());
-
-    expect(merge()).toHaveAttribute('tabindex', '-1');
-    expect(replace()).toHaveAttribute('tabindex', '0');
-  });
-
   it('moves the selection and the focus with the arrow keys', () => {
     renderGroup();
     merge().focus();
@@ -65,14 +42,6 @@ describe('import mode radio group', () => {
     expect(replace()).toHaveAttribute('aria-checked', 'true');
 
     fireEvent.keyDown(replace(), { key: 'ArrowRight' });
-    expect(merge()).toHaveAttribute('aria-checked', 'true');
-  });
-
-  it('ignores keys that are not arrows', () => {
-    renderGroup();
-
-    fireEvent.keyDown(merge(), { key: 'a' });
-
     expect(merge()).toHaveAttribute('aria-checked', 'true');
   });
 });

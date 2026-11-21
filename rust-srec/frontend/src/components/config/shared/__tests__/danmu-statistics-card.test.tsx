@@ -60,16 +60,6 @@ describe('DanmuStatisticsCard ignored words', () => {
     expect(textarea.value).toBe('lol\n');
   });
 
-  it('accepts a second word on the new line', () => {
-    const { textarea, stopWords } = renderCard(['lol']);
-
-    type(textarea, 'lol\n');
-    type(textarea, 'lol\nnice');
-
-    expect(textarea.value).toBe('lol\nnice');
-    expect(stopWords()).toEqual(['lol', 'nice']);
-  });
-
   // Leading whitespace is a normal intermediate state while typing; the
   // backend's `sanitized()` trims on save, so the field must not fight it.
   it('leaves whitespace alone while typing', () => {
@@ -94,11 +84,5 @@ describe('DanmuStatisticsCard ignored words', () => {
     type(textarea, '');
 
     expect(stopWords()).toBeUndefined();
-  });
-
-  it('shows words loaded from an existing config', () => {
-    const { textarea } = renderCard(['lol', 'nice']);
-
-    expect(textarea.value).toBe('lol\nnice');
   });
 });

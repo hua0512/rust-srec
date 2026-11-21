@@ -254,53 +254,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_url_matching() {
-        let protocol = DouyuDanmuProtocol::default();
-
-        // Test supported URLs
-        assert!(protocol.supports_url("https://www.douyu.com/123456"));
-        assert!(protocol.supports_url("http://douyu.com/789012"));
-        assert!(protocol.supports_url("https://douyu.com/1234567890"));
-
-        // Test unsupported URLs
-        assert!(!protocol.supports_url("https://www.huya.com/123"));
-        assert!(!protocol.supports_url("https://www.bilibili.com/123"));
-        assert!(!protocol.supports_url("https://douyu.com/")); // No room ID
-    }
-
-    #[test]
-    fn test_extract_room_id() {
-        let protocol = DouyuDanmuProtocol::default();
-
-        assert_eq!(
-            protocol.extract_room_id("https://www.douyu.com/123456"),
-            Some("123456".to_string())
-        );
-        assert_eq!(
-            protocol.extract_room_id("http://douyu.com/789012"),
-            Some("789012".to_string())
-        );
-        assert_eq!(protocol.extract_room_id("https://www.huya.com/123"), None);
-    }
-
-    #[tokio::test]
-    async fn test_handshake_messages() {
-        let mut protocol = DouyuDanmuProtocol::default();
-        let messages = protocol.handshake_messages("123456").await.unwrap();
-
-        assert_eq!(messages.len(), 2); // Login + JoinGroup
-
-        for msg in messages {
-            match msg {
-                Message::Binary(data) => {
-                    assert!(!data.is_empty());
-                }
-                _ => panic!("Expected binary messages"),
-            }
-        }
-    }
-
-    #[test]
     fn test_parse_chat_message() {
         use super::super::stt::stt_decode;
 

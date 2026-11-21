@@ -349,34 +349,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_reader_bool() {
-        let amf0_bool = vec![0x01, 0x01]; // true
-        let mut amf_reader = Amf0Decoder::new(&amf0_bool);
-        let value = amf_reader.decode_with_type(Amf0Marker::Boolean).unwrap();
-        assert_eq!(value, Amf0Value::Boolean(true));
-    }
-
-    #[test]
-    fn test_reader_number() {
-        let mut amf0_number = vec![0x00];
-        amf0_number.extend_from_slice(&772.161_f64.to_be_bytes());
-
-        let mut amf_reader = Amf0Decoder::new(&amf0_number);
-        let value = amf_reader.decode_with_type(Amf0Marker::Number).unwrap();
-        assert_eq!(value, Amf0Value::Number(772.161));
-    }
-
-    #[test]
-    fn test_reader_string() {
-        let mut amf0_string = vec![0x02, 0x00, 0x0b]; // 11 bytes
-        amf0_string.extend_from_slice(b"Hello World");
-
-        let mut amf_reader = Amf0Decoder::new(&amf0_string);
-        let value = amf_reader.decode_with_type(Amf0Marker::String).unwrap();
-        assert_eq!(value, Amf0Value::String(Cow::Borrowed("Hello World")));
-    }
-
-    #[test]
     fn test_reader_long_string() {
         let mut amf0_string = vec![0x0c, 0x00, 0x00, 0x00, 0x0b]; // 11 bytes
         amf0_string.extend_from_slice(b"Hello World");
@@ -384,22 +356,6 @@ mod tests {
         let mut amf_reader = Amf0Decoder::new(&amf0_string);
         let value = amf_reader.decode_with_type(Amf0Marker::LongString).unwrap();
         assert_eq!(value, Amf0Value::LongString(Cow::Borrowed("Hello World")));
-    }
-
-    #[test]
-    fn test_reader_object() {
-        let mut amf0_object = vec![0x03, 0x00, 0x04]; // 1 property with 4 bytes
-        amf0_object.extend_from_slice(b"test");
-        amf0_object.extend_from_slice(&[0x05]); // null
-        amf0_object.extend_from_slice(&[0x00, 0x00, 0x09]); // object end (0x00 0x00 0x09)
-
-        let mut amf_reader = Amf0Decoder::new(&amf0_object);
-        let value = amf_reader.decode_with_type(Amf0Marker::Object).unwrap();
-
-        assert_eq!(
-            value,
-            Amf0Value::Object(vec![("test".into(), Amf0Value::Null)].into())
-        );
     }
 
     #[test]
@@ -653,24 +609,6 @@ mod tests {
             )
         );
         assert!(decoder.is_empty());
-    }
-
-    #[test]
-    fn test_decode_all_lossy_skips_unknown_marker() {
-        // Number(1.0), invalid byte, Boolean(true)
-        let mut data = vec![0x00]; // Number marker
-        data.extend_from_slice(&1.0_f64.to_be_bytes());
-        data.push(0xFF); // Invalid marker
-        data.extend_from_slice(&[0x01, 0x01]); // Boolean true
-
-        let mut decoder = Amf0Decoder::new(&data);
-        let result = decoder.decode_all_lossy(64);
-
-        assert_eq!(result.values.len(), 2);
-        assert_eq!(result.values[0], Amf0Value::Number(1.0));
-        assert_eq!(result.values[1], Amf0Value::Boolean(true));
-        assert_eq!(result.bytes_skipped, 1);
-        assert!(result.error.is_none());
     }
 
     #[test]

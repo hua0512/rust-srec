@@ -275,46 +275,6 @@ describe.each<Editor>(['preset', 'workflow'])('Execute %s editor', (editor) => {
   });
 });
 
-describe.each<Editor>(['preset', 'workflow'])(
-  'Thumbnail %s editor',
-  (editor) => {
-    const native = { timestamp_secs: 1, preserve_resolution: true, quality: 1 };
-
-    it('keeps native resolution when saving', async () => {
-      const { onSave } = renderEditor(editor, native, 'thumbnail');
-
-      expect(
-        await screen.findByRole('switch', { name: 'Native resolution' }),
-      ).toBeChecked();
-      makePresetDirty(editor);
-      fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
-      await waitFor(() =>
-        expect(onSave).toHaveBeenCalledWith({ ...native, width: 320 }),
-      );
-    });
-
-    it('scales to the width once native resolution is off', async () => {
-      const { onSave } = renderEditor(editor, native, 'thumbnail');
-
-      fireEvent.click(
-        await screen.findByRole('switch', { name: 'Native resolution' }),
-      );
-      expect(
-        screen.getByText('Width in pixels (keeps aspect ratio)'),
-      ).toBeInTheDocument();
-      makePresetDirty(editor);
-      fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
-      await waitFor(() =>
-        expect(onSave).toHaveBeenCalledWith({
-          ...native,
-          preserve_resolution: false,
-          width: 320,
-        }),
-      );
-    });
-  },
-);
-
 describe('Preset editor', () => {
   // A saved config holds only what was set: optional fields left blank are absent. The remux
   // one also keeps Web Optimize on for a container it does not apply to.

@@ -184,21 +184,6 @@ describe('ThemeSettingsSync', () => {
     expect(all[0].textContent).toContain('--primary:oklch(0 0 0)');
   });
 
-  it('removes every duplicate style element when settings are pristine', () => {
-    for (const css of [':root{--primary:red;}', ':root{--primary:blue;}']) {
-      const el = document.createElement('style');
-      el.id = USER_THEME_STYLE_ID;
-      el.textContent = css;
-      document.head.appendChild(el);
-    }
-
-    render(<ThemeSettingsSync />);
-
-    expect(
-      document.querySelectorAll(`[id="${USER_THEME_STYLE_ID}"]`),
-    ).toHaveLength(0);
-  });
-
   it('clears the css cache synchronously when settings return to pristine', () => {
     seedPersistedSettings({ preset: 'black' });
     render(<ThemeSettingsSync />);

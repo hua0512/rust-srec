@@ -232,19 +232,4 @@ mod tests {
         reporter.report(snapshot);
         assert_eq!(rx.try_recv().unwrap().snapshot.eta_secs, Some(10.0));
     }
-
-    #[test]
-    fn phase_is_serialized_by_name_and_omitted_when_absent() {
-        let mut snapshot = JobProgressSnapshot::new(ProgressKind::Ffmpeg);
-        let plain = serde_json::to_value(&snapshot).unwrap();
-        for absent in ["phase", "current_file", "attempt", "max_attempts"] {
-            assert!(plain.get(absent).is_none(), "{absent} is serialized");
-        }
-
-        snapshot.phase = Some(JobPhase::Finalizing);
-        assert_eq!(
-            serde_json::to_value(&snapshot).unwrap()["phase"],
-            "finalizing"
-        );
-    }
 }

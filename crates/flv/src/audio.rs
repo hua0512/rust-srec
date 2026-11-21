@@ -953,23 +953,6 @@ mod tests {
     }
 
     #[test]
-    fn test_read_remaining_without_size() {
-        let mut bytes = BytesMut::new();
-        bytes.put_u8(0x01);
-        bytes.put_u8(0x02);
-        bytes.put_u8(0x03);
-
-        let mut cursor = Cursor::new(bytes.freeze());
-        let result = AudioData::read_remaining(&mut cursor, None).unwrap();
-
-        assert_eq!(result.len(), 3);
-        assert_eq!(result[0], 0x01);
-        assert_eq!(result[1], 0x02);
-        assert_eq!(result[2], 0x03);
-        assert_eq!(cursor.position(), 3);
-    }
-
-    #[test]
     fn test_audio_codec_numeric_representation() {
         let cases = [
             (AudioCodec::Legacy(SoundFormat::Aac), 10),

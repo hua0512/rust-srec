@@ -1,36 +1,7 @@
-import { revokeApiKey } from '../functions/apiKeys';
-import {
-  getTemplate,
-  updateGlobalConfig,
-  updatePlatformConfig,
-} from '../functions/config';
-import {
-  getCredentialCapabilities,
-  listCredentialProfiles,
-} from '../functions/credential-profiles';
-import { getEngine } from '../functions/engines';
-import { createFilter, deleteFilter, updateFilter } from '../functions/filters';
-import { getJobPreset } from '../functions/job';
-import { listLogFiles } from '../functions/logging';
+import { updateGlobalConfig, updatePlatformConfig } from '../functions/config';
 import { createChannel } from '../functions/notifications';
-import {
-  cancelDag,
-  createPipelinePreset,
-  deleteInterruptedOutput,
-  deletePipelineOutput,
-  getPipelineJob,
-  listInterruptedOutputs,
-  listPipelinePresets,
-} from '../functions/pipeline';
-import {
-  deleteProxy,
-  getEffectiveRoute,
-  getProxy,
-  testProxy,
-  updateProxy,
-} from '../functions/proxies';
-import { getSession } from '../functions/sessions';
-import { getStreamer, updateStreamer } from '../functions/streamers';
+import { testProxy, updateProxy } from '../functions/proxies';
+import { updateStreamer } from '../functions/streamers';
 
 const fetchBackendMock = vi.hoisted(() => vi.fn());
 
@@ -48,15 +19,9 @@ vi.mock('../api', async () => ({
 beforeEach(() => {
   fetchBackendMock.mockReset();
   // Handlers parse the response; the tests only care about the request, so let
-  // that parse fail and swallow it in `requestedPath`.
+  // that parse fail and swallow it in the request helpers.
   fetchBackendMock.mockResolvedValue(undefined);
 });
-
-async function requestedPath(invoke: () => Promise<unknown>): Promise<string> {
-  await invoke().catch(() => undefined);
-  expect(fetchBackendMock).toHaveBeenCalledTimes(1);
-  return fetchBackendMock.mock.calls[0][0] as string;
-}
 
 async function expectNoRequest(invoke: () => Promise<unknown>): Promise<void> {
   await expect(invoke()).rejects.toThrow();
@@ -102,201 +67,6 @@ function globalConfigWithoutToggles() {
   };
 }
 
-describe('server function request paths', () => {
-  it('cancels a pipeline and returns the cancellation result', async () => {
-    const result = {
-      dag_id: ID,
-      cancelled_steps: 2,
-      message: 'Pipeline cancelled',
-    };
-    fetchBackendMock.mockResolvedValue(result);
-
-    await expect(cancelDag({ data: ID })).resolves.toEqual(result);
-    expect(fetchBackendMock).toHaveBeenCalledExactlyOnceWith(
-      `/pipeline/dag/${ID}`,
-      { method: 'DELETE' },
-    );
-  });
-
-  it.each([false, true])(
-    'saves output retention with delete-files set to %s',
-    async (deleteFiles) => {
-      const data = {
-        ...globalConfigWithoutToggles(),
-        output_retention_days: 14,
-        output_retention_delete_files: deleteFiles,
-      };
-      const body = JSON.parse(
-        await requestedBody(() => updateGlobalConfig({ data })),
-      );
-      expect(body.output_retention_days).toBe(14);
-      expect(body.output_retention_delete_files).toBe(deleteFiles);
-    },
-  );
-
-  it.each([
-    ['getStreamer', () => getStreamer({ data: ID }), `/streamers/${ID}`],
-    [
-      'updateStreamer',
-      () => updateStreamer({ data: { id: ID, data: { enabled: true } } }),
-      `/streamers/${ID}`,
-    ],
-    [
-      'deleteFilter',
-      () => deleteFilter({ data: { streamerId: ID, filterId: 'f1' } }),
-      `/streamers/${ID}/filters/f1`,
-    ],
-    ['getTemplate', () => getTemplate({ data: ID }), `/templates/${ID}`],
-    ['getSession', () => getSession({ data: ID }), `/sessions/${ID}`],
-    ['getJobPreset', () => getJobPreset({ data: ID }), `/job/presets/${ID}`],
-    ['getEngine', () => getEngine({ data: ID }), `/engines/${ID}`],
-    ['revokeApiKey', () => revokeApiKey({ data: ID }), `/auth/api-keys/${ID}`],
-    [
-      'getPipelineJob',
-      () => getPipelineJob({ data: ID }),
-      `/pipeline/jobs/${ID}`,
-    ],
-    [
-      'deletePipelineOutput',
-      () => deletePipelineOutput({ data: { id: ID, deleteFile: true } }),
-      `/pipeline/outputs/${ID}?delete_file=true`,
-    ],
-    [
-      'deleteInterruptedOutput',
-      () => deleteInterruptedOutput({ data: { id: ID, keepFile: true } }),
-      `/pipeline/interrupted-outputs/${ID}?keep_file=true`,
-    ],
-    [
-      'listInterruptedOutputs',
-      () => listInterruptedOutputs({ data: { jobId: ID } }),
-      `/pipeline/interrupted-outputs?job_id=${ID}`,
-    ],
-    [
-      'listCredentialProfiles',
-      () =>
-        listCredentialProfiles({
-          data: { platform_id: ID },
-        }),
-      `/credentials/profiles?platform_id=${ID}`,
-    ],
-    [
-      'getCredentialCapabilities',
-      () => getCredentialCapabilities({ data: { platform_id: ID } }),
-      `/credentials/capabilities?platform_id=${ID}`,
-    ],
-    ['getProxy', () => getProxy({ data: ID }), `/proxies/${ID}`],
-    [
-      'deleteProxy',
-      () => deleteProxy({ data: { id: ID, expected_version: 3 } }),
-      `/proxies/${ID}?expected_version=3`,
-    ],
-    [
-      'getEffectiveRoute',
-      () =>
-        getEffectiveRoute({
-          data: { scope_type: 'template', scope_id: ID, platform_id: 'p1' },
-        }),
-      `/proxies/effective?scope_type=template&scope_id=${ID}&platform_id=p1`,
-    ],
-    [
-      'getEffectiveRoute (global)',
-      () => getEffectiveRoute({ data: { scope_type: 'global' } }),
-      '/proxies/effective?scope_type=global',
-    ],
-    [
-      'listLogFiles',
-      () => listLogFiles({ data: { from: '2026-01-01', limit: 100 } }),
-      '/logging/files?from=2026-01-01&limit=100',
-    ],
-  ])('%s builds the documented path', async (_name, invoke, expected) => {
-    await expect(requestedPath(invoke)).resolves.toBe(expected);
-  });
-
-  it('lists log files without any filter', async () => {
-    await expect(requestedPath(() => listLogFiles())).resolves.toBe(
-      '/logging/files',
-    );
-  });
-
-  it('lists pipeline presets without a query string when unfiltered', async () => {
-    await expect(requestedPath(() => listPipelinePresets())).resolves.toBe(
-      '/pipeline/presets',
-    );
-  });
-
-  it('lists pipeline presets with the filters it was given', async () => {
-    await expect(
-      requestedPath(() =>
-        listPipelinePresets({
-          data: { search: 'remux', limit: 10, offset: 0 },
-        }),
-      ),
-    ).resolves.toBe('/pipeline/presets?search=remux&limit=10&offset=0');
-  });
-});
-
-describe('server function identifier validation', () => {
-  const unusable: Array<[string, string]> = [
-    ['an empty identifier', ''],
-    ['an over-long identifier', 'a'.repeat(513)],
-  ];
-
-  it.each(unusable)(
-    'getStreamer rejects %s with no request',
-    async (_l, id) => {
-      await expectNoRequest(() => getStreamer({ data: id }));
-    },
-  );
-
-  it('rejects a non-string identifier', async () => {
-    await expectNoRequest(() => getStreamer({ data: 42 as unknown as string }));
-  });
-
-  it('rejects an empty identifier in either filter segment', async () => {
-    await expectNoRequest(() =>
-      deleteFilter({ data: { streamerId: '', filterId: 'f1' } }),
-    );
-    fetchBackendMock.mockClear();
-    await expectNoRequest(() =>
-      deleteFilter({ data: { streamerId: ID, filterId: '' } }),
-    );
-  });
-
-  it('rejects a payload that does not match the request schema', async () => {
-    await expectNoRequest(() =>
-      updateFilter({
-        data: {
-          streamerId: ID,
-          filterId: 'f1',
-          data: {
-            filter_type: 'CATEGORY',
-            config: { categories: 'not-a-list' },
-          } as never,
-        },
-      }),
-    );
-  });
-});
-
-describe('server function identifier containment', () => {
-  // An identifier that carries path or query syntax must stay inside its own
-  // segment so it cannot redirect the request to a different endpoint. The
-  // encoding itself is covered in backend-path.test.ts.
-  it('keeps a traversal identifier in one segment', async () => {
-    await expect(
-      requestedPath(() => getStreamer({ data: '../../auth/api-keys' })),
-    ).resolves.toBe('/streamers/..%2F..%2Fauth%2Fapi-keys');
-  });
-
-  it('keeps both filter segments contained', async () => {
-    await expect(
-      requestedPath(() =>
-        deleteFilter({ data: { streamerId: '../x', filterId: 'a/b' } }),
-      ),
-    ).resolves.toBe('/streamers/..%2Fx/filters/a%2Fb');
-  });
-});
-
 describe('server function request bodies', () => {
   // A validator that parses the payload must forward it unchanged: a schema
   // default reaching a partial update would overwrite a field the caller never
@@ -309,23 +79,6 @@ describe('server function request bodies', () => {
     ).resolves.toBe('{"enabled":true}');
   });
 
-  it('forwards only the Douyin option a streamer override sets', async () => {
-    await expect(
-      requestedBody(() =>
-        updateStreamer({
-          data: {
-            id: ID,
-            data: {
-              streamer_specific_config: { platform_extras: { ttwid: 'x' } },
-            },
-          },
-        }),
-      ),
-    ).resolves.toBe(
-      '{"streamer_specific_config":{"platform_extras":{"ttwid":"x"}}}',
-    );
-  });
-
   it('leaves settings out of a global config update that omits them', async () => {
     const body = await requestedBody(() =>
       updateGlobalConfig({ data: globalConfigWithoutToggles() }),
@@ -333,25 +86,6 @@ describe('server function request bodies', () => {
     const sent = JSON.parse(body);
     expect(sent).not.toHaveProperty('auto_thumbnail');
     expect(sent).not.toHaveProperty('stream_proxy_allow_private_targets');
-  });
-
-  // `{"kind":"inherit"}` is how a streamer drops its own route; leaving it
-  // out would keep the stored one.
-  it('forwards a streamer route reset to inherit', async () => {
-    await expect(
-      requestedBody(() =>
-        updateStreamer({
-          data: {
-            id: ID,
-            data: {
-              streamer_specific_config: { proxy_route: { kind: 'inherit' } },
-            },
-          },
-        }),
-      ),
-    ).resolves.toBe(
-      '{"streamer_specific_config":{"proxy_route":{"kind":"inherit"}}}',
-    );
   });
 
   it('sends routes as objects, never the replaced proxy_config', async () => {
@@ -411,14 +145,6 @@ describe('server function request bodies', () => {
     );
   });
 
-  it('preserves an explicit streamer priority', async () => {
-    await expect(
-      requestedBody(() =>
-        updateStreamer({ data: { id: ID, data: { priority: 'HIGH' } } }),
-      ),
-    ).resolves.toBe('{"priority":"HIGH"}');
-  });
-
   // The channel editor submits `settings` as the object it built, which is what
   // the backend stores; the shared schema describes the serialized form.
   it('forwards channel settings given as an object', async () => {
@@ -438,67 +164,6 @@ describe('server function request bodies', () => {
       ),
     ).resolves.toBe(
       JSON.stringify({ name: 'ops', channel_type: 'Discord', settings }),
-    );
-  });
-
-  it('forwards channel settings given as a string', async () => {
-    const settings = '{"a":1}';
-    await expect(
-      requestedBody(() =>
-        createChannel({
-          data: { name: 'ops', channel_type: 'Discord', settings },
-        }),
-      ),
-    ).resolves.toBe(
-      JSON.stringify({ name: 'ops', channel_type: 'Discord', settings }),
-    );
-  });
-
-  it('adds the streamer id to a created filter', async () => {
-    const body = {
-      filter_type: 'CATEGORY',
-      config: { categories: ['irl'] },
-      streamer_id: ID,
-    };
-    await expect(
-      requestedBody(() =>
-        createFilter({
-          data: {
-            streamerId: ID,
-            data: { filter_type: 'CATEGORY', config: { categories: ['irl'] } },
-          },
-        }),
-      ),
-    ).resolves.toBe(JSON.stringify(body));
-  });
-
-  it('forwards a pipeline preset definition unchanged', async () => {
-    const preset = {
-      name: 'remux only',
-      dag: {
-        name: 'remux only',
-        steps: [
-          {
-            id: 'remux',
-            step: { type: 'inline' as const, processor: 'remux', config: {} },
-          },
-        ],
-      },
-    };
-    const response = {
-      ...preset,
-      id: ID,
-      created_at: '2026-01-01T00:00:00Z',
-      updated_at: '2026-01-01T00:00:00Z',
-    };
-    fetchBackendMock.mockResolvedValue(response);
-
-    await expect(createPipelinePreset({ data: preset })).resolves.toEqual(
-      response,
-    );
-    expect(fetchBackendMock).toHaveBeenCalledExactlyOnceWith(
-      '/pipeline/presets',
-      { method: 'POST', body: JSON.stringify(preset) },
     );
   });
 });

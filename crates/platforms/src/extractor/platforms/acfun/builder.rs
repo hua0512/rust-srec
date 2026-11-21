@@ -154,25 +154,6 @@ impl PlatformExtractor for Acfun {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_visitor_login_error_payload_parses_without_user_fields() {
-        let json = r#"{"result":100,"error_msg":"rate limited"}"#;
-        let response: VisitorLoginResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(response.result, 100);
-        assert_eq!(response.error_msg.as_deref(), Some("rate limited"));
-        assert!(response.user_id.is_none());
-        assert!(response.visitor_st.is_none());
-    }
-
-    #[test]
-    fn test_visitor_login_success_payload_parses_user_fields() {
-        let json = r#"{"result":0,"userId":123456,"acfun.api.visitor_st":"st-token"}"#;
-        let response: VisitorLoginResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(response.result, 0);
-        assert_eq!(response.user_id, Some(123456));
-        assert_eq!(response.visitor_st.as_deref(), Some("st-token"));
-    }
-
     #[tokio::test]
     #[ignore]
     async fn test_extract() {

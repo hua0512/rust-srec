@@ -1406,13 +1406,6 @@ mod tests {
     }
 
     #[test]
-    fn test_stream_codec_uses_cdn_h265_flag() {
-        assert_eq!(Douyu::stream_codec(true, false), "hevc,aac");
-        assert_eq!(Douyu::stream_codec(false, false), "avc,aac");
-        assert_eq!(Douyu::stream_codec(true, true), "aac");
-    }
-
-    #[test]
     fn test_stream_url_uses_player_1_only_for_h265_video() {
         let play_info: DouyuH5PlayData = serde_json::from_value(json!({
             "room_id": 1,

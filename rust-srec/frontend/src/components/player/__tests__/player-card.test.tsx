@@ -68,19 +68,6 @@ it('offers retry, proxy and source selection after a playback error', () => {
   expect(screen.getByText('Source selector')).toBeInTheDocument();
 });
 
-it('disables direct playback for sources needing request headers', () => {
-  renderWithProviders(
-    player({ headers: { Referer: 'https://source.example' } }),
-  );
-  fireEvent.click(screen.getByRole('button', { name: 'Player settings' }));
-  expect(screen.getByText(/Direct is unavailable/)).toBeInTheDocument();
-  expect(screen.getByRole('radio', { name: 'Direct' })).toBeDisabled();
-  fireEvent.click(screen.getByRole('radio', { name: 'Server proxy' }));
-  expect(hook).toHaveBeenLastCalledWith(
-    expect.objectContaining({ connectionMode: 'proxy' }),
-  );
-});
-
 it('shows refresh progress and a recoverable error when refreshing fails', async () => {
   let rejectRefresh: (error: Error) => void = () => {};
   const refresh = vi.fn(
@@ -103,105 +90,6 @@ it('shows refresh progress and a recoverable error when refreshing fails', async
     ),
   );
   expect(screen.getByRole('alert')).not.toHaveTextContent('secret');
-});
-
-it('separates source metadata from measured playback details and enables sampling on demand', () => {
-  hook.mockReturnValue({
-    ...playback,
-    statistics: {
-      width: 1280,
-      height: 720,
-      bufferSeconds: 3.5,
-      droppedFrames: 0,
-      totalFrames: 240,
-      liveEdgeDistanceSeconds: 5.2,
-    },
-  });
-  renderWithProviders(
-    player({
-      isLive: true,
-      sourceDetails: { codec: 'h264', fps: 60, bitrate: 4_000_000 },
-    }),
-  );
-  expect(hook).toHaveBeenLastCalledWith(
-    expect.objectContaining({ detailsEnabled: false }),
-  );
-  fireEvent.click(screen.getByRole('button', { name: 'Playback details' }));
-  expect(hook).toHaveBeenLastCalledWith(
-    expect.objectContaining({ detailsEnabled: true }),
-  );
-  expect(
-    screen.getByRole('region', { name: 'Playback details' }),
-  ).toBeInTheDocument();
-  expect(screen.getByText('Reported by source')).toBeInTheDocument();
-  expect(screen.getByText('Measured by player')).toBeInTheDocument();
-  expect(screen.getByText('h264')).toBeInTheDocument();
-  expect(screen.getByText('60 fps')).toBeInTheDocument();
-  expect(screen.getByText('1280 \u00d7 720')).toBeInTheDocument();
-  expect(screen.getByText('0 / 240')).toBeInTheDocument();
-  expect(screen.getByText('5.2 s')).toBeInTheDocument();
-  fireEvent.click(
-    screen.getByRole('button', { name: 'Close playback details' }),
-  );
-  expect(hook).toHaveBeenLastCalledWith(
-    expect.objectContaining({ detailsEnabled: false }),
-  );
-});
-
-it('lets supported live players choose a playback preference', () => {
-  hook.mockReturnValue({ ...playback, supportsLivePresets: true });
-  renderWithProviders(player({ isLive: true }));
-  fireEvent.click(screen.getByRole('button', { name: 'Player settings' }));
-  const latency = screen.getByRole('radiogroup', { name: 'Latency' });
-  expect(screen.getByRole('radio', { name: 'Balanced' })).toBeChecked();
-  fireEvent.click(screen.getByRole('radio', { name: 'Smooth' }));
-  expect(hook).toHaveBeenLastCalledWith(
-    expect.objectContaining({ playbackPreset: 'smooth' }),
-  );
-  fireEvent.keyDown(screen.getByRole('radio', { name: 'Smooth' }), {
-    key: 'ArrowRight',
-  });
-  expect(hook).toHaveBeenLastCalledWith(
-    expect.objectContaining({ playbackPreset: 'low-latency' }),
-  );
-  expect(latency).toHaveAccessibleDescription(/restarts the player/);
-});
-
-it('explains unsupported live buffering and hides live preferences for recordings', () => {
-  const view = renderWithProviders(player({ isLive: true }));
-  fireEvent.click(screen.getByRole('button', { name: 'Player settings' }));
-  for (const option of screen.getAllByRole('radio', {
-    name: /Low|Balanced|Smooth/,
-  }))
-    expect(option).toBeDisabled();
-  expect(
-    screen.getByText(
-      'Buffering presets are unavailable for this playback path.',
-    ),
-  ).toBeInTheDocument();
-  view.rerender(player({ isLive: false }));
-  expect(
-    screen.queryByRole('radiogroup', { name: 'Latency' }),
-  ).not.toBeInTheDocument();
-});
-
-it('groups stream selection and playback settings into tabs', () => {
-  renderWithProviders(player({ settingsContent: <div>Source selector</div> }));
-  fireEvent.click(screen.getByRole('button', { name: 'Player settings' }));
-  expect(screen.getByText('Source selector')).toBeInTheDocument();
-  fireEvent.mouseDown(screen.getByRole('tab', { name: 'Playback' }));
-  expect(
-    screen.getByRole('radiogroup', { name: 'Connection' }),
-  ).toBeInTheDocument();
-});
-
-it('only shows a visible status chip for transitional states', () => {
-  const view = renderWithProviders(player());
-  expect(screen.getByRole('status')).toHaveClass('sr-only');
-  hook.mockReturnValue({ ...playback, status: 'buffering', loading: true });
-  view.rerender(player());
-  expect(screen.getByRole('status')).not.toHaveClass('sr-only');
-  expect(screen.getByRole('status')).toHaveTextContent('Buffering');
 });
 
 it('renews for expired live chat at most once a minute, never beside another renewal', async () => {

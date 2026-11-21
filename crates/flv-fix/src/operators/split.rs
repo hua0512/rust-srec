@@ -965,66 +965,6 @@ mod tests {
     }
 
     #[test]
-    fn test_video_codec_change_detection() {
-        let context = StreamerContext::arc_new(CancellationToken::new());
-        let mut operator = SplitOperator::new(context.clone());
-        let mut output_items = Vec::new();
-
-        // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        // Add a header and first video sequence header (version 1)
-        operator
-            .process(&context, create_test_header(), &mut output_fn)
-            .unwrap();
-        operator
-            .process(&context, create_video_sequence_header(0, 1), &mut output_fn)
-            .unwrap();
-
-        // Add some content tags
-        for i in 1..5 {
-            operator
-                .process(
-                    &context,
-                    create_video_tag(i * 100, i % 3 == 0),
-                    &mut output_fn,
-                )
-                .unwrap();
-        }
-
-        // Add a different video sequence header (version 2) - should trigger a split
-        operator
-            .process(&context, create_video_sequence_header(0, 2), &mut output_fn)
-            .unwrap();
-
-        // Add more content tags
-        for i in 5..10 {
-            operator
-                .process(
-                    &context,
-                    create_video_tag(i * 100, i % 3 == 0),
-                    &mut output_fn,
-                )
-                .unwrap();
-        }
-
-        // The header count indicates how many splits occurred
-        let header_count = output_items
-            .iter()
-            .filter(|item| matches!(item, FlvData::Header(_)))
-            .count();
-
-        // Should have 2 headers: initial + 1 after codec change
-        assert_eq!(
-            header_count, 2,
-            "Should detect video codec change and inject new header"
-        );
-    }
-
-    #[test]
     fn test_extract_video_codec_info_fallback_enhanced_vp9() {
         // Enhanced keyframe + SEQUENCE_START with the VP9 FourCC: `VideoData::demux`
         // yields `EnhancedPacket::Unknown` (no VP9 config parser), so

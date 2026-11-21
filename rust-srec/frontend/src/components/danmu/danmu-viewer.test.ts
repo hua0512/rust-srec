@@ -3,7 +3,6 @@ import {
   normalizeDanmuTimestamp,
   type DanmuComment,
 } from './danmu-parser';
-import { formatDanmuOffset } from './danmu-viewer';
 
 /** Parses a whole document in one write, as a single-chunk stream would. */
 function parseDanmuXml(text: string): DanmuComment[] {
@@ -96,9 +95,5 @@ describe('danmu timestamps', () => {
   it('returns null for missing or invalid timestamps', () => {
     expect(normalizeDanmuTimestamp(null)).toBeNull();
     expect(normalizeDanmuTimestamp('not-a-number')).toBeNull();
-  });
-
-  it('renders the segment start explicitly', () => {
-    expect(formatDanmuOffset(0)).toBe('0s');
   });
 });

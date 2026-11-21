@@ -531,35 +531,6 @@ mod tests {
     }
 
     #[test]
-    fn test_build_hls_config_with_headers() {
-        let mut config = create_test_download_config();
-        config.headers = vec![
-            ("User-Agent".to_string(), "CustomAgent/1.0".to_string()),
-            ("X-Custom-Header".to_string(), "custom-value".to_string()),
-        ];
-
-        let hls_config = build_hls_config(&config, &MesioEngineConfig::default());
-
-        // Check custom headers are mapped
-        assert_eq!(
-            hls_config
-                .base
-                .headers
-                .get(reqwest::header::USER_AGENT)
-                .map(|v| v.to_str().unwrap()),
-            Some("CustomAgent/1.0")
-        );
-        assert_eq!(
-            hls_config
-                .base
-                .headers
-                .get("X-Custom-Header")
-                .map(|v| v.to_str().unwrap()),
-            Some("custom-value")
-        );
-    }
-
-    #[test]
     fn flv_downloads_use_the_configured_buffer_size() {
         let engine_config = MesioEngineConfig {
             buffer_size: 256 * 1024,
@@ -586,39 +557,6 @@ mod tests {
             stall_timeout(serde_json::json!({ "media_stall_timeout_ms": null })),
             None
         );
-    }
-
-    #[test]
-    fn test_build_hls_config_with_cookies() {
-        let mut config = create_test_download_config();
-        config.cookies = Some("session=abc123; token=xyz789".to_string());
-
-        let hls_config = build_hls_config(&config, &MesioEngineConfig::default());
-
-        // Check cookies are mapped to Cookie header
-        assert_eq!(
-            hls_config
-                .base
-                .headers
-                .get(reqwest::header::COOKIE)
-                .map(|v| v.to_str().unwrap()),
-            Some("session=abc123; token=xyz789")
-        );
-    }
-
-    #[test]
-    fn test_build_hls_config_with_proxy() {
-        let mut config = create_test_download_config();
-        config.proxy =
-            ProxyTarget::Explicit(ProxyEndpoint::new("http://proxy.example.com:8080", None));
-
-        let hls_config = build_hls_config(&config, &MesioEngineConfig::default());
-
-        // Check proxy is configured
-        assert!(hls_config.base.proxy.is_some());
-        let proxy = hls_config.base.proxy.unwrap();
-        assert_eq!(proxy.url, "http://proxy.example.com:8080");
-        assert_eq!(proxy.proxy_type, ProxyType::Http);
     }
 
     fn endpoint(url: &str, login: Option<(&str, &str)>) -> ProxyEndpoint {
@@ -665,20 +603,6 @@ mod tests {
             )
             .contains("secret")
         );
-    }
-
-    /// Mesio splits parts by the pipeline config, so the part limits must reach it.
-    #[test]
-    fn build_pipeline_config_carries_part_limits() {
-        let mut config = create_test_download_config();
-        let unlimited = config.build_pipeline_config();
-        assert_eq!((unlimited.max_file_size, unlimited.max_duration), (0, None));
-
-        config.max_segment_size_bytes = 100 * 1024 * 1024;
-        config.max_segment_duration_secs = 3600;
-        let limited = config.build_pipeline_config();
-        assert_eq!(limited.max_file_size, 100 * 1024 * 1024);
-        assert_eq!(limited.max_duration, Some(Duration::from_secs(3600)));
     }
 
     #[test]

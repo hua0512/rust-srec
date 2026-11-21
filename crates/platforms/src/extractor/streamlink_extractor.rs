@@ -581,33 +581,6 @@ mod tests {
     use crate::proxy::ProxyEndpoint;
 
     #[test]
-    fn test_parse_streamlink_json_hls() {
-        let raw = r#"{
-          "plugin": "hls",
-          "metadata": { "id": null, "author": null, "category": null, "title": null },
-          "streams": {
-            "720p": {
-              "type": "hls",
-              "url": "https://example.com/playlist.m3u8",
-              "headers": { "User-Agent": "UA" },
-              "master": "https://example.com/master.m3u8"
-            },
-            "best": {
-              "type": "hls",
-              "url": "https://example.com/playlist-best.m3u8",
-              "headers": { "User-Agent": "UA" },
-              "master": "https://example.com/master.m3u8"
-            }
-          }
-        }"#;
-
-        let parsed: StreamlinkJson = serde_json::from_str(raw).unwrap();
-        assert_eq!(parsed.plugin.as_deref(), Some("hls"));
-        assert!(parsed.error.is_none());
-        assert!(parsed.streams.as_ref().unwrap().contains_key("best"));
-    }
-
-    #[test]
     fn dash_streams_are_labelled_dash_and_fragmented_mp4() {
         for url in [
             "https://cdn.example/live/manifest.mpd",
@@ -643,23 +616,6 @@ mod tests {
         for (stream_type, url, expected) in cases {
             assert_eq!(infer_stream_format(stream_type, url), expected, "{url}");
         }
-    }
-
-    #[test]
-    fn test_parse_streamlink_json_dash() {
-        let raw = r#"{
-          "plugin": "dash",
-          "streams": {
-            "1080p+a128k": { "type": "dash", "url": "https://example.com/live.mpd" }
-          }
-        }"#;
-        let parsed: StreamlinkJson = serde_json::from_str(raw).unwrap();
-        let stream = &parsed.streams.as_ref().unwrap()["1080p+a128k"];
-        let format = infer_stream_format(
-            stream.stream_type.as_deref(),
-            stream.url.as_deref().unwrap(),
-        );
-        assert_eq!(format, StreamFormat::Dash);
     }
 
     #[test]

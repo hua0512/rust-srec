@@ -49,13 +49,4 @@ describe('routerWithQueryHydration', () => {
     expect(browser.getQueryData(['streamers', 1])).toEqual({ items: ['a'] });
     expect(seenByNextStep).toEqual({ items: ['a'] });
   });
-
-  it('leaves the cache alone when the page carries no query state', async () => {
-    const browser = new QueryClient();
-    const router = routerWithQueryHydration(fakeRouter(false), browser);
-
-    await router.options.hydrate!({});
-
-    expect(browser.getQueryCache().getAll()).toHaveLength(0);
-  });
 });

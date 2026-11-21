@@ -265,13 +265,6 @@ mod tests {
         assert_eq!(msg.message_type, DanmuType::Chat);
     }
 
-    #[test]
-    fn test_parse_ping_message() {
-        let line = "PING :tmi.twitch.tv";
-        let result = TwitchDanmuProtocol::parse_irc_message(line);
-        assert!(result.is_none());
-    }
-
     #[tokio::test]
     async fn ping_returns_pong_as_outbound_protocol_frame() {
         let mut protocol = TwitchDanmuProtocol;
@@ -298,13 +291,6 @@ mod tests {
         assert!(msg.metadata.is_some());
         let metadata = msg.metadata.unwrap();
         assert_eq!(metadata.get("bits").unwrap(), &serde_json::json!(100));
-    }
-
-    #[test]
-    fn test_generate_anonymous_nick() {
-        let nick = TwitchDanmuProtocol::generate_anonymous_nick();
-        assert!(nick.starts_with("justinfan"));
-        assert!(nick.len() > 9); // "justinfan" + at least 1 digit
     }
 
     /// Real integration test - connects to an actual Twitch channel

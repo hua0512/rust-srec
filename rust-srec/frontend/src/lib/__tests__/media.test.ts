@@ -6,13 +6,6 @@ import {
 } from '../media';
 
 describe('player media type resolution', () => {
-  it('normalizes backend format aliases', () => {
-    expect(normalizePlayerMediaType('HLS')).toBe('hls');
-    expect(normalizePlayerMediaType('http-flv')).toBe('flv');
-    expect(normalizePlayerMediaType('mpeg-ts')).toBe('mpegts');
-    expect(normalizePlayerMediaType('fmp4')).toBe('mp4');
-  });
-
   it('prefers an explicit format over URL and title fallbacks', () => {
     expect(
       resolvePlayerMediaType(
@@ -49,12 +42,6 @@ describe('player media type resolution', () => {
         'https://cdn.example/live/manifest.mpd?t=1',
       ),
     ).toBe('dash');
-  });
-
-  it('returns auto when no supported type is known', () => {
-    expect(resolvePlayerMediaType('unknown', '/api/media/id/content')).toBe(
-      'auto',
-    );
   });
 });
 

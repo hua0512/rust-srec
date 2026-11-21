@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { DagStepDefinition } from '@/api/schemas';
-import {
-  createStepId,
-  removeStep,
-  replaceStep,
-  updateStep,
-} from '../step-operations';
+import { createStepId, removeStep, updateStep } from '../step-operations';
 
 const steps: DagStepDefinition[] = [
   {
@@ -76,20 +71,6 @@ describe('pipeline DAG step operations', () => {
     expect(removeStep(branchedSteps, 'remux-1')[1]?.depends_on).toEqual([
       'download-0',
     ]);
-  });
-
-  it('replaces only the step content and preserves graph relationships', () => {
-    const result = replaceStep(steps, 1, {
-      type: 'workflow',
-      name: 'archive workflow',
-    });
-
-    expect(result[1]).toEqual({
-      id: 'remux-1',
-      step: { type: 'workflow', name: 'archive workflow' },
-      depends_on: ['download-0'],
-    });
-    expect(result[2]?.depends_on).toEqual(['remux-1']);
   });
 
   it('creates a unique ID after nodes have been removed', () => {

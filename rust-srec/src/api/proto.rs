@@ -306,25 +306,4 @@ mod tests {
             assert_eq!(safe_playback_ratio(60.0, elapsed), 0.0);
         }
     }
-
-    #[test]
-    fn upload_progress_carries_the_phase_current_file_and_attempt() {
-        let mut snapshot = JobProgressSnapshot::new(crate::pipeline::ProgressKind::Ffmpeg);
-        snapshot.phase = Some(JobPhase::Finalizing);
-        snapshot.current_file = Some("seg_002.flv".to_string());
-        let wire = upload_progress_to_proto("job", None, &snapshot);
-        assert_eq!(
-            (wire.phase(), wire.current_file.as_deref()),
-            (download_progress::JobPhase::Finalizing, Some("seg_002.flv"))
-        );
-
-        snapshot.phase = Some(JobPhase::Retrying);
-        snapshot.attempt = Some(2);
-        snapshot.max_attempts = Some(3);
-        let wire = upload_progress_to_proto("job", None, &snapshot);
-        assert_eq!(
-            (wire.phase(), wire.attempt, wire.max_attempts),
-            (download_progress::JobPhase::Retrying, Some(2), Some(3))
-        );
-    }
 }

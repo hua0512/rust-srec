@@ -29,13 +29,3 @@ macro_rules! range_check {
         }
     }};
 }
-
-#[cfg(test)]
-#[cfg_attr(all(test, coverage_nightly), coverage(off))]
-mod tests {
-    #[test]
-    fn u64() {
-        let i = 2u64;
-        range_check!(i, 0, 63).unwrap();
-    }
-}

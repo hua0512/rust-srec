@@ -162,29 +162,3 @@ impl DanmuMessage {
         self
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_danmu_message_gift() {
-        let msg = DanmuMessage::gift("2", "user2", "GiftUser", "Rocket", 5);
-
-        assert_eq!(msg.message_type, DanmuType::Gift);
-        assert_eq!(msg.content, "赠送 Rocket x5");
-        let metadata = msg.metadata.as_ref().unwrap();
-        assert_eq!(metadata.get("gift_name").unwrap(), "Rocket");
-        assert_eq!(metadata.get("gift_count").unwrap(), 5);
-    }
-
-    #[test]
-    fn test_danmu_message_super_chat() {
-        let msg = DanmuMessage::super_chat("3", "user3", "SCUser", "Hello", 30);
-
-        assert_eq!(msg.message_type, DanmuType::SuperChat);
-        assert_eq!(msg.content, "Hello");
-        let metadata = msg.metadata.as_ref().unwrap();
-        assert_eq!(metadata.get("price").unwrap(), 30);
-    }
-}

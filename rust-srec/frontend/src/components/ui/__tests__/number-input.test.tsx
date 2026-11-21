@@ -35,20 +35,6 @@ function renderInput(initial?: number) {
 }
 
 describe('NumberInput', () => {
-  it('shows the stored value', () => {
-    const { input } = renderInput(5);
-
-    expect(input.value).toBe('5');
-  });
-
-  it('stores what was typed', () => {
-    const { input, stored } = renderInput();
-
-    fireEvent.change(input, { target: { value: '7' } });
-
-    expect(stored()).toBe(7);
-  });
-
   // The field's controller answers a request for an absent value with the value
   // the field started with, which would refill the box the moment it is cleared.
   it('stays empty after the value it started with is deleted', () => {

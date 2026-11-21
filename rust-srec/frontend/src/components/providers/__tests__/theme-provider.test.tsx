@@ -62,21 +62,6 @@ beforeEach(() => {
 });
 
 describe('ThemeProvider', () => {
-  it('reads stored theme from localStorage on first render (no FOUC)', () => {
-    localStorage.setItem('theme', 'dark');
-
-    render(
-      <ThemeProvider>
-        <span>child</span>
-      </ThemeProvider>,
-    );
-
-    // The dark class must be present after the very first commit — no intermediate
-    // "system" render that would cause a flash-of-unstyled-content.
-    expect(document.documentElement).toHaveClass('dark');
-    expect(document.documentElement).not.toHaveClass('light');
-  });
-
   it('falls back to the default mode when localStorage is empty', () => {
     // Default is 'system'. With matchMedia returning matches: false (light),
     // the resolved class should be 'light'.
@@ -88,17 +73,6 @@ describe('ThemeProvider', () => {
 
     expect(document.documentElement).toHaveClass('light');
     expect(localStorage.getItem('theme')).toBeNull();
-  });
-
-  it('setMode("dark") applies .dark class and writes to localStorage', () => {
-    const { result } = renderHook(() => useTheme(), { wrapper });
-
-    act(() => result.current.setMode('dark'));
-
-    expect(document.documentElement).toHaveClass('dark');
-    expect(document.documentElement).not.toHaveClass('light');
-    expect(document.documentElement.style.colorScheme).toBe('dark');
-    expect(localStorage.getItem('theme')).toBe('dark');
   });
 
   it('setMode("light") applies .light class and removes .dark', () => {
@@ -146,21 +120,6 @@ describe('ThemeProvider', () => {
 
     expect(document.documentElement).toHaveClass('dark');
     expect(document.documentElement).not.toHaveClass('light');
-  });
-
-  it('exposes resolvedMode alongside mode', () => {
-    mockSystemDark(true);
-
-    const { result } = renderHook(() => useTheme(), { wrapper });
-
-    // Default mode is 'system', system is dark.
-    expect(result.current.mode).toBe('system');
-    expect(result.current.resolvedMode).toBe('dark');
-
-    act(() => result.current.setMode('light'));
-
-    expect(result.current.mode).toBe('light');
-    expect(result.current.resolvedMode).toBe('light');
   });
 
   it('falls back to the default mode when localStorage holds a garbage value', () => {

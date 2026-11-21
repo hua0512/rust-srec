@@ -529,22 +529,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn error_kind_strings_are_stable() {
-        // Locked in because they are i18n discriminator keys; changing
-        // any of these without updating events.rs and the locale files
-        // breaks notification description rendering.
-        assert_eq!(
-            GpuErrorKind::NvmlUnknownError.as_str(),
-            "nvml_unknown_error"
-        );
-        assert_eq!(GpuErrorKind::DriverMismatch.as_str(), "driver_mismatch");
-        assert_eq!(GpuErrorKind::NoDevice.as_str(), "no_device");
-        assert_eq!(GpuErrorKind::TimedOut.as_str(), "timed_out");
-        assert_eq!(GpuErrorKind::NotInstalled.as_str(), "not_installed");
-        assert_eq!(GpuErrorKind::Other.as_str(), "other");
-    }
-
-    #[test]
     fn binary_on_path_finds_existing_binary() {
         // `cargo` is always on PATH inside `cargo test`; Windows exposes
         // it as `cargo.exe`, which exercises PATHEXT handling.

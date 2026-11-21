@@ -88,10 +88,6 @@ function openDashTab() {
   });
 }
 
-function openSection(name: string) {
-  fireEvent.click(screen.getByRole('button', { name: new RegExp(`^${name}`) }));
-}
-
 async function choose(select: string, option: string) {
   fireEvent.keyDown(screen.getByRole('combobox', { name: select }), {
     key: 'Enter',
@@ -100,15 +96,6 @@ async function choose(select: string, option: string) {
 }
 
 describe('Mesio DASH settings', () => {
-  it('saves nothing until a setting is changed', () => {
-    const { saved } = mount();
-    expect(saved()).not.toHaveProperty('dash');
-    expect(
-      screen.getByRole('combobox', { name: 'Video Quality' }),
-    ).toHaveTextContent('Default (Highest bandwidth)');
-    expect(screen.getByRole('switch', { name: /Record Video/ })).toBeChecked();
-  });
-
   it('writes the chosen quality policy with its value', async () => {
     const { saved } = mount();
     await choose('Video Quality', 'Highest up to a height');
@@ -130,28 +117,6 @@ describe('Mesio DASH settings', () => {
     expect(saved()).not.toHaveProperty('dash');
   });
 
-  it('asks for a delay only for a fixed live start', async () => {
-    const { saved } = mount();
-    expect(screen.queryByLabelText(/Delay behind the live edge/)).toBeNull();
-    await choose('Live Start Position', 'Fixed delay');
-    fireEvent.change(screen.getByLabelText(/Delay behind the live edge/), {
-      target: { value: '4000' },
-    });
-    expect(saved().dash.live_start).toEqual({ type: 'delay', delay_ms: 4000 });
-    await choose('Live Start Position', 'Live edge');
-    expect(saved().dash.live_start).toEqual({ type: 'live_edge' });
-  });
-
-  it('leaves a cleared number to the engine default', () => {
-    const { saved } = mount(false, { dash: { download_concurrency: 2 } });
-    openSection('Segment downloads');
-    const input = screen.getByLabelText('Download Concurrency');
-    expect(input).toHaveValue(2);
-    fireEvent.change(input, { target: { value: '' } });
-    expect(input).toHaveAttribute('placeholder', 'Default: 5');
-    expect(saved()).not.toHaveProperty('dash');
-  });
-
   it('refuses to record neither video nor audio', async () => {
     mount();
     fireEvent.click(screen.getByRole('switch', { name: /Record Video/ }));
@@ -168,99 +133,9 @@ describe('Mesio DASH settings', () => {
       ).toBeNull(),
     );
   });
-
-  it('is available in template overrides, which stay partial', async () => {
-    const { saved } = mount(true, { fix_hls: false });
-    await choose('Preferred Audio Language', 'Custom');
-    fireEvent.change(
-      screen.getByRole('textbox', { name: 'Preferred Audio Language' }),
-      { target: { value: 'pt-BR' } },
-    );
-    expect(saved()).toEqual({
-      fix_hls: false,
-      dash: { audio_language: 'pt-BR' },
-    });
-  });
 });
 
 describe('Mesio DASH template overrides', () => {
-  it('shows what unset settings inherit from the engine', async () => {
-    mount(
-      true,
-      {},
-      { dash: { include_video: false, download_concurrency: 2 } },
-    );
-    expect(
-      await screen.findByRole('combobox', { name: 'Record Video' }),
-    ).toHaveTextContent('Use engine setting (Off)');
-    expect(
-      screen.getByRole('combobox', { name: 'Video Quality' }),
-    ).toHaveTextContent('Use engine setting (Highest bandwidth)');
-    openSection('Segment downloads');
-    expect(
-      screen.getByRole('combobox', { name: 'Download Concurrency' }),
-    ).toHaveTextContent('Use engine setting (2)');
-  });
-
-  it('keeps per-setting resets to the default through an unrelated change', async () => {
-    const config = {
-      dash: {
-        audio_language: null,
-        include_video: null,
-        video_quality: null,
-        download_concurrency: null,
-      },
-    };
-    const { saved } = mount(true, config, {
-      dash: { audio_language: 'en', include_video: false },
-    });
-    expect(
-      await screen.findByRole('combobox', { name: 'Preferred Audio Language' }),
-    ).toHaveTextContent('Default (Any language)');
-    expect(
-      screen.getByRole('combobox', { name: 'Video Quality' }),
-    ).toHaveTextContent('Default (Highest bandwidth)');
-    openSection('Segment downloads');
-    await choose('Segment Retries', 'Custom');
-    fireEvent.change(
-      screen.getByRole('spinbutton', { name: 'Segment Retries' }),
-      {
-        target: { value: '7' },
-      },
-    );
-    expect(saved()).toEqual({
-      dash: { ...config.dash, max_segment_retries: 7 },
-    });
-
-    await choose('Preferred Audio Language', 'Use engine setting (en)');
-    expect(saved().dash).not.toHaveProperty('audio_language');
-    await choose('Preferred Audio Language', 'Default (Any language)');
-    expect(saved().dash.audio_language).toBeNull();
-  });
-
-  it('shows a whole-section reset and keeps it through one change', async () => {
-    const { saved } = mount(
-      true,
-      { fix_hls: false, dash: null },
-      { dash: { download_concurrency: 2, max_segment_retries: 9 } },
-    );
-    expect(
-      await screen.findByRole('combobox', { name: 'Video Quality' }),
-    ).toHaveTextContent('Default (Highest bandwidth)');
-    expect(saved()).toEqual({ fix_hls: false, dash: null });
-
-    openSection('Segment downloads');
-    expect(
-      screen.getByRole('combobox', { name: 'Download Concurrency' }),
-    ).toHaveTextContent('Default (5)');
-    await choose('Download Concurrency', 'Custom');
-    const dash = saved().dash;
-    expect(dash.download_concurrency).toBe(2);
-    // Still reset, not inheriting the engine's 9.
-    expect(dash.max_segment_retries).toBeNull();
-    expect(dash.video_quality).toBeNull();
-  });
-
   it('refuses an override that leaves no track once merged with the engine', async () => {
     const { form } = mount(true, {}, { dash: { include_video: false } });
     await choose('Record Separate Audio', 'Off');

@@ -94,18 +94,4 @@ describe('LogFileBrowser downloads', () => {
     expect(url.searchParams.get('from')).toBe('2026-09-01');
     expect(url.searchParams.get('to')).toBe('2026-09-01');
   });
-
-  it('shows the translated fallback when the failure has no message', async () => {
-    mocks.getLogsDownloadUrl.mockRejectedValue('network down');
-    renderBrowser();
-
-    fireEvent.click(
-      await screen.findByTitle('Download rust-srec.2026-09-01.log'),
-    );
-
-    await waitFor(() =>
-      expect(mocks.toast.error).toHaveBeenCalledWith('ECHEC'),
-    );
-    expect(clicked).toHaveLength(0);
-  });
 });

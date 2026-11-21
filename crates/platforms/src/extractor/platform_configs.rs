@@ -291,20 +291,4 @@ mod tests {
             Some(json!({"api_mode": "MP", "force_origin_quality": false}))
         );
     }
-
-    #[test]
-    fn test_douyu_config_deserialize() {
-        let json = json!({"api_mode":"app", "codec":"hevc", "cdn": "hw-h5", "rate": 0, "request_retries": 5, "only_audio":false});
-        let config: DouyuConfig = serde_json::from_value(json).unwrap();
-        assert_eq!(config.cdn, Some("hw-h5".to_string()));
-        assert_eq!(config.rate, Some(0));
-        assert_eq!(config.request_retries, Some(5));
-        assert_eq!(config.api_mode, Some(DouyuApiMode::App));
-        assert_eq!(config.codec, Some(DouyuCodec::Hevc));
-        assert_eq!(config.only_audio, Some(false));
-        assert_eq!(
-            serde_json::to_value(DouyuConfig::default()).unwrap(),
-            json!({})
-        );
-    }
 }

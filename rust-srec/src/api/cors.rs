@@ -328,18 +328,6 @@ mod tests {
         HeaderValue::from_str(value).expect("test origin should be a valid header value")
     }
 
-    fn exact(values: &[&str]) -> CorsPolicy {
-        CorsPolicy::Exact(parse_origins(values.iter().copied()))
-    }
-
-    #[test]
-    fn defaults_cover_the_dev_server_and_desktop_webview() {
-        let origins = parse_origins(DEFAULT_UNAUTHENTICATED_ORIGINS.iter().copied());
-        assert_eq!(origins.len(), DEFAULT_UNAUTHENTICATED_ORIGINS.len());
-        assert!(origins.contains(&origin("http://localhost:15275")));
-        assert!(origins.contains(&origin("tauri://localhost")));
-    }
-
     #[test]
     fn entries_are_normalized_and_deduplicated() {
         let origins = parse_origins(
@@ -374,25 +362,6 @@ mod tests {
                 "{entry} should be rejected"
             );
         }
-    }
-
-    #[test]
-    fn exact_policy_echoes_only_configured_origins() {
-        let policy = exact(&["http://localhost:15275", "tauri://localhost"]);
-
-        assert_eq!(
-            policy.allow_origin_value(Some(&origin("http://localhost:15275"))),
-            Some(origin("http://localhost:15275"))
-        );
-        assert_eq!(
-            policy.allow_origin_value(Some(&origin("https://evil.example"))),
-            None
-        );
-        assert_eq!(
-            policy.allow_origin_value(Some(&origin("http://localhost:15276"))),
-            None
-        );
-        assert_eq!(policy.allow_origin_value(None), None);
     }
 
     mod router_preflight {

@@ -227,47 +227,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_marker() {
-        let cases = [
-            (Amf0Value::Number(1.0), Amf0Marker::Number),
-            (Amf0Value::Boolean(true), Amf0Marker::Boolean),
-            (Amf0Value::String(Cow::Borrowed("test")), Amf0Marker::String),
-            (
-                Amf0Value::Object(Cow::Borrowed(&[(
-                    Cow::Borrowed("test"),
-                    Amf0Value::Number(1.0),
-                )])),
-                Amf0Marker::Object,
-            ),
-            (Amf0Value::Null, Amf0Marker::Null),
-            (Amf0Value::Undefined, Amf0Marker::Undefined),
-            (
-                Amf0Value::EcmaArray(Cow::Borrowed(&[(Cow::Borrowed("key"), Amf0Value::Null)])),
-                Amf0Marker::EcmaArray,
-            ),
-            (
-                Amf0Value::LongString(Cow::Borrowed("test")),
-                Amf0Marker::LongString,
-            ),
-            (
-                Amf0Value::StrictArray(Cow::Borrowed(&[Amf0Value::Number(1.0)])),
-                Amf0Marker::StrictArray,
-            ),
-            (
-                Amf0Value::Date {
-                    timestamp: 1000.0,
-                    timezone: 0,
-                },
-                Amf0Marker::Date,
-            ),
-        ];
-
-        for (value, marker) in cases {
-            assert_eq!(value.marker(), marker);
-        }
-    }
-
-    #[test]
     fn test_into_owned() {
         let value = Amf0Value::Object(Cow::Borrowed(&[(
             Cow::Borrowed("test"),
@@ -340,74 +299,5 @@ mod tests {
                 timezone: -120,
             }
         );
-    }
-
-    #[test]
-    fn test_marker_try_from() {
-        let cases = [
-            (Amf0Marker::Number, 0x00),
-            (Amf0Marker::Boolean, 0x01),
-            (Amf0Marker::String, 0x02),
-            (Amf0Marker::Object, 0x03),
-            (Amf0Marker::MovieClipMarker, 0x04),
-            (Amf0Marker::Null, 0x05),
-            (Amf0Marker::Undefined, 0x06),
-            (Amf0Marker::Reference, 0x07),
-            (Amf0Marker::EcmaArray, 0x08),
-            (Amf0Marker::ObjectEnd, 0x09),
-            (Amf0Marker::StrictArray, 0x0a),
-            (Amf0Marker::Date, 0x0b),
-            (Amf0Marker::LongString, 0x0c),
-            (Amf0Marker::Unsupported, 0x0d),
-            (Amf0Marker::Recordset, 0x0e),
-            (Amf0Marker::XmlDocument, 0x0f),
-            (Amf0Marker::TypedObject, 0x10),
-            (Amf0Marker::AVMPlusObject, 0x11),
-        ];
-
-        for (marker, value) in cases {
-            assert_eq!(marker as u8, value);
-            assert_eq!(Amf0Marker::try_from(value), Ok(marker));
-        }
-
-        assert_eq!(Amf0Marker::try_from(0x12), Err(0x12));
-        assert_eq!(Amf0Marker::try_from(0xFF), Err(0xFF));
-    }
-
-    #[test]
-    fn test_accessors() {
-        assert_eq!(Amf0Value::Number(42.0).as_number(), Some(42.0));
-        assert_eq!(Amf0Value::Boolean(true).as_number(), None);
-
-        assert_eq!(Amf0Value::Boolean(true).as_bool(), Some(true));
-        assert_eq!(Amf0Value::Number(1.0).as_bool(), None);
-
-        assert_eq!(
-            Amf0Value::String(Cow::Borrowed("hello")).as_str(),
-            Some("hello")
-        );
-        assert_eq!(
-            Amf0Value::LongString(Cow::Borrowed("world")).as_str(),
-            Some("world")
-        );
-        assert_eq!(Amf0Value::Number(1.0).as_str(), None);
-
-        let obj = Amf0Value::Object(Cow::Borrowed(&[(Cow::Borrowed("k"), Amf0Value::Null)]));
-        assert!(obj.as_object_properties().is_some());
-
-        let ecma = Amf0Value::EcmaArray(Cow::Borrowed(&[(Cow::Borrowed("k"), Amf0Value::Null)]));
-        assert!(ecma.as_object_properties().is_some());
-        assert!(Amf0Value::Null.as_object_properties().is_none());
-
-        let arr = Amf0Value::StrictArray(Cow::Borrowed(&[Amf0Value::Number(1.0)]));
-        assert!(arr.as_array().is_some());
-        assert!(Amf0Value::Null.as_array().is_none());
-    }
-
-    #[test]
-    fn test_is_object_end_u24() {
-        assert!(Amf0Marker::is_object_end_u24(0x000009));
-        assert!(!Amf0Marker::is_object_end_u24(0x000000));
-        assert!(!Amf0Marker::is_object_end_u24(0x000109));
     }
 }

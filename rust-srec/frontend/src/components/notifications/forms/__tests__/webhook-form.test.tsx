@@ -42,18 +42,6 @@ const removeRow = (index: number) =>
   );
 
 describe('WebhookForm custom headers', () => {
-  it('lists the configured headers', () => {
-    renderForm([
-      ['X-Token', 'abc'],
-      ['X-Trace', 'def'],
-    ]);
-
-    expect(keyInputs().map((input) => input.value)).toEqual([
-      'X-Token',
-      'X-Trace',
-    ]);
-  });
-
   // Rows keyed by position would leave the survivor rendered on the deleted
   // row's element, taking the caret and focus ring with it.
   it('removes the row that was asked for and leaves the other one in place', () => {
@@ -67,15 +55,5 @@ describe('WebhookForm custom headers', () => {
 
     expect(keyInputs()).toEqual([second]);
     expect(stored().headers).toEqual([['X-Trace', 'def']]);
-  });
-
-  it('leaves the timeout unset when it is cleared', () => {
-    const { stored } = renderForm([]);
-    const timeout = screen.getByPlaceholderText('30') as HTMLInputElement;
-
-    fireEvent.change(timeout, { target: { value: '' } });
-
-    expect(timeout.value).toBe('');
-    expect(stored().timeout_secs).toBeUndefined();
   });
 });

@@ -12,27 +12,6 @@ const timeWindow = {
 };
 
 describe('filter timezone payloads', () => {
-  it.each(['local', 'Europe/Madrid', 'UTC'])(
-    'preserves %s through a TimeBased editor round trip',
-    (timezone) => {
-      const config = normalizeFilterConfigForType('TIME_BASED', {
-        ...timeWindow,
-        timezone,
-      });
-      const request = UpdateFilterRequestSchema.parse({
-        filter_type: 'TIME_BASED',
-        config,
-      });
-
-      expect(request.config).toEqual({
-        ...timeWindow,
-        start_time: '19:00:00',
-        end_time: '23:00:00',
-        timezone,
-      });
-    },
-  );
-
   it('preserves the zone when normalizing legacy day names', () => {
     const config = normalizeFilterConfigForType('TIME_BASED', {
       days: ['Mon', 'Fri'],

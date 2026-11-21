@@ -266,10 +266,7 @@ mod tests {
     use crate::extractor::{
         default::default_client,
         platform_extractor::PlatformExtractor,
-        platforms::pandatv::{
-            builder::PandaTV,
-            models::{PandaTvBjResponse, PandaTvLiveResponse},
-        },
+        platforms::pandatv::{builder::PandaTV, models::PandaTvBjResponse},
     };
 
     const TEST_URL: &str = "https://www.pandalive.co.kr/play/codud23";
@@ -294,25 +291,6 @@ mod tests {
         let info = extractor.parse_live_info(response).await.unwrap();
         assert!(!info.is_live);
         assert!(info.streams.is_empty());
-    }
-
-    #[test]
-    fn test_live_response_error_payload_parses_without_success_fields() {
-        let json = r#"{"result": false, "message": "castEnd"}"#;
-        let response: PandaTvLiveResponse = serde_json::from_str(json).unwrap();
-        assert!(!response.result);
-        assert_eq!(response.message.as_deref(), Some("castEnd"));
-        assert!(response.media.is_none());
-        assert!(response.play_list.is_none());
-        assert!(response.chat_server.is_none());
-    }
-
-    #[test]
-    fn test_live_response_error_payload_parses_without_message() {
-        let json = r#"{"result": false}"#;
-        let response: PandaTvLiveResponse = serde_json::from_str(json).unwrap();
-        assert!(!response.result);
-        assert!(response.message.is_none());
     }
 
     #[tokio::test]

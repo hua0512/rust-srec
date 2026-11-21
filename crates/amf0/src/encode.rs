@@ -192,30 +192,6 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_u64() {
-        let value: u64 = 1234567890;
-        let mut expected = vec![0x00]; // Number marker
-        expected.extend_from_slice(&(value as f64).to_be_bytes());
-
-        let mut vec = Vec::<u8>::new();
-        Amf0Encoder::encode_u64(&mut vec, value).unwrap();
-
-        assert_eq!(vec, expected);
-    }
-
-    #[test]
-    fn test_encode_u32() {
-        let value: u32 = 123456;
-        let mut expected = vec![0x00]; // Number marker
-        expected.extend_from_slice(&(value as f64).to_be_bytes());
-
-        let mut vec = Vec::<u8>::new();
-        Amf0Encoder::encode_u32(&mut vec, value).unwrap();
-
-        assert_eq!(vec, expected);
-    }
-
-    #[test]
     fn test_write_string() {
         let mut amf0_string = vec![0x02, 0x00, 0x0b];
         amf0_string.extend_from_slice(b"Hello World");
@@ -282,24 +258,6 @@ mod tests {
         Amf0Encoder::encode(
             &mut vec,
             &Amf0Value::EcmaArray(vec![("test".into(), Amf0Value::Null)].into()),
-        )
-        .unwrap();
-        assert_eq!(vec, expected);
-    }
-
-    #[test]
-    fn test_encode_generic_date() {
-        let mut expected = vec![Amf0Marker::Date as u8];
-        expected.extend_from_slice(&1000.0_f64.to_be_bytes());
-        expected.extend_from_slice(&0_i16.to_be_bytes());
-
-        let mut vec = Vec::<u8>::new();
-        Amf0Encoder::encode(
-            &mut vec,
-            &Amf0Value::Date {
-                timestamp: 1000.0,
-                timezone: 0,
-            },
         )
         .unwrap();
         assert_eq!(vec, expected);

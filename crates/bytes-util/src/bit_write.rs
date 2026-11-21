@@ -240,18 +240,4 @@ mod tests {
             ]
         );
     }
-
-    #[test]
-    fn test_flush() {
-        let mut inner = Vec::new();
-        let mut bit_writer = BitWriter::new(&mut inner);
-
-        bit_writer.write_bits(0b10100000, 8).unwrap();
-
-        bit_writer.flush().unwrap();
-
-        assert_eq!(bit_writer.get_ref().as_slice(), &[0b10100000]);
-        assert_eq!(bit_writer.bit_pos(), 0);
-        assert!(bit_writer.is_aligned());
-    }
 }

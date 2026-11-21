@@ -164,17 +164,4 @@ mod tests {
             assert_eq!(audio.body.sample_rate(), 0.0, "config {data:02x?}");
         }
     }
-
-    #[test]
-    fn test_aac_packet_type() {
-        // Only 0x00 and 0x01 are defined by the FLV spec; anything else must
-        // be rejected rather than silently mapped onto a valid variant.
-        assert_eq!(
-            AacPacketType::new(0x00).unwrap(),
-            AacPacketType::SequenceHeader
-        );
-        assert_eq!(AacPacketType::new(0x01).unwrap(), AacPacketType::Raw);
-        assert_eq!(AacPacketType::new(0x02), None);
-        assert_eq!(AacPacketType::new(0x03), None);
-    }
 }

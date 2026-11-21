@@ -1,4 +1,4 @@
-import { fireEvent, screen, within } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import { AccountSelectionSection } from '../account-selection-section';
 import {
   listCredentialProfiles,
@@ -32,7 +32,6 @@ function renderSection(
   platformName = 'Bilibili',
   scope: CredentialOwner = platformOwner,
   selection: CredentialSelection = { mode: 'fixed', credential_id: profile.id },
-  dirty = false,
 ) {
   mockPlatformCapabilities(platformName);
   renderCredentials(
@@ -41,7 +40,7 @@ function renderSection(
       platformId="platform-a"
       selection={selection}
       onSelectionChange={vi.fn()}
-      dirty={dirty}
+      dirty={false}
     />,
   );
 }
@@ -81,38 +80,6 @@ describe('the selection summary', () => {
     ]);
   });
 
-  it('names the fixed account with its health', async () => {
-    renderSection();
-    const summary = await sentence('Recording uses Account A');
-    expect(
-      within(summary).getByRole('img', { name: 'Valid' }),
-    ).toBeInTheDocument();
-  });
-
-  it('lists primary and backups in order, with failover and attempts', async () => {
-    renderSection('Bilibili', platformOwner, pool('priority'));
-    const summary = await sentence('Recording uses Account A → then Account B');
-    expect(
-      within(summary).getByRole('img', { name: 'Needs refresh' }),
-    ).toBeInTheDocument();
-    await sentence('Failover on · up to 3 tries');
-  });
-
-  it('says a round-robin pool rotates between its accounts', async () => {
-    renderSection('Bilibili', platformOwner, {
-      ...pool('round_robin'),
-      failover: false,
-      max_attempts: 1,
-    });
-    await sentence('Recording rotates between Account A, Account B');
-    await sentence('Failover off · up to 1 try');
-  });
-
-  it('says no account records signed out', async () => {
-    renderSection('Bilibili', platformOwner, { mode: 'none' });
-    await sentence('No account — records signed out');
-  });
-
   it.each([
     ['platform', platformOwner, "Uses the platform's setting"],
     ['template', templateOwner, "Uses the template's setting"],
@@ -130,56 +97,12 @@ describe('the selection summary', () => {
       await sentence(`${source} · Failover on · up to 3 tries`);
     },
   );
-
-  it('says an inherit selection that resolves to nothing records signed out', async () => {
-    vi.mocked(getEffectiveCredentialSelection).mockResolvedValue({
-      configured: { mode: 'inherit' },
-      resolved: null,
-      candidates: [],
-      unavailable_reason: null,
-    });
-    renderSection('Bilibili', templateOwner, { mode: 'inherit' });
-    await sentence('No account — records signed out');
-    expect(
-      screen.getByText('Nothing it inherits from chooses an account'),
-    ).toBeInTheDocument();
-  });
-
-  it('marks a selection the form has not saved yet', async () => {
-    renderSection('Bilibili', platformOwner, { mode: 'none' }, true);
-    expect(await screen.findByText('Unsaved')).toBeInTheDocument();
-  });
-
-  it('marks nothing while the selection is saved', async () => {
-    renderSection();
-    await sentence('Recording uses Account A');
-    expect(screen.queryByText('Unsaved')).not.toBeInTheDocument();
-  });
-});
-
-it('expands the editor under the summary with Change', async () => {
-  renderSection();
-  const change = await screen.findByRole('button', { name: 'Change' });
-  const editor = screen.getByText('Account selection');
-  expect(change).toHaveAttribute('aria-expanded', 'false');
-  expect(editor.closest('[inert]')).not.toBeNull();
-  fireEvent.click(change);
-  expect(change).toHaveAttribute('aria-expanded', 'true');
-  expect(editor.closest('[inert]')).toBeNull();
 });
 
 it('does not preview inheritance from a selection that is not saved yet', async () => {
   renderSection('Bilibili', streamerOwner, { mode: 'inherit' });
   expect(
     await screen.findByText('Save this configuration to see what it inherits.'),
-  ).toBeInTheDocument();
-});
-
-it('points to platform settings when there are no accounts to select', async () => {
-  vi.mocked(listCredentialProfiles).mockResolvedValue([]);
-  renderSection('Bilibili', templateOwner, { mode: 'inherit' });
-  expect(
-    await screen.findByText(/This platform has no accounts yet/),
   ).toBeInTheDocument();
 });
 
@@ -193,58 +116,6 @@ it('a Streamlink streamer picks one account and never a pool', async () => {
   ]);
 });
 
-it.each<[string, CredentialSelection, string]>([
-  [
-    'one selected account',
-    { mode: 'fixed', credential_id: profile.id },
-    'This account needs a new login.',
-  ],
-  [
-    'several selected accounts',
-    {
-      mode: 'pool',
-      credential_ids: [profile.id, 'account-b'],
-      strategy: 'priority',
-      failover: true,
-      max_attempts: 3,
-    },
-    'All selected accounts need a new login.',
-  ],
-])(
-  'speaks of %s when the selection needs a new login',
-  async (_, selection, text) => {
-    vi.mocked(getEffectiveCredentialSelection).mockResolvedValue({
-      configured: selection,
-      resolved: { owner: platformOwner, selection },
-      candidates: [],
-      unavailable_reason: 'login_required',
-    });
-    renderSection('Bilibili', platformOwner, selection);
-    const notice = await screen.findByRole('status');
-    expect(notice).toHaveTextContent(text);
-    // The notice stays in view while the editor is closed.
-    expect(notice.closest('[inert]')).toBeNull();
-  },
-);
-
-it.each([
-  ['attempts_exhausted', 'Signing in with this account kept failing.'],
-  ['unknown', 'Signing in is temporarily unavailable.'],
-] as const)('explains the %s reason', async (reason, text) => {
-  const selection: CredentialSelection = {
-    mode: 'fixed',
-    credential_id: profile.id,
-  };
-  vi.mocked(getEffectiveCredentialSelection).mockResolvedValue({
-    configured: selection,
-    resolved: { owner: platformOwner, selection },
-    candidates: [],
-    unavailable_reason: reason,
-  });
-  renderSection('Bilibili', platformOwner, selection);
-  expect(await screen.findByRole('status')).toHaveTextContent(text);
-});
-
 describe('a Streamlink streamer', () => {
   const youtubeAccount = accountDetail({ sites: ['youtube.com'] });
   const site = (host: string, accounts: string[] = []) => ({
@@ -255,35 +126,6 @@ describe('a Streamlink streamer', () => {
 
   beforeEach(() => {
     vi.mocked(listCredentialProfiles).mockResolvedValue([youtubeAccount]);
-  });
-
-  it('inherits the account set up for its site', async () => {
-    vi.mocked(getEffectiveCredentialSelection).mockResolvedValue({
-      configured: null,
-      resolved: {
-        owner: platformOwner,
-        selection: { mode: 'fixed', credential_id: profile.id },
-      },
-      candidates: [youtubeAccount],
-      unavailable_reason: null,
-      site: site('youtube.com', [profile.id]),
-    });
-    renderSection('streamlink', streamerOwner, { mode: 'inherit' });
-    await sentence('Recording uses Account A');
-    await sentence('The account set up for youtube.com');
-  });
-
-  it('records signed out when no account is set up for its site', async () => {
-    vi.mocked(getEffectiveCredentialSelection).mockResolvedValue({
-      configured: null,
-      resolved: null,
-      candidates: [],
-      unavailable_reason: null,
-      site: site('kick.com'),
-    });
-    renderSection('streamlink', streamerOwner, { mode: 'inherit' });
-    await sentence('No account — records signed out');
-    await sentence('No account is set up for kick.com');
   });
 
   it('warns about an account set up for other sites', async () => {

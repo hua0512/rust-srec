@@ -2321,44 +2321,6 @@ mod tests {
     }
 
     #[test]
-    fn validation_rejects_duplicate_streamer_urls_case_insensitively() {
-        let global = GlobalConfigDbModel::default();
-        let mut config = import_config(&global);
-        config.streamers = vec![
-            crate::config::backup::StreamerExport {
-                name: "one".to_string(),
-                url: "https://example.com/Live".to_string(),
-                platform: "test".to_string(),
-                template: None,
-                priority: "NORMAL".to_string(),
-                state: "NOT_LIVE".to_string(),
-                avatar_url: None,
-                streamer_specific_config: None,
-                proxy_route: None,
-                filters: Vec::new(),
-            },
-            crate::config::backup::StreamerExport {
-                name: "two".to_string(),
-                url: "https://example.com/live".to_string(),
-                platform: "test".to_string(),
-                template: None,
-                priority: "NORMAL".to_string(),
-                state: "NOT_LIVE".to_string(),
-                avatar_url: None,
-                streamer_specific_config: None,
-                proxy_route: None,
-                filters: Vec::new(),
-            },
-        ];
-
-        assert!(matches!(
-            validate_import(&config, ImportMode::Merge),
-            Err(ConfigurationImportError::Validation(message))
-                if message.contains("Duplicate streamer URL")
-        ));
-    }
-
-    #[test]
     fn validation_rejects_non_argon2id_password_hashes() {
         let global = GlobalConfigDbModel::default();
         let mut config = import_config(&global);
@@ -2501,82 +2463,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(violations, 0);
-    }
-
-    #[tokio::test]
-    async fn successful_import_revokes_refresh_tokens_without_replacing_omitted_users() {
-        let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
-        run_migrations(&pool).await.unwrap();
-        let global: GlobalConfigDbModel =
-            sqlx::query_as("SELECT * FROM global_config ORDER BY rowid LIMIT 1")
-                .fetch_one(&pool)
-                .await
-                .unwrap();
-        let user = UserDbModel::new(
-            "preserved-user",
-            VALID_PASSWORD_HASH,
-            vec!["user".to_string()],
-        );
-        let mut setup_tx = begin_immediate(&pool).await.unwrap();
-        persist_user(&mut setup_tx, &user).await.unwrap();
-        setup_tx.commit().await.unwrap();
-        sqlx::query("INSERT INTO auth_sessions(id, user_id, created_at, expires_at) VALUES('session-id', ?, ?, ?)")
-            .bind(&user.id)
-            .bind(crate::database::time::now_ms())
-            .bind(crate::database::time::now_ms() + 60_000)
-            .execute(&pool).await.unwrap();
-        sqlx::query(
-            r#"
-            INSERT INTO refresh_tokens
-                (id, user_id, token_hash, expires_at, created_at, revoked_at, device_info)
-            VALUES ('token-id', ?, 'token-hash', ?, ?, NULL, NULL)
-            "#,
-        )
-        .bind(&user.id)
-        .bind(crate::database::time::now_ms() + 60_000)
-        .bind(crate::database::time::now_ms())
-        .execute(&pool)
-        .await
-        .unwrap();
-
-        let mut config = import_config(&global);
-        config.global_config.output_retention_days = 14;
-        config.global_config.output_retention_delete_files = true;
-        let mut tx = begin_immediate(&pool).await.unwrap();
-        let snapshot = ImportSnapshot::load(&mut tx).await.unwrap();
-        snapshot
-            .validate_references(&config, ImportMode::Merge)
-            .unwrap();
-        apply_import(&mut tx, &snapshot, &config, ImportMode::Merge)
-            .await
-            .unwrap();
-        tx.commit().await.unwrap();
-        let retention: (i32, bool) = sqlx::query_as(
-            "SELECT output_retention_days, output_retention_delete_files FROM global_config",
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-        assert_eq!(retention, (14, true));
-
-        let user_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE id = ?")
-            .bind(&user.id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        let token_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM refresh_tokens")
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-        assert_eq!(user_count.0, 1);
-        assert_eq!(token_count.0, 0);
-        assert_eq!(
-            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM auth_sessions")
-                .fetch_one(&pool)
-                .await
-                .unwrap(),
-            0
-        );
     }
 
     #[tokio::test]

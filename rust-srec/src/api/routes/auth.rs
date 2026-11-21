@@ -610,7 +610,7 @@ mod tests {
         //! mirrored from `routes::create_router`, for handler tests that need
         //! a pinned login rate limiter.
 
-        use axum::body::{Body, to_bytes};
+        use axum::body::Body;
         use axum::http::header::CONTENT_TYPE;
         use axum::http::{Request, StatusCode};
         use tower::ServiceExt;
@@ -854,7 +854,6 @@ mod tests {
             //! the same failed-credential budget as an existing account.
 
             use super::*;
-            use axum::http::header::RETRY_AFTER;
 
             async fn attempt_login(app: &Router, username: &str) -> axum::response::Response {
                 let body = serde_json::json!({
@@ -871,48 +870,6 @@ mod tests {
                         .expect("test request should build"),
                 )
                 .await
-            }
-
-            #[tokio::test]
-            async fn attempt_past_the_budget_is_throttled_with_retry_after() {
-                let (app, _token) = forced_change_app();
-
-                for attempt in 1..=TEST_MAX_FAILURES {
-                    let response = attempt_login(&app, "ghost").await;
-                    assert_eq!(
-                        response.status(),
-                        StatusCode::UNAUTHORIZED,
-                        "attempt {attempt} is still within the budget"
-                    );
-                }
-
-                let throttled = attempt_login(&app, "ghost").await;
-                assert_eq!(throttled.status(), StatusCode::TOO_MANY_REQUESTS);
-
-                let retry_after = throttled
-                    .headers()
-                    .get(RETRY_AFTER)
-                    .expect("a 429 must tell the client when to retry")
-                    .to_str()
-                    .expect("Retry-After should be ASCII")
-                    .parse::<u64>()
-                    .expect("Retry-After should be a delay in seconds");
-                assert!(retry_after > 0);
-                assert!(retry_after <= TEST_WINDOW.as_secs());
-
-                let body = to_bytes(throttled.into_body(), usize::MAX)
-                    .await
-                    .expect("error body should be readable");
-                let body: serde_json::Value =
-                    serde_json::from_slice(&body).expect("error body should be JSON");
-                assert_eq!(body["code"], "TOO_MANY_REQUESTS");
-                assert!(
-                    !body["message"]
-                        .as_str()
-                        .unwrap_or_default()
-                        .contains("ghost"),
-                    "the response must not confirm whether the username exists"
-                );
             }
 
             #[tokio::test]

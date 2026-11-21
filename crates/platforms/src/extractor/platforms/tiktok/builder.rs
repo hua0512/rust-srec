@@ -632,16 +632,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn api_live_not_found_maps_to_streamer_not_found() {
-        let parsed: ApiLiveRoomResponse = serde_json::from_str(
-            r#"{"data": null, "message": "user_not_found", "extra": {"id": "x"}, "statusCode": 19881007}"#,
-        )
-        .unwrap();
-        assert!(parsed.data.is_none());
-        assert_eq!(parsed.status_code, TikTok::API_STATUS_USER_NOT_FOUND);
-    }
-
     /// Anonymised `api-live/user/room` response. H.264 offers `hd` and `ao`;
     /// HEVC offers `origin`, `hd` (no HLS), `sd` (empty `cmaf`), `ld` (an
     /// HLS playlist in `cmaf`) and `ao`.

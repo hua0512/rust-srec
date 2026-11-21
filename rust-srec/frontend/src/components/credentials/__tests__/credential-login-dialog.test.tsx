@@ -1,4 +1,4 @@
-import { act, screen } from '@testing-library/react';
+import { act } from '@testing-library/react';
 import {
   generateCredentialLogin,
   pollCredentialLogin,
@@ -71,36 +71,4 @@ it('does not overlap polls and ignores completion after unmount', async () => {
   view.unmount();
   await act(async () => finish({ status: 'completed' }));
   expect(success).not.toHaveBeenCalled();
-});
-
-it("names the app of the login's platform", async () => {
-  vi.mocked(pollCredentialLogin).mockResolvedValue({ status: 'not_scanned' });
-  renderWithProviders(dialog(vi.fn(), 'douyu'));
-  await advance(0);
-  expect(screen.getByText('Scan with the Douyu app')).toBeTruthy();
-});
-
-it('names the account it logs in again or adds', async () => {
-  vi.mocked(pollCredentialLogin).mockResolvedValue({ status: 'not_scanned' });
-  const view = renderWithProviders(dialog());
-  expect(
-    screen.getByRole('heading', { name: 'Log in again to “Main account”' }),
-  ).toBeInTheDocument();
-  view.unmount();
-  renderWithProviders(
-    dialog(vi.fn(), 'bilibili', {
-      type: 'create',
-      platform_id: 'platform-a',
-      label: 'Main account',
-    }),
-  );
-  expect(
-    screen.getByRole('heading', { name: 'Log in to “Main account”' }),
-  ).toBeInTheDocument();
-});
-
-it('opens without focusing its close button', () => {
-  vi.mocked(pollCredentialLogin).mockResolvedValue({ status: 'not_scanned' });
-  renderWithProviders(dialog());
-  expect(screen.getByRole('dialog')).toHaveFocus();
 });

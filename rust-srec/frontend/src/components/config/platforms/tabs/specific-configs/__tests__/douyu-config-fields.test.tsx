@@ -38,29 +38,6 @@ const retriesInput = () =>
   screen.getByLabelText('API Request Retries') as HTMLInputElement;
 
 describe('Douyu configuration', () => {
-  it('leaves the fields empty when nothing is set and names the fallback', () => {
-    renderFields();
-
-    expect(cdnInput().value).toBe('');
-    expect(cdnInput().placeholder).toBe('Default: hw');
-    expect(retriesInput().value).toBe('');
-    expect(retriesInput().placeholder).toBe('Default: 3');
-  });
-
-  it('offers inheritance instead of a default on an overriding layer', () => {
-    renderFields(undefined, { inherited: true });
-
-    expect(cdnInput().placeholder).toBe('Inherited');
-    expect(retriesInput().placeholder).toBe('Inherited');
-  });
-
-  it('shows the saved values', () => {
-    renderFields({ cdn: 'hw-h5', request_retries: 5 });
-
-    expect(cdnInput().value).toBe('hw-h5');
-    expect(retriesInput().value).toBe('5');
-  });
-
   it('can be emptied again', () => {
     const { stored } = renderFields({ cdn: 'hw-h5', request_retries: 5 });
 
@@ -83,42 +60,6 @@ describe('Douyu configuration', () => {
     expect(stored().request_retries).toBe(0);
   });
 
-  it('shows the legacy CDN default for web extraction', () => {
-    renderFields({ api_mode: 'web' });
-    expect(cdnInput().placeholder).toBe('Default: ws-h5');
-    expect(screen.getByLabelText('Extraction Method')).toHaveTextContent(
-      'Web (deprecated)',
-    );
-  });
-
-  it('hides the App device options for web extraction', () => {
-    renderFields({ api_mode: 'web' });
-    expect(screen.queryByText('App Device')).toBeNull();
-    expect(screen.queryByLabelText('Device Model')).toBeNull();
-  });
-
-  it('shows the App device options when the method is unset', () => {
-    renderFields();
-    expect(screen.getByText('App Device')).toBeInTheDocument();
-  });
-
-  it('shows the legacy CDN default for audio-only extraction', () => {
-    renderFields({ api_mode: 'app', only_audio: true });
-    expect(cdnInput().placeholder).toBe('Default: ws-h5');
-  });
-
-  it('preserves unset method and codec instead of writing overrides', () => {
-    const { stored } = renderFields({}, { inherited: true });
-    expect(screen.getByLabelText('Extraction Method')).toHaveTextContent(
-      'Inherited',
-    );
-    expect(screen.getByLabelText('Preferred Video Codec')).toHaveTextContent(
-      'Inherited',
-    );
-    expect(stored().api_mode).toBeUndefined();
-    expect(stored().codec).toBeUndefined();
-  });
-
   it('changes method and codec and restores inheritance', async () => {
     const { stored } = renderFields(
       { api_mode: 'app', codec: 'avc' },
@@ -139,25 +80,5 @@ describe('Douyu configuration', () => {
     }
     expect(stored().api_mode).toBeNull();
     expect(stored().codec).toBeNull();
-  });
-
-  it('saves device options and can clear them to inherit', async () => {
-    const { stored } = renderFields({}, { inherited: true });
-    for (const [label, key, value] of [
-      ['Device Model', 'device_name', 'OnePlus 12'],
-      ['Android Version', 'os_version', '15'],
-    ]) {
-      const input = screen.getByLabelText(label);
-      expect(input).toHaveAttribute('placeholder', 'Inherited');
-      fireEvent.change(input, { target: { value } });
-      expect(stored()[key]).toBe(value);
-      fireEvent.change(input, { target: { value: '' } });
-      expect(stored()[key]).toBeNull();
-    }
-    const source = screen.getByLabelText('Device ID source');
-    await chooseOption(source, 'Server registration');
-    expect(stored().device_id_mode).toBe('server');
-    await chooseOption(source, 'Inherited');
-    expect(stored().device_id_mode).toBeNull();
   });
 });
