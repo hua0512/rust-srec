@@ -8,6 +8,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { useCallback, useState } from 'react';
 import { queryKeys } from '@/api/query-keys';
+import { invalidateProxyQueries } from '@/api/proxies';
 import {
   listPipelinePresets,
   deletePipelinePreset,
@@ -94,6 +95,8 @@ function WorkflowsPage() {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.pipeline.workflows.all,
       });
+      // Saved proxies count the upload steps that choose them.
+      void invalidateProxyQueries(queryClient);
     },
     onError: (error, { data: id }) => {
       const users = stepUsersFromConflict(error);

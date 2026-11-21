@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use sqlx::SqliteConnection;
 
+use crate::pipeline::step_routes::Layout;
 use crate::proxies::{
     AccountReference, NamedReference, ProxyEndpoint, ProxyEntry, ProxyError, ProxyReferences,
     ProxyRoute, ResolvedRoute, RouteSource, SystemProxy, TemplateReference, resolve,
@@ -298,6 +299,12 @@ pub(crate) async fn delete(
     if !references.is_empty() {
         return Err(ProxyError::Referenced(Box::new(references)).into());
     }
+    remove_unreferenced(connection, id).await
+}
+
+/// Deletes an entry the caller found no reference to. A route a foreign key
+/// guards that names it still refuses the deletion.
+pub(crate) async fn remove_unreferenced(connection: &mut SqliteConnection, id: &str) -> Result<()> {
     match sqlx::query("DELETE FROM proxies WHERE id = ?")
         .bind(id)
         .execute(&mut *connection)
@@ -316,94 +323,137 @@ pub(crate) async fn references_of(
     connection: &mut SqliteConnection,
     id: &str,
 ) -> Result<ProxyReferences> {
-    let global: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM global_config WHERE proxy_id = ?)")
-            .bind(id)
-            .fetch_one(&mut *connection)
-            .await?;
-    let platforms = sqlx::query_as::<_, (String, String)>(
-        "SELECT id, platform_name FROM platform_config WHERE proxy_id = ? ORDER BY platform_name, id",
-    )
-    .bind(id)
-    .fetch_all(&mut *connection)
-    .await?
-    .into_iter()
-    .map(|(id, name)| NamedReference { id, name })
-    .collect();
-    let templates = sqlx::query_as::<_, (String, String, bool)>(
-        "SELECT t.id, t.name, EXISTS(SELECT 1 FROM retirement_config_deletions r WHERE r.kind = 'template' AND r.config_id = t.id) FROM template_config t WHERE t.proxy_id = ? ORDER BY t.name, t.id",
-    )
-    .bind(id)
-    .fetch_all(&mut *connection)
-    .await?
-    .into_iter()
-    .map(|(id, name, being_removed)| TemplateReference {
-        id,
-        name,
-        being_removed,
-    })
-    .collect();
-    let streamers = sqlx::query_as::<_, (String, String)>(
-        "SELECT id, name FROM streamers WHERE proxy_id = ? AND deleted_at IS NULL ORDER BY name, id",
-    )
-    .bind(id)
-    .fetch_all(&mut *connection)
-    .await?
-    .into_iter()
-    .map(|(id, name)| NamedReference { id, name })
-    .collect();
-    let accounts = sqlx::query_as::<_, (String, String, String, String)>(
-        "SELECT p.id, p.label, p.platform_config_id, c.platform_name FROM credential_profiles p JOIN platform_config c ON c.id = p.platform_config_id WHERE p.proxy_id = ? ORDER BY c.platform_name, p.label, p.id",
-    )
-    .bind(id)
-    .fetch_all(&mut *connection)
-    .await?
-    .into_iter()
-    .map(|(id, label, platform_id, platform_name)| AccountReference {
-        id,
-        label,
-        platform_id,
-        platform_name,
-    })
-    .collect();
-    let notification_channels = sqlx::query_as::<_, (String, String)>(
-        "SELECT id, name FROM notification_channel WHERE proxy_id = ? ORDER BY name, id",
-    )
-    .bind(id)
-    .fetch_all(&mut *connection)
-    .await?
-    .into_iter()
-    .map(|(id, name)| NamedReference { id, name })
-    .collect();
-    Ok(ProxyReferences {
-        global,
-        platforms,
-        templates,
-        streamers,
-        accounts,
-        notification_channels,
-    })
+    Ok(all_references(connection)
+        .await?
+        .remove(id)
+        .unwrap_or_default())
 }
 
-/// How many routes name each entry.
+/// The routes naming each entry that any route names, listed once for all
+/// entries. Retired streamers do not hold one.
+pub(crate) async fn all_references(
+    connection: &mut SqliteConnection,
+) -> Result<HashMap<String, ProxyReferences>> {
+    let mut references: HashMap<String, ProxyReferences> = HashMap::new();
+    let global: Option<String> =
+        sqlx::query_scalar("SELECT proxy_id FROM global_config WHERE proxy_id IS NOT NULL")
+            .fetch_optional(&mut *connection)
+            .await?;
+    if let Some(id) = global {
+        references.entry(id).or_default().global = true;
+    }
+    let named = |query: &'static str| sqlx::query_as::<_, (String, String, String)>(query);
+    for (proxy_id, id, name) in named(
+        "SELECT proxy_id, id, platform_name FROM platform_config WHERE proxy_id IS NOT NULL ORDER BY platform_name, id",
+    )
+    .fetch_all(&mut *connection)
+    .await?
+    {
+        let entry = references.entry(proxy_id).or_default();
+        entry.platforms.push(NamedReference { id, name });
+    }
+    let templates = sqlx::query_as::<_, (String, String, String, bool)>(
+        "SELECT t.proxy_id, t.id, t.name, EXISTS(SELECT 1 FROM retirement_config_deletions r WHERE r.kind = 'template' AND r.config_id = t.id) FROM template_config t WHERE t.proxy_id IS NOT NULL ORDER BY t.name, t.id",
+    )
+    .fetch_all(&mut *connection)
+    .await?;
+    for (proxy_id, id, name, being_removed) in templates {
+        let entry = references.entry(proxy_id).or_default();
+        entry.templates.push(TemplateReference {
+            id,
+            name,
+            being_removed,
+        });
+    }
+    for (proxy_id, id, name) in named(
+        "SELECT proxy_id, id, name FROM streamers WHERE proxy_id IS NOT NULL AND deleted_at IS NULL ORDER BY name, id",
+    )
+    .fetch_all(&mut *connection)
+    .await?
+    {
+        let entry = references.entry(proxy_id).or_default();
+        entry.streamers.push(NamedReference { id, name });
+    }
+    let accounts = sqlx::query_as::<_, (String, String, String, String, String)>(
+        "SELECT p.proxy_id, p.id, p.label, p.platform_config_id, c.platform_name FROM credential_profiles p JOIN platform_config c ON c.id = p.platform_config_id WHERE p.proxy_id IS NOT NULL ORDER BY c.platform_name, p.label, p.id",
+    )
+    .fetch_all(&mut *connection)
+    .await?;
+    for (proxy_id, id, label, platform_id, platform_name) in accounts {
+        let entry = references.entry(proxy_id).or_default();
+        entry.accounts.push(AccountReference {
+            id,
+            label,
+            platform_id,
+            platform_name,
+        });
+    }
+    for (proxy_id, id, name) in named(
+        "SELECT proxy_id, id, name FROM notification_channel WHERE proxy_id IS NOT NULL ORDER BY name, id",
+    )
+    .fetch_all(&mut *connection)
+    .await?
+    {
+        let entry = references.entry(proxy_id).or_default();
+        entry.notification_channels.push(NamedReference { id, name });
+    }
+
+    // Upload steps keep their routes in JSON, where no foreign key reaches:
+    // job preset configs and the inline steps of stored pipelines.
+    let presets = sqlx::query_as::<_, (String, String, String, String)>(
+        "SELECT id, name, processor, config FROM job_presets ORDER BY name, id",
+    )
+    .fetch_all(&mut *connection)
+    .await?;
+    for (id, name, processor, config) in presets {
+        let Ok(mut config) = serde_json::from_str::<serde_json::Value>(&config) else {
+            continue;
+        };
+        if let Some(proxy_id) =
+            crate::pipeline::step_routes::preset_route_mut(&processor, &mut config)
+                .and_then(|route| saved_proxy(route))
+        {
+            let entry = references.entry(proxy_id).or_default();
+            entry.job_presets.push(NamedReference { id, name });
+        }
+    }
+    let owners = super::preset::pipeline_owners(connection, super::preset::Owners::All).await?;
+    for mut owner in owners {
+        let mut named: Vec<String> = owner
+            .documents
+            .iter_mut()
+            .flat_map(|(layout, document)| {
+                crate::pipeline::step_routes::pipeline_routes_mut(document, *layout)
+            })
+            .filter_map(|route| saved_proxy(route))
+            .collect();
+        named.sort();
+        named.dedup();
+        for proxy_id in named {
+            let entry = references.entry(proxy_id).or_default();
+            entry.pipelines.push(owner.user.clone());
+        }
+    }
+    Ok(references)
+}
+
+/// The saved proxy a stored step route names, if it is one.
+fn saved_proxy(route: &serde_json::Value) -> Option<String> {
+    serde_json::from_value::<ProxyRoute>(route.clone())
+        .ok()?
+        .proxy_id()
+        .map(str::to_owned)
+}
+
+/// How many routes name each entry, counted as [`references_of`] lists
+/// them.
 pub(crate) async fn usage_counts(
     connection: &mut SqliteConnection,
 ) -> Result<HashMap<String, usize>> {
-    let rows: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT proxy_id, COUNT(*) FROM (
-            SELECT proxy_id FROM global_config WHERE proxy_id IS NOT NULL
-            UNION ALL SELECT proxy_id FROM platform_config WHERE proxy_id IS NOT NULL
-            UNION ALL SELECT proxy_id FROM template_config WHERE proxy_id IS NOT NULL
-            UNION ALL SELECT proxy_id FROM streamers WHERE proxy_id IS NOT NULL AND deleted_at IS NULL
-            UNION ALL SELECT proxy_id FROM credential_profiles WHERE proxy_id IS NOT NULL
-            UNION ALL SELECT proxy_id FROM notification_channel WHERE proxy_id IS NOT NULL
-        ) GROUP BY proxy_id",
-    )
-    .fetch_all(connection)
-    .await?;
-    Ok(rows
+    Ok(all_references(connection)
+        .await?
         .into_iter()
-        .map(|(id, count)| (id, usize::try_from(count).unwrap_or(usize::MAX)))
+        .map(|(id, references)| (id, references.count()))
         .collect())
 }
 
@@ -489,11 +539,7 @@ pub(crate) async fn set_route(
     if *owner == RouteOwner::Global && route.is_inherit() {
         return Err(ProxyError::GlobalInherit.into());
     }
-    if let Some(id) = route.proxy_id()
-        && find(connection, id).await?.is_none()
-    {
-        return Err(ProxyError::Missing(id.to_owned()).into());
-    }
+    require_entry(connection, route).await?;
     let query = match owner.id() {
         Some(_) => format!(
             "UPDATE {} SET proxy_route = ?, proxy_id = ? WHERE id = ?",
@@ -513,6 +559,65 @@ pub(crate) async fn set_route(
             owner.table(),
             owner.id().unwrap_or("global"),
         ));
+    }
+    Ok(())
+}
+
+/// Refuses a route naming a saved proxy that does not exist.
+pub(crate) async fn require_entry(
+    connection: &mut SqliteConnection,
+    route: &ProxyRoute,
+) -> Result<()> {
+    if let Some(id) = route.proxy_id()
+        && find(connection, id).await?.is_none()
+    {
+        return Err(ProxyError::Missing(id.to_owned()).into());
+    }
+    Ok(())
+}
+
+/// Where a stored document keeps upload step routes.
+#[derive(Clone, Copy)]
+pub(crate) enum StepDocument<'a> {
+    /// A document holding pipelines as its layout places them.
+    Pipelines(Layout, Option<&'a str>),
+    /// A job preset's config for its processor.
+    PresetConfig { processor: &'a str, config: &'a str },
+}
+
+/// Refuses documents whose upload steps choose a malformed route or one
+/// naming a saved proxy that does not exist. Text that is not JSON has no
+/// steps to check.
+pub(crate) async fn require_step_routes(
+    connection: &mut SqliteConnection,
+    documents: &[StepDocument<'_>],
+) -> Result<()> {
+    for document in documents {
+        let text = match document {
+            StepDocument::Pipelines(_, text) => *text,
+            StepDocument::PresetConfig { config, .. } => Some(*config),
+        };
+        let Some(mut value) =
+            text.and_then(|text| serde_json::from_str::<serde_json::Value>(text).ok())
+        else {
+            continue;
+        };
+        let routes = match document {
+            StepDocument::Pipelines(layout, _) => {
+                crate::pipeline::step_routes::pipeline_routes_mut(&mut value, *layout)
+            }
+            StepDocument::PresetConfig { processor, .. } => {
+                crate::pipeline::step_routes::preset_route_mut(processor, &mut value)
+                    .into_iter()
+                    .collect()
+            }
+        };
+        for route in routes {
+            let route: ProxyRoute = serde_json::from_value(route.clone()).map_err(|_| {
+                ProxyError::invalid("proxy_route must be inherit, direct, system or a saved proxy")
+            })?;
+            require_entry(connection, &route).await?;
+        }
     }
     Ok(())
 }

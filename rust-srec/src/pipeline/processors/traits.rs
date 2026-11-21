@@ -205,14 +205,21 @@ pub struct ProcessorContext {
 pub struct JobLogSink {
     tx: tokio::sync::mpsc::Sender<JobLogEntry>,
     dropped: Arc<AtomicUsize>,
+    /// Applied to every entry sent; see [`ProcessorContext::scrubbing`].
+    scrubber: crate::proxies::OutputScrubber,
 }
 
 impl JobLogSink {
     pub fn new(tx: tokio::sync::mpsc::Sender<JobLogEntry>, dropped: Arc<AtomicUsize>) -> Self {
-        Self { tx, dropped }
+        Self {
+            tx,
+            dropped,
+            scrubber: crate::proxies::OutputScrubber::default(),
+        }
     }
 
-    pub fn try_send(&self, entry: JobLogEntry) {
+    pub fn try_send(&self, mut entry: JobLogEntry) {
+        entry.message = self.scrubber.scrub(&entry.message);
         if self.tx.try_send(entry).is_err() {
             self.dropped.fetch_add(1, Ordering::Relaxed);
         }
@@ -278,6 +285,14 @@ impl ProcessorContext {
     /// as a probe that prints account details. Progress, cancellation and the
     /// retry flag are shared with `self`; entries sent to the returned
     /// context's log sink are discarded without counting as dropped for the job.
+    /// This context with `scrubber` applied to the job log, for a tool
+    /// that may print a proxy login.
+    pub fn scrubbing(&self, scrubber: &crate::proxies::OutputScrubber) -> Self {
+        let mut context = self.clone();
+        context.log_sink.scrubber = scrubber.clone();
+        context
+    }
+
     pub fn without_job_log(&self) -> Self {
         let (log_tx, _discarded) = tokio::sync::mpsc::channel(1);
         Self {
@@ -389,6 +404,41 @@ pub struct ProcessorOutput {
 }
 
 impl ProcessorOutput {
+    /// `result` with `scrubber` applied to every message it reports.
+    pub(crate) fn scrubbed(
+        result: crate::Result<Self>,
+        scrubber: &crate::proxies::OutputScrubber,
+    ) -> crate::Result<Self> {
+        let mut output = match result {
+            Ok(output) => output,
+            Err(crate::Error::Other(message)) => {
+                return Err(crate::Error::Other(scrubber.scrub(&message)));
+            }
+            Err(crate::Error::Validation(message)) => {
+                return Err(crate::Error::Validation(scrubber.scrub(&message)));
+            }
+            Err(error) => return Err(error),
+        };
+        for entry in &mut output.logs {
+            entry.message = scrubber.scrub(&entry.message);
+        }
+        for (_, message) in output
+            .failed_inputs
+            .iter_mut()
+            .chain(output.skipped_inputs.iter_mut())
+        {
+            *message = scrubber.scrub(message);
+        }
+        for error in output
+            .uploads
+            .iter_mut()
+            .filter_map(|upload| upload.error.as_mut())
+        {
+            *error = scrubber.scrub(error);
+        }
+        Ok(output)
+    }
+
     /// A single skipped file remains available for downstream processors.
     /// Whole-job passthrough and processor-specific batch metadata are separate.
     pub(super) fn skipped_file(

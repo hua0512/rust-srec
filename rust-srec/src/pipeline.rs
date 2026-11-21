@@ -17,6 +17,7 @@ mod manifest;
 mod processors;
 mod progress;
 mod staged_outputs;
+pub(crate) mod step_routes;
 mod throttle;
 mod upload_events;
 mod worker_pool;

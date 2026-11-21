@@ -5,6 +5,7 @@ import { useLingui } from '@lingui/react';
 import { Link } from '@tanstack/react-router';
 import { Workflow } from 'lucide-react';
 import { z } from 'zod';
+import { StepUserSchema, type StepUser } from '@/api/schemas/pipeline';
 import { referencesFromConflict } from '@/lib/api-error';
 import { formatPlatformName } from '@/lib/platform';
 import { Button } from '@/components/ui/button';
@@ -30,15 +31,6 @@ import {
   type OwnerTarget,
 } from '@/components/shared/owner-link';
 
-const StepUserSchema = z.object({
-  kind: z.enum(['global', 'platform', 'template', 'streamer', 'workflow']),
-  id: z.string(),
-  name: z.string(),
-  removing: z.boolean(),
-});
-
-type StepUser = z.infer<typeof StepUserSchema>;
-
 /**
  * The pipelines that still name a job preset or workflow whose deletion or
  * rename the backend refused, or `undefined` when it refused for another
@@ -60,11 +52,12 @@ export interface StepInUse {
   users: StepUser[];
 }
 
-function displayName(user: StepUser): string {
+export function displayName(user: StepUser): string {
   return user.kind === 'platform' ? formatPlatformName(user.name) : user.name;
 }
 
-function UserName({ user }: { user: StepUser }) {
+/** A pipeline owner's name, linking to where its pipelines are edited. */
+export function UserName({ user }: { user: StepUser }) {
   const { i18n } = useLingui();
   const name = displayName(user);
   if (user.removing) {

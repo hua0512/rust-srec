@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ProxyRouteSchema } from '@/api/schemas/proxies';
 import { msg } from '@lingui/core/macro';
 import type { MessageDescriptor } from '@lingui/core';
 import { zodError, zodText } from '@/lib/zod-i18n';
@@ -117,6 +118,7 @@ export const RcloneConfigSchema = z.object({
   tpslimit_burst: z.number().int().nonnegative().optional(),
   multi_thread_streams: z.number().int().nonnegative().optional(),
   multi_thread_cutoff: z.string().optional(),
+  proxy_route: ProxyRouteSchema.optional(),
 });
 
 // --- BaiduPCS-Go Processor ---
@@ -135,6 +137,7 @@ export const BaiduPcsConfigSchema = z.object({
   args: z.array(z.string()).default([]),
   max_retries: z.number().int().min(1).max(10).default(3),
   remove_source_after_upload: z.boolean().default(false),
+  proxy_route: ProxyRouteSchema.optional(),
 });
 
 // --- Thumbnail Processor ---

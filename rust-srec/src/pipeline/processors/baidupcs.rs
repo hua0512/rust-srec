@@ -31,6 +31,7 @@ use crate::pipeline::job_queue::JobLogEntry;
 use crate::pipeline::progress::{
     JobPhase, JobProgressSnapshot, ProgressKind, ProgressReporter, progress_file_name,
 };
+use crate::proxies::ProxyTarget;
 
 // Output markers printed by BaiduPCS-Go (hardcoded constants in its
 // source, not localized). `parse_upload_outcomes` resolves per-file
@@ -169,6 +170,10 @@ pub struct BaiduPcsConfig {
     /// uploaded by the earlier attempt, mirroring
     /// `inputs::is_confirmed_absent` move-resume semantics.
     pub remove_source_after_upload: bool,
+
+    /// How BaiduPCS-Go connects, re-logins included; `inherit`, the
+    /// default, follows the global route.
+    pub proxy_route: crate::proxies::ProxyRoute,
 }
 
 impl Default for BaiduPcsConfig {
@@ -183,6 +188,7 @@ impl Default for BaiduPcsConfig {
             args: Vec::new(),
             max_retries: 3,
             remove_source_after_upload: false,
+            proxy_route: crate::proxies::ProxyRoute::Inherit,
         }
     }
 }
@@ -202,6 +208,8 @@ pub struct BaiduPcsProcessor {
     authenticator_override: Option<Arc<dyn crate::baidupcs::BaiduPcsAuthenticator>>,
     /// See [`UPLOAD_ARGS_BUDGET`]; lowered by tests to exercise chunking.
     upload_args_budget: usize,
+    /// Resolves each step's proxy route; see [`crate::proxies::upload_target`].
+    routes: Option<crate::proxies::ServiceRoutes>,
 }
 
 #[async_trait]
@@ -801,6 +809,7 @@ impl BaiduPcsProcessor {
             command_runner: Arc::new(ProcessBaiduPcsCommandRunner),
             authenticator_override: None,
             upload_args_budget: UPLOAD_ARGS_BUDGET,
+            routes: None,
         }
     }
 
@@ -814,7 +823,14 @@ impl BaiduPcsProcessor {
             command_runner,
             authenticator_override: None,
             upload_args_budget: UPLOAD_ARGS_BUDGET,
+            routes: None,
         }
+    }
+
+    /// Resolves each step's proxy route through `routes`.
+    pub fn with_routes(mut self, routes: crate::proxies::ServiceRoutes) -> Self {
+        self.routes = Some(routes);
+        self
     }
 
     #[cfg(test)]
@@ -880,10 +896,11 @@ impl BaiduPcsProcessor {
         authenticator: &Arc<dyn crate::baidupcs::BaiduPcsAuthenticator>,
         binary_path: &str,
         config: &BaiduPcsConfig,
+        proxy: &ProxyTarget,
         ctx: &ProcessorContext,
     ) {
         match authenticator
-            .relogin(binary_path, config.config_dir.as_deref())
+            .relogin(binary_path, config.config_dir.as_deref(), proxy)
             .await
         {
             Ok(true) => {
@@ -1035,6 +1052,11 @@ impl Processor for BaiduPcsProcessor {
 
         let config: BaiduPcsConfig =
             super::utils::parse_config_strict(input.config.as_deref(), "baidupcs")?;
+        let proxy =
+            crate::proxies::upload_target(self.routes.as_ref(), &config.proxy_route).await?;
+        let scrubber = crate::proxies::OutputScrubber::for_target(&proxy);
+        let ctx = &ctx.scrubbing(&scrubber);
+        let result = async {
 
         let binary_path = config
             .binary_path
@@ -1157,7 +1179,7 @@ impl Processor for BaiduPcsProcessor {
                 && (attempt > 0 || self.session_logged_out(&binary_path, &config, ctx).await)
             {
                 relogin_done = true;
-                self.attempt_relogin(authenticator, &binary_path, &config, ctx)
+                self.attempt_relogin(authenticator, &binary_path, &config, &proxy, ctx)
                     .await;
             }
 
@@ -1182,8 +1204,12 @@ impl Processor for BaiduPcsProcessor {
                         "BaiduPCS-Go upload cancelled".to_string(),
                     ));
                 }
-                let mut cmd =
-                    crate::baidupcs::base_command(&binary_path, config.config_dir.as_deref());
+                let mut cmd = crate::baidupcs::connected_command(
+                    &binary_path,
+                    config.config_dir.as_deref(),
+                    &proxy,
+                )
+                .await?;
                 cmd.arg("upload");
                 cmd.args(["--policy", config.policy.as_arg()]);
                 if config.norapid {
@@ -1457,6 +1483,9 @@ impl Processor for BaiduPcsProcessor {
             uploads,
             logs,
         })
+        }
+        .await;
+        ProcessorOutput::scrubbed(result, &scrubber)
     }
 }
 
@@ -2267,7 +2296,12 @@ mod tests {
             Ok(())
         }
 
-        async fn relogin(&self, _binary_path: &str, _config_dir: Option<&str>) -> Result<bool> {
+        async fn relogin(
+            &self,
+            _binary_path: &str,
+            _config_dir: Option<&str>,
+            _proxy: &ProxyTarget,
+        ) -> Result<bool> {
             self.relogin_calls
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             Ok(self.relogin_result)

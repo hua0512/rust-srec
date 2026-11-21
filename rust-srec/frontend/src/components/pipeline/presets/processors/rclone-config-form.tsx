@@ -27,6 +27,7 @@ import {
   ProcessorSubsectionHeader,
   ProcessorTextField,
   TimeAnchorField,
+  UploadProxySection,
 } from './processor-form-layout';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
@@ -174,6 +175,8 @@ export function RcloneConfigForm({
             placeholder="/path/to/rclone.conf"
           />
         </ProcessorSection>
+
+        <UploadProxySection control={control} name={fieldPath('proxy_route')} />
       </TabsContent>
 
       <TabsContent value="advanced" className="space-y-4">

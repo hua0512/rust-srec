@@ -139,8 +139,9 @@ async fn settings_shown(app: &TestApp, token: &str, template_id: &str) -> Value 
 /// Configuration of each kind a bundle carries, created through the API:
 /// global settings, a proxy, a Huya account selected for the platform, the
 /// template "Backup template", the disabled streamer "Backup Alpha" on it with
-/// a time filter, and the webhook "Backup webhook" with subscriptions,
-/// delivering through the proxy. Returns
+/// a time filter, the webhook "Backup webhook" with subscriptions, delivering
+/// through the proxy, and the rclone job preset "Backup upload" uploading
+/// through it. Returns
 /// the streamer's id.
 ///
 /// The global, Huya and template settings differ from a fresh install's, so a
@@ -182,6 +183,17 @@ async fn create_backup_content(app: &TestApp, token: &str) -> String {
     )
     .await
     .ok();
+    let upload = json!({"destination_root": "remote:/backup", "proxy_route": {"kind": "proxy", "id": proxy.body["id"]}});
+    app.post(
+        "/api/job/presets",
+        token,
+        &json!({
+            "id": "backup-upload", "name": "Backup upload", "category": "upload",
+            "processor": "rclone", "config": upload.to_string(),
+        }),
+    )
+    .await
+    .created();
     let profile = app
         .post(
             "/api/credentials/profiles",
@@ -412,6 +424,18 @@ async fn the_export_carries_what_a_restore_needs_and_leaves_out_sessions_and_api
         "streamer-refresh-secret"
     );
 
+    let upload = bundle["job_presets"]
+        .as_array()
+        .expect("job presets")
+        .iter()
+        .find(|preset| preset["name"] == "Backup upload")
+        .expect("the upload preset is exported");
+    assert_eq!(
+        upload["config"]["proxy_route"],
+        json!({"kind": "proxy", "name": "Backup proxy"}),
+        "upload steps name their proxy"
+    );
+
     let global = &bundle["global_config"];
     let stored = app.get_ok("/api/config/global", &token).await;
     let log_filter = global["log_filter_directive"].as_str().expect("log filter");
@@ -597,20 +621,41 @@ async fn a_backup_restores_into_a_fresh_install_and_exports_the_same_bundle() {
         settings_shown(&target, &token, template_id).await,
         settings_before
     );
+    // Upload steps name their proxy by name in the bundle and by the
+    // installation's own ID once restored.
+    let proxy_path = format!(
+        "/api/proxies/{}",
+        target.get_ok("/api/proxies", &token).await[0]["id"]
+            .as_str()
+            .expect("restored proxy")
+    );
+    let references = |detail: Value| detail["references"].clone();
+    assert_eq!(
+        references(target.get_ok(&proxy_path, &token).await)["job_presets"][0]["name"],
+        "Backup upload"
+    );
 
     let again = export(&target, &token).await;
     assert_same_bundle(&again, &bundle);
 
     let mut bundle = again;
+    // A definition encoded as a JSON string is read like one that is not.
     bundle["pipeline_presets"] = json!([{
         "name": "Imported workflow", "description": null, "pipeline_type": null,
-        "dag_definition": {"name": "imported", "steps": [{
-            "id": "run", "step": {"type": "inline", "processor": "execute", "config": {"command": "exit 0"}},
-        }]},
+        "dag_definition": json!({"name": "imported", "steps": [
+            {"id": "run", "step": {"type": "inline", "processor": "execute", "config": {"command": "exit 0"}}},
+            {"id": "ship", "step": {"type": "inline", "processor": "rclone", "config": {
+                "destination_root": "remote:/", "proxy_route": {"kind": "proxy", "name": "Backup proxy"},
+            }}, "depends_on": ["run"]},
+        ]}).to_string(),
     }]);
     let created = import(&target, &token, &bundle, "merge").await.ok();
     assert_eq!(created["stats"]["pipeline_presets_created"], 1);
     let token = sign_in_again(&target, RESTORED_PASSWORD).await;
+    assert_eq!(
+        references(target.get_ok(&proxy_path, &token).await)["pipelines"][0]["name"],
+        "Imported workflow"
+    );
     let mut bundle = export(&target, &token).await;
     bundle["pipeline_presets"]
         .as_array_mut()

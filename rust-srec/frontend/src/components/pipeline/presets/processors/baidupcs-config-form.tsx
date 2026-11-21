@@ -39,6 +39,7 @@ import {
   ProcessorListField,
   ProcessorNumberField,
   ProcessorSection,
+  UploadProxySection,
   ProcessorSelectField,
   ProcessorTextField,
   TimeAnchorField,
@@ -205,6 +206,18 @@ function BaiduPcsAccountCard({
                   {formatBytes(status.quota_used_bytes)} of{' '}
                   {formatBytes(status.quota_total_bytes)} used
                 </Trans>
+              </p>
+            </div>
+          )}
+
+          {status.logged_in && status.quota_error && (
+            <div className="space-y-1">
+              <p className="flex items-start gap-2 text-xs text-destructive">
+                <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <Trans>Could not read the storage quota.</Trans>
+              </p>
+              <p className="break-all font-mono text-xs text-muted-foreground">
+                {status.quota_error}
               </p>
             </div>
           )}
@@ -393,6 +406,11 @@ export function BaiduPcsConfigForm({
               placeholder="3"
             />
           </ProcessorSection>
+
+          <UploadProxySection
+            control={control}
+            name={fieldPath('proxy_route')}
+          />
         </TabsContent>
 
         <TabsContent value="advanced" className="space-y-4">

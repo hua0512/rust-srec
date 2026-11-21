@@ -227,7 +227,7 @@ A saved proxy has a name and an address: `http`, `https`, `socks5` or `socks5h`,
 
 The list shows each proxy's address, username and how many settings use it; expand a row to see which. Passwords are never shown: when editing, leave the password empty to keep it. **Test** requests a platform's home page, or another address, once through the proxy and reports whether it answered, with the HTTP status and the time taken; the editor can test a proxy before it is saved. Any answer except the proxy rejecting its login counts as reachable. Testing an address on a private network needs **Allow private stream proxy targets**. The page also shows the system proxy detected when the server started.
 
-A proxy cannot be deleted while a setting, account or notification channel uses it; the delete dialog lists them. A template being removed releases its proxy once the recordings using it finish.
+A proxy cannot be deleted while a setting, account, notification channel, job preset or pipeline upload step uses it; the delete dialog lists them. A template being removed releases its proxy once the recordings using it finish. Upload jobs already queued or running do not count as users: if their proxy is deleted, they fail when they upload rather than connecting another way.
 
 Changes are saved at once and apply to the next check, extraction or connection; work already running keeps its connection. Changing a proxy's address or username counts as changing the credentials of the accounts that choose it: they are checked again, and recordings using them switch at their next fresh extraction. Renaming a proxy or changing only its password does not.
 
@@ -243,7 +243,7 @@ The chosen connection carries live checks and parsing, downloads with every engi
 
 A setting that names a proxy which no longer exists makes its requests fail rather than connect directly.
 
-Notification channels choose their own [proxy setting](./notifications.md#proxy), which inherits the **Default proxy**, and browser push always follows the Default proxy. Email notifications always connect directly. Upload tools such as rclone and BaiduPCS-Go do not use these settings; they follow the server's environment variables.
+Notification channels choose their own [proxy setting](./notifications.md#proxy), which inherits the **Default proxy**, and browser push always follows the Default proxy. Email notifications always connect directly. rclone and Baidu Netdisk upload steps also choose their own [proxy setting](../reference/processors.md#upload-proxy), inheriting the Default proxy.
 
 ### Account proxy settings {#account-proxies}
 

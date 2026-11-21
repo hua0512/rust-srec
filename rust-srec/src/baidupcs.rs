@@ -26,6 +26,7 @@ use tracing::{debug, warn};
 use crate::database::models::ToolCredentialDbModel;
 use crate::database::repositories::ToolCredentialRepository;
 use crate::notification::{NotificationEvent, NotificationService};
+use crate::proxies::ProxyTarget;
 use process_utils::NoWindowExt;
 
 /// Binary name used when neither an explicit path nor [`BINARY_PATH_ENV`]
@@ -82,8 +83,17 @@ pub fn cli_lock() -> &'static Arc<RwLock<()>> {
 }
 
 /// Build a [`Command`] for the given binary with [`CONFIG_DIR_ENV`] applied
-/// when `config_dir` is a non-empty override.
+/// when `config_dir` is a non-empty override, for commands that only read
+/// the local config (`-v`, `env`, `who`, `logout`). They run without any
+/// proxy variable, so no proxy login reaches them.
 pub fn base_command(binary_path: &str, config_dir: Option<&str>) -> Command {
+    let mut command = tool_command(binary_path, config_dir);
+    ProxyTarget::Direct.apply_environment(&mut command);
+    command
+}
+
+/// The binary with [`CONFIG_DIR_ENV`] applied, on the server's environment.
+fn tool_command(binary_path: &str, config_dir: Option<&str>) -> Command {
     let mut command = Command::new(binary_path);
     if let Some(dir) = config_dir.map(str::trim).filter(|d| !d.is_empty()) {
         command.env(CONFIG_DIR_ENV, dir);
@@ -91,19 +101,35 @@ pub fn base_command(binary_path: &str, config_dir: Option<&str>) -> Command {
     command
 }
 
-/// Replace each secret value occurring in `text` with `***`. Applied to CLI
-/// output before it is returned in API responses or logged, because the
-/// BaiduPCS-Go may echo parts of its input on errors.
-pub fn scrub(text: &str, secrets: &[&str]) -> String {
-    let mut out = text.to_string();
-    for secret in secrets {
-        let secret = secret.trim();
-        if secret.is_empty() {
-            continue;
-        }
-        out = out.replace(secret, "***");
+/// How long `BaiduPCS-Go env` gets to report the config directory.
+const ENV_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// A [`base_command`] that reaches Baidu through `proxy`, for uploads and
+/// quota checks. Commands run for an upload step take the step's route;
+/// account commands from the tools page follow the global route.
+///
+/// BaiduPCS-Go prefers a proxy set in its own config over the environment,
+/// so a route other than System proxy fails while one is set there.
+pub async fn connected_command(
+    binary_path: &str,
+    config_dir: Option<&str>,
+    proxy: &ProxyTarget,
+) -> crate::Result<Command> {
+    if *proxy != ProxyTarget::System {
+        let mut probe = base_command(binary_path, config_dir);
+        probe.arg("env");
+        let output = run_capture(probe, None, ENV_PROBE_TIMEOUT).await?;
+        let directory = login::config_directory_from(binary_path, output).await?;
+        let proxy = proxy.clone();
+        tokio::task::spawn_blocking(move || login::reject_own_proxy(&directory, &proxy))
+            .await
+            .map_err(|error| {
+                crate::Error::Other(format!("BaiduPCS-Go config check task failed: {error}"))
+            })??;
     }
-    out
+    let mut command = tool_command(binary_path, config_dir);
+    crate::proxies::set_tool_environment(&mut command, proxy, "BaiduPCS-Go")?;
+    Ok(command)
 }
 
 /// Captured output of a one-shot CLI invocation run via [`run_capture`].
@@ -376,11 +402,12 @@ mod login;
 pub async fn run_login(
     binary_path: &str,
     config_dir: Option<&str>,
+    proxy: &ProxyTarget,
     material: &LoginMaterial,
     timeout: Duration,
     lease: Arc<OwnedRwLockWriteGuard<()>>,
 ) -> crate::Result<LoginOutcome> {
-    login::run(binary_path, config_dir, material, timeout, lease).await
+    login::run(binary_path, config_dir, proxy, material, timeout, lease).await
 }
 
 /// How long a config-dir key sits out of automatic re-login after a
@@ -458,7 +485,12 @@ pub trait BaiduPcsAuthenticator: Send + Sync {
     /// `Ok(false)` when nothing usable is stored or the CLI rejected the
     /// material. Acquires the write side of [`cli_lock`] itself, so the
     /// caller must not hold either side.
-    async fn relogin(&self, binary_path: &str, config_dir: Option<&str>) -> crate::Result<bool>;
+    async fn relogin(
+        &self,
+        binary_path: &str,
+        config_dir: Option<&str>,
+        proxy: &ProxyTarget,
+    ) -> crate::Result<bool>;
 }
 
 /// Production [`BaiduPcsAuthenticator`] over the `tool_credentials` table
@@ -553,7 +585,12 @@ impl BaiduPcsAuthenticator for StoredLoginAuthenticator {
         Ok(())
     }
 
-    async fn relogin(&self, binary_path: &str, config_dir: Option<&str>) -> crate::Result<bool> {
+    async fn relogin(
+        &self,
+        binary_path: &str,
+        config_dir: Option<&str>,
+        proxy: &ProxyTarget,
+    ) -> crate::Result<bool> {
         let key = config_dir_key(config_dir);
         if !self.cooldown.should_attempt(&key) {
             debug!("Skipping BaiduPCS-Go re-login during failure cooldown");
@@ -568,7 +605,15 @@ impl BaiduPcsAuthenticator for StoredLoginAuthenticator {
 
         let outcome = {
             let lease = Arc::new(cli_lock().clone().write_owned().await);
-            run_login(binary_path, config_dir, &material, LOGIN_TIMEOUT, lease).await
+            run_login(
+                binary_path,
+                config_dir,
+                proxy,
+                &material,
+                LOGIN_TIMEOUT,
+                lease,
+            )
+            .await
         };
         match outcome {
             Ok(outcome) if outcome.success => {
@@ -650,15 +695,6 @@ mod tests {
         assert_eq!(parse_size(" 1.000000GB "), Some(1024u64.pow(3)));
         assert_eq!(parse_size("weird"), None);
         assert_eq!(parse_size(""), None);
-    }
-
-    #[test]
-    fn scrub_masks_all_secret_occurrences() {
-        let text = "login -bduss=SECRETVALUE failed; SECRETVALUE rejected";
-        assert_eq!(
-            scrub(text, &["SECRETVALUE", "", "  "]),
-            "login -bduss=*** failed; *** rejected"
-        );
     }
 
     #[test]
@@ -771,7 +807,10 @@ mod tests {
         let authenticator = StoredLoginAuthenticator::new(repo.clone());
         authenticator.cooldown.record_failure("");
 
-        let result = authenticator.relogin("BaiduPCS-Go", None).await.unwrap();
+        let result = authenticator
+            .relogin("BaiduPCS-Go", None, &ProxyTarget::System)
+            .await
+            .unwrap();
 
         assert!(!result);
         assert_eq!(repo.gets(), 0, "cooldown short-circuits before the store");
@@ -784,7 +823,10 @@ mod tests {
         let repo = MockCredentialRepo::new(None);
         let authenticator = StoredLoginAuthenticator::new(repo.clone());
 
-        let result = authenticator.relogin("BaiduPCS-Go", None).await.unwrap();
+        let result = authenticator
+            .relogin("BaiduPCS-Go", None, &ProxyTarget::System)
+            .await
+            .unwrap();
 
         assert!(!result);
         assert_eq!(repo.gets(), 1);

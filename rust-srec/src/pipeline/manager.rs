@@ -332,6 +332,8 @@ pub(crate) struct PipelineRuntimeDependencies<
     pub(crate) staged_output_repository: Arc<dyn StagedOutputRepository>,
     pub(crate) upload_broadcaster: UploadStatusBroadcaster,
     pub(crate) download_limit_adjuster: Arc<dyn DownloadLimitAdjuster>,
+    /// Resolves the proxy routes of upload steps.
+    pub(crate) routes: crate::proxies::ServiceRoutes,
 }
 
 impl<CR, SR> PipelineManager<CR, SR>
@@ -380,6 +382,16 @@ where
         config: PipelineManagerConfig,
         job_repository: Arc<dyn JobRepository>,
     ) -> Self {
+        Self::with_routes(config, job_repository, None)
+    }
+
+    /// [`Self::with_repository`] whose upload processors resolve step
+    /// routes through `routes`.
+    fn with_routes(
+        config: PipelineManagerConfig,
+        job_repository: Arc<dyn JobRepository>,
+        routes: Option<crate::proxies::ServiceRoutes>,
+    ) -> Self {
         let (event_tx, _) = broadcast::channel(256);
         let job_queue = Arc::new(JobQueue::with_repository(
             config.job_queue.clone(),
@@ -388,13 +400,20 @@ where
 
         let execute_timeout_secs = config.execute_timeout_secs;
 
-        // Create default processors
+        // Create default processors. Without `routes` the upload processors
+        // keep the server's proxy environment.
+        let mut rclone = RcloneProcessor::new();
+        let mut baidupcs = BaiduPcsProcessor::new();
+        if let Some(routes) = routes {
+            rclone = rclone.with_routes(routes.clone());
+            baidupcs = baidupcs.with_routes(routes);
+        }
         let processors: Vec<Arc<dyn Processor>> = vec![
             Arc::new(RemuxProcessor::new()),
             Arc::new(DanmakuFactoryProcessor::new()),
             Arc::new(AssBurnInProcessor::new()),
-            Arc::new(RcloneProcessor::new()),
-            Arc::new(BaiduPcsProcessor::new()),
+            Arc::new(rclone),
+            Arc::new(baidupcs),
             Arc::new(ExecuteCommandProcessor::new().with_timeout(execute_timeout_secs)),
             Arc::new(ThumbnailProcessor::new()),
             Arc::new(CopyMoveProcessor::new()),
@@ -461,9 +480,10 @@ where
             staged_output_repository,
             upload_broadcaster,
             download_limit_adjuster,
+            routes,
         } = dependencies;
 
-        Self::with_repository(config, job_repository)
+        Self::with_routes(config, job_repository, Some(routes))
             .with_session_repository(session_repository)
             .with_streamer_repository(streamer_repository)
             .with_preset_repository(preset_repository)

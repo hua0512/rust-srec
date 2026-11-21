@@ -32,6 +32,8 @@ const noReferences = {
   streamers: [],
   accounts: [],
   notification_channels: [],
+  job_presets: [],
+  pipelines: [],
 };
 
 beforeEach(() => {

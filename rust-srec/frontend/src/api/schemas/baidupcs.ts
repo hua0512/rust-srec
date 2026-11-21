@@ -18,6 +18,7 @@ export const BaiduPcsStatusResponseSchema = z.object({
   username: z.string().nullable().optional(),
   quota_used_bytes: z.number().nullable().optional(),
   quota_total_bytes: z.number().nullable().optional(),
+  quota_error: z.string().nullable().optional(),
   has_stored_credentials: z.boolean().default(false),
   detail: z.string().nullable().optional(),
 });
