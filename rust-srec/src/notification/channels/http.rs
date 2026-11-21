@@ -3,11 +3,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use reqwest::{Client, Method, RequestBuilder, Response, StatusCode, header::HeaderMap};
+use reqwest::{Method, RequestBuilder, Response, StatusCode, header::HeaderMap};
 use tracing::{debug, warn};
 
 use crate::proxies::{ProxyRoute, ProxyService, ProxyTarget};
-use crate::utils::http_client::{ClientCache, apply_proxy, build_client};
+use crate::utils::http_client::service_client;
 use crate::{Error, Result};
 
 pub(super) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -15,10 +15,6 @@ const MAX_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(30);
 const MAX_ATTEMPTS: usize = 3;
 const MAX_RETRY_BODY_BYTES: usize = 8192;
-
-/// Clients by connection, shared by every channel. Timeouts are set per
-/// request, so the connection is all a client depends on.
-static CLIENTS: ClientCache<ProxyTarget> = ClientCache::new(16);
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum RetryPolicy {
@@ -89,16 +85,13 @@ impl HttpDelivery {
         let target = match &self.route {
             DeliveryRoute::Fixed(target) => target.clone(),
             DeliveryRoute::Stored { proxies, route } => {
-                proxies.notification_target(route).await.map_err(|error| {
+                proxies.resolve_over_global(route).await.map_err(|error| {
                     warn!(channel = self.channel, %error, "Notification proxy route unavailable");
                     self.failure(format!("proxy route unavailable: {error}"))
                 })?
             }
         };
-        let client = CLIENTS
-            .get_or_try_build(&target, || {
-                build_client(apply_proxy(Client::builder(), &target))
-            })
+        let client = service_client(&target)
             .map_err(|_| self.failure("HTTP client initialization failed"))?;
         Ok(client.request(method, url).timeout(self.timeout))
     }

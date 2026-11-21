@@ -540,6 +540,21 @@ pub(crate) async fn resolve_layers(
     )?)
 }
 
+/// The route of traffic that serves no platform, such as notifications,
+/// browser push and uploads: `own`, else the global route, with the saved
+/// proxy as it is stored now. Platform, template and streamer routes do not
+/// apply. Callers use only the target, so `own` is not reported as a source
+/// of its own.
+pub(crate) async fn resolve_over_global(
+    connection: &mut SqliteConnection,
+    own: &ProxyRoute,
+    system: &SystemProxy,
+) -> Result<ResolvedRoute> {
+    let mut layers = vec![(RouteSource::Global, own.clone())];
+    layers.extend(scope_layers(connection, None).await?);
+    resolve_layers(connection, &layers, system).await
+}
+
 /// A streamer's route: its own, then its template's, then its platform's,
 /// then the global route.
 pub(crate) async fn resolve_streamer(

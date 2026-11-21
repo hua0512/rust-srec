@@ -92,6 +92,16 @@ impl<K: Clone + Eq> ClientCache<K> {
     }
 }
 
+/// A client on `target` for the backend's own requests that serve no
+/// platform, such as notification channels and browser push. Clients are
+/// shared per connection, so callers set timeouts per request.
+pub(crate) fn service_client(target: &ProxyTarget) -> Result<reqwest::Client, ProxyError> {
+    static CLIENTS: ClientCache<ProxyTarget> = ClientCache::new(16);
+    CLIENTS.get_or_try_build(target, || {
+        build_client(apply_proxy(reqwest::Client::builder(), target))
+    })
+}
+
 /// Build a `reqwest::Client` configured like `platforms-parser`'s default client,
 /// but with rust-srec proxy semantics applied. Fails when no client on the
 /// route can be built: a default client would ignore the route.

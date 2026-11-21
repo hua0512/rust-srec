@@ -21,8 +21,8 @@ use std::time::Duration;
 use std::time::Instant;
 use url::Url;
 
-use crate::proxies::{ProxyTarget, SystemProxy};
-use crate::utils::http_client::{ClientCache, apply_proxy, build_client};
+use crate::proxies::{ProxyRoute, SystemProxy};
+use crate::utils::http_client::service_client;
 
 const SALT_LEN: usize = 16;
 const PUBLIC_KEY_LEN: usize = 65;
@@ -34,9 +34,6 @@ const SUBSCRIPTION_CACHE_TTL: Duration = Duration::from_secs(30);
 const VAPID_JWT_EXP_SECS: i64 = 12 * 60 * 60;
 const VAPID_JWT_SKEW_SECS: i64 = 60;
 const PUSH_TIMEOUT: Duration = Duration::from_secs(15);
-
-/// Push clients by connection.
-static CLIENTS: ClientCache<ProxyTarget> = ClientCache::new(4);
 
 type SubscriptionCacheValue = Option<(Instant, Vec<WebPushSubscriptionDbModel>)>;
 type SubscriptionCache = std::sync::Arc<tokio::sync::RwLock<SubscriptionCacheValue>>;
@@ -291,19 +288,16 @@ impl WebPushService {
     /// A client on the global route as it is now. A route naming a saved
     /// proxy that no longer exists is an error, never a direct connection.
     async fn client(&self) -> Result<reqwest::Client> {
-        use crate::database::repositories::proxies;
         let mut connection = self.pool.acquire().await?;
-        let layers = proxies::scope_layers(&mut connection, None).await?;
-        let target = proxies::resolve_layers(&mut connection, &layers, SystemProxy::current())
-            .await?
-            .target;
+        let target = crate::database::repositories::proxies::resolve_over_global(
+            &mut connection,
+            &ProxyRoute::Inherit,
+            SystemProxy::current(),
+        )
+        .await?
+        .target;
         drop(connection);
-        Ok(CLIENTS.get_or_try_build(&target, || {
-            build_client(apply_proxy(
-                reqwest::Client::builder().timeout(PUSH_TIMEOUT),
-                &target,
-            ))
-        })?)
+        Ok(service_client(&target)?)
     }
 
     pub async fn send_event(&self, event: &NotificationEvent, event_log_id: Option<&str>) {
@@ -412,6 +406,7 @@ impl WebPushService {
             .header("Content-Type", "application/octet-stream")
             .header("Authorization", authorization.clone())
             .header("Urgency", urgency)
+            .timeout(PUSH_TIMEOUT)
             .body(body.clone())
             .send()
             .await
@@ -430,6 +425,7 @@ impl WebPushService {
                 .header("Content-Type", "application/octet-stream")
                 .header("Authorization", authorization)
                 .header("Urgency", urgency)
+                .timeout(PUSH_TIMEOUT)
                 .body(body)
                 .send()
                 .await

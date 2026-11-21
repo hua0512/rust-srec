@@ -219,17 +219,13 @@ impl ProxyService {
         proxies::resolve_layers(&mut connection, &layers, system).await
     }
 
-    /// The connection a notification channel with route `own` takes now:
-    /// its own route, else the global route, with the saved proxy as it is
-    /// stored now.
-    pub async fn notification_target(&self, own: &ProxyRoute) -> Result<ProxyTarget> {
+    /// The connection traffic that serves no platform takes now, such as
+    /// notifications and uploads: `own`, else the global route; see
+    /// [`proxies::resolve_over_global`].
+    pub async fn resolve_over_global(&self, own: &ProxyRoute) -> Result<ProxyTarget> {
         let mut connection = self.pool.acquire().await?;
-        // Only the target is used, so the channel's own layer is not
-        // reported as a source of its own.
-        let mut layers = vec![(RouteSource::Global, own.clone())];
-        layers.extend(proxies::scope_layers(&mut connection, None).await?);
         Ok(
-            proxies::resolve_layers(&mut connection, &layers, SystemProxy::current())
+            proxies::resolve_over_global(&mut connection, own, SystemProxy::current())
                 .await?
                 .target,
         )
