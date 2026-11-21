@@ -72,6 +72,15 @@ export type ProxyRouteInherit =
   /** An account: it follows the recording using it. */
   | { kind: 'recording' };
 
+/**
+ * Inherit for traffic that serves no platform, such as notifications and
+ * uploads: it follows the global Default proxy.
+ */
+export const GLOBAL_ROUTE_INHERIT: ProxyRouteInherit = {
+  kind: 'scope',
+  query: { scope_type: 'global' },
+};
+
 const ADD = '__add__';
 
 function routeValue(route: ProxyRoute | undefined): string {

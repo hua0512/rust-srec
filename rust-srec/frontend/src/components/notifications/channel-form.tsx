@@ -64,16 +64,10 @@ import {
 import { IconInput } from '@/components/ui/icon-input';
 import { Callout } from '@/components/shared/callout';
 import {
+  GLOBAL_ROUTE_INHERIT,
   ProxyRoutePicker,
-  type ProxyRouteInherit,
 } from '@/components/config/shared/proxy-route-picker';
 import { INHERIT_ROUTE, type ProxyRoute } from '@/api/schemas/proxies';
-
-/** Inheriting follows the global route, which the picker shows. */
-const CHANNEL_INHERIT: ProxyRouteInherit = {
-  kind: 'scope',
-  query: { scope_type: 'global' },
-};
 
 interface ChannelFormProps {
   channel?: NotificationChannel | null;
@@ -422,7 +416,7 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
                   <ProxyRoutePicker
                     value={proxyRoute}
                     onChange={setProxyRoute}
-                    inherit={CHANNEL_INHERIT}
+                    inherit={GLOBAL_ROUTE_INHERIT}
                   />
                 )}
               </section>
