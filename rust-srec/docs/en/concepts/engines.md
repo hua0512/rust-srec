@@ -4,11 +4,11 @@ Use Mesio for a first recording. Select FFmpeg when you need its container or co
 
 Streamlink can also be an **extractor**, which resolves the stream URL before downloading. Extractor selection and download-engine selection are independent. See [engine and extractor settings](../reference/configuration-overrides.md#engine-and-extractor-selection).
 
-## 1. Engines Feature List
+## Engines Feature List {#_1-engines-feature-list}
 
 |         Feature          |                Mesio                 |                 FFMPEG                  |               STREAMLINK                |
 | :----------------------: | :-----------------------------------: | :-------------------------------------: | :-------------------------------------: |
-|       FLV Download       |                  ✅                   |                   ✅                    |                   ❌                    |
+|       FLV Download       |                  ✅                   |                   ✅                    |                   ✅                    |
 |       HLS Download       |        ✅ <br/>(Multithreaded)        |                   ✅                    |         ✅ <br/>(Multithreaded)         |
 |  MPEG-DASH Download   | ✅ <br/>(Multithreaded; separate video and audio merged into one file) |   Depends on the installed FFmpeg   |   Depends on the installed Streamlink   |
 | Recording Duration Stats | ✅ <br/>(Raw data mode not supported) |                   ✅                    |                   ✅                    |
@@ -28,9 +28,11 @@ A Mesio engine's settings have one tab each for FLV, HLS and DASH, each starting
 
 An empty field uses the default shown in it, and saving an engine stores only the settings you set, so engines follow later changes to the defaults. In a template's engine override, each setting can use the engine's setting (the field is left out), the default (`null`), or a custom value.
 
-## 2. FLV Consistency Fix
+## FLV Consistency Fix {#_2-flv-consistency-fix}
 
 When enabled, FLV items pass through one ordered repair chain before the writer. The chain preserves media payloads while fixing container-level structure:
+
+<StreamRepairDemo />
 
 | Concern | Pipeline behavior |
 | --- | --- |
@@ -66,7 +68,7 @@ Memory use per recording while Loop Protection is on:
 
 The byte limit is `flv_fix.duplicate_tag_filter_config.window_capacity_bytes` (default `16777216`; `0` keeps no history). It is under **Advanced → Loop protection** on the FLV tab.
 
-## 3. Raw Data Mode
+## Raw Data Mode {#_3-raw-data-mode}
 
 In Raw Data Mode, the **Mesio** engine writes stream data directly to disk as it arrives from the network, without parsing or processing media packets (headers, frames, metadata).
 
@@ -80,7 +82,7 @@ Because the headers and packet structures are not inspected, some advanced featu
 - **Segmentation**: The engine cannot detect frame boundaries or duration, so it cannot perform precise segmentation by size or duration.
 - **Repair**: Features like FLV, HLS or DASH Consistency Fix cannot be applied as they require packet-level manipulation.
 
-## 4. HLS Consistency Fix (Mesio Exclusive)
+## HLS Consistency Fix (Mesio Exclusive) {#_4-hls-consistency-fix-mesio-exclusive}
 
 Mesio's HLS download reactor and HLS fix pipeline have separate responsibilities:
 
@@ -89,7 +91,7 @@ Mesio's HLS download reactor and HLS fix pipeline have separate responsibilities
 
 The pipeline does not rewrite timestamps inside TS or fMP4 payloads, recreate missing media, or transcode codecs. A skipped segment remains an observable gap; the pipeline keeps delivered output ordered and rotates when a detected format change requires a new file.
 
-## 5. MPEG-DASH Recording (Mesio Exclusive) {#mpeg-dash}
+## MPEG-DASH Recording (Mesio Exclusive) {#mpeg-dash}
 
 Mesio records MPEG-DASH (`.mpd`) streams, live or finished. When video and audio are delivered separately, as is usual for DASH, they are merged into one fragmented MP4 file. DRM-protected streams, WebM media and live manifests using `SegmentBase` are not supported, and subtitles are not recorded. See [how the DASH engine works](./mesio.md#mpeg-dash-engine).
 
@@ -132,7 +134,7 @@ The action waits for a safe media boundary. Repeated clicks share the pending re
 
 In the download engine configuration, turn on **Enable lossless cutting** for the FFmpeg or Streamlink engine you use. This setting is marked **Experimental** and is off by default, including for existing configurations. The JSON field is `enable_lossless_cutting` (default `false`). Changes apply to new recordings. Template engine overrides can turn it on or off, select **Default** for the default (off), or select **Use engine setting** to inherit the engine configuration. Mesio does not require this option.
 
-When enabled for a supported FFmpeg or Streamlink mode, recording uses temporary chunks and assembles each final file after a manual cut, an automatic limit, or the end of recording. Final files become available only after assembly finishes, even when no manual cut is requested. This uses additional disk space and I/O during finalization. Final filenames follow your configured template, including `%i` when present. A numeric suffix such as `-001` is added only if that filename already exists. The recording attempt ID and unfinished remux files stay inside the `.srec-chunks-*` staging directory. When the option is off, or the output format or custom arguments are unsupported, the engine retains its existing recording behavior and the action does not appear. The engine settings warn when custom arguments prevent lossless cutting.
+When enabled for a supported FFmpeg or Streamlink mode, recording uses temporary chunks and assembles each final file after a manual cut, an automatic limit, or the end of recording. This experimental chunked mode also supports both duration and size limits together on FFmpeg and Streamlink. Final files become available only after assembly finishes, even when no manual cut is requested. This uses additional disk space and I/O during finalization. Final filenames follow your configured template, including `%i` when present. A numeric suffix such as `-001` is added only if that filename already exists. The recording attempt ID and unfinished remux files stay inside the `.srec-chunks-*` staging directory. When the option is off, or the output format or custom arguments are unsupported, the engine retains its existing recording behavior and the action does not appear. The engine settings warn when custom arguments prevent lossless cutting.
 
 Stopping a recording ends acquisition within the engine's graceful stop timeout, then waits for the remaining files to be assembled, however long that takes. Only an application shutdown that runs out of time interrupts assembly. If FFmpeg or Streamlink exits unexpectedly, the chunks captured before the exit are still assembled; the unfinished last chunk stays in the staging directory.
 

@@ -306,7 +306,7 @@ Stored millisecond values, nullable lifecycle timestamps and omitted schema defa
 
 The download manager keeps event contracts in `downloader::manager::events`, acknowledged delivery in `coordination`, engine configuration in `configuration`, and attempt ownership in `attempt`. These implementation modules remain private; public event imports through `downloader` and internal imports through `downloader::manager` are preserved. Runtime shutdown uses `DownloadManager::shutdown_until`, and the active entry retains its queue slot until removal.
 
-Rust integrations should use the supported manager shutdown and snapshot methods, `DownloadConfig::build_pipeline_config` / `build_hls_pipeline_config` / `build_flv_pipeline_config`, and the public `CircuitBreaker` methods. Internal breaker ownership uses `CircuitBreakerManager::get`. Mesio engine diagnostics report the linked crate's `mesio::VERSION`.
+Rust integrations should use the supported manager shutdown and snapshot methods, `DownloadConfig::build_pipeline_config`, and the public `CircuitBreaker` methods. Internal breaker ownership uses `CircuitBreakerManager::get`. Mesio engine diagnostics report the linked crate's `mesio::VERSION`.
 
 ### FFmpeg recording events {#ffmpeg-recording-events}
 
@@ -484,24 +484,13 @@ remain local to each API state.
     the Watchtower update hooks)
   - `GET /api/health` and `GET /api/health/ready` require a valid bearer token unless authentication
     is disabled
-- Shutdown:
-  - The standalone executable keeps SQLite, sockets, and recording files inside an OS-contained
-    worker process. A dedicated parent thread observes termination signals and arms the absolute
-    shutdown deadline even while startup or async runtime work is blocked. The watchdog remains
-    armed through durable marker updates, terminal diagnostics, and parent process exit.
-  - The `ServiceContainer` performs phased graceful shutdown inside that worker, keeping required
-    event consumers alive until final segment facts are persisted.
-  - `SIGINT` triggers graceful shutdown on all supported platforms; `SIGTERM` is additionally
-    handled on Unix. The parent and the worker both register handlers, so a signal delivered
-    straight to the worker — as `KillMode=control-group` or `pkill` does — runs the same graceful
-    finalization as one relayed over the control pipe. A worker-local critical failure still
-    fail-stops that worker; the parent then contains its descendants and retains recovery state.
-  - A forced or crashed worker leaves a dirty-generation marker beside SQLite so the next launch
-    reports that recovery may be required. Earlier unresolved recovery state persists after later clean generations;
-    the marker is a detection mechanism, not artifact replay.
-  - That marker keeps the oldest and newest unresolved generations plus a count of the ones in
-    between, so a restart loop cannot grow it. Startup and exit messages report how many
-    generations still require recovery.
+### Standalone shutdown deadline {#standalone-shutdown-deadline}
+
+- The standalone executable keeps SQLite, sockets, and recording files inside an OS-contained worker process. A dedicated parent thread observes `SIGINT` (all supported platforms) and `SIGTERM` (Unix) and arms the absolute shutdown deadline immediately — including while startup admission, async runtime work, or marker I/O is blocked. The watchdog remains armed through durable marker updates, terminal diagnostics, and parent process exit.
+- Both the parent and the worker register signal handlers, so a signal delivered straight to the worker (as `KillMode=control-group` or `pkill` does) runs the same phased graceful finalization in `ServiceContainer` as one relayed over the control pipe, keeping required event consumers alive until final segment facts are persisted.
+- The worker's own drain budget is derived from `RUST_SREC_SHUTDOWN_TIMEOUT_SECS` minus `RUST_SREC_SHUTDOWN_FORCE_RESERVE_SECS` (less a small scheduling margin), so raising the timeout lengthens recording finalization. Recording engines clamp their own graceful-stop wait to whatever remains of this budget so a longer per-engine stop timeout does not cause a child to be killed mid-finalization.
+- At the start of the force reserve, if the runtime is still active the parent terminates the contained process tree and exits unsuccessfully (`124` for hard-deadline expiry; `125` if the process-tree termination request itself fails). A worker-local fatal failure fails closed instead of starting an unbounded drain; the parent then contains its descendants and retains recovery state. A shutdown that overruns its grace period but still finalizes everything exits cleanly; only work that could not be contained is reported as a crash.
+- A forced or crashed worker leaves a dirty-generation marker beside SQLite keeping the oldest and newest unresolved generations plus an intervening count, so restart loops cannot grow it. Earlier unresolved recovery state persists across later clean runs; the marker is a detection mechanism rather than artifact replay and should be removed only while the backend is stopped and interrupted artifacts have been reconciled.
 
 ## Backend Rust Interfaces {#backend-rust-interfaces}
 
@@ -532,7 +521,3 @@ wire-level stop cause.
 actor checks clone an immutable Arc snapshot instead of configuration JSON.
 `StatusChecker`, which takes borrowed metadata inputs, is the scheduler's only
 status-check interface.
-
-## Standalone shutdown deadline
-
-The deadline starts when the parent observes `SIGINT` or `SIGTERM`, including while startup admission or marker I/O is in progress, and covers the parent process exit as well as worker cleanup. The server first asks its isolated runtime to shut down gracefully; the runtime's own drain budget is derived from these same two values (the timeout minus the force reserve, less a small scheduling margin), so raising the timeout lengthens the phase that actually finalizes recordings. At the start of the force reserve, it terminates the contained process tree if the runtime is still active and exits unsuccessfully. Exit status `124` identifies hard-deadline expiry; `125` means the terminal process-tree termination request itself failed. A worker-local fatal failure fails closed instead of starting an unbounded graceful drain. A retained marker means startup recovery may be required; later clean runs do not clear the earlier unresolved recovery state. The marker does not by itself reconstruct an artifact that was interrupted before it reached SQLite. Remove it only while the backend is stopped and after the interrupted artifacts have been reconciled. Recording engines clamp their own graceful-stop wait to whatever remains of this budget, so a per-engine stop timeout that is longer than the shutdown timeout does not cause the engine child to be killed mid-finalization. A shutdown that overruns its grace period but still finalizes everything exits cleanly; only work that could not be contained is reported as a crash.

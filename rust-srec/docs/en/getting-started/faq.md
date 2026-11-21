@@ -2,7 +2,7 @@
 
 ## Which address should I open?
 
-For the Docker files downloaded from this documentation, open `http://localhost:15275`; the API is at `http://localhost:12555/api`. A source development checkout using the example `.env` files uses frontend port `15275` and API port `8080`. See the [installation matrix](./installation.md#choose-a-deployment-method).
+For Docker deployments and source checkouts using the example `.env` files, open `http://localhost:15275`; the backend API listens on `http://localhost:12555/api` by default. See the [installation matrix](./installation.md#choose-a-deployment-method).
 
 ## What is the initial account?
 

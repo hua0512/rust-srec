@@ -3,12 +3,15 @@ import { defineConfig } from "vitepress";
 export default defineConfig({
   title: "Rust-Srec",
   description: "Automatic Online Streaming Recorder",
+  cleanUrls: true,
   lastUpdated: true,
+  sitemap: {
+    hostname: "https://docs.srec.rs",
+  },
   srcExclude: ["AGENTS.md", "release-notes.md", "release-notes-body.md"],
 
-  // Ignore dead links for external URLs and runtime-generated paths
+  // Ignore dead links for localhost URLs and static downloadable templates in public/
   ignoreDeadLinks: [
-    /^\/api\/docs/,
     /^http:\/\/localhost/,
     "/docker-compose.example.yml",
     "/docker-compose.gpu.yml",
@@ -31,6 +34,16 @@ export default defineConfig({
     ["meta", { property: "og:image:height", content: "640" }],
     ["meta", { name: "twitter:card", content: "summary_large_image" }],
   ],
+
+  transformHead(ctx) {
+    return [
+      ["meta", { property: "og:type", content: "website" }],
+      ["meta", { property: "og:site_name", content: "Rust-Srec" }],
+      ["meta", { property: "og:title", content: ctx.title }],
+      ["meta", { property: "og:description", content: ctx.description }],
+      ["meta", { property: "og:image:alt", content: ctx.title }],
+    ];
+  },
 
   locales: {
     en: {
@@ -60,16 +73,40 @@ export default defineConfig({
         langMenuLabel: "Change language",
         skipToContentLabel: "Skip to content",
         footer: {
-          message: "Released under the MIT License.",
+          message: "Released under the MIT / Apache-2.0 License.",
           copyright: "Copyright © 2024-present hua0512",
         },
         nav: [
-          { text: "Getting Started", link: "/en/getting-started/" },
-          { text: "Guides", link: "/en/guides/" },
-          { text: "Reference", link: "/en/reference/" },
-          { text: "Operations", link: "/en/operations/production" },
-          { text: "Release Notes", link: "/en/release-notes/" },
-          { text: "Donate", link: "/en/donate" },
+          {
+            text: "Getting Started",
+            link: "/en/getting-started/",
+            activeMatch: "^/en/getting-started/",
+          },
+          {
+            text: "Guides",
+            link: "/en/guides/",
+            activeMatch: "^/en/(guides|concepts/(?!mesio))",
+          },
+          {
+            text: "Reference",
+            link: "/en/reference/",
+            activeMatch: "^/en/(reference|api|platforms)/",
+          },
+          {
+            text: "Operations",
+            link: "/en/operations/",
+            activeMatch: "^/en/operations/",
+          },
+          {
+            text: "Release Notes",
+            link: "/en/release-notes/",
+            activeMatch: "^/en/release-notes/",
+          },
+          {
+            text: "Donate",
+            link: "/en/donate",
+            activeMatch: "^/en/donate",
+          },
         ],
         sidebar: {
           "/en/": [
@@ -86,6 +123,7 @@ export default defineConfig({
             },
             {
               text: "Guides",
+              link: "/en/guides/",
               items: [
                 { text: "System Overview", link: "/en/concepts/architecture" },
                 { text: "Templates & Inheritance", link: "/en/concepts/configuration" },
@@ -95,10 +133,10 @@ export default defineConfig({
                 { text: "Notifications", link: "/en/concepts/notifications" },
                 { text: "Danmu & Statistics", link: "/en/guides/danmu" },
               ],
-              link: "/en/guides/",
             },
             {
               text: "Reference",
+              link: "/en/reference/",
               items: [
                 { text: "Settings", link: "/en/reference/settings" },
                 { text: "Environment Variables", link: "/en/reference/environment" },
@@ -125,10 +163,11 @@ export default defineConfig({
                   ],
                 },
               ],
-              link: "/en/reference/",
             },
             {
               text: "Operations",
+              link: "/en/operations/",
+              collapsed: true,
               items: [
                 { text: "Production Deployment", link: "/en/operations/production" },
                 { text: "Storage & Capacity", link: "/en/operations/storage" },
@@ -142,22 +181,23 @@ export default defineConfig({
             },
             {
               text: "Development",
+              link: "/en/development/",
+              collapsed: true,
               items: [
                 { text: "Development Environment", link: "/en/development/setup" },
                 { text: "Runtime Architecture", link: "/en/development/architecture" },
                 { text: "Configuration Resolution", link: "/en/development/configuration" },
                 { text: "Pipeline Contracts", link: "/en/development/pipeline" },
-                { text: "Recording Engines", link: "/en/development/engines" },
-                { text: "Mesio Internals", link: "/en/concepts/mesio" },
+                { text: "Recording Engine Internals", link: "/en/development/engines" },
+                { text: "Mesio Engine", link: "/en/concepts/mesio" },
                 { text: "Notification Internals", link: "/en/development/notifications" },
                 { text: "Persistence Contracts", link: "/en/development/persistence" },
                 { text: "Monitoring Implementation", link: "/en/development/monitoring" },
               ],
-              link: "/en/development/",
-              collapsed: true,
             },
             {
               text: "Release Notes",
+              collapsed: true,
               items: [
                 { text: "Overview", link: "/en/release-notes/" },
                 { text: "Unreleased", link: "/en/release-notes/unreleased" },
@@ -188,6 +228,7 @@ export default defineConfig({
       label: "简体中文",
       lang: "zh-CN",
       link: "/zh/",
+      description: "自动在线直播录制与后处理工具",
       themeConfig: {
         editLink: {
           pattern:
@@ -211,16 +252,40 @@ export default defineConfig({
         langMenuLabel: "切换语言",
         skipToContentLabel: "跳转到正文",
         footer: {
-          message: "基于 MIT 许可证发布。",
+          message: "基于 MIT / Apache-2.0 许可证发布。",
           copyright: "Copyright © 2024-present hua0512",
         },
         nav: [
-          { text: "快速开始", link: "/zh/getting-started/" },
-          { text: "指南", link: "/zh/guides/" },
-          { text: "参考", link: "/zh/reference/" },
-          { text: "运维", link: "/zh/operations/production" },
-          { text: "更新日志", link: "/zh/release-notes/" },
-          { text: "捐赠", link: "/zh/donate" },
+          {
+            text: "快速开始",
+            link: "/zh/getting-started/",
+            activeMatch: "^/zh/getting-started/",
+          },
+          {
+            text: "使用指南",
+            link: "/zh/guides/",
+            activeMatch: "^/zh/(guides|concepts/(?!mesio))",
+          },
+          {
+            text: "参考",
+            link: "/zh/reference/",
+            activeMatch: "^/zh/(reference|api|platforms)/",
+          },
+          {
+            text: "运维",
+            link: "/zh/operations/",
+            activeMatch: "^/zh/operations/",
+          },
+          {
+            text: "更新日志",
+            link: "/zh/release-notes/",
+            activeMatch: "^/zh/release-notes/",
+          },
+          {
+            text: "捐赠",
+            link: "/zh/donate",
+            activeMatch: "^/zh/donate",
+          },
         ],
         sidebar: {
           "/zh/": [
@@ -237,6 +302,7 @@ export default defineConfig({
             },
             {
               text: "使用指南",
+              link: "/zh/guides/",
               items: [
                 { text: "系统概览", link: "/zh/concepts/architecture" },
                 { text: "模板与继承", link: "/zh/concepts/configuration" },
@@ -246,10 +312,10 @@ export default defineConfig({
                 { text: "通知", link: "/zh/concepts/notifications" },
                 { text: "弹幕与统计", link: "/zh/guides/danmu" },
               ],
-              link: "/zh/guides/",
             },
             {
               text: "参考",
+              link: "/zh/reference/",
               items: [
                 { text: "设置", link: "/zh/reference/settings" },
                 { text: "环境变量", link: "/zh/reference/environment" },
@@ -276,10 +342,11 @@ export default defineConfig({
                   ],
                 },
               ],
-              link: "/zh/reference/",
             },
             {
               text: "运维",
+              link: "/zh/operations/",
+              collapsed: true,
               items: [
                 { text: "生产部署", link: "/zh/operations/production" },
                 { text: "存储与容量", link: "/zh/operations/storage" },
@@ -293,22 +360,23 @@ export default defineConfig({
             },
             {
               text: "开发",
+              link: "/zh/development/",
+              collapsed: true,
               items: [
                 { text: "开发环境", link: "/zh/development/setup" },
                 { text: "运行时架构", link: "/zh/development/architecture" },
                 { text: "配置解析", link: "/zh/development/configuration" },
                 { text: "管道执行约定", link: "/zh/development/pipeline" },
                 { text: "录制引擎内部实现", link: "/zh/development/engines" },
-                { text: "Mesio 内部实现", link: "/zh/concepts/mesio" },
+                { text: "Mesio 引擎", link: "/zh/concepts/mesio" },
                 { text: "通知内部实现", link: "/zh/development/notifications" },
                 { text: "持久化约定", link: "/zh/development/persistence" },
                 { text: "监控内部实现", link: "/zh/development/monitoring" },
               ],
-              link: "/zh/development/",
-              collapsed: true,
             },
             {
               text: "更新日志",
+              collapsed: true,
               items: [
                 { text: "概览", link: "/zh/release-notes/" },
                 { text: "未发布", link: "/zh/release-notes/unreleased" },
@@ -339,12 +407,22 @@ export default defineConfig({
 
   themeConfig: {
     logo: "/stream-rec-orange.svg",
+    gradedContainers: true,
     socialLinks: [
       { icon: "github", link: "https://github.com/hua0512/rust-srec" },
     ],
     search: {
       provider: "local",
       options: {
+        async _render(src, env, md) {
+          const cleaned = src.replace(
+            /<div\s+[^>]*class="legacy-section"[^>]*>[\s\S]*?<\/div>/g,
+            "",
+          );
+          const html = await md.renderAsync(cleaned, env);
+          if (env.frontmatter?.search === false) return "";
+          return html;
+        },
         locales: {
           zh: {
             translations: {

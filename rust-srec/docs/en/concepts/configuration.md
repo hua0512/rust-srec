@@ -13,6 +13,8 @@ Settings are applied in this order, from lowest to highest priority:
 
 For example, if the global output format is `flv` and a template sets `mp4`, streamers using that template record as MP4. A streamer that explicitly sets `flv` uses FLV instead. Remove that override to inherit the template again.
 
+<ConfigLayersDemo />
+
 ## Create and use a template
 
 1. Create a template containing the settings shared by a group of streamers.
@@ -38,11 +40,15 @@ Changes made through the interface or API do not require a service restart, but 
 
 A running download does pick up:
 
-- `min_segment_size_bytes` and the segment and session-complete pipeline definitions, re-read from
-  the merged config as each segment completes. Clearing a pipeline in configuration does not clear
-  it for a session already running — the re-read only replaces a pipeline that is set.
-- `max_concurrent_downloads`, the queue freshness threshold, the GPU probe interval and pipeline
-  worker concurrency, when global settings are saved.
+- `min_segment_size_bytes`, the segment (`pipeline`), paired-segment (`paired_segment_pipeline`), and
+  session-complete (`session_complete_pipeline`) pipeline definitions, and `auto_thumbnail` (evaluated
+  on segment 0), re-read from the merged config as each segment completes. Clearing a pipeline in
+  configuration does not clear it for a session already running — the re-read only replaces a
+  pipeline that is set.
+- `max_concurrent_downloads`, the queue freshness threshold, the GPU probe interval, and pipeline
+  worker concurrency when global settings are saved. Decreasing `max_concurrent_cpu_jobs`,
+  `max_concurrent_io_jobs`, or `max_concurrent_uploads` applies promptly, whereas **raising**
+  concurrency above the startup values requires a restart.
 - A new monitoring interval, which is applied to each live streamer — but only
   when `streamer_check_delay_ms`, `offline_check_delay_ms` or `offline_check_count` actually
   changed. A streamer whose check is already due runs that check first and applies the new
@@ -55,6 +61,79 @@ reuses the base name captured at the start. Editing any of them applies to the n
 that streamer, not to the next segment of the current one.
 
 A pipeline job that is already queued keeps the DAG definition it was created with.
+
+## Account profiles and selection
+
+A profile stores one account's complete cookies and supported refresh or login material for one platform. Save accounts separately; never concatenate cookies from different accounts. Profiles belong to their platform and are managed on the platform page. The platform, a template's override for that platform, and any streamer on it can each select from the platform's profiles; a selection cannot name another platform's profile. Cookies, tokens and account logins are not stored in configuration itself.
+
+| Selection | Behavior |
+| --- | --- |
+| Inherit (or not set) | Follows the next layer; at the platform, it means no account. |
+| None | Stops inheritance and uses no stored account credentials or automatic re-login. |
+| Fixed | Uses exactly one profile; refresh and re-login target that account. |
+| Pool: priority (default) | Starts with the first eligible profile in saved order; later profiles are backups. |
+| Pool: round robin | Distributes independent checks across eligible profiles in saved order. Most useful when the accounts [connect through different proxies](#account-proxies). |
+
+Resolution walks the streamer, the template override for the exact platform name, then the platform, and uses the first selection other than inherit. A pool replaces the inherited pool; lists are never combined. Global configuration does not store accounts. Pools have optional failover and a total attempt limit from 1 to 10; disabled and invalid accounts are skipped. Priority is the recommended pool: one main account with automatic backups draws less attention from platform anti-abuse checks than spreading every check across all accounts. Fixed selection never switches accounts. Unavailable credentials do not silently fall back to anonymous access, unless a pool turns on **Check without an account when no account can be used**: then, while none of its accounts can be used, checks and new recordings go on without an account, and the pool's accounts are used again once one works. Ordinary checks do not move a recording that started without an account onto one.
+
+A recording keeps its selected account through extraction, download startup, and chat collection. Ordinary polls cannot rotate a recording already running. If recovery switches the recording to another account, chat collection reconnects with that account. Account/material changes require fresh extraction for the next attempt; changing a policy or disabling a profile does not by itself stop an engine already running. Use the existing stop/disable action to stop immediately. Credential exhaustion backs off without counting as a generic streamer error or entering temporary disable. A recording that is waiting for credentials restarts as soon as an account is edited, re-enabled or logged in again, or its selection changes, without waiting for the next check.
+
+When no account can be used, the account status says why: every usable account needs a new login, or every selected account is disabled.
+
+A streamer whose last check found no usable account shows **Account needs login** or **Accounts disabled** on its card instead of *Offline*, with a link to its platform's accounts; a streamer that is recording keeps showing *Live*. The badge clears at the next check that reaches an account. The top bar also counts enabled accounts that need a new login, or whose automatic refresh has failed three times in a row after the platform rejected them, and lists them by platform. Disabled accounts are not counted. An expired login is flagged only where the platform reports it; elsewhere the account keeps being used and neither warning appears for it.
+
+Profile saves happen immediately; selecting the saved profile in an unsaved configuration form still requires saving that form. Supplying new material replaces the whole bundle and clears any token it leaves out; an edit that supplies no material keeps the stored secrets. Ordinary profile views show presence/status indicators rather than secret values. Each row of the account list sums up who uses the account and when, or why it needs attention. Expanding a row names the platform, templates and streamers that select the account and the streamers recording with it, with links to their pages, and shows when the account was last used (updated at most every few minutes), checked and refreshed, any consecutive refresh failures and their reason, and, for accounts the platform renews automatically such as Douyu's, when the next renewal is due. Deleting an account that is still selected or recording lists the same configurations and recordings instead. A streamer's own selection ends when the streamer is deleted, and when an edited URL moves it to another platform it inherits there; select its accounts again on the new platform if it needs its own.
+
+### Streamlink accounts {#streamlink-accounts}
+
+Streamers on sites without a built-in extractor, such as YouTube or Kick, all belong to the Streamlink platform. Because that one platform covers many unrelated sites, its accounts are chosen by site or per streamer:
+
+- Add profiles on the Streamlink platform page and enter the **Sites** each one is for, such as `youtube.com`. A site also covers its subdomains: `youtube.com` covers `www.youtube.com` and `m.youtube.com`, but not `notyoutube.com`. A whole URL can be pasted, a leading `www.` is dropped, and each site belongs to one account only.
+- A streamer that inherits uses the account whose site covers its URL. When two sites cover it, the more specific one wins, so `m.youtube.com` beats `youtube.com`. Without such an account the streamer records signed out.
+- A streamer can choose **No authentication** or one **Fixed account** in its settings instead. The settings warn when the fixed account is set up for other sites, because its cookies would be sent to the streamer's site.
+- The Streamlink platform and template overrides for it cannot select accounts, and pools are not available, so there is no automatic failover to another account.
+- Streamlink receives the profile's cookies and connects as the account's [proxy setting](#account-proxies) chooses. The account is not checked or refreshed automatically, and a login failure does not mark it invalid.
+- Credentials written into the Streamlink engine's or extractor's `extra_args` are passed to Streamlink as written. They are not managed by profiles, are never checked, and apply to every streamer using those settings.
+
+A Twitch streamer whose [extractor](../reference/configuration-overrides.md#extractor) is set to Streamlink stays on the Twitch platform and uses Twitch accounts as usual; its profile's cookies and access token are passed to Streamlink.
+
+## Proxies {#proxies}
+
+Save the proxies you use under **Settings → Proxies**, then choose how each scope and account connects: directly, through the server's system proxy, or through a saved proxy.
+
+### Saved proxies {#saved-proxies}
+
+A saved proxy has a name and an address: `http`, `https`, `socks5` or `socks5h`, written as `scheme://host:port` without a path, with an optional username and password in their own fields. An address and username identify the exit a platform sees, so each pair can be saved only once; saving it again offers the existing proxy instead. Names are unique, ignoring case.
+
+The list shows each proxy's address, username and how many settings use it; expand a row to see which. Passwords are never shown: when editing, leave the password empty to keep it. **Test** requests a platform's home page, or another address, once through the proxy and reports whether it answered, with the HTTP status and the time taken; the editor can test a proxy before it is saved. Any answer except the proxy rejecting its login counts as reachable. Testing an address on a private network needs **Allow private stream proxy targets**. The page also shows the system proxy detected when the server started.
+
+A proxy cannot be deleted while a setting, account, notification channel, job preset or pipeline upload step uses it; the delete dialog lists them. A template being removed releases its proxy once the recordings using it finish. Upload jobs already queued or running do not count as users: if their proxy is deleted, they fail when they upload rather than connecting another way.
+
+Changes are saved at once and apply to the next check, extraction or connection; work already running keeps its connection. Changing a proxy's address or username counts as changing the credentials of the accounts that choose it: they are checked again, and recordings using them switch at their next fresh extraction. Renaming a proxy or changing only its password does not.
+
+### Choosing how to connect {#choosing-a-proxy}
+
+Global settings choose the **Default proxy** under **Network & System**: **Direct**, **System proxy** or a saved proxy. A new installation starts with **System proxy** when `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` is set on its first start, otherwise **Direct**. Platforms, templates and streamers choose on their **Proxy** tab, which also offers **Inherit**. The most specific choice other than Inherit wins: streamer, then template, then platform, then global. A template that inherits leaves each streamer on its own platform's setting.
+
+The chosen connection carries live checks and parsing, downloads with every engine, danmu, and playback through the **Server proxy**.
+
+- **Direct** uses no proxy at all. FFmpeg and Streamlink are started without the `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY` environment variables, so they connect directly too.
+- **System proxy** uses those [environment variables](../reference/environment.md#network) of the server. Danmu uses the first of `HTTPS_PROXY`, `ALL_PROXY` and `HTTP_PROXY` that was set when the server started, and connects directly to hosts listed in `NO_PROXY`. With none of them set, System proxy connects directly. In the desktop app, the operating system's proxy setting reaches only some requests made inside the app, never FFmpeg, Streamlink or danmu; save the proxy instead to cover every connection.
+- A **saved proxy** carries all of them. FFmpeg supports only `http` proxies: an FFmpeg recording through an `https` or SOCKS proxy fails with an error saying so, and the setting warns about it. Use an `http` proxy there, or the Mesio or Streamlink engine.
+
+A setting that names a proxy which no longer exists makes its requests fail rather than connect directly.
+
+Notification channels choose their own [proxy setting](./notifications.md#proxy), which inherits the **Default proxy**, and browser push always follows the Default proxy. Email notifications always connect directly. rclone and Baidu Netdisk upload steps also choose their own [proxy setting](../reference/processors.md#upload-proxy), inheriting the Default proxy.
+
+### Account proxy settings {#account-proxies}
+
+Each account has its own proxy setting, chosen when adding or editing it: **Follow the recording's proxy** (the default), **Direct**, **System proxy** or a saved proxy. An account's own choice wins over the streamer, template and platform for everything done with the account: account checks, refreshes, renewals and QR login, live checks and parsing, downloads, danmu and playback. An account that follows the recording connects the way whatever uses it does; its own checks, refreshes, renewals and QR login then follow the platform's setting, or the global one. In the account list, an icon marks accounts with their own setting.
+
+Changing an account's proxy setting counts as changing its credentials: the account is checked again, and recordings using it switch at their next fresh extraction.
+
+### Rate limits per connection {#proxy-rate-limits}
+
+Platforms throttle a connection rather than an account. Direct, System proxy and each saved proxy are separate connections; without proxy environment variables, System proxy counts as Direct. When a platform limits requests, only its requests on that connection pause, whichever setting or account chose it. A pool with failover then moves on to an account on another connection, skipping accounts that use the throttled one, and tries accounts whose connection is still paused last. Each pause sends a *Platform rate limited* notification naming the connection. Changing a saved proxy's address or username ends its pause.
 
 <div id="the-4-layer-hierarchy" class="legacy-section">
 
@@ -160,7 +239,7 @@ This section is now in [Configuration overrides](../reference/configuration-over
 
 <div id="hot-reload-cache-and-update-events" class="legacy-section">
 
-This section is now in [Configuration layers](./configuration.md#when-a-change-reaches-a-recording-already-in-progress).
+This section is now in [Configuration resolution](../development/configuration.md#hot-reload-cache-and-update-events).
 
 </div>
 
@@ -181,76 +260,3 @@ This section is now in [Upgrade and Rollback](../operations/upgrading.md#upgradi
 This section is now in [Upgrade and Rollback](../operations/upgrading.md#proxy-settings).
 
 </div>
-
-## Account profiles and selection
-
-A profile stores one account's complete cookies and supported refresh or login material for one platform. Save accounts separately; never concatenate cookies from different accounts. Profiles belong to their platform and are managed on the platform page. The platform, a template's override for that platform, and any streamer on it can each select from the platform's profiles; a selection cannot name another platform's profile. Cookies, tokens and account logins are not stored in configuration itself.
-
-| Selection | Behavior |
-| --- | --- |
-| Inherit (or not set) | Follows the next layer; at the platform, it means no account. |
-| None | Stops inheritance and uses no stored account credentials or automatic re-login. |
-| Fixed | Uses exactly one profile; refresh and re-login target that account. |
-| Pool: priority (default) | Starts with the first eligible profile in saved order; later profiles are backups. |
-| Pool: round robin | Distributes independent checks across eligible profiles in saved order. Most useful when the accounts [connect through different proxies](#account-proxies). |
-
-Resolution walks the streamer, the template override for the exact platform name, then the platform, and uses the first selection other than inherit. A pool replaces the inherited pool; lists are never combined. Global configuration does not store accounts. Pools have optional failover and a total attempt limit from 1 to 10; disabled and invalid accounts are skipped. Priority is the recommended pool: one main account with automatic backups draws less attention from platform anti-abuse checks than spreading every check across all accounts. Fixed selection never switches accounts. Unavailable credentials do not silently fall back to anonymous access, unless a pool turns on **Check without an account when no account can be used**: then, while none of its accounts can be used, checks and new recordings go on without an account, and the pool's accounts are used again once one works. Ordinary checks do not move a recording that started without an account onto one.
-
-A recording keeps its selected account through extraction, download startup, and chat collection. Ordinary polls cannot rotate a recording already running. If recovery switches the recording to another account, chat collection reconnects with that account. Account/material changes require fresh extraction for the next attempt; changing a policy or disabling a profile does not by itself stop an engine already running. Use the existing stop/disable action to stop immediately. Credential exhaustion backs off without counting as a generic streamer error or entering temporary disable. A recording that is waiting for credentials restarts as soon as an account is edited, re-enabled or logged in again, or its selection changes, without waiting for the next check.
-
-When no account can be used, the account status says why: every usable account needs a new login, or every selected account is disabled.
-
-A streamer whose last check found no usable account shows **Account needs login** or **Accounts disabled** on its card instead of *Offline*, with a link to its platform's accounts; a streamer that is recording keeps showing *Live*. The badge clears at the next check that reaches an account. The top bar also counts enabled accounts that need a new login, or whose automatic refresh has failed three times in a row after the platform rejected them, and lists them by platform. Disabled accounts are not counted. An expired login is flagged only where the platform reports it; elsewhere the account keeps being used and neither warning appears for it.
-
-Profile saves happen immediately; selecting the saved profile in an unsaved configuration form still requires saving that form. Supplying new material replaces the whole bundle and clears any token it leaves out; an edit that supplies no material keeps the stored secrets. Ordinary profile views show presence/status indicators rather than secret values. Each row of the account list sums up who uses the account and when, or why it needs attention. Expanding a row names the platform, templates and streamers that select the account and the streamers recording with it, with links to their pages, and shows when the account was last used (updated at most every few minutes), checked and refreshed, any consecutive refresh failures and their reason, and, for accounts the platform renews automatically such as Douyu's, when the next renewal is due. Deleting an account that is still selected or recording lists the same configurations and recordings instead. A streamer's own selection ends when the streamer is deleted, and when an edited URL moves it to another platform it inherits there; select its accounts again on the new platform if it needs its own.
-
-### Streamlink accounts {#streamlink-accounts}
-
-Streamers on sites without a built-in extractor, such as YouTube or Kick, all belong to the Streamlink platform. Because that one platform covers many unrelated sites, its accounts are chosen by site or per streamer:
-
-- Add profiles on the Streamlink platform page and enter the **Sites** each one is for, such as `youtube.com`. A site also covers its subdomains: `youtube.com` covers `www.youtube.com` and `m.youtube.com`, but not `notyoutube.com`. A whole URL can be pasted, a leading `www.` is dropped, and each site belongs to one account only.
-- A streamer that inherits uses the account whose site covers its URL. When two sites cover it, the more specific one wins, so `m.youtube.com` beats `youtube.com`. Without such an account the streamer records signed out.
-- A streamer can choose **No authentication** or one **Fixed account** in its settings instead. The settings warn when the fixed account is set up for other sites, because its cookies would be sent to the streamer's site.
-- The Streamlink platform and template overrides for it cannot select accounts, and pools are not available, so there is no automatic failover to another account.
-- Streamlink receives the profile's cookies and connects as the account's [proxy setting](#account-proxies) chooses. The account is not checked or refreshed automatically, and a login failure does not mark it invalid.
-- Credentials written into the Streamlink engine's or extractor's `extra_args` are passed to Streamlink as written. They are not managed by profiles, are never checked, and apply to every streamer using those settings.
-
-A Twitch streamer whose [extractor](../reference/configuration-overrides.md#extractor) is set to Streamlink stays on the Twitch platform and uses Twitch accounts as usual; its profile's cookies and access token are passed to Streamlink.
-
-## Proxies {#proxies}
-
-Save the proxies you use under **Settings → Proxies**, then choose how each scope and account connects: directly, through the server's system proxy, or through a saved proxy.
-
-### Saved proxies {#saved-proxies}
-
-A saved proxy has a name and an address: `http`, `https`, `socks5` or `socks5h`, written as `scheme://host:port` without a path, with an optional username and password in their own fields. An address and username identify the exit a platform sees, so each pair can be saved only once; saving it again offers the existing proxy instead. Names are unique, ignoring case.
-
-The list shows each proxy's address, username and how many settings use it; expand a row to see which. Passwords are never shown: when editing, leave the password empty to keep it. **Test** requests a platform's home page, or another address, once through the proxy and reports whether it answered, with the HTTP status and the time taken; the editor can test a proxy before it is saved. Any answer except the proxy rejecting its login counts as reachable. Testing an address on a private network needs **Allow private stream proxy targets**. The page also shows the system proxy detected when the server started.
-
-A proxy cannot be deleted while a setting, account, notification channel, job preset or pipeline upload step uses it; the delete dialog lists them. A template being removed releases its proxy once the recordings using it finish. Upload jobs already queued or running do not count as users: if their proxy is deleted, they fail when they upload rather than connecting another way.
-
-Changes are saved at once and apply to the next check, extraction or connection; work already running keeps its connection. Changing a proxy's address or username counts as changing the credentials of the accounts that choose it: they are checked again, and recordings using them switch at their next fresh extraction. Renaming a proxy or changing only its password does not.
-
-### Choosing how to connect {#choosing-a-proxy}
-
-Global settings choose the **Default proxy** under **Network & System**: **Direct**, **System proxy** or a saved proxy. A new installation starts with **System proxy** when `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` is set on its first start, otherwise **Direct**. Platforms, templates and streamers choose on their **Proxy** tab, which also offers **Inherit**. The most specific choice other than Inherit wins: streamer, then template, then platform, then global. A template that inherits leaves each streamer on its own platform's setting.
-
-The chosen connection carries live checks and parsing, downloads with every engine, danmu, and playback through the **Server proxy**.
-
-- **Direct** uses no proxy at all. FFmpeg and Streamlink are started without the `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` and `NO_PROXY` environment variables, so they connect directly too.
-- **System proxy** uses those [environment variables](../reference/environment.md#network) of the server. Danmu uses the first of `HTTPS_PROXY`, `ALL_PROXY` and `HTTP_PROXY` that was set when the server started, and connects directly to hosts listed in `NO_PROXY`. With none of them set, System proxy connects directly. In the desktop app, the operating system's proxy setting reaches only some requests made inside the app, never FFmpeg, Streamlink or danmu; save the proxy instead to cover every connection.
-- A **saved proxy** carries all of them. FFmpeg supports only `http` proxies: an FFmpeg recording through an `https` or SOCKS proxy fails with an error saying so, and the setting warns about it. Use an `http` proxy there, or the Mesio or Streamlink engine.
-
-A setting that names a proxy which no longer exists makes its requests fail rather than connect directly.
-
-Notification channels choose their own [proxy setting](./notifications.md#proxy), which inherits the **Default proxy**, and browser push always follows the Default proxy. Email notifications always connect directly. rclone and Baidu Netdisk upload steps also choose their own [proxy setting](../reference/processors.md#upload-proxy), inheriting the Default proxy.
-
-### Account proxy settings {#account-proxies}
-
-Each account has its own proxy setting, chosen when adding or editing it: **Follow the recording's proxy** (the default), **Direct**, **System proxy** or a saved proxy. An account's own choice wins over the streamer, template and platform for everything done with the account: account checks, refreshes, renewals and QR login, live checks and parsing, downloads, danmu and playback. An account that follows the recording connects the way whatever uses it does; its own checks, refreshes, renewals and QR login then follow the platform's setting, or the global one. In the account list, an icon marks accounts with their own setting.
-
-Changing an account's proxy setting counts as changing its credentials: the account is checked again, and recordings using it switch at their next fresh extraction.
-
-### Rate limits per connection {#proxy-rate-limits}
-
-Platforms throttle a connection rather than an account. Direct, System proxy and each saved proxy are separate connections; without proxy environment variables, System proxy counts as Direct. When a platform limits requests, only its requests on that connection pause, whichever setting or account chose it. A pool with failover then moves on to an account on another connection, skipping accounts that use the throttled one, and tries accounts whose connection is still paused last. Each pause sends a *Platform rate limited* notification naming the connection. Changing a saved proxy's address or username ends its pause.

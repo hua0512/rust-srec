@@ -2,6 +2,8 @@
 
 Rust-Srec monitors configured channels, records live video and chat, and runs post-processing workflows. The web interface and API control the same backend.
 
+<AnimatedFlowDemo compact />
+
 ```mermaid
 flowchart LR
     UI[Web interface or API] --> B[Backend]

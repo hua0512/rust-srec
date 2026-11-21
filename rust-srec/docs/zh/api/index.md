@@ -2,8 +2,7 @@
 
 Rust-Srec 在 `/api` 下提供 JSON REST API。运行中的后端会为其准确构建版本生成权威 OpenAPI 文档。
 
-- Docker 默认地址：[Swagger UI](http://localhost:12555/api/docs) 与 [OpenAPI JSON](http://localhost:12555/api/docs/openapi.json)
-- 使用 `rust-srec/.env.example` 的源码环境：把以上链接中的 `12555` 改为 `8080`
+- 默认地址：[Swagger UI](http://localhost:12555/api/docs) 与 [OpenAPI JSON](http://localhost:12555/api/docs/openapi.json)
 
 Swagger 属于正在运行的 Rust-Srec 后端，并不位于 `docs.srec.rs` 文档域名下。
 
@@ -71,10 +70,7 @@ curl http://localhost:12555/api/streamers \
 轮换后 ID 可能改变；刷新令牌已到期或已清理的会话即使访问令牌仍有效，也可能
 不在列表中。
 
-媒体、流代理以及下载/日志 WebSocket 路由优先使用 Authorization 请求头，仅在
-缺少该请求头时使用 `?token=`；无效或格式错误的请求头不会回退到查询参数。
-只读 API 密钥可读取健康详情和录制媒体；下载/日志 WebSocket、流代理和日志配置/
-归档路由需要完全权限密钥。详见 [API 密钥与 MCP](./api-keys-mcp.md)。
+媒体、流代理以及下载、日志和实时弹幕（`/api/parse/danmu/ws`）WebSocket 路由优先使用 `Authorization: Bearer` 请求头，仅在缺少该请求头时使用 `?token=`；无效或格式错误的请求头不会回退到查询参数。只读 API 密钥可读取健康详情和录制媒体；下载、日志和 `/api/parse/danmu/ws` WebSocket（均每五秒重新验证凭据）、流代理和日志配置/归档路由需要 `full` 权限。详见 [API 密钥与 MCP](./api-keys-mcp.md)。
 
 访问令牌、刷新令牌、Cookie 和平台凭据都应按敏感信息处理，不要写入日志或源代码仓库。
 
@@ -110,7 +106,7 @@ curl http://localhost:12555/api/streamers \
 | 请求 | 用途 |
 |---|---|
 | `GET /api/proxies` | 列出已保存的代理及 `usage_count`，即选用各代理的设置数量 |
-| `GET /api/proxies/{id}` | 单个代理及其 `references`：选用它的全局设置、平台、模板、主播和账号 |
+| `GET /api/proxies/{id}` | 单个代理及其 `references`：选用它的 `global`、`platforms`、`templates`、`streamers`、`accounts`、`notification_channels`、`job_presets` 和 `pipelines` |
 | `POST /api/proxies` | 按 `name`、`url`（`http`、`https`、`socks5` 或 `socks5h`，写成 `scheme://host[:port]`）以及可选的 `username` 和 `password` 创建 |
 | `PATCH /api/proxies/{id}` | 携带 `expected_version` 编辑。省略 `password` 会保留原密码；`"username": null` 会移除登录信息。 |
 | `DELETE /api/proxies/{id}` | 删除，可附带 `expected_version` 查询参数 |
@@ -120,20 +116,15 @@ curl http://localhost:12555/api/streamers \
 
 冲突返回 `409`，代码为 `PROXY_NAME_TAKEN`、`PROXY_DUPLICATE`（另一个代理的地址和用户名相同）、`PROXY_STALE_VERSION`，或删除仍在使用的代理时返回 `PROXY_REFERENCED`，并在 `details.references` 中列出使用者。地址或登录信息无效时返回 `422` `PROXY_INVALID`。
 
-全局、平台、模板、主播和账号的写入请求用 [`proxy_route`](../reference/configuration-overrides.md#proxy-route-json) 对象选择代理。旧的 `proxy_config` 字段会以 `422` `PROXY_CONFIG_REPLACED` 被拒绝。
+全局、平台、模板、主播、账号、通知渠道（邮件除外）和上传步骤（`rclone`、`baidupcs`）的写入请求用 [`proxy_route`](../reference/configuration-overrides.md#proxy-route-json) 对象选择代理。旧的 `proxy_config` 字段会以 `422` `PROXY_CONFIG_REPLACED` 被拒绝。
 
 ## 创建响应与任务进度
 
-创建主播、模板、引擎、过滤器、通知渠道、任务预设、管道预设和管道时，接口返回
+创建主播、模板、引擎、过滤器、通知渠道、已保存代理（`POST /api/proxies`）、任务预设、管道预设和管道时，接口返回
 **201 Created**，响应体仍是已创建资源的 JSON。克隆模板和任务预设也会返回 201
 及新资源。客户端应接受成功的 2xx 状态，不应要求所有 JSON 响应都必须是 200。
 
-生成的 OpenAPI 文档现已包含会话分段列表、模板克隆，以及浏览器 Web Push 的
-四个操作（公钥、订阅列表、订阅和取消订阅），并包含对应的请求与响应结构。
-
-任务列表、任务详情和管道创建响应中的任务摘要使用 `progress: null` 表示该响应
-没有可用进度，这不表示完成了零百分比。请使用
-`GET /api/pipeline/jobs/{id}/progress` 获取最近的处理器专用进度快照；
+请使用 `GET /api/pipeline/jobs/{id}/progress` 获取任务的最新处理器专用进度快照；
 没有快照时，该接口返回 404。快照中可选的 `phase` 在 FFmpeg 写完最后一帧后重写
 输出时，以及 rclone 上传发送完所有字节、等待目标确认文件时，为 `finalizing`；
 在上传等待重试时为 `retrying`；在 BaiduPCS 或 rclone 上传正在处理的文件都还没有
@@ -142,12 +133,12 @@ curl http://localhost:12555/api/streamers \
 上传首次尝试失败后，`attempt` 和 `max_attempts` 给出它在本次任务运行内的尝试
 次数，与任务的重试次数无关。
 
-`GET /api/pipeline/dag/{id}` 为每个步骤返回 `job_status`、`started_at` 和
-`retry_after`，时间均为 epoch 毫秒。不会再执行自动重试时，`retry_after` 为
-null，已取消或已失败的工作流也是如此。每个步骤的 `progress` 是其运行中任务的
-快照，与 `GET /api/pipeline/jobs/{id}/progress` 返回的相同，但 `raw` 始终为
-null。只有步骤的任务正在运行且已上报进度时，步骤的 `progress` 才有值，因此 null
-不表示完成了零百分比。
+逐步骤的 `progress` 字段由 `GET /api/pipeline/dag/{id}` 返回（连同以 epoch 毫秒
+表示的 `job_status`、`started_at` 和 `retry_after`），不会出现在任务列表、任务详情
+或管道创建摘要中。不会再执行自动重试时，`retry_after` 为 null，已取消或已失败的
+工作流也是如此。每个步骤的 `progress` 是其运行中任务的快照，与
+`GET /api/pipeline/jobs/{id}/progress` 返回的相同，但 `raw` 始终为 null。只有步骤的
+任务正在运行且已上报进度时，步骤的 `progress` 才有值，因此 null 不表示完成了零百分比。
 
 `GET /api/pipeline/dag/{id}`、`GET /api/pipeline/dags` 和
 `GET /api/pipeline/dag/{id}/stats` 中的 `progress_percent` 将每个已完成的步骤完整计入，
@@ -181,9 +172,7 @@ API 错误使用统一结构：
 
 没有额外信息时会省略 `details`。常见状态为：`400` 输入无效、`401` 凭据缺失或过期、`403` 账号禁用或要求改密、`404` 资源不存在、`409` 冲突、`422` 校验失败、`429` 登录失败次数过多、`500` 内部错误、`503` 依赖不可用。
 
-`POST /api/auth/login` 会按账号和来源地址分别限流。同一账号连续五次失败后返回 `429`，`code` 为 `TOO_MANY_REQUESTS`，并在 `Retry-After` 响应头中给出需要等待的秒数；登录成功会立即清零该账号的计数。另有一个宽松得多的按来源地址配额（每窗口 100 次），用于限制密码哈希开销。
-
-来源地址取自 TCP 连接的对端，且不信任 `X-Forwarded-For` 与 `X-Real-IP`，因此**在本项目自带的前端容器、nginx 或任何反向代理之后，所有登录都会被归到代理的地址上**——按地址的配额是开销上限，而不是针对某个客户端的锁定。超过 128 个字符的用户名会在两个配额生效之前直接返回 `400`（按字符而非字节计算，非拉丁文名称不会因此吃亏）。导入配置时也会应用同一限制，避免导入出无法登录的账号。两个配额均可配置，详见[配置](../reference/environment.md#登录限流)。
+`POST /api/auth/login` 在按账号或按来源地址的失败配额用尽后会返回 `429`（`TOO_MANY_REQUESTS`）及 `Retry-After` 响应头；默认配额、窗口配置及反向代理归属说明详见[登录限流](../reference/environment.md#登录限流)。超过 128 个字符的用户名会在检查配额前直接返回 `400`（按字符而非字节计算，非拉丁文名称不会因此吃亏）；导入配置时也会应用同一限制。
 
 删除仍被主播使用的模板会返回 `409` `TEMPLATE_IN_USE`，`details.streamer_count` 为使用它的主播数；为 `0` 时表示只有正在移除的主播仍在使用它。删除或重命名仍被已保存流水线按名称引用的任务预设或工作流会返回 `409` `PRESET_IN_USE`，`details.references` 中每项为一个使用者，包含其 `kind`（`global`、`platform`、`template`、`streamer` 或 `workflow`）、`id`、`name`，以及是否正在移除（`removing`）。
 

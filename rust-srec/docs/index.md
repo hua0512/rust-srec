@@ -1,8 +1,11 @@
 ---
 layout: page
+navbar: false
+footer: false
+search: false
 ---
 
-<script setup>
+<script setup lang="ts">
 import { onMounted } from 'vue'
 import { useRouter, withBase } from 'vitepress'
 
@@ -14,8 +17,12 @@ onMounted(() => {
 })
 </script>
 
-<div style="display: flex; flex-direction: column; justify-content: center; align-items: center; height: 50vh; gap: 1rem;">
-  <img src="/stream-rec-orange.svg" alt="rust-srec" style="width: 64px; height: 64px;" />
-  <p>Choose a language / 选择语言</p>
-  <p><a href="./en/">English</a> · <a href="./zh/">简体中文</a></p>
+<div class="lang-picker">
+  <img :src="withBase('/stream-rec-orange.svg')" alt="Rust-Srec" class="lang-picker-logo" />
+  <p class="lang-picker-title">Rust-Srec Documentation</p>
+  <p class="lang-picker-subtitle">Choose a language / 选择语言</p>
+  <div class="lang-picker-links">
+    <a class="lang-picker-btn" :href="withBase('/en/')">English</a>
+    <a class="lang-picker-btn" :href="withBase('/zh/')">简体中文</a>
+  </div>
 </div>

@@ -10,16 +10,16 @@ rust-srec 支持 14 个直播平台，可自动检测并录制直播流。
 | [抖音](./douyin.md) | `live.douyin.com/{room_id}` | FLV/HLS | ✅ |
 | [斗鱼](./douyu.md) | `douyu.com/{room_id}` | FLV | ✅ |
 | [虎牙](./huya.md) | `huya.com/{room_id}` | FLV/HLS | ✅ |
-| [Bigo Live](./bigo.md) | `bigo.tv/{id}` | FLV/HLS | ✅ |
-| [AcFun](./others.md#acfun) | `live.acfun.cn/live/{room_id}` | FLV | ❌ |
-| [PandaTV](./others.md#熊猫直播) | `pandalive.co.kr/play/{id}` | HLS | ❌ |
-| [小红书](./others.md#小红书) | `xhslink.com/m/{id}`, `xhslink.com/o/{id}` | FLV/HLS | ❌ |
-| [微博](./others.md#微博) | `weibo.com/u/{uid}`, `m.weibo.cn/u/{uid}`, `weibo.com/l/wblive/p/show/{id}` | FLV/HLS | ❌ |
 | [Twitch](./twitch.md) | `twitch.tv/{channel}` | HLS | ✅ |
-| [TikTok](./tiktok.md) | `tiktok.com/@{user}/live` | FLV/HLS/DASH | ✅ |
-| [Twitcasting](./others.md#twitcasting) | `twitcasting.tv/{user}` | HLS | ✅ |
-| [Picarto](./others.md#picarto) | `picarto.tv/{user}` | HLS/MP4 | ❌ |
 | [SOOP](./soop.md) | `play.sooplive.co.kr/{channel}`, `play.sooplive.com/{channel}` | HLS | ✅ |
+| [Bigo Live](./bigo.md) | `bigo.tv/{id}` | FLV/HLS | ✅ |
+| [TikTok](./tiktok.md) | `tiktok.com/@{user}/live` | FLV/HLS/DASH | ✅ |
+| [AcFun](./others.md#acfun) | `live.acfun.cn/live/{room_id}` | FLV | ❌ |
+| [PandaTV](./others.md#pandatv) | `pandalive.co.kr/play/{id}` | HLS | ❌ |
+| [Picarto](./others.md#picarto) | `picarto.tv/{user}` | HLS/MP4 | ❌ |
+| [小红书](./others.md#小红书) | `xhslink.com/m/{id}`, `xhslink.com/o/{id}` | FLV/HLS | ❌ |
+| [Twitcasting](./others.md#twitcasting) | `twitcasting.tv/{user}` | HLS | ✅ |
+| [微博](./others.md#微博) | `weibo.com/u/{uid}`, `m.weibo.cn/u/{uid}`, `weibo.com/l/wblive/p/show/{id}` | FLV/HLS | ❌ |
 
 ## 通用配置
 
@@ -67,6 +67,10 @@ Bigo 没有这样的请求。对 Bigo 来说，同一个开关改为开启[开�
 
 由批量请求回答的检测，在主播的检查历史中显示为比其他未开播检测更短、颜色更浅的竖条，悬停提示中也会注明。
 
+### 弹幕流关闭时结束录制 {#end-stream-on-danmu-stream-closed}
+
+在开启弹幕采集的同时启用**弹幕流关闭时结束录制**（`end_stream_on_danmu_stream_closed`）后，当平台通过弹幕通道发出明确的关播信号时，rust-srec 会将其视为直播已结束，及时收尾录制，而不必等待媒体流停顿超时。目前支持 **Bilibili**、**抖音**、**斗鱼**、**虎牙**、**Twitch**、**TikTok** 和 **Twitcasting**。
+
 ### 直播信息查看
 
 您可以使用内置播放器查看任何在线主播的可用直播流详情：
@@ -77,14 +81,24 @@ Bigo 没有这样的请求。对 Bigo 来说，同一个开关改为开启[开�
 
 ### 多账号与平台能力限制
 
+#### 账号池与故障切换
+
 通过[账号配置](../concepts/configuration.md#账号配置与选择)选择固定账号或有序的优先/轮询账号池。平台拒绝某个账号的登录，或限流的账号因其[代理设置](../concepts/configuration.md#account-proxies)与下一个账号走不同连接时，才会自动故障切换。离线结果、内容限制和网络故障不能成为逐个尝试账号的理由，剩余账号共用的连接被限流时本次检查结束。无法区分这些失败的平台采用保守行为；不支持验证本身不代表账号不可用。
+
+#### 平台准入与限流
 
 平台准入限制由所有凭据配置、匿名请求、显式 Cookie 解析、刷新和二维码登录共享。增加账号不会增加平台请求额度。这些请求（包括匿名请求）遇到限流时，该平台在同一连接上的所有请求都会暂停，时长为平台给出的重试间隔，未给出时为 60 秒。直连、系统代理以及每个已保存的代理各算一条[连接](../concepts/configuration.md#proxy-rate-limits)，无论由哪个设置或账号选择；每条连接开始暂停时都会发送注明该连接的“平台限流”通知。平台要求的间隔超过 15 分钟时会缩短为 15 分钟，因此单个响应不会让录制停止数小时。Bilibili 二维码/令牌请求、斗鱼二维码登录和会话续期、微博二维码登录和账号检查，以及 SOOP 刷新给出的重试间隔同样受此上限约束。操作时限包含准入和刷新等待，修复与提取共同消耗有界尝试预算。
 
+#### 二维码登录
+
 二维码生成时即绑定所选平台或凭据配置。改变目标需要重新生成二维码，并发轮询不会把一次登录写给两个账号。过期或重启可能需要新二维码；已在本地完成的回执可安全重复查询。每次生成或轮询请求最长 30 秒，放弃的二维码过期后一分钟内会清除其登录数据。状态界面区分管理性禁用、凭据无效及不支持验证。
+
+#### 托管播放
 
 托管播放将账号的 Cookie 和平台请求头保留在服务器。播放器获得流地址和经过授权的临时句柄，并始终通过服务器代理播放；代理只对该流自身的主机和来源页面的主机附加账号请求头，其他主机上的播放列表、分段、密钥和重定向不带这些请求头获取，代理也会拒绝将句柄用于其他主机。淘汰、重启、凭据/策略变更或过期均需要重新解析。刷新播放源时会先用同一账号续期；若句柄已过期或账号选择已更改，播放器会重新解析该来源，此时可能改用账号池中的其他账号。默认最多 1,024 个上下文，空闲 15 分钟、绝对存活 12 小时，因此持续播放最终也可能需要更新。显式原始 Cookie 是隔离的临时覆盖，不能与托管凭据请求混用。
 
 托管 HLS 播放列表与其他经代理的播放列表采用相同方式重写。不支持 `EXT-X-DEFINE` 变量替换；接受低延迟查询参数 `_HLS_msn`、`_HLS_part` 和 `_HLS_skip`，但不向上游转发。
+
+#### 平台凭据格式
 
 Twitch 凭据配置可以只填写访问令牌而不填写 Cookie。Twitch OAuth 令牌即凭据配置的访问令牌；抖音 `ttwid` 和斗鱼 `device_id`（即 `acf_did`）是凭据配置中的 Cookie，而不是平台选项。房间密码等非账号设置仍按正常规则继承。

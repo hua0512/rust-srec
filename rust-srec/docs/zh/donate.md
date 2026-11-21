@@ -1,46 +1,15 @@
 # 支持项目
 
-如果您觉得 rust-srec 有用，欢迎支持项目开发！
+Rust-Srec 是一款公开开发和维护的项目。如果它帮你稳定录下喜欢的直播、保存弹幕或自动完成视频后处理，欢迎通过以下方式支持项目持续迭代与各平台适配维护。
 
-## 支持方式
+<SupportCards />
 
-### ⭐ GitHub Star
+## 开源核心与即将推出的 Premium 方案
 
-最简单的支持方式是在 GitHub 上给项目 [点个 Star](https://github.com/hua0512/rust-srec)。
+Rust-Srec 的自托管核心免费且采用 **MIT / Apache-2.0** 双重许可。自动录制、直播流修复、弹幕采集与统计、可视化工作流、通知推送以及 REST API / MCP 服务等核心能力将始终保持开源。
 
-### 💖 赞助
+面向大规模监控增强的可选 **Premium** 方案正在筹备中，目前**尚未开放**。你可以在首页查看 [Community 与 Premium 对比](/zh/#tiers)。
 
-支持持续开发：
+## 致谢
 
-#### 微信支付
-
-<img src="/images/donate_wx_qr.jpg" alt="微信支付" width="300" />
-
-#### 支付宝
-
-<img src="/images/donate_alipay_qr.png" alt="支付宝" width="300" />
-
-- [GitHub Sponsors](https://github.com/sponsors/hua0512)
-
-### 💬 QQ群
-
-QQ群号：566418735
-
-[点击链接加入群聊【鸽鸽鸽鸽鸽】](https://qm.qq.com/q/qAbmjCuTug)
-
-<img src="/images/qq_group_zh.jpg" alt="QQ群二维码" width="300" />
-
-### 🐛 贡献
-
-- 报告 Bug 和问题
-- 提交 Pull Request
-- 帮助翻译
-- 完善文档
-
-## 感谢
-
-感谢所有贡献者和支持者！
-
----
-
-*rust-srec 是 MIT/Apache-2.0 许可的开源软件。*
+感谢每一位提交反馈、参与贡献、协助翻译和赞助支持的朋友，让 Rust-Srec 越来越好用！

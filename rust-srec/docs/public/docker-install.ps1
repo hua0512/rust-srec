@@ -195,9 +195,9 @@ function Install-RustSrec {
                 # Set COMPOSE_FILE so docker compose picks up both files automatically
                 $envContent = Get-Content ".env" -Raw -Encoding UTF8
                 if ($envContent -match "(?m)^COMPOSE_FILE=") {
-                    $envContent = $envContent -replace "(?m)^COMPOSE_FILE=.*", "COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml"
+                    $envContent = $envContent -replace "(?m)^COMPOSE_FILE=.*", "COMPOSE_FILE=docker-compose.yml;docker-compose.gpu.yml"
                 } else {
-                    $envContent = $envContent.TrimEnd() + "`nCOMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml`n"
+                    $envContent = $envContent.TrimEnd() + "`nCOMPOSE_FILE=docker-compose.yml;docker-compose.gpu.yml`n"
                 }
                 Set-Content ".env" $envContent -NoNewline -Encoding UTF8
                 Write-Success "GPU acceleration enabled (docker-compose.gpu.yml)"
@@ -207,7 +207,7 @@ function Install-RustSrec {
             }
         } else {
             Write-Info "No NVIDIA GPU detected. GPU acceleration can be enabled later."
-            Write-Host "  See: https://docs.srec.rs/en/getting-started/docker#gpu-hardware-acceleration-nvidia" -ForegroundColor Cyan
+            Write-Host "  See: https://docs.srec.rs/en/getting-started/docker#nvidia-gpu" -ForegroundColor Cyan
         }
 
         Write-Host ""

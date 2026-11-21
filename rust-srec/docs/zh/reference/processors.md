@@ -8,16 +8,16 @@
 
 | 处理器 ID | 功能 | 核心参数 |
 |----------|------|---------|
-| `remux` | 更改容器格式，也可选择重新编码 | `format`, `video_codec`, `audio_codec`, `crf`, `preset`, `remove_input_on_success` |
+| `remux` | 更改容器格式，也可选择重新编码 | `format`, `video_codec`, `audio_codec`, `crf`, `preset`, `hwaccel`, `start_time`, `duration`, `end_time`, `include_recording_metadata`, `remove_input_on_success` |
 | `danmaku_factory` | 使用 DanmakuFactory 将弹幕 XML 转换为 ASS 字幕 | `binary_path`, `args`, `extra_args`, `delete_source_xml_on_success` |
 | `ass_burnin` | 将 ASS 字幕硬烧录进对应的视频 | `match_strategy`, `video_codec`, `crf`, `preset`, `fonts_dir`, `delete_source_videos_on_success` |
 | `thumbnail` | 从视频中提取画面作为图片 | `timestamp_secs`, `width`, `quality`, `preserve_resolution` |
 | `audio_extract` | 提取音轨 | `format`, `bitrate`, `sample_rate`, `channels`, `output_path` |
 | `compression` | 将文件打包为 ZIP 或 tar.gz 归档 | `format`, `compression_level`, `output_path`, `overwrite`, `preserve_paths` |
-| `rclone` | 云端同步 | `destination_root`, `operation`, `time_anchor`, `max_retries`, `args`, `proxy_route` |
-| `baidupcs` | 通过 BaiduPCS-Go 上传到百度网盘 | `destination_root`, `policy`, `norapid`, `time_anchor`, `args`, `proxy_route` |
+| `rclone` | 云端同步 | `destination_root`, `config_path`, `operation`, `time_anchor`, `max_retries`, `bwlimit`, `bwlimit_file`, `transfers`, `checkers`, `tpslimit`, `tpslimit_burst`, `multi_thread_streams`, `multi_thread_cutoff`, `args`, `proxy_route` |
+| `baidupcs` | 通过 BaiduPCS-Go 上传到百度网盘 | `destination_root`, `binary_path`, `config_dir`, `policy`, `norapid`, `max_retries`, `remove_source_after_upload`, `time_anchor`, `args`, `proxy_route` |
 | `copy_move` | 复制或移动本地文件 | `operation`, `destination`, `time_anchor`, `overwrite`, `exclude_patterns` |
-| `metadata` | 使用 FFmpeg 将元数据标签写入媒体文件 | `title`, `artist`, `date`, `album`, `comment`, `custom` |
+| `metadata` | 使用 FFmpeg 将元数据标签写入媒体文件 | `title`, `artist`, `date`, `album`, `comment`, `custom`, `remove_input_on_success` |
 | `delete` | 删除它收到的文件，即其所依赖步骤的输出 | `max_retries`, `retry_delay_ms` |
 | `execute` | 运行程序或自定义 Shell 命令 | `program`, `args` 或 `command`, `scan_output_dir`, `scan_extension` |
 
@@ -69,7 +69,7 @@ Windows 还拒绝管道、多行模板、批处理脚本、含占位符的内置
 
 Windows 先组装完整参数，再按常见 C 风格及 Shell32 解析器的反斜杠引号规则编码。使用自定义参数解析器的程序必须接受这种编码；请遵循被调用程序的参数或数据接口要求。重定向文件名使用独立规则，不能含双引号。
 
-固定 Windows 原生路径允许 `RUNNER~1` 等 8.3 别名和字面方括号，但仍不支持通配符程序名及扩展 `\\?\` 命名空间路径。含取值的 Windows 命令会在启动前按 cmd 的 8,191 个 UTF-16 单元限制检查：每个继承绑定、生成命令及保守估算的展开命令都必须符合限制，并为启动器保留 32 个单元。因此，大型 JSON 数组可能需要改用 `program`/`args` 或文件数据接口。
+Windows 上含占位符的命令要求使用常规原生可执行文件路径（不支持通配符程序名和 `\\?\` 扩展路径），且总长度不得超过 Windows `cmd.exe` 的 8,191 字符限制。遇到 `{inputs_json}` 或 `{manifest_json}` 等大型 JSON 数组时，请改用 `program` 和 `args`（或通过文件传递数据）。
 
 不支持的形式请改用 `program` 与 `args`，或使用具有明确参数/数据接口的固定脚本。不要把不可信取值放进被调用程序的代码或表达式参数中；程序仍会按自身规则解释选项。
 
@@ -100,14 +100,4 @@ ZIP 条目始终按 ZIP64 尺寸写入，因此单个超过 4 GiB 的录制文�
 - **重试**：BaiduPCS-Go 的退出码无法反映上传结果，rust-srec 会解析其逐文件输出来判定成败。无论是运行内重试还是手动重试任务，都只会重新上传尚未确认结果的文件；配合默认的 `skip` 策略和秒传检测，部分失败后的重试开销很小。批量上传中部分文件失败时，步骤会失败，并按文件分别记录结果（已上传、已跳过或失败）。由于所有文件都直接放在目标文件夹下，文件名相同的两个输入会在上传前被拒绝。被百度直接拒绝的文件（文件名不合法、超过大小限制、无法读取或容量已满）会记为失败，后续尝试不会再重新上传。大批量文件会拆成多次 BaiduPCS-Go 调用上传，使命令行长度不超过平台限制；上传前的登录检查不会写入任务日志。
 - **限制**：单文件超过 128 GB 会被百度拒绝；传输中断后只能从头重传（BaiduPCS-Go v4 已不支持断点续传）。由于该工具的本地状态存储不支持并发写入，上传任务同一时间只运行一个 BaiduPCS-Go 进程；任务运行期间也请勿手动对同一配置目录执行 BaiduPCS-Go 命令。其余上传任务会排队等待当前上传完成，在顶栏中显示为排队中的上传，超时（步骤的 [`timeout_secs`](./workflows.md#按步骤设置重试与超时)，未设置时为 **IO 任务**超时）从任务开始运行时才计算。百度网盘上传与 rclone 上传一起计入**最大上传数**，不计入**最大 IO 任务数**。发送文件前，BaiduPCS-Go 会读取整个文件以检查百度是否已有相同文件（开启**禁用秒传**时除外）；大型录制文件可能需要数分钟，期间任务显示**准备中…**。
 
-登录使用 [BaiduPCS-Go v4.0.1 的标准输入命令接口](https://github.com/qjfoidnh/BaiduPCS-Go/blob/v4.0.1/main.go)，
-并在私有目录中操作标准 `pcs_config.json` 的副本，避免 Cookie、BDUSS 和 STOKEN
-出现在进程参数中。私有目录内会阻止 CLI 打开命令历史路径，因此登录命令不会
-保存到历史记录。成功后只更新原配置中的当前账号及所选 UID；登录被拒绝时，
-原配置保持不变。提交前检查原始字节时，如果发现外部改动，则拒绝覆盖。
-外部 CLI 或配置写入程序不受后端锁保护，因此不能同时运行。
-
-自定义程序必须支持相同的无参数命令接口、`env` 配置目录输出及标准账号配置格式。
-不兼容的程序会返回错误，绝不会退回通过命令行参数传递凭据。登录子进程保持
-六十秒截止时间（包含标准输入写入），强制清理最多额外等待五秒。请求取消后，
-仍会保留账号锁直到清理完成。粘贴的凭据不能包含换行或 NUL 字符。
+- **登录注意事项**：凭据通过标准输入传递而非命令行参数，也不会写入 BaiduPCS-Go 的命令历史；登录成功后仅更新 `pcs_config.json` 中的当前账号条目。登录期间请勿对同一配置目录并发运行外部 `BaiduPCS-Go` 命令——如果配置文件在此期间被外部修改，更新会被拒绝。自定义程序必须兼容 BaiduPCS-Go v4 的交互式标准输入命令接口和 `pcs_config.json` 格式。登录超时时间为 60 秒，粘贴的凭据不能包含换行或 NUL 字符。

@@ -1,104 +1,339 @@
 /**
- * Custom Theme Styles for Rust-Srec
+ * Custom Theme Styles for Rust-Srec Docs
+ * Aligned with the Rust-Srec application's Zinc surface palette and WCAG-tuned Rust Orange accent.
  */
 
 :root {
-  --vp-c-brand-1: #e44d26;
-  /* Rust-inspired orange-red */
-  --vp-c-brand-2: #f16529;
-  --vp-c-brand-3: #ff7f50;
-  --vp-c-brand-soft: rgba(228, 77, 38, 0.14);
+  /* Zinc neutral surfaces (matched to rust-srec/frontend/src/styles.css) */
+  --vp-c-bg: #ffffff;
+  --vp-c-bg-alt: #fafafa;
+  --vp-c-bg-elv: #ffffff;
+  --vp-c-bg-soft: #f4f4f5;
 
+  --vp-c-border: #d4d4d8;
+  --vp-c-divider: #e4e4e7;
+  --vp-c-gutter: #e4e4e7;
+
+  --vp-c-text-1: #18181b;
+  --vp-c-text-2: #52525b;
+  --vp-c-text-3: #71717a;
+
+  /* WCAG-compliant Rust Orange brand scale */
+  --vp-c-brand-1: #c23b16;
+  --vp-c-brand-2: #d9481f;
+  --vp-c-brand-3: #c73e18;
+  --vp-c-brand-soft: rgba(228, 77, 38, 0.12);
+
+  /* Fallbacks for vitepress-mermaid-renderer */
+  --vp-c-danger: var(--vp-c-danger-1);
+  --vp-c-bg-mute: var(--vp-c-bg-soft);
+
+  /* Native VitePress 2 frosted navbar & sidebar tokens */
+  --vp-nav-bg-color: rgba(255, 255, 255, 0.82);
+  --vp-nav-backdrop-filter: saturate(180%) blur(12px);
+  --vp-sidebar-bg-color: var(--vp-c-bg-alt);
+
+  /* Hero accents: Rust Orange -> Violet */
   --vp-home-hero-name-color: transparent;
-  --vp-home-hero-name-background: linear-gradient(135deg, #e44d26 0%, #f16529 50%, #ffbb33 100%);
+  --vp-home-hero-name-background: linear-gradient(135deg, #e44d26 0%, #f16529 52%, #7c3aed 100%);
+  --vp-home-hero-image-background-image: linear-gradient(
+    -45deg,
+    rgba(228, 77, 38, 0.42) 40%,
+    rgba(124, 58, 237, 0.4) 60%
+  );
+  --vp-home-hero-image-filter: blur(56px);
 }
 
-body {
-  background:
-    radial-gradient(circle at 10% 20%, rgba(228, 77, 38, 0.04) 0%, transparent 40%),
-    radial-gradient(circle at 90% 80%, rgba(71, 161, 255, 0.04) 0%, transparent 40%),
-    #ffffff;
-  background-attachment: fixed;
+.dark {
+  --vp-c-bg: #09090b;
+  --vp-c-bg-alt: #111114;
+  --vp-c-bg-elv: #18181b;
+  --vp-c-bg-soft: #18181b;
+
+  --vp-c-border: #3f3f46;
+  --vp-c-divider: #27272a;
+  --vp-c-gutter: #1f1f23;
+
+  --vp-c-text-1: #fafafa;
+  --vp-c-text-2: #a1a1aa;
+  --vp-c-text-3: #71717a;
+
+  --vp-c-brand-1: #ff7a4d;
+  --vp-c-brand-2: #f16529;
+  --vp-c-brand-3: #d6461d;
+  --vp-c-brand-soft: rgba(241, 101, 41, 0.16);
+
+  --vp-nav-bg-color: rgba(9, 9, 11, 0.82);
+  --vp-sidebar-bg-color: var(--vp-c-bg-alt);
+
+  --vp-home-hero-name-background: linear-gradient(135deg, #ff8456 0%, #f16529 50%, #a78bfa 100%);
+  --vp-home-hero-image-background-image: linear-gradient(
+    -45deg,
+    rgba(241, 101, 41, 0.48) 40%,
+    rgba(139, 92, 246, 0.45) 60%
+  );
 }
 
-.dark body {
-  background:
-    radial-gradient(circle at 10% 20%, rgba(228, 77, 38, 0.06) 0%, transparent 40%),
-    radial-gradient(circle at 90% 80%, rgba(71, 161, 255, 0.06) 0%, transparent 40%),
-    #1b1b1f;
-  background-attachment: fixed;
+/* Atmospheric landing backdrop: subtle non-fixed orange + violet radial glows */
+.VPHome {
+  background-image:
+    radial-gradient(60% 420px at 18% 0%, rgba(228, 77, 38, 0.08), transparent 72%),
+    radial-gradient(55% 420px at 82% 4%, rgba(124, 58, 237, 0.07), transparent 72%);
+  background-repeat: no-repeat;
 }
 
-/* Glassmorphism for Navbar */
-.VPNavBar {
-  background-color: rgba(255, 255, 255, 0.7) !important;
-  backdrop-filter: blur(12px) saturate(180%);
-  -webkit-backdrop-filter: blur(12px) saturate(180%);
+.dark .VPHome {
+  background-image:
+    radial-gradient(60% 440px at 18% 0%, rgba(241, 101, 41, 0.14), transparent 72%),
+    radial-gradient(55% 440px at 82% 4%, rgba(139, 92, 246, 0.12), transparent 72%);
 }
 
-.dark .VPNavBar {
-  background-color: rgba(27, 27, 31, 0.7) !important;
+/* Softly masked dot-grid texture scoped to the Hero so it never traps lower lightboxes */
+.VPHero {
+  position: relative;
 }
 
-/* Sidebar Glassmorphism */
-.VPSidebar {
-  background-color: rgba(255, 255, 255, 0.6) !important;
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+.VPHero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(24, 24, 27, 0.11) 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: radial-gradient(ellipse 82% 72% at 50% 24%, #000 10%, transparent 78%);
+  -webkit-mask-image: radial-gradient(ellipse 82% 72% at 50% 24%, #000 10%, transparent 78%);
+  pointer-events: none;
+  z-index: 0;
 }
 
-.dark .VPSidebar {
-  background-color: rgba(27, 27, 31, 0.6) !important;
+.dark .VPHero::before {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.09) 1px, transparent 1px);
 }
 
-/* Hero Section Enhancements */
-.VPHero .name {
-  background: var(--vp-home-hero-name-background);
-  -webkit-background-clip: text;
-  background-clip: text;
-  filter: drop-shadow(0 2px 10px rgba(228, 77, 38, 0.2));
+.VPHero .container {
+  position: relative;
+  z-index: 1;
 }
 
-.VPHero .image-bg {
-  filter: blur(60px);
-  opacity: 0.4;
-  background-image: linear-gradient(-45deg, #e44d26 50%, #47a1ff 50%);
+/* VPHero layout for HomeHeroVisual studio card */
+.VPHero.has-image .image {
+  order: 3;
+  margin: 2.25rem 0 0;
 }
 
-/* Feature Cards */
+.VPHero.has-image .image-container {
+  width: 100%;
+  height: auto;
+  max-width: 540px;
+}
+
+.VPHero.has-image .image-bg {
+  pointer-events: none;
+  z-index: 0;
+}
+
+@media (min-width: 60rem) {
+  .VPHero.has-image .container {
+    align-items: center;
+    gap: 3rem;
+  }
+
+  .VPHero.has-image .main {
+    max-width: 34rem;
+    width: auto;
+    flex: 1 1 48%;
+  }
+
+  .VPHero.has-image .image {
+    order: 2;
+    flex: 1 1 52%;
+    min-width: 0;
+    margin: 0;
+  }
+
+  .VPHero.has-image .image-container {
+    transform: none;
+    width: 100%;
+    max-width: none;
+    height: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* Brand button polish */
+.VPButton.brand {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: linear-gradient(135deg, #e44d26 0%, #c23b16 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    0 6px 18px -8px rgba(228, 77, 38, 0.55);
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    filter 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.dark .VPButton.brand {
+  background: linear-gradient(135deg, #ff7a4d 0%, #e44d26 100%);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.VPButton.brand:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.04);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 10px 24px -8px rgba(228, 77, 38, 0.65);
+}
+
+/* Feature cards */
 .VPFeature {
-  border: 1px solid var(--vp-c-bg-soft);
-  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
-  background-color: var(--vp-c-bg-soft) !important;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  transition:
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
 }
 
-.VPFeature:hover {
-  transform: translateY(-5px);
-  border-color: var(--vp-c-brand-1);
-  box-shadow: 0 10px 30px -10px rgba(228, 77, 38, 0.3);
-  background-color: var(--vp-c-bg) !important;
+.dark .VPFeature {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
-/* Custom Containers */
-.custom-block.info {
+.VPFeature.link:hover {
+  transform: translateY(-2px);
   border-color: var(--vp-c-brand-1);
+  background-color: var(--vp-c-bg-elv);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 14px 32px -14px rgba(228, 77, 38, 0.28);
+}
+
+.VPFeature .icon {
   background-color: var(--vp-c-brand-soft);
+  color: var(--vp-c-brand-1);
+  border-radius: 10px;
 }
 
-/* Typography Improvements */
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
+.VPFeature .icon svg {
+  width: 22px;
+  height: 22px;
+  stroke: currentColor;
 }
 
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
-  letter-spacing: 0;
+/* Custom landing page section container & heading spacing.
+   VPHomeContent already provides max-width: 80rem and responsive horizontal padding,
+   so .vp-home-section stays flush with VPHero and VPFeatures at max-width: 72rem. */
+.vp-home-section {
+  max-width: 72rem;
+  margin: 96px auto 0;
+  padding: 0;
+}
+
+.vp-home-section:last-of-type {
+  margin-bottom: 64px;
+}
+
+.vp-home-section-header {
+  text-align: center;
+  max-width: 720px;
+  margin: 0 auto 36px;
+}
+
+.vp-section-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  margin-bottom: 14px;
+  border-radius: 9999px;
+  background: var(--vp-c-brand-soft);
+  border: 1px solid rgba(228, 77, 38, 0.22);
+  color: var(--vp-c-brand-1);
+  font-family: var(--vp-font-family-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  line-height: 1.3;
+}
+
+.vp-doc .vp-home-section h2,
+.vp-home-section h2 {
+  margin-top: 0;
+  margin-bottom: 12px;
+  padding-top: 0;
+  border-top: none;
+  font-size: clamp(1.875rem, 2.5vw, 2.125rem);
+  font-weight: 700;
+  line-height: 1.22;
+  letter-spacing: -0.025em;
+}
+
+.vp-home-section-header p {
+  margin: 0;
+  color: var(--vp-c-text-2);
+  font-size: 16px;
+  line-height: 1.65;
+}
+
+/* Inner documentation page polish */
+.VPSidebarItem.is-active > .item {
+  border-radius: 0 8px 8px 0;
+  background: var(--vp-c-brand-soft);
+  box-shadow: inset 2px 0 0 var(--vp-c-brand-1);
+  padding-inline-start: 10px;
+  margin-inline-start: -10px;
+}
+
+.vp-doc table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.vp-doc th,
+.vp-doc td {
+  border: 0;
+  border-right: 1px solid var(--vp-c-divider);
+  border-bottom: 1px solid var(--vp-c-divider);
+}
+
+.vp-doc tr th:first-child,
+.vp-doc tr td:first-child {
+  border-left: 1px solid var(--vp-c-divider);
+}
+
+.vp-doc thead tr:first-child th {
+  border-top: 1px solid var(--vp-c-divider);
+  background-color: var(--vp-c-bg-soft);
+  font-weight: 600;
+}
+
+.vp-doc thead tr:first-child th:first-child {
+  border-top-left-radius: 10px;
+}
+
+.vp-doc thead tr:first-child th:last-child {
+  border-top-right-radius: 10px;
+}
+
+.vp-doc tbody tr:last-child td:first-child {
+  border-bottom-left-radius: 10px;
+}
+
+.vp-doc tbody tr:last-child td:last-child {
+  border-bottom-right-radius: 10px;
+}
+
+.vp-doc tbody tr:hover td {
+  background-color: color-mix(in srgb, var(--vp-c-bg-soft) 72%, transparent);
+}
+
+.vp-doc div[class*='language-'] {
+  border: 1px solid var(--vp-c-divider);
 }
 
 /* Show a moved section's destination only when a reader opens its old bookmark. */
@@ -114,63 +349,142 @@ h6 {
   background: var(--vp-c-bg-soft);
 }
 
-/* Smooth Scrolling */
-html {
-  scroll-behavior: smooth;
+/* Mermaid diagram card frame & responsive box height */
+.mermaid-container {
+  background: var(--vp-c-bg-soft);
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  margin: 1.25rem 0;
+}
+
+.mermaid-container:not(:fullscreen):not(.dialog-fullscreen-active) {
+  height: var(--diagram-height, auto);
+  min-height: 6rem;
+  max-height: none;
+}
+
+/* Root language redirect fallback picker */
+.lang-picker {
+  min-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  padding: 2rem 1.5rem;
+  text-align: center;
+}
+
+.lang-picker-logo {
+  width: 64px;
+  height: 64px;
+}
+
+.lang-picker-title {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--vp-c-text-1);
+}
+
+.lang-picker-subtitle {
+  margin: 0;
+  font-size: 0.9375rem;
+  color: var(--vp-c-text-2);
+}
+
+.lang-picker-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+}
+
+.lang-picker-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 132px;
+  padding: 0.625rem 1.25rem;
+  border-radius: 10px;
+  border: 1px solid var(--vp-c-divider);
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-1);
+  font-weight: 600;
+  font-size: 0.9375rem;
+  text-decoration: none;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.lang-picker-btn:hover {
+  border-color: var(--vp-c-brand-1);
+  background: var(--vp-c-brand-soft);
+  color: var(--vp-c-brand-1);
+}
+
+/* Theme-mode circular reveal (matching rust-srec/frontend/src/styles.css).
+   CSS animations on the View Transition pseudos apply from the first frame
+   so the incoming/outgoing snapshots never flash unclipped. --reveal-x,
+   --reveal-y, and --reveal-r are set inline on <html> before startViewTransition. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+.dark::view-transition-old(root) {
+  z-index: 1;
+}
+
+.dark::view-transition-new(root) {
+  z-index: 9999;
+  animation: rs-theme-reveal-in 400ms ease-in forwards;
+}
+
+html:not(.dark)::view-transition-old(root) {
+  z-index: 9999;
+  animation: rs-theme-reveal-out 400ms ease-in forwards;
+}
+
+html:not(.dark)::view-transition-new(root) {
+  z-index: 1;
+}
+
+@keyframes rs-theme-reveal-in {
+  from {
+    clip-path: circle(0px at var(--reveal-x) var(--reveal-y));
+  }
+
+  to {
+    clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y));
+  }
+}
+
+@keyframes rs-theme-reveal-out {
+  from {
+    clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y));
+  }
+
+  to {
+    clip-path: circle(0px at var(--reveal-x) var(--reveal-y));
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
+  .VPButton.brand,
+  .VPButton.brand:hover,
+  .VPFeature,
+  .VPFeature.link:hover,
+  .lang-picker-btn {
+    transition: none;
+    transform: none;
   }
 
-  .VPFeature {
-    transition: none !important;
-  }
-}
-
-/* Diagram boxes take the height computed in theme/index.ts; the renderer's
-   own fullscreen styles keep control of fullscreen views. */
-.mermaid-container:not(:fullscreen):not(.dialog-fullscreen-active) {
-    height: var(--diagram-height, auto);
-    max-height: none;
-}
-
-/* Home page screenshots: each shot ships in a light and a dark variant, and
-   the one matching the site theme is shown. */
-.showcase {
-  max-width: 1152px;
-  margin: 64px auto 0;
-  padding: 0 24px;
-}
-
-.showcase figure {
-  margin: 0 0 40px;
-}
-
-.showcase img {
-  width: 100%;
-  height: auto;
-}
-
-.showcase figcaption {
-  margin-top: 4px;
-  text-align: center;
-  color: var(--vp-c-text-2);
-  font-size: 14px;
-}
-
-.showcase .showcase-dark,
-.dark .showcase .showcase-light {
-  display: none;
-}
-
-.dark .showcase .showcase-dark {
-  display: block;
-}
-
-@media (min-width: 960px) {
-  .showcase {
-    padding: 0 64px;
+  .dark::view-transition-new(root),
+  html:not(.dark)::view-transition-old(root) {
+    animation: none;
   }
 }

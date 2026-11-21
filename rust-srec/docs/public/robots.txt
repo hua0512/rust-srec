@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://docs.srec.rs/sitemap.xml

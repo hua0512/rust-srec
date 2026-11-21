@@ -17,10 +17,7 @@ The configuration export can contain platform cookies, profile refresh/access to
 
 In the web interface, open **Settings > Backup & Restore** and download an export. The API equivalents are `GET /api/config/backup/export` and `POST /api/config/backup/import`.
 
-If the filters or notification subscriptions of one streamer or channel cannot
-be read, that streamer or channel is exported with an empty list and the backend
-logs a warning; the rest of the export is unaffected. Failures to load the main
-configuration lists abort the export.
+If any streamer filter, notification subscription, or main configuration list cannot be read, the entire export fails cleanly so a partial backup is never emitted.
 
 Import supports two modes:
 
@@ -51,21 +48,16 @@ Imports apply configuration as one database transaction. Validation or write fai
 
 ## Consistent Filesystem Backup
 
-For the standard Docker layout:
+| Deployment | Stop / Start commands | Paths to snapshot or copy | Optional log path |
+|---|---|---|---|
+| Docker | `docker compose stop` / `docker compose up -d` | `DATA_DIR`, `CONFIG_DIR`, `OUTPUT_DIR`, `.env`, `docker-compose.yml` | `LOG_DIR` |
+| systemd | `systemctl stop rust-srec` / `systemctl start rust-srec` | `/var/lib/rust-srec` (database, WAL files, default output directory), `/etc/rust-srec/rust-srec.env`, any recording volume listed under `ReadWritePaths=` | `/var/log/rust-srec` |
 
 1. Download a fresh configuration export.
 2. Disable new recording work or schedule a maintenance window.
-3. Run `docker compose stop` so SQLite and active media files are consistent.
-4. Snapshot or copy `DATA_DIR`, `CONFIG_DIR`, `OUTPUT_DIR`, the `.env` file, and `docker-compose.yml`. Include `LOG_DIR` only when required by your incident-retention policy.
-5. Restart with `docker compose up -d` and verify liveness.
-
-With the systemd service the sequence is the same, against the unit's own paths:
-
-1. Download a fresh configuration export.
-2. Disable new recording work or schedule a maintenance window.
-3. Run `systemctl stop rust-srec` so SQLite and active media files are consistent.
-4. Snapshot or copy `/var/lib/rust-srec` (database, WAL files, and the default output directory), `/etc/rust-srec/rust-srec.env`, and any recording volume listed under `ReadWritePaths=`. Include `/var/log/rust-srec` only when required by your incident-retention policy.
-5. Run `systemctl start rust-srec` and verify liveness.
+3. Run the stop command above so SQLite and active media files are consistent.
+4. Snapshot or copy the paths listed for your deployment (include the log directory only when required by your incident-retention policy).
+5. Run the start command above and verify liveness.
 
 Protect `.env`, `/etc/rust-srec/rust-srec.env`, and backup media with the same or stronger controls as the live service. Keep at least one backup outside the host and test its integrity.
 
@@ -82,23 +74,15 @@ A session can outlive the streamer it was recorded for: `live_sessions.streamer_
 
 Record the restore time and the point-in-time loss observed. Those measurements are your actual recovery time and recovery point.
 
-<div id="import-persistence-ownership" class="legacy-section">
-
-This section is now in [Persistence contracts](../development/persistence.md#import-persistence-ownership).
-
-</div>
-
 ## Credential profiles and rollback {#credential-profiles-and-rollback}
 
 An export with no profiles, no selection and no [saved proxies](#proxies-in-backups) keeps schema `0.1.8`. Any saved profile or explicit selection policy, including `inherit` or `none` with no profiles, requires schema `1.0.0`. Older importers reject that version. This is a backup format version, not the application version. A filtered export must retain referenced profiles and their platforms; incomplete credential graphs are rejected. Profiles contain cookies, refresh/access tokens and supported re-login material, so protect them like the live database.
 
 Profile UUIDs are preserved when free. An existing UUID is updated only if it belongs to the same platform; otherwise the entire import fails. Accounts are never guessed from labels or cookie contents. Profiles are matched to platforms by platform name. Repeated imports update the same accounts. All profile/reference validation and configuration writes share one transaction.
 
-Backups from versions that stored cookies in configuration are converted on import with the same rules as the [upgrade](./upgrading.md#upgrading-from-configuration-cookies): their cookies, tokens and logins become profiles that the imported scopes select. The backup's schema version is kept, so its other fields are read as before.
-
 Merge retains omitted profiles and omitted selection policies; use an explicit `inherit` policy to reset a selection. Replace retires omitted profiles and removed owners, stops affected recordings after commit, and retains material until active sessions settle before physical deletion. Runtime publication continues even if the HTTP client disconnects. Restored material receives a new revision so old refresh results cannot overwrite it; later download attempts obtain fresh media. Managed profile health, throttle pauses, round-robin positions, session bindings, QR receipts and playback contexts are not configuration-backup data.
 
-Before upgrading, take a consistent database backup; the upgrade moves configuration cookies into profiles. Running an older binary against an upgraded database is not a supported rollback: it may reject migration versions and cannot interpret managed policies. Restore the matching pre-upgrade database backup with the previous binary. There is no lossless pool-to-scalar downgrade export.
+Pre-v0.6.0 backups with inline configuration cookies convert to account profiles on import using the same rules as [upgrading account credentials](./upgrading.md#upgrading-from-configuration-cookies), while keeping their original schema version. Rollback to an earlier release requires restoring the pre-upgrade database backup with the previous binary; there is no lossless pool-to-scalar downgrade export (see [Rollback](./upgrading.md#rollback)).
 
 ## Proxies in backups {#proxies-in-backups}
 
@@ -106,4 +90,10 @@ A schema `1.0.0` export includes every [saved proxy](../concepts/configuration.m
 
 Import matches each proxy in the bundle by name, or else by address and username, updating that proxy or creating a new one, before writing the settings that choose it. A setting naming a proxy that is neither in the bundle nor on the server rejects the import. Merge keeps saved proxies the bundle omits and keeps a scope's proxy setting when the bundle gives none. Replace sets such scopes to inherit, except the global setting, and deletes omitted proxies that nothing uses any more; proxies still in use stay. Restoring a proxy with a different address or username counts as changing the credentials of the accounts that choose it: they are checked again.
 
-Backups from versions before saved proxies are converted on import with the same rules as the [upgrade](./upgrading.md#proxy-settings), except that the server's environment variables are not consulted: a global proxy that was turned off becomes **Direct**. An address and username already saved on the server reuse that proxy, keeping its password; new proxies get names not yet taken.
+Pre-v0.6.0 backups convert inline proxy settings on import using the [upgrade rules](./upgrading.md#proxy-settings), except that server environment variables are not consulted (a disabled global proxy becomes **Direct**, and an existing server proxy with the same address and username is reused with its saved password).
+
+<div id="import-persistence-ownership" class="legacy-section">
+
+This section is now in [Persistence contracts](../development/persistence.md#import-persistence-ownership).
+
+</div>

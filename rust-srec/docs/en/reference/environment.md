@@ -6,20 +6,24 @@ import { withBase } from 'vitepress'
 
 The following environment variables can be configured in your <a :href="withBase('/env.example')" download=".env.example">.env</a> file.
 
-A numeric variable set to a value that is not a valid number, such as `API_PORT=80800`, stops startup with an error naming the variable. An unset or empty variable uses its default.
+Most numeric variables stop startup with an error naming the variable when set to an invalid value (such as `API_PORT=80800`), while an unset or empty variable uses its default. Two groups differ:
+
+- `API_LOGIN_MAX_FAILURES`, `API_LOGIN_IP_MAX_FAILURES`, and `API_LOGIN_WINDOW_SECS` log a warning and fall back to their defaults on invalid values.
+- `LOG_MAX_FILE_BYTES`, `LOG_MAX_FILES`, `RUST_SREC_SHUTDOWN_TIMEOUT_SECS`, and `RUST_SREC_SHUTDOWN_FORCE_RESERVE_SECS` fail startup on both invalid values and empty assignments (`VAR=`); unset them to use defaults.
 
 ## General {#general}
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `TZ` | Container timezone | `UTC` |
 | `VERSION` | Docker image version tag | `latest` |
+| `WATCHTOWER_POLL_INTERVAL` | Polling interval in seconds for the optional Docker Compose `watchtower` auto-update service | `3600` |
 
 ## Paths {#paths}
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `DATA_DIR` | Directory for application data | `./data` |
-| `CONFIG_DIR` | Directory for platform configuration files | `./config` |
-| `OUTPUT_DIR` | Initial recording folder when the standalone backend creates a fresh database; also watched by startup and disk-space health probes. Under Docker Compose this is the host bind-mount directory, while the container receives `OUTPUT_DIR=/app/output`. Existing database settings are preserved. | `./output` |
+| `CONFIG_DIR` | Docker Compose host directory mounted at `/app/config` for external tool configs (such as rclone and BaiduPCS-Go); platform configurations live in SQLite | `./config` |
+| `OUTPUT_DIR` | Initial recording folder used only to seed `global_config.output_folder` when the standalone backend creates a fresh database; startup write probes and disk-space health checks read saved `global_config.output_folder` and overrides instead. Under Docker Compose this is the host bind-mount directory, while the container receives `OUTPUT_DIR=/app/output`. Existing database settings are preserved. | `./output` |
 | `LOG_DIR` | Directory for log files. A relative value resolves against the process working directory; the bundled system service sets it to `/var/log/rust-srec` instead, so log files are stored outside the state directory. See [Installation](../getting-started/installation.md). | `./logs` |
 | `LOG_MAX_FILE_BYTES` | Maximum bytes per managed log segment, read at startup; integer from 1024 to 1073741824. Oversized records are truncated with a marker. | `16777216` (16 MiB) |
 | `LOG_MAX_FILES` | Maximum managed log segments including the current file, read at startup; integer from 2 to 1024. Use consistent settings for shared `LOG_DIR`; see [retention limits](../operations/monitoring.md#logs). | `16` |
@@ -58,7 +62,7 @@ A forced or crashed run leaves a recovery marker beside the database. Later clea
 | `ALL_PROXY` | Proxy for both when the more specific variable is not set | - |
 | `NO_PROXY` | Comma-separated list of hosts that bypass the proxy | - |
 
-The proxy variables, in upper or lower case, take effect only where a global, platform, template, streamer, account, notification channel or upload step [proxy setting](../concepts/configuration.md#choosing-a-proxy) is **System proxy**. **Direct** ignores them, and FFmpeg and Streamlink are then started without them. The server reads them when it starts: restart it after changing them. rclone and BaiduPCS-Go are started without them too, and receive a saved proxy as `HTTP_PROXY` and `HTTPS_PROXY`. Email notifications never use a proxy. A new installation, or an upgrade from a version whose global proxy was turned off, that starts with `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` set makes **System proxy** the global default; see [upgrading from proxy settings](../concepts/configuration.md#upgrading-proxy-settings).
+The proxy variables, in upper or lower case, take effect only where a global, platform, template, streamer, account, notification channel or upload step [proxy setting](../concepts/configuration.md#choosing-a-proxy) is **System proxy**. **Direct** ignores them, and FFmpeg and Streamlink are then started without them. The server reads them when it starts: restart it after changing them. rclone and BaiduPCS-Go are started without them too, and receive a saved proxy as `HTTP_PROXY` and `HTTPS_PROXY`. Email notifications never use a proxy. A new installation, or an upgrade from a version whose global proxy was turned off, that starts with `HTTP_PROXY`, `HTTPS_PROXY` or `ALL_PROXY` set makes **System proxy** the global default; see [upgrading proxy settings](../operations/upgrading.md#proxy-settings).
 
 ## Security & Auth {#security-auth}
 | Variable | Description | Default |
@@ -109,7 +113,7 @@ Both share the window length set by `API_LOGIN_WINDOW_SECS`.
 ## Backend Service {#backend-service}
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `RUST_LOG` | Logging level (`trace`, `debug`, `info`, `warn`, `error`) | `info` |
+| `RUST_LOG` | Logging filter directive (`trace`, `debug`, `info`, `warn`, `error`, or target-specific directives). Docker Compose sets `info` by default; the standalone binary defaults to `rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info`. | `rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info` (standalone) / `info` (Docker) |
 | `DATABASE_URL` | SQL database connection string. The value shown is the one the Docker `.env` sets. Left unset the backend falls back to `sqlite:srec.db?mode=rwc`, relative to the working directory; the bundled system service sets `sqlite:///var/lib/rust-srec/rust-srec.db`. The runtime generation marker is derived from this URL and is stored beside the database file. | `sqlite:///app/data/rust-srec.db` (Docker) |
 | `RUST_SREC_LOCALE` | Locale for backend-emitted notification strings. Affects every notification event — stream online/offline, download lifecycle, segments, pipeline jobs, system alerts, credential events. Supported: `en`, `zh-CN`. | `en` |
 | `RUST_SREC_OUTPUT_ROOTS` | Comma-separated list of **absolute** paths to treat as output-root boundaries for the write gate. If unset, the gate uses a heuristic that takes the first **two named components** of each resolved output path (e.g. `/rec/huya` for `/rec/huya/X/20260415`, `/home/user` for `/home/user/recordings/X/20260415`). Two named components is the smallest safe default — it avoids accidentally sharing a gate key across unrelated users in `/home/...` layouts. For a single-mount `/rec`-style layout where you want one gate key per mount (and therefore one aggregated notification on failure instead of one per platform), set this explicitly: `RUST_SREC_OUTPUT_ROOTS=/rec`. | - |
@@ -124,6 +128,7 @@ The heuristic groups deep paths under broader keys: `/var/lib/rust-srec/output` 
 | `STREAMLINK_PATH` | Streamlink binary used to look up streams with Streamlink, and to check whether Streamlink can handle a URL when adding a streamer, unless `streamlink.binary_path` in the platform's settings names another. The Streamlink download engine uses the binary path in its own configuration. | `streamlink` |
 | `RCLONE_PATH` | rclone binary used by the `rclone` processor | `rclone` |
 | `BAIDUPCS_PATH` | BaiduPCS-Go binary, used when the preset sets no `binary_path` | `BaiduPCS-Go` |
+| `BAIDUPCS_GO_CONFIG_DIR` | Config directory where BaiduPCS-Go stores its session and `pcs_config.json` (used when the preset sets no `config_dir`) | BaiduPCS-Go default (`/app/config/BaiduPCS-Go` in Docker) |
 | `DANMAKU_FACTORY_PATH` | DanmakuFactory binary, used when the preset sets no `binary_path` | `DanmakuFactory` |
 
 A bare name is looked up on `PATH`. The Docker image bundles these tools.

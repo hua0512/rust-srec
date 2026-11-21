@@ -52,5 +52,6 @@ localized rendering methods are in `notification::events`.
 Custom Rust channels implement `NotificationChannel::send`; the
 optional `send_rendered` method receives a `RenderedEvent` for integrations that
 want to reuse the shared title/body. Direct built-in sends use the same filtering
-and payload construction as queued delivery. The default `test` method follows
-normal delivery filtering.
+and payload construction as queued delivery. The default `NotificationChannel::test`
+method checks `is_enabled()` and calls `send_rendered` directly, intentionally
+bypassing `min_priority` filtering (`accepts()`).

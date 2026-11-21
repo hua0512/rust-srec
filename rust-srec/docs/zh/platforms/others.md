@@ -6,11 +6,16 @@
 - **协议**: FLV
 - **弹幕**: ❌ 不支持
 
-## 熊猫直播
+## PandaTV（pandalive.co.kr） {#pandatv}
 
 - **URL**: `https://www.pandalive.co.kr/play/{id}`
 - **协议**: HLS
 - **弹幕**: ❌ 不支持
+
+::: info 密码房与 19+ 限制房间
+- **密码房**：在主播 URL 后追加 `?pwd=...` 参数（例如 `https://www.pandalive.co.kr/play/{id}?pwd=secret`）。
+- **成人 / 19+ 房间**：受年龄限制的直播会返回 `AgeRestrictedContent`，需要选中一个包含有效 PandaTV 登录 Cookie 的[账号凭据配置](../concepts/configuration.md#账号配置与选择)。
+:::
 
 ## Picarto
 
@@ -39,7 +44,7 @@
 - **弹幕**: ✅ 已支持
 
 ::: info 带密码的直播
-在 Twitcasting 平台设置中填写 **直播密码**，或把密码以 `?password=...` 的形式加到主播 URL 中（例如 `https://twitcasting.tv/{用户}?password=secret`）。URL 中的密码优先。
+在 Twitcasting 平台设置中填写 **直播密码**（`password`），或把密码以 `?password=...` 的形式加到主播 URL 中（例如 `https://twitcasting.tv/{用户}?password=secret`）。URL 中的密码优先。
 :::
 
 ## 微博
@@ -65,3 +70,13 @@
 扫码登录的账号会自动续期：被微博退出登录时，rust-srec 会像浏览器一样用保存的登录信息重新登录，无需再次扫码，账号即可继续使用。续期失败时，账号暂不用于检测，并发送 **凭据刷新失败** 通知，最早一小时后再次尝试续期。如果微博要求重新登录，通知中会说明；在您点击 **重新登录** 之前，录制会在不使用该账号的情况下继续。每次续期都会替换保存的登录信息，因此另一个 rust-srec 实例中的同一凭据配置副本（例如从备份恢复的副本）在任一副本续期后可能就无法再续期；请为每个实例分别扫码登录。
 
 从已登录 weibo.com 的浏览器粘贴的 Cookie 同样会被检查，但不会续期。如果 weibo.com 认为这些 Cookie 未登录，账号会被标记为无效，并发送 **凭据无效** 通知；在您点击 **重新登录** 之前，录制会在不使用该账号的情况下继续。如果 weibo.com 显示的页面中没有该账号，**校验** 会提示该账号无法检查。
+
+### 批量检测（`batch_detection`） <Badge type="tip" text="Premium · 即将开放" />
+
+微博批量检测将在 Premium 版本开放后提供，用于降低多主播场景下的检测开销。当前尚未开放，详情请关注[版本方案](/zh/#tiers)。
+
+<div id="熊猫直播" class="legacy-section">
+
+此节内容已移至 [PandaTV（pandalive.co.kr）](#pandatv)。
+
+</div>

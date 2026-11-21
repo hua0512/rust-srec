@@ -18,7 +18,6 @@ services:
       - ${CONFIG_DIR:-./config}:/app/config
       - ${OUTPUT_DIR:-./output}:/app/output
       - ${LOG_DIR:-./logs}:/app/logs
-      - /tmp:/tmp
     environment:
       - TZ=${TZ:-UTC}
       - RUST_LOG=${RUST_LOG:-info}
@@ -51,6 +50,7 @@ services:
       - HTTP_PROXY=${HTTP_PROXY:-}
       - HTTPS_PROXY=${HTTPS_PROXY:-}
       - NO_PROXY=${NO_PROXY:-}
+      # - ALL_PROXY=${ALL_PROXY:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/health/live"]
       interval: 30s

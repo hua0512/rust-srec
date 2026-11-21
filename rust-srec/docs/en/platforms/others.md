@@ -12,6 +12,11 @@
 - **Protocol**: HLS
 - **Danmaku**: ❌ Not supported
 
+::: info Password & adult rooms
+- **Password-protected rooms**: Append `?pwd=...` to the streamer URL (for example `https://www.pandalive.co.kr/play/{id}?pwd=secret`).
+- **Adult / 19+ rooms**: Age-restricted broadcasts fail with `AgeRestrictedContent` unless you select a logged-in [account profile](../concepts/configuration.md#account-profiles-and-selection) with valid PandaTV cookies.
+:::
+
 ## Picarto
 
 - **URL**: `https://picarto.tv/{channel}`
@@ -39,7 +44,7 @@ Share links need no account. If you select an [account profile](../concepts/conf
 - **Danmaku**: ✅ Supported
 
 ::: info Password-protected broadcasts
-Set **Stream Password** in the Twitcasting platform settings, or add the password to the streamer URL as `?password=...` (for example `https://twitcasting.tv/{user}?password=secret`). A password in the URL takes priority.
+Set **Stream Password** (`password`) in the Twitcasting platform settings, or add the password to the streamer URL as `?password=...` (for example `https://twitcasting.tv/{user}?password=secret`). A password in the URL takes priority.
 :::
 
 ## Weibo
@@ -65,3 +70,7 @@ The account is optional, and a problem with it never stops monitoring or recordi
 An account signed in by QR code renews itself: when Weibo signs it out, rust-srec signs it in again from the saved login, as a browser does, and the account keeps working without a new scan. If the renewal fails, the account is left out of checks for now, you get the **Credential refresh failed** notification, and the renewal is tried again an hour later at the earliest. If Weibo asks for a new login instead, the notification says so; recording goes on without the account until you use **Log in again**. Every renewal replaces the saved login, so a copy of the profile in another rust-srec install, for example one restored from a backup, may stop renewing once either copy has renewed; sign each install in with its own QR scan.
 
 Cookies pasted from a browser signed in to weibo.com are checked too, but they are not renewed. If weibo.com treats them as signed out, the account is marked invalid and you get the **Credential invalid** notification; recording goes on without it until you use **Log in again**. If weibo.com shows a page without the account, **Validate** reports that the account cannot be checked.
+
+### Batch Detection (`batch_detection`) <Badge type="tip" text="Premium · Coming Soon" />
+
+Weibo batch detection is planned for the upcoming Premium edition to reduce polling overhead across multiple channels. Not yet open — see [editions](/en/#tiers) for updates.

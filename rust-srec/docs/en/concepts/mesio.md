@@ -4,7 +4,7 @@ Mesio is rust-srec's **in-process Rust download engine**. Unlike `FFMPEG` and `S
 
 ## Architecture
 
-A single `MesioDownloader` picks the protocol (HLS, MPEG-DASH or FLV) and the source, then produces one **download session** regardless of protocol. The session exposes two streams — a guaranteed **items** stream of media data and terminal markers, and a best-effort **events** stream of progress/telemetry — plus a control handle for cancellation and optional metrics.
+A single `MesioDownloader` picks the HTTP protocol (HLS, MPEG-DASH or FLV) and the source, then produces one **download session** regardless of protocol. The session exposes two streams — a guaranteed **items** stream of media data and terminal markers, and a best-effort **events** stream of progress/telemetry — plus a control handle for cancellation and optional metrics. For native Bigo Live streams (`bigo://`), `rust-srec`'s `MesioEngine` wrapper dispatches directly to `BigoDownloader` alongside these HTTP downloaders.
 
 ```mermaid
 flowchart LR
@@ -89,6 +89,10 @@ Limitations:
 - The web player cannot play DASH streams; it reports the format as unsupported. Recorded files are ordinary MP4 files.
 
 DASH settings are listed under [MPEG-DASH recording](./engines.md#mpeg-dash).
+
+## Native Bigo protocol {#bigo-protocol}
+
+For Bigo Live rooms that use Bigo's native transport (`bigo://` URLs), `rust-srec`'s `MesioEngine` wrapper intercepts the URL before `MesioDownloader` and dispatches it to `BigoDownloader`. It runs in-process alongside the HLS, MPEG-DASH, and FLV downloaders, delivering media and progress through the same recorder pipeline and download-engine controls.
 
 ## Download sessions
 

@@ -42,6 +42,6 @@ Disabling the summary still records chat files, but stops computing and saving t
 
 ## Understand live and interrupted sessions
 
-Statistics are saved about once a minute during recording. A restart resumes saved counts; the most recent unsaved interval can be lost. Long sessions reduce timeline resolution to retain the full recording period.
+Published danmu statistics persist roughly once a minute (`60s`) during recording, while the crash-recovery aggregator checkpoint is saved every **5 minutes** (`300s`). After a restart, saved counts resume from the last checkpoint, so an unclean crash can lose up to 5 minutes of checkpoint state. Long sessions reduce timeline resolution to retain the full recording period.
 
 Chat reconnects while video recording continues. A prolonged outage appears in System Health. Messages the platform never delivered cannot be recovered. New XML files filter invalid characters; existing files are not repaired automatically.

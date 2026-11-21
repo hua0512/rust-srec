@@ -7,6 +7,7 @@
 | 接口 | 认证 | 用途 |
 |---|---|---|
 | `GET /api/health/live` | 公开 | 进程存活与运行时间；Docker 健康检查使用该接口 |
+| `GET /api/health/idle` | 公开 | 空闲门控（空闲返回 `200`，忙碌返回 `503`），返回 `idle`、`active_recordings`、`pending_recordings` 和 `processing_jobs`；供 Watchtower 更新钩子使用 |
 | `GET /api/health/ready` | 启用认证时需要 Bearer 令牌 | 根据组件状态返回 `200 ready` 或 `503 not ready` |
 | `GET /api/health` | 启用认证时需要 Bearer 令牌 | 版本、运行时间、组件状态、CPU 和内存使用率 |
 
@@ -29,7 +30,7 @@ curl http://localhost:12555/api/health/ready \
 
 ### 启动时的输出路径
 
-磁盘健康路径在启动时发现，初始写入探测最多十六个目标，同时执行四个，每个等待五秒。这不是持续刷新的目录清单；修改输出设置不会重建探测列表。应检查实际录制路径，详见[输出根探测](./storage.md)。
+磁盘健康路径仅在启动时发现一次，不会持续刷新。修改输出设置不会重建探测列表；应检查实际录制路径，发现上限与超时说明见[输出根探测](./storage.md#输出根探测)。
 
 ### 文件系统采样缓慢
 

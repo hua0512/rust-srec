@@ -8,9 +8,13 @@
 https://play.sooplive.co.kr/{channel_id}
 https://play.sooplive.com/{channel_id}
 https://play.afreecatv.com/{channel_id}
+https://ch.sooplive.co.kr/{channel_id}
+https://ch.sooplive.com/{channel_id}
+https://m.sooplive.co.kr/{channel_id}
+https://m.sooplive.com/{channel_id}
 ```
 
-也支持包含直播编号的播放页 URL：
+除 `play.*` 之外，也支持 `ch.*`（频道页）和 `m.*`（移动端）子域名。同时支持包含直播编号的播放页 URL：
 
 ```
 https://play.sooplive.com/{channel_id}/{broadcast_number}

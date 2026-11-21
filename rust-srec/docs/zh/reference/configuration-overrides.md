@@ -99,8 +99,6 @@ Cookies 属于账号凭据配置，而不属于平台、模板或主播配置。
 - 高优先级层中值为 `null` 的键会被忽略（不产生覆盖）。
 - 如果任意一侧不是对象，则高优先级层胜出。
 
-具体实现位于 `platforms_parser::extractor::platform_configs::merge_platform_extras`。
-
 ::: tip 如何清除 platform_extras 中的键
 `platform_extras` 使用浅合并，且忽略上层的 `null`。这意味着高优先级层无法通过 `null`
 “取消”低优先级层的键，只能用一个非 null 的值覆盖它。
@@ -229,7 +227,8 @@ extras，而不是被跳过。
     "credential_ids": ["profile-uuid-a", "profile-uuid-b"],
     "strategy": "priority",
     "failover": true,
-    "max_attempts": 3
+    "max_attempts": 3,
+    "anonymous_fallback": false
   }
 }
 ```
@@ -237,7 +236,9 @@ extras，而不是被跳过。
 其他策略为 `{ "mode": "none" }`、`{ "mode": "inherit" }` 及
 `{ "mode": "fixed", "credential_id": "profile-uuid-a" }`。账号池支持 `priority`
 或 `round_robin`，有序 ID 列表必须非空且不重复，总尝试次数为 1–10。
-省略 `strategy`、`failover` 和 `max_attempts` 时，分别默认为 `priority`、`true` 和 `3`。
+省略 `strategy`、`failover`、`max_attempts` 和 `anonymous_fallback` 时，分别默认为
+`priority`、`true`、`3` 和 `false`。将 `anonymous_fallback` 设为 `true` 时，若池中所有
+账号均不可用或失败，检查会回退到匿名请求。
 单成员池有效。
 未知模式/字段会被拒绝。选择不存在的凭据或其他平台的凭据时，请求会以 HTTP 409
 `CREDENTIAL_REFERENCE_INACCESSIBLE` 失败，并列出作出该选择的配置。
@@ -258,8 +259,9 @@ extras，而不是被跳过。
 
 ## 代理连接 JSON {#proxy-route-json}
 
-每个作用域的代理设置是 `proxy_route`：它是全局、平台和模板配置中的字段，也是主播
-`streamer_specific_config` 中的一个键。账号在创建、编辑以及通过扫码登录创建时也带有该字段。
+每个作用域的代理设置是 `proxy_route`：它是全局、平台和模板配置中的字段、主播
+`streamer_specific_config` 中的一个键，也用于账号（创建、编辑及扫码登录创建时）、
+通知渠道（邮件除外）和上传步骤（`rclone`、`baidupcs`）。
 
 ```json
 { "proxy_route": { "kind": "proxy", "id": "proxy-uuid" } }
@@ -274,5 +276,5 @@ extras，而不是被跳过。
 
 旧的 `proxy_config` 对象已不再读取。仍然设置它的请求——无论在全局、平台或模板配置中、
 `streamer_specific_config` 内，还是模板的 `platform_overrides` 内——都会以 HTTP 422
-`PROXY_CONFIG_REPLACED` 失败，避免客户端在不知情时丢失代理；值为 `null` 或空字符串时会被接受并忽略。
+`PROXY_CONFIG_REPLACED` 失败，避免客户端在不知情时丢失代理；只有值为 `null` 时才会被接受并忽略，空字符串 `""` 同样会被拒绝。
 保存代理功能推出之前写出的备份仍带有该字段，导入时会[自动转换](../operations/backup-restore.md#proxies-in-backups)。

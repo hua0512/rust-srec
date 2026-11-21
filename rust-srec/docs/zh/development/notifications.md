@@ -45,4 +45,5 @@ Web Push 发送成功后会清除持久化限流状态，包括首次 HTTP 请�
 负责。公开事件目录和本地化方法位于 `notification::events`。自定义 Rust
 渠道实现 `NotificationChannel::send`；可选的 `send_rendered` 方法提供
 `RenderedEvent`，便于复用共享的标题和正文。直接调用内置渠道与队列投递使用相同的
-过滤和消息构建路径。默认 `test` 方法同样遵守正常投递的过滤规则。
+过滤和消息构建路径。默认的 `NotificationChannel::test` 方法仅检查 `is_enabled()` 并
+直接调用 `send_rendered`，有意绕过 `min_priority` 优先级过滤（`accepts()`）。
