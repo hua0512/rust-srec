@@ -1,6 +1,8 @@
 //! Routes of the backend's own traffic that serves no platform, and the
 //! environment of the upload tools that take one.
 
+use std::sync::Arc;
+
 use sqlx::SqlitePool;
 use tokio::process::Command;
 
@@ -70,27 +72,48 @@ pub fn set_tool_environment(command: &mut Command, target: &ProxyTarget, tool: &
         .map_err(|error| crate::Error::Validation(format!("{tool} {error}")))
 }
 
-/// The proxy login `target` carries, as it may appear in a tool's output:
-/// the password percent-encoded and as written.
-pub fn proxy_secrets(target: &ProxyTarget) -> Vec<String> {
-    target.endpoint().map(endpoint_secrets).unwrap_or_default()
+/// Hides proxy logins in what an upload tool on `target` prints: the saved
+/// proxy's and the system proxy's, as written and percent-encoded. Tool
+/// output is parsed as printed; only the text written to job logs or
+/// returned by the API passes through it.
+#[derive(Clone, Default)]
+pub struct OutputScrubber {
+    /// Longest first, so a secret containing another is replaced whole.
+    secrets: Arc<[String]>,
 }
 
-/// The proxy logins [`set_tool_environment`] gave `command`, longest first,
-/// for scrubbing what it prints.
-pub fn environment_secrets(command: &Command) -> Vec<String> {
-    let mut secrets: Vec<String> = command
-        .as_std()
-        .get_envs()
-        .filter(|(name, _)| {
-            name.eq_ignore_ascii_case("HTTP_PROXY") || name.eq_ignore_ascii_case("HTTPS_PROXY")
-        })
-        .filter_map(|(_, value)| value?.to_str())
-        .flat_map(|url| endpoint_secrets(&ProxyEndpoint::from_url(url)))
-        .collect();
-    secrets.sort_by_key(|secret| std::cmp::Reverse(secret.len()));
-    secrets.dedup();
-    secrets
+impl OutputScrubber {
+    pub fn for_target(target: &ProxyTarget) -> Self {
+        Self::with_system(target, SystemProxy::current())
+    }
+
+    fn with_system(target: &ProxyTarget, system: &SystemProxy) -> Self {
+        let mut secrets: Vec<String> = target
+            .endpoint()
+            .cloned()
+            .into_iter()
+            .chain(system.endpoints())
+            .flat_map(|endpoint| endpoint_secrets(&endpoint))
+            .collect();
+        secrets.sort_by_key(|secret| std::cmp::Reverse(secret.len()));
+        secrets.dedup();
+        Self {
+            secrets: secrets.into(),
+        }
+    }
+
+    /// The logins it hides, longest first.
+    pub fn secrets(&self) -> impl Iterator<Item = &str> {
+        self.secrets.iter().map(String::as_str)
+    }
+
+    pub fn scrub(&self, text: &str) -> String {
+        if self.secrets.is_empty() {
+            return text.to_owned();
+        }
+        let secrets: Vec<&str> = self.secrets().collect();
+        crate::utils::text::scrub(text, &secrets)
+    }
 }
 
 fn endpoint_secrets(endpoint: &ProxyEndpoint) -> Vec<String> {
@@ -102,7 +125,32 @@ fn endpoint_secrets(endpoint: &ProxyEndpoint) -> Vec<String> {
         && let Some(encoded) = url.password()
         && encoded != password
     {
-        secrets.insert(0, encoded.to_owned());
+        secrets.push(encoded.to_owned());
     }
     secrets
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_saved_proxy_and_every_system_proxy_login_are_hidden() {
+        let saved = ProxyTarget::Explicit(ProxyEndpoint::new(
+            "http://saved.example:8080",
+            Some(("user".into(), "saved:pw".into())),
+        ));
+        let system = SystemProxy::from_lookup(|name| match name {
+            "HTTPS_PROXY" => Some("http://a:https%2Fpw@secure.example:3128".into()),
+            "http_proxy" => Some("plain.example:3128".into()),
+            "ALL_PROXY" => Some("socks5://b:all%40pw@all.example:1080".into()),
+            _ => None,
+        });
+        let scrubber = OutputScrubber::with_system(&saved, &system);
+        let output = "saved:pw saved%3Apw https/pw https%2Fpw all@pw all%40pw plain.example";
+        assert_eq!(
+            scrubber.scrub(output),
+            "*** *** *** *** *** *** plain.example"
+        );
+    }
 }

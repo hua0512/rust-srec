@@ -33,9 +33,10 @@ pub(super) async fn insert_dag(
 ) -> Result<()> {
     super::super::proxies::require_step_routes(
         &mut *connection,
-        &[super::super::proxies::StepDocument::Pipelines(Some(
-            &dag.dag_definition,
-        ))],
+        &[super::super::proxies::StepDocument::Pipelines(
+            crate::pipeline::step_routes::Layout::Pipeline,
+            Some(&dag.dag_definition),
+        )],
     )
     .await?;
     sqlx::query(INSERT_DAG)

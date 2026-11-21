@@ -21,6 +21,7 @@ use tokio::time::Instant;
 
 use super::{
     CONFIG_DIR_ENV, CliOutput, LOGIN_SUCCESS_MARKER, LoginMaterial, LoginOutcome, base_command,
+    tool_command,
 };
 use crate::proxies::ProxyTarget;
 use crate::utils::text::scrub;
@@ -82,7 +83,11 @@ pub(super) async fn run(
                     .filter(|value| !value.is_empty()),
             );
         }
-        secrets.extend(crate::proxies::proxy_secrets(&proxy));
+        secrets.extend(
+            crate::proxies::OutputScrubber::for_target(&proxy)
+                .secrets()
+                .map(str::to_owned),
+        );
         let escaped: Vec<_> = secrets
             .iter()
             .map(|secret| secret.replace('\\', "\\\\").replace('"', "\\\""))
@@ -142,7 +147,7 @@ async fn perform(
     })
     .await
     .map_err(|error| Error::Other(format!("BaiduPCS-Go staging task failed: {error}")))??;
-    let mut command = base_command(binary, None);
+    let mut command = tool_command(binary, None);
     command.env(CONFIG_DIR_ENV, staged.directory.path());
     crate::proxies::set_tool_environment(&mut command, proxy, "BaiduPCS-Go")?;
     let result = capture(command, input, deadline, response, preserve_stage).await;

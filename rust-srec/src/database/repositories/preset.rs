@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use crate::Result;
 use crate::database::models::{JobPreset, Pagination};
+use crate::pipeline::step_routes::Layout;
 use async_trait::async_trait;
 use sqlx::{QueryBuilder, Sqlite, SqlitePool};
 
@@ -170,8 +171,8 @@ pub(crate) async fn step_users(
             owner
                 .documents
                 .iter_mut()
-                .any(|document| {
-                    crate::pipeline::step_routes::pipeline_steps_mut(document)
+                .any(|(layout, document)| {
+                    crate::pipeline::step_routes::pipeline_steps_mut(document, *layout)
                         .into_iter()
                         .any(|step_value| names_step(step_value))
                 })
@@ -184,7 +185,7 @@ pub(crate) async fn step_users(
 /// hold them.
 pub(crate) struct PipelineOwner {
     pub user: StepUser,
-    pub documents: Vec<serde_json::Value>,
+    pub documents: Vec<(Layout, serde_json::Value)>,
 }
 
 /// Every stored pipeline owner `owners` covers, ordered by kind, then name.
@@ -226,18 +227,27 @@ pub(crate) async fn pipeline_owners(
         .await?;
     Ok(rows
         .into_iter()
-        .map(|(kind, id, name, removing, a, b, c, d)| PipelineOwner {
-            user: StepUser {
-                kind,
-                id,
-                name,
-                removing,
-            },
-            documents: [a, b, c, d]
-                .into_iter()
-                .flatten()
-                .filter_map(|text| serde_json::from_str(&text).ok())
-                .collect(),
+        .map(|(kind, id, name, removing, a, b, c, d)| {
+            // The first column is a streamer's config or a pipeline; a
+            // template's fourth holds its platform overrides.
+            let first = match kind {
+                StepUserKind::Streamer => Layout::Config,
+                _ => Layout::Pipeline,
+            };
+            let layouts = [first, Layout::Pipeline, Layout::Pipeline, Layout::Overrides];
+            PipelineOwner {
+                user: StepUser {
+                    kind,
+                    id,
+                    name,
+                    removing,
+                },
+                documents: layouts
+                    .into_iter()
+                    .zip([a, b, c, d])
+                    .filter_map(|(layout, text)| Some((layout, serde_json::from_str(&text?).ok()?)))
+                    .collect(),
+            }
         })
         .collect())
 }

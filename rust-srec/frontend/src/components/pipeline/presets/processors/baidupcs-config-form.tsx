@@ -210,6 +210,18 @@ function BaiduPcsAccountCard({
             </div>
           )}
 
+          {status.logged_in && status.quota_error && (
+            <div className="space-y-1">
+              <p className="flex items-start gap-2 text-xs text-destructive">
+                <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <Trans>Could not read the storage quota.</Trans>
+              </p>
+              <p className="break-all font-mono text-xs text-muted-foreground">
+                {status.quota_error}
+              </p>
+            </div>
+          )}
+
           {!status.logged_in && status.detail && (
             <p className="break-all font-mono text-xs text-muted-foreground">
               {status.detail}

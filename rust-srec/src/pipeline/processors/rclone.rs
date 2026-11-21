@@ -1238,71 +1238,77 @@ impl Processor for RcloneProcessor {
         let attempts = config.max_retries.unwrap_or(DEFAULT_ATTEMPTS).max(1);
         let proxy =
             crate::proxies::upload_target(self.routes.as_ref(), &config.proxy_route).await?;
+        let scrubber = crate::proxies::OutputScrubber::for_target(&proxy);
+        let ctx = &ctx.scrubbing(&scrubber);
+        let result = async {
+            // Only a retried move can find inputs already consumed and uploaded.
+            let skip_absent_inputs =
+                matches!(config.operation, RcloneOperation::Move) && ctx.is_retry;
 
-        // Only a retried move can find inputs already consumed and uploaded.
-        let skip_absent_inputs = matches!(config.operation, RcloneOperation::Move) && ctx.is_retry;
+            // Choose single or batch mode based on input count
+            if input.inputs.len() == 1 {
+                // Single file mode - append filename to destination
+                let input_path = &input.inputs[0];
+                let input_file = Path::new(input_path);
+                let file_name = input_file.file_name().unwrap_or_default().to_string_lossy();
 
-        // Choose single or batch mode based on input count
-        if input.inputs.len() == 1 {
-            // Single file mode - append filename to destination
-            let input_path = &input.inputs[0];
-            let input_file = Path::new(input_path);
-            let file_name = input_file.file_name().unwrap_or_default().to_string_lossy();
+                // If destination doesn't look like it includes the filename, append it
+                let full_destination =
+                    if remote_destination.ends_with('/') || config.destination_root.is_some() {
+                        format!("{}/{}", remote_destination.trim_end_matches('/'), file_name)
+                    } else {
+                        remote_destination.clone()
+                    };
 
-            // If destination doesn't look like it includes the filename, append it
-            let full_destination =
-                if remote_destination.ends_with('/') || config.destination_root.is_some() {
-                    format!("{}/{}", remote_destination.trim_end_matches('/'), file_name)
-                } else {
-                    remote_destination.clone()
+                let execution = RcloneExecution {
+                    remote_destination: &full_destination,
+                    proxy: &proxy,
+                    operation: config.operation,
+                    config_path: config.config_path.as_deref(),
+                    throughput: &throughput,
+                    extra_args: &extra_args,
+                    attempts,
+                    context: ctx,
                 };
+                let targets =
+                    Self::mkdir_targets(&input.inputs, &full_destination, None, skip_absent_inputs)
+                        .await;
+                self.ensure_remote_dirs(&targets, &execution).await?;
+                self.process_single(input_path, &execution).await
+            } else {
+                // Batch mode - use --files-from
+                info!("Using batch mode for {} files", input.inputs.len());
 
-            let execution = RcloneExecution {
-                remote_destination: &full_destination,
-                proxy: &proxy,
-                operation: config.operation,
-                config_path: config.config_path.as_deref(),
-                throughput: &throughput,
-                extra_args: &extra_args,
-                attempts,
-                context: ctx,
-            };
-            let targets =
-                Self::mkdir_targets(&input.inputs, &full_destination, None, skip_absent_inputs)
-                    .await;
-            self.ensure_remote_dirs(&targets, &execution).await?;
-            self.process_single(input_path, &execution).await
-        } else {
-            // Batch mode - use --files-from
-            info!("Using batch mode for {} files", input.inputs.len());
-
-            let execution = RcloneExecution {
-                remote_destination: &remote_destination,
-                proxy: &proxy,
-                operation: config.operation,
-                config_path: config.config_path.as_deref(),
-                throughput: &throughput,
-                extra_args: &extra_args,
-                attempts,
-                context: ctx,
-            };
-            // Same base directory `process_batch` lays the inputs out from;
-            // without one it rejects the batch before any transfer.
-            let targets = match Self::find_common_base_dir(&input.inputs) {
-                Some(base_dir) => {
-                    Self::mkdir_targets(
-                        &input.inputs,
-                        &remote_destination,
-                        Some(&base_dir),
-                        skip_absent_inputs,
-                    )
-                    .await
-                }
-                None => Vec::new(),
-            };
-            self.ensure_remote_dirs(&targets, &execution).await?;
-            self.process_batch(&input.inputs, &execution).await
+                let execution = RcloneExecution {
+                    remote_destination: &remote_destination,
+                    proxy: &proxy,
+                    operation: config.operation,
+                    config_path: config.config_path.as_deref(),
+                    throughput: &throughput,
+                    extra_args: &extra_args,
+                    attempts,
+                    context: ctx,
+                };
+                // Same base directory `process_batch` lays the inputs out from;
+                // without one it rejects the batch before any transfer.
+                let targets = match Self::find_common_base_dir(&input.inputs) {
+                    Some(base_dir) => {
+                        Self::mkdir_targets(
+                            &input.inputs,
+                            &remote_destination,
+                            Some(&base_dir),
+                            skip_absent_inputs,
+                        )
+                        .await
+                    }
+                    None => Vec::new(),
+                };
+                self.ensure_remote_dirs(&targets, &execution).await?;
+                self.process_batch(&input.inputs, &execution).await
+            }
         }
+        .await;
+        ProcessorOutput::scrubbed(result, &scrubber)
     }
 }
 

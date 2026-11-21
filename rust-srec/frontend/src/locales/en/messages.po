@@ -776,7 +776,7 @@ msgstr "Add at least one step"
 msgid "Add at most {count, plural, one {# item} other {# items}}"
 msgstr "Add at most {count, plural, one {# item} other {# items}}"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:453
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:465
 msgid "Add BaiduPCS-Go argument"
 msgstr "Add BaiduPCS-Go argument"
 
@@ -930,7 +930,7 @@ msgstr "Adjust the roundness of UI elements."
 
 #: src/components/config/engines/forms/setting-sections.tsx:551
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:46
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:291
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:303
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:105
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:208
 #: src/components/streamers/streamer-editor.tsx:178
@@ -1467,7 +1467,7 @@ msgstr "Backward Jump Threshold (ms)"
 msgid "Baidu Netdisk Account"
 msgstr "Baidu Netdisk Account"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:321
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:333
 msgid "Baidu Netdisk folder the files are uploaded into. Defaults to the netdisk root when empty."
 msgstr "Baidu Netdisk folder the files are uploaded into. Defaults to the netdisk root when empty."
 
@@ -1502,7 +1502,7 @@ msgstr "BAIDUID=...; BDUSS=...; STOKEN=...; ..."
 msgid "BaiduPCS-Go binary not available at <0>{0}</0>. Install it or set the binary path in the Advanced tab."
 msgstr "BaiduPCS-Go binary not available at <0>{0}</0>. Install it or set the binary path in the Advanced tab."
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:413
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:425
 msgid "BaiduPCS-Go Executable (Optional)"
 msgstr "BaiduPCS-Go Executable (Optional)"
 
@@ -2293,11 +2293,11 @@ msgstr "Concurrent file transfers (--transfers)."
 msgid "Config"
 msgstr "Config"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:426
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:438
 msgid "Config Directory (Optional)"
 msgstr "Config Directory (Optional)"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:428
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:440
 msgid "Config Directory help"
 msgstr "Config Directory help"
 
@@ -2615,6 +2615,10 @@ msgstr "Could not load presets: {0}"
 #: src/components/pipeline/workflows/step-config-dialog.tsx:481
 msgid "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
 msgstr "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
+
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:217
+msgid "Could not read the storage quota."
+msgstr "Could not read the storage quota."
 
 #: src/components/streamers/card/lossless-cut-action.tsx:67
 msgid "Could not request lossless cutting. Refresh the recording status and try again."
@@ -3201,7 +3205,7 @@ msgstr "Delete filter"
 msgid "Delete Job"
 msgstr "Delete Job"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:371
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:383
 msgid "Delete local files after upload"
 msgstr "Delete local files after upload"
 
@@ -3386,7 +3390,7 @@ msgstr "Desktop Notifications"
 msgid "Desktop notifications are shown by the operating system even when the app is minimized."
 msgstr "Desktop notifications are shown by the operating system even when the app is minimized."
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:299
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:311
 msgid "Destination"
 msgstr "Destination"
 
@@ -3398,11 +3402,11 @@ msgstr "Destination copied"
 msgid "Destination Directory"
 msgstr "Destination Directory"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:304
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:316
 msgid "Destination Folder"
 msgstr "Destination Folder"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:306
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:318
 msgid "Destination Folder help"
 msgstr "Destination Folder help"
 
@@ -3463,7 +3467,7 @@ msgstr "Dimensions & Filters"
 msgid "Direct"
 msgstr "Direct"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:430
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:442
 msgid "Directory holding BaiduPCS-Go's login session (BAIDUPCS_GO_CONFIG_DIR). Logging in via the account card above stores the session in the same directory configured here."
 msgstr "Directory holding BaiduPCS-Go's login session (BAIDUPCS_GO_CONFIG_DIR). Logging in via the account card above stores the session in the same directory configured here."
 
@@ -3481,7 +3485,7 @@ msgstr "Directory to scan for new files after command execution"
 msgid "Disable"
 msgstr "Disable"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:361
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:373
 msgid "Disable rapid upload"
 msgstr "Disable rapid upload"
 
@@ -3547,7 +3551,7 @@ msgstr "Dolby Vision (30000)"
 msgid "Done"
 msgstr "Done"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:452
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:464
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:486
 msgid "Double click to edit items."
 msgstr "Double click to edit items."
@@ -3683,7 +3687,7 @@ msgstr "Duration limit"
 msgid "e.g. 'best', 'worst', '720p', 'audio_only'"
 msgstr "e.g. 'best', 'worst', '720p', 'audio_only'"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:439
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:451
 msgid "e.g. /app/config/BaiduPCS-Go"
 msgstr "e.g. /app/config/BaiduPCS-Go"
 
@@ -3691,7 +3695,7 @@ msgstr "e.g. /app/config/BaiduPCS-Go"
 msgid "e.g. /output/processed/"
 msgstr "e.g. /output/processed/"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:326
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:338
 msgid "e.g. /rust-srec/{streamer}/%Y-%m"
 msgstr "e.g. /rust-srec/{streamer}/%Y-%m"
 
@@ -4249,7 +4253,7 @@ msgid "Exports include all global settings, platforms, templates, streamers, eng
 msgstr "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 
 #: src/components/config/engines/forms/streamlink-form.tsx:30
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:447
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:459
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:70
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:481
 msgid "Extra Arguments"
@@ -4659,7 +4663,7 @@ msgstr "Failover off"
 msgid "Failover on"
 msgstr "Failover on"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:415
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:427
 msgid "Falls back to the BAIDUPCS_PATH environment variable, then PATH lookup."
 msgstr "Falls back to the BAIDUPCS_PATH environment variable, then PATH lookup."
 
@@ -5087,7 +5091,7 @@ msgstr "GB"
 #: src/components/config/platforms/platform-editor.tsx:220
 #: src/components/config/templates/template-editor.tsx:240
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:43
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:285
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:297
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:99
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:204
 #: src/components/streamers/streamer-editor.tsx:155
@@ -5410,7 +5414,7 @@ msgstr "How checks, recordings, danmu and playback here connect. An account with
 msgid "How far playback trails the available stream, not the total broadcast delay."
 msgstr "How far playback trails the available stream, not the total broadcast delay."
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:352
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:364
 msgid "How files that already exist at the destination are handled (--policy). Skip also makes job retries cheap."
 msgstr "How files that already exist at the destination are handled (--policy). Skip also makes job retries cheap."
 
@@ -6180,7 +6184,7 @@ msgstr "Local generation"
 msgid "Log Files"
 msgstr "Log Files"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:242
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:254
 #: src/components/pipeline/presets/processors/baidupcs-login-dialog.tsx:247
 msgid "Log in"
 msgstr "Log in"
@@ -6213,7 +6217,7 @@ msgstr "Log level for {module}"
 msgid "Log levels & modules"
 msgstr "Log levels & modules"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:233
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:245
 msgid "Log out"
 msgstr "Log out"
 
@@ -6420,7 +6424,7 @@ msgstr "Match Strategy"
 msgid "Matching resolution"
 msgstr "Matching resolution"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:384
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:396
 msgid "Max Attempts"
 msgstr "Max Attempts"
 
@@ -6624,7 +6628,7 @@ msgstr "Mins"
 msgid "Minute (00-59)"
 msgstr "Minute (00-59)"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:314
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:326
 msgid "Missing folders are created by BaiduPCS-Go during upload."
 msgstr "Missing folders are created by BaiduPCS-Go during upload."
 
@@ -6852,7 +6856,7 @@ msgstr "Needs a new login"
 msgid "Needs refresh"
 msgstr "Needs refresh"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:308
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:320
 msgid "Netdisk folder path. Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 msgstr "Netdisk folder path. Supports placeholders: {PLACEHOLDER_TOKENS} and time tokens like %Y/%m/%d."
 
@@ -9099,7 +9103,7 @@ msgstr "Remove Step"
 msgid "Remove this filter from the streamer? This cannot be undone."
 msgstr "Remove this filter from the streamer? This cannot be undone."
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:374
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:386
 msgid "Removes each local file once its upload (or skip) is confirmed. The local copy is gone afterwards — keep this off unless Netdisk is the final destination."
 msgstr "Removes each local file once its upload (or skip) is confirmed. The local copy is gone afterwards — keep this off unless Netdisk is the final destination."
 
@@ -9521,7 +9525,7 @@ msgstr "S"
 msgid "Same as server"
 msgstr "Same as server"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:349
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:361
 msgid "Same-name policy"
 msgstr "Same-name policy"
 
@@ -9951,7 +9955,7 @@ msgstr "Select parse mode"
 msgid "Select pipelines"
 msgstr "Select pipelines"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:350
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:362
 msgid "Select policy"
 msgstr "Select policy"
 
@@ -10354,7 +10358,7 @@ msgstr "Skipped"
 msgid "Skipped {skippedCount} duplicate stream(s)"
 msgstr "Skipped {skippedCount} duplicate stream(s)"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:363
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:375
 msgid "Skips the rapid-upload (秒传) hash check before transferring (--norapid)."
 msgstr "Skips the rapid-upload (秒传) hash check before transferring (--norapid)."
 
@@ -11489,7 +11493,7 @@ msgstr "Toggle Sidebar"
 msgid "Token"
 msgstr "Token"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:408
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:420
 msgid "Tool Location"
 msgstr "Tool Location"
 
@@ -11876,11 +11880,11 @@ msgstr "Upload and Delete"
 msgid "Upload attempt {attempt} of {max}"
 msgstr "Upload attempt {attempt} of {max}"
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:386
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:398
 msgid "Upload attempts per job before failing. Retries only re-send files without a confirmed result."
 msgstr "Upload attempts per job before failing. Retries only re-send files without a confirmed result."
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:344
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:356
 msgid "Upload Behavior"
 msgstr "Upload Behavior"
 
@@ -11974,7 +11978,7 @@ msgstr "Use engine settings"
 msgid "Use mobile endpoint for extraction."
 msgstr "Use mobile endpoint for extraction."
 
-#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:333
+#: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:345
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:165
 msgid "Use stream start time to keep a midnight-crossing stream in one dated folder and group all segments of a session together."
 msgstr "Use stream start time to keep a midnight-crossing stream in one dated folder and group all segments of a session together."

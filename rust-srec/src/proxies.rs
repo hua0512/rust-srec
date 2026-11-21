@@ -36,7 +36,5 @@ pub use probe::{PROBE_TIMEOUT, ProbeErrorKind, ProbeOutcome, platform_homepage, 
 pub use resolve::{ProxyEntry, materialize, resolve};
 pub use route::{ProxyName, ProxyRoute, ResolvedRoute, RouteKey, RouteKind, RouteSource, name_key};
 pub use service::{ProxyService, RouteScope};
-pub use service_routes::{
-    ServiceRoutes, environment_secrets, proxy_secrets, set_tool_environment, upload_target,
-};
+pub use service_routes::{OutputScrubber, ServiceRoutes, set_tool_environment, upload_target};
 pub use system::{SystemProxy, SystemProxySummary};

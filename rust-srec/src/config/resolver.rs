@@ -288,13 +288,13 @@ impl<R: ConfigRepository> ConfigResolver<R> {
                 .map(|mut entry| {
                     if let Some(obj) = entry.as_object_mut() {
                         tpl_po_pipeline = obj
-                            .remove("pipeline")
+                            .remove(super::PIPELINE_FIELD)
                             .and_then(|v| serde_json::from_value(v).ok());
                         tpl_po_session_complete = obj
-                            .remove("session_complete_pipeline")
+                            .remove(super::SESSION_COMPLETE_PIPELINE_FIELD)
                             .and_then(|v| serde_json::from_value(v).ok());
                         tpl_po_paired_segment = obj
-                            .remove("paired_segment_pipeline")
+                            .remove(super::PAIRED_SEGMENT_PIPELINE_FIELD)
                             .and_then(|v| serde_json::from_value(v).ok());
                         // The template form stores extractor options in this wrapper. Keep
                         // supporting flat configurations; explicit nested nulls must replace

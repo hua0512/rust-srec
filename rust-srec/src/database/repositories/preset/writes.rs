@@ -53,7 +53,10 @@ pub(crate) async fn write_pipeline_preset(
 ) -> crate::Result<()> {
     require_step_routes(
         connection,
-        &[StepDocument::Pipelines(model.dag_definition.as_deref())],
+        &[StepDocument::Pipelines(
+            crate::pipeline::step_routes::Layout::Pipeline,
+            model.dag_definition.as_deref(),
+        )],
     )
     .await?;
     let mutation = match mode {

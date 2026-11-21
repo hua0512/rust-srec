@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use sqlx::SqliteConnection;
 
+use crate::pipeline::step_routes::Layout;
 use crate::proxies::{
     AccountReference, NamedReference, ProxyEndpoint, ProxyEntry, ProxyError, ProxyReferences,
     ProxyRoute, ResolvedRoute, RouteSource, SystemProxy, TemplateReference, resolve,
@@ -421,7 +422,9 @@ pub(crate) async fn all_references(
         let mut named: Vec<String> = owner
             .documents
             .iter_mut()
-            .flat_map(crate::pipeline::step_routes::pipeline_routes_mut)
+            .flat_map(|(layout, document)| {
+                crate::pipeline::step_routes::pipeline_routes_mut(document, *layout)
+            })
             .filter_map(|route| saved_proxy(route))
             .collect();
         named.sort();
@@ -576,8 +579,8 @@ pub(crate) async fn require_entry(
 /// Where a stored document keeps upload step routes.
 #[derive(Clone, Copy)]
 pub(crate) enum StepDocument<'a> {
-    /// A pipeline, or a configuration with pipelines nested in it.
-    Pipelines(Option<&'a str>),
+    /// A document holding pipelines as its layout places them.
+    Pipelines(Layout, Option<&'a str>),
     /// A job preset's config for its processor.
     PresetConfig { processor: &'a str, config: &'a str },
 }
@@ -591,7 +594,7 @@ pub(crate) async fn require_step_routes(
 ) -> Result<()> {
     for document in documents {
         let text = match document {
-            StepDocument::Pipelines(text) => *text,
+            StepDocument::Pipelines(_, text) => *text,
             StepDocument::PresetConfig { config, .. } => Some(*config),
         };
         let Some(mut value) =
@@ -600,8 +603,8 @@ pub(crate) async fn require_step_routes(
             continue;
         };
         let routes = match document {
-            StepDocument::Pipelines(_) => {
-                crate::pipeline::step_routes::pipeline_routes_mut(&mut value)
+            StepDocument::Pipelines(layout, _) => {
+                crate::pipeline::step_routes::pipeline_routes_mut(&mut value, *layout)
             }
             StepDocument::PresetConfig { processor, .. } => {
                 crate::pipeline::step_routes::preset_route_mut(processor, &mut value)

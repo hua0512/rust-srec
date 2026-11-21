@@ -57,6 +57,10 @@ pub struct BaiduPcsStatusResponse {
     pub username: Option<String>,
     pub quota_used_bytes: Option<u64>,
     pub quota_total_bytes: Option<u64>,
+    /// Why the quota could not be read for a logged-in account, such as a
+    /// proxy route BaiduPCS-Go cannot use. The account status above stays
+    /// valid.
+    pub quota_error: Option<String>,
     /// Login material is stored for this config dir, so the pipeline can
     /// re-login automatically. The material itself is never returned.
     pub has_stored_credentials: bool,
@@ -114,12 +118,12 @@ fn output_tail(text: &str) -> String {
 
 /// The connection of account commands from the tools page: they serve no
 /// upload step, so they follow the global route.
-async fn account_proxy(state: &AppState) -> ApiResult<crate::proxies::ProxyTarget> {
-    Ok(state
+async fn account_proxy(state: &AppState) -> crate::Result<crate::proxies::ProxyTarget> {
+    state
         .proxies
         .routes()
         .target(&crate::proxies::ProxyRoute::Inherit)
-        .await?)
+        .await
 }
 
 fn non_empty(value: Option<&str>) -> Option<&str> {
@@ -156,6 +160,7 @@ pub async fn baidupcs_status(
         username: None,
         quota_used_bytes: None,
         quota_total_bytes: None,
+        quota_error: None,
         has_stored_credentials,
         detail: None,
     };
@@ -208,17 +213,33 @@ pub async fn baidupcs_status(
     }
 
     if response.logged_in {
-        let proxy = account_proxy(&state).await?;
-        let mut quota_cmd = baidupcs::connected_command(&binary_path, config_dir, &proxy).await?;
-        quota_cmd.arg("quota");
-        if let Ok(output) = baidupcs::run_capture(quota_cmd, None, STATUS_PROBE_TIMEOUT).await {
-            match baidupcs::parse_quota(&output.stdout) {
+        let quota = match account_proxy(&state).await {
+            Ok(proxy) => {
+                let scrubber = crate::proxies::OutputScrubber::for_target(&proxy);
+                let output = async {
+                    let mut quota_cmd =
+                        baidupcs::connected_command(&binary_path, config_dir, &proxy).await?;
+                    quota_cmd.arg("quota");
+                    baidupcs::run_capture(quota_cmd, None, STATUS_PROBE_TIMEOUT).await
+                }
+                .await;
+                output
+                    .map(|output| (output, scrubber.clone()))
+                    .map_err(|error| scrubber.scrub(&error.to_string()))
+            }
+            Err(error) => Err(error.to_string()),
+        };
+        match quota {
+            Ok((output, scrubber)) => match baidupcs::parse_quota(&output.stdout) {
                 Some(quota) => {
                     response.quota_used_bytes = Some(quota.used_bytes);
                     response.quota_total_bytes = Some(quota.total_bytes);
                 }
-                None => response.detail = Some(output_tail(&output.combined())),
-            }
+                None => {
+                    response.detail = Some(output_tail(&scrubber.scrub(&output.combined())));
+                }
+            },
+            Err(message) => response.quota_error = Some(message),
         }
     }
 

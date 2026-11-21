@@ -29,6 +29,9 @@ const NO_PROXY_VARIABLES: [&str; 2] = ["no_proxy", "NO_PROXY"];
 pub struct SystemProxy {
     url: Option<String>,
     no_proxy: Option<String>,
+    /// Every proxy variable that is set, in [`PROXY_VARIABLES`] order; a
+    /// helper process may read any of them.
+    urls: Vec<String>,
 }
 
 impl std::fmt::Debug for SystemProxy {
@@ -60,22 +63,28 @@ impl SystemProxy {
     /// Reads the variables through `lookup`, so callers can supply an
     /// environment other than the process's.
     pub fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Self {
-        let first = |names: &[&str]| {
+        let set = |names: &[&str]| -> Vec<String> {
             names
                 .iter()
                 .filter_map(|name| lookup(name))
                 .map(|value| value.trim().to_owned())
-                .find(|value| !value.is_empty())
+                .filter(|value| !value.is_empty())
+                .collect()
         };
-        Self {
-            url: first(&PROXY_VARIABLES).map(|url| {
+        let urls: Vec<String> = set(&PROXY_VARIABLES)
+            .into_iter()
+            .map(|url| {
                 if url.contains("://") {
                     url
                 } else {
                     format!("http://{url}")
                 }
-            }),
-            no_proxy: first(&NO_PROXY_VARIABLES),
+            })
+            .collect();
+        Self {
+            url: urls.first().cloned(),
+            no_proxy: set(&NO_PROXY_VARIABLES).into_iter().next(),
+            urls,
         }
     }
 
@@ -109,6 +118,13 @@ impl SystemProxy {
             ProxyTarget::System => self.danmu_proxy(),
             ProxyTarget::Explicit(endpoint) => DanmuProxy::new(endpoint.clone()).map(Some),
         }
+    }
+
+    /// Every proxy the environment's variables name, with its login.
+    pub fn endpoints(&self) -> impl Iterator<Item = platforms_parser::proxy::ProxyEndpoint> + '_ {
+        self.urls
+            .iter()
+            .map(|url| platforms_parser::proxy::ProxyEndpoint::from_url(url))
     }
 
     /// The danmu tunnel for the environment's proxy; `None` when none is set.

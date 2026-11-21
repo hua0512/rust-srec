@@ -1054,6 +1054,9 @@ impl Processor for BaiduPcsProcessor {
             super::utils::parse_config_strict(input.config.as_deref(), "baidupcs")?;
         let proxy =
             crate::proxies::upload_target(self.routes.as_ref(), &config.proxy_route).await?;
+        let scrubber = crate::proxies::OutputScrubber::for_target(&proxy);
+        let ctx = &ctx.scrubbing(&scrubber);
+        let result = async {
 
         let binary_path = config
             .binary_path
@@ -1480,6 +1483,9 @@ impl Processor for BaiduPcsProcessor {
             uploads,
             logs,
         })
+        }
+        .await;
+        ProcessorOutput::scrubbed(result, &scrubber)
     }
 }
 

@@ -27,7 +27,6 @@ use crate::database::models::ToolCredentialDbModel;
 use crate::database::repositories::ToolCredentialRepository;
 use crate::notification::{NotificationEvent, NotificationService};
 use crate::proxies::ProxyTarget;
-use crate::utils::text::scrub;
 use process_utils::NoWindowExt;
 
 /// Binary name used when neither an explicit path nor [`BINARY_PATH_ENV`]
@@ -84,10 +83,17 @@ pub fn cli_lock() -> &'static Arc<RwLock<()>> {
 }
 
 /// Build a [`Command`] for the given binary with [`CONFIG_DIR_ENV`] applied
-/// when `config_dir` is a non-empty override. It keeps the server's proxy
-/// environment, which commands that only read the local config (`-v`,
-/// `env`, `who`, `logout`) never use.
+/// when `config_dir` is a non-empty override, for commands that only read
+/// the local config (`-v`, `env`, `who`, `logout`). They run without any
+/// proxy variable, so no proxy login reaches them.
 pub fn base_command(binary_path: &str, config_dir: Option<&str>) -> Command {
+    let mut command = tool_command(binary_path, config_dir);
+    ProxyTarget::Direct.apply_environment(&mut command);
+    command
+}
+
+/// The binary with [`CONFIG_DIR_ENV`] applied, on the server's environment.
+fn tool_command(binary_path: &str, config_dir: Option<&str>) -> Command {
     let mut command = Command::new(binary_path);
     if let Some(dir) = config_dir.map(str::trim).filter(|d| !d.is_empty()) {
         command.env(CONFIG_DIR_ENV, dir);
@@ -121,7 +127,7 @@ pub async fn connected_command(
                 crate::Error::Other(format!("BaiduPCS-Go config check task failed: {error}"))
             })??;
     }
-    let mut command = base_command(binary_path, config_dir);
+    let mut command = tool_command(binary_path, config_dir);
     crate::proxies::set_tool_environment(&mut command, proxy, "BaiduPCS-Go")?;
     Ok(command)
 }
@@ -162,8 +168,6 @@ pub async fn run_capture(
     stdin_input: Option<&[u8]>,
     timeout: Duration,
 ) -> crate::Result<CliOutput> {
-    let secrets = crate::proxies::environment_secrets(&command);
-    let secrets: Vec<&str> = secrets.iter().map(String::as_str).collect();
     command.no_window();
     command.kill_on_drop(true);
     command.stdin(if stdin_input.is_some() {
@@ -190,8 +194,8 @@ pub async fn run_capture(
     match tokio::time::timeout(timeout, child.wait_with_output()).await {
         Ok(Ok(output)) => Ok(CliOutput {
             status: output.status,
-            stdout: scrub(&String::from_utf8_lossy(&output.stdout), &secrets),
-            stderr: scrub(&String::from_utf8_lossy(&output.stderr), &secrets),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
         }),
         Ok(Err(e)) => Err(crate::Error::Other(format!(
             "Failed to wait for BaiduPCS-Go: {e}"

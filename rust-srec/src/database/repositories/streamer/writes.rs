@@ -26,6 +26,7 @@ pub(crate) async fn write_streamer(
     super::super::proxies::require_step_routes(
         connection,
         &[super::super::proxies::StepDocument::Pipelines(
+            crate::pipeline::step_routes::Layout::Config,
             model.streamer_specific_config.as_deref(),
         )],
     )

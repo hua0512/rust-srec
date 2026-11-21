@@ -444,52 +444,57 @@ impl ConfigExport {
         &mut self,
         mut map: impl FnMut(&mut serde_json::Value) -> Result<(), E>,
     ) -> Result<(), E> {
-        use crate::pipeline::step_routes::{pipeline_routes_mut, preset_route_mut};
+        use crate::pipeline::step_routes::{Layout, pipeline_routes_mut, preset_route_mut};
+        fn pipelines(
+            documents: [&mut Option<serde_json::Value>; 3],
+        ) -> impl Iterator<Item = (Layout, &mut serde_json::Value)> {
+            documents
+                .into_iter()
+                .flatten()
+                .map(|document| (Layout::Pipeline, document))
+        }
         let global = &mut self.global_config;
-        let mut pipelines: Vec<&mut serde_json::Value> = [
+        let mut documents: Vec<(Layout, &mut serde_json::Value)> = pipelines([
             &mut global.pipeline,
             &mut global.session_complete_pipeline,
             &mut global.paired_segment_pipeline,
-        ]
-        .into_iter()
-        .flatten()
+        ])
         .collect();
         for template in &mut self.templates {
-            pipelines.extend(
-                [
-                    &mut template.pipeline,
-                    &mut template.session_complete_pipeline,
-                    &mut template.paired_segment_pipeline,
-                    &mut template.platform_overrides,
-                ]
-                .into_iter()
-                .flatten(),
+            documents.extend(pipelines([
+                &mut template.pipeline,
+                &mut template.session_complete_pipeline,
+                &mut template.paired_segment_pipeline,
+            ]));
+            documents.extend(
+                template
+                    .platform_overrides
+                    .as_mut()
+                    .map(|overrides| (Layout::Overrides, overrides)),
             );
         }
         for platform in &mut self.platforms {
-            pipelines.extend(
-                [
-                    &mut platform.pipeline,
-                    &mut platform.session_complete_pipeline,
-                    &mut platform.paired_segment_pipeline,
-                ]
-                .into_iter()
-                .flatten(),
-            );
+            documents.extend(pipelines([
+                &mut platform.pipeline,
+                &mut platform.session_complete_pipeline,
+                &mut platform.paired_segment_pipeline,
+            ]));
         }
-        pipelines.extend(
-            self.streamers
-                .iter_mut()
-                .filter_map(|streamer| streamer.streamer_specific_config.as_mut()),
-        );
-        pipelines.extend(
-            self.pipeline_presets
-                .iter_mut()
-                .filter_map(|preset| preset.dag_definition.as_mut()),
-        );
-        for document in pipelines {
+        documents.extend(self.streamers.iter_mut().filter_map(|streamer| {
+            streamer
+                .streamer_specific_config
+                .as_mut()
+                .map(|config| (Layout::Config, config))
+        }));
+        documents.extend(self.pipeline_presets.iter_mut().filter_map(|preset| {
+            preset
+                .dag_definition
+                .as_mut()
+                .map(|definition| (Layout::Pipeline, definition))
+        }));
+        for (layout, document) in documents {
             *document = unwrap_json_value(std::mem::take(document));
-            for route in pipeline_routes_mut(document) {
+            for route in pipeline_routes_mut(document, layout) {
                 map(route)?;
             }
         }

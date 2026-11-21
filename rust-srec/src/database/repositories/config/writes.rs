@@ -5,6 +5,7 @@ use crate::credentials::{CredentialOwner, CredentialSelection};
 use crate::database::models::{
     EngineConfigurationDbModel, GlobalConfigDbModel, PlatformConfigDbModel, TemplateConfigDbModel,
 };
+use crate::pipeline::step_routes::Layout;
 
 pub(crate) async fn write_global(
     connection: &mut sqlx::SqliteConnection,
@@ -14,9 +15,9 @@ pub(crate) async fn write_global(
     super::super::proxies::require_step_routes(
         connection,
         &[
-            StepDocument::Pipelines(model.pipeline.as_deref()),
-            StepDocument::Pipelines(model.session_complete_pipeline.as_deref()),
-            StepDocument::Pipelines(model.paired_segment_pipeline.as_deref()),
+            StepDocument::Pipelines(Layout::Pipeline, model.pipeline.as_deref()),
+            StepDocument::Pipelines(Layout::Pipeline, model.session_complete_pipeline.as_deref()),
+            StepDocument::Pipelines(Layout::Pipeline, model.paired_segment_pipeline.as_deref()),
         ],
     )
     .await?;
@@ -177,10 +178,10 @@ pub(crate) async fn write_template(
     super::super::proxies::require_step_routes(
         connection,
         &[
-            StepDocument::Pipelines(model.pipeline.as_deref()),
-            StepDocument::Pipelines(model.session_complete_pipeline.as_deref()),
-            StepDocument::Pipelines(model.paired_segment_pipeline.as_deref()),
-            StepDocument::Pipelines(model.platform_overrides.as_deref()),
+            StepDocument::Pipelines(Layout::Pipeline, model.pipeline.as_deref()),
+            StepDocument::Pipelines(Layout::Pipeline, model.session_complete_pipeline.as_deref()),
+            StepDocument::Pipelines(Layout::Pipeline, model.paired_segment_pipeline.as_deref()),
+            StepDocument::Pipelines(Layout::Overrides, model.platform_overrides.as_deref()),
         ],
     )
     .await?;
@@ -262,9 +263,9 @@ pub(crate) async fn write_platform(
     super::super::proxies::require_step_routes(
         connection,
         &[
-            StepDocument::Pipelines(model.pipeline.as_deref()),
-            StepDocument::Pipelines(model.session_complete_pipeline.as_deref()),
-            StepDocument::Pipelines(model.paired_segment_pipeline.as_deref()),
+            StepDocument::Pipelines(Layout::Pipeline, model.pipeline.as_deref()),
+            StepDocument::Pipelines(Layout::Pipeline, model.session_complete_pipeline.as_deref()),
+            StepDocument::Pipelines(Layout::Pipeline, model.paired_segment_pipeline.as_deref()),
         ],
     )
     .await?;

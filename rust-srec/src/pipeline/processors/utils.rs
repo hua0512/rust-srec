@@ -321,29 +321,23 @@ struct CappedLines<R> {
     /// which callers must skip. A segment ending in [`BAIDUPCS_BAR_END`] is
     /// also yielded as soon as it is read, without waiting for a terminator.
     split_cr: bool,
-    /// Replaced by `***` in every line; see [`crate::proxies::environment_secrets`].
-    secrets: Secrets,
 }
 
-/// Values scrubbed from a child's output, longest first.
-type Secrets = Arc<[String]>;
-
 impl<R: AsyncRead + Unpin> CappedLines<R> {
-    fn new(reader: R, overlong_count: Arc<AtomicUsize>, secrets: Secrets) -> Self {
+    fn new(reader: R, overlong_count: Arc<AtomicUsize>) -> Self {
         Self {
             reader: BufReader::new(reader),
             partial: Vec::new(),
             skipping_to_newline: false,
             overlong_count,
             split_cr: false,
-            secrets,
         }
     }
 
-    fn with_cr_splitting(reader: R, overlong_count: Arc<AtomicUsize>, secrets: Secrets) -> Self {
+    fn with_cr_splitting(reader: R, overlong_count: Arc<AtomicUsize>) -> Self {
         Self {
             split_cr: true,
-            ..Self::new(reader, overlong_count, secrets)
+            ..Self::new(reader, overlong_count)
         }
     }
 
@@ -359,11 +353,7 @@ impl<R: AsyncRead + Unpin> CappedLines<R> {
         }
         let line = String::from_utf8_lossy(&self.partial).into_owned();
         self.partial.clear();
-        if self.secrets.is_empty() {
-            return line;
-        }
-        let secrets: Vec<&str> = self.secrets.iter().map(String::as_str).collect();
-        crate::utils::text::scrub(&line, &secrets)
+        line
     }
 
     /// Next complete line (newline and trailing `\r` stripped), `Ok(None)`
@@ -460,7 +450,6 @@ struct ReaderContext {
     dropped_count: Arc<AtomicUsize>,
     overlong_count: Arc<AtomicUsize>,
     log_sink: Option<JobLogSink>,
-    secrets: Secrets,
 }
 
 async fn consume_command_stream<R: AsyncRead + Unpin>(
@@ -475,7 +464,6 @@ async fn consume_command_stream<R: AsyncRead + Unpin>(
             context.tx,
             context.dropped_count,
             context.overlong_count,
-            context.secrets,
         )
         .await;
     }
@@ -487,11 +475,10 @@ async fn consume_command_stream<R: AsyncRead + Unpin>(
             context.tx,
             context.dropped_count,
             context.overlong_count,
-            context.secrets,
         )
         .await;
     }
-    let mut lines = CappedLines::new(reader, context.overlong_count, context.secrets);
+    let mut lines = CappedLines::new(reader, context.overlong_count);
     if stdout && let CommandMode::Ffmpeg { progress, state } = &context.mode {
         while let Some(line) = lines.next_line().await? {
             // Reporting under the state lock delivers the two readers'
@@ -568,7 +555,6 @@ async fn run_logged_command_until(
         Stdio::piped()
     });
     command.stderr(Stdio::piped());
-    let secrets: Secrets = crate::proxies::environment_secrets(command).into();
     let mut child = ContainedChild::spawn(command)
         .map_err(|error| crate::Error::Other(format!("Failed to spawn command: {error}")))?;
 
@@ -581,7 +567,6 @@ async fn run_logged_command_until(
         dropped_count: dropped_count.clone(),
         overlong_count: overlong_count.clone(),
         log_sink: log_sink.clone(),
-        secrets,
     };
     let stdout_handle = child.take_stdout().map(|stdout| {
         AbortOnDropHandle::new(tokio::spawn(consume_command_stream(
@@ -1149,9 +1134,8 @@ async fn consume_rclone_stderr<R: AsyncRead + Unpin>(
     tx: tokio::sync::mpsc::Sender<JobLogEntry>,
     dropped_count: Arc<AtomicUsize>,
     overlong_count: Arc<AtomicUsize>,
-    secrets: Secrets,
 ) -> std::io::Result<()> {
-    let mut lines = CappedLines::new(reader, overlong_count, secrets);
+    let mut lines = CappedLines::new(reader, overlong_count);
     while let Some(line) = lines.next_line().await? {
         match parse_rclone_line(&line) {
             ParsedRcloneLine::Progress(snapshot) => progress.report(snapshot),
@@ -1243,9 +1227,8 @@ async fn consume_baidupcs_stream<R: AsyncRead + Unpin>(
     tx: tokio::sync::mpsc::Sender<JobLogEntry>,
     dropped_count: Arc<AtomicUsize>,
     overlong_count: Arc<AtomicUsize>,
-    secrets: Secrets,
 ) -> std::io::Result<()> {
-    let mut lines = CappedLines::with_cr_splitting(reader, overlong_count, secrets);
+    let mut lines = CappedLines::with_cr_splitting(reader, overlong_count);
     let mut last_noise: Option<std::time::Instant> = None;
     while let Some(segment) = lines.next_line().await? {
         // A line printed right after a bar ending in `BAIDUPCS_BAR_END`, such
@@ -1561,11 +1544,6 @@ mod tests {
                 assert_eq!(std::io::stdin().read(&mut [0u8; 1]).unwrap(), 0);
             }
             "exit-7" => std::process::exit(7),
-            "echo-proxy" => {
-                let proxy = std::env::var("HTTPS_PROXY").unwrap();
-                eprintln!("[error] proxyconnect {proxy} failed");
-                println!("using {proxy}");
-            }
             "logs" => {
                 let stdout = std::thread::spawn(|| {
                     let mut stdout = std::io::stdout().lock();
@@ -1679,39 +1657,6 @@ mod tests {
                     );
                 }
             }
-        }
-    }
-
-    #[tokio::test]
-    async fn a_tool_never_logs_the_proxy_login_it_was_given() {
-        let target = crate::proxies::ProxyTarget::Explicit(crate::proxies::ProxyEndpoint::new(
-            "http://proxy.example:8080",
-            Some(("user".into(), "s3cret:pass".into())),
-        ));
-        for mode in command_modes() {
-            let mut command = helper_command("echo-proxy");
-            crate::proxies::set_tool_environment(&mut command, &target, "helper").unwrap();
-            let output = tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                run_logged_command(&mut command, mode, None),
-            )
-            .await
-            .expect("pipes must not deadlock")
-            .unwrap();
-            let logs: Vec<&str> = output
-                .logs
-                .iter()
-                .map(|entry| entry.message.as_str())
-                .collect();
-            assert!(
-                logs.iter().any(|line| line.contains("proxyconnect")),
-                "{logs:?}"
-            );
-            assert!(
-                logs.iter()
-                    .all(|line| !line.contains("s3cret") && !line.contains("s3cret%3Apass")),
-                "{logs:?}"
-            );
         }
     }
 
@@ -1930,7 +1875,6 @@ mod tests {
             log_tx,
             dropped.clone(),
             overlong.clone(),
-            Secrets::default(),
         )
         .await
         .expect("reader completes after skipping the overlong line");
@@ -1963,17 +1907,9 @@ mod tests {
         let dropped = Arc::new(AtomicUsize::new(0));
         let overlong = Arc::new(AtomicUsize::new(0));
 
-        consume_baidupcs_stream(
-            input,
-            None,
-            None,
-            log_tx,
-            dropped.clone(),
-            overlong.clone(),
-            Secrets::default(),
-        )
-        .await
-        .expect("stream drains");
+        consume_baidupcs_stream(input, None, None, log_tx, dropped.clone(), overlong.clone())
+            .await
+            .expect("stream drains");
 
         let mut messages = Vec::new();
         while let Ok(entry) = log_rx.try_recv() {
@@ -2055,7 +1991,6 @@ mod tests {
             log_tx,
             Arc::default(),
             Arc::default(),
-            Secrets::default(),
         );
         let (read, ()) = tokio::join!(tracker.report_while(read), write);
         read.unwrap();
