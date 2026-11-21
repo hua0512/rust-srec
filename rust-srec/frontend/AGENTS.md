@@ -58,6 +58,18 @@ Each of these has broken the app before and passes lint, types and unit tests.
 - **Style recalculation**: inherited changes on `body`/`main` restyle the whole page (Radix modal `pointer-events`, react-remove-scroll's body variable, `inert`), and flipping `data-state` re-matches every `data-state` selector in the subtree. Check a modal primitive or scroll lock for these before using it on a page-level overlay; that is why the mobile nav is `SidebarMobile`, not a Radix `Sheet`. Key an element's own state on a dedicated attribute (`data-drawer`).
 - **Pre-paint scripts on the web build**: behind Cloudflare Rocket Loader every `<script>` is deferred past first paint unless the SSR markup carries `data-cfasync="false"` (setting it from JS is too late). The theme script spreads `THEME_SCRIPT_ATTRS` (`src/lib/theme-script.ts`); anything else that must run before paint needs the same. For a web-only visual bug, inspect the served HTML first.
 
+## TESTING
+
+Write Vitest tests only when a realistic bug would slip past TypeScript, oxlint, and backend E2E tests.
+
+- **Do test**: form dirty-state tracking, `null`-reset vs inherit/override merging, and payload stripping; auth/session cookie security, concurrency, and legacy format compatibility; token-refresh coordination and WebSocket reconnect lifecycles; non-trivial client state machines, DAG/layout math, URL/path encoding, and keyboard/accessibility invariants that break silently.
+- **Do not test**:
+  - Zod schema defaults, accepted/rejected literals already enforced by types, or thin `parse` pass-throughs without custom transforms or refinement edge cases.
+  - Static copy, translated strings, empty-state text, CSS classes, badge colors, or icon/label lookup tables.
+  - Pure prop forwarding, thin shadcn/Radix wrappers, or thin browser/library wrappers (`sessionStorage`, clipboard, `Intl`, date formatting).
+  - Tests that mainly assert a mocked server function or callback was called with the arguments the test just supplied, or that duplicate backend API/E2E coverage.
+- Keep test helpers local to the tests that need them; when removing tests, remove dead mocks, fixtures, and unused imports in the same edit.
+
 ## COMMANDS
 
 Run from `rust-srec/frontend/`. Use Node from the root `.nvmrc` and pnpm from this directory's `package.json`.
