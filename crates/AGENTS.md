@@ -59,3 +59,10 @@ Adding a platform touches, besides its directory: `extractor/platforms.rs`, the 
 ## Backend touchpoints
 
 Backend consumers live in `rust-srec/src/downloader/engine/` (per-engine adapters, `mesio/` for this engine), `rust-srec/src/danmu/` (danmaku service), `rust-srec/src/credentials/platforms/` (platform login/cookie refresh), `rust-srec/src/monitor/` (live checks via extractors) and `rust-srec/src/proxies/`.
+
+## Testing
+
+Apply the root testing bar to library crates:
+
+- **Do test**: binary/wire protocol parsing edge cases and malformed inputs, signing/redaction/auth helpers, stream-repair operator invariants and ordering, segment-engine state transitions, concurrency/cancellation/backpressure, and fault injection.
+- **Do not test**: `Default`, `Clone`, `Debug`, `Display`, trivial getters/builders, struct-literal or simple `serde` round trips, standard-library/third-party crate behavior, or thin unit tests that duplicate scenarios already covered by `crates/mesio/tests/` or `rust-srec/tests/`.
