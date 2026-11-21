@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useForm, useWatch, Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { queryKeys } from '@/api/query-keys';
+import { invalidateProxyQueries } from '@/api/proxies';
 import {
   ChannelType,
   NotificationChannel,
@@ -243,6 +244,8 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.notifications.channels(),
       });
+      // Saved proxies count the channels that choose them.
+      void invalidateProxyQueries(queryClient);
       onOpenChange(false);
     },
     onError: (err) =>
@@ -259,6 +262,8 @@ export function ChannelForm({ channel, open, onOpenChange }: ChannelFormProps) {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.notifications.channels(),
       });
+      // Saved proxies count the channels that choose them.
+      void invalidateProxyQueries(queryClient);
       onOpenChange(false);
     },
     onError: (err) =>

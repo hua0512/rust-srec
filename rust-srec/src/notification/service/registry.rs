@@ -246,7 +246,7 @@ impl NotificationService {
         let route = match &self.proxies {
             Some(proxies) => DeliveryRoute::Stored {
                 proxies: proxies.clone(),
-                channel_id: db_channel.id.clone(),
+                route: db_channel.proxy_route.clone(),
             },
             None => DeliveryRoute::default(),
         };

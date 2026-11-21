@@ -454,7 +454,8 @@ pub async fn get_channel(
     tag = "notifications",
     request_body = CreateChannelRequest,
     responses(
-        (status = 201, description = "Channel created", body = crate::database::models::notification::NotificationChannelDbModel)
+        (status = 201, description = "Channel created", body = crate::database::models::notification::NotificationChannelDbModel),
+        (status = 422, description = "The route names a saved proxy that does not exist (`PROXY_NOT_FOUND`), or an email channel chooses a route other than inherit (`VALIDATION_ERROR`): email always connects directly", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]
@@ -491,7 +492,8 @@ pub async fn create_channel(
     request_body = UpdateChannelRequest,
     responses(
         (status = 200, description = "Channel updated", body = crate::database::models::notification::NotificationChannelDbModel),
-        (status = 404, description = "Channel not found", body = crate::api::error::ApiErrorResponse)
+        (status = 404, description = "Channel not found", body = crate::api::error::ApiErrorResponse),
+        (status = 422, description = "The route names a saved proxy that does not exist (`PROXY_NOT_FOUND`), or an email channel chooses a route other than inherit (`VALIDATION_ERROR`): email always connects directly", body = crate::api::error::ApiErrorResponse)
     ),
     security(("bearer_auth" = []))
 )]
@@ -508,11 +510,16 @@ pub async fn update_channel(
     channel.name = req.name;
     channel.settings = serde_json::to_string(&req.settings)
         .map_err(|e| ApiError::bad_request(format!("Invalid settings JSON: {}", e)))?;
-    if let Some(route) = req.proxy_route {
-        channel.proxy_route = route;
+    // An omitted route is left out of the write, so this edit cannot revert
+    // a route changed since the channel was read.
+    match req.proxy_route {
+        Some(route) => {
+            channel.proxy_route = route;
+            repo.update_channel(&channel).await?;
+        }
+        None => repo.update_channel_keeping_route(&channel).await?,
     }
-
-    repo.update_channel(&channel).await?;
+    let channel = repo.get_channel(&id).await?;
 
     // Reload service
     if let Err(e) = service.reload_from_db().await {

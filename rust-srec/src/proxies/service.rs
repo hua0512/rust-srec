@@ -13,8 +13,8 @@ use crate::database::repositories::{
 };
 
 use super::{
-    ProxyEndpoint, ProxyEntry, ProxyReferences, ProxyTarget, ResolvedRoute, RouteKey, RouteSource,
-    SystemProxy,
+    ProxyEndpoint, ProxyEntry, ProxyReferences, ProxyRoute, ProxyTarget, ResolvedRoute, RouteKey,
+    RouteSource, SystemProxy,
 };
 
 type RuntimeConfigService = ConfigService<SqlxConfigRepository, SqlxStreamerRepository>;
@@ -219,19 +219,14 @@ impl ProxyService {
         proxies::resolve_layers(&mut connection, &layers, system).await
     }
 
-    /// The connection a notification channel's deliveries take now: the
-    /// channel's own route, else the global route. Read at each delivery, so
-    /// edits to either route or to a saved proxy apply to the next one.
-    pub async fn notification_target(&self, channel_id: &str) -> Result<ProxyTarget> {
+    /// The connection a notification channel with route `own` takes now:
+    /// its own route, else the global route, with the saved proxy as it is
+    /// stored now.
+    pub async fn notification_target(&self, own: &ProxyRoute) -> Result<ProxyTarget> {
         let mut connection = self.pool.acquire().await?;
-        let own = proxies::route_of(
-            &mut connection,
-            &RouteOwner::NotificationChannel(channel_id.to_owned()),
-        )
-        .await?;
         // Only the target is used, so the channel's own layer is not
         // reported as a source of its own.
-        let mut layers = vec![(RouteSource::Global, own)];
+        let mut layers = vec![(RouteSource::Global, own.clone())];
         layers.extend(proxies::scope_layers(&mut connection, None).await?);
         Ok(
             proxies::resolve_layers(&mut connection, &layers, SystemProxy::current())

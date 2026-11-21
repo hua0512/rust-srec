@@ -29,7 +29,6 @@ pub enum RouteOwner {
     Template(String),
     Streamer(String),
     Account(String),
-    NotificationChannel(String),
 }
 
 impl RouteOwner {
@@ -40,18 +39,15 @@ impl RouteOwner {
             Self::Template(_) => "template_config",
             Self::Streamer(_) => "streamers",
             Self::Account(_) => "credential_profiles",
-            Self::NotificationChannel(_) => "notification_channel",
         }
     }
 
     fn id(&self) -> Option<&str> {
         match self {
             Self::Global => None,
-            Self::Platform(id)
-            | Self::Template(id)
-            | Self::Streamer(id)
-            | Self::Account(id)
-            | Self::NotificationChannel(id) => Some(id),
+            Self::Platform(id) | Self::Template(id) | Self::Streamer(id) | Self::Account(id) => {
+                Some(id)
+            }
         }
     }
 }

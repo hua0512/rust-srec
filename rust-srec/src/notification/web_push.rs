@@ -488,15 +488,11 @@ impl WebPushService {
             return Ok(());
         }
 
-        let body_text = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "<failed to read response body>".to_string());
-        let body_text = crate::utils::text::truncate_chars(&body_text, 500);
-
+        // The body is not reported: a push service or proxy may echo the
+        // request's headers, VAPID token and proxy login included.
         Err(Error::Other(format!(
-            "Web push failed: status {} body {}",
-            status, body_text
+            "Web push failed: HTTP {}",
+            status.as_u16()
         )))
     }
 

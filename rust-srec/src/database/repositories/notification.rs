@@ -24,6 +24,13 @@ pub trait NotificationRepository: Send + Sync {
     async fn list_channels(&self) -> Result<Vec<NotificationChannelDbModel>>;
     async fn create_channel(&self, channel: &NotificationChannelDbModel) -> Result<()>;
     async fn update_channel(&self, channel: &NotificationChannelDbModel) -> Result<()>;
+    /// [`Self::update_channel`] leaving the stored proxy route as it is.
+    async fn update_channel_keeping_route(
+        &self,
+        channel: &NotificationChannelDbModel,
+    ) -> Result<()> {
+        self.update_channel(channel).await
+    }
     async fn delete_channel(&self, id: &str) -> Result<()>;
 
     // Subscriptions
@@ -121,9 +128,9 @@ impl NotificationRepository for SqlxNotificationRepository {
             &mut *self.write_pool.acquire().await?,
             channel,
             super::row_write::WriteMode::Insert,
+            writes::RouteWrite::Write,
         )
-        .await?;
-        Ok(())
+        .await
     }
 
     async fn update_channel(&self, channel: &NotificationChannelDbModel) -> Result<()> {
@@ -131,9 +138,22 @@ impl NotificationRepository for SqlxNotificationRepository {
             &mut *self.write_pool.acquire().await?,
             channel,
             super::row_write::WriteMode::Update,
+            writes::RouteWrite::Write,
         )
-        .await?;
-        Ok(())
+        .await
+    }
+
+    async fn update_channel_keeping_route(
+        &self,
+        channel: &NotificationChannelDbModel,
+    ) -> Result<()> {
+        writes::write_channel(
+            &mut *self.write_pool.acquire().await?,
+            channel,
+            super::row_write::WriteMode::Update,
+            writes::RouteWrite::Keep,
+        )
+        .await
     }
 
     async fn delete_channel(&self, id: &str) -> Result<()> {

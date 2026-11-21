@@ -2,14 +2,26 @@ use super::super::row_write::{Mutation, RowWrite, WriteMode};
 use crate::database::models::{ChannelType, NotificationChannelDbModel};
 use crate::proxies::ProxyError;
 
-/// Writes a channel with its route. Email channels cannot take a route other
-/// than `inherit`, and a route must name an existing saved proxy.
+/// Whether a channel write stores the model's route or leaves the stored
+/// one, so an edit of other fields cannot revert a concurrent route change.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RouteWrite {
+    Write,
+    Keep,
+}
+
+/// Writes a channel, with its route unless `route` keeps the stored one.
+/// Email channels cannot take a route other than `inherit`, and a route
+/// must name an existing saved proxy. Inserts and imports always write it.
 pub(crate) async fn write_channel(
     connection: &mut sqlx::SqliteConnection,
     model: &NotificationChannelDbModel,
     mode: WriteMode,
+    route: RouteWrite,
 ) -> crate::Result<()> {
-    if !model.proxy_route.is_inherit()
+    let write_route = route == RouteWrite::Write || mode != WriteMode::Update;
+    if write_route
+        && !model.proxy_route.is_inherit()
         && ChannelType::parse(&model.channel_type).is_some_and(|kind| !kind.supports_proxy())
     {
         return Err(crate::Error::validation(
@@ -25,8 +37,10 @@ pub(crate) async fn write_channel(
     row.field("name", &model.name, true)?;
     row.field("channel_type", &model.channel_type, true)?;
     row.field("settings", &model.settings, true)?;
-    row.field("proxy_route", model.proxy_route.kind(), true)?;
-    row.field("proxy_id", model.proxy_route.proxy_id(), true)?;
+    if write_route {
+        row.field("proxy_route", model.proxy_route.kind(), true)?;
+        row.field("proxy_id", model.proxy_route.proxy_id(), true)?;
+    }
     match row.execute(connection).await {
         Ok(()) => Ok(()),
         // The saved proxy is the channel's only foreign key.
@@ -44,7 +58,7 @@ pub(crate) async fn import_channel(
     connection: &mut sqlx::SqliteConnection,
     model: &NotificationChannelDbModel,
 ) -> crate::Result<()> {
-    write_channel(connection, model, WriteMode::Import).await
+    write_channel(connection, model, WriteMode::Import, RouteWrite::Write).await
 }
 
 #[derive(Clone, Copy)]

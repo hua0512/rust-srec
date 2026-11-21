@@ -675,9 +675,9 @@ async fn test_send_reports_disabled_and_failing_channels_without_leaking_the_rec
     app.shutdown().await;
 }
 
-/// A channel's route is read at each delivery: an inheriting channel follows
-/// the Default proxy as soon as it changes, and the channel's own route then
-/// overrides it. Email channels accept no route, since SMTP cannot use one.
+/// A channel's route is applied at each delivery: an inheriting channel
+/// follows the Default proxy as soon as it changes, and the channel's own
+/// route then overrides it.
 #[tokio::test]
 async fn channels_deliver_on_the_route_in_force_when_they_send() {
     let app = TestApp::start().await;
@@ -725,25 +725,12 @@ async fn channels_deliver_on_the_route_in_force_when_they_send() {
         .assert_error(StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR");
     assert_eq!(forward_proxy.received().len(), 1, "direct skips the proxy");
 
-    let email = app
-        .post(
-            "/api/notifications/channels",
-            &token,
-            &json!({
-                "name": "Proxied mail",
-                "channel_type": "Email",
-                "settings": email_settings("127.0.0.1", 25, ""),
-                "proxy_route": { "kind": "proxy", "id": proxy["id"] },
-            }),
-        )
-        .await;
-    email.assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
-
     app.shutdown().await;
 }
 
 /// A half-configured SMTP login and a blank host are refused before any
-/// connection; a complete channel delivers through a local SMTP server.
+/// connection, as is a proxy route, which SMTP cannot use; a complete
+/// channel delivers through a local SMTP server.
 #[tokio::test]
 async fn email_test_send_checks_its_smtp_settings_before_connecting_and_delivers_locally() {
     let smtp = SmtpFixture::start().await;
@@ -775,6 +762,18 @@ async fn email_test_send_checks_its_smtp_settings_before_connecting_and_delivers
         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
         other => panic!("the SMTP server was contacted: {other:?}"),
     }
+    app.post(
+        "/api/notifications/channels",
+        &token,
+        &json!({
+            "name": "Proxied mail",
+            "channel_type": "Email",
+            "settings": email_settings("127.0.0.1", unused_port, ""),
+            "proxy_route": { "kind": "system" },
+        }),
+    )
+    .await
+    .assert_error(StatusCode::UNPROCESSABLE_ENTITY, "VALIDATION_ERROR");
 
     let id = create_channel(
         &app,

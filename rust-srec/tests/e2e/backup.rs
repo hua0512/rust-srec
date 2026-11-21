@@ -1092,3 +1092,68 @@ async fn a_late_database_failure_rolls_back_a_replace_import() {
 
     app.shutdown().await;
 }
+
+/// An email channel can take no proxy route. A merge that gives a stored,
+/// proxied webhook's name to an email channel without a route makes it
+/// inherit; one with a proxy route is refused as invalid, not as a failure.
+#[tokio::test]
+async fn a_merged_email_channel_never_keeps_a_proxy_route() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    let proxy = app
+        .post(
+            "/api/proxies",
+            &token,
+            &json!({"name": "Relay", "url": "http://127.0.0.1:3128"}),
+        )
+        .await
+        .created();
+    app.post(
+        "/api/notifications/channels",
+        &token,
+        &json!({
+            "name": "Alerts",
+            "channel_type": "Webhook",
+            "settings": {"url": "http://127.0.0.1:9/hook"},
+            "proxy_route": {"kind": "proxy", "id": proxy["id"]},
+        }),
+    )
+    .await
+    .created();
+    let mut bundle = export(&app, &token).await;
+    let email = json!({
+        "name": "Alerts",
+        "channel_type": "Email",
+        "settings": {
+            "smtp_host": "127.0.0.1",
+            "smtp_port": 25,
+            "username": "",
+            "password": "",
+            "from_address": "srec@example.com",
+            "to_addresses": ["ops@example.com"],
+        },
+        "subscriptions": [],
+    });
+
+    let mut routed = email.clone();
+    routed["proxy_route"] = json!({"kind": "proxy", "name": "Relay"});
+    bundle["notification_channels"] = json!([routed]);
+    import(&app, &token, &bundle, "merge")
+        .await
+        .assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
+
+    bundle["notification_channels"] = json!([email]);
+    import(&app, &token, &bundle, "merge")
+        .await
+        .expect_status(StatusCode::OK);
+    // An import signs every session out.
+    let token = app
+        .login_tokens(ADMIN_USERNAME, ADMIN_PASSWORD)
+        .await
+        .access;
+    let channels = app.get_ok("/api/notifications/channels", &token).await;
+    assert_eq!(channels[0]["channel_type"], "Email");
+    assert_eq!(channels[0]["proxy_route"], json!({"kind": "inherit"}));
+
+    app.shutdown().await;
+}

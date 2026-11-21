@@ -6,7 +6,7 @@ use std::time::Duration;
 use reqwest::{Client, Method, RequestBuilder, Response, StatusCode, header::HeaderMap};
 use tracing::{debug, warn};
 
-use crate::proxies::{ProxyService, ProxyTarget};
+use crate::proxies::{ProxyRoute, ProxyService, ProxyTarget};
 use crate::utils::http_client::{ClientCache, apply_proxy, build_client};
 use crate::{Error, Result};
 
@@ -33,11 +33,14 @@ pub enum DeliveryRoute {
     /// Always this connection, for channels configured outside the
     /// database.
     Fixed(ProxyTarget),
-    /// A stored channel's route, resolved before each delivery so edits to
-    /// it, to the global route or to a saved proxy apply to the next one.
+    /// A stored channel's own route, kept with the settings it was loaded
+    /// with so a delivery never pairs one revision's destination with
+    /// another's route. Inheriting and the saved proxy's address and login
+    /// are resolved before each delivery, so edits to the global route or
+    /// to a saved proxy apply to the next one.
     Stored {
         proxies: Arc<ProxyService>,
-        channel_id: String,
+        route: ProxyRoute,
     },
 }
 
@@ -85,16 +88,12 @@ impl HttpDelivery {
     pub(super) async fn request(&self, method: Method, url: &str) -> Result<RequestBuilder> {
         let target = match &self.route {
             DeliveryRoute::Fixed(target) => target.clone(),
-            DeliveryRoute::Stored {
-                proxies,
-                channel_id,
-            } => proxies
-                .notification_target(channel_id)
-                .await
-                .map_err(|error| {
-                    warn!(channel = self.channel, %channel_id, %error, "Notification proxy route unavailable");
+            DeliveryRoute::Stored { proxies, route } => {
+                proxies.notification_target(route).await.map_err(|error| {
+                    warn!(channel = self.channel, %error, "Notification proxy route unavailable");
                     self.failure(format!("proxy route unavailable: {error}"))
-                })?,
+                })?
+            }
         };
         let client = CLIENTS
             .get_or_try_build(&target, || {

@@ -1780,10 +1780,14 @@ async fn apply_notification_channels(
                 item.channel_type
             ))
         })?;
-        // A merge keeps the stored route of a channel the bundle gives none.
+        // A merge keeps the stored route of a channel the bundle gives none,
+        // except for email, which always connects directly: the stored
+        // channel of that name may be another type.
         let proxy_route = match &item.proxy_route {
             Some(route) => imported_proxies.route(route)?,
-            None if replace => crate::proxies::ProxyRoute::Inherit,
+            None if replace || !channel_type.supports_proxy() => {
+                crate::proxies::ProxyRoute::Inherit
+            }
             None => existing
                 .map(|existing| existing.proxy_route.clone())
                 .unwrap_or_default(),
@@ -1806,7 +1810,7 @@ async fn apply_notification_channels(
                 )
             }
         };
-        persist_channel(tx, &model).await?;
+        persist_channel(tx, &model).await.map_err(write_error)?;
         crate::database::repositories::notification::delete_subscriptions(tx, &model.id).await?;
         for event in item
             .subscriptions
