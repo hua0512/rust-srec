@@ -644,7 +644,7 @@ impl MesioDownloader {
         });
 
         let stream: BoxMediaStream<HlsData, DownloadError> = Box::pin(SessionCancelOnDropStream {
-            inner: Box::pin(ReceiverStream::new(item_rx)),
+            inner: ReceiverStream::new(item_rx),
             token: session_token.clone(),
         });
 
@@ -1040,8 +1040,12 @@ fn select_source_attempt(
     }))
 }
 
+/// The consumer's end of a failover session's items. Dropping it closes the
+/// channel before it cancels the session: the failover task can run as soon
+/// as the token is cancelled, and must then find the channel closed to end
+/// with [`DownloadTerminal::DownstreamClosed`] rather than `Cancelled`.
 struct SessionCancelOnDropStream<T> {
-    inner: BoxMediaStream<T, DownloadError>,
+    inner: ReceiverStream<Result<T, DownloadError>>,
     token: CancellationToken,
 }
 
@@ -1049,12 +1053,13 @@ impl<T> Stream for SessionCancelOnDropStream<T> {
     type Item = Result<T, DownloadError>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.inner.as_mut().poll_next(cx)
+        Pin::new(&mut self.inner).poll_next(cx)
     }
 }
 
 impl<T> Drop for SessionCancelOnDropStream<T> {
     fn drop(&mut self) {
+        self.inner.close();
         self.token.cancel();
     }
 }

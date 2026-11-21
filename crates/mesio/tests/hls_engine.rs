@@ -1567,10 +1567,10 @@ async fn mesio_downloader_hls_sources_finish_when_consumer_drops_items() {
     let joined = tokio::time::timeout(Duration::from_secs(5), session.handle.join())
         .await
         .expect("failover task finishes after the consumer drops items");
-    assert!(matches!(
-        joined,
-        Some(Ok(DownloadTerminal::DownstreamClosed))
-    ));
+    assert!(
+        matches!(joined, Some(Ok(DownloadTerminal::DownstreamClosed))),
+        "{joined:?}"
+    );
     tokio::time::timeout(Duration::from_secs(5), async {
         while events.next().await.is_some() {}
     })
