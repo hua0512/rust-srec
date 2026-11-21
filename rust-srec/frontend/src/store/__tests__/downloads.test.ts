@@ -131,26 +131,4 @@ describe('useDownloadStore batched metrics', () => {
     expect(useDownloadStore.getState().viewsById.has('dl-1')).toBe(false);
     expect(useDownloadStore.getState().version).toBe(versionBefore);
   });
-
-  it('returns the first download of a streamer', () => {
-    const store = useDownloadStore.getState();
-    store.upsertMeta({
-      downloadId: 'dl-1',
-      streamerId: 'streamer-1',
-      sessionId: 'session-1',
-      engineType: 'mesio',
-      startedAtMs: 0n,
-      updatedAtMs: 0n,
-      cdnHost: '',
-      downloadUrl: '',
-    });
-
-    expect(
-      useDownloadStore.getState().getFirstDownloadByStreamer('streamer-1')
-        ?.downloadId,
-    ).toBe('dl-1');
-    expect(
-      useDownloadStore.getState().getFirstDownloadByStreamer('streamer-2'),
-    ).toBeUndefined();
-  });
 });

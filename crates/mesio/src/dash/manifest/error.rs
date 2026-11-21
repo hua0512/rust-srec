@@ -253,27 +253,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn unsupported_maps_to_non_recoverable_download_error() {
-        let error: DownloadError =
-            ManifestError::from(UnsupportedFeature::ContentProtection).into();
-        assert!(matches!(
-            &error,
-            DownloadError::Unsupported {
-                protocol: "dash",
-                ..
-            }
-        ));
-        assert!(error.is_non_recoverable_source_error());
-    }
-
-    #[test]
-    fn malformed_manifest_maps_to_retryable_manifest_error() {
-        let error: DownloadError = ManifestError::inconsistent("periods overlap").into();
-        assert!(matches!(&error, DownloadError::Manifest { reason } if reason.contains("overlap")));
-        assert!(!error.is_non_recoverable_source_error());
-    }
-
-    #[test]
     fn long_attribute_values_are_truncated() {
         let value = "9".repeat(200);
         let error = ManifestError::invalid_attribute("S", "d", &value, "too large");

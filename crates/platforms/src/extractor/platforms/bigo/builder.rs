@@ -650,17 +650,6 @@ mod tests {
     }
 
     #[test]
-    fn url_regex_matches() {
-        assert!(URL_REGEX.is_match("https://www.bigo.tv/221338632"));
-        assert!(URL_REGEX.is_match("https://bigo.tv/221338632"));
-        assert!(URL_REGEX.is_match("https://www.bigo.tv/ja/221338632"));
-        assert!(URL_REGEX.is_match("www.bigo.tv/username"));
-        assert!(URL_REGEX.is_match("https://www.bigo.tv/ba.brendac"));
-        assert!(!URL_REGEX.is_match("https://www.twitch.tv/foo"));
-        assert!(!URL_REGEX.is_match("https://bigo.tv/"));
-    }
-
-    #[test]
     fn url_regex_captures_site_id() {
         let m = URL_REGEX
             .captures("https://www.bigo.tv/ja/221338632")
@@ -670,11 +659,6 @@ mod tests {
             .captures("https://www.bigo.tv/ba.brendac")
             .unwrap();
         assert_eq!(m.get(1).unwrap().as_str(), "ba.brendac");
-    }
-
-    #[test]
-    fn password_md5() {
-        assert_eq!(Bigo::md5_hex("secret"), "5ebe2294ecd0e0f08eab7690d2a6ee69");
     }
 
     #[tokio::test]

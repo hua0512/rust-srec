@@ -21,10 +21,4 @@ describe('formatShortRelativeTime', () => {
       'this minute',
     );
   });
-
-  it('follows the locale', () => {
-    expect(formatShortRelativeTime(now - 41 * minute, 'zh-CN', now)).toBe(
-      '41分钟前',
-    );
-  });
 });

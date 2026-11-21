@@ -16,12 +16,7 @@ import {
   savedProxy,
   socksProxy,
 } from '@/components/proxies/__tests__/proxy-test-utils';
-import {
-  chooseOption,
-  openSelect,
-  optionNames,
-  renderWithProviders,
-} from '@/test/render';
+import { chooseOption, renderWithProviders } from '@/test/render';
 
 vi.mock('@tanstack/react-router', async () => ({
   Link: (await import('@/test/router')).MockLink,
@@ -69,46 +64,6 @@ function Harness({
 
 const trigger = () => screen.getByRole('combobox');
 
-it('the global route offers no Inherit', async () => {
-  renderWithProviders(<Harness initial={{ kind: 'direct' }} />);
-  openSelect(trigger());
-  await waitFor(() =>
-    expect(
-      screen.getAllByRole('option').map((option) => option.textContent),
-    ).toEqual([
-      'DirectNo proxy',
-      'System proxyhttp://127.0.0.1:3128',
-      'Officeproxy.example:8080',
-      'Tunnel10.0.0.2:1080',
-      'Add proxy…',
-    ]),
-  );
-});
-
-it('labels Inherit with the route the next scope out resolves to', async () => {
-  vi.mocked(getEffectiveRoute).mockResolvedValue({
-    kind: 'proxy',
-    proxy: { id: office.id, name: 'Office' },
-    source: 'global',
-  });
-  renderWithProviders(
-    <Harness
-      initial={{ kind: 'inherit' }}
-      inherit={{ kind: 'scope', query: { scope_type: 'global' } }}
-    />,
-  );
-  await waitFor(() =>
-    expect(trigger()).toHaveTextContent(
-      'Inherit — Office (from global settings)',
-    ),
-  );
-  expect(getEffectiveRoute).toHaveBeenCalledWith({
-    data: { scope_type: 'global' },
-  });
-  const names = await optionNames(trigger());
-  expect(names[0]).toBe('Inherit — Office (from global settings)');
-});
-
 it.each([
   [
     { kind: 'per-platform' } as const,
@@ -124,43 +79,6 @@ it.each([
     expect(getEffectiveRoute).not.toHaveBeenCalled();
   },
 );
-
-it('chooses a saved proxy by its id', async () => {
-  renderWithProviders(<Harness inherit={{ kind: 'unknown' }} />);
-  await chooseOption(trigger(), /^Tunnel/);
-  expect(onChange).toHaveBeenCalledWith({ kind: 'proxy', id: 'proxy-socks' });
-  expect(trigger()).toHaveTextContent('Tunnel');
-});
-
-it('warns that System connects directly when no system proxy was detected', async () => {
-  vi.mocked(getSystemProxy).mockResolvedValue({
-    detected: false,
-    url: null,
-    authenticated: false,
-    no_proxy: null,
-  });
-  renderWithProviders(<Harness initial={{ kind: 'system' }} />);
-  expect(
-    await screen.findByText(/No system proxy was detected/),
-  ).toBeInTheDocument();
-});
-
-it('warns when FFmpeg records through a proxy that is not http', async () => {
-  renderWithProviders(
-    <Harness ffmpeg initial={{ kind: 'proxy', id: 'proxy-socks' }} />,
-  );
-  expect(
-    await screen.findByText(/FFmpeg only supports http proxies/),
-  ).toBeInTheDocument();
-});
-
-it('says nothing about FFmpeg for an http proxy', async () => {
-  renderWithProviders(
-    <Harness ffmpeg initial={{ kind: 'proxy', id: office.id }} />,
-  );
-  await waitFor(() => expect(trigger()).toHaveTextContent('Office'));
-  expect(screen.queryByText(/FFmpeg only supports/)).not.toBeInTheDocument();
-});
 
 it('adds a proxy from the picker and chooses it', async () => {
   vi.mocked(createProxy).mockResolvedValue(

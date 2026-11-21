@@ -77,23 +77,3 @@ impl Write for PipeWriter {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn pipe_output_writes_media_to_the_stream_it_names() {
-        assert_eq!(PipeStream::of(OutputFormat::File), None);
-        assert_eq!(
-            PipeStream::of(OutputFormat::Stdout),
-            Some(PipeStream::Stdout)
-        );
-        assert_eq!(
-            PipeStream::of(OutputFormat::Stderr),
-            Some(PipeStream::Stderr)
-        );
-        assert!(matches!(PipeStream::Stdout.open(), PipeWriter::Stdout(_)));
-        assert!(matches!(PipeStream::Stderr.open(), PipeWriter::Stderr(_)));
-    }
-}

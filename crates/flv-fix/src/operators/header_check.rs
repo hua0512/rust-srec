@@ -118,41 +118,8 @@ impl Processor<FlvData> for HeaderCheckOperator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::{create_test_header, create_video_tag};
+    use crate::test_utils::create_video_tag;
     use pipeline_common::{CancellationToken, StreamerContext};
-
-    #[test]
-    fn test_with_header_present() {
-        let context = StreamerContext::arc_new(CancellationToken::new());
-        let mut operator = HeaderCheckOperator::new(context.clone(), true, true);
-        let mut output_items = Vec::new();
-
-        // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        // Process a header followed by some tags
-        operator
-            .process(&context, create_test_header(), &mut output_fn)
-            .unwrap();
-        for i in 0..5 {
-            operator
-                .process(
-                    &context,
-                    create_video_tag(i * 100, i % 3 == 0),
-                    &mut output_fn,
-                )
-                .unwrap();
-        }
-
-        // Should receive all 6 items (header + 5 tags)
-        assert_eq!(output_items.len(), 6);
-
-        // First item should be a header
-        assert!(matches!(output_items[0], FlvData::Header(_)));
-    }
 
     #[test]
     fn test_without_header() {

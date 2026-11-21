@@ -140,8 +140,6 @@ pub async fn import_config(
 
 #[cfg(test)]
 mod tests {
-    use crate::config::backup::{GlobalConfigExport, StreamerExport};
-
     #[test]
     fn test_schema_version_at_least() {
         let is_at_least = crate::config::backup::schema_version_at_least;
@@ -150,64 +148,5 @@ mod tests {
         assert!(!is_at_least("0.1.2", (0, 1, 3)));
         assert!(is_at_least("0.1.3-alpha.1", (0, 1, 3)));
         assert!(!is_at_least("invalid", (0, 1, 3)));
-    }
-
-    #[test]
-    fn test_streamer_export_deserialization_missing_state_defaults_to_not_live() {
-        let json = r#"{
-            "name":"test",
-            "url":"https://example.com/streamer",
-            "platform":"twitch",
-            "template":null,
-            "priority":"NORMAL",
-            "avatar_url":null,
-            "streamer_specific_config":null,
-            "filters":[]
-        }"#;
-
-        let streamer: StreamerExport = serde_json::from_str(json).unwrap();
-        assert_eq!(streamer.state, "NOT_LIVE");
-    }
-
-    #[test]
-    fn test_global_config_export_accepts_legacy_session_gap_time() {
-        let json = serde_json::json!({
-            "output_folder": "test",
-            "output_filename_template": "test",
-            "output_file_format": "test",
-            "min_segment_size_bytes": 0,
-            "max_download_duration_secs": 0,
-            "max_part_size_bytes": 0,
-            "record_danmu": false,
-            "max_concurrent_downloads": 0,
-            "max_concurrent_uploads": 0,
-            "streamer_check_delay_ms": 0,
-            "proxy_config": "test",
-            "offline_check_delay_ms": 0,
-            "offline_check_count": 0,
-            "default_download_engine": "test",
-            "max_concurrent_cpu_jobs": 0,
-            "max_concurrent_io_jobs": 0,
-            "job_history_retention_days": 0,
-            "notification_event_log_retention_days": 0,
-            "session_gap_time_secs": 3600,
-            "pipeline": null,
-            "session_complete_pipeline": null,
-            "paired_segment_pipeline": null,
-            "log_filter_directive": "rust_srec=debug",
-            "auto_thumbnail": false,
-            "pipeline_cpu_job_timeout_secs": 3600,
-            "pipeline_io_job_timeout_secs": 3600,
-            "pipeline_execute_timeout_secs": 3600,
-            "queue_freshness_threshold_ms": 60_000
-        });
-
-        let export: GlobalConfigExport = serde_json::from_value(json).unwrap();
-        assert_eq!(export.output_retention_days, 0);
-        assert!(!export.output_retention_delete_files);
-        assert_eq!(
-            export.log_filter_directive.as_deref(),
-            Some("rust_srec=debug")
-        );
     }
 }

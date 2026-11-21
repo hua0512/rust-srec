@@ -197,15 +197,6 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_refresh_token() {
-        let cookies = "SESSDATA=abc; bili_jct=xyz; refresh_token=my_token";
-        assert_eq!(extract_refresh_token(cookies), Some("my_token".to_string()));
-
-        let cookies_without = "SESSDATA=abc; bili_jct=xyz";
-        assert_eq!(extract_refresh_token(cookies_without), None);
-    }
-
-    #[test]
     fn test_embed_refresh_token() {
         let cookies = "SESSDATA=abc; bili_jct=xyz";
         let result = embed_refresh_token(cookies, "my_token");

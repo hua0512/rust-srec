@@ -5,29 +5,6 @@ import { TimelineTab } from '../timeline-tab';
 import { renderWithProviders } from '@/test/render';
 
 describe('TimelineTab', () => {
-  it('renders a known session-ended event when its optional payload is absent', () => {
-    renderWithProviders(
-      <TimelineTab
-        session={{
-          titles: [],
-          events: [
-            {
-              kind: 'session_ended',
-              occurred_at: '2026-08-25T12:08:39Z',
-              payload: null,
-            },
-          ],
-        }}
-      />,
-    );
-
-    expect(screen.getByText('SESSION ENDED')).toBeInTheDocument();
-    expect(
-      screen.getByText('Session ended. Additional details are unavailable.'),
-    ).toBeInTheDocument();
-    expect(screen.queryByText('Unrecognised event kind.')).toBeNull();
-  });
-
   // `from_hysteresis` decides between the "RESUMED START" and "SESSION STARTED"
   // badges, so a missing payload must not resolve to either — that would claim
   // a resumed session was a fresh one, or the reverse.

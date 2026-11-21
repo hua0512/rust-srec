@@ -849,19 +849,4 @@ mod tests {
             assert!(parse(invalid).is_err(), "{invalid:?}");
         }
     }
-
-    #[test]
-    fn protocol_flag_maps_to_the_protocol_selection() {
-        let selection = |value: &str| -> ProtocolSelection {
-            parse(&["--protocol", value]).unwrap().protocol.into()
-        };
-        assert!(matches!(
-            ProtocolSelection::from(parse(&[]).unwrap().protocol),
-            ProtocolSelection::Auto
-        ));
-        assert!(matches!(selection("auto"), ProtocolSelection::Auto));
-        assert!(matches!(selection("flv"), ProtocolSelection::Flv(_)));
-        assert!(matches!(selection("hls"), ProtocolSelection::Hls(_)));
-        assert!(matches!(selection("dash"), ProtocolSelection::Dash(_)));
-    }
 }

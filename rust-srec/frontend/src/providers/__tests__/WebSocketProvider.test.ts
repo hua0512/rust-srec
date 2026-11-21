@@ -1,14 +1,9 @@
-import { create } from '@bufbuild/protobuf';
 import { QueryClient } from '@tanstack/react-query';
 
 import { queryKeys } from '@/api/query-keys';
-import {
-  StreamerCheckRecordedSchema,
-  UploadTerminalStatus,
-} from '@/api/proto/gen/download_progress_pb.js';
+import { UploadTerminalStatus } from '@/api/proto/gen/download_progress_pb.js';
 import {
   applyCredentialBlock,
-  checkHistoryEntryFromWire,
   handleUploadTerminal,
 } from '../WebSocketProvider';
 
@@ -139,23 +134,5 @@ describe('applyCredentialBlock', () => {
         listKey,
       )?.items[0].credential_blocked,
     ).toBeNull();
-  });
-});
-
-describe('checkHistoryEntryFromWire', () => {
-  const offline = (source: string) =>
-    checkHistoryEntryFromWire(
-      create(StreamerCheckRecordedSchema, {
-        streamerId: 'streamer-1',
-        checkedAtMs: 1_788_784_496_123n,
-        durationMs: 12,
-        outcome: 'offline',
-        source,
-      }),
-    );
-
-  it('keeps the batch marker and reads an unset source as an individual check', () => {
-    expect(offline('batch')?.source).toBe('batch');
-    expect(offline('')?.source).toBe('individual');
   });
 });

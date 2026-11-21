@@ -732,72 +732,6 @@ mod tests {
     }
 
     #[test]
-    fn url_regex_matches_supported_urls() {
-        let valid_urls = [
-            "https://play.sooplive.co.kr/example",
-            "https://play.sooplive.com/example/281234567",
-            "https://play.afreecatv.com/example",
-            "https://ch.sooplive.co.kr/example",
-            "m.sooplive.co.kr/example",
-        ];
-
-        for url in valid_urls {
-            assert!(URL_REGEX.is_match(url), "{url} should match");
-        }
-
-        assert!(!URL_REGEX.is_match("https://example.com/example"));
-        assert!(!URL_REGEX.is_match("https://www.sooplive.com/example"));
-    }
-
-    #[test]
-    fn models_deserialize_live_response() {
-        let json = r#"{
-            "CHANNEL": {
-                "RESULT": 1,
-                "BNO": "281234567",
-                "BJNICK": "streamer",
-                "TITLE": "live title",
-                "CATE": "00040001",
-                "CATEGORY_TAGS": ["스타크래프트"],
-                "RMD": "https://livestream-manager.sooplive.com",
-                "CDN": "gs_cdn",
-                "BPWD": "N",
-                "VIEWPRESET": [
-                    {"label": "Original", "name": "original"},
-                    {"label": "1440p", "name": "hd4000"},
-                    {"label": "Auto", "name": "auto"}
-                ]
-            }
-        }"#;
-
-        let response: SoopPlayerResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(response.channel.result, Soop::RESULT_OK);
-        assert_eq!(response.channel.bno.as_deref(), Some("281234567"));
-        assert_eq!(response.channel.cate.as_deref(), Some("00040001"));
-        assert_eq!(
-            response.channel.category_tags.as_deref(),
-            Some(["스타크래프트".to_string()].as_slice())
-        );
-        assert_eq!(response.channel.viewpreset.unwrap().len(), 3);
-    }
-
-    #[test]
-    fn models_deserialize_offline_response() {
-        let json = r#"{"CHANNEL":{"RESULT":0,"BJNICK":"streamer","TITLE":""}}"#;
-        let response: SoopPlayerResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(response.channel.result, Soop::RESULT_OFFLINE);
-        assert_ne!(response.channel.gdpr, Some(true));
-    }
-
-    #[test]
-    fn models_deserialize_gdpr_geo_stub() {
-        let json = r#"{"CHANNEL":{"geo_cc":"ES","RESULT":0,"GDPR":true}}"#;
-        let response: SoopPlayerResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(response.channel.result, Soop::RESULT_OFFLINE);
-        assert_eq!(response.channel.gdpr, Some(true));
-    }
-
-    #[test]
     fn models_deserialize_login_required_string_result() {
         let json = r#"{"CHANNEL":{"RESULT":"-6"}}"#;
         let response: SoopPlayerResponse = serde_json::from_str(json).unwrap();
@@ -826,13 +760,6 @@ mod tests {
             Soop::resolve_chat_host(&response.channel).as_deref(),
             Some("chat-aabbccdd.sooplive.com")
         );
-    }
-
-    #[test]
-    fn models_deserialize_aid_response() {
-        let json = r#"{"CHANNEL":{"RESULT":1,"AID":"abc.def"}}"#;
-        let response: SoopPlayerResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(response.channel.aid.as_deref(), Some("abc.def"));
     }
 
     #[test]

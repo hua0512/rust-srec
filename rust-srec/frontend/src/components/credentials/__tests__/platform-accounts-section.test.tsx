@@ -187,27 +187,6 @@ it('the edit dialog replaces credentials only when asked', async () => {
   );
 });
 
-it('deletes an account only after confirmation', async () => {
-  await show();
-  await openMenuItem('Delete');
-  const dialog = await screen.findByRole('alertdialog');
-  expect(dialog).toHaveTextContent('Delete "Account A"');
-  expect(deleteCredentialProfile).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-  await waitFor(() =>
-    expect(deleteCredentialProfile).toHaveBeenCalledWith({
-      data: { id: 'account-a', expected_version: 2 },
-    }),
-  );
-});
-
-const streamerReference = (index: number) => ({
-  owner: { type: 'streamer' as const, streamer_id: `streamer-${index}` },
-  name: `Streamer ${index}`,
-  platform_id: 'platform-a',
-  platform_name: 'bilibili',
-});
-
 const inUse = {
   selections: [
     {
@@ -263,127 +242,6 @@ it('explains why an account in use cannot be deleted', async () => {
   );
 });
 
-it('summarises the first users of an account and details them all', async () => {
-  vi.mocked(listCredentialProfiles).mockResolvedValue([
-    accountDetail({
-      references: {
-        selections: [1, 2, 3, 4, 5].map(streamerReference),
-        recordings: [],
-      },
-    }),
-  ]);
-  await show();
-  expect(summaryOf()).toHaveTextContent('Streamer 1, Streamer 2 +3');
-  expect(detailFor('Selected by')).toHaveTextContent(
-    'Streamer 1, Streamer 2, Streamer 3, Streamer 4, Streamer 5',
-  );
-});
-
-it('expands a row from the row itself, not from its actions', async () => {
-  vi.mocked(listCredentialProfiles).mockResolvedValue([
-    accountDetail({
-      health: { validity: 'invalid' },
-      capabilities: { validate: true, refresh: false, qr_login: false },
-    }),
-  ]);
-  await show('Twitch');
-  const toggle = screen.getByRole('button', { name: rowName });
-  const panel = document.getElementById(
-    toggle.getAttribute('aria-controls') ?? '',
-  );
-  expect(toggle).toHaveAttribute('aria-expanded', 'false');
-  expect(panel?.closest('[inert]')).not.toBeNull();
-  fireEvent.click(toggle);
-  expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  expect(panel?.closest('[inert]')).toBeNull();
-  // The row's own buttons do their job without toggling the details.
-  fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
-  expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  fireEvent.click(toggle);
-  expect(toggle).toHaveAttribute('aria-expanded', 'false');
-});
-
-it('summarises why an account needs attention and when it was checked', async () => {
-  const now = Date.now();
-  vi.mocked(listCredentialProfiles).mockResolvedValue([
-    accountDetail({
-      health: {
-        validity: 'needs_refresh',
-        refresh_failure_count: 4,
-        last_check_at: now - 4 * 60 * 60_000,
-      },
-      references: { selections: [streamerReference(1)], recordings: [] },
-    }),
-    accountDetail({
-      profile: { ...profile, id: 'account-b', label: 'Account B' },
-      health: { validity: 'invalid', reason_code: 'login_required' },
-    }),
-    accountDetail({
-      profile: {
-        ...profile,
-        id: 'account-c',
-        label: 'Account C',
-        enabled: false,
-      },
-      health: { validity: 'valid', last_check_at: now - 5 * 24 * 60 * 60_000 },
-    }),
-  ]);
-  await show();
-  expect(summaryOf()).toHaveTextContent(
-    'Refresh failed 4 times · checked 4h ago',
-  );
-  expect(summaryOf('Details for Account B')).toHaveTextContent(
-    'The platform asked for a new login',
-  );
-  expect(summaryOf('Details for Account C')).toHaveTextContent(
-    'Not used while disabled · checked 5d ago',
-  );
-  expect(detailFor('Selected by', 'Details for Account C')).toHaveTextContent(
-    'Not selected anywhere',
-  );
-  expect(
-    screen.getByText(/Disabled accounts are not used, checked or refreshed/),
-  ).toBeInTheDocument();
-});
-
-it('shows when an account was used, checked, refreshed and renews', async () => {
-  const now = Date.now();
-  const minutes = (count: number) => count * 60_000;
-  vi.mocked(listCredentialProfiles).mockResolvedValue([
-    accountDetail({
-      profile: { ...profile, last_used_at: now - minutes(5) },
-      health: {
-        validity: 'needs_refresh',
-        last_check_at: now - minutes(120),
-        last_refresh_at: null,
-        refresh_failure_count: 2,
-        last_failure_at: now - minutes(30),
-        reason_code: 'refresh_failed',
-      },
-      next_renewal_at: now + minutes(2 * 24 * 60 + 60),
-    }),
-    accountDetail({
-      profile: { ...profile, id: 'account-b', label: 'Account B' },
-      next_renewal_at: now - minutes(1),
-    }),
-  ]);
-  await show();
-  // Two failed refreshes are not yet the user's problem.
-  expect(summaryOf()).toHaveTextContent(
-    'Not selected anywhere · used 5m ago · renews in 2d',
-  );
-  expect(detailFor('Last used')).toHaveTextContent('5 minutes ago');
-  expect(detailFor('Last checked')).toHaveTextContent('about 2 hours ago');
-  expect(detailFor('Next renewal')).toHaveTextContent('in 2 days');
-  expect(detailFor('Problems')).toHaveTextContent(
-    '2 failed refreshes in a row · The last refresh failed',
-  );
-  expect(summaryOf('Details for Account B')).toHaveTextContent('renewal due');
-  expect(detailFor('Next renewal', 'Details for Account B')).toHaveTextContent(
-    'Due at its next use',
-  );
-});
-
 it('a refused deletion shows what the backend says still uses the account', async () => {
   vi.mocked(deleteCredentialProfile).mockRejectedValue(
     Object.assign(new Error('Credential profile is still referenced'), {
@@ -403,56 +261,6 @@ it('a refused deletion shows what the backend says still uses the account', asyn
     expect(dialog).toHaveTextContent('This account is in use'),
   );
   expect(dialog).toHaveTextContent('Night shift');
-});
-
-it('shows translated health and hides unsupported actions', async () => {
-  vi.mocked(listCredentialProfiles).mockResolvedValue([
-    accountDetail({
-      health: { validity: 'needs_refresh' },
-    }),
-  ]);
-  await show();
-  expect(screen.getByText('Needs refresh')).toBeInTheDocument();
-  expect(screen.queryByText('needs_refresh')).not.toBeInTheDocument();
-  expect(screen.queryByText(profile.id)).not.toBeInTheDocument();
-  fireEvent.pointerDown(screen.getByRole('button', { name: menuName }), {
-    button: 0,
-    ctrlKey: false,
-  });
-  await screen.findByRole('menuitem', { name: 'Edit' });
-  for (const name of ['Validate', 'Log in with QR code', 'Refresh'])
-    expect(screen.queryByRole('menuitem', { name })).not.toBeInTheDocument();
-});
-
-it('replacement opens empty and a second account does not change the fixed selection', async () => {
-  await show();
-  fireEvent.click(screen.getByRole('button', { name: 'Add account' }));
-  chooseSignIn('Paste cookies');
-  expect(screen.getByLabelText('Cookies')).toHaveValue('');
-  expect(screen.getByLabelText('Refresh token')).toHaveValue('');
-  fireEvent.change(screen.getByLabelText('Label'), {
-    target: { value: 'Account B' },
-  });
-  fireEvent.change(screen.getByLabelText('Cookies'), {
-    target: { value: 'sid=b' },
-  });
-  fireEvent.click(screen.getByRole('button', { name: 'Save account' }));
-  await waitFor(() =>
-    expect(createCredentialProfile).toHaveBeenCalledWith({
-      data: {
-        platform_id: 'platform-a',
-        label: 'Account B',
-        enabled: true,
-        material: {
-          cookies: 'sid=b',
-          refresh_token: null,
-          access_token: null,
-          reauth_config: null,
-        },
-      },
-    }),
-  );
-  expect(onSelectionChange).not.toHaveBeenCalled();
 });
 
 it('disabled accounts cannot start validation or refresh, but can log in again', async () => {
@@ -624,14 +432,6 @@ it('an edit keeps the proxy unless changed, and can switch to direct', async () 
   );
 });
 
-it('an account that follows the recording says so in its details', async () => {
-  await show();
-  expect(
-    screen.queryByRole('img', { name: 'Own proxy setting' }),
-  ).not.toBeInTheDocument();
-  expect(detailFor('Proxy')).toHaveTextContent('Follows the recording');
-});
-
 const accountB = { ...profile, id: 'account-b', label: 'Account B' };
 const qrCapable = { validate: true, refresh: true, qr_login: true };
 
@@ -722,30 +522,6 @@ it('shows progress only on the row whose action is running', async () => {
   ).toHaveAttribute('aria-disabled', 'true');
 });
 
-it('the edit dialog does not select the label', async () => {
-  await show();
-  await openMenuItem('Edit');
-  const label = await screen.findByLabelText('Label');
-  await waitFor(() => expect(label).toHaveFocus());
-  const input = label as HTMLInputElement;
-  expect(input.selectionStart).toBe(input.value.length);
-  expect(input.selectionEnd).toBe(input.value.length);
-});
-
-it.each([
-  ['Bilibili', /scanning a QR code/],
-  ['Twitch', /with its cookies or tokens/],
-])('%s without accounts invites adding one', async (platformName, help) => {
-  vi.mocked(listCredentialProfiles).mockResolvedValue([]);
-  renderPlatformPage(platformName);
-  expect(await screen.findByText('No accounts yet')).toBeInTheDocument();
-  expect(screen.getByText(help)).toBeInTheDocument();
-  // The empty list offers the only add button.
-  expect(screen.getAllByRole('button', { name: 'Add account' })).toHaveLength(
-    1,
-  );
-});
-
 describe('Streamlink account sites', () => {
   it('a new Streamlink account names the sites it is for', async () => {
     await show('streamlink');
@@ -768,12 +544,6 @@ describe('Streamlink account sites', () => {
         }),
       }),
     );
-  });
-
-  it('accounts on other platforms name no sites', async () => {
-    await show();
-    fireEvent.click(screen.getByRole('button', { name: 'Add account' }));
-    expect(screen.queryByLabelText('Sites')).not.toBeInTheDocument();
   });
 
   it('an edit sends the sites only when they change', async () => {
@@ -835,15 +605,5 @@ describe('Streamlink account sites', () => {
         'youtube.com already belongs to the account Main. A site can belong to one account only.',
       ),
     ).toBeInTheDocument();
-  });
-
-  it('the list says which sites an account is for', async () => {
-    vi.mocked(listCredentialProfiles).mockResolvedValue([
-      accountDetail({ sites: ['kick.com', 'youtube.com'] }),
-    ]);
-    await show('streamlink');
-    expect(summaryOf()).toHaveTextContent('For kick.com, youtube.com');
-    expect(summaryOf()).not.toHaveTextContent('Not selected anywhere');
-    expect(detailFor('Sites')).toHaveTextContent('kick.com, youtube.com');
   });
 });

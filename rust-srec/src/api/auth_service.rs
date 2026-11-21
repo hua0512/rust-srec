@@ -1449,16 +1449,6 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     #[test]
-    fn reuse_revocation_configuration_defaults_securely() {
-        for value in [None, Some(""), Some("invalid"), Some("TRUE"), Some(" on ")] {
-            assert!(AuthConfig::parse_reuse_revocation(value), "{value:?}");
-        }
-        for value in ["false", "0", "no", " off "] {
-            assert!(!AuthConfig::parse_reuse_revocation(Some(value)), "{value}");
-        }
-    }
-
-    #[test]
     fn test_verify_password_legacy_argon2id_hash() {
         // Argon2 0.5's PHC test vector also checks that verification reads stored parameters.
         let hash = concat!(

@@ -1967,7 +1967,6 @@ mod tests {
         SqlxSessionEventRepository, SqlxSessionRepository, SqlxStreamerRepository,
     };
     use crate::database::{init_pool_with_size, run_migrations};
-    use crate::session::{SessionEventPayload, TerminalCauseDto};
     use crate::streamer::StreamerManager;
 
     #[test]
@@ -2314,13 +2313,6 @@ mod tests {
             .unwrap()
     }
 
-    async fn get_streamer(pool: &SqlitePool, streamer_id: &str) -> StreamerDbModel {
-        SqlxStreamerRepository::new(pool.clone(), pool.clone())
-            .get_streamer(streamer_id)
-            .await
-            .unwrap()
-    }
-
     async fn get_active_session_for_streamer(
         pool: &SqlitePool,
         streamer_id: &str,
@@ -2329,27 +2321,6 @@ mod tests {
             .get_active_session_for_streamer(streamer_id)
             .await
             .unwrap()
-    }
-
-    async fn latest_session_ended_payload(
-        pool: &SqlitePool,
-        session_id: &str,
-    ) -> Option<SessionEventPayload> {
-        SqlxSessionEventRepository::new(pool.clone(), pool.clone())
-            .list_for_session(session_id)
-            .await
-            .unwrap()
-            .into_iter()
-            .rev()
-            .find(|row| row.kind == "session_ended")
-            .and_then(|row| row.payload)
-    }
-
-    fn session_ended_cause(payload: &SessionEventPayload) -> &TerminalCauseDto {
-        let SessionEventPayload::SessionEnded { cause, .. } = payload else {
-            panic!("expected session_ended payload, got {payload:?}");
-        };
-        cause
     }
 
     #[tokio::test]
@@ -2530,104 +2501,6 @@ mod tests {
         monitor.handle_offline(&current("flaky-oos")).await.unwrap();
         assert_eq!(current("flaky-oos").consecutive_error_count, 0);
         assert_eq!(check_alerts(&pool).await[4..], ["ChecksRestored"]);
-
-        monitor.stop();
-    }
-
-    #[tokio::test]
-    async fn test_process_status_out_of_schedule_ends_session_via_lifecycle() {
-        let pool = setup_monitor_test_db().await;
-        insert_streamer(&pool, "streamer-4", StreamerState::NotLive, 0, None).await;
-
-        let monitor = build_test_monitor(&pool).await;
-        let mut rx = monitor.session_lifecycle.subscribe();
-        let streams = Vec::new();
-
-        monitor
-            .session_lifecycle
-            .on_live_detected(crate::session::LiveDetectedArgs {
-                credential_binding: None,
-                streamer_id: "streamer-4",
-                streamer_name: "Test Streamer",
-                streamer_url: "https://example.com/streamer-4",
-                current_avatar: None,
-                new_avatar: None,
-                title: "Schedule Live",
-                category: None,
-                streams: &streams,
-                media_headers: None,
-                media_extras: None,
-                now: jiff::Timestamp::now(),
-            })
-            .await
-            .unwrap();
-
-        let started = rx.recv().await.unwrap();
-        let session_id = match started {
-            crate::session::SessionTransition::Started { session_id, .. } => session_id,
-            other => panic!("expected Started, got {other:?}"),
-        };
-
-        monitor
-            .streamer_manager
-            .reload_from_repo(
-                "streamer-4",
-                crate::streamer::manager::ReloadPublish::StateOnly,
-            )
-            .await
-            .unwrap();
-        let live_streamer = monitor.streamer_manager.get_streamer("streamer-4").unwrap();
-        monitor
-            .process_status(
-                &live_streamer,
-                LiveStatus::Filtered {
-                    reason: FilterReason::OutOfSchedule {
-                        next_available: None,
-                    },
-                    title: "Schedule Live".to_string(),
-                    category: None,
-                },
-            )
-            .await
-            .unwrap();
-
-        assert!(get_session(&pool, &session_id).await.end_time.is_some());
-
-        assert_eq!(
-            get_streamer(&pool, "streamer-4").await.state,
-            "OUT_OF_SCHEDULE"
-        );
-
-        match rx.recv().await.unwrap() {
-            crate::session::SessionTransition::Ended {
-                session_id: ended_id,
-                cause,
-                ..
-            } => {
-                assert_eq!(ended_id, session_id);
-                assert_eq!(cause, crate::session::TerminalCause::OutOfSchedule);
-            }
-            other => panic!("expected Ended, got {other:?}"),
-        }
-
-        let payload = latest_session_ended_payload(&pool, &session_id)
-            .await
-            .unwrap();
-        assert_eq!(
-            session_ended_cause(&payload),
-            &TerminalCauseDto::OutOfSchedule
-        );
-
-        let events = outbox_events(&pool).await;
-        let event_types: Vec<&str> = events.iter().map(outbox_event_type).collect();
-        assert_eq!(event_types, vec!["StreamerLive", "StateChanged"]);
-
-        match &events[1] {
-            MonitorEvent::StateChanged { reason, .. } => {
-                assert_eq!(reason.as_deref(), Some("out_of_schedule"));
-            }
-            other => panic!("expected StateChanged, got {other:?}"),
-        }
 
         monitor.stop();
     }

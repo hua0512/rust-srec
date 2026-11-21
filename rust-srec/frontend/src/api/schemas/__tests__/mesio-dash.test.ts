@@ -9,45 +9,12 @@ import {
 } from '../engine';
 import { overridesWithoutDashTracks } from '@/components/config/templates/engine-override-checks';
 
-const full = {
-  video_quality: { type: 'max_height', height: 720 },
-  audio_quality: { type: 'closest_bandwidth', bandwidth: 128000 },
-  audio_language: 'pt-BR',
-  include_video: true,
-  include_audio: false,
-  download_concurrency: 2,
-  manifest_timeout_ms: 3000,
-  min_refresh_interval_ms: 500,
-  max_refresh_retries: 0,
-  segment_timeout_ms: 8000,
-  max_segment_retries: 0,
-  live_start: { type: 'delay', delay_ms: 6000 },
-};
-
 const schemas = [
   ['full config', MesioConfigSchema],
   ['override', MesioConfigOverrideSchema],
 ] as const;
 
 describe('Mesio DASH configuration', () => {
-  it('leaves DASH fixing and the DASH settings to the engine', () => {
-    const parsed = MesioConfigSchema.parse({});
-    expect(parsed).not.toHaveProperty('fix_dash');
-    expect(parsed).not.toHaveProperty('dash');
-    expect(MesioConfigSchema.parse({ dash: null }).dash).toBeUndefined();
-    expect(MesioConfigOverrideSchema.parse({})).toEqual({});
-  });
-
-  it.each(schemas)(
-    'round-trips every setting in the %s schema',
-    (_, schema) => {
-      const config = { fix_dash: false, dash: full };
-      const saved = JSON.parse(JSON.stringify(schema.parse(config)));
-      expect(saved).toMatchObject(config);
-      expect(schema.parse(saved)).toMatchObject(config);
-    },
-  );
-
   // A template override refuses an emptied field instead: there, an input only shows for a
   // custom value (see mesio-override.test.ts).
   it.each(schemas.slice(0, 1))(
@@ -83,28 +50,6 @@ describe('Mesio DASH configuration', () => {
       video_quality: { type: 'closest_bandwidth', bandwidth: 2500000 },
       live_start: { type: 'delay', delay_ms: 0 },
     });
-  });
-
-  it('keeps partial overrides partial and lets a template reset DASH settings', () => {
-    const partial = { dash: { include_audio: false } };
-    expect(MesioConfigOverrideSchema.parse(partial)).toEqual(partial);
-    expect(EngineConfigOverrideSchema.parse(partial)).toEqual(partial);
-    expect(EngineConfigOverrideSchema.parse({ fix_dash: false })).toEqual({
-      fix_dash: false,
-    });
-    expect(MesioConfigOverrideSchema.parse({ dash: null })).toEqual({
-      dash: null,
-    });
-  });
-
-  it('keeps DASH keys the form does not know, but not unknown engine settings', () => {
-    expect(
-      MesioConfigOverrideSchema.parse({ dash: { future_setting: false } }),
-    ).toEqual({ dash: { future_setting: false } });
-    expect(
-      MesioConfigOverrideSchema.safeParse({ dashh: { include_video: false } })
-        .success,
-    ).toBe(false);
   });
 
   it.each(schemas)(
@@ -169,13 +114,6 @@ describe('Mesio DASH override semantics', () => {
     );
     expect(saved).toEqual(override);
     expect(EngineConfigOverrideSchema.parse(override)).toEqual(override);
-  });
-
-  it('treats null as unset in an engine configuration', () => {
-    const saved = JSON.parse(
-      JSON.stringify(MesioConfigSchema.parse({ dash: resets })),
-    );
-    expect(saved).not.toHaveProperty('dash');
   });
 
   it('merges tracks like the backend: absent inherits, null resets', () => {

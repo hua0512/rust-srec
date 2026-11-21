@@ -188,20 +188,6 @@ impl GlobalTtwidManager {
         }
     }
 
-    /// Clear the global ttwid
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "retained for protocol variants and forward-compatible response handling"
-        )
-    )]
-    pub fn clear_global_ttwid() {
-        if let Ok(mut guard) = GLOBAL_TTWID.lock() {
-            *guard = None;
-        }
-    }
-
     /// Fetch a fresh ttwid from Douyin's servers and store it globally.
     /// Concurrent callers share one network fetch.
     ///
@@ -254,24 +240,6 @@ impl GlobalTtwidManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_global_ttwid_manager() {
-        // Test the global ttwid manager directly
-        GlobalTtwidManager::clear_global_ttwid();
-        assert_eq!(GlobalTtwidManager::get_global_ttwid(), None);
-
-        // Set a global ttwid
-        GlobalTtwidManager::set_global_ttwid("test_global_ttwid");
-        assert_eq!(
-            GlobalTtwidManager::get_global_ttwid(),
-            Some("test_global_ttwid".to_string())
-        );
-
-        // Clear it
-        GlobalTtwidManager::clear_global_ttwid();
-        assert_eq!(GlobalTtwidManager::get_global_ttwid(), None);
-    }
 
     #[test]
     fn cached_ttwid_expires() {

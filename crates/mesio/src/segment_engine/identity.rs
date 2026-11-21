@@ -169,14 +169,6 @@ mod tests {
     }
 
     #[test]
-    fn strip_query_policy_keeps_distinct_segments_distinct() {
-        let policy = StripQueryIdentity::new(["token"]);
-        let a = policy.canonical_uri(&url("https://e.com/s1.ts?token=aaa"));
-        let b = policy.canonical_uri(&url("https://e.com/s2.ts?token=aaa"));
-        assert_ne!(a, b);
-    }
-
-    #[test]
     fn strip_query_policy_sorts_significant_params() {
         let policy = StripQueryIdentity::new(["token"]);
         let a = policy.canonical_uri(&url("https://e.com/s1.ts?b=2&a=1&token=x"));

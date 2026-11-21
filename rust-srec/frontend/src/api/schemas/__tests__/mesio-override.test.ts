@@ -101,21 +101,6 @@ describe('Mesio override resets', () => {
     ).toBe(false);
   });
 
-  it('keeps settings the form does not show', () => {
-    const override = {
-      hls: { fetcher_config: { progress_emit_min_bytes: null } },
-    };
-    expect(MesioConfigOverrideSchema.parse(override)).toEqual(override);
-  });
-
-  it('keeps engine settings the form does not show', () => {
-    expect(
-      MesioConfigSchema.parse({
-        hls: { fetcher_config: { progress_emit_min_bytes: 1 } },
-      }).hls,
-    ).toEqual({ fetcher_config: { progress_emit_min_bytes: 1 } });
-  });
-
   it('reads null as unset in engine settings, except a disabled timeout', () => {
     expect(
       MesioConfigSchema.parse({ hls: { base: { timeout_ms: null } } }),

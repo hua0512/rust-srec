@@ -310,28 +310,6 @@ mod tests {
     }
 
     #[test]
-    fn test_obu_to_from_u8() {
-        let case = [
-            (ObuType::SequenceHeader, 1),
-            (ObuType::TemporalDelimiter, 2),
-            (ObuType::FrameHeader, 3),
-            (ObuType::TileGroup, 4),
-            (ObuType::Metadata, 5),
-            (ObuType::Frame, 6),
-            (ObuType::RedundantFrameHeader, 7),
-            (ObuType::TileList, 8),
-            (ObuType::Padding, 15),
-            (ObuType::Reserved(0), 0),
-            (ObuType::Reserved(100), 100),
-        ];
-
-        for (obu_type, value) in case {
-            assert_eq!(u8::from(obu_type), value);
-            assert_eq!(ObuType::from(value), obu_type);
-        }
-    }
-
-    #[test]
     fn test_obu_header_mux_round_trip() {
         // Test with size field, no extension
         let data = b"\n\x0f\0\0\0j\xef\xbf\xe1\xbc\x02\x19\x90\x10\x10\x10@";

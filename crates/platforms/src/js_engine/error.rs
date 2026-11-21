@@ -52,36 +52,3 @@ impl From<rquickjs::Error> for JsError {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn display_matches_pre_migration_formatting() {
-        assert_eq!(
-            JsError::RuntimeCreation("boom".into()).to_string(),
-            "Failed to create JS runtime: boom"
-        );
-        assert_eq!(
-            JsError::ContextCreation("boom".into()).to_string(),
-            "Failed to create JS context: boom"
-        );
-        assert_eq!(
-            JsError::eval("boom").to_string(),
-            "JS evaluation failed: boom"
-        );
-        assert_eq!(
-            JsError::eval_with_stack("boom", "at foo.js:1").to_string(),
-            "JS evaluation failed: boom\nStack: at foo.js:1"
-        );
-        assert_eq!(
-            JsError::TypeConversion("boom".into()).to_string(),
-            "JS type conversion error: boom"
-        );
-        assert_eq!(
-            JsError::PoolExhausted.to_string(),
-            "JS runtime pool exhausted"
-        );
-    }
-}

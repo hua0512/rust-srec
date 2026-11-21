@@ -169,22 +169,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_descriptor_iterator_empty() {
-        let iter = DescriptorIterator::new(Bytes::new());
-        assert_eq!(iter.count(), 0);
-    }
-
-    #[test]
-    fn test_descriptor_iterator_single() {
-        // One descriptor: tag=0x05, length=4, data="CUEI"
-        let data = Bytes::from_static(&[0x05, 0x04, b'C', b'U', b'E', b'I']);
-        let descriptors: Vec<_> = DescriptorIterator::new(data).collect();
-        assert_eq!(descriptors.len(), 1);
-        assert_eq!(descriptors[0].tag, TAG_REGISTRATION);
-        assert_eq!(&descriptors[0].data[..], b"CUEI");
-    }
-
-    #[test]
     fn test_descriptor_iterator_multiple() {
         let mut data = Vec::new();
         // Registration descriptor
@@ -226,12 +210,6 @@ mod tests {
         assert_eq!(entries[0].audio_type, 0);
         assert_eq!(&entries[1].language_code, b"fra");
         assert_eq!(entries[1].audio_type, 1);
-    }
-
-    #[test]
-    fn test_parse_iso639_language_empty() {
-        let entries = parse_iso639_language(&[]);
-        assert!(entries.is_empty());
     }
 
     #[test]

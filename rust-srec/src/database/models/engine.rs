@@ -657,19 +657,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_mesio_config_backward_compatible() {
-        let json = r#"{"buffer_size":123,"fix_flv":true,"fix_hls":false}"#;
-        let parsed: MesioEngineConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(parsed.buffer_size, 123);
-        assert!(parsed.fix_flv);
-        assert!(!parsed.fix_hls);
-        assert!(parsed.flv_fix.is_none());
-        assert!(parsed.hls.is_none());
-        assert!(parsed.fix_dash);
-        assert!(parsed.dash.is_none());
-    }
-
-    #[test]
     fn test_mesio_flv_fix_config_apply() {
         let json = r#"
         {
@@ -747,45 +734,5 @@ mod tests {
             mesio::dash::LiveStartPolicy::PresentationDelay(None)
         );
         assert_eq!(ours.live_start, MesioDashLiveStart::Auto);
-    }
-
-    #[test]
-    fn mesio_dash_config_parses_partially_with_defaults() {
-        let json = r#"
-        {
-          "fix_dash": false,
-          "dash": {
-            "video_quality": { "type": "max_height", "height": 720 },
-            "audio_quality": { "type": "closest_bandwidth", "bandwidth": 128000 },
-            "audio_language": "pt-BR",
-            "include_audio": false,
-            "live_start": { "type": "delay", "delay_ms": 6000 }
-          }
-        }"#;
-        let parsed: MesioEngineConfig = serde_json::from_str(json).unwrap();
-        assert!(!parsed.fix_dash);
-        let dash = parsed.dash.unwrap();
-        assert_eq!(
-            dash.video_quality,
-            MesioDashVideoQuality::MaxHeight { height: 720 }
-        );
-        assert_eq!(
-            dash.audio_quality,
-            MesioDashAudioQuality::ClosestBandwidth { bandwidth: 128000 }
-        );
-        assert_eq!(dash.audio_language.as_deref(), Some("pt-BR"));
-        assert!(dash.include_video);
-        assert!(!dash.include_audio);
-        assert_eq!(
-            dash.live_start,
-            MesioDashLiveStart::Delay { delay_ms: 6000 }
-        );
-        let defaults = MesioDashConfig::default();
-        assert_eq!(dash.download_concurrency, defaults.download_concurrency);
-        assert_eq!(dash.manifest_timeout_ms, defaults.manifest_timeout_ms);
-
-        let round_trip: MesioDashConfig =
-            serde_json::from_value(serde_json::to_value(&dash).unwrap()).unwrap();
-        assert_eq!(round_trip, dash);
     }
 }

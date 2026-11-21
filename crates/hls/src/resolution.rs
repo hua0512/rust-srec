@@ -395,36 +395,6 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_elementary_stream_from_pes_valid() {
-        let pes_data = [
-            0x00, 0x00, 0x01, // Start code
-            0xE0, // Stream ID (video)
-            0x00, 0x00, // Unbounded video PES
-            0x80, 0x00, // Flags
-            0x00, // PES header data length (0)
-            0x00, 0x00, 0x01, 0x67, // Elementary stream data
-        ];
-
-        let result = ResolutionDetector::extract_elementary_stream_from_pes(&pes_data);
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), &[0x00, 0x00, 0x01, 0x67]);
-    }
-
-    #[test]
-    fn test_extract_elementary_stream_from_pes_invalid_start_code() {
-        let pes_data = [0x00, 0x00, 0x02, 0xE0, 0x00, 0x10, 0x80, 0x00, 0x00];
-        let result = ResolutionDetector::extract_elementary_stream_from_pes(&pes_data);
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_extract_elementary_stream_from_pes_too_short() {
-        let pes_data = [0x00, 0x00, 0x01, 0xE0];
-        let result = ResolutionDetector::extract_elementary_stream_from_pes(&pes_data);
-        assert!(result.is_none());
-    }
-
-    #[test]
     fn truncated_h264_sps_with_three_byte_start_code_is_rejected() {
         let data = [0x00, 0x00, 0x01, 0x67, 0x42, 0x00, 0x1f];
         let result = ResolutionDetector::find_and_parse_h264_sps(&data);

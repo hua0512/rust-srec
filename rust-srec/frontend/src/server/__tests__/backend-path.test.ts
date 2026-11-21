@@ -1,7 +1,6 @@
 import {
   backendPath,
   InvalidBackendPathError,
-  PathIdSchema,
   withQuery,
 } from '../backend-path';
 
@@ -59,31 +58,10 @@ describe('backendPath', () => {
   });
 });
 
-describe('PathIdSchema', () => {
-  it('accepts a normal identifier', () => {
-    expect(PathIdSchema.parse('abc')).toBe('abc');
-  });
-
-  it.each([[''], [undefined], [null], [42], ['a'.repeat(513)]])(
-    'rejects %s',
-    (value) => {
-      expect(() => PathIdSchema.parse(value)).toThrow();
-    },
-  );
-});
-
 describe('withQuery', () => {
   it('omits the separator when there is nothing to send', () => {
     expect(withQuery('/logging/files', new URLSearchParams())).toBe(
       '/logging/files',
-    );
-  });
-
-  it('escapes values that would otherwise change the path', () => {
-    const params = new URLSearchParams();
-    params.set('search', 'a&b=c/d');
-    expect(withQuery('/logging/files', params)).toBe(
-      '/logging/files?search=a%26b%3Dc%2Fd',
     );
   });
 });

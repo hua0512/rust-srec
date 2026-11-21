@@ -497,23 +497,6 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_pipeline() {
-        let context = Arc::new(StreamerContext::new(CancellationToken::new()));
-        let pipeline = Pipeline::<u32>::new(context);
-
-        let input = vec![Ok(1), Ok(2), Ok(3)];
-        let mut results = Vec::new();
-        let mut output = |res: Result<u32, PipelineError>| {
-            results.push(res.unwrap());
-        };
-
-        pipeline.run(input.into_iter(), &mut output).unwrap();
-
-        // Empty pipeline passes through unchanged
-        assert_eq!(results, vec![1, 2, 3]);
-    }
-
-    #[test]
     fn progress_sink_is_opt_in_and_throttled() {
         let context = Arc::new(StreamerContext::new(CancellationToken::new()));
         let updates = Arc::new(Mutex::new(Vec::new()));

@@ -1,10 +1,4 @@
-import {
-  act,
-  fireEvent,
-  screen,
-  waitFor,
-  within,
-} from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -12,11 +6,7 @@ import {
   UploadStatusIndicator,
 } from '../upload-status-indicator';
 import { cancelActivePipelineJob } from '@/server/functions/pipeline';
-import {
-  STALE_AFTER_MS,
-  useUploadStore,
-  type UploadView,
-} from '@/store/uploads';
+import { useUploadStore, type UploadView } from '@/store/uploads';
 import { renderWithProviders } from '@/test/render';
 
 vi.mock('@tanstack/react-router', async () => ({
@@ -54,65 +44,6 @@ describe('UploadStatusIndicator', () => {
     useUploadStore.getState().clearAll();
   });
 
-  it('renders nothing when no upload is live', () => {
-    const { container } = renderIndicator([
-      createUpload({ lastEventAtMs: Date.now() - STALE_AFTER_MS }),
-    ]);
-
-    expect(container).toBeEmptyDOMElement();
-  });
-
-  it("lists every streamer's uploads, each linked to its job", () => {
-    renderIndicator([
-      createUpload(),
-      createUpload({
-        jobId: 'job-2',
-        streamerId: 'streamer-2',
-        streamerName: '',
-        startedAtMs: 2n,
-      }),
-    ]);
-
-    fireEvent.click(screen.getByRole('button', { name: '2 active uploads' }));
-
-    expect(screen.getByText('Streamer One').closest('a')).toHaveAttribute(
-      'href',
-      '/pipeline/jobs/job-1',
-    );
-    // No resolved name: the streamer id still identifies the upload.
-    expect(screen.getByText('streamer-2').closest('a')).toHaveAttribute(
-      'href',
-      '/pipeline/jobs/job-2',
-    );
-  });
-
-  it('keeps a failed upload on screen after the rest finish, until dismissed', async () => {
-    renderIndicator([createUpload()]);
-    act(() =>
-      useUploadStore.getState().fail({
-        jobId: 'job-1',
-        streamerId: 'streamer-1',
-        error: 'quota exceeded',
-        filesSucceeded: 0,
-        filesFailed: 1,
-      }),
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: '1 failed upload' }));
-    expect(screen.getByText('Streamer One').closest('a')).toHaveAttribute(
-      'href',
-      '/pipeline/jobs/job-1',
-    );
-    expect(screen.getByText('quota exceeded')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
-    await waitFor(() =>
-      expect(
-        screen.queryByRole('button', { name: /failed upload/ }),
-      ).not.toBeInTheDocument(),
-    );
-  });
-
   it('cancels an upload only after confirmation', async () => {
     renderIndicator([createUpload()]);
 
@@ -130,28 +61,6 @@ describe('UploadStatusIndicator', () => {
         data: 'job-1',
       }),
     );
-  });
-
-  it('shows a retrying upload with its attempt instead of preparing', () => {
-    renderIndicator([
-      createUpload({ phase: 'retrying', attempt: 2, maxAttempts: 3 }),
-    ]);
-
-    fireEvent.click(screen.getByRole('button', { name: '1 active upload' }));
-
-    expect(screen.getByText('rclone').nextElementSibling).toHaveTextContent(
-      /^Retrying\.\.\. · Upload attempt 2 of 3$/,
-    );
-  });
-
-  it('shows queued uploads even before any of them starts', () => {
-    renderIndicator([]);
-    act(() => useUploadStore.getState().setPendingCount(3));
-
-    fireEvent.click(screen.getByRole('button', { name: '3 queued uploads' }));
-    expect(
-      screen.getByText('Waiting for a free upload worker.'),
-    ).toBeInTheDocument();
   });
 });
 

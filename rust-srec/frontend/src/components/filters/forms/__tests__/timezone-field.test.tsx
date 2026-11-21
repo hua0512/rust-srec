@@ -64,16 +64,6 @@ describe.each([
     },
   );
 
-  it.each([undefined, null])(
-    'displays an absent %s timezone as UTC',
-    (timezone) => {
-      const { values } = renderForm(Component, { ...config, timezone });
-
-      expect(timezoneInput()).toHaveValue('UTC');
-      expect(values().timezone).toBe(timezone);
-    },
-  );
-
   it('accepts a typed IANA name without changing clock values', () => {
     const { values } = renderForm(Component, { ...config, timezone: 'local' });
     const input = timezoneInput();

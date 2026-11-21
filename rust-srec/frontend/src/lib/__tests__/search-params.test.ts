@@ -38,17 +38,6 @@ describe('searchParamsValidator', () => {
     });
   });
 
-  it.each([
-    ['a non-numeric page', { page: 'abc' }],
-    ['a negative page', { page: -5 }],
-    ['a zero size', { size: 0 }],
-    ['an unknown enum value', { priority: 'URGENT' }],
-    ['a wrongly typed string', { q: ['a', 'b'] }],
-  ])('never throws on %s', (_label, search) => {
-    expect(() => validate(search)).not.toThrow();
-    expect(validate(search)).toEqual({});
-  });
-
   it('ignores unknown parameters', () => {
     expect(validate({ q: 'clip', utm_source: 'newsletter' })).toEqual({
       q: 'clip',

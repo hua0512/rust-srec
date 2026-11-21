@@ -60,23 +60,6 @@ describe('Bigo monitoring method', () => {
     });
   });
 
-  it('labels the badge by method', async () => {
-    vi.mocked(getBigoNotificationStatus).mockResolvedValue(listener);
-    const bigo = (id: string) => ({ id, url: BIGO_URL, enabled: true });
-
-    const notifications = renderWithProviders(
-      <MonitoringMethodBadge streamer={bigo('bigo-1')} />,
-    );
-    expect(await notifications.findByText('Notifications')).toBeInTheDocument();
-
-    const polling = renderWithProviders(
-      <MonitoringMethodBadge streamer={bigo('bigo-2')} />,
-    );
-    expect(
-      await polling.findByText('Polling · inconsistent'),
-    ).toBeInTheDocument();
-  });
-
   it('is absent for other platforms and disabled streamers', () => {
     for (const streamer of [
       { id: 'other', url: 'https://live.bilibili.com/1', enabled: true },

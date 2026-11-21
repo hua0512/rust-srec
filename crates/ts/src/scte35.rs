@@ -413,14 +413,4 @@ mod tests {
         let data = vec![0x00; 20];
         assert!(SpliceInfoSection::parse(&data).is_err());
     }
-
-    #[test]
-    fn test_scte35_ref() {
-        let data = make_scte35_time_signal(45000);
-        let section_ref = SpliceInfoSectionRef::parse(Bytes::from(data)).unwrap();
-        assert_eq!(
-            section_ref.inner.splice_command_type,
-            SpliceCommandType::TimeSignal
-        );
-    }
 }

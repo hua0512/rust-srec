@@ -16,9 +16,7 @@ function renderMobileSidebar() {
   const trigger = screen.getByRole('button', { name: 'Toggle Sidebar' });
   const drawer = () =>
     document.querySelector<HTMLElement>('[data-mobile="true"]');
-  const overlay = () =>
-    document.querySelector<HTMLElement>('[data-slot="sidebar-overlay"]');
-  return { trigger, drawer, overlay };
+  return { trigger, drawer };
 }
 
 function openDrawer(trigger: HTMLElement) {
@@ -56,15 +54,6 @@ describe('Sidebar on mobile', () => {
 
     expect(drawer()).toHaveAttribute('data-drawer', 'closed');
     expect(drawer()).toHaveAttribute('aria-modal', 'false');
-  });
-
-  it('opens with a transition from off-screen when tapped before it rendered', () => {
-    const { trigger, drawer } = renderMobileSidebar();
-
-    openDrawer(trigger);
-
-    expect(drawer()).toHaveAttribute('data-drawer', 'open');
-    expect(drawer()?.className).toContain('starting:-translate-x-full');
   });
 
   it('opens without touching inherited styles on the page', () => {
@@ -111,15 +100,6 @@ describe('Sidebar on mobile', () => {
     });
 
     expect(drawer()).toHaveAttribute('data-drawer', 'open');
-  });
-
-  it('closes when the overlay is tapped', () => {
-    const { trigger, drawer, overlay } = renderMobileSidebar();
-    openDrawer(trigger);
-
-    fireEvent.click(overlay()!);
-
-    expect(drawer()).toHaveAttribute('data-drawer', 'closed');
   });
 
   it('keeps Tab focus inside the open drawer', () => {

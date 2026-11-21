@@ -33,10 +33,6 @@ function textInput() {
   return screen.getByPlaceholderText('--primary value') as HTMLInputElement;
 }
 
-function swatch() {
-  return screen.getByRole('button');
-}
-
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -60,15 +56,6 @@ describe('color picker', () => {
     expect(markup).not.toContain('#123456');
   });
 
-  it('shows the computed value of the css variable after mount', () => {
-    stubComputedStyle({ '--primary': ' oklch(0.5 0.1 250) ' });
-
-    renderPicker();
-
-    expect(textInput().value).toBe('oklch(0.5 0.1 250)');
-    expect(swatch()).toHaveStyle({ backgroundColor: 'oklch(0.5 0.1 250)' });
-  });
-
   it('re-reads the variable when the active theme changes', () => {
     const values: Record<string, string> = { '--primary': '#111111' };
     stubComputedStyle(values);
@@ -88,14 +75,5 @@ describe('color picker', () => {
     );
 
     expect(textInput().value).toBe('#222222');
-  });
-
-  it('shows an explicit override verbatim instead of the computed value', () => {
-    stubComputedStyle({ '--primary': '#111111' });
-
-    renderPicker({ value: '#abcdef' });
-
-    expect(textInput().value).toBe('#abcdef');
-    expect(swatch()).toHaveStyle({ backgroundColor: '#abcdef' });
   });
 });

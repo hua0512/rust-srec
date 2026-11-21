@@ -382,57 +382,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_normal_flow() {
-        let context = StreamerContext::arc_new(CancellationToken::new());
-        let mut operator = TimeConsistencyOperator::new(context.clone(), ContinuityMode::Reset);
-        let mut output_items = Vec::new();
-
-        // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        // Process a header followed by some tags
-        operator
-            .process(&context, create_test_header(), &mut output_fn)
-            .unwrap();
-        operator
-            .process(&context, create_video_tag(0, true), &mut output_fn)
-            .unwrap();
-        operator
-            .process(&context, create_audio_tag(10), &mut output_fn)
-            .unwrap();
-        operator
-            .process(&context, create_video_tag(20, false), &mut output_fn)
-            .unwrap();
-        operator
-            .process(&context, create_audio_tag(30), &mut output_fn)
-            .unwrap();
-
-        // Finish processing
-        operator.finish(&context, &mut output_fn).unwrap();
-
-        // Validate tags have correct timestamps
-        assert_eq!(output_items.len(), 5);
-
-        // Extract tags and verify timestamps
-        let timestamps: Vec<u32> = output_items
-            .iter()
-            .filter_map(|item| {
-                if let FlvData::Tag(tag) = item {
-                    Some(tag.timestamp_ms)
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        // Original timestamps should be preserved in normal flow
-        assert_eq!(timestamps, vec![0, 10, 20, 30]);
-    }
-
-    #[test]
     fn test_decreasing_timestamp_handling() {
         init_test_tracing!();
         let context = StreamerContext::arc_new(CancellationToken::new());

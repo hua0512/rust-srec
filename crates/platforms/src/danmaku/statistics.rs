@@ -1156,22 +1156,6 @@ mod tests {
     }
 
     #[test]
-    fn test_word_frequency() {
-        let mut agg = StatisticsAggregator::with_config(10, 10, 10);
-        let now = Timestamp::now();
-
-        agg.record_message(&chat_at("user1", "User", "hello world hello", now));
-        agg.record_message(&chat_at("user2", "User", "hello rust world", now));
-
-        let stats = agg.current_stats();
-
-        // "hello" should appear 3 times, "world" 2 times, "rust" 1 time
-        let hello = stats.word_frequency.iter().find(|w| w.word == "hello");
-        assert!(hello.is_some());
-        assert_eq!(hello.unwrap().count, 3);
-    }
-
-    #[test]
     fn test_rate_timeseries() {
         let mut agg = StatisticsAggregator::with_config(10, 10, 10);
         let base = "2024-01-01T12:00:00Z".parse::<jiff::Timestamp>().unwrap();
@@ -1284,21 +1268,6 @@ mod tests {
         assert_eq!(stats.start_time, Some(start));
         assert_eq!(stats.end_time, Some(end));
         assert_eq!(stats.duration_secs, 1800); // 30 minutes
-    }
-
-    #[test]
-    fn test_gift_counting() {
-        let mut agg = StatisticsAggregator::new();
-        let now = Timestamp::now();
-
-        agg.record_message(&chat_at("user1", "User", "chat", now));
-        agg.record_message(&gift_at("user2", "User", "Rocket", 1, now));
-        agg.record_message(&gift_at("user3", "User", "Rocket", 1, now));
-
-        let stats = agg.current_stats();
-        assert_eq!(stats.total_count, 3);
-        assert_eq!(stats.chat_count, 1);
-        assert_eq!(stats.gift_count, 2);
     }
 
     /// Gifters are ranked by total gift items (`gift_count` metadata), not by

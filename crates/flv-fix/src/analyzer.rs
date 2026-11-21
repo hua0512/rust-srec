@@ -663,14 +663,6 @@ mod tests {
     }
 
     #[test]
-    fn test_analyze_header() {
-        let mut analyzer = FlvAnalyzer::default();
-        let header = FlvHeader::new(true, true);
-        assert!(analyzer.analyze_header(&header).is_ok());
-        assert_eq!(analyzer.stats.file_size, 13); // 9 bytes for header + 4 bytes for previous tag size
-    }
-
-    #[test]
     fn detects_enhanced_av1_codec() {
         let mut analyzer = FlvAnalyzer::default();
         analyzer

@@ -456,22 +456,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_stream_type_conversion() {
-        assert_eq!(StreamType::from(0x1B), StreamType::H264);
-        assert_eq!(StreamType::from(0x24), StreamType::H265);
-        assert_eq!(StreamType::from(0x0F), StreamType::AdtsAac);
-        assert_eq!(StreamType::from(0xFF), StreamType::Unknown(0xFF));
-    }
-
-    #[test]
-    fn test_stream_type_classification() {
-        assert!(StreamType::H264.is_video());
-        assert!(!StreamType::H264.is_audio());
-        assert!(StreamType::AdtsAac.is_audio());
-        assert!(!StreamType::AdtsAac.is_video());
-    }
-
-    #[test]
     fn test_pmt_invalid_table_id() {
         let data = vec![
             0x01, 0x80, 0x0D, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,

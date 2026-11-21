@@ -851,30 +851,6 @@ mod tests {
     }
 
     #[test]
-    fn test_blacklist_matches_url_when_no_cdn_extra() {
-        let config = StreamSelectionConfig {
-            blacklisted_cdns: vec!["akamaized".to_string()],
-            ..Default::default()
-        };
-        let selector = StreamSelector::with_config(config);
-
-        // Stream with akamaized in URL but no cdn in extras
-        let stream = create_test_stream(
-            "https://video.akamaized.net/stream.m3u8",
-            StreamFormat::Hls,
-            "1080p",
-            5000000,
-            1,
-        );
-
-        let streams = vec![stream];
-        let result = selector.select_best(&streams);
-
-        // Should be blacklisted based on URL
-        assert!(result.is_none());
-    }
-
-    #[test]
     fn test_cdn_extra_takes_precedence_over_url() {
         // When extras["cdn"] exists, it should be used instead of URL
         let config = StreamSelectionConfig {

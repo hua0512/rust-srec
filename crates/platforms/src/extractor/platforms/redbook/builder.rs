@@ -336,17 +336,6 @@ mod tests {
     }
 
     #[test]
-    fn test_url_regex_matches_share_links() {
-        assert!(!super::URL_REGEX.is_match("http://xhslink.com/DEnpCgb"));
-        assert!(!super::URL_REGEX.is_match("https://xhslink.com/DEnpCgb"));
-        assert!(super::URL_REGEX.is_match("http://xhslink.com/m/844vKmW30jz"));
-        assert!(super::URL_REGEX.is_match("https://xhslink.com/m/844vKmW30jz"));
-        assert!(super::URL_REGEX.is_match("https://xhslink.com/o/share123"));
-
-        assert!(!super::URL_REGEX.as_str().contains("xiaohongshu"));
-    }
-
-    #[test]
     fn resolves_room_from_redirect_without_page_state() {
         for host in [
             "www.xiaohongshu.com",

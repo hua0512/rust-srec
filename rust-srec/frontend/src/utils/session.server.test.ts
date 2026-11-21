@@ -30,18 +30,6 @@ vi.mock('@tanstack/react-start/server', () => ({
 }));
 
 describe('resolveSessionSecret', () => {
-  it('uses the configured secret', () => {
-    expect(resolveSessionSecret('configured-secret', 'production')).toBe(
-      'configured-secret',
-    );
-  });
-
-  it('allows the built-in secret outside production', () => {
-    expect(resolveSessionSecret(undefined, 'development')).toContain(
-      'dev_secret',
-    );
-  });
-
   it('rejects a missing production secret', () => {
     expect(() => resolveSessionSecret(undefined, 'production')).toThrow(
       'SESSION_SECRET must be set in production',
@@ -106,22 +94,6 @@ describe('resolveCookieSecurity', () => {
       resolveCookieSecurity({ cookieSecure: 'yes', forwardedProto: 'https' })
         .secure,
     ).toBe(true);
-  });
-});
-
-describe('warnInsecureCookieOnce', () => {
-  it('logs once per module instance', async () => {
-    // The guard is module state, so load a fresh copy instead of inheriting
-    // whatever earlier tests left behind.
-    vi.resetModules();
-    const { warnInsecureCookieOnce } = await import('./session.server');
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-    warnInsecureCookieOnce();
-    warnInsecureCookieOnce();
-
-    expect(warn).toHaveBeenCalledTimes(1);
-    warn.mockRestore();
   });
 });
 

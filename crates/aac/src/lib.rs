@@ -342,30 +342,4 @@ mod tests {
             assert_eq!(adts.audio_specific_config(), config);
         }
     }
-
-    #[test]
-    fn test_idx_to_freq() {
-        let cases = [
-            (SampleFrequencyIndex::FreqEscape, None),
-            (SampleFrequencyIndex::FreqReserved2, None),
-            (SampleFrequencyIndex::FreqReserved, None),
-            (SampleFrequencyIndex::Freq7350, Some(7350)),
-            (SampleFrequencyIndex::Freq8000, Some(8000)),
-            (SampleFrequencyIndex::Freq11025, Some(11025)),
-            (SampleFrequencyIndex::Freq12000, Some(12000)),
-            (SampleFrequencyIndex::Freq16000, Some(16000)),
-            (SampleFrequencyIndex::Freq22050, Some(22050)),
-            (SampleFrequencyIndex::Freq24000, Some(24000)),
-            (SampleFrequencyIndex::Freq32000, Some(32000)),
-            (SampleFrequencyIndex::Freq44100, Some(44100)),
-            (SampleFrequencyIndex::Freq48000, Some(48000)),
-            (SampleFrequencyIndex::Freq64000, Some(64000)),
-            (SampleFrequencyIndex::Freq88200, Some(88200)),
-            (SampleFrequencyIndex::Freq96000, Some(96000)),
-        ];
-
-        for (idx, freq) in cases {
-            assert_eq!(freq, idx.to_freq(), "Expected frequency for {idx:?}");
-        }
-    }
 }

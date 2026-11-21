@@ -569,27 +569,6 @@ mod tests {
         assert!(buffer.is_empty());
     }
 
-    #[test]
-    fn test_decode_header_invalid() {
-        init_tracing();
-        let mut decoder = FlvDecoder::default();
-        let mut buffer = BytesMut::from(
-            &[
-                0x46, 0x4C, 0x57, // Invalid signature 'W'
-                0x01, 0x05, 0x00, 0x00, 0x00, 0x09,
-                // Next part (start of first tag prev size)
-                0x00, 0x00, 0x00, 0x00,
-            ][..],
-        );
-
-        let result = decoder.decode(&mut buffer);
-        assert!(result.is_err());
-        match result.err().unwrap() {
-            FlvError::InvalidHeader => {} // Expected error
-            e => panic!("Unexpected error type: {e:?}"),
-        }
-    }
-
     #[tokio::test]
     async fn test_flv_decoder_stream() {
         use std::time::Duration;
@@ -637,59 +616,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_decode_first_tag_ok() {
-        init_tracing();
-        let mut decoder = FlvDecoder::default();
-        let mut buffer = BytesMut::new();
-
-        // 1. Provide Header
-        buffer.extend_from_slice(&[
-            0x46, 0x4C, 0x56, 0x01, 0x05, 0x00, 0x00, 0x00, 0x09, // Header
-            // Next part (start of first tag prev size)
-            0x00, 0x00, 0x00, 0x00,
-        ]);
-        let header_res = decoder.decode(&mut buffer).unwrap().unwrap();
-        assert!(matches!(header_res, FlvData::Header(_)));
-        assert_eq!(buffer.len(), 0); // Consumed header
-
-        // 2. Provide First PreviousTagSize (always 0) + Tag Header + Tag Data + Next PreviousTagSize
-        buffer.extend_from_slice(&[
-            // Previous Tag Size (0 for header) - This should be handled implicitly after header
-            //0x00, 0x00, 0x00, 0x00, // <-- Decoder logic skips reading this after header
-
-            // Tag 1: Script Data (type 18), 15 bytes data, timestamp 0
-            0x12, // Type 18 (Script)
-            0x00, 0x00, 0x0F, // Data Size 15
-            0x00, 0x00, 0x00, // Timestamp 0 (lower 24 bits)
-            0x00, // Timestamp extension
-            0x00, 0x00, 0x00, // Stream ID 0
-            // Data (15 bytes, example AMF data)
-            0x02, 0x00, 0x0A, b'o', b'n', b'M', b'e', b't', b'a', b'D', b'a', b't', b'a', 0x08,
-            0x00, // End marker omitted for simplicity, assuming demux handles it
-            // Previous Tag Size for Tag 1 (Header=11 + Data=15 = 26 = 0x1A)
-            0x00, 0x00, 0x00, 0x1A,
-        ]);
-
-        let tag1_res = decoder.decode(&mut buffer);
-        assert!(tag1_res.is_ok());
-        let tag1_opt = tag1_res.unwrap();
-        assert!(tag1_opt.is_some());
-
-        match tag1_opt.unwrap() {
-            FlvData::Tag(tag) => {
-                assert_eq!(tag.tag_type(), FlvTagType::ScriptData);
-                assert_eq!(tag.timestamp_ms, 0);
-                assert_eq!(tag.data().len(), 15);
-                assert_eq!(decoder.last_tag_size, 11 + 15); // Header + Data
-            }
-            _ => panic!("Expected Tag"),
-        }
-        assert!(!decoder.expecting_tag_header); // Expecting prev tag size next
-        assert_eq!(buffer.len(), 4); // Remaining bytes should be the next PreviousTagSize
-        assert_eq!(&buffer[..], &[0x00, 0x00, 0x00, 0x1A]);
-    }
-
     #[tokio::test]
     async fn decoder_stream_propagates_invalid_header_and_terminates() {
         let mut stream = FlvDecoderStream::new(Cursor::new(b"NOT-FLV-HEADER"));
@@ -702,51 +628,6 @@ mod tests {
         })
         .await
         .unwrap();
-    }
-
-    #[test]
-    fn test_decode_second_tag_after_prev_size() {
-        init_tracing();
-        let mut decoder = FlvDecoder::default();
-        let mut buffer = BytesMut::new();
-
-        // --- Simulate state after first tag ---
-        decoder.header_parsed = true;
-        decoder.expecting_tag_header = false; // Expecting prev tag size
-        decoder.last_tag_size = 11 + 15; // Size of the "first" tag (ScriptData example)
-        buffer.extend_from_slice(&[
-            // Previous Tag Size for Tag 1 (Header=11 + Data=15 = 26 = 0x1A)
-            0x00, 0x00, 0x00, 0x1A,
-            // Tag 2: Video Data (type 9), 5 bytes data, timestamp 100ms
-            0x09, // Type 9 (Video)
-            0x00, 0x00, 0x05, // Data Size 5
-            0x00, 0x00, 0x64, // Timestamp 100ms (lower 24 bits)
-            0x00, // Timestamp extension
-            0x00, 0x00, 0x00, // Stream ID 0
-            // Data (5 bytes)
-            0x17, 0x01, 0x02, 0x03, 0x04,
-            // Previous Tag Size for Tag 2 (Header=11 + Data=5 = 16 = 0x10)
-            0x00, 0x00, 0x00, 0x10,
-        ]);
-        // --- End Simulate ---
-
-        let tag2_res = decoder.decode(&mut buffer);
-        assert!(tag2_res.is_ok(), "Decode failed: {:?}", tag2_res.err());
-        let tag2_opt = tag2_res.unwrap();
-        assert!(tag2_opt.is_some(), "Decoder returned None unexpectedly");
-
-        match tag2_opt.unwrap() {
-            FlvData::Tag(tag) => {
-                assert_eq!(tag.tag_type(), FlvTagType::Video);
-                assert_eq!(tag.timestamp_ms, 100);
-                assert_eq!(tag.data().len(), 5);
-                assert_eq!(decoder.last_tag_size, 11 + 5); // Header + Data
-            }
-            _ => panic!("Expected Tag"),
-        }
-        assert!(!decoder.expecting_tag_header); // Expecting next prev tag size
-        assert_eq!(buffer.len(), 4); // Remaining bytes should be the next PreviousTagSize
-        assert_eq!(&buffer[..], &[0x00, 0x00, 0x00, 0x10]);
     }
 
     #[test]

@@ -160,53 +160,6 @@ where
 pub(crate) mod tests {
     use super::*;
 
-    pub(crate) async fn open_socket(
-        address: std::net::SocketAddr,
-        path: &str,
-        authorization: Option<&str>,
-        expected_status: u16,
-    ) -> tokio::net::TcpStream {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        tokio::time::timeout(Duration::from_secs(3), async {
-            let mut socket = tokio::net::TcpStream::connect(address).await.unwrap();
-            let auth = authorization.map(|value| format!("Authorization: {value}\r\n")).unwrap_or_default();
-            socket.write_all(format!("GET {path} HTTP/1.1\r\nHost: {address}\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n{auth}\r\n").as_bytes()).await.unwrap();
-            let mut headers = Vec::new();
-            while !headers.ends_with(b"\r\n\r\n") {
-                assert!(headers.len() < 16384, "response headers must be bounded");
-                headers.push(socket.read_u8().await.unwrap());
-            }
-            let headers = String::from_utf8(headers).unwrap();
-            assert!(headers.starts_with(&format!("HTTP/1.1 {expected_status} ")), "{headers}");
-            socket
-        }).await.expect("socket handshake must complete")
-    }
-
-    pub(crate) async fn wait_for_socket_close(mut socket: tokio::net::TcpStream) {
-        use tokio::io::AsyncReadExt;
-        tokio::time::timeout(Duration::from_secs(9), async {
-            let mut buffer = [0; 4096];
-            loop {
-                match socket.read(&mut buffer).await {
-                    Ok(0) => break,
-                    Ok(_) => {}
-                    Err(error)
-                        if matches!(
-                            error.kind(),
-                            std::io::ErrorKind::ConnectionReset
-                                | std::io::ErrorKind::ConnectionAborted
-                        ) =>
-                    {
-                        break;
-                    }
-                    Err(error) => panic!("socket read failed: {error}"),
-                }
-            }
-        })
-        .await
-        .expect("revoked socket must close within the revalidation deadline");
-    }
-
     pub(crate) struct AuthFixture {
         pub pool: sqlx::SqlitePool,
         pub service: Arc<AuthService>,

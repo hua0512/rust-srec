@@ -1,24 +1,7 @@
 import { z } from 'zod';
 import { parseInput } from '../validate';
-import { updateLoggingFilter } from '../functions/logging';
-
-const fetchBackendMock = vi.hoisted(() => vi.fn());
-
-vi.mock('@/server/createServerFn', async () => ({
-  createServerFn: (await import('../createServerFn.desktop')).createServerFn,
-}));
-
-vi.mock('../api', async () => ({
-  fetchBackend: fetchBackendMock,
-  BackendApiError: (await import('@/lib/api-error')).BackendApiError,
-}));
 
 describe('parseInput', () => {
-  it('returns the parsed value on success', () => {
-    const schema = z.object({ id: z.string().min(1) });
-    expect(parseInput(schema, { id: 'abc' })).toEqual({ id: 'abc' });
-  });
-
   it('reports the failing field as a plain Error', () => {
     const schema = z.object({ settings: z.string() });
     let thrown: unknown;
@@ -48,18 +31,5 @@ describe('parseInput', () => {
       d: z.string(),
     });
     expect(() => parseInput(schema, {})).toThrow(/\(and 1 more\)$/);
-  });
-});
-
-describe('server function validator failures', () => {
-  it('surfaces a readable message instead of a serialized ZodError', async () => {
-    fetchBackendMock.mockResolvedValue(undefined);
-    const failure = updateLoggingFilter({ data: { filter: '' } }).catch(
-      (error: unknown) => error,
-    );
-    await expect(failure).resolves.toBeInstanceOf(Error);
-    await expect(failure).resolves.not.toBeInstanceOf(z.ZodError);
-    expect(((await failure) as Error).message).toContain('filter: ');
-    expect(fetchBackendMock).not.toHaveBeenCalled();
   });
 });

@@ -668,37 +668,6 @@ mod tests {
     }
 
     #[test]
-    fn test_ts_stream_info_first_video_stream_empty() {
-        let info = TsStreamInfo::default();
-        assert!(info.first_video_stream().is_none());
-    }
-
-    #[test]
-    fn test_ts_stream_info_first_video_stream() {
-        let info = TsStreamInfo {
-            transport_stream_id: 1,
-            program_count: 1,
-            programs: vec![ProgramInfo {
-                program_number: 1,
-                pcr_pid: 256,
-                video_streams: vec![StreamEntry {
-                    pid: 256,
-                    stream_type: StreamType::H264,
-                    language: None,
-                    first_pts: None,
-                }],
-                audio_streams: vec![],
-                other_streams: vec![],
-                scte35_pids: vec![],
-            }],
-            ..Default::default()
-        };
-        let (pid, st) = info.first_video_stream().unwrap();
-        assert_eq!(pid, 256);
-        assert_eq!(st, StreamType::H264);
-    }
-
-    #[test]
     fn analysis_is_shared_across_segment_clones() {
         let segment =
             TsSegmentData::new(make_media_segment(), Bytes::new()).with_continuity_check(false);

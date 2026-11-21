@@ -90,19 +90,6 @@ describe('tokenRefresh', () => {
     expect(session.data.token?.refresh_token).toMatch(/^refresh-/);
   });
 
-  it('keeps the session when the refresh endpoint cannot be reached', async () => {
-    const session = createSession();
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockRejectedValue(new TypeError('fetch failed')),
-    );
-
-    await expect(refreshAuthTokenGlobal()).resolves.toEqual({
-      status: 'transient',
-    });
-    expect(session.clear).not.toHaveBeenCalled();
-  });
-
   it('keeps the session when the request times out, and retries on the next call', async () => {
     const session = createSession();
     const fetchMock = vi

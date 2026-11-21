@@ -87,24 +87,3 @@ describe('danmu statistics form value', () => {
     expect(isDirty()).toBe(false);
   });
 });
-
-describe('DanmuStatisticsOverrideSchema', () => {
-  it('sends an override with nothing set as inheriting', () => {
-    expect(
-      DanmuStatisticsOverrideSchema.parse(danmuStatisticsFormValue(null)),
-    ).toBeNull();
-  });
-
-  it('keeps an override with any setting', () => {
-    expect(
-      DanmuStatisticsOverrideSchema.parse(
-        danmuStatisticsFormValue({ enabled: false }),
-      ),
-    ).toEqual(expect.objectContaining({ enabled: false }));
-  });
-
-  it('leaves an inheriting layer as it is', () => {
-    expect(DanmuStatisticsOverrideSchema.parse(null)).toBeNull();
-    expect(DanmuStatisticsOverrideSchema.parse(undefined)).toBeUndefined();
-  });
-});

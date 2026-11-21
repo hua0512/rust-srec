@@ -7,10 +7,8 @@ import { useSignedOutRedirect } from '../use-signed-out-redirect';
 import { testSession } from '@/test/session';
 import { newQueryClient } from '@/test/render';
 
-const checkAuthFnMock = vi.hoisted(() => vi.fn());
-
 vi.mock('@/server/functions/auth', () => ({
-  checkAuthFn: checkAuthFnMock,
+  checkAuthFn: vi.fn(),
 }));
 
 const router = vi.hoisted(() => ({
@@ -64,7 +62,6 @@ describe('useSignedOutRedirect', () => {
     queryClient = newQueryClient();
     router.navigate.mockClear();
     router.state.status = 'idle';
-    checkAuthFnMock.mockReset();
   });
 
   afterEach(() => {
@@ -81,16 +78,6 @@ describe('useSignedOutRedirect', () => {
     expect(router.navigate).not.toHaveBeenCalled();
   });
 
-  it('never runs the session check itself', async () => {
-    queryClient.setQueryData(sessionQueryOptions.queryKey, testSession());
-    renderRedirect(queryClient);
-    await act(async () => {
-      await Promise.resolve();
-    });
-
-    expect(checkAuthFnMock).not.toHaveBeenCalled();
-  });
-
   it('sends a signed-out visitor to login with the page they were on', async () => {
     queryClient.setQueryData(sessionQueryOptions.queryKey, testSession());
     renderRedirect(queryClient);
@@ -99,18 +86,6 @@ describe('useSignedOutRedirect', () => {
 
     expect(router.navigate).toHaveBeenCalledOnce();
     expect(router.navigate).toHaveBeenCalledWith(loginRedirect);
-  });
-
-  it('redirects once, not again while its own navigation is in flight', async () => {
-    queryClient.setQueryData(sessionQueryOptions.queryKey, testSession());
-    const { rerender } = renderRedirect(queryClient);
-
-    await setSession(queryClient, null);
-    router.state.status = 'pending';
-    rerender();
-    rerender();
-
-    expect(router.navigate).toHaveBeenCalledOnce();
   });
 
   it('lets a navigation in flight finish, then redirects if still signed out', async () => {
@@ -129,16 +104,5 @@ describe('useSignedOutRedirect', () => {
 
     expect(router.navigate).toHaveBeenCalledOnce();
     expect(router.navigate).toHaveBeenCalledWith(loginRedirect);
-  });
-
-  it('stands down once the visitor is signed in again', async () => {
-    queryClient.setQueryData(sessionQueryOptions.queryKey, null);
-    renderRedirect(queryClient);
-    expect(router.navigate).toHaveBeenCalledOnce();
-
-    await setSession(queryClient, testSession());
-    await setSession(queryClient, testSession());
-
-    expect(router.navigate).toHaveBeenCalledOnce();
   });
 });

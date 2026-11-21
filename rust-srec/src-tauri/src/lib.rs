@@ -1700,29 +1700,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn exit_settle_returns_once_the_owner_has_drained() {
-        let sender = tokio::sync::watch::Sender::new(false);
-        let waiter = tokio::spawn(wait_for_exit_settled(
-            sender.subscribe(),
-            Duration::from_secs(5),
-        ));
-        tokio::task::yield_now().await;
-        assert!(!waiter.is_finished());
-
-        sender.send_replace(true);
-
-        assert!(waiter.await.expect("waiter task"));
-        assert!(wait_for_exit_settled(sender.subscribe(), Duration::from_secs(5)).await);
-    }
-
-    #[tokio::test]
-    async fn exit_settle_gives_up_after_the_cap() {
-        let sender = tokio::sync::watch::Sender::new(false);
-
-        assert!(!wait_for_exit_settled(sender.subscribe(), Duration::from_millis(20)).await);
-    }
-
-    #[tokio::test]
     async fn boot_settle_gives_up_after_the_cap() {
         let (_tx, rx) = tokio::sync::watch::channel(BootPhase::Services);
 

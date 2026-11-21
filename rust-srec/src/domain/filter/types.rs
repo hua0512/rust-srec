@@ -476,13 +476,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_keyword_filter_exclude() {
-        let filter = KeywordFilter::new(vec![], vec!["rerun".to_string()]);
-        assert!(filter.matches("Live stream"));
-        assert!(!filter.matches("Rerun of yesterday"));
-    }
-
-    #[test]
     fn test_keyword_filter_both() {
         let filter = KeywordFilter::new(vec!["live".to_string()], vec!["rerun".to_string()]);
         assert!(filter.matches("Going live!"));

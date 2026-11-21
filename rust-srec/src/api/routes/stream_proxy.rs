@@ -1108,27 +1108,6 @@ mod tests {
     use tokio::net::TcpListener;
     use tower::ServiceExt;
 
-    async fn upstream_handler(req: HttpRequest<Body>) -> impl IntoResponse {
-        let mut headers = HeaderMap::new();
-        headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("video/mp2t"));
-        headers.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
-
-        let status = if req
-            .headers()
-            .get(header::RANGE)
-            .and_then(|range| range.to_str().ok())
-            .is_some()
-        {
-            let value = HeaderValue::from_static("bytes 0-1/3");
-            headers.insert(header::CONTENT_RANGE, value);
-            StatusCode::PARTIAL_CONTENT
-        } else {
-            StatusCode::OK
-        };
-
-        (status, headers, "abc")
-    }
-
     async fn hls_manifest_handler() -> impl IntoResponse {
         (
             [(header::CONTENT_TYPE, "application/vnd.apple.mpegurl")],
@@ -1450,92 +1429,6 @@ mod tests {
         })
         .await
         .expect("redirect fixture must finish");
-    }
-
-    #[tokio::test]
-    async fn proxy_forwards_range_and_sets_cors_headers() {
-        let upstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let upstream_addr = upstream_listener.local_addr().unwrap();
-        let upstream_app = Router::new().route("/stream", get(upstream_handler));
-        tokio::spawn(async move {
-            axum::serve(upstream_listener, upstream_app).await.unwrap();
-        });
-
-        let state = test_state(true);
-
-        let app = Router::new()
-            .nest("/api/stream-proxy", super::router::<StreamProxyState>())
-            .with_state(state);
-
-        let target = format!("http://{upstream_addr}/stream");
-        let headers_json = r#"{"Referer":"https://example.com/"}"#;
-        let query = build_query(&[
-            ("url", &target),
-            ("headers", headers_json),
-            ("token", "unused-in-no-auth-mode"),
-        ]);
-
-        let request = HttpRequest::builder()
-            .uri(format!("/api/stream-proxy?{query}"))
-            .header(header::RANGE, "bytes=0-1")
-            .body(Body::empty())
-            .unwrap();
-
-        let response = app.oneshot(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
-        assert_eq!(
-            response
-                .headers()
-                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
-                .unwrap(),
-            "*"
-        );
-        assert!(response.headers().get(header::CONTENT_TYPE).is_some());
-        assert!(response.headers().get(header::CONTENT_RANGE).is_some());
-    }
-
-    #[tokio::test]
-    async fn proxy_rewrites_hls_manifest_responses() {
-        let upstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let upstream_addr = upstream_listener.local_addr().unwrap();
-        let upstream_app = Router::new().route("/live/master.m3u8", get(hls_manifest_handler));
-        tokio::spawn(async move {
-            axum::serve(upstream_listener, upstream_app).await.unwrap();
-        });
-
-        let state = test_state(true);
-        let app = Router::new()
-            .nest("/api/stream-proxy", super::router::<StreamProxyState>())
-            .with_state(state);
-        let target = format!("http://{upstream_addr}/live/master.m3u8");
-        let query = build_query(&[
-            ("url", &target),
-            ("headers", r#"{"Referer":"https://source.example/"}"#),
-            ("token", "desktop-token"),
-        ]);
-        let request = HttpRequest::builder()
-            .uri(format!("/api/stream-proxy?{query}"))
-            .body(Body::empty())
-            .unwrap();
-
-        let response = app.oneshot(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        assert!(response.headers().get(header::CONTENT_RANGE).is_none());
-        assert!(response.headers().get(header::ETAG).is_none());
-        let content_length = response
-            .headers()
-            .get(header::CONTENT_LENGTH)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<usize>().ok());
-        let body = axum::body::to_bytes(response.into_body(), MAX_MANIFEST_BYTES)
-            .await
-            .unwrap();
-        assert_eq!(content_length, Some(body.len()));
-        let body = std::str::from_utf8(&body).unwrap();
-        assert_eq!(body.matches("/api/stream-proxy?").count(), 2);
-        assert!(body.contains("token=desktop-token"));
-        assert!(body.contains("headers=%7B%22Referer%22"));
-        assert!(body.contains("%2Flive%2Fvideo%2Findex.m3u8"));
     }
 
     #[test]

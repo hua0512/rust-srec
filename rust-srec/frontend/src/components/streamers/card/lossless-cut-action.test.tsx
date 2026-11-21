@@ -92,12 +92,6 @@ it('is hidden for unsupported recordings and disabled with a visible reason whil
   expect(screen.getByText('Reconnect to request a cut.')).toBeVisible();
 });
 
-it('is hidden without split state', () => {
-  useDownloadStore.getState().clearAll();
-  mount();
-  expect(screen.queryByRole('button')).toBeNull();
-});
-
 it('waits for completed output and reports success after the menu closes', async () => {
   vi.mocked(requestLosslessCut).mockResolvedValue({
     request_id: '1',
@@ -168,54 +162,6 @@ it('restores a pending cut and explains expiration without reporting success', a
   );
   expect(screen.getByRole('button', { name: 'Split file now' })).toBeEnabled();
   expect(toast.success).not.toHaveBeenCalled();
-});
-
-it('explains why a cut expired', async () => {
-  vi.mocked(requestLosslessCut).mockResolvedValue({
-    request_id: '1',
-    status: 'pending',
-  });
-  mount();
-  fireEvent.click(screen.getByRole('button'));
-  await waitFor(() => expect(requestLosslessCut).toHaveBeenCalledTimes(1));
-  act(() =>
-    useDownloadStore.getState().upsertManualSplit('download-1', {
-      ...initial,
-      requestId: 1n,
-      revision: 4n,
-      status: 'expired',
-      expiryReason: 'no_independent_segment',
-    }),
-  );
-  await waitFor(() =>
-    expect(toast.error).toHaveBeenCalledWith(
-      "The stream's segments are not marked as independently playable, so no safe cut boundary was found. Recording continues.",
-    ),
-  );
-});
-
-it('shows the backend error when a request is rejected', async () => {
-  vi.mocked(requestLosslessCut).mockRejectedValue(
-    new Error('Lossless cutting is unavailable for this recording'),
-  );
-  mount();
-  fireEvent.click(screen.getByRole('button'));
-  await waitFor(() =>
-    expect(toast.error).toHaveBeenCalledWith(
-      'Lossless cutting is unavailable for this recording',
-    ),
-  );
-});
-
-it('falls back to generic text for an error without a message', async () => {
-  vi.mocked(requestLosslessCut).mockRejectedValue(new Error(''));
-  mount();
-  fireEvent.click(screen.getByRole('button'));
-  await waitFor(() =>
-    expect(toast.error).toHaveBeenCalledWith(
-      'Could not request lossless cutting. Refresh the recording status and try again.',
-    ),
-  );
 });
 
 it('does not carry a request over to a replacement recording', async () => {

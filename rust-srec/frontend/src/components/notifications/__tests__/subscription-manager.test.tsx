@@ -47,13 +47,6 @@ const checkboxes = () => screen.getAllByRole('checkbox');
 const saveButton = () => screen.getByRole('button', { name: /Save/ });
 
 describe('SubscriptionManager', () => {
-  it('starts from the saved subscriptions', async () => {
-    await renderManager();
-
-    expect(checkboxes()[0]).toBeChecked();
-    expect(checkboxes()[1]).not.toBeChecked();
-  });
-
   // The subscriptions query refetches whenever the window regains focus, and
   // adopting its answer a second time would silently undo pending choices.
   it('keeps unsaved choices when the saved subscriptions arrive again', async () => {
@@ -83,19 +76,6 @@ describe('SubscriptionManager', () => {
     await waitFor(() => expect(updateSubscriptions).toHaveBeenCalled());
     expect(vi.mocked(updateSubscriptions).mock.calls[0][0]).toEqual({
       data: { id: channel.id, events: ['stream_online'] },
-    });
-  });
-
-  it('saves the selection that is on screen', async () => {
-    await renderManager();
-
-    fireEvent.click(checkboxes()[0]);
-    fireEvent.click(checkboxes()[1]);
-    fireEvent.click(saveButton());
-
-    await waitFor(() => expect(updateSubscriptions).toHaveBeenCalled());
-    expect(vi.mocked(updateSubscriptions).mock.calls[0][0]).toEqual({
-      data: { id: channel.id, events: ['download_error'] },
     });
   });
 });

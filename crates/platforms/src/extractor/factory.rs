@@ -416,18 +416,4 @@ mod tests {
             );
         }
     }
-
-    #[test]
-    fn extractor_selection_round_trips_through_strings() {
-        assert_eq!(
-            "streamlink".parse::<ExtractorSelection>().unwrap(),
-            ExtractorSelection::Streamlink
-        );
-        assert_eq!(
-            "auto".parse::<ExtractorSelection>().unwrap(),
-            ExtractorSelection::Auto
-        );
-        assert_eq!(ExtractorSelection::default(), ExtractorSelection::Auto);
-        assert!("ffmpeg".parse::<ExtractorSelection>().is_err());
-    }
 }

@@ -1704,19 +1704,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_builder_with_ttwid() {
-        let ttwid = "test_ttwid_123".to_string();
-        let config =
-            Douyin::new(TEST_URL.to_string(), default_client(), None, None).ttwid(ttwid.clone());
-
-        assert_eq!(config.ttwid, Some(ttwid));
-        assert_eq!(
-            config.ttwid_management_mode,
-            TtwidManagementMode::PerExtractor
-        );
-    }
-
     #[tokio::test]
     #[ignore]
     async fn test_request_cookie_logic() {

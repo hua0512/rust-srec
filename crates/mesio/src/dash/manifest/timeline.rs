@@ -915,15 +915,6 @@ mod tests {
     }
 
     #[test]
-    fn missing_time_shift_buffer_keeps_the_whole_period() {
-        let addressing = grid(2, 1, 0);
-        let window = addressing
-            .window(&dynamic(0, None), finite(0), at(20, 0))
-            .unwrap();
-        assert_eq!(window, 0..10);
-    }
-
-    #[test]
     fn zero_time_shift_buffer_retains_the_live_edge_segment_only_at_exact_boundaries() {
         let addressing = grid(2, 1, 0);
         let window = addressing

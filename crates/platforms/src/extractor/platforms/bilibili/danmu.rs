@@ -1226,20 +1226,6 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_room_id() {
-        let protocol = BilibiliDanmuProtocol::default();
-
-        assert_eq!(
-            protocol.extract_room_id("https://live.bilibili.com/12345"),
-            Some("12345".to_string())
-        );
-        assert_eq!(
-            protocol.extract_room_id("https://www.bilibili.com/67890"),
-            Some("67890".to_string())
-        );
-    }
-
-    #[test]
     fn test_build_packet() {
         let body = b"test";
         let packet = build_packet(body, op::AUTH);

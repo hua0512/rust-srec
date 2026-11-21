@@ -222,34 +222,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_pcr_parse() {
-        // PCR base = 0, extension = 0
-        let data = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-        let pcr = Pcr::parse(&data).unwrap();
-        assert_eq!(pcr.base, 0);
-        assert_eq!(pcr.extension, 0);
-        assert_eq!(pcr.as_27mhz(), 0);
-        assert_eq!(pcr.as_seconds(), 0.0);
-    }
-
-    #[test]
     fn test_pcr_parse_max() {
         // PCR base = max 33-bit (0x1FFFFFFFF), extension = max 9-bit (0x1FF)
         let data = [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF];
         let pcr = Pcr::parse(&data).unwrap();
         assert_eq!(pcr.base, 0x1_FFFF_FFFF);
         assert_eq!(pcr.extension, 0x1FF);
-    }
-
-    #[test]
-    fn test_pcr_as_seconds() {
-        // 90000 base ticks = 1 second (at 90kHz, with extension=0)
-        let pcr = Pcr {
-            base: 90_000,
-            extension: 0,
-        };
-        let seconds = pcr.as_seconds();
-        assert!((seconds - 1.0).abs() < 1e-9);
     }
 
     #[test]

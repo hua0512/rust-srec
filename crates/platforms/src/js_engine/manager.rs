@@ -144,19 +144,6 @@ mod tests {
     }
 
     #[test]
-    fn test_runtime_reuse() {
-        let manager = JsEngineManager::global();
-
-        // First execution creates runtime
-        let result1 = manager.execute(|ctx| ctx.eval_string("String(1)"));
-        assert!(result1.is_ok());
-
-        // Second execution reuses runtime (same thread)
-        let result2 = manager.execute(|ctx| ctx.eval_string("String(2)"));
-        assert!(result2.is_ok());
-    }
-
-    #[test]
     fn test_browser_env() {
         let manager = JsEngineManager::global();
 

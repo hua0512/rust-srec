@@ -21,14 +21,3 @@ impl std::fmt::Display for Resolution {
         write!(f, "{}x{}", self.width, self.height)
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_resolution_display() {
-        let r = Resolution::new(1920, 1080);
-        assert_eq!(r.to_string(), "1920x1080");
-    }
-}

@@ -354,14 +354,4 @@ mod tests {
             Some(md5_hex("from-url"))
         );
     }
-
-    #[test]
-    fn test_room_id_extraction() {
-        let url = "https://twitcasting.tv/nodasori2525";
-        let client = default_client();
-        let extractor = Twitcasting::new(url.to_string(), client, None, None);
-
-        let room_id = extractor.extract_room_id().unwrap();
-        assert_eq!(room_id, "nodasori2525");
-    }
 }

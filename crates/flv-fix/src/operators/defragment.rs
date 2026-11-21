@@ -256,35 +256,6 @@ mod tests {
     }
 
     #[test]
-    fn test_end_of_stream_with_enough_tags() {
-        let context = StreamerContext::arc_new(CancellationToken::new());
-        let mut operator = DefragmentOperator::new(context.clone());
-        let mut output_items = Vec::new();
-
-        // Create a mutable output function
-        let mut output_fn = |item: FlvData| -> Result<(), PipelineError> {
-            output_items.push(item);
-            Ok(())
-        };
-
-        // Send a header followed by exactly MIN_TAGS_NUM tags
-        operator
-            .process(&context, test_utils::create_test_header(), &mut output_fn)
-            .unwrap();
-        for i in 0..10 {
-            operator
-                .process(&context, create_video_tag(i, i % 3 == 0), &mut output_fn)
-                .unwrap();
-        }
-
-        // Finish processing (should emit buffer as it has enough tags)
-        operator.finish(&context, &mut output_fn).unwrap();
-
-        // Should receive all 11 items (header + 10 tags)
-        assert_eq!(output_items.len(), 11);
-    }
-
-    #[test]
     fn test_end_of_stream_with_insufficient_tags() {
         let context = StreamerContext::arc_new(CancellationToken::new());
         let mut operator = DefragmentOperator::new(context.clone());

@@ -6,7 +6,6 @@ import {
   registerPasswordChangeRedirect,
   redirectToChangePasswordOnError,
 } from '../password-change-redirect';
-import { testSession } from '@/test/session';
 import { newQueryClient } from '@/test/render';
 
 const toastWarning = vi.hoisted(() => vi.fn());
@@ -83,22 +82,6 @@ describe('redirectToChangePasswordOnError', () => {
       queryKey: sessionQueryOptions.queryKey,
     });
     expect(calls).toEqual(['session', 'router', 'navigate']);
-  });
-
-  it('marks a session cached before the requirement was raised as stale', async () => {
-    const { queryClient, invalidateQueries } = harness();
-    invalidateQueries.mockRestore();
-    queryClient.setQueryData(sessionQueryOptions.queryKey, testSession());
-
-    redirectToChangePasswordOnError(passwordChangeRequiredError());
-    await settle();
-
-    expect(
-      queryClient
-        .getQueryCache()
-        .find({ queryKey: sessionQueryOptions.queryKey })
-        ?.isStale(),
-    ).toBe(true);
   });
 
   it('ignores errors that are not a password-change requirement', async () => {

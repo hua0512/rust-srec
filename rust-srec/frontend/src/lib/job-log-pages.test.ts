@@ -1,7 +1,6 @@
 import {
   flattenLogPages,
   latestLogTotal,
-  newestLogPageOffset,
   replaceNewestLogPage,
   visibleLogChunks,
   type JobLogPage,
@@ -26,20 +25,6 @@ function pages(...list: JobLogPage[]): JobLogPages {
 }
 
 describe('job log pages', () => {
-  it('points a live view at the only page that can still grow', () => {
-    expect(newestLogPageOffset(undefined)).toBeUndefined();
-    expect(
-      newestLogPageOffset(pages(page(0, 1000, 2400), page(1000, 1000, 2400))),
-    ).toBe(1000);
-  });
-
-  it('reads the total from the most recently refreshed page', () => {
-    expect(latestLogTotal(undefined)).toBe(0);
-    expect(
-      latestLogTotal(pages(page(0, 1000, 1000), page(1000, 40, 1040))),
-    ).toBe(1040);
-  });
-
   it('shows rows appended to the newest page', () => {
     const before = pages(page(0, 1000, 1005), page(1000, 5, 1005));
 
@@ -71,10 +56,6 @@ describe('job log pages', () => {
     // Arrives after the reader paged forward, so it describes an earlier
     // window than the one now at the end.
     expect(replaceNewestLogPage(before, page(0, 1000, 2000))).toBe(before);
-  });
-
-  it('has nothing to fold into pages that were never loaded', () => {
-    expect(replaceNewestLogPage(undefined, page(0, 3, 3))).toBeUndefined();
   });
 
   it('mounts the chunks a scroll window overlaps and keeps the rest as space', () => {

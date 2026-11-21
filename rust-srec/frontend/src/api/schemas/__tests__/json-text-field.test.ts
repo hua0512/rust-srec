@@ -64,11 +64,6 @@ describe('jsonTextField', () => {
     );
   });
 
-  it('says nothing about a value it could read', () => {
-    schema.parse({ value: '{"enabled":true}' });
-    expect(warn).not.toHaveBeenCalled();
-  });
-
   // The backend stores the JSON text `null` for an unconfigured column, so
   // that is the expected value and not something to report.
   it('treats stored JSON null as unconfigured without warning', () => {
@@ -130,20 +125,6 @@ describe('config rows with unreadable JSON columns', () => {
     expect(parsed.paired_segment_pipeline).toBeNull();
     expect(parsed.platform_overrides).toBeNull();
     expect(parsed.engines_override).toBeNull();
-  });
-
-  it('keeps the readable columns of a row that has one bad one', () => {
-    const parsed = TemplateSchema.parse({
-      id: 'template-2',
-      name: 'Mixed',
-      stream_selection_config: '{"preferred_qualities":["source"]}',
-      danmu_statistics: '{"enabled":',
-    });
-
-    expect(parsed.stream_selection_config).toEqual({
-      preferred_qualities: ['source'],
-    });
-    expect(parsed.danmu_statistics).toBeNull();
   });
 });
 

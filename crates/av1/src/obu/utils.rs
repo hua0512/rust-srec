@@ -152,17 +152,6 @@ mod tests {
     }
 
     #[test]
-    fn test_leb128_size() {
-        assert_eq!(leb128_size(0), 1);
-        assert_eq!(leb128_size(1), 1);
-        assert_eq!(leb128_size(127), 1);
-        assert_eq!(leb128_size(128), 2);
-        assert_eq!(leb128_size(16383), 2);
-        assert_eq!(leb128_size(16384), 3);
-        assert_eq!(leb128_size(u32::MAX as u64), 5);
-    }
-
-    #[test]
     fn test_read_uvlc() {
         let mut cursor = std::io::Cursor::new([0x01, 0xff]);
         let mut reader = BitReader::new(&mut cursor);

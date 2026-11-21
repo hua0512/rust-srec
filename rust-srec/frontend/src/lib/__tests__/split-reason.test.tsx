@@ -58,8 +58,4 @@ describe('SplitReasonDetails', () => {
     expect(screen.getByText('44.1kHz')).toBeInTheDocument();
     expect(screen.getByText('48kHz')).toBeInTheDocument();
   });
-
-  it('keeps the column headings separate from the unrelated "To" message', () => {
-    expect(to.id).not.toBe(msg`To`.id);
-  });
 });

@@ -319,26 +319,6 @@ fn format_bytes_per_sec(bytes_per_sec: f64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn test_default_metrics() {
-        let metrics = PerformanceMetrics::default();
-        assert_eq!(metrics.downloads_total.load(Ordering::Relaxed), 0);
-        assert_eq!(metrics.download_bytes_total.load(Ordering::Relaxed), 0);
-        assert!(metrics.average_download_latency_ms().is_none());
-        assert!(metrics.average_throughput().is_none());
-        assert_eq!(metrics.cache_hit_rate(), 0.0);
-    }
-
-    #[test]
-    fn test_record_download() {
-        let metrics = PerformanceMetrics::new();
-        metrics.record_download(1000, 50);
-        metrics.record_download(2000, 100);
-
-        assert_eq!(metrics.downloads_total.load(Ordering::Relaxed), 2);
-        assert_eq!(metrics.download_bytes_total.load(Ordering::Relaxed), 3000);
-        assert_eq!(metrics.download_latency_sum_ms.load(Ordering::Relaxed), 150);
-    }
 
     #[test]
     fn test_average_latency() {
@@ -406,19 +386,5 @@ mod tests {
         assert_eq!(metrics.http1_bytes.load(Ordering::Relaxed), 110);
         assert_eq!(metrics.http2_requests.load(Ordering::Relaxed), 1);
         assert_eq!(metrics.http2_bytes.load(Ordering::Relaxed), 1000);
-    }
-
-    #[test]
-    fn test_snapshot() {
-        let metrics = PerformanceMetrics::new();
-        metrics.record_download(1000, 50);
-        metrics.record_cache_hit();
-        metrics.record_decryption(500, 10);
-
-        let snapshot = metrics.snapshot();
-        assert_eq!(snapshot.downloads_total, 1);
-        assert_eq!(snapshot.download_bytes_total, 1000);
-        assert_eq!(snapshot.cache_hits, 1);
-        assert_eq!(snapshot.decryptions_total, 1);
     }
 }

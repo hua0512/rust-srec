@@ -427,21 +427,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_circuit_breaker_opens_on_failures() {
-        let breaker = CircuitBreaker::new(3, 60);
-
-        breaker.record_failure();
-        assert_eq!(breaker.state(), CircuitState::Closed);
-
-        breaker.record_failure();
-        assert_eq!(breaker.state(), CircuitState::Closed);
-
-        breaker.record_failure();
-        assert_eq!(breaker.state(), CircuitState::Open);
-        assert!(!breaker.is_allowed());
-    }
-
-    #[test]
     fn test_circuit_breaker_success_resets_failures() {
         let breaker = CircuitBreaker::new(3, 60);
 

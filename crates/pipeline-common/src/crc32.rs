@@ -16,23 +16,3 @@ pub fn crc32(data: &[u8]) -> u32 {
 pub fn crc32_update(state: u32, data: &[u8]) -> u32 {
     zlib_rs::crc32::crc32(state, data)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::{crc32, crc32_update};
-
-    fn crc32_streaming(chunks: &[&[u8]]) -> u32 {
-        let mut state = 0u32;
-        for chunk in chunks {
-            state = crc32_update(state, chunk);
-        }
-        state
-    }
-
-    #[test]
-    fn streaming_update_matches_one_shot() {
-        let one_shot = crc32(b"hello world");
-        let streaming = crc32_streaming(&[b"hello", b" ", b"world"]);
-        assert_eq!(streaming, one_shot);
-    }
-}

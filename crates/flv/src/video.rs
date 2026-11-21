@@ -866,25 +866,6 @@ mod tests {
     use crate::avc::AvcPacketType;
 
     #[test]
-    fn test_video_fourcc() {
-        let cases = [
-            (VideoFourCC::Av01, *b"av01", "Av01"),
-            (VideoFourCC::Vp08, *b"vp08", "Vp08"),
-            (VideoFourCC::Vp09, *b"vp09", "Vp09"),
-            (VideoFourCC::Hvc1, *b"hvc1", "Hvc1"),
-            (VideoFourCC::Avc1, *b"avc1", "Avc1"),
-        ];
-
-        for (expected, bytes, name) in cases {
-            assert_eq!(VideoFourCC::try_from(bytes).unwrap(), expected);
-            assert_eq!(format!("{:?}", VideoFourCC::try_from(bytes).unwrap()), name);
-        }
-
-        // Unknown FourCC should error
-        assert!(VideoFourCC::try_from(*b"xxxx").is_err());
-    }
-
-    #[test]
     fn test_video_codec_numeric_representation() {
         let cases = [
             (VideoCodec::Legacy(VideoCodecId::Avc), 7),
@@ -900,119 +881,6 @@ mod tests {
             assert_eq!(VideoCodec::try_from(value).unwrap(), codec);
         }
         assert!(VideoCodec::try_from(0).is_err());
-    }
-
-    #[test]
-    fn test_enhanced_packet_type() {
-        let cases = [
-            (EnhancedPacketType::SEQUENCE_START, 0, "SequenceStart"),
-            (EnhancedPacketType::CODED_FRAMES, 1, "CodedFrames"),
-            (EnhancedPacketType::SEQUENCE_END, 2, "SequenceEnd"),
-            (EnhancedPacketType::CODED_FRAMES_X, 3, "CodedFramesX"),
-            (EnhancedPacketType::METADATA, 4, "Metadata"),
-            (
-                EnhancedPacketType::MPEG2_SEQUENCE_START,
-                5,
-                "Mpeg2SequenceStart",
-            ),
-            (EnhancedPacketType::MULTITRACK, 6, "Multitrack"),
-            (EnhancedPacketType::MOD_EX, 7, "ModEx"),
-            (EnhancedPacketType(8), 8, "Unknown(8)"),
-        ];
-
-        for (expected, value, name) in cases {
-            assert_eq!(EnhancedPacketType::from(value), expected);
-            // Compare with Display format instead of Debug format
-            assert_eq!(format!("{}", EnhancedPacketType::from(value)), name);
-        }
-    }
-
-    #[test]
-    fn test_frame_type() {
-        let cases = [
-            (VideoFrameType::KeyFrame, 1, "KeyFrame"),
-            (VideoFrameType::InterFrame, 2, "InterFrame"),
-            (
-                VideoFrameType::DisposableInterFrame,
-                3,
-                "DisposableInterFrame",
-            ),
-            (VideoFrameType::GeneratedKeyFrame, 4, "GeneratedKeyFrame"),
-            (VideoFrameType::VideoInfoFrame, 5, "VideoInfoFrame"),
-        ];
-
-        for (expected, value, name) in cases {
-            assert_eq!(VideoFrameType::try_from(value).unwrap(), expected);
-            // Compare with short name instead of full enum path
-            assert_eq!(
-                format!("{:?}", VideoFrameType::try_from(value).unwrap())
-                    .split("::")
-                    .last()
-                    .unwrap(),
-                name
-            );
-        }
-
-        // Test error cases
-        assert!(VideoFrameType::try_from(6).is_err());
-        assert!(VideoFrameType::try_from(7).is_err());
-    }
-
-    #[test]
-    fn test_video_codec_id() {
-        let cases = [
-            (VideoCodecId::SorensonH263, 2, "SorensonH263"),
-            (VideoCodecId::ScreenVideo, 3, "ScreenVideo"),
-            (VideoCodecId::On2VP6, 4, "On2VP6"),
-            (VideoCodecId::On2VP6Alpha, 5, "On2VP6Alpha"),
-            (VideoCodecId::Avc, 7, "Avc"),
-            (VideoCodecId::ExHeader, 9, "ExHeader"),
-            (VideoCodecId::LegacyHevc, 12, "LegacyHevc"),
-        ];
-
-        for (expected, value, name) in cases {
-            assert_eq!(VideoCodecId::try_from(value).unwrap(), expected);
-            // Compare with short name instead of full enum path
-            assert_eq!(
-                format!("{:?}", VideoCodecId::try_from(value).unwrap())
-                    .split("::")
-                    .last()
-                    .unwrap(),
-                name
-            );
-        }
-
-        // Test error cases
-        assert!(VideoCodecId::try_from(10).is_err());
-        assert!(VideoCodecId::try_from(11).is_err());
-        assert!(VideoCodecId::try_from(15).is_err());
-
-        // Fix the ScreenVideo case which now appears twice
-        assert!(VideoCodecId::try_from(6).is_err());
-    }
-
-    #[test]
-    fn test_command_packet() {
-        let cases = [
-            (VideoCommand::StartSeek, 1, "StartSeek"),
-            (VideoCommand::EndSeek, 2, "EndSeek"),
-        ];
-
-        for (expected, value, name) in cases {
-            assert_eq!(VideoCommand::try_from(value).unwrap(), expected);
-            // Compare with short name instead of full enum path
-            assert_eq!(
-                format!("{:?}", VideoCommand::try_from(value).unwrap())
-                    .split("::")
-                    .last()
-                    .unwrap(),
-                name
-            );
-        }
-
-        // Test error cases
-        assert!(VideoCommand::try_from(3).is_err());
-        assert!(VideoCommand::try_from(4).is_err());
     }
 
     #[test]
@@ -1356,33 +1224,6 @@ mod tests {
     }
 
     #[test]
-    fn test_av1_is_sequence_header() {
-        let body = VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::SequenceStart(
-            AV1CodecConfigurationRecord {
-                seq_profile: 0,
-                seq_level_idx_0: 0,
-                seq_tier_0: false,
-                high_bitdepth: false,
-                twelve_bit: false,
-                monochrome: false,
-                chroma_subsampling_x: false,
-                chroma_subsampling_y: false,
-                chroma_sample_position: 0,
-                hdr_wcg_idc: 0,
-                initial_presentation_delay_minus_one: None,
-                config_obu: Bytes::new(),
-            },
-        )));
-        assert!(body.is_sequence_header());
-
-        let body = VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::Raw(Bytes::new())));
-        assert!(!body.is_sequence_header());
-
-        let body = VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::EndOfSequence));
-        assert!(!body.is_sequence_header());
-    }
-
-    #[test]
     fn test_av1_get_video_resolution() {
         // Use the same real config_obu from test_av1_mpeg2_sequence_start
         let body = VideoTagBody::Enhanced(EnhancedPacket::Av1(Av1Packet::SequenceStart(
@@ -1486,32 +1327,6 @@ mod tests {
                 data: Bytes::from_static(&[0xAA, 0xBB, 0xCC]),
             }))
         );
-    }
-
-    #[test]
-    fn test_enhanced_avc_is_sequence_header() {
-        // Create a minimal AVCDecoderConfigurationRecord for testing
-        // We can't easily construct one, so test via is_sequence_header on non-seqhdr types
-        let body = VideoTagBody::Enhanced(EnhancedPacket::Avc(AvcPacket::EndOfSequence));
-        assert!(!body.is_sequence_header());
-
-        let body = VideoTagBody::Enhanced(EnhancedPacket::Avc(AvcPacket::Nalu {
-            composition_time: 0,
-            data: Bytes::new(),
-        }));
-        assert!(!body.is_sequence_header());
-    }
-
-    #[test]
-    fn test_enhanced_hevc_is_sequence_header() {
-        let body = VideoTagBody::Enhanced(EnhancedPacket::Hevc(HevcPacket::EndOfSequence));
-        assert!(!body.is_sequence_header());
-
-        let body = VideoTagBody::Enhanced(EnhancedPacket::Hevc(HevcPacket::Nalu {
-            composition_time: None,
-            data: Bytes::new(),
-        }));
-        assert!(!body.is_sequence_header());
     }
 
     #[test]

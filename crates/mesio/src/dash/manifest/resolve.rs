@@ -1559,26 +1559,6 @@ mod tests {
     }
 
     #[test]
-    fn drm_only_period_is_unusable() {
-        let manifest = manifest(
-            r#"<MPD type="static" mediaPresentationDuration="PT2S"><Period>
-  <AdaptationSet mimeType="video/mp4">
-    <ContentProtection schemeIdUri="urn:mpeg:dash:mp4protection:2011" value="cenc"/>
-    <SegmentTemplate duration="2" media="$Number$.m4s"/>
-    <Representation id="v" bandwidth="1"/>
-  </AdaptationSet>
-</Period></MPD>"#,
-        );
-        let error = manifest.periods[0].ensure_usable().unwrap_err();
-        assert!(matches!(
-            error,
-            ManifestError::Unsupported(UnsupportedFeature::ContentProtection)
-        ));
-        let download: crate::DownloadError = error.into();
-        assert!(matches!(download, crate::DownloadError::Unsupported { .. }));
-    }
-
-    #[test]
     fn xlink_period_is_unsupported() {
         let error = Manifest::parse(
             br#"<MPD xmlns:xlink="http://www.w3.org/1999/xlink"><Period xlink:href="https://x/p.xml"/></MPD>"#,

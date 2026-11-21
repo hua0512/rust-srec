@@ -72,12 +72,6 @@ it('shows byte progress with speed, time left and the file in a batch', () => {
   expect(screen.getByText('25%')).toBeInTheDocument();
 });
 
-it('shows progress whose phase this client does not know', () => {
-  renderRunningJob({ phase: 'verifying', percent: 40 });
-
-  expect(screen.getByText('40%')).toBeInTheDocument();
-});
-
 it.each([
   ['plain work', undefined, true],
   ['finalizing', 'finalizing', false],

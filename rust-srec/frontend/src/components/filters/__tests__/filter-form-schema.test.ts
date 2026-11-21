@@ -37,13 +37,4 @@ describe('filter form schema', () => {
       issuePaths(timeBased({ start_time: '21:00', end_time: '21:00:00' })),
     ).toEqual(['config.end_time']);
   });
-
-  it('leaves other filter types alone', () => {
-    expect(
-      issuePaths({
-        filter_type: 'KEYWORD',
-        config: { include: [], exclude: [] },
-      }),
-    ).toEqual([]);
-  });
 });

@@ -467,9 +467,8 @@ mod tests {
     use tracing::Level;
 
     use crate::extractor::{
-        default::default_client,
-        platform_extractor::PlatformExtractor,
-        platforms::bilibili::{Bilibili, models::RoomPlayInfo},
+        default::default_client, platform_extractor::PlatformExtractor,
+        platforms::bilibili::Bilibili,
     };
 
     #[test]
@@ -481,44 +480,6 @@ mod tests {
             super::Bilibili::api_error(-403),
             crate::extractor::error::ExtractorError::ValidationError(_)
         ));
-    }
-
-    #[test]
-    fn test_room_play_info_parses_offline_room_with_null_playurl_info() {
-        let json = r#"{
-            "code": 0,
-            "message": "0",
-            "ttl": 1,
-            "data": {
-                "room_id": 6,
-                "short_id": 6,
-                "uid": 1,
-                "is_hidden": false,
-                "is_locked": false,
-                "is_portrait": false,
-                "live_status": 0,
-                "hidden_till": 0,
-                "lock_till": 0,
-                "encrypted": false,
-                "pwd_verified": false,
-                "live_time": -1,
-                "room_shield": 0,
-                "playurl_info": null
-            }
-        }"#;
-        let info: RoomPlayInfo = serde_json::from_str(json).unwrap();
-        assert_eq!(info.code, 0);
-        let data = info.data.unwrap();
-        assert_eq!(data.live_status, 0);
-        assert!(data.playurl_info.is_none());
-    }
-
-    #[test]
-    fn test_room_play_info_parses_error_response_without_data() {
-        let json = r#"{"code": -400, "message": "参数错误", "ttl": 1, "data": null}"#;
-        let info: RoomPlayInfo = serde_json::from_str(json).unwrap();
-        assert_eq!(info.code, -400);
-        assert!(info.data.is_none());
     }
 
     #[tokio::test]

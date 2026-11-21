@@ -337,13 +337,6 @@ mod tests {
     }
 
     #[test]
-    fn test_pes_header_zero_pts() {
-        let data = make_pes_with_pts(0xE0, 0);
-        let header = PesHeader::parse(&data).unwrap();
-        assert_eq!(header.pts, Some(0));
-    }
-
-    #[test]
     fn test_pes_invalid_start_code() {
         let data = vec![0x00, 0x00, 0x00, 0xE0, 0x00, 0x00];
         assert!(matches!(

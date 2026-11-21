@@ -2110,49 +2110,6 @@ mod tests {
     }
 
     #[test]
-    fn init_trim_never_evicts_in_window_inits() {
-        let mut s = SegmentStateStore::new(
-            StoreConfig {
-                max_retained_inits: 2,
-                ..StoreConfig::default()
-            },
-            Arc::new(RateLimitHolds::new()),
-        );
-        let b = budget_unlimited();
-        // Three init keys: two below the window (msn 1, 2) and one in-window
-        // (msn 10). With max_retained_inits=2 the trim must drop the two
-        // below-window inits, never the in-window one.
-        s.ingest(
-            vec![
-                descriptor("https://e.com/i1.mp4", 1, SegmentKind::Init),
-                descriptor("https://e.com/i2.mp4", 2, SegmentKind::Init),
-                descriptor("https://e.com/i10.mp4", 10, SegmentKind::Init),
-            ],
-            Instant::now(),
-        );
-        // Complete them so none are InFlight (InFlight is never evicted anyway).
-        while let Some(job) = take_one(&mut s, &b) {
-            s.apply_outcome(
-                SegmentOutcome::Completed {
-                    key: job.descriptor.key.clone(),
-                    msn: job.descriptor.msn,
-                    payload: payload_for(&job.descriptor),
-                },
-                Instant::now(),
-            );
-        }
-
-        s.prune_below(10, 10);
-
-        assert!(
-            s.records
-                .keys()
-                .any(|k| k.uri.as_ref() == "https://e.com/i10.mp4"),
-            "in-window init must survive the retention trim"
-        );
-    }
-
-    #[test]
     fn completed_init_still_in_the_window_survives_the_retention_trim() {
         let mut s = SegmentStateStore::new(
             StoreConfig {

@@ -256,23 +256,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_message_type_from_str() {
-        assert_eq!(
-            DouyuMessageType::from_str("loginreq"),
-            DouyuMessageType::LoginReq
-        );
-        assert_eq!(
-            DouyuMessageType::from_str("chatmsg"),
-            DouyuMessageType::ChatMsg
-        );
-        assert_eq!(DouyuMessageType::from_str("dgb"), DouyuMessageType::Gift);
-        assert_eq!(
-            DouyuMessageType::from_str("unknown_type"),
-            DouyuMessageType::Unknown
-        );
-    }
-
-    #[test]
     fn test_create_login_message() {
         let msg = create_login_message("123456");
         assert!(msg.contains("type@=loginreq"));

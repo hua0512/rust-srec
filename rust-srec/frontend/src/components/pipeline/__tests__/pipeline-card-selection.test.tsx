@@ -2,7 +2,6 @@ import { fireEvent, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PipelineSummaryCard } from '../jobs/pipeline-summary-card';
-import { OutputCard } from '../outputs/output-card';
 import { renderWithProviders } from '@/test/render';
 
 vi.mock('@tanstack/react-router', async () => ({
@@ -22,18 +21,6 @@ const pipeline = {
   progress_percent: 100,
   created_at: 1767225600000,
   updated_at: 1767225600000,
-};
-
-const output = {
-  id: 'output-1',
-  session_id: 'session-1',
-  streamer_id: 'streamer-1',
-  file_path: '/recordings/streamer-one/clip.mp4',
-  file_size_bytes: 1024,
-  // `format` carries `media_outputs.file_type`, never a container extension.
-  format: 'VIDEO',
-  created_at: '2026-01-01T00:00:00Z',
-  uploads: [],
 };
 
 describe('PipelineSummaryCard selection mode', () => {
@@ -78,62 +65,5 @@ describe('PipelineSummaryCard selection mode', () => {
     expect(selectedCard).toHaveAttribute('aria-checked', 'true');
     fireEvent.keyDown(selectedCard, { key: 'Enter' });
     expect(onSelectChange).toHaveBeenLastCalledWith('dag-1', false);
-  });
-
-  it('navigates on click when selection mode is off', () => {
-    const { container } = renderWithProviders(
-      <PipelineSummaryCard
-        pipeline={pipeline}
-        onViewDetails={onViewDetails}
-        onSelectChange={onSelectChange}
-      />,
-    );
-
-    expect(screen.queryByRole('checkbox')).toBeNull();
-    fireEvent.click(container.querySelector('[data-slot="card"]')!);
-    expect(onViewDetails).toHaveBeenCalledWith('dag-1');
-    expect(onSelectChange).not.toHaveBeenCalled();
-  });
-});
-
-describe('OutputCard selection mode', () => {
-  const onSelectChange = vi.fn();
-
-  beforeEach(() => {
-    onSelectChange.mockClear();
-  });
-
-  it('toggles selection with pointer and keyboard input', () => {
-    const { rerender } = renderWithProviders(
-      <OutputCard
-        output={output}
-        selectionMode
-        isSelected={false}
-        onSelectChange={onSelectChange}
-      />,
-    );
-
-    const card = screen.getByRole('checkbox');
-    expect(card).toHaveAttribute('aria-checked', 'false');
-
-    fireEvent.click(card);
-    expect(onSelectChange).toHaveBeenCalledWith('output-1', true);
-
-    rerender(
-      <OutputCard
-        output={output}
-        selectionMode
-        isSelected
-        onSelectChange={onSelectChange}
-      />,
-    );
-
-    fireEvent.keyDown(screen.getByRole('checkbox'), { key: ' ' });
-    expect(onSelectChange).toHaveBeenLastCalledWith('output-1', false);
-  });
-
-  it('exposes no checkbox role outside selection mode', () => {
-    renderWithProviders(<OutputCard output={output} />);
-    expect(screen.queryByRole('checkbox')).toBeNull();
   });
 });

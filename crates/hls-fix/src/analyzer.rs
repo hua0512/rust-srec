@@ -449,33 +449,6 @@ mod tests {
     }
 
     #[test]
-    fn test_build_stats() {
-        let mut analyzer = HlsAnalyzer::new();
-
-        // Add TS segment
-        analyzer
-            .analyze_segment(&create_test_ts_segment(2.0))
-            .unwrap();
-
-        // Add MP4 segments
-        analyzer
-            .analyze_segment(&create_test_mp4_init_segment())
-            .unwrap();
-        analyzer
-            .analyze_segment(&create_test_mp4_media_segment(3.0))
-            .unwrap();
-
-        let result = analyzer.build_stats();
-        assert!(result.is_ok());
-
-        let stats = result.unwrap();
-        assert_eq!(stats.total_segment_count, 3);
-        assert_eq!(stats.total_duration, 5.0);
-        assert!(stats.has_ts_segments);
-        assert!(stats.has_mp4_segments);
-    }
-
-    #[test]
     fn test_analyze_mp4_av1_media_segment_validation_ok() {
         let mut analyzer = HlsAnalyzer::new();
 

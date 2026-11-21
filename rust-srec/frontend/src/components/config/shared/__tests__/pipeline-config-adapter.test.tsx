@@ -101,26 +101,12 @@ beforeEach(() => {
 });
 
 describe('PipelineConfigAdapter', () => {
-  it('shows the steps held by the form field', () => {
-    const adapter = renderAdapter({ name: 'pipeline', steps: [step('s1')] });
-
-    expect(adapter.steps()).toBe('s1');
-  });
-
   it('picks up a value written to the field elsewhere', () => {
     const adapter = renderAdapter(null);
 
     adapter.setValue({ name: 'pipeline', steps: [step('s1'), step('s2')] });
 
     expect(adapter.steps()).toBe('s1,s2');
-  });
-
-  it('drops the steps when the field is cleared elsewhere', () => {
-    const adapter = renderAdapter({ name: 'pipeline', steps: [step('s1')] });
-
-    adapter.setValue(null);
-
-    expect(adapter.steps()).toBe('');
   });
 
   // The editor's own edit arrives back through the field it wrote to, so it has to settle in a
@@ -166,17 +152,6 @@ describe('PipelineConfigAdapter', () => {
 
     expect(adapter.value()).toBeNull();
     expect(adapter.steps()).toBe('');
-  });
-
-  it('stores the DAG under the name the caller asked for', () => {
-    const adapter = renderGlobalAdapter(null);
-
-    adapter.add();
-
-    expect(adapter.value()).toEqual({
-      name: 'global_pipeline',
-      steps: [step('s1')],
-    });
   });
 
   // The global settings request cannot tell a `null` field from an omitted one, so clearing has

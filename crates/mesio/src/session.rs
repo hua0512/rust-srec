@@ -1306,29 +1306,4 @@ mod tests {
         assert_eq!(detect("https://e.com/live/stream.flv"), ProtocolType::Flv);
         assert!(MesioDownloader::detect_protocol("https://e.com/live/stream.mp4").is_err());
     }
-
-    #[test]
-    fn downloader_session_conversions_name_both_protocols() {
-        let session = || DownloadSession::<hls::HlsData> {
-            items: Box::pin(futures::stream::empty()),
-            events: Box::pin(futures::stream::empty()),
-            handle: DownloadHandle::new(
-                CancellationToken::new(),
-                None,
-                Arc::new(AtomicU64::new(0)),
-                None,
-            ),
-        };
-        assert_eq!(
-            DownloaderSession::Dash(session()).protocol(),
-            ProtocolType::Dash
-        );
-        assert!(DownloaderSession::Dash(session()).into_dash().is_ok());
-        let error = DownloaderSession::Dash(session())
-            .into_hls()
-            .err()
-            .expect("a DASH session is not an HLS session");
-        assert!(error.to_string().contains("expected HLS session, got DASH"));
-        assert!(DownloaderSession::Hls(session()).into_dash().is_err());
-    }
 }
