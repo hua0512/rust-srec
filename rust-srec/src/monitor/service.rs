@@ -2445,13 +2445,16 @@ mod tests {
         }
     }
 
-    /// The `ChecksFailing` / `ChecksRestored` kinds in the outbox, oldest first.
+    /// The `ChecksFailing` / `ChecksRestored` kinds ever enqueued, oldest
+    /// first. Delivered rows count too: the monitor's outbox publisher runs
+    /// alongside the test and may deliver an event before it is read.
     async fn check_alerts(pool: &SqlitePool) -> Vec<&'static str> {
-        MonitorOutboxOps::fetch_undelivered(pool, 100)
+        sqlx::query_scalar::<_, String>("SELECT payload FROM monitor_event_outbox ORDER BY id")
+            .fetch_all(pool)
             .await
             .unwrap()
-            .into_iter()
-            .map(|entry| serde_json::from_str(&entry.payload).unwrap())
+            .iter()
+            .map(|payload| serde_json::from_str(payload).unwrap())
             .map(|event: MonitorEvent| outbox_event_type(&event))
             .filter(|kind| kind.starts_with("Checks"))
             .collect()
