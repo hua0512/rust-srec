@@ -298,6 +298,12 @@ pub(crate) async fn delete(
     if !references.is_empty() {
         return Err(ProxyError::Referenced(Box::new(references)).into());
     }
+    remove_unreferenced(connection, id).await
+}
+
+/// Deletes an entry the caller found no reference to. A route a foreign key
+/// guards that names it still refuses the deletion.
+pub(crate) async fn remove_unreferenced(connection: &mut SqliteConnection, id: &str) -> Result<()> {
     match sqlx::query("DELETE FROM proxies WHERE id = ?")
         .bind(id)
         .execute(&mut *connection)
@@ -316,94 +322,124 @@ pub(crate) async fn references_of(
     connection: &mut SqliteConnection,
     id: &str,
 ) -> Result<ProxyReferences> {
-    let global: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM global_config WHERE proxy_id = ?)")
-            .bind(id)
-            .fetch_one(&mut *connection)
+    Ok(all_references(connection)
+        .await?
+        .remove(id)
+        .unwrap_or_default())
+}
+
+/// The routes naming each entry that any route names, listed once for all
+/// entries. Retired streamers do not hold one.
+pub(crate) async fn all_references(
+    connection: &mut SqliteConnection,
+) -> Result<HashMap<String, ProxyReferences>> {
+    let mut references: HashMap<String, ProxyReferences> = HashMap::new();
+    let global: Option<String> =
+        sqlx::query_scalar("SELECT proxy_id FROM global_config WHERE proxy_id IS NOT NULL")
+            .fetch_optional(&mut *connection)
             .await?;
-    let platforms = sqlx::query_as::<_, (String, String)>(
-        "SELECT id, platform_name FROM platform_config WHERE proxy_id = ? ORDER BY platform_name, id",
+    if let Some(id) = global {
+        references.entry(id).or_default().global = true;
+    }
+    let named = |query: &'static str| sqlx::query_as::<_, (String, String, String)>(query);
+    for (proxy_id, id, name) in named(
+        "SELECT proxy_id, id, platform_name FROM platform_config WHERE proxy_id IS NOT NULL ORDER BY platform_name, id",
     )
-    .bind(id)
     .fetch_all(&mut *connection)
     .await?
-    .into_iter()
-    .map(|(id, name)| NamedReference { id, name })
-    .collect();
-    let templates = sqlx::query_as::<_, (String, String, bool)>(
-        "SELECT t.id, t.name, EXISTS(SELECT 1 FROM retirement_config_deletions r WHERE r.kind = 'template' AND r.config_id = t.id) FROM template_config t WHERE t.proxy_id = ? ORDER BY t.name, t.id",
+    {
+        let entry = references.entry(proxy_id).or_default();
+        entry.platforms.push(NamedReference { id, name });
+    }
+    let templates = sqlx::query_as::<_, (String, String, String, bool)>(
+        "SELECT t.proxy_id, t.id, t.name, EXISTS(SELECT 1 FROM retirement_config_deletions r WHERE r.kind = 'template' AND r.config_id = t.id) FROM template_config t WHERE t.proxy_id IS NOT NULL ORDER BY t.name, t.id",
     )
-    .bind(id)
+    .fetch_all(&mut *connection)
+    .await?;
+    for (proxy_id, id, name, being_removed) in templates {
+        let entry = references.entry(proxy_id).or_default();
+        entry.templates.push(TemplateReference {
+            id,
+            name,
+            being_removed,
+        });
+    }
+    for (proxy_id, id, name) in named(
+        "SELECT proxy_id, id, name FROM streamers WHERE proxy_id IS NOT NULL AND deleted_at IS NULL ORDER BY name, id",
+    )
     .fetch_all(&mut *connection)
     .await?
-    .into_iter()
-    .map(|(id, name, being_removed)| TemplateReference {
-        id,
-        name,
-        being_removed,
-    })
-    .collect();
-    let streamers = sqlx::query_as::<_, (String, String)>(
-        "SELECT id, name FROM streamers WHERE proxy_id = ? AND deleted_at IS NULL ORDER BY name, id",
+    {
+        let entry = references.entry(proxy_id).or_default();
+        entry.streamers.push(NamedReference { id, name });
+    }
+    let accounts = sqlx::query_as::<_, (String, String, String, String, String)>(
+        "SELECT p.proxy_id, p.id, p.label, p.platform_config_id, c.platform_name FROM credential_profiles p JOIN platform_config c ON c.id = p.platform_config_id WHERE p.proxy_id IS NOT NULL ORDER BY c.platform_name, p.label, p.id",
     )
-    .bind(id)
+    .fetch_all(&mut *connection)
+    .await?;
+    for (proxy_id, id, label, platform_id, platform_name) in accounts {
+        let entry = references.entry(proxy_id).or_default();
+        entry.accounts.push(AccountReference {
+            id,
+            label,
+            platform_id,
+            platform_name,
+        });
+    }
+    for (proxy_id, id, name) in named(
+        "SELECT proxy_id, id, name FROM notification_channel WHERE proxy_id IS NOT NULL ORDER BY name, id",
+    )
     .fetch_all(&mut *connection)
     .await?
-    .into_iter()
-    .map(|(id, name)| NamedReference { id, name })
-    .collect();
-    let accounts = sqlx::query_as::<_, (String, String, String, String)>(
-        "SELECT p.id, p.label, p.platform_config_id, c.platform_name FROM credential_profiles p JOIN platform_config c ON c.id = p.platform_config_id WHERE p.proxy_id = ? ORDER BY c.platform_name, p.label, p.id",
-    )
-    .bind(id)
-    .fetch_all(&mut *connection)
-    .await?
-    .into_iter()
-    .map(|(id, label, platform_id, platform_name)| AccountReference {
-        id,
-        label,
-        platform_id,
-        platform_name,
-    })
-    .collect();
-    let notification_channels = sqlx::query_as::<_, (String, String)>(
-        "SELECT id, name FROM notification_channel WHERE proxy_id = ? ORDER BY name, id",
-    )
-    .bind(id)
-    .fetch_all(&mut *connection)
-    .await?
-    .into_iter()
-    .map(|(id, name)| NamedReference { id, name })
-    .collect();
+    {
+        let entry = references.entry(proxy_id).or_default();
+        entry.notification_channels.push(NamedReference { id, name });
+    }
+
     // Upload steps keep their routes in JSON, where no foreign key reaches:
     // job preset configs and the inline steps of stored pipelines.
-    let job_presets = sqlx::query_as::<_, (String, String)>(
-        "SELECT id, name FROM job_presets WHERE json_valid(config) \
-         AND json_extract(config, '$.proxy_route.kind') = 'proxy' \
-         AND json_extract(config, '$.proxy_route.id') = ? ORDER BY name, id",
+    let presets = sqlx::query_as::<_, (String, String, String, String)>(
+        "SELECT id, name, processor, config FROM job_presets ORDER BY name, id",
     )
-    .bind(id)
     .fetch_all(&mut *connection)
-    .await?
-    .into_iter()
-    .map(|(id, name)| NamedReference { id, name })
-    .collect();
-    let pipelines = super::preset::pipeline_users(
-        connection,
-        super::preset::StepMatch::Proxy { id },
-        super::preset::Owners::All,
-    )
     .await?;
-    Ok(ProxyReferences {
-        global,
-        platforms,
-        templates,
-        streamers,
-        accounts,
-        notification_channels,
-        job_presets,
-        pipelines,
-    })
+    for (id, name, processor, config) in presets {
+        let Ok(mut config) = serde_json::from_str::<serde_json::Value>(&config) else {
+            continue;
+        };
+        if let Some(proxy_id) =
+            crate::pipeline::step_routes::preset_route_mut(&processor, &mut config)
+                .and_then(|route| saved_proxy(route))
+        {
+            let entry = references.entry(proxy_id).or_default();
+            entry.job_presets.push(NamedReference { id, name });
+        }
+    }
+    let owners = super::preset::pipeline_owners(connection, super::preset::Owners::All).await?;
+    for mut owner in owners {
+        let mut named: Vec<String> = owner
+            .documents
+            .iter_mut()
+            .flat_map(crate::pipeline::step_routes::pipeline_routes_mut)
+            .filter_map(|route| saved_proxy(route))
+            .collect();
+        named.sort();
+        named.dedup();
+        for proxy_id in named {
+            let entry = references.entry(proxy_id).or_default();
+            entry.pipelines.push(owner.user.clone());
+        }
+    }
+    Ok(references)
+}
+
+/// The saved proxy a stored step route names, if it is one.
+fn saved_proxy(route: &serde_json::Value) -> Option<String> {
+    serde_json::from_value::<ProxyRoute>(route.clone())
+        .ok()?
+        .proxy_id()
+        .map(str::to_owned)
 }
 
 /// How many routes name each entry, counted as [`references_of`] lists
@@ -411,15 +447,11 @@ pub(crate) async fn references_of(
 pub(crate) async fn usage_counts(
     connection: &mut SqliteConnection,
 ) -> Result<HashMap<String, usize>> {
-    let ids: Vec<String> = sqlx::query_scalar("SELECT id FROM proxies")
-        .fetch_all(&mut *connection)
-        .await?;
-    let mut counts = HashMap::with_capacity(ids.len());
-    for id in ids {
-        let count = references_of(connection, &id).await?.count();
-        counts.insert(id, count);
-    }
-    Ok(counts)
+    Ok(all_references(connection)
+        .await?
+        .into_iter()
+        .map(|(id, references)| (id, references.count()))
+        .collect())
 }
 
 /// The route `owner` stores. A missing owner is not found.
@@ -546,8 +578,8 @@ pub(crate) async fn require_entry(
 pub(crate) enum StepDocument<'a> {
     /// A pipeline, or a configuration with pipelines nested in it.
     Pipelines(Option<&'a str>),
-    /// A job preset's processor config.
-    PresetConfig(&'a str),
+    /// A job preset's config for its processor.
+    PresetConfig { processor: &'a str, config: &'a str },
 }
 
 /// Refuses documents whose upload steps choose a malformed route or one
@@ -560,7 +592,7 @@ pub(crate) async fn require_step_routes(
     for document in documents {
         let text = match document {
             StepDocument::Pipelines(text) => *text,
-            StepDocument::PresetConfig(text) => Some(*text),
+            StepDocument::PresetConfig { config, .. } => Some(*config),
         };
         let Some(mut value) =
             text.and_then(|text| serde_json::from_str::<serde_json::Value>(text).ok())
@@ -571,8 +603,8 @@ pub(crate) async fn require_step_routes(
             StepDocument::Pipelines(_) => {
                 crate::pipeline::step_routes::pipeline_routes_mut(&mut value)
             }
-            StepDocument::PresetConfig(_) => {
-                crate::pipeline::step_routes::preset_route_mut(&mut value)
+            StepDocument::PresetConfig { processor, .. } => {
+                crate::pipeline::step_routes::preset_route_mut(processor, &mut value)
                     .into_iter()
                     .collect()
             }

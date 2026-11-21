@@ -621,20 +621,41 @@ async fn a_backup_restores_into_a_fresh_install_and_exports_the_same_bundle() {
         settings_shown(&target, &token, template_id).await,
         settings_before
     );
+    // Upload steps name their proxy by name in the bundle and by the
+    // installation's own ID once restored.
+    let proxy_path = format!(
+        "/api/proxies/{}",
+        target.get_ok("/api/proxies", &token).await[0]["id"]
+            .as_str()
+            .expect("restored proxy")
+    );
+    let references = |detail: Value| detail["references"].clone();
+    assert_eq!(
+        references(target.get_ok(&proxy_path, &token).await)["job_presets"][0]["name"],
+        "Backup upload"
+    );
 
     let again = export(&target, &token).await;
     assert_same_bundle(&again, &bundle);
 
     let mut bundle = again;
+    // A definition encoded as a JSON string is read like one that is not.
     bundle["pipeline_presets"] = json!([{
         "name": "Imported workflow", "description": null, "pipeline_type": null,
-        "dag_definition": {"name": "imported", "steps": [{
-            "id": "run", "step": {"type": "inline", "processor": "execute", "config": {"command": "exit 0"}},
-        }]},
+        "dag_definition": json!({"name": "imported", "steps": [
+            {"id": "run", "step": {"type": "inline", "processor": "execute", "config": {"command": "exit 0"}}},
+            {"id": "ship", "step": {"type": "inline", "processor": "rclone", "config": {
+                "destination_root": "remote:/", "proxy_route": {"kind": "proxy", "name": "Backup proxy"},
+            }}, "depends_on": ["run"]},
+        ]}).to_string(),
     }]);
     let created = import(&target, &token, &bundle, "merge").await.ok();
     assert_eq!(created["stats"]["pipeline_presets_created"], 1);
     let token = sign_in_again(&target, RESTORED_PASSWORD).await;
+    assert_eq!(
+        references(target.get_ok(&proxy_path, &token).await)["pipelines"][0]["name"],
+        "Imported workflow"
+    );
     let mut bundle = export(&target, &token).await;
     bundle["pipeline_presets"]
         .as_array_mut()

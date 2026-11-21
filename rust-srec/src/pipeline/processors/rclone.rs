@@ -20,7 +20,7 @@ use super::traits::{
 use super::utils::CommandOutput;
 use crate::Result;
 use crate::pipeline::progress::ProgressKind;
-use crate::proxies::{ProxyInput, ProxyRoute, ProxyTarget};
+use crate::proxies::{ProxyRoute, ProxyTarget};
 
 /// Rclone operation type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -249,7 +249,7 @@ pub struct RcloneProcessor {
     command_runner: Arc<dyn RcloneCommandRunner>,
     /// Serializes destination directory creation across concurrent jobs.
     dir_gate: RemoteDirGate,
-    /// Resolves each step's proxy route; see [`crate::proxies::upload_tool_target`].
+    /// Resolves each step's proxy route; see [`crate::proxies::upload_target`].
     routes: Option<crate::proxies::ServiceRoutes>,
 }
 
@@ -316,15 +316,30 @@ impl RcloneProcessor {
     }
 
     /// An rclone command on the execution's connection and config file.
-    fn command(&self, execution: &RcloneExecution<'_>) -> Command {
+    ///
+    /// rclone prefers `--http-proxy` and `RCLONE_HTTP_PROXY` over the
+    /// environment proxy, so a route other than System proxy removes the
+    /// variable and refuses the flag in the step's arguments. Proxy settings
+    /// of a remote in the rclone config still apply to that remote.
+    fn command(&self, execution: &RcloneExecution<'_>) -> Result<Command> {
         let mut cmd = Command::new(&self.rclone_path);
-        execution
-            .proxy
-            .apply_environment(&mut cmd, ProxyInput::Environment);
+        if *execution.proxy != ProxyTarget::System {
+            if execution
+                .extra_args
+                .iter()
+                .any(|arg| arg == "--http-proxy" || arg.starts_with("--http-proxy="))
+            {
+                return Err(crate::Error::Validation(
+                    "rclone's --http-proxy argument overrides the step's proxy route; remove it, or choose System proxy for this step".to_owned(),
+                ));
+            }
+            cmd.env_remove("RCLONE_HTTP_PROXY");
+        }
+        crate::proxies::set_tool_environment(&mut cmd, execution.proxy, "rclone")?;
         if let Some(cfg) = execution.config_path {
             cmd.arg("--config").arg(cfg);
         }
-        cmd
+        Ok(cmd)
     }
 
     /// Find the common base directory for a list of paths.
@@ -617,7 +632,7 @@ impl RcloneProcessor {
         loggable: &str,
         execution: &RcloneExecution<'_>,
     ) -> Result<()> {
-        let mut cmd = self.command(execution);
+        let mut cmd = self.command(execution)?;
         cmd.args(["--use-json-log", "--log-level", "NOTICE", "mkdir", target]);
         // Extra args can carry backend flags (e.g. a root folder ID) that
         // change which directory the path names, so they apply here too.
@@ -741,7 +756,7 @@ impl RcloneProcessor {
                 .await;
             }
 
-            let mut cmd = self.command(execution);
+            let mut cmd = self.command(execution)?;
             cmd.args(JSON_STATS_ARGS);
             cmd.args(SINGLE_PASS_ARGS);
             cmd.args([cmd_op, input_path, remote_destination]);
@@ -941,7 +956,7 @@ impl RcloneProcessor {
                     crate::Error::io_path("creating rclone files-from list", &base_dir, e)
                 })?;
             let files_from_path_str = files_from_path.to_string_lossy().to_string();
-            let mut cmd = self.command(execution);
+            let mut cmd = self.command(execution)?;
             cmd.args(JSON_STATS_ARGS);
             cmd.args(SINGLE_PASS_ARGS);
             cmd.args([
@@ -1222,8 +1237,7 @@ impl Processor for RcloneProcessor {
 
         let attempts = config.max_retries.unwrap_or(DEFAULT_ATTEMPTS).max(1);
         let proxy =
-            crate::proxies::upload_tool_target(self.routes.as_ref(), &config.proxy_route, "rclone")
-                .await?;
+            crate::proxies::upload_target(self.routes.as_ref(), &config.proxy_route).await?;
 
         // Only a retried move can find inputs already consumed and uploaded.
         let skip_absent_inputs = matches!(config.operation, RcloneOperation::Move) && ctx.is_retry;

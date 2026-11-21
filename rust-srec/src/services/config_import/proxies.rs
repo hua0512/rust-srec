@@ -24,9 +24,11 @@ impl ImportedProxies {
         &self,
         route: &BackupRoute,
     ) -> Result<ProxyRoute, ConfigurationImportError> {
-        route
-            .to_route(&self.ids)
-            .map_err(|name| validation_error(format!("Unknown proxy '{name}'")))
+        route.to_route(&self.ids).map_err(|name| {
+            ConfigurationImportError::MissingProxy(crate::proxies::ProxyError::Missing(
+                name.to_owned(),
+            ))
+        })
     }
 
     /// The bundle with its upload step routes naming entries by ID, as they
@@ -196,7 +198,7 @@ pub(super) async fn delete_omitted(
                 })
             });
         if !named && usage.get(&entry.id).copied().unwrap_or_default() == 0 {
-            proxies::delete(tx, &entry.id, None)
+            proxies::remove_unreferenced(tx, &entry.id)
                 .await
                 .map_err(write_error)?;
         }

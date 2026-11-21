@@ -1,12 +1,14 @@
-//! Routes of the backend's own traffic that serves no platform.
+//! Routes of the backend's own traffic that serves no platform, and the
+//! environment of the upload tools that take one.
 
 use sqlx::SqlitePool;
+use tokio::process::Command;
 
 use crate::Result;
 use crate::database::repositories::proxies;
 use crate::utils::http_client::service_client;
 
-use super::{ProxyRoute, ProxyTarget, SystemProxy};
+use super::{ProxyEndpoint, ProxyRoute, ProxyTarget, SystemProxy};
 
 /// Resolves the connection of traffic that serves no platform, such as
 /// notifications and browser push: its own route, else the global route,
@@ -43,4 +45,64 @@ impl ServiceRoutes {
     pub async fn client(&self, own: &ProxyRoute) -> Result<reqwest::Client> {
         Ok(service_client(&self.target(own).await?)?)
     }
+}
+
+/// The connection an upload tool (rclone, BaiduPCS-Go) whose own route is
+/// `route` takes now: that route, else the global route. Without `routes`,
+/// as in unit tests of the processors, the tool keeps the server's
+/// environment.
+pub async fn upload_target(
+    routes: Option<&ServiceRoutes>,
+    route: &ProxyRoute,
+) -> Result<ProxyTarget> {
+    match routes {
+        Some(routes) => routes.target(route).await,
+        None => Ok(ProxyTarget::System),
+    }
+}
+
+/// Starts the upload tool `tool` on `target` through its proxy
+/// environment. A proxy the tool cannot read from there fails the command
+/// rather than letting it connect without the proxy.
+pub fn set_tool_environment(command: &mut Command, target: &ProxyTarget, tool: &str) -> Result<()> {
+    target
+        .set_environment(command)
+        .map_err(|error| crate::Error::Validation(format!("{tool} {error}")))
+}
+
+/// The proxy login `target` carries, as it may appear in a tool's output:
+/// the password percent-encoded and as written.
+pub fn proxy_secrets(target: &ProxyTarget) -> Vec<String> {
+    target.endpoint().map(endpoint_secrets).unwrap_or_default()
+}
+
+/// The proxy logins [`set_tool_environment`] gave `command`, longest first,
+/// for scrubbing what it prints.
+pub fn environment_secrets(command: &Command) -> Vec<String> {
+    let mut secrets: Vec<String> = command
+        .as_std()
+        .get_envs()
+        .filter(|(name, _)| {
+            name.eq_ignore_ascii_case("HTTP_PROXY") || name.eq_ignore_ascii_case("HTTPS_PROXY")
+        })
+        .filter_map(|(_, value)| value?.to_str())
+        .flat_map(|url| endpoint_secrets(&ProxyEndpoint::from_url(url)))
+        .collect();
+    secrets.sort_by_key(|secret| std::cmp::Reverse(secret.len()));
+    secrets.dedup();
+    secrets
+}
+
+fn endpoint_secrets(endpoint: &ProxyEndpoint) -> Vec<String> {
+    let Some((_, password)) = endpoint.login() else {
+        return Vec::new();
+    };
+    let mut secrets = vec![password.to_owned()];
+    if let Ok(url) = url::Url::parse(&endpoint.url_with_login())
+        && let Some(encoded) = url.password()
+        && encoded != password
+    {
+        secrets.insert(0, encoded.to_owned());
+    }
+    secrets
 }

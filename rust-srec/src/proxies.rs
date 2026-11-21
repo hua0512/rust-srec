@@ -31,10 +31,12 @@ mod system;
 
 pub use endpoint::{ProxyEndpoint, canonical};
 pub use error::{AccountReference, NamedReference, ProxyError, ProxyReferences, TemplateReference};
-pub use platforms_parser::proxy::{ENVIRONMENT_PROXY_SCHEMES, ProxyInput, ProxyTarget};
+pub use platforms_parser::proxy::ProxyTarget;
 pub use probe::{PROBE_TIMEOUT, ProbeErrorKind, ProbeOutcome, platform_homepage, probe};
 pub use resolve::{ProxyEntry, materialize, resolve};
 pub use route::{ProxyName, ProxyRoute, ResolvedRoute, RouteKey, RouteKind, RouteSource, name_key};
-pub use service::{ProxyService, RouteScope, upload_tool_target};
-pub use service_routes::ServiceRoutes;
+pub use service::{ProxyService, RouteScope};
+pub use service_routes::{
+    ServiceRoutes, environment_secrets, proxy_secrets, set_tool_environment, upload_target,
+};
 pub use system::{SystemProxy, SystemProxySummary};

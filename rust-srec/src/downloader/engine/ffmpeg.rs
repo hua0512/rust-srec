@@ -20,7 +20,7 @@ use super::utils::{
     redact_download_process_args, settle_engine_tasks, terminate_and_reap,
 };
 use crate::database::models::engine::FfmpegEngineConfig;
-use crate::proxies::{ProxyInput, ProxyTarget};
+use crate::proxies::ProxyTarget;
 
 enum FfmpegProcessExit {
     Status(Option<i32>),
@@ -307,9 +307,7 @@ impl FfmpegEngine {
             command = fixture.command(false);
         }
         crate::utils::configure_ffmpeg_locale(&mut command);
-        config
-            .proxy
-            .apply_environment(&mut command, ProxyInput::Argument);
+        config.proxy.apply_environment(&mut command);
         command
             .stdin(Stdio::piped()) // allow graceful stop via 'q'
             .stdout(Stdio::null())

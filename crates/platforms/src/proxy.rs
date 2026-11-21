@@ -130,28 +130,18 @@ impl ProxyEndpoint {
 /// the host. Clients use it when the proxy they were given is unusable, so
 /// they fail rather than connect without it.
 pub fn unroutable_proxy() -> reqwest::Proxy {
-    reqwest::Proxy::custom(|_| Some(UNROUTABLE_PROXY_URL.to_owned()))
-}
-
-/// The address of a proxy no request gets through.
-const UNROUTABLE_PROXY_URL: &str = "http://unroutable.invalid:9";
-
-/// Where a helper process takes its proxy from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProxyInput {
-    /// An argument the caller passes, which the program prefers over the
-    /// environment, as ffmpeg and Streamlink do.
-    Argument,
-    /// The `HTTP_PROXY` and `HTTPS_PROXY` variables, as Go programs such as
-    /// rclone and BaiduPCS-Go read them. Those accept the schemes in
-    /// [`ENVIRONMENT_PROXY_SCHEMES`].
-    Environment,
+    reqwest::Proxy::custom(|_| Some("http://unroutable.invalid:9".to_owned()))
 }
 
 /// The proxy URL schemes Go's `net/http` accepts from the environment.
 /// Go resolves host names on a `socks5` proxy, so `socks5h` is passed as
 /// `socks5`, which older Go releases also read.
-pub const ENVIRONMENT_PROXY_SCHEMES: [&str; 4] = ["http", "https", "socks5", "socks5h"];
+const ENVIRONMENT_PROXY_SCHEMES: [&str; 4] = ["http", "https", "socks5", "socks5h"];
+
+/// A proxy a program reading its proxy from the environment cannot use.
+#[derive(Debug, thiserror::Error)]
+#[error("can only use http, https and SOCKS5 proxies; choose another proxy")]
+pub struct UnsupportedProxyScheme;
 
 /// How requests reach a platform.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -183,36 +173,50 @@ impl ProxyTarget {
         })
     }
 
-    /// Sets up the proxy environment of a helper process. A direct target
-    /// removes every proxy variable, so the process connects directly
-    /// whatever the server's environment says; the system target leaves the
-    /// environment alone. An explicit proxy taken as an argument leaves it
-    /// alone too. One taken from the environment replaces every proxy
-    /// variable with `HTTP_PROXY` and `HTTPS_PROXY`, login included; callers
-    /// check [`Self::supports_schemes`] first, and an address of another
-    /// scheme is replaced by one no request gets through, so the process
-    /// fails rather than connect without the proxy.
-    pub fn apply_environment(&self, command: &mut tokio::process::Command, input: ProxyInput) {
-        let explicit = match (self, input) {
-            (Self::System, _) | (Self::Explicit(_), ProxyInput::Argument) => return,
-            (Self::Direct, _) => None,
-            (Self::Explicit(endpoint), ProxyInput::Environment) => Some(endpoint),
-        };
-        for name in PROXY_ENVIRONMENT {
-            command.env_remove(name);
+    /// Removes the proxy environment variables from a process that connects
+    /// directly, so it connects directly whatever the environment says.
+    /// Other targets leave the environment alone: an explicit proxy is passed
+    /// as an argument, which the programs prefer over the environment.
+    pub fn apply_environment(&self, command: &mut tokio::process::Command) {
+        if *self == Self::Direct {
+            remove_proxy_environment(command);
         }
-        if let Some(endpoint) = explicit {
-            let url = if self.supports_schemes(&ENVIRONMENT_PROXY_SCHEMES) {
+    }
+
+    /// Sets up the proxy environment of a program that reads its proxy only
+    /// from `HTTP_PROXY` and `HTTPS_PROXY`, as Go programs such as rclone and
+    /// BaiduPCS-Go do. A direct target removes every proxy variable; an
+    /// explicit proxy replaces them with those two, login included; the
+    /// system target leaves the environment alone. A proxy of a scheme Go
+    /// cannot read from there is refused, so the program never connects
+    /// without it.
+    pub fn set_environment(
+        &self,
+        command: &mut tokio::process::Command,
+    ) -> Result<(), UnsupportedProxyScheme> {
+        match self {
+            Self::System => {}
+            Self::Direct => remove_proxy_environment(command),
+            Self::Explicit(endpoint) => {
+                if !self.supports_schemes(&ENVIRONMENT_PROXY_SCHEMES) {
+                    return Err(UnsupportedProxyScheme);
+                }
                 let url = endpoint.url_with_login();
-                match url.strip_prefix("socks5h://") {
+                let url = match url.strip_prefix("socks5h://") {
                     Some(rest) => format!("socks5://{rest}"),
                     None => url,
-                }
-            } else {
-                UNROUTABLE_PROXY_URL.to_owned()
-            };
-            command.env("HTTP_PROXY", &url).env("HTTPS_PROXY", &url);
+                };
+                remove_proxy_environment(command);
+                command.env("HTTP_PROXY", &url).env("HTTPS_PROXY", &url);
+            }
         }
+        Ok(())
+    }
+}
+
+fn remove_proxy_environment(command: &mut tokio::process::Command) {
+    for name in PROXY_ENVIRONMENT {
+        command.env_remove(name);
     }
 }
 
@@ -321,12 +325,13 @@ mod tests {
         }
     }
 
-    /// The variables `target` sets (`Some`) and removes (`None`) for a
-    /// program reading its proxy through `input`.
-    fn environment(target: &ProxyTarget, input: ProxyInput) -> Vec<(String, Option<String>)> {
+    /// The variables `setup` sets (`Some`) and removes (`None`) on a command.
+    fn environment(
+        setup: impl FnOnce(&mut tokio::process::Command),
+    ) -> Vec<(String, Option<String>)> {
         let mut command = tokio::process::Command::new("program");
-        target.apply_environment(&mut command, input);
-        let mut envs: Vec<_> = command
+        setup(&mut command);
+        command
             .as_std()
             .get_envs()
             .map(|(name, value)| {
@@ -335,62 +340,77 @@ mod tests {
                     value.map(|value| value.to_string_lossy().into_owned()),
                 )
             })
-            .collect();
-        envs.sort();
-        envs
+            .collect()
+    }
+
+    /// What `envs` does to the variable `name`: `None` when it leaves it
+    /// alone. Windows compares variable names without case.
+    fn variable(envs: &[(String, Option<String>)], name: &str) -> Option<Option<String>> {
+        envs.iter()
+            .find(|(key, _)| {
+                if cfg!(windows) {
+                    key.eq_ignore_ascii_case(name)
+                } else {
+                    key == name
+                }
+            })
+            .map(|(_, value)| value.clone())
     }
 
     #[test]
-    fn helper_processes_get_the_proxy_environment_their_target_and_input_call_for() {
+    fn helper_processes_get_the_proxy_environment_their_target_calls_for() {
         let explicit = |url: &str| {
             ProxyTarget::Explicit(ProxyEndpoint::new(
                 url,
                 Some(("us@r".into(), "p:ss".into())),
             ))
         };
-        for input in [ProxyInput::Argument, ProxyInput::Environment] {
-            let direct = environment(&ProxyTarget::Direct, input);
-            assert_eq!(direct.len(), PROXY_ENVIRONMENT.len(), "{input:?}");
-            assert!(direct.iter().all(|(_, value)| value.is_none()), "{input:?}");
-            assert!(environment(&ProxyTarget::System, input).is_empty());
+        let http = explicit("http://proxy.example:8080");
+        let removes_all = |envs: &[(String, Option<String>)]| {
+            for name in PROXY_ENVIRONMENT {
+                assert_eq!(variable(envs, name), Some(None), "{name}: {envs:?}");
+            }
+        };
+
+        removes_all(&environment(|command| {
+            ProxyTarget::Direct.apply_environment(command)
+        }));
+        removes_all(&environment(|command| {
+            ProxyTarget::Direct.set_environment(command).unwrap()
+        }));
+        for target in [ProxyTarget::System, http.clone()] {
+            assert!(environment(|command| target.apply_environment(command)).is_empty());
         }
         assert!(
-            environment(&explicit("http://proxy.example:8080"), ProxyInput::Argument).is_empty()
+            environment(|command| ProxyTarget::System.set_environment(command).unwrap()).is_empty()
         );
 
-        let set = |target: &ProxyTarget| -> Vec<(String, String)> {
-            let envs = environment(target, ProxyInput::Environment);
-            let removed = envs.iter().filter(|(_, value)| value.is_none()).count();
-            // Every other proxy variable is removed; Windows names are
-            // case-insensitive, so the set ones may replace their removal.
-            assert!(removed >= PROXY_ENVIRONMENT.len() - 2, "{envs:?}");
-            envs.into_iter()
-                .filter_map(|(name, value)| Some((name.to_uppercase(), value?)))
-                .collect()
+        // The two variables Go reads carry the proxy and every other proxy
+        // variable is removed; on Windows the lower-case names are the same
+        // variables.
+        let exported = |target: &ProxyTarget, url: &str| {
+            let envs = environment(|command| target.set_environment(command).unwrap());
+            for name in PROXY_ENVIRONMENT {
+                let set = name.eq_ignore_ascii_case("HTTP_PROXY")
+                    || name.eq_ignore_ascii_case("HTTPS_PROXY");
+                let expected = if set && (cfg!(windows) || name.ends_with("_PROXY")) {
+                    Some(url.to_owned())
+                } else {
+                    None
+                };
+                assert_eq!(variable(&envs, name), Some(expected), "{name}: {envs:?}");
+            }
         };
-        let proxied = "http://us%40r:p%3Ass@proxy.example:8080/".to_owned();
-        assert_eq!(
-            set(&explicit("http://proxy.example:8080")),
-            [
-                ("HTTPS_PROXY".to_owned(), proxied.clone()),
-                ("HTTP_PROXY".to_owned(), proxied)
-            ]
-        );
-        let socks = set(&explicit("socks5h://proxy.example:1080"));
-        assert!(
-            socks
-                .iter()
-                .all(|(_, url)| url == "socks5://us%40r:p%3Ass@proxy.example:1080"),
-            "{socks:?}"
+        exported(&http, "http://us%40r:p%3Ass@proxy.example:8080/");
+        exported(
+            &explicit("socks5h://proxy.example:1080"),
+            "socks5://us%40r:p%3Ass@proxy.example:1080",
         );
 
         let unsupported = explicit("ftp://proxy.example:21");
-        assert!(!unsupported.supports_schemes(&ENVIRONMENT_PROXY_SCHEMES));
-        assert!(
-            set(&unsupported)
-                .iter()
-                .all(|(_, url)| url == UNROUTABLE_PROXY_URL)
-        );
+        let mut command = tokio::process::Command::new("program");
+        assert!(unsupported.set_environment(&mut command).is_err());
+        assert_eq!(command.as_std().get_envs().count(), 0);
         assert!(ProxyTarget::Direct.supports_schemes(&["http"]));
         assert!(!explicit("socks5://proxy.example:1080").supports_schemes(&["http"]));
     }

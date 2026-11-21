@@ -1053,8 +1053,10 @@ async fn a_proxy_in_use_cannot_be_deleted_and_the_refusal_lists_every_user() {
 
 /// Upload steps keep their route in JSON, which no foreign key covers: a
 /// saved proxy a job preset or a stored pipeline's inline upload step
-/// chooses is listed among its users and cannot be deleted, and a step
-/// naming a proxy that does not exist is refused like any other route.
+/// chooses, including a pipeline nested in a template's platform override,
+/// is listed among its users and cannot be deleted, and a step naming a
+/// proxy that does not exist is refused like any other route, in a saved
+/// pipeline or one started directly.
 #[tokio::test]
 async fn a_proxy_chosen_by_upload_steps_is_in_use_and_steps_must_name_one_that_exists() {
     let app = TestApp::start().await;
@@ -1091,6 +1093,17 @@ async fn a_proxy_chosen_by_upload_steps_is_in_use_and_steps_must_name_one_that_e
     )
     .await
     .assert_error(StatusCode::UNPROCESSABLE_ENTITY, "PROXY_NOT_FOUND");
+    let input = app.write_output_file("uploads/a.flv", "recorded");
+    app.post(
+        "/api/pipeline/create",
+        &token,
+        &json!({
+            "session_id": "session-e2e", "streamer_id": "streamer-e2e",
+            "input_paths": [input], "dag": pipeline(&missing),
+        }),
+    )
+    .await
+    .assert_error(StatusCode::UNPROCESSABLE_ENTITY, "PROXY_NOT_FOUND");
 
     let job_preset = app
         .post("/api/job/presets", &token, &preset("Upload", &proxy["id"]))
@@ -1108,7 +1121,13 @@ async fn a_proxy_chosen_by_upload_steps_is_in_use_and_steps_must_name_one_that_e
         .post(
             "/api/templates",
             &token,
-            &json!({"name": "Shipping", "pipeline": pipeline(&proxy["id"]).to_string()}),
+            &json!({
+                "name": "Shipping",
+                "platform_overrides": {"huya": {
+                    "session_complete_pipeline": pipeline(&proxy["id"]),
+                    "paired_segment_pipeline": pipeline(&proxy["id"]),
+                }},
+            }),
         )
         .await
         .created();

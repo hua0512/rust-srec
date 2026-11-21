@@ -26,7 +26,8 @@ use tracing::{debug, warn};
 use crate::database::models::ToolCredentialDbModel;
 use crate::database::repositories::ToolCredentialRepository;
 use crate::notification::{NotificationEvent, NotificationService};
-use crate::proxies::{ProxyInput, ProxyTarget};
+use crate::proxies::ProxyTarget;
+use crate::utils::text::scrub;
 use process_utils::NoWindowExt;
 
 /// Binary name used when neither an explicit path nor [`BINARY_PATH_ENV`]
@@ -82,33 +83,47 @@ pub fn cli_lock() -> &'static Arc<RwLock<()>> {
     LOCK.get_or_init(|| Arc::new(RwLock::new(())))
 }
 
-/// Build a [`Command`] for the given binary connecting through `proxy`, with
-/// [`CONFIG_DIR_ENV`] applied when `config_dir` is a non-empty override.
-/// Commands run for an upload step take the step's route; account commands
-/// from the tools page, and their automatic re-login outside a step, follow
-/// the global route.
-pub fn base_command(binary_path: &str, config_dir: Option<&str>, proxy: &ProxyTarget) -> Command {
+/// Build a [`Command`] for the given binary with [`CONFIG_DIR_ENV`] applied
+/// when `config_dir` is a non-empty override. It keeps the server's proxy
+/// environment, which commands that only read the local config (`-v`,
+/// `env`, `who`, `logout`) never use.
+pub fn base_command(binary_path: &str, config_dir: Option<&str>) -> Command {
     let mut command = Command::new(binary_path);
-    proxy.apply_environment(&mut command, ProxyInput::Environment);
     if let Some(dir) = config_dir.map(str::trim).filter(|d| !d.is_empty()) {
         command.env(CONFIG_DIR_ENV, dir);
     }
     command
 }
 
-/// Replace each secret value occurring in `text` with `***`. Applied to CLI
-/// output before it is returned in API responses or logged, because the
-/// BaiduPCS-Go may echo parts of its input on errors.
-pub fn scrub(text: &str, secrets: &[&str]) -> String {
-    let mut out = text.to_string();
-    for secret in secrets {
-        let secret = secret.trim();
-        if secret.is_empty() {
-            continue;
-        }
-        out = out.replace(secret, "***");
+/// How long `BaiduPCS-Go env` gets to report the config directory.
+const ENV_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// A [`base_command`] that reaches Baidu through `proxy`, for uploads and
+/// quota checks. Commands run for an upload step take the step's route;
+/// account commands from the tools page follow the global route.
+///
+/// BaiduPCS-Go prefers a proxy set in its own config over the environment,
+/// so a route other than System proxy fails while one is set there.
+pub async fn connected_command(
+    binary_path: &str,
+    config_dir: Option<&str>,
+    proxy: &ProxyTarget,
+) -> crate::Result<Command> {
+    if *proxy != ProxyTarget::System {
+        let mut probe = base_command(binary_path, config_dir);
+        probe.arg("env");
+        let output = run_capture(probe, None, ENV_PROBE_TIMEOUT).await?;
+        let directory = login::config_directory_from(binary_path, output).await?;
+        let proxy = proxy.clone();
+        tokio::task::spawn_blocking(move || login::reject_own_proxy(&directory, &proxy))
+            .await
+            .map_err(|error| {
+                crate::Error::Other(format!("BaiduPCS-Go config check task failed: {error}"))
+            })??;
     }
-    out
+    let mut command = base_command(binary_path, config_dir);
+    crate::proxies::set_tool_environment(&mut command, proxy, "BaiduPCS-Go")?;
+    Ok(command)
 }
 
 /// Captured output of a one-shot CLI invocation run via [`run_capture`].
@@ -147,6 +162,8 @@ pub async fn run_capture(
     stdin_input: Option<&[u8]>,
     timeout: Duration,
 ) -> crate::Result<CliOutput> {
+    let secrets = crate::proxies::environment_secrets(&command);
+    let secrets: Vec<&str> = secrets.iter().map(String::as_str).collect();
     command.no_window();
     command.kill_on_drop(true);
     command.stdin(if stdin_input.is_some() {
@@ -173,8 +190,8 @@ pub async fn run_capture(
     match tokio::time::timeout(timeout, child.wait_with_output()).await {
         Ok(Ok(output)) => Ok(CliOutput {
             status: output.status,
-            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            stdout: scrub(&String::from_utf8_lossy(&output.stdout), &secrets),
+            stderr: scrub(&String::from_utf8_lossy(&output.stderr), &secrets),
         }),
         Ok(Err(e)) => Err(crate::Error::Other(format!(
             "Failed to wait for BaiduPCS-Go: {e}"
@@ -674,15 +691,6 @@ mod tests {
         assert_eq!(parse_size(" 1.000000GB "), Some(1024u64.pow(3)));
         assert_eq!(parse_size("weird"), None);
         assert_eq!(parse_size(""), None);
-    }
-
-    #[test]
-    fn scrub_masks_all_secret_occurrences() {
-        let text = "login -bduss=SECRETVALUE failed; SECRETVALUE rejected";
-        assert_eq!(
-            scrub(text, &["SECRETVALUE", "", "  "]),
-            "login -bduss=*** failed; *** rejected"
-        );
     }
 
     #[test]

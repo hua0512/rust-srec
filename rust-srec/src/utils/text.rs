@@ -84,6 +84,22 @@ pub fn truncate_bytes(s: &str, max_bytes: usize) -> String {
     out
 }
 
+/// Replaces each secret occurring in `text` with `***`. Applied to helper
+/// process output before it is logged or returned, because programs may
+/// echo login material or the proxy URL they were given. Pass longer
+/// secrets first when one contains another.
+pub fn scrub(text: &str, secrets: &[&str]) -> String {
+    let mut out = text.to_string();
+    for secret in secrets {
+        let secret = secret.trim();
+        if secret.is_empty() {
+            continue;
+        }
+        out = out.replace(secret, "***");
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -105,6 +121,15 @@ mod tests {
         assert_eq!(format_duration(3661.0), "1h 1m 1s");
         assert_eq!(format_duration(125.9), "2m 5s");
         assert_eq!(format_duration(59.0), "59s");
+    }
+
+    #[test]
+    fn scrub_masks_all_secret_occurrences() {
+        let text = "login -bduss=SECRETVALUE failed; SECRETVALUE rejected";
+        assert_eq!(
+            scrub(text, &["SECRETVALUE", "", "  "]),
+            "login -bduss=*** failed; *** rejected"
+        );
     }
 
     // ---- truncate_chars ----

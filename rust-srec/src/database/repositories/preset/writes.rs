@@ -8,7 +8,14 @@ pub(crate) async fn write_job_preset(
     mode: WriteMode,
     updated_at: i64,
 ) -> crate::Result<()> {
-    require_step_routes(connection, &[StepDocument::PresetConfig(&model.config)]).await?;
+    require_step_routes(
+        connection,
+        &[StepDocument::PresetConfig {
+            processor: &model.processor,
+            config: &model.config,
+        }],
+    )
+    .await?;
     let mutation = match mode {
         WriteMode::Insert => Mutation::Insert,
         WriteMode::Update => Mutation::Update,

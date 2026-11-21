@@ -25,10 +25,19 @@ pub(super) enum InsertState<'a> {
     Unattached { status: &'a str },
 }
 
+/// Inserts a DAG execution. Its upload steps must name saved proxies that
+/// exist, as stored pipelines must.
 pub(super) async fn insert_dag(
     connection: &mut SqliteConnection,
     dag: &DagExecutionDbModel,
 ) -> Result<()> {
+    super::super::proxies::require_step_routes(
+        &mut *connection,
+        &[super::super::proxies::StepDocument::Pipelines(Some(
+            &dag.dag_definition,
+        ))],
+    )
+    .await?;
     sqlx::query(INSERT_DAG)
         .bind(&dag.id)
         .bind(&dag.dag_definition)

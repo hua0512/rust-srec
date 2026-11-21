@@ -58,6 +58,10 @@ pub(super) use profiles::export_profiles;
 pub(crate) enum ConfigurationImportError {
     #[error("{0}")]
     Validation(String),
+    /// A route names a saved proxy that neither the bundle nor the
+    /// installation has.
+    #[error(transparent)]
+    MissingProxy(crate::proxies::ProxyError),
     #[error("configuration import database operation failed: {0}")]
     Database(#[from] sqlx::Error),
 }
@@ -411,7 +415,10 @@ impl ImportSnapshot {
         .collect();
         let proxies = proxies::existing(tx).await.map_err(|error| match error {
             ConfigurationImportError::Database(error) => error,
-            ConfigurationImportError::Validation(message) => sqlx::Error::Protocol(message),
+            error @ (ConfigurationImportError::Validation(_)
+            | ConfigurationImportError::MissingProxy(_)) => {
+                sqlx::Error::Protocol(error.to_string())
+            }
         })?;
         let channels =
             sqlx::query_as::<_, NotificationChannelDbModel>("SELECT * FROM notification_channel")
@@ -655,6 +662,9 @@ fn validation_error(message: impl Into<String>) -> ConfigurationImportError {
 fn write_error(error: crate::Error) -> ConfigurationImportError {
     match error {
         crate::Error::DatabaseSqlx(error) => ConfigurationImportError::Database(error),
+        crate::Error::Proxy(error @ crate::proxies::ProxyError::Missing(_)) => {
+            ConfigurationImportError::MissingProxy(error)
+        }
         error => validation_error(error.to_string()),
     }
 }

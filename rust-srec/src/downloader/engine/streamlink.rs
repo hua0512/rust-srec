@@ -21,7 +21,6 @@ use super::utils::{
     redact_download_process_args, sanitize_engine_message, settle_engine_tasks,
 };
 use crate::database::models::engine::StreamlinkEngineConfig;
-use crate::proxies::ProxyInput;
 
 /// Cap for Streamlink's own exit before forcing containment. Used after FFmpeg
 /// exits and after a stop request, where the remaining shared stop budget can
@@ -661,9 +660,7 @@ impl StreamlinkEngine {
         // Spawn streamlink process
         let mut streamlink_command = process_utils::tokio_command(&self.config.binary_path);
         streamlink_command.args(&streamlink_args);
-        config
-            .proxy
-            .apply_environment(&mut streamlink_command, ProxyInput::Argument);
+        config.proxy.apply_environment(&mut streamlink_command);
         #[cfg(test)]
         if let Some(fixture) = &self.fixture {
             streamlink_command = fixture.command(true);

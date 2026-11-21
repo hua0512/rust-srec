@@ -7,7 +7,7 @@
 - **移除的设置：** Bigo 的 **签发完整性 token** 设置已移除，因为 Bigo 检测不再发送该 token。更新时会从已保存的平台、模板和主播设置中移除该项。详见[录制与恢复](#录制与恢复)。
 - **Bigo 录制：** Bigo 直播间现在默认从 BIGO 的 App 服务器录制，因此新的录制为 FLV 文件（常为 HEVC），而不再是 H.264 的 TS 文件；即使配置了其他引擎，这类录制也由 Mesio 引擎完成。BIGO 把直播流切换到其他画质时，一场录制可能被分成多个文件。对 HEVC 文件进行转封装、转码或其他后处理需要 FFmpeg 6.1 或更新版本，而且并非所有浏览器都能在网页界面的播放器中播放这些文件。如需继续录制网页版直播流，请在 Bigo 平台设置中关闭 **录制原始直播流**。参见[录制](https://docs.srec.rs/zh/platforms/bigo#recording)。
 - **通知代理：** Webhook、Telegram、Gotify 和 Discord 通知以及浏览器推送现在跟随 **默认代理**，不再使用服务器的代理环境变量。只要默认代理不是 **系统代理**，连接方式就会改变：设为 **直连** 时不经代理直接连接，设为已保存的代理时经由该代理连接。如果你依靠 `HTTP_PROXY` 或 `HTTPS_PROXY` 连接通知服务，请在更新后把该渠道的代理设为 **系统代理**。浏览器推送始终跟随默认代理。邮件通知仍直接连接。参见[通知代理](https://docs.srec.rs/zh/concepts/notifications#proxy)。
-- **上传代理：** rclone 和百度网盘上传步骤现在跟随 **默认代理**，不再使用服务器的代理环境变量。只要默认代理不是 **系统代理**，现有上传在更新后的连接方式就会改变：设为 **直连** 时不经代理连接，设为已保存的代理时经由该代理连接。如果你依靠 `HTTP_PROXY` 或 `HTTPS_PROXY` 进行上传，请把该步骤的代理设为 **系统代理**。参见[上传代理](https://docs.srec.rs/zh/reference/processors#upload-proxy)。
+- **上传代理：** rclone 和百度网盘上传步骤现在跟随 **默认代理**，不再使用服务器的代理环境变量。只要默认代理不是 **系统代理**，现有上传在更新后的连接方式就会改变：设为 **直连** 时不经代理连接，设为已保存的代理时经由该代理连接。如果你依靠 `HTTP_PROXY` 或 `HTTPS_PROXY` 进行上传，请把该步骤的代理设为 **系统代理**。通过 `RCLONE_HTTP_PROXY`、rclone 的 `--http-proxy` 或 BaiduPCS-Go 自身的代理设置配置代理时同样如此：选择其他方式时，rclone 会忽略该变量，使用该参数或 BaiduPCS-Go 代理设置的步骤会失败，直到将其移除。参见[上传代理](https://docs.srec.rs/zh/reference/processors#upload-proxy)。
 
 ## 新增功能
 

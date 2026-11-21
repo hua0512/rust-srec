@@ -208,8 +208,7 @@ pub struct BaiduPcsProcessor {
     authenticator_override: Option<Arc<dyn crate::baidupcs::BaiduPcsAuthenticator>>,
     /// See [`UPLOAD_ARGS_BUDGET`]; lowered by tests to exercise chunking.
     upload_args_budget: usize,
-    /// Resolves each step's proxy route; see
-    /// [`crate::proxies::upload_tool_target`].
+    /// Resolves each step's proxy route; see [`crate::proxies::upload_target`].
     routes: Option<crate::proxies::ServiceRoutes>,
 }
 
@@ -865,12 +864,10 @@ impl BaiduPcsProcessor {
         &self,
         binary_path: &str,
         config: &BaiduPcsConfig,
-        proxy: &ProxyTarget,
         ctx: &ProcessorContext,
     ) -> bool {
         let lease = config_lease().await;
-        let mut cmd =
-            crate::baidupcs::base_command(binary_path, config.config_dir.as_deref(), proxy);
+        let mut cmd = crate::baidupcs::base_command(binary_path, config.config_dir.as_deref());
         cmd.arg("who");
         match self
             .command_runner
@@ -1055,12 +1052,8 @@ impl Processor for BaiduPcsProcessor {
 
         let config: BaiduPcsConfig =
             super::utils::parse_config_strict(input.config.as_deref(), "baidupcs")?;
-        let proxy = crate::proxies::upload_tool_target(
-            self.routes.as_ref(),
-            &config.proxy_route,
-            "BaiduPCS-Go",
-        )
-        .await?;
+        let proxy =
+            crate::proxies::upload_target(self.routes.as_ref(), &config.proxy_route).await?;
 
         let binary_path = config
             .binary_path
@@ -1180,10 +1173,7 @@ impl Processor for BaiduPcsProcessor {
                 && authenticator
                     .has_credentials(config.config_dir.as_deref())
                     .await
-                && (attempt > 0
-                    || self
-                        .session_logged_out(&binary_path, &config, &proxy, ctx)
-                        .await)
+                && (attempt > 0 || self.session_logged_out(&binary_path, &config, ctx).await)
             {
                 relogin_done = true;
                 self.attempt_relogin(authenticator, &binary_path, &config, &proxy, ctx)
@@ -1211,11 +1201,12 @@ impl Processor for BaiduPcsProcessor {
                         "BaiduPCS-Go upload cancelled".to_string(),
                     ));
                 }
-                let mut cmd = crate::baidupcs::base_command(
+                let mut cmd = crate::baidupcs::connected_command(
                     &binary_path,
                     config.config_dir.as_deref(),
                     &proxy,
-                );
+                )
+                .await?;
                 cmd.arg("upload");
                 cmd.args(["--policy", config.policy.as_arg()]);
                 if config.norapid {

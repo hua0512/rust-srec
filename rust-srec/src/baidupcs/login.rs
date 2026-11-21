@@ -21,9 +21,9 @@ use tokio::time::Instant;
 
 use super::{
     CONFIG_DIR_ENV, CliOutput, LOGIN_SUCCESS_MARKER, LoginMaterial, LoginOutcome, base_command,
-    scrub,
 };
 use crate::proxies::ProxyTarget;
+use crate::utils::text::scrub;
 use crate::{Error, Result};
 
 const CONFIG_FILE: &str = "pcs_config.json";
@@ -82,6 +82,7 @@ pub(super) async fn run(
                     .filter(|value| !value.is_empty()),
             );
         }
+        secrets.extend(crate::proxies::proxy_secrets(&proxy));
         let escaped: Vec<_> = secrets
             .iter()
             .map(|secret| secret.replace('\\', "\\\\").replace('"', "\\\""))
@@ -130,29 +131,20 @@ async fn perform(
     response: &mut oneshot::Sender<Result<LoginOutcome>>,
     preserve_stage: &mut bool,
 ) -> Result<LoginOutcome> {
-    let mut probe = base_command(binary, config_dir, proxy);
+    let mut probe = base_command(binary, config_dir);
     probe.arg("env");
     let output = capture(probe, &[], deadline, response, preserve_stage).await?;
-    if !output.status.success() {
-        return Err(Error::Other(
-            "BaiduPCS-Go could not report its config directory".to_owned(),
-        ));
-    }
-    let binary_for_resolution = binary.to_owned();
-    let target_dir = tokio::task::spawn_blocking(move || {
-        config_directory(&binary_for_resolution, &output.stdout)
+    let target_dir = config_directory_from(binary, output).await?;
+    let proxy_for_check = proxy.clone();
+    let staged = tokio::task::spawn_blocking(move || {
+        reject_own_proxy(&target_dir, &proxy_for_check)?;
+        Stage::prepare(&target_dir)
     })
     .await
-    .map_err(|error| {
-        Error::Other(format!(
-            "BaiduPCS-Go config resolution task failed: {error}"
-        ))
-    })??;
-    let staged = tokio::task::spawn_blocking(move || Stage::prepare(&target_dir))
-        .await
-        .map_err(|error| Error::Other(format!("BaiduPCS-Go staging task failed: {error}")))??;
-    let mut command = base_command(binary, None, proxy);
+    .map_err(|error| Error::Other(format!("BaiduPCS-Go staging task failed: {error}")))??;
+    let mut command = base_command(binary, None);
     command.env(CONFIG_DIR_ENV, staged.directory.path());
+    crate::proxies::set_tool_environment(&mut command, proxy, "BaiduPCS-Go")?;
     let result = capture(command, input, deadline, response, preserve_stage).await;
     if *preserve_stage {
         let path = staged.directory.keep();
@@ -301,6 +293,51 @@ async fn capture(
         )));
     }
     result
+}
+
+/// The config directory a `BaiduPCS-Go env` run reported.
+pub(super) async fn config_directory_from(binary: &str, output: CliOutput) -> Result<PathBuf> {
+    if !output.status.success() {
+        return Err(Error::Other(
+            "BaiduPCS-Go could not report its config directory".to_owned(),
+        ));
+    }
+    let binary = binary.to_owned();
+    tokio::task::spawn_blocking(move || config_directory(&binary, &output.stdout))
+        .await
+        .map_err(|error| {
+            Error::Other(format!(
+                "BaiduPCS-Go config resolution task failed: {error}"
+            ))
+        })?
+}
+
+/// Refuses to start BaiduPCS-Go on `proxy` while the config in `directory`
+/// sets a proxy of its own: BaiduPCS-Go prefers that one over the
+/// environment. The System proxy route leaves the tool's settings to it.
+/// A config that cannot be read sets none.
+pub(super) fn reject_own_proxy(directory: &Path, proxy: &ProxyTarget) -> Result<()> {
+    if *proxy == ProxyTarget::System {
+        return Ok(());
+    }
+    let path = directory.join(CONFIG_FILE);
+    let own_proxy = std::fs::read(&path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .and_then(|config| {
+            config
+                .get("proxy")
+                .and_then(Value::as_str)
+                .map(|proxy| !proxy.trim().is_empty())
+        })
+        .unwrap_or(false);
+    if own_proxy {
+        return Err(Error::validation(format!(
+            "BaiduPCS-Go's own proxy setting in {} takes precedence over the proxy route; clear it there, or choose System proxy for this route",
+            path.display()
+        )));
+    }
+    Ok(())
 }
 
 fn config_directory(binary: &str, output: &str) -> Result<PathBuf> {

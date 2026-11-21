@@ -438,7 +438,8 @@ impl ConfigExport {
 impl ConfigExport {
     /// Applies `map` to the route of every upload step in the bundle: the
     /// inline steps of each pipeline, template platform override, streamer
-    /// configuration and workflow, and each job preset's config.
+    /// configuration and workflow, and each upload job preset's config.
+    /// Documents encoded as JSON strings are decoded first.
     pub fn map_step_routes<E>(
         &mut self,
         mut map: impl FnMut(&mut serde_json::Value) -> Result<(), E>,
@@ -487,12 +488,14 @@ impl ConfigExport {
                 .filter_map(|preset| preset.dag_definition.as_mut()),
         );
         for document in pipelines {
+            *document = unwrap_json_value(std::mem::take(document));
             for route in pipeline_routes_mut(document) {
                 map(route)?;
             }
         }
         for preset in &mut self.job_presets {
-            if let Some(route) = preset_route_mut(&mut preset.config) {
+            preset.config = unwrap_json_value(std::mem::take(&mut preset.config));
+            if let Some(route) = preset_route_mut(&preset.processor, &mut preset.config) {
                 map(route)?;
             }
         }

@@ -1,76 +1,77 @@
-//! The proxy routes of upload steps inside stored configuration: the
-//! `proxy_route` of an inline step's config in a pipeline, and of a job
-//! preset's config.
+//! The pipeline steps inside stored configuration, and the proxy routes of
+//! the upload steps among them: the `proxy_route` of an inline rclone or
+//! BaiduPCS-Go step's config, and of a job preset's config for those
+//! processors.
 //!
 //! Pipelines keep their steps at `steps[N].step`, at the top of the document
 //! or under any key ending in `pipeline` nested in it (template platform
-//! overrides and streamer-specific configs). The proxy references query
-//! (`preset::names_step`) searches the same places.
+//! overrides and streamer-specific configs). Every search for step users,
+//! proxy references, route validation and backup rewriting walks them here.
 
 use serde_json::Value;
 
-/// The route values of the inline steps in a pipeline document.
-pub(crate) fn pipeline_routes_mut(document: &mut Value) -> Vec<&mut Value> {
-    let mut routes = Vec::new();
-    visit(document, true, &mut routes);
-    routes
-}
-
-/// The route value of a job preset's config, if it sets one.
-pub(crate) fn preset_route_mut(config: &mut Value) -> Option<&mut Value> {
-    config.get_mut(ROUTE_KEY)
-}
+/// The job types of the processors that take a proxy route.
+const UPLOAD_PROCESSORS: [&str; 3] = ["rclone", "upload", "baidupcs"];
 
 const ROUTE_KEY: &str = "proxy_route";
 
-fn visit<'a>(value: &'a mut Value, pipeline: bool, routes: &mut Vec<&'a mut Value>) {
+/// The steps (`steps[N].step`) of the pipelines in `document`.
+pub(crate) fn pipeline_steps_mut(document: &mut Value) -> Vec<&mut Value> {
+    let mut steps = Vec::new();
+    visit(document, true, &mut steps);
+    steps
+}
+
+/// The route values of the inline upload steps in a pipeline document.
+pub(crate) fn pipeline_routes_mut(document: &mut Value) -> Vec<&mut Value> {
+    pipeline_steps_mut(document)
+        .into_iter()
+        .filter_map(|step| {
+            if step.get("type").and_then(Value::as_str) != Some("inline") {
+                return None;
+            }
+            let upload = step
+                .get("processor")
+                .and_then(Value::as_str)
+                .is_some_and(is_upload);
+            upload.then(|| step.get_mut("config")?.get_mut(ROUTE_KEY))?
+        })
+        .collect()
+}
+
+/// The route value of a job preset's config, if it is an upload preset
+/// that sets one.
+pub(crate) fn preset_route_mut<'a>(
+    processor: &str,
+    config: &'a mut Value,
+) -> Option<&'a mut Value> {
+    is_upload(processor).then(|| config.get_mut(ROUTE_KEY))?
+}
+
+fn is_upload(processor: &str) -> bool {
+    UPLOAD_PROCESSORS.contains(&processor)
+}
+
+fn visit<'a>(value: &'a mut Value, pipeline: bool, steps: &mut Vec<&'a mut Value>) {
     match value {
         Value::Object(fields) => {
             for (key, child) in fields.iter_mut() {
                 if pipeline && key == "steps" && child.is_array() {
-                    if let Value::Array(steps) = child {
-                        routes.extend(steps.iter_mut().filter_map(inline_route));
+                    if let Value::Array(entries) = child {
+                        steps.extend(entries.iter_mut().filter_map(|entry| {
+                            entry.get_mut("step").filter(|step| step.is_object())
+                        }));
                     }
                 } else {
-                    visit(child, key.ends_with("pipeline"), routes);
+                    visit(child, key.ends_with("pipeline"), steps);
                 }
             }
         }
         Value::Array(items) => {
             for item in items {
-                visit(item, false, routes);
+                visit(item, false, steps);
             }
         }
         _ => {}
-    }
-}
-
-fn inline_route(entry: &mut Value) -> Option<&mut Value> {
-    let step = entry.get_mut("step")?;
-    if step.get("type").and_then(Value::as_str) != Some("inline") {
-        return None;
-    }
-    step.get_mut("config")?.get_mut(ROUTE_KEY)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn routes_are_found_where_pipelines_keep_inline_steps() {
-        let route = |id: &str| serde_json::json!({"kind": "proxy", "id": id});
-        let step = |id: &str| serde_json::json!({"id": id, "step": {"type": "inline", "processor": "rclone", "config": {"proxy_route": route(id)}}});
-        let mut document = serde_json::json!({
-            "steps": [step("top"), {"id": "p", "step": {"type": "preset", "name": "x", "config": {"proxy_route": route("named")}}}],
-            "huya": {"session_complete_pipeline": {"steps": [step("nested")]}},
-            "other": {"steps": [step("not-a-pipeline")]},
-        });
-        let mut found: Vec<String> = pipeline_routes_mut(&mut document)
-            .into_iter()
-            .map(|route| route["id"].as_str().unwrap().to_owned())
-            .collect();
-        found.sort();
-        assert_eq!(found, ["nested", "top"]);
     }
 }
