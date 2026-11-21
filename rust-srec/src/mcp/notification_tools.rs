@@ -27,6 +27,10 @@ pub struct CreateChannelParams {
     /// settings). Same shape as `POST /api/notifications/channels` in the
     /// OpenAPI spec at /api/docs.
     pub settings: serde_json::Value,
+    /// How deliveries connect: inherit (the default, following the global
+    /// route), direct, system, or a saved proxy by its ID from proxy_list.
+    /// Email channels always connect directly and accept only inherit.
+    pub proxy_route: Option<crate::proxies::ProxyRoute>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -37,6 +41,9 @@ pub struct UpdateChannelParams {
     pub name: String,
     /// Channel-type-specific settings object (full replacement)
     pub settings: serde_json::Value,
+    /// Replaces the channel's proxy route (as for
+    /// notification_create_channel); omitted keeps it.
+    pub proxy_route: Option<crate::proxies::ProxyRoute>,
 }
 
 #[derive(serde::Deserialize, schemars::JsonSchema)]
@@ -127,6 +134,7 @@ impl SrecMcpServer {
             name: params.name,
             channel_type,
             settings: params.settings,
+            proxy_route: params.proxy_route.unwrap_or_default(),
         };
         let state = NotificationRouteState::from_ref(&self.app_state);
         tool_json(
@@ -138,7 +146,7 @@ impl SrecMcpServer {
 
     #[tool(
         name = "notification_update_channel",
-        description = "Update a notification channel's name and settings. Requires a full-access API key."
+        description = "Update a notification channel's name, settings and proxy route. Requires a full-access API key."
     )]
     pub async fn notification_update_channel(
         &self,
@@ -149,6 +157,7 @@ impl SrecMcpServer {
         let request = UpdateChannelRequest {
             name: params.name,
             settings: params.settings,
+            proxy_route: params.proxy_route,
         };
         let state = NotificationRouteState::from_ref(&self.app_state);
         tool_json(

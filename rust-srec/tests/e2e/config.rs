@@ -842,7 +842,7 @@ async fn saved_proxies_never_return_their_password_and_report_conflicts_by_code(
     assert_eq!(detail.body["proxy"], proxy);
     assert_eq!(
         detail.body["references"],
-        json!({"global": false, "platforms": [], "templates": [], "streamers": [], "accounts": []})
+        json!({"global": false, "platforms": [], "templates": [], "streamers": [], "accounts": [], "notification_channels": []})
     );
     app.patch(
         "/api/config/global",
@@ -988,6 +988,36 @@ async fn a_proxy_in_use_cannot_be_deleted_and_the_refusal_lists_every_user() {
     account["proxy_route"] = route.clone();
     let account = create_profile(&app, &token, account).await;
     assert_eq!(account["proxy_route"], route);
+    let channel = app
+        .post(
+            "/api/notifications/channels",
+            &token,
+            &json!({
+                "name": "Routed channel",
+                "channel_type": "Webhook",
+                "settings": {"url": "http://127.0.0.1:9/hook"},
+                "proxy_route": route,
+            }),
+        )
+        .await
+        .created();
+    let channel_path = format!("/api/notifications/channels/{}", id_of(&channel));
+    let renamed = app
+        .put(
+            &channel_path,
+            &token,
+            &json!({"name": "Routed channel", "settings": {"url": "http://127.0.0.1:9/hook"}}),
+        )
+        .await
+        .ok();
+    assert_eq!(
+        renamed["proxy_route"], route,
+        "an update without a route keeps it"
+    );
+    assert_eq!(
+        app.get_ok(&channel_path, &token).await["proxy_route"],
+        route
+    );
 
     let expected_references = json!({
         "global": true,
@@ -1000,6 +1030,7 @@ async fn a_proxy_in_use_cannot_be_deleted_and_the_refusal_lists_every_user() {
             "platform_id": "platform-bilibili",
             "platform_name": "bilibili",
         }],
+        "notification_channels": [{"id": channel["id"], "name": "Routed channel"}],
     });
     let refused = app.delete(&proxy_path, &token).await;
     refused.assert_error(StatusCode::CONFLICT, "PROXY_REFERENCED");
@@ -1009,11 +1040,11 @@ async fn a_proxy_in_use_cannot_be_deleted_and_the_refusal_lists_every_user() {
     );
     assert_eq!(
         app.get_ok("/api/proxies", &token).await[0]["usage_count"],
-        5
+        6
     );
     let detail = app.get_ok(&proxy_path, &token).await;
     assert_eq!(detail["references"], expected_references);
-    assert_eq!(detail["proxy"]["usage_count"], 5);
+    assert_eq!(detail["proxy"]["usage_count"], 6);
 
     app.shutdown().await;
 }

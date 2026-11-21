@@ -11,8 +11,8 @@ use crate::database::models::{
     NotificationChannelDbModel, TelegramChannelSettings, WebhookChannelSettings,
 };
 use crate::notification::channels::{
-    self, ChannelConfig, DiscordChannel, EmailChannel, GotifyChannel, NotificationChannel,
-    TelegramChannel, WebhookChannel,
+    self, ChannelConfig, DeliveryRoute, DiscordChannel, EmailChannel, GotifyChannel,
+    NotificationChannel, TelegramChannel, WebhookChannel,
 };
 use crate::notification::events::{NotificationPriority, canonicalize_subscription_event_name};
 
@@ -243,21 +243,31 @@ impl NotificationService {
             .unwrap_or(NotificationPriority::Normal);
 
         let locale = parse_channel_locale(&settings_json);
+        let route = match &self.routes {
+            Some(routes) => DeliveryRoute::Stored {
+                routes: routes.clone(),
+                route: db_channel.proxy_route.clone(),
+            },
+            None => DeliveryRoute::environment(),
+        };
 
         let runtime_channel: Arc<dyn NotificationChannel> = match channel_type {
             ChannelType::Discord => {
                 let settings: DiscordChannelSettings =
                     serde_json::from_value(settings_json.clone())?;
-                Arc::new(DiscordChannel::new(channels::DiscordConfig {
-                    id: None,
-                    name: None,
-                    enabled: true,
-                    webhook_url: settings.webhook_url,
-                    username: settings.username,
-                    avatar_url: settings.avatar_url,
-                    min_priority,
-                    locale: locale.clone(),
-                }))
+                Arc::new(DiscordChannel::new(
+                    channels::DiscordConfig {
+                        id: None,
+                        name: None,
+                        enabled: true,
+                        webhook_url: settings.webhook_url,
+                        username: settings.username,
+                        avatar_url: settings.avatar_url,
+                        min_priority,
+                        locale: locale.clone(),
+                    },
+                    route.clone(),
+                ))
             }
             ChannelType::Email => {
                 let settings: EmailChannelSettings = serde_json::from_value(settings_json.clone())?;
@@ -287,20 +297,23 @@ impl NotificationService {
             ChannelType::Telegram => {
                 let settings: TelegramChannelSettings =
                     serde_json::from_value(settings_json.clone())?;
-                Arc::new(TelegramChannel::new(channels::TelegramConfig {
-                    id: None,
-                    name: None,
-                    enabled: true,
-                    bot_token: settings.bot_token,
-                    chat_id: settings.chat_id,
-                    parse_mode: settings_json
-                        .get("parse_mode")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("HTML")
-                        .to_string(),
-                    min_priority,
-                    locale: locale.clone(),
-                }))
+                Arc::new(TelegramChannel::new(
+                    channels::TelegramConfig {
+                        id: None,
+                        name: None,
+                        enabled: true,
+                        bot_token: settings.bot_token,
+                        chat_id: settings.chat_id,
+                        parse_mode: settings_json
+                            .get("parse_mode")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("HTML")
+                            .to_string(),
+                        min_priority,
+                        locale: locale.clone(),
+                    },
+                    route.clone(),
+                ))
             }
             ChannelType::Webhook => {
                 let settings: WebhookChannelSettings =
@@ -329,32 +342,38 @@ impl NotificationService {
                     None
                 };
 
-                Arc::new(WebhookChannel::new(channels::WebhookConfig {
-                    id: None,
-                    name: None,
-                    enabled: settings.enabled.unwrap_or(true),
-                    url: settings.url,
-                    method: settings.method,
-                    headers: headers_vec,
-                    auth,
-                    min_priority,
-                    locale: locale.clone(),
-                    timeout_secs: settings.timeout_secs.unwrap_or(30),
-                }))
+                Arc::new(WebhookChannel::new(
+                    channels::WebhookConfig {
+                        id: None,
+                        name: None,
+                        enabled: settings.enabled.unwrap_or(true),
+                        url: settings.url,
+                        method: settings.method,
+                        headers: headers_vec,
+                        auth,
+                        min_priority,
+                        locale: locale.clone(),
+                        timeout_secs: settings.timeout_secs.unwrap_or(30),
+                    },
+                    route.clone(),
+                ))
             }
             ChannelType::Gotify => {
                 let settings: GotifyChannelSettings =
                     serde_json::from_value(settings_json.clone())?;
-                Arc::new(GotifyChannel::new(channels::GotifyConfig {
-                    id: None,
-                    name: None,
-                    enabled: true,
-                    server_url: settings.server_url,
-                    app_token: settings.app_token,
-                    min_priority,
-                    locale: locale.clone(),
-                    timeout_secs: settings.timeout_secs,
-                }))
+                Arc::new(GotifyChannel::new(
+                    channels::GotifyConfig {
+                        id: None,
+                        name: None,
+                        enabled: true,
+                        server_url: settings.server_url,
+                        app_token: settings.app_token,
+                        min_priority,
+                        locale: locale.clone(),
+                        timeout_secs: settings.timeout_secs,
+                    },
+                    route.clone(),
+                ))
             }
         };
 
@@ -412,11 +431,23 @@ impl NotificationService {
 
 fn channel_from_config(config: &ChannelConfig) -> Arc<dyn NotificationChannel> {
     match config {
-        ChannelConfig::Discord(config) => Arc::new(DiscordChannel::new(config.clone())),
+        ChannelConfig::Discord(config) => Arc::new(DiscordChannel::new(
+            config.clone(),
+            DeliveryRoute::environment(),
+        )),
         ChannelConfig::Email(config) => Arc::new(EmailChannel::new(config.clone())),
-        ChannelConfig::Gotify(config) => Arc::new(GotifyChannel::new(config.clone())),
-        ChannelConfig::Telegram(config) => Arc::new(TelegramChannel::new(config.clone())),
-        ChannelConfig::Webhook(config) => Arc::new(WebhookChannel::new(config.clone())),
+        ChannelConfig::Gotify(config) => Arc::new(GotifyChannel::new(
+            config.clone(),
+            DeliveryRoute::environment(),
+        )),
+        ChannelConfig::Telegram(config) => Arc::new(TelegramChannel::new(
+            config.clone(),
+            DeliveryRoute::environment(),
+        )),
+        ChannelConfig::Webhook(config) => Arc::new(WebhookChannel::new(
+            config.clone(),
+            DeliveryRoute::environment(),
+        )),
     }
 }
 

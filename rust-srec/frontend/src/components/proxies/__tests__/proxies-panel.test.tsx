@@ -31,6 +31,7 @@ const noReferences = {
   templates: [],
   streamers: [],
   accounts: [],
+  notification_channels: [],
 };
 
 beforeEach(() => {

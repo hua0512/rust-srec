@@ -20,7 +20,7 @@ fn distinctive<T: Serialize + DeserializeOwned>(seed: &T, generation: i64) -> T 
     for (index, (key, field)) in value.as_object_mut().unwrap().iter_mut().enumerate() {
         let integer = generation * 100 + index as i64 + 1;
         *field = match key.as_str() {
-            "id" | "deleted_at" => field.clone(),
+            "id" | "deleted_at" | "proxy_route" => field.clone(),
             "platform_config_id" => json!(if generation % 2 == 0 {
                 "platform-huya"
             } else {

@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::debug;
 
-use super::http::{DEFAULT_TIMEOUT, HttpDelivery, RetryPolicy};
+use super::http::{DEFAULT_TIMEOUT, DeliveryRoute, HttpDelivery, RetryPolicy};
 use super::{NotificationChannel, send_direct};
 use crate::Result;
 use crate::notification::events::{NotificationEvent, NotificationPriority, RenderedEvent};
@@ -108,10 +108,10 @@ pub struct TelegramChannel {
 
 impl TelegramChannel {
     /// Create a new Telegram channel.
-    pub fn new(config: TelegramConfig) -> Self {
+    pub fn new(config: TelegramConfig, route: DeliveryRoute) -> Self {
         Self {
             config,
-            http: HttpDelivery::new("telegram", DEFAULT_TIMEOUT),
+            http: HttpDelivery::new("telegram", DEFAULT_TIMEOUT, route),
         }
     }
 
@@ -189,7 +189,7 @@ impl TelegramChannel {
                 .map_or(TELEGRAM_API_BASE, String::as_str);
             format!("{api_base}/bot{token}/sendMessage")
         };
-        let request = self.http.request(Method::POST, &url)?.json(payload);
+        let request = self.http.request(Method::POST, &url).await?.json(payload);
         self.http.send(request, RetryPolicy::Telegram).await
     }
 }
@@ -264,11 +264,14 @@ mod tests {
     use super::*;
 
     fn channel(mode: &str, locale: &str) -> TelegramChannel {
-        TelegramChannel::new(TelegramConfig {
-            parse_mode: mode.to_string(),
-            locale: Some(locale.to_string()),
-            ..Default::default()
-        })
+        TelegramChannel::new(
+            TelegramConfig {
+                parse_mode: mode.to_string(),
+                locale: Some(locale.to_string()),
+                ..Default::default()
+            },
+            crate::notification::channels::DeliveryRoute::environment(),
+        )
     }
 
     fn event(name: &str, title: &str) -> NotificationEvent {

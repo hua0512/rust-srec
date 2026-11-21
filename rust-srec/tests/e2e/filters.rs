@@ -97,6 +97,8 @@ async fn a_schedule_that_excludes_now_ends_a_recording_as_out_of_schedule() {
         "name": "Live alerts",
         "channel_type": "Webhook",
         "settings": { "url": receiver.url("/hook"), "locale": "en", "min_priority": 2 },
+        // Live apps send the global route to a dead end; the receiver is local.
+        "proxy_route": { "kind": "direct" },
     });
     let channel = app
         .post("/api/notifications/channels", &token, &channel)

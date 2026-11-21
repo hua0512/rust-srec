@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::debug;
 
-use super::http::{HttpDelivery, RetryPolicy};
+use super::http::{DeliveryRoute, HttpDelivery, RetryPolicy};
 use super::{NotificationChannel, send_direct};
 use crate::Result;
 use crate::notification::events::{NotificationEvent, NotificationPriority, RenderedEvent};
@@ -135,10 +135,11 @@ pub struct WebhookChannel {
 
 impl WebhookChannel {
     /// Create a new Webhook channel.
-    pub fn new(config: WebhookConfig) -> Self {
+    pub fn new(config: WebhookConfig, route: DeliveryRoute) -> Self {
         let http = HttpDelivery::new(
             "webhook",
             std::time::Duration::from_secs(config.timeout_secs),
+            route,
         );
 
         Self { config, http }
@@ -236,9 +237,9 @@ impl NotificationChannel for WebhookChannel {
         let headers = self.build_headers();
 
         let mut request = match self.config.method.to_uppercase().as_str() {
-            "POST" => self.http.request(Method::POST, &self.config.url)?,
-            "PUT" => self.http.request(Method::PUT, &self.config.url)?,
-            _ => self.http.request(Method::POST, &self.config.url)?,
+            "POST" => self.http.request(Method::POST, &self.config.url).await?,
+            "PUT" => self.http.request(Method::PUT, &self.config.url).await?,
+            _ => self.http.request(Method::POST, &self.config.url).await?,
         };
 
         request = request.headers(headers).json(&payload);

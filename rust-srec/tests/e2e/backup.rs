@@ -139,7 +139,8 @@ async fn settings_shown(app: &TestApp, token: &str, template_id: &str) -> Value 
 /// Configuration of each kind a bundle carries, created through the API:
 /// global settings, a proxy, a Huya account selected for the platform, the
 /// template "Backup template", the disabled streamer "Backup Alpha" on it with
-/// a time filter, and the webhook "Backup webhook" with subscriptions. Returns
+/// a time filter, and the webhook "Backup webhook" with subscriptions,
+/// delivering through the proxy. Returns
 /// the streamer's id.
 ///
 /// The global, Huya and template settings differ from a fresh install's, so a
@@ -272,6 +273,7 @@ async fn create_backup_content(app: &TestApp, token: &str) -> String {
                     "url": "http://127.0.0.1:9/backup",
                     "auth": { "type": "Bearer", "token": "channel-secret" },
                 },
+                "proxy_route": {"kind": "proxy", "id": proxy.body["id"]},
             }),
         )
         .await
@@ -391,6 +393,7 @@ async fn the_export_carries_what_a_restore_needs_and_leaves_out_sessions_and_api
                 "auth": { "type": "Bearer", "token": "channel-secret" },
             },
             "subscriptions": ["fatal_error", "stream_online"],
+            "proxy_route": {"kind": "proxy", "name": "Backup proxy"},
         }]),
         "channel settings are an object, not a string"
     );
@@ -1086,6 +1089,71 @@ async fn a_late_database_failure_rolls_back_a_replace_import() {
     // The original token still works: the failed import revoked nothing.
     let after = export(&app, &token).await;
     assert_same_bundle(&after, &baseline);
+
+    app.shutdown().await;
+}
+
+/// An email channel can take no proxy route. A merge that gives a stored,
+/// proxied webhook's name to an email channel without a route makes it
+/// inherit; one with a proxy route is refused as invalid, not as a failure.
+#[tokio::test]
+async fn a_merged_email_channel_never_keeps_a_proxy_route() {
+    let app = TestApp::start().await;
+    let token = app.admin_token().await;
+    let proxy = app
+        .post(
+            "/api/proxies",
+            &token,
+            &json!({"name": "Relay", "url": "http://127.0.0.1:3128"}),
+        )
+        .await
+        .created();
+    app.post(
+        "/api/notifications/channels",
+        &token,
+        &json!({
+            "name": "Alerts",
+            "channel_type": "Webhook",
+            "settings": {"url": "http://127.0.0.1:9/hook"},
+            "proxy_route": {"kind": "proxy", "id": proxy["id"]},
+        }),
+    )
+    .await
+    .created();
+    let mut bundle = export(&app, &token).await;
+    let email = json!({
+        "name": "Alerts",
+        "channel_type": "Email",
+        "settings": {
+            "smtp_host": "127.0.0.1",
+            "smtp_port": 25,
+            "username": "",
+            "password": "",
+            "from_address": "srec@example.com",
+            "to_addresses": ["ops@example.com"],
+        },
+        "subscriptions": [],
+    });
+
+    let mut routed = email.clone();
+    routed["proxy_route"] = json!({"kind": "proxy", "name": "Relay"});
+    bundle["notification_channels"] = json!([routed]);
+    import(&app, &token, &bundle, "merge")
+        .await
+        .assert_error(StatusCode::BAD_REQUEST, "BAD_REQUEST");
+
+    bundle["notification_channels"] = json!([email]);
+    import(&app, &token, &bundle, "merge")
+        .await
+        .expect_status(StatusCode::OK);
+    // An import signs every session out.
+    let token = app
+        .login_tokens(ADMIN_USERNAME, ADMIN_PASSWORD)
+        .await
+        .access;
+    let channels = app.get_ok("/api/notifications/channels", &token).await;
+    assert_eq!(channels[0]["channel_type"], "Email");
+    assert_eq!(channels[0]["proxy_route"], json!({"kind": "inherit"}));
 
     app.shutdown().await;
 }

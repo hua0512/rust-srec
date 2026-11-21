@@ -58,7 +58,7 @@ impl Fixture {
         let private = [37u8; 32];
         let signing = SigningKey::from_bytes((&private).into()).unwrap();
         let public = signing.verifying_key().to_sec1_point(false);
-        let mut service = WebPushService::new(
+        let service = WebPushService::new(
             pool.clone(),
             pool,
             WebPushConfig {
@@ -68,11 +68,6 @@ impl Fixture {
             },
         )
         .unwrap();
-        service.client = reqwest::Client::builder()
-            .no_proxy()
-            .timeout(Duration::from_secs(2))
-            .build()
-            .unwrap();
         service
             .upsert_subscription(
                 "push-test",
@@ -200,7 +195,12 @@ async fn failed_stale_deletion_keeps_cache_and_does_not_report_deleted() {
         assert!(
             fixture
                 .service
-                .send_to_subscription(&fixture.row().await, &event(), None)
+                .send_to_subscription(
+                    &fixture.service.client().await.unwrap(),
+                    &fixture.row().await,
+                    &event(),
+                    None
+                )
                 .await
                 .is_err()
         );

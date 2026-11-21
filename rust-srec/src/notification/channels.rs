@@ -5,6 +5,9 @@
 //! - Email (SMTP)
 //! - Telegram Bot API
 //! - Generic webhooks (HTTP POST)
+//!
+//! The HTTP channels connect on a [`DeliveryRoute`]; email always connects
+//! directly, since SMTP has no proxy support.
 
 mod discord;
 mod email;
@@ -21,6 +24,7 @@ mod redaction_tests;
 pub use discord::{DiscordChannel, DiscordConfig};
 pub use email::{EmailChannel, EmailConfig};
 pub use gotify::{GotifyChannel, GotifyConfig};
+pub use http::DeliveryRoute;
 #[doc(hidden)]
 pub use telegram::override_telegram_api_base;
 pub use telegram::{TelegramChannel, TelegramConfig};
