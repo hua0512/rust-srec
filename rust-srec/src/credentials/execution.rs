@@ -1005,7 +1005,11 @@ impl CredentialExecutionService {
             }
         } else if binding.is_some() && !allow_switch {
             return Err(self
-                .unavailable(policy, UnavailableReason::BindingPolicyChanged)
+                .exhausted(
+                    policy,
+                    UnavailableReason::BindingPolicyChanged,
+                    anonymous_fallback,
+                )
                 .await);
         } else if matches!(
             policy.selection,
