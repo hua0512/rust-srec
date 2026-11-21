@@ -823,6 +823,11 @@ impl Failover {
 /// Runs attempts against the request's sources until one ends the stream,
 /// the consumer goes away, or every source has failed. Items of successive
 /// attempts are separated by a discontinuity marker once media was delivered.
+///
+/// A session whose consumer dropped the item stream ends with
+/// [`DownloadTerminal::DownstreamClosed`], wherever the task observed it.
+/// The drop also cancels the token, but it closes the channel first, so a
+/// cancellation seen while the channel is closed came from the consumer.
 #[allow(clippy::too_many_arguments)]
 async fn run_source_failover<E, F>(
     name: &'static str,
@@ -852,7 +857,25 @@ where
         attempted: HashSet::new(),
         delivered_media: false,
     };
+    match run_attempts(&mut failover, make_engine, request, request_cache).await {
+        DownloadTerminal::Cancelled if failover.item_tx.is_closed() => {
+            DownloadTerminal::DownstreamClosed
+        }
+        terminal => terminal,
+    }
+}
 
+async fn run_attempts<E, F>(
+    failover: &mut Failover,
+    make_engine: F,
+    request: DownloadRequest,
+    request_cache: Option<Arc<CacheManager>>,
+) -> DownloadTerminal
+where
+    E: MediaEngine<Item = HlsData>,
+    F: Fn() -> Result<E, DownloadError>,
+{
+    let name = failover.name;
     let mut last_error: Option<DownloadError> = None;
     let mut pending_discontinuity = false;
     let mut attempt = 0_u32;
@@ -973,8 +996,9 @@ enum Delivery {
 
 /// Sends `item` downstream unless `token` is cancelled first. A consumer
 /// that stops reading without dropping the stream would otherwise keep a
-/// cancelled session blocked here forever. A dropped stream (which also
-/// cancels the session) reports `Closed`.
+/// cancelled session blocked here forever. A dropped stream, which also
+/// cancels the session, may report either; `run_source_failover` tells the
+/// two apart.
 async fn deliver<T>(tx: &mpsc::Sender<T>, item: T, token: &CancellationToken) -> Delivery {
     if tx.is_closed() {
         return Delivery::Closed;

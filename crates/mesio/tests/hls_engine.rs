@@ -1519,6 +1519,46 @@ async fn mesio_downloader_hls_source_exhaustion_does_not_emit_extra_discontinuit
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn mesio_downloader_hls_sources_report_a_drop_while_waiting_for_media() {
+    use futures::StreamExt;
+
+    // One segment, so after it the failover task waits on the engine
+    // rather than on the consumer when the items are dropped.
+    let origin = Origin::new();
+    origin.push_playlist(playlist(0, &["seg0.ts"], false));
+    origin.add_file("seg0.ts", b"zero".to_vec());
+    let base = origin.clone().serve().await;
+
+    let downloader = MesioDownloader::new(MesioConfig {
+        hls: fast_config(),
+        ..Default::default()
+    });
+    let request = DownloadRequest::from_url(&format!("{base}/live.m3u8"))
+        .expect("valid URL")
+        .with_protocol(ProtocolSelection::Hls(Default::default()))
+        .add_source(ContentSource::new(format!("{base}/live.m3u8"), 0));
+    let session = downloader
+        .start_hls(request)
+        .await
+        .expect("source session starts");
+    let mut items = session.items;
+    tokio::time::timeout(Duration::from_secs(15), items.next())
+        .await
+        .expect("first item")
+        .expect("stream yields")
+        .expect("no stream error");
+    drop(items);
+
+    let joined = tokio::time::timeout(Duration::from_secs(5), session.handle.join())
+        .await
+        .expect("failover task finishes after the consumer drops items");
+    assert!(
+        matches!(joined, Some(Ok(DownloadTerminal::DownstreamClosed))),
+        "{joined:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn mesio_downloader_hls_sources_finish_when_consumer_drops_items() {
     use futures::StreamExt;
 
