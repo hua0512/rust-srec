@@ -1037,7 +1037,7 @@ pub fn run() {
                     if !settings.check_updates_on_startup {
                         return;
                     }
-                    match updates::fetch_update_info().await {
+                    match updates::fetch_update_info(&update_app).await {
                         Ok(info) => {
                             if info.update_available
                                 && settings.skipped_update_version.as_deref()

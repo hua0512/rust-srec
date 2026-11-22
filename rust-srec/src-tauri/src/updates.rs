@@ -1,9 +1,10 @@
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use tauri::Manager;
 
 use crate::DesktopBackendState;
-use crate::desktop_settings::DesktopSettings;
+use crate::desktop_settings::{BackendMode, DesktopSettings};
 
 pub const EVENT_DESKTOP_UPDATE_AVAILABLE: &str = "rust-srec://desktop-update-available";
 
@@ -131,18 +132,40 @@ pub fn select_latest_release(
     })
 }
 
-pub async fn fetch_update_info() -> Result<DesktopUpdateInfo, String> {
+/// The client the update check connects with: the local backend's global
+/// route (the **Default proxy** setting), else the system proxy. Remote mode
+/// has no local backend, and in local mode a check made before the backend
+/// has started, or after it failed to start, takes the system proxy rather
+/// than waiting for it. A global route naming a saved proxy that no longer
+/// exists fails the check rather than connecting directly.
+async fn update_check_client(app: &tauri::AppHandle) -> Result<reqwest::Client, String> {
+    let backend = app.try_state::<DesktopBackendState>().and_then(|state| {
+        let backend = state.backend();
+        if backend.is_none() && state.active_backend_mode == BackendMode::Local {
+            log::info!("Local backend is not running; checking for updates over the system proxy");
+        }
+        backend
+    });
+    let client = match backend {
+        Some(backend) => backend.service_client().await,
+        None => rust_srec::backend::system_service_client(),
+    };
+    client.map_err(|error| format!("Failed to initialize HTTP client: {error}"))
+}
+
+pub async fn fetch_update_info(app: &tauri::AppHandle) -> Result<DesktopUpdateInfo, String> {
     rust_srec::backend::install_rustls_provider();
 
     let current_version = env!("CARGO_PKG_VERSION");
-    let client = reqwest::Client::builder()
-        .timeout(UPDATE_CHECK_TIMEOUT)
-        .user_agent(format!("rust-srec-desktop/{current_version}"))
-        .build()
-        .map_err(|error| format!("Failed to initialize HTTP client: {error}"))?;
+    let client = update_check_client(app).await?;
 
     let mut response = client
         .get(GITHUB_RELEASES_API_URL)
+        .timeout(UPDATE_CHECK_TIMEOUT)
+        .header(
+            reqwest::header::USER_AGENT,
+            format!("rust-srec-desktop/{current_version}"),
+        )
         .header(reqwest::header::ACCEPT, "application/vnd.github+json")
         .send()
         .await
@@ -179,8 +202,8 @@ pub async fn fetch_update_info() -> Result<DesktopUpdateInfo, String> {
 }
 
 #[tauri::command]
-pub async fn check_for_updates() -> Result<DesktopUpdateInfo, String> {
-    fetch_update_info().await
+pub async fn check_for_updates(app: tauri::AppHandle) -> Result<DesktopUpdateInfo, String> {
+    fetch_update_info(&app).await
 }
 
 #[tauri::command]

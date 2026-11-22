@@ -18,3 +18,12 @@ pub use crate::runtime::RuntimeLease;
 pub use crate::server::run as run_server;
 pub use crate::services::{ActiveRecordingSummary, ServiceContainer, ServiceContainerConfig};
 pub use crate::utils::http_client::install_rustls_provider;
+
+/// A shared HTTP client on the proxy the environment configures, for
+/// requests that serve no platform when no [`ServiceContainer`] is running
+/// to supply the global route. Callers set timeouts per request.
+pub fn system_service_client() -> crate::Result<reqwest::Client> {
+    Ok(crate::utils::http_client::service_client(
+        &crate::proxies::ProxyTarget::System,
+    )?)
+}

@@ -410,7 +410,7 @@ pub(crate) fn setup_tray(
             if event.id == check_updates_id {
                 let app_handle = app.clone();
                 tauri::async_runtime::spawn(async move {
-                    match fetch_update_info().await {
+                    match fetch_update_info(&app_handle).await {
                         Ok(info) if info.update_available => {
                             if let Err(error) =
                                 app_handle.emit(EVENT_DESKTOP_UPDATE_AVAILABLE, &info)

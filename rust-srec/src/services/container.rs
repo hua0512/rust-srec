@@ -572,6 +572,16 @@ impl ServiceContainer {
         &self.notification_service
     }
 
+    /// A shared HTTP client on the global route as it is now, for the
+    /// embedding application's own requests that serve no platform. Callers
+    /// set timeouts per request. A global route naming a saved proxy that no
+    /// longer exists fails rather than connecting directly.
+    pub async fn service_client(&self) -> Result<reqwest::Client> {
+        crate::proxies::ServiceRoutes::new(self.pool.clone())
+            .client(&crate::proxies::ProxyRoute::Inherit)
+            .await
+    }
+
     /// The scheduler's control surface.
     ///
     /// `start_scheduler` moves the `Scheduler` itself into a task, so this is the
