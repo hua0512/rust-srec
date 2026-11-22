@@ -9,24 +9,24 @@ use flv::{data::FlvData, parser_async::FlvDecoderStream};
 use futures::StreamExt;
 use futures::stream::BoxStream;
 use reqwest::{Response, StatusCode, Url};
-use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, info, warn};
 
 use super::error::FlvDownloadError;
 use super::flv_config::FlvProtocolConfig;
 use crate::bytes_stream::BytesStreamReader;
+use crate::cancel_stream::CancelOnDropStream;
 use crate::config::HttpVersionPreference;
 use crate::redact::Redacted;
 use crate::watchdog::StallWatchdog;
 use crate::{BoxMediaStream, DownloadError, downloader::create_client_pool};
 use crate::{
-    DownloadEvent, DownloadRequest, DownloadSession, EventSink, MediaEngine, ProtocolSelection,
-    ProtocolType, ResourceId,
+    DownloadEvent, DownloadRequest, DownloadSession, DownloadTerminal, EventSink, MediaEngine,
+    ProtocolSelection, ProtocolType, ResourceId,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -34,31 +34,6 @@ use tokio_util::sync::CancellationToken;
 pub struct FlvDownloader {
     clients: Arc<crate::downloader::ClientPool>,
     config: FlvProtocolConfig,
-}
-
-struct CancelOnDropStream {
-    inner: BoxMediaStream<FlvData, DownloadError>,
-    token: CancellationToken,
-}
-
-impl CancelOnDropStream {
-    fn new(inner: BoxMediaStream<FlvData, DownloadError>, token: CancellationToken) -> Self {
-        Self { inner, token }
-    }
-}
-
-impl futures::Stream for CancelOnDropStream {
-    type Item = Result<FlvData, DownloadError>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.inner.as_mut().poll_next(cx)
-    }
-}
-
-impl Drop for CancelOnDropStream {
-    fn drop(&mut self) {
-        self.token.cancel();
-    }
 }
 
 impl FlvDownloader {
@@ -94,11 +69,23 @@ impl FlvDownloader {
         Ok(Self { clients, config })
     }
 
+    pub(crate) fn with_clients(
+        config: FlvProtocolConfig,
+        clients: Arc<crate::downloader::ClientPool>,
+    ) -> Self {
+        Self { clients, config }
+    }
+
     /// Core method to start a download request and return the response
     async fn start_download_request(&self, url: &Url) -> Result<Response, DownloadError> {
         info!(url = %Redacted(url), "Starting FLV download request");
         debug!(url = %Redacted(url), parameter_count = self.config.base.params.len(), "Sending FLV download request");
 
+        let admission = self
+            .clients
+            .rate_limiter()
+            .try_admit(url)
+            .map_err(|throttled| throttled.error(url, "initial_request"))?;
         let client = self.clients.client_for_url(url);
         let response = client
             .get(url.clone())
@@ -106,12 +93,23 @@ impl FlvDownloader {
             .send()
             .await?;
 
+        let status = response.status();
+        if let Some(retry_in) = admission.observe(response.url(), status, response.headers()) {
+            return Err(DownloadError::rate_limited(
+                status,
+                response.url().as_str(),
+                "initial_request",
+                retry_in,
+            ));
+        }
+        drop(admission);
+
         // Check response status
-        if !response.status().is_success() {
-            Self::log_unexpected_status(url, response.status(), "initial_request");
+        if !status.is_success() {
+            Self::log_unexpected_status(url, status, "initial_request");
             return Err(DownloadError::http_status(
-                response.status(),
-                url.to_string(),
+                status,
+                url.as_str(),
                 "initial_request",
             ));
         }
@@ -185,7 +183,13 @@ impl FlvDownloader {
         url: Url,
         token: CancellationToken,
         events: Option<EventSink>,
-    ) -> Result<BoxMediaStream<FlvData, FlvDownloadError>, DownloadError> {
+    ) -> Result<
+        (
+            BoxMediaStream<FlvData, FlvDownloadError>,
+            JoinHandle<DownloadTerminal>,
+        ),
+        DownloadError,
+    > {
         // The request and the content probe both wait on the network, so both
         // race cancellation: a server that sends headers and then stalls must
         // not hold a cancel until the read timeout.
@@ -207,31 +211,50 @@ impl FlvDownloader {
             last_emit: Instant::now(),
         };
         let stream_token = token.clone();
-        tokio::spawn(async move {
+        let reader_handle = tokio::spawn(async move {
             progress.record(first_chunk.len());
             if tx.send(Ok(first_chunk)).await.is_err() {
-                return;
+                progress.flush();
+                return if stream_token.is_cancelled() {
+                    DownloadTerminal::Cancelled
+                } else {
+                    DownloadTerminal::DownstreamClosed
+                };
             }
 
             loop {
                 tokio::select! {
                     _ = stream_token.cancelled() => {
                         debug!("FLV download stream cancelled");
-                        break;
+                        progress.flush();
+                        return DownloadTerminal::Cancelled;
                     }
                     data = byte_stream.next() => {
                         let Some(item) = data else {
                             progress.finish();
-                            break;
+                            return DownloadTerminal::AuthoritativeEnd;
                         };
-                        if let Ok(bytes) = &item {
-                            progress.record(bytes.len());
+                        match &item {
+                            Ok(bytes) => progress.record(bytes.len()),
+                            Err(_) => progress.flush(),
                         }
-                        // A body error ends the resource: it was not
-                        // finished, so no ResourceFinished follows it.
-                        let failed = item.is_err();
-                        if tx.send(item).await.is_err() || failed {
-                            break;
+                        // A body error ends the resource: flush buffered byte
+                        // progress, forward the error to the decoder, and
+                        // surface a terminal pipeline error without emitting
+                        // ResourceFinished.
+                        if let Err(err) = &item {
+                            let reason: Arc<str> =
+                                Arc::from(crate::redact::redact_diagnostic(err));
+                            let _ = tx.send(item).await;
+                            return DownloadTerminal::PipelineError(reason);
+                        }
+                        if tx.send(item).await.is_err() {
+                            progress.flush();
+                            return if stream_token.is_cancelled() {
+                                DownloadTerminal::Cancelled
+                            } else {
+                                DownloadTerminal::DownstreamClosed
+                            };
                         }
                     }
                 }
@@ -240,7 +263,7 @@ impl FlvDownloader {
 
         let stream = ReceiverStream::new(rx);
         let reader = BytesStreamReader::new(stream.boxed());
-        Ok(self.create_decoder_stream(reader))
+        Ok((self.create_decoder_stream(reader), reader_handle))
     }
 
     /// Send the request and read enough of the body to tell FLV from an
@@ -295,7 +318,7 @@ impl FlvDownloader {
             url: Arc::from(request.url.as_str()),
         });
 
-        let stream = self
+        let (stream, reader_handle) = self
             .download_url_with_events(request.url, stream_token.clone(), Some(events.clone()))
             .await?;
         let stream = stream.map(|item| item.map_err(DownloadError::from)).boxed();
@@ -318,7 +341,12 @@ impl FlvDownloader {
         Ok(DownloadSession {
             items: stream,
             events: event_stream,
-            handle: crate::DownloadHandle::new(stream_token, None, events.dropped_counter(), None),
+            handle: crate::DownloadHandle::new(
+                stream_token,
+                None,
+                events.dropped_counter(),
+                Some(reader_handle),
+            ),
         })
     }
 }
@@ -456,7 +484,7 @@ impl MediaEngine for FlvDownloader {
 /// nothing, while a connection-level GOAWAY from a CDN recycling its HTTP/2
 /// connections would cut the recording. `Auto` therefore means HTTP/1.1 here;
 /// an explicit HTTP/2 preference is honoured.
-fn connection_config(base: &crate::DownloaderConfig) -> crate::DownloaderConfig {
+pub(crate) fn connection_config(base: &crate::DownloaderConfig) -> crate::DownloaderConfig {
     let mut base = base.clone();
     if base.http_version == HttpVersionPreference::Auto {
         base.http_version = HttpVersionPreference::Http1Only;

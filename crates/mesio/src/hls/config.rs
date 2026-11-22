@@ -88,6 +88,33 @@ pub struct HlsConfig {
     pub engine_config: HlsEngineConfig,
 }
 
+impl HlsConfig {
+    /// Effective TTL for cached processed segments. Prefers an explicit
+    /// `cache_config.segment_ttl` override when it differs from the default,
+    /// falling back to `processor_config.processed_segment_ttl` so callers of
+    /// either builder setter take effect while both fields keep their values.
+    pub fn effective_segment_cache_ttl(&self) -> Duration {
+        let default_ttl = HlsCacheConfig::default().segment_ttl;
+        if self.cache_config.segment_ttl != default_ttl {
+            self.cache_config.segment_ttl
+        } else {
+            self.processor_config.processed_segment_ttl
+        }
+    }
+
+    /// Effective TTL for cached decryption keys. Prefers an explicit
+    /// `cache_config.decryption_key_ttl` override when it differs from the
+    /// default, falling back to `decryption_config.key_cache_ttl`.
+    pub fn effective_decryption_key_ttl(&self) -> Duration {
+        let default_ttl = HlsCacheConfig::default().decryption_key_ttl;
+        if self.cache_config.decryption_key_ttl != default_ttl {
+            self.cache_config.decryption_key_ttl
+        } else {
+            self.decryption_config.key_cache_ttl
+        }
+    }
+}
+
 // --- Playlist Configuration ---
 #[derive(Debug, Clone)]
 pub struct HlsPlaylistConfig {
@@ -263,7 +290,7 @@ impl Default for HlsCacheConfig {
     fn default() -> Self {
         Self {
             playlist_ttl: Duration::from_secs(60), // Cache playlists for a minute
-            segment_ttl: Duration::from_secs(2 * 60), // Cache segments for 1 minutes
+            segment_ttl: Duration::from_secs(60),  // Cache segments for a minute
             decryption_key_ttl: Duration::from_secs(60 * 60), // Cache keys for an hour
         }
     }

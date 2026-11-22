@@ -32,6 +32,7 @@ type TextMatcher = Box<dyn Fn(&str) -> bool>;
 pub struct CommandExecutor {
     config: AppConfig,
     extractor_factory: ExtractorFactory,
+    quiet: bool,
 }
 
 pub struct ExtractRequest<'a> {
@@ -63,6 +64,7 @@ impl CommandExecutor {
         Self {
             config,
             extractor_factory,
+            quiet: false,
         }
     }
 
@@ -82,7 +84,41 @@ impl CommandExecutor {
         Self {
             config,
             extractor_factory,
+            quiet: false,
         }
+    }
+
+    pub fn with_quiet(mut self, quiet: bool) -> Self {
+        self.quiet = quiet;
+        self
+    }
+
+    pub(crate) fn parse_extras(extras: Option<&str>) -> Result<Option<serde_json::Value>> {
+        let Some(raw) = extras else {
+            return Ok(None);
+        };
+        serde_json::from_str(raw)
+            .map(Some)
+            .map_err(|e| CliError::invalid_input(format!("Invalid --extras JSON: {e}")))
+    }
+
+    pub(crate) fn retry_delay(attempt: u32, error: Option<&CliError>) -> Duration {
+        const MAX_BACKOFF_MS: u64 = 60_000;
+        let multiplier = 1u64.checked_shl(attempt).unwrap_or(u64::MAX);
+        let exp_backoff =
+            Duration::from_millis(1000u64.saturating_mul(multiplier).min(MAX_BACKOFF_MS));
+
+        if let Some(CliError::Extractor(
+            platforms_parser::extractor::error::ExtractorError::RateLimited {
+                retry_after: Some(wait),
+                ..
+            },
+        )) = error
+        {
+            return (*wait).max(exp_backoff);
+        }
+
+        exp_backoff
     }
 
     pub async fn resolve_stream(
@@ -94,12 +130,13 @@ impl CommandExecutor {
         output_format: &OutputFormat,
         output_file: Option<&Path>,
     ) -> Result<()> {
+        let extras_json = Self::parse_extras(extras)?;
         let mut stream_info: StreamInfo = serde_json::from_str(payload)?;
 
         let extractor = self.extractor_factory.create_extractor(
             url,
             cookies.map(String::from),
-            extras.and_then(|s| serde_json::from_str(s).ok()),
+            extras_json,
             ExtractorSelection::default(),
         )?;
 
@@ -132,65 +169,44 @@ impl CommandExecutor {
             .await;
         pb.finish_and_clear();
 
-        match result {
-            Ok((mut media_info, extractor)) => {
-                let selected_stream =
-                    if matches!(output_format, OutputFormat::Pretty | OutputFormat::Table) {
-                        if media_info.streams.is_empty() {
-                            None
-                        } else {
-                            // Filter before choosing, so `--format` also opts in
-                            // to streams that are never picked automatically.
-                            let streams = Self::apply_filters(
-                                std::mem::take(&mut media_info.streams),
-                                quality,
-                                format,
-                            )?;
-                            if auto_select {
-                                Some(Self::auto_select_stream(streams, format)?)
-                            } else if streams.len() == 1 {
-                                Some(Self::first_selectable_stream(streams, format)?)
-                            } else {
-                                Some(self.interactive_select_stream(streams, format)?)
-                            }
-                        }
-                    } else {
-                        None
-                    };
-
-                let final_stream = if let Some(mut final_stream) = selected_stream {
-                    // Get the true URL
-                    let pb_get_url =
-                        self.create_progress_bar("Getting stream URL...", &output_format);
-                    extractor.get_url(&mut final_stream).await?;
-                    pb_get_url.finish_and_clear();
-                    Some(final_stream)
+        let (mut media_info, extractor) = result?;
+        let selected_stream = if matches!(output_format, OutputFormat::Pretty | OutputFormat::Table)
+        {
+            if media_info.streams.is_empty() {
+                None
+            } else {
+                // Filter before choosing, so `--format` also opts in
+                // to streams that are never picked automatically.
+                let streams =
+                    Self::apply_filters(std::mem::take(&mut media_info.streams), quality, format)?;
+                if auto_select {
+                    Some(Self::auto_select_stream(streams, format)?)
+                } else if streams.len() == 1 {
+                    Some(Self::first_selectable_stream(streams, format)?)
                 } else {
-                    None
-                };
-
-                let output_manager = OutputManager::new(self.config.colored_output);
-                let output = output_manager.format_media_info(
-                    &media_info,
-                    final_stream.as_ref(),
-                    &output_format,
-                )?;
-
-                write_output(&output, output_file)?;
-                Ok(())
-            }
-            Err(e) => {
-                #[cfg(feature = "colored-output")]
-                {
-                    eprintln!("{}", e.to_string().red());
+                    Some(self.interactive_select_stream(streams, format)?)
                 }
-                #[cfg(not(feature = "colored-output"))]
-                {
-                    eprintln!("{}", e);
-                }
-                Err(e)
             }
-        }
+        } else {
+            None
+        };
+
+        let final_stream = if let Some(mut final_stream) = selected_stream {
+            // Get the true URL
+            let pb_get_url = self.create_progress_bar("Getting stream URL...", &output_format);
+            extractor.get_url(&mut final_stream).await?;
+            pb_get_url.finish_and_clear();
+            Some(final_stream)
+        } else {
+            None
+        };
+
+        let output_manager = OutputManager::new(self.config.colored_output);
+        let output =
+            output_manager.format_media_info(&media_info, final_stream.as_ref(), &output_format)?;
+
+        write_output(&output, output_file)?;
+        Ok(())
     }
 
     pub async fn batch_process(
@@ -219,7 +235,7 @@ impl CommandExecutor {
             return Err(CliError::invalid_input("No valid URLs found in input file"));
         }
 
-        let pb = if !matches!(output_format, OutputFormat::Pretty) {
+        let pb = if self.quiet || !matches!(output_format, OutputFormat::Pretty) {
             Arc::new(ProgressBar::hidden())
         } else {
             let pb = Arc::new(ProgressBar::new(urls.len() as u64));
@@ -232,28 +248,24 @@ impl CommandExecutor {
             pb
         };
 
-        let semaphore = Arc::new(Semaphore::new(concurrency));
+        let semaphore = Arc::new(Semaphore::new(concurrency.max(1)));
+        let timeout_secs = timeout_duration.as_secs();
         let mut tasks = Vec::new();
-
-        // Create proxy config for batch processing
-        let proxy_config = self.config.default_proxy.as_ref().map(|url| ProxyConfig {
-            url: url.to_string(),
-            username: self.config.default_proxy_username.clone(),
-            password: self.config.default_proxy_password.clone(),
-        });
 
         for (index, url) in urls.iter().enumerate() {
             let url = url.clone();
             let pb = Arc::clone(&pb);
             let permit = semaphore.clone().acquire_owned().await?;
-            let proxy_config = proxy_config.clone();
+            let factory = self.extractor_factory.clone();
 
             let task = tokio::spawn(async move {
                 let _permit = permit;
-                pb.set_message(format!("Processing: {url}"));
+                pb.set_message(format!(
+                    "Processing: {}",
+                    platforms_parser::media::redact_url_for_display(&url)
+                ));
 
                 let result = timeout(timeout_duration, async {
-                    let factory = factory_with_proxy(proxy_config);
                     let extractor = factory.create_extractor(
                         &url,
                         None,
@@ -281,7 +293,7 @@ impl CommandExecutor {
                     Ok((media_info, selected_stream))
                 })
                 .await
-                .map_err(|_| CliError::timeout())
+                .map_err(|_| CliError::timeout(timeout_secs))
                 .and_then(|r| r);
 
                 pb.inc(1);
@@ -393,9 +405,8 @@ impl CommandExecutor {
     }
 
     fn create_progress_bar(&self, message: &str, output_format: &OutputFormat) -> ProgressBar {
-        if !matches!(output_format, OutputFormat::Pretty) {
-            let pb = ProgressBar::hidden();
-            return pb;
+        if self.quiet || !matches!(output_format, OutputFormat::Pretty) {
+            return ProgressBar::hidden();
         }
         let pb = ProgressBar::new_spinner();
         pb.enable_steady_tick(Duration::from_millis(500));
@@ -417,15 +428,17 @@ impl CommandExecutor {
         timeout_duration: Duration,
         retries: u32,
     ) -> Result<(MediaInfo, Box<dyn PlatformExtractor>)> {
+        let extras_json = Self::parse_extras(extras)?;
+        let timeout_secs = timeout_duration.as_secs();
         let mut last_error = None;
 
         for attempt in 0..=retries {
+            let extras_clone = extras_json.clone();
             match timeout(timeout_duration, async {
-                let extras_json = extras.and_then(|s| serde_json::from_str(s).ok());
                 let extractor = self.extractor_factory.create_extractor(
                     url,
                     cookies.map(String::from),
-                    extras_json,
+                    extras_clone,
                     ExtractorSelection::default(),
                 )?;
                 let media_info = extractor.extract().await?;
@@ -435,23 +448,24 @@ impl CommandExecutor {
             {
                 Ok(Ok(result)) => return Ok(result),
                 Ok(Err(e)) => {
+                    let delay = Self::retry_delay(attempt, Some(&e));
                     last_error = Some(e);
                     if attempt < retries {
-                        let delay = Duration::from_millis(1000 * (1 << attempt));
                         sleep(delay).await;
                     }
                 }
                 Err(_) => {
-                    last_error = Some(CliError::timeout());
+                    let err = CliError::timeout(timeout_secs);
+                    let delay = Self::retry_delay(attempt, Some(&err));
+                    last_error = Some(err);
                     if attempt < retries {
-                        let delay = Duration::from_millis(1000 * (1 << attempt));
                         sleep(delay).await;
                     }
                 }
             }
         }
 
-        Err(last_error.unwrap_or_else(CliError::timeout))
+        Err(last_error.unwrap_or_else(|| CliError::timeout(timeout_secs)))
     }
 
     /// Whether `stream` may be picked without the user choosing it from a
@@ -694,9 +708,10 @@ impl CommandExecutor {
         summary.push_str(&format!("Failed: {failed}\n\n"));
 
         for (index, url, result) in results {
+            let safe_url = platforms_parser::media::redact_url_for_display(url);
             let status_line = match result {
-                Ok(_) => format!("[{}] ✓ SUCCESS: {}", index + 1, url),
-                Err(e) => format!("ERROR for URL {url}: {e}"),
+                Ok(_) => format!("[{}] ✓ SUCCESS: {safe_url}", index + 1),
+                Err(e) => format!("ERROR for URL {safe_url}: {e}"),
             };
             summary.push_str(&status_line);
             summary.push('\n');
@@ -810,5 +825,89 @@ mod tests {
     #[test]
     fn best_stream_rejects_empty_input() {
         assert_eq!(CommandExecutor::best_stream_index(&[], None), None);
+    }
+
+    #[test]
+    fn retry_delay_bounds_large_attempts_and_honors_rate_limit_retry_after() {
+        use platforms_parser::extractor::error::ExtractorError;
+        use std::time::Duration;
+
+        assert_eq!(
+            CommandExecutor::retry_delay(0, None),
+            Duration::from_secs(1)
+        );
+        assert_eq!(
+            CommandExecutor::retry_delay(3, None),
+            Duration::from_secs(8)
+        );
+        // Shifts >= 64 must saturate cleanly instead of panicking on `1 << attempt`.
+        assert_eq!(
+            CommandExecutor::retry_delay(64, None),
+            Duration::from_secs(60)
+        );
+        assert_eq!(
+            CommandExecutor::retry_delay(u32::MAX, None),
+            Duration::from_secs(60)
+        );
+
+        let rate_limited = CliError::Extractor(ExtractorError::RateLimited {
+            code: Some("429".to_string()),
+            retry_after: Some(Duration::from_secs(120)),
+        });
+        assert_eq!(
+            CommandExecutor::retry_delay(0, Some(&rate_limited)),
+            Duration::from_secs(120)
+        );
+    }
+
+    #[test]
+    fn cli_and_config_debug_redact_credentials_and_cookies() {
+        use crate::{cli::Args, config::AppConfig};
+        use clap::Parser;
+
+        let cfg = AppConfig {
+            default_cookies: Some("SESS=topsecret_cookie".to_string()),
+            default_proxy: Some("http://proxy_u:proxy_url_secret@127.0.0.1:8080".to_string()),
+            default_proxy_username: Some("proxy_u_field".to_string()),
+            default_proxy_password: Some("proxy_p_field".to_string()),
+            ..AppConfig::default()
+        };
+        let cfg_dbg = format!("{cfg:?}");
+        for secret in [
+            "topsecret_cookie",
+            "proxy_url_secret",
+            "proxy_u_field",
+            "proxy_p_field",
+        ] {
+            assert!(!cfg_dbg.contains(secret), "leaked {secret}: {cfg_dbg}");
+        }
+
+        let args = Args::parse_from([
+            "strev",
+            "--proxy",
+            "socks5://u1:secret_pw@127.0.0.1:1080",
+            "--proxy-username",
+            "u_arg_secret",
+            "--proxy-password",
+            "p_arg_secret",
+            "extract",
+            "-u",
+            "https://twitcasting.tv/room?password=room_pw_secret",
+            "--cookies",
+            "auth=cookie_arg_secret",
+            "--extras",
+            r#"{"oauth_token":"extra_arg_secret"}"#,
+        ]);
+        let args_dbg = format!("{args:?}");
+        for secret in [
+            "secret_pw",
+            "u_arg_secret",
+            "p_arg_secret",
+            "room_pw_secret",
+            "cookie_arg_secret",
+            "extra_arg_secret",
+        ] {
+            assert!(!args_dbg.contains(secret), "leaked {secret}: {args_dbg}");
+        }
     }
 }

@@ -436,7 +436,7 @@ impl Douyu {
             ExtractorError::ValidationError(format!(
                 "Failed to parse betard response: {} - body: {}",
                 e,
-                &body[..body.len().min(200)]
+                &body[..body.floor_char_boundary(200)]
             ))
         })?;
 
@@ -571,7 +571,7 @@ impl Douyu {
             ExtractorError::ValidationError(format!(
                 "Failed to parse encryption response: {} - body: {}",
                 e,
-                &body[..body.len().min(500)]
+                &body[..body.floor_char_boundary(500)]
             ))
         })?;
 
@@ -673,6 +673,12 @@ impl Douyu {
 
         let key_data = self.get_encryption_key(did).await?;
         let enc = &key_data.data;
+        if enc.enc_time > 1024 {
+            return Err(ExtractorError::ValidationError(format!(
+                "Douyu encryption iteration count {} exceeds maximum 1024",
+                enc.enc_time
+            )));
+        }
 
         // Generate secret through iterative MD5 hashing
         let mut secret = enc.rand_str.clone();
@@ -775,7 +781,7 @@ impl Douyu {
                 ExtractorError::ValidationError(format!(
                     "Failed to parse getH5PlayV1 response: {} - body: {}",
                     e,
-                    &body[..body.len().min(500)]
+                    &body[..body.floor_char_boundary(500)]
                 ))
             })?;
 

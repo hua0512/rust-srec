@@ -81,7 +81,6 @@ impl PlaylistEngine {
             return Self::parse_initial(&playlist_url, &playlist_url, &cached_data);
         }
 
-        let client = self.clients.client_for_url(&playlist_url);
         let resource = ResourceId::HlsPlaylist {
             url: Arc::from(playlist_url.as_str()),
         };
@@ -95,40 +94,28 @@ impl PlaylistEngine {
         );
         // Startup is not retried here: a cooling server fails it at once,
         // and the requests that follow honour a cool-down this answer starts.
-        let admission = self
-            .clients
-            .rate_limiter()
-            .try_admit(&playlist_url)
-            .map_err(|throttled| throttled.error(&playlist_url, "initial playlist fetch"))?;
-        let response = client
-            .get(playlist_url.clone())
-            .timeout(self.config.playlist_config.initial_playlist_fetch_timeout)
-            .query(&self.config.base.params)
-            .send()
-            .await
-            .map_err(HlsDownloaderError::from)?;
-        if let Some(retry_in) =
-            admission.observe(response.url(), response.status(), response.headers())
-        {
-            return Err(HlsDownloaderError::rate_limited(
-                response.status(),
-                response.url().as_str(),
-                "initial playlist fetch",
-                retry_in,
-            ));
-        }
-        drop(admission);
-        if !response.status().is_success() {
-            return Err(HlsDownloaderError::http_status(
-                response.status(),
-                playlist_url.as_str(),
-                "initial playlist fetch",
-            ));
-        }
+        let fetched = crate::http_util::fetch_bytes_capped(
+            &self.clients,
+            &playlist_url,
+            &self.config.base.params,
+            self.config.playlist_config.initial_playlist_fetch_timeout,
+            crate::http_util::MAX_HLS_PLAYLIST_BYTES,
+            "initial playlist fetch",
+            crate::http_util::AdmissionMode::Immediate,
+            None,
+            |size| HlsDownloaderError::Playlist {
+                reason: format!(
+                    "Initial playlist {} exceeds {} bytes (got at least {size} bytes)",
+                    Redacted(&playlist_url),
+                    crate::http_util::MAX_HLS_PLAYLIST_BYTES,
+                ),
+            },
+        )
+        .await?;
         // Relative URIs resolve against the document actually served, which
         // differs from the requested URL after a redirect.
-        let document_url = response.url().clone();
-        let playlist_bytes = response.bytes().await.map_err(HlsDownloaderError::from)?;
+        let document_url = fetched.final_url;
+        let playlist_bytes = fetched.bytes;
         emit_event(
             &self.events,
             DownloadEvent::ResourceFinished {
@@ -209,14 +196,17 @@ impl PlaylistEngine {
         let selected_variant = select_variant(master_playlist_ref, policy)?;
         let master_playlist_url =
             Url::parse(master_base_url_str).map_err(|e| HlsDownloaderError::Playlist {
-                reason: format!("Invalid master base URL {master_base_url_str}: {e}"),
+                reason: format!(
+                    "Invalid master base URL {}: {e}",
+                    crate::redact::redact_url_str(master_base_url_str)
+                ),
             })?;
         let media_playlist_url = master_playlist_url
             .join(&selected_variant.uri)
             .map_err(|e| HlsDownloaderError::Playlist {
                 reason: format!(
                     "Could not join master URL with variant URI {}: {e}",
-                    selected_variant.uri
+                    crate::redact::redact_url_str(&selected_variant.uri)
                 ),
             })?;
 
@@ -224,7 +214,6 @@ impl PlaylistEngine {
             "Selected media playlist URL: {}",
             Redacted(&media_playlist_url)
         );
-        let client = self.clients.client_for_url(&media_playlist_url);
         let resource = ResourceId::HlsPlaylist {
             url: Arc::from(media_playlist_url.as_str()),
         };
@@ -238,38 +227,26 @@ impl PlaylistEngine {
         );
         // Startup is not retried here: a cooling server fails it at once,
         // and the requests that follow honour a cool-down this answer starts.
-        let admission = self
-            .clients
-            .rate_limiter()
-            .try_admit(&media_playlist_url)
-            .map_err(|throttled| throttled.error(&media_playlist_url, "media playlist fetch"))?;
-        let response = client
-            .get(media_playlist_url.clone())
-            .timeout(self.config.playlist_config.initial_playlist_fetch_timeout)
-            .query(&self.config.base.params)
-            .send()
-            .await
-            .map_err(HlsDownloaderError::from)?;
-        if let Some(retry_in) =
-            admission.observe(response.url(), response.status(), response.headers())
-        {
-            return Err(HlsDownloaderError::rate_limited(
-                response.status(),
-                response.url().as_str(),
-                "media playlist fetch",
-                retry_in,
-            ));
-        }
-        drop(admission);
-        if !response.status().is_success() {
-            return Err(HlsDownloaderError::http_status(
-                response.status(),
-                media_playlist_url.as_str(),
-                "media playlist fetch",
-            ));
-        }
-        let document_url = response.url().clone();
-        let playlist_bytes = response.bytes().await.map_err(HlsDownloaderError::from)?;
+        let fetched = crate::http_util::fetch_bytes_capped(
+            &self.clients,
+            &media_playlist_url,
+            &self.config.base.params,
+            self.config.playlist_config.initial_playlist_fetch_timeout,
+            crate::http_util::MAX_HLS_PLAYLIST_BYTES,
+            "media playlist fetch",
+            crate::http_util::AdmissionMode::Immediate,
+            None,
+            |size| HlsDownloaderError::Playlist {
+                reason: format!(
+                    "Media playlist {} exceeds {} bytes (got at least {size} bytes)",
+                    Redacted(&media_playlist_url),
+                    crate::http_util::MAX_HLS_PLAYLIST_BYTES,
+                ),
+            },
+        )
+        .await?;
+        let document_url = fetched.final_url;
+        let playlist_bytes = fetched.bytes;
         emit_event(
             &self.events,
             DownloadEvent::ResourceFinished {
@@ -372,16 +349,14 @@ fn variant_media(variant: &VariantStream) -> Option<VariantMedia> {
     };
     let (mut audio, mut video) = (false, false);
     for codec in codecs.split(',').map(str::trim).filter(|c| !c.is_empty()) {
-        let family = codec
-            .split('.')
-            .next()
-            .unwrap_or(codec)
-            .to_ascii_lowercase();
-        match codec_kind(&family) {
-            Some(CodecKind::Audio) => audio = true,
-            Some(CodecKind::Video) => video = true,
-            Some(CodecKind::Other) => {}
-            None => return None,
+        if crate::codecs::is_audio_codec(codec) {
+            audio = true;
+        } else if crate::codecs::is_video_codec(codec) {
+            video = true;
+        } else if crate::codecs::is_text_codec(codec) {
+            // Subtitles and captions: neither audio nor video.
+        } else {
+            return None;
         }
     }
     match (audio, video) {
@@ -389,25 +364,6 @@ fn variant_media(variant: &VariantStream) -> Option<VariantMedia> {
         (false, true) => Some(VariantMedia::VideoOnly),
         (true, true) => Some(VariantMedia::AudioAndVideo),
         (false, false) => None,
-    }
-}
-
-enum CodecKind {
-    Audio,
-    Video,
-    /// Subtitles and captions: neither audio nor video.
-    Other,
-}
-
-/// Classify an RFC 6381 codec family (the part before the first `.`).
-fn codec_kind(family: &str) -> Option<CodecKind> {
-    match family {
-        "mp4a" | "ac-3" | "ec-3" | "ac-4" | "opus" | "flac" | "alac" | "mhm1" | "mha1" | "dtsc"
-        | "dtse" | "dtsh" | "dtsl" | "dtsx" => Some(CodecKind::Audio),
-        "avc1" | "avc3" | "hvc1" | "hev1" | "av01" | "vp08" | "vp09" | "vp8" | "vp9" | "vvc1"
-        | "vvi1" | "mp4v" | "dva1" | "dvav" | "dvh1" | "dvhe" | "dav1" => Some(CodecKind::Video),
-        "wvtt" | "stpp" | "tx3g" | "c608" | "c708" => Some(CodecKind::Other),
-        _ => None,
     }
 }
 

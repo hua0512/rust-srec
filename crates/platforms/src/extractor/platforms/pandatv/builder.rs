@@ -66,14 +66,15 @@ impl PandaTV {
         params.insert("userId", room_id);
         params.insert("info", "media fanGrade");
 
-        let response = self
-            .extractor
-            .post(Self::BJ_API_URL)
-            .form(&params)
-            .send()
-            .await?
-            .json::<PandaTvBjResponse>()
-            .await?;
+        let response = ExtractorError::check_response(
+            self.extractor
+                .post(Self::BJ_API_URL)
+                .form(&params)
+                .send()
+                .await?,
+        )?
+        .json::<PandaTvBjResponse>()
+        .await?;
 
         // debug!("Response: {:?}", response);
 
@@ -218,14 +219,15 @@ impl PandaTV {
         params.insert("action", "watch");
         params.insert("password", pwd.as_str());
 
-        let response = self
-            .extractor
-            .post(Self::LIVE_API_URL)
-            .form(&params)
-            .send()
-            .await?
-            .json::<PandaTvLiveResponse>()
-            .await?;
+        let response = ExtractorError::check_response(
+            self.extractor
+                .post(Self::LIVE_API_URL)
+                .form(&params)
+                .send()
+                .await?,
+        )?
+        .json::<PandaTvLiveResponse>()
+        .await?;
 
         if !response.result {
             let msg = response

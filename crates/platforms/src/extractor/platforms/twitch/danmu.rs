@@ -2,6 +2,8 @@
 //!
 //! Implements danmu collection for the Twitch streaming platform using IRC over WebSocket.
 
+use rustc_hash::FxHashMap;
+use std::borrow::Cow;
 use std::time::Duration;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
@@ -38,80 +40,104 @@ impl TwitchDanmuProtocol {
         format!("justinfan{}", random_num)
     }
 
+    /// Unescape IRCv3 tag value escapes (`\:`, `\s`, `\\`, `\r`, `\n`).
+    fn unescape_irc_tag(val: &str) -> Cow<'_, str> {
+        if !val.contains('\\') {
+            return Cow::Borrowed(val);
+        }
+        let mut out = String::with_capacity(val.len());
+        let mut chars = val.chars();
+        while let Some(ch) = chars.next() {
+            if ch == '\\' {
+                match chars.next() {
+                    Some(':') => out.push(';'),
+                    Some('s') => out.push(' '),
+                    Some('\\') => out.push('\\'),
+                    Some('r') => out.push('\r'),
+                    Some('n') => out.push('\n'),
+                    Some(other) => out.push(other),
+                    None => break,
+                }
+            } else {
+                out.push(ch);
+            }
+        }
+        Cow::Owned(out)
+    }
+
     /// Parse IRC message into DanmuMessage
     fn parse_irc_message(line: &str) -> Option<DanmuMessage> {
-        if line.starts_with("PING") || !line.contains("PRIVMSG") {
-            return None;
-        }
-
-        // Parse tags. Keys and values borrow from `line`; only the three or
-        // four tags the message uses are copied out below.
-        let mut tags: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
-        let mut remaining = line;
-
-        if line.starts_with('@')
-            && let Some(space_idx) = line.find(' ')
-        {
-            let tag_str = &line[1..space_idx];
+        let mut tags: FxHashMap<&str, &str> = FxHashMap::default();
+        let remaining = if let Some(rest) = line.strip_prefix('@') {
+            let (tag_str, rem) = rest.split_once(' ')?;
             for tag in tag_str.split(';') {
-                if let Some(eq_idx) = tag.find('=') {
-                    let key = &tag[..eq_idx];
-                    let value = &tag[eq_idx + 1..];
+                if let Some((key, value)) = tag.split_once('=') {
                     tags.insert(key, value);
                 }
             }
-            remaining = &line[space_idx + 1..];
-        }
+            rem.trim_start_matches(' ')
+        } else {
+            line
+        };
 
-        // Parse: :user!user@user.tmi.twitch.tv PRIVMSG #channel :message
-        let parts: Vec<&str> = remaining.splitn(4, ' ').collect();
-        if parts.len() < 4 {
+        let (prefix, remaining) = if let Some(rest) = remaining.strip_prefix(':') {
+            let (pfx, rem) = rest.split_once(' ')?;
+            (Some(pfx), rem.trim_start_matches(' '))
+        } else {
+            (None, remaining)
+        };
+
+        let (command, remaining) = remaining.split_once(' ')?;
+        if command != "PRIVMSG" {
             return None;
         }
 
-        let prefix = parts[0];
-        let content = if parts[3].starts_with(':') {
-            &parts[3][1..]
-        } else {
-            parts[3]
-        };
+        let remaining = remaining.trim_start_matches(' ');
+        let (_channel, trailing) = remaining.split_once(' ')?;
+        let trailing = trailing.trim_start_matches(' ');
+        let content = trailing.strip_prefix(':').unwrap_or(trailing);
 
-        // Extract username from prefix
         let username = prefix
-            .strip_prefix(':')
             .and_then(|s| s.split('!').next())
+            .filter(|s| !s.is_empty())
             .unwrap_or("unknown");
 
         let display_name = tags
             .get("display-name")
-            .map_or_else(|| username.to_string(), |s| s.to_string());
+            .map(|s| Self::unescape_irc_tag(s))
+            .filter(|s| !s.is_empty())
+            .map_or_else(|| username.to_string(), Cow::into_owned);
 
         let user_id = tags
             .get("user-id")
-            .map_or_else(|| username.to_string(), |s| s.to_string());
+            .map(|s| Self::unescape_irc_tag(s))
+            .filter(|s| !s.is_empty())
+            .map_or_else(|| username.to_string(), Cow::into_owned);
 
         let message_id = tags
             .get("id")
-            .map_or_else(|| uuid::Uuid::new_v4().to_string(), |s| s.to_string());
+            .map(|s| Self::unescape_irc_tag(s))
+            .filter(|s| !s.is_empty())
+            .map_or_else(|| uuid::Uuid::new_v4().to_string(), Cow::into_owned);
 
         let mut msg = DanmuMessage::chat(message_id, user_id, display_name, content.trim());
 
         // Add color if present
-        if let Some(color) = tags.get("color")
+        if let Some(color) = tags.get("color").map(|s| Self::unescape_irc_tag(s))
             && !color.is_empty()
         {
-            msg = msg.with_color(*color);
+            msg = msg.with_color(color.into_owned());
         }
 
         // Add badges as metadata
-        if let Some(badges) = tags.get("badges")
+        if let Some(badges) = tags.get("badges").map(|s| Self::unescape_irc_tag(s))
             && !badges.is_empty()
         {
             msg = msg.with_metadata("badges", serde_json::json!(badges));
         }
 
         // Check for bits (cheering) - change message type to Gift
-        if let Some(bits) = tags.get("bits") {
+        if let Some(bits) = tags.get("bits").map(|s| Self::unescape_irc_tag(s)) {
             msg.message_type = DanmuType::Gift;
             msg = msg.with_metadata("bits", serde_json::json!(bits.parse::<u32>().unwrap_or(0)));
         }
@@ -148,6 +174,10 @@ impl DanmuProtocol for TwitchDanmuProtocol {
     fn cookies(&self) -> Option<String> {
         // Twitch doesn't use cookies for IRC WebSocket
         None
+    }
+
+    fn send_cookie_header(&self) -> bool {
+        false
     }
 
     async fn handshake_messages(&mut self, room_id: &str) -> Result<Vec<Message>> {
@@ -291,6 +321,25 @@ mod tests {
         assert!(msg.metadata.is_some());
         let metadata = msg.metadata.unwrap();
         assert_eq!(metadata.get("bits").unwrap(), &serde_json::json!(100));
+    }
+
+    #[test]
+    fn irc_parser_unescapes_ircv3_tags_rejects_non_privmsg_and_disables_ws_cookies() {
+        use crate::extractor::platforms::douyu::DouyuDanmuProtocol;
+
+        assert!(!TwitchDanmuProtocol.send_cookie_header());
+        assert!(!DouyuDanmuProtocol::default().send_cookie_header());
+
+        let escaped = r"@display-name=Alice\sBob\:Jr\\III;id=msg-1;user-id=42 :alice!alice@alice.tmi.twitch.tv PRIVMSG #chan :hello :there";
+        let msg = TwitchDanmuProtocol::parse_irc_message(escaped).expect("valid PRIVMSG");
+        assert_eq!(msg.username, r"Alice Bob;Jr\III");
+        assert_eq!(msg.user_id, "42");
+        assert_eq!(msg.id, "msg-1");
+        assert_eq!(msg.content, "hello :there");
+
+        // A NOTICE or USERNOTICE whose trailing text mentions "PRIVMSG" must not be parsed as chat.
+        let notice = ":tmi.twitch.tv NOTICE #chan :Do not spoof PRIVMSG #chan :fake";
+        assert!(TwitchDanmuProtocol::parse_irc_message(notice).is_none());
     }
 
     /// Real integration test - connects to an actual Twitch channel

@@ -1,5 +1,6 @@
 //! Basic TARS request types for Huya API
 
+use bytes::Bytes;
 use rustc_hash::FxHashMap;
 use tars_codec::{error::TarsError, types::TarsValue};
 
@@ -7,7 +8,7 @@ use tars_codec::{error::TarsError, types::TarsValue};
 pub struct WebSocketCommand {
     cmd_type: i32,
     /// Binary data payload - serialized as TARS SimpleList (bytes), not as List of integers
-    data: Vec<u8>,
+    data: Bytes,
     request_id: i64,
     trace_id: String,
     encrypt_type: i32,
@@ -18,7 +19,7 @@ pub struct WebSocketCommand {
 impl WebSocketCommand {
     pub fn new(
         cmd_type: i32,
-        data: Vec<u8>,
+        data: impl Into<Bytes>,
         request_id: i64,
         trace_id: String,
         encrypt_type: i32,
@@ -27,7 +28,7 @@ impl WebSocketCommand {
     ) -> Self {
         Self {
             cmd_type,
-            data,
+            data: data.into(),
             request_id,
             trace_id,
             encrypt_type,
@@ -42,7 +43,7 @@ impl WebSocketCommand {
     }
 
     /// Returns a reference to the inner data payload
-    pub fn data(&self) -> &Vec<u8> {
+    pub fn data(&self) -> &Bytes {
         &self.data
     }
 }
@@ -51,7 +52,7 @@ impl From<WebSocketCommand> for TarsValue {
     fn from(cmd: WebSocketCommand) -> Self {
         let mut map = FxHashMap::default();
         map.insert(0, TarsValue::Int(cmd.cmd_type));
-        map.insert(1, TarsValue::SimpleList(cmd.data.into()));
+        map.insert(1, TarsValue::SimpleList(cmd.data));
         map.insert(2, TarsValue::Long(cmd.request_id));
         map.insert(3, TarsValue::String(cmd.trace_id));
         map.insert(4, TarsValue::Int(cmd.encrypt_type));
@@ -74,7 +75,6 @@ impl TryFrom<TarsValue> for WebSocketCommand {
                 .unwrap_or_default(),
             data: take(1)
                 .and_then(|v| v.try_into_simple_list().ok())
-                .map(|b| b.to_vec())
                 .unwrap_or_default(),
             request_id: take(2)
                 .and_then(|v| v.try_into_i64().ok())
@@ -104,7 +104,7 @@ pub struct WsPushMessage {
     /// URI identifier for the message type
     pub i_uri: i64,
     /// Message payload data (serialized inner struct)
-    pub s_msg: Vec<u8>,
+    pub s_msg: Bytes,
     /// Protocol type
     pub i_protocol_type: i32,
     /// Group identifier (e.g., "live:294636272")
@@ -120,7 +120,7 @@ impl From<WsPushMessage> for TarsValue {
         let mut map = FxHashMap::default();
         map.insert(0, TarsValue::Int(msg.e_push_type));
         map.insert(1, TarsValue::Long(msg.i_uri));
-        map.insert(2, TarsValue::SimpleList(msg.s_msg.into()));
+        map.insert(2, TarsValue::SimpleList(msg.s_msg));
         map.insert(3, TarsValue::Int(msg.i_protocol_type));
         map.insert(4, TarsValue::String(msg.s_group_id));
         map.insert(5, TarsValue::Long(msg.l_msg_id));
@@ -145,7 +145,6 @@ impl TryFrom<TarsValue> for WsPushMessage {
                 .unwrap_or_default(),
             s_msg: take(2)
                 .and_then(|v| v.try_into_simple_list().ok())
-                .map(|b| b.to_vec())
                 .unwrap_or_default(),
             i_protocol_type: take(3)
                 .and_then(|v| v.try_into_i32().ok())

@@ -282,7 +282,9 @@ pub(crate) async fn open_transport(
 ) -> Result<BoxedTransport> {
     match proxy {
         Some(proxy) => proxy.tunnel(host, port).await,
-        None => connect_direct(host, port).await,
+        None => tokio::time::timeout(TUNNEL_TIMEOUT, connect_direct(host, port))
+            .await
+            .map_err(|_| DanmakuError::connection("danmu host did not answer in time"))?,
     }
 }
 

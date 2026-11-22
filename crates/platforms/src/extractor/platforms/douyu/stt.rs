@@ -175,9 +175,12 @@ pub fn parse_packet(data: &[u8]) -> Option<(Cow<'_, str>, usize)> {
 
     // Read length (little-endian)
     let length = u32::from_le_bytes([data[0], data[1], data[2], data[3]]) as usize;
+    if length < 9 {
+        return None;
+    }
 
     // Total packet size is length + 4 (first length field)
-    let total_size = length + 4;
+    let total_size = length.checked_add(4)?;
 
     if data.len() < total_size {
         return None;
@@ -328,5 +331,17 @@ mod tests {
         let generated = create_packet("type@=mrkl/");
 
         assert_eq!(generated.as_ref(), HEARTBEAT);
+    }
+
+    #[test]
+    fn parse_packet_rejects_underflow_and_overflow_lengths() {
+        for bad_len in [0_u32, 1, 8, u32::MAX, u32::MAX - 2] {
+            let mut frame = vec![0_u8; 20];
+            frame[0..4].copy_from_slice(&bad_len.to_le_bytes());
+            frame[4..8].copy_from_slice(&bad_len.to_le_bytes());
+            frame[8..12].copy_from_slice(&CLIENT_MAGIC);
+            assert!(parse_packet(&frame).is_none(), "bad_len={bad_len}");
+            assert!(parse_packets(&frame).is_empty(), "bad_len={bad_len}");
+        }
     }
 }

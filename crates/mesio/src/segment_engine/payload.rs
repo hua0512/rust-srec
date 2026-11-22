@@ -64,4 +64,32 @@ impl SegmentPayload {
     pub fn discontinuity(&self) -> bool {
         self.descriptor().discontinuity
     }
+
+    pub fn with_msn(&self, msn: u64) -> Self {
+        if self.msn() == msn && !self.discontinuity() {
+            return self.clone();
+        }
+        let mut updated = (**self.descriptor()).clone();
+        updated.msn = msn;
+        updated.discontinuity = false;
+        let descriptor = Arc::new(updated);
+        match self {
+            Self::Ts { data, .. } => Self::Ts {
+                data: data.clone(),
+                descriptor,
+            },
+            Self::Mp4Init { data, .. } => Self::Mp4Init {
+                data: data.clone(),
+                descriptor,
+            },
+            Self::TsInit { data, .. } => Self::TsInit {
+                data: data.clone(),
+                descriptor,
+            },
+            Self::Mp4Media { data, .. } => Self::Mp4Media {
+                data: data.clone(),
+                descriptor,
+            },
+        }
+    }
 }

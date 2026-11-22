@@ -155,13 +155,13 @@ impl TikTok {
     ) -> Result<RoomUserInfo, ExtractorError> {
         let url = Self::api_live_room_url(unique_id);
 
-        let response = self
-            .extractor
-            .get(&url)
-            .header(reqwest::header::ACCEPT, "application/json")
-            .send()
-            .await?
-            .error_for_status()?;
+        let response = ExtractorError::check_response(
+            self.extractor
+                .get(&url)
+                .header(reqwest::header::ACCEPT, "application/json")
+                .send()
+                .await?,
+        )?;
         let body = response.text().await?;
         let parsed: ApiLiveRoomResponse = serde_json::from_str(&body).map_err(|e| {
             ExtractorError::ValidationError(format!(
@@ -183,7 +183,8 @@ impl TikTok {
     }
 
     async fn fetch_page_content(&self) -> Result<String, ExtractorError> {
-        let response = self.extractor.get(&self.extractor.url).send().await?;
+        let response =
+            ExtractorError::check_response(self.extractor.get(&self.extractor.url).send().await?)?;
         let body = response.text().await?;
 
         if body.contains(Self::DISCONTINUED_MESSAGE) {

@@ -5,10 +5,7 @@ use tracing::info;
 pub fn parse_and_add_header(headers: &mut HeaderMap, header_str: &str) {
     // Find the first colon which separates name and value
     let Some(colon_pos) = header_str.find(':') else {
-        tracing::warn!(
-            "Invalid header format: '{}'. Expected 'Name: Value'",
-            header_str
-        );
+        tracing::warn!("Invalid header format: expected 'Name: Value'");
         return;
     };
 
@@ -22,11 +19,11 @@ pub fn parse_and_add_header(headers: &mut HeaderMap, header_str: &str) {
     };
 
     let Ok(header_value) = HeaderValue::from_str(value) else {
-        tracing::warn!("Invalid header value: '{}'", value);
+        tracing::warn!("Invalid header value for '{}'", name);
         return;
     };
 
-    info!("Adding header: {}: {}", name, value);
+    info!("Adding header: {name}");
     headers.insert(header_name, header_value);
 }
 

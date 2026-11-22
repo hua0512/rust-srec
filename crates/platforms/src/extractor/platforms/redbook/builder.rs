@@ -283,19 +283,12 @@ impl RedBook {
     }
 
     pub async fn get_live_info(&self) -> Result<MediaInfo, ExtractorError> {
-        let response = self
-            .extractor
-            .get(&self.extractor.url)
-            .send()
-            .await?
-            .error_for_status()?;
+        let response =
+            ExtractorError::check_response(self.extractor.get(&self.extractor.url).send().await?)?;
         let room_id = Self::room_id_from_url(response.url())?;
         // Share pages no longer need to embed __INITIAL_STATE__.
-        let response = self
-            .room_info_request(&room_id)?
-            .send()
-            .await?
-            .error_for_status()?;
+        let response =
+            ExtractorError::check_response(self.room_info_request(&room_id)?.send().await?)?;
         self.parse_room_info(&response.text().await?, &room_id)
     }
 }

@@ -101,7 +101,8 @@ impl FromStr for MediaFormat {
         match s.to_lowercase().as_str() {
             "flv" => Ok(MediaFormat::Flv),
             "ts" => Ok(MediaFormat::Ts),
-            "fmp4" | "mp4" => Ok(MediaFormat::Mp4),
+            "fmp4" => Ok(MediaFormat::Fmp4),
+            "mp4" => Ok(MediaFormat::Mp4),
             _ => Err(()),
         }
     }

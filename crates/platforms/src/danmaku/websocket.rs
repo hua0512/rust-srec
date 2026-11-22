@@ -1,9 +1,11 @@
 use async_trait::async_trait;
 use futures::{SinkExt, StreamExt};
+use rand::RngExt;
 use rustls::{ClientConfig, crypto::aws_lc_rs};
 use rustls_platform_verifier::BuilderVerifierExt;
 use std::collections::HashMap;
 use std::future::Future;
+use std::io::Read;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -13,6 +15,7 @@ use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::http::HeaderMap;
 use tokio_tungstenite::tungstenite::http::HeaderValue;
 use tokio_tungstenite::tungstenite::http::header;
+use tokio_tungstenite::tungstenite::protocol::WebSocketConfig;
 use tokio_tungstenite::{
     Connector, MaybeTlsStream, WebSocketStream, client_async_tls_with_config,
     tungstenite::protocol::Message,
@@ -28,6 +31,28 @@ use crate::danmaku::proxy::{self, BoxedTransport, DanmuProxy};
 use crate::extractor::utils::merge_cookie_headers;
 
 const MAX_ACTIVE_CONNECTIONS: usize = 1024;
+const WS_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+const HEALTHY_CONNECTION_THRESHOLD: Duration = Duration::from_secs(30);
+const MAX_WS_MESSAGE_BYTES: usize = 8 * 1024 * 1024;
+const MAX_WS_FRAME_BYTES: usize = 2 * 1024 * 1024;
+
+/// Maximum decompressed size (4 MiB) accepted for a single compressed danmaku frame.
+pub(crate) const MAX_DECOMPRESSED_FRAME_BYTES: usize = 4 * 1024 * 1024;
+
+/// Reads up to `limit` bytes from `reader`, returning a protocol error if the
+/// decompressed stream exceeds `limit`.
+pub(crate) fn read_bounded<R: Read>(reader: R, limit: usize, label: &str) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    reader
+        .take((limit as u64).saturating_add(1))
+        .read_to_end(&mut out)?;
+    if out.len() > limit {
+        return Err(DanmakuError::protocol(format!(
+            "{label} decompressed frame exceeds maximum size of {limit} bytes"
+        )));
+    }
+    Ok(out)
+}
 
 const ENV_NATIVE_TLS_HOSTS: &str = "RUST_SREC_NATIVE_TLS_HOSTS";
 
@@ -191,11 +216,19 @@ async fn open_websocket(
         request.headers_mut().insert(name, value.clone());
     }
     let (host, port) = proxy::endpoint(&Url::parse(url).map_err(|e| invalid(&e))?)?;
-    let stream = proxy::open_transport(&host, port, proxy).await?;
-    let (socket, _) =
-        client_async_tls_with_config(request, stream, None, Some(connector_for_url(url)))
+    let ws_config = WebSocketConfig::default()
+        .max_message_size(Some(MAX_WS_MESSAGE_BYTES))
+        .max_frame_size(Some(MAX_WS_FRAME_BYTES));
+    let connector = connector_for_url(url);
+
+    let (socket, _) = tokio::time::timeout(WS_CONNECT_TIMEOUT, async {
+        let stream = proxy::open_transport(&host, port, proxy).await?;
+        client_async_tls_with_config(request, stream, Some(ws_config), Some(connector))
             .await
-            .map_err(|error| DanmakuError::connection(error.to_string()))?;
+            .map_err(|error| DanmakuError::connection(error.to_string()))
+    })
+    .await
+    .map_err(|_| DanmakuError::connection("WebSocket handshake timed out"))??;
     Ok(socket)
 }
 
@@ -364,10 +397,43 @@ struct WsConnectionState {
     tasks: Vec<JoinHandle<()>>,
     /// Shutdown sender
     shutdown_tx: Option<mpsc::Sender<()>>,
-    /// Held for its `Drop`: releasing it returns the slot taken from
-    /// `WebSocketDanmuProvider::connection_semaphore` in `connect`, which is
-    /// what bounds active connections when callers forget to disconnect.
+}
+
+/// Owned by the spawned connection task so normal exits, task aborts, and panics
+/// all release the active-connection semaphore permit and evict the map entry.
+struct TaskCleanupGuard {
+    connection_id: String,
+    connections: Arc<RwLock<HashMap<String, Arc<Mutex<WsConnectionState>>>>>,
+    cleanup_state: Arc<Mutex<WsConnectionState>>,
     _connection_permit: OwnedSemaphorePermit,
+}
+
+impl Drop for TaskCleanupGuard {
+    fn drop(&mut self) {
+        if let Ok(mut map) = self.connections.try_write() {
+            if map
+                .get(&self.connection_id)
+                .is_some_and(|existing| Arc::ptr_eq(existing, &self.cleanup_state))
+            {
+                map.remove(&self.connection_id);
+            }
+            return;
+        }
+        let connections = Arc::clone(&self.connections);
+        let connection_id = std::mem::take(&mut self.connection_id);
+        let cleanup_state = Arc::clone(&self.cleanup_state);
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                let mut map = connections.write().await;
+                if map
+                    .get(&connection_id)
+                    .is_some_and(|existing| Arc::ptr_eq(existing, &cleanup_state))
+                {
+                    map.remove(&connection_id);
+                }
+            });
+        }
+    }
 }
 
 impl WsConnectionState {
@@ -390,7 +456,7 @@ pub struct WebSocketDanmuProvider<F: DanmuProtocolFactory> {
     /// Settings
     config: WebSocketProviderConfig,
     /// Active connections
-    connections: RwLock<HashMap<String, Arc<Mutex<WsConnectionState>>>>,
+    connections: Arc<RwLock<HashMap<String, Arc<Mutex<WsConnectionState>>>>>,
     connection_semaphore: Arc<Semaphore>,
 }
 
@@ -411,28 +477,71 @@ impl Default for WebSocketProviderConfig {
     }
 }
 
+fn jittered_backoff_ms(delay_ms: u64, max_delay_ms: u64) -> u64 {
+    let capped = if max_delay_ms > 0 {
+        delay_ms.min(max_delay_ms)
+    } else {
+        delay_ms
+    };
+    let max_jitter = capped / 4;
+    if max_jitter == 0 {
+        return capped;
+    }
+    let jitter = rand::rng().random_range(0..=max_jitter);
+    let with_jitter = capped.saturating_add(jitter);
+    if max_delay_ms > 0 {
+        with_jitter.min(max_delay_ms)
+    } else {
+        with_jitter
+    }
+}
+
+fn next_backoff_ms(delay_ms: u64, base_delay_ms: u64, max_delay_ms: u64) -> u64 {
+    let floor = delay_ms.max(base_delay_ms.min(1));
+    let doubled = floor.saturating_mul(2);
+    if max_delay_ms > 0 {
+        doubled.min(max_delay_ms)
+    } else {
+        doubled
+    }
+}
+
 impl<F: DanmuProtocolFactory> WebSocketDanmuProvider<F> {
     /// Creates a provider that uses `factory` for every connection attempt.
     pub fn with_factory(factory: F, config: Option<WebSocketProviderConfig>) -> Self {
         Self {
             factory: Arc::new(factory),
             config: config.unwrap_or_default(),
-            connections: RwLock::new(HashMap::new()),
+            connections: Arc::new(RwLock::new(HashMap::new())),
             connection_semaphore: Arc::new(Semaphore::new(MAX_ACTIVE_CONNECTIONS)),
         }
     }
 
-    async fn connect_internal(
+    async fn spawn_connection_task(
         &self,
+        connection_id: String,
         room_id: &str,
         config: ConnectionConfig,
-    ) -> Result<(
-        mpsc::Receiver<DanmuItem>,
-        mpsc::Sender<()>,
-        Vec<JoinHandle<()>>,
-    )> {
+        connection_permit: OwnedSemaphorePermit,
+    ) -> Result<mpsc::Receiver<DanmuItem>> {
+        let http_client = config
+            .proxy
+            .as_ref()
+            .map(DanmuProxy::http_client)
+            .transpose()?;
+
         let (message_tx, message_rx) = mpsc::channel(100);
         let (shutdown_tx, mut shutdown_rx) = mpsc::channel(1);
+
+        let my_state = Arc::new(Mutex::new(WsConnectionState {
+            tasks: Vec::new(),
+            shutdown_tx: Some(shutdown_tx),
+        }));
+        let mut state_guard = my_state.lock().await;
+        self.connections
+            .write()
+            .await
+            .insert(connection_id.clone(), Arc::clone(&my_state));
 
         let factory = Arc::clone(&self.factory);
         let ws_config = config.websocket.unwrap_or(self.config);
@@ -440,27 +549,31 @@ impl<F: DanmuProtocolFactory> WebSocketDanmuProvider<F> {
         let cookies = config.cookies;
         let extras = config.extras;
         let proxy = config.proxy;
-        let http_client = proxy.as_ref().map(DanmuProxy::http_client).transpose()?;
-        // Spawn main management task
+        let connections = Arc::clone(&self.connections);
+        let cleanup_state = Arc::clone(&my_state);
+
         let handle = tokio::spawn(async move {
-            let mut current_connection: Option<(DanmuSocket, F::Protocol)> = None;
-            let mut attempt = 0;
+            let _cleanup_guard = TaskCleanupGuard {
+                connection_id,
+                connections,
+                cleanup_state,
+                _connection_permit: connection_permit,
+            };
+            let mut current_connection: Option<(DanmuSocket, F::Protocol, tokio::time::Instant)> =
+                None;
+            let mut attempt = 0u32;
             let mut delay = ws_config.base_reconnect_delay_ms;
 
-            loop {
-                // Check shutdown
-                if shutdown_rx.try_recv().is_ok() {
+            'outer: loop {
+                if shutdown_rx.try_recv().is_ok() || message_tx.is_closed() {
                     break;
                 }
 
-                // Connect if not connected
                 if current_connection.is_none() {
                     let mut protocol = factory.create_protocol();
                     if let Some(client) = &http_client {
                         protocol.use_http_client(client.clone());
                     }
-                    // Compute cookies and let the protocol derive per-connection state (e.g. uid)
-                    // before resolving the final WebSocket URL.
                     let protocol_cookies = protocol.cookies();
                     let merged_cookies =
                         merge_cookie_headers(protocol_cookies.as_deref(), cookies.as_deref())
@@ -471,14 +584,13 @@ impl<F: DanmuProtocolFactory> WebSocketDanmuProvider<F> {
                         Ok(url) => {
                             info!(
                                 proxied = proxy.is_some(),
-                                "Connecting to WebSocket: {}", url
+                                "Connecting to WebSocket: {}",
+                                crate::proxy::redacted_url(&url)
                             );
 
-                            // Build request with custom headers
                             let mut headers = protocol.headers(&room_id_owned);
 
                             if protocol.send_cookie_header() {
-                                // Add or merge cookies into headers
                                 if let Some(cookie_str) = merged_cookies.as_deref() {
                                     let cookie_str = cookie_str.trim();
                                     if !cookie_str.is_empty() {
@@ -504,18 +616,13 @@ impl<F: DanmuProtocolFactory> WebSocketDanmuProvider<F> {
                                     }
                                 }
                             } else {
-                                // Explicitly drop any Cookie header to avoid leakage.
                                 headers.remove(header::COOKIE);
                             }
 
-                            let connect_result =
-                                open_websocket(&url, &headers, proxy.as_ref()).await;
-
-                            match connect_result {
+                            match open_websocket(&url, &headers, proxy.as_ref()).await {
                                 Ok(mut ws_stream) => {
                                     info!("Connected to WebSocket for room {}", room_id_owned);
 
-                                    // Handshake
                                     let mut handshake_ok = true;
                                     match protocol.handshake_messages(&room_id_owned).await {
                                         Ok(msgs) => {
@@ -534,9 +641,11 @@ impl<F: DanmuProtocolFactory> WebSocketDanmuProvider<F> {
                                     }
 
                                     if handshake_ok {
-                                        attempt = 0;
-                                        delay = ws_config.base_reconnect_delay_ms;
-                                        current_connection = Some((ws_stream, protocol));
+                                        current_connection = Some((
+                                            ws_stream,
+                                            protocol,
+                                            tokio::time::Instant::now(),
+                                        ));
                                     }
                                 }
                                 Err(e) => {
@@ -548,44 +657,29 @@ impl<F: DanmuProtocolFactory> WebSocketDanmuProvider<F> {
                             error!("Failed to get WebSocket URL: {}", e);
                         }
                     }
-
-                    if current_connection.is_none() {
-                        if attempt >= ws_config.max_reconnect_attempts {
-                            error!("Max reconnect attempts reached for {}", room_id_owned);
-                            break;
-                        }
-                        attempt += 1;
-
-                        tokio::select! {
-                            _ = tokio::time::sleep(Duration::from_millis(delay)) => {},
-                            _ = shutdown_rx.recv() => break,
-                        }
-
-                        delay = (delay * 2).min(ws_config.max_reconnect_delay_ms);
-                        continue;
-                    }
                 }
 
-                // Main loop: read/write/heartbeat
-                if let Some((mut stream, mut protocol)) = current_connection.take() {
+                if let Some((mut stream, mut protocol, connected_at)) = current_connection.take() {
                     let heartbeat_enabled = protocol.heartbeat_message().is_some();
-                    let heartbeat_interval = protocol.heartbeat_interval();
-                    let mut heartbeat_timer = tokio::time::interval(heartbeat_interval);
+                    let heartbeat_interval =
+                        protocol.heartbeat_interval().max(Duration::from_millis(1));
+                    let first_tick = tokio::time::Instant::now() + heartbeat_interval;
+                    let mut heartbeat_timer =
+                        tokio::time::interval_at(first_tick, heartbeat_interval);
                     heartbeat_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
                     loop {
                         tokio::select! {
-                             // Heartbeat (only if enabled)
                             _ = heartbeat_timer.tick(), if heartbeat_enabled => {
                                 if let Some(msg) = protocol.heartbeat_message() {
                                     if let Err(e) = stream.send(msg).await {
                                         error!("Failed to send heartbeat: {}", e);
-                                        break; // Reconnect
+                                        break;
                                     }
                                     trace!("Sent heartbeat for {}", room_id_owned);
                                 }
                             }
 
-                            // Read message
                             msg_opt = stream.next() => {
                                 match msg_opt {
                                     Some(Ok(msg)) => {
@@ -605,46 +699,76 @@ impl<F: DanmuProtocolFactory> WebSocketDanmuProvider<F> {
                                                 }
                                                 for item in items {
                                                     if message_tx.send(item).await.is_err() {
-                                                        return;
+                                                        break 'outer;
                                                     }
                                                 }
                                             }
                                             Err(e) => {
                                                 warn!("Failed to decode message: {}", e);
-                                                tokio::select! {
-                                                    _ = tokio::time::sleep(Duration::from_millis(ws_config.base_reconnect_delay_ms)) => {}
-                                                    _ = shutdown_rx.recv() => return,
-                                                }
                                                 break;
                                             }
                                         }
                                     }
                                     Some(Err(e)) => {
                                         error!("WebSocket error: {}", e);
-                                        break; // Reconnect
+                                        break;
                                     }
                                     None => {
                                         warn!("WebSocket stream closed");
-                                        break; // Reconnect
+                                        break;
                                     }
                                 }
                             }
 
-                            // Shutdown
+                            _ = message_tx.closed() => {
+                                if let Err(error) = stream.close(None).await {
+                                    debug!(%error, "Failed to close WebSocket after stream drop");
+                                }
+                                break 'outer;
+                            }
+
                             _ = shutdown_rx.recv() => {
                                 if let Err(error) = stream.close(None).await {
                                     debug!(%error, "Failed to close WebSocket during shutdown");
                                 }
-                                return;
+                                break 'outer;
                             }
                         }
                     }
+
+                    if connected_at.elapsed() >= HEALTHY_CONNECTION_THRESHOLD {
+                        attempt = 0;
+                        delay = ws_config.base_reconnect_delay_ms;
+                    }
                 }
+
+                if attempt >= ws_config.max_reconnect_attempts {
+                    error!("Max reconnect attempts reached for {}", room_id_owned);
+                    break;
+                }
+                attempt += 1;
+
+                let sleep_ms = jittered_backoff_ms(delay, ws_config.max_reconnect_delay_ms);
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_millis(sleep_ms)) => {},
+                    _ = message_tx.closed() => break,
+                    _ = shutdown_rx.recv() => break,
+                }
+
+                delay = next_backoff_ms(
+                    delay,
+                    ws_config.base_reconnect_delay_ms,
+                    ws_config.max_reconnect_delay_ms,
+                );
             }
+
             debug!("WebSocket task for {} stopped", room_id_owned);
         });
 
-        Ok((message_rx, shutdown_tx, vec![handle]))
+        state_guard.tasks.push(handle);
+        drop(state_guard);
+
+        Ok(message_rx)
     }
 }
 
@@ -667,22 +791,12 @@ impl<F: DanmuProtocolFactory> DanmuProvider for WebSocketDanmuProvider<F> {
             })?;
 
         let connection_id = format!("{}-{}-{}", self.platform(), room_id, uuid::Uuid::new_v4());
-
-        let (items, shutdown_tx, tasks) = self.connect_internal(room_id, config).await?;
-
-        let state = WsConnectionState {
-            tasks,
-            shutdown_tx: Some(shutdown_tx),
-            _connection_permit: connection_permit,
-        };
-
-        self.connections
-            .write()
-            .await
-            .insert(connection_id.clone(), Arc::new(Mutex::new(state)));
+        let items = self
+            .spawn_connection_task(connection_id.clone(), room_id, config, connection_permit)
+            .await?;
 
         let mut connection = DanmuConnection::new(connection_id, self.platform(), room_id);
-        // The upgrade and handshake run in the task spawned by `connect_internal`,
+        // The upgrade and handshake run in the task spawned by `spawn_connection_task`,
         // so the handle is returned before the socket is necessarily live. The
         // caller learns the outcome from `items`: frames arrive once the
         // handshake succeeds, and the channel closes when the task gives up.
@@ -894,5 +1008,147 @@ mod tests {
             merge_cookie_headers(Some(base), Some(extra)).as_deref(),
             Some("a=1; b=3; c=4")
         );
+    }
+
+    #[tokio::test]
+    async fn immediate_disconnect_enforces_max_reconnect_attempts_and_releases_permit_on_exit() {
+        use std::sync::atomic::AtomicUsize;
+
+        let listener = websocket_server().await;
+        let port = listener.local_addr().unwrap().port();
+        let accepted = Arc::new(AtomicUsize::new(0));
+        let accepted_srv = accepted.clone();
+
+        tokio::spawn(async move {
+            while let Ok((stream, _)) = listener.accept().await {
+                accepted_srv.fetch_add(1, Ordering::SeqCst);
+                if let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await {
+                    let _ = ws.close(None).await;
+                }
+            }
+        });
+
+        let provider = WebSocketDanmuProvider::with_factory(
+            TextFactory {
+                url: format!("ws://127.0.0.1:{port}/room"),
+                given_client: Arc::default(),
+            },
+            Some(WebSocketProviderConfig {
+                max_reconnect_attempts: 2,
+                base_reconnect_delay_ms: 15,
+                max_reconnect_delay_ms: 40,
+            }),
+        );
+
+        let mut stream = provider
+            .connect("room", ConnectionConfig::default())
+            .await
+            .unwrap();
+
+        let next = tokio::time::timeout(Duration::from_secs(5), stream.items.recv())
+            .await
+            .expect("task must stop after max_reconnect_attempts rather than looping forever");
+        assert!(next.is_none());
+        // 1 initial connect + 2 reconnect attempts = 3 total handshakes.
+        assert_eq!(accepted.load(Ordering::SeqCst), 3);
+
+        // Wait briefly for the spawned task's post-loop cleanup to finish, without calling disconnect().
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        while provider.connection_semaphore.available_permits() < MAX_ACTIVE_CONNECTIONS
+            && tokio::time::Instant::now() < deadline
+        {
+            tokio::task::yield_now().await;
+        }
+
+        assert_eq!(
+            provider.connection_semaphore.available_permits(),
+            MAX_ACTIVE_CONNECTIONS,
+            "connection permit leaked after natural task exit"
+        );
+        assert!(
+            provider.connections.read().await.is_empty(),
+            "connections map entry leaked after natural task exit"
+        );
+    }
+
+    #[tokio::test]
+    async fn heartbeat_waits_one_interval_before_sending_first_frame() {
+        struct HeartbeatFactory {
+            url: String,
+        }
+        struct HeartbeatProtocol {
+            url: String,
+        }
+        impl DanmuProtocolFactory for HeartbeatFactory {
+            type Protocol = HeartbeatProtocol;
+            fn platform(&self) -> &str {
+                "hb"
+            }
+            fn supports_url(&self, _url: &str) -> bool {
+                false
+            }
+            fn extract_room_id(&self, _url: &str) -> Option<String> {
+                None
+            }
+            fn create_protocol(&self) -> Self::Protocol {
+                HeartbeatProtocol {
+                    url: self.url.clone(),
+                }
+            }
+        }
+        impl DanmuProtocol for HeartbeatProtocol {
+            async fn websocket_url(&mut self, _room_id: &str) -> Result<String> {
+                Ok(self.url.clone())
+            }
+            fn heartbeat_message(&self) -> Option<Message> {
+                Some(Message::Text("hb-ping".into()))
+            }
+            fn heartbeat_interval(&self) -> Duration {
+                Duration::from_millis(120)
+            }
+            async fn decode_message(
+                &mut self,
+                _message: &Message,
+                _room_id: &str,
+            ) -> Result<DanmuProtocolOutput> {
+                Ok(DanmuProtocolOutput::default())
+            }
+        }
+
+        let listener = websocket_server().await;
+        let port = listener.local_addr().unwrap().port();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            let early = tokio::time::timeout(Duration::from_millis(50), ws.next()).await;
+            let on_time = tokio::time::timeout(Duration::from_millis(250), ws.next()).await;
+            let _ = tx.send((early.is_err(), on_time));
+        });
+
+        let provider = WebSocketDanmuProvider::with_factory(
+            HeartbeatFactory {
+                url: format!("ws://127.0.0.1:{port}/room"),
+            },
+            None,
+        );
+        let mut stream = provider
+            .connect("room", ConnectionConfig::default())
+            .await
+            .unwrap();
+
+        let (no_immediate_tick, first_tick) = tokio::time::timeout(Duration::from_secs(5), rx)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(no_immediate_tick, "heartbeat fired immediately at t=0");
+        let msg = first_tick
+            .expect("heartbeat did not fire after interval")
+            .unwrap()
+            .unwrap();
+        assert_eq!(msg, Message::Text("hb-ping".into()));
+
+        provider.disconnect(&mut stream.connection).await.unwrap();
     }
 }

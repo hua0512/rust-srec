@@ -3,17 +3,13 @@
 //! Implements danmu collection for Bilibili live streaming using the generic
 //! WebSocket provider with binary protocol and Brotli/Zlib compression.
 
-use std::borrow::Cow;
+mod command;
+mod packet;
+
 use std::collections::HashMap;
-use std::io::Read;
 use std::time::Duration;
 
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD;
-use byteorder::{BigEndian, ByteOrder};
 use bytes::Bytes;
-use flate2::read::ZlibDecoder;
-use prost::Message as ProstMessage;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -21,12 +17,12 @@ use tokio_tungstenite::tungstenite::http::HeaderMap;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use tracing::debug;
 
+use crate::danmaku::DanmuItem;
 use crate::danmaku::error::{DanmakuError, Result};
 use crate::danmaku::websocket::ws_headers_origin_referer_ua;
 use crate::danmaku::websocket::{
     DanmuProtocol, DanmuProtocolFactory, DanmuProtocolOutput, WebSocketDanmuProvider,
 };
-use crate::danmaku::{DanmuControlEvent, DanmuItem, DanmuMessage};
 use crate::extractor::default::{DEFAULT_UA, default_client};
 
 use super::URL_REGEX;
@@ -34,45 +30,13 @@ use super::cookie_utils::{extract_cookie_value, strip_refresh_token};
 use super::utils::generate_fake_buvid3;
 use super::wbi::{encode_wbi, get_wbi_keys};
 use crate::extractor::utils::capture_group_1_owned;
+use packet::{DecodedPacket, HEARTBEAT, build_packet, decode_packets, op};
 
 /// Default WebSocket URL
 const DEFAULT_WS_URL: &str = "wss://broadcastlv.chat.bilibili.com/sub";
 
 /// Heartbeat interval in seconds
 const HEARTBEAT_INTERVAL_SECS: u64 = 30;
-
-/// Heartbeat packet (operation = 2)
-/// Header: len=31, header_len=16, ver=1, op=2, seq=1
-/// Body: "[object Object]"
-const HEARTBEAT: &[u8] = &[
-    0x00, 0x00, 0x00, 0x1f, // packet length = 31
-    0x00, 0x10, // header length = 16
-    0x00, 0x01, // version = 1
-    0x00, 0x00, 0x00, 0x02, // operation = 2 (heartbeat)
-    0x00, 0x00, 0x00, 0x01, // sequence = 1
-    // "[object Object]"
-    0x5b, 0x6f, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x20, 0x4f, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x5d,
-];
-
-/// Operation codes
-#[expect(
-    dead_code,
-    reason = "retained for protocol variants and forward-compatible response handling"
-)]
-mod op {
-    pub const HEARTBEAT_REPLY: u32 = 3;
-    pub const NOTIFICATION: u32 = 5;
-    pub const AUTH: u32 = 7;
-    pub const AUTH_REPLY: u32 = 8;
-}
-
-/// Protocol versions
-mod ver {
-    pub const RAW_JSON: u16 = 0;
-    pub const POPULARITY: u16 = 1;
-    pub const ZLIB: u16 = 2;
-    pub const BROTLI: u16 = 3;
-}
 
 /// Room init API response
 #[derive(Debug, Deserialize)]
@@ -98,59 +62,6 @@ struct AuthData {
     key: String,
 }
 
-/// Decoded packet
-struct DecodedPacket {
-    operation: u32,
-    /// Slice of the frame (or of the decompressed buffer) the packet came
-    /// from; refcounted, so packets never copy their body.
-    body: Bytes,
-}
-
-// Borrow the Base64 payload and skip unrelated JSON fields on the common V2
-// path. Cow still accepts escaped strings, allocating only when unescaping.
-#[derive(Deserialize)]
-struct GiftV2Notification<'a> {
-    #[serde(borrow)]
-    cmd: Cow<'a, str>,
-    #[serde(borrow)]
-    data: GiftV2Payload<'a>,
-}
-
-#[derive(Deserialize)]
-struct GiftV2Payload<'a> {
-    #[serde(borrow)]
-    pb: Cow<'a, str>,
-}
-
-// Subset of SEND_GIFT_V2 used for recording. Tags follow the schema shipped in
-// blive-message-listener@0.5.6-beta.1 (src/protobuf/SEND_GIFT_V2.proto.ts).
-// Prost skips other fields, including nested medal and animation information.
-#[derive(Clone, PartialEq, prost::Message)]
-struct SendGiftV2 {
-    #[prost(int64, tag = "1")]
-    uid: i64,
-    #[prost(string, tag = "2")]
-    uname: String,
-    #[prost(message, repeated, tag = "10")]
-    gift_list: Vec<GiftV2>,
-    #[prost(bool, tag = "11")]
-    switch: bool,
-}
-
-#[derive(Clone, PartialEq, prost::Message)]
-struct GiftV2 {
-    #[prost(string, tag = "2")]
-    gift_name: String,
-    #[prost(int64, tag = "3")]
-    num: i64,
-    #[prost(int64, tag = "5")]
-    price: i64,
-    #[prost(string, tag = "8")]
-    coin_type: String,
-    #[prost(int64, tag = "10")]
-    timestamp: i64,
-}
-
 /// Bilibili Danmu Protocol Implementation
 #[derive(Clone)]
 pub struct BilibiliDanmuProtocol {
@@ -159,6 +70,9 @@ pub struct BilibiliDanmuProtocol {
     cookies: Option<String>,
     uid: Option<u64>,
     connection_cookies: Option<String>,
+    /// Cached `(requested_room_id, real_room_id, token)` resolved in `websocket_url`
+    /// and consumed by `handshake_messages` to avoid duplicate HTTP + WBI calls.
+    resolved_session: Option<(String, u64, String)>,
 }
 
 impl Default for BilibiliDanmuProtocol {
@@ -168,6 +82,7 @@ impl Default for BilibiliDanmuProtocol {
             cookies: None,
             uid: None,
             connection_cookies: None,
+            resolved_session: None,
         }
     }
 }
@@ -185,6 +100,7 @@ impl BilibiliDanmuProtocol {
             cookies: Some(cookies.into()),
             uid: None,
             connection_cookies: None,
+            resolved_session: None,
         }
     }
 
@@ -381,404 +297,18 @@ impl BilibiliDanmuProtocol {
     }
 
     /// Decode packets, handling compression.
-    fn decode_packets(data: &Bytes) -> Vec<DecodedPacket> {
-        let mut packets = Vec::new();
-        let mut offset = 0;
-
-        while offset + 16 <= data.len() {
-            let packet_len = BigEndian::read_u32(&data[offset..offset + 4]) as usize;
-            let _header_len = BigEndian::read_u16(&data[offset + 4..offset + 6]);
-            let version = BigEndian::read_u16(&data[offset + 6..offset + 8]);
-            let operation = BigEndian::read_u32(&data[offset + 8..offset + 12]);
-
-            // Every frame has a 16-byte header. Validate the relative length
-            // before slicing, and avoid overflowing `offset + packet_len`.
-            if packet_len < 16 || packet_len > data.len() - offset {
-                break;
-            }
-
-            let body = &data[offset + 16..offset + packet_len];
-
-            match version {
-                ver::ZLIB => {
-                    if let Ok(decompressed) = decompress_zlib(body) {
-                        packets.extend(Self::decode_packets(&Bytes::from(decompressed)));
-                    }
-                }
-                ver::BROTLI => {
-                    if let Ok(decompressed) = decompress_brotli(body) {
-                        packets.extend(Self::decode_packets(&Bytes::from(decompressed)));
-                    }
-                }
-                ver::RAW_JSON | ver::POPULARITY => {
-                    packets.push(DecodedPacket {
-                        operation,
-                        body: data.slice(offset + 16..offset + packet_len),
-                    });
-                }
-                _ => {
-                    debug!("Unknown protocol version: {}", version);
-                }
-            }
-
-            offset += packet_len;
-        }
-
-        packets
-    }
-
-    /// Commands `parse_notification` turns into items; everything else is
-    /// dropped.
-    fn handles_command(cmd_base: &str) -> bool {
-        matches!(
-            cmd_base,
-            "DANMU_MSG"
-                | "DANMU_MSG_MIRROR"
-                | "SEND_GIFT"
-                | "SEND_GIFT_V2"
-                | "SUPER_CHAT_MESSAGE"
-                | "ROOM_CHANGE"
-                | "ROOM_LOCK"
-                | "CUT_OFF"
-        )
+    fn decode_packets(data: &Bytes, allow_compressed: bool) -> Result<Vec<DecodedPacket>> {
+        decode_packets(data, allow_compressed)
     }
 
     /// Append items from a notification (op=5); V2 gifts can contain a batch.
     fn parse_notification(body: &[u8], items: &mut Vec<DanmuItem>) {
-        // Bilibili serialises `cmd` as the first key. Most notifications
-        // (INTERACT_WORD, ONLINE_RANK_*, WATCHED_CHANGE, STOP_LIVE_ROOM_LIST,
-        // ...) are dropped anyway, so when that layout holds and the command
-        // is not handled, skip the frame before it becomes a `Value` tree.
-        // Any other layout, or a command with escapes, takes the full parse.
-        if let Some(rest) = body.strip_prefix(b"{\"cmd\":\"")
-            && let Some(end) = rest.iter().position(|&b| b == b'"')
-            && let Ok(cmd) = std::str::from_utf8(&rest[..end])
-            && !cmd.contains('\\')
-        {
-            let cmd_base = cmd.split(':').next().unwrap_or(cmd);
-            if !Self::handles_command(cmd_base) {
-                return;
-            }
-            if cmd_base == "SEND_GIFT_V2"
-                && let Ok(notification) = serde_json::from_slice::<GiftV2Notification<'_>>(body)
-                && notification.cmd.split(':').next() == Some("SEND_GIFT_V2")
-            {
-                Self::parse_gifts_v2(&notification.data.pb, items);
-                return;
-            }
-            // Duplicate fields or an unexpected envelope use Value's existing
-            // semantics below, including keeping the last duplicate field.
-        }
-
-        let Ok(json) = serde_json::from_slice::<Value>(body) else {
-            return;
-        };
-        let Some(cmd) = json.get("cmd").and_then(Value::as_str) else {
-            return;
-        };
-
-        // Handle DANMU_MSG variants (e.g., "DANMU_MSG:4:0:2:2:2:0")
-        let cmd_base = cmd.split(':').next().unwrap_or(cmd);
-        // DANMU_MSG_MIRROR are mirror of DANMU_MSG
-
-        let item = match cmd_base {
-            "DANMU_MSG" | "DANMU_MSG_MIRROR" => {
-                Self::parse_danmu_msg(&json).map(DanmuItem::Message)
-            }
-            "SEND_GIFT" => Self::parse_gift(&json).map(DanmuItem::Message),
-            "SEND_GIFT_V2" => {
-                if let Some(pb) = json
-                    .get("data")
-                    .and_then(|data| data.get("pb"))
-                    .and_then(Value::as_str)
-                {
-                    Self::parse_gifts_v2(pb, items);
-                }
-                return;
-            }
-            "SUPER_CHAT_MESSAGE" => Self::parse_super_chat(&json).map(DanmuItem::Message),
-            "ROOM_CHANGE" => Self::parse_room_change(&json),
-            // Stream-ending / enforcement events.
-            // Bilibili emits these when the live room is forcibly ended/locked.
-            "ROOM_LOCK" | "CUT_OFF" => Self::parse_stream_closed(cmd_base, &json),
-            _ => None,
-        };
-        items.extend(item);
+        command::parse_notification(body, items);
     }
 
-    fn parse_gifts_v2(pb: &str, items: &mut Vec<DanmuItem>) {
-        let bytes = match STANDARD.decode(pb) {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                debug!(%error, "Invalid SEND_GIFT_V2 base64 payload");
-                return;
-            }
-        };
-        let batch = match SendGiftV2::decode(bytes.as_slice()) {
-            Ok(batch) => batch,
-            Err(error) => {
-                debug!(%error, "Invalid SEND_GIFT_V2 protobuf payload");
-                return;
-            }
-        };
-        // Disabled batches must not produce gifts, matching the upstream gate.
-        // Record sender identity as delivered: anonymous senders can have uid=0.
-        if !batch.switch || batch.gift_list.is_empty() {
-            return;
-        }
-
-        let gift_count = batch.gift_list.len();
-        items.reserve(gift_count);
-        let mut user_id = batch.uid.to_string();
-        let mut username = batch.uname;
-        for (index, gift) in batch.gift_list.into_iter().enumerate() {
-            let Ok(count) = u32::try_from(gift.num) else {
-                debug!("Ignoring SEND_GIFT_V2 gift with invalid count");
-                continue;
-            };
-            let Ok(price) = u64::try_from(gift.price) else {
-                debug!("Ignoring SEND_GIFT_V2 gift with invalid price");
-                continue;
-            };
-            if count == 0
-                || gift.gift_name.is_empty()
-                || !matches!(gift.coin_type.as_str(), "gold" | "silver")
-            {
-                debug!("Ignoring SEND_GIFT_V2 gift with invalid name, count or coin type");
-                continue;
-            }
-            let mut message = DanmuMessage::gift(
-                uuid::Uuid::new_v4().to_string(),
-                // The final gift can own these strings directly; single-gift
-                // notifications need no sender-string clones.
-                if index + 1 == gift_count {
-                    std::mem::take(&mut user_id)
-                } else {
-                    user_id.clone()
-                },
-                if index + 1 == gift_count {
-                    std::mem::take(&mut username)
-                } else {
-                    username.clone()
-                },
-                gift.gift_name,
-                count,
-            )
-            // Preserve the same raw price units as legacy SEND_GIFT.
-            .with_metadata("price", serde_json::json!(price));
-
-            // Timestamp belongs to each gift, not the outer JSON envelope.
-            // Missing/nonpositive or out-of-range values keep reception time.
-            let timestamp = if gift.timestamp > 1_000_000_000_000 {
-                jiff::Timestamp::from_millisecond(gift.timestamp).ok()
-            } else if gift.timestamp > 0 {
-                jiff::Timestamp::from_second(gift.timestamp).ok()
-            } else {
-                None
-            };
-            if let Some(timestamp) = timestamp {
-                message = message.with_timestamp(timestamp);
-            }
-            items.push(DanmuItem::Message(message));
-        }
-    }
-
-    fn parse_stream_closed(cmd: &str, json: &Value) -> Option<DanmuItem> {
-        let data = json.get("data");
-
-        let message = data
-            .and_then(|d| {
-                d.get("message")
-                    .or_else(|| d.get("msg"))
-                    .or_else(|| d.get("reason"))
-                    .or_else(|| d.get("text"))
-            })
-            .and_then(|v| v.as_str())
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .or_else(|| Some(cmd.to_string()));
-
-        Some(DanmuItem::Control(DanmuControlEvent::StreamClosed {
-            message,
-            action: None,
-        }))
-    }
-
-    /// Parse ROOM_CHANGE (room info update) into a control event.
-    ///
-    /// Bilibili sends this when the streamer updates the title / area / tags.  
-    fn parse_room_change(json: &Value) -> Option<DanmuItem> {
-        let data = json.get("data")?;
-
-        let title = data
-            .get("title")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .filter(|s| !s.is_empty());
-        let category = data
-            .get("area_name")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .filter(|s| !s.is_empty());
-        let parent_category = data
-            .get("parent_area_name")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .filter(|s| !s.is_empty());
-
-        Some(DanmuItem::Control(DanmuControlEvent::RoomInfoChanged {
-            title,
-            category,
-            parent_category,
-        }))
-    }
-
-    /// Parse DANMU_MSG into DanmuMessage.
-    fn parse_danmu_msg(json: &Value) -> Option<DanmuMessage> {
-        let info = json.get("info")?.as_array()?;
-
-        // info[1] = content
-        let content = info.get(1)?.as_str()?.to_string();
-
-        // info[2][0] = uid, info[2][1] = name
-        let user_info = info.get(2)?.as_array()?;
-        let uid = user_info.first()?.as_u64().unwrap_or(0);
-        let name = user_info.get(1)?.as_str().unwrap_or("").to_string();
-
-        // info[0][3] = color
-        let meta = info.first()?.as_array()?;
-        let color = meta
-            .get(3)
-            .and_then(|v| v.as_u64())
-            .map(|c| format!("#{:06X}", c as u32));
-
-        // Check for emoticon in extra field
-        let content = if let Some(extra_obj) = meta.get(15) {
-            if let Some(extra_str) = extra_obj.get("extra").and_then(|v| v.as_str()) {
-                if let Ok(extra) = serde_json::from_str::<Value>(extra_str) {
-                    if let Some(emoticon) = extra.get("emoticon_unique").and_then(|v| v.as_str()) {
-                        if !emoticon.is_empty() {
-                            format!("[表情:{}]", emoticon)
-                        } else {
-                            content
-                        }
-                    } else {
-                        content
-                    }
-                } else {
-                    content
-                }
-            } else {
-                content
-            }
-        } else {
-            content
-        };
-
-        let mut danmu = DanmuMessage::chat(
-            uuid::Uuid::new_v4().to_string(),
-            uid.to_string(),
-            name,
-            content,
-        );
-
-        if let Some(c) = color {
-            danmu = danmu.with_color(c);
-        }
-
-        Some(danmu)
-    }
-
-    /// Parse SEND_GIFT into DanmuMessage.
-    fn parse_gift(json: &Value) -> Option<DanmuMessage> {
-        let data = json.get("data")?;
-
-        let name = data.get("uname")?.as_str()?.to_string();
-        let uid = data.get("uid")?.as_u64()?;
-        let gift_name = data.get("giftName")?.as_str()?.to_string();
-        let num = data.get("num").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
-
-        let price = data
-            .get("price")
-            .or_else(|| data.get("total_coin"))
-            .and_then(|v| v.as_u64().or_else(|| v.as_f64().map(|f| f as u64)))
-            .unwrap_or(0);
-
-        let timestamp_ms = data
-            .get("timestamp")
-            .and_then(|v| v.as_i64().or_else(|| v.as_u64().map(|u| u as i64)))
-            .map(|ts| {
-                if ts > 1_000_000_000_000 {
-                    ts
-                } else {
-                    ts * 1000
-                }
-            });
-
-        let mut msg = DanmuMessage::gift(
-            uuid::Uuid::new_v4().to_string(),
-            uid.to_string(),
-            name,
-            gift_name,
-            num,
-        )
-        .with_metadata("price", serde_json::json!(price));
-
-        if let Some(ts_ms) = timestamp_ms
-            && let Some(dt) = jiff::Timestamp::from_millisecond(ts_ms).ok()
-        {
-            msg = msg.with_timestamp(dt);
-        }
-
-        Some(msg)
-    }
-
-    /// Parse SUPER_CHAT_MESSAGE into DanmuMessage.
-    fn parse_super_chat(json: &Value) -> Option<DanmuMessage> {
-        let data = json.get("data")?;
-
-        let user_info = data.get("user_info")?;
-        let name = user_info.get("uname")?.as_str()?.to_string();
-        let uid = data.get("uid")?.as_u64()?;
-        let content = data.get("message")?.as_str()?.to_string();
-        let price = data
-            .get("price")
-            .and_then(|v| v.as_u64().or_else(|| v.as_f64().map(|f| f as u64)))
-            .unwrap_or(0);
-
-        let keep_time = data
-            .get("time")
-            .and_then(|v| v.as_u64().or_else(|| v.as_f64().map(|f| f as u64)))
-            .unwrap_or(0);
-
-        let timestamp_ms = data
-            .get("ts")
-            .or_else(|| data.get("timestamp"))
-            .and_then(|v| v.as_i64().or_else(|| v.as_u64().map(|u| u as i64)))
-            .map(|ts| {
-                if ts > 1_000_000_000_000 {
-                    ts
-                } else {
-                    ts * 1000
-                }
-            });
-
-        let mut msg = DanmuMessage::super_chat(
-            uuid::Uuid::new_v4().to_string(),
-            uid.to_string(),
-            name,
-            content,
-            price,
-        )
-        .with_super_chat_keep_time(keep_time);
-
-        if let Some(ts_ms) = timestamp_ms
-            && let Some(dt) = jiff::Timestamp::from_millisecond(ts_ms).ok()
-        {
-            msg = msg.with_timestamp(dt);
-        }
-
-        Some(msg)
+    #[cfg(test)]
+    fn parse_danmu_msg(json: &Value) -> Option<crate::danmaku::DanmuMessage> {
+        command::parse_danmu_msg(json)
     }
 }
 
@@ -803,6 +333,7 @@ impl DanmuProtocolFactory for BilibiliDanmuProtocol {
             cookies: self.cookies.clone(),
             uid: None,
             connection_cookies: None,
+            resolved_session: None,
         }
     }
 }
@@ -813,11 +344,9 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
     }
 
     async fn websocket_url(&mut self, room_id: &str) -> Result<String> {
-        // First get real room ID
         let real_room_id = self.get_real_room_id(room_id).await?;
-
-        // Then get WebSocket URL (token is retrieved separately for handshake)
-        let (ws_url, _token) = self.get_danmu_info(real_room_id).await?;
+        let (ws_url, token) = self.get_danmu_info(real_room_id).await?;
+        self.resolved_session = Some((room_id.to_owned(), real_room_id, token));
 
         Ok(ws_url)
     }
@@ -856,14 +385,19 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
             .and_then(|cookies| extract_cookie_value(cookies, "DedeUserID"))
             .and_then(|v| v.parse::<u64>().ok());
         self.connection_cookies = cookies.map(ToString::to_string);
+        self.resolved_session = None;
     }
 
     async fn handshake_messages(&mut self, room_id: &str) -> Result<Vec<Message>> {
-        // Get real room ID and danmu info
-        let real_room_id = self.get_real_room_id(room_id).await?;
-        let (_ws_url, token) = self.get_danmu_info(real_room_id).await?;
+        let (real_room_id, token) = match self.resolved_session.take() {
+            Some((cached_room, real_id, tok)) if cached_room == room_id => (real_id, tok),
+            _ => {
+                let real_id = self.get_real_room_id(room_id).await?;
+                let (_ws_url, tok) = self.get_danmu_info(real_id).await?;
+                (real_id, tok)
+            }
+        };
 
-        // Build auth packet
         let auth_packet = self.build_auth_packet(real_room_id, &token);
 
         Ok(vec![Message::Binary(auth_packet)])
@@ -884,7 +418,7 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
     ) -> Result<DanmuProtocolOutput> {
         match message {
             Message::Binary(data) => {
-                let packets = Self::decode_packets(data);
+                let packets = Self::decode_packets(data, true)?;
                 let mut items = Vec::new();
 
                 for packet in packets {
@@ -892,15 +426,10 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
                         op::NOTIFICATION => {
                             Self::parse_notification(&packet.body, &mut items);
                         }
-                        // op::HEARTBEAT_REPLY => {
-                        //     debug!("Bilibili heartbeat reply received");
-                        // }
                         op::AUTH_REPLY => {
                             debug!("Bilibili auth reply received");
                         }
-                        _ => {
-                            // debug!("Unknown operation: {}", packet.operation);
-                        }
+                        _ => {}
                     }
                 }
 
@@ -909,42 +438,6 @@ impl DanmuProtocol for BilibiliDanmuProtocol {
             _ => Ok(DanmuProtocolOutput::default()),
         }
     }
-}
-
-/// Build a packet with the given body and operation code.
-fn build_packet(body: &[u8], operation: u32) -> Vec<u8> {
-    let packet_len = 16 + body.len();
-    let mut packet = Vec::with_capacity(packet_len);
-
-    // Header
-    packet.extend_from_slice(&(packet_len as u32).to_be_bytes()); // packet length
-    packet.extend_from_slice(&16u16.to_be_bytes()); // header length
-    packet.extend_from_slice(&1u16.to_be_bytes()); // version
-    packet.extend_from_slice(&operation.to_be_bytes()); // operation
-    packet.extend_from_slice(&1u32.to_be_bytes()); // sequence
-
-    // Body
-    packet.extend_from_slice(body);
-
-    packet
-}
-
-/// Decompress zlib data.
-fn decompress_zlib(data: &[u8]) -> Result<Vec<u8>> {
-    let mut decoder = ZlibDecoder::new(data);
-    let mut decompressed = Vec::new();
-    decoder
-        .read_to_end(&mut decompressed)
-        .map_err(|e| DanmakuError::protocol(format!("zlib decompression failed: {}", e)))?;
-    Ok(decompressed)
-}
-
-/// Decompress brotli data.
-fn decompress_brotli(data: &[u8]) -> Result<Vec<u8>> {
-    let mut decompressed = Vec::new();
-    brotli::BrotliDecompress(&mut std::io::Cursor::new(data), &mut decompressed)
-        .map_err(|e| DanmakuError::protocol(format!("brotli decompression failed: {}", e)))?;
-    Ok(decompressed)
 }
 
 // Re-export the provider type
@@ -957,7 +450,14 @@ pub fn create_bilibili_danmu_provider() -> BilibiliDanmuProvider {
 
 #[cfg(test)]
 mod tests {
-    use crate::danmaku::ConnectionConfig;
+    use base64::Engine;
+    use base64::engine::general_purpose::STANDARD;
+    use byteorder::{BigEndian, ByteOrder};
+    use prost::Message as ProstMessage;
+
+    use super::command::SendGiftV2;
+    use super::packet::ver;
+    use crate::danmaku::{ConnectionConfig, DanmuControlEvent};
 
     use super::*;
 
@@ -1243,8 +743,13 @@ mod tests {
         for packet_len in [0_u32, 15] {
             let mut packet = vec![0_u8; 16];
             BigEndian::write_u32(&mut packet[0..4], packet_len);
+            BigEndian::write_u16(&mut packet[4..6], 16);
 
-            assert!(BilibiliDanmuProtocol::decode_packets(&Bytes::from(packet)).is_empty());
+            assert!(
+                BilibiliDanmuProtocol::decode_packets(&Bytes::from(packet), true)
+                    .unwrap()
+                    .is_empty()
+            );
         }
     }
 
@@ -1252,8 +757,86 @@ mod tests {
     fn decode_packets_rejects_lengths_beyond_the_frame() {
         let mut packet = vec![0_u8; 16];
         BigEndian::write_u32(&mut packet[0..4], 17);
+        BigEndian::write_u16(&mut packet[4..6], 16);
 
-        assert!(BilibiliDanmuProtocol::decode_packets(&Bytes::from(packet)).is_empty());
+        assert!(
+            BilibiliDanmuProtocol::decode_packets(&Bytes::from(packet), true)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn decode_packets_rejects_short_header_len_nested_compression_and_decompression_bombs() {
+        use crate::danmaku::websocket::MAX_DECOMPRESSED_FRAME_BYTES;
+        use std::io::Write;
+
+        // 1. header_len < 16 with packet_len >= 16 must not slice &[16..header_len] and panic.
+        let mut bad_header = vec![0_u8; 20];
+        BigEndian::write_u32(&mut bad_header[0..4], 20);
+        BigEndian::write_u16(&mut bad_header[4..6], 8);
+        assert!(
+            BilibiliDanmuProtocol::decode_packets(&Bytes::from(bad_header), true)
+                .unwrap()
+                .is_empty()
+        );
+
+        // 2. Nested Zlib-inside-Zlib compressed frame must be rejected.
+        let inner_raw = build_packet(b"{}", op::NOTIFICATION);
+        let mut inner_enc =
+            flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+        inner_enc.write_all(&inner_raw).unwrap();
+        let mut inner_zlib_pkt = build_packet(&inner_enc.finish().unwrap(), op::NOTIFICATION);
+        BigEndian::write_u16(&mut inner_zlib_pkt[6..8], ver::ZLIB);
+
+        let mut outer_enc =
+            flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+        outer_enc.write_all(&inner_zlib_pkt).unwrap();
+        let mut nested_pkt = build_packet(&outer_enc.finish().unwrap(), op::NOTIFICATION);
+        BigEndian::write_u16(&mut nested_pkt[6..8], ver::ZLIB);
+
+        let err = BilibiliDanmuProtocol::decode_packets(&Bytes::from(nested_pkt), true)
+            .expect_err("nested compressed packets must fail");
+        assert!(matches!(err, DanmakuError::Protocol(_)), "{err:?}");
+
+        // 3. Oversized Zlib and Brotli payloads exceeding MAX_DECOMPRESSED_FRAME_BYTES must error.
+        let oversized = vec![0_u8; MAX_DECOMPRESSED_FRAME_BYTES + 1024];
+
+        let mut zlib_bomb_enc =
+            flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+        zlib_bomb_enc.write_all(&oversized).unwrap();
+        let mut zlib_bomb_pkt = build_packet(&zlib_bomb_enc.finish().unwrap(), op::NOTIFICATION);
+        BigEndian::write_u16(&mut zlib_bomb_pkt[6..8], ver::ZLIB);
+        assert!(BilibiliDanmuProtocol::decode_packets(&Bytes::from(zlib_bomb_pkt), true).is_err());
+
+        let mut brotli_bomb = Vec::new();
+        {
+            let mut writer = brotli::CompressorWriter::new(&mut brotli_bomb, 4096, 1, 20);
+            writer.write_all(&oversized).unwrap();
+        }
+        let mut brotli_bomb_pkt = build_packet(&brotli_bomb, op::NOTIFICATION);
+        BigEndian::write_u16(&mut brotli_bomb_pkt[6..8], ver::BROTLI);
+        assert!(
+            BilibiliDanmuProtocol::decode_packets(&Bytes::from(brotli_bomb_pkt), true).is_err()
+        );
+    }
+
+    #[tokio::test]
+    async fn handshake_messages_consumes_cached_session_without_network_calls() {
+        let mut protocol = BilibiliDanmuProtocol::default();
+        protocol.configure_connection(Some("DedeUserID=99; SESSDATA=ok"), None);
+        protocol.resolved_session = Some(("short6".to_string(), 60006, "cached-tok".to_string()));
+
+        let msgs = protocol.handshake_messages("short6").await.unwrap();
+        assert_eq!(msgs.len(), 1);
+        let Message::Binary(packet) = &msgs[0] else {
+            panic!("expected binary auth packet");
+        };
+        let auth: Value = serde_json::from_slice(&packet[16..]).unwrap();
+        assert_eq!(auth["roomid"], 60006);
+        assert_eq!(auth["key"], "cached-tok");
+        assert_eq!(auth["uid"], 99);
+        assert!(protocol.resolved_session.is_none());
     }
 
     #[test]

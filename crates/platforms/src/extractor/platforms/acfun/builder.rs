@@ -58,16 +58,17 @@ impl PlatformExtractor for Acfun {
 
         let did = format!("web_{}", get_random_name(16));
 
-        let response = self
-            .extractor
-            .client
-            .post(Self::VISITOR_LOGIN_URL)
-            .form(&[("sid", "acfun.api.visitor")])
-            .header(header::COOKIE, format!("_did={did};"))
-            .send()
-            .await?
-            .json::<VisitorLoginResponse>()
-            .await?;
+        let response = ExtractorError::check_response(
+            self.extractor
+                .client
+                .post(Self::VISITOR_LOGIN_URL)
+                .form(&[("sid", "acfun.api.visitor")])
+                .header(header::COOKIE, format!("_did={did};"))
+                .send()
+                .await?,
+        )?
+        .json::<VisitorLoginResponse>()
+        .await?;
 
         if response.result != 0 {
             let detail = response
@@ -95,20 +96,21 @@ impl PlatformExtractor for Acfun {
             ("did", did),
             ("acfun.api.visitor_st", visitor_st),
         ];
-        let start_play_response = self
-            .extractor
-            .client
-            .post(Self::START_PLAY_URL)
-            .header(header::REFERER, "https://live.acfun.cn/")
-            .query(&params)
-            .form(&[
-                ("authorId", rid.to_string()),
-                ("pullStreamType", "FLV".to_string()),
-            ])
-            .send()
-            .await?
-            .json::<StartPlayResponse>()
-            .await?;
+        let start_play_response = ExtractorError::check_response(
+            self.extractor
+                .client
+                .post(Self::START_PLAY_URL)
+                .header(header::REFERER, "https://live.acfun.cn/")
+                .query(&params)
+                .form(&[
+                    ("authorId", rid.to_string()),
+                    ("pullStreamType", "FLV".to_string()),
+                ])
+                .send()
+                .await?,
+        )?
+        .json::<StartPlayResponse>()
+        .await?;
 
         if start_play_response.result != 1 {
             return Ok(MediaInfo::builder(self.extractor.url.clone(), "", "")

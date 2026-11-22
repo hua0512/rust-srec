@@ -10,10 +10,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use aes::Aes128;
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use cipher::{BlockModeDecrypt, KeyIvInit, block_padding::Pkcs7};
 
 use crate::DownloadError;
+use crate::redact::redact_url_str;
 
 type Aes128CbcDec = cbc::Decryptor<Aes128>;
 
@@ -37,11 +38,11 @@ impl CryptoExecutor {
         Self { backend }
     }
 
-    /// AES-128-CBC with PKCS#7 padding. The single intentional copy of the
-    /// zero-copy strategy happens here: encrypted `Bytes` -> mutable buffer ->
-    /// in-place decrypt -> decrypted `Bytes`. Output is never larger than the
-    /// input, which is why the processing budget reserves the input length as
-    /// an upper bound before dispatch.
+    /// AES-128-CBC with PKCS#7 padding. Reuses the owned `Bytes` buffer in
+    /// place when uniquely held (`try_into_mut`), falling back to a single
+    /// copy only when another handle shares the allocation. Output is never
+    /// larger than the input, which is why the processing budget reserves the
+    /// input length as an upper bound before dispatch.
     pub async fn decrypt_aes128_cbc(
         &self,
         data: Bytes,
@@ -66,7 +67,9 @@ pub fn decrypt_aes128_cbc_sync(
     key: &[u8; 16],
     iv: &[u8; 16],
 ) -> Result<Bytes, DownloadError> {
-    let mut buffer = data.to_vec();
+    let mut buffer = data
+        .try_into_mut()
+        .unwrap_or_else(|shared| BytesMut::from(shared.as_ref()));
 
     let cipher = Aes128CbcDec::new_from_slices(key, iv).map_err(|e| DownloadError::Decryption {
         reason: format!("failed to initialize AES decryptor: {e}"),
@@ -80,7 +83,7 @@ pub fn decrypt_aes128_cbc_sync(
         .len();
 
     buffer.truncate(decrypted_len);
-    Ok(Bytes::from(buffer))
+    Ok(buffer.freeze())
 }
 
 /// TTL key cache with single-flight loading.
@@ -130,7 +133,8 @@ impl KeyCache {
 pub fn validate_key_bytes(raw: &[u8], identity: &str) -> Result<[u8; 16], DownloadError> {
     <[u8; 16]>::try_from(raw).map_err(|_| DownloadError::Decryption {
         reason: format!(
-            "decryption key for {identity} has invalid length {} (expected 16)",
+            "decryption key for {} has invalid length {} (expected 16)",
+            redact_url_str(identity),
             raw.len()
         ),
     })
@@ -156,16 +160,24 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn decrypt_roundtrip_on_both_backends() {
+    async fn decrypt_roundtrip_on_unique_and_shared_buffers() {
         let key = [0x42u8; 16];
         let iv = [0x24u8; 16];
         let plaintext = b"hello hls engine";
-        let encrypted = Bytes::from(encrypt(plaintext, &key, &iv));
+        let shared = Bytes::from(encrypt(plaintext, &key, &iv));
 
+        // Unique buffer exercises in-place `try_into_mut` without copying.
+        let unique = BytesMut::from(shared.as_ref()).freeze();
+        let unique_ptr = unique.as_ptr();
+        let out_unique = decrypt_aes128_cbc_sync(unique, &key, &iv).unwrap();
+        assert_eq!(out_unique.as_ref(), plaintext);
+        assert_eq!(out_unique.as_ptr(), unique_ptr);
+
+        // Shared buffer falls back cleanly when another handle holds a ref.
         for backend in [CryptoBackend::Inline, CryptoBackend::TokioBlocking] {
             let exec = CryptoExecutor::new(backend);
             let out = exec
-                .decrypt_aes128_cbc(encrypted.clone(), key, iv)
+                .decrypt_aes128_cbc(shared.clone(), key, iv)
                 .await
                 .unwrap();
             assert_eq!(out.as_ref(), plaintext);
@@ -232,8 +244,16 @@ mod tests {
     }
 
     #[test]
-    fn key_validation_rejects_wrong_length() {
-        assert!(validate_key_bytes(&[0u8; 15], "k").is_err());
+    fn key_validation_rejects_wrong_length_and_redacts_secrets() {
+        let err = validate_key_bytes(
+            &[0u8; 15],
+            "https://user:secret_pw@e.com/key.bin?token=super_secret#frag",
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(!err.contains("secret_pw"), "{err}");
+        assert!(!err.contains("super_secret"), "{err}");
+        assert!(!err.contains("frag"), "{err}");
         assert!(validate_key_bytes(&[0u8; 17], "k").is_err());
         assert_eq!(validate_key_bytes(&[3u8; 16], "k").unwrap(), [3u8; 16]);
     }

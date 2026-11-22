@@ -40,6 +40,7 @@ pub async fn process_hls_stream(
 
     let start_time = Instant::now();
     let label = protocol.label();
+    let redacted_url = mesio_engine::redact::redact_url_for_log(url_str);
 
     let base_name = expand_name_url(name_template, url_str)?;
     // Create the writer progress span up-front so downloads inherit it
@@ -54,16 +55,16 @@ pub async fn process_hls_stream(
     // Span names must be literals.
     let download_span = match protocol {
         SegmentedProtocol::Hls => {
-            span!(parent: &writer_span, Level::INFO, "download_hls", url = %url_str)
+            span!(parent: &writer_span, Level::INFO, "download_hls", url = %redacted_url)
         }
         SegmentedProtocol::Dash => {
-            span!(parent: &writer_span, Level::INFO, "download_dash", url = %url_str)
+            span!(parent: &writer_span, Level::INFO, "download_dash", url = %redacted_url)
         }
     };
 
     // Only initialize download span visuals if not in pipe mode
     if !is_pipe_mode {
-        spans::init_hls_download_span(&download_span, format!("Downloading {}", url_str));
+        spans::init_hls_download_span(&download_span, format!("Downloading {redacted_url}"));
     }
 
     let DownloadSession {
@@ -130,13 +131,14 @@ pub async fn process_hls_stream(
             &config.pipeline_config,
             PipeHlsStrategy::for_protocol(protocol).with_stream(pipe_stream),
             extension,
+            token.child_token(),
         )
         .await?;
 
         // Log completion statistics for pipe mode
         let elapsed = start_time.elapsed();
         info!(
-            url = %url_str,
+            url = %redacted_url,
             duration = ?elapsed,
             items_written = pipe_stats.items_written,
             bytes_written = pipe_stats.bytes_written,
@@ -179,7 +181,7 @@ pub async fn process_hls_stream(
 
     // Only update progress bar finish message if not in pipe mode
     if !is_pipe_mode {
-        download_span.pb_set_finish_message(&format!("Downloaded {}", url_str));
+        download_span.pb_set_finish_message(&format!("Downloaded {redacted_url}"));
     }
     cleanup.finish().await;
     drop(download_span);
@@ -188,7 +190,7 @@ pub async fn process_hls_stream(
 
     // Log completion (goes to stderr in pipe mode)
     info!(
-        url = %url_str,
+        url = %redacted_url,
         items = stats.items_written,
         files = stats.files_created,
         duration = ?elapsed,

@@ -42,16 +42,16 @@ pub fn parse_params(params: &[String]) -> Result<Vec<(String, String)>, AppError
     let result: Result<Vec<(String, String)>, AppError> = params
         .iter()
         .map(|param| {
-            debug!("Parsing parameter: {param}");
             param
                 .split_once('=')
                 .map(|(key, value)| {
-                    info!("Added parameter: key='{key}', value='{value}'");
+                    debug!("Parsing parameter: key='{key}'");
+                    info!("Added parameter: key='{key}', value='[REDACTED]'");
                     (key.to_string(), value.to_string())
                 })
                 .ok_or_else(|| {
-                    error!("Invalid param format: {param}");
-                    AppError::InvalidInput(format!("Invalid param format: {param}"))
+                    error!("Invalid param format: expected 'key=value'");
+                    AppError::InvalidInput("Invalid param format: expected 'key=value'".to_string())
                 })
         })
         .collect();

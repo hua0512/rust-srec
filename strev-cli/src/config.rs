@@ -1,8 +1,10 @@
-use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     /// Default output format
     pub default_output_format: String,
@@ -42,6 +44,39 @@ pub struct AppConfig {
 
     /// Default proxy password (if proxy requires authentication)
     pub default_proxy_password: Option<String>,
+}
+
+impl fmt::Debug for AppConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let redacted_proxy = self
+            .default_proxy
+            .as_deref()
+            .map(platforms_parser::proxy::redacted_url);
+        f.debug_struct("AppConfig")
+            .field("default_output_format", &self.default_output_format)
+            .field("default_timeout", &self.default_timeout)
+            .field("default_retries", &self.default_retries)
+            .field("max_concurrent", &self.max_concurrent)
+            .field(
+                "default_cookies",
+                &self.default_cookies.as_ref().map(|_| "[redacted]"),
+            )
+            .field("auto_select", &self.auto_select)
+            .field("include_extras", &self.include_extras)
+            .field("default_output_dir", &self.default_output_dir)
+            .field("user_agent", &self.user_agent)
+            .field("colored_output", &self.colored_output)
+            .field("default_proxy", &redacted_proxy)
+            .field(
+                "default_proxy_username",
+                &self.default_proxy_username.as_ref().map(|_| "[redacted]"),
+            )
+            .field(
+                "default_proxy_password",
+                &self.default_proxy_password.as_ref().map(|_| "[redacted]"),
+            )
+            .finish()
+    }
 }
 
 impl Default for AppConfig {
@@ -126,6 +161,19 @@ impl AppConfig {
 
     /// Show current configuration as a formatted string
     pub fn show(&self) -> Result<String> {
-        toml::to_string_pretty(self).context("Failed to serialize configuration for display")
+        let mut redacted = self.clone();
+        if redacted.default_cookies.is_some() {
+            redacted.default_cookies = Some("[redacted]".to_string());
+        }
+        if let Some(proxy) = redacted.default_proxy.as_deref() {
+            redacted.default_proxy = Some(platforms_parser::proxy::redacted_url(proxy));
+        }
+        if redacted.default_proxy_username.is_some() {
+            redacted.default_proxy_username = Some("[redacted]".to_string());
+        }
+        if redacted.default_proxy_password.is_some() {
+            redacted.default_proxy_password = Some("[redacted]".to_string());
+        }
+        toml::to_string_pretty(&redacted).context("Failed to serialize configuration for display")
     }
 }

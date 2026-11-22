@@ -86,6 +86,31 @@ impl FlvProtocolBuilder {
         }
     }
 
+    /// Replace the shared base HTTP configuration.
+    pub fn with_base_config(mut self, base_config: DownloaderConfig) -> Self {
+        self.config.base = base_config;
+        self
+    }
+
+    /// Set proxy configuration
+    pub fn proxy(mut self, proxy_config: ProxyConfig) -> Self {
+        self.config.base.proxy = Some(proxy_config);
+        self.config.base.use_system_proxy = false;
+        self
+    }
+
+    /// Set whether to use system proxy settings
+    pub fn use_system_proxy(mut self, use_system_proxy: bool) -> Self {
+        self.config.base.use_system_proxy = use_system_proxy;
+        self
+    }
+
+    /// Set whether to accept invalid TLS certificates (use with caution)
+    pub fn danger_accept_invalid_certs(mut self, accept: bool) -> Self {
+        self.config.base.danger_accept_invalid_certs = accept;
+        self
+    }
+
     /// Set buffer size for download operations
     pub fn buffer_size(mut self, size: usize) -> Self {
         self.config.buffer_size = size;
@@ -173,6 +198,7 @@ impl HlsProtocolBuilder {
     /// Set proxy configuration
     pub fn proxy(mut self, proxy_config: ProxyConfig) -> Self {
         self.config.base.proxy = Some(proxy_config);
+        self.config.base.use_system_proxy = false;
         self
     }
 
@@ -420,6 +446,7 @@ impl DashProtocolBuilder {
     /// Set proxy configuration
     pub fn proxy(mut self, proxy_config: ProxyConfig) -> Self {
         self.config.base.proxy = Some(proxy_config);
+        self.config.base.use_system_proxy = false;
         self
     }
 

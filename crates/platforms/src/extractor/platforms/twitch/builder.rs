@@ -28,11 +28,25 @@ pub(super) const GQL_URL: &str = "https://gql.twitch.tv/gql";
 pub struct Twitch {
     extractor: Extractor,
     gql_url: String,
-    /// Whether requests carry an account OAuth token, so a rejected request
-    /// is evidence against that account rather than an anonymous failure.
-    has_oauth_token: bool,
+    /// Account OAuth token sent only on GraphQL API requests (`post_gql`),
+    /// never stored in `extractor.platform_headers` or forwarded to CDN edges.
+    oauth_token: Option<String>,
     /// Comma-separated `supported_codecs` usher parameter.
     supported_codecs: String,
+}
+
+impl std::fmt::Debug for Twitch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Twitch")
+            .field("extractor", &self.extractor)
+            .field("gql_url", &self.gql_url)
+            .field(
+                "oauth_token",
+                &self.oauth_token.as_ref().map(|_| "[redacted]"),
+            )
+            .field("supported_codecs", &self.supported_codecs)
+            .finish()
+    }
 }
 
 /// Codecs usher can be offered. Twitch serves some qualities only in H.265 or
@@ -90,9 +104,6 @@ impl Twitch {
             extras_get_str(extras.as_ref(), "oauth_token"),
             cookies.as_deref(),
         );
-        if let Some(token) = &oauth_token {
-            extractor.add_header_typed(reqwest::header::AUTHORIZATION, format!("OAuth {token}"));
-        }
 
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
@@ -100,7 +111,7 @@ impl Twitch {
         Self {
             extractor,
             gql_url: GQL_URL.to_owned(),
-            has_oauth_token: oauth_token.is_some(),
+            oauth_token,
             supported_codecs,
         }
     }
@@ -116,6 +127,11 @@ impl Twitch {
 
     pub fn extract_room_id(&self) -> Result<&str, ExtractorError> {
         capture_group_1_or_invalid_url(&URL_REGEX, &self.extractor.url)
+    }
+
+    #[doc(hidden)]
+    pub fn configured_oauth_token(&self) -> Option<&str> {
+        self.oauth_token.as_deref()
     }
 
     fn build_persisted_query_request(
@@ -141,10 +157,18 @@ impl Twitch {
         &self,
         body: String,
     ) -> Result<Vec<T>, ExtractorError> {
-        let response = self.extractor.post(&self.gql_url).body(body).send().await?;
+        let mut req = self.extractor.post(&self.gql_url).body(body);
+        if let Some(token) = &self.oauth_token
+            && let Ok(mut auth_value) =
+                reqwest::header::HeaderValue::from_str(&format!("OAuth {token}"))
+        {
+            auth_value.set_sensitive(true);
+            req = req.header(reqwest::header::AUTHORIZATION, auth_value);
+        }
+        let response = req.send().await?;
         // GQL rejects an invalid or revoked OAuth token with 401 instead of
         // falling back to anonymous access.
-        if self.has_oauth_token && response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        if self.oauth_token.is_some() && response.status() == reqwest::StatusCode::UNAUTHORIZED {
             return Err(ExtractorError::Authentication {
                 code: "401".to_owned(),
             });
@@ -499,6 +523,61 @@ mod tests {
             .unwrap();
 
         assert_eq!(responses.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn oauth_token_is_excluded_from_platform_headers_and_debug_but_sent_on_gql() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (req_tx, req_rx) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0_u8; 4096];
+            let n = socket.read(&mut buf).await.unwrap();
+            let raw = String::from_utf8_lossy(&buf[..n]).into_owned();
+            let _ = req_tx.send(raw);
+            let body = r#"[{"data":{}}]"#;
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = socket.write_all(resp.as_bytes()).await;
+        });
+
+        let mut twitch = Twitch::new(
+            "https://www.twitch.tv/abby_".to_string(),
+            default_client(),
+            Some("auth-token=cookie_secret_tok".to_string()),
+            Some(serde_json::json!({ "oauth_token": "extras_secret_tok" })),
+        );
+        twitch.gql_url = format!("http://{addr}/gql");
+
+        let headers = twitch.extractor.get_platform_headers_map();
+        assert!(
+            !headers
+                .keys()
+                .any(|k| k.eq_ignore_ascii_case("authorization")),
+            "OAuth token must not leak into platform_headers / MediaInfo.headers: {headers:?}"
+        );
+        let dbg_str = format!("{twitch:?}");
+        assert!(!dbg_str.contains("extras_secret_tok"), "{dbg_str}");
+        assert!(!dbg_str.contains("cookie_secret_tok"), "{dbg_str}");
+
+        let responses = twitch
+            .post_gql::<serde_json::Value>("{}".to_owned())
+            .await
+            .unwrap();
+        assert_eq!(responses.len(), 1);
+
+        let raw_http = req_rx.await.unwrap();
+        assert!(
+            raw_http
+                .lines()
+                .any(|line| line.eq_ignore_ascii_case("authorization: OAuth extras_secret_tok")),
+            "expected Authorization header on GQL request:\n{raw_http}"
+        );
     }
 
     #[tokio::test]

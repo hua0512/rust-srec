@@ -2,9 +2,10 @@
 //!
 //! This module provides an in-memory cache implementation using Moka caching.
 
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use bytes::Bytes;
+use moka::Expiry;
 use moka::future::Cache as MokaCache;
 use tracing::{debug, warn};
 
@@ -20,6 +21,56 @@ struct CacheEntry {
     metadata: CacheMetadata,
 }
 
+/// Per-entry expiration policy honoring `entry.metadata.expires_at` intersected
+/// with the cache's optional global `ttl_seconds`.
+struct CacheEntryExpiry {
+    default_ttl: Option<Duration>,
+}
+
+impl CacheEntryExpiry {
+    fn ttl_for(&self, entry: &CacheEntry) -> Option<Duration> {
+        let meta_ttl = entry.metadata.expires_at.and_then(|expires_at| {
+            let now_secs = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            // Entries inserted already expired remain observable as
+            // `CacheStatus::Expired` on their first `get()` (and are skipped by
+            // `contains` / cleaned up on `sweep`), while live entries receive an
+            // exact timer for automatic Moka eviction once their TTL elapses.
+            (expires_at > now_secs).then(|| Duration::from_secs(expires_at - now_secs))
+        });
+
+        match (meta_ttl, self.default_ttl) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (Some(a), None) => Some(a),
+            (None, Some(b)) => Some(b),
+            (None, None) => None,
+        }
+    }
+}
+
+impl Expiry<CacheKey, CacheEntry> for CacheEntryExpiry {
+    fn expire_after_create(
+        &self,
+        _key: &CacheKey,
+        value: &CacheEntry,
+        _created_at: Instant,
+    ) -> Option<Duration> {
+        self.ttl_for(value)
+    }
+
+    fn expire_after_update(
+        &self,
+        _key: &CacheKey,
+        value: &CacheEntry,
+        _updated_at: Instant,
+        _duration_until_expiry: Option<Duration>,
+    ) -> Option<Duration> {
+        self.ttl_for(value)
+    }
+}
+
 /// Memory cache provider implementation using Moka
 #[derive(Clone)]
 pub struct MemoryCache {
@@ -32,9 +83,11 @@ pub struct MemoryCache {
 impl MemoryCache {
     /// Create a new memory cache with the specified size limit
     pub fn new(max_size_bytes: u64, ttl_seconds: u64) -> Self {
-        // Size based eviction
+        let default_ttl = (ttl_seconds > 0).then(|| Duration::from_secs(ttl_seconds));
+
         let mut builder = MokaCache::builder()
-            .weigher(|_k, v: &CacheEntry| v.data.len().try_into().unwrap_or(u32::MAX));
+            .weigher(|_k, v: &CacheEntry| v.data.len().try_into().unwrap_or(u32::MAX))
+            .expire_after(CacheEntryExpiry { default_ttl });
 
         if max_size_bytes == 0 {
             warn!("Memory cache disabled (max_size_bytes = 0)");
@@ -42,18 +95,12 @@ impl MemoryCache {
             builder = builder.max_capacity(max_size_bytes);
         }
 
-        // Only add TTL if it's non-zero
-        if ttl_seconds > 0 {
-            builder = builder.time_to_live(Duration::from_secs(ttl_seconds));
-        }
-
-        // Build the cache
         let cache = builder.build();
 
         debug!(
             max_size = max_size_bytes,
             ttl_seconds = ttl_seconds,
-            "Memory cache created with size limit and TTL"
+            "Memory cache created with size limit and per-entry expiry"
         );
 
         Self {
@@ -65,17 +112,18 @@ impl MemoryCache {
 
 impl CacheProvider for MemoryCache {
     async fn contains(&self, key: &CacheKey) -> CacheResult<bool> {
-        Ok(self.cache.contains_key(key))
+        Ok(self
+            .cache
+            .get(key)
+            .await
+            .is_some_and(|entry| !entry.metadata.is_expired()))
     }
 
     async fn get(&self, key: &CacheKey) -> CacheLookupResult {
-        // Try to get the entry from the cache
         if let Some(entry) = self.cache.get(key).await {
             let data = entry.data.clone();
             let metadata = entry.metadata.clone();
 
-            // Manually check for expiration based on metadata, which is necessary when no
-            // global TTL is set on the Moka cache.
             if metadata.is_expired() {
                 debug!(
                     key = ?key,
@@ -85,19 +133,18 @@ impl CacheProvider for MemoryCache {
                 return Ok(Some((data, metadata, CacheStatus::Expired)));
             }
 
-            // Return a cache hit
             return Ok(Some((data, metadata, CacheStatus::Hit)));
         }
 
-        // Cache miss
         Ok(None)
     }
 
     async fn put(&self, key: CacheKey, data: Bytes, metadata: CacheMetadata) -> CacheResult<()> {
+        if self.max_size == 0 {
+            return Ok(());
+        }
         let size = metadata.size;
 
-        // Check if this entry is too large to be cached at all
-        // A single entry shouldn't be larger than the total cache size
         if size > self.max_size {
             warn!(
                 key = ?key,
@@ -108,18 +155,13 @@ impl CacheProvider for MemoryCache {
             return Ok(());
         }
 
-        // Add the new entry
         let entry = CacheEntry { data, metadata };
-
         self.cache.insert(key, entry).await;
-
         Ok(())
     }
 
     async fn remove(&self, key: &CacheKey) -> CacheResult<()> {
-        // Check if entry exists before removing
         if self.cache.get(key).await.is_some() {
-            // Remove from cache
             self.cache.invalidate(key).await;
             debug!(key = ?key, "Removed entry from memory cache");
         }
@@ -128,16 +170,21 @@ impl CacheProvider for MemoryCache {
     }
 
     async fn clear(&self) -> CacheResult<()> {
-        // Clear the cache
         self.cache.invalidate_all();
-
         debug!("Memory cache cleared");
         Ok(())
     }
 
     async fn sweep(&self) -> CacheResult<()> {
-        // Moka handles expiration automatically based on its configuration (time_to_live, time_to_idle).
-        // `run_pending_tasks` can be called to eagerly perform maintenance, like removing expired entries.
+        let expired: Vec<CacheKey> = self
+            .cache
+            .iter()
+            .filter(|(_, entry)| entry.metadata.is_expired())
+            .map(|(k, _)| (*k).clone())
+            .collect();
+        for key in expired {
+            self.cache.invalidate(&key).await;
+        }
         self.cache.run_pending_tasks().await;
         Ok(())
     }
@@ -150,17 +197,14 @@ mod tests {
     use bytes::Bytes;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-    // Helper to create a CacheKey
     fn key(name: &str) -> CacheKey {
         CacheKey::new(CacheResourceType::Content, name.to_string(), None)
     }
 
-    // Helper to create Bytes data
     fn data(content: &str) -> Bytes {
         Bytes::from(content.to_string())
     }
 
-    // Helper to create CacheMetadata
     fn metadata(size: u64, expires_in_secs: Option<u64>) -> CacheMetadata {
         let mut meta = CacheMetadata::new(size)
             .with_content_type_option(Some("application/octet-stream".to_string()));
@@ -170,7 +214,6 @@ mod tests {
         meta
     }
 
-    // Helper to create CacheMetadata that is already expired
     fn expired_metadata(size: u64) -> CacheMetadata {
         let mut meta = CacheMetadata::new(size)
             .with_content_type_option(Some("application/octet-stream".to_string()));
@@ -195,7 +238,6 @@ mod tests {
         cache.put(k.clone(), d, m).await.unwrap();
         cache.cache.run_pending_tasks().await;
 
-        // With max_size=0, puts are always skipped.
         assert!(cache.get(&k).await.unwrap().is_none());
     }
 
@@ -207,7 +249,7 @@ mod tests {
         let m = metadata(d.len() as u64, Some(60));
 
         cache.put(k.clone(), d.clone(), m.clone()).await.unwrap();
-        cache.cache.run_pending_tasks().await; // Settle after put
+        cache.cache.run_pending_tasks().await;
 
         let result = cache.get(&k).await.unwrap();
         match result {
@@ -233,7 +275,12 @@ mod tests {
             .put(k.clone(), d.clone(), m_expired.clone())
             .await
             .unwrap();
-        cache.cache.run_pending_tasks().await; // Settle after put
+        cache.cache.run_pending_tasks().await;
+
+        assert!(
+            !cache.contains(&k).await.unwrap(),
+            "contains() must report false for metadata-expired entries"
+        );
 
         let result = cache.get(&k).await.unwrap();
         match result {
@@ -245,7 +292,7 @@ mod tests {
             None => panic!("Expected CacheExpired, got None"),
         }
 
-        cache.cache.run_pending_tasks().await; // Ensure invalidation from get() is processed
+        cache.cache.run_pending_tasks().await;
         assert!(
             !cache.contains(&k).await.unwrap(),
             "Expired item should be removed after get"
@@ -268,7 +315,7 @@ mod tests {
         assert!(d.len() as u64 > cache.max_size);
 
         cache.put(k.clone(), d, m).await.unwrap();
-        cache.cache.run_pending_tasks().await; // Settle
+        cache.cache.run_pending_tasks().await;
 
         assert!(!cache.contains(&k).await.unwrap());
         let result = cache.get(&k).await.unwrap();

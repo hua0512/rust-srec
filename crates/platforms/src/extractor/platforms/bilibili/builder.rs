@@ -120,7 +120,7 @@ impl Bilibili {
         let mut extractor = Extractor::new("Bilibili", url, client);
 
         if let Some(cookies) = cookies {
-            extractor.set_cookies_from_string(&cookies);
+            extractor.set_cookies_from_string(&super::cookie_utils::strip_refresh_token(&cookies));
         }
         extractor.set_referer_static(Self::BASE_URL);
 
@@ -401,16 +401,38 @@ impl PlatformExtractor for Bilibili {
             .data
             .and_then(|data| data.playurl_info)
             .ok_or(ExtractorError::NoStreamsFound)?;
-        let stream = playurl_info
-            .playurl
-            .stream
-            .first()
-            .ok_or_else(|| ExtractorError::ValidationError("No stream found".to_string()))?;
+        let expected_protocol = match stream_info.stream_format {
+            StreamFormat::Flv => Some("http_stream"),
+            StreamFormat::Hls => Some("http_hls"),
+            _ => None,
+        };
+        let stream = match expected_protocol {
+            Some(proto) => playurl_info
+                .playurl
+                .stream
+                .iter()
+                .find(|s| s.protocol_name == proto),
+            None => playurl_info.playurl.stream.first(),
+        }
+        .ok_or_else(|| ExtractorError::ValidationError("No matching stream found".to_string()))?;
 
         let format = stream
             .format
-            .first()
-            .ok_or_else(|| ExtractorError::ValidationError("No format found".to_string()))?;
+            .iter()
+            .find(|f| MediaFormat::from_extension(&f.format_name) == stream_info.media_format)
+            .or_else(|| {
+                if matches!(
+                    stream_info.media_format,
+                    MediaFormat::Flv | MediaFormat::Ts | MediaFormat::Fmp4
+                ) {
+                    None
+                } else {
+                    stream.format.first()
+                }
+            })
+            .ok_or_else(|| {
+                ExtractorError::ValidationError("No matching format found".to_string())
+            })?;
 
         let codec = format
             .codec
@@ -480,6 +502,29 @@ mod tests {
             super::Bilibili::api_error(-403),
             crate::extractor::error::ExtractorError::ValidationError(_)
         ));
+    }
+
+    #[test]
+    fn new_strips_refresh_token_from_extractor_cookies() {
+        let bilibili = Bilibili::new(
+            "https://live.bilibili.com/6".to_string(),
+            default_client(),
+            Some("SESSDATA=session_ok; refresh_token=do_not_send_long_lived; bili_jct=csrf".into()),
+            None,
+        );
+        assert_eq!(
+            bilibili
+                .extractor
+                .cookies
+                .get("SESSDATA")
+                .map(String::as_str),
+            Some("session_ok")
+        );
+        assert!(!bilibili.extractor.cookies.contains_key("refresh_token"));
+        let headers = bilibili.extractor.get_platform_headers_map();
+        if let Some(cookie_hdr) = headers.get("cookie").or_else(|| headers.get("Cookie")) {
+            assert!(!cookie_hdr.contains("do_not_send_long_lived"));
+        }
     }
 
     #[tokio::test]

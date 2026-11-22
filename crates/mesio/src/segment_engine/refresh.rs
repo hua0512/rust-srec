@@ -49,7 +49,7 @@ impl AdaptiveRefreshTracker {
         interval.max(self.min_interval).min(self.max_interval)
     }
 
-    pub(crate) fn get_refresh_interval(&self, default_interval: Duration) -> Duration {
+    pub(crate) fn next_interval(&self, default_interval: Duration) -> Duration {
         if !self.enabled {
             return default_interval;
         }
@@ -62,12 +62,14 @@ impl AdaptiveRefreshTracker {
         } else if self.consecutive_empty >= 3 {
             // Exponential backoff after several empty refreshes.
             let backoff_factor = 1.5_f64.powi(self.consecutive_empty.min(5) as i32);
-            interval = Duration::from_secs_f64(default_interval.as_secs_f64() * backoff_factor);
+            interval = Duration::try_from_secs_f64(default_interval.as_secs_f64() * backoff_factor)
+                .unwrap_or(self.max_interval);
         } else {
             let recent_success_rate = self.recent_results.iter().filter(|&&got| got).count() as f64
                 / self.recent_results.len().max(1) as f64;
             if recent_success_rate > 0.8 && self.recent_results.len() >= 5 {
-                interval = Duration::from_secs_f64(default_interval.as_secs_f64() * 0.8);
+                interval = Duration::try_from_secs_f64(default_interval.as_secs_f64() * 0.8)
+                    .unwrap_or(self.min_interval);
             }
         }
 
@@ -86,13 +88,13 @@ mod tests {
         for _ in 0..3 {
             tracker.record_refresh(0);
         }
-        let interval = tracker.get_refresh_interval(Duration::from_millis(100));
+        let interval = tracker.next_interval(Duration::from_millis(100));
         assert!(interval >= Duration::from_millis(500));
 
         for _ in 0..7 {
             tracker.record_refresh(0);
         }
-        let interval = tracker.get_refresh_interval(Duration::from_secs(10));
+        let interval = tracker.next_interval(Duration::from_secs(10));
         assert!(interval <= Duration::from_secs(3));
     }
 
@@ -101,7 +103,20 @@ mod tests {
         let mut tracker =
             AdaptiveRefreshTracker::new(true, Duration::from_millis(500), Duration::from_secs(3));
         tracker.record_refresh(3);
-        let interval = tracker.get_refresh_interval(Duration::from_secs(1));
+        let interval = tracker.next_interval(Duration::from_secs(1));
         assert_eq!(interval, Duration::from_millis(500));
+    }
+
+    #[test]
+    fn adaptive_refresh_handles_extreme_default_interval_without_panicking() {
+        let mut tracker =
+            AdaptiveRefreshTracker::new(true, Duration::from_millis(500), Duration::from_secs(10));
+        for _ in 0..5 {
+            tracker.record_refresh(0);
+        }
+        assert_eq!(
+            tracker.next_interval(Duration::MAX),
+            Duration::from_secs(10)
+        );
     }
 }

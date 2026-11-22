@@ -12,7 +12,6 @@
 //! continue a chain started in the previous snapshot) and the decision
 //! watermark used for window-slide gap detection.
 
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use tracing::{debug, trace, warn};
@@ -20,7 +19,7 @@ use url::Url;
 
 use crate::DownloadError;
 use crate::hls::twitch_processor::{PREFETCH_SEGMENT_TITLE, TwitchPlaylistProcessor};
-use crate::redact::redact_url_for_log;
+use crate::redact::{redact_url_for_log, redact_url_str};
 use crate::segment_engine::control::{
     EngineNotice, PlanOutcome, PruneWindow, ResetKind, SegmentPlanner, SourceFailure, TerminalCause,
 };
@@ -140,6 +139,11 @@ impl SegmentPlanner for PlannerContext {
         }
         let planned = plan(snapshot, self);
         let playlist = snapshot.playlist.as_ref();
+        let committed_len = playlist
+            .segments
+            .iter()
+            .filter(|s| s.title.as_deref() != Some(PREFETCH_SEGMENT_TITLE))
+            .count();
         outcome.descriptors = planned.descriptors;
         outcome.missing = planned.missing;
         outcome.skipped = planned.skipped;
@@ -147,11 +151,11 @@ impl SegmentPlanner for PlannerContext {
         outcome.reset = planned.reset.then_some(ResetKind::SequenceRegressed);
         outcome.prune = Some(PruneWindow {
             start: playlist.media_sequence,
-            len: playlist.segments.len(),
+            len: committed_len,
         });
         outcome.notices.push(EngineNotice::ManifestRefreshed {
             sequence_base: playlist.media_sequence,
-            target_duration: playlist.target_duration as f64,
+            target_duration: clamp_target_duration(playlist.target_duration as f64),
         });
         if matches!(snapshot.terminal, Some(TerminalCause::End)) {
             outcome.notices.push(EngineNotice::End);
@@ -192,16 +196,34 @@ struct ByteChain {
 /// rather than a stale window, however short the window is.
 const MIN_RESET_REGRESSION: u64 = 16;
 
+/// Clamp `#EXT-X-TARGETDURATION` to a sane finite bound (`0.0..=3600.0` seconds)
+/// so hostile or corrupt playlists cannot overflow `Duration` conversions.
+pub(crate) fn clamp_target_duration(secs: f64) -> f64 {
+    if secs.is_nan() || secs < 0.0 {
+        0.0
+    } else {
+        secs.min(3600.0)
+    }
+}
+
 pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
     let mut planned = Planned::default();
     let playlist = snapshot.playlist.as_ref();
     let first_plan = ctx.next_undecided_msn.is_none();
     let finished = *ctx.finished.get_or_insert(first_plan && playlist.end_list);
     let window_start = playlist.media_sequence;
-    let window_end = window_start.saturating_add(playlist.segments.len() as u64);
+    let committed_count = playlist
+        .segments
+        .iter()
+        .filter(|s| s.title.as_deref() != Some(PREFETCH_SEGMENT_TITLE))
+        .count() as u64;
+    let committed_end = window_start.saturating_add(committed_count);
 
     // MSN-base gap: the window slid past undecided MSNs (possibly across
     // coalesced snapshot generations). Mark them missing — explicitly.
+    // Speculative `#EXT-X-TWITCH-PREFETCH` tail entries are excluded from
+    // `committed_end` so their count never advances the decision watermark or
+    // triggers false stale-window / sequence-reset branches.
     if let Some(next_undecided) = ctx.next_undecided_msn {
         if window_start > next_undecided {
             debug!(
@@ -211,13 +233,13 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
                 "window slid past unplanned MSNs"
             );
             planned.missing.push((next_undecided, window_start - 1));
-        } else if window_end < next_undecided {
-            let regression = next_undecided - window_end;
+        } else if committed_end < next_undecided {
+            let regression = next_undecided - committed_end;
             // An empty window has nothing to re-base, so it cannot prove a
             // reset; a short one gets a floor so one lagging edge serving a
             // 1-2 segment window does not end the recording.
-            let reset_threshold = (playlist.segments.len() as u64 * 4).max(MIN_RESET_REGRESSION);
-            if !playlist.segments.is_empty() && regression > reset_threshold {
+            let reset_threshold = committed_count.saturating_mul(4).max(MIN_RESET_REGRESSION);
+            if committed_count > 0 && regression > reset_threshold {
                 // A genuine media-sequence reset (playlist restart). The
                 // assembler's emit cursor cannot regress, so every re-based
                 // payload would be stale-rejected and the stream would
@@ -225,7 +247,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
                 // error instead; the caller restarts a new session.
                 warn!(
                     window_start,
-                    window_end,
+                    window_end = committed_end,
                     watermark = next_undecided,
                     "media-sequence reset detected; surfacing as pipeline error"
                 );
@@ -237,7 +259,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
                 // generations. Plan nothing and wait for a fresh window.
                 debug!(
                     window_start,
-                    window_end,
+                    window_end = committed_end,
                     watermark = next_undecided,
                     generation = snapshot.generation,
                     "stale playlist window; planning nothing"
@@ -278,15 +300,15 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
     if playlist_level_map.is_some() {
         ctx.current_map = playlist_level_map;
     }
-    // One init descriptor per distinct init *key* per plan() call (URI plus
+    // Emit an init descriptor whenever the active map key changes (URI plus
     // byte range — a same-URI different-range map rotation is a distinct
-    // resource); the store dedups across calls.
-    let mut emitted_init_keys: HashSet<SegmentKey> = HashSet::new();
+    // resource), including when a playlist rotates A -> B -> A.
+    let mut last_emitted_init_key: Option<SegmentKey> = None;
     let watermark = ctx.next_undecided_msn;
     let skip = |ranges: &mut Vec<MsnRange>, msn: u64| {
         // Coalesce contiguous MSNs produced within this scan.
         if let Some((_, to)) = ranges.last_mut()
-            && *to + 1 == msn
+            && to.checked_add(1) == Some(msn)
         {
             *to = msn;
         } else {
@@ -295,14 +317,16 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
     };
 
     for (idx, scanned) in scan.iter().enumerate() {
-        let msn = window_start + idx as u64;
+        let msn = window_start.saturating_add(idx as u64);
         let deciding = watermark.is_none_or(|w| msn >= w);
         let segment = scanned.segment;
+        let is_prefetch = segment.title.as_deref() == Some(PREFETCH_SEGMENT_TITLE);
 
         // --- Encryption normalization (shared by init + media) ---
         // A key tag opens a scope covering every following segment until the
-        // next tag; the parser only attaches it to the first one.
-        if segment.key.is_some() {
+        // next tag; the parser only attaches it to the first one. Speculative
+        // prefetch entries do not mutate cross-segment scopes.
+        if !is_prefetch && segment.key.is_some() {
             ctx.current_key = segment.key.clone();
         }
         let scoped_key = segment.key.as_ref().or(ctx.current_key.as_ref());
@@ -323,19 +347,24 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
         // the segment it precedes, so the scope is propagated via current_map.
         // A playlist-level X-MAP re-seeds current_map at the start of each
         // snapshot; if a refresh omits it, the carried scope remains active.
-        if segment.map.is_some() {
+        if !is_prefetch && segment.map.is_some() {
             ctx.current_map = segment.map.clone();
         }
+        let scoped_map = if is_prefetch {
+            segment.map.as_ref().or(ctx.current_map.as_ref())
+        } else {
+            ctx.current_map.as_ref()
+        };
         // The init key the media segments below this map depend on, so the
         // assembler can gate media emission on its arrival.
         let mut active_init_key: Option<SegmentKey> = None;
-        if let Some(map_info) = ctx.current_map.clone()
+        if let Some(map_info) = scoped_map
             && let Some(absolute_map_uri) = resolve_uri(&base_url, &map_info.uri)
         {
             let final_map_uri = merge_params(&parent_params, &absolute_map_uri);
             if let Some(descriptor) = build_init_descriptor(
                 &final_map_uri,
-                &map_info,
+                map_info,
                 msn,
                 scanned.discontinuity,
                 init_map_encryption(encryption.clone()),
@@ -343,10 +372,8 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
                 &ctx.policy,
             ) {
                 active_init_key = Some(descriptor.key.clone());
-                // Emit one descriptor per distinct init key per call; the
-                // store dedups across calls, so only the first occurrence in
-                // this scan produces a descriptor.
-                if emitted_init_keys.insert(descriptor.key.clone()) {
+                if last_emitted_init_key.as_ref() != Some(&descriptor.key) {
+                    last_emitted_init_key = Some(descriptor.key.clone());
                     planned.descriptors.push(descriptor);
                 }
             } else {
@@ -362,11 +389,13 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
                 None
             }
         } else {
-            ctx.last_non_empty_segment_uri = Some(segment.uri.clone());
+            if !is_prefetch {
+                ctx.last_non_empty_segment_uri = Some(segment.uri.clone());
+            }
             Some(segment.uri.clone())
         };
         let Some(effective_uri) = effective_uri.filter(|u| !u.trim().is_empty()) else {
-            if deciding {
+            if deciding && !is_prefetch {
                 warn!(msn, "skipping segment with empty URI");
                 skip(&mut planned.skipped, msn);
             }
@@ -380,6 +409,8 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
         // its immediate predecessor, never a stale anchor. Re-emitting an
         // already-decided segment's descriptor is intentional: the store uses
         // it to refresh volatile fetch metadata (re-discovery is not a no-op).
+        // Speculative prefetch entries never mutate `ctx.byterange_chain` or
+        // record permanent skips.
         let mut byte_range_key: Option<ByteRangeKey> = None;
         match segment.byte_range.as_ref() {
             Some(range) => {
@@ -397,11 +428,13 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
                             length: range.length,
                             offset,
                         });
-                        ctx.byterange_chain = Some(ByteChain {
-                            uri: effective_uri.clone(),
-                            next_offset: offset.saturating_add(range.length),
-                            next_msn: msn + 1,
-                        });
+                        if !is_prefetch {
+                            ctx.byterange_chain = Some(ByteChain {
+                                uri: effective_uri.clone(),
+                                next_offset: offset.saturating_add(range.length),
+                                next_msn: msn.saturating_add(1),
+                            });
+                        }
                     }
                     None => {
                         // Uninferable here: no explicit offset and no anchor
@@ -414,35 +447,43 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
                         // depends on it — clobbering it would skip that segment
                         // permanently. A stale anchor (next_msn <= msn) is
                         // genuinely broken and is cleared.
-                        let chain_is_future_anchor = ctx
-                            .byterange_chain
-                            .as_ref()
-                            .is_some_and(|chain| chain.next_msn > msn);
-                        if !chain_is_future_anchor {
-                            ctx.byterange_chain = None;
-                        }
-                        // Record the skip only while deciding so refresh does
-                        // not re-emit it.
-                        if deciding {
-                            warn!(
-                                msn,
-                                uri = %redact_url_for_log(&effective_uri),
-                                "skipping BYTERANGE segment with no explicit offset and no prior range to infer from"
-                            );
-                            skip(&mut planned.skipped, msn);
+                        if !is_prefetch {
+                            let chain_is_future_anchor = ctx
+                                .byterange_chain
+                                .as_ref()
+                                .is_some_and(|chain| chain.next_msn > msn);
+                            if !chain_is_future_anchor {
+                                ctx.byterange_chain = None;
+                            }
+                            // Record the skip only while deciding so refresh does
+                            // not re-emit it.
+                            if deciding {
+                                warn!(
+                                    msn,
+                                    uri = %redact_url_for_log(&effective_uri),
+                                    "skipping BYTERANGE segment with no explicit offset and no prior range to infer from"
+                                );
+                                skip(&mut planned.skipped, msn);
+                            }
                         }
                         continue;
                     }
                 }
             }
             None => {
-                ctx.byterange_chain = None;
+                if !is_prefetch {
+                    ctx.byterange_chain = None;
+                }
             }
         }
 
         // --- Ad filtering (planner policy; the watcher only preprocesses) ---
+        // Speculative prefetch entries are dropped silently when classified as
+        // ads; emitting `planned.filtered` for a prefetch MSN would poison
+        // `SequenceAssembler::DeadRanges` and drop the real live segment that
+        // later commits at that MSN.
         if scanned.is_ad {
-            if deciding {
+            if deciding && !is_prefetch {
                 debug!(msn, uri = %redact_url_for_log(&segment.uri), "dropping ad segment");
                 skip(&mut planned.filtered, msn);
             }
@@ -453,7 +494,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
         // "preloading". They carry no broadcast content; skip download but keep
         // the playlist row so MSN = window_start + idx stays consistent.
         if ctx.soop && is_preloading_segment(segment) {
-            if deciding {
+            if deciding && !is_prefetch {
                 debug!(msn, uri = %redact_url_for_log(&segment.uri), "dropping SOOP preloading placeholder");
                 skip(&mut planned.filtered, msn);
             }
@@ -462,7 +503,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
 
         // --- Resolve, inherit query params, build identity ---
         let Some(absolute_uri) = resolve_uri(&base_url, &effective_uri) else {
-            if deciding {
+            if deciding && !is_prefetch {
                 warn!(msn, uri = %redact_url_for_log(&effective_uri), "skipping segment with unresolvable URI");
                 skip(&mut planned.skipped, msn);
             }
@@ -471,14 +512,14 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
         let final_uri = merge_params(&parent_params, &absolute_uri);
         let Ok(parsed_url) = Url::parse(&final_uri) else {
             // A malformed URL never produces a job (terminal by construction).
-            if deciding {
+            if deciding && !is_prefetch {
                 warn!(msn, uri = %redact_url_for_log(&final_uri), "skipping segment with malformed URL");
                 skip(&mut planned.skipped, msn);
             }
             continue;
         };
 
-        let source = if segment.title.as_deref() == Some(PREFETCH_SEGMENT_TITLE) {
+        let source = if is_prefetch {
             SegmentSource::PlaylistPrefetch
         } else {
             SegmentSource::Playlist
@@ -512,7 +553,7 @@ pub fn plan(snapshot: &PlaylistSnapshot, ctx: &mut PlannerContext) -> Planned {
         });
     }
 
-    ctx.next_undecided_msn = Some(ctx.next_undecided_msn.unwrap_or(0).max(window_end));
+    ctx.next_undecided_msn = Some(ctx.next_undecided_msn.unwrap_or(0).max(committed_end));
     planned
 }
 
@@ -614,7 +655,7 @@ fn normalize_encryption(
             let merged = merge_params(parent_params, &absolute);
             let Ok(fetch_url) = Url::parse(&merged) else {
                 return Some(unsupported(
-                    format!("unparseable key URI {merged}"),
+                    format!("unparseable key URI {}", redact_url_str(&merged)),
                     placeholder(),
                 ));
             };
@@ -655,11 +696,21 @@ fn normalize_encryption(
     }
 }
 
+/// Parse an RFC 8216 §4.2 hexadecimal-sequence IV (`0x` or `0X` followed by
+/// 1..=32 ASCII hex digits) into a big-endian 16-octet initialization vector.
 fn parse_iv(iv_hex: &str) -> Option<[u8; 16]> {
-    let iv_str = iv_hex.trim_start_matches("0x").trim_start_matches("0X");
-    let mut iv = [0u8; 16];
-    hex::decode_to_slice(iv_str, &mut iv).ok()?;
-    Some(iv)
+    let hex_digits = iv_hex
+        .strip_prefix("0x")
+        .or_else(|| iv_hex.strip_prefix("0X"))?;
+    if hex_digits.is_empty()
+        || hex_digits.len() > 32
+        || !hex_digits.bytes().all(|b| b.is_ascii_hexdigit())
+    {
+        return None;
+    }
+    u128::from_str_radix(hex_digits, 16)
+        .ok()
+        .map(u128::to_be_bytes)
 }
 
 fn resolve_uri(base_url: &Option<Url>, relative: &str) -> Option<String> {
@@ -1253,5 +1304,94 @@ mod tests {
             planned.missing.is_empty(),
             "stale regression must not manufacture a missing range over decided MSNs"
         );
+    }
+
+    #[test]
+    fn twitch_prefetch_never_poisons_dead_ranges_or_watermark() {
+        let mut c = PlannerContext::new(SegmentIdentityPolicy::default(), true, false);
+        // Snapshot 0: committed MSN 10 (ad), followed by two speculative
+        // prefetches after discontinuity (classified as ads by Twitch processor)
+        // and one unparseable prefetch URI.
+        let snap0 = snapshot(
+            0,
+            &format!(
+                "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:10\n\
+                 #EXTINF:2.0,Amazon ad\nad10.ts\n\
+                 #EXT-X-DISCONTINUITY\n\
+                 #EXTINF:2.002,{PREFETCH_SEGMENT_TITLE}\npre11.ts\n\
+                 #EXTINF:2.002,{PREFETCH_SEGMENT_TITLE}\nhttp://[::1\n"
+            ),
+        );
+        let outcome0 = SegmentPlanner::plan(&mut c, &snap0);
+        // Only the committed ad at MSN 10 may enter `filtered`; speculative
+        // prefetches at MSNs 11..=12 must NOT poison `filtered`, `skipped`, or
+        // advance the watermark past MSN 11.
+        assert_eq!(outcome0.filtered, vec![(10, 10)]);
+        assert!(outcome0.skipped.is_empty());
+        assert_eq!(outcome0.prune, Some(PruneWindow { start: 10, len: 1 }));
+
+        // Snapshot 1: real content arrives at MSN 11 with no prefetches. It
+        // must not be treated as a stale window and must plan MSN 11 cleanly.
+        let snap1 = snapshot(
+            1,
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:2\n#EXT-X-MEDIA-SEQUENCE:10\n\
+             #EXTINF:2.0,Amazon ad\nad10.ts\n\
+             #EXTINF:2.0,live\nseg11.ts\n",
+        );
+        let planned1 = plan(&snap1, &mut c);
+        assert!(!planned1.reset);
+        assert!(planned1.filtered.is_empty());
+        assert!(planned1.skipped.is_empty());
+        assert_eq!(planned1.descriptors.len(), 1);
+        assert_eq!(planned1.descriptors[0].msn, 11);
+        assert_eq!(planned1.descriptors[0].source, SegmentSource::Playlist);
+    }
+
+    #[test]
+    fn parse_iv_accepts_short_rfc8216_hex_and_rejects_malformed_prefixes() {
+        assert_eq!(parse_iv("0x1"), Some(1u128.to_be_bytes()));
+        assert_eq!(parse_iv("0X2a"), Some(42u128.to_be_bytes()));
+        assert_eq!(
+            parse_iv("0x000000000000000000000000000000ff"),
+            Some(255u128.to_be_bytes())
+        );
+        assert_eq!(parse_iv("00000000000000000000000000000001"), None);
+        assert_eq!(parse_iv("0x0x0000000000000000000000000001"), None);
+        assert_eq!(parse_iv("0x"), None);
+        assert_eq!(parse_iv("0x000000000000000000000000000000001"), None);
+    }
+
+    #[test]
+    fn unparseable_key_uri_redacts_query_secrets_and_clamps_target_duration() {
+        let mut snap = snapshot(
+            0,
+            "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:999999999\n\
+             #EXT-X-MEDIA-SEQUENCE:18446744073709551615\n\
+             #EXT-X-KEY:METHOD=AES-128,URI=\"http://[::1?token=supersecret\"\n\
+             #EXTINF:2.0,\nseg0.ts\n#EXTINF:2.0,\nseg1.ts\n",
+        );
+        Arc::make_mut(&mut snap.playlist).target_duration = u64::MAX;
+        let mut c = ctx();
+        let outcome = SegmentPlanner::plan(&mut c, &snap);
+        assert_eq!(outcome.descriptors.len(), 2);
+        assert_eq!(outcome.descriptors[0].msn, u64::MAX);
+        assert_eq!(outcome.descriptors[1].msn, u64::MAX);
+        let enc = outcome.descriptors[0]
+            .encryption
+            .as_ref()
+            .expect("encryption present");
+        match &enc.method {
+            EncryptionMethod::Unsupported(reason) => {
+                assert!(
+                    !reason.contains("supersecret"),
+                    "secret leaked in unsupported key reason: {reason}"
+                );
+            }
+            other => panic!("expected Unsupported encryption, got {other:?}"),
+        }
+        assert!(outcome.notices.iter().any(|n| matches!(
+            n,
+            EngineNotice::ManifestRefreshed { target_duration, .. } if *target_duration == 3600.0
+        )));
     }
 }

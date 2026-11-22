@@ -99,8 +99,10 @@ pub async fn run_reactor<P: SegmentPlanner>(
         .filter(|_| window_segments > 0 || window_bytes > 0);
 
     // `ending`: a terminal cause was seen — drain known work, then finish.
+    // `no_more_inits_queued`: AssemblerInput::NoMoreInits enqueued once all inits finish.
     // `end_queued`: AssemblerInput::End enqueued exactly once.
     let mut ending = false;
+    let mut no_more_inits_queued = false;
     let mut end_queued = false;
 
     // Pipeline-error exits forward the error as Fatal so the consumer sees a
@@ -127,6 +129,14 @@ pub async fn run_reactor<P: SegmentPlanner>(
     }
 
     let terminal = loop {
+        // Once the stream is ending and no initialization segment remains in
+        // flight or pending retry, notify the assembler so any fMP4 media
+        // waiting on a nonexistent map fails instead of stalling the window.
+        if ending && !no_more_inits_queued && !store.has_unfinished_inits() {
+            pending.push(AssemblerInput::NoMoreInits);
+            no_more_inits_queued = true;
+        }
+
         // Authoritative end: enqueue End only once *all lifecycle work is
         // finished* — `has_unfinished_work()` includes future-deadline
         // retries, so a final-window segment waiting on a retry holds the
