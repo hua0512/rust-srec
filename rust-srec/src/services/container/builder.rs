@@ -96,6 +96,7 @@ impl ServiceContainer {
             download_config,
             pipeline_config,
             api_config,
+            local_desktop_mode,
         } = options;
         let auth_config = crate::api::auth_service::AuthConfig::from_env()?;
 
@@ -671,6 +672,7 @@ impl ServiceContainer {
             committed_write_supervisor,
             logging_config: Arc::new(std::sync::OnceLock::new()),
             auth_service: std::sync::OnceLock::new(),
+            local_desktop_mode,
             startup_recovery_complete: std::sync::atomic::AtomicBool::new(false),
             discarded_segment_keys: Arc::new(DashMap::new()),
             danmu_link_down: Arc::new(DashMap::new()),

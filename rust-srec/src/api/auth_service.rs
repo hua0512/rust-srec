@@ -39,6 +39,7 @@ pub use self::config::{
     API_KEY_PREFIX, AuthConfig, AuthError, AuthPrincipal, AuthResponse, CredentialKind,
     MAX_USERNAME_LENGTH, SessionInfo,
 };
+pub use self::local_desktop::LocalDesktopAccount;
 use self::local_desktop::LocalDesktopSessionRecord;
 use self::users::password_work_permits;
 use crate::api::jwt::JwtService;
@@ -77,6 +78,10 @@ pub struct AuthService {
     /// Sessions issued by `issue_local_desktop_session`, keyed by session id.
     /// Only the desktop shell's in-process backend ever fills this.
     local_desktop_sessions: DashMap<String, LocalDesktopSessionRecord>,
+    /// Set for the desktop app's built-in backend, where an account that
+    /// still has `must_change_password` is reachable only through sessions
+    /// the shell issues in-process; see [`Self::with_local_desktop_mode`].
+    local_desktop_mode: bool,
     #[cfg(test)]
     password_verify_calls: Arc<AtomicU64>,
 }
@@ -103,6 +108,7 @@ impl AuthService {
             login_rate_limiter: LoginRateLimiter::from_env(),
             password_work_permits: Arc::new(Semaphore::new(password_work_permits())),
             local_desktop_sessions: DashMap::new(),
+            local_desktop_mode: false,
             #[cfg(test)]
             password_verify_calls: Arc::new(AtomicU64::new(0)),
         }

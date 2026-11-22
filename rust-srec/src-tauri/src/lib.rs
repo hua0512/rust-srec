@@ -16,6 +16,8 @@ mod desktop_settings;
 mod json_file;
 mod lifecycle;
 mod sleep_inhibitor;
+#[cfg(test)]
+mod test_support;
 mod tool_check;
 mod tray;
 mod updates;
@@ -32,7 +34,7 @@ use desktop_notifications::{
     should_deliver_desktop_notification, show_desktop_notification,
 };
 use desktop_settings::{
-    BackendMode, DesktopSettings, load_or_create_desktop_settings, normalize_remote_backend_url,
+    BackendMode, load_desktop_settings_or_fallback, normalize_remote_backend_url,
     reconcile_local_desktop_sessions, should_start_minimized,
 };
 use lifecycle::{
@@ -419,6 +421,10 @@ async fn run_desktop_backend_init(
             download_config: backend::DownloadManagerConfig::default(),
             pipeline_config: backend::PipelineManagerConfig::default(),
             api_config,
+            // This is the local-mode backend: an account still on its seeded
+            // password is reachable only through auto-login sessions, so the
+            // seeded password never signs in over the loopback API.
+            local_desktop_mode: true,
         },
     )
     .await
@@ -817,6 +823,7 @@ pub fn run() {
             updates::skip_update_version,
             desktop_settings::test_remote_backend_connection,
             desktop_settings::desktop_auto_login,
+            desktop_settings::set_desktop_password,
             desktop_settings::switch_to_local_backend
         ])
         .setup(move |app| {
@@ -827,13 +834,7 @@ pub fn run() {
 
             let desktop_notifications =
                 load_or_create_desktop_notifications_config(&data_dir).unwrap_or_default();
-            let desktop_settings = match load_or_create_desktop_settings(&data_dir) {
-                Ok(settings) => settings,
-                Err(error) => {
-                    log::warn!("Failed to load desktop settings, using defaults: {}", error);
-                    DesktopSettings::default()
-                }
-            };
+            let desktop_settings = load_desktop_settings_or_fallback(&data_dir);
             let launch_args: Vec<String> = std::env::args().collect();
             let start_minimized_boot = should_start_minimized(&desktop_settings, &launch_args);
             let check_updates_on_startup = desktop_settings.check_updates_on_startup;

@@ -161,6 +161,9 @@ pub enum AuthError {
     #[error("Current password is incorrect")]
     IncorrectCurrentPassword,
 
+    #[error("A password has already been set; change it with the current password")]
+    PasswordAlreadySet,
+
     #[error("User not found")]
     UserNotFound,
 

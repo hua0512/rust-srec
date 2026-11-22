@@ -683,7 +683,7 @@ msgstr "操作"
 msgid "Actions"
 msgstr "操作"
 
-#: src/components/config/desktop/backend-security-card.tsx:120
+#: src/components/config/desktop/backend-security-card.tsx:121
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:232
 #: src/routes/_authed/_dashboard/config/language.lazy.tsx:113
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:275
@@ -1218,7 +1218,7 @@ msgstr "只有程序模式才能设置参数"
 msgid "Artist"
 msgstr "艺术家"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:650
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:689
 msgid "Ask for confirmation before quitting when recordings are currently in progress."
 msgstr "当前有正在进行的录制时，退出前弹出确认提示。"
 
@@ -1383,7 +1383,7 @@ msgstr "自动登录失败"
 msgid "Automatically generate a thumbnail for the first segment of each session."
 msgstr "自动为每个会话的第一段生成封面图。"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:546
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:585
 msgid "Automatically start Rust-Srec when you sign in to your computer."
 msgstr "登录电脑时自动启动 Rust-Srec。"
 
@@ -1464,11 +1464,11 @@ msgstr "返回模板列表"
 msgid "Back to workflows"
 msgstr "返回工作流列表"
 
-#: src/components/config/desktop/backend-security-card.tsx:312
+#: src/components/config/desktop/backend-security-card.tsx:330
 msgid "Backend & Security"
 msgstr "后端与安全"
 
-#: src/components/config/desktop/backend-security-card.tsx:326
+#: src/components/config/desktop/backend-security-card.tsx:344
 msgid "Backend mode"
 msgstr "后端模式"
 
@@ -1796,7 +1796,7 @@ msgstr "缓冲中"
 msgid "Buffering presets are unavailable for this playback path."
 msgstr "当前播放方式不支持缓冲预设。"
 
-#: src/components/config/desktop/backend-security-card.tsx:332
+#: src/components/config/desktop/backend-security-card.tsx:350
 msgid "Built-in local backend"
 msgstr "内置本地后端"
 
@@ -1820,6 +1820,7 @@ msgstr "C:path1.flv,C:path2.flv"
 msgid "Caching and progress"
 msgstr "缓存与进度"
 
+#: src/components/config/desktop/set-desktop-password-dialog.tsx:168
 #: src/components/config/engines/engines-panel.tsx:305
 #: src/components/config/global/backup-restore-card.tsx:523
 #: src/components/config/templates/template-card.tsx:281
@@ -2147,7 +2148,7 @@ msgstr "选择时区"
 msgid "Choose when this streamer should be recorded."
 msgstr "设置该主播在什么情况下会被录制。"
 
-#: src/components/config/desktop/backend-security-card.tsx:314
+#: src/components/config/desktop/backend-security-card.tsx:332
 msgid "Choose whether to run the built-in backend or connect to a remote Rust-Srec server."
 msgstr "选择运行内置本地后端，或连接到远程 Rust-Srec 服务器。"
 
@@ -2241,7 +2242,7 @@ msgstr "正在克隆..."
 msgid "Close"
 msgstr "关闭"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:578
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:617
 msgid "Close button hides to tray"
 msgstr "关闭窗口时隐藏到托盘"
 
@@ -2478,7 +2479,7 @@ msgstr "配置接收通知的位置和方式。"
 msgid "Configured Events"
 msgstr "已配置的事件"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:648
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:687
 msgid "Confirm before quitting during recordings"
 msgstr "录制期间退出前确认"
 
@@ -2486,15 +2487,17 @@ msgstr "录制期间退出前确认"
 msgid "Confirm Import"
 msgstr "确认导入"
 
+#: src/components/config/desktop/set-desktop-password-dialog.tsx:151
 #: src/routes/_authed/change-password.lazy.tsx:250
 msgid "Confirm new password"
 msgstr "确认新密码"
 
+#: src/components/config/desktop/set-desktop-password-dialog.tsx:146
 #: src/routes/_authed/change-password.lazy.tsx:244
 msgid "Confirm Password"
 msgstr "确认密码"
 
-#: src/api/schemas/auth.ts:32
+#: src/api/schemas/auth.ts:37
 msgid "Confirm password is required"
 msgstr "必须填写确认密码"
 
@@ -2506,7 +2509,7 @@ msgstr "等待恢复超时后确认。"
 msgid "Connect an AI assistant (MCP)"
 msgstr "连接 AI 助手（MCP）"
 
-#: src/components/config/desktop/backend-security-card.tsx:349
+#: src/components/config/desktop/backend-security-card.tsx:367
 msgid "Connect the desktop app to an existing Rust-Srec server over HTTP or HTTPS."
 msgstr "通过 HTTP 或 HTTPS 将桌面应用连接到现有的 Rust-Srec 服务器。"
 
@@ -2514,7 +2517,7 @@ msgstr "通过 HTTP 或 HTTPS 将桌面应用连接到现有的 Rust-Srec 服务
 msgid "Connect Timeout (ms)"
 msgstr "连接超时 (ms)"
 
-#: src/components/config/desktop/backend-security-card.tsx:503
+#: src/components/config/desktop/backend-security-card.tsx:527
 #: src/components/connection-status-indicator.tsx:22
 #: src/components/logging/log-viewer.tsx:324
 msgid "Connected"
@@ -2547,8 +2550,8 @@ msgstr "连接方式"
 msgid "Connection Error"
 msgstr "连接错误"
 
-#: src/components/config/desktop/backend-security-card.tsx:508
-#: src/components/config/desktop/backend-security-card.tsx:531
+#: src/components/config/desktop/backend-security-card.tsx:532
+#: src/components/config/desktop/backend-security-card.tsx:555
 msgid "Connection failed"
 msgstr "连接失败"
 
@@ -2589,7 +2592,7 @@ msgstr "继续"
 msgid "Continue without password"
 msgstr "免密码继续进入"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:535
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:574
 msgid "Control how Rust-Srec launches and behaves in the system tray."
 msgstr "控制 Rust-Srec 的启动方式和系统托盘行为。"
 
@@ -2996,7 +2999,7 @@ msgstr "当前密码"
 msgid "Current Password"
 msgstr "当前密码"
 
-#: src/api/schemas/auth.ts:26
+#: src/api/schemas/auth.ts:54
 msgid "Current password is required"
 msgstr "必须填写当前密码"
 
@@ -3139,7 +3142,7 @@ msgstr "深色"
 msgid "Dashboard"
 msgstr "仪表盘"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:707
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:747
 msgid "Data Folder"
 msgstr "数据文件夹"
 
@@ -3515,8 +3518,8 @@ msgstr "取消全选"
 msgid "Design your automation pipeline step by step"
 msgstr "逐步设计你的自动化处理管道"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:195
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:486
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:196
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:525
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:54
 msgid "Desktop"
 msgstr "桌面"
@@ -3530,7 +3533,7 @@ msgstr "桌面通知"
 msgid "Desktop notifications are shown by the operating system even when the app is minimized."
 msgstr "即使应用已最小化，操作系统仍会显示桌面通知。"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:205
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:206
 msgid "Desktop preferences are only available in the Rust-Srec desktop app. Open Rust-Srec on your computer to configure tray, autostart, sleep protection, and local folder shortcuts."
 msgstr "桌面偏好设置仅在 Rust-Srec 桌面应用中可用。请在电脑上打开桌面应用以配置系统托盘、开机自启、防休眠和本地文件夹快捷入口。"
 
@@ -4669,7 +4672,7 @@ msgstr "内容加载失败"
 msgid "Failed to load danmu statistics."
 msgstr "加载弹幕统计失败。"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:498
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:537
 msgid "Failed to load desktop settings"
 msgstr "加载桌面设置失败"
 
@@ -4735,7 +4738,7 @@ msgid "Failed to load workflows"
 msgstr "加载工作流失败"
 
 #: src/components/config/shared/desktop-path-input.tsx:92
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:464
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:503
 msgid "Failed to open folder"
 msgstr "无法打开文件夹"
 
@@ -4776,7 +4779,7 @@ msgstr "查询 BaiduPCS-Go 状态失败。"
 msgid "Failed to reconnect"
 msgstr "重新连接失败"
 
-#: src/components/config/desktop/backend-security-card.tsx:280
+#: src/components/config/desktop/backend-security-card.tsx:298
 msgid "Failed to restart Rust-Srec"
 msgstr "重启 Rust-Srec 失败"
 
@@ -4800,7 +4803,7 @@ msgstr "重试工作流失败"
 msgid "Failed to revoke API key"
 msgstr "吊销 API 密钥失败"
 
-#: src/components/config/desktop/backend-security-card.tsx:266
+#: src/components/config/desktop/backend-security-card.tsx:284
 msgid "Failed to save backend settings and restart"
 msgstr "保存后端设置并重启失败"
 
@@ -4808,6 +4811,10 @@ msgstr "保存后端设置并重启失败"
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:392
 msgid "Failed to send test notification"
 msgstr "发送测试通知失败"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:453
+msgid "Failed to set the password"
+msgstr "设置密码失败"
 
 #: src/desktop/desktop-update-listener.tsx:61
 msgid "Failed to skip this update version."
@@ -4821,7 +4828,7 @@ msgstr "切换到本地后端失败"
 msgid "Failed to update channel"
 msgstr "更新渠道失败"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:359
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:372
 msgid "Failed to update desktop setting"
 msgstr "更新桌面设置失败"
 
@@ -4829,7 +4836,7 @@ msgstr "更新桌面设置失败"
 msgid "Failed to update filter"
 msgstr "更新过滤器失败"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:416
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:431
 msgid "Failed to update launch at login setting"
 msgstr "更新开机自启设置失败"
 
@@ -5455,7 +5462,7 @@ msgstr "优雅停止超时"
 msgid "Graph"
 msgstr "图表"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:619
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:658
 msgid "Guard active recordings against sleep and accidental exits."
 msgstr "保护正在进行的录制不被系统休眠或误退出中断。"
 
@@ -5523,7 +5530,7 @@ msgstr "隐藏弹幕"
 msgid "Hide password"
 msgstr "隐藏密码"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:598
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:637
 msgid "Hide the main window to the system tray instead of the taskbar or Dock when minimized."
 msgstr "最小化主窗口时隐藏到系统托盘，而不是留在任务栏或程序坞。"
 
@@ -6129,7 +6136,7 @@ msgstr "多个会话共用同一目标文件夹时，请在文件名模板中保
 msgid "Keep directory structure"
 msgstr "保留目录结构"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:580
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:619
 msgid "Keep recording in the background when you close the main window instead of quitting."
 msgstr "点击主窗口关闭按钮时隐藏到后台继续录制，而不是直接退出。"
 
@@ -6137,7 +6144,7 @@ msgstr "点击主窗口关闭按钮时隐藏到后台继续录制，而不是直
 msgid "Keep Running"
 msgstr "保持运行"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:632
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:671
 msgid "Keep the computer awake while active recordings are running; the display can still turn off."
 msgstr "有活跃录制时阻止电脑休眠；屏幕仍可正常熄屏。"
 
@@ -6237,7 +6244,7 @@ msgstr "最近使用"
 msgid "Latency"
 msgstr "延迟"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:544
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:583
 msgid "Launch at login"
 msgstr "开机自启动"
 
@@ -6422,7 +6429,7 @@ msgstr "加载中…"
 msgid "Local Archive"
 msgstr "本地归档"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:686
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:726
 msgid "Local Folders"
 msgstr "本地文件夹"
 
@@ -6521,7 +6528,7 @@ msgstr "登录失效"
 msgid "Logs"
 msgstr "日志"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:714
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:754
 msgid "Logs Folder"
 msgstr "日志文件夹"
 
@@ -6865,7 +6872,7 @@ msgstr "最低优先级"
 msgid "Min Segment Size"
 msgstr "最小分段大小"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:596
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:635
 msgid "Minimize to system tray"
 msgstr "最小化到系统托盘"
 
@@ -7153,10 +7160,12 @@ msgstr "新建"
 msgid "New notification channel"
 msgstr "新建通知渠道"
 
+#: src/components/config/desktop/set-desktop-password-dialog.tsx:125
 #: src/routes/_authed/change-password.lazy.tsx:201
 msgid "New Password"
 msgstr "新密码"
 
+#: src/components/config/desktop/set-desktop-password-dialog.tsx:130
 #: src/routes/_authed/change-password.lazy.tsx:207
 msgid "New password (min 8 chars)"
 msgstr "新密码（至少 8 个字符）"
@@ -7608,7 +7617,7 @@ msgstr "未校验"
 msgid "Not checked yet"
 msgstr "尚未检查"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:701
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:741
 msgid "Not configured"
 msgstr "未配置"
 
@@ -7890,7 +7899,7 @@ msgid "Opacity"
 msgstr "不透明度"
 
 #: src/components/config/shared/desktop-path-input.tsx:65
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:179
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:180
 msgid "Open folder"
 msgstr "打开文件夹"
 
@@ -7898,7 +7907,7 @@ msgstr "打开文件夹"
 msgid "Open in player"
 msgstr "用系统播放器打开"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:688
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:728
 msgid "Open local directories used for recordings, data, and logs."
 msgstr "快速打开录制、数据和日志所在的本地目录。"
 
@@ -8229,15 +8238,23 @@ msgstr "必须填写密码"
 msgid "Password must be at least 8 characters"
 msgstr "密码至少需要 8 个字符"
 
+#: src/api/schemas/auth.ts:32
+msgid "Password must contain at least one letter"
+msgstr "密码至少需要包含一个字母"
+
+#: src/api/schemas/auth.ts:34
+msgid "Password must contain at least one number"
+msgstr "密码至少需要包含一个数字"
+
 #: src/components/proxies/proxy-row.tsx:241
 msgid "password saved"
 msgstr "已保存密码"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:334
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:346
 msgid "Password sign-in enabled. Please sign in to continue."
 msgstr "已启用密码登录，请重新登录后继续。"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:345
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:357
 msgid "Password sign-in is on, but this session could not be signed out."
 msgstr "已开启密码登录，但无法退出当前会话。"
 
@@ -8245,13 +8262,17 @@ msgstr "已开启密码登录，但无法退出当前会话。"
 msgid "Password sign-in is required to access this server"
 msgstr "访问此服务器需要输入密码登录"
 
+#: src/components/config/desktop/set-desktop-password-dialog.tsx:88
+msgid "Password sign-in needs a password of your own. After you set it, this session ends and Rust-Srec asks you to sign in with the new password."
+msgstr "启用密码登录前，需要先设置你自己的密码。设置后，当前会话会结束，Rust-Srec 会要求你用新密码登录。"
+
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:119
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:53
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:27
 msgid "Password..."
 msgstr "密码…"
 
-#: src/api/schemas/auth.ts:35
+#: src/api/schemas/auth.ts:46
 msgid "Passwords don't match"
 msgstr "两次输入的密码不一致"
 
@@ -8776,7 +8797,7 @@ msgstr "预设"
 msgid "Press Enter to add recipient"
 msgstr "按 Enter 添加收件人"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:630
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:669
 msgid "Prevent system sleep while recording"
 msgstr "录制期间阻止系统休眠"
 
@@ -9233,7 +9254,7 @@ msgstr "录制完成"
 msgid "Recording is paused"
 msgstr "录制已暂停"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:617
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:656
 msgid "Recording Protection"
 msgstr "录制保护"
 
@@ -9266,7 +9287,7 @@ msgstr "录制内容"
 msgid "Recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
 msgstr "录制内容会先写入临时分块，并在分割、达到大小或时长限制或录制停止后合并为最终文件。只有这一步完成后，最终文件才可用。"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:699
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:739
 msgid "Recordings Folder"
 msgstr "录制文件夹"
 
@@ -9354,7 +9375,7 @@ msgstr "重新加载播放器"
 msgid "Remember for automatic re-login"
 msgstr "记住凭据以便自动重新登录"
 
-#: src/components/config/desktop/backend-security-card.tsx:347
+#: src/components/config/desktop/backend-security-card.tsx:365
 msgid "Remote rust-srec server"
 msgstr "远程 rust-srec 服务器"
 
@@ -9572,11 +9593,11 @@ msgstr "此账号的请求通过 {routeLabel} 连接。"
 msgid "Requests for this account use the system proxy."
 msgstr "此账号的请求使用系统代理。"
 
-#: src/components/config/desktop/backend-security-card.tsx:391
+#: src/components/config/desktop/backend-security-card.tsx:409
 msgid "Require entering your username and password to open the local desktop app instead of signing in automatically."
 msgstr "打开本地桌面应用时要求输入用户名和密码，而不是自动登录。"
 
-#: src/components/config/desktop/backend-security-card.tsx:389
+#: src/components/config/desktop/backend-security-card.tsx:407
 msgid "Require password sign-in"
 msgstr "需要密码登录"
 
@@ -9646,7 +9667,7 @@ msgstr "资源限制"
 msgid "Resources"
 msgstr "资源"
 
-#: src/components/config/desktop/backend-security-card.tsx:377
+#: src/components/config/desktop/backend-security-card.tsx:395
 msgid "Restart now"
 msgstr "立即重启"
 
@@ -9708,7 +9729,7 @@ msgstr "锁定文件重试次数"
 #: src/components/player/player-card.tsx:560
 #: src/components/sessions/danmu-stats-panel.tsx:247
 #: src/components/shared/query-error.tsx:39
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:516
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:555
 msgid "Retry"
 msgstr "重试"
 
@@ -9806,7 +9827,7 @@ msgstr "运行自定义 FFmpeg 命令。编辑参数以自定义。"
 msgid "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
 msgstr "运行带有占位符的自定义 Shell 命令（例如 {input}, {inputs_json}, {streamer}, %Y%m%d）。"
 
-#: src/components/config/desktop/backend-security-card.tsx:334
+#: src/components/config/desktop/backend-security-card.tsx:352
 msgid "Run the embedded Rust-Srec backend locally on this computer."
 msgstr "在本机直接运行内置的 Rust-Srec 后端。"
 
@@ -9907,8 +9928,8 @@ msgstr "清理后的主播名称"
 msgid "Saturday"
 msgstr "星期六"
 
-#: src/components/config/desktop/backend-security-card.tsx:409
-#: src/components/config/desktop/backend-security-card.tsx:491
+#: src/components/config/desktop/backend-security-card.tsx:433
+#: src/components/config/desktop/backend-security-card.tsx:515
 msgid "Save & Restart"
 msgstr "保存并重启"
 
@@ -10414,7 +10435,7 @@ msgstr "服务器代理会通过本应用的服务器转发播放，并使用该
 msgid "Server registration"
 msgstr "服务端注册"
 
-#: src/components/config/desktop/backend-security-card.tsx:422
+#: src/components/config/desktop/backend-security-card.tsx:446
 #: src/components/notifications/channel-card.tsx:121
 #: src/components/notifications/forms/gotify-form.tsx:36
 msgid "Server URL"
@@ -10517,6 +10538,10 @@ msgstr "会话缩略图"
 msgid "Sessions"
 msgstr "录制会话"
 
+#: src/components/config/desktop/set-desktop-password-dialog.tsx:85
+msgid "Set a password"
+msgstr "设置密码"
+
 #: src/api/schemas/notifications.ts:65
 msgid "Set both a username and a password, or leave both empty"
 msgstr "请同时填写用户名和密码，或都留空"
@@ -10524,6 +10549,10 @@ msgstr "请同时填写用户名和密码，或都留空"
 #: src/components/config/shared/limits-card.tsx:45
 msgid "Set constraints on downloads."
 msgstr "设置录制限制。"
+
+#: src/components/config/desktop/set-desktop-password-dialog.tsx:177
+msgid "Set password and require sign-in"
+msgstr "设置密码并启用密码登录"
 
 #: src/components/streamers/streamer-batch-action-bar.tsx:153
 #: src/components/streamers/streamer-batch-action-bar.tsx:164
@@ -10828,7 +10857,7 @@ msgstr "合并输出中出现不兼容的流变化时开始新文件，并应用
 msgid "Start a new file when the codec, resolution or initialization data changes, and apply file size and duration limits. The settings below apply either way."
 msgstr "在编码、分辨率或初始化数据变化时开始新文件，并应用文件大小和时长限制。无论是否开启，下方设置都会生效。"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:560
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:599
 msgid "Start minimized to tray"
 msgstr "启动时最小化到托盘"
 
@@ -10836,7 +10865,7 @@ msgstr "启动时最小化到托盘"
 msgid "Start Over"
 msgstr "重新开始"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:562
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:601
 msgid "Start quietly in the system tray without opening the main window."
 msgstr "静默启动到系统托盘，不自动弹出主窗口。"
 
@@ -10861,7 +10890,7 @@ msgstr "BIGO 未通知的开播：{missed}"
 msgid "Starts BIGO did not notify: {missed}, the last {lastMissed}"
 msgstr "BIGO 未通知的开播：{missed}，最近一次在{lastMissed}"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:533
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:572
 msgid "Startup & Window"
 msgstr "启动与窗口"
 
@@ -11213,7 +11242,7 @@ msgstr "切换到本地后端"
 msgid "Switch to the next account when one stops working"
 msgstr "账号失效时切换到下一个账号"
 
-#: src/components/config/desktop/backend-security-card.tsx:404
+#: src/components/config/desktop/backend-security-card.tsx:428
 msgid "Switching back to the built-in local backend requires restarting Rust-Srec."
 msgstr "切换回内置本地后端需要重启 Rust-Srec。"
 
@@ -11373,7 +11402,7 @@ msgstr "测试"
 msgid "Test “{name}”"
 msgstr "测试“{name}”"
 
-#: src/components/config/desktop/backend-security-card.tsx:471
+#: src/components/config/desktop/backend-security-card.tsx:495
 msgid "Test connection"
 msgstr "测试连接"
 
@@ -11421,7 +11450,7 @@ msgstr "接收开播通知的 BIGO 账号。录制从不使用它登录 BIGO 的
 msgid "The browser could not decode this stream. Choose another quality or format."
 msgstr "浏览器无法解码此直播流。请选择其他画质或格式。"
 
-#: src/components/config/desktop/backend-security-card.tsx:366
+#: src/components/config/desktop/backend-security-card.tsx:384
 msgid "The built-in local backend is saved and takes effect after Rust-Srec restarts."
 msgstr "已保存为内置本地后端，重启 Rust-Srec 后生效。"
 
@@ -11501,7 +11530,7 @@ msgstr "代理拒绝了登录信息"
 msgid "The recording ended before the cut completed."
 msgstr "分段完成前录制已结束。"
 
-#: src/components/config/desktop/backend-security-card.tsx:371
+#: src/components/config/desktop/backend-security-card.tsx:389
 msgid "The remote server is saved and takes effect after Rust-Srec restarts."
 msgstr "已保存为远程服务器，重启 Rust-Srec 后生效。"
 
@@ -11603,7 +11632,7 @@ msgstr "该账号正在使用中"
 msgid "This account needs a new login. Log in again or replace its cookies."
 msgstr "该账号需要重新登录。请重新登录，或替换其 Cookie。"
 
-#: src/components/config/desktop/backend-security-card.tsx:444
+#: src/components/config/desktop/backend-security-card.tsx:468
 msgid "This address uses http://, so your password and sign-in tokens are sent unencrypted."
 msgstr "该地址使用 http://，你的密码和登录令牌会以未加密的方式传输。"
 
@@ -12009,8 +12038,8 @@ msgstr "瞬时错误"
 msgid "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
 msgstr "在持续的下载进度确认流状态健康之前，暂时的监控错误会继续保留。"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:196
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:487
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:197
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:526
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:57
 msgid "Tray, startup & window behavior"
 msgstr "托盘、启动与窗口行为"
@@ -12178,11 +12207,11 @@ msgstr "极速压缩"
 msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "超快 H.264 编码（CRF 26），用于快速分享。"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:503
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:542
 msgid "Unable to communicate with the desktop shell."
 msgstr "无法连接桌面应用。"
 
-#: src/components/config/desktop/backend-security-card.tsx:243
+#: src/components/config/desktop/backend-security-card.tsx:261
 msgid "Unable to connect to the remote server."
 msgstr "无法连接到远程服务器。"
 
@@ -12190,8 +12219,8 @@ msgstr "无法连接到远程服务器。"
 msgid "Unable to inspect local tool binaries."
 msgstr "无法检测本地工具可执行文件。"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:709
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:716
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:749
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:756
 msgid "Unavailable"
 msgstr "不可用"
 
@@ -12478,6 +12507,7 @@ msgctxt "terminal-cause"
 msgid "User Disabled"
 msgstr "已被用户停用"
 
+#: src/components/config/desktop/set-desktop-password-dialog.tsx:106
 #: src/components/credentials/profile-editor-dialog.tsx:323
 #: src/components/notifications/forms/email-form.tsx:86
 #: src/components/notifications/forms/email-form.tsx:91

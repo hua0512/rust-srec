@@ -24,6 +24,7 @@ import {
   XCircle,
 } from 'lucide-react';
 
+import { SetDesktopPasswordDialog } from '@/components/config/desktop/set-desktop-password-dialog';
 import { SettingToggleRow } from '@/components/config/desktop/setting-toggle-row';
 import { SettingsCard } from '@/components/config/settings-card';
 import { Badge } from '@/components/ui/badge';
@@ -179,6 +180,11 @@ interface BackendSecurityCardProps {
   snapshot: DesktopSettingsSnapshot;
   isRequireLoginPending: boolean;
   onToggleRequireLogin: (checked: boolean) => void;
+  /**
+   * Sets the first password and turns password sign-in on; resolves to
+   * `true` when the password was set.
+   */
+  onSetPasswordAndRequireLogin: (password: string) => Promise<boolean>;
   onApplyBackendSettings: (
     nextMode: DesktopBackendMode,
     nextRemoteUrl: string | null,
@@ -191,10 +197,12 @@ export function BackendSecurityCard({
   snapshot,
   isRequireLoginPending,
   onToggleRequireLogin,
+  onSetPasswordAndRequireLogin,
   onApplyBackendSettings,
   onRestart,
 }: BackendSecurityCardProps) {
   const { i18n } = useLingui();
+  const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [selectedMode, setSelectedMode] = useState<DesktopBackendMode>(
     snapshot.backendMode,
   );
@@ -227,6 +235,16 @@ export function BackendSecurityCard({
   const needsRestartToLocal =
     selectedMode === 'local' && snapshot.backendMode !== 'local';
   const showInsecureUrlWarning = isInsecureRemoteUrl(trimmedRemoteUrl);
+
+  // The shell refuses to require sign-in while the account still has its
+  // initial password, so a password is asked for first.
+  const handleRequireLoginChange = (checked: boolean) => {
+    if (checked && snapshot.passwordSetupRequired) {
+      setIsPasswordDialogOpen(true);
+      return;
+    }
+    onToggleRequireLogin(checked);
+  };
 
   const handleTestConnection = async () => {
     if (!trimmedRemoteUrl) return;
@@ -395,7 +413,13 @@ export function BackendSecurityCard({
               }
               checked={snapshot.requireLogin}
               disabled={isRequireLoginPending || isSavingBackend}
-              onCheckedChange={onToggleRequireLogin}
+              onCheckedChange={handleRequireLoginChange}
+            />
+            <SetDesktopPasswordDialog
+              open={isPasswordDialogOpen}
+              onOpenChange={setIsPasswordDialogOpen}
+              username={snapshot.localUsername}
+              onSubmit={onSetPasswordAndRequireLogin}
             />
 
             {needsRestartToLocal && (

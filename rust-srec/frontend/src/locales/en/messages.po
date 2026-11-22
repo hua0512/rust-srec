@@ -683,7 +683,7 @@ msgstr "Action"
 msgid "Actions"
 msgstr "Actions"
 
-#: src/components/config/desktop/backend-security-card.tsx:120
+#: src/components/config/desktop/backend-security-card.tsx:121
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:232
 #: src/routes/_authed/_dashboard/config/language.lazy.tsx:113
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:275
@@ -1218,7 +1218,7 @@ msgstr "Arguments require program mode"
 msgid "Artist"
 msgstr "Artist"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:650
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:689
 msgid "Ask for confirmation before quitting when recordings are currently in progress."
 msgstr "Ask for confirmation before quitting when recordings are currently in progress."
 
@@ -1383,7 +1383,7 @@ msgstr "Automatic sign-in failed"
 msgid "Automatically generate a thumbnail for the first segment of each session."
 msgstr "Automatically generate a thumbnail for the first segment of each session."
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:546
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:585
 msgid "Automatically start Rust-Srec when you sign in to your computer."
 msgstr "Automatically start Rust-Srec when you sign in to your computer."
 
@@ -1464,11 +1464,11 @@ msgstr "Back to templates"
 msgid "Back to workflows"
 msgstr "Back to workflows"
 
-#: src/components/config/desktop/backend-security-card.tsx:312
+#: src/components/config/desktop/backend-security-card.tsx:330
 msgid "Backend & Security"
 msgstr "Backend & Security"
 
-#: src/components/config/desktop/backend-security-card.tsx:326
+#: src/components/config/desktop/backend-security-card.tsx:344
 msgid "Backend mode"
 msgstr "Backend mode"
 
@@ -1796,7 +1796,7 @@ msgstr "Buffering"
 msgid "Buffering presets are unavailable for this playback path."
 msgstr "Buffering presets are unavailable for this playback path."
 
-#: src/components/config/desktop/backend-security-card.tsx:332
+#: src/components/config/desktop/backend-security-card.tsx:350
 msgid "Built-in local backend"
 msgstr "Built-in local backend"
 
@@ -1820,6 +1820,7 @@ msgstr "C:path1.flv,C:path2.flv"
 msgid "Caching and progress"
 msgstr "Caching and progress"
 
+#: src/components/config/desktop/set-desktop-password-dialog.tsx:168
 #: src/components/config/engines/engines-panel.tsx:305
 #: src/components/config/global/backup-restore-card.tsx:523
 #: src/components/config/templates/template-card.tsx:281
@@ -2147,7 +2148,7 @@ msgstr "Choose timezone"
 msgid "Choose when this streamer should be recorded."
 msgstr "Choose when this streamer should be recorded."
 
-#: src/components/config/desktop/backend-security-card.tsx:314
+#: src/components/config/desktop/backend-security-card.tsx:332
 msgid "Choose whether to run the built-in backend or connect to a remote Rust-Srec server."
 msgstr "Choose whether to run the built-in backend or connect to a remote Rust-Srec server."
 
@@ -2241,7 +2242,7 @@ msgstr "Cloning..."
 msgid "Close"
 msgstr "Close"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:578
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:617
 msgid "Close button hides to tray"
 msgstr "Close button hides to tray"
 
@@ -2478,7 +2479,7 @@ msgstr "Configure where and how you receive notifications."
 msgid "Configured Events"
 msgstr "Configured Events"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:648
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:687
 msgid "Confirm before quitting during recordings"
 msgstr "Confirm before quitting during recordings"
 
@@ -2486,15 +2487,17 @@ msgstr "Confirm before quitting during recordings"
 msgid "Confirm Import"
 msgstr "Confirm Import"
 
+#: src/components/config/desktop/set-desktop-password-dialog.tsx:151
 #: src/routes/_authed/change-password.lazy.tsx:250
 msgid "Confirm new password"
 msgstr "Confirm new password"
 
+#: src/components/config/desktop/set-desktop-password-dialog.tsx:146
 #: src/routes/_authed/change-password.lazy.tsx:244
 msgid "Confirm Password"
 msgstr "Confirm Password"
 
-#: src/api/schemas/auth.ts:32
+#: src/api/schemas/auth.ts:37
 msgid "Confirm password is required"
 msgstr "Confirm password is required"
 
@@ -2506,7 +2509,7 @@ msgstr "Confirmed via backstop timer."
 msgid "Connect an AI assistant (MCP)"
 msgstr "Connect an AI assistant (MCP)"
 
-#: src/components/config/desktop/backend-security-card.tsx:349
+#: src/components/config/desktop/backend-security-card.tsx:367
 msgid "Connect the desktop app to an existing Rust-Srec server over HTTP or HTTPS."
 msgstr "Connect the desktop app to an existing Rust-Srec server over HTTP or HTTPS."
 
@@ -2514,7 +2517,7 @@ msgstr "Connect the desktop app to an existing Rust-Srec server over HTTP or HTT
 msgid "Connect Timeout (ms)"
 msgstr "Connect Timeout (ms)"
 
-#: src/components/config/desktop/backend-security-card.tsx:503
+#: src/components/config/desktop/backend-security-card.tsx:527
 #: src/components/connection-status-indicator.tsx:22
 #: src/components/logging/log-viewer.tsx:324
 msgid "Connected"
@@ -2547,8 +2550,8 @@ msgstr "Connection"
 msgid "Connection Error"
 msgstr "Connection Error"
 
-#: src/components/config/desktop/backend-security-card.tsx:508
-#: src/components/config/desktop/backend-security-card.tsx:531
+#: src/components/config/desktop/backend-security-card.tsx:532
+#: src/components/config/desktop/backend-security-card.tsx:555
 msgid "Connection failed"
 msgstr "Connection failed"
 
@@ -2589,7 +2592,7 @@ msgstr "Continue"
 msgid "Continue without password"
 msgstr "Continue without password"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:535
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:574
 msgid "Control how Rust-Srec launches and behaves in the system tray."
 msgstr "Control how Rust-Srec launches and behaves in the system tray."
 
@@ -2996,7 +2999,7 @@ msgstr "Current password"
 msgid "Current Password"
 msgstr "Current Password"
 
-#: src/api/schemas/auth.ts:26
+#: src/api/schemas/auth.ts:54
 msgid "Current password is required"
 msgstr "Current password is required"
 
@@ -3139,7 +3142,7 @@ msgstr "Dark"
 msgid "Dashboard"
 msgstr "Dashboard"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:707
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:747
 msgid "Data Folder"
 msgstr "Data Folder"
 
@@ -3515,8 +3518,8 @@ msgstr "Deselect All"
 msgid "Design your automation pipeline step by step"
 msgstr "Design your automation pipeline step by step"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:195
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:486
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:196
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:525
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:54
 msgid "Desktop"
 msgstr "Desktop"
@@ -3530,7 +3533,7 @@ msgstr "Desktop Notifications"
 msgid "Desktop notifications are shown by the operating system even when the app is minimized."
 msgstr "Desktop notifications are shown by the operating system even when the app is minimized."
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:205
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:206
 msgid "Desktop preferences are only available in the Rust-Srec desktop app. Open Rust-Srec on your computer to configure tray, autostart, sleep protection, and local folder shortcuts."
 msgstr "Desktop preferences are only available in the Rust-Srec desktop app. Open Rust-Srec on your computer to configure tray, autostart, sleep protection, and local folder shortcuts."
 
@@ -4669,7 +4672,7 @@ msgstr "Failed to load content"
 msgid "Failed to load danmu statistics."
 msgstr "Failed to load danmu statistics."
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:498
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:537
 msgid "Failed to load desktop settings"
 msgstr "Failed to load desktop settings"
 
@@ -4735,7 +4738,7 @@ msgid "Failed to load workflows"
 msgstr "Failed to load workflows"
 
 #: src/components/config/shared/desktop-path-input.tsx:92
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:464
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:503
 msgid "Failed to open folder"
 msgstr "Failed to open folder"
 
@@ -4776,7 +4779,7 @@ msgstr "Failed to query BaiduPCS-Go status."
 msgid "Failed to reconnect"
 msgstr "Failed to reconnect"
 
-#: src/components/config/desktop/backend-security-card.tsx:280
+#: src/components/config/desktop/backend-security-card.tsx:298
 msgid "Failed to restart Rust-Srec"
 msgstr "Failed to restart Rust-Srec"
 
@@ -4800,7 +4803,7 @@ msgstr "Failed to retry workflow"
 msgid "Failed to revoke API key"
 msgstr "Failed to revoke API key"
 
-#: src/components/config/desktop/backend-security-card.tsx:266
+#: src/components/config/desktop/backend-security-card.tsx:284
 msgid "Failed to save backend settings and restart"
 msgstr "Failed to save backend settings and restart"
 
@@ -4808,6 +4811,10 @@ msgstr "Failed to save backend settings and restart"
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:392
 msgid "Failed to send test notification"
 msgstr "Failed to send test notification"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:453
+msgid "Failed to set the password"
+msgstr "Failed to set the password"
 
 #: src/desktop/desktop-update-listener.tsx:61
 msgid "Failed to skip this update version."
@@ -4821,7 +4828,7 @@ msgstr "Failed to switch to local backend"
 msgid "Failed to update channel"
 msgstr "Failed to update channel"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:359
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:372
 msgid "Failed to update desktop setting"
 msgstr "Failed to update desktop setting"
 
@@ -4829,7 +4836,7 @@ msgstr "Failed to update desktop setting"
 msgid "Failed to update filter"
 msgstr "Failed to update filter"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:416
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:431
 msgid "Failed to update launch at login setting"
 msgstr "Failed to update launch at login setting"
 
@@ -5455,7 +5462,7 @@ msgstr "Graceful Stop Timeout"
 msgid "Graph"
 msgstr "Graph"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:619
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:658
 msgid "Guard active recordings against sleep and accidental exits."
 msgstr "Guard active recordings against sleep and accidental exits."
 
@@ -5523,7 +5530,7 @@ msgstr "Hide danmu"
 msgid "Hide password"
 msgstr "Hide password"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:598
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:637
 msgid "Hide the main window to the system tray instead of the taskbar or Dock when minimized."
 msgstr "Hide the main window to the system tray instead of the taskbar or Dock when minimized."
 
@@ -6129,7 +6136,7 @@ msgstr "Keep date and time tokens in your filename template when multiple sessio
 msgid "Keep directory structure"
 msgstr "Keep directory structure"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:580
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:619
 msgid "Keep recording in the background when you close the main window instead of quitting."
 msgstr "Keep recording in the background when you close the main window instead of quitting."
 
@@ -6137,7 +6144,7 @@ msgstr "Keep recording in the background when you close the main window instead 
 msgid "Keep Running"
 msgstr "Keep Running"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:632
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:671
 msgid "Keep the computer awake while active recordings are running; the display can still turn off."
 msgstr "Keep the computer awake while active recordings are running; the display can still turn off."
 
@@ -6237,7 +6244,7 @@ msgstr "Last used"
 msgid "Latency"
 msgstr "Latency"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:544
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:583
 msgid "Launch at login"
 msgstr "Launch at login"
 
@@ -6422,7 +6429,7 @@ msgstr "Loading…"
 msgid "Local Archive"
 msgstr "Local Archive"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:686
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:726
 msgid "Local Folders"
 msgstr "Local Folders"
 
@@ -6521,7 +6528,7 @@ msgstr "Login invalid"
 msgid "Logs"
 msgstr "Logs"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:714
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:754
 msgid "Logs Folder"
 msgstr "Logs Folder"
 
@@ -6865,7 +6872,7 @@ msgstr "Min Priority"
 msgid "Min Segment Size"
 msgstr "Min Segment Size"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:596
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:635
 msgid "Minimize to system tray"
 msgstr "Minimize to system tray"
 
@@ -7153,10 +7160,12 @@ msgstr "New"
 msgid "New notification channel"
 msgstr "New notification channel"
 
+#: src/components/config/desktop/set-desktop-password-dialog.tsx:125
 #: src/routes/_authed/change-password.lazy.tsx:201
 msgid "New Password"
 msgstr "New Password"
 
+#: src/components/config/desktop/set-desktop-password-dialog.tsx:130
 #: src/routes/_authed/change-password.lazy.tsx:207
 msgid "New password (min 8 chars)"
 msgstr "New password (min 8 chars)"
@@ -7608,7 +7617,7 @@ msgstr "Not checked"
 msgid "Not checked yet"
 msgstr "Not checked yet"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:701
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:741
 msgid "Not configured"
 msgstr "Not configured"
 
@@ -7890,7 +7899,7 @@ msgid "Opacity"
 msgstr "Opacity"
 
 #: src/components/config/shared/desktop-path-input.tsx:65
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:179
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:180
 msgid "Open folder"
 msgstr "Open folder"
 
@@ -7898,7 +7907,7 @@ msgstr "Open folder"
 msgid "Open in player"
 msgstr "Open in player"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:688
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:728
 msgid "Open local directories used for recordings, data, and logs."
 msgstr "Open local directories used for recordings, data, and logs."
 
@@ -8229,15 +8238,23 @@ msgstr "Password is required"
 msgid "Password must be at least 8 characters"
 msgstr "Password must be at least 8 characters"
 
+#: src/api/schemas/auth.ts:32
+msgid "Password must contain at least one letter"
+msgstr "Password must contain at least one letter"
+
+#: src/api/schemas/auth.ts:34
+msgid "Password must contain at least one number"
+msgstr "Password must contain at least one number"
+
 #: src/components/proxies/proxy-row.tsx:241
 msgid "password saved"
 msgstr "password saved"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:334
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:346
 msgid "Password sign-in enabled. Please sign in to continue."
 msgstr "Password sign-in enabled. Please sign in to continue."
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:345
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:357
 msgid "Password sign-in is on, but this session could not be signed out."
 msgstr "Password sign-in is on, but this session could not be signed out."
 
@@ -8245,13 +8262,17 @@ msgstr "Password sign-in is on, but this session could not be signed out."
 msgid "Password sign-in is required to access this server"
 msgstr "Password sign-in is required to access this server"
 
+#: src/components/config/desktop/set-desktop-password-dialog.tsx:88
+msgid "Password sign-in needs a password of your own. After you set it, this session ends and Rust-Srec asks you to sign in with the new password."
+msgstr "Password sign-in needs a password of your own. After you set it, this session ends and Rust-Srec asks you to sign in with the new password."
+
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:119
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:53
 #: src/components/config/platforms/tabs/specific-configs/twitcasting-config-fields.tsx:27
 msgid "Password..."
 msgstr "Password..."
 
-#: src/api/schemas/auth.ts:35
+#: src/api/schemas/auth.ts:46
 msgid "Passwords don't match"
 msgstr "Passwords don't match"
 
@@ -8776,7 +8797,7 @@ msgstr "Presets"
 msgid "Press Enter to add recipient"
 msgstr "Press Enter to add recipient"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:630
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:669
 msgid "Prevent system sleep while recording"
 msgstr "Prevent system sleep while recording"
 
@@ -9233,7 +9254,7 @@ msgstr "Recording finished"
 msgid "Recording is paused"
 msgstr "Recording is paused"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:617
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:656
 msgid "Recording Protection"
 msgstr "Recording Protection"
 
@@ -9266,7 +9287,7 @@ msgstr "Recordings"
 msgid "Recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
 msgstr "Recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:699
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:739
 msgid "Recordings Folder"
 msgstr "Recordings Folder"
 
@@ -9354,7 +9375,7 @@ msgstr "Reload Player"
 msgid "Remember for automatic re-login"
 msgstr "Remember for automatic re-login"
 
-#: src/components/config/desktop/backend-security-card.tsx:347
+#: src/components/config/desktop/backend-security-card.tsx:365
 msgid "Remote rust-srec server"
 msgstr "Remote rust-srec server"
 
@@ -9572,11 +9593,11 @@ msgstr "Requests for this account go through {routeLabel}."
 msgid "Requests for this account use the system proxy."
 msgstr "Requests for this account use the system proxy."
 
-#: src/components/config/desktop/backend-security-card.tsx:391
+#: src/components/config/desktop/backend-security-card.tsx:409
 msgid "Require entering your username and password to open the local desktop app instead of signing in automatically."
 msgstr "Require entering your username and password to open the local desktop app instead of signing in automatically."
 
-#: src/components/config/desktop/backend-security-card.tsx:389
+#: src/components/config/desktop/backend-security-card.tsx:407
 msgid "Require password sign-in"
 msgstr "Require password sign-in"
 
@@ -9646,7 +9667,7 @@ msgstr "Resource Limits"
 msgid "Resources"
 msgstr "Resources"
 
-#: src/components/config/desktop/backend-security-card.tsx:377
+#: src/components/config/desktop/backend-security-card.tsx:395
 msgid "Restart now"
 msgstr "Restart now"
 
@@ -9708,7 +9729,7 @@ msgstr "Retries for locked files"
 #: src/components/player/player-card.tsx:560
 #: src/components/sessions/danmu-stats-panel.tsx:247
 #: src/components/shared/query-error.tsx:39
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:516
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:555
 msgid "Retry"
 msgstr "Retry"
 
@@ -9806,7 +9827,7 @@ msgstr "Run a custom FFmpeg command. Edit the args to customize."
 msgid "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
 msgstr "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
 
-#: src/components/config/desktop/backend-security-card.tsx:334
+#: src/components/config/desktop/backend-security-card.tsx:352
 msgid "Run the embedded Rust-Srec backend locally on this computer."
 msgstr "Run the embedded Rust-Srec backend locally on this computer."
 
@@ -9907,8 +9928,8 @@ msgstr "Sanitized streamer name"
 msgid "Saturday"
 msgstr "Saturday"
 
-#: src/components/config/desktop/backend-security-card.tsx:409
-#: src/components/config/desktop/backend-security-card.tsx:491
+#: src/components/config/desktop/backend-security-card.tsx:433
+#: src/components/config/desktop/backend-security-card.tsx:515
 msgid "Save & Restart"
 msgstr "Save & Restart"
 
@@ -10414,7 +10435,7 @@ msgstr "Server proxy relays playback through this app's server with the source's
 msgid "Server registration"
 msgstr "Server registration"
 
-#: src/components/config/desktop/backend-security-card.tsx:422
+#: src/components/config/desktop/backend-security-card.tsx:446
 #: src/components/notifications/channel-card.tsx:121
 #: src/components/notifications/forms/gotify-form.tsx:36
 msgid "Server URL"
@@ -10517,6 +10538,10 @@ msgstr "Session thumbnail"
 msgid "Sessions"
 msgstr "Sessions"
 
+#: src/components/config/desktop/set-desktop-password-dialog.tsx:85
+msgid "Set a password"
+msgstr "Set a password"
+
 #: src/api/schemas/notifications.ts:65
 msgid "Set both a username and a password, or leave both empty"
 msgstr "Set both a username and a password, or leave both empty"
@@ -10524,6 +10549,10 @@ msgstr "Set both a username and a password, or leave both empty"
 #: src/components/config/shared/limits-card.tsx:45
 msgid "Set constraints on downloads."
 msgstr "Set constraints on downloads."
+
+#: src/components/config/desktop/set-desktop-password-dialog.tsx:177
+msgid "Set password and require sign-in"
+msgstr "Set password and require sign-in"
 
 #: src/components/streamers/streamer-batch-action-bar.tsx:153
 #: src/components/streamers/streamer-batch-action-bar.tsx:164
@@ -10828,7 +10857,7 @@ msgstr "Start a new file on incompatible stream changes in the merged output, an
 msgid "Start a new file when the codec, resolution or initialization data changes, and apply file size and duration limits. The settings below apply either way."
 msgstr "Start a new file when the codec, resolution or initialization data changes, and apply file size and duration limits. The settings below apply either way."
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:560
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:599
 msgid "Start minimized to tray"
 msgstr "Start minimized to tray"
 
@@ -10836,7 +10865,7 @@ msgstr "Start minimized to tray"
 msgid "Start Over"
 msgstr "Start Over"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:562
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:601
 msgid "Start quietly in the system tray without opening the main window."
 msgstr "Start quietly in the system tray without opening the main window."
 
@@ -10861,7 +10890,7 @@ msgstr "Starts BIGO did not notify: {missed}"
 msgid "Starts BIGO did not notify: {missed}, the last {lastMissed}"
 msgstr "Starts BIGO did not notify: {missed}, the last {lastMissed}"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:533
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:572
 msgid "Startup & Window"
 msgstr "Startup & Window"
 
@@ -11213,7 +11242,7 @@ msgstr "Switch to local backend"
 msgid "Switch to the next account when one stops working"
 msgstr "Switch to the next account when one stops working"
 
-#: src/components/config/desktop/backend-security-card.tsx:404
+#: src/components/config/desktop/backend-security-card.tsx:428
 msgid "Switching back to the built-in local backend requires restarting Rust-Srec."
 msgstr "Switching back to the built-in local backend requires restarting Rust-Srec."
 
@@ -11373,7 +11402,7 @@ msgstr "Test"
 msgid "Test “{name}”"
 msgstr "Test “{name}”"
 
-#: src/components/config/desktop/backend-security-card.tsx:471
+#: src/components/config/desktop/backend-security-card.tsx:495
 msgid "Test connection"
 msgstr "Test connection"
 
@@ -11421,7 +11450,7 @@ msgstr "The BIGO account that receives live notifications. Recording never signs
 msgid "The browser could not decode this stream. Choose another quality or format."
 msgstr "The browser could not decode this stream. Choose another quality or format."
 
-#: src/components/config/desktop/backend-security-card.tsx:366
+#: src/components/config/desktop/backend-security-card.tsx:384
 msgid "The built-in local backend is saved and takes effect after Rust-Srec restarts."
 msgstr "The built-in local backend is saved and takes effect after Rust-Srec restarts."
 
@@ -11501,7 +11530,7 @@ msgstr "The proxy rejected the login"
 msgid "The recording ended before the cut completed."
 msgstr "The recording ended before the cut completed."
 
-#: src/components/config/desktop/backend-security-card.tsx:371
+#: src/components/config/desktop/backend-security-card.tsx:389
 msgid "The remote server is saved and takes effect after Rust-Srec restarts."
 msgstr "The remote server is saved and takes effect after Rust-Srec restarts."
 
@@ -11603,7 +11632,7 @@ msgstr "This account is in use"
 msgid "This account needs a new login. Log in again or replace its cookies."
 msgstr "This account needs a new login. Log in again or replace its cookies."
 
-#: src/components/config/desktop/backend-security-card.tsx:444
+#: src/components/config/desktop/backend-security-card.tsx:468
 msgid "This address uses http://, so your password and sign-in tokens are sent unencrypted."
 msgstr "This address uses http://, so your password and sign-in tokens are sent unencrypted."
 
@@ -12009,8 +12038,8 @@ msgstr "Transient error"
 msgid "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
 msgstr "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:196
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:487
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:197
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:526
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:57
 msgid "Tray, startup & window behavior"
 msgstr "Tray, startup & window behavior"
@@ -12178,11 +12207,11 @@ msgstr "Ultrafast Compression"
 msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:503
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:542
 msgid "Unable to communicate with the desktop shell."
 msgstr "Unable to communicate with the desktop shell."
 
-#: src/components/config/desktop/backend-security-card.tsx:243
+#: src/components/config/desktop/backend-security-card.tsx:261
 msgid "Unable to connect to the remote server."
 msgstr "Unable to connect to the remote server."
 
@@ -12190,8 +12219,8 @@ msgstr "Unable to connect to the remote server."
 msgid "Unable to inspect local tool binaries."
 msgstr "Unable to inspect local tool binaries."
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:709
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:716
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:749
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:756
 msgid "Unavailable"
 msgstr "Unavailable"
 
@@ -12478,6 +12507,7 @@ msgctxt "terminal-cause"
 msgid "User Disabled"
 msgstr "User Disabled"
 
+#: src/components/config/desktop/set-desktop-password-dialog.tsx:106
 #: src/components/credentials/profile-editor-dialog.tsx:323
 #: src/components/notifications/forms/email-form.tsx:86
 #: src/components/notifications/forms/email-form.tsx:91

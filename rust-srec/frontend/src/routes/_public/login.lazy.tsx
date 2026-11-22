@@ -26,7 +26,6 @@ import { safeRedirectPath } from '@/lib/url';
 import { isLoginFailedError } from '@/lib/api-error';
 import { isDesktopBuild } from '@/utils/desktop';
 import { isTauriRuntime } from '@/utils/tauri';
-import { hasExplicitDesktopLogout } from '@/desktop/desktop-auth';
 import { switchDesktopToLocalBackend } from '@/desktop/desktop-backend-switch';
 import { getDesktopSettings } from '@/desktop/desktop-settings';
 import {
@@ -71,10 +70,11 @@ function LoginPage() {
     isDesktopRuntime && desktopBackendMode === 'remote'
       ? getDesktopRemoteUrl()
       : null;
+  // Offered whenever the shell signs in without a password, not only after an
+  // explicit logout: if an automatic sign-in failed, a user who never set a
+  // password has no other way in than retrying it.
   const canCheckLocalAutoLogin =
-    isDesktopRuntime &&
-    desktopBackendMode === 'local' &&
-    hasExplicitDesktopLogout();
+    isDesktopRuntime && desktopBackendMode === 'local';
 
   const { data: desktopSettings } = useQuery({
     queryKey: ['desktop', 'settings', 'login-check'],

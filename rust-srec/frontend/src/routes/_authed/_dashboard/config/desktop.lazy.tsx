@@ -40,6 +40,7 @@ import {
   openDesktopSystemFolder,
   restartDesktopApp,
   setDesktopAutostartEnabled,
+  setDesktopPassword,
   skipDesktopUpdateVersion,
   updateDesktopSettings,
   type DesktopSettings,
@@ -248,6 +249,17 @@ function DesktopSettingsContent() {
     );
   };
 
+  // Writes are built from the snapshot, which may be stale (for example a
+  // backup restored since the page loaded makes the shell refuse the
+  // `requireLogin: true` every write carries), so a failed write of any
+  // setting fetches it again.
+  const refetchAfterFailedWrite = () => {
+    void queryClient.invalidateQueries({
+      queryKey: DESKTOP_SETTINGS_QUERY_KEY,
+      exact: true,
+    });
+  };
+
   const writeDesktopSettings = (change: DesktopSettingsChange) => {
     const confirmed = confirmedDesktopSettings.current;
     if (!confirmed) {
@@ -353,6 +365,7 @@ function DesktopSettingsContent() {
       // Back to what the shell holds, keeping later toggles' optimistic values.
       const confirmed = confirmedDesktopSettings.current;
       if (confirmed) applyConfirmedSettings(confirmed, change);
+      refetchAfterFailedWrite();
       toast.error(
         errorMessage(
           mutationError,
@@ -366,12 +379,14 @@ function DesktopSettingsContent() {
     scope: DESKTOP_SETTINGS_WRITE_SCOPE,
     mutationFn: writeDesktopSettings,
     onSuccess: (updated) => applyConfirmedSettings(updated),
+    onError: refetchAfterFailedWrite,
   });
 
   const skipVersionMutation = useMutation({
     scope: DESKTOP_SETTINGS_WRITE_SCOPE,
     mutationFn: skipDesktopUpdateVersion,
     onSuccess: (updated) => applyConfirmedSettings(updated),
+    onError: refetchAfterFailedWrite,
   });
 
   const autostartMutation = useMutation({
@@ -424,6 +439,30 @@ function DesktopSettingsContent() {
     checked: boolean,
   ) => {
     settingsMutation.mutate({ [key]: checked });
+  };
+
+  // Setting the password signs this session out (the backend revokes every
+  // session of the account), and the `requireLogin` write's success path then
+  // sends the user to /login. A failed write keeps the toggle off and shows
+  // its own toast.
+  const handleSetPasswordAndRequireLogin = async (password: string) => {
+    try {
+      await setDesktopPassword(password);
+    } catch (setError) {
+      toast.error(
+        errorMessage(setError, i18n._(msg`Failed to set the password`)),
+      );
+      // The account may have a password by now (set elsewhere, or restored
+      // from a backup), which only a fresh snapshot shows.
+      refetchAfterFailedWrite();
+      return false;
+    }
+    queryClient.setQueryData<DesktopSettingsSnapshot>(
+      DESKTOP_SETTINGS_QUERY_KEY,
+      (prev) => (prev ? { ...prev, passwordSetupRequired: false } : prev),
+    );
+    settingsMutation.mutate({ requireLogin: true });
+    return true;
   };
 
   const handleSkipVersion = async (version: string | null) => {
@@ -670,6 +709,7 @@ function DesktopSettingsContent() {
           onToggleRequireLogin={(checked) =>
             handleToggleSetting('requireLogin', checked)
           }
+          onSetPasswordAndRequireLogin={handleSetPasswordAndRequireLogin}
           onApplyBackendSettings={handleApplyBackendSettings}
           onRestart={restartIntoSavedBackend}
         />

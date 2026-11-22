@@ -86,7 +86,7 @@ impl AuthService {
     }
 
     /// Run `hash_password` on a blocking thread; see `verify_password_blocking`.
-    async fn hash_password_blocking(&self, password: &str) -> Result<String, AuthError> {
+    pub(super) async fn hash_password_blocking(&self, password: &str) -> Result<String, AuthError> {
         let permit = self.acquire_password_work_permit().await?;
         let password = password.to_owned();
         tokio::task::spawn_blocking(move || {

@@ -172,7 +172,10 @@ impl AuthService {
             return Err(AuthError::AccountDisabled);
         }
 
-        if state.must_change_password {
+        // In local desktop mode the flag means "no password has been set" and
+        // only in-process sessions can act for the account, so any key it has
+        // was created by a session that was allowed to act; it is honoured.
+        if state.must_change_password && !self.is_local_desktop_mode() {
             warn!(user_id = %state.user_id, api_key_id = %state.key_id, "API key rejected: password change required");
             return Err(AuthError::PasswordChangeRequired);
         }

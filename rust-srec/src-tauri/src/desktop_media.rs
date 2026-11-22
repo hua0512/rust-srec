@@ -181,34 +181,8 @@ pub async fn open_directory_in_explorer(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicU64, Ordering};
-
     use super::*;
-
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new(label: &str) -> Self {
-            static COUNTER: AtomicU64 = AtomicU64::new(0);
-            let id = COUNTER.fetch_add(1, Ordering::Relaxed);
-            let dir = std::env::temp_dir().join(format!(
-                "rust-srec-desktop-media-{label}-{}-{id}",
-                std::process::id()
-            ));
-            std::fs::create_dir_all(&dir).expect("create temp dir");
-            Self(dir)
-        }
-
-        fn path(&self) -> &Path {
-            &self.0
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
+    use crate::test_support::TempDir;
 
     #[test]
     fn accepts_media_extensions_in_any_case_and_rejects_other_files() {

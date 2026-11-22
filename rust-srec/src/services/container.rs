@@ -95,6 +95,19 @@ pub struct ServiceContainerConfig {
     pub download_config: DownloadManagerConfig,
     pub pipeline_config: PipelineManagerConfig,
     pub api_config: ApiServerConfig,
+    /// Serve the API as the desktop app's built-in backend. The shell signs
+    /// its user in without a password, so nobody is ever made to change the
+    /// seeded default password, and `must_change_password` then means "no
+    /// password has been set". With this set, an account with that flag is
+    /// reachable only through sessions issued by
+    /// [`ServiceContainer::issue_local_desktop_session`]: a password login for
+    /// it never succeeds (the seeded password never signs in), its other
+    /// sessions are refused like revoked ones, and its API keys are honoured.
+    ///
+    /// Part of the configuration so it is fixed before the container, and so
+    /// the API server's `AuthService`, exists. Only the desktop shell's local
+    /// mode sets it; the server and Docker builds never do.
+    pub local_desktop_mode: bool,
 }
 
 /// Snapshot of currently active recordings for desktop status and exit guards.
@@ -112,6 +125,7 @@ impl ServiceContainerConfig {
             download_config: DownloadManagerConfig::default(),
             pipeline_config: PipelineManagerConfig::default(),
             api_config: ApiServerConfig::from_env()?,
+            local_desktop_mode: false,
         })
     }
 }
@@ -234,6 +248,9 @@ pub struct ServiceContainer {
     logging_config: Arc<std::sync::OnceLock<Arc<LoggingConfig>>>,
     /// Installed when the API server starts with database authentication.
     auth_service: std::sync::OnceLock<Arc<crate::api::auth_service::AuthService>>,
+    /// See [`ServiceContainerConfig::local_desktop_mode`]; read when the API
+    /// server's `AuthService` is built.
+    local_desktop_mode: bool,
     startup_recovery_complete: std::sync::atomic::AtomicBool,
     /// Segment keys that should be discarded (min-size gate) to prevent danmu/xml and video
     /// from racing into the pipeline while being deleted.
@@ -625,6 +642,30 @@ impl ServiceContainer {
             crate::Error::ApiError("Authentication service is not initialized".to_string())
         })?;
         auth.issue_local_desktop_session()
+            .await
+            .map_err(|error| crate::Error::ApiError(error.to_string()))
+    }
+
+    /// The account local desktop sessions are issued for, or `None` when
+    /// there is no active admin.
+    pub async fn local_desktop_account(
+        &self,
+    ) -> Result<Option<crate::api::auth_service::LocalDesktopAccount>> {
+        let auth = self.auth_service.get().ok_or_else(|| {
+            crate::Error::ApiError("Authentication service is not initialized".to_string())
+        })?;
+        auth.local_desktop_account()
+            .await
+            .map_err(|error| crate::Error::ApiError(error.to_string()))
+    }
+
+    /// Replace the initial password of the local desktop account. Fails once
+    /// that account has a password of its own.
+    pub async fn set_local_desktop_password(&self, new_password: &str) -> Result<()> {
+        let auth = self.auth_service.get().ok_or_else(|| {
+            crate::Error::ApiError("Authentication service is not initialized".to_string())
+        })?;
+        auth.set_local_desktop_password(new_password)
             .await
             .map_err(|error| crate::Error::ApiError(error.to_string()))
     }

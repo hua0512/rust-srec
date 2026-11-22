@@ -42,6 +42,10 @@ Every successful import revokes all refresh tokens and their bound access-token
 sessions, including a `merge` that omits users. Sign in again after import.
 Rejected imports do not revoke tokens.
 
+On the desktop app, restoring a backup made before a password was set removes
+the password: the app then opens without asking for one until you set a new
+password by turning on **Require password sign-in**.
+
 An export is useful for migration and source-controlled review after secrets are removed, but it is not a database backup.
 
 Imports apply configuration as one database transaction. Validation or write failures before commit leave it unchanged. A reload warning after commit means the configuration was saved, but runtime refresh needs attention.
