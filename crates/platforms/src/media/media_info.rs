@@ -238,7 +238,7 @@ impl MediaInfo {
         // Cover URL (if present)
         if let Some(ref cover) = self.cover_url {
             let display_url = if cover.len() > 40 {
-                format!("{}...", &cover[..40])
+                format!("{}...", &cover[..cover.floor_char_boundary(40)])
             } else {
                 cover.clone()
             };
@@ -248,7 +248,7 @@ impl MediaInfo {
         // Artist URL (if present)
         if let Some(ref artist_url) = self.artist_url {
             let display_url = if artist_url.len() > 40 {
-                format!("{}...", &artist_url[..40])
+                format!("{}...", &artist_url[..artist_url.floor_char_boundary(40)])
             } else {
                 artist_url.clone()
             };
@@ -275,8 +275,10 @@ impl MediaInfo {
             let _ = writeln!(output, "{}", empty_line);
 
             for (key, value) in headers.iter() {
-                let display_value = if value.len() > 35 {
-                    format!("{}...", &value[..35])
+                let display_value = if super::is_sensitive_key(key) {
+                    "[redacted]".to_owned()
+                } else if value.len() > 35 {
+                    format!("{}...", &value[..value.floor_char_boundary(35)])
                 } else {
                     value.clone()
                 };
@@ -295,8 +297,10 @@ impl MediaInfo {
             let _ = writeln!(output, "{}", empty_line);
 
             for (key, value) in extras.iter() {
-                let display_value = if value.len() > 35 {
-                    format!("{}...", &value[..35])
+                let display_value = if super::is_sensitive_key(key) {
+                    "[redacted]".to_owned()
+                } else if value.len() > 35 {
+                    format!("{}...", &value[..value.floor_char_boundary(35)])
                 } else {
                     value.clone()
                 };
@@ -470,4 +474,73 @@ where
         CategoryField::One(s) => vec![s],
         CategoryField::Many(v) => v,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use rustc_hash::FxHashMap;
+    use serde_json::json;
+
+    use super::MediaInfo;
+    use crate::media::{MediaFormat, StreamFormat, StreamInfo};
+
+    #[test]
+    fn pretty_print_truncates_multibyte_utf8_safely_and_redacts_secrets() {
+        // Place 4-byte emoji ('🔥') and 3-byte CJK ('中') across byte boundaries 35, 40, and 50.
+        let cover_straddling_40 = format!("{}🔥tail", "a".repeat(38));
+        let artist_straddling_40 = format!("{}中tail", "b".repeat(39));
+        let header_straddling_35 = format!("{}🔥tail", "c".repeat(33));
+        let extra_straddling_35 = format!("{}中tail", "d".repeat(34));
+        let url_straddling_50 = format!(
+            "https://user:s3cr3t@cdn.example.com/{}🔥.flv?wsSecret=topsecret&cid=1",
+            "e".repeat(12)
+        );
+
+        let mut headers = FxHashMap::default();
+        headers.insert("Cookie".to_string(), "SESSDATA=leak_cookie".to_string());
+        headers.insert("Authorization".to_string(), "OAuth leak_oauth".to_string());
+        headers.insert("Referer".to_string(), header_straddling_35);
+
+        let mut media_extras = FxHashMap::default();
+        media_extras.insert("session_cookies".to_string(), "AUTH=leak_sess".to_string());
+        media_extras.insert("stream_password".to_string(), "leak_room_pw".to_string());
+        media_extras.insert("note".to_string(), extra_straddling_35);
+
+        let stream = StreamInfo::builder(url_straddling_50, StreamFormat::Flv, MediaFormat::Flv)
+            .quality("原画")
+            .bitrate(5_000_000)
+            .codec("h264")
+            .fps(60.0)
+            .extras(json!({
+                "pwd": "leak_stream_pwd",
+                "cdn": format!("{}🔥cdn", "x".repeat(33))
+            }))
+            .build();
+
+        let info = MediaInfo::builder("https://example.com", "直播标题", "主播")
+            .is_live(true)
+            .cover_url(cover_straddling_40)
+            .artist_url(artist_straddling_40)
+            .headers(headers)
+            .extras(media_extras)
+            .streams(vec![stream])
+            .build();
+
+        let rendered = info.pretty_print();
+        for secret in [
+            "leak_cookie",
+            "leak_oauth",
+            "leak_sess",
+            "leak_room_pw",
+            "leak_stream_pwd",
+            "s3cr3t",
+            "topsecret",
+        ] {
+            assert!(
+                !rendered.contains(secret),
+                "leaked secret: {secret}\n{rendered}"
+            );
+        }
+        assert!(rendered.contains("[redacted]"));
+    }
 }

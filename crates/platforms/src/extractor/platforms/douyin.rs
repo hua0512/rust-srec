@@ -4,8 +4,10 @@ mod builder;
 pub mod danmu;
 mod metadata;
 pub(crate) mod models;
+mod request;
 pub(crate) mod sign;
 mod signature;
+mod streams;
 pub(crate) mod utils;
 
 pub use builder::URL_REGEX;

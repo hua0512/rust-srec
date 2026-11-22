@@ -4,7 +4,7 @@ use reqwest::Client;
 use rustls::{ClientConfig, crypto::aws_lc_rs};
 use rustls_platform_verifier::BuilderVerifierExt;
 use std::sync::{Arc, OnceLock};
-use tracing::debug;
+use tracing::{debug, warn};
 
 pub const DEFAULT_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36";
 pub(crate) const DEFAULT_MOBILE_UA: &str = "Mozilla/5.0 (iPhone17,1; CPU iPhone OS 18_2_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Mohegan Sun/4.7.4";
@@ -22,24 +22,28 @@ pub fn create_client(proxy_config: Option<ProxyConfig>) -> Client {
         .expect("Failed to create HTTP client")
 }
 
+fn shared_tls_config() -> ClientConfig {
+    static TLS_CONFIG: OnceLock<ClientConfig> = OnceLock::new();
+    TLS_CONFIG
+        .get_or_init(|| {
+            if let Err(e) = aws_lc_rs::default_provider().install_default() {
+                debug!(existing_provider = ?e, "rustls CryptoProvider already installed");
+            }
+
+            let provider = Arc::new(aws_lc_rs::default_provider());
+            ClientConfig::builder_with_provider(provider)
+                .with_safe_default_protocol_versions()
+                .expect("Failed to configure default TLS protocol versions")
+                .with_platform_verifier()
+                .expect("Failed to configure platform TLS verifier")
+                .with_no_client_auth()
+        })
+        .clone()
+}
+
 pub fn create_client_builder(proxy_config: Option<ProxyConfig>) -> reqwest::ClientBuilder {
-    static PROVIDER_INSTALLED: OnceLock<()> = OnceLock::new();
-    PROVIDER_INSTALLED.get_or_init(|| {
-        if let Err(e) = aws_lc_rs::default_provider().install_default() {
-            debug!(existing_provider = ?e, "rustls CryptoProvider already installed");
-        }
-    });
-
-    let provider = Arc::new(aws_lc_rs::default_provider());
-    let tls_config = ClientConfig::builder_with_provider(provider)
-        .with_safe_default_protocol_versions()
-        .expect("Failed to configure default TLS protocol versions")
-        .with_platform_verifier()
-        .expect("Failed to configure platform TLS verifier")
-        .with_no_client_auth();
-
     let mut builder = Client::builder()
-        .tls_backend_preconfigured(tls_config)
+        .tls_backend_preconfigured(shared_tls_config())
         // Reqwest auto-decompression is enabled by default when the corresponding
         // crate features are enabled (gzip/deflate/brotli).
         .timeout(std::time::Duration::from_secs(30));
@@ -50,10 +54,10 @@ pub fn create_client_builder(proxy_config: Option<ProxyConfig>) -> reqwest::Clie
                 builder = builder.proxy(proxy);
             }
             Err(e) => {
-                eprintln!(
-                    "Warning: Failed to configure proxy '{}': {}; requests through it will fail",
-                    crate::proxy::redacted_url(&config.url),
-                    e.without_url()
+                warn!(
+                    proxy = %crate::proxy::redacted_url(&config.url),
+                    error = %e,
+                    "Failed to configure proxy; requests through it will fail"
                 );
                 // Without a proxy the client would follow the environment,
                 // sending requests outside the proxy that was asked for.

@@ -4,8 +4,14 @@
 //! extractor options, along with utility functions for merging configs
 //! through the 4-layer hierarchy (Global → Platform → Template → Streamer).
 
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+fn redact_opt(opt: &Option<String>) -> Option<&'static str> {
+    opt.as_ref().map(|_| "[redacted]")
+}
 
 /// Huya platform-specific configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -21,7 +27,7 @@ pub struct HuyaConfig {
 }
 
 /// Douyin platform-specific configuration
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 pub struct DouyinConfig {
     /// Force origin quality stream (default: false)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -43,6 +49,23 @@ pub struct DouyinConfig {
     pub skip_interactive_games: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_stream_on_danmu_stream_closed: Option<bool>,
+}
+
+impl fmt::Debug for DouyinConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DouyinConfig")
+            .field("force_origin_quality", &self.force_origin_quality)
+            .field("double_screen", &self.double_screen)
+            .field("ttwid_management_mode", &self.ttwid_management_mode)
+            .field("ttwid", &redact_opt(&self.ttwid))
+            .field("force_mobile_api", &self.force_mobile_api)
+            .field("skip_interactive_games", &self.skip_interactive_games)
+            .field(
+                "end_stream_on_danmu_stream_closed",
+                &self.end_stream_on_danmu_stream_closed,
+            )
+            .finish()
+    }
 }
 
 /// Bilibili platform-specific configuration
@@ -123,7 +146,7 @@ pub struct DouyuConfig {
 }
 
 /// Twitch platform-specific configuration
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 pub struct TwitchConfig {
     /// OAuth token for authentication
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -133,6 +156,19 @@ pub struct TwitchConfig {
     pub supported_codecs: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_stream_on_danmu_stream_closed: Option<bool>,
+}
+
+impl fmt::Debug for TwitchConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TwitchConfig")
+            .field("oauth_token", &redact_opt(&self.oauth_token))
+            .field("supported_codecs", &self.supported_codecs)
+            .field(
+                "end_stream_on_danmu_stream_closed",
+                &self.end_stream_on_danmu_stream_closed,
+            )
+            .finish()
+    }
 }
 
 /// TikTok platform-specific configuration
@@ -149,7 +185,7 @@ pub struct TikTokConfig {
 }
 
 /// Twitcasting platform-specific configuration
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 pub struct TwitcastingConfig {
     /// Password for protected streams
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -158,8 +194,20 @@ pub struct TwitcastingConfig {
     pub end_stream_on_danmu_stream_closed: Option<bool>,
 }
 
+impl fmt::Debug for TwitcastingConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TwitcastingConfig")
+            .field("password", &redact_opt(&self.password))
+            .field(
+                "end_stream_on_danmu_stream_closed",
+                &self.end_stream_on_danmu_stream_closed,
+            )
+            .finish()
+    }
+}
+
 /// SOOP (formerly AfreecaTV) platform-specific configuration
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 pub struct SoopConfig {
     /// SOOP account username (login-required broadcasts, e.g. 19+)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -172,8 +220,18 @@ pub struct SoopConfig {
     pub stream_password: Option<String>,
 }
 
+impl fmt::Debug for SoopConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SoopConfig")
+            .field("username", &self.username)
+            .field("password", &redact_opt(&self.password))
+            .field("stream_password", &redact_opt(&self.stream_password))
+            .finish()
+    }
+}
+
 /// Bigo Live platform-specific configuration
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 pub struct BigoConfig {
     /// Password for password-protected rooms
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -182,6 +240,15 @@ pub struct BigoConfig {
     /// falling back to the web HLS stream (default: true)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub native_stream: Option<bool>,
+}
+
+impl fmt::Debug for BigoConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BigoConfig")
+            .field("stream_password", &redact_opt(&self.stream_password))
+            .field("native_stream", &self.native_stream)
+            .finish()
+    }
 }
 
 /// Streamlink *extractor* configuration.

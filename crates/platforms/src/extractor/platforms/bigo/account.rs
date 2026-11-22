@@ -19,7 +19,6 @@ const SITE: &str = "https://www.bigo.tv";
 pub const SIGNED_OUT_CODE: i64 = 700001;
 
 /// Whether a set of cookies holds a Bigo login.
-#[derive(Debug)]
 pub enum AccountSession {
     /// The login works; `cookies` are the request's cookies with the ones
     /// Bigo set again in the response.
@@ -27,6 +26,18 @@ pub enum AccountSession {
         cookies: String,
     },
     SignedOut,
+}
+
+impl std::fmt::Debug for AccountSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SignedIn { .. } => f
+                .debug_struct("SignedIn")
+                .field("cookies", &"[redacted]")
+                .finish(),
+            Self::SignedOut => f.write_str("SignedOut"),
+        }
+    }
 }
 
 #[derive(Deserialize)]

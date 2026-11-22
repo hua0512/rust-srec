@@ -44,6 +44,7 @@ impl ServiceContainer {
             pipeline_manager: self.pipeline_manager.clone(),
             runtime_coordinator: self.runtime_coordinator.clone(),
             gpu_health_monitor: self.gpu_health_monitor.get().cloned(),
+            logging_config: self.logging_config.clone(),
             credential_blocks: self.stream_monitor.credential_blocks().clone(),
         };
         let receiver = self.event_broadcaster.subscribe();
@@ -69,6 +70,7 @@ impl ServiceContainer {
             pipeline_manager: self.pipeline_manager.clone(),
             runtime_coordinator: self.runtime_coordinator.clone(),
             gpu_health_monitor: self.gpu_health_monitor.get().cloned(),
+            logging_config: self.logging_config.clone(),
             credential_blocks: self.stream_monitor.credential_blocks().clone(),
         }
         .handle_event(event)
@@ -244,6 +246,7 @@ struct ConfigEventHandler {
     pipeline_manager: Arc<PipelineManager>,
     runtime_coordinator: Arc<RuntimeCoordinator>,
     gpu_health_monitor: Option<Arc<crate::metrics::GpuHealthMonitor>>,
+    logging_config: Arc<std::sync::OnceLock<Arc<crate::logging::LoggingConfig>>>,
     /// Lifted here for streamers that stop being monitored: no later check
     /// would lift it.
     credential_blocks: Arc<crate::credentials::CredentialBlocks>,
@@ -464,6 +467,18 @@ impl ConfigEventHandler {
                         if let Some(monitor) = self.gpu_health_monitor.as_ref() {
                             monitor
                                 .set_interval(global.gpu_health_probe_interval_secs.max(0) as u64);
+                        }
+
+                        if let Some(logging) = self.logging_config.get()
+                            && !global.log_filter_directive.is_empty()
+                            && logging.get_filter() != global.log_filter_directive
+                            && let Err(error) = logging.set_filter(&global.log_filter_directive)
+                        {
+                            warn!(
+                                directive = %global.log_filter_directive,
+                                %error,
+                                "Failed to apply updated log filter directive"
+                            );
                         }
 
                         // Wire CPU/IO/upload pipeline job concurrency knobs (best-effort).

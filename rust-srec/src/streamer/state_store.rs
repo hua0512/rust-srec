@@ -49,7 +49,7 @@ pub(crate) struct StreamerCache {
     pub urls: Arc<DashMap<String, String>>,
     pub publication: RwLock<()>,
     broadcaster: ConfigEventBroadcaster,
-    on_removed: RwLock<Option<RemovalCallback>>,
+    on_removed: RwLock<Vec<RemovalCallback>>,
     on_changed: RwLock<Option<RemovalCallback>>,
 }
 
@@ -60,7 +60,7 @@ impl StreamerCache {
             urls: Arc::new(DashMap::new()),
             publication: RwLock::new(()),
             broadcaster,
-            on_removed: RwLock::new(None),
+            on_removed: RwLock::new(Vec::new()),
             on_changed: RwLock::new(None),
         }
     }
@@ -126,7 +126,7 @@ impl StreamerCache {
                 self.urls
                     .remove_if(&old.url.to_lowercase(), |_, owner| owner == id);
             }
-            if let Some(invalidate) = self.on_removed.read().as_ref() {
+            for invalidate in self.on_removed.read().iter() {
                 invalidate(id);
             }
             match publication {
@@ -167,7 +167,7 @@ impl CommittedStreamerState {
     /// The callback may invalidate other caches but must not re-enter streamer
     /// cache access, await work, or attempt to acquire the database writer.
     pub(crate) fn on_removed(&self, callback: Arc<dyn Fn(&str) + Send + Sync>) {
-        *self.cache.on_removed.write() = Some(callback);
+        self.cache.on_removed.write().push(callback);
     }
 
     /// Synchronous, non-reentrant invalidation with the same locking contract as

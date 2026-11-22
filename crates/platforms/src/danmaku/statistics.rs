@@ -2,73 +2,21 @@
 //!
 //! Provides statistics aggregation for danmu messages during a session.
 
-use jieba_rs::Jieba;
-use jiff::Timestamp;
-use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
+mod config;
+mod tokenizer;
+
 use std::cmp::Ordering;
-use std::collections::HashSet;
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
-use std::sync::LazyLock;
+
+use jiff::Timestamp;
+use rustc_hash::FxHashSet;
+use serde::{Deserialize, Serialize};
+
+pub use config::StatisticsConfig;
 
 use super::message::{DanmuMessage, DanmuType};
-
-/// Livestream vocabulary absent from jieba's general-Chinese dictionary that its
-/// HMM also does not infer, so without seeding it the words split into single
-/// characters and `StatisticsAggregator::record_word` discards them as noise.
-///
-/// A seed, not an exhaustive list: anything missing still segments per-character
-/// and simply goes uncounted rather than producing a wrong word.
-const DANMU_DICT_WORDS: &[&str] = &[
-    "牛逼",
-    "弹幕",
-    "下播",
-    "开播",
-    "直播间",
-    "老铁",
-    "破防",
-    "泪目",
-    "上分",
-    "团战",
-    "打野",
-    "中单",
-    "野区",
-    "残血",
-    "反杀",
-    "秒了",
-    "抬走",
-    "整活",
-];
-
-/// Shared segmenter for CJK word frequency.
-///
-/// `Jieba` is immutable after construction and `cut` takes `&self`, so one
-/// instance serves every concurrent session. `LazyLock` keeps the embedded
-/// dictionary out of memory entirely for deployments whose danmu is never CJK.
-static JIEBA: LazyLock<Jieba> = LazyLock::new(|| {
-    let mut jieba = Jieba::new();
-    for word in DANMU_DICT_WORDS {
-        jieba.add_word(word, None, None);
-    }
-    jieba
-});
-
-/// Whether `text` contains a character that needs dictionary segmentation.
-///
-/// Covers CJK Unified Ideographs (plus the common extension A), Japanese
-/// hiragana/katakana, and the CJK compatibility block. Hangul is excluded:
-/// Korean is written with spaces, so the outer split already tokenizes it.
-fn contains_cjk(text: &str) -> bool {
-    text.chars().any(|c| {
-        matches!(c,
-            '\u{3040}'..='\u{30FF}'      // hiragana + katakana
-            | '\u{3400}'..='\u{4DBF}'    // CJK ext. A
-            | '\u{4E00}'..='\u{9FFF}'    // CJK unified ideographs
-            | '\u{F900}'..='\u{FAFF}'    // CJK compatibility ideographs
-        )
-    })
-}
+use tokenizer::{STOP_WORDS, for_each_token, normalize_word};
 
 /// Statistics for a danmu collection session.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -581,51 +529,6 @@ impl WordHeavyHitters {
     }
 }
 
-/// Tuning for [`StatisticsAggregator`].
-///
-/// The `*_capacity` fields are how many distinct keys are *tracked*; the
-/// `top_*` fields are how many are *reported*. They are separate because the
-/// tracking capacity governs accuracy — while fewer distinct keys than capacity
-/// have been seen, Space-Saving never evicts and every count is exact — whereas
-/// the reported size only affects payload size. Deriving one from the other
-/// silently changes the accuracy regime when a caller asks for a longer list.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StatisticsConfig {
-    /// Talkers and gifters returned by snapshots.
-    pub top_talkers: usize,
-    /// Words returned by snapshots.
-    pub top_words: usize,
-    /// Gift names returned by snapshots.
-    pub top_gifts: usize,
-    /// Distinct senders tracked before Space-Saving eviction begins.
-    pub talker_capacity: usize,
-    /// Distinct words tracked before Space-Saving eviction begins.
-    pub word_capacity: usize,
-    /// Distinct gift names tracked before eviction begins.
-    pub gift_capacity: usize,
-    /// Initial width of one rate-timeseries bucket.
-    pub rate_bucket_secs: u64,
-    /// Words to ignore on top of the built-in list, matched lowercased.
-    pub extra_stop_words: Vec<String>,
-}
-
-impl Default for StatisticsConfig {
-    fn default() -> Self {
-        Self {
-            top_talkers: 100,
-            top_words: 50,
-            top_gifts: 20,
-            // Generous enough that ordinary rooms never evict, so their counts
-            // are exact rather than Space-Saving approximations.
-            talker_capacity: 2048,
-            word_capacity: 2048,
-            gift_capacity: 256,
-            rate_bucket_secs: 10,
-            extra_stop_words: Vec::new(),
-        }
-    }
-}
-
 /// A checkpoint of an aggregator's internal state.
 ///
 /// Exists so a collector restarted mid-session can continue counting instead of
@@ -693,11 +596,11 @@ pub struct StatisticsAggregator {
     max_rate_points: usize,
     /// Reporting sizes, capacities and stop-word additions.
     config: StatisticsConfig,
+    /// Extra stop words normalized to lowercase for O(1) lookup.
+    extra_stop_words: FxHashSet<String>,
     /// Stop words to filter out
-    stop_words: &'static HashSet<&'static str>,
+    stop_words: &'static FxHashSet<&'static str>,
 }
-
-static STOP_WORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(default_stop_words);
 
 impl StatisticsAggregator {
     /// Create a new statistics aggregator with default tuning.
@@ -723,6 +626,7 @@ impl StatisticsAggregator {
     /// Create a new statistics aggregator from a full configuration.
     pub fn with_settings(config: StatisticsConfig) -> Self {
         let max_rate_points = Self::max_rate_points_for(config.rate_bucket_secs);
+        let extra_stop_words = Self::build_extra_stop_words(&config.extra_stop_words);
         Self {
             total_count: 0,
             chat_count: 0,
@@ -738,8 +642,18 @@ impl StatisticsAggregator {
             start_time: None,
             max_rate_points,
             config,
+            extra_stop_words,
             stop_words: &STOP_WORDS,
         }
+    }
+
+    fn build_extra_stop_words(words: &[String]) -> FxHashSet<String> {
+        words
+            .iter()
+            .map(|w| w.trim())
+            .filter(|w| !w.is_empty())
+            .map(|w| w.to_lowercase())
+            .collect()
     }
 
     /// Point budget for the rate timeseries: enough to cover six hours at the
@@ -797,6 +711,7 @@ impl StatisticsAggregator {
         gift_tally.shrink_to_capacity(config.gift_capacity);
 
         let bucket_duration_secs = state.bucket_duration_secs.max(1);
+        let extra_stop_words = Self::build_extra_stop_words(&config.extra_stop_words);
         Some(Self {
             total_count: state.total_count,
             chat_count: state.chat_count,
@@ -812,6 +727,7 @@ impl StatisticsAggregator {
             start_time: state.start_time,
             max_rate_points: Self::max_rate_points_for(bucket_duration_secs),
             config,
+            extra_stop_words,
             stop_words: &STOP_WORDS,
         })
     }
@@ -825,12 +741,7 @@ impl StatisticsAggregator {
     /// Whether `word` should be excluded from word frequency.
     fn is_stop_word(&self, word: &str) -> bool {
         self.stop_words.contains(word)
-            || (!self.config.extra_stop_words.is_empty()
-                && self
-                    .config
-                    .extra_stop_words
-                    .iter()
-                    .any(|entry| entry == word))
+            || (!self.extra_stop_words.is_empty() && self.extra_stop_words.contains(word))
     }
 
     /// Record a message.
@@ -841,8 +752,8 @@ impl StatisticsAggregator {
     pub fn record_message(&mut self, message: &DanmuMessage) {
         let timestamp = message.timestamp;
 
-        // Set start time on first message
-        if self.start_time.is_none() {
+        // Track earliest seen message timestamp even when out-of-order frames arrive.
+        if self.start_time.is_none_or(|start| timestamp < start) {
             self.start_time = Some(timestamp);
         }
 
@@ -888,52 +799,17 @@ impl StatisticsAggregator {
         self.update_rate_bucket(timestamp);
     }
 
-    /// Process words from a message.
-    ///
-    /// Two passes. The outer split on `!is_alphanumeric()` treats whitespace,
-    /// ASCII *and* full-width punctuation (`,`, `。`, `!`, ...) and
-    /// symbols/emoji as separators. That alone is not enough for CJK: ideographs
-    /// *are* alphanumeric and CJK text has no spaces, so `主播今天好厉害啊`
-    /// survives the split as one token. Runs containing CJK are therefore passed
-    /// through `JIEBA`, while Latin-script runs keep the allocation-free path.
     fn process_words(&mut self, content: &str) {
         if self.config.top_words == 0 {
             return;
         }
-        for run in content
-            .split(|c: char| !c.is_alphanumeric())
-            // `record_word` discards single-character words, so dropping such
-            // runs here keeps a lone CJK character from loading the dictionary.
-            .filter(|run| run.chars().nth(1).is_some())
-        {
-            if contains_cjk(run) {
-                // HMM inference on: the bundled dictionary is general Chinese, and
-                // without it a common word like `主播` splits into `主` + `播`,
-                // which `record_word` then discards as single-character noise.
-                // `Token::word` borrows from `run`, so segments cost no allocation
-                // beyond the returned Vec.
-                for token in JIEBA.cut(run, true) {
-                    self.record_word(token.word);
-                }
-            } else {
-                self.record_word(run);
-            }
-        }
+        for_each_token(content, |token| self.record_word(token));
     }
 
     /// Count one candidate word, after case folding and stop-word filtering.
     fn record_word(&mut self, word: &str) {
-        // `chars().count()`, not `len()`: a byte length keeps single CJK
-        // characters (3 bytes) while dropping single ASCII ones.
-        if word.chars().count() < 2 {
+        let Some(word_lower) = normalize_word(word) else {
             return;
-        }
-
-        // Borrow when there is no case to fold, which is every CJK word.
-        let word_lower = if word.chars().any(char::is_uppercase) {
-            Cow::Owned(word.to_lowercase())
-        } else {
-            Cow::Borrowed(word)
         };
 
         if self.is_stop_word(&word_lower) {
@@ -943,16 +819,16 @@ impl StatisticsAggregator {
         self.word_hh.increment(&word_lower);
     }
 
-    /// Update the rate bucket.
+    /// Update the rate bucket while preserving strictly monotonic bucket timestamps
+    /// across `rate_data` and `current_bucket`, even when messages arrive out of order.
     fn update_rate_bucket(&mut self, timestamp: Timestamp) {
         let bucket_start = self.get_bucket_start(timestamp);
 
         match &mut self.current_bucket {
             Some((start, count)) if *start == bucket_start => {
-                *count += 1;
+                *count = count.saturating_add(1);
             }
-            Some((start, count)) => {
-                // Save current bucket and start new one
+            Some((start, count)) if bucket_start > *start => {
                 self.rate_data.push_back(RateDataPoint {
                     timestamp: *start,
                     count: *count,
@@ -961,9 +837,49 @@ impl StatisticsAggregator {
                     self.coarsen_rate_data();
                 }
                 // Recompute: `coarsen_rate_data` doubles `bucket_duration_secs`,
-                // which changes the bucket alignment for new messages.
+                // which changes the bucket alignment for new messages and may merge
+                // `bucket_start` into the newly coarsened trailing bucket.
                 let bucket_start = self.get_bucket_start(timestamp);
-                self.current_bucket = Some((bucket_start, 1));
+                if let Some(last) = self
+                    .rate_data
+                    .pop_back_if(|last| last.timestamp == bucket_start)
+                {
+                    self.current_bucket = Some((bucket_start, last.count.saturating_add(1)));
+                } else {
+                    self.current_bucket = Some((bucket_start, 1));
+                }
+            }
+            Some(_) => {
+                // Out-of-order message earlier than `current_bucket`: insert or merge
+                // in sorted order inside `rate_data` so timestamps never regress.
+                match self
+                    .rate_data
+                    .binary_search_by(|point| point.timestamp.cmp(&bucket_start))
+                {
+                    Ok(idx) => {
+                        self.rate_data[idx].count = self.rate_data[idx].count.saturating_add(1);
+                    }
+                    Err(idx) => {
+                        self.rate_data.insert(
+                            idx,
+                            RateDataPoint {
+                                timestamp: bucket_start,
+                                count: 1,
+                            },
+                        );
+                        if self.rate_data.len() > self.max_rate_points {
+                            if let Some((cur_start, cur_count)) = self.current_bucket.take() {
+                                self.rate_data.push_back(RateDataPoint {
+                                    timestamp: cur_start,
+                                    count: cur_count,
+                                });
+                            }
+                            self.coarsen_rate_data();
+                            self.current_bucket =
+                                self.rate_data.pop_back().map(|p| (p.timestamp, p.count));
+                        }
+                    }
+                }
             }
             None => {
                 self.current_bucket = Some((bucket_start, 1));
@@ -1083,28 +999,6 @@ impl Default for StatisticsAggregator {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Default stop words for filtering.
-fn default_stop_words() -> HashSet<&'static str> {
-    let words = [
-        // English
-        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
-        "do", "does", "did", "will", "would", "could", "should", "may", "might", "must", "shall",
-        "can", "need", "dare", "to", "of", "in", "for", "on", "with", "at", "by", "from", "as",
-        "into", "through", "during", "before", "after", "above", "below", "between", "under",
-        "again", "further", "then", "once", "here", "there", "when", "where", "why", "how", "all",
-        "each", "few", "more", "most", "other", "some", "such", "no", "nor", "not", "only", "own",
-        "same", "so", "than", "too", "very", "just", "and", "but", "if", "or", "because", "until",
-        "while", "this", "that", "these", "those", "it", "its", "he", "she", "they", "them", "his",
-        "her", "their", "what", "which", "who", "whom", // Chinese common words
-        "的", "了", "是", "在", "我", "有", "和", "就", "不", "人", "都", "一", "一个", "上", "也",
-        "很", "到", "说", "要", "去", "你", "会", "着", "没有", "看", "好", "自己", "这", "那",
-        // Common chat expressions
-        "lol", "lmao", "haha", "hehe", "xd", "gg", "ez", "wp", "666", "233", "哈哈", "呵呵", "嘿嘿",
-    ];
-
-    words.into_iter().collect()
 }
 
 #[cfg(test)]
@@ -1727,5 +1621,43 @@ mod tests {
             total_messages,
             elapsed.as_millis()
         );
+    }
+
+    #[test]
+    fn mixed_case_extra_stop_words_filter_case_insensitively_and_out_of_order_rates_stay_monotonic()
+    {
+        let mut agg = StatisticsAggregator::with_settings(StatisticsConfig {
+            rate_bucket_secs: 10,
+            extra_stop_words: vec!["PogChamp".to_string(), "  Kappa  ".to_string()],
+            ..StatisticsConfig::default()
+        });
+
+        let t = |secs: i64| Timestamp::from_second(1_700_000_000 + secs).unwrap();
+        agg.record_message(&chat_at("u1", "U1", "PogChamp keepme", t(32)));
+        agg.record_message(&chat_at("u2", "U2", "pogchamp KAPPA keepme", t(11)));
+        agg.record_message(&chat_at("u3", "U3", "keepme", t(24)));
+        agg.record_message(&chat_at("u1", "U1", "kappa", t(18)));
+        agg.record_message(&chat_at("u2", "U2", "keepme", t(39)));
+
+        let stats = agg.current_stats();
+        assert_eq!(stats.start_time, Some(t(11)));
+        assert_eq!(stats.total_count, 5);
+        assert!(
+            stats
+                .word_frequency
+                .iter()
+                .all(|wf| wf.word != "pogchamp" && wf.word != "kappa"),
+            "stop words leaked: {:?}",
+            stats.word_frequency
+        );
+        assert_eq!(stats.word_frequency[0].word, "keepme");
+        assert_eq!(stats.word_frequency[0].count, 4);
+
+        let buckets: Vec<(i64, u64)> = stats
+            .rate_timeseries
+            .iter()
+            .map(|p| (p.timestamp.as_second() - 1_700_000_000, p.count))
+            .collect();
+        assert_eq!(buckets, vec![(10, 2), (20, 1), (30, 2)]);
     }
 }

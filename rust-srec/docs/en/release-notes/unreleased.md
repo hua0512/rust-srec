@@ -30,8 +30,12 @@
 - An HLS segment that keeps failing is now skipped after 45 seconds of retries instead of stalling the recording for about two minutes (any retry already in flight finishes first, and rate-limit waits are not counted). This can be adjusted via **Segment Retry Deadline** under **Advanced → Segment downloads** on the Mesio engine's HLS tab; DASH recordings use the same 45-second limit.
 - Fixed **End Stream On Danmu Close** having no effect when set on a template or streamer. Previously only the platform setting was used, so turning it off for a streamer did not stop danmu close events from ending the recording.
 - Fixed **Min Segment Size** deleting valid parts mid-recording and leaving gaps. When a stream's resolution or codec changes, recording continues in a new file; on low-bitrate streams, a part between two changes can be smaller than the minimum (1 MiB by default) and was previously deleted along with its chat file. Parts ended by a resolution or codec change are now kept even if smaller than the minimum, while short parts from stops, reconnects or ad breaks are still cleaned up. See [Resource Limits](https://docs.srec.rs/en/reference/settings#resource-limits).
+- Fixed FFmpeg and Streamlink recordings that failed before recording anything leaving an empty hidden `.srec-chunks-…` folder in the output folder. The folder is now removed unless it holds parts of a recording that can still be recovered.
+- Fixed Mesio HLS and DASH recordings that stopped before their first segment being reported as "stream is empty" even when a download or processing error was the cause. The failure now shows the actual error.
 - Reduced server memory usage during FLV recordings with **Loop Protection** enabled and on installations with a large history of **Danmu Statistics**.
 - Setting **Frequent words to keep** under **Danmu Statistics** to `0` now disables word frequency counting and CJK word segmentation while keeping the rest of the session's chat summary (totals, activity timeline, top chatters and gifts).
+- Fixed Huya **Record Danmu** failing to capture live chat, including on rooms with custom URLs or links with query parameters, and stopped sending your Twitch login token to video servers.
+- Fixed negative bitrate values on some Douyin streams breaking bitrate filters, and fixed password-protected Twitcasting links entered without `https://` losing their password.
 
 ## Workflows and file processing
 
@@ -41,10 +45,22 @@
 - Fixed a cancelled or timed-out Baidu Netdisk upload overlapping with the next upload before BaiduPCS-Go finished exiting, which could corrupt its local data. The next upload now waits for the previous process to exit and notes this in the log; signing in from the account card reports that BaiduPCS-Go is busy in the meantime.
 - Fixed rclone uploads retrying more times than the preset's **Max Retries** allowed. Previously rclone retried each failed attempt up to 3 times internally, running up to three times as often as configured with no visibility in job progress. Each attempt shown in job progress is now a single upload capped strictly by **Max Retries**; pass `--retries` in extra arguments if you want rclone's own retries back.
 - Prevented deleting or renaming a job preset or workflow still used by a pipeline, which previously caused those pipelines to fail at runtime. Such changes are now blocked with a dialog listing every place it is used (with links to each). Importing a configuration in **Replace** mode also keeps omitted presets and workflows that imported pipelines still need, listing them as warnings.
+- Prevented deleting a recording session on **Sessions** while it is still live or still has processing jobs waiting or running.
 
 ## Configuration
 
 - Fixed on/off options in a template's platform override or a streamer's **Platform options** tab (such as **Batch Detection**, **Force Origin Quality** and **End Stream On Danmu Close**) always showing as on or off even when unset, making it unclear whether they followed the platform setting. Previously, once toggled there, the only way to follow the platform again was editing JSON. These options now offer **Inherit**, **On** and **Off**, where **Inherit** follows the template or platform setting. See [Configuration layers](https://docs.srec.rs/en/concepts/configuration#important-merge-rules).
+- Fixed **Replace All** in **Import Configuration** under **Backup & Restore** leaving settings, **Accounts** and **Proxies** choices on **Platforms** omitted from the backup, which could block deleting old accounts or proxies.
+- Updating the log filter in global settings or through **Import Configuration** now takes effect right away without restarting rust-srec.
+- **Import Configuration** now rejects a backup with an invalid log filter or a streamer address without a host before changing anything, instead of saving settings that cannot work.
+
+## Notifications
+
+- Fixed **Web Push** under **Browser Notifications** failing to subscribe, update priority or unsubscribe when `AUTH_DISABLED=true`.
+
+## Authentication and API
+
+- Fixed **API Keys** keeping old permissions or staying active for up to five seconds after **Change Password** or **Import Configuration** updated or disabled an account.
 
 ## Web interface
 

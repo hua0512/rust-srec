@@ -1524,3 +1524,38 @@ async fn manual_cut_waits_while_finalization_is_backlogged() {
         })
     );
 }
+
+#[tokio::test]
+async fn startup_failure_removes_staging_directory_when_no_recovery_files_exist() {
+    let directory = tempfile::tempdir().unwrap();
+    for create_empty_list in [false, true] {
+        let id = if create_empty_list {
+            "startup-fail-with-list"
+        } else {
+            "startup-fail-empty"
+        };
+        let (handle, _events) = fixture_handle(directory.path(), id);
+        let result = run(
+            handle,
+            "missing-recording-finalizer",
+            move |inner| async move {
+                if create_empty_list {
+                    let staging = inner.config_snapshot().output_dir;
+                    tokio::fs::write(staging.join(LIST_NAME), b"")
+                        .await
+                        .unwrap();
+                }
+                Err(EngineStartError::new(
+                    DownloadFailureKind::ProcessExit { code: None },
+                    "failed to spawn producer",
+                ))
+            },
+        )
+        .await;
+        assert!(result.is_err());
+        assert!(
+            !directory.path().join(format!(".srec-chunks-{id}")).exists(),
+            "empty staging directory leaked (create_empty_list={create_empty_list})"
+        );
+    }
+}

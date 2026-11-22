@@ -27,7 +27,16 @@ tokio = { workspace = true, features = [
     "sync",
     "time",
 ] }
-reqwest = { workspace = true, features = ["json", "stream", "gzip", "deflate"] }
+reqwest = { workspace = true, features = [
+    "json",
+    "stream",
+    "gzip",
+    "deflate",
+    # `proxy::ProxyEndpoint` accepts `socks5` and `socks5h` proxies. Without
+    # this feature the client fails every request sent through one, which a
+    # build of `strev` alone would hit: no other crate it uses enables it.
+    "socks",
+] }
 rustls = { workspace = true }
 rustls-platform-verifier = { workspace = true }
 # TLS to an `https` proxy before tunnelling a danmu WebSocket through it.

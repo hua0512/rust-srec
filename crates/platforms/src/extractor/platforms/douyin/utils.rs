@@ -70,18 +70,6 @@ pub(crate) fn get_common_params() -> HashMap<&'static str, &'static str> {
     params
 }
 
-/// Generate a random ms_token, 184 length
-pub(crate) fn generate_ms_token() -> String {
-    const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-";
-    let mut rng = rng();
-    (0..184)
-        .map(|_| {
-            let idx = rng.random_range(0..CHARSET.len());
-            CHARSET[idx] as char
-        })
-        .collect()
-}
-
 static CHARSET: LazyLock<&[u8]> = LazyLock::new(|| b"abcdef0123456789");
 
 /// Generate a random odin_ttid, 160 length

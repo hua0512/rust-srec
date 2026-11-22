@@ -60,13 +60,24 @@ impl StreamerUrl {
         }
 
         // Basic URL validation
-        if !url.starts_with("http://") && !url.starts_with("https://") {
+        let Some(rest) = url
+            .strip_prefix("https://")
+            .or_else(|| url.strip_prefix("http://"))
+        else {
             return Err(Error::validation("URL must start with http:// or https://"));
+        };
+        if rest.is_empty() || rest.starts_with('/') {
+            return Err(Error::validation("URL must include a non-empty host"));
         }
 
         // Check for valid characters
         if url.contains(char::is_whitespace) {
             return Err(Error::validation("URL cannot contain whitespace"));
+        }
+
+        let parsed = url::Url::parse(url).map_err(|_| Error::validation("URL is malformed"))?;
+        if parsed.host_str().is_none_or(|host| host.is_empty()) {
+            return Err(Error::validation("URL must include a non-empty host"));
         }
 
         Ok(())

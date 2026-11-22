@@ -160,6 +160,11 @@ impl OfflineClassifier {
         }
     }
 
+    /// Evict per-streamer failure history when a streamer is disabled or deleted.
+    pub fn purge_streamer(&self, streamer_id: &str) {
+        self.failure_log.remove(streamer_id);
+    }
+
     /// Append a Network failure to the per-streamer log and decide if the
     /// trailing-window threshold has been reached.
     fn record_network_failure_and_check(&self, streamer_id: &str) -> Option<OfflineSignal> {

@@ -182,7 +182,14 @@ impl CredentialProfileRepository {
         &self,
         policy: &crate::credentials::ResolvedCredentialPolicy,
     ) -> Result<()> {
-        validate_policy(
+        self.validate_selection_platform(policy).await.map(|_| ())
+    }
+
+    pub async fn validate_selection_platform(
+        &self,
+        policy: &crate::credentials::ResolvedCredentialPolicy,
+    ) -> Result<String> {
+        validate_policy_platform(
             &mut *self.pool.acquire().await?,
             &policy.owner,
             &policy.platform_id,
@@ -209,6 +216,135 @@ impl CredentialProfileRepository {
 
     pub async fn get(&self, id: &str) -> Result<CredentialProfile> {
         load(&mut *self.pool.acquire().await?, id).await
+    }
+
+    /// Loads `id` and its current-revision health in one query.
+    pub async fn get_with_health(
+        &self,
+        id: &str,
+    ) -> Result<(CredentialProfile, Option<CredentialProfileHealth>)> {
+        #[derive(sqlx::FromRow)]
+        struct ProfileWithHealthRow {
+            #[sqlx(flatten)]
+            profile: CredentialProfile,
+            health_revision: Option<i64>,
+            validity: Option<CredentialValidity>,
+            last_check_at: Option<i64>,
+            last_refresh_at: Option<i64>,
+            refresh_failure_count: Option<i64>,
+            last_failure_at: Option<i64>,
+            last_notified_failure_count: Option<i64>,
+            reason_code: Option<HealthReason>,
+        }
+
+        let row = sqlx::query_as::<_, ProfileWithHealthRow>(
+            "SELECT p.*, \
+                    h.revision AS health_revision, \
+                    h.validity, \
+                    h.last_check_at, \
+                    h.last_refresh_at, \
+                    h.refresh_failure_count, \
+                    h.last_failure_at, \
+                    h.last_notified_failure_count, \
+                    h.reason_code \
+             FROM credential_profiles p \
+             LEFT JOIN credential_profile_health h \
+               ON h.profile_id = p.id AND h.revision = p.revision \
+             WHERE p.id = ?",
+        )
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?
+        .ok_or_else(|| Error::not_found("CredentialProfile", id))?;
+
+        let health = match (row.health_revision, row.validity) {
+            (Some(revision), Some(validity)) => Some(CredentialProfileHealth {
+                profile_id: row.profile.id.clone(),
+                revision,
+                validity,
+                last_check_at: row.last_check_at,
+                last_refresh_at: row.last_refresh_at,
+                refresh_failure_count: row.refresh_failure_count.unwrap_or(0),
+                last_failure_at: row.last_failure_at,
+                last_notified_failure_count: row.last_notified_failure_count.unwrap_or(0),
+                reason_code: row.reason_code,
+            }),
+            _ => None,
+        };
+        Ok((row.profile, health))
+    }
+
+    /// Loads candidate profiles, their current-revision health, and resolved
+    /// routes in `ids` order on a single read connection with batched queries.
+    pub async fn load_pool_candidates(
+        &self,
+        ids: &[&str],
+        operation: &crate::proxies::ResolvedRoute,
+    ) -> Result<
+        Vec<(
+            CredentialProfile,
+            Option<CredentialProfileHealth>,
+            crate::proxies::ResolvedRoute,
+        )>,
+    > {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let mut connection = self.pool.acquire().await?;
+        let profiles = load_many(&mut connection, ids).await?;
+        let health_map = health_of_in(&mut connection, ids).await?;
+
+        let mut proxy_ids: Vec<&str> = Vec::new();
+        let mut seen_proxies = HashSet::new();
+        for id in ids {
+            let profile = profiles
+                .get(*id)
+                .ok_or_else(|| Error::not_found("CredentialProfile", *id))?;
+            if let Some(proxy_id) = profile.proxy_id.as_deref()
+                && !profile.route()?.is_inherit()
+                && seen_proxies.insert(proxy_id)
+            {
+                proxy_ids.push(proxy_id);
+            }
+        }
+
+        let mut proxy_entries: HashMap<String, crate::proxies::ProxyEntry> = HashMap::new();
+        for chunk in proxy_ids.chunks(super::LOOKUP_BATCH_SIZE) {
+            let query = format!(
+                "SELECT * FROM proxies WHERE id IN ({})",
+                vec!["?"; chunk.len()].join(", ")
+            );
+            let mut statement =
+                sqlx::query_as::<_, crate::proxies::ProxyEntry>(sqlx::AssertSqlSafe(query));
+            for proxy_id in chunk {
+                statement = statement.bind(*proxy_id);
+            }
+            for entry in statement.fetch_all(&mut *connection).await? {
+                proxy_entries.insert(entry.id.clone(), entry);
+            }
+        }
+
+        let system = crate::proxies::SystemProxy::current();
+        let mut out = Vec::with_capacity(ids.len());
+        for id in ids {
+            let profile = profiles
+                .get(*id)
+                .cloned()
+                .ok_or_else(|| Error::not_found("CredentialProfile", *id))?;
+            let own = profile.route()?;
+            let resolved_route = if own.is_inherit() {
+                operation.clone()
+            } else {
+                crate::proxies::resolve(
+                    &[(crate::proxies::RouteSource::Account, own)],
+                    |proxy_id| proxy_entries.get(proxy_id),
+                    system,
+                )?
+            };
+            let health = health_map.get(*id).cloned();
+            out.push((profile, health, resolved_route));
+        }
+        Ok(out)
     }
 
     #[cfg(test)]
@@ -850,22 +986,115 @@ pub(crate) async fn require_current(
     Ok(())
 }
 
+pub(crate) async fn load_many(
+    connection: &mut SqliteConnection,
+    ids: &[&str],
+) -> Result<HashMap<String, CredentialProfile>> {
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let mut seen = HashSet::with_capacity(ids.len());
+    let unique: Vec<&str> = ids.iter().copied().filter(|id| seen.insert(*id)).collect();
+    let mut profiles = HashMap::with_capacity(unique.len());
+    for chunk in unique.chunks(super::LOOKUP_BATCH_SIZE) {
+        let query = format!(
+            "SELECT * FROM credential_profiles WHERE id IN ({})",
+            vec!["?"; chunk.len()].join(", ")
+        );
+        let mut statement = sqlx::query_as::<_, CredentialProfile>(sqlx::AssertSqlSafe(query));
+        for id in chunk {
+            statement = statement.bind(*id);
+        }
+        for profile in statement.fetch_all(&mut *connection).await? {
+            profiles.insert(profile.id.clone(), profile);
+        }
+    }
+    Ok(profiles)
+}
+
+async fn health_of_in(
+    connection: &mut SqliteConnection,
+    ids: &[&str],
+) -> Result<HashMap<String, CredentialProfileHealth>> {
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let mut seen = HashSet::with_capacity(ids.len());
+    let unique: Vec<&str> = ids.iter().copied().filter(|id| seen.insert(*id)).collect();
+    let mut health = HashMap::new();
+    for chunk in unique.chunks(super::LOOKUP_BATCH_SIZE) {
+        let query = format!(
+            "SELECT h.* FROM credential_profile_health h \
+             JOIN credential_profiles p ON p.id = h.profile_id AND p.revision = h.revision \
+             WHERE h.profile_id IN ({})",
+            vec!["?"; chunk.len()].join(", ")
+        );
+        let mut statement =
+            sqlx::query_as::<_, CredentialProfileHealth>(sqlx::AssertSqlSafe(query));
+        for id in chunk {
+            statement = statement.bind(*id);
+        }
+        for row in statement.fetch_all(&mut *connection).await? {
+            health.insert(row.profile_id.clone(), row);
+        }
+    }
+    Ok(health)
+}
+
 pub(crate) async fn validate_policy(
     connection: &mut SqliteConnection,
     owner: &CredentialOwner,
     platform_id: &str,
     selection: &CredentialSelection,
 ) -> Result<()> {
+    validate_policy_platform(connection, owner, platform_id, selection)
+        .await
+        .map(|_| ())
+}
+
+pub(crate) async fn validate_policy_platform(
+    connection: &mut SqliteConnection,
+    owner: &CredentialOwner,
+    platform_id: &str,
+    selection: &CredentialSelection,
+) -> Result<String> {
     selection.validate()?;
-    require_owner(connection, owner, platform_id).await?;
-    for id in selection.profile_ids() {
-        require_not_retiring(connection, id).await?;
-        let profile = load(connection, id).await?;
+    let platform = require_owner(connection, owner, platform_id).await?;
+    let ids = selection.profile_ids();
+    if ids.is_empty() {
+        return Ok(platform);
+    }
+
+    let mut seen = HashSet::with_capacity(ids.len());
+    let unique: Vec<&str> = ids.iter().copied().filter(|id| seen.insert(*id)).collect();
+    let mut retiring = HashSet::new();
+    for chunk in unique.chunks(super::LOOKUP_BATCH_SIZE) {
+        let query = format!(
+            "SELECT profile_id FROM retirement_credential_profiles WHERE profile_id IN ({})",
+            vec!["?"; chunk.len()].join(", ")
+        );
+        let mut statement = sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(query));
+        for id in chunk {
+            statement = statement.bind(*id);
+        }
+        for retired_id in statement.fetch_all(&mut *connection).await? {
+            retiring.insert(retired_id);
+        }
+    }
+    let profiles = load_many(connection, &unique).await?;
+
+    for id in ids {
+        if retiring.contains(id) {
+            return Err(ProfileError::SourceChanged.into());
+        }
+        let profile = profiles
+            .get(id)
+            .ok_or_else(|| Error::not_found("CredentialProfile", id))?;
         if profile.platform_config_id != platform_id {
             return Err(ProfileError::InvalidOwner.into());
         }
     }
-    Ok(())
+    Ok(platform)
 }
 
 pub(crate) async fn require_not_retiring(

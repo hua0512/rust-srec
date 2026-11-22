@@ -671,6 +671,10 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         {
             return;
         }
+        let Some(handle) = self.supervisor.registry().get_streamer(&streamer_id) else {
+            debug!("No actor found for streamer {}", streamer_id);
+            return;
+        };
         self.download_heartbeat_last_sent
             .insert(streamer_id.clone(), now);
         let msg = StreamerMessage::DownloadHeartbeat {
@@ -682,15 +686,11 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
             "Handling download event for streamer {}: {:?}",
             streamer_id, msg
         );
-        if let Some(handle) = self.supervisor.registry().get_streamer(&streamer_id) {
-            if let Err(e) = handle.try_send(msg) {
-                warn!(
-                    "Failed to send download message to actor {}: {}",
-                    streamer_id, e
-                );
-            }
-        } else {
-            debug!("No actor found for streamer {}", streamer_id);
+        if let Err(e) = handle.try_send(msg) {
+            warn!(
+                "Failed to send download message to actor {}: {}",
+                streamer_id, e
+            );
         }
     }
 
@@ -781,7 +781,7 @@ mod tests {
     /// The repository is real but unused by this path: nothing here applies a
     /// config event, and `StreamerActor` persists through its `StatusChecker`,
     /// not through `StreamerManager`.
-    async fn scheduler_with_streamers(
+    pub(super) async fn scheduler_with_streamers(
         streamer_ids: &[&str],
     ) -> Scheduler<crate::database::repositories::SqlxStreamerRepository> {
         let dir = tempfile::TempDir::new().unwrap();

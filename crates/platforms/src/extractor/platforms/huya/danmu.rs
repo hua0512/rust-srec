@@ -3,11 +3,14 @@
 //! Implements danmu collection for the Huya streaming platform using the generic
 //! WebSocket provider with TARS protocol for message encoding/decoding.
 
-use bytes::{Bytes, BytesMut};
-use rustc_hash::FxHashMap;
+use std::collections::HashMap;
 use std::time::Duration;
+
+use bytes::Bytes;
+use reqwest::Client;
+use rustc_hash::FxHashMap;
 use tars_codec::{
-    decode_tars_struct, encode_tars_value, next_request_id,
+    decode_response_zero_copy, decode_tars_struct, encode_tars_value, next_request_id,
     types::{TarsMessage, TarsRequestHeader, TarsValue},
 };
 use tokio_tungstenite::tungstenite::protocol::Message;
@@ -18,11 +21,13 @@ use crate::danmaku::websocket::{
     DanmuProtocol, DanmuProtocolFactory, DanmuProtocolOutput, WebSocketDanmuProvider,
 };
 use crate::danmaku::{DanmuItem, DanmuMessage};
+use crate::extractor::default::{DEFAULT_UA, default_client};
 use crate::extractor::platforms::huya::huya_uri;
-use crate::extractor::platforms::huya::{HuyaSourceType, HuyaWsCmd};
+use crate::extractor::platforms::huya::web::PROFILE_INFO_REGEX;
 use crate::extractor::platforms::huya::{
-    HuyaUserId, LiveAppUAEx, LiveLaunchReq, LiveUserBase, MessageNotice, WebSocketCommand,
-    WsPushMessage, WsRegisterGroupReq, build_get_living_info_request,
+    GetLivingInfoRsp, HuyaSourceType, HuyaUserId, HuyaWsCmd, LiveAppUAEx, LiveLaunchReq,
+    LiveUserBase, MessageNotice, WebSocketCommand, WsPushMessage, WsRegisterGroupReq,
+    build_get_living_info_by_room_id_request, build_get_living_info_request,
 };
 
 use super::URL_REGEX;
@@ -30,6 +35,7 @@ use crate::extractor::utils::capture_group_1_owned;
 
 /// Huya WebSocket server URL
 const HUYA_WS_URL: &str = "wss://cdnws.api.huya.com:443";
+const HUYA_BASE_URL: &str = "https://www.huya.com";
 
 /// Heartbeat interval in seconds
 const HEARTBEAT_INTERVAL_SECS: u64 = 60;
@@ -46,10 +52,28 @@ const HEARTBEAT: &[u8] = &[
 ];
 
 /// Huya Protocol Implementation
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct HuyaDanmuProtocol {
+    client: Client,
+    base_url: std::borrow::Cow<'static, str>,
     /// Optional cookies for authenticated sessions
     cookies: Option<String>,
+    /// Presenter UID resolved from extras, room HTML page, or `getLivingInfo`
+    presenter_uid: Option<i64>,
+    /// Whether `RegisterGroupReq` has been sent for the current connection
+    joined_group: bool,
+}
+
+impl Default for HuyaDanmuProtocol {
+    fn default() -> Self {
+        Self {
+            client: default_client(),
+            base_url: std::borrow::Cow::Borrowed(HUYA_BASE_URL),
+            cookies: None,
+            presenter_uid: None,
+            joined_group: false,
+        }
+    }
 }
 
 impl HuyaDanmuProtocol {
@@ -62,7 +86,66 @@ impl HuyaDanmuProtocol {
     pub fn with_cookies(cookies: impl Into<String>) -> Self {
         Self {
             cookies: Some(cookies.into()),
+            ..Self::default()
         }
+    }
+
+    pub(crate) fn extract_presenter_uid_from_html(html: &str) -> Result<i64> {
+        #[derive(serde::Deserialize)]
+        struct ProfileUid {
+            #[serde(default, deserialize_with = "super::models::deserialize_lp")]
+            lp: i64,
+        }
+
+        let profile_info_str = PROFILE_INFO_REGEX
+            .captures(html)
+            .and_then(|caps| caps.get(1))
+            .map(|m| m.as_str())
+            .ok_or_else(|| {
+                DanmakuError::protocol("Could not find TT_PROFILE_INFO on Huya room page")
+            })?;
+        let profile_info: ProfileUid = serde_json::from_str(profile_info_str)
+            .map_err(|e| DanmakuError::protocol(format!("Invalid Huya TT_PROFILE_INFO: {e}")))?;
+        if profile_info.lp <= 0 {
+            return Err(DanmakuError::connection(
+                "Huya room presenter_uid not found",
+            ));
+        }
+        Ok(profile_info.lp)
+    }
+
+    async fn resolve_vanity_presenter_uid(&self, slug: &str) -> Result<i64> {
+        let url = format!("{}/{slug}", self.base_url.trim_end_matches('/'));
+        let mut request = self
+            .client
+            .get(&url)
+            .header(reqwest::header::USER_AGENT, DEFAULT_UA)
+            .header(reqwest::header::ORIGIN, HUYA_BASE_URL)
+            .header(reqwest::header::REFERER, HUYA_BASE_URL);
+        if let Some(cookies) = self
+            .cookies
+            .as_deref()
+            .map(str::trim)
+            .filter(|c| !c.is_empty())
+            && let Ok(mut cookie_val) = reqwest::header::HeaderValue::from_str(cookies)
+        {
+            cookie_val.set_sensitive(true);
+            request = request.header(reqwest::header::COOKIE, cookie_val);
+        }
+        let response = request.send().await.map_err(|e| {
+            DanmakuError::connection(format!("Failed to fetch Huya room page: {e}"))
+        })?;
+        if !response.status().is_success() {
+            return Err(DanmakuError::connection(format!(
+                "Huya room page returned HTTP {}",
+                response.status()
+            )));
+        }
+        let html = response
+            .text()
+            .await
+            .map_err(|e| DanmakuError::connection(format!("Failed to read Huya room page: {e}")))?;
+        Self::extract_presenter_uid_from_html(&html)
     }
 }
 
@@ -82,12 +165,46 @@ impl DanmuProtocolFactory for HuyaDanmuProtocol {
     }
 
     fn create_protocol(&self) -> Self::Protocol {
-        self.clone()
+        Self {
+            client: self.client.clone(),
+            base_url: self.base_url.clone(),
+            cookies: self.cookies.clone(),
+            presenter_uid: None,
+            joined_group: false,
+        }
     }
 }
 
 impl DanmuProtocol for HuyaDanmuProtocol {
-    async fn websocket_url(&mut self, _room_id: &str) -> Result<String> {
+    fn use_http_client(&mut self, client: Client) {
+        self.client = client;
+    }
+
+    fn configure_connection(
+        &mut self,
+        cookies: Option<&str>,
+        extras: Option<&HashMap<String, String>>,
+    ) {
+        if let Some(cookies) = cookies.map(str::trim).filter(|c| !c.is_empty()) {
+            self.cookies = Some(cookies.to_owned());
+        }
+        self.presenter_uid = extras
+            .and_then(|map| map.get("presenter_uid"))
+            .and_then(|v| v.trim().parse::<i64>().ok())
+            .filter(|&uid| uid > 0);
+        self.joined_group = false;
+    }
+
+    async fn websocket_url(&mut self, room_id: &str) -> Result<String> {
+        self.joined_group = false;
+        let trimmed = room_id.trim();
+        let is_numeric = !trimmed.is_empty()
+            && trimmed.bytes().all(|b| b.is_ascii_digit())
+            && trimmed.parse::<i64>().is_ok_and(|id| id > 0);
+        if self.presenter_uid.is_none() && !is_numeric {
+            let uid = self.resolve_vanity_presenter_uid(trimmed).await?;
+            self.presenter_uid = Some(uid);
+        }
         Ok(HUYA_WS_URL.to_string())
     }
 
@@ -96,25 +213,28 @@ impl DanmuProtocol for HuyaDanmuProtocol {
     }
 
     async fn handshake_messages(&mut self, room_id: &str) -> Result<Vec<Message>> {
-        let room_id_num: i64 = room_id
-            .parse()
-            .map_err(|_| DanmakuError::connection("Invalid room ID".to_string()))?;
-
-        // 2512200523
         let ua = format!(
             "webh5&{}&websocket",
             jiff::Timestamp::now().strftime("%y%m%d%H%M")
         );
-        // let ua = "webh5&2512200523&websocket";
-        // debug!("ua: {}", ua);
         let device = "chrome";
 
-        // 1. Living info packet
-        let living_info_packet =
-            HuyaDanmuProtocol::create_living_info_packet(room_id_num, &ua, device)?;
+        // 1. Living info packet: use presenter_uid when known, else query by numeric room_id
+        let living_info_packet = if let Some(presenter_uid) = self.presenter_uid {
+            Self::create_living_info_packet(presenter_uid, &ua, device)?
+        } else {
+            let trimmed = room_id.trim();
+            let room_id_num: i64 = (!trimmed.is_empty()
+                && trimmed.bytes().all(|b| b.is_ascii_digit()))
+            .then(|| trimmed.parse::<i64>().ok())
+            .flatten()
+            .filter(|&id| id > 0)
+            .ok_or_else(|| DanmakuError::connection("Invalid room ID".to_string()))?;
+            Self::create_living_info_by_room_id_packet(room_id_num, &ua, device)?
+        };
 
         // 2. Register packet
-        let reg_packet = HuyaDanmuProtocol::create_do_launch_packet(&ua, device)?;
+        let reg_packet = Self::create_do_launch_packet(&ua, device)?;
 
         Ok(vec![
             Message::Binary(living_info_packet),
@@ -154,23 +274,32 @@ impl HuyaDanmuProtocol {
     pub fn create_living_info_packet(presenter_uid: i64, ua: &str, device: &str) -> Result<Bytes> {
         let packet = build_get_living_info_request(presenter_uid, ua, device)
             .map_err(|e| DanmakuError::connection(format!("Failed to build packet: {}", e)))?;
-        // wrap into socket command
+        Self::wrap_register_req(packet)
+    }
+
+    pub fn create_living_info_by_room_id_packet(
+        room_id: i64,
+        ua: &str,
+        device: &str,
+    ) -> Result<Bytes> {
+        let packet = build_get_living_info_by_room_id_request(room_id, ua, device)
+            .map_err(|e| DanmakuError::connection(format!("Failed to build packet: {}", e)))?;
+        Self::wrap_register_req(packet)
+    }
+
+    fn wrap_register_req(packet: Bytes) -> Result<Bytes> {
         let req = WebSocketCommand::new(
             HuyaWsCmd::RegisterReq as i32,
-            packet.to_vec(),
+            packet,
             0,
-            "".to_string(),
+            String::new(),
             0,
             0,
-            "".to_string(),
+            String::new(),
         );
-
-        // encode socket command into bytes
-        let req_bytes = encode_tars_value(&TarsValue::from(req))
-            .map_err(|e| DanmakuError::connection(format!("Failed to encode packet: {}", e)))?
-            .freeze();
-
-        Ok(req_bytes)
+        encode_tars_value(&TarsValue::from(req))
+            .map_err(|e| DanmakuError::connection(format!("Failed to encode packet: {}", e)))
+            .map(bytes::BytesMut::freeze)
     }
 
     pub fn create_do_launch_packet(ua: &str, device: &str) -> Result<Bytes> {
@@ -201,25 +330,13 @@ impl HuyaDanmuProtocol {
             body: body_map,
         };
 
-        let encoded = tars_codec::encode_request(&message).map_err(|e| {
-            DanmakuError::connection(format!("Failed to encode room join packet: {}", e))
-        })?;
-
-        let socket_cmd = WebSocketCommand::new(
-            HuyaWsCmd::RegisterReq as i32,
-            encoded.to_vec(),
-            0,
-            "".to_string(),
-            0,
-            0,
-            "".to_string(),
-        );
-
-        let socket_bytes = encode_tars_value(&TarsValue::from(socket_cmd))
-            .map_err(|e| DanmakuError::connection(format!("Failed to encode socket cmd: {}", e)))?
+        let encoded = tars_codec::encode_request(&message)
+            .map_err(|e| {
+                DanmakuError::connection(format!("Failed to encode room join packet: {}", e))
+            })?
             .freeze();
 
-        Ok(socket_bytes)
+        Self::wrap_register_req(encoded)
     }
 
     pub fn create_create_join_group_packet(presenter_uid: i64) -> Result<Bytes> {
@@ -230,31 +347,58 @@ impl HuyaDanmuProtocol {
             ],
             String::new(), // token is empty
         );
-        let register_vec = encode_tars_value(&TarsValue::from(register_req))
+        let register_bytes = encode_tars_value(&TarsValue::from(register_req))
             .map_err(|e| DanmakuError::connection(format!("Failed to encode register: {}", e)))?
-            .to_vec();
+            .freeze();
         let socket_cmd = WebSocketCommand::new(
             HuyaWsCmd::RegisterGroupReq as i32,
-            register_vec,
+            register_bytes,
             0,
-            "".to_string(),
+            String::new(),
             0,
             0,
-            "".to_string(),
+            String::new(),
         );
         Ok(encode_tars_value(&TarsValue::from(socket_cmd))
             .map_err(|e| DanmakuError::connection(format!("Failed to encode socket cmd: {}", e)))?
             .freeze())
     }
 
+    fn maybe_join_group_outbound(&mut self) -> Vec<Message> {
+        if self.joined_group {
+            return Vec::new();
+        }
+        let Some(presenter_uid) = self.presenter_uid.filter(|&uid| uid > 0) else {
+            return Vec::new();
+        };
+        match Self::create_create_join_group_packet(presenter_uid) {
+            Ok(packet) => {
+                debug!(
+                    presenter_uid,
+                    "Queued join group packet for live/chat groups"
+                );
+                self.joined_group = true;
+                vec![Message::Binary(packet)]
+            }
+            Err(e) => {
+                debug!("Failed to create join group packet: {}", e);
+                Vec::new()
+            }
+        }
+    }
+
     /// Parse incoming WebSocket command and handle protocol-level responses
-    fn parse_socket_command(&self, data: &[u8], room_id: &str) -> Result<DanmuProtocolOutput> {
+    fn parse_socket_command(
+        &mut self,
+        data: &Bytes,
+        _room_id: &str,
+    ) -> Result<DanmuProtocolOutput> {
         if data.len() < 4 {
             return Ok(DanmuProtocolOutput::default());
         }
 
-        // First, decode the WebSocketCommand wrapper (naked struct)
-        let tars_val = match decode_tars_struct(Bytes::copy_from_slice(data)) {
+        // Decode the WebSocketCommand wrapper zero-copy via Bytes refcount clone
+        let tars_val = match decode_tars_struct(data.clone()) {
             Ok(v) => v,
             Err(e) => {
                 debug!("Failed to decode TARS value from socket command: {}", e);
@@ -270,7 +414,6 @@ impl HuyaDanmuProtocol {
             }
         };
 
-        // Check the command type
         let cmd_type = socket_cmd.cmd_type();
         match cmd_type {
             // HeartbeatRsp (2) - just acknowledge
@@ -278,66 +421,63 @@ impl HuyaDanmuProtocol {
                 debug!("Received heartbeat response");
                 Ok(DanmuProtocolOutput::default())
             }
-            // RegisterRsp (4) - check if it's doLaunch response, then send join group packet
+            // RegisterRsp (4) - handle getLivingInfo (presenter_uid discovery) and doLaunch
             4 => {
-                let inner_data = socket_cmd.data();
+                let inner_data = socket_cmd.data().clone();
                 if inner_data.is_empty() {
                     debug!("Received empty RegisterRsp");
                     return Ok(DanmuProtocolOutput::default());
                 }
 
-                // Decode the inner TARS message to check func_name
-                let mut src = BytesMut::from(inner_data.as_slice());
-                let message = match tars_codec::decode_response(&mut src) {
-                    Ok(Some(msg)) => msg,
-                    Ok(None) => {
-                        debug!("No TARS message in RegisterRsp");
-                        return Ok(DanmuProtocolOutput::default());
-                    }
+                let message = match decode_response_zero_copy(inner_data) {
+                    Ok(msg) => msg,
                     Err(e) => {
                         debug!("Failed to decode RegisterRsp inner message: {}", e);
                         return Ok(DanmuProtocolOutput::default());
                     }
                 };
 
-                // Only send join group packet for doLaunch response
-                if message.header.func_name == "doLaunch" {
-                    debug!("Received doLaunch response, sending join group packet");
-                    let outbound = if let Ok(presenter_uid) = room_id.parse::<i64>() {
-                        match Self::create_create_join_group_packet(presenter_uid) {
-                            Ok(packet) => {
+                match message.header.func_name.as_str() {
+                    "getLivingInfo" => {
+                        if let Some(resp_bytes) = message.body.get("tRsp")
+                            && let Ok(val) = tars_codec::de::from_bytes(resp_bytes.clone())
+                            && let Ok(rsp) = GetLivingInfoRsp::try_from(val)
+                        {
+                            let uid = if rsp.t_notice.l_presenter_uid > 0 {
+                                rsp.t_notice.l_presenter_uid
+                            } else {
+                                rsp.t_stream_setting_notice.l_presenter_uid
+                            };
+                            if uid > 0 && self.presenter_uid.is_none() {
                                 debug!(
-                                    "Queued join group packet for presenter_uid: {}",
-                                    presenter_uid
+                                    presenter_uid = uid,
+                                    "Resolved presenter_uid from getLivingInfo"
                                 );
-                                vec![Message::Binary(packet)]
-                            }
-                            Err(e) => {
-                                debug!("Failed to create join group packet: {}", e);
-                                Vec::new()
+                                self.presenter_uid = Some(uid);
                             }
                         }
-                    } else {
-                        debug!("Invalid room_id for join group: {}", room_id);
-                        Vec::new()
-                    };
-                    return Ok(DanmuProtocolOutput::outbound(outbound));
-                } else {
-                    debug!(
-                        "Received RegisterRsp with func_name: {}",
-                        message.header.func_name
-                    );
+                        let outbound = self.maybe_join_group_outbound();
+                        Ok(DanmuProtocolOutput::outbound(outbound))
+                    }
+                    "doLaunch" => {
+                        debug!("Received doLaunch response");
+                        let outbound = self.maybe_join_group_outbound();
+                        Ok(DanmuProtocolOutput::outbound(outbound))
+                    }
+                    other => {
+                        debug!("Received RegisterRsp with func_name: {}", other);
+                        Ok(DanmuProtocolOutput::default())
+                    }
                 }
-                Ok(DanmuProtocolOutput::default())
             }
             // WupRsp (7) - Push messages in WsPushMessage format
             7 => {
-                let inner_data = socket_cmd.data();
+                let inner_data = socket_cmd.data().clone();
                 if inner_data.is_empty() {
                     return Ok(DanmuProtocolOutput::default());
                 }
 
-                let push_msg_val = match decode_tars_struct(Bytes::copy_from_slice(inner_data)) {
+                let push_msg_val = match decode_tars_struct(inner_data) {
                     Ok(v) => v,
                     Err(e) => {
                         debug!("Failed to decode WsPushMessage TARS: {}", e);
@@ -354,14 +494,13 @@ impl HuyaDanmuProtocol {
 
                         // Parse the inner s_msg data as MessageNotice
                         if !push_msg.s_msg.is_empty() {
-                            let notice_val =
-                                match decode_tars_struct(Bytes::copy_from_slice(&push_msg.s_msg)) {
-                                    Ok(v) => v,
-                                    Err(e) => {
-                                        debug!("Failed to decode MessageNotice TARS: {}", e);
-                                        return Ok(DanmuProtocolOutput::default());
-                                    }
-                                };
+                            let notice_val = match decode_tars_struct(push_msg.s_msg) {
+                                Ok(v) => v,
+                                Err(e) => {
+                                    debug!("Failed to decode MessageNotice TARS: {}", e);
+                                    return Ok(DanmuProtocolOutput::default());
+                                }
+                            };
 
                             match MessageNotice::try_from(notice_val) {
                                 Ok(danmu_content) => {
@@ -454,6 +593,135 @@ mod tests {
         assert!(result.is_ok());
         let packet = result.unwrap();
         assert!(!packet.is_empty());
+    }
+
+    fn encode_register_rsp(func_name: &str, body: FxHashMap<String, Bytes>) -> Bytes {
+        let msg = TarsMessage {
+            header: TarsRequestHeader {
+                version: 3,
+                packet_type: 0,
+                message_type: 0,
+                request_id: 1,
+                servant_name: "liveui".to_string(),
+                func_name: func_name.to_string(),
+                timeout: 0,
+                context: FxHashMap::default(),
+                status: FxHashMap::default(),
+            },
+            body,
+        };
+        let inner = tars_codec::encode_request(&msg).unwrap().freeze();
+        let cmd = WebSocketCommand::new(
+            HuyaWsCmd::RegisterRsp as i32,
+            inner,
+            0,
+            String::new(),
+            0,
+            0,
+            String::new(),
+        );
+        encode_tars_value(&TarsValue::from(cmd)).unwrap().freeze()
+    }
+
+    fn decode_group_ids_from_outbound(msg: &Message) -> Vec<String> {
+        let Message::Binary(bytes) = msg else {
+            panic!("expected binary RegisterGroupReq");
+        };
+        let cmd_val = decode_tars_struct(bytes.clone()).unwrap();
+        let cmd = WebSocketCommand::try_from(cmd_val).unwrap();
+        assert_eq!(cmd.cmd_type(), HuyaWsCmd::RegisterGroupReq as i32);
+        let reg_val = decode_tars_struct(cmd.data().clone()).unwrap();
+        let reg = WsRegisterGroupReq::try_from(reg_val).unwrap();
+        let TarsValue::Struct(mut fields) = TarsValue::from(reg) else {
+            unreachable!();
+        };
+        fields
+            .remove(&0)
+            .unwrap()
+            .try_into_list()
+            .unwrap()
+            .into_iter()
+            .map(|v| v.try_into_string().unwrap())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn configured_presenter_uid_and_get_living_info_discovery_join_correct_groups() {
+        use crate::extractor::platforms::huya::tars::StreamSettingNotice;
+
+        // 1. Pre-supplied presenter_uid via configure_connection joins live:{uid} and chat:{uid}.
+        let mut proto = HuyaDanmuProtocol::default();
+        let extras = HashMap::from([("presenter_uid".to_string(), "1199511627776".to_string())]);
+        proto.configure_connection(Some("yyuid=7"), Some(&extras));
+
+        let launch_rsp = encode_register_rsp("doLaunch", FxHashMap::default());
+        let (_, outbound) = proto
+            .decode_message(&Message::Binary(launch_rsp.clone()), "660000")
+            .await
+            .unwrap()
+            .into_parts();
+        assert_eq!(outbound.len(), 1);
+        assert_eq!(
+            decode_group_ids_from_outbound(&outbound[0]),
+            vec!["live:1199511627776", "chat:1199511627776"]
+        );
+        // Subsequent RegisterRsp must not re-send RegisterGroupReq.
+        let (_, dup_outbound) = proto
+            .decode_message(&Message::Binary(launch_rsp), "660000")
+            .await
+            .unwrap()
+            .into_parts();
+        assert!(dup_outbound.is_empty());
+
+        // 2. Numeric room_id without presenter_uid queries getLivingInfo by room_id and extracts l_presenter_uid.
+        let mut proto_num = HuyaDanmuProtocol::default();
+        let hs = proto_num.handshake_messages("660000").await.unwrap();
+        assert_eq!(hs.len(), 2);
+
+        let rsp_struct = GetLivingInfoRsp {
+            b_is_living: 1,
+            t_stream_setting_notice: StreamSettingNotice {
+                l_presenter_uid: 99887766,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let trsp_bytes = tars_codec::encode_tars_value_wrapped(&TarsValue::from(rsp_struct))
+            .unwrap()
+            .freeze();
+        let mut body = FxHashMap::default();
+        body.insert("tRsp".to_string(), trsp_bytes);
+        let living_rsp = encode_register_rsp("getLivingInfo", body);
+
+        let (_, outbound_num) = proto_num
+            .decode_message(&Message::Binary(living_rsp), "660000")
+            .await
+            .unwrap()
+            .into_parts();
+        assert_eq!(outbound_num.len(), 1);
+        assert_eq!(
+            decode_group_ids_from_outbound(&outbound_num[0]),
+            vec!["live:99887766", "chat:99887766"]
+        );
+    }
+
+    #[tokio::test]
+    async fn vanity_slug_resolves_presenter_uid_from_room_page() {
+        use crate::extractor::test_support::serve_once;
+
+        let page_url = serve_once(
+            "200 OK",
+            r#"<html><script>var TT_PROFILE_INFO = {"lp":"44556677","aid":1};</script></html>"#,
+        )
+        .await;
+        let base_origin = page_url.trim_end_matches('/').to_string();
+
+        let mut proto = HuyaDanmuProtocol {
+            base_url: std::borrow::Cow::Owned(base_origin),
+            ..Default::default()
+        };
+        proto.websocket_url("baozou").await.unwrap();
+        assert_eq!(proto.presenter_uid, Some(44556677));
     }
 
     /// Integration test: Connect to a real Huya room and verify handshake

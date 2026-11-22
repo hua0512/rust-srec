@@ -1,31 +1,18 @@
-use crate::extractor::default::{DEFAULT_MOBILE_UA, DEFAULT_UA};
-use crate::extractor::error::ExtractorError;
-use crate::extractor::platform_extractor::{Extractor, PlatformExtractor};
-use crate::extractor::platforms::douyin::abogus::ABogus;
-use crate::extractor::platforms::douyin::apis::{
-    APP_REFLOW_URL, LIVE_DOUYIN_URL, WEBCAST_ENTER_URL,
-};
-use crate::extractor::platforms::douyin::models::{
-    DouyinAppResponse, DouyinAvatarThumb, DouyinPcData, DouyinPcResponse, DouyinQuality,
-    DouyinStreamDataParsed, DouyinStreamUrl, DouyinUserInfo, normalize_bitrate, normalize_codec,
-};
-use crate::extractor::platforms::douyin::sign::gen_verify_fp;
-use crate::extractor::platforms::douyin::utils::{
-    GlobalTtwidManager, extract_rid, fetch_ttwid, generate_ms_token, generate_odin_ttid,
-    get_common_params,
-};
-use crate::extractor::utils::{extras_get_bool, extras_get_str};
-use crate::media::formats::{MediaFormat, StreamFormat};
-use crate::media::media_info::MediaInfo;
-use crate::media::stream_info::StreamInfo;
+use std::sync::LazyLock;
+
 use async_trait::async_trait;
 use regex::Regex;
-use reqwest::{Client, RequestBuilder};
-use rustc_hash::FxHashMap;
-use std::borrow::Cow;
-use std::collections::HashMap;
-use std::sync::LazyLock;
+use reqwest::Client;
 use tracing::debug;
+
+use crate::extractor::error::ExtractorError;
+use crate::extractor::platform_extractor::{Extractor, PlatformExtractor};
+use crate::extractor::platforms::douyin::apis::LIVE_DOUYIN_URL;
+use crate::extractor::platforms::douyin::utils::extract_rid;
+use crate::extractor::utils::{extras_get_bool, extras_get_str};
+use crate::media::media_info::MediaInfo;
+
+use super::request::DouyinRequest;
 
 pub static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(?:https?://)?(?:www\.)?live.douyin\.com/([a-zA-Z0-9_\-\.]+)").unwrap()
@@ -63,13 +50,13 @@ pub struct DouyinExtractorConfig {
 
 /// Builder for `DouyinExtractorConfig`.
 pub struct Douyin {
-    extractor: Extractor,
-    force_origin_quality: bool,
-    ttwid_management_mode: TtwidManagementMode,
-    ttwid: Option<String>,
-    double_screen: bool,
-    force_mobile_api: bool,
-    skip_interactive_games: bool,
+    pub(super) extractor: Extractor,
+    pub(super) force_origin_quality: bool,
+    pub(super) ttwid_management_mode: TtwidManagementMode,
+    pub(super) ttwid: Option<String>,
+    pub(super) double_screen: bool,
+    pub(super) force_mobile_api: bool,
+    pub(super) skip_interactive_games: bool,
 }
 
 impl Douyin {
@@ -86,11 +73,6 @@ impl Douyin {
         if let Some(cookies) = cookies {
             extractor.set_cookies_from_string(&cookies);
         }
-
-        // let common_params = get_common_params();
-        // for (key, value) in common_params {
-        //     extractor.add_param(key.to_string(), value.to_string());
-        // }
 
         let force_origin_quality =
             extras_get_bool(extras.as_ref(), "force_origin_quality").unwrap_or(false);
@@ -159,989 +141,6 @@ impl Douyin {
     }
 }
 
-/// Handles the state and logic for a single `extract` call.
-struct DouyinRequest<'a> {
-    config: &'a Douyin,
-    web_rid: String,
-    cookies: FxHashMap<String, String>,
-    params: FxHashMap<String, String>,
-    id_str: Option<String>,
-    sec_rid: Option<String>,
-    platform_metadata: Option<crate::media::PlatformMetadata>,
-}
-
-impl<'a> DouyinRequest<'a> {
-    /// Creates a new request handler.
-    fn new(cookies: FxHashMap<String, String>, config: &'a Douyin, web_rid: String) -> Self {
-        let mut cookies = cookies;
-        cookies.insert("hevc_supported".to_string(), "true".to_string());
-
-        Self {
-            config,
-            web_rid,
-            cookies,
-            params: config.extractor.platform_params.clone(),
-            id_str: None,
-            sec_rid: None,
-            platform_metadata: None,
-        }
-    }
-
-    /// The main entry point for the extraction logic.
-    async fn extract(&mut self) -> Result<MediaInfo, ExtractorError> {
-        self.ensure_all_requirements().await?;
-
-        // Force mobile API if configured
-        // We still need to call PC API first to get sec_user_id and room_id
-        if self.config.force_mobile_api {
-            let pc_response = self.get_pc_response().await?;
-            // Extract just the user info (sec_uid and room_id) from PC response
-            if let Err(e) = self.extract_user_info_from_pc_response(&pc_response) {
-                debug!(
-                    category = e.category(),
-                    "Failed to extract user info from Douyin PC response"
-                );
-                return Err(e);
-            }
-            let app_response = self.get_app_response().await?;
-            return self.parse_app_response(&app_response);
-        }
-
-        let pc_response = self.get_pc_response().await?;
-        // std::fs::write("pc_response.json", &pc_response).unwrap();
-        match self.parse_pc_response(&pc_response) {
-            Ok(media_info) => Ok(media_info),
-            Err(err) => {
-                if matches!(err, ExtractorError::ValidationError(ref msg) if msg == "No room data available")
-                {
-                    let app_response = self.get_app_response().await?;
-                    return self.parse_app_response(&app_response);
-                }
-                Err(err)
-            }
-        }
-    }
-
-    /// Extracts only the user info (sec_uid and room_id) from PC response.
-    /// Used when forcing mobile API to get required parameters.
-    fn extract_user_info_from_pc_response(&mut self, body: &str) -> Result<(), ExtractorError> {
-        if body.is_empty() {
-            return Err(ExtractorError::ValidationError(
-                "Empty response from API".to_string(),
-            ));
-        }
-
-        let trimmed = body.trim_start();
-        if trimmed.starts_with("<!") || trimmed.starts_with("<html") {
-            return Err(ExtractorError::ValidationError(
-                "Received HTML error page instead of JSON".to_string(),
-            ));
-        }
-
-        let response: DouyinPcResponse = serde_json::from_str(body)?;
-        // debug!("response: {:#?}", response);
-
-        // Unlike parse_pc_response, we continue even if stream ended
-        // We just need the user info to call the mobile API
-        if let Some(user) = &response.data.user {
-            if user.is_cancelled() {
-                return Err(ExtractorError::StreamerNotFound);
-            }
-            self.sec_rid = Some(user.sec_uid.to_string());
-            if response.is_success() {
-                self.platform_metadata = super::metadata::metadata(&self.web_rid, user.id_str);
-            }
-        } else {
-            let msg = response.data.message.as_ref().unwrap_or(&"Unknown error");
-            return Err(ExtractorError::ValidationError(format!("API error: {msg}")));
-        }
-
-        self.id_str = response.data.enter_room_id.map(|v| v.to_string());
-
-        Ok(())
-    }
-
-    /// Creates a `RequestBuilder` with all necessary headers, params, and cookies.
-    fn request(&self, method: reqwest::Method, url: &str) -> RequestBuilder {
-        let mut cookies = String::new();
-
-        if !self.cookies.is_empty() {
-            let cookie_string = self
-                .cookies
-                .iter()
-                .map(|(name, value)| format!("{name}={value}"))
-                .collect::<Vec<_>>()
-                .join("; ");
-            if let Ok(cookie_value) = reqwest::header::HeaderValue::from_str(&cookie_string) {
-                cookies = cookie_value.to_str().unwrap_or("").to_string();
-            }
-        }
-
-        let mut builder = self.config.extractor.request(method, url);
-        if !cookies.is_empty() {
-            builder = builder.header(reqwest::header::COOKIE, cookies);
-        }
-        builder
-    }
-
-    /// Generate request parameters with a_bogus signature.
-    ///
-    /// This method takes a HashMap of parameters, converts them to a query string format,
-    /// and then generates an a_bogus signature using the ABogus algorithm. The a_bogus
-    /// signature is appended to the parameters to create a final authenticated parameter string.
-    ///
-    /// # Arguments
-    ///
-    /// * `params` - A HashMap containing the request parameters as key-value pairs
-    ///
-    /// # Returns
-    ///
-    /// * `Result<String, ExtractorError>` - The final parameter string with a_bogus signature on success,
-    ///   or an ExtractorError on failure
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let mut params = HashMap::new();
-    /// params.insert("web_rid", "12345");
-    /// params.insert("aid", "6383");
-    /// let signed_params = self.get_a_bogus_params(&params, DEFAULT_UA).await?;
-    /// ```
-    async fn get_a_bogus_params(
-        &self,
-        params: &HashMap<&str, &str>,
-        user_agent: &str,
-    ) -> Result<String, ExtractorError> {
-        let params_str = params
-            .iter()
-            .map(|(k, v)| format!("{k}={v}"))
-            .collect::<Vec<_>>()
-            .join("&");
-        debug!(
-            parameter_count = params.len(),
-            "Signing Douyin request parameters"
-        );
-        let mut abogus = ABogus::new(None, Some(user_agent), None);
-        let (final_params, _, _, _) = abogus.generate_abogus(&params_str, "");
-        Ok(final_params)
-    }
-
-    /// Fetches the main PC API response.
-    async fn get_pc_response(&mut self) -> Result<String, ExtractorError> {
-        let mut params = get_common_params();
-        params.insert("web_rid", &self.web_rid);
-        params.insert("cookie_enabled", "true");
-        let abogus = self.get_a_bogus_params(&params, DEFAULT_UA).await?;
-        let url = format!("{WEBCAST_ENTER_URL}?{abogus}");
-        debug!("Prepared Douyin API request");
-
-        let response = self
-            .request(reqwest::Method::GET, &url)
-            .send()
-            .await
-            .map_err(ExtractorError::HttpError)?;
-
-        // Automatically parse and store new cookies from the response
-        self.parse_and_store_cookies(response.headers());
-
-        response.text().await.map_err(ExtractorError::from)
-    }
-    async fn get_app_response(&mut self) -> Result<String, ExtractorError> {
-        let default_room_id = "2";
-        let room_id = self.id_str.as_ref().map_or(default_room_id, |v| v.as_str());
-        let sec_rid = self
-            .sec_rid
-            .as_deref()
-            .ok_or_else(|| ExtractorError::ValidationError("Missing sec_user_id".to_string()))?;
-        let mut params = HashMap::new();
-        params.insert("room_id", room_id);
-        params.insert("sec_user_id", sec_rid);
-        params.insert("type_id", "0");
-        params.insert("live_id", "1");
-        params.insert("version_code", "99.99.99");
-        params.insert("app_id", "1128");
-        params.insert("aid", "6383");
-
-        let verify_fp = gen_verify_fp();
-        params.insert("verifyFp", verify_fp.as_str());
-
-        let abogus = self.get_a_bogus_params(&params, DEFAULT_MOBILE_UA).await?;
-
-        let url = format!("{APP_REFLOW_URL}?{abogus}");
-        debug!("Prepared Douyin API request");
-
-        // Build request directly (avoid `Extractor::request()` which applies `platform_params`
-        // via `.query(&self.platform_params)`. For signed URLs, extra query params can
-        // invalidate the signature.
-        let mut builder = self
-            .config
-            .extractor
-            .client
-            .request(reqwest::Method::GET, &url)
-            .header(reqwest::header::REFERER, LIVE_DOUYIN_URL)
-            .header(reqwest::header::ORIGIN, LIVE_DOUYIN_URL)
-            .header(reqwest::header::USER_AGENT, DEFAULT_MOBILE_UA);
-
-        if !self.cookies.is_empty() {
-            let cookie_string = self
-                .cookies
-                .iter()
-                .map(|(name, value)| format!("{name}={value}"))
-                .collect::<Vec<_>>()
-                .join("; ");
-
-            builder = builder.header(reqwest::header::COOKIE, cookie_string);
-        }
-        debug!("Prepared Douyin request headers");
-        let response = builder.send().await.map_err(ExtractorError::HttpError)?;
-
-        // Automatically parse and store new cookies from the response
-        self.parse_and_store_cookies(response.headers());
-
-        response.text().await.map_err(ExtractorError::from)
-    }
-
-    /// Parses and stores cookies from response headers.
-    fn parse_and_store_cookies(&mut self, headers: &reqwest::header::HeaderMap) {
-        // Keep behavior aligned with `Extractor::parse_and_store_cookies`.
-        for value in headers.get_all("set-cookie").iter() {
-            if let Ok(cookie_str) = value.to_str()
-                && let Some(cookie_part) = cookie_str.split(';').next()
-                && let Some((name, value)) = cookie_part.split_once('=')
-            {
-                let name = name.trim();
-                let value = value.trim();
-                if name.is_empty() || value.is_empty() {
-                    continue;
-                }
-                self.cookies.insert(name.to_owned(), value.to_owned());
-            }
-        }
-    }
-
-    /// Ensures all required parameters and cookies are set before making a request.
-    async fn ensure_all_requirements(&mut self) -> Result<(), ExtractorError> {
-        self.ensure_ttwid().await?;
-        self.ensure_ms_token().await?;
-        self.ensure_odin_ttid();
-        Ok(())
-    }
-
-    /// Ensures a valid `ttwid` cookie is present.
-    async fn ensure_ttwid(&mut self) -> Result<(), ExtractorError> {
-        if self.cookies.contains_key("ttwid") {
-            return Ok(());
-        }
-
-        let ttwid = match self.config.ttwid_management_mode {
-            TtwidManagementMode::Global => {
-                GlobalTtwidManager::ensure_global_ttwid(&self.config.extractor.client).await?
-            }
-            TtwidManagementMode::PerExtractor => {
-                if let Some(ttwid) = &self.config.ttwid {
-                    ttwid.clone()
-                } else {
-                    fetch_ttwid(&self.config.extractor.client).await?
-                }
-            }
-        };
-        self.cookies.insert("ttwid".to_string(), ttwid);
-        Ok(())
-    }
-
-    /// Ensures a valid `msToken` is present.
-    async fn ensure_ms_token(&mut self) -> Result<(), ExtractorError> {
-        if self.params.contains_key("msToken") {
-            return Ok(());
-        }
-        let ms_token = generate_ms_token();
-        self.params.insert("msToken".to_string(), ms_token);
-        Ok(())
-    }
-
-    /// Ensures a valid `odin_ttid` is present.
-    fn ensure_odin_ttid(&mut self) {
-        if self.cookies.contains_key("odin_ttid") {
-            return;
-        }
-        let odin_ttid = generate_odin_ttid();
-        self.cookies.insert("odin_ttid".to_string(), odin_ttid);
-    }
-
-    /// Parses the API response body into `MediaInfo`.
-    fn parse_pc_response(&mut self, body: &str) -> Result<MediaInfo, ExtractorError> {
-        if body.is_empty() {
-            return Err(ExtractorError::ValidationError(
-                "Empty response from API".to_string(),
-            ));
-        }
-
-        // Check if response is HTML (likely an error page)
-        let trimmed = body.trim_start();
-        if trimmed.starts_with("<!") || trimmed.starts_with("<html") {
-            debug!(
-                response_bytes = body.len(),
-                "Received HTML instead of Douyin JSON"
-            );
-            return Err(ExtractorError::ValidationError(
-                "Received HTML error page instead of JSON - API may be rate limiting or blocking requests".to_string(),
-            ));
-        }
-
-        let response: DouyinPcResponse = match serde_json::from_str(body) {
-            Ok(resp) => resp,
-            Err(e) => {
-                debug!(category = ?e.classify(), response_bytes = body.len(), "Failed to parse Douyin JSON response");
-                return Err(ExtractorError::JsonError(e));
-            }
-        };
-
-        // An error reply cannot verify identity, but it still decides the status below:
-        // the platform sends its prompts with a non-zero code.
-        if response.is_success()
-            && let Some(user) = response
-                .data
-                .user
-                .as_ref()
-                .filter(|user| !user.is_cancelled())
-        {
-            self.platform_metadata = super::metadata::metadata(&self.web_rid, user.id_str);
-        }
-
-        // Check for "直播已结束" prompt or visibility restriction
-        if let Some(prompts) = &response.data.prompts
-            && (prompts.contains("直播已结束") || prompts.contains("你不在主播设置的可见范围内"))
-        {
-            debug!("Douyin stream ended or visibility restricted");
-            // If we have user info, we can return offline info
-            // Try to get title from room data if available, otherwise use default
-            let title = response
-                .data
-                .data
-                .as_ref()
-                .and_then(|d| d.first())
-                .map(|d| d.title.as_str())
-                .unwrap_or("");
-
-            let user = response.data.user.as_ref();
-            let artist = user
-                .map(|u| u.nickname.as_str())
-                .unwrap_or("Douyin Streamer");
-
-            let cover_url = response
-                .data
-                .data
-                .as_ref()
-                .and_then(|d| d.first())
-                .and_then(|d| d.cover.as_ref())
-                .and_then(|cover| cover.url_list.first())
-                .map(|url| url.to_string());
-            let avatar_url = user
-                .as_ref()
-                .and_then(|u| u.avatar_thumb.as_ref())
-                .and_then(|avatar| avatar.url_list.first())
-                .map(|url| url.to_string());
-
-            return Ok(self.create_offline_media_info(title, artist, cover_url, avatar_url));
-        }
-
-        self._validate_response(&response)?;
-
-        let user = response.data.user.as_ref().ok_or_else(|| {
-            ExtractorError::ValidationError("User data not available".to_string())
-        })?;
-        self.id_str = response.data.enter_room_id.map(|v| v.to_string());
-        self.sec_rid = Some(user.sec_uid.to_string());
-
-        let data = self._extract_data(&response)?;
-
-        self._build_media_info(data, user)
-    }
-
-    fn parse_app_response(&mut self, body: &str) -> Result<MediaInfo, ExtractorError> {
-        // Check for empty or HTML response
-        if body.is_empty() {
-            return Err(ExtractorError::ValidationError(
-                "Empty response from APP API".to_string(),
-            ));
-        }
-
-        let trimmed = body.trim_start();
-        if trimmed.starts_with("<!") || trimmed.starts_with("<html") {
-            debug!(
-                response_bytes = body.len(),
-                "Received HTML instead of Douyin APP JSON"
-            );
-            return Err(ExtractorError::ValidationError(
-                "Received HTML error page from APP API".to_string(),
-            ));
-        }
-
-        let response: DouyinAppResponse = match serde_json::from_str(body) {
-            Ok(resp) => resp,
-            Err(e) => {
-                debug!(category = ?e.classify(), response_bytes = body.len(), "Failed to parse Douyin APP JSON response");
-                return Err(ExtractorError::JsonError(e));
-            }
-        };
-        if let Some(prompts) = &response.data.prompts {
-            if prompts.contains("直播已结束") || prompts.contains("你不在主播设置的可见范围内")
-            {
-                debug!("Douyin stream ended or visibility restricted");
-                let user = response.data.user.as_ref();
-                let title = response
-                    .data
-                    .room
-                    .as_ref()
-                    .map(|r| r.title.as_str())
-                    .unwrap_or("");
-                let (artist, avatar_url) = streamer_identity(user, response.data.room.as_ref());
-                let artist = artist.unwrap_or("Douyin Streamer");
-                let cover_url = response
-                    .data
-                    .room
-                    .as_ref()
-                    .and_then(|r| r.cover.as_ref())
-                    .and_then(|cover| cover.url_list.first())
-                    .map(|url| url.to_string());
-
-                return Ok(self.create_offline_media_info(title, artist, cover_url, avatar_url));
-            }
-
-            return Err(ExtractorError::ValidationError(format!(
-                "API error: {prompts}",
-            )));
-        }
-
-        if let Some(user) = &response.data.user {
-            if user.is_cancelled() {
-                return Err(ExtractorError::StreamerNotFound);
-            }
-        } else {
-            let msg = response
-                .data
-                .message
-                .as_ref()
-                .unwrap_or(&Cow::Borrowed("Unknown error"));
-            return Err(ExtractorError::ValidationError(format!("API error: {msg}")));
-        }
-
-        let data = &response.data.room;
-        let user = response.data.user.as_ref().ok_or_else(|| {
-            ExtractorError::ValidationError("User data not available".to_string())
-        })?;
-
-        self._build_media_info(
-            data.as_ref().ok_or_else(|| {
-                ExtractorError::ValidationError("Room data not available".to_string())
-            })?,
-            user,
-        )
-    }
-
-    /// Validates the overall API response.
-    fn _validate_response(&self, response: &DouyinPcResponse) -> Result<(), ExtractorError> {
-        if let Some(prompts) = &response.data.prompts {
-            return Err(ExtractorError::ValidationError(format!(
-                "API error: {prompts}"
-            )));
-        }
-        if let Some(user) = &response.data.user {
-            if user.is_cancelled() {
-                return Err(ExtractorError::StreamerNotFound);
-            }
-        } else {
-            let msg = response.data.message.as_ref().unwrap_or(&"Unknown error");
-            return Err(ExtractorError::ValidationError(format!("API error: {msg}")));
-        }
-        Ok(())
-    }
-
-    /// Extracts the core room data from the response.
-    fn _extract_data<'b>(
-        &self,
-        response: &'b DouyinPcResponse,
-    ) -> Result<&'b DouyinPcData<'b>, ExtractorError> {
-        response
-            .data
-            .data
-            .as_ref()
-            .and_then(|data| data.first())
-            .ok_or_else(|| ExtractorError::ValidationError("No room data available".to_string()))
-    }
-
-    /// Builds the final `MediaInfo` struct from the parsed data.
-    fn _build_media_info(
-        &self,
-        data: &DouyinPcData,
-        user: &DouyinUserInfo,
-    ) -> Result<MediaInfo, ExtractorError> {
-        // Reflow rooms can keep status=2 and playable streams after the broadcast ends
-        // or while serving a replay, so `status` alone does not mean live.
-        let is_live = data.status == 2 && !data.has_ended() && data.is_replay != Some(true);
-
-        let title = &data.title;
-        let (artist, avatar_url) = streamer_identity(Some(user), Some(data));
-        let artist = artist.unwrap_or_default();
-        let cover_url = data
-            .cover
-            .as_ref()
-            .and_then(|cover| cover.url_list.first())
-            .map(|url| url.to_string());
-
-        if !is_live {
-            return Ok(self.create_offline_media_info(title, artist, cover_url, avatar_url));
-        }
-
-        // Check if this is an interactive game stream
-        if self.config.skip_interactive_games && data.is_interactive_game_stream() {
-            debug!("Skipping interactive game stream for room: {}", data.id_str);
-            return Ok(self.create_offline_media_info(title, artist, cover_url, avatar_url));
-        }
-
-        let stream_url = data
-            .stream_url
-            .as_ref()
-            .ok_or_else(|| ExtractorError::ValidationError("Stream is not live".to_string()))?;
-        let mut streams = self.extract_streams(stream_url)?;
-        let had_streams = !streams.is_empty();
-        // Every URL from the reflow API carries `rtm_expr_tag=reflow_room_info`, live or
-        // not, so the URL says nothing about liveness; only unusable empty URLs are dropped.
-        streams.retain(|stream| !stream.url.is_empty());
-        if had_streams && streams.is_empty() {
-            return Ok(self.create_offline_media_info(title, artist, cover_url, avatar_url));
-        }
-        let mut extras = FxHashMap::default();
-        if let Some(id) = self
-            .id_str
-            .clone()
-            .or_else(|| (!data.id_str.is_empty()).then(|| data.id_str.to_string()))
-        {
-            extras.insert("id_str".to_string(), id);
-        }
-
-        let mut info = MediaInfo::new(
-            self.config.extractor.url.clone(),
-            title.to_string(),
-            artist.to_string(),
-            cover_url,
-            avatar_url,
-            is_live,
-            streams,
-            Some(self.config.extractor.get_platform_headers_map()),
-            Some(extras),
-        );
-        info.platform_metadata = self.platform_metadata.clone();
-        Ok(info)
-    }
-
-    fn create_offline_media_info(
-        &self,
-        title: &str,
-        artist: &str,
-        cover_url: Option<String>,
-        avatar_url: Option<String>,
-    ) -> MediaInfo {
-        let mut info = MediaInfo::new(
-            self.config.extractor.url.clone(),
-            title.to_string(),
-            artist.to_string(),
-            cover_url,
-            avatar_url,
-            false,
-            Vec::new(),
-            None,
-            None,
-        );
-        info.platform_metadata = self.platform_metadata.clone();
-        info
-    }
-
-    /// Extract streams using owned quality data (from pull_datas)
-    fn extract_streams_with_owned_qualities(
-        &self,
-        stream_data: &DouyinStreamDataParsed,
-        owned_qualities: &[crate::extractor::platforms::douyin::models::DouyinQualityOwned],
-        stream_url: &DouyinStreamUrl,
-    ) -> Result<Vec<StreamInfo>, ExtractorError> {
-        let mut streams = Vec::new();
-
-        // 1. Attempt to extract origin quality stream if forced
-        let mut origin_quality_filled = false;
-        if self.config.force_origin_quality
-            && let Some(origin_stream) =
-                self._extract_origin_stream_owned(stream_data, owned_qualities)
-        {
-            streams.push(origin_stream);
-            origin_quality_filled = true;
-        }
-
-        // 2. Extract streams from SDK data with owned qualities
-        if !stream_data.data.is_empty() {
-            let sdk_streams = self._extract_sdk_streams_owned(
-                stream_data,
-                owned_qualities,
-                origin_quality_filled,
-            );
-            streams.extend(sdk_streams);
-        }
-
-        // 3. Fallback to legacy stream URLs if no other streams were found
-        if streams.is_empty() {
-            let legacy_streams = self._extract_legacy_streams(stream_url);
-            streams.extend(legacy_streams);
-        }
-
-        Ok(streams)
-    }
-
-    /// Extracts the "origin" quality stream with owned quality data
-    fn _extract_origin_stream_owned(
-        &self,
-        stream_data: &DouyinStreamDataParsed,
-        qualities: &[crate::extractor::platforms::douyin::models::DouyinQualityOwned],
-    ) -> Option<StreamInfo> {
-        let origin_quality_details = qualities.iter().find(|q| q.sdk_key == "origin")?;
-        let origin_quality_data = stream_data
-            .data
-            .get(origin_quality_details.sdk_key.as_str())?;
-        if origin_quality_data.main.flv.is_empty()
-            || !Self::_is_or4_stream_url(&origin_quality_data.main.flv)
-        {
-            return None;
-        }
-
-        let ao_quality_data = stream_data.data.get("ao")?;
-        if ao_quality_data.main.flv.is_empty() {
-            return None;
-        }
-        let origin_url = ao_quality_data.main.flv.replace("&only_audio=1", "");
-
-        let quality_name = origin_quality_details.name.as_str();
-        let bitrate = u32::try_from(origin_quality_details.v_bit_rate)
-            .map(normalize_bitrate)
-            .unwrap_or(0);
-        let codec = normalize_codec(&origin_quality_details.v_codec);
-        let fps = origin_quality_details.fps;
-        let extras = Some(serde_json::json!({
-            "resolution": origin_quality_details.resolution.as_str(),
-            "sdk_key": origin_quality_details.sdk_key.as_str(),
-        }));
-
-        Some(
-            StreamInfo::builder(origin_url, StreamFormat::Flv, MediaFormat::Flv)
-                .quality(quality_name.to_string())
-                .bitrate(bitrate as u64)
-                .priority(0)
-                .extras_opt(extras)
-                .codec(codec)
-                .fps(fps as f64)
-                .is_headers_needed(true)
-                .build(),
-        )
-    }
-
-    /// Extracts all available streams from the SDK data with owned qualities
-    fn _extract_sdk_streams_owned(
-        &self,
-        stream_data: &DouyinStreamDataParsed,
-        qualities: &[crate::extractor::platforms::douyin::models::DouyinQualityOwned],
-        origin_quality_filled: bool,
-    ) -> Vec<StreamInfo> {
-        use crate::extractor::platforms::douyin::models::DouyinQualityOwned;
-
-        let mut streams = Vec::new();
-        let quality_map: FxHashMap<&str, &DouyinQualityOwned> =
-            qualities.iter().map(|q| (q.sdk_key.as_str(), q)).collect();
-
-        for (sdk_key, quality_data) in stream_data.data.iter() {
-            let quality_details = quality_map.get(sdk_key.as_str());
-            let (quality_name, bitrate, fps, codec) = match quality_details {
-                Some(details) => (
-                    details.name.as_str(),
-                    normalize_bitrate(details.v_bit_rate as u32),
-                    details.fps,
-                    normalize_codec(&details.v_codec),
-                ),
-                None => (sdk_key.as_str(), 0, 0, String::new()),
-            };
-
-            let extras = quality_details.map(|details| {
-                serde_json::json!({
-                    "resolution": details.resolution.as_str(),
-                    "sdk_key": details.sdk_key.as_str(),
-                })
-            });
-
-            // Skip FLV if origin quality filled and this is origin quality
-            if !(origin_quality_filled && sdk_key == "origin") {
-                self._add_stream_if_url_present(
-                    &quality_data.main.flv,
-                    StreamFormat::Flv,
-                    MediaFormat::Flv,
-                    quality_name,
-                    bitrate as u64,
-                    &codec,
-                    fps,
-                    extras.as_ref(),
-                    sdk_key,
-                    &mut streams,
-                );
-            }
-
-            self._add_stream_if_url_present(
-                &quality_data.main.hls,
-                StreamFormat::Hls,
-                MediaFormat::Ts,
-                quality_name,
-                bitrate as u64,
-                &codec,
-                fps,
-                extras.as_ref(),
-                sdk_key,
-                &mut streams,
-            );
-        }
-        streams
-    }
-
-    /// Orchestrates the extraction of all available streams.
-    fn extract_streams(
-        &self,
-        stream_url: &DouyinStreamUrl,
-    ) -> Result<Vec<StreamInfo>, ExtractorError> {
-        use crate::extractor::platforms::douyin::models::DouyinStreamDataParsed;
-
-        // Check if we should use double_screen data
-        let double_screen_pull_data =
-            if self.config.double_screen && !stream_url.pull_datas.data.is_empty() {
-                debug!("Using double screen data");
-                stream_url.pull_datas.data.values().next()
-            } else {
-                None
-            };
-
-        // Get the stream data and qualities
-        let sdk_pull_data = &stream_url.live_core_sdk_data.pull_data;
-        let stream_data: &DouyinStreamDataParsed;
-
-        if let Some(pull_data) = double_screen_pull_data {
-            stream_data = &pull_data.stream_data;
-            debug!("Decoded Douyin stream data");
-            // Use owned qualities from pull_data
-            return self.extract_streams_with_owned_qualities(
-                stream_data,
-                &pull_data.options.qualities,
-                stream_url,
-            );
-        } else {
-            stream_data = &sdk_pull_data.stream_data;
-        }
-
-        let qualities = &sdk_pull_data.options.qualities;
-
-        let mut streams = Vec::new();
-
-        // 1. Attempt to extract origin quality stream if forced
-        let mut origin_quality_filled = false;
-        if self.config.force_origin_quality
-            && let Some(origin_stream) = self._extract_valid_origin_stream(stream_data, qualities)
-        {
-            streams.push(origin_stream);
-            origin_quality_filled = true;
-        }
-
-        // 2. Extract streams from SDK data
-        if !stream_data.data.is_empty() {
-            let sdk_streams =
-                self._extract_sdk_streams(stream_data, qualities, origin_quality_filled);
-            streams.extend(sdk_streams);
-        }
-
-        // 3. Fallback to legacy stream URLs if no other streams were found
-        if streams.is_empty() {
-            let legacy_streams = self._extract_legacy_streams(stream_url);
-            streams.extend(legacy_streams);
-        }
-
-        Ok(streams)
-    }
-
-    /// Extracts the "origin" quality stream if available.
-    fn _extract_valid_origin_stream(
-        &self,
-        stream_data: &DouyinStreamDataParsed,
-        qualities: &[DouyinQuality],
-    ) -> Option<StreamInfo> {
-        let origin_quality_details = qualities.iter().find(|q| q.sdk_key == "origin")?;
-        let origin_quality_data = stream_data.data.get(origin_quality_details.sdk_key)?;
-        if origin_quality_data.main.flv.is_empty()
-            || !Self::_is_or4_stream_url(&origin_quality_data.main.flv)
-        {
-            return None;
-        }
-
-        let ao_quality_data = stream_data.data.get("ao")?;
-        if ao_quality_data.main.flv.is_empty() {
-            return None;
-        }
-        let origin_url = ao_quality_data.main.flv.replace("&only_audio=1", "");
-
-        let quality_name = origin_quality_details.name;
-        let bitrate = u32::try_from(origin_quality_details.v_bit_rate)
-            .map(normalize_bitrate)
-            .unwrap_or(0);
-        let codec = normalize_codec(origin_quality_details.v_codec);
-        let fps = origin_quality_details.fps;
-        let extras = Some(serde_json::json!({
-            "resolution": origin_quality_details.resolution,
-            "sdk_key": origin_quality_details.sdk_key,
-        }));
-
-        Some(
-            StreamInfo::builder(origin_url, StreamFormat::Flv, MediaFormat::Flv)
-                .quality(quality_name.to_string())
-                .bitrate(bitrate as u64)
-                .priority(0)
-                .extras_opt(extras)
-                .codec(codec)
-                .fps(fps as f64)
-                .is_headers_needed(true)
-                .build(),
-        )
-    }
-
-    fn _is_or4_stream_url(url: &str) -> bool {
-        url.contains("_or4.")
-    }
-
-    /// Extracts all available streams from the SDK data.
-    fn _extract_sdk_streams(
-        &self,
-        stream_data: &DouyinStreamDataParsed,
-        qualities: &[DouyinQuality],
-        origin_quality_filled: bool,
-    ) -> Vec<StreamInfo> {
-        let mut streams = Vec::new();
-        let quality_map: FxHashMap<&str, &DouyinQuality> =
-            qualities.iter().map(|q| (q.sdk_key, q)).collect();
-
-        for (sdk_key, quality_data) in stream_data.data.iter() {
-            let quality_details = quality_map.get(sdk_key.as_str());
-            let (quality_name, bitrate, fps, codec) = match quality_details {
-                Some(details) => (
-                    details.name,
-                    normalize_bitrate(details.v_bit_rate as u32),
-                    details.fps,
-                    normalize_codec(details.v_codec),
-                ),
-                None => (sdk_key.as_str(), 0, 0, String::new()),
-            };
-
-            let extras = quality_details.map(|details| {
-                serde_json::json!({
-                    "resolution": details.resolution,
-                    "sdk_key": details.sdk_key,
-                })
-            });
-
-            // Skip FLV if origin quality filled and this is origin quality
-            if !(origin_quality_filled && sdk_key == "origin") {
-                self._add_stream_if_url_present(
-                    &quality_data.main.flv,
-                    StreamFormat::Flv,
-                    MediaFormat::Flv,
-                    quality_name,
-                    bitrate as u64,
-                    &codec,
-                    fps,
-                    extras.as_ref(),
-                    sdk_key,
-                    &mut streams,
-                );
-            }
-
-            self._add_stream_if_url_present(
-                &quality_data.main.hls,
-                StreamFormat::Hls,
-                MediaFormat::Ts,
-                quality_name,
-                bitrate as u64,
-                &codec,
-                fps,
-                extras.as_ref(),
-                sdk_key,
-                &mut streams,
-            );
-        }
-        streams
-    }
-
-    /// Helper to add a new `StreamInfo` to the list if the URL is not empty.
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "arguments map directly to one extracted stream representation"
-    )]
-    fn _add_stream_if_url_present(
-        &self,
-        url: &str,
-        format: StreamFormat,
-        media_format: MediaFormat,
-        quality_name: &str,
-        bitrate: u64,
-        codec: &str,
-        fps: i32,
-        extras: Option<&serde_json::Value>,
-        sdk_key: &str,
-        streams: &mut Vec<StreamInfo>,
-    ) {
-        if !url.is_empty() {
-            // Set higher priority for origin quality streams
-            let priority = if sdk_key == "origin" { 0 } else { 10 };
-            // Mark audio-only streams
-            let is_audio_only = sdk_key == "ao";
-
-            streams.push(
-                StreamInfo::builder(url.to_string(), format, media_format)
-                    .quality(quality_name.to_string())
-                    .bitrate(bitrate)
-                    .priority(priority)
-                    .extras_opt(extras.cloned())
-                    .codec(codec.to_string())
-                    .fps(fps as f64)
-                    .is_headers_needed(true)
-                    .is_audio_only(is_audio_only)
-                    .build(),
-            );
-        }
-    }
-
-    /// Extracts streams from the legacy pull URL fields.
-    fn _extract_legacy_streams(&self, stream_url: &DouyinStreamUrl) -> Vec<StreamInfo> {
-        let mut streams =
-            Vec::with_capacity(stream_url.flv_pull_url.len() + stream_url.hls_pull_url_map.len());
-
-        for (quality, url) in &stream_url.flv_pull_url {
-            streams.push(
-                StreamInfo::builder(url.to_string(), StreamFormat::Flv, MediaFormat::Flv)
-                    .quality(quality.to_string())
-                    .is_headers_needed(true)
-                    .build(),
-            );
-        }
-
-        for (quality, url) in &stream_url.hls_pull_url_map {
-            streams.push(
-                StreamInfo::builder(url.to_string(), StreamFormat::Hls, MediaFormat::Ts)
-                    .quality(quality.to_string())
-                    .is_headers_needed(true)
-                    .build(),
-            );
-        }
-        streams
-    }
-}
-
 #[async_trait]
 impl PlatformExtractor for Douyin {
     fn get_extractor(&self) -> &Extractor {
@@ -1157,43 +156,16 @@ impl PlatformExtractor for Douyin {
     }
 }
 
-/// Returns the streamer's name and avatar URL, taking each from `user` when it is set
-/// and otherwise from the room owner. The reflow API reports the streamer only as the
-/// room owner and leaves `user` as an empty placeholder.
-fn streamer_identity<'d>(
-    user: Option<&'d DouyinUserInfo<'_>>,
-    room: Option<&'d DouyinPcData<'_>>,
-) -> (Option<&'d str>, Option<String>) {
-    let owner = room.and_then(|room| room.owner.as_ref());
-    let name = user
-        .map(|user| user.nickname.as_str())
-        .filter(|name| !name.is_empty())
-        .or_else(|| {
-            owner
-                .and_then(|owner| owner.nickname.as_deref())
-                .filter(|name| !name.is_empty())
-        });
-    let first_url = |avatar: Option<&DouyinAvatarThumb<'_>>| {
-        avatar
-            .and_then(|avatar| avatar.url_list.first())
-            .filter(|url| !url.is_empty())
-            .map(|url| url.to_string())
-    };
-    let avatar = first_url(user.and_then(|user| user.avatar_thumb.as_ref()))
-        .or_else(|| first_url(owner.and_then(|owner| owner.avatar_thumb.as_ref())));
-    (name, avatar)
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::{Value, json};
 
     use crate::extractor::default::default_client;
     use crate::extractor::platform_extractor::PlatformExtractor;
-    use crate::extractor::platforms::douyin::builder::{
-        Douyin, DouyinRequest, TtwidManagementMode,
-    };
+    use crate::extractor::platforms::douyin::builder::{Douyin, TtwidManagementMode};
     use crate::extractor::platforms::douyin::models::{DouyinAvatarThumb, DouyinUserInfo};
+    use crate::extractor::platforms::douyin::request::DouyinRequest;
+    use crate::extractor::platforms::douyin::streams::add_stream_if_url_present;
     use crate::extractor::platforms::douyin::utils::GlobalTtwidManager;
     use crate::media::formats::{MediaFormat, StreamFormat};
     use crate::media::media_info::MediaInfo;
@@ -1707,7 +679,6 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_request_cookie_logic() {
-        // 1. Test Global Mode
         GlobalTtwidManager::set_global_ttwid("global_ttwid_for_test");
         let config_global = Douyin::new(TEST_URL.to_string(), default_client(), None, None)
             .ttwid_mode(TtwidManagementMode::Global);
@@ -1723,7 +694,6 @@ mod tests {
             Some(&"global_ttwid_for_test".to_string())
         );
 
-        // 2. Test PerExtractor Mode with pre-set ttwid
         let config_per_extractor_set =
             Douyin::new(TEST_URL.to_string(), default_client(), None, None)
                 .ttwid("preset_ttwid".to_string());
@@ -1738,10 +708,6 @@ mod tests {
             request_per_extractor_set.cookies.get("ttwid"),
             Some(&"preset_ttwid".to_string())
         );
-
-        // 3. Test PerExtractor Mode without pre-set ttwid (will fetch)
-        // This part is hard to test without mocking network calls, but we can check the logic path.
-        // We know it will call `fetch_ttwid` internally.
     }
 
     #[test]
@@ -1835,19 +801,14 @@ mod tests {
 
     #[test]
     fn test_priority_assignment() {
-        let config = Douyin::new(TEST_URL.to_string(), default_client(), None, None);
-        let request =
-            DouyinRequest::new(config.extractor.cookies.clone(), &config, "123".to_string());
-
         let mut streams = Vec::new();
 
-        // Test origin priority
-        request._add_stream_if_url_present(
+        add_stream_if_url_present(
             "http://example.com/origin.flv",
             StreamFormat::Flv,
             MediaFormat::Flv,
             "原画",
-            8000000,
+            8000,
             "h264",
             30,
             None,
@@ -1855,13 +816,12 @@ mod tests {
             &mut streams,
         );
 
-        // Test other priority
-        request._add_stream_if_url_present(
+        add_stream_if_url_present(
             "http://example.com/uhd.flv",
             StreamFormat::Flv,
             MediaFormat::Flv,
             "蓝光",
-            10000000,
+            10000,
             "h264",
             30,
             None,
@@ -1871,9 +831,21 @@ mod tests {
 
         assert_eq!(streams.len(), 2);
         assert_eq!(streams[0].quality, "原画");
-        assert_eq!(streams[0].priority, 0); // Origin should be 0 (highest)
+        assert_eq!(streams[0].priority, 0);
 
         assert_eq!(streams[1].quality, "蓝光");
-        assert_eq!(streams[1].priority, 10); // Others should be 10
+        assert_eq!(streams[1].priority, 10);
+    }
+
+    #[test]
+    fn negative_v_bit_rate_maps_to_zero_without_wrapping() {
+        let mut room = room_fixture(StreamSource::Sdk, LIVE_FLV, LIVE_HLS);
+        room["stream_url"]["live_core_sdk_data"]["pull_data"]["options"]["qualities"][0]["v_bit_rate"] =
+            json!(-1);
+        let info = parse_room_fixture(room, false, StreamSource::Sdk);
+        assert!(!info.streams.is_empty());
+        for s in &info.streams {
+            assert_eq!(s.bitrate, 0);
+        }
     }
 }

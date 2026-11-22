@@ -2,10 +2,10 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use tracing::{debug, info, warn};
 
 use super::engine::EngineType;
@@ -98,8 +98,8 @@ impl std::fmt::Display for EngineKey {
             None => write!(f, "{}", self.engine_type)?,
         }
         if let Some(sid) = &self.streamer_id {
-            // Show truncated streamer ID for readability (first 8 chars of UUID)
-            let short = if sid.len() > 8 { &sid[..8] } else { sid };
+            // Show truncated streamer ID for readability (up to the first 8 UTF-8 bytes).
+            let short = &sid[..sid.floor_char_boundary(8)];
             write!(f, "[{}]", short)?;
         }
         Ok(())
@@ -117,22 +117,38 @@ pub enum CircuitState {
     HalfOpen,
 }
 
+#[derive(Debug)]
+struct BreakerInner {
+    state: CircuitState,
+    failure_count: u32,
+    opened_at: Option<Instant>,
+    half_open_successes: u32,
+    half_open_failures: u32,
+}
+
+impl BreakerInner {
+    fn advance_cooldown(&mut self, cooldown_duration: Duration) {
+        if self.state == CircuitState::Open
+            && let Some(opened_at) = self.opened_at
+            && opened_at.elapsed() >= cooldown_duration
+        {
+            self.state = CircuitState::HalfOpen;
+            self.opened_at = None;
+            self.half_open_successes = 0;
+            self.half_open_failures = 0;
+            debug!("Circuit breaker transitioned to half-open state");
+        }
+    }
+}
+
 /// Circuit breaker for protecting against cascading failures.
 pub struct CircuitBreaker {
-    /// Current state.
-    state: RwLock<CircuitState>,
-    /// Consecutive failure count.
-    failure_count: AtomicU32,
+    /// Mutable state and counters guarded atomically to prevent torn transitions.
+    inner: Mutex<BreakerInner>,
     /// Failure threshold to open circuit.
     failure_threshold: u32,
-    /// Time when circuit was opened.
-    opened_at: RwLock<Option<Instant>>,
     /// Cooldown duration before trying again.
     cooldown_duration: Duration,
-    /// Success count in half-open state.
-    half_open_successes: AtomicU32,
-    /// Failure count in half-open state.
-    half_open_failures: AtomicU32,
     /// Required successes to close circuit.
     success_threshold: u32,
     /// Required failures in half-open state to reopen circuit.
@@ -172,13 +188,15 @@ impl CircuitBreaker {
         half_open_failure_threshold: u32,
     ) -> Self {
         Self {
-            state: RwLock::new(CircuitState::Closed),
-            failure_count: AtomicU32::new(0),
+            inner: Mutex::new(BreakerInner {
+                state: CircuitState::Closed,
+                failure_count: 0,
+                opened_at: None,
+                half_open_successes: 0,
+                half_open_failures: 0,
+            }),
             failure_threshold,
-            opened_at: RwLock::new(None),
             cooldown_duration: Duration::from_secs(cooldown_secs),
-            half_open_successes: AtomicU32::new(0),
-            half_open_failures: AtomicU32::new(0),
             success_threshold: half_open_success_threshold,
             half_open_failure_threshold,
             last_used_unix: AtomicU64::new(Self::unix_now()),
@@ -188,8 +206,9 @@ impl CircuitBreaker {
     /// Get the current state.
     pub fn state(&self) -> CircuitState {
         self.touch();
-        self.check_state_transition();
-        *self.state.read()
+        let mut inner = self.inner.lock();
+        inner.advance_cooldown(self.cooldown_duration);
+        inner.state
     }
 
     /// Check if the circuit allows requests.
@@ -204,42 +223,41 @@ impl CircuitBreaker {
     /// Record a successful operation.
     pub fn record_success(&self) {
         self.touch();
-        let state = *self.state.read();
+        let mut inner = self.inner.lock();
+        inner.advance_cooldown(self.cooldown_duration);
 
-        match state {
+        match inner.state {
             CircuitState::Closed => {
-                // Reset failure count on success
-                self.failure_count.store(0, Ordering::SeqCst);
+                inner.failure_count = 0;
             }
             CircuitState::HalfOpen => {
-                let successes = self.half_open_successes.fetch_add(1, Ordering::SeqCst) + 1;
-                if successes >= self.success_threshold {
-                    // Close the circuit
-                    *self.state.write() = CircuitState::Closed;
-                    self.failure_count.store(0, Ordering::SeqCst);
-                    self.half_open_successes.store(0, Ordering::SeqCst);
+                inner.half_open_successes += 1;
+                if inner.half_open_successes >= self.success_threshold {
+                    inner.state = CircuitState::Closed;
+                    inner.opened_at = None;
+                    inner.failure_count = 0;
+                    inner.half_open_successes = 0;
+                    inner.half_open_failures = 0;
                     info!("Circuit breaker closed after successful recovery");
                 }
             }
-            CircuitState::Open => {
-                // Shouldn't happen, but reset if it does
-                self.check_state_transition();
-            }
+            CircuitState::Open => {}
         }
     }
 
     /// Record a failed operation.
     pub fn record_failure(&self) {
         self.touch();
-        let state = *self.state.read();
+        let mut inner = self.inner.lock();
+        inner.advance_cooldown(self.cooldown_duration);
 
-        match state {
+        match inner.state {
             CircuitState::Closed => {
-                let failures = self.failure_count.fetch_add(1, Ordering::SeqCst) + 1;
-                if failures >= self.failure_threshold {
-                    // Open the circuit
-                    *self.state.write() = CircuitState::Open;
-                    *self.opened_at.write() = Some(Instant::now());
+                inner.failure_count += 1;
+                if inner.failure_count >= self.failure_threshold {
+                    let failures = inner.failure_count;
+                    inner.state = CircuitState::Open;
+                    inner.opened_at = Some(Instant::now());
                     warn!(
                         "Circuit breaker opened after {} consecutive failures",
                         failures
@@ -247,14 +265,13 @@ impl CircuitBreaker {
                 }
             }
             CircuitState::HalfOpen => {
-                // Count failures in half-open state and only reopen after threshold
-                let failures = self.half_open_failures.fetch_add(1, Ordering::SeqCst) + 1;
-                if failures >= self.half_open_failure_threshold {
-                    // Exceeded half-open failure threshold, reopen the circuit
-                    *self.state.write() = CircuitState::Open;
-                    *self.opened_at.write() = Some(Instant::now());
-                    self.half_open_successes.store(0, Ordering::SeqCst);
-                    self.half_open_failures.store(0, Ordering::SeqCst);
+                inner.half_open_failures += 1;
+                if inner.half_open_failures >= self.half_open_failure_threshold {
+                    let failures = inner.half_open_failures;
+                    inner.state = CircuitState::Open;
+                    inner.opened_at = Some(Instant::now());
+                    inner.half_open_successes = 0;
+                    inner.half_open_failures = 0;
                     warn!(
                         "Circuit breaker reopened after {} failures in half-open state",
                         failures
@@ -262,28 +279,11 @@ impl CircuitBreaker {
                 } else {
                     debug!(
                         "Circuit breaker half-open failure {}/{}, staying half-open",
-                        failures, self.half_open_failure_threshold
+                        inner.half_open_failures, self.half_open_failure_threshold
                     );
                 }
             }
-            CircuitState::Open => {
-                // Already open, nothing to do
-            }
-        }
-    }
-
-    /// Check if state should transition (open -> half-open after cooldown).
-    fn check_state_transition(&self) {
-        let state = *self.state.read();
-
-        if state == CircuitState::Open
-            && let Some(opened_at) = *self.opened_at.read()
-            && opened_at.elapsed() >= self.cooldown_duration
-        {
-            *self.state.write() = CircuitState::HalfOpen;
-            self.half_open_successes.store(0, Ordering::SeqCst);
-            self.half_open_failures.store(0, Ordering::SeqCst);
-            debug!("Circuit breaker transitioned to half-open state");
+            CircuitState::Open => {}
         }
     }
 }
@@ -438,5 +438,33 @@ mod tests {
         breaker.record_failure();
         breaker.record_failure();
         assert_eq!(breaker.state(), CircuitState::Closed);
+    }
+
+    #[test]
+    fn each_half_open_cycle_tolerates_one_failure_and_reopening_restarts_the_cooldown() {
+        let breaker = CircuitBreaker::with_half_open(1, 60, 2, 2);
+
+        breaker.record_failure();
+        assert_eq!(breaker.state(), CircuitState::Open);
+
+        // Simulate cooldown expiry into HalfOpen, accumulate one partial failure, then recover.
+        breaker.inner.lock().opened_at = Some(Instant::now() - Duration::from_secs(61));
+        assert_eq!(breaker.state(), CircuitState::HalfOpen);
+        breaker.record_failure();
+        assert_eq!(breaker.state(), CircuitState::HalfOpen);
+        breaker.record_success();
+        breaker.record_success();
+        assert_eq!(breaker.state(), CircuitState::Closed);
+
+        // Next half-open cycle must tolerate a single transient failure again before reopening,
+        // and once reopened must stay Open for a full fresh cooldown window.
+        breaker.record_failure();
+        breaker.inner.lock().opened_at = Some(Instant::now() - Duration::from_secs(61));
+        assert_eq!(breaker.state(), CircuitState::HalfOpen);
+        breaker.record_failure();
+        assert_eq!(breaker.state(), CircuitState::HalfOpen);
+        breaker.record_failure();
+        assert_eq!(breaker.state(), CircuitState::Open);
+        assert!(!breaker.is_allowed());
     }
 }
