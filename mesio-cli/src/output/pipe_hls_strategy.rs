@@ -116,15 +116,16 @@ impl PipeHlsStrategy {
         self
     }
 
-    /// Check if the pipe should be closed based on the current item
+    /// Check if the pipe should be closed based on the current item.
     ///
     /// Returns true when:
-    /// - A segment with discontinuity flag is received
     /// - An EndMarker is received
+    /// - A mid-stream segment carries a discontinuity after data has already
+    ///   been written to the current pipe session
     pub fn should_close_pipe(&self, item: &HlsData) -> bool {
         match item {
             HlsData::EndMarker(_) => true,
-            _ if item.is_discontinuity() => true,
+            _ if item.is_discontinuity() && self.has_written_data => true,
             _ => false,
         }
     }
@@ -218,9 +219,32 @@ impl FormatStrategy<HlsData> for PipeHlsStrategy {
         self.write_to(writer, item)
     }
 
+    fn should_open_file(&mut self, item: &HlsData) -> bool {
+        !matches!(item, HlsData::EndMarker(_))
+    }
+
     fn should_rotate_file(&self, _config: &WriterConfig, _state: &WriterState) -> bool {
-        // Pipe output doesn't rotate files
+        // Pipe output doesn't rotate files on size or duration thresholds
         false
+    }
+
+    fn should_rotate_before_item(
+        &mut self,
+        item: &HlsData,
+        _config: &WriterConfig,
+        _state: &WriterState,
+    ) -> bool {
+        if !matches!(item, HlsData::EndMarker(_)) && self.should_close_pipe(item) {
+            tracing::info!(
+                boundary_type = self.protocol.discontinuity_boundary(),
+                segment_count = self.discontinuity_count + 1,
+                bytes_written = self.bytes_written,
+                "Segment boundary detected"
+            );
+            true
+        } else {
+            false
+        }
     }
 
     fn next_file_path(&self, config: &WriterConfig, _state: &WriterState) -> PathBuf {
@@ -265,21 +289,13 @@ impl FormatStrategy<HlsData> for PipeHlsStrategy {
         _bytes_written: u64,
         _state: &WriterState,
     ) -> Result<PostWriteAction, Self::StrategyError> {
-        // Signal closure if a boundary was detected
-        if self.should_close_pipe(item) {
-            // Log segment boundary event to stderr
-            let boundary_type = match item {
-                HlsData::EndMarker(_) => self.protocol.end_marker_boundary(),
-                _ if item.is_discontinuity() => self.protocol.discontinuity_boundary(),
-                _ => "Unknown",
-            };
+        if matches!(item, HlsData::EndMarker(_)) {
             tracing::info!(
-                boundary_type = boundary_type,
+                boundary_type = self.protocol.end_marker_boundary(),
                 segment_count = self.discontinuity_count,
                 bytes_written = self.bytes_written,
                 "Segment boundary detected"
             );
-
             Ok(PostWriteAction::Close)
         } else {
             Ok(PostWriteAction::None)
@@ -361,11 +377,23 @@ mod tests {
 
     #[test]
     fn test_should_close_pipe_discontinuity_ts() {
-        let strategy = PipeHlsStrategy::new();
+        let mut strategy = PipeHlsStrategy::new();
         let ts_with_discontinuity = create_test_ts_segment(true, vec![0x47, 0x00, 0x00]);
+        let config = WriterConfig::new(PathBuf::from("."), "stdout".into(), "ts".into());
+        let state = WriterState::default();
 
-        // TS segment with discontinuity should trigger closure
+        // Initial discontinuity before any data is written must NOT close/rotate the pipe
+        assert!(!strategy.should_close_pipe(&ts_with_discontinuity));
+        assert!(!strategy.should_rotate_before_item(&ts_with_discontinuity, &config, &state));
+
+        // Once data has been written, a mid-stream discontinuity rotates/closes
+        // BEFORE writing the post-discontinuity segment.
+        let mut buffer = Vec::new();
+        strategy
+            .write_to(&mut buffer, &create_test_ts_segment(false, vec![0x47]))
+            .unwrap();
         assert!(strategy.should_close_pipe(&ts_with_discontinuity));
+        assert!(strategy.should_rotate_before_item(&ts_with_discontinuity, &config, &state));
     }
 
     #[test]

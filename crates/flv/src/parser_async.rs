@@ -43,6 +43,10 @@ pub struct FlvDecoder {
     // the next candidate is only accepted once its trailing PreviousTagSize
     // confirms it.
     resyncing: bool,
+    // Set when headerless mid-stream join detection skipped the FLV header and
+    // has not yet confirmed a plausible FLV tag + matching PreviousTagSize.
+    // Reaching EOF while unconfirmed means the stream was never valid FLV.
+    mid_stream_unconfirmed: bool,
 }
 
 impl FlvDecoder {
@@ -127,22 +131,23 @@ impl Decoder for FlvDecoder {
 
             // Peek at the first byte to determine if this is a header or a tag
             let first_byte = src[0];
-            let first_tag_type = first_byte & 0x1F; // Lower 5 bits for tag type
 
-            // Check if stream starts with a valid FLV tag type instead of FLV header
-            // This can happen with CDN mid-stream joins
-            if first_tag_type == 8 || first_tag_type == 9 || first_tag_type == 18 {
-                // First byte is a valid tag type (audio=8, video=9, script=18)
-                // This is a mid-stream join, skip header parsing
+            // Check if stream starts with a valid FLV tag start byte instead of an FLV header.
+            // Require reserved high bits to be 0 (`framing::is_tag_start`) so ASCII text
+            // responses ('H', 'I', 'R', etc.) are rejected as invalid headers, and enter
+            // `resyncing` so any candidate (e.g. '2' = 0x32 or '\t' = 0x09) must pass
+            // StreamID == 0 and trailing PreviousTagSize confirmation before emitting tags.
+            if framing::is_tag_start(first_byte) {
                 debug!(
-                    "Detected mid-stream join: first byte 0x{:02X} is tag type {}. Skipping header parsing.",
-                    first_byte, first_tag_type
+                    "Detected candidate mid-stream join: first byte 0x{:02X} is tag type {}. Entering resync confirmation.",
+                    first_byte,
+                    first_byte & 0x1F
                 );
                 self.header_parsed = true;
                 self.expecting_tag_header = true;
                 self.last_tag_size = 0;
-                // Don't consume any bytes, let the tag parsing handle it
-                // No header to return, continue to tag parsing
+                self.resyncing = true;
+                self.mid_stream_unconfirmed = true;
             } else {
                 // Expect a standard FLV header
                 if src.len() < FLV_HEADER_SIZE {
@@ -320,6 +325,7 @@ impl Decoder for FlvDecoder {
             }
             debug!(position = self.position, "Resync confirmed at tag boundary");
             self.resyncing = false;
+            self.mid_stream_unconfirmed = false;
         }
 
         if src.len() < total_tag_size {
@@ -360,6 +366,9 @@ impl Decoder for FlvDecoder {
         loop {
             let initial_len = src.len();
             if initial_len == 0 {
+                if self.mid_stream_unconfirmed {
+                    return Err(FlvError::InvalidHeader);
+                }
                 return Ok(None);
             }
 
@@ -367,8 +376,13 @@ impl Decoder for FlvDecoder {
                 Some(frame) => return Ok(Some(frame)),
                 None => {
                     if src.len() == initial_len {
-                        // decode() made no progress: the remainder is a partial
-                        // tag that can never complete at EOF. Discard it so the
+                        // If EOF arrived before a valid FLV header or confirmed mid-stream
+                        // tag boundary was ever established, reject the input as an invalid header.
+                        if !self.header_parsed || self.mid_stream_unconfirmed {
+                            return Err(FlvError::InvalidHeader);
+                        }
+                        // decode() made no progress after valid framing: the remainder is a
+                        // partial tail tag that can never complete at EOF. Discard it so the
                         // next call terminates the stream.
                         warn!(
                             "{} bytes remaining in buffer at EOF, discarding final partial tag.",
@@ -917,5 +931,54 @@ mod tests {
         // This decode call will consume the PreviousTagSize
         let _ = decoder.decode(&mut buffer).unwrap();
         assert_eq!(decoder.position(), initial_pos + prev_tag_size_field as u64);
+    }
+
+    #[tokio::test]
+    async fn rejects_plain_text_and_http_responses_as_invalid_header() {
+        let non_flv_payloads: &[&[u8]] = &[
+            b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n",
+            b"Internal Server Error",
+            b"Region blocked",
+            b"200 OK",
+            b"\t<html><body>error</body></html>",
+            b"ERR",
+        ];
+
+        for &payload in non_flv_payloads {
+            let mut stream = FlvDecoderStream::new(Cursor::new(payload));
+            let first = stream.next().await;
+            assert!(
+                matches!(first, Some(Err(FlvError::InvalidHeader))),
+                "payload {:?} should fail with InvalidHeader, got {first:?}",
+                String::from_utf8_lossy(payload)
+            );
+            assert!(stream.next().await.is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn accepts_confirmed_mid_stream_flv_join() {
+        let mut join_bytes = Vec::new();
+        join_bytes.extend(tag_with_trailer(9, 100, 0x17, 4));
+        join_bytes.extend(tag_with_trailer(8, 120, 0xAF, 3));
+
+        let mut stream = FlvDecoderStream::new(Cursor::new(join_bytes));
+        match stream.next().await {
+            Some(Ok(FlvData::Tag(tag))) => {
+                assert_eq!(tag.tag_type(), FlvTagType::Video);
+                assert_eq!(tag.timestamp_ms, 100);
+                assert_eq!(tag.data().len(), 4);
+            }
+            other => panic!("expected confirmed video tag, got {other:?}"),
+        }
+        match stream.next().await {
+            Some(Ok(FlvData::Tag(tag))) => {
+                assert_eq!(tag.tag_type(), FlvTagType::Audio);
+                assert_eq!(tag.timestamp_ms, 120);
+                assert_eq!(tag.data().len(), 3);
+            }
+            other => panic!("expected audio tag, got {other:?}"),
+        }
+        assert!(stream.next().await.is_none());
     }
 }

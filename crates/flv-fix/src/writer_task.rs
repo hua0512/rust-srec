@@ -53,7 +53,6 @@ pub struct FlvFormatStrategy {
     pending_header: Option<FlvHeader>,
     // Internal state
     file_start_instant: Option<Instant>,
-    last_header_received: bool,
     current_tag_count: u64,
     last_status_update: Option<Instant>,
     last_status_bytes: u64,
@@ -81,7 +80,6 @@ impl FlvFormatStrategy {
             analyzer: FlvAnalyzer::default(),
             pending_header: None,
             file_start_instant: None,
-            last_header_received: false,
             current_tag_count: 0,
             last_status_update: None,
             last_status_bytes: 0,
@@ -152,13 +150,8 @@ impl FlvFormatStrategy {
         let Ok(script) = ScriptData::demux(&mut cursor) else {
             return Ok(None);
         };
-        if script.name != crate::AMF0_ON_METADATA {
-            return Ok(None);
-        }
-        let Some(properties) = script
-            .data
-            .first()
-            .and_then(amf0::Amf0Value::as_object_properties)
+        let Some(properties) =
+            crate::amf::on_metadata_value(&script).and_then(amf0::Amf0Value::as_object_properties)
         else {
             return Ok(None);
         };
@@ -231,6 +224,17 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
         Ok(FlvWriter::new(buf_writer)?)
     }
 
+    fn should_open_file(&mut self, item: &FlvData) -> bool {
+        match item {
+            FlvData::Header(header) => {
+                self.pending_header = Some(header.clone());
+                false
+            }
+            FlvData::Tag(_) => true,
+            FlvData::Split(_) | FlvData::EndOfSequence(_) => false,
+        }
+    }
+
     fn write_item(
         &mut self,
         writer: &mut Self::Writer,
@@ -239,7 +243,6 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
         match item {
             FlvData::Header(header) => {
                 self.pending_header = Some(header.clone());
-                self.last_header_received = true;
                 Ok(0)
             }
             FlvData::Tag(tag) => {
@@ -252,10 +255,6 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
                         .map_err(FlvStrategyError::Analysis)?;
                     writer.write_header(&header)?;
                     bytes_written += 13;
-                }
-
-                if self.last_header_received {
-                    self.last_header_received = false;
                 }
 
                 self.current_tag_count += 1;
@@ -284,8 +283,7 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
     }
 
     fn should_rotate_file(&self, _config: &WriterConfig, _state: &WriterState) -> bool {
-        // Rotate if we've received a header and we've already written some tags to the current file.
-        self.last_header_received && self.current_tag_count > 0
+        false
     }
 
     fn next_file_path(&self, config: &WriterConfig, state: &WriterState) -> PathBuf {
@@ -320,7 +318,6 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
             span.pb_set_message(&format!("Writing {}", path.display()));
         }
 
-        self.last_header_received = false;
         Ok(0)
     }
 
@@ -392,7 +389,7 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
 
     fn after_item_written(
         &mut self,
-        _item: &FlvData,
+        item: &FlvData,
         _bytes_written: u64,
         state: &WriterState,
     ) -> Result<PostWriteAction, Self::StrategyError> {
@@ -404,6 +401,14 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
                 tags_written = state.items_written_total,
                 "Writer progress..."
             );
+        }
+        if self.current_tag_count > 0
+            && matches!(
+                item,
+                FlvData::Split(_) | FlvData::EndOfSequence(_) | FlvData::Header(_)
+            )
+        {
+            return Ok(PostWriteAction::RotateOnNextItem);
         }
         Ok(PostWriteAction::None)
     }
@@ -711,5 +716,185 @@ mod tests {
         assert_eq!(tag.tag_type(), FlvTagType::ScriptData);
         assert!(tag.is_filtered());
         assert_eq!(tag.data(), &original_payload);
+    }
+
+    #[test]
+    fn split_and_eos_immediately_close_and_patch_completed_segment_before_next_tags() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let config = WriterConfig::new(
+            tempdir.path().to_path_buf(),
+            "segment-%i".to_string(),
+            "flv".to_string(),
+        );
+        let mut task = pipeline_common::WriterTask::new(config, FlvFormatStrategy::new());
+
+        let opened = Arc::new(Mutex::new(Vec::<(PathBuf, u32)>::new()));
+        let closed = Arc::new(Mutex::new(Vec::<(
+            PathBuf,
+            u32,
+            f64,
+            u64,
+            Option<SplitReason>,
+        )>::new()));
+        let opened_cb = Arc::clone(&opened);
+        let closed_cb = Arc::clone(&closed);
+        task.set_on_file_open_callback(move |path, seq| {
+            opened_cb.lock().unwrap().push((path.to_path_buf(), seq));
+        });
+        task.set_on_file_close_callback(move |path, seq, dur, size, reason| {
+            closed_cb
+                .lock()
+                .unwrap()
+                .push((path.to_path_buf(), seq, dur, size, reason.cloned()));
+        });
+
+        for leading in [
+            FlvData::Header(FlvHeader::new(false, true)),
+            FlvData::Split(SplitReason::Discontinuity),
+            FlvData::Header(FlvHeader::new(false, true)),
+        ] {
+            task.process_item(leading).unwrap();
+        }
+        assert!(task.get_current_file_path().is_none());
+        assert!(opened.lock().unwrap().is_empty());
+
+        let (payload, _) = OnMetaDataBuilder::new()
+            .with_placeholder_keyframes(10)
+            .build_bytes(0, false)
+            .unwrap();
+        task.process_item(FlvData::Tag(FlvTag::new(
+            0,
+            0,
+            FlvTagType::ScriptData,
+            false,
+            Bytes::from(payload),
+        )))
+        .unwrap();
+        task.process_item(crate::test_utils::create_video_tag(0, true))
+            .unwrap();
+        task.process_item(crate::test_utils::create_video_tag(4_250, true))
+            .unwrap();
+        assert!(task.get_current_file_path().is_some());
+        assert!(closed.lock().unwrap().is_empty());
+
+        // Split immediately closes, patches onMetaData, and notifies completion
+        // before any item from the next segment arrives.
+        task.process_item(FlvData::Split(SplitReason::SizeLimit))
+            .unwrap();
+        assert!(task.get_current_file_path().is_none());
+        {
+            let closed_guard = closed.lock().unwrap();
+            assert_eq!(closed_guard.len(), 1);
+            let (ref seg0_path, seq, dur, size, ref reason) = closed_guard[0];
+            assert_eq!(seq, 0);
+            assert_eq!(dur, 4.25);
+            assert!(size > 0);
+            assert!(matches!(reason, Some(SplitReason::SizeLimit)));
+
+            let first_tag = read_first_tag(seg0_path);
+            let mut cursor = std::io::Cursor::new(first_tag.data().clone());
+            let script = ScriptData::demux(&mut cursor).unwrap();
+            let props = script.data[0].as_object_properties().unwrap();
+            assert_eq!(
+                metadata_property(props, "duration"),
+                &Amf0Value::Number(4.25)
+            );
+        }
+
+        // Trailing Header + EndOfSequence with no media tags must not create segment-1.flv.
+        task.process_item(FlvData::Header(FlvHeader::new(false, true)))
+            .unwrap();
+        task.process_item(FlvData::EndOfSequence(Bytes::new()))
+            .unwrap();
+        task.close().unwrap();
+
+        assert_eq!(opened.lock().unwrap().len(), 1);
+        assert_eq!(closed.lock().unwrap().len(), 1);
+        assert_eq!(std::fs::read_dir(tempdir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn writer_patches_set_data_frame_after_leading_cue_point() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let (mut writer, opened_path) = recording_writer(tempdir.path());
+
+        let mut cue_buf = Vec::new();
+        amf0::Amf0Encoder::encode_string(&mut cue_buf, "onCuePoint").unwrap();
+        amf0::Amf0Encoder::encode(
+            &mut cue_buf,
+            &Amf0Value::Object(Cow::Owned(vec![(
+                Cow::Borrowed("name"),
+                Amf0Value::String(Cow::Borrowed("intro")),
+            )])),
+        )
+        .unwrap();
+        let cue_payload = Bytes::from(cue_buf);
+
+        let mut meta_buf = Vec::new();
+        amf0::Amf0Encoder::encode_string(&mut meta_buf, "@setDataFrame").unwrap();
+        amf0::Amf0Encoder::encode_string(&mut meta_buf, "onMetaData").unwrap();
+        amf0::Amf0Encoder::encode(
+            &mut meta_buf,
+            &Amf0Value::EcmaArray(Cow::Owned(vec![(
+                Cow::Borrowed("videocodecid"),
+                Amf0Value::Number(VideoFourCC::Av01.as_u32() as f64),
+            )])),
+        )
+        .unwrap();
+
+        run_writer(
+            &mut writer,
+            [
+                FlvData::Header(FlvHeader::new(false, true)),
+                FlvData::Tag(FlvTag::new(
+                    0,
+                    0,
+                    FlvTagType::ScriptData,
+                    false,
+                    cue_payload.clone(),
+                )),
+                FlvData::Tag(FlvTag::new(
+                    0,
+                    0,
+                    FlvTagType::ScriptData,
+                    false,
+                    Bytes::from(meta_buf),
+                )),
+                FlvData::Tag(FlvTag::new(
+                    0,
+                    0,
+                    FlvTagType::Video,
+                    false,
+                    Bytes::from_static(b"\x90av01\x81\r\x0c\0"),
+                )),
+                crate::test_utils::create_video_tag(3_000, true),
+            ],
+        );
+
+        let file = std::fs::File::open(recorded_path(&opened_path)).unwrap();
+        let mut reader = std::io::BufReader::new(file);
+        FlvParser::parse_header(&mut reader).unwrap();
+        reader.seek(std::io::SeekFrom::Start(13)).unwrap();
+
+        let (tag0, _) = FlvParser::parse_tag(&mut reader).unwrap().unwrap();
+        let mut prev = [0u8; 4];
+        std::io::Read::read_exact(&mut reader, &mut prev).unwrap();
+        assert_eq!(tag0.data(), &cue_payload);
+
+        let (tag1, _) = FlvParser::parse_tag(&mut reader).unwrap().unwrap();
+        let mut cursor = std::io::Cursor::new(tag1.data().clone());
+        let script = ScriptData::demux(&mut cursor).unwrap();
+        let props = crate::amf::on_metadata_value(&script)
+            .unwrap()
+            .as_object_properties()
+            .unwrap();
+        assert_eq!(
+            metadata_property(props, "duration"),
+            &Amf0Value::Number(3.0)
+        );
+        assert_eq!(
+            metadata_property(props, "videocodecid"),
+            &Amf0Value::Number(VideoFourCC::Av01.as_u32() as f64)
+        );
     }
 }

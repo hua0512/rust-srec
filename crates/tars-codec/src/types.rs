@@ -37,8 +37,7 @@ pub struct TarsRequestHeader {
 }
 
 /// An enum representing any valid Tars value.
-
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub enum TarsValue {
     Bool(bool),
     Byte(u8),
@@ -60,6 +59,86 @@ pub enum TarsValue {
     StructEnd,
 }
 
+const CANONICAL_F32_NAN_BITS: u32 = 0x7fc0_0000;
+const CANONICAL_F64_NAN_BITS: u64 = 0x7ff8_0000_0000_0000;
+
+#[inline]
+fn canonical_f32_bits(v: f32) -> u32 {
+    if v.is_nan() {
+        CANONICAL_F32_NAN_BITS
+    } else if v == 0.0 {
+        0
+    } else {
+        v.to_bits()
+    }
+}
+
+#[inline]
+fn canonical_f64_bits(v: f64) -> u64 {
+    if v.is_nan() {
+        CANONICAL_F64_NAN_BITS
+    } else if v == 0.0 {
+        0
+    } else {
+        v.to_bits()
+    }
+}
+
+impl TarsValue {
+    /// Canonical discriminant rank used by `Ord` and `Hash`.
+    /// `String` and `StringRef` share rank `7` because they represent the same logical TARS string type.
+    #[inline]
+    const fn variant_rank(&self) -> u8 {
+        match self {
+            TarsValue::Bool(_) => 0,
+            TarsValue::Byte(_) => 1,
+            TarsValue::Short(_) => 2,
+            TarsValue::Int(_) => 3,
+            TarsValue::Long(_) => 4,
+            TarsValue::Float(_) => 5,
+            TarsValue::Double(_) => 6,
+            TarsValue::String(_) | TarsValue::StringRef(_) => 7,
+            TarsValue::Struct(_) => 8,
+            TarsValue::Map(_) => 9,
+            TarsValue::List(_) => 10,
+            TarsValue::SimpleList(_) => 11,
+            TarsValue::Binary(_) => 12,
+            TarsValue::StructBegin => 13,
+            TarsValue::StructEnd => 14,
+        }
+    }
+}
+
+impl PartialEq for TarsValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (TarsValue::Bool(a), TarsValue::Bool(b)) => a == b,
+            (TarsValue::Byte(a), TarsValue::Byte(b)) => a == b,
+            (TarsValue::Short(a), TarsValue::Short(b)) => a == b,
+            (TarsValue::Int(a), TarsValue::Int(b)) => a == b,
+            (TarsValue::Long(a), TarsValue::Long(b)) => a == b,
+            (TarsValue::Float(a), TarsValue::Float(b)) => {
+                canonical_f32_bits(*a) == canonical_f32_bits(*b)
+            }
+            (TarsValue::Double(a), TarsValue::Double(b)) => {
+                canonical_f64_bits(*a) == canonical_f64_bits(*b)
+            }
+            (TarsValue::String(a), TarsValue::String(b)) => a == b,
+            (TarsValue::StringRef(a), TarsValue::StringRef(b)) => a == b,
+            (TarsValue::String(a), TarsValue::StringRef(b)) => a.as_bytes() == b.as_ref(),
+            (TarsValue::StringRef(a), TarsValue::String(b)) => a.as_ref() == b.as_bytes(),
+            (TarsValue::Struct(a), TarsValue::Struct(b)) => a == b,
+            (TarsValue::Map(a), TarsValue::Map(b)) => a == b,
+            (TarsValue::List(a), TarsValue::List(b)) => a == b,
+            (TarsValue::SimpleList(a), TarsValue::SimpleList(b)) => a == b,
+            (TarsValue::Binary(a), TarsValue::Binary(b)) => a == b,
+            (TarsValue::StructBegin, TarsValue::StructBegin) => true,
+            (TarsValue::StructEnd, TarsValue::StructEnd) => true,
+            _ => false,
+        }
+    }
+}
+
 impl Eq for TarsValue {}
 
 impl PartialOrd for TarsValue {
@@ -76,191 +155,88 @@ impl Ord for TarsValue {
             (TarsValue::Short(a), TarsValue::Short(b)) => a.cmp(b),
             (TarsValue::Int(a), TarsValue::Int(b)) => a.cmp(b),
             (TarsValue::Long(a), TarsValue::Long(b)) => a.cmp(b),
-            (TarsValue::Float(a), TarsValue::Float(b)) => {
-                // Safe float comparison that handles NaN values
-                a.partial_cmp(b).unwrap_or_else(|| {
-                    if a.is_nan() && b.is_nan() {
-                        Ordering::Equal
-                    } else if a.is_nan() {
-                        Ordering::Greater
-                    } else {
-                        Ordering::Less
-                    }
-                })
-            }
-            (TarsValue::Double(a), TarsValue::Double(b)) => {
-                // Safe double comparison that handles NaN values
-                a.partial_cmp(b).unwrap_or_else(|| {
-                    if a.is_nan() && b.is_nan() {
-                        Ordering::Equal
-                    } else if a.is_nan() {
-                        Ordering::Greater
-                    } else {
-                        Ordering::Less
-                    }
-                })
-            }
-            (TarsValue::String(a), TarsValue::String(b)) => a.cmp(b),
-            (TarsValue::StringRef(a), TarsValue::StringRef(b)) => a.cmp(b),
-            (TarsValue::String(a), TarsValue::StringRef(b)) => a.as_bytes().cmp(&**b),
-            (TarsValue::StringRef(a), TarsValue::String(b)) => (**a).cmp(b.as_bytes()),
+            (TarsValue::Float(a), TarsValue::Float(b)) => f32::from_bits(canonical_f32_bits(*a))
+                .total_cmp(&f32::from_bits(canonical_f32_bits(*b))),
+            (TarsValue::Double(a), TarsValue::Double(b)) => f64::from_bits(canonical_f64_bits(*a))
+                .total_cmp(&f64::from_bits(canonical_f64_bits(*b))),
+            (TarsValue::String(a), TarsValue::String(b)) => a.as_bytes().cmp(b.as_bytes()),
+            (TarsValue::StringRef(a), TarsValue::StringRef(b)) => a.as_ref().cmp(b.as_ref()),
+            (TarsValue::String(a), TarsValue::StringRef(b)) => a.as_bytes().cmp(b.as_ref()),
+            (TarsValue::StringRef(a), TarsValue::String(b)) => a.as_ref().cmp(b.as_bytes()),
             (TarsValue::Struct(a), TarsValue::Struct(b)) => {
-                // Compare HashMaps by converting to sorted vectors
                 let mut a_vec: Vec<_> = a.iter().collect();
                 let mut b_vec: Vec<_> = b.iter().collect();
-                a_vec.sort_by_key(|(k, _)| **k);
-                b_vec.sort_by_key(|(k, _)| **k);
+                a_vec.sort_by(|(ka, va), (kb, vb)| ka.cmp(kb).then_with(|| va.cmp(vb)));
+                b_vec.sort_by(|(ka, va), (kb, vb)| ka.cmp(kb).then_with(|| va.cmp(vb)));
                 a_vec.cmp(&b_vec)
             }
             (TarsValue::Map(a), TarsValue::Map(b)) => {
-                // Compare HashMaps by converting to sorted vectors
                 let mut a_vec: Vec<_> = a.iter().collect();
                 let mut b_vec: Vec<_> = b.iter().collect();
-                a_vec.sort_by_key(|(k, _)| *k);
-                b_vec.sort_by_key(|(k, _)| *k);
+                a_vec.sort_by(|(ka, va), (kb, vb)| ka.cmp(kb).then_with(|| va.cmp(vb)));
+                b_vec.sort_by(|(ka, va), (kb, vb)| ka.cmp(kb).then_with(|| va.cmp(vb)));
                 a_vec.cmp(&b_vec)
             }
-            (TarsValue::List(a), TarsValue::List(b)) => {
-                // Compare SmallVec of Box<TarsValue>
-                let a_slice: &[Box<TarsValue>] = a.as_slice();
-                let b_slice: &[Box<TarsValue>] = b.as_slice();
-                a_slice.cmp(b_slice)
-            }
+            (TarsValue::List(a), TarsValue::List(b)) => a.as_slice().cmp(b.as_slice()),
             (TarsValue::SimpleList(a), TarsValue::SimpleList(b)) => a.cmp(b),
             (TarsValue::Binary(a), TarsValue::Binary(b)) => a.cmp(b),
-            (TarsValue::StructBegin, TarsValue::StructBegin) => Ordering::Equal,
-            (TarsValue::StructEnd, TarsValue::StructEnd) => Ordering::Equal,
-            _ => Ordering::Less,
+            (TarsValue::StructBegin, TarsValue::StructBegin)
+            | (TarsValue::StructEnd, TarsValue::StructEnd) => Ordering::Equal,
+            _ => self.variant_rank().cmp(&other.variant_rank()),
         }
     }
 }
 
 impl Hash for TarsValue {
     fn hash<H: Hasher>(&self, state: &mut H) {
+        self.variant_rank().hash(state);
         match self {
-            TarsValue::Bool(v) => {
-                0u8.hash(state);
-                v.hash(state);
-            }
-            TarsValue::Byte(v) => {
-                1u8.hash(state);
-                v.hash(state);
-            }
-            TarsValue::Short(v) => {
-                2u8.hash(state);
-                v.hash(state);
-            }
-            TarsValue::Int(v) => {
-                3u8.hash(state);
-                v.hash(state);
-            }
-            TarsValue::Long(v) => {
-                4u8.hash(state);
-                v.hash(state);
-            }
-            TarsValue::Float(v) => {
-                5u8.hash(state);
-                // Safe float hashing by converting to bits
-                if v.is_nan() {
-                    0u32.hash(state); // All NaN values hash to the same value
-                } else {
-                    v.to_bits().hash(state);
-                }
-            }
-            TarsValue::Double(v) => {
-                6u8.hash(state);
-                // Safe double hashing by converting to bits
-                if v.is_nan() {
-                    0u64.hash(state); // All NaN values hash to the same value
-                } else {
-                    v.to_bits().hash(state);
-                }
-            }
+            TarsValue::Bool(v) => v.hash(state),
+            TarsValue::Byte(v) => v.hash(state),
+            TarsValue::Short(v) => v.hash(state),
+            TarsValue::Int(v) => v.hash(state),
+            TarsValue::Long(v) => v.hash(state),
+            TarsValue::Float(v) => canonical_f32_bits(*v).hash(state),
+            TarsValue::Double(v) => canonical_f64_bits(*v).hash(state),
             TarsValue::String(v) => {
-                7u8.hash(state);
-                v.hash(state);
+                let bytes: &[u8] = v.as_bytes();
+                bytes.hash(state);
             }
             TarsValue::StringRef(v) => {
-                14u8.hash(state);
-                v.hash(state);
+                let bytes: &[u8] = v.as_ref();
+                bytes.hash(state);
             }
             TarsValue::Struct(v) => {
-                8u8.hash(state);
-                // Optimized hashing for small structs - avoid sorting when possible
-                if v.len() <= 4 {
-                    // For small structs, hash in tag order (usually already sorted)
-                    let mut tags: Vec<_> = v.keys().collect();
-                    tags.sort_unstable();
-                    for &tag in tags {
-                        tag.hash(state);
-                        v[&tag].hash(state);
-                    }
-                } else {
-                    // For larger structs, use the sorting approach
-                    let mut pairs: Vec<_> = v.iter().collect();
-                    pairs.sort_by_key(|(k, _)| **k);
-                    for (k, val) in pairs {
-                        k.hash(state);
-                        val.hash(state);
-                    }
+                v.len().hash(state);
+                let mut combined = 0u64;
+                for (k, val) in v {
+                    let mut entry_hasher = std::collections::hash_map::DefaultHasher::new();
+                    k.hash(&mut entry_hasher);
+                    val.hash(&mut entry_hasher);
+                    combined = combined.wrapping_add(entry_hasher.finish());
                 }
+                combined.hash(state);
             }
             TarsValue::Map(v) => {
-                9u8.hash(state);
-                // Optimized hashing for small maps
-                if v.len() <= 3 {
-                    // For small maps, collect and sort with faster unstable sort
-                    let mut pairs: Vec<_> = v.iter().collect();
-                    pairs.sort_unstable_by_key(|(k, _)| *k);
-                    // Hash length first for better distribution
-                    v.len().hash(state);
-                    for (k, val) in pairs {
-                        k.hash(state);
-                        val.hash(state);
-                    }
-                } else {
-                    // For larger maps, use a simplified hash approach
-                    // Hash the length and a sample of key-value pairs
-                    v.len().hash(state);
-                    let mut key_hash = 0u64;
-                    let mut val_hash = 0u64;
-                    for (k, val) in v.iter().take(3) {
-                        // XOR hash values for order independence (approximate)
-                        key_hash ^= {
-                            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                            k.hash(&mut hasher);
-                            hasher.finish()
-                        };
-                        val_hash ^= {
-                            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                            val.hash(&mut hasher);
-                            hasher.finish()
-                        };
-                    }
-                    key_hash.hash(state);
-                    val_hash.hash(state);
+                v.len().hash(state);
+                let mut combined = 0u64;
+                for (k, val) in v {
+                    let mut entry_hasher = std::collections::hash_map::DefaultHasher::new();
+                    k.hash(&mut entry_hasher);
+                    val.hash(&mut entry_hasher);
+                    combined = combined.wrapping_add(entry_hasher.finish());
                 }
+                combined.hash(state);
             }
             TarsValue::List(v) => {
-                10u8.hash(state);
+                v.len().hash(state);
                 for item in v {
                     item.hash(state);
                 }
             }
-            TarsValue::SimpleList(v) => {
-                11u8.hash(state);
-                v.hash(state);
-            }
-            TarsValue::Binary(v) => {
-                15u8.hash(state);
-                v.hash(state);
-            }
-            TarsValue::StructBegin => {
-                12u8.hash(state);
-            }
-            TarsValue::StructEnd => {
-                13u8.hash(state);
-            }
+            TarsValue::SimpleList(v) => v.hash(state),
+            TarsValue::Binary(v) => v.hash(state),
+            TarsValue::StructBegin | TarsValue::StructEnd => {}
         }
     }
 }
@@ -411,5 +387,90 @@ impl Hash for ValidatedBytes {
 impl From<ValidatedBytes> for Bytes {
     fn from(validated: ValidatedBytes) -> Self {
         validated.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::hash_map::DefaultHasher;
+
+    use super::*;
+
+    fn hash_value(v: &TarsValue) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        v.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    #[test]
+    fn tars_value_ord_eq_and_hash_invariants_hold_across_variants() {
+        let values = vec![
+            TarsValue::Bool(false),
+            TarsValue::Bool(true),
+            TarsValue::Byte(1),
+            TarsValue::Short(-2),
+            TarsValue::Int(42),
+            TarsValue::Long(-100),
+            TarsValue::Float(-0.0),
+            TarsValue::Float(0.0),
+            TarsValue::Float(f32::NAN),
+            TarsValue::Float(f32::from_bits(0xffc0_0001)),
+            TarsValue::Double(-0.0),
+            TarsValue::Double(0.0),
+            TarsValue::Double(f64::NAN),
+            TarsValue::Double(f64::from_bits(0xfff8_0000_0000_0001)),
+            TarsValue::String("alpha".to_string()),
+            TarsValue::StringRef(Bytes::from_static(b"alpha")),
+            TarsValue::StringRef(Bytes::from_static(b"beta")),
+            TarsValue::SimpleList(Bytes::from_static(b"raw")),
+            TarsValue::Binary(Bytes::from_static(b"raw")),
+            TarsValue::StructBegin,
+            TarsValue::StructEnd,
+        ];
+
+        for a in &values {
+            for b in &values {
+                assert_eq!(
+                    a.cmp(b),
+                    b.cmp(a).reverse(),
+                    "antisymmetry failed: {a:?} vs {b:?}"
+                );
+                assert_eq!(
+                    a == b,
+                    a.cmp(b) == Ordering::Equal,
+                    "Eq/Ord mismatch: {a:?} vs {b:?}"
+                );
+                if a == b {
+                    assert_eq!(
+                        hash_value(a),
+                        hash_value(b),
+                        "Eq/Hash mismatch: {a:?} vs {b:?}"
+                    );
+                }
+            }
+        }
+
+        let mut forward = values.clone();
+        let mut reverse: Vec<_> = values.into_iter().rev().collect();
+        forward.sort();
+        reverse.sort();
+        assert_eq!(forward, reverse);
+
+        let mut map_a = FxHashMap::with_capacity_and_hasher(4, Default::default());
+        let mut map_b = FxHashMap::with_capacity_and_hasher(64, Default::default());
+        for i in 0..8 {
+            map_a.insert(TarsValue::String(format!("k{i}")), TarsValue::Int(i));
+        }
+        for i in (0..8).rev() {
+            map_b.insert(
+                TarsValue::StringRef(Bytes::from(format!("k{i}"))),
+                TarsValue::Int(i),
+            );
+        }
+        let val_map_a = TarsValue::Map(map_a);
+        let val_map_b = TarsValue::Map(map_b);
+        assert_eq!(val_map_a, val_map_b);
+        assert_eq!(val_map_a.cmp(&val_map_b), Ordering::Equal);
+        assert_eq!(hash_value(&val_map_a), hash_value(&val_map_b));
     }
 }

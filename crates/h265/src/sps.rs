@@ -286,6 +286,30 @@ impl SpsRbsp {
             .transpose()?
             .unwrap_or_default();
 
+        if conformance_window_flag {
+            let crop_w = conformance_window
+                .conf_win_left_offset
+                .saturating_add(conformance_window.conf_win_right_offset)
+                .saturating_mul(u64::from(sub_width_c));
+            if crop_w >= pic_width_in_luma_samples.get() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "sub_width_c * (conf_win_left_offset + conf_win_right_offset) must be less than pic_width_in_luma_samples",
+                ));
+            }
+
+            let crop_h = conformance_window
+                .conf_win_top_offset
+                .saturating_add(conformance_window.conf_win_bottom_offset)
+                .saturating_mul(u64::from(sub_height_c));
+            if crop_h >= pic_height_in_luma_samples.get() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "sub_height_c * (conf_win_top_offset + conf_win_bottom_offset) must be less than pic_height_in_luma_samples",
+                ));
+            }
+        }
+
         let bit_depth_luma_minus8 = bit_reader.read_exp_golomb()?;
         range_check!(bit_depth_luma_minus8, 0, 8)?;
         let bit_depth_luma_minus8 = bit_depth_luma_minus8 as u8;
@@ -307,16 +331,31 @@ impl SpsRbsp {
         )?;
 
         let log2_min_luma_coding_block_size_minus3 = bit_reader.read_exp_golomb()?;
-        let log2_diff_max_min_luma_coding_block_size = bit_reader.read_exp_golomb()?;
-
+        range_check!(log2_min_luma_coding_block_size_minus3, 0, 3)?;
         let min_cb_log2_size_y = log2_min_luma_coding_block_size_minus3 + 3;
+
+        let log2_diff_max_min_luma_coding_block_size = bit_reader.read_exp_golomb()?;
+        range_check!(
+            log2_diff_max_min_luma_coding_block_size,
+            0,
+            6 - min_cb_log2_size_y
+        )?;
         let ctb_log2_size_y = min_cb_log2_size_y + log2_diff_max_min_luma_coding_block_size;
 
         let log2_min_luma_transform_block_size_minus2 = bit_reader.read_exp_golomb()?;
-
+        range_check!(
+            log2_min_luma_transform_block_size_minus2,
+            0,
+            log2_min_luma_coding_block_size_minus3
+        )?;
         let min_tb_log2_size_y = log2_min_luma_transform_block_size_minus2 + 2;
 
         let log2_diff_max_min_luma_transform_block_size = bit_reader.read_exp_golomb()?;
+        range_check!(
+            log2_diff_max_min_luma_transform_block_size,
+            0,
+            ctb_log2_size_y.min(5) - min_tb_log2_size_y
+        )?;
         let max_transform_hierarchy_depth_inter = bit_reader.read_exp_golomb()?;
         range_check!(
             max_transform_hierarchy_depth_inter,
@@ -495,10 +534,12 @@ impl SpsRbsp {
     ///
     /// ISO/IEC 23008-2 - D.3.29
     pub fn cropped_width(&self) -> u64 {
-        self.pic_width_in_luma_samples.get()
-            - self.sub_width_c() as u64
-                * (self.conformance_window.conf_win_left_offset
-                    + self.conformance_window.conf_win_right_offset)
+        let crop = self
+            .conformance_window
+            .conf_win_left_offset
+            .saturating_add(self.conformance_window.conf_win_right_offset)
+            .saturating_mul(u64::from(self.sub_width_c()));
+        self.pic_width_in_luma_samples.get().saturating_sub(crop)
     }
 
     /// The `croppedHeight` as a [`u64`].
@@ -509,10 +550,12 @@ impl SpsRbsp {
     ///
     /// ISO/IEC 23008-2 - D.3.29
     pub fn cropped_height(&self) -> u64 {
-        self.pic_height_in_luma_samples.get()
-            - self.sub_height_c() as u64
-                * (self.conformance_window.conf_win_top_offset
-                    + self.conformance_window.conf_win_bottom_offset)
+        let crop = self
+            .conformance_window
+            .conf_win_top_offset
+            .saturating_add(self.conformance_window.conf_win_bottom_offset)
+            .saturating_mul(u64::from(self.sub_height_c()));
+        self.pic_height_in_luma_samples.get().saturating_sub(crop)
     }
 
     /// - If [`separate_colour_plane_flag`](Self::separate_colour_plane_flag) is equal to `false`, `ChromaArrayType` is set equal to [`chroma_format_idc`](Self::chroma_format_idc).
@@ -556,7 +599,7 @@ impl SpsRbsp {
     ///
     /// ISO/IEC 23008-2 - 7.4.3.2.1
     pub fn qp_bd_offset_y(&self) -> u8 {
-        6 * self.bit_depth_y()
+        6u8.saturating_mul(self.bit_depth_luma_minus8)
     }
 
     /// The bit depth of the samples of the chroma arrays.
@@ -575,7 +618,7 @@ impl SpsRbsp {
     ///
     /// ISO/IEC 23008-2 - 7.4.3.2.1
     pub fn qp_bd_offset_c(&self) -> u8 {
-        6 * self.bit_depth_c()
+        6u8.saturating_mul(self.bit_depth_chroma_minus8)
     }
 
     /// Used in the decoding process for picture order count.
@@ -591,28 +634,30 @@ impl SpsRbsp {
     ///
     /// ISO/IEC 23008-2 - 7.4.3.2.1
     pub fn min_cb_log2_size_y(&self) -> u64 {
-        self.log2_min_luma_coding_block_size_minus3 + 3
+        self.log2_min_luma_coding_block_size_minus3
+            .saturating_add(3)
     }
 
     /// `CtbLog2SizeY = MinCbLog2SizeY + log2_diff_max_min_luma_coding_block_size` (7-11)
     ///
     /// ISO/IEC 23008-2 - 7.4.3.2.1
     pub fn ctb_log2_size_y(&self) -> u64 {
-        self.min_cb_log2_size_y() + self.log2_diff_max_min_luma_coding_block_size
+        self.min_cb_log2_size_y()
+            .saturating_add(self.log2_diff_max_min_luma_coding_block_size)
     }
 
     /// `MinCbSizeY = 1 << MinCbLog2SizeY` (7-12)
     ///
     /// ISO/IEC 23008-2 - 7.4.3.2.1
     pub fn min_cb_size_y(&self) -> u64 {
-        1 << self.min_cb_log2_size_y()
+        1u64 << self.min_cb_log2_size_y().min(63)
     }
 
     /// `CtbSizeY = 1 << CtbLog2SizeY` (7-13)
     ///
     /// ISO/IEC 23008-2 - 7.4.3.2.1
     pub fn ctb_size_y(&self) -> NonZero<u64> {
-        NonZero::new(1 << self.ctb_log2_size_y()).unwrap()
+        NonZero::new(1u64 << self.ctb_log2_size_y().min(63)).unwrap_or(NonZero::<u64>::MIN)
     }
 
     /// `PicWidthInMinCbsY = pic_width_in_luma_samples / MinCbSizeY` (7-14)
@@ -626,7 +671,9 @@ impl SpsRbsp {
     ///
     /// ISO/IEC 23008-2 - 7.4.3.2.1
     pub fn pic_width_in_ctbs_y(&self) -> u64 {
-        (self.pic_width_in_luma_samples.get() / self.ctb_size_y()) + 1
+        self.pic_width_in_luma_samples
+            .get()
+            .div_ceil(self.ctb_size_y().get())
     }
 
     /// `PicHeightInMinCbsY = pic_height_in_luma_samples / MinCbSizeY` (7-16)
@@ -640,28 +687,34 @@ impl SpsRbsp {
     ///
     /// ISO/IEC 23008-2 - 7.4.3.2.1
     pub fn pic_height_in_ctbs_y(&self) -> u64 {
-        (self.pic_height_in_luma_samples.get() / self.ctb_size_y()) + 1
+        self.pic_height_in_luma_samples
+            .get()
+            .div_ceil(self.ctb_size_y().get())
     }
 
     /// `PicSizeInMinCbsY = PicWidthInMinCbsY * PicHeightInMinCbsY` (7-18)
     ///
     /// ISO/IEC 23008-2 - 7.4.3.2.1
     pub fn pic_size_in_min_cbs_y(&self) -> u64 {
-        self.pic_width_in_min_cbs_y() * self.pic_height_in_min_cbs_y()
+        self.pic_width_in_min_cbs_y()
+            .saturating_mul(self.pic_height_in_min_cbs_y())
     }
 
     /// `PicSizeInCtbsY = PicWidthInCtbsY * PicHeightInCtbsY` (7-19)
     ///
     /// ISO/IEC 23008-2 - 7.4.3.2.1
     pub fn pic_size_in_ctbs_y(&self) -> u64 {
-        self.pic_width_in_ctbs_y() * self.pic_height_in_ctbs_y()
+        self.pic_width_in_ctbs_y()
+            .saturating_mul(self.pic_height_in_ctbs_y())
     }
 
     /// `PicSizeInSamplesY = pic_width_in_luma_samples * pic_height_in_luma_samples` (7-20)
     ///
     /// ISO/IEC 23008-2 - 7.4.3.2.1
     pub fn pic_size_in_samples_y(&self) -> u64 {
-        self.pic_width_in_luma_samples.get() * self.pic_height_in_luma_samples.get()
+        self.pic_width_in_luma_samples
+            .get()
+            .saturating_mul(self.pic_height_in_luma_samples.get())
     }
 
     /// `PicWidthInSamplesC = pic_width_in_luma_samples / SubWidthC` (7-21)
@@ -757,20 +810,20 @@ mod tests {
         assert_eq!(sps.sub_width_c(), 2);
         assert_eq!(sps.sub_height_c(), 2);
         assert_eq!(sps.bit_depth_y(), 8);
-        assert_eq!(sps.qp_bd_offset_y(), 48);
+        assert_eq!(sps.qp_bd_offset_y(), 0);
         assert_eq!(sps.bit_depth_c(), 8);
-        assert_eq!(sps.qp_bd_offset_c(), 48);
+        assert_eq!(sps.qp_bd_offset_c(), 0);
         assert_eq!(sps.max_pic_order_cnt_lsb(), 256);
         assert_eq!(sps.min_cb_log2_size_y(), 4);
         assert_eq!(sps.ctb_log2_size_y(), 5);
         assert_eq!(sps.min_cb_size_y(), 16);
         assert_eq!(sps.ctb_size_y().get(), 32);
         assert_eq!(sps.pic_width_in_min_cbs_y(), 160);
-        assert_eq!(sps.pic_width_in_ctbs_y(), 81);
+        assert_eq!(sps.pic_width_in_ctbs_y(), 80);
         assert_eq!(sps.pic_height_in_min_cbs_y(), 90);
-        assert_eq!(sps.pic_height_in_ctbs_y(), 46);
+        assert_eq!(sps.pic_height_in_ctbs_y(), 45);
         assert_eq!(sps.pic_size_in_min_cbs_y(), 14400);
-        assert_eq!(sps.pic_size_in_ctbs_y(), 3726);
+        assert_eq!(sps.pic_size_in_ctbs_y(), 3600);
         assert_eq!(sps.pic_size_in_samples_y(), 3686400);
         assert_eq!(sps.pic_width_in_samples_c(), 1280);
         assert_eq!(sps.pic_height_in_samples_c(), 720);
@@ -796,20 +849,20 @@ mod tests {
         assert_eq!(sps.sub_width_c(), 2);
         assert_eq!(sps.sub_height_c(), 2);
         assert_eq!(sps.bit_depth_y(), 8);
-        assert_eq!(sps.qp_bd_offset_y(), 48);
+        assert_eq!(sps.qp_bd_offset_y(), 0);
         assert_eq!(sps.bit_depth_c(), 8);
-        assert_eq!(sps.qp_bd_offset_c(), 48);
+        assert_eq!(sps.qp_bd_offset_c(), 0);
         assert_eq!(sps.max_pic_order_cnt_lsb(), 256);
         assert_eq!(sps.min_cb_log2_size_y(), 4);
         assert_eq!(sps.ctb_log2_size_y(), 5);
         assert_eq!(sps.min_cb_size_y(), 16);
         assert_eq!(sps.ctb_size_y().get(), 32);
         assert_eq!(sps.pic_width_in_min_cbs_y(), 120);
-        assert_eq!(sps.pic_width_in_ctbs_y(), 61);
+        assert_eq!(sps.pic_width_in_ctbs_y(), 60);
         assert_eq!(sps.pic_height_in_min_cbs_y(), 68);
-        assert_eq!(sps.pic_height_in_ctbs_y(), 35);
+        assert_eq!(sps.pic_height_in_ctbs_y(), 34);
         assert_eq!(sps.pic_size_in_min_cbs_y(), 8160);
-        assert_eq!(sps.pic_size_in_ctbs_y(), 2135);
+        assert_eq!(sps.pic_size_in_ctbs_y(), 2040);
         assert_eq!(sps.pic_size_in_samples_y(), 2088960);
         assert_eq!(sps.pic_width_in_samples_c(), 960);
         assert_eq!(sps.pic_height_in_samples_c(), 544);
@@ -835,20 +888,20 @@ mod tests {
         assert_eq!(sps.sub_width_c(), 2);
         assert_eq!(sps.sub_height_c(), 2);
         assert_eq!(sps.bit_depth_y(), 10);
-        assert_eq!(sps.qp_bd_offset_y(), 60);
+        assert_eq!(sps.qp_bd_offset_y(), 12);
         assert_eq!(sps.bit_depth_c(), 10);
-        assert_eq!(sps.qp_bd_offset_c(), 60);
+        assert_eq!(sps.qp_bd_offset_c(), 12);
         assert_eq!(sps.max_pic_order_cnt_lsb(), 65536);
         assert_eq!(sps.min_cb_log2_size_y(), 3);
         assert_eq!(sps.ctb_log2_size_y(), 6);
         assert_eq!(sps.min_cb_size_y(), 8);
         assert_eq!(sps.ctb_size_y().get(), 64);
         assert_eq!(sps.pic_width_in_min_cbs_y(), 480);
-        assert_eq!(sps.pic_width_in_ctbs_y(), 61);
+        assert_eq!(sps.pic_width_in_ctbs_y(), 60);
         assert_eq!(sps.pic_height_in_min_cbs_y(), 270);
         assert_eq!(sps.pic_height_in_ctbs_y(), 34);
         assert_eq!(sps.pic_size_in_min_cbs_y(), 129600);
-        assert_eq!(sps.pic_size_in_ctbs_y(), 2074);
+        assert_eq!(sps.pic_size_in_ctbs_y(), 2040);
         assert_eq!(sps.pic_size_in_samples_y(), 8294400);
         assert_eq!(sps.pic_width_in_samples_c(), 1920);
         assert_eq!(sps.pic_height_in_samples_c(), 1080);
@@ -874,20 +927,20 @@ mod tests {
         assert_eq!(sps.sub_width_c(), 2);
         assert_eq!(sps.sub_height_c(), 2);
         assert_eq!(sps.bit_depth_y(), 8);
-        assert_eq!(sps.qp_bd_offset_y(), 48);
+        assert_eq!(sps.qp_bd_offset_y(), 0);
         assert_eq!(sps.bit_depth_c(), 8);
-        assert_eq!(sps.qp_bd_offset_c(), 48);
+        assert_eq!(sps.qp_bd_offset_c(), 0);
         assert_eq!(sps.max_pic_order_cnt_lsb(), 256);
         assert_eq!(sps.min_cb_log2_size_y(), 3);
         assert_eq!(sps.ctb_log2_size_y(), 6);
         assert_eq!(sps.min_cb_size_y(), 8);
         assert_eq!(sps.ctb_size_y().get(), 64);
         assert_eq!(sps.pic_width_in_min_cbs_y(), 960);
-        assert_eq!(sps.pic_width_in_ctbs_y(), 121);
+        assert_eq!(sps.pic_width_in_ctbs_y(), 120);
         assert_eq!(sps.pic_height_in_min_cbs_y(), 540);
         assert_eq!(sps.pic_height_in_ctbs_y(), 68);
         assert_eq!(sps.pic_size_in_min_cbs_y(), 518400);
-        assert_eq!(sps.pic_size_in_ctbs_y(), 8228);
+        assert_eq!(sps.pic_size_in_ctbs_y(), 8160);
         assert_eq!(sps.pic_size_in_samples_y(), 33177600);
         assert_eq!(sps.pic_width_in_samples_c(), 3840);
         assert_eq!(sps.pic_height_in_samples_c(), 2160);
@@ -913,20 +966,20 @@ mod tests {
         assert_eq!(sps.sub_width_c(), 2);
         assert_eq!(sps.sub_height_c(), 2);
         assert_eq!(sps.bit_depth_y(), 8);
-        assert_eq!(sps.qp_bd_offset_y(), 48);
+        assert_eq!(sps.qp_bd_offset_y(), 0);
         assert_eq!(sps.bit_depth_c(), 8);
-        assert_eq!(sps.qp_bd_offset_c(), 48);
+        assert_eq!(sps.qp_bd_offset_c(), 0);
         assert_eq!(sps.max_pic_order_cnt_lsb(), 256);
         assert_eq!(sps.min_cb_log2_size_y(), 3);
         assert_eq!(sps.ctb_log2_size_y(), 6);
         assert_eq!(sps.min_cb_size_y(), 8);
         assert_eq!(sps.ctb_size_y().get(), 64);
         assert_eq!(sps.pic_width_in_min_cbs_y(), 240);
-        assert_eq!(sps.pic_width_in_ctbs_y(), 31);
+        assert_eq!(sps.pic_width_in_ctbs_y(), 30);
         assert_eq!(sps.pic_height_in_min_cbs_y(), 135);
         assert_eq!(sps.pic_height_in_ctbs_y(), 17);
         assert_eq!(sps.pic_size_in_min_cbs_y(), 32400);
-        assert_eq!(sps.pic_size_in_ctbs_y(), 527);
+        assert_eq!(sps.pic_size_in_ctbs_y(), 510);
         assert_eq!(sps.pic_size_in_samples_y(), 2073600);
         assert_eq!(sps.pic_width_in_samples_c(), 960);
         assert_eq!(sps.pic_height_in_samples_c(), 540);
@@ -952,20 +1005,20 @@ mod tests {
         assert_eq!(sps.sub_width_c(), 2);
         assert_eq!(sps.sub_height_c(), 1);
         assert_eq!(sps.bit_depth_y(), 10);
-        assert_eq!(sps.qp_bd_offset_y(), 60);
+        assert_eq!(sps.qp_bd_offset_y(), 12);
         assert_eq!(sps.bit_depth_c(), 10);
-        assert_eq!(sps.qp_bd_offset_c(), 60);
+        assert_eq!(sps.qp_bd_offset_c(), 12);
         assert_eq!(sps.max_pic_order_cnt_lsb(), 256);
         assert_eq!(sps.min_cb_log2_size_y(), 3);
         assert_eq!(sps.ctb_log2_size_y(), 5);
         assert_eq!(sps.min_cb_size_y(), 8);
         assert_eq!(sps.ctb_size_y().get(), 32);
         assert_eq!(sps.pic_width_in_min_cbs_y(), 480);
-        assert_eq!(sps.pic_width_in_ctbs_y(), 121);
+        assert_eq!(sps.pic_width_in_ctbs_y(), 120);
         assert_eq!(sps.pic_height_in_min_cbs_y(), 270);
         assert_eq!(sps.pic_height_in_ctbs_y(), 68);
         assert_eq!(sps.pic_size_in_min_cbs_y(), 129600);
-        assert_eq!(sps.pic_size_in_ctbs_y(), 8228);
+        assert_eq!(sps.pic_size_in_ctbs_y(), 8160);
         assert_eq!(sps.pic_size_in_samples_y(), 8294400);
         assert_eq!(sps.pic_width_in_samples_c(), 1920);
         assert_eq!(sps.pic_height_in_samples_c(), 2160);
@@ -1009,5 +1062,75 @@ mod tests {
         let err = SpsNALUnit::parse(io::Cursor::new(data)).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
         assert_eq!(err.to_string(), "nal_unit_type is not SPS_NUT");
+    }
+
+    #[test]
+    fn rejects_invalid_block_sizes_and_excessive_conformance_crop() {
+        use bytes_util::BitWriter;
+        use expgolomb::BitWriterExpGolombExt;
+
+        fn write_minimal_prefix(
+            writer: &mut BitWriter<&mut Vec<u8>>,
+            conf_crop_right: Option<u64>,
+        ) {
+            writer.write_bits(0, 4).unwrap(); // sps_video_parameter_set_id
+            writer.write_bits(0, 3).unwrap(); // sps_max_sub_layers_minus1 = 0
+            writer.write_bit(true).unwrap(); // sps_temporal_id_nesting_flag
+            // ProfileTierLevel (12 bytes = 96 bits: general_profile_idc=1, rest 0, general_level_idc=0)
+            writer.write_bits(1, 8).unwrap(); // profile_space=0, tier=0, profile_idc=1
+            writer.write_bits(0, 32).unwrap(); // profile_compatibility_flag
+            writer.write_bits(0, 48).unwrap(); // constraint flags
+            writer.write_bits(0, 8).unwrap(); // general_level_idc
+            writer.write_exp_golomb(0).unwrap(); // sps_seq_parameter_set_id
+            writer.write_exp_golomb(1).unwrap(); // chroma_format_idc = 1 (SubWidthC=2, SubHeightC=2)
+            writer.write_exp_golomb(64).unwrap(); // pic_width_in_luma_samples
+            writer.write_exp_golomb(64).unwrap(); // pic_height_in_luma_samples
+            if let Some(right) = conf_crop_right {
+                writer.write_bit(true).unwrap();
+                writer.write_exp_golomb(0).unwrap();
+                writer.write_exp_golomb(right).unwrap();
+                writer.write_exp_golomb(0).unwrap();
+                writer.write_exp_golomb(0).unwrap();
+            } else {
+                writer.write_bit(false).unwrap();
+            }
+            writer.write_exp_golomb(0).unwrap(); // bit_depth_luma_minus8
+            writer.write_exp_golomb(0).unwrap(); // bit_depth_chroma_minus8
+            writer.write_exp_golomb(0).unwrap(); // log2_max_pic_order_cnt_lsb_minus4
+            writer.write_bit(false).unwrap(); // sps_sub_layer_ordering_info_present_flag
+            writer.write_exp_golomb(0).unwrap(); // sps_max_dec_pic_buffering_minus1
+            writer.write_exp_golomb(0).unwrap(); // sps_max_num_reorder_pics
+            writer.write_exp_golomb(0).unwrap(); // sps_max_latency_increase_plus1
+        }
+
+        // Case 1: conformance crop width >= pic_width_in_luma_samples (SubWidthC=2 * 32 == 64).
+        let mut rbsp = Vec::new();
+        let mut writer = BitWriter::new(&mut rbsp);
+        write_minimal_prefix(&mut writer, Some(32));
+        writer.finish().unwrap();
+        let err = crate::SpsRbsp::parse(io::Cursor::new(&rbsp), 0).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+
+        // Case 2: log2_diff_max_min_luma_coding_block_size = 61 (would shift 1 << 64).
+        let mut rbsp = Vec::new();
+        let mut writer = BitWriter::new(&mut rbsp);
+        write_minimal_prefix(&mut writer, None);
+        writer.write_exp_golomb(0).unwrap(); // log2_min_luma_coding_block_size_minus3 (MinCbLog2=3)
+        writer.write_exp_golomb(61).unwrap(); // CtbLog2 = 64 -> invalid (> 6)
+        writer.finish().unwrap();
+        let err = crate::SpsRbsp::parse(io::Cursor::new(&rbsp), 0).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+
+        // Case 3: MinTbLog2SizeY (5) must be smaller than MinCbLog2SizeY (3).
+        let mut rbsp = Vec::new();
+        let mut writer = BitWriter::new(&mut rbsp);
+        write_minimal_prefix(&mut writer, None);
+        writer.write_exp_golomb(0).unwrap(); // MinCbLog2 = 3
+        writer.write_exp_golomb(1).unwrap(); // CtbLog2 = 4
+        writer.write_exp_golomb(3).unwrap(); // MinTbLog2 = 5
+        writer.write_exp_golomb(0).unwrap();
+        writer.finish().unwrap();
+        let err = crate::SpsRbsp::parse(io::Cursor::new(&rbsp), 0).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
     }
 }

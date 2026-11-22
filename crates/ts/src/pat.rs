@@ -28,56 +28,85 @@ pub struct PatProgram {
     pub pmt_pid: u16,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ParsedPatHeader {
+    pub table_id: u8,
+    pub transport_stream_id: u16,
+    pub version_number: u8,
+    pub current_next_indicator: bool,
+    pub section_number: u8,
+    pub last_section_number: u8,
+    pub programs_offset: usize,
+    pub programs_end: usize,
+}
+
+pub(crate) fn parse_pat_header(data: &[u8]) -> Result<ParsedPatHeader> {
+    if data.len() < 8 {
+        return Err(TsError::InsufficientData {
+            expected: 8,
+            actual: data.len(),
+        });
+    }
+
+    let table_id = data[0];
+    if table_id != 0x00 {
+        return Err(TsError::InvalidTableId {
+            expected: 0x00,
+            actual: table_id,
+        });
+    }
+
+    let section_syntax_indicator = (data[1] & 0x80) != 0;
+    if !section_syntax_indicator {
+        return Err(TsError::ParseError(
+            "PAT must have section syntax indicator set".to_string(),
+        ));
+    }
+
+    let section_length = ((data[1] as u16 & 0x0F) << 8) | data[2] as u16;
+    // Minimum PAT section_length is 9: 5-byte syntax header after section_length + 4-byte CRC32.
+    if section_length < 9 {
+        return Err(TsError::InvalidSectionLength(section_length));
+    }
+
+    let section_end = 3 + section_length as usize;
+    if data.len() < section_end {
+        return Err(TsError::InsufficientData {
+            expected: section_end,
+            actual: data.len(),
+        });
+    }
+
+    let transport_stream_id = ((data[3] as u16) << 8) | data[4] as u16;
+    let version_number = (data[5] >> 1) & 0x1F;
+    let current_next_indicator = (data[5] & 0x01) != 0;
+    let section_number = data[6];
+    let last_section_number = data[7];
+    let programs_offset = 8;
+    let programs_end = section_end - 4;
+
+    Ok(ParsedPatHeader {
+        table_id,
+        transport_stream_id,
+        version_number,
+        current_next_indicator,
+        section_number,
+        last_section_number,
+        programs_offset,
+        programs_end,
+    })
+}
+
 impl Pat {
     /// Parse PAT from PSI section data
     pub fn parse(data: &[u8]) -> Result<Self> {
-        if data.len() < 8 {
-            return Err(TsError::InsufficientData {
-                expected: 8,
-                actual: data.len(),
-            });
-        }
-
-        let table_id = data[0];
-        if table_id != 0x00 {
-            return Err(TsError::InvalidTableId {
-                expected: 0x00,
-                actual: table_id,
-            });
-        }
-
-        // Parse section header
-        let section_syntax_indicator = (data[1] & 0x80) != 0;
-        if !section_syntax_indicator {
-            return Err(TsError::ParseError(
-                "PAT must have section syntax indicator set".to_string(),
-            ));
-        }
-
-        let section_length = ((data[1] as u16 & 0x0F) << 8) | data[2] as u16;
-        if section_length < 5 {
-            return Err(TsError::InvalidSectionLength(section_length));
-        }
-
-        if data.len() < (3 + section_length as usize) {
-            return Err(TsError::InsufficientData {
-                expected: 3 + section_length as usize,
-                actual: data.len(),
-            });
-        }
-
-        let transport_stream_id = ((data[3] as u16) << 8) | data[4] as u16;
-        let version_number = (data[5] >> 1) & 0x1F;
-        let current_next_indicator = (data[5] & 0x01) != 0;
-        let section_number = data[6];
-        let last_section_number = data[7];
+        let header = parse_pat_header(data)?;
 
         // Parse programs (each program entry is 4 bytes)
-        let mut programs = Vec::new();
-        let mut offset = 8;
-        let programs_end = 3 + section_length as usize - 4; // Exclude CRC32
+        let mut programs = Vec::with_capacity((header.programs_end - header.programs_offset) / 4);
+        let mut offset = header.programs_offset;
 
-        while offset + 4 <= programs_end {
+        while offset + 4 <= header.programs_end {
             let program_number = ((data[offset] as u16) << 8) | data[offset + 1] as u16;
             let pid = ((data[offset + 2] as u16 & 0x1F) << 8) | data[offset + 3] as u16;
 
@@ -90,12 +119,12 @@ impl Pat {
         }
 
         Ok(Pat {
-            table_id,
-            transport_stream_id,
-            version_number,
-            current_next_indicator,
-            section_number,
-            last_section_number,
+            table_id: header.table_id,
+            transport_stream_id: header.transport_stream_id,
+            version_number: header.version_number,
+            current_next_indicator: header.current_next_indicator,
+            section_number: header.section_number,
+            last_section_number: header.last_section_number,
             programs,
         })
     }
@@ -200,5 +229,21 @@ mod tests {
         assert_eq!(pat.programs.len(), 1);
         assert_eq!(pat.programs[0].program_number, 1);
         assert_eq!(pat.programs[0].pmt_pid, 0x1000);
+    }
+
+    #[test]
+    fn test_pat_rejects_section_length_below_9() {
+        use bytes::Bytes;
+
+        // section_length = 5 is smaller than the 5-byte header + 4-byte CRC32 minimum (9).
+        let data = [0x00, 0x80, 0x05, 0x00, 0x01, 0x01, 0x00, 0x00];
+        assert!(matches!(
+            Pat::parse(&data),
+            Err(TsError::InvalidSectionLength(5))
+        ));
+        assert!(matches!(
+            crate::PatRef::parse(Bytes::copy_from_slice(&data)),
+            Err(TsError::InvalidSectionLength(5))
+        ));
     }
 }

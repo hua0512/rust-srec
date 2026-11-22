@@ -72,6 +72,6 @@ impl ProtocolWriter for FlvWriter {
         &mut self,
         input: pipeline_common::PipelineReceiver<Self::Item>,
     ) -> Result<WriterStats, WriterError> {
-        self.writer_task.run_from_channel(input, |_, _| true)
+        self.writer_task.run_from_channel(input)
     }
 }

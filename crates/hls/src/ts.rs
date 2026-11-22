@@ -27,8 +27,10 @@ pub struct TsAnalysis {
     pub stream_info: TsStreamInfo,
     pub has_psi: bool,
     pub has_random_access: bool,
-    /// Every declared media track starts at a PES boundary after its program
-    /// tables, and the first video PES carries a random-access indicator.
+    /// Every declared video/audio track starts at a PES boundary after its
+    /// program tables (with a random-access indicator on the first video PES),
+    /// and any ancillary stream emitting packets in this segment also starts
+    /// at a unit boundary after the program tables.
     pub independent_start: bool,
     pub resolution: Option<Resolution>,
 }
@@ -152,8 +154,7 @@ impl TsAnalysisBuilder {
         let independent_start = self.has_pat
             && !self.programs.is_empty()
             && self.programs.iter().all(|program| {
-                program.other_streams.is_empty()
-                    && (!program.video_streams.is_empty() || !program.audio_streams.is_empty())
+                (!program.video_streams.is_empty() || !program.audio_streams.is_empty())
                     && program
                         .video_streams
                         .iter()
@@ -162,6 +163,11 @@ impl TsAnalysisBuilder {
                         self.first_payloads
                             .get(&stream.pid)
                             .is_some_and(|(start, _)| *start)
+                    })
+                    && program.other_streams.iter().all(|stream| {
+                        self.first_payloads
+                            .get(&stream.pid)
+                            .is_none_or(|(start, _)| *start)
                     })
             });
         TsAnalysis {
@@ -437,9 +443,24 @@ impl TsSegmentData {
     }
 
     fn fill_program_streams(program_info: &mut ProgramInfo, pmt: PmtRef) {
+        let mut program_has_cuei = false;
+        let mut program_has_hdmv = false;
+        for desc in pmt.program_descriptors() {
+            if desc.tag == TAG_REGISTRATION
+                && let Some(id) = parse_registration_descriptor(&desc.data)
+            {
+                if &id == b"CUEI" {
+                    program_has_cuei = true;
+                } else if &id == b"HDMV" {
+                    program_has_hdmv = true;
+                }
+            }
+        }
+
         for stream in pmt.streams().flatten() {
             let mut language = None;
-            let mut is_scte35 = false;
+            let mut es_has_cuei = false;
+            let mut es_has_hdmv = false;
 
             for desc in stream.descriptors() {
                 if desc.tag == TAG_ISO_639_LANGUAGE {
@@ -451,11 +472,21 @@ impl TsSegmentData {
 
                 if desc.tag == TAG_REGISTRATION
                     && let Some(id) = parse_registration_descriptor(&desc.data)
-                    && &id == b"CUEI"
                 {
-                    is_scte35 = true;
+                    if &id == b"CUEI" {
+                        es_has_cuei = true;
+                    } else if &id == b"HDMV" {
+                        es_has_hdmv = true;
+                    }
                 }
             }
+
+            // Stream type 0x86 is user-private in ISO/IEC 13818-1: ANSI/SCTE 35
+            // uses it for splice_info_section in broadcast/HLS TS, whereas
+            // Blu-ray M2TS uses it for DTS-HD MA alongside an "HDMV" descriptor.
+            let is_scte35 = es_has_cuei
+                || (stream.stream_type == StreamType::from(0x86)
+                    && (program_has_cuei || (!program_has_hdmv && !es_has_hdmv)));
 
             if is_scte35 {
                 program_info.scte35_pids.push(stream.elementary_pid);
@@ -468,7 +499,9 @@ impl TsSegmentData {
                 first_pts: None,
             };
 
-            if stream.stream_type.is_video() {
+            if is_scte35 {
+                program_info.other_streams.push(stream_entry);
+            } else if stream.stream_type.is_video() {
                 program_info.video_streams.push(stream_entry);
             } else if stream.stream_type.is_audio() {
                 program_info.audio_streams.push(stream_entry);
@@ -646,6 +679,120 @@ mod tests {
                 })
                 .unwrap();
             assert_eq!(analysis.independent_start, expected);
+        }
+    }
+
+    #[test]
+    fn independent_start_allows_silent_id3_scte35_and_private_tracks_and_checks_active_ones() {
+        fn pes_packet(pid: u16, pusi: bool, random_access: bool, counter: u8) -> Vec<u8> {
+            let mut packet = vec![0xff; 188];
+            let pusi_bit = if pusi { 0x40 } else { 0x00 };
+            packet[..6].copy_from_slice(&[
+                0x47,
+                pusi_bit | ((pid >> 8) as u8 & 0x1f),
+                pid as u8,
+                0x30 | (counter & 0x0f),
+                1,
+                if random_access { 0x40 } else { 0x00 },
+            ]);
+            packet[6..15].copy_from_slice(&[0, 0, 1, 0xbd, 0, 0, 0x80, 0, 0]);
+            packet
+        }
+
+        let pat = psi(0, &[0, 0xb0, 13, 0, 1, 0xc1, 0, 0, 0, 1, 0xf0, 0], 0);
+        // PMT declaring H.264 (0x1b), ADTS AAC (0x0f), ID3 (0x15),
+        // SCTE-35 (0x86 + CUEI descriptor), and private PES/captions (0x06).
+        let pmt = psi(
+            0x1000,
+            &[
+                2, 0xb0, 44, 0, 1, 0xc1, 0, 0, 0xe1, 0, 0xf0, 0, // header
+                0x1b, 0xe1, 0x00, 0xf0, 0, // H.264 video on 0x0100
+                0x0f, 0xe1, 0x01, 0xf0, 0, // ADTS AAC audio on 0x0101
+                0x15, 0xe1, 0x02, 0xf0, 0, // ID3 timed metadata on 0x0102
+                0x86, 0xe1, 0x03, 0xf0, 6, 0x05, 4, b'C', b'U', b'E',
+                b'I', // SCTE-35 on 0x0103
+                0x06, 0xe1, 0x04, 0xf0, 0, // private PES on 0x0104
+            ],
+            0,
+        );
+
+        let silent_ancillary = TsSegmentData::new(
+            make_media_segment(),
+            [
+                pat.clone(),
+                pmt.clone(),
+                pes_packet(0x0100, true, true, 0),
+                pes_packet(0x0101, true, false, 0),
+            ]
+            .concat()
+            .into(),
+        )
+        .with_crc_validation(true)
+        .with_strict_continuity(true);
+        let analysis = silent_ancillary
+            .analysis(StreamProfileOptions {
+                include_resolution: false,
+            })
+            .unwrap();
+        assert!(analysis.independent_start);
+        let program = &analysis.stream_info.programs[0];
+        assert_eq!(program.video_streams.len(), 1);
+        assert_eq!(program.audio_streams.len(), 1);
+        assert_eq!(program.other_streams.len(), 3);
+        assert_eq!(program.scte35_pids, vec![0x0103]);
+
+        // Active ID3 packet starting cleanly at a PES boundary after PAT/PMT stays independent.
+        let active_id3_clean = TsSegmentData::new(
+            make_media_segment(),
+            [
+                pat.clone(),
+                pmt.clone(),
+                pes_packet(0x0100, true, true, 0),
+                pes_packet(0x0101, true, false, 0),
+                pes_packet(0x0102, true, false, 0),
+            ]
+            .concat()
+            .into(),
+        )
+        .with_crc_validation(true)
+        .with_strict_continuity(true);
+        assert!(
+            active_id3_clean
+                .analysis(StreamProfileOptions {
+                    include_resolution: false,
+                })
+                .unwrap()
+                .independent_start
+        );
+
+        // Mid-packet continuation or pre-PMT ancillary payload disqualifies independent_start.
+        for packets in [
+            vec![
+                pat.clone(),
+                pmt.clone(),
+                pes_packet(0x0100, true, true, 0),
+                pes_packet(0x0101, true, false, 0),
+                pes_packet(0x0102, false, false, 0),
+            ],
+            vec![
+                pes_packet(0x0102, true, false, 0),
+                pat,
+                pmt,
+                pes_packet(0x0100, true, true, 0),
+                pes_packet(0x0101, true, false, 0),
+            ],
+        ] {
+            let segment = TsSegmentData::new(make_media_segment(), packets.concat().into())
+                .with_crc_validation(true)
+                .with_strict_continuity(true);
+            assert!(
+                !segment
+                    .analysis(StreamProfileOptions {
+                        include_resolution: false,
+                    })
+                    .unwrap()
+                    .independent_start
+            );
         }
     }
 

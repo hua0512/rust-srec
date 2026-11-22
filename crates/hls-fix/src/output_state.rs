@@ -27,6 +27,11 @@ impl OutputState {
         self.init.as_ref().filter(|_| !self.init_written)
     }
 
+    pub(crate) fn set_pending_init(&mut self, init: M4sInitSegmentData) {
+        self.init = Some(init);
+        self.init_written = false;
+    }
+
     pub(crate) fn is_repeated_init(&self, init: &M4sInitSegmentData) -> bool {
         self.init_written
             && self

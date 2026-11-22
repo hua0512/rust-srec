@@ -343,14 +343,16 @@ fn parse_trun_and_validate_samples(
     let has_sample_cto = flags & 0x000800 != 0;
 
     let mut sample_offset = if let Some(data_offset) = data_offset {
-        let offset = tfhd_info.base_data_offset as i64 + data_offset as i64;
-        if offset < 0 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "computed AV1 sample offset is negative",
-            ));
-        }
-        offset as usize
+        tfhd_info
+            .base_data_offset
+            .checked_add_signed(i64::from(data_offset))
+            .and_then(|offset| usize::try_from(offset).ok())
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "computed AV1 sample offset overflows or is negative",
+                )
+            })?
     } else if let Some(offset) = state.next_sample_offset {
         offset
     } else {
@@ -391,7 +393,15 @@ fn parse_trun_and_validate_samples(
             })?
         };
 
-        let sample_end = sample_offset + sample_size as usize;
+        let sample_end = usize::try_from(sample_size)
+            .ok()
+            .and_then(|size| sample_offset.checked_add(size))
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "AV1 sample end offset overflows usize",
+                )
+            })?;
         if sample_offset < mdat_start || sample_end > mdat_end {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,

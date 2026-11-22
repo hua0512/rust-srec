@@ -3,7 +3,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
-use tracing::debug;
+use tracing::{debug, warn};
 
 use crate::split_reason::SplitReason;
 use crate::{PipelineError, PipelineReceiver};
@@ -246,6 +246,16 @@ pub trait FormatStrategy<D>: Send + Sync + 'static {
     /// This is typically a `BufWriter<File>` or similar.
     fn create_writer(&self, path: &Path) -> Result<Self::Writer, Self::StrategyError>;
 
+    /// Determines whether an incoming item should open a new output file when
+    /// no writer is currently active.
+    ///
+    /// Control markers or pending headers that write zero bytes on their own can
+    /// update internal strategy state here and return `false` so empty files are
+    /// never created on disk before media arrives.
+    fn should_open_file(&mut self, _item: &D) -> bool {
+        true
+    }
+
     /// Writes a single data item to the writer.
     /// Should return the number of bytes written.
     fn write_item(
@@ -400,7 +410,11 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
 
     pub fn new(config: WriterConfig, strategy: S) -> Self {
         std::fs::create_dir_all(&config.base_path).unwrap_or_else(|e| {
-            eprintln!("Failed to create base path {:?}: {}", config.base_path, e);
+            warn!(
+                path = ?config.base_path,
+                error = %e,
+                "Failed to create writer base path"
+            );
         });
         Self {
             config,
@@ -594,6 +608,10 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
     }
 
     fn process_item_inner(&mut self, item: D) -> Result<(), TaskError<S::StrategyError>> {
+        if self.writer.is_none() && !self.strategy.should_open_file(&item) {
+            return Ok(());
+        }
+
         self.ensure_writer_open(&item)?;
 
         if let Some(writer) = self.writer.as_mut() {
@@ -709,22 +727,13 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
     }
 
     /// De-duplicated blocking_recv loop for reading from a channel and writing items.
-    ///
-    /// The `pre_filter` closure can inspect each item and the current writer state
-    /// to decide whether to skip it (return `false`) or process it (return `true`).
     pub fn run_from_channel(
         &mut self,
         mut rx: PipelineReceiver<D>,
-        mut pre_filter: impl FnMut(&D, &WriterState) -> bool,
     ) -> Result<WriterStats, WriterError> {
         while let Some(result) = rx.blocking_recv() {
             match result {
-                Ok(item) => {
-                    if !pre_filter(&item, &self.state) {
-                        continue;
-                    }
-                    self.process_item(item)?;
-                }
+                Ok(item) => self.process_item(item)?,
                 Err(e) => {
                     if let Err(close_error) = self.close() {
                         return Err(WriterError::InputAndClose {
@@ -988,7 +997,7 @@ mod tests {
                 .unwrap();
                 drop(tx);
                 let error = writer
-                    .run_from_channel(PipelineReceiver::from_items(rx), |_, _| true)
+                    .run_from_channel(PipelineReceiver::from_items(rx))
                     .unwrap_err();
                 assert!(
                     matches!(&error, WriterError::InputAndClose { input: PipelineError::Io(input), .. } if input.kind() == io::ErrorKind::ConnectionReset)

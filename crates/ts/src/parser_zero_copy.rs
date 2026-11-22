@@ -173,56 +173,17 @@ pub struct PatRef {
 impl PatRef {
     /// Parse PAT from PSI section data
     pub fn parse(data: Bytes) -> Result<Self> {
-        if data.len() < 8 {
-            return Err(TsError::InsufficientData {
-                expected: 8,
-                actual: data.len(),
-            });
-        }
-        let mut reader = &data[..];
-        let table_id = reader.get_u8();
-        if table_id != 0x00 {
-            return Err(TsError::InvalidTableId {
-                expected: 0x00,
-                actual: table_id,
-            });
-        }
-        let byte1 = reader.get_u8();
-        let section_syntax_indicator = (byte1 & 0x80) != 0;
-        if !section_syntax_indicator {
-            return Err(TsError::ParseError(
-                "PAT must have section syntax indicator set".to_string(),
-            ));
-        }
-        let section_length = ((byte1 as u16 & 0x0F) << 8) | reader.get_u8() as u16;
-        if section_length < 9 {
-            return Err(TsError::InvalidSectionLength(section_length));
-        }
-        if data.len() < (3 + section_length as usize) {
-            return Err(TsError::InsufficientData {
-                expected: 3 + section_length as usize,
-                actual: data.len(),
-            });
-        }
-        let transport_stream_id = reader.get_u16();
-        let byte5 = reader.get_u8();
-        let version_number = (byte5 >> 1) & 0x1F;
-        let current_next_indicator = (byte5 & 0x01) != 0;
-        let section_number = reader.get_u8();
-        let last_section_number = reader.get_u8();
-        let programs_offset = 8;
-        let programs_end = 3 + section_length as usize - 4; // Exclude CRC32
-        let programs_length = programs_end - programs_offset;
+        let header = crate::pat::parse_pat_header(&data)?;
         Ok(PatRef {
             data,
-            table_id,
-            transport_stream_id,
-            version_number,
-            current_next_indicator,
-            section_number,
-            last_section_number,
-            programs_offset,
-            programs_length,
+            table_id: header.table_id,
+            transport_stream_id: header.transport_stream_id,
+            version_number: header.version_number,
+            current_next_indicator: header.current_next_indicator,
+            section_number: header.section_number,
+            last_section_number: header.last_section_number,
+            programs_offset: header.programs_offset,
+            programs_length: header.programs_end - header.programs_offset,
         })
     }
 
@@ -320,74 +281,20 @@ pub struct PmtRef {
 impl PmtRef {
     /// Parse PMT from PSI section data
     pub fn parse(data: Bytes) -> Result<Self> {
-        if data.len() < 12 {
-            return Err(TsError::InsufficientData {
-                expected: 12,
-                actual: data.len(),
-            });
-        }
-        let mut reader = &data[..];
-        let table_id = reader.get_u8();
-        if table_id != 0x02 {
-            return Err(TsError::InvalidTableId {
-                expected: 0x02,
-                actual: table_id,
-            });
-        }
-        let byte1 = reader.get_u8();
-        let section_syntax_indicator = (byte1 & 0x80) != 0;
-        if !section_syntax_indicator {
-            return Err(TsError::ParseError(
-                "PMT must have section syntax indicator set".to_string(),
-            ));
-        }
-        let section_length = ((byte1 as u16 & 0x0F) << 8) | reader.get_u8() as u16;
-        if section_length < 13 {
-            return Err(TsError::InvalidSectionLength(section_length));
-        }
-        if data.len() < (3 + section_length as usize) {
-            return Err(TsError::InsufficientData {
-                expected: 3 + section_length as usize,
-                actual: data.len(),
-            });
-        }
-        let program_number = reader.get_u16();
-        let byte5 = reader.get_u8();
-        let version_number = (byte5 >> 1) & 0x1F;
-        let current_next_indicator = (byte5 & 0x01) != 0;
-        let section_number = reader.get_u8();
-        let last_section_number = reader.get_u8();
-        let pcr_pid_high = reader.get_u8();
-        let pcr_pid_low = reader.get_u8();
-        let pcr_pid = ((pcr_pid_high as u16 & 0x1F) << 8) | pcr_pid_low as u16;
-
-        let prog_info_len_high = reader.get_u8();
-        let prog_info_len_low = reader.get_u8();
-        let program_info_length =
-            (((prog_info_len_high as u16) & 0x0F) << 8) | prog_info_len_low as u16;
-        let program_info_length = program_info_length as usize;
-
-        if (section_length as usize) < 9 + program_info_length + 4 {
-            return Err(TsError::InvalidSectionLength(section_length));
-        }
-
-        let program_info_offset = 12;
-        let streams_offset = 12 + program_info_length;
-        let streams_end = 3 + section_length as usize - 4; // Exclude CRC32
-        let streams_length = streams_end - streams_offset;
+        let header = crate::pmt::parse_pmt_header(&data)?;
         Ok(PmtRef {
             data,
-            table_id,
-            program_number,
-            version_number,
-            current_next_indicator,
-            section_number,
-            last_section_number,
-            pcr_pid,
-            program_info_offset,
-            program_info_length,
-            streams_offset,
-            streams_length,
+            table_id: header.table_id,
+            program_number: header.program_number,
+            version_number: header.version_number,
+            current_next_indicator: header.current_next_indicator,
+            section_number: header.section_number,
+            last_section_number: header.last_section_number,
+            pcr_pid: header.pcr_pid,
+            program_info_offset: header.program_info_offset,
+            program_info_length: header.program_info_length,
+            streams_offset: header.streams_offset,
+            streams_length: header.streams_end - header.streams_offset,
         })
     }
 

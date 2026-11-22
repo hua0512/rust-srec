@@ -231,12 +231,19 @@ impl AudioDataBody {
     ) -> io::Result<Self> {
         match sound_format {
             SoundFormat::Aac => {
+                if body_size == Some(0) {
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "missing AAC packet type byte",
+                    ));
+                }
                 // For some reason the spec adds a specific byte before the AAC data.
                 // This byte is the AAC packet type.
                 let aac_packet_type = AacPacketType::try_from(reader.read_u8()?)?;
+                let payload_size = body_size.map(|size| size - 1);
                 Ok(Self::Aac(AacPacket::new(
                     aac_packet_type,
-                    AudioData::read_remaining(reader, body_size)?,
+                    AudioData::read_remaining(reader, payload_size)?,
                 )))
             }
             _ => Ok(Self::Unknown {
@@ -506,12 +513,19 @@ impl AudioData {
     /// * Reading from the cursor fails
     /// * The data format is invalid or unsupported
     pub fn demux(reader: &mut io::Cursor<Bytes>, body_size: Option<usize>) -> io::Result<Self> {
+        if body_size == Some(0) {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "No data available for audio header byte",
+            ));
+        }
+
         let start_pos = reader.position() as usize;
 
         // Read the first byte to get the sound format
         let sound_format_byte = reader.read_u8()?;
 
-        let available_data = reader.get_ref().len() - start_pos;
+        let available_data = reader.get_ref().len().saturating_sub(start_pos);
 
         // Ensure we have at least the first byte
         if available_data < 1 {
@@ -576,9 +590,24 @@ impl AudioData {
             _ => AudioPacket::Legacy(AudioLegacyPacket::from_byte(sound_format_byte)?),
         };
 
+        let header_consumed = (reader.position() as usize).saturating_sub(start_pos);
+        let remaining_body_size = match body_size {
+            Some(total_size) => match total_size.checked_sub(header_consumed) {
+                Some(remaining) => Some(remaining),
+                None => {
+                    reader.set_position(start_pos as u64);
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "Audio body_size is smaller than the parsed audio header",
+                    ));
+                }
+            },
+            None => None,
+        };
+
         // read the body
         let original_position = reader.position();
-        let body = match AudioDataBody::demux(&sound_format, reader, body_size) {
+        let body = match AudioDataBody::demux(&sound_format, reader, remaining_body_size) {
             Ok(body) => body,
             Err(e) => {
                 reader.set_position(original_position); // Reset reader position on error
@@ -599,16 +628,11 @@ impl AudioData {
     }
 
     fn read_remaining(reader: &mut io::Cursor<Bytes>, size: Option<usize>) -> io::Result<Bytes> {
-        Ok(match size {
-            None | Some(0) => {
-                // if size is None or 0, read until the end of the stream
-                reader.extract_remaining()
-            }
-            Some(size) => {
-                // read a fixed size
-                reader.extract_bytes(size)?
-            }
-        })
+        match size {
+            None => Ok(reader.extract_remaining()),
+            Some(0) => Ok(Bytes::new()),
+            Some(size) => reader.extract_bytes(size),
+        }
     }
 }
 
@@ -1043,5 +1067,36 @@ mod tests {
         let mut reader = Cursor::new(Bytes::from_static(&[0x95, 0x05, b'm', b'p', b'4', b'a']));
 
         assert!(AudioData::demux(&mut reader, None).is_err());
+    }
+
+    #[test]
+    fn test_demux_with_body_size_subtracts_consumed_headers() {
+        // Legacy MP3: 1 header byte + 2 payload bytes, followed by 2 trailing bytes.
+        let mut mp3_cursor = Cursor::new(Bytes::from_static(&[0x26, 0xAB, 0xCD, 0xEE, 0xFF]));
+        let mp3 = AudioData::demux(&mut mp3_cursor, Some(3)).unwrap();
+        assert_eq!(
+            mp3.body,
+            AudioDataBody::Unknown {
+                data: Bytes::from_static(&[0xAB, 0xCD]),
+            }
+        );
+        assert_eq!(mp3_cursor.position(), 3);
+
+        // Legacy AAC: 1 audio header byte + 1 AAC packet type byte (Raw=1) + 0 payload bytes, followed by trailing bytes.
+        let mut aac_cursor = Cursor::new(Bytes::from_static(&[0xAF, 0x01, 0xEE, 0xFF]));
+        let aac = AudioData::demux(&mut aac_cursor, Some(2)).unwrap();
+        assert_eq!(
+            aac.body,
+            AudioDataBody::Aac(AacPacket::new(AacPacketType::Raw, Bytes::new()))
+        );
+        assert_eq!(aac_cursor.position(), 2);
+
+        // Enhanced audio: 5 header bytes (ExHeader + FourCC) + 0 payload bytes, followed by trailing bytes.
+        let mut ex_cursor = Cursor::new(Bytes::from_static(&[
+            0x92, b'O', b'p', b'u', b's', 0xEE, 0xFF,
+        ]));
+        let ex = AudioData::demux(&mut ex_cursor, Some(5)).unwrap();
+        assert_eq!(ex.body, AudioDataBody::Unknown { data: Bytes::new() });
+        assert_eq!(ex_cursor.position(), 5);
     }
 }

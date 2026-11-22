@@ -95,19 +95,28 @@ pub fn validate_isobmff_sample_bytes_with_options(
     use crate::ObuHeader;
 
     let mut cursor = io::Cursor::new(data);
-    while (cursor.position() as usize) < data.len() {
+    while cursor.position() < data.len() as u64 {
         let header = ObuHeader::parse(&mut cursor)?;
         validate_isobmff_obu_type(header.obu_type, options)?;
 
-        let payload_size = header
-            .size
-            .unwrap_or_else(|| data.len() as u64 - cursor.position())
-            as usize;
-        let next = cursor.position() as usize + payload_size;
+        let pos = usize::try_from(cursor.position()).unwrap_or(data.len());
+        let remaining = data.len().saturating_sub(pos);
+        let payload_size_u64 = header.size.unwrap_or(remaining as u64);
+        let payload_size =
+            usize::try_from(payload_size_u64).map_err(|_| Av1Error::UnexpectedEof {
+                expected: usize::MAX,
+                actual: remaining,
+            })?;
+        let next = pos
+            .checked_add(payload_size)
+            .ok_or(Av1Error::UnexpectedEof {
+                expected: payload_size,
+                actual: remaining,
+            })?;
         if next > data.len() {
             return Err(Av1Error::UnexpectedEof {
                 expected: payload_size,
-                actual: data.len().saturating_sub(cursor.position() as usize),
+                actual: remaining,
             });
         }
 

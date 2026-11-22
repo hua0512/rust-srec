@@ -355,8 +355,28 @@ pub struct Sps {
 }
 
 impl Sps {
-    fn apply_crop(base: u64, first_offset: u64, second_offset: u64) -> u64 {
-        base.saturating_sub(first_offset.saturating_add(second_offset).saturating_mul(2))
+    fn apply_crop(base: u64, first_offset: u64, second_offset: u64, unit: u64) -> u64 {
+        base.saturating_sub(
+            first_offset
+                .saturating_add(second_offset)
+                .saturating_mul(unit),
+        )
+    }
+
+    /// `(CropUnitX, CropUnitY)` per ISO/IEC 14496-10 §7.4.2.1.1 (Equations 7-18..7-22).
+    fn crop_units(&self) -> (u64, u64) {
+        let field_factor = 2 - u64::from(self.mb_adaptive_frame_field_flag.is_none());
+        let chroma_array_type = match &self.ext {
+            Some(ext) if ext.separate_color_plane_flag => 0,
+            Some(ext) => ext.chroma_format_idc,
+            None => 1,
+        };
+        match chroma_array_type {
+            0 => (1, field_factor),
+            1 => (2, 2 * field_factor),
+            2 => (2, field_factor),
+            _ => (1, field_factor),
+        }
     }
 
     /// Parses an Sps from the input bytes.
@@ -582,8 +602,20 @@ impl Sps {
         bit_writer.write_exp_golomb(self.pic_order_cnt_type as u64)?;
 
         if self.pic_order_cnt_type == 0 {
-            bit_writer.write_exp_golomb(self.log2_max_pic_order_cnt_lsb_minus4.unwrap() as u64)?;
-        } else if let Some(pic_order_cnt) = &self.pic_order_cnt_type1 {
+            let lsb_minus4 = self.log2_max_pic_order_cnt_lsb_minus4.ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "log2_max_pic_order_cnt_lsb_minus4 must be Some when pic_order_cnt_type is 0",
+                )
+            })?;
+            bit_writer.write_exp_golomb(u64::from(lsb_minus4))?;
+        } else if self.pic_order_cnt_type == 1 {
+            let pic_order_cnt = self.pic_order_cnt_type1.as_ref().ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "pic_order_cnt_type1 must be Some when pic_order_cnt_type is 1",
+                )
+            })?;
             pic_order_cnt.build(&mut bit_writer)?;
         }
 
@@ -679,8 +711,13 @@ impl Sps {
         size_of_exp_golomb(self.log2_max_frame_num_minus4 as u64) +
         size_of_exp_golomb(self.pic_order_cnt_type as u64) +
         match self.pic_order_cnt_type {
-            0 => size_of_exp_golomb(self.log2_max_pic_order_cnt_lsb_minus4.unwrap() as u64),
-            1 => self.pic_order_cnt_type1.as_ref().unwrap().bitsize(),
+            0 => self
+                .log2_max_pic_order_cnt_lsb_minus4
+                .map_or(0, |lsb| size_of_exp_golomb(u64::from(lsb))),
+            1 => self
+                .pic_order_cnt_type1
+                .as_ref()
+                .map_or(0, PicOrderCountType1::bitsize),
             _ => 0
         } +
         size_of_exp_golomb(self.max_num_ref_frames as u64) +
@@ -710,36 +747,46 @@ impl Sps {
     /// The height as a u64. This is computed from other fields, and isn't directly set.
     ///
     /// `height = ((2 - frame_mbs_only_flag as u64) * (pic_height_in_map_units_minus1 + 1) * 16) -
-    /// frame_crop_bottom_offset * 2 - frame_crop_top_offset * 2`
+    /// (frame_crop_bottom_offset + frame_crop_top_offset) * CropUnitY`
     ///
     /// We don't directly store `frame_mbs_only_flag` since we can tell if it's set:
     /// If `mb_adaptive_frame_field_flag` is None, then `frame_mbs_only_flag` is set (1).
     /// Otherwise `mb_adaptive_frame_field_flag` unset (0).
     pub fn height(&self) -> u64 {
-        let base_height = (2 - self.mb_adaptive_frame_field_flag.is_none() as u64)
-            * (self.pic_height_in_map_units_minus1 + 1)
-            * 16;
+        let field_factor = 2 - u64::from(self.mb_adaptive_frame_field_flag.is_none());
+        let base_height = self
+            .pic_height_in_map_units_minus1
+            .saturating_add(1)
+            .saturating_mul(16)
+            .saturating_mul(field_factor);
+        let (_, crop_unit_y) = self.crop_units();
 
         self.frame_crop_info.as_ref().map_or(base_height, |crop| {
             Self::apply_crop(
                 base_height,
                 crop.frame_crop_top_offset,
                 crop.frame_crop_bottom_offset,
+                crop_unit_y,
             )
         })
     }
 
     /// The width as a u64. This is computed from other fields, and isn't directly set.
     ///
-    /// `width = ((pic_width_in_mbs_minus1 + 1) * 16) - frame_crop_right_offset * 2 - frame_crop_left_offset * 2`
+    /// `width = ((pic_width_in_mbs_minus1 + 1) * 16) - (frame_crop_right_offset + frame_crop_left_offset) * CropUnitX`
     pub fn width(&self) -> u64 {
-        let base_width = (self.pic_width_in_mbs_minus1 + 1) * 16;
+        let base_width = self
+            .pic_width_in_mbs_minus1
+            .saturating_add(1)
+            .saturating_mul(16);
+        let (crop_unit_x, _) = self.crop_units();
 
         self.frame_crop_info.as_ref().map_or(base_width, |crop| {
             Self::apply_crop(
                 base_width,
                 crop.frame_crop_left_offset,
                 crop.frame_crop_right_offset,
+                crop_unit_x,
             )
         })
     }
@@ -766,8 +813,8 @@ mod tests {
 
     #[test]
     fn excessive_crop_offsets_saturate_to_zero() {
-        assert_eq!(Sps::apply_crop(16, 9, 0), 0);
-        assert_eq!(Sps::apply_crop(16, u64::MAX, 1), 0);
+        assert_eq!(Sps::apply_crop(16, 9, 0, 2), 0);
+        assert_eq!(Sps::apply_crop(16, u64::MAX, 1, 2), 0);
     }
 
     #[test]
@@ -1263,7 +1310,8 @@ mod tests {
         ");
 
         assert_eq!(Some(480.0), result.frame_rate());
-        assert_eq!(1920, result.width());
+        // chroma_format_idc = 3 (4:4:4) gives CropUnitX = 1, so (120 + 1) * 16 - (4 + 4) * 1 = 1928.
+        assert_eq!(1928, result.width());
         assert_eq!(1080, result.height());
 
         // create a writer for the builder
@@ -2440,5 +2488,75 @@ mod tests {
             timing_info: None,
         }
         ");
+    }
+
+    #[test]
+    fn crop_units_follow_chroma_array_type_and_field_coding() {
+        // Interlaced 1080i 4:2:0: 34 map units * 2 fields * 16 = 1088, bottom crop 2 * CropUnitY(4) = 8 -> 1080.
+        let mut sps_1080i = Sps {
+            nal_ref_idc: 3,
+            nal_unit_type: crate::NALUnitType::SPS,
+            profile_idc: 100,
+            constraint_set0_flag: false,
+            constraint_set1_flag: false,
+            constraint_set2_flag: false,
+            constraint_set3_flag: false,
+            constraint_set4_flag: false,
+            constraint_set5_flag: false,
+            level_idc: 40,
+            seq_parameter_set_id: 0,
+            ext: Some(crate::SpsExtended {
+                chroma_format_idc: 1,
+                separate_color_plane_flag: false,
+                bit_depth_luma_minus8: 0,
+                bit_depth_chroma_minus8: 0,
+                qpprime_y_zero_transform_bypass_flag: false,
+                scaling_matrix: Vec::new(),
+            }),
+            log2_max_frame_num_minus4: 0,
+            pic_order_cnt_type: 0,
+            log2_max_pic_order_cnt_lsb_minus4: Some(0),
+            pic_order_cnt_type1: None,
+            max_num_ref_frames: 4,
+            gaps_in_frame_num_value_allowed_flag: false,
+            pic_width_in_mbs_minus1: 119,
+            pic_height_in_map_units_minus1: 33,
+            mb_adaptive_frame_field_flag: Some(false),
+            direct_8x8_inference_flag: true,
+            frame_crop_info: Some(super::FrameCropInfo {
+                frame_crop_left_offset: 0,
+                frame_crop_right_offset: 0,
+                frame_crop_top_offset: 0,
+                frame_crop_bottom_offset: 2,
+            }),
+            sample_aspect_ratio: None,
+            overscan_appropriate_flag: None,
+            color_config: None,
+            chroma_sample_loc: None,
+            timing_info: None,
+        };
+        assert_eq!(sps_1080i.width(), 1920);
+        assert_eq!(sps_1080i.height(), 1080);
+
+        // Separate color planes (4:4:4 with separate_color_plane_flag = true) -> ChromaArrayType = 0:
+        // CropUnitX = 1, CropUnitY = 2 (field-coded).
+        let ext = sps_1080i.ext.as_mut().unwrap();
+        ext.chroma_format_idc = 3;
+        ext.separate_color_plane_flag = true;
+        sps_1080i.frame_crop_info = Some(super::FrameCropInfo {
+            frame_crop_left_offset: 1,
+            frame_crop_right_offset: 2,
+            frame_crop_top_offset: 1,
+            frame_crop_bottom_offset: 3,
+        });
+        assert_eq!(sps_1080i.width(), 1920 - 3);
+        assert_eq!(sps_1080i.height(), 1088 - 8);
+
+        // 4:2:2 -> ChromaArrayType = 2: CropUnitX = 2, CropUnitY = 2 (field-coded).
+        let ext = sps_1080i.ext.as_mut().unwrap();
+        ext.chroma_format_idc = 2;
+        ext.separate_color_plane_flag = false;
+        assert_eq!(sps_1080i.width(), 1920 - 6);
+        assert_eq!(sps_1080i.height(), 1088 - 8);
     }
 }

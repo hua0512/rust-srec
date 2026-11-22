@@ -1,22 +1,23 @@
 //! # ScriptFilterOperator
 //!
-//! The `ScriptFilterOperator` removes duplicate script data (metadata) tags from an FLV stream.
+//! The `ScriptFilterOperator` removes duplicate metadata script tags from an FLV stream.
 //!
 //! ## Purpose
 //!
-//! FLV streams may contain multiple script data tags (metadata), but many players
-//! can only properly handle a single metadata tag. This operator ensures that:
+//! FLV streams may contain multiple `onMetaData` tags, but many players can only
+//! properly handle a single one. This operator ensures that, in each segment
+//! (everything after an FLV header):
 //!
-//! 1. The first script data tag is preserved (typically containing essential metadata)
-//! 2. Subsequent script data tags are discarded
-//!
-//! This improves compatibility with various players and reduces unnecessary data.
+//! 1. The first metadata tag (`onMetaData`, bare or wrapped in `@setDataFrame`) is preserved
+//! 2. Later metadata tags are discarded
+//! 3. Other script tags, such as `onCuePoint` and `onTextData`, pass through,
+//!    as do script tags with the filter bit set, whose payload cannot be read
 //!
 //! ## Operation
 //!
-//! The operator tracks whether it has already encountered a script tag. Once it has
-//! seen the first script tag, it filters out any subsequent ones while passing through
-//! all other tag types unmodified.
+//! The operator tracks whether the current segment has already had a metadata tag.
+//! A script tag that cannot be parsed, or that has a name but no value, counts as
+//! metadata. All other tag types pass through unmodified.
 //!
 //!
 //! ## License
@@ -28,17 +29,21 @@
 //! - hua0512
 //!
 
+use std::sync::Arc;
+
 use flv::data::FlvData;
+use flv::script::ScriptData;
 use flv::tag::FlvTagType;
 use pipeline_common::{PipelineError, Processor, StreamerContext};
-use std::sync::Arc;
 use tracing::{debug, info};
 
-/// Operator that filters out script data tags except for the first one
+/// Operator that filters out duplicate `onMetaData` / `@setDataFrame` metadata
+/// tags while preserving non-metadata script tags (such as `onCuePoint` and
+/// `onTextData`).
 pub struct ScriptFilterOperator {
     context: Arc<StreamerContext>,
-    seen_script_tag: bool,
-    script_tag_count: u32,
+    seen_metadata_tag: bool,
+    discarded_metadata_count: u32,
 }
 
 impl ScriptFilterOperator {
@@ -46,15 +51,15 @@ impl ScriptFilterOperator {
     pub fn new(context: Arc<StreamerContext>) -> Self {
         Self {
             context,
-            seen_script_tag: false,
-            script_tag_count: 0,
+            seen_metadata_tag: false,
+            discarded_metadata_count: 0,
         }
     }
 
     /// Reset the operator state
     pub fn reset(&mut self) {
-        self.seen_script_tag = false;
-        self.script_tag_count = 0;
+        self.seen_metadata_tag = false;
+        self.discarded_metadata_count = 0;
     }
 }
 
@@ -72,27 +77,38 @@ impl Processor<FlvData> for ScriptFilterOperator {
             FlvData::Header(_) => {
                 debug!("{} Resetting script tag filter state", self.context.name);
                 self.reset();
-                // Forward the header
                 output(input)
-            } // Check if this is a script tag
+            }
             FlvData::Tag(tag) if tag.tag_type() == FlvTagType::ScriptData => {
-                self.script_tag_count += 1;
-                if !self.seen_script_tag {
-                    // First script tag, keep it and mark as seen
-                    self.seen_script_tag = true;
-                    debug!("{} Forwarding first script tag", self.context.name);
+                if tag.is_filtered() {
+                    return output(FlvData::Tag(tag));
+                }
+
+                let mut cursor = std::io::Cursor::new(tag.data().clone());
+                if let Ok(script) = ScriptData::demux(&mut cursor)
+                    && crate::amf::is_non_metadata_script(&script)
+                {
+                    debug!(
+                        "{} Forwarding non-metadata script tag '{}'",
+                        self.context.name, script.name
+                    );
+                    return output(FlvData::Tag(tag));
+                }
+
+                if !self.seen_metadata_tag {
+                    self.seen_metadata_tag = true;
+                    debug!("{} Forwarding first metadata script tag", self.context.name);
                     output(FlvData::Tag(tag))
                 } else {
-                    // Subsequent script tag, discard it
+                    self.discarded_metadata_count += 1;
                     debug!(
-                        "{} Discarding subsequent script tag #{}",
-                        self.context.name, self.script_tag_count
+                        "{} Discarding duplicate metadata script tag #{}",
+                        self.context.name, self.discarded_metadata_count
                     );
-                    // Skip sending this to output
                     Ok(())
                 }
             }
-            _ => output(input), // Forward other data types unmodified
+            _ => output(input),
         }
     }
 
@@ -101,11 +117,10 @@ impl Processor<FlvData> for ScriptFilterOperator {
         _context: &Arc<StreamerContext>,
         _output: &mut dyn FnMut(FlvData) -> Result<(), PipelineError>,
     ) -> Result<(), PipelineError> {
-        if self.script_tag_count > 1 {
+        if self.discarded_metadata_count > 0 {
             info!(
-                "{} Filtered out {} excess script tags",
-                self.context.name,
-                self.script_tag_count - 1
+                "{} Filtered out {} excess metadata script tags",
+                self.context.name, self.discarded_metadata_count
             );
         }
         debug!("{} Script filter operator completed", self.context.name);
@@ -209,5 +224,67 @@ mod tests {
             second_segment_script_count, 1,
             "Second segment should have 1 script tag"
         );
+    }
+
+    #[test]
+    fn preserves_non_metadata_script_tags_while_deduplicating_metadata() {
+        use std::borrow::Cow;
+
+        use amf0::Amf0Value;
+        use bytes::Bytes;
+        use flv::tag::FlvTag;
+
+        let make_named_script = |name: &str, ts: u32, extra_str: Option<&'static str>| {
+            let mut buf = Vec::new();
+            amf0::Amf0Encoder::encode_string(&mut buf, name).unwrap();
+            if let Some(s) = extra_str {
+                amf0::Amf0Encoder::encode_string(&mut buf, s).unwrap();
+            }
+            amf0::Amf0Encoder::encode(
+                &mut buf,
+                &Amf0Value::Object(Cow::Owned(vec![(
+                    Cow::Borrowed("k"),
+                    Amf0Value::Number(1.0),
+                )])),
+            )
+            .unwrap();
+            FlvData::Tag(FlvTag::new(
+                ts,
+                0,
+                FlvTagType::ScriptData,
+                false,
+                Bytes::from(buf),
+            ))
+        };
+
+        let context = StreamerContext::arc_new(CancellationToken::new());
+        let mut operator = ScriptFilterOperator::new(context.clone());
+        let mut out = Vec::new();
+
+        let cue = make_named_script("onCuePoint", 0, None);
+        let set_df = make_named_script("@setDataFrame", 0, Some("onMetaData"));
+        let dup_meta = create_script_tag(20, false);
+        let text = make_named_script("onTextData", 30, None);
+
+        for item in [
+            create_test_header(),
+            cue.clone(),
+            set_df.clone(),
+            create_video_tag(10, true),
+            dup_meta,
+            text.clone(),
+        ] {
+            operator
+                .process(&context, item, &mut |item| {
+                    out.push(item);
+                    Ok(())
+                })
+                .unwrap();
+        }
+
+        assert_eq!(out.len(), 5);
+        assert_eq!(out[1], cue);
+        assert_eq!(out[2], set_df);
+        assert_eq!(out[4], text);
     }
 }

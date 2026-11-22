@@ -73,6 +73,8 @@ impl<W: Write + Seek> FlvWriter<W> {
     pub fn write_header(&mut self, header: &FlvHeader) -> io::Result<()> {
         let bytes = encode::encode_header_bytes(header)?;
         self.writer.write_all(&bytes)?;
+        self.has_audio = header.has_audio;
+        self.has_video = header.has_video;
         Ok(())
     }
 
@@ -247,5 +249,25 @@ impl<W: Write + Seek> Write for FlvWriter<W> {
 
     fn flush(&mut self) -> io::Result<()> {
         self.flush()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use super::*;
+
+    #[test]
+    fn write_header_enables_the_tracks_it_declares() {
+        let mut writer = FlvWriter::new(Cursor::new(Vec::new())).unwrap();
+        writer.write_header(&FlvHeader::new(true, true)).unwrap();
+
+        writer
+            .write_video(Bytes::from_static(&[0x17, 0x00]), 0)
+            .unwrap();
+        writer
+            .write_audio(Bytes::from_static(&[0xAF, 0x00]), 0)
+            .unwrap();
     }
 }

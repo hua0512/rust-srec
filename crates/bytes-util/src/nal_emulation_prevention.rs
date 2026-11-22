@@ -31,7 +31,7 @@ impl<I: std::io::Write> std::io::Write for EmulationPreventionIo<I> {
 
             self.inner.write_all(&[byte])?;
             if byte == 0x00 {
-                self.zero_count += 1;
+                self.zero_count = self.zero_count.saturating_add(1);
             } else {
                 self.zero_count = 0;
             }
@@ -62,7 +62,7 @@ impl<I: std::io::Read> std::io::Read for EmulationPreventionIo<I> {
                     continue;
                 }
                 0x00 => {
-                    self.zero_count += 1;
+                    self.zero_count = self.zero_count.saturating_add(1);
                 }
                 _ => {
                     self.zero_count = 0;
@@ -105,5 +105,21 @@ mod tests {
         reader.read_to_end(&mut output).unwrap();
 
         assert_eq!(output, vec![0x00, 0x00, 0x01, 0x00, 0x00, 0x02]);
+    }
+
+    #[test]
+    fn zero_run_of_256_bytes_still_strips_the_emulation_prevention_byte() {
+        // 256 zeros is one more than a `u8` run counter can hold.
+        let mut escaped = vec![0x00; 256];
+        escaped.extend_from_slice(&[0x03, 0x01]);
+
+        let mut expected = vec![0x00; 256];
+        expected.push(0x01);
+
+        let mut decoded = Vec::new();
+        EmulationPreventionIo::new(escaped.as_slice())
+            .read_to_end(&mut decoded)
+            .unwrap();
+        assert_eq!(decoded, expected);
     }
 }

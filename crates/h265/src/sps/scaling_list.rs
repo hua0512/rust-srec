@@ -1,6 +1,6 @@
 use std::io;
 
-use bytes_util::BitReader;
+use bytes_util::{BitReader, range_check};
 use expgolomb::BitReaderExpGolombExt;
 
 /// `ScalingList[0][0..5][i]`
@@ -63,60 +63,120 @@ impl ScalingListData {
         let mut scaling_list = [[[0; 64]; 6]; 4];
 
         for (size_id, scaling_column) in scaling_list.iter_mut().enumerate() {
+            let coef_num = usize::min(64, 1 << (4 + (size_id << 1)));
+            let step = if size_id == 3 { 3 } else { 1 };
             let mut matrix_id = 0;
 
             while matrix_id < 6 {
                 let scaling_list_pred_mode_flag = bit_reader.read_bit()?;
 
                 if !scaling_list_pred_mode_flag {
-                    // the values of the scaling list are the same as the values of a reference scaling list.
-
-                    let scaling_list_pred_matrix_id_delta = bit_reader.read_exp_golomb()? as usize;
+                    // The values of the scaling list are inferred from a default or reference scaling list.
+                    let scaling_list_pred_matrix_id_delta = bit_reader.read_exp_golomb()?;
 
                     if scaling_list_pred_matrix_id_delta == 0 {
-                        // the scaling list is inferred from the default scaling list
                         if size_id == 0 {
                             scaling_column[matrix_id][0..16].copy_from_slice(&TABLE_7_5);
                         } else {
-                            let end = usize::min(63, (1 << (4 + (size_id << 1))) - 1);
-                            scaling_column[matrix_id][0..end]
-                                .copy_from_slice(&TABLE_7_6[matrix_id][0..end]);
+                            scaling_column[matrix_id][0..coef_num]
+                                .copy_from_slice(&TABLE_7_6[matrix_id][0..coef_num]);
                         }
                     } else {
-                        // the scaling list is inferred from the reference scaling list
-                        if size_id == 0 {
-                            scaling_column[matrix_id][0..16].copy_from_slice(&TABLE_7_5);
-                        } else {
-                            let ref_matrix_id = matrix_id
-                                - scaling_list_pred_matrix_id_delta
-                                    * (if size_id == 3 { 3 } else { 1 });
-                            let end = usize::min(63, (1 << (4 + (size_id << 1))) - 1);
-                            scaling_column[matrix_id][0..end]
-                                .copy_from_slice(&TABLE_7_6[ref_matrix_id][0..end]);
-                        }
+                        let ref_matrix_id = usize::try_from(scaling_list_pred_matrix_id_delta)
+                            .ok()
+                            .and_then(|delta| delta.checked_mul(step))
+                            .and_then(|offset| matrix_id.checked_sub(offset))
+                            .ok_or_else(|| {
+                                io::Error::new(
+                                    io::ErrorKind::InvalidData,
+                                    "scaling_list_pred_matrix_id_delta references out-of-range matrix_id",
+                                )
+                            })?;
+
+                        let (prev_matrices, current_and_rest) =
+                            scaling_column.split_at_mut(matrix_id);
+                        current_and_rest[0][0..coef_num]
+                            .copy_from_slice(&prev_matrices[ref_matrix_id][0..coef_num]);
                     }
                 } else {
-                    // the values of the scaling list are explicitly signalled.
-
+                    // The values of the scaling list are explicitly signalled.
                     let mut next_coef = 8;
-                    let coef_num = usize::min(64, 1 << (4 + (size_id << 1)));
 
                     if size_id > 1 {
                         let scaling_list_dc_coef_minus8 = bit_reader.read_signed_exp_golomb()?;
+                        range_check!(scaling_list_dc_coef_minus8, -7, 247)?;
                         next_coef = scaling_list_dc_coef_minus8 + 8;
                     }
 
                     for coef in scaling_column[matrix_id].iter_mut().take(coef_num) {
                         let scaling_list_delta_coef = bit_reader.read_signed_exp_golomb()?;
+                        range_check!(scaling_list_delta_coef, -128, 127)?;
                         next_coef = (next_coef + scaling_list_delta_coef + 256) % 256;
                         *coef = next_coef;
                     }
                 }
 
-                matrix_id += if size_id == 3 { 3 } else { 1 };
+                matrix_id += step;
             }
         }
 
         Ok(Self { scaling_list })
+    }
+}
+
+#[cfg(test)]
+#[cfg_attr(all(test, coverage_nightly), coverage(off))]
+mod tests {
+    use std::io;
+
+    use bytes_util::{BitReader, BitWriter};
+    use expgolomb::BitWriterExpGolombExt;
+
+    use super::ScalingListData;
+
+    #[test]
+    fn rejects_invalid_scaling_list_syntax() {
+        // size_id = 0, matrix_id = 0: pred_mode_flag = false, delta = 1 (references matrix_id -1)
+        let mut buf = Vec::new();
+        let mut writer = BitWriter::new(&mut buf);
+        writer.write_bit(false).unwrap();
+        writer.write_exp_golomb(1).unwrap();
+        writer.finish().unwrap();
+        assert_eq!(
+            ScalingListData::parse(&mut BitReader::new(buf.as_slice()))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidData
+        );
+
+        // Out-of-range delta_coef (128 > 127) in size_id = 0, matrix_id = 0.
+        let mut buf = Vec::new();
+        let mut writer = BitWriter::new(&mut buf);
+        writer.write_bit(true).unwrap();
+        writer.write_signed_exp_golomb(128).unwrap();
+        writer.finish().unwrap();
+        assert_eq!(
+            ScalingListData::parse(&mut BitReader::new(buf.as_slice()))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidData
+        );
+
+        // Out-of-range dc_coef_minus8 (-8 < -7) in size_id = 2, matrix_id = 0.
+        let mut buf = Vec::new();
+        let mut writer = BitWriter::new(&mut buf);
+        for _ in 0..12 {
+            writer.write_bit(false).unwrap();
+            writer.write_exp_golomb(0).unwrap();
+        }
+        writer.write_bit(true).unwrap();
+        writer.write_signed_exp_golomb(-8).unwrap();
+        writer.finish().unwrap();
+        assert_eq!(
+            ScalingListData::parse(&mut BitReader::new(buf.as_slice()))
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::InvalidData
+        );
     }
 }

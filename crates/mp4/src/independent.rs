@@ -333,7 +333,11 @@ impl IndependentFragmentCheck {
     fn starts_independently(&self, data: &Bytes, traf: &BoxView, id: u32) -> Option<bool> {
         let tfhd = find_first_box(data, traf.body_start, traf.end, *b"tfhd")?;
         let body = &data[tfhd.body_start..tfhd.end];
-        let flags = word(body, 0)? & 0x00ff_ffff;
+        let tfhd_version_and_flags = word(body, 0)?;
+        if (tfhd_version_and_flags >> 24) != 0 {
+            return None;
+        }
+        let flags = tfhd_version_and_flags & 0x00ff_ffff;
         // Explicit absolute data offsets do not remain valid in a new file.
         if flags & 1 != 0 || flags & 0x010000 != 0 {
             return Some(false);
@@ -353,7 +357,11 @@ impl IndependentFragmentCheck {
         };
         let trun = find_first_box(data, traf.body_start, traf.end, *b"trun")?;
         let body = &data[trun.body_start..trun.end];
-        let flags = word(body, 0)? & 0x00ff_ffff;
+        let trun_version_and_flags = word(body, 0)?;
+        if (trun_version_and_flags >> 24) > 1 {
+            return None;
+        }
+        let flags = trun_version_and_flags & 0x00ff_ffff;
         let sample_count = word(body, 4)?;
         if sample_count == 0 {
             return Some(false);
@@ -384,6 +392,19 @@ impl IndependentFragmentCheck {
         };
         // Per-sample rows start after the optional first-sample flags.
         let rows = field;
+        let row_stride = [0x000100, 0x000200, 0x000400, 0x000800]
+            .into_iter()
+            .filter(|flag| flags & flag != 0)
+            .count()
+            * 4;
+        if row_stride > 0 {
+            let total_rows_bytes = usize::try_from(sample_count)
+                .ok()?
+                .checked_mul(row_stride)?;
+            if rows.checked_add(total_rows_bytes)? > body.len() {
+                return None;
+            }
+        }
         // Whether the flags of a sample after the first mark it non-sync:
         // proof that this muxer signals sync samples rather than leaving
         // every sample's flags at zero.
@@ -394,11 +415,6 @@ impl IndependentFragmentCheck {
             if flags & 0x000400 == 0 {
                 return Some(default_flags.is_some_and(|flags| flags & NON_SYNC != 0));
             }
-            let row = [0x000100, 0x000200, 0x000400, 0x000800]
-                .into_iter()
-                .filter(|flag| flags & flag != 0)
-                .count()
-                * 4;
             let before_flags = [0x000100, 0x000200]
                 .into_iter()
                 .filter(|flag| flags & flag != 0)
@@ -406,7 +422,7 @@ impl IndependentFragmentCheck {
                 * 4;
             for sample in 1..sample_count as usize {
                 let offset = rows
-                    .checked_add(sample.checked_mul(row)?)?
+                    .checked_add(sample.checked_mul(row_stride)?)?
                     .checked_add(before_flags)?;
                 if word(body, offset)? & NON_SYNC != 0 {
                     return Some(true);

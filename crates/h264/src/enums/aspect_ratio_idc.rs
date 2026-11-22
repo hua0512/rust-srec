@@ -145,32 +145,31 @@ impl fmt::Debug for AspectRatioIdc {
     }
 }
 
-impl TryFrom<u8> for AspectRatioIdc {
-    type Error = &'static str;
-
-    /// Converts a `u8` value to an `AspectRatioIdc`.
-    /// Returns an error if the value is reserved (17..=254).
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
+impl AspectRatioIdc {
+    /// Converts any `u8` bitstream `aspect_ratio_idc` value to an [`AspectRatioIdc`].
+    ///
+    /// Reserved values (`17..=254`) map to [`AspectRatioIdc::Reserved`] per ISO/IEC 14496-10 Table E-1.
+    pub const fn from_u8(value: u8) -> Self {
         match value {
-            0 => Ok(AspectRatioIdc::Unspecified),
-            1 => Ok(AspectRatioIdc::Square),
-            2 => Ok(AspectRatioIdc::Aspect12_11),
-            3 => Ok(AspectRatioIdc::Aspect10_11),
-            4 => Ok(AspectRatioIdc::Aspect16_11),
-            5 => Ok(AspectRatioIdc::Aspect40_33),
-            6 => Ok(AspectRatioIdc::Aspect24_11),
-            7 => Ok(AspectRatioIdc::Aspect20_11),
-            8 => Ok(AspectRatioIdc::Aspect32_11),
-            9 => Ok(AspectRatioIdc::Aspect80_33),
-            10 => Ok(AspectRatioIdc::Aspect18_11),
-            11 => Ok(AspectRatioIdc::Aspect15_11),
-            12 => Ok(AspectRatioIdc::Aspect64_33),
-            13 => Ok(AspectRatioIdc::Aspect160_99),
-            14 => Ok(AspectRatioIdc::Aspect4_3),
-            15 => Ok(AspectRatioIdc::Aspect3_2),
-            16 => Ok(AspectRatioIdc::Aspect2_1),
-            17..=254 => Err("Reserved value"),
-            255 => Ok(AspectRatioIdc::ExtendedSar),
+            0 => Self::Unspecified,
+            1 => Self::Square,
+            2 => Self::Aspect12_11,
+            3 => Self::Aspect10_11,
+            4 => Self::Aspect16_11,
+            5 => Self::Aspect40_33,
+            6 => Self::Aspect24_11,
+            7 => Self::Aspect20_11,
+            8 => Self::Aspect32_11,
+            9 => Self::Aspect80_33,
+            10 => Self::Aspect18_11,
+            11 => Self::Aspect15_11,
+            12 => Self::Aspect64_33,
+            13 => Self::Aspect160_99,
+            14 => Self::Aspect4_3,
+            15 => Self::Aspect3_2,
+            16 => Self::Aspect2_1,
+            17..=254 => Self::Reserved,
+            255 => Self::ExtendedSar,
         }
     }
 }

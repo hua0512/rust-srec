@@ -62,7 +62,13 @@ pub fn inject_stats_into_script_data(
 
     // Find the first onMetaData script tag (not all FLVs place it immediately after the header).
     let mut reader = BufReader::new(fs::File::open(file_path)?);
-    reader.seek(io::SeekFrom::Start(13))?; // 9-byte header + 4-byte PreviousTagSize0
+    let header = flv::parser::FlvParser::parse_header(&mut reader)?;
+    let first_tag_offset = u64::from(header.data_offset)
+        .checked_add(crate::utils::FLV_PREVIOUS_TAG_SIZE as u64)
+        .ok_or(ScriptModifierError::ScriptData(
+            "FLV header data_offset overflow",
+        ))?;
+    reader.seek(io::SeekFrom::Start(first_tag_offset))?;
 
     let (start_pos, script_data, original_payload_data) = loop {
         let tag_start_pos = reader.stream_position()?;
@@ -94,7 +100,7 @@ pub fn inject_stats_into_script_data(
         let data = flv::script::ScriptData::demux(&mut cursor)?;
         trace!("Script data: {:?}", data);
 
-        if data.name != crate::AMF0_ON_METADATA {
+        if !crate::amf::is_on_metadata_script(&data) {
             continue;
         }
 
@@ -105,13 +111,12 @@ pub fn inject_stats_into_script_data(
         break (tag_start_pos, data, original_payload_data);
     };
 
-    let amf_data = script_data.data;
-    if amf_data.is_empty() {
+    let Some(metadata_value) = crate::amf::on_metadata_value(&script_data) else {
         return Err(ScriptModifierError::ScriptData("Script data is empty"));
-    }
+    };
 
     // Generate new script data buffer
-    if let Some(props) = amf_data[0].as_object_properties() {
+    if let Some(props) = metadata_value.as_object_properties() {
         // current script data model
         let script_data_model = AmfScriptData::from_amf_object_ref(props)?;
 

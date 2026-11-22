@@ -71,7 +71,7 @@ impl Iterator for AnnexBIterator<'_> {
     type Item = Result<TemporalUnit>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let remaining = self.reader.get_ref().len() as u64 - self.reader.position();
+        let remaining = (self.reader.get_ref().len() as u64).saturating_sub(self.reader.position());
         if remaining == 0 {
             return None;
         }
@@ -86,11 +86,11 @@ fn parse_temporal_unit(reader: &mut io::Cursor<Bytes>) -> Result<TemporalUnit> {
     let tu_start = reader.position();
 
     let mut frame_units = Vec::new();
-    while reader.position() - tu_start < tu_size {
+    while reader.position().saturating_sub(tu_start) < tu_size {
         frame_units.push(parse_frame_unit(reader)?);
     }
 
-    let consumed = reader.position() - tu_start;
+    let consumed = reader.position().saturating_sub(tu_start);
     if consumed != tu_size {
         return Err(Av1Error::TemporalUnitSizeMismatch {
             declared: tu_size,
@@ -107,15 +107,19 @@ fn parse_frame_unit(reader: &mut io::Cursor<Bytes>) -> Result<FrameUnit> {
     let fu_start = reader.position();
 
     let mut obus = Vec::new();
-    while reader.position() - fu_start < fu_size {
+    while reader.position().saturating_sub(fu_start) < fu_size {
         let obu_length = read_leb128_from_cursor(reader)?;
         let obu_start = reader.position();
 
         // In Annex B, OBUs may have obu_has_size_field=0 (common) or 1 (also valid).
         // The obu_length field includes the header bytes + payload bytes.
         let header = ObuHeader::parse(reader)?;
-        let header_bytes_consumed = reader.position() - obu_start;
-        let payload_size = obu_length - header_bytes_consumed;
+        let header_bytes_consumed = reader.position().saturating_sub(obu_start);
+        let payload_size = obu_length.checked_sub(header_bytes_consumed).ok_or_else(|| {
+            Av1Error::InvalidObu(format!(
+                "Annex B obu_length ({obu_length}) is smaller than OBU header ({header_bytes_consumed} bytes)"
+            ))
+        })?;
 
         // If obu_has_size_field=1, the header includes an obu_size field.
         // Verify it is consistent with the obu_length from the Annex B framing.
@@ -128,18 +132,25 @@ fn parse_frame_unit(reader: &mut io::Cursor<Bytes>) -> Result<FrameUnit> {
             });
         }
 
-        let data =
-            reader
-                .extract_bytes(payload_size as usize)
-                .map_err(|_| Av1Error::UnexpectedEof {
-                    expected: payload_size as usize,
-                    actual: (reader.get_ref().len() as u64 - reader.position()) as usize,
-                })?;
+        let remaining =
+            usize::try_from((reader.get_ref().len() as u64).saturating_sub(reader.position()))
+                .unwrap_or(usize::MAX);
+        let payload_len = usize::try_from(payload_size).map_err(|_| Av1Error::UnexpectedEof {
+            expected: usize::MAX,
+            actual: remaining,
+        })?;
+
+        let data = reader
+            .extract_bytes(payload_len)
+            .map_err(|_| Av1Error::UnexpectedEof {
+                expected: payload_len,
+                actual: remaining,
+            })?;
 
         obus.push(Obu { header, data });
     }
 
-    let consumed = reader.position() - fu_start;
+    let consumed = reader.position().saturating_sub(fu_start);
     if consumed != fu_size {
         return Err(Av1Error::FrameUnitSizeMismatch {
             declared: fu_size,
@@ -481,5 +492,17 @@ mod tests {
         assert_eq!(obu.header.obu_type, ObuType::SequenceHeader);
         assert_eq!(obu.header.size, Some(4)); // obu_size field present
         assert_eq!(obu.data.as_ref(), payload);
+    }
+
+    #[test]
+    fn test_annex_b_obu_length_smaller_than_header_returns_error() {
+        // tu_size=3, fu_size=2, obu_length=0, then a 1-byte OBU header (0x08).
+        let zero_len_obu = Bytes::from_static(&[0x03, 0x02, 0x00, 0x08]);
+        let mut cursor = io::Cursor::new(zero_len_obu);
+        let err = AnnexBIterator::new(&mut cursor)
+            .next()
+            .unwrap()
+            .unwrap_err();
+        assert!(matches!(err, Av1Error::InvalidObu(_)));
     }
 }
