@@ -275,6 +275,17 @@ impl AuthService {
             warn!("Login failed: invalid credentials");
             return Err(AuthError::InvalidCredentials);
         };
+        // Checked only after the password has been verified, so a refused
+        // login costs the same work, keeps its failure slot and returns the
+        // same error as a wrong password.
+        if user.must_change_password && self.refuses_must_change_password_logins() {
+            warn!(
+                user_id = %user.id,
+                "Login refused: the account still has its initial password and \
+                 the desktop app signs in automatically"
+            );
+            return Err(AuthError::InvalidCredentials);
+        }
         if !user.is_active {
             warn!(user_id = %user.id, "Login blocked: account disabled");
             return Err(AuthError::AccountDisabled);

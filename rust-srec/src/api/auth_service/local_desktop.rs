@@ -1,9 +1,13 @@
-//! Password-less sessions for the desktop app's in-process backend.
+//! Password-less sessions for the desktop app's in-process backend, and the
+//! rules that keep the seeded default password unusable while the shell signs
+//! in without one.
 //!
 //! Nothing here is reachable over HTTP: the desktop shell calls these methods
-//! through `ServiceContainer` when the user has turned password sign-in off.
+//! through `ServiceContainer`.
 
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use jiff::Timestamp;
 use tracing::{info, warn};
@@ -17,6 +21,16 @@ use crate::database::models::{AuthSessionDbModel, RefreshTokenDbModel, UserDbMod
 /// expire.
 const MAX_LOCAL_DESKTOP_SESSIONS: usize = 3;
 
+/// The account that desktop auto-login signs in as.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalDesktopAccount {
+    pub username: String,
+    /// The account still has `must_change_password`, that is the password it
+    /// was created with (for the seeded `admin`, the publicly documented
+    /// default). `ServiceContainer::set_local_desktop_password` replaces it.
+    pub password_setup_required: bool,
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct LocalDesktopSessionRecord {
     pub(super) user_id: String,
@@ -24,6 +38,84 @@ pub(super) struct LocalDesktopSessionRecord {
 }
 
 impl AuthService {
+    /// Make `authenticate` read `guard` on every password login. While it
+    /// holds `true`, a correct password for an account that still has
+    /// `must_change_password` is refused exactly like a wrong one.
+    ///
+    /// The desktop shell keeps it set while it signs the webview in without a
+    /// password: nobody is then ever made to change the seeded default
+    /// password, so that password must not open a session over the loopback
+    /// API either. Existing sessions are not affected.
+    pub(crate) fn with_must_change_password_login_guard(mut self, guard: Arc<AtomicBool>) -> Self {
+        self.refuse_must_change_password_logins = guard;
+        self
+    }
+
+    pub(super) fn refuses_must_change_password_logins(&self) -> bool {
+        self.refuse_must_change_password_logins
+            .load(Ordering::Acquire)
+    }
+
+    /// The account auto-login uses (see [`Self::issue_local_desktop_session`]),
+    /// or `None` when there is no active admin.
+    pub async fn local_desktop_account(&self) -> Result<Option<LocalDesktopAccount>, AuthError> {
+        Ok(self
+            .find_active_admin()
+            .await?
+            .map(|user| LocalDesktopAccount {
+                username: user.username,
+                password_setup_required: user.must_change_password,
+            }))
+    }
+
+    /// Replace the initial password of the account auto-login uses without
+    /// asking for it, and return that account's username.
+    ///
+    /// Only an account that still has `must_change_password` qualifies: this
+    /// exists so the desktop user can retire the seeded default password
+    /// before turning password sign-in on. Once a password has been set it
+    /// returns [`AuthError::PasswordAlreadySet`], and changes go through
+    /// [`Self::change_password`], which needs the current password.
+    pub async fn set_local_desktop_password(
+        &self,
+        new_password: &str,
+    ) -> Result<String, AuthError> {
+        let user = self
+            .find_active_admin()
+            .await?
+            .ok_or(AuthError::UserNotFound)?;
+        if !user.must_change_password {
+            return Err(AuthError::PasswordAlreadySet);
+        }
+
+        self.validate_password_strength(new_password)?;
+        if self
+            .verify_password_blocking(new_password, &user.password_hash)
+            .await?
+        {
+            return Err(AuthError::WeakPassword(
+                "New password must be different from current password".to_string(),
+            ));
+        }
+
+        let new_hash = self.hash_password_blocking(new_password).await?;
+        self.user_repo
+            .update_password(&user.id, &new_hash, true)
+            .await
+            .map_err(|error| AuthError::Database(error.to_string()))?;
+        // The password-update trigger has revoked every session of the user,
+        // auto-login ones included, so they are no longer tracked either.
+        self.forget_local_desktop_sessions_of(&user.id);
+        self.invalidate_user_state(&user.id);
+        info!(
+            user_id = %user.id,
+            username = %user.username,
+            "Set the local desktop account's password; revoked its sessions"
+        );
+
+        Ok(user.username)
+    }
+
     /// Whether `session_id` was issued by [`Self::issue_local_desktop_session`]
     /// (or restored from the desktop shell's list). Such a session is exempt
     /// from `must_change_password`; the flag itself stays set in SQLite, so a

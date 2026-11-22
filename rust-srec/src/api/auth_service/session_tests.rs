@@ -500,3 +500,99 @@ async fn local_desktop_session_bypasses_must_change_survives_restart_and_revokes
         Err(AuthError::TokenRevoked)
     ));
 }
+
+const SEEDED_ADMIN_PASSWORD: &str = "admin123!";
+
+#[tokio::test]
+async fn login_guard_refuses_the_initial_password_like_a_wrong_one() {
+    let fixture = Fixture::new(AuthConfig::default()).await;
+    let guard = Arc::new(AtomicBool::new(false));
+    // One failure per account and window, so a refused login that kept its
+    // failure slot throttles the next attempt.
+    let service = AuthService::new(
+        Arc::new(SqlxUserRepository::new(
+            fixture.pool.clone(),
+            fixture.pool.clone(),
+        )),
+        fixture.tokens.clone(),
+        Arc::new(SqlxApiKeyRepository::new(
+            fixture.pool.clone(),
+            fixture.pool.clone(),
+        )),
+        fixture.service.jwt_service.clone(),
+        AuthConfig::default(),
+    )
+    .with_must_change_password_login_guard(guard.clone())
+    .with_login_rate_limiter(LoginRateLimiter::new(
+        1,
+        100,
+        std::time::Duration::from_secs(60),
+        64,
+    ));
+
+    // Guard off: the seeded admin signs in with the default password and is
+    // then made to change it.
+    let login = service
+        .authenticate("admin", SEEDED_ADMIN_PASSWORD, None, None)
+        .await
+        .expect("the default password works while the guard is off");
+    assert!(login.must_change_password);
+
+    // Guard on: the same correct password counts as a wrong one, failure slot
+    // included, while an account with a password of its own is unaffected.
+    guard.store(true, Ordering::Release);
+    assert!(matches!(
+        service
+            .authenticate("admin", SEEDED_ADMIN_PASSWORD, None, None)
+            .await,
+        Err(AuthError::InvalidCredentials)
+    ));
+    assert!(matches!(
+        service
+            .authenticate("admin", SEEDED_ADMIN_PASSWORD, None, None)
+            .await,
+        Err(AuthError::TooManyAttempts { .. })
+    ));
+    service
+        .authenticate(&fixture.user.username, PASSWORD, None, None)
+        .await
+        .expect("an account that changed its password still signs in");
+}
+
+#[tokio::test]
+async fn local_desktop_password_replaces_only_the_initial_password() {
+    let fixture = Fixture::new(AuthConfig::default()).await;
+    let service = &fixture.service;
+
+    assert!(matches!(
+        service.set_local_desktop_password("short1").await,
+        Err(AuthError::WeakPassword(_))
+    ));
+    assert!(matches!(
+        service.set_local_desktop_password(SEEDED_ADMIN_PASSWORD).await,
+        Err(AuthError::WeakPassword(message)) if message.contains("different")
+    ));
+
+    let username = service
+        .set_local_desktop_password("DesktopPass123")
+        .await
+        .expect("the initial password is replaced");
+    assert_eq!(username, "admin");
+    let account = service
+        .local_desktop_account()
+        .await
+        .unwrap()
+        .expect("the seeded admin is the local desktop account");
+    assert!(!account.password_setup_required);
+
+    let login = service
+        .authenticate("admin", "DesktopPass123", None, None)
+        .await
+        .expect("the new password signs in");
+    assert!(!login.must_change_password);
+
+    assert!(matches!(
+        service.set_local_desktop_password("OtherPass456").await,
+        Err(AuthError::PasswordAlreadySet)
+    ));
+}

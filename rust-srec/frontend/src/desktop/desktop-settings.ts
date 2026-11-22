@@ -31,6 +31,10 @@ const DesktopSettingsSnapshotSchema = DesktopSettingsSchema.extend({
   outputDir: z.string().nullable(),
   activeBackendMode: DesktopBackendModeSchema,
   appVersion: z.string(),
+  /** The local account still has its initial password. */
+  passwordSetupRequired: z.boolean(),
+  /** The account the app signs in as automatically; null in remote mode. */
+  localUsername: z.string().nullable(),
 });
 
 export type DesktopSettingsSnapshot = z.infer<
@@ -111,6 +115,15 @@ export async function updateDesktopSettings(
     { settings: DesktopSettingsSchema.parse(settings) },
     DesktopSettingsSchema,
   );
+}
+
+/**
+ * Replaces the local account's initial password and resolves to its username.
+ * The shell refuses once the account has a password of its own. Setting it
+ * signs out every session of that account, this one included.
+ */
+export function setDesktopPassword(password: string): Promise<string> {
+  return invokeDesktop('set_desktop_password', { password }, z.string());
 }
 
 export function setDesktopAutostartEnabled(enabled: boolean): Promise<boolean> {

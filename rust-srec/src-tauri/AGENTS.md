@@ -30,7 +30,7 @@ Applies to the desktop wrapper. Follow root workflow rules; apply parent backend
   - `JWT_SECRET` generated and persisted in app data dir if not in env.
   - A `RuntimeLease` keyed on the SQLite database keeps a second backend (desktop or standalone server) off the same DB.
   - Shell-owned JSON files in the app data dir are written through `json_file::write_json_atomically`, each under its own write lock.
-- **Auto-login**: `require_login` defaults to on. Sessions issued without a password come only from the `desktop_auto_login` command, are listed in `local_desktop_sessions.json`, and are revoked before `require_login` is stored as on. Commands that act on backend-supplied paths refuse to run in remote mode.
+- **Auto-login**: `require_login` defaults to off. While it is off, the backend refuses password logins for accounts that still have `must_change_password` (the seeded default password), set before the API starts and on every `commit_desktop_settings`. `require_login` cannot be stored as on while the auto-login account still has its initial password; `set_desktop_password` replaces it without the old one, once. Sessions issued without a password come only from the `desktop_auto_login` command, are listed in `local_desktop_sessions.json`, and are revoked before `require_login` is stored as on. Commands that act on backend-supplied paths refuse to run in remote mode.
 - **First-run rewrite**: Detect docker-default `/app/output` in DB and rewrite to `<app_data_dir>/output`.
 
 ## ANTI-PATTERNS

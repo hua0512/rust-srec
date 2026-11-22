@@ -195,6 +195,7 @@ impl ServiceContainer {
             jwt,
             auth_config,
         )
+        .with_must_change_password_login_guard(self.refuse_must_change_password_logins.clone())
     }
 
     /// Initialize and start the API server, returning the resolved bind address.

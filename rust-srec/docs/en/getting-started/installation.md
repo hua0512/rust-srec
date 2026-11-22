@@ -18,7 +18,7 @@ Docker packages the backend, frontend, and required runtime dependencies. Follow
 
 ## Desktop App
 
-The desktop app runs the backend and web interface together in one window on Windows, Linux, or macOS. Download its installer from the [GitHub Releases](https://github.com/hua0512/rust-srec/releases) page of a release that includes desktop builds. It needs no `.env` file: it generates its own `JWT_SECRET`, listens only on the local machine, and saves recordings to an `output` folder in its application data directory until you choose another **Output Folder**. Only one copy can run at a time, and it cannot share a database with a standalone backend.
+The desktop app runs the backend and web interface together in one window on Windows, Linux, or macOS. Download its installer from the [GitHub Releases](https://github.com/hua0512/rust-srec/releases) page of a release that includes desktop builds. It needs no `.env` file: it generates its own `JWT_SECRET`, listens only on the local machine, and saves recordings to an `output` folder in its application data directory until you choose another **Output Folder**. Only one copy can run at a time, and it cannot share a database with a standalone backend. It signs you in automatically; if other people use the computer, turn on **Require password sign-in** under **Desktop → Backend & Security** and set your own password when asked.
 
 ## Pre-built Binaries
 

@@ -40,6 +40,7 @@ import {
   openDesktopSystemFolder,
   restartDesktopApp,
   setDesktopAutostartEnabled,
+  setDesktopPassword,
   skipDesktopUpdateVersion,
   updateDesktopSettings,
   type DesktopSettings,
@@ -426,6 +427,27 @@ function DesktopSettingsContent() {
     settingsMutation.mutate({ [key]: checked });
   };
 
+  // Setting the password signs this session out (the backend revokes every
+  // session of the account), and the `requireLogin` write's success path then
+  // sends the user to /login. A failed write keeps the toggle off and shows
+  // its own toast.
+  const handleSetPasswordAndRequireLogin = async (password: string) => {
+    try {
+      await setDesktopPassword(password);
+    } catch (setError) {
+      toast.error(
+        errorMessage(setError, i18n._(msg`Failed to set the password`)),
+      );
+      return false;
+    }
+    queryClient.setQueryData<DesktopSettingsSnapshot>(
+      DESKTOP_SETTINGS_QUERY_KEY,
+      (prev) => (prev ? { ...prev, passwordSetupRequired: false } : prev),
+    );
+    settingsMutation.mutate({ requireLogin: true });
+    return true;
+  };
+
   const handleSkipVersion = async (version: string | null) => {
     await skipVersionMutation.mutateAsync(version);
   };
@@ -670,6 +692,7 @@ function DesktopSettingsContent() {
           onToggleRequireLogin={(checked) =>
             handleToggleSetting('requireLogin', checked)
           }
+          onSetPasswordAndRequireLogin={handleSetPasswordAndRequireLogin}
           onApplyBackendSettings={handleApplyBackendSettings}
           onRestart={restartIntoSavedBackend}
         />

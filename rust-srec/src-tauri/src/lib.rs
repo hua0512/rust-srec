@@ -517,6 +517,15 @@ async fn run_desktop_backend_init(
         services_ms
     );
 
+    // Before the API accepts its first request, so the seeded default
+    // password never opens a session while the app signs in without one.
+    // Under the settings lock: a settings write after this sees the container
+    // and applies its own value.
+    {
+        let _write_guard = state.settings_write_lock.lock().await;
+        state.apply_password_login_rule(&state.desktop_settings());
+    }
+
     emit_boot_progress(&app_handle, "Starting API server...", 0.9);
 
     let api_server_start = Instant::now();
@@ -817,6 +826,7 @@ pub fn run() {
             updates::skip_update_version,
             desktop_settings::test_remote_backend_connection,
             desktop_settings::desktop_auto_login,
+            desktop_settings::set_desktop_password,
             desktop_settings::switch_to_local_backend
         ])
         .setup(move |app| {

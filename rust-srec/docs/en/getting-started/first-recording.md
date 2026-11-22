@@ -32,6 +32,8 @@ Open `http://localhost:15275` and sign in with:
 
 The initial account is marked for a mandatory password change. Choose a unique password before any other authenticated action is allowed. Do not expose the service to a network while it still has the default password.
 
+The desktop app with the **Built-in local backend** signs you in automatically, so skip this step there. The default password does not work in the desktop app; if you later turn on **Require password sign-in** under **Desktop → Backend & Security**, you are asked to set your own password first.
+
 ## 3. Add a Streamer
 
 1. Open **Streamers** and select **Add Streamer**.

@@ -435,6 +435,9 @@ impl From<AuthError> for ApiError {
             AuthError::IncorrectCurrentPassword => {
                 ApiError::bad_request("Current password is incorrect")
             }
+            AuthError::PasswordAlreadySet => ApiError::conflict(
+                "A password has already been set; change it with the current password",
+            ),
             AuthError::UserNotFound => ApiError::unauthorized("Invalid credentials"),
             AuthError::UsernameTooLong { max } => {
                 ApiError::bad_request(format!("Username must be at most {max} characters"))

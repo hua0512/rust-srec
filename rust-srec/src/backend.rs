@@ -4,7 +4,7 @@
 //! desktop shell. Application wiring remains internal so changes to routes,
 //! services, and infrastructure do not expand the crate's public API.
 
-pub use crate::api::auth_service::AuthResponse;
+pub use crate::api::auth_service::{AuthResponse, LocalDesktopAccount};
 pub use crate::api::server::ApiServerConfig;
 pub use crate::database::{
     init_database_pools, init_migration_pool, init_pool, init_write_pool, run_migrations,
