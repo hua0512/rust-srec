@@ -92,3 +92,7 @@
 ## Deployment and desktop
 
 - Reduced the server's memory use on Linux hosts where transparent hugepages are set to `always`. In a test recording five streams with danmu, the server used about 170 MiB instead of 330 MiB. It no longer uses hugepages for its own memory; FFmpeg, rclone and the other tools it starts are not affected. Set `MIMALLOC_ALLOW_THP=1` to restore the previous behaviour. See [Environment Variables](https://docs.srec.rs/en/reference/environment#backend-service).
+- Fixed the desktop app staying in the system tray, with the database still locked, after you closed the window that reports a startup error. Closing that window now quits the app.
+- Fixed the desktop app exiting without a message when another rust-srec instance is already using its database. It now opens a window that explains the problem.
+- Fixed the desktop app failing to start when the path of its data folder contains `?` or `%`.
+- Fixed double-clicking the tray icon showing the window and then hiding it again. A double-click now always brings the window to the front.

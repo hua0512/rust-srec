@@ -1,413 +1,55 @@
 use std::fs::OpenOptions;
 use std::io;
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use rust_srec::backend;
-use serde::{Deserialize, Serialize};
-use tauri::Emitter;
-use tauri::Listener;
-use tauri::Manager;
-use tauri::menu::{Menu, MenuItem};
-use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri_plugin_opener::OpenerExt;
+use tauri::{Emitter, Listener, Manager};
 
+mod boot_error;
 mod desktop_notifications;
+mod lifecycle;
+#[cfg(desktop)]
+mod tray;
+mod window_state;
 
-use desktop_notifications::{
-    DesktopNotificationConfig, load_or_create_desktop_notifications_config,
-    register_desktop_notifications_ipc, should_deliver_desktop_notification,
-    show_desktop_notification, test_desktop_notifications,
+pub(crate) use lifecycle::DesktopBackendState;
+
+use boot_error::{
+    BootFailureKind, BootFailurePayload, BootFailureStage, build_init_script,
+    classify_boot_failure, emit_boot_progress, show_boot_error_window,
 };
-
-/// Cooperative drain budget handed to `ServiceContainer::shutdown_with_hard_cap`.
-const SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(30);
-
-/// Wall-clock cap on the whole in-process drain.
-///
-/// The desktop hosts the backend inside its own process, so nothing outside it
-/// can force-kill a wedged engine or pipeline job. Past this cap
-/// `shutdown_with_hard_cap` aborts the remaining tasks — which is what kills
-/// their ffmpeg/streamlink children — so `app_handle.exit` cannot orphan them.
-const SHUTDOWN_HARD_CAP: Duration = Duration::from_secs(60);
-
-/// Wall-clock cap on waiting for the boot task before the exit path contains
-/// the backend.
-///
-/// `ServiceContainer::initialize` is not cancellable and must not overlap
-/// `shutdown_with_hard_cap`, or work spawned after the drain would outlive it.
-/// An exit requested while services are starting therefore waits for the boot
-/// task to return. Past this cap the exit path proceeds anyway: a boot wedged
-/// that long is already beyond cooperative cleanup.
-const BOOT_SETTLE_CAP: Duration = Duration::from_secs(60);
-
-/// Boot progress as seen by the exit path.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum BootPhase {
-    /// Nothing that can own a recording process has been started.
-    Preparing,
-    /// `ServiceContainer::initialize` has been entered: actors, downloads and
-    /// pipeline workers may exist from here on.
-    Services,
-    /// The boot task returned; the exit path owns the container from here on.
-    Settled,
-}
-
-/// Outcome of waiting for the boot task before containing the backend.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum BootSettle {
-    /// The boot task never entered `BootPhase::Services`, and once cancelled it
-    /// cannot enter it any more.
-    NotStarted,
-    Settled,
-    /// The boot task ended without settling (a panic dropped its sender).
-    Abandoned,
-    TimedOut,
-}
-
-/// Wait until the boot task can no longer be inside
-/// `ServiceContainer::initialize`.
-///
-/// Caller contract: cancel the boot task (`DesktopBackendState::init_cancel`)
-/// before calling this. The boot task publishes `BootPhase::Services` before it
-/// checks that token, so a `Preparing` reading here proves the boot task will
-/// observe the cancellation and return before starting services.
-async fn wait_for_boot_settled(
-    mut boot_phase: tokio::sync::watch::Receiver<BootPhase>,
-    cap: Duration,
-) -> BootSettle {
-    if *boot_phase.borrow() == BootPhase::Preparing {
-        return BootSettle::NotStarted;
-    }
-    match tokio::time::timeout(
-        cap,
-        boot_phase.wait_for(|phase| *phase == BootPhase::Settled),
-    )
-    .await
-    {
-        Ok(Ok(_)) => BootSettle::Settled,
-        Ok(Err(_)) => BootSettle::Abandoned,
-        Err(_) => BootSettle::TimedOut,
-    }
-}
-
-#[derive(Clone, Serialize)]
-struct BootProgressPayload {
-    status: String,
-    progress: f32, // 0.0 to 1.0
-}
-
-impl Default for BootProgressPayload {
-    fn default() -> Self {
-        Self {
-            status: "Starting...".to_string(),
-            progress: 0.0,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum BootFailureStage {
-    Logging,
-    Database,
-    Migrations,
-    Backend,
-    Services,
-    ApiServer,
-    Window,
-}
-
-impl BootFailureStage {
-    fn is_database(self) -> bool {
-        matches!(self, Self::Database | Self::Migrations)
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum BootFailureKind {
-    DatabaseBusy,
-    PermissionDenied,
-    StorageFull,
-    DatabaseCorrupt,
-    MigrationFailed,
-    LoggingFailed,
-    ServiceFailed,
-    ApiServerFailed,
-    WindowFailed,
-    Unknown,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct BootFailurePayload {
-    stage: BootFailureStage,
-    kind: BootFailureKind,
-    title: String,
-    message: String,
-    details: String,
-}
-
-impl BootFailurePayload {
-    fn new(stage: BootFailureStage, details: impl Into<String>) -> Self {
-        let details = details.into();
-        let kind = classify_boot_failure(stage, &details);
-        let (title, message) = boot_failure_copy(kind);
-
-        Self {
-            stage,
-            kind,
-            title: title.to_string(),
-            message: message.to_string(),
-            details,
-        }
-    }
-}
-
-fn classify_boot_failure(stage: BootFailureStage, details: &str) -> BootFailureKind {
-    let normalized = details.to_ascii_lowercase();
-
-    if stage.is_database()
-        && [
-            "database is locked",
-            "database is busy",
-            "(code: 5)",
-            "(code: 6)",
-        ]
-        .iter()
-        .any(|needle| normalized.contains(needle))
-    {
-        return BootFailureKind::DatabaseBusy;
-    }
-
-    if [
-        "permission denied",
-        "access is denied",
-        "read-only",
-        "readonly",
-        "attempt to write a readonly database",
-    ]
-    .iter()
-    .any(|needle| normalized.contains(needle))
-    {
-        return BootFailureKind::PermissionDenied;
-    }
-
-    if ["database or disk is full", "no space left on device"]
-        .iter()
-        .any(|needle| normalized.contains(needle))
-    {
-        return BootFailureKind::StorageFull;
-    }
-
-    if stage.is_database()
-        && [
-            "database disk image is malformed",
-            "file is not a database",
-            "database corruption",
-        ]
-        .iter()
-        .any(|needle| normalized.contains(needle))
-    {
-        return BootFailureKind::DatabaseCorrupt;
-    }
-
-    match stage {
-        BootFailureStage::Logging => BootFailureKind::LoggingFailed,
-        BootFailureStage::Migrations => BootFailureKind::MigrationFailed,
-        BootFailureStage::Backend | BootFailureStage::Services => BootFailureKind::ServiceFailed,
-        BootFailureStage::ApiServer => BootFailureKind::ApiServerFailed,
-        BootFailureStage::Window => BootFailureKind::WindowFailed,
-        BootFailureStage::Database => BootFailureKind::Unknown,
-    }
-}
-
-fn boot_failure_copy(kind: BootFailureKind) -> (&'static str, &'static str) {
-    match kind {
-        BootFailureKind::DatabaseBusy => (
-            "The database is temporarily unavailable",
-            "Another process is using the application database. Close other Rust-Srec windows or database tools, then restart.",
-        ),
-        BootFailureKind::PermissionDenied => (
-            "Rust-Srec cannot access its files",
-            "Check the application data folder permissions and security software, then restart.",
-        ),
-        BootFailureKind::StorageFull => (
-            "There is not enough free disk space",
-            "Free some space on the drive containing the application data, then restart.",
-        ),
-        BootFailureKind::DatabaseCorrupt => (
-            "The database may be damaged",
-            "Do not delete the database. Open the data folder and make a backup before attempting recovery.",
-        ),
-        BootFailureKind::MigrationFailed => (
-            "The database could not be upgraded",
-            "Review the logs before restarting. The existing database has not been reset.",
-        ),
-        BootFailureKind::LoggingFailed => (
-            "Logging could not start",
-            "Check that the log folder is writable and that the drive has free space.",
-        ),
-        BootFailureKind::ServiceFailed => (
-            "A desktop service could not start",
-            "Restart the application. If the problem continues, copy the details and review the logs.",
-        ),
-        BootFailureKind::ApiServerFailed => (
-            "The local API could not start",
-            "Restart the application. If the problem continues, review the logs for the underlying service error.",
-        ),
-        BootFailureKind::WindowFailed => (
-            "The desktop window could not be created",
-            "Restart the application. Updating the system webview may be required if the problem continues.",
-        ),
-        BootFailureKind::Unknown => (
-            "Rust-Srec could not finish starting",
-            "Restart the application. If the problem continues, copy the details and review the logs.",
-        ),
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum DesktopRecoveryLocation {
-    Data,
-    Logs,
-}
-
-// Desktop notifications are implemented in `desktop_notifications`.
-
-fn show_main_window(app: &tauri::AppHandle) {
-    let Some(window) = app.get_webview_window("main") else {
-        return;
-    };
-    let _ = window.show();
-    let _ = window.unminimize();
-    let _ = window.set_focus();
-}
-
-/// Identifier of the application menu's Quit item.
-const APP_MENU_QUIT_ID: &str = "app-menu-quit";
-
-/// Tauri's default macOS menu with Quit routed through this app.
-///
-/// The predefined Quit item sends AppKit `terminate:`, which never raises
-/// `ExitRequested`, so Cmd-Q and the application menu would skip the backend
-/// drain that the tray's Quit performs. A regular item with the same key
-/// equivalent goes through `AppHandle::exit` instead. Everything else mirrors
-/// `Menu::default` so the Edit key equivalents keep reaching the webview and
-/// the Window and Help submenus keep their AppKit roles.
-fn app_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
-    use tauri::menu::{
-        AboutMetadata, HELP_SUBMENU_ID, PredefinedMenuItem, Submenu, WINDOW_SUBMENU_ID,
-    };
-
-    let package = app.package_info();
-    let bundle = &app.config().bundle;
-    let about = AboutMetadata {
-        name: Some(package.name.clone()),
-        version: Some(package.version.to_string()),
-        copyright: bundle.copyright.clone(),
-        authors: bundle.publisher.clone().map(|publisher| vec![publisher]),
-        ..Default::default()
-    };
-    let quit = MenuItem::with_id(
-        app,
-        APP_MENU_QUIT_ID,
-        format!("Quit {}", package.name),
-        true,
-        Some("CmdOrCtrl+Q"),
-    )?;
-
-    let application = Submenu::with_items(
-        app,
-        package.name.clone(),
-        true,
-        &[
-            &PredefinedMenuItem::about(app, None, Some(about))?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::services(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::hide(app, None)?,
-            &PredefinedMenuItem::hide_others(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &quit,
-        ],
-    )?;
-    let file = Submenu::with_items(
-        app,
-        "File",
-        true,
-        &[&PredefinedMenuItem::close_window(app, None)?],
-    )?;
-    let edit = Submenu::with_items(
-        app,
-        "Edit",
-        true,
-        &[
-            &PredefinedMenuItem::undo(app, None)?,
-            &PredefinedMenuItem::redo(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::cut(app, None)?,
-            &PredefinedMenuItem::copy(app, None)?,
-            &PredefinedMenuItem::paste(app, None)?,
-            &PredefinedMenuItem::select_all(app, None)?,
-        ],
-    )?;
-    let view = Submenu::with_items(
-        app,
-        "View",
-        true,
-        &[&PredefinedMenuItem::fullscreen(app, None)?],
-    )?;
-    let window = Submenu::with_id_and_items(
-        app,
-        WINDOW_SUBMENU_ID,
-        "Window",
-        true,
-        &[
-            &PredefinedMenuItem::minimize(app, None)?,
-            &PredefinedMenuItem::maximize(app, None)?,
-            &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::close_window(app, None)?,
-        ],
-    )?;
-    let help = Submenu::with_id_and_items(app, HELP_SUBMENU_ID, "Help", true, &[])?;
-
-    Menu::with_items(app, &[&application, &file, &edit, &view, &window, &help])
-}
-
-fn hide_main_window(app: &tauri::AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.hide();
-    }
-}
-
-fn toggle_main_window(app: &tauri::AppHandle) {
-    let Some(window) = app.get_webview_window("main") else {
-        return;
-    };
-    match window.is_visible() {
-        Ok(true) => hide_main_window(app),
-        Ok(false) => show_main_window(app),
-        Err(_) => show_main_window(app),
-    }
-}
+use desktop_notifications::{
+    load_or_create_desktop_notifications_config, register_desktop_notifications_ipc,
+    should_deliver_desktop_notification, show_desktop_notification,
+};
+use lifecycle::{
+    BOOT_SETTLE_CAP, BootPhase, SHUTDOWN_HARD_CAP, begin_exit, drain_backend_for_exit, exit_owned,
+    finish_exit, mark_exit_settled, wait_for_exit_settled,
+};
+#[cfg(desktop)]
+use tray::{APP_MENU_QUIT_ID, app_menu, setup_tray_icon};
+#[cfg(desktop)]
+use window_state::handle_main_window_event;
+use window_state::{center_main_window_once, on_main_window_close_requested, show_main_window};
 
 /// Connection URL for the desktop's SQLite database.
 ///
-/// `RuntimeLease::acquire_for_database` derives the ownership lock from this,
-/// so the setup hook and the backend boot must build it the same way or the
-/// lease would guard a different file than the one actually opened.
+/// `RuntimeLease::acquire_for_database` and SQLx both parse this URL with
+/// `SqliteConnectOptions::from_str`, which strips the scheme, treats the first
+/// `?` as the start of the parameters, and percent-decodes the rest as the file
+/// name. Escaping `%` and `?` is therefore all it takes for the path to come
+/// back unchanged, Windows verbatim (`\\?\`) and UNC prefixes included. The
+/// scheme is always `sqlite://` because a bare `sqlite:` in front of a path
+/// that starts with `//` would read as that longer scheme and lose the root.
 fn desktop_database_url(data_dir: &Path) -> String {
-    format!(
-        "sqlite:{}?mode=rwc",
-        data_dir.join("srec.db").to_string_lossy()
-    )
+    let db_path = data_dir.join("srec.db");
+    let escaped = db_path
+        .to_string_lossy()
+        .replace('%', "%25")
+        .replace('?', "%3F");
+    format!("sqlite://{escaped}?mode=rwc")
 }
 
 fn load_or_create_jwt_secret(data_dir: &Path) -> io::Result<String> {
@@ -446,338 +88,6 @@ fn load_or_create_jwt_secret(data_dir: &Path) -> io::Result<String> {
     file.sync_all()?;
 
     Ok(secret)
-}
-
-struct DesktopBackendState {
-    container: std::sync::Mutex<Option<Arc<backend::ServiceContainer>>>,
-    log_guard: std::sync::Mutex<Option<tracing_appender::non_blocking::WorkerGuard>>,
-    _instance_lock: backend::RuntimeLease,
-    shutdown_started: AtomicBool,
-    /// Set once the exit owner has drained the backend (`finish_exit`,
-    /// `restart_desktop` just before its restart, or the `Exit` arm after
-    /// draining an AppKit termination). While `shutdown_started` is set and
-    /// this is not, the `ExitRequested` handler holds back every request
-    /// except the owner's own and restarts, which Tauri cannot hold, and the
-    /// final `Exit` event waits for it before the process may end.
-    exit_settled: tokio::sync::watch::Sender<bool>,
-
-    main_window_centered: AtomicBool,
-
-    boot_progress: std::sync::Mutex<BootProgressPayload>,
-
-    init_cancel: tokio_util::sync::CancellationToken,
-    /// Published by the boot task; read by the exit path through
-    /// `wait_for_boot_settled`.
-    boot_phase: tokio::sync::watch::Receiver<BootPhase>,
-
-    data_dir: PathBuf,
-    log_dir: PathBuf,
-    desktop_notifications: std::sync::Mutex<DesktopNotificationConfig>,
-}
-
-impl DesktopBackendState {
-    fn new(
-        instance_lock: backend::RuntimeLease,
-        data_dir: PathBuf,
-        log_dir: PathBuf,
-        desktop_notifications: DesktopNotificationConfig,
-        boot_phase: tokio::sync::watch::Receiver<BootPhase>,
-    ) -> Self {
-        Self {
-            container: std::sync::Mutex::new(None),
-            log_guard: std::sync::Mutex::new(None),
-            _instance_lock: instance_lock,
-            shutdown_started: AtomicBool::new(false),
-            exit_settled: tokio::sync::watch::Sender::new(false),
-            main_window_centered: AtomicBool::new(false),
-            boot_progress: std::sync::Mutex::new(BootProgressPayload::default()),
-            init_cancel: tokio_util::sync::CancellationToken::new(),
-            boot_phase,
-
-            data_dir,
-            log_dir,
-            desktop_notifications: std::sync::Mutex::new(desktop_notifications),
-        }
-    }
-
-    fn set_boot_progress(&self, status: &str, progress: f32) -> BootProgressPayload {
-        let payload = BootProgressPayload {
-            status: status.to_string(),
-            progress: progress.clamp(0.0, 1.0),
-        };
-
-        if let Ok(mut lock) = self.boot_progress.lock() {
-            *lock = payload.clone();
-        }
-
-        payload
-    }
-
-    fn current_boot_progress(&self) -> BootProgressPayload {
-        self.boot_progress
-            .lock()
-            .map(|p| p.clone())
-            .unwrap_or_default()
-    }
-
-    fn set_container(&self, container: Arc<backend::ServiceContainer>) {
-        if let Ok(mut lock) = self.container.lock() {
-            *lock = Some(container);
-        }
-    }
-
-    fn set_log_guard(&self, log_guard: tracing_appender::non_blocking::WorkerGuard) {
-        if let Ok(mut lock) = self.log_guard.lock() {
-            *lock = Some(log_guard);
-        }
-    }
-
-    fn backend(&self) -> Option<Arc<backend::ServiceContainer>> {
-        self.container.lock().ok().and_then(|c| c.clone())
-    }
-}
-
-fn center_main_window_once(app: &tauri::AppHandle) {
-    let Some(window) = app.get_webview_window("main") else {
-        return;
-    };
-
-    let should_center = app
-        .try_state::<DesktopBackendState>()
-        .map(|state| !state.main_window_centered.swap(true, Ordering::SeqCst))
-        .unwrap_or(true);
-
-    if !should_center {
-        return;
-    }
-
-    if let Err(e) = window.center() {
-        log::warn!("Failed to center main window: {}", e);
-    }
-}
-
-fn emit_boot_progress(app: &tauri::AppHandle, status: &str, progress: f32) {
-    let payload = app
-        .try_state::<DesktopBackendState>()
-        .map(|state| state.set_boot_progress(status, progress))
-        .unwrap_or(BootProgressPayload {
-            status: status.to_string(),
-            progress: progress.clamp(0.0, 1.0),
-        });
-
-    // Always use global emit for boot progress to ensure the splash window catches it
-    // regardless of whether it's listening locally or globally.
-    if let Err(e) = app.emit("boot-progress", payload) {
-        log::warn!("Failed to emit boot progress: {}", e);
-    }
-}
-
-fn build_init_script(
-    backend_url: &str,
-    boot_error: Option<&BootFailurePayload>,
-    desktop_notifications: &DesktopNotificationConfig,
-) -> String {
-    let backend_url_json =
-        serde_json::to_string(backend_url).unwrap_or_else(|_| "\"\"".to_string());
-    let boot_error_json = match boot_error {
-        Some(error) => serde_json::to_string(error).unwrap_or_else(|_| "null".to_string()),
-        None => "null".to_string(),
-    };
-
-    let desktop_notifications_json =
-        serde_json::to_string(desktop_notifications).unwrap_or_else(|_| "null".to_string());
-
-    format!(
-        "globalThis.__RUST_SREC_BACKEND_URL__ = {backend_url_json};\
- globalThis.__RUST_SREC_BOOT_ERROR__ = {boot_error_json};\
- globalThis.__RUST_SREC_DESKTOP_NOTIFICATIONS__ = {desktop_notifications_json};"
-    )
-}
-
-async fn show_boot_error_window(app_handle: &tauri::AppHandle, failure: BootFailurePayload) {
-    log::error!(
-        "Desktop boot failed at {:?} ({:?}): {}",
-        failure.stage,
-        failure.kind,
-        failure.details
-    );
-
-    let state = app_handle.state::<DesktopBackendState>();
-    if state.init_cancel.is_cancelled() {
-        // The exit path already owns the process; a recovery window would only
-        // flash before it closes.
-        return;
-    }
-    let desktop_notifications = state.desktop_notifications();
-
-    let webview_url = if tauri::is_dev() {
-        tauri::WebviewUrl::External(
-            tauri::Url::parse("http://127.0.0.1:15275/index.desktop.html")
-                .unwrap_or_else(|_| tauri::Url::parse("http://127.0.0.1:15275/").unwrap()),
-        )
-    } else {
-        tauri::WebviewUrl::App("index.desktop.html".into())
-    };
-
-    let init_script = build_init_script("", Some(&failure), &desktop_notifications);
-
-    if app_handle.get_webview_window("main").is_none() {
-        match tauri::WebviewWindowBuilder::new(app_handle, "main", webview_url)
-            .title("Rust-Srec - Startup error")
-            .inner_size(920.0, 720.0)
-            .min_inner_size(640.0, 520.0)
-            .initialization_script(init_script)
-            .build()
-        {
-            Ok(window) => {
-                center_main_window_once(app_handle);
-                if let Err(error) = window.show() {
-                    log::error!("Failed to show desktop boot error window: {}", error);
-                }
-                if let Err(error) = window.set_focus() {
-                    log::warn!("Failed to focus desktop boot error window: {}", error);
-                }
-            }
-            Err(error) => {
-                log::error!("Failed to create desktop boot error window: {}", error);
-            }
-        }
-    } else {
-        show_main_window(app_handle);
-    }
-
-    if let Some(splash) = app_handle.get_webview_window("splash")
-        && let Err(error) = splash.close()
-    {
-        log::warn!("Failed to close splash after boot failure: {}", error);
-    }
-}
-
-#[tauri::command]
-fn open_desktop_recovery_location(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, DesktopBackendState>,
-    location: DesktopRecoveryLocation,
-) -> Result<(), String> {
-    let path = match location {
-        DesktopRecoveryLocation::Data => &state.data_dir,
-        DesktopRecoveryLocation::Logs => &state.log_dir,
-    };
-    let path_display = path.to_string_lossy().into_owned();
-
-    app.opener()
-        .open_path(path_display.clone(), None::<&str>)
-        .map_err(|error| format!("Failed to open '{path_display}': {error}"))
-}
-
-#[tauri::command]
-fn restart_desktop(app: tauri::AppHandle) {
-    // `ExitRequestApi::prevent_exit` is ignored for restart requests, so the
-    // `ExitRequested` handler cannot hold a restart back: contain first.
-    if !begin_exit(&app) {
-        return;
-    }
-    tauri::async_runtime::spawn(async move {
-        drain_backend_for_exit(&app).await;
-        mark_exit_settled(&app);
-        app.request_restart();
-    });
-}
-
-fn mark_exit_settled(app: &tauri::AppHandle) {
-    if let Some(state) = app.try_state::<DesktopBackendState>() {
-        state.exit_settled.send_replace(true);
-    }
-}
-
-/// Wait until the exit owner has drained the backend. Returns `false` when
-/// `cap` elapses first.
-async fn wait_for_exit_settled(
-    mut exit_settled: tokio::sync::watch::Receiver<bool>,
-    cap: Duration,
-) -> bool {
-    tokio::time::timeout(cap, exit_settled.wait_for(|settled| *settled))
-        .await
-        .is_ok()
-}
-
-/// Exit now that the backend is drained; the `ExitRequested` handler lets the
-/// owner's own request through while an exit is owned.
-fn finish_exit(app: &tauri::AppHandle, code: i32) {
-    mark_exit_settled(app);
-    app.exit(code);
-}
-
-/// Drain the backend on a task of its own, so that a panic inside the drain
-/// still lets the owner finish the exit: while an exit is owned every other
-/// request is held back, so the owner must always reach `finish_exit`.
-async fn drain_backend_for_exit(app: &tauri::AppHandle) {
-    let drain = tauri::async_runtime::spawn({
-        let app = app.clone();
-        async move { contain_backend_for_exit(&app).await }
-    });
-    if drain.await.is_err() {
-        log::error!("Backend drain task ended abnormally; continuing with the exit");
-    }
-}
-
-/// Whether an exit sequence has been claimed.
-///
-/// Window-state getters called from a runtime thread block until the main
-/// thread services them, and during an AppKit termination the main thread is
-/// parked in the drain; callers use this to skip such reads once an exit is
-/// under way.
-fn exit_owned(app: &tauri::AppHandle) -> bool {
-    app.try_state::<DesktopBackendState>()
-        .is_some_and(|state| state.shutdown_started.load(Ordering::SeqCst))
-}
-
-/// Claim the single exit sequence and stop the boot task at its next
-/// checkpoint.
-///
-/// Returns `false` when another path already owns the exit, or when the app
-/// is exiting before its state was registered; that path finishes on its own.
-fn begin_exit(app: &tauri::AppHandle) -> bool {
-    let Some(state) = app.try_state::<DesktopBackendState>() else {
-        return false;
-    };
-    if state.shutdown_started.swap(true, Ordering::SeqCst) {
-        return false;
-    }
-    // Cancel before `contain_backend_for_exit` reads the boot phase; see
-    // `wait_for_boot_settled` for the ordering this relies on.
-    state.init_cancel.cancel();
-    true
-}
-
-/// Drain the backend so no recording child outlives the process.
-///
-/// Waits for the boot task first: `ServiceContainer::initialize` may still be
-/// spawning the very work a concurrent drain would miss.
-async fn contain_backend_for_exit(app: &tauri::AppHandle) {
-    let state = app.state::<DesktopBackendState>();
-    if wait_for_boot_settled(state.boot_phase.clone(), BOOT_SETTLE_CAP).await
-        == BootSettle::TimedOut
-    {
-        log::warn!(
-            "Desktop boot did not settle within {:?}; continuing without waiting further (the backend is drained only if it was stored)",
-            BOOT_SETTLE_CAP
-        );
-    }
-    let Some(container) = state.backend() else {
-        return;
-    };
-    if let Err(e) = container
-        .shutdown_with_hard_cap(SHUTDOWN_GRACE_PERIOD, SHUTDOWN_HARD_CAP)
-        .await
-    {
-        log::error!("Error during shutdown: {}", e);
-    }
-}
-
-#[tauri::command]
-fn quit_desktop(app: tauri::AppHandle) {
-    app.exit(0);
 }
 
 async fn run_desktop_backend_init(
@@ -1235,71 +545,6 @@ async fn run_desktop_notification_listener(
     }
 }
 
-/// Hide the main window once the platform reports it minimized, so it lives in
-/// the tray rather than the taskbar or Dock. Returns whether it was minimized.
-fn hide_main_window_if_minimized(app: &tauri::AppHandle) -> bool {
-    if exit_owned(app) {
-        return false;
-    }
-    let Some(window) = app.get_webview_window("main") else {
-        return false;
-    };
-    if !window.is_minimized().unwrap_or(false) {
-        return false;
-    }
-    if let Err(error) = window.hide() {
-        log::warn!("Failed to hide minimized window: {}", error);
-    }
-    true
-}
-
-/// Move a minimized main window to the tray.
-///
-/// Tao reports minimization through `Resized`: WM_SIZE on Windows and the GTK
-/// window-state change on Linux, both delivered after the minimized state is
-/// updated, so one read suffices.
-#[cfg(all(desktop, not(target_os = "macos")))]
-fn handle_main_window_event(app: &tauri::AppHandle, event: &tauri::WindowEvent) {
-    if matches!(event, tauri::WindowEvent::Resized(_)) {
-        hide_main_window_if_minimized(app);
-    }
-}
-
-/// Successive delays between re-reads of the minimized state after the window
-/// resigns key status. AppKit resigns key while the miniaturize animation is
-/// still running, so the read that follows the event can precede the state
-/// change; the default animation finishes well inside the first two re-reads
-/// and the last one is a margin for a slowed animation.
-#[cfg(all(desktop, target_os = "macos"))]
-const MINIMIZE_RECHECK_DELAYS: [Duration; 3] = [
-    Duration::from_millis(250),
-    Duration::from_millis(1000),
-    Duration::from_millis(3000),
-];
-
-/// Move a minimized main window to the tray.
-///
-/// macOS has no minimize event; the window only resigns key status, which
-/// also happens on every app switch. A miss is re-read a little later rather
-/// than polled for. Minimizing a window that is not key (from the Dock, or the
-/// yellow button of a background window) resigns nothing, so that window stays
-/// in the Dock until it is restored from the tray.
-#[cfg(all(desktop, target_os = "macos"))]
-fn handle_main_window_event(app: &tauri::AppHandle, event: &tauri::WindowEvent) {
-    if !matches!(event, tauri::WindowEvent::Focused(false)) || hide_main_window_if_minimized(app) {
-        return;
-    }
-    let app = app.clone();
-    tauri::async_runtime::spawn(async move {
-        for delay in MINIMIZE_RECHECK_DELAYS {
-            tokio::time::sleep(delay).await;
-            if hide_main_window_if_minimized(&app) {
-                break;
-            }
-        }
-    });
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -1326,10 +571,10 @@ pub fn run() {
 
     let app = builder
         .invoke_handler(tauri::generate_handler![
-            open_desktop_recovery_location,
-            restart_desktop,
-            quit_desktop,
-            test_desktop_notifications
+            boot_error::open_desktop_recovery_location,
+            lifecycle::restart_desktop,
+            lifecycle::quit_desktop,
+            desktop_notifications::test_desktop_notifications
         ])
         .setup(move |app| {
             let data_dir = app.path().app_data_dir()?;
@@ -1342,15 +587,6 @@ pub fn run() {
             std::fs::create_dir_all(&log_dir)?;
             let log_dir_str = log_dir.to_string_lossy().to_string();
 
-            // Desktop: ensure authentication is consistently enabled by providing a per-install JWT secret.
-            // If JWT_SECRET is already set in the process env, we assume the user wants to manage auth
-            // externally (dev override). Otherwise we persist a per-install secret under app data.
-            let desktop_jwt_secret = if std::env::var("JWT_SECRET").is_ok() {
-                None
-            } else {
-                Some(load_or_create_jwt_secret(&data_dir)?)
-            };
-
             // Defense-in-depth: ensure we never start a 2nd backend instance against the same
             // local SQLite DB, even if the single-instance plugin doesn't exit early on some
             // platforms/configurations.
@@ -1358,18 +594,22 @@ pub fn run() {
             // Keyed on the database rather than on this app's data directory,
             // so a standalone `rust-srec` server pointed at the same file is
             // excluded too — it acquires the same lease before it starts.
-            let instance_lock =
-                match backend::RuntimeLease::acquire_for_database(&desktop_database_url(&data_dir))
-                {
-                    Ok(lease) => lease,
+            let database_url = desktop_database_url(&data_dir);
+            let (instance_lock, lease_error) =
+                match backend::RuntimeLease::acquire_for_database(&database_url) {
+                    Ok(lease) => (Some(lease), None),
                     Err(error) => {
-                        log::warn!("Another runtime already owns this database: {error}");
-                        app.handle().exit(0);
-                        return Ok(());
+                        log::warn!("Failed to acquire database runtime lease: {error}");
+                        (None, Some(error))
                     }
                 };
 
-            let (boot_phase_tx, boot_phase_rx) = tokio::sync::watch::channel(BootPhase::Preparing);
+            let initial_phase = if lease_error.is_some() {
+                BootPhase::Settled
+            } else {
+                BootPhase::Preparing
+            };
+            let (boot_phase_tx, boot_phase_rx) = tokio::sync::watch::channel(initial_phase);
 
             app.manage(DesktopBackendState::new(
                 instance_lock,
@@ -1380,6 +620,45 @@ pub fn run() {
             ));
 
             register_desktop_notifications_ipc(app.handle());
+
+            // Create system tray icon early so the app is controllable during startup.
+            #[cfg(desktop)]
+            setup_tray_icon(app)?;
+
+            if let Some(error) = lease_error {
+                let app_handle = app.handle().clone();
+                let failure = BootFailurePayload::new(
+                    BootFailureStage::Database,
+                    format!("Failed to acquire database lock: {error}"),
+                );
+                tauri::async_runtime::spawn(async move {
+                    show_boot_error_window(&app_handle, failure).await;
+                });
+                return Ok(());
+            }
+
+            // Desktop: ensure authentication is consistently enabled by providing a per-install JWT secret.
+            // If JWT_SECRET is already set in the process env, we assume the user wants to manage auth
+            // externally (dev override). Otherwise we persist a per-install secret under app data.
+            let desktop_jwt_secret = if std::env::var("JWT_SECRET").is_ok() {
+                None
+            } else {
+                match load_or_create_jwt_secret(&data_dir) {
+                    Ok(secret) => Some(secret),
+                    Err(error) => {
+                        let app_handle = app.handle().clone();
+                        let failure = BootFailurePayload::new(
+                            BootFailureStage::Backend,
+                            format!("Failed to initialize desktop JWT secret: {error}"),
+                        );
+                        boot_phase_tx.send_replace(BootPhase::Settled);
+                        tauri::async_runtime::spawn(async move {
+                            show_boot_error_window(&app_handle, failure).await;
+                        });
+                        return Ok(());
+                    }
+                }
+            };
 
             // Show a lightweight loading window while the backend starts.
             let splash_url = if tauri::is_dev() {
@@ -1440,89 +719,6 @@ pub fn run() {
                     });
             }
 
-            // Desktop notifications IPC bridge lives in `desktop_notifications`.
-
-            // Create system tray icon early so the app is controllable during startup.
-            #[cfg(desktop)]
-            {
-                let handle = app.handle().clone();
-
-                let show_hide = MenuItem::new(&handle, "Show/Hide", true, None::<&str>)?;
-
-                #[cfg(feature = "devtools")]
-                let devtools = {
-                    let enabled = cfg!(debug_assertions)
-                        || std::env::var_os("RUST_SREC_DESKTOP_DEVTOOLS").is_some();
-                    enabled
-                        .then(|| MenuItem::new(&handle, "DevTools", true, None::<&str>))
-                        .transpose()?
-                };
-
-                #[cfg(not(feature = "devtools"))]
-                let devtools: Option<MenuItem<_>> = None;
-
-                let quit = MenuItem::new(&handle, "Quit", true, None::<&str>)?;
-                let menu = if let Some(devtools) = &devtools {
-                    Menu::with_items(&handle, &[&show_hide, devtools, &quit])?
-                } else {
-                    Menu::with_items(&handle, &[&show_hide, &quit])?
-                };
-
-                let show_hide_id = show_hide.id().clone();
-
-                #[cfg(feature = "devtools")]
-                let devtools_id = devtools.as_ref().map(|item| item.id().clone());
-
-                let quit_id = quit.id().clone();
-
-                let icon = tauri::include_image!("./icons/32x32.png");
-
-                TrayIconBuilder::with_id("rust-srec-tray")
-                    .icon(icon)
-                    .tooltip("Rust-Srec")
-                    .menu(&menu)
-                    .show_menu_on_left_click(false)
-                    .on_menu_event(move |app: &tauri::AppHandle, event| {
-                        if event.id == quit_id {
-                            app.exit(0);
-                            return;
-                        }
-                        #[cfg(feature = "devtools")]
-                        {
-                            if devtools_id.as_ref().is_some_and(|id| event.id == *id) {
-                                if let Some(window) = app.get_webview_window("main") {
-                                    if window.is_devtools_open() {
-                                        window.close_devtools();
-                                    } else {
-                                        window.open_devtools();
-                                    }
-                                }
-                                return;
-                            }
-                        }
-                        if event.id == show_hide_id {
-                            toggle_main_window(app);
-                        }
-                    })
-                    .on_tray_icon_event(|tray: &tauri::tray::TrayIcon, event| match event {
-                        TrayIconEvent::Click {
-                            button: MouseButton::Left,
-                            button_state: MouseButtonState::Up,
-                            ..
-                        } => {
-                            toggle_main_window(tray.app_handle());
-                        }
-                        TrayIconEvent::DoubleClick {
-                            button: MouseButton::Left,
-                            ..
-                        } => {
-                            toggle_main_window(tray.app_handle());
-                        }
-                        _ => {}
-                    })
-                    .build(&handle)?;
-            }
-
             let app_handle = app.handle().clone();
             let data_dir = data_dir.clone();
             let log_dir_str = log_dir_str.clone();
@@ -1546,7 +742,6 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {
-        // Intercept window close button (X) and hide to tray instead of exiting.
         if let tauri::RunEvent::WindowEvent {
             label,
             event: tauri::WindowEvent::CloseRequested { api, .. },
@@ -1555,7 +750,7 @@ pub fn run() {
             && label == "main"
         {
             api.prevent_close();
-            hide_main_window(app_handle);
+            on_main_window_close_requested(app_handle);
             return;
         }
 
@@ -1623,89 +818,42 @@ pub fn run() {
 mod tests {
     use super::*;
 
-    #[test]
-    fn classifies_transient_database_lock() {
-        let failure = BootFailurePayload::new(
-            BootFailureStage::Database,
-            "Failed to open database: (code: 5) database is locked",
-        );
-
-        assert_eq!(failure.kind, BootFailureKind::DatabaseBusy);
-        assert!(failure.message.contains("Close other Rust-Srec windows"));
-    }
-
-    #[test]
-    fn classifies_database_corruption_without_destructive_advice() {
-        let failure = BootFailurePayload::new(
-            BootFailureStage::Migrations,
-            "database disk image is malformed",
-        );
-
-        assert_eq!(failure.kind, BootFailureKind::DatabaseCorrupt);
-        assert!(failure.message.contains("Do not delete the database"));
-        assert!(failure.message.contains("make a backup"));
-    }
-
-    #[test]
-    fn classifies_permission_and_storage_failures_across_stages() {
-        assert_eq!(
-            classify_boot_failure(BootFailureStage::Logging, "Access is denied"),
-            BootFailureKind::PermissionDenied
-        );
-        assert_eq!(
-            classify_boot_failure(BootFailureStage::Services, "No space left on device"),
-            BootFailureKind::StorageFull
-        );
-    }
-
-    #[test]
-    fn uses_stage_specific_fallback_for_migration_errors() {
-        assert_eq!(
-            classify_boot_failure(BootFailureStage::Migrations, "unexpected schema version"),
-            BootFailureKind::MigrationFailed
-        );
-    }
-
     #[tokio::test]
-    async fn boot_settle_does_not_wait_before_services_start() {
-        let (_tx, rx) = tokio::sync::watch::channel(BootPhase::Preparing);
+    async fn database_url_reaches_a_data_dir_whose_name_needs_escaping() {
+        // `?` cannot appear in a Windows file name.
+        let dir_name = if cfg!(windows) {
+            "acct 100%25 data"
+        } else {
+            "acct?1 100%25 data"
+        };
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let base_dir = std::env::temp_dir().join(format!(
+            "rust-srec-desktop-db-url-{}-{unique}",
+            std::process::id()
+        ));
+        let data_dir = base_dir.join(dir_name);
+        std::fs::create_dir_all(&data_dir).expect("create data dir");
 
+        let url = desktop_database_url(&data_dir);
+        let lease =
+            backend::RuntimeLease::acquire_for_database(&url).expect("acquire runtime lease");
+        let contention = backend::RuntimeLease::acquire_for_database(&url)
+            .err()
+            .expect("second runtime lease should contend");
         assert_eq!(
-            wait_for_boot_settled(rx, Duration::from_secs(5)).await,
-            BootSettle::NotStarted
+            classify_boot_failure(BootFailureStage::Database, &contention.to_string()),
+            BootFailureKind::DatabaseBusy
         );
-    }
 
-    #[tokio::test]
-    async fn boot_settle_waits_for_the_boot_task_to_return() {
-        let (tx, rx) = tokio::sync::watch::channel(BootPhase::Services);
-        let waiter = tokio::spawn(wait_for_boot_settled(rx, Duration::from_secs(5)));
-        tokio::task::yield_now().await;
-        assert!(!waiter.is_finished());
-
-        tx.send_replace(BootPhase::Settled);
-
-        assert_eq!(waiter.await.expect("waiter task"), BootSettle::Settled);
-    }
-
-    #[tokio::test]
-    async fn boot_settle_treats_a_dropped_boot_task_as_settled() {
-        let (tx, rx) = tokio::sync::watch::channel(BootPhase::Services);
-        drop(tx);
-
-        assert_eq!(
-            wait_for_boot_settled(rx, Duration::from_secs(5)).await,
-            BootSettle::Abandoned
-        );
-    }
-
-    #[tokio::test]
-    async fn boot_settle_gives_up_after_the_cap() {
-        let (_tx, rx) = tokio::sync::watch::channel(BootPhase::Services);
-
-        assert_eq!(
-            wait_for_boot_settled(rx, Duration::from_millis(20)).await,
-            BootSettle::TimedOut
-        );
+        let pool = backend::init_migration_pool(&url)
+            .await
+            .expect("open SQLite pool");
+        pool.close().await;
+        assert!(data_dir.join("srec.db").exists());
+        drop(lease);
+        let _ = std::fs::remove_dir_all(&base_dir);
     }
 }
