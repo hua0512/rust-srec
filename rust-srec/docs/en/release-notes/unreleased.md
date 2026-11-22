@@ -29,6 +29,12 @@
 - An HLS segment that keeps failing is now skipped after 45 seconds of retries instead of stalling the recording for about two minutes (any retry already in flight finishes first, and rate-limit waits are not counted). This can be adjusted via **Segment Retry Deadline** under **Advanced → Segment downloads** on the Mesio engine's HLS tab; DASH recordings use the same 45-second limit.
 - Fixed **End Stream On Danmu Close** having no effect when set on a template or streamer. Previously only the platform setting was used, so turning it off for a streamer did not stop danmu close events from ending the recording.
 - Fixed **Min Segment Size** deleting valid parts mid-recording and leaving gaps. When a stream's resolution or codec changes, recording continues in a new file; on low-bitrate streams, a part between two changes can be smaller than the minimum (1 MiB by default) and was previously deleted along with its chat file. Parts ended by a resolution or codec change are now kept even if smaller than the minimum, while short parts from stops, reconnects or ad breaks are still cleaned up. See [Resource Limits](https://docs.srec.rs/en/reference/settings#resource-limits).
+- Fixed Huya **Record Danmu** failing to capture live chat, including on rooms with custom URLs or links with query parameters.
+- Fixed **Split file now** never finding a clean cut point on some HLS and fragmented MP4 streams.
+- Fixed FLV recordings losing their duration and stream details on broadcasts that send stream events before metadata, and prevented empty FLV or fragmented MP4 files from being left behind when a recording ends or splits before any audio or video arrives.
+- Fixed Twitch recordings skipping live or ending segments around low-latency previews or ad breaks, and stopped sending your Twitch login token to video servers.
+- Prevented deleting a recording session on **Sessions** while it is still live or still has processing jobs waiting or running.
+- Fixed negative bitrate values on some Douyin streams breaking bitrate filters, 1080p H.265 streams showing a height of `1088` instead of `1080`, and password-protected Twitcasting links entered without `https://` losing their password.
 
 ## Workflows and file processing
 
@@ -42,6 +48,10 @@
 ## Configuration
 
 - Fixed on/off options in a template's platform override or a streamer's **Platform options** tab (such as **Batch Detection**, **Force Origin Quality** and **End Stream On Danmu Close**) always showing as on or off even when unset, making it unclear whether they followed the platform setting. Previously, once toggled there, the only way to follow the platform again was editing JSON. These options now offer **Inherit**, **On** and **Off**, where **Inherit** follows the template or platform setting. See [Configuration layers](https://docs.srec.rs/en/concepts/configuration#important-merge-rules).
+- Fixed **Replace All** in **Import Configuration** under **Backup & Restore** leaving settings, **Accounts** and **Proxies** choices on **Platforms** omitted from the backup, which could block deleting old accounts or proxies.
+- Fixed **API Keys** keeping old permissions or staying active for up to five seconds after **Change Password** or **Import Configuration** updated or disabled an account.
+- Fixed **Web Push** under **Browser Notifications** failing to subscribe, update priority or unsubscribe when `AUTH_DISABLED=true`.
+- Updating the log filter in global settings or through **Import Configuration** now takes effect right away without restarting rust-srec.
 
 ## Web interface
 
@@ -67,3 +77,7 @@
 - The **Engines** and **Proxies** settings pages now use the same list layout as the rest of the settings pages. Each engine shows a summary of its configuration with quick action buttons, **System proxy** has its own status card, and each proxy can be expanded to see which settings use it.
 - Fixed the QR code login dialog staying open after a scan succeeded. It now closes automatically shortly after the account is saved.
 - Saving changes on a platform, template or engine settings page now keeps you on that page instead of returning to the list, so you can keep adjusting other tabs or settings and click **Back** when finished.
+
+## Deployment and desktop
+
+- Fixed closing the desktop startup recovery window hiding it to the system tray and keeping the database locked, fixed the desktop app exiting without a message when another rust-srec instance is already using the database or when the app data folder contains `#`, `?` or `%`, and fixed double-clicking the tray icon showing and immediately hiding the window.
