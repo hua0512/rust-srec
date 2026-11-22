@@ -117,20 +117,24 @@ async fn read_danmu(
         .unwrap_or(DANMU_READ_DEFAULT_BYTES)
         .min(DANMU_READ_MAX_BYTES);
 
-    let mut file = tokio::fs::File::open(&output.file_path)
-        .await
-        .map_err(|error| {
+    let path = crate::utils::fs::normalize_media_path(&output.file_path);
+    let mut file = tokio::fs::File::open(&path).await.map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
             ApiError::not_found(format!(
-                "Danmu file '{}' is not readable: {error}",
-                output.file_path
+                "Danmu file for media output '{}' is not available",
+                output.id
             ))
-        })?;
+        } else {
+            ApiError::from(crate::Error::io_path("opening danmu file", &path, error))
+        }
+    })?;
     let file_size = file
         .metadata()
         .await
-        .map_err(|error| ApiError::internal(format!("Failed to stat danmu file: {error}")))?
+        .map_err(|error| ApiError::from(crate::Error::io_path("stating danmu file", &path, error)))?
         .len();
-    let (text, next_offset) = read_danmu_window(&mut file, file_size, offset, max_bytes).await?;
+    let (text, next_offset) =
+        read_danmu_window(&mut file, &path, file_size, offset, max_bytes).await?;
 
     Ok(Json(serde_json::json!({
         "media_output_id": output.id,
@@ -144,6 +148,7 @@ async fn read_danmu(
 
 async fn read_danmu_window(
     file: &mut tokio::fs::File,
+    path: &std::path::Path,
     file_size: u64,
     offset: u64,
     max_bytes: u64,
@@ -157,17 +162,18 @@ async fn read_danmu_window(
     let budget = max_bytes.min(DANMU_READ_MAX_BYTES) as usize;
     file.seek(std::io::SeekFrom::Start(offset))
         .await
-        .map_err(|error| ApiError::internal(format!("Failed to seek danmu file: {error}")))?;
+        .map_err(|error| {
+            ApiError::from(crate::Error::io_path("seeking danmu file", path, error))
+        })?;
     // Three lookahead bytes distinguish a scalar split by the requested window
     // from malformed or truncated UTF-8. They are never counted as returned bytes.
     let read_size = (file_size - offset).min(budget as u64 + 3) as usize;
     let mut buffer = vec![0; read_size];
     let mut filled = 0;
     while filled < buffer.len() {
-        let count = file
-            .read(&mut buffer[filled..])
-            .await
-            .map_err(|error| ApiError::internal(format!("Failed to read danmu file: {error}")))?;
+        let count = file.read(&mut buffer[filled..]).await.map_err(|error| {
+            ApiError::from(crate::Error::io_path("reading danmu file", path, error))
+        })?;
         if count == 0 {
             break;
         }
@@ -332,6 +338,8 @@ impl SrecMcpServer {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
 
     async fn file_with_bytes(bytes: &[u8]) -> (tempfile::TempDir, tokio::fs::File) {
@@ -350,10 +358,15 @@ mod tests {
             let mut offset = 0;
             let mut recovered = String::new();
             loop {
-                let (text, next) =
-                    read_danmu_window(&mut file, original.len() as u64, offset, budget)
-                        .await
-                        .unwrap();
+                let (text, next) = read_danmu_window(
+                    &mut file,
+                    Path::new("danmu.xml"),
+                    original.len() as u64,
+                    offset,
+                    budget,
+                )
+                .await
+                .unwrap();
                 assert!(!text.is_empty());
                 assert!(text.len() as u64 <= budget);
                 assert_eq!(
@@ -380,6 +393,7 @@ mod tests {
         let (_directory, mut file) = file_with_bytes(original.as_bytes()).await;
         let (first, next) = read_danmu_window(
             &mut file,
+            Path::new("danmu.xml"),
             original.len() as u64,
             0,
             DANMU_READ_DEFAULT_BYTES,
@@ -389,6 +403,7 @@ mod tests {
         assert_eq!(first.len(), DANMU_READ_DEFAULT_BYTES as usize - 1);
         let (last, end) = read_danmu_window(
             &mut file,
+            Path::new("danmu.xml"),
             original.len() as u64,
             next.unwrap(),
             DANMU_READ_DEFAULT_BYTES,
@@ -399,9 +414,15 @@ mod tests {
         assert!(end.is_none());
         for offset in [original.len() as u64, u64::MAX] {
             assert_eq!(
-                read_danmu_window(&mut file, original.len() as u64, offset, 4)
-                    .await
-                    .unwrap(),
+                read_danmu_window(
+                    &mut file,
+                    Path::new("danmu.xml"),
+                    original.len() as u64,
+                    offset,
+                    4
+                )
+                .await
+                .unwrap(),
                 (String::new(), None)
             );
         }
@@ -412,52 +433,86 @@ mod tests {
         let original = "😀中";
         let (_directory, mut file) = file_with_bytes(original.as_bytes()).await;
         for offset in [1, 2, 3, 5, 6] {
-            let error = read_danmu_window(&mut file, original.len() as u64, offset, 8)
-                .await
-                .unwrap_err();
+            let error = read_danmu_window(
+                &mut file,
+                Path::new("danmu.xml"),
+                original.len() as u64,
+                offset,
+                8,
+            )
+            .await
+            .unwrap_err();
             assert_eq!(error.status, axum::http::StatusCode::BAD_REQUEST);
             assert!(error.message.contains("character boundary"));
         }
         for budget in 0..4 {
-            let error = read_danmu_window(&mut file, original.len() as u64, 0, budget)
-                .await
-                .unwrap_err();
+            let error = read_danmu_window(
+                &mut file,
+                Path::new("danmu.xml"),
+                original.len() as u64,
+                0,
+                budget,
+            )
+            .await
+            .unwrap_err();
             assert_eq!(error.status, axum::http::StatusCode::BAD_REQUEST);
             assert!(error.message.contains("max_bytes"));
         }
         for invalid in [&b"good\xffbad"[..], &b"x\xf0\x9f"[..], &b"\xed\xa0\x80"[..]] {
             let (_directory, mut file) = file_with_bytes(invalid).await;
             assert!(
-                read_danmu_window(&mut file, invalid.len() as u64, 0, 16)
-                    .await
-                    .is_err()
+                read_danmu_window(
+                    &mut file,
+                    Path::new("danmu.xml"),
+                    invalid.len() as u64,
+                    0,
+                    16
+                )
+                .await
+                .is_err()
             );
         }
         // Invalid data beyond the requested window is reported by its own page.
         let (_directory, mut file) = file_with_bytes(b"a\xff").await;
         assert_eq!(
-            read_danmu_window(&mut file, 2, 0, 1).await.unwrap(),
+            read_danmu_window(&mut file, Path::new("danmu.xml"), 2, 0, 1)
+                .await
+                .unwrap(),
             ("a".to_owned(), Some(1))
         );
-        assert!(read_danmu_window(&mut file, 2, 1, 1).await.is_err());
+        assert!(
+            read_danmu_window(&mut file, Path::new("danmu.xml"), 2, 1, 1)
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]
     async fn byte_pages_respect_hard_limit_and_do_not_repeat_offset_after_truncation() {
         let original = vec![b'x'; DANMU_READ_MAX_BYTES as usize + 1];
         let (_directory, mut file) = file_with_bytes(&original).await;
-        let (text, next) = read_danmu_window(&mut file, original.len() as u64, 0, u64::MAX)
-            .await
-            .unwrap();
+        let (text, next) = read_danmu_window(
+            &mut file,
+            Path::new("danmu.xml"),
+            original.len() as u64,
+            0,
+            u64::MAX,
+        )
+        .await
+        .unwrap();
         assert_eq!(text.len(), DANMU_READ_MAX_BYTES as usize);
         assert_eq!(next, Some(DANMU_READ_MAX_BYTES));
         let (_directory, mut file) = file_with_bytes(b"abc").await;
         assert_eq!(
-            read_danmu_window(&mut file, 100, 0, 8).await.unwrap(),
+            read_danmu_window(&mut file, Path::new("danmu.xml"), 100, 0, 8)
+                .await
+                .unwrap(),
             ("abc".to_owned(), None)
         );
         assert_eq!(
-            read_danmu_window(&mut file, 100, 3, 8).await.unwrap(),
+            read_danmu_window(&mut file, Path::new("danmu.xml"), 100, 3, 8)
+                .await
+                .unwrap(),
             (String::new(), None)
         );
     }

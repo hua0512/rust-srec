@@ -1608,6 +1608,7 @@ async fn aging_material_is_renewed_before_use_and_a_failed_renewal_keeps_it() {
             id: &rejected.id,
             repair: Some(rejected.revision),
             route: direct(),
+            preloaded: None,
         };
         let prepared = service
             .prepare(&second, "huya", &mut HashSet::new(), &mut HashSet::new())

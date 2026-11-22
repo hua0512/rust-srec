@@ -158,13 +158,11 @@ impl ServiceContainer {
         );
 
         let weak_config = Arc::downgrade(&config_service);
-        let publish_owner: Arc<dyn Fn(crate::credentials::CredentialOwner) + Send + Sync> =
-            Arc::new(move |owner| {
-                if let Some(config) = weak_config.upgrade() {
-                    config.publish_credential_owner(owner);
-                }
-            });
-        config_repo.bind_publication(publish_owner.clone());
+        config_repo.bind_config_publication(Arc::new(move |write| {
+            if let Some(config) = weak_config.upgrade() {
+                config.publish_config_write(write);
+            }
+        }));
         let credential_profiles = Arc::new(
             crate::database::repositories::credential_profiles::CredentialProfileRepository::new(
                 pool.clone(),
@@ -172,6 +170,13 @@ impl ServiceContainer {
             )
             .with_supervisor(committed_write_supervisor.clone()),
         );
+        let weak_config = Arc::downgrade(&config_service);
+        let publish_owner: Arc<dyn Fn(crate::credentials::CredentialOwner) + Send + Sync> =
+            Arc::new(move |owner| {
+                if let Some(config) = weak_config.upgrade() {
+                    config.publish_credential_owner(owner);
+                }
+            });
         credential_profiles.bind_publication(publish_owner);
         let weak_config = Arc::downgrade(&config_service);
         credential_profiles.bind_material_publication(Arc::new(move |owner| {
@@ -664,7 +669,7 @@ impl ServiceContainer {
             cancellation_token,
             task_supervisor,
             committed_write_supervisor,
-            logging_config: std::sync::OnceLock::new(),
+            logging_config: Arc::new(std::sync::OnceLock::new()),
             startup_recovery_complete: std::sync::atomic::AtomicBool::new(false),
             discarded_segment_keys: Arc::new(DashMap::new()),
             danmu_link_down: Arc::new(DashMap::new()),

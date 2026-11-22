@@ -5,7 +5,7 @@
 use axum::{
     Json, Router,
     extract::State,
-    http::header::{CONTENT_DISPOSITION, CONTENT_TYPE},
+    http::header::{CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_TYPE, REFERRER_POLICY},
     response::IntoResponse,
     routing::{get, post},
 };
@@ -57,6 +57,8 @@ pub async fn export_config(State(state): State<AppState>) -> Result<impl IntoRes
         [
             (CONTENT_TYPE, "application/json".to_string()),
             (CONTENT_DISPOSITION, content_disposition),
+            (CACHE_CONTROL, "private, no-store".to_string()),
+            (REFERRER_POLICY, "no-referrer".to_string()),
         ],
         json,
     ))
@@ -87,15 +89,11 @@ pub async fn import_config(
     // Detached, so a caller that disconnects or times out cannot cut the
     // import short after its commit, nor skip the cache invalidation below.
     let outcome = tokio::spawn(async move {
-        let outcome = import_service.import(request.config, request.mode).await;
-        // The import writes user rows in its own transaction without going
-        // through `AuthService`, so cached `authorize_access_token` state may
-        // no longer match them. It is dropped on failure too: a failure after
-        // the commit still leaves the new rows in place.
-        if let Some(auth_service) = auth_service {
-            auth_service.invalidate_user_cache();
-        }
-        outcome
+        // `import_with_auth` invalidates `AuthService`'s user/API-key cache
+        // synchronously inside the commit hook before `finish_import` runs.
+        import_service
+            .import_with_auth(request.config, request.mode, auth_service)
+            .await
     })
     .await
     .map_err(|error| {

@@ -40,10 +40,15 @@
 - Fixed a cancelled or timed-out Baidu Netdisk upload overlapping with the next upload before BaiduPCS-Go finished exiting, which could corrupt its local data. The next upload now waits for the previous process to exit and notes this in the log; signing in from the account card reports that BaiduPCS-Go is busy in the meantime.
 - Fixed rclone uploads retrying more times than the preset's **Max Retries** allowed. Previously rclone retried each failed attempt up to 3 times internally, running up to three times as often as configured with no visibility in job progress. Each attempt shown in job progress is now a single upload capped strictly by **Max Retries**; pass `--retries` in extra arguments if you want rclone's own retries back.
 - Prevented deleting or renaming a job preset or workflow still used by a pipeline, which previously caused those pipelines to fail at runtime. Such changes are now blocked with a dialog listing every place it is used (with links to each). Importing a configuration in **Replace** mode also keeps omitted presets and workflows that imported pipelines still need, listing them as warnings.
+- Prevented deleting a recording session on **Sessions** while it is still live or still has processing jobs waiting or running.
 
 ## Configuration
 
 - Fixed on/off options in a template's platform override or a streamer's **Platform options** tab (such as **Batch Detection**, **Force Origin Quality** and **End Stream On Danmu Close**) always showing as on or off even when unset, making it unclear whether they followed the platform setting. Previously, once toggled there, the only way to follow the platform again was editing JSON. These options now offer **Inherit**, **On** and **Off**, where **Inherit** follows the template or platform setting. See [Configuration layers](https://docs.srec.rs/en/concepts/configuration#important-merge-rules).
+- Fixed **Replace All** in **Import Configuration** under **Backup & Restore** leaving settings, **Accounts** and **Proxies** choices on **Platforms** omitted from the backup, which could block deleting old accounts or proxies.
+- Fixed **API Keys** keeping old permissions or staying active for up to five seconds after **Change Password** or **Import Configuration** updated or disabled an account.
+- Fixed **Web Push** under **Browser Notifications** failing to subscribe, update priority or unsubscribe when `AUTH_DISABLED=true`.
+- Updating the log filter in global settings or through **Import Configuration** now takes effect right away without restarting rust-srec.
 
 ## Web interface
 

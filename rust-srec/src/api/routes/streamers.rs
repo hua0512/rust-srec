@@ -236,17 +236,29 @@ async fn streamlink_can_handle(url: &str, configs: &[PlatformConfigDbModel]) -> 
         .and_then(|extras| {
             extras["streamlink"]["binary_path"]
                 .as_str()
+                .map(str::trim)
+                .filter(|path| !path.is_empty())
                 .map(str::to_owned)
         });
     let binary = configured
-        .or_else(|| std::env::var("STREAMLINK_PATH").ok())
+        .or_else(|| {
+            std::env::var("STREAMLINK_PATH")
+                .ok()
+                .map(|path| path.trim().to_owned())
+                .filter(|path| !path.is_empty())
+        })
         .unwrap_or_else(|| "streamlink".to_string());
     let mut cmd = process_utils::tokio_command(binary);
-    cmd.arg("--can-handle-url-no-redirect")
-        .arg(url)
+    cmd.arg(format!("--can-handle-url-no-redirect={url}"))
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    cmd.status().await.is_ok_and(|s| s.success())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true);
+    tokio::time::timeout(std::time::Duration::from_secs(5), cmd.status())
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .is_some_and(|s| s.success())
 }
 
 /// Resolve the platform configuration a streamer URL belongs to.
@@ -775,13 +787,17 @@ pub async fn update_streamer(
     let platform_config_id = match request.url.as_deref() {
         Some(new_url) => {
             let url = StreamerUrl::new(new_url).map_err(|e| ApiError::validation(e.to_string()))?;
-            let url_changed = !current.url.eq_ignore_ascii_case(new_url);
-
-            // The streamlink probe spawns a subprocess, so only pay for it when the URL actually
-            // changed; an unchanged URL that no regex claims keeps the id it already has.
-            match resolve_platform_for_url(&url, &state.config_service, url_changed).await? {
+            // The streamlink probe spawns a subprocess, so only pay for it when the URL changed
+            // (including case-only path edits) or the streamer is not already on streamlink.
+            let should_probe_streamlink = current.url != new_url
+                || !current
+                    .platform_config_id
+                    .eq_ignore_ascii_case("platform-streamlink");
+            match resolve_platform_for_url(&url, &state.config_service, should_probe_streamlink)
+                .await?
+            {
                 Some(resolved) => Some(resolved.config.id),
-                None if url_changed => {
+                None if should_probe_streamlink => {
                     return Err(ApiError::validation(
                         "Unsupported URL: no platform recognizes this address",
                     ));

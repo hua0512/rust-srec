@@ -135,17 +135,21 @@ impl MonitorOutboxOps {
         }
 
         let now = crate::database::time::now_ms();
-        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-        let sql = format!(
-            "UPDATE monitor_event_outbox SET delivered_at = ?, attempts = attempts + 1, last_error = NULL WHERE id IN ({})",
-            placeholders
-        );
-
-        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql)).bind(now);
-        for id in ids {
-            query = query.bind(id);
+        // Reserve one bind variable for `delivered_at` and stay under SQLite's bind limit.
+        let chunk_size = super::LOOKUP_BATCH_SIZE.min(super::MAX_SQLITE_BIND_VARS - 1);
+        let mut tx = crate::database::begin_immediate(pool).await?;
+        for chunk in ids.chunks(chunk_size) {
+            let placeholders = vec!["?"; chunk.len()].join(", ");
+            let sql = format!(
+                "UPDATE monitor_event_outbox SET delivered_at = ?, attempts = attempts + 1, last_error = NULL WHERE id IN ({placeholders})"
+            );
+            let mut query = sqlx::query(sqlx::AssertSqlSafe(sql)).bind(now);
+            for id in chunk {
+                query = query.bind(id);
+            }
+            query.execute(&mut *tx).await?;
         }
-        query.execute(pool).await?;
+        tx.commit().await?;
 
         Ok(())
     }
@@ -155,27 +159,26 @@ impl MonitorOutboxOps {
             return Ok(());
         }
 
-        let when_clauses = failures
-            .iter()
-            .map(|_| " WHEN ? THEN ?")
-            .collect::<Vec<_>>()
-            .join("");
-        let id_placeholders = failures.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-        let sql = format!(
-            "UPDATE monitor_event_outbox SET attempts = attempts + 1, last_error = CASE id{} ELSE last_error END WHERE id IN ({})",
-            when_clauses, id_placeholders
-        );
+        // Each failure binds 3 parameters (`WHEN ? THEN ?` plus `IN (?)`).
+        let chunk_size = super::MAX_SQLITE_BIND_VARS / 3;
+        let mut tx = crate::database::begin_immediate(pool).await?;
+        for chunk in failures.chunks(chunk_size) {
+            let when_clauses = vec![" WHEN ? THEN ?"; chunk.len()].join("");
+            let id_placeholders = vec!["?"; chunk.len()].join(", ");
+            let sql = format!(
+                "UPDATE monitor_event_outbox SET attempts = attempts + 1, last_error = CASE id{when_clauses} ELSE last_error END WHERE id IN ({id_placeholders})"
+            );
 
-        let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
-        for (id, error) in failures {
-            query = query.bind(id).bind(error);
+            let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
+            for (id, error) in chunk {
+                query = query.bind(id).bind(error);
+            }
+            for (id, _) in chunk {
+                query = query.bind(id);
+            }
+            query.execute(&mut *tx).await?;
         }
-
-        for (id, _) in failures {
-            query = query.bind(id);
-        }
-
-        query.execute(pool).await?;
+        tx.commit().await?;
 
         Ok(())
     }
@@ -200,7 +203,7 @@ mod tests {
     async fn setup_test_db() -> SqlitePool {
         let pool = init_pool_with_size("sqlite::memory:", 1).await.unwrap();
         run_migrations(&pool).await.unwrap();
-        for id in ["test-1", "s1", "s2", "s3", "s0"] {
+        for id in ["test-1", "s0", "s1", "s2", "s3"] {
             insert_streamer(&pool, id).await;
         }
         pool

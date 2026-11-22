@@ -716,6 +716,11 @@ fn static_root_prefix_cuts_at_the_first_placeholder() {
             "{template}"
         );
     }
+    #[cfg(windows)]
+    assert_eq!(
+        super::static_root_prefix(r"C:\Recordings\{platform}\{streamer}"),
+        Some(r"C:\Recordings\".to_string())
+    );
 }
 
 #[test]
@@ -728,4 +733,7 @@ fn static_root_prefix_partial_directory_name_rejected() {
         super::static_root_prefix("/recordings-{streamer}/files"),
         None
     );
+    assert_eq!(super::static_root_prefix("recordings/{streamer}"), None);
+    #[cfg(windows)]
+    assert_eq!(super::static_root_prefix(r"C:\{streamer}"), None);
 }
