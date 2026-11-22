@@ -23,6 +23,7 @@
 
 - With **Batch Detection** enabled for Bilibili or Twitch, streamers spotted as live in a batch are now checked right away instead of waiting for their next scheduled poll, so recordings start sooner. If that check does not find the stream yet, it retries after each subsequent batch that still shows the streamer live.
 - Fixed Twitch recordings skipping live or ending segments around low-latency previews or ad breaks.
+- Fixed Mesio HLS recordings of fMP4 streams that switch between more than eight different initialisation segments (for example around inserted ads) skipping video after returning to an earlier one.
 - Fixed Bigo checks failing with a login prompt before checking whether a room is live, and fixed silently restricted Bigo accounts reporting live rooms as offline and missing recordings. Live status is now checked publicly without an account, and accounts are only used when fetching the website stream. If Bigo restricts an account without signing it out so it reports active rooms as offline, rust-srec now detects this, pauses the account for 30 minutes and moves to the next account in a failover pool. See [Bigo](https://docs.srec.rs/en/platforms/bigo).
 - Fixed Weibo user links (such as `https://weibo.com/u/{uid}`) failing every check with "Extraction failed" and no notification once an account's login lapsed. User pages are now checked as a guest without needing an account. An account is only used when Weibo rejects guest lookups; if that account has been signed out, QR-signed accounts renew themselves while other accounts are marked as needing a new login and send a **Credential invalid** notification. See [Weibo](https://docs.srec.rs/en/platforms/others#weibo).
 - Weibo now also accepts `m.weibo.cn/u/{uid}`, `m.weibo.cn/profile/{uid}` and `weibo.com/{uid}` links, and shows the streamer's name and avatar while they are offline.
@@ -53,6 +54,7 @@
 - Fixed **Replace All** in **Import Configuration** under **Backup & Restore** leaving settings, **Accounts** and **Proxies** choices on **Platforms** omitted from the backup, which could block deleting old accounts or proxies.
 - Updating the log filter in global settings or through **Import Configuration** now takes effect right away without restarting rust-srec.
 - **Import Configuration** now rejects a backup with an invalid log filter or a streamer address without a host before changing anything, instead of saving settings that cannot work.
+- Fixed the Mesio engine's **Decryption Key Cache TTL (ms)** setting having no effect. When set, it now takes precedence over **Key Cache TTL (ms)**.
 
 ## Notifications
 
