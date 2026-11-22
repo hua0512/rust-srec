@@ -44,30 +44,18 @@ impl TarsCodec {
         serializer.write_map(10, &item.header.status)?;
 
         let encoded_bytes = serializer.into_bytes();
-        let total_len_usize = 4usize.checked_add(encoded_bytes.len()).ok_or_else(|| {
-            TarsError::Io(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "TARS frame length overflows usize",
-            ))
-        })?;
-        if total_len_usize > MAX_TARS_FRAME_SIZE {
+        let total_len = 4 + encoded_bytes.len();
+        if total_len > MAX_TARS_FRAME_SIZE {
             return Err(TarsError::Io(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                format!(
-                    "TARS frame length {total_len_usize} exceeds maximum {MAX_TARS_FRAME_SIZE}"
-                ),
+                format!("TARS frame length {total_len} exceeds maximum {MAX_TARS_FRAME_SIZE}"),
             )));
         }
-        let total_len = u32::try_from(total_len_usize).map_err(|_| {
-            TarsError::Io(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "TARS frame length exceeds u32::MAX",
-            ))
-        })?;
 
         // Pre-allocate capacity to avoid reallocations
-        dst.reserve(total_len_usize);
-        dst.put_u32(total_len);
+        dst.reserve(total_len);
+        // Fits in `u32`: bounded by `MAX_TARS_FRAME_SIZE` above.
+        dst.put_u32(total_len as u32);
         dst.extend_from_slice(&encoded_bytes);
 
         Ok(())

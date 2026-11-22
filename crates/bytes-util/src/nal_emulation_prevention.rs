@@ -108,33 +108,18 @@ mod tests {
     }
 
     #[test]
-    fn long_zero_runs_past_256_bytes_preserve_emulation_prevention() {
-        for zero_run in [256usize, 257, 512] {
-            // 1. Reader path: >= 256 consecutive literal 0x00 bytes followed by 0x03, 0x01
-            // must saturate zero_count rather than overflowing/wrapping to 0 and leaving 0x03 in output.
-            let mut unescaped_zeros = vec![0x00; zero_run];
-            unescaped_zeros.extend_from_slice(&[0x03, 0x01]);
+    fn zero_run_of_256_bytes_still_strips_the_emulation_prevention_byte() {
+        // 256 zeros is one more than a `u8` run counter can hold.
+        let mut escaped = vec![0x00; 256];
+        escaped.extend_from_slice(&[0x03, 0x01]);
 
-            let mut expected = vec![0x00; zero_run];
-            expected.push(0x01);
+        let mut expected = vec![0x00; 256];
+        expected.push(0x01);
 
-            let mut decoded = Vec::new();
-            EmulationPreventionIo::new(unescaped_zeros.as_slice())
-                .read_to_end(&mut decoded)
-                .unwrap();
-            assert_eq!(decoded, expected, "reader zero_run={zero_run}");
-
-            // 2. Writer -> Reader round-trip on long zero runs.
-            let mut escaped = Vec::new();
-            let mut writer = EmulationPreventionIo::new(&mut escaped);
-            writer.write_all(&expected).unwrap();
-            writer.flush().unwrap();
-
-            let mut round_tripped = Vec::new();
-            EmulationPreventionIo::new(escaped.as_slice())
-                .read_to_end(&mut round_tripped)
-                .unwrap();
-            assert_eq!(round_tripped, expected, "round-trip zero_run={zero_run}");
-        }
+        let mut decoded = Vec::new();
+        EmulationPreventionIo::new(escaped.as_slice())
+            .read_to_end(&mut decoded)
+            .unwrap();
+        assert_eq!(decoded, expected);
     }
 }

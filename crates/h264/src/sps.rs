@@ -363,7 +363,7 @@ impl Sps {
         )
     }
 
-    ///`(CropUnitX, CropUnitY)` per ISO/IEC 14496-10 §7.4.2.1.1 (Equations 7-18..7-22).
+    /// `(CropUnitX, CropUnitY)` per ISO/IEC 14496-10 §7.4.2.1.1 (Equations 7-18..7-22).
     fn crop_units(&self) -> (u64, u64) {
         let field_factor = 2 - u64::from(self.mb_adaptive_frame_field_flag.is_none());
         let chroma_array_type = match &self.ext {
@@ -2550,6 +2550,13 @@ mod tests {
             frame_crop_bottom_offset: 3,
         });
         assert_eq!(sps_1080i.width(), 1920 - 3);
+        assert_eq!(sps_1080i.height(), 1088 - 8);
+
+        // 4:2:2 -> ChromaArrayType = 2: CropUnitX = 2, CropUnitY = 2 (field-coded).
+        let ext = sps_1080i.ext.as_mut().unwrap();
+        ext.chroma_format_idc = 2;
+        ext.separate_color_plane_flag = false;
+        assert_eq!(sps_1080i.width(), 1920 - 6);
         assert_eq!(sps_1080i.height(), 1088 - 8);
     }
 }

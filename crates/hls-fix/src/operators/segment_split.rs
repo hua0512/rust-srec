@@ -91,14 +91,9 @@ impl SegmentSplitOperator {
     // Handle TS segment
     // Returns Some(reason) if a split is needed
     fn handle_ts_segment(&mut self, input: &TsSegmentData) -> Option<SplitReason> {
-        // Once a baseline resolution is established, only random-access segments
-        // can update it; run the lightweight PSI/packet pass first so non-IDR
-        // segments skip PES reassembly and SPS scanning altogether.
-        let initial_include_resolution =
-            self.last_resolution.is_none() && self.resolution_probe_remaining > 0;
-        let mut analysis = match input.analysis(StreamProfileOptions {
-            include_resolution: initial_include_resolution,
-        }) {
+        let include_resolution =
+            self.last_resolution.is_some() || self.resolution_probe_remaining > 0;
+        let analysis = match input.analysis(StreamProfileOptions { include_resolution }) {
             Ok(analysis) => analysis,
             Err(error) => {
                 warn!(stream = %self.context.name, %error, "Failed to analyze TS segment");
@@ -124,17 +119,6 @@ impl SegmentSplitOperator {
                 self.context.name
             );
             return None;
-        }
-
-        if self.last_resolution.is_some() && analysis.has_random_access {
-            match input.analysis(StreamProfileOptions {
-                include_resolution: true,
-            }) {
-                Ok(upgraded) => analysis = upgraded,
-                Err(error) => {
-                    warn!(stream = %self.context.name, %error, "Failed to probe TS segment resolution");
-                }
-            }
         }
 
         let current_stream_info = &analysis.stream_info;

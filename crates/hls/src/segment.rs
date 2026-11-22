@@ -129,7 +129,7 @@ impl HlsData {
 
     /// Check if this segment contains a keyframe
     /// For TS: checks for Adaptation Field random access indicator across all packets
-    /// For MP4: inspects `moof`/`traf`/`trun` sample flags for a sync sample
+    /// For MP4: checks for moof box at the beginning for media segments
     #[inline]
     pub fn has_keyframe(&self) -> bool {
         match self {
@@ -139,14 +139,17 @@ impl HlsData {
                 })
                 .is_ok_and(|analysis| analysis.has_random_access),
             HlsData::M4sData(M4sData::Segment(seg)) => {
-                mp4::independent::fragment_has_sync_sample(&seg.data)
+                let bytes = seg.data.as_ref();
+                if bytes.len() >= 8 {
+                    return &bytes[4..8] == b"moof";
+                }
+                false
             }
             _ => false,
         }
     }
 
-    /// Check if this segment has a discontinuity tag
-    #[inline]
+    /// Check if this segment is a discontinuity
     pub fn is_discontinuity(&self) -> bool {
         match self {
             HlsData::TsData(ts) => ts.segment.discontinuity,
@@ -158,14 +161,18 @@ impl HlsData {
 
     /// Check if this segment indicates the start of a new segment
     /// For TS: typically a keyframe with PAT/PMT tables following
-    /// For MP4: an init segment or a media segment containing a top-level `moof` box
+    /// For MP4: an init segment or a media segment starting with moof box
     #[inline]
     pub fn is_segment_start(&self) -> bool {
         match self {
             HlsData::TsData(_) => self.has_keyframe(),
             HlsData::M4sData(M4sData::InitSegment(_)) => true,
             HlsData::M4sData(M4sData::Segment(seg)) => {
-                mp4::independent::has_movie_fragment(&seg.data)
+                let bytes = seg.data.as_ref();
+                if bytes.len() >= 8 {
+                    return &bytes[4..8] == b"moof";
+                }
+                false
             }
             HlsData::EndMarker(_) => false,
         }

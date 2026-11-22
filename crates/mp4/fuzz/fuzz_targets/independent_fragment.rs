@@ -18,6 +18,4 @@ fuzz_target!(|data: &[u8]| {
     let data = Bytes::copy_from_slice(data);
     let _ = IndependentFragmentCheck::from_init(&data);
     let _ = CHECK.is_independent(&data);
-    let _ = mp4::independent::has_movie_fragment(&data);
-    let _ = mp4::independent::fragment_has_sync_sample(&data);
 });

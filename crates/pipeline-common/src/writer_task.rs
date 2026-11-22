@@ -727,22 +727,13 @@ impl<D, S: FormatStrategy<D>> WriterTask<D, S> {
     }
 
     /// De-duplicated blocking_recv loop for reading from a channel and writing items.
-    ///
-    /// The `pre_filter` closure can inspect each item and the current writer state
-    /// to decide whether to skip it (return `false`) or process it (return `true`).
     pub fn run_from_channel(
         &mut self,
         mut rx: PipelineReceiver<D>,
-        mut pre_filter: impl FnMut(&D, &WriterState) -> bool,
     ) -> Result<WriterStats, WriterError> {
         while let Some(result) = rx.blocking_recv() {
             match result {
-                Ok(item) => {
-                    if !pre_filter(&item, &self.state) {
-                        continue;
-                    }
-                    self.process_item(item)?;
-                }
+                Ok(item) => self.process_item(item)?,
                 Err(e) => {
                     if let Err(close_error) = self.close() {
                         return Err(WriterError::InputAndClose {
@@ -1006,7 +997,7 @@ mod tests {
                 .unwrap();
                 drop(tx);
                 let error = writer
-                    .run_from_channel(PipelineReceiver::from_items(rx), |_, _| true)
+                    .run_from_channel(PipelineReceiver::from_items(rx))
                     .unwrap_err();
                 assert!(
                     matches!(&error, WriterError::InputAndClose { input: PipelineError::Io(input), .. } if input.kind() == io::ErrorKind::ConnectionReset)

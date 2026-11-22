@@ -322,9 +322,7 @@ impl ProtocolWriter for HlsWriter {
         &mut self,
         input: pipeline_common::PipelineReceiver<HlsData>,
     ) -> Result<WriterStats, WriterError> {
-        self.writer_task.run_from_channel(input, |item, state| {
-            !item.is_end_marker() || state.current_file_path.is_some()
-        })
+        self.writer_task.run_from_channel(input)
     }
 }
 

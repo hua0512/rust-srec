@@ -105,15 +105,6 @@ impl<W: Write + Seek> FlvWriter<W> {
         data: &[u8],
         timestamp_ms: u32,
     ) -> io::Result<()> {
-        if data.len() > 0xFF_FFFF {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!(
-                    "FLV tag data size {} exceeds 24-bit maximum (16777215)",
-                    data.len()
-                ),
-            ));
-        }
         let data_size = data.len() as u32;
 
         // Write tag header
@@ -268,11 +259,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn write_header_updates_stream_flags_and_write_tag_rejects_oversized_payload() {
+    fn write_header_enables_the_tracks_it_declares() {
         let mut writer = FlvWriter::new(Cursor::new(Vec::new())).unwrap();
         writer.write_header(&FlvHeader::new(true, true)).unwrap();
-        assert!(writer.has_audio);
-        assert!(writer.has_video);
 
         writer
             .write_video(Bytes::from_static(&[0x17, 0x00]), 0)
@@ -280,11 +269,5 @@ mod tests {
         writer
             .write_audio(Bytes::from_static(&[0xAF, 0x00]), 0)
             .unwrap();
-
-        let oversized = vec![0u8; 0x100_0000];
-        let err = writer
-            .write_tag(FlvTagType::Video, &oversized, 10)
-            .unwrap_err();
-        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
     }
 }

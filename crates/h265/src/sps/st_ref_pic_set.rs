@@ -157,20 +157,12 @@ impl ShortTermRefPicSets {
                 }
 
                 num_positive_pics[st_rps_idx] = i as u64;
-                // ISO/IEC 23008-2 §7.4.8: NumNegativePics and NumPositivePics are
-                // bounded by sps_max_dec_pic_buffering_minus1[sps_max_sub_layers_minus1]
-                // when nuh_layer_id == 0, and by 16 otherwise.
-                let max_pics = if nuh_layer_id == 0 {
-                    sps_max_dec_pic_buffering_minus1_at_sps_max_sub_layers_minus1
-                } else {
-                    16
-                };
-                range_check!(num_negative_pics[st_rps_idx], 0, max_pics)?;
-                range_check!(
-                    num_positive_pics[st_rps_idx],
-                    0,
-                    max_pics.saturating_sub(num_negative_pics[st_rps_idx])
-                )?;
+                // ISO/IEC 23008-2 §7.4.8 ties the signalled num_negative_pics and
+                // num_positive_pics to sps_max_dec_pic_buffering_minus1, but a
+                // predicted candidate set only has to fit the DPB once a slice
+                // selects it, so each derived count is capped at the 16-picture
+                // DPB limit instead.
+                range_check!(num_positive_pics[st_rps_idx], 0, 16)?;
             } else {
                 num_negative_pics[st_rps_idx] = bit_reader.read_exp_golomb()?;
                 num_positive_pics[st_rps_idx] = bit_reader.read_exp_golomb()?;

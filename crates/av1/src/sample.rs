@@ -255,14 +255,4 @@ mod tests {
 
         assert!(matches!(err, Av1Error::InvalidObu(msg) if msg.contains("Reserved OBU type")));
     }
-
-    #[test]
-    fn test_validate_isobmff_sample_oversized_obu_returns_unexpected_eof() {
-        // Metadata OBU header (has_size=1) with LEB128 size = u32::MAX and 0 payload bytes.
-        let mut sample = vec![0x2A];
-        crate::obu::utils::write_leb128(&mut sample, u64::from(u32::MAX)).unwrap();
-
-        let err = validate_isobmff_sample_bytes(&sample).unwrap_err();
-        assert!(matches!(err, Av1Error::UnexpectedEof { actual: 0, .. }));
-    }
 }

@@ -231,11 +231,7 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
                 false
             }
             FlvData::Tag(_) => true,
-            FlvData::Split(_) => false,
-            FlvData::EndOfSequence(_) => {
-                self.pending_header = None;
-                false
-            }
+            FlvData::Split(_) | FlvData::EndOfSequence(_) => false,
         }
     }
 
@@ -247,7 +243,6 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
         match item {
             FlvData::Header(header) => {
                 self.pending_header = Some(header.clone());
-                self.last_split_reason = None;
                 Ok(0)
             }
             FlvData::Tag(tag) => {
@@ -282,8 +277,6 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
             }
             FlvData::EndOfSequence(_) => {
                 tracing::debug!("Received EndOfSequence, stream ending");
-                self.last_split_reason = None;
-                self.pending_header = None;
                 Ok(0)
             }
         }
@@ -390,7 +383,6 @@ impl FormatStrategy<FlvData> for FlvFormatStrategy {
         // Reset the analyzer and place it back into the strategy object for the next file segment.
         analyzer.reset();
         self.analyzer = analyzer;
-        self.current_tag_count = 0;
 
         Ok(0)
     }

@@ -1121,13 +1121,13 @@ mod tests {
         let err = crate::SpsRbsp::parse(io::Cursor::new(&rbsp), 0).unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::InvalidData);
 
-        // Case 3: MinTbLog2SizeY >= MinCbLog2SizeY (would underflow ctb_log2_size_y - min_tb_log2_size_y when diff=0).
+        // Case 3: MinTbLog2SizeY (5) must be smaller than MinCbLog2SizeY (3).
         let mut rbsp = Vec::new();
         let mut writer = BitWriter::new(&mut rbsp);
         write_minimal_prefix(&mut writer, None);
         writer.write_exp_golomb(0).unwrap(); // MinCbLog2 = 3
         writer.write_exp_golomb(1).unwrap(); // CtbLog2 = 4
-        writer.write_exp_golomb(3).unwrap(); // MinTbLog2 = 5 > CtbLog2
+        writer.write_exp_golomb(3).unwrap(); // MinTbLog2 = 5
         writer.write_exp_golomb(0).unwrap();
         writer.finish().unwrap();
         let err = crate::SpsRbsp::parse(io::Cursor::new(&rbsp), 0).unwrap_err();

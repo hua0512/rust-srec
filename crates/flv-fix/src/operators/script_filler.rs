@@ -368,10 +368,9 @@ impl Processor<FlvData> for ScriptKeyframesFillerOperator {
             }
             FlvData::Tag(_) => output(input),
             // A split marker or end of stream closes the segment.
-            other => {
+            _ => {
                 self.release_held_sequence_tags(output)?;
-                self.metadata_decided = false;
-                output(other)
+                output(input)
             }
         }
     }

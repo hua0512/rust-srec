@@ -174,15 +174,6 @@ impl AspectRatioIdc {
     }
 }
 
-impl TryFrom<u8> for AspectRatioIdc {
-    type Error = &'static str;
-
-    /// Converts a `u8` value to an [`AspectRatioIdc`], mapping `17..=254` to [`AspectRatioIdc::Reserved`].
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        Ok(Self::from_u8(value))
-    }
-}
-
 impl From<AspectRatioIdc> for u8 {
     fn from(value: AspectRatioIdc) -> Self {
         value as u8

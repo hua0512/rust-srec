@@ -135,24 +135,15 @@ impl DefragmentOperator {
         debug!("{} End of playlist marker received", self.context.name);
 
         // The buffer only ever holds fMP4 items; process_internal forwards TS directly.
-        // Flush gathered media regardless of item count so a mid-stream discontinuity or
-        // recording end never drops a short segment, while discarding standalone init
-        // segments that never received any media fragments.
+        // Flush everything gathered regardless of item count so a mid-stream discontinuity or
+        // recording end never drops a freshly re-gathered init segment or its trailing media.
         if !self.buffer.is_empty() {
-            if !self.has_init_segment || self.buffer.iter().any(HlsData::is_mp4_media) {
-                debug!(
-                    "{} Flushing buffer on playlist end ({} items)",
-                    self.context.name,
-                    self.buffer.len()
-                );
-                self.flush_buffer(output)?;
-            } else {
-                debug!(
-                    stream = %self.context.name,
-                    "Dropping standalone initialization segment on playlist end"
-                );
-                self.has_init_segment = false;
-            }
+            debug!(
+                "{} Flushing buffer on playlist end ({} items)",
+                self.context.name,
+                self.buffer.len()
+            );
+            self.flush_buffer(output)?;
             self.reset();
         }
 
@@ -323,16 +314,6 @@ impl Processor<HlsData> for DefragmentOperator {
         }
 
         if self.buffer.is_empty() {
-            return Ok(());
-        }
-
-        if self.has_init_segment && !self.buffer.iter().any(HlsData::is_mp4_media) {
-            debug!(
-                stream = %self.context.name,
-                "Dropping standalone initialization segment on finish"
-            );
-            self.has_init_segment = false;
-            self.reset();
             return Ok(());
         }
 
@@ -663,42 +644,5 @@ mod tests {
         assert_eq!(out.len(), 3);
         assert!(out[0].is_mp4_init());
         assert!(out[1..].iter().all(HlsData::is_mp4_media));
-    }
-
-    #[test]
-    fn standalone_init_without_media_is_dropped_on_playlist_end_and_finish() {
-        let context = StreamerContext::arc_new(CancellationToken::new());
-        let mut operator = DefragmentOperator::new(context.clone());
-        let mut out = Vec::new();
-
-        operator
-            .process(&context, init(INIT), &mut |item| {
-                out.push(item);
-                Ok(())
-            })
-            .unwrap();
-        operator
-            .process(&context, HlsData::end_marker(), &mut |item| {
-                out.push(item);
-                Ok(())
-            })
-            .unwrap();
-        assert_eq!(out.len(), 1);
-        assert!(matches!(out[0], HlsData::EndMarker(None)));
-
-        out.clear();
-        operator
-            .process(&context, init(OTHER_INIT), &mut |item| {
-                out.push(item);
-                Ok(())
-            })
-            .unwrap();
-        operator
-            .finish(&context, &mut |item| {
-                out.push(item);
-                Ok(())
-            })
-            .unwrap();
-        assert!(out.is_empty());
     }
 }

@@ -272,7 +272,11 @@ where
     S: FormatStrategy<P::Item>,
     S::Writer: Send,
 {
-    let context = Arc::new(StreamerContext::new(token.clone()));
+    // The operators and the writer share a token that only a broken pipe
+    // cancels. A stop request (`token`) just ends the input, so the operators
+    // still flush the media they hold instead of dropping it.
+    let pipe_token = CancellationToken::new();
+    let context = Arc::new(StreamerContext::new(pipe_token.clone()));
     let pipeline_provider = P::with_config(context, pipeline_config, pipeline_type_config);
     let pipeline = pipeline_provider.build_pipeline();
 
@@ -282,14 +286,14 @@ where
         tasks: processing_tasks,
     } = spawn_pipeline(pipeline, ChannelSpec::items(pipeline_config.channel_size));
 
-    // Pass the token to the writer task so it can cancel on broken pipe
-    let writer_task = spawn_pipe_writer_task(output_rx, strategy, extension, token.clone());
+    let writer_task = spawn_pipe_writer_task(output_rx, strategy, extension, pipe_token.clone());
 
     let mut stream = stream;
     loop {
         let item_result = tokio::select! {
             biased;
             _ = token.cancelled() => break,
+            _ = pipe_token.cancelled() => break,
             next = stream.next() => match next {
                 Some(item) => item,
                 None => break,

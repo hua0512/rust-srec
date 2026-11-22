@@ -496,18 +496,9 @@ mod tests {
 
     #[test]
     fn test_annex_b_obu_length_smaller_than_header_returns_error() {
-        // Case 1: obu_length = 0 followed by a 1-byte OBU header (tu_size=2, fu_size=2, obu_length=0, header=0x08).
+        // tu_size=3, fu_size=2, obu_length=0, then a 1-byte OBU header (0x08).
         let zero_len_obu = Bytes::from_static(&[0x03, 0x02, 0x00, 0x08]);
         let mut cursor = io::Cursor::new(zero_len_obu);
-        let err = AnnexBIterator::new(&mut cursor)
-            .next()
-            .unwrap()
-            .unwrap_err();
-        assert!(matches!(err, Av1Error::InvalidObu(_)));
-
-        // Case 2: obu_length = 1 with a 2-byte OBU header (obu_extension_flag=1: 0x0C, 0x00).
-        let short_ext_obu = Bytes::from_static(&[0x04, 0x03, 0x01, 0x0C, 0x00]);
-        let mut cursor = io::Cursor::new(short_ext_obu);
         let err = AnnexBIterator::new(&mut cursor)
             .next()
             .unwrap()

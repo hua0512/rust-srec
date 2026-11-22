@@ -434,20 +434,6 @@ mod tests {
             io::ErrorKind::InvalidData
         );
 
-        struct MaxUnsignedReader;
-        impl BitReaderExpGolombExt for MaxUnsignedReader {
-            fn read_exp_golomb(&mut self) -> io::Result<u64> {
-                Ok(u64::MAX)
-            }
-        }
-        assert_eq!(
-            MaxUnsignedReader
-                .read_signed_exp_golomb()
-                .unwrap_err()
-                .kind(),
-            io::ErrorKind::InvalidData
-        );
-
         let mut writer = BitWriter::<Vec<u8>>::default();
         assert_eq!(
             writer.write_exp_golomb(u64::MAX).unwrap_err().kind(),

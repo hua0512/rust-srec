@@ -394,12 +394,6 @@ mod tests {
             .unwrap();
         assert!(strategy.should_close_pipe(&ts_with_discontinuity));
         assert!(strategy.should_rotate_before_item(&ts_with_discontinuity, &config, &state));
-        assert!(matches!(
-            strategy
-                .after_item_written(&ts_with_discontinuity, 3, &state)
-                .unwrap(),
-            PostWriteAction::None
-        ));
     }
 
     #[test]

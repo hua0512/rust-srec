@@ -356,7 +356,6 @@ impl Decoder for FlvDecoder {
         );
         self.last_tag_size = total_tag_size as u32;
         self.expecting_tag_header = false;
-        self.mid_stream_unconfirmed = false;
         Ok(Some(FlvData::Tag(tag)))
     }
 
@@ -368,8 +367,6 @@ impl Decoder for FlvDecoder {
             let initial_len = src.len();
             if initial_len == 0 {
                 if self.mid_stream_unconfirmed {
-                    self.mid_stream_unconfirmed = false;
-                    self.resyncing = false;
                     return Err(FlvError::InvalidHeader);
                 }
                 return Ok(None);
@@ -382,10 +379,6 @@ impl Decoder for FlvDecoder {
                         // If EOF arrived before a valid FLV header or confirmed mid-stream
                         // tag boundary was ever established, reject the input as an invalid header.
                         if !self.header_parsed || self.mid_stream_unconfirmed {
-                            src.clear();
-                            self.header_parsed = true;
-                            self.mid_stream_unconfirmed = false;
-                            self.resyncing = false;
                             return Err(FlvError::InvalidHeader);
                         }
                         // decode() made no progress after valid framing: the remainder is a

@@ -1,22 +1,23 @@
 //! # ScriptFilterOperator
 //!
-//! The `ScriptFilterOperator` removes duplicate script data (metadata) tags from an FLV stream.
+//! The `ScriptFilterOperator` removes duplicate metadata script tags from an FLV stream.
 //!
 //! ## Purpose
 //!
-//! FLV streams may contain multiple script data tags (metadata), but many players
-//! can only properly handle a single metadata tag. This operator ensures that:
+//! FLV streams may contain multiple `onMetaData` tags, but many players can only
+//! properly handle a single one. This operator ensures that, in each segment
+//! (everything after an FLV header):
 //!
-//! 1. The first script data tag is preserved (typically containing essential metadata)
-//! 2. Subsequent script data tags are discarded
-//!
-//! This improves compatibility with various players and reduces unnecessary data.
+//! 1. The first metadata tag (`onMetaData`, bare or wrapped in `@setDataFrame`) is preserved
+//! 2. Later metadata tags are discarded
+//! 3. Other script tags, such as `onCuePoint` and `onTextData`, pass through,
+//!    as do script tags with the filter bit set, whose payload cannot be read
 //!
 //! ## Operation
 //!
-//! The operator tracks whether it has already encountered a script tag. Once it has
-//! seen the first script tag, it filters out any subsequent ones while passing through
-//! all other tag types unmodified.
+//! The operator tracks whether the current segment has already had a metadata tag.
+//! A script tag that cannot be parsed, or that has a name but no value, counts as
+//! metadata. All other tag types pass through unmodified.
 //!
 //!
 //! ## License
@@ -73,7 +74,7 @@ impl Processor<FlvData> for ScriptFilterOperator {
             return Err(PipelineError::Cancelled);
         }
         match input {
-            FlvData::Header(_) | FlvData::Split(_) | FlvData::EndOfSequence(_) => {
+            FlvData::Header(_) => {
                 debug!("{} Resetting script tag filter state", self.context.name);
                 self.reset();
                 output(input)
