@@ -75,7 +75,10 @@ impl HuyaPlatform {
 
     pub(crate) fn get_random() -> Self {
         let mut rng = rand::rng();
-        *Self::all_variants().choose(&mut rng).unwrap()
+        Self::all_variants()
+            .choose(&mut rng)
+            .copied()
+            .unwrap_or(Self::HuyaPcExe)
     }
 
     pub(crate) fn generate_ua(&self) -> String {
@@ -126,7 +129,7 @@ fn generate_random_uid(rng: &mut impl Rng) -> u64 {
 fn generate_random_uuid() -> u64 {
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_millis() as u64;
 
     let mut rng = rand::rng();
@@ -160,7 +163,7 @@ pub fn get_anticode(
 
     let calc_start_time = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs_f64();
 
     let mut rng = rand::rng();

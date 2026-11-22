@@ -50,7 +50,7 @@ impl Picarto {
 
     pub async fn get_live_info(&self, rid: &str) -> Result<MediaInfo, ExtractorError> {
         let api_url = format!("{}{}", Self::API_URL_LIVE, rid);
-        let response = self.extractor.get(&api_url).send().await?;
+        let response = ExtractorError::check_response(self.extractor.get(&api_url).send().await?)?;
 
         let data = response.json::<PicartoResponse>().await?;
 

@@ -23,23 +23,19 @@ use tracing_subscriber::{filter::EnvFilter, fmt, prelude::*};
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
+    let output_format = args.output_format();
     let result = run(args).await;
 
     if let Err(e) = result {
-        let output_format = match &Args::parse().command {
-            Commands::Extract { output, .. } => Some(*output),
-            Commands::Batch { output_format, .. } => Some(*output_format),
-            Commands::Resolve { output, .. } => Some(*output),
-            _ => None,
-        };
-
         match output_format {
-            Some(crate::cli::OutputFormat::Json) | Some(crate::cli::OutputFormat::JsonCompact) => {
+            Some(crate::cli::OutputFormat::Json | crate::cli::OutputFormat::JsonCompact) => {
                 let error_json = serde_json::json!({
                     "status": "error",
                     "message": e.to_string(),
                 });
-                println!("{}", serde_json::to_string(&error_json).unwrap());
+                if let Ok(serialized) = serde_json::to_string(&error_json) {
+                    println!("{serialized}");
+                }
             }
             _ => {
                 error!("Application error: {}", e);
@@ -58,14 +54,9 @@ async fn main() {
 }
 
 async fn run(args: Args) -> Result<()> {
-    let output_format = match &args.command {
-        Commands::Extract { output, .. } => Some(*output),
-        Commands::Batch { output_format, .. } => Some(*output_format),
-        Commands::Resolve { output, .. } => Some(*output),
-        _ => None,
-    };
-
-    let show_banner = matches!(output_format, Some(crate::cli::OutputFormat::Pretty));
+    let output_format = args.output_format();
+    let show_banner =
+        !args.quiet && matches!(output_format, Some(crate::cli::OutputFormat::Pretty));
 
     if show_banner {
         println!("==================================================================");
@@ -82,7 +73,9 @@ async fn run(args: Args) -> Result<()> {
         println!("GitHub: https://github.com/hua0512/rust-srec");
         println!("==================================================================");
         println!();
-    } else {
+    }
+
+    if !show_banner || args.verbose {
         init_logging(args.verbose, args.quiet);
     }
 
@@ -93,9 +86,14 @@ async fn run(args: Args) -> Result<()> {
         info!("Starting platforms-cli with config: {:?}", config);
     }
 
-    // Create command executor with proxy support
-    let executor =
-        if args.proxy.is_some() || args.proxy_username.is_some() || args.proxy_password.is_some() {
+    // Built by the commands that use it, so an unusable proxy fails those
+    // commands without blocking `config --reset` from repairing the setting.
+    let quiet = args.quiet;
+    let build_executor = move || -> Result<CommandExecutor> {
+        let executor = if args.proxy.is_some()
+            || args.proxy_username.is_some()
+            || args.proxy_password.is_some()
+        {
             CommandExecutor::new_with_proxy(
                 config,
                 args.proxy,
@@ -104,7 +102,9 @@ async fn run(args: Args) -> Result<()> {
             )
         } else {
             CommandExecutor::new(config)
-        };
+        }?;
+        Ok(executor.with_quiet(quiet))
+    };
 
     // Execute command
     match args.command {
@@ -118,7 +118,7 @@ async fn run(args: Args) -> Result<()> {
             format,
             auto_select,
         } => {
-            executor
+            build_executor()?
                 .extract_single(ExtractRequest {
                     url: &url,
                     cookies: cookies.as_deref(),
@@ -141,7 +141,7 @@ async fn run(args: Args) -> Result<()> {
             max_concurrent,
             continue_on_error: _,
         } => {
-            executor
+            build_executor()?
                 .batch_process(
                     &input,
                     output_dir.as_deref(),
@@ -154,7 +154,7 @@ async fn run(args: Args) -> Result<()> {
         }
 
         Commands::Platforms { detailed: _ } => {
-            executor
+            build_executor()?
                 .list_platforms(&crate::cli::OutputFormat::Pretty)
                 .await?;
         }
@@ -196,7 +196,7 @@ async fn run(args: Args) -> Result<()> {
                 io::stdin().read_to_string(&mut buffer)?;
                 buffer
             };
-            executor
+            build_executor()?
                 .resolve_stream(
                     &url,
                     cookies.as_deref(),
@@ -224,6 +224,11 @@ fn init_logging(verbose: bool, quiet: bool) {
     let subscriber = tracing_subscriber::registry().with(filter);
 
     subscriber
-        .with(fmt::layer().with_target(false).with_level(verbose))
+        .with(
+            fmt::layer()
+                .with_writer(std::io::stderr)
+                .with_target(false)
+                .with_level(verbose),
+        )
         .init();
 }

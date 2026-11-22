@@ -33,6 +33,8 @@
 - Fixed Mesio HLS and DASH recordings that stopped before their first segment being reported as "stream is empty" even when a download or processing error was the cause. The failure now shows the actual error.
 - Reduced server memory usage during FLV recordings with **Loop Protection** enabled and on installations with a large history of **Danmu Statistics**.
 - Setting **Frequent words to keep** under **Danmu Statistics** to `0` now disables word frequency counting and CJK word segmentation while keeping the rest of the session's chat summary (totals, activity timeline, top chatters and gifts).
+- Fixed Huya **Record Danmu** failing to capture live chat, including on rooms with custom URLs or links with query parameters, and stopped sending your Twitch login token to video servers.
+- Fixed negative bitrate values on some Douyin streams breaking bitrate filters, and fixed password-protected Twitcasting links entered without `https://` losing their password.
 
 ## Workflows and file processing
 

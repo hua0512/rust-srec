@@ -146,6 +146,10 @@ impl DanmuProtocol for DouyuDanmuProtocol {
         self.cookies.clone()
     }
 
+    fn send_cookie_header(&self) -> bool {
+        false
+    }
+
     async fn handshake_messages(&mut self, room_id: &str) -> Result<Vec<Message>> {
         // Create login and join group messages
         let login_msg = create_login_message(room_id);

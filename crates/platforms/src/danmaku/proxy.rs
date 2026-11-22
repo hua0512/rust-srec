@@ -102,7 +102,6 @@ impl DanmuProxy {
     /// The client for requests a protocol makes before connecting, so they
     /// leave through the same proxy as the WebSocket.
     pub(crate) fn http_client(&self) -> Result<reqwest::Client> {
-        // Errors may quote the URL, so they are not passed on.
         let proxy = self
             .endpoint
             .reqwest_proxy()
@@ -282,7 +281,9 @@ pub(crate) async fn open_transport(
 ) -> Result<BoxedTransport> {
     match proxy {
         Some(proxy) => proxy.tunnel(host, port).await,
-        None => connect_direct(host, port).await,
+        None => tokio::time::timeout(TUNNEL_TIMEOUT, connect_direct(host, port))
+            .await
+            .map_err(|_| DanmakuError::connection("danmu host did not answer in time"))?,
     }
 }
 

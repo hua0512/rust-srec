@@ -458,9 +458,9 @@ impl CachedEncryptionKey {
     pub fn new_with_ttl(data: DouyuEncryptionData, user_agent: String, ttl_secs: u64) -> Self {
         let expire_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs()
-            + ttl_secs;
+            .saturating_add(ttl_secs);
 
         Self {
             data,
@@ -473,14 +473,14 @@ impl CachedEncryptionKey {
     pub fn new(data: DouyuEncryptionData, user_agent: String) -> Self {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         // Prefer server-provided expire_at when present/valid; otherwise fallback to 24h TTL.
         let expire_at = if data.expire_at > now {
             data.expire_at
         } else {
-            now + 86400
+            now.saturating_add(86400)
         };
 
         Self {
@@ -494,7 +494,7 @@ impl CachedEncryptionKey {
     pub fn is_valid(&self) -> bool {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
         now < self.expire_at
     }

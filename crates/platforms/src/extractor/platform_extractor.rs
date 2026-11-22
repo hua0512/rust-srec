@@ -71,6 +71,31 @@ impl std::fmt::Debug for Extractor {
     }
 }
 
+fn has_url_scheme(s: &str) -> bool {
+    s.split_once("://").is_some_and(|(scheme, _)| {
+        let mut chars = scheme.chars();
+        chars
+            .next()
+            .is_some_and(|first| first.is_ascii_alphabetic())
+            && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+    })
+}
+
+fn normalize_platform_url(raw: String) -> String {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || has_url_scheme(trimmed) {
+        if trimmed.len() == raw.len() {
+            raw
+        } else {
+            trimmed.to_owned()
+        }
+    } else if let Some(rest) = trimmed.strip_prefix("//") {
+        format!("https://{rest}")
+    } else {
+        format!("https://{trimmed}")
+    }
+}
+
 impl Extractor {
     pub fn new<S1: Into<String>, S2: Into<String>>(
         platform_name: S1,
@@ -98,7 +123,7 @@ impl Extractor {
 
         Self {
             platform_name: platform_name.into(),
-            url: platform_url.into(),
+            url: normalize_platform_url(platform_url.into()),
             client,
             platform_headers: default_headers,
             platform_params: FxHashMap::default(),

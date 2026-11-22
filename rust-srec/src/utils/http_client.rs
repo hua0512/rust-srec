@@ -30,7 +30,7 @@ pub fn apply_proxy(builder: reqwest::ClientBuilder, proxy: &ProxyTarget) -> reqw
             Err(error) => {
                 // Only the address's scheme, host and port are logged.
                 warn!(
-                    error = %error.without_url(),
+                    error = %error,
                     proxy = %redacted_url(&endpoint.url),
                     "Invalid proxy URL; requests through it will fail"
                 );

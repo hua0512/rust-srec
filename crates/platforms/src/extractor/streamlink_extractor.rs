@@ -23,9 +23,45 @@ static DEFAULT_STREAMLINK_QUALITY: &str = "best";
 /// to streamlink, so the probe must not spawn a process each time. Caching with a TTL rather than
 /// forever also means a binary installed while the process is running becomes visible.
 const PROBE_TTL: Duration = Duration::from_secs(300);
+const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+const STREAMLINK_COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 
 static PROBE_CACHE: LazyLock<Mutex<FxHashMap<String, (bool, Instant)>>> =
     LazyLock::new(|| Mutex::new(FxHashMap::default()));
+
+fn run_version_probe(binary_path: &str) -> bool {
+    let mut cmd = process_utils::std_command(binary_path);
+    cmd.arg("--version")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    let Ok(mut child) = cmd.spawn() else {
+        return false;
+    };
+
+    let deadline = Instant::now() + PROBE_TIMEOUT;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return status.success(),
+            Ok(None) if Instant::now() < deadline => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Ok(None) => {
+                debug!(binary_path, "Streamlink version probe timed out");
+                break;
+            }
+            Err(error) => {
+                debug!(binary_path, %error, "Failed to poll the streamlink version probe");
+                break;
+            }
+        }
+    }
+
+    // Kill and reap the probe so it does not outlive the check as a zombie.
+    if let Err(error) = child.kill().and_then(|()| child.wait()) {
+        debug!(binary_path, %error, "Failed to stop the streamlink version probe");
+    }
+    false
+}
 
 /// Whether `binary_path` responds to `--version`, memoized for [`PROBE_TTL`].
 fn probe_streamlink(binary_path: &str) -> bool {
@@ -35,11 +71,12 @@ fn probe_streamlink(binary_path: &str) -> bool {
         return available;
     }
 
-    let mut cmd = process_utils::std_command(binary_path);
-    cmd.arg("--version")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    let available = cmd.status().is_ok_and(|s| s.success());
+    let available = match tokio::runtime::Handle::try_current() {
+        Ok(handle) if handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
+            tokio::task::block_in_place(|| run_version_probe(binary_path))
+        }
+        _ => run_version_probe(binary_path),
+    };
 
     PROBE_CACHE
         .lock()
@@ -114,7 +151,7 @@ impl std::fmt::Debug for TwitchToken {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct StreamlinkExtractor {
     extractor: Extractor,
     config: StreamlinkConfig,
@@ -126,6 +163,21 @@ pub struct StreamlinkExtractor {
     /// Streamlink runs as its own process, so the HTTP client's proxy does
     /// not reach it; its requests take this path instead.
     proxy: ProxyTarget,
+}
+
+impl std::fmt::Debug for StreamlinkExtractor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StreamlinkExtractor")
+            .field("extractor", &self.extractor)
+            .field("config", &self.config)
+            .field(
+                "cookie_string",
+                &self.cookie_string.as_ref().map(|_| "[redacted]"),
+            )
+            .field("twitch_token", &self.twitch_token)
+            .field("proxy", &self.proxy)
+            .finish()
+    }
 }
 
 impl StreamlinkExtractor {
@@ -211,17 +263,23 @@ impl StreamlinkExtractor {
     async fn run_streamlink_json(&self) -> Result<StreamlinkJson, ExtractorError> {
         let binary_path = self.config.binary_path();
         let mut cmd = process_utils::tokio_command(binary_path);
-        cmd.arg("--json").arg("--url").arg(&self.extractor.url);
+        cmd.arg("--json");
         cmd.args(self.build_auth_args());
         self.apply_proxy(&mut cmd);
-
         cmd.args(&self.config.extra_args);
-
-        let out = cmd
+        cmd.arg(format!("--url={}", self.extractor.url));
+        cmd.kill_on_drop(true)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
+            .stderr(Stdio::piped());
+
+        let out = tokio::time::timeout(STREAMLINK_COMMAND_TIMEOUT, cmd.output())
             .await
+            .map_err(|_| {
+                ExtractorError::Other(format!(
+                    "Streamlink timed out after {}s",
+                    STREAMLINK_COMMAND_TIMEOUT.as_secs()
+                ))
+            })?
             .map_err(|e| ExtractorError::Other(format!("Failed to spawn streamlink: {e}")))?;
 
         let stdout = String::from_utf8_lossy(&out.stdout).to_string();
@@ -266,20 +324,26 @@ impl StreamlinkExtractor {
     async fn resolve_stream_url(&self, quality: &str) -> Result<String, ExtractorError> {
         let binary_path = self.config.binary_path();
         let mut cmd = process_utils::tokio_command(binary_path);
-        cmd.arg("--stream-url")
-            .arg("--url")
-            .arg(&self.extractor.url)
-            .arg(quality);
+        cmd.arg("--stream-url");
         cmd.args(self.build_auth_args());
         self.apply_proxy(&mut cmd);
-
         cmd.args(&self.config.extra_args);
-
-        let out = cmd
+        // Streamlink reads its first positional argument as the URL even
+        // when `--url` is given, so the quality goes in as an option too.
+        cmd.arg(format!("--url={}", self.extractor.url))
+            .arg(format!("--default-stream={quality}"));
+        cmd.kill_on_drop(true)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
+            .stderr(Stdio::piped());
+
+        let out = tokio::time::timeout(STREAMLINK_COMMAND_TIMEOUT, cmd.output())
             .await
+            .map_err(|_| {
+                ExtractorError::Other(format!(
+                    "Streamlink timed out after {}s",
+                    STREAMLINK_COMMAND_TIMEOUT.as_secs()
+                ))
+            })?
             .map_err(|e| ExtractorError::Other(format!("Failed to spawn streamlink: {e}")))?;
 
         if !out.status.success() {
