@@ -69,3 +69,7 @@
 - The **Engines** and **Proxies** settings pages now use the same list layout as the rest of the settings pages. Each engine shows a summary of its configuration with quick action buttons, **System proxy** has its own status card, and each proxy can be expanded to see which settings use it.
 - Fixed the QR code login dialog staying open after a scan succeeded. It now closes automatically shortly after the account is saved.
 - Saving changes on a platform, template or engine settings page now keeps you on that page instead of returning to the list, so you can keep adjusting other tabs or settings and click **Back** when finished.
+
+## Deployment and desktop
+
+- Reduced the server's memory use on Linux hosts where transparent hugepages are set to `always`. In a test recording five streams with danmu, the server used about 170 MiB instead of 330 MiB. It no longer uses hugepages for its own memory; FFmpeg, rclone and the other tools it starts are not affected. Set `MIMALLOC_ALLOW_THP=1` to restore the previous behaviour. See [Environment Variables](https://docs.srec.rs/en/reference/environment#backend-service).

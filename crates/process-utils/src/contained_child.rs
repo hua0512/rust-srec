@@ -421,6 +421,7 @@ mod platform {
 
     pub(super) fn prepare_command(command: &mut Command) -> Result<(), ContainmentError> {
         command.as_std_mut().process_group(0);
+        crate::use_system_thp(command);
         Ok(())
     }
 
@@ -998,6 +999,37 @@ mod tests {
             }
             other => panic!("unknown helper mode: {other}"),
         }
+    }
+
+    /// `PR_SET_THP_DISABLE` survives fork and exec, so without the reset the
+    /// child reports hugepages disabled, like its parent.
+    #[tokio::test]
+    #[cfg(target_os = "linux")]
+    async fn confined_thp_opt_out_does_not_reach_the_child() {
+        use tokio::io::AsyncReadExt;
+
+        // SAFETY: sets a flag of the calling process and takes no pointers.
+        if unsafe { libc::prctl(libc::PR_SET_THP_DISABLE, 1, 0, 0, 0) } != 0 {
+            // The kernel was built without transparent hugepages.
+            return;
+        }
+        crate::confine_thp_opt_out();
+
+        let mut command = crate::tokio_command("grep");
+        command
+            .args(["THP_enabled", "/proc/self/status"])
+            .stdout(Stdio::piped());
+        let mut child = ContainedChild::spawn(&mut command).expect("spawn contained child");
+        let mut status_line = String::new();
+        child
+            .take_stdout()
+            .expect("configured stdout pipe")
+            .read_to_string(&mut status_line)
+            .await
+            .expect("read child status");
+        child.wait().await.expect("wait for child");
+
+        assert_eq!(status_line.split_whitespace().last(), Some("1"));
     }
 
     #[tokio::test]

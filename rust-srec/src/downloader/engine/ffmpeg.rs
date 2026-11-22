@@ -313,6 +313,7 @@ impl FfmpegEngine {
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        process_utils::use_system_thp(&mut command);
         let mut child = command.spawn().map_err(|e| {
             EngineStartError::new(
                 DownloadFailureKind::Configuration,

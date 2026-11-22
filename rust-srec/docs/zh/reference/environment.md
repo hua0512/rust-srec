@@ -116,6 +116,7 @@ import { withBase } from 'vitepress'
 | `RUST_LOG` | 日志过滤指令（`trace`、`debug`、`info`、`warn`、`error` 或按模块指定的过滤规则）。Docker Compose 默认设为 `info`；独立二进制默认值为 `rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info`。 | `rust_srec=info,sqlx=warn,mesio_engine=info,flv=info,hls=info`（独立二进制）/ `info`（Docker） |
 | `DATABASE_URL` | SQL 数据库连接字符串。表中所列是 Docker `.env` 设置的值。未设置时后端回退到 `sqlite:srec.db?mode=rwc`，相对工作目录解析；随附的系统服务单元则设为 `sqlite:///var/lib/rust-srec/rust-srec.db`。运行世代标记由该 URL 推导，与数据库文件放在一起。 | `sqlite:///app/data/rust-srec.db`（Docker） |
 | `RUST_SREC_LOCALE` | 后端通知字符串的语言环境。影响所有通知事件——直播上/下线、录制生命周期、分段、流水线任务、系统告警、凭据事件。支持：`en`、`zh-CN`。 | `en` |
+| `MIMALLOC_ALLOW_THP` | 仅限 Linux。后端自身的内存是否可以使用透明大页（THP）。未设置该变量时，后端会为自己关闭透明大页，因为在 `transparent_hugepage` 为 `always` 的主机上，透明大页会让后端占用远超实际需要的内存。后端启动的 FFmpeg、rclone 等工具仍沿用系统设置。设为 `1` 可让后端重新使用透明大页。 | `0` |
 | `RUST_SREC_OUTPUT_ROOTS` | 以逗号分隔的**绝对**路径列表，作为写入门（write gate）的输出根边界。未设置时，写入门会对每个解析后的输出路径取前**两段有名分量**作为默认（例如 `/rec/huya/X/20260415` → `/rec/huya`，`/home/user/recordings/X/20260415` → `/home/user`）。两段是最小安全默认值——它可以避免意外将 `/home/...` 布局下不同用户合并到同一个门键。如果您是 `/rec` 这种单挂载布局，且希望一个挂载点对应一个门键（从而在故障时只收到一条聚合通知、而不是按平台分别通知），请显式设置：`RUST_SREC_OUTPUT_ROOTS=/rec`。 | - |
 
 默认规则会把深层路径归入较宽的键：`/var/lib/rust-srec/output` 使用 `/var/lib`。启动发现会测试映射到同一键的具体录制目录，因此不要求对只读祖先目录具有写权限。设置 `RUST_SREC_OUTPUT_ROOTS=/var/lib/rust-srec/output` 可为该目录指定独立边界；最长匹配的显式前缀优先。显式边界本身也会被探测，应指向可写的录制位置。发现范围的限制详见[输出根探测](../operations/storage.md#输出根探测)。

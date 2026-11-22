@@ -177,6 +177,7 @@ pub async fn run_capture(
     });
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
+    process_utils::use_system_thp(&mut command);
 
     let mut child = command
         .spawn()

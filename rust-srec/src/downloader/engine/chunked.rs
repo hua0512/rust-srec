@@ -471,6 +471,7 @@ async fn finalize(
         .stderr(Stdio::piped())
         .kill_on_drop(true);
     crate::utils::configure_ffmpeg_locale(&mut command);
+    process_utils::use_system_thp(&mut command);
     let mut child = command
         .spawn()
         .map_err(|e| io_error("start recording finalizer", &temporary, e))?;
