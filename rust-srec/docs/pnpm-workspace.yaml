@@ -1,3 +1,7 @@
 allowBuilds:
   "@parcel/watcher": true
   esbuild: true
+
+# Disable pnpm's default 24h release-age gate so frozen installs in CI always
+# reproduce the committed pnpm-lock.yaml.
+minimumReleaseAge: 0

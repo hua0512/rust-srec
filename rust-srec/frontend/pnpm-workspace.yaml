@@ -7,6 +7,11 @@ allowBuilds:
 # mpegts.js depends on a pinned webworkify-webpack Git commit.
 blockExoticSubdeps: false
 
+# Committed lockfiles may reference freshly released packages (e.g. daily oxlint-tsgolint
+# builds); disable pnpm's default 24h release-age gate so frozen installs in CI and Docker
+# always reproduce pnpm-lock.yaml.
+minimumReleaseAge: 0
+
 # Dependency holds in package.json:
 # Keep React Hook Form at 7.89.0: 7.90.0 crashes when dirty tracking compares
 # an object default with null while clearing an inherited pipeline override.
