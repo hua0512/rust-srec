@@ -63,11 +63,12 @@ jobs:
       - name: Run tests (backend only)
         if: matrix.os == 'ubuntu-latest'
         run: cargo nextest run --locked --workspace --exclude rust-srec-desktop --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback
-      # Hosted macOS runners have 7 GB RAM; build integration tests (`--test '*'`,
-      # which compiles the library without the unit-test harness) before running
-      # the full suite to avoid memory thrashing.
-      - name: Build integration tests (macOS)
-        if: runner.os == 'macOS'
+      # Hosted Apple Silicon macOS runners have 7 GB RAM; build integration tests
+      # (`--test '*'`, which compiles the library without the unit-test harness)
+      # before running the full suite to avoid memory thrashing. Intel macOS
+      # runners have 14 GB RAM and stay faster in a single pass.
+      - name: Build integration tests (macOS ARM64)
+        if: runner.os == 'macOS' && runner.arch == 'ARM64'
         run: cargo nextest run --no-run --locked --workspace --exclude rust-srec-desktop --test '*'
       - name: Run tests
         if: matrix.os != 'ubuntu-latest'

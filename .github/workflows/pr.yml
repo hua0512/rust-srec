@@ -112,12 +112,14 @@ jobs:
       - name: Run ffmpeg, rclone, and Streamlink gated tests
         if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' }}
         run: cargo nextest run --locked --workspace --exclude rust-srec-desktop --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback --run-ignored ignored-only -E 'package(=rust-srec) and not test(/^sqlite_claim_stress::/) and not test(/known_bug_/)'
-      # Hosted macOS runners have 7 GB RAM; compiling rust-srec's library and
-      # unit-test harness concurrently exhausts RAM and thrashes compressed memory.
-      # Build integration tests (`--test '*'`, which compiles the library without
-      # the unit-test harness) first so the two heavy compilations run sequentially.
-      - name: Build integration tests (macOS)
-        if: runner.os == 'macOS'
+      # Hosted Apple Silicon macOS runners have 7 GB RAM; compiling rust-srec's
+      # library and unit-test harness concurrently exhausts RAM and thrashes
+      # compressed memory. Build integration tests (`--test '*'`, which compiles
+      # the library without the unit-test harness) first on ARM64 macOS so the
+      # two heavy compilations run sequentially. Intel macOS runners have 14 GB
+      # RAM and stay faster in a single parallel pass.
+      - name: Build integration tests (macOS ARM64)
+        if: runner.os == 'macOS' && runner.arch == 'ARM64'
         run: cargo nextest run --no-run --locked --workspace --exclude rust-srec-desktop --test '*' --timings
       - name: Run tests (macOS)
         if: runner.os == 'macOS'
