@@ -305,13 +305,20 @@ impl HlsDownloader {
 
         // Peek at the first segment to determine file extension
         let first_segment = loop {
-            let next = next_initial_item(
+            let next = match next_initial_item(
                 hls_stream.next(),
                 &self.handle.cancellation_token,
                 &token,
                 protocol,
             )
-            .await?;
+            .await
+            {
+                Ok(next) => next,
+                Err(err) => {
+                    lifecycle.settle(false).await;
+                    return Err(err);
+                }
+            };
             match next {
                 Some(Ok(HlsData::EndMarker(_))) => {
                     debug!(
@@ -322,6 +329,7 @@ impl HlsDownloader {
                 }
                 Some(Ok(segment)) => break segment,
                 Some(Err(e)) => {
+                    lifecycle.settle(false).await;
                     let kind = classify_download_error(&e);
                     observe_segment_event_send(
                         self.handle
@@ -342,20 +350,46 @@ impl HlsDownloader {
                     ));
                 }
                 None => {
+                    let (stream_error, _) = settle_session(
+                        SettleContext {
+                            protocol,
+                            parent_token: &self.handle.cancellation_token,
+                            child_token: &token,
+                            streamer_id: &streamer_id,
+                            managed_credentials: config.managed_credentials,
+                        },
+                        lifecycle,
+                        true,
+                        false,
+                        None,
+                    )
+                    .await;
+                    if self.handle.cancellation_token.is_cancelled() || token.is_cancelled() {
+                        return Err(EngineStartError::new(
+                            DownloadFailureKind::Cancelled,
+                            format!("{label} download cancelled before first segment"),
+                        ));
+                    }
+                    let (kind, raw_message) = stream_error.unwrap_or_else(|| {
+                        (
+                            DownloadFailureKind::SourceUnavailable,
+                            format!("{label} stream is empty"),
+                        )
+                    });
                     observe_segment_event_send(
                         self.handle
                             .event_tx
                             .send(SegmentEvent::DownloadFailed {
-                                kind: DownloadFailureKind::SourceUnavailable,
-                                message: format!("{label} stream is empty"),
+                                kind,
+                                message: sanitize_engine_message(
+                                    &raw_message,
+                                    config.managed_credentials,
+                                ),
                             })
                             .await,
                         &streamer_id,
                     );
-                    return Err(EngineStartError::new(
-                        DownloadFailureKind::SourceUnavailable,
-                        format!("{label} stream is empty"),
-                    ));
+                    return Err(EngineStartError::new(kind, raw_message));
                 }
             }
         };
@@ -1095,5 +1129,120 @@ mod tests {
 
         assert_eq!(concluded, (None, EngineEndSignal::CleanDisconnect));
         assert_eq!(started.elapsed(), Duration::from_millis(500));
+    }
+
+    #[tokio::test]
+    async fn early_exits_before_first_segment_settle_lifecycle_and_preserve_session_failures() {
+        let make_downloader = || {
+            let temp = tempfile::tempdir().expect("tempdir");
+            let config = DownloadConfig::new(
+                "http://127.0.0.1:1/live.m3u8",
+                temp.path().to_path_buf(),
+                "streamer",
+                "streamer",
+                "session",
+            )
+            .with_processing_enabled(false);
+            let (event_tx, event_rx) = mpsc::channel(16);
+            let handle = Arc::new(DownloadHandle::new(
+                "download",
+                EngineType::Mesio,
+                config,
+                event_tx,
+            ));
+            let parent = handle.cancellation_token.clone();
+            (
+                temp,
+                parent,
+                HlsDownloader::new(handle, MesioEngineConfig::default()),
+                event_rx,
+            )
+        };
+
+        let cancel_gated_lifecycle = || {
+            let joined = Arc::new(AtomicBool::new(false));
+            let joined_flag = Arc::clone(&joined);
+            let cancelled = Arc::new(AtomicBool::new(false));
+            let cancelled_flag = Arc::clone(&cancelled);
+            let session_stop = CancellationToken::new();
+            let session_wait = session_stop.clone();
+            let lifecycle = SessionLifecycle {
+                cancel: Box::new(move || {
+                    cancelled_flag.store(true, Ordering::Relaxed);
+                    session_stop.cancel();
+                }),
+                join: Box::pin(async move {
+                    session_wait.cancelled().await;
+                    joined_flag.store(true, Ordering::Relaxed);
+                    None
+                }),
+            };
+            (lifecycle, cancelled, joined)
+        };
+
+        // 1. Cancellation before first segment cancels and joins spawned session tasks.
+        let (_temp, parent, downloader, _rx) = make_downloader();
+        let child = parent.child_token();
+        let (lifecycle, cancelled, joined) = cancel_gated_lifecycle();
+        parent.cancel();
+        let err = downloader
+            .record(
+                SegmentedProtocol::Hls,
+                child,
+                Box::pin(futures::stream::pending()),
+                lifecycle,
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(err.kind, DownloadFailureKind::Cancelled);
+        assert!(cancelled.load(Ordering::Relaxed));
+        assert!(joined.load(Ordering::Relaxed));
+
+        // 2. First-item stream error cancels and joins spawned session tasks.
+        let (_temp, parent, downloader, _rx) = make_downloader();
+        let child = parent.child_token();
+        let (lifecycle, cancelled, joined) = cancel_gated_lifecycle();
+        let err_stream: BoxMediaStream<HlsData, DownloadError> =
+            Box::pin(futures::stream::iter([Err(DownloadError::Playlist {
+                reason: "bad playlist".to_string(),
+            })]));
+        let err = downloader
+            .record(SegmentedProtocol::Hls, child, err_stream, lifecycle)
+            .await
+            .unwrap_err();
+        assert_eq!(err.kind, DownloadFailureKind::Network);
+        assert!(cancelled.load(Ordering::Relaxed));
+        assert!(joined.load(Ordering::Relaxed));
+
+        // 3. Empty stream (`None`) caused by an internal session/assembler failure reports Processing.
+        let (_temp, parent, downloader, mut event_rx) = make_downloader();
+        let child = parent.child_token();
+        let (lifecycle, cancelled) = scripted_lifecycle(Some(Ok(DownloadTerminal::PipelineError(
+            Arc::from("DASH assembler panicked before first segment"),
+        ))));
+        let err = downloader
+            .record(
+                SegmentedProtocol::Dash,
+                child,
+                Box::pin(futures::stream::empty()),
+                lifecycle,
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(err.kind, DownloadFailureKind::Processing);
+        assert!(
+            err.message.contains("DASH session failed"),
+            "{}",
+            err.message
+        );
+        assert!(!cancelled.load(Ordering::Relaxed));
+        let event = event_rx.try_recv().expect("DownloadFailed event");
+        assert!(matches!(
+            event,
+            SegmentEvent::DownloadFailed {
+                kind: DownloadFailureKind::Processing,
+                ..
+            }
+        ));
     }
 }

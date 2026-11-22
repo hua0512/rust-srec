@@ -48,7 +48,7 @@ pub(super) struct ConfigurationWork {
     pub(super) failure: Option<String>,
     pending: HashMap<String, PendingConfig>,
     running: HashSet<String>,
-    revisions: HashMap<String, u64>,
+    pub(super) revisions: HashMap<String, u64>,
     restart_ready: HashSet<String>,
     global_revision: u64,
     global_pending: bool,
@@ -88,9 +88,7 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
                 self.configuration.global_due = None;
             }
             ConfigUpdateEvent::StreamerDeleted { streamer_id } => {
-                self.invalidate_configuration(&streamer_id);
-                self.feedback.retire(&streamer_id);
-                self.remove_streamer(&streamer_id);
+                self.purge_deleted_streamer(&streamer_id);
             }
             ConfigUpdateEvent::StreamerMetadataUpdated { streamer_id } => {
                 self.queue_streamer_configuration(&streamer_id, false)
@@ -159,12 +157,21 @@ impl<R: StreamerRepository + Send + Sync + 'static> Scheduler<R> {
         self.configuration.restart_ready.remove(id);
     }
 
+    pub(super) fn purge_deleted_streamer(&mut self, id: &str) {
+        self.download_heartbeat_last_sent.remove(id);
+        self.configuration.revisions.remove(id);
+        self.configuration.pending.remove(id);
+        self.configuration.restart_ready.remove(id);
+        self.feedback.purge_streamer(id);
+        self.supervisor.remove_streamer(id);
+    }
+
     fn queue_streamer_configuration(&mut self, id: &str, restart: bool) {
-        let active = self
-            .streamer_manager
-            .get_streamer(id)
-            .is_some_and(|metadata| metadata.is_active());
-        if !active {
+        let Some(metadata) = self.streamer_manager.get_streamer(id) else {
+            self.purge_deleted_streamer(id);
+            return;
+        };
+        if !metadata.is_active() {
             self.invalidate_configuration(id);
             self.feedback.retire(id);
             self.remove_streamer(id);

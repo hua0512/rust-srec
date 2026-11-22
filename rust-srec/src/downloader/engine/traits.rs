@@ -911,6 +911,11 @@ pub trait DownloadEngine: Send + Sync {
     /// Check if the engine is available (e.g., binary exists).
     fn is_available(&self) -> bool;
 
+    /// Wait for engine availability without blocking the async runtime.
+    async fn wait_available(&self) -> bool {
+        self.is_available()
+    }
+
     /// Get the engine version string.
     fn version(&self) -> Option<String>;
 }

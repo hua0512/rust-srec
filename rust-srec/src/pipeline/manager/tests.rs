@@ -2075,11 +2075,22 @@ async fn stop_settles_owned_pipeline_runtime_tasks() {
         .await
         .expect("pipeline stop should settle every owned runtime task");
 
-    let runtime = manager.runtime.lock();
-    assert_eq!(runtime.state, PipelineRuntimeState::Stopped);
-    assert!(runtime.tasks.is_empty());
-    drop(runtime);
+    {
+        let runtime = manager.runtime.lock();
+        assert_eq!(runtime.state, PipelineRuntimeState::Stopped);
+        assert!(runtime.tasks.is_empty());
+    }
     assert!(!manager.job_queue.progress_aggregator_is_running());
+
+    // Forced `abort` also terminates the owned progress aggregator task.
+    let aborted_manager: PipelineManager = PipelineManager::with_repository(
+        PipelineManagerConfig::default(),
+        crate::database::test_support::job_repository().await,
+    );
+    assert!(aborted_manager.job_queue.progress_aggregator_is_running());
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+    assert!(aborted_manager.abort(deadline).await >= 1);
+    assert!(!aborted_manager.job_queue.progress_aggregator_is_running());
 }
 
 #[tokio::test]
@@ -3372,4 +3383,123 @@ async fn queue_depth_events_carry_configured_thresholds() {
         }
     }
     assert_eq!(queue_events, [("warning", 1, 1), ("critical", 2, 2)]);
+}
+
+#[tokio::test]
+async fn session_transition_skips_config_lookup_for_non_completing_causes_and_falls_back_to_configured_session()
+ {
+    use crate::database::repositories::{
+        SqlxConfigRepository, SqlxDagRepository, SqlxJobRepository, SqlxStreamerRepository,
+    };
+    use crate::session::{SessionTransition, TerminalCause};
+
+    let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+        .await
+        .unwrap();
+    crate::database::run_migrations(&pool).await.unwrap();
+    let jobs = Arc::new(SqlxJobRepository::new(pool.clone(), pool.clone()));
+    let dags = Arc::new(SqlxDagRepository::new(pool.clone(), pool.clone()));
+    let sessions = Arc::new(TestSessionRepository::new(Some(
+        jiff::Timestamp::now().as_millisecond(),
+    )));
+
+    // Use a closed pool for ConfigService so `get_config_for_streamer` fails deterministically.
+    let closed_pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+        .await
+        .unwrap();
+    closed_pool.close().await;
+    let config_service = Arc::new(ConfigService::new(
+        Arc::new(SqlxConfigRepository::new(
+            closed_pool.clone(),
+            closed_pool.clone(),
+        )),
+        Arc::new(SqlxStreamerRepository::new(
+            closed_pool.clone(),
+            closed_pool,
+        )),
+    ));
+
+    let manager = PipelineManager::with_repository(PipelineManagerConfig::default(), jobs)
+        .with_dag_repository(dags.clone())
+        .with_session_repository(sessions.clone())
+        .with_config_service(config_service);
+
+    // 1. `!should_run_session_complete` marks the session settled even when config lookup fails.
+    manager
+        .handle_session_transition(SessionTransition::Ended {
+            streamer_id: "missing-streamer".to_string(),
+            streamer_name: "Missing Streamer".to_string(),
+            session_id: "rejected-session".to_string(),
+            started_at: Some(jiff::Timestamp::now()),
+            ended_at: jiff::Timestamp::now(),
+            cause: TerminalCause::Rejected {
+                reason: "circuit breaker".to_string(),
+            },
+            via_hysteresis: false,
+        })
+        .await;
+    assert!(
+        sessions
+            .session_complete_dispatched
+            .lock()
+            .unwrap()
+            .contains("rejected-session"),
+        "non-completing transition must record its skip receipt without requiring config lookup"
+    );
+
+    // 2. `should_run_session_complete` falls back to pre-configured coordinator state on transient config failure.
+    let complete_def = DagPipelineDefinition::new(
+        "session-complete",
+        vec![DagStep::new(
+            "A",
+            PipelineStep::inline("remux", serde_json::json!({})),
+        )],
+    );
+    manager
+        .pipeline_coordinator
+        .apply_event(PipelineCoordinationEvent::ConfigureSession {
+            session_id: "configured-session".to_string(),
+            streamer_id: "transient-streamer".to_string(),
+            danmu_enabled: false,
+            segment_pipeline: None,
+            paired_segment_pipeline: None,
+            session_complete_pipeline: Some(complete_def),
+        });
+    manager
+        .pipeline_coordinator
+        .apply_event(PipelineCoordinationEvent::VideoSegmentCompleted {
+            session_id: "configured-session".to_string(),
+            streamer_id: "transient-streamer".to_string(),
+            segment_index: 0,
+            path: PathBuf::from("/recordings/seg0.flv"),
+        });
+
+    manager
+        .handle_session_transition(SessionTransition::Ended {
+            streamer_id: "transient-streamer".to_string(),
+            streamer_name: "Transient Streamer".to_string(),
+            session_id: "configured-session".to_string(),
+            started_at: Some(jiff::Timestamp::now()),
+            ended_at: jiff::Timestamp::now(),
+            cause: TerminalCause::StreamerOffline,
+            via_hysteresis: false,
+        })
+        .await;
+
+    let created_dags = dags
+        .list_dags(None, Some("configured-session"), 10, 0)
+        .await
+        .unwrap();
+    assert_eq!(
+        created_dags.len(),
+        1,
+        "pre-configured session must trigger session-complete DAG despite transient config error"
+    );
+    assert!(
+        sessions
+            .session_complete_dispatched
+            .lock()
+            .unwrap()
+            .contains("configured-session")
+    );
 }

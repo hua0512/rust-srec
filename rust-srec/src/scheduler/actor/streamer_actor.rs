@@ -125,6 +125,8 @@ pub struct StreamerActor {
     batch_wake_routine_deadline: Option<Instant>,
     /// Shared metadata store for fetching fresh streamer data.
     metadata_store: Arc<DashMap<String, Arc<StreamerMetadata>>>,
+    /// Shared actor handle metadata kept synchronized on live config updates.
+    actor_metadata: ActorMetadata,
     /// Configuration.
     config: StreamerConfig,
     /// Cancellation token.
@@ -166,7 +168,7 @@ impl StreamerActor {
             tx.clone(),
             priority_tx,
             cancellation_token.clone(),
-            actor_metadata,
+            actor_metadata.clone(),
         );
 
         // Get initial state from metadata store
@@ -188,6 +190,7 @@ impl StreamerActor {
             live_watchdog_backoff_until: None,
             batch_wake_routine_deadline: None,
             metadata_store,
+            actor_metadata,
             config,
             cancellation_token,
             status_checker,

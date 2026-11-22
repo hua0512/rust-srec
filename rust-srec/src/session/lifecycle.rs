@@ -42,8 +42,8 @@ use tracing::{debug, info, warn};
 use crate::Result;
 use crate::database::models::SessionEventDbModel;
 use crate::database::repositories::{
-    EndForOutOfScheduleInputs, EndSessionInputs, EndSessionOutcome, SessionEventRepository,
-    SessionLifecycleRepository, StartSessionInputs, StartSessionOutcome,
+    EndSessionInputs, EndSessionOutcome, SessionEventRepository, SessionLifecycleRepository,
+    StartSessionInputs, StartSessionOutcome,
 };
 use crate::domain::StreamerState;
 #[cfg(test)]
@@ -85,13 +85,13 @@ pub const ENDED_RETENTION_DEFAULT: Duration = Duration::from_secs(60);
 /// - `classifier` — per-streamer Network-failure window used by `on_download_terminal`.
 #[derive(Clone)]
 pub struct SessionLifecycle {
-    repo: Arc<SessionLifecycleRepository>,
+    pub(super) repo: Arc<SessionLifecycleRepository>,
     /// Per-engine offline-signal classifier. On every Terminal::Failed,
     /// the classifier decides whether the failure is a high-confidence
     /// definitive-offline (N consecutive Mesio Network failures inside a
     /// window) so the session can be ended immediately without waiting on
     /// the hysteresis quiet-period.
-    classifier: Arc<OfflineClassifier>,
+    pub(super) classifier: Arc<OfflineClassifier>,
     /// `session_id` → in-memory session snapshot. Source of truth for the
     /// in-process `is_session_active` query (returns true for `Recording`
     /// AND `Hysteresis`). DB `end_time` is authoritative on cold-start.
@@ -102,17 +102,17 @@ pub struct SessionLifecycle {
     /// `Ended` entry after the retention window — bounding the map at
     /// `O(active sessions + active hysteresis windows + sessions ended in
     /// the last `ended_retention` seconds)`.
-    sessions: Arc<DashMap<String, SessionState>>,
+    pub(super) sessions: Arc<DashMap<String, SessionState>>,
     /// `streamer_id` → current `session_id`. Unlike `sessions`, this has at
     /// most one entry per streamer and is the deterministic lookup path for
     /// streamer-scoped operations such as disable cleanup.
-    streamer_current_sessions: Arc<DashMap<String, String>>,
+    pub(super) streamer_current_sessions: Arc<DashMap<String, String>>,
     /// `session_id` → `HysteresisHandle`. One entry per session in the
     /// hysteresis quiet-period. The handle owns the cancellation token
     /// that the timer task watches; cancellation can come from a resume
     /// (`on_live_detected`) or an authoritative end overriding hysteresis
     /// (`on_offline_detected`, danmu close, etc.).
-    hysteresis: Arc<DashMap<String, HysteresisHandle>>,
+    pub(super) hysteresis: Arc<DashMap<String, HysteresisHandle>>,
     /// Default hysteresis window length, used when no per-streamer
     /// resolver is wired in or the resolver returns nothing for a streamer.
     hysteresis_config: HysteresisConfig,
@@ -147,6 +147,7 @@ pub struct SessionLifecycle {
     /// its stripe to an owned operation before writing the database.
     streamer_operations: Arc<[Arc<AsyncMutex<()>>; 256]>,
     accepting_operations: Arc<AtomicBool>,
+    committed_removal_bound: Arc<AtomicBool>,
     hysteresis_tasks: Arc<Mutex<JoinSet<()>>>,
     hysteresis_shutdown: Arc<AtomicBool>,
     /// Delayed in-memory cleanup has no terminal side effects and stops on shutdown.
@@ -184,7 +185,18 @@ impl SessionLifecycle {
         &self,
         state: Arc<crate::streamer::CommittedStreamerState>,
     ) {
+        if !self.committed_removal_bound.swap(true, Ordering::AcqRel) {
+            let classifier = self.classifier.clone();
+            state.on_removed(Arc::new(move |streamer_id| {
+                classifier.purge_streamer(streamer_id);
+            }));
+        }
         self.repo.bind_committed_state(state);
+    }
+
+    /// Evict per-streamer failure classification state when a streamer is deleted.
+    pub fn purge_streamer(&self, streamer_id: &str) {
+        self.classifier.purge_streamer(streamer_id);
     }
 
     pub fn new(
@@ -218,6 +230,7 @@ impl SessionLifecycle {
             operation_gate: Arc::new(RwLock::new(())),
             streamer_operations: Arc::new(std::array::from_fn(|_| Arc::new(AsyncMutex::new(())))),
             accepting_operations: Arc::new(AtomicBool::new(true)),
+            committed_removal_bound: Arc::new(AtomicBool::new(false)),
             hysteresis_tasks: Arc::new(Mutex::new(JoinSet::new())),
             hysteresis_shutdown: Arc::new(AtomicBool::new(false)),
             eviction_tasks: Arc::new(TaskSupervisor::with_cancellation(eviction_cancel.clone())),
@@ -466,7 +479,7 @@ impl SessionLifecycle {
         self.transition_tx.subscribe()
     }
 
-    fn publish_transition(&self, transition: SessionTransition) {
+    pub(super) fn publish_transition(&self, transition: SessionTransition) {
         if let Some(required_tx) = &self.required_transition_tx
             && required_tx.publish(transition.clone()) != Publish::Accepted
         {
@@ -484,7 +497,7 @@ impl SessionLifecycle {
     /// A failure logs and continues — the audit log must never block the
     /// in-memory FSM, and the eventual `session_ended` row is still
     /// written atomically and tells the full story.
-    async fn record_event_best_effort(
+    pub(super) async fn record_event_best_effort(
         &self,
         session_id: &str,
         streamer_id: &str,
@@ -541,7 +554,7 @@ impl SessionLifecycle {
     /// Existing pointers win: state changes for an old session must not steal
     /// the pointer from a newer session that went live while the old `Ended`
     /// entry is retained.
-    fn refresh_current_session_if_current(&self, streamer_id: &str, session_id: &str) {
+    pub(super) fn refresh_current_session_if_current(&self, streamer_id: &str, session_id: &str) {
         match self
             .streamer_current_sessions
             .entry(streamer_id.to_string())
@@ -574,7 +587,10 @@ impl SessionLifecycle {
             .map(|(session_id, _)| session_id)
     }
 
-    fn current_session_for_streamer(&self, streamer_id: &str) -> Option<(String, SessionState)> {
+    pub(super) fn current_session_for_streamer(
+        &self,
+        streamer_id: &str,
+    ) -> Option<(String, SessionState)> {
         let session_id = self
             .streamer_current_sessions
             .get(streamer_id)
@@ -635,7 +651,7 @@ impl SessionLifecycle {
     /// apart). Once the window passes, the `sessions` entry and the
     /// `streamer_current_sessions` pointer (only if it still names this
     /// session) are removed.
-    fn schedule_ended_eviction(&self, streamer_id: &str, session_id: &str) {
+    pub(super) fn schedule_ended_eviction(&self, streamer_id: &str, session_id: &str) {
         let sessions = self.sessions.clone();
         let streamer_current_sessions = self.streamer_current_sessions.clone();
         let streamer_id = streamer_id.to_string();
@@ -845,7 +861,7 @@ impl SessionLifecycle {
 
     /// When the session started: from its in-memory state, else from its
     /// row, which is all a restart leaves. `None` when neither has it.
-    async fn known_started_at(&self, session_id: &str) -> Option<Timestamp> {
+    pub(super) async fn known_started_at(&self, session_id: &str) -> Option<Timestamp> {
         let in_memory = self.sessions.get(session_id).map(|e| e.started_at());
         if in_memory.is_some() {
             return in_memory;
@@ -1085,7 +1101,28 @@ impl SessionLifecycle {
             return Ok(());
         }
 
-        // Step 2: Build the typed cause.
+        // Step 2: idempotency — check before mutating per-streamer failure
+        // counters so duplicate or post-end terminal events cannot advance
+        // `OfflineClassifier` toward `DefinitiveOffline`.
+        if self
+            .sessions
+            .get(session_id)
+            .is_some_and(|entry| entry.value().is_ended())
+        {
+            debug!(
+                session_id,
+                "on_download_terminal: session already ended in memory — ignoring"
+            );
+            return Ok(());
+        }
+
+        if !self.sessions.contains_key(session_id)
+            && !self.repo.is_session_active(session_id).await?
+        {
+            return Ok(());
+        }
+
+        // Step 3: Build the typed cause.
         // Failed runs through the classifier (consecutive Mesio Network
         // failures promote to DefinitiveOffline). Other variants map directly.
         let cause = match event {
@@ -1122,26 +1159,6 @@ impl SessionLifecycle {
             DownloadTerminalEvent::Completed { engine_signal, .. } => Some(*engine_signal),
             _ => None,
         };
-
-        // Step 3: idempotency.
-        if self
-            .sessions
-            .get(session_id)
-            .is_some_and(|entry| entry.value().is_ended())
-        {
-            debug!(
-                session_id,
-                cause = cause.as_str(),
-                "on_download_terminal: session already ended in memory — ignoring"
-            );
-            return Ok(());
-        }
-
-        if !self.sessions.contains_key(session_id)
-            && !self.repo.is_session_active(session_id).await?
-        {
-            return Ok(());
-        }
 
         // Step 4 / 5: authority routes to direct Ended; ambiguous to Hysteresis.
         let authoritative = cause.is_authoritative_end_with_signal(engine_signal);
@@ -1398,652 +1415,6 @@ impl SessionLifecycle {
         }
         tasks.spawn(timer);
     }
-
-    /// Cancel an active hysteresis timer and transition `Hysteresis →
-    /// Recording`. The session row's `end_time` remains unset during
-    /// hysteresis, so no DB undo is needed. Emits `SessionTransition::Resumed`.
-    ///
-    /// Before claiming the exit, `mark_streamer_live` re-checks the
-    /// streamer row's state at the DB serialization point: an inactive row
-    /// (user disabled/cancelled, fatal) aborts the resume with
-    /// `SuppressedInactive` and leaves the hysteresis handle armed, so the
-    /// disable teardown or the timer ends the session normally.
-    ///
-    /// The caller's stripe excludes concurrent timer/end publication. Removing
-    /// the handle after the live write claims the exit; an absent handle means
-    /// this quiet period was already claimed, so the caller uses the normal
-    /// start_or_resume path. The handle stays armed on inactive suppression.
-    async fn resume_from_hysteresis(
-        &self,
-        session_id: &str,
-        args: &LiveDetectedArgs<'_>,
-    ) -> Option<StartSessionOutcome> {
-        // Set `streamers.state = LIVE` BEFORE claiming the hysteresis exit
-        // and before broadcasting. This path reuses the existing session row
-        // and does not go through `start_or_resume`, so without this write
-        // the row keeps whatever `monitor::service::handle_error` last wrote
-        // — `NOT_LIVE` after a non-authoritative download failure.
-        // Subscribers of the broadcasts below read that state through
-        // `streamer_manager`, so the value must be correct before the send.
-        //
-        // `mark_streamer_live` also carries the authoritative inactive
-        // guard: it reads the row's state inside its own `BEGIN IMMEDIATE`
-        // transaction, so a user disable that already committed is observed
-        // here even while the in-memory metadata cache (which the monitor's
-        // guards read) still lags. When blocked, the hysteresis handle
-        // stays armed — the disable path's `end_for_disable`, or the
-        // hysteresis timer if that broadcast is lost, ends the session
-        // through the normal path — and returning `SuppressedInactive`
-        // keeps `on_live_detected` from falling through to
-        // `start_or_resume`.
-        //
-        // A DB error logs and continues with the resume: a transient write
-        // failure must not kill the resume; the cache may stay stale until
-        // the next state write.
-        match self
-            .repo
-            .mark_streamer_live(args.streamer_id, args.now)
-            .await
-        {
-            Ok(None) => {}
-            Ok(Some(state)) => {
-                info!(
-                    streamer_id = %args.streamer_id,
-                    session_id,
-                    state = %state,
-                    "hysteresis resume suppressed: streamer row is inactive"
-                );
-                return Some(StartSessionOutcome::SuppressedInactive { state });
-            }
-            Err(e) => {
-                warn!(
-                    streamer_id = args.streamer_id,
-                    session_id,
-                    error = %e,
-                    "resume_from_hysteresis: set_live DB write failed; cache may stay stale"
-                );
-            }
-        }
-
-        crate::database::committed_writer::prepare_owned_commit().ok()?;
-        // CAS: claim the hysteresis exit. None = another path won.
-        let Some((_, handle)) = self.hysteresis.remove(session_id) else {
-            debug!(
-                session_id,
-                streamer_id = args.streamer_id,
-                "resume_from_hysteresis: hysteresis handle already gone (CAS lost — \
-                 timer or authoritative end won); caller should fall through to start_or_resume"
-            );
-            return None;
-        };
-        handle.cancel();
-        let hysteresis_duration =
-            jiff::SignedDuration::try_from(handle.elapsed()).unwrap_or(jiff::SignedDuration::ZERO);
-
-        // The session API and the session-complete jobs name a session by its
-        // latest title, and a resume is where a title changed mid-session is
-        // usually first seen. Written only after the exit is claimed, so a
-        // session the timer ended keeps its titles. A failure must not stop
-        // the resume.
-        if let Err(e) = self
-            .repo
-            .add_session_title(session_id, args.title, args.now)
-            .await
-        {
-            warn!(
-                streamer_id = args.streamer_id,
-                session_id,
-                error = %e,
-                "resume_from_hysteresis: failed to record the session title"
-            );
-        }
-
-        // Restore in-memory state to Recording. Preserve the original
-        // `started_at` from the prior entry.
-        let started_at = self
-            .sessions
-            .get(session_id)
-            .map(|e| e.started_at())
-            .unwrap_or(args.now);
-        self.sessions.insert(
-            session_id.to_string(),
-            SessionState::recording(args.streamer_id.to_string(), session_id, started_at),
-        );
-        self.refresh_current_session_if_current(args.streamer_id, session_id);
-
-        self.publish_transition(SessionTransition::Resumed {
-            session_id: session_id.to_string(),
-            streamer_id: args.streamer_id.to_string(),
-            resumed_at: args.now,
-            hysteresis_duration,
-        });
-
-        info!(
-            streamer_id = %args.streamer_id,
-            session_id,
-            hysteresis_secs = hysteresis_duration.as_secs(),
-            "Session resumed from hysteresis"
-        );
-
-        // Best-effort `session_resumed` audit row. We're already on an
-        // async path so awaiting is fine; any failure is non-fatal.
-        let resumed_secs = u64::try_from(hysteresis_duration.as_secs()).unwrap_or(0);
-        self.record_event_best_effort(
-            session_id,
-            args.streamer_id,
-            SessionEventPayload::SessionResumed {
-                hysteresis_duration_secs: resumed_secs,
-            },
-            args.now,
-        )
-        .await;
-
-        // Also emit a Started so notification consumers that filter on
-        // Started see the resume as a logical re-online (with from_hysteresis=true).
-        //
-        // Crucially: the resume path short-circuits before `start_or_resume`,
-        // so no `MonitorEvent::StreamerLive` outbox event fires for this
-        // session this time around. Without `download_start` populated here,
-        // the container has no signal to restart the download → the FLV
-        // engine that disconnected at hysteresis-entry stays dead and the
-        // session "records" zero bytes for the rest of the broadcast.
-        // Populating the sidecar from `args` is what supplies that
-        // restart signal.
-        self.publish_transition(SessionTransition::Started {
-            session_id: session_id.to_string(),
-            streamer_id: args.streamer_id.to_string(),
-            streamer_name: args.streamer_name.to_string(),
-            title: args.title.to_string(),
-            category: args.category.map(|s| s.to_string()),
-            started_at: args.now,
-            from_hysteresis: true,
-            download_start: Some(Box::new(crate::session::DownloadStartPayload {
-                credential_binding: args.credential_binding.cloned(),
-                streamer_url: args.streamer_url.to_string(),
-                streams: args.streams.clone(),
-                media_headers: args.media_headers.cloned(),
-                media_extras: args.media_extras.cloned(),
-            })),
-        });
-
-        // The resume path doesn't go through `start_or_resume`, so the
-        // atomic `session_started { from_hysteresis: false }` row from the
-        // initial create is the only one in the audit log. Record a paired
-        // best-effort `session_started { from_hysteresis: true }` so the
-        // timeline shows the full Recording → Hysteresis → Recording loop.
-        self.record_event_best_effort(
-            session_id,
-            args.streamer_id,
-            SessionEventPayload::SessionStarted {
-                from_hysteresis: true,
-                title: Some(args.title.to_string()),
-            },
-            args.now,
-        )
-        .await;
-
-        Some(StartSessionOutcome::ReusedActive {
-            session_id: session_id.to_string(),
-        })
-    }
-
-    /// Move `session_id` into the final `Ended` state. Source of truth for
-    /// the DB `end_time` write (path-dependent — see [`DbWritePath`]).
-    /// Tears down any active hysteresis handle. Idempotent: a session
-    /// already in `Ended` short-circuits with a debug log.
-    ///
-    /// The caller's stripe excludes concurrent resume and timer completion.
-    /// A missing hysteresis handle indicates an already claimed quiet period.
-    /// Keep the handle until SQL succeeds so a failed end leaves it recoverable.
-    async fn enter_ended_state(&self, transition: EndedStateTransition<'_>) -> Result<()> {
-        let EndedStateTransition {
-            session_id,
-            streamer_id,
-            streamer_name,
-            cause,
-            ended_at,
-            via_hysteresis,
-            db_write,
-        } = transition;
-        // CAS-style entry guard. If the session is already Ended, skip
-        // (idempotent on duplicate authoritative-end events arriving in
-        // tight succession).
-        if let Some(entry) = self.sessions.get(session_id)
-            && entry.is_ended()
-        {
-            debug!(session_id, "enter_ended_state: already Ended, skipping");
-            return Ok(());
-        }
-
-        // A live hysteresis entry must still own its quiet-period handle.
-        // The stripe prevents this check from changing during the SQL write.
-        let was_in_hysteresis = self
-            .sessions
-            .get(session_id)
-            .is_some_and(|e| matches!(e.value(), SessionState::Hysteresis { .. }));
-
-        if was_in_hysteresis && !self.hysteresis.contains_key(session_id) {
-            debug!(
-                session_id,
-                streamer_id,
-                "enter_ended_state: hysteresis already claimed by resume (CAS lost); skipping"
-            );
-            return Ok(());
-        }
-
-        // DB write — exactly the path the caller specified. The cause +
-        // via_hysteresis are forwarded into the repo so the `session_ended`
-        // audit row inside its tx carries the same values we're about to
-        // broadcast on `SessionTransition::Ended`. The two cannot diverge.
-        match db_write {
-            DbWritePath::Skip => {
-                debug!(session_id, "enter_ended_state: caller already wrote DB");
-            }
-            DbWritePath::EndSessionOnly => {
-                if !session_id.is_empty() {
-                    let ended = self
-                        .repo
-                        .end_session_only(
-                            streamer_id,
-                            Some(session_id),
-                            (&cause).into(),
-                            via_hysteresis,
-                            ended_at,
-                        )
-                        .await?;
-                    if ended.is_none() {
-                        return Ok(());
-                    }
-                }
-            }
-        }
-
-        // Read before sealing the commit: no await may follow it.
-        let started_at = self.known_started_at(session_id).await;
-
-        crate::database::committed_writer::prepare_owned_commit()?;
-        // The stripe excludes resume and timer completion until publication.
-        // Keep the existing timer armed if the preceding SQL write fails.
-        if let Some((_, handle)) = self.hysteresis.remove(session_id) {
-            handle.cancel();
-        }
-
-        self.sessions.insert(
-            session_id.to_string(),
-            SessionState::ended(
-                streamer_id,
-                session_id,
-                started_at.unwrap_or(ended_at),
-                ended_at,
-                cause.clone(),
-            ),
-        );
-        self.refresh_current_session_if_current(streamer_id, session_id);
-
-        info!(
-            streamer_id,
-            session_id,
-            cause = cause.as_str(),
-            via_hysteresis,
-            "Session ended"
-        );
-
-        self.publish_transition(SessionTransition::Ended {
-            session_id: session_id.to_string(),
-            streamer_id: streamer_id.to_string(),
-            streamer_name: streamer_name.to_string(),
-            started_at,
-            ended_at,
-            cause,
-            via_hysteresis,
-        });
-
-        // Defer eviction by `ended_retention` so the CAS-style idempotency
-        // guard at the top of this function actually catches a duplicate
-        // authoritative-end event.
-        self.schedule_ended_eviction(streamer_id, session_id);
-
-        Ok(())
-    }
-
-    /// Tear down the active session because the user disabled (or deleted)
-    /// the streamer.
-    ///
-    /// Ends the DB row and the in-memory FSM together: writing
-    /// `live_sessions.end_time` without also cancelling the in-memory
-    /// Hysteresis handle would let a later re-enable take the
-    /// `resume_from_hysteresis` short-circuit and silently restart a
-    /// download under an already-ended `session_id`.
-    ///
-    /// Behaviour:
-    /// - Cancels any active hysteresis handle via the same CAS protocol
-    ///   used by `enter_ended_state` / `resume_from_hysteresis` — no race
-    ///   with concurrent resume or timer fire.
-    /// - Commits `live_sessions.end_time` plus a `session_events` audit
-    ///   row with [`TerminalCause::UserDisabled`], atomically.
-    /// - Does NOT touch `streamers.state` (the API route owns it) and does
-    ///   NOT enqueue `MonitorEvent::StreamerOffline` (the user knows they
-    ///   disabled it; downstream notification integrations don't need a
-    ///   synthetic offline push).
-    /// - Broadcasts `SessionTransition::Ended { cause: UserDisabled }` so
-    ///   pipeline-manager runs session-complete (captured bytes deserve
-    ///   processing) and notification-service skips `StreamOffline`.
-    ///
-    /// If a hysteresis timer already ended the session with an ambiguous
-    /// cause, reattribute that audit row to `user_disabled` and patch the
-    /// in-memory `Ended.cause` to match. Authoritative end causes are
-    /// preserved. The original `SessionTransition::
-    /// Ended` broadcast (with the stale cause) has already shipped — we do
-    /// NOT re-broadcast, because subscribers like the notification service
-    /// would re-fire on the second event. The trade-off: in this rare
-    /// race, one trailing offline notification slips through with the
-    /// stale cause; the audit log is the source of truth and reflects the
-    /// user's actual intent.
-    ///
-    /// Returns:
-    /// - `Ok(Some(session_id))` if a session was actually torn down (or
-    ///   retro-corrected);
-    /// - `Ok(None)` if no active or recently-ended session existed for
-    ///   the streamer.
-    async fn end_for_disable_inner(
-        &self,
-        streamer_id: &str,
-        streamer_name: &str,
-    ) -> Result<Option<String>> {
-        let now = Timestamp::now();
-
-        // Step 1: find the session in memory via the deterministic
-        // per-streamer index (`current_session_for_streamer`); `sessions`
-        // retains recently-ended entries and may hold several per streamer.
-        // The in-memory map is the source of truth for FSM state; if it has
-        // no entry we'll fall back to a DB lookup inside the repo to handle
-        // cold-start / post-restart cases (see Step 4).
-        let in_memory = self.current_session_for_streamer(streamer_id);
-        let session_id_hint = in_memory.as_ref().map(|(sid, _)| sid.clone());
-        let was_in_hysteresis = matches!(
-            in_memory.as_ref(),
-            Some((_, state)) if state.is_hysteresis()
-        );
-        let was_already_ended = matches!(
-            in_memory.as_ref(),
-            Some((_, state)) if state.is_ended()
-        );
-
-        // The stripe retains hysteresis ownership across the SQL write. Only
-        // remove the handle after success so errors leave its timer armed.
-        let lost_cas = was_in_hysteresis
-            && !session_id_hint
-                .as_ref()
-                .is_some_and(|sid| self.hysteresis.contains_key(sid));
-
-        // Only an existing timer end is eligible for reattribution. Missing
-        // timer ownership alone never means the active DB row was closed.
-        if was_already_ended {
-            let Some(sid) = session_id_hint else {
-                debug!(
-                    streamer_id,
-                    "end_for_disable: no in-memory session id to retro-update"
-                );
-                return Ok(None);
-            };
-            return self
-                .retro_update_user_disabled(&sid, streamer_id, streamer_name, now, lost_cas)
-                .await;
-        }
-
-        // Normal path. DB write first (commit → in-memory →
-        // broadcast). Repo handles the active-session lookup if we don't
-        // have a session_id hint (cold-start / process-restart safety).
-        let resolved = self
-            .repo
-            .end_for_disable(
-                streamer_id,
-                session_id_hint.as_deref(),
-                was_in_hysteresis,
-                now,
-            )
-            .await?;
-
-        if let Some(sid) = session_id_hint.as_ref()
-            && let Some((_, handle)) = self.hysteresis.remove(sid)
-        {
-            handle.cancel();
-        }
-        let Some(session_id) = resolved else {
-            debug!(streamer_id, "end_for_disable: no active session to end");
-            return Ok(None);
-        };
-
-        // In-memory update. Pull `started_at` from the prior state if
-        // present; otherwise default to `now` (cold-start case where we
-        // recovered the session from the DB).
-        let started_at = self.sessions.get(&session_id).map(|e| e.started_at());
-        self.sessions.insert(
-            session_id.clone(),
-            SessionState::ended(
-                streamer_id,
-                &session_id,
-                started_at.unwrap_or(now),
-                now,
-                TerminalCause::UserDisabled,
-            ),
-        );
-        self.refresh_current_session_if_current(streamer_id, &session_id);
-
-        info!(
-            streamer_id,
-            session_id = %session_id,
-            cause = "user_disabled",
-            via_hysteresis = was_in_hysteresis,
-            "Session ended"
-        );
-
-        // Broadcast last — subscribers querying `session_snapshot` from
-        // inside the receiver must observe the post-update state.
-        self.publish_transition(SessionTransition::Ended {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.to_string(),
-            streamer_name: streamer_name.to_string(),
-            started_at,
-            ended_at: now,
-            cause: TerminalCause::UserDisabled,
-            via_hysteresis: was_in_hysteresis,
-        });
-
-        // Defer in-memory eviction (see `schedule_ended_eviction` for rationale).
-        self.schedule_ended_eviction(streamer_id, &session_id);
-
-        Ok(Some(session_id))
-    }
-
-    /// Tear down the active session because the configured recording
-    /// schedule closed while the upstream stream may still be live.
-    ///
-    /// This follows the same in-memory/DB/broadcast ordering as
-    /// [`Self::end_for_disable`], but persists the streamer state change
-    /// and `StateChanged { reason: "out_of_schedule" }` outbox event in
-    /// the same transaction as the session end. It never emits
-    /// `StreamerOffline`, because this is policy-driven recording stop,
-    /// not a platform offline observation.
-    async fn end_for_out_of_schedule_inner(
-        &self,
-        streamer_id: &str,
-        streamer_name: &str,
-        old_state: StreamerState,
-    ) -> Result<Option<String>> {
-        let now = Timestamp::now();
-
-        let in_memory = self.current_session_for_streamer(streamer_id);
-        let session_id_hint = in_memory.as_ref().map(|(sid, _)| sid.clone());
-        let was_in_hysteresis = matches!(
-            in_memory.as_ref(),
-            Some((_, state)) if state.is_hysteresis()
-        );
-        let was_already_ended = matches!(
-            in_memory.as_ref(),
-            Some((_, state)) if state.is_ended()
-        );
-
-        let lost_hysteresis_cas = was_in_hysteresis
-            && !session_id_hint
-                .as_ref()
-                .is_some_and(|sid| self.hysteresis.contains_key(sid));
-        if was_already_ended || lost_hysteresis_cas {
-            debug!(
-                streamer_id,
-                session_id = session_id_hint.as_deref().unwrap_or("(none)"),
-                was_already_ended,
-                lost_hysteresis_cas,
-                "end_for_out_of_schedule: will update schedule state; session end may already be claimed"
-            );
-        }
-
-        let resolved = self
-            .repo
-            .end_for_out_of_schedule(EndForOutOfScheduleInputs {
-                streamer_id: streamer_id.to_string(),
-                streamer_name: streamer_name.to_string(),
-                session_id: session_id_hint.clone(),
-                old_state,
-                via_hysteresis: was_in_hysteresis,
-                now,
-            })
-            .await?;
-
-        if let Some(sid) = session_id_hint.as_ref()
-            && let Some((_, handle)) = self.hysteresis.remove(sid)
-        {
-            handle.cancel();
-        }
-        let Some(session_id) = resolved else {
-            debug!(
-                streamer_id,
-                "end_for_out_of_schedule: state updated but no active session to end"
-            );
-            return Ok(None);
-        };
-
-        // If the process restarted before this cleanup, the DB can resolve
-        // an active row that has no in-memory snapshot. The DB row remains
-        // authoritative; this short-lived `Ended` snapshot only needs a
-        // conservative timestamp until retention evicts it.
-        let started_at = self.sessions.get(&session_id).map(|e| e.started_at());
-        self.sessions.insert(
-            session_id.clone(),
-            SessionState::ended(
-                streamer_id,
-                &session_id,
-                started_at.unwrap_or(now),
-                now,
-                TerminalCause::OutOfSchedule,
-            ),
-        );
-        self.refresh_current_session_if_current(streamer_id, &session_id);
-
-        info!(
-            streamer_id,
-            session_id = %session_id,
-            cause = "out_of_schedule",
-            via_hysteresis = was_in_hysteresis,
-            "Session ended"
-        );
-
-        self.publish_transition(SessionTransition::Ended {
-            session_id: session_id.clone(),
-            streamer_id: streamer_id.to_string(),
-            streamer_name: streamer_name.to_string(),
-            started_at,
-            ended_at: now,
-            cause: TerminalCause::OutOfSchedule,
-            via_hysteresis: was_in_hysteresis,
-        });
-
-        self.schedule_ended_eviction(streamer_id, &session_id);
-
-        Ok(Some(session_id))
-    }
-
-    /// Helper for [`Self::end_for_disable`] — retro-actively rewrite the
-    /// most recent `session_ended` audit row's cause to `user_disabled`
-    /// and update the in-memory snapshot. Used when the FSM state is
-    /// already `Ended` by the time disable cleanup runs. The repository only
-    /// accepts ambiguous timer ends; authoritative end causes are preserved.
-    ///
-    /// Does NOT broadcast a fresh `SessionTransition::Ended`. The original
-    /// broadcast (with the stale cause) has already shipped to subscribers
-    /// like notification-service; re-broadcasting would double-fire side
-    /// effects. The audit log + in-memory patch are sufficient for
-    /// operators to see the corrected attribution.
-    async fn retro_update_user_disabled(
-        &self,
-        session_id: &str,
-        streamer_id: &str,
-        _streamer_name: &str,
-        _now: Timestamp,
-        lost_cas: bool,
-    ) -> Result<Option<String>> {
-        let updated = self
-            .repo
-            .rewrite_session_ended_cause(
-                session_id,
-                crate::session::events::TerminalCauseDto::UserDisabled,
-            )
-            .await?;
-
-        if !updated {
-            debug!(
-                streamer_id,
-                session_id, lost_cas, "end_for_disable: no eligible timer end to reattribute"
-            );
-            return Ok(None);
-        }
-
-        // Patch the in-memory `Ended.cause` so consumers of `session_snapshot`
-        // and `subscribe()` receivers that re-query state see the corrected
-        // attribution.
-        if let Some(mut entry) = self.sessions.get_mut(session_id)
-            && let SessionState::Ended { cause, .. } = entry.value_mut()
-        {
-            *cause = TerminalCause::UserDisabled;
-        }
-
-        info!(
-            streamer_id,
-            session_id,
-            cause = "user_disabled",
-            lost_cas,
-            "Session end retroactively re-attributed to user_disabled"
-        );
-
-        Ok(Some(session_id.to_string()))
-    }
-}
-
-/// Which DB-write path `enter_ended_state` should take. The DB write is
-/// path-dependent because `on_offline_detected` runs the full atomic
-/// bundle (end_session + set_offline + StreamerOffline outbox event) inside
-/// `repo.end()` BEFORE calling `enter_ended_state`, while the
-/// download-terminal path runs the lighter `end_session_only`.
-#[derive(Debug, Clone, Copy)]
-enum DbWritePath {
-    /// Caller already wrote `end_time` (e.g. via the full atomic bundle in
-    /// `on_offline_detected`). `enter_ended_state` only updates in-memory
-    /// state and emits the transition.
-    Skip,
-    /// `enter_ended_state` itself calls `repo.end_session_only` to write
-    /// `end_time` without flipping streamer state. Used by the
-    /// download-terminal path and the hysteresis-timer path.
-    EndSessionOnly,
-}
-
-struct EndedStateTransition<'a> {
-    session_id: &'a str,
-    streamer_id: &'a str,
-    streamer_name: &'a str,
-    cause: TerminalCause,
-    ended_at: Timestamp,
-    via_hysteresis: bool,
-    db_write: DbWritePath,
 }
 
 /// Arguments for [`SessionLifecycle::on_live_detected`].
@@ -2107,5 +1478,9 @@ fn remove_streamer_current_session_if_matches(
     }
 }
 
+mod teardown;
 #[cfg(test)]
 mod tests;
+mod transitions;
+
+use transitions::{DbWritePath, EndedStateTransition};
