@@ -19,10 +19,19 @@ export const LoginResponseSchema = z.object({
   must_change_password: z.boolean(),
 });
 
+// The backend's `validate_password_strength` rules, checked here so the form
+// reports them in the user's language instead of the backend's English error.
+// `\p{Alphabetic}` and `\p{N}` match Rust's `char::is_alphabetic` and
+// `char::is_numeric`.
 const newPasswordFields = {
   new_password: z
     .string()
-    .min(8, zodError(msg`Password must be at least 8 characters`)),
+    .min(8, zodError(msg`Password must be at least 8 characters`))
+    .regex(
+      /\p{Alphabetic}/u,
+      zodError(msg`Password must contain at least one letter`),
+    )
+    .regex(/\p{N}/u, zodError(msg`Password must contain at least one number`)),
   confirm_password: z
     .string()
     .min(1, zodError(msg`Confirm password is required`)),

@@ -671,7 +671,7 @@ impl ServiceContainer {
             committed_write_supervisor,
             logging_config: Arc::new(std::sync::OnceLock::new()),
             auth_service: std::sync::OnceLock::new(),
-            refuse_must_change_password_logins: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            local_desktop_mode: std::sync::atomic::AtomicBool::new(false),
             startup_recovery_complete: std::sync::atomic::AtomicBool::new(false),
             discarded_segment_keys: Arc::new(DashMap::new()),
             danmu_link_down: Arc::new(DashMap::new()),

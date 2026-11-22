@@ -30,16 +30,16 @@ pub enum BackendMode {
 ///
 /// `require_login` defaults to off: the shell signs the webview in without a
 /// password. That is safe on a fresh install whose `admin` still has the
-/// seeded default password because, while `require_login` is off, the backend
-/// refuses password logins for any account that must still change its
-/// password (`ServiceContainer::set_refuse_must_change_password_logins`, kept
-/// in step by [`DesktopBackendState::commit_desktop_settings`] and at
-/// start-up). The default password therefore opens no session over the
-/// loopback API.
+/// seeded default password because the built-in backend always runs in local
+/// desktop mode (`ServiceContainer::enable_local_desktop_mode`, set before the
+/// API starts): a password login for an account that must still change its
+/// password never succeeds there, so the seeded password never signs in.
 ///
-/// `require_login` can only be turned on once the auto-login account has a
-/// password of its own (`set_desktop_password`), so sign-in is never required
-/// while the default password is the only way in.
+/// The stored `require_login` is what the user asked for. In local mode
+/// password sign-in is required only while it is on *and* the auto-login
+/// account has a password of its own ([`password_sign_in_required`]); until a
+/// password is set (`set_desktop_password`) the app keeps signing in
+/// automatically, whatever the file or a restored backup says.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct DesktopSettings {
@@ -75,6 +75,10 @@ impl Default for DesktopSettings {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DesktopSettingsSnapshot {
+    /// The stored settings, except that `require_login` is the effective
+    /// value ([`password_sign_in_required`]): off while the local auto-login
+    /// account has no password of its own, so the toggle shows what happens
+    /// and the next save writes that value back.
     #[serde(flatten)]
     pub settings: DesktopSettings,
     pub autostart_enabled: bool,
@@ -155,7 +159,7 @@ fn desktop_settings_path(data_dir: &Path) -> PathBuf {
     data_dir.join("desktop_settings.json")
 }
 
-pub fn load_or_create_desktop_settings(data_dir: &Path) -> io::Result<DesktopSettings> {
+fn load_or_create_desktop_settings(data_dir: &Path) -> io::Result<DesktopSettings> {
     let path = desktop_settings_path(data_dir);
     match std::fs::read_to_string(&path) {
         Ok(raw) => serde_json::from_str::<DesktopSettings>(&raw)
@@ -166,6 +170,52 @@ pub fn load_or_create_desktop_settings(data_dir: &Path) -> io::Result<DesktopSet
             Ok(settings)
         }
         Err(e) => Err(e),
+    }
+}
+
+/// The stored settings, or the defaults when the file cannot be read or
+/// parsed. That fallback keeps `require_login` on: the file may be the only
+/// record that the user asked for password sign-in, and with
+/// [`password_sign_in_required`] it costs a user who never set a password
+/// nothing.
+pub fn load_desktop_settings_or_fallback(data_dir: &Path) -> DesktopSettings {
+    match load_or_create_desktop_settings(data_dir) {
+        Ok(settings) => settings,
+        Err(error) => {
+            log::warn!(
+                "Failed to load desktop settings, using defaults with password sign-in required: {}",
+                error
+            );
+            DesktopSettings {
+                require_login: true,
+                ..DesktopSettings::default()
+            }
+        }
+    }
+}
+
+/// Whether the local backend requires password sign-in: the user asked for
+/// it (`require_login`) and the auto-login account has a password of its own.
+/// An account that cannot be looked up (`None`) leaves the stored value as it
+/// stands, so a lookup failure never drops the requirement.
+pub(crate) fn password_sign_in_required(
+    require_login: bool,
+    account: Option<&rust_srec::backend::LocalDesktopAccount>,
+) -> bool {
+    require_login && !account.is_some_and(|account| account.password_setup_required)
+}
+
+/// The auto-login account of the running local backend, or `None` without a
+/// backend, without an active admin, or when the lookup fails (logged).
+async fn local_desktop_account(
+    container: Option<&rust_srec::backend::ServiceContainer>,
+) -> Option<rust_srec::backend::LocalDesktopAccount> {
+    match container?.local_desktop_account().await {
+        Ok(account) => account,
+        Err(error) => {
+            log::warn!("Failed to look up the local desktop account: {}", error);
+            None
+        }
     }
 }
 
@@ -304,19 +354,14 @@ pub async fn get_desktop_settings(
     };
 
     let output_dir = resolve_configured_output_folder(&state).await;
-    let local_account = match state.backend() {
-        Some(container) => match container.local_desktop_account().await {
-            Ok(account) => account,
-            Err(error) => {
-                log::warn!("Failed to look up the local desktop account: {}", error);
-                None
-            }
-        },
-        None => None,
-    };
+    let local_account = local_desktop_account(state.backend().as_deref()).await;
     let password_setup_required = local_account
         .as_ref()
         .is_some_and(|account| account.password_setup_required);
+    let settings = DesktopSettings {
+        require_login: password_sign_in_required(settings.require_login, local_account.as_ref()),
+        ..settings
+    };
 
     Ok(DesktopSettingsSnapshot {
         settings,
@@ -358,45 +403,29 @@ pub async fn update_desktop_settings(
     // Only `skip_update_version` changes the skipped version. The frontend
     // sends the whole struct back, so a write queued before a skip would
     // otherwise undo it.
-    let current = state.desktop_settings();
-    settings.skipped_update_version = current.skipped_update_version;
+    settings.skipped_update_version = state.desktop_settings().skipped_update_version;
 
-    if settings.require_login && !current.require_login {
-        ensure_local_password_is_set(&state).await?;
-    }
-    if settings.require_login {
-        revoke_local_desktop_sessions(&state).await?;
-    }
-    state.commit_desktop_settings(&app, &settings).await?;
-
-    Ok(settings)
-}
-
-/// Refuse to require password sign-in while the local auto-login account still
-/// has its initial password: the only password that would then open the app
-/// is the publicly known default.
-///
-/// In remote mode there is no local account to check. A `require_login`
-/// stored there takes effect at the next local start, where the default
-/// password is accepted again and its first sign-in forces a change.
-async fn ensure_local_password_is_set(state: &DesktopBackendState) -> Result<(), String> {
-    if state.active_backend_mode != BackendMode::Local {
-        return Ok(());
-    }
-    let Some(container) = state.backend() else {
-        return Err("Local backend is not ready yet".to_string());
-    };
-    let account = container
-        .local_desktop_account()
-        .await
-        .map_err(|error| format!("Failed to look up the local desktop account: {error}"))?;
-    if account.is_some_and(|account| account.password_setup_required) {
+    // Without a password of its own the account could only be signed in to
+    // with the seeded default, so turning sign-in on asks for a password
+    // first (`set_desktop_password`). Storing `true` regardless would be safe
+    // ([`password_sign_in_required`] ignores it until a password exists);
+    // refusing tells the user why nothing changed. In remote mode there is no
+    // local account, and the value is stored as given.
+    let account = local_desktop_account(state.backend().as_deref()).await;
+    if settings.require_login
+        && account
+            .as_ref()
+            .is_some_and(|account| account.password_setup_required)
+    {
         return Err(
-            "Set a password before turning on password sign-in: this account still has its initial password"
+            "Set a password before turning on password sign-in: this account has no password of its own yet"
                 .to_string(),
         );
     }
-    Ok(())
+    if password_sign_in_required(settings.require_login, account.as_ref()) {
+        revoke_local_desktop_sessions(&state).await?;
+    }
+    state.commit_desktop_settings(&app, &settings).await
 }
 
 /// Revoke every session issued by auto-login and forget the stored list.
@@ -431,17 +460,19 @@ async fn revoke_local_desktop_sessions(state: &DesktopBackendState) -> Result<()
         .map_err(|e| format!("Failed to clear stored desktop sessions: {e}"))
 }
 
-/// Bring the stored auto-login sessions in line with `require_login` once the
-/// local backend is up: revoke them while password sign-in is required (it may
-/// have been switched on while this backend was not running), otherwise track
-/// them again so they keep working across the restart.
+/// Bring the stored auto-login sessions in line with
+/// [`password_sign_in_required`] once the local backend is up: revoke them
+/// while password sign-in is required (it may have been switched on while this
+/// backend was not running), otherwise track them again so they keep working
+/// across the restart.
 pub(crate) async fn reconcile_local_desktop_sessions(
     state: &DesktopBackendState,
     container: &rust_srec::backend::ServiceContainer,
 ) {
     let _write_guard = state.settings_write_lock.lock().await;
 
-    if state.desktop_settings().require_login {
+    let account = local_desktop_account(Some(container)).await;
+    if password_sign_in_required(state.desktop_settings().require_login, account.as_ref()) {
         if let Err(error) = revoke_local_desktop_sessions(state).await {
             log::warn!("{error}; retrying at the next start");
         }
@@ -549,11 +580,15 @@ pub async fn desktop_auto_login(
 ) -> Result<Option<DesktopAutoLoginSession>, String> {
     let _write_guard = state.settings_write_lock.lock().await;
 
-    if state.active_backend_mode != BackendMode::Local || state.desktop_settings().require_login {
+    if state.active_backend_mode != BackendMode::Local {
         return Ok(None);
     }
-
-    let Some(container) = state.backend() else {
+    let container = state.backend();
+    let account = local_desktop_account(container.as_deref()).await;
+    if password_sign_in_required(state.desktop_settings().require_login, account.as_ref()) {
+        return Ok(None);
+    }
+    let Some(container) = container else {
         return Err("Local backend is not ready yet".to_string());
     };
 
@@ -596,14 +631,14 @@ pub async fn desktop_auto_login(
     }))
 }
 
-/// Give the auto-login account its first password, replacing the initial one,
-/// and return its username. Refused in remote mode and once the account has a
-/// password of its own; changing that needs the current password.
+/// Give the auto-login account its first password, replacing the initial one.
+/// Refused in remote mode and once the account has a password of its own;
+/// changing that needs the current password.
 #[tauri::command]
 pub async fn set_desktop_password(
     state: tauri::State<'_, DesktopBackendState>,
     password: String,
-) -> Result<String, String> {
+) -> Result<(), String> {
     if state.active_backend_mode != BackendMode::Local {
         return Err("Not available when connected to a remote server".to_string());
     }
@@ -678,24 +713,18 @@ impl DesktopBackendState {
             .clone()
     }
 
-    /// Make the local backend refuse password logins for accounts that must
-    /// still change their password exactly while the shell signs in without
-    /// one. Only local mode has a backend. The caller holds
-    /// `settings_write_lock`, so a concurrent settings write cannot leave an
-    /// older value behind.
-    pub(crate) fn apply_password_login_rule(&self, settings: &DesktopSettings) {
-        if let Some(container) = self.backend() {
-            container.set_refuse_must_change_password_logins(!settings.require_login);
-        }
-    }
-
     /// Store `settings` on disk and in memory, then tell the runtime watcher
     /// and the frontend. The caller holds `settings_write_lock`.
+    ///
+    /// Returns the settings as the frontend sees them, which is also what the
+    /// settings-updated event carries: `require_login` is the effective value
+    /// ([`password_sign_in_required`]), so a stored `true` that does not apply
+    /// yet does not show the toggle as on.
     pub(crate) async fn commit_desktop_settings(
         &self,
         app: &tauri::AppHandle,
         settings: &DesktopSettings,
-    ) -> Result<(), String> {
+    ) -> Result<DesktopSettings, String> {
         let data_dir = self.data_dir.clone();
         let to_persist = settings.clone();
         tauri::async_runtime::spawn_blocking(move || {
@@ -709,12 +738,17 @@ impl DesktopBackendState {
             .desktop_settings
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = settings.clone();
-        self.apply_password_login_rule(settings);
         self.settings_notify.notify_one();
-        if let Err(error) = app.emit(EVENT_DESKTOP_SETTINGS_UPDATED, settings) {
+
+        let account = local_desktop_account(self.backend().as_deref()).await;
+        let reported = DesktopSettings {
+            require_login: password_sign_in_required(settings.require_login, account.as_ref()),
+            ..settings.clone()
+        };
+        if let Err(error) = app.emit(EVENT_DESKTOP_SETTINGS_UPDATED, &reported) {
             log::warn!("Failed to emit desktop settings update: {}", error);
         }
-        Ok(())
+        Ok(reported)
     }
 }
 
@@ -764,10 +798,16 @@ mod tests {
     }
 
     #[test]
-    fn settings_saved_without_require_login_sign_in_automatically() {
-        let settings: DesktopSettings =
-            serde_json::from_str(r#"{"startMinimized":true}"#).expect("partial settings");
-        assert!(settings.start_minimized);
-        assert!(!settings.require_login);
+    fn unreadable_settings_file_keeps_password_sign_in_required() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "rust-srec-desktop-settings-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&data_dir).expect("test data dir");
+        std::fs::write(desktop_settings_path(&data_dir), "{ not json").expect("corrupt file");
+
+        let settings = load_desktop_settings_or_fallback(&data_dir);
+        std::fs::remove_dir_all(&data_dir).expect("remove test data dir");
+        assert!(settings.require_login);
     }
 }

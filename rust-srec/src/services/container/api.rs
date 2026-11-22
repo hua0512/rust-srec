@@ -179,7 +179,7 @@ impl ServiceContainer {
 
     /// Build the user/token/API-key backed authentication service.
     fn database_auth_service(&self, jwt: Arc<JwtService>, auth_config: AuthConfig) -> AuthService {
-        AuthService::new(
+        let service = AuthService::new(
             Arc::new(SqlxUserRepository::new(
                 self.pool.clone(),
                 self.write_pool.clone(),
@@ -194,8 +194,15 @@ impl ServiceContainer {
             )),
             jwt,
             auth_config,
-        )
-        .with_must_change_password_login_guard(self.refuse_must_change_password_logins.clone())
+        );
+        if self
+            .local_desktop_mode
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            service.with_local_desktop_mode()
+        } else {
+            service
+        }
     }
 
     /// Initialize and start the API server, returning the resolved bind address.
@@ -337,35 +344,9 @@ mod tests {
         use std::time::Duration;
 
         use crate::api::rate_limit::LoginRateLimiter;
-        use crate::api::server::ApiServerConfig;
-        use crate::services::container::ServiceContainerConfig;
 
         let directory = tempfile::tempdir().unwrap();
-        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
-            .await
-            .unwrap();
-        crate::database::run_migrations(&pool).await.unwrap();
-        let container = ServiceContainer::with_full_config(
-            pool.clone(),
-            pool.clone(),
-            ServiceContainerConfig {
-                cache_ttl: Duration::from_secs(60),
-                event_capacity: 8,
-                download_config: crate::downloader::DownloadManagerConfig::default(),
-                pipeline_config: crate::pipeline::PipelineManagerConfig::default(),
-                api_config: ApiServerConfig {
-                    bind_address: "127.0.0.1".to_owned(),
-                    port: 0,
-                    enable_cors: false,
-                    body_limit: 1024 * 1024,
-                },
-            },
-        )
-        .await
-        .unwrap();
-        let (logging, _layer) =
-            crate::logging::LoggingConfig::for_route_tests(directory.path().to_path_buf());
-        assert!(container.logging_config.set(Arc::new(logging)).is_ok());
+        let (container, pool) = served_test_container(directory.path()).await;
         let auth = AuthService::new(
             Arc::new(SqlxUserRepository::new(pool.clone(), pool.clone())),
             Arc::new(SqlxRefreshTokenRepository::new(pool.clone(), pool.clone())),
@@ -410,5 +391,79 @@ mod tests {
             ]
         );
         container.cancellation_token.cancel();
+    }
+
+    /// The desktop shell enables local desktop mode on the container before
+    /// starting the API. The served login must then answer the seeded
+    /// `admin` / `admin123!` exactly like a wrong password, which only holds
+    /// if the container hands the mode to the `AuthService` it builds.
+    #[tokio::test]
+    async fn local_desktop_mode_reaches_the_served_login() {
+        let directory = tempfile::tempdir().unwrap();
+        let (container, _pool) = served_test_container(directory.path()).await;
+        container.enable_local_desktop_mode();
+        let address = container
+            .start_api_server_bound_with_jwt_secret(
+                "local-desktop-mode-test-secret-with-entropy".to_owned(),
+            )
+            .await
+            .unwrap();
+
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap();
+        let mut answers = Vec::new();
+        for password in ["admin123!", "wrong-password-1"] {
+            let response = client
+                .post(format!("http://{address}/api/auth/login"))
+                .json(&serde_json::json!({ "username": "admin", "password": password }))
+                .send()
+                .await
+                .unwrap();
+            answers.push((response.status(), response.text().await.unwrap()));
+        }
+        assert_eq!(answers[0].0, reqwest::StatusCode::UNAUTHORIZED);
+        assert_eq!(answers[0], answers[1]);
+        container.cancellation_token.cancel();
+    }
+
+    /// A container on a fresh in-memory database, ready to start its API on
+    /// an ephemeral loopback port.
+    async fn served_test_container(
+        log_dir: &std::path::Path,
+    ) -> (ServiceContainer, sqlx::SqlitePool) {
+        use std::time::Duration;
+
+        use crate::api::server::ApiServerConfig;
+        use crate::services::container::ServiceContainerConfig;
+
+        let pool = crate::database::init_pool_with_size("sqlite::memory:", 1)
+            .await
+            .unwrap();
+        crate::database::run_migrations(&pool).await.unwrap();
+        let container = ServiceContainer::with_full_config(
+            pool.clone(),
+            pool.clone(),
+            ServiceContainerConfig {
+                cache_ttl: Duration::from_secs(60),
+                event_capacity: 8,
+                download_config: crate::downloader::DownloadManagerConfig::default(),
+                pipeline_config: crate::pipeline::PipelineManagerConfig::default(),
+                api_config: ApiServerConfig {
+                    bind_address: "127.0.0.1".to_owned(),
+                    port: 0,
+                    enable_cors: false,
+                    body_limit: 1024 * 1024,
+                },
+            },
+        )
+        .await
+        .unwrap();
+        let (logging, _layer) =
+            crate::logging::LoggingConfig::for_route_tests(log_dir.to_path_buf());
+        assert!(container.logging_config.set(Arc::new(logging)).is_ok());
+        (container, pool)
     }
 }

@@ -234,9 +234,9 @@ pub struct ServiceContainer {
     logging_config: Arc<std::sync::OnceLock<Arc<LoggingConfig>>>,
     /// Installed when the API server starts with database authentication.
     auth_service: std::sync::OnceLock<Arc<crate::api::auth_service::AuthService>>,
-    /// Shared with the `AuthService` built for the API server; see
-    /// [`Self::set_refuse_must_change_password_logins`].
-    refuse_must_change_password_logins: Arc<std::sync::atomic::AtomicBool>,
+    /// Read when the API server's `AuthService` is built; see
+    /// [`Self::enable_local_desktop_mode`].
+    local_desktop_mode: std::sync::atomic::AtomicBool,
     startup_recovery_complete: std::sync::atomic::AtomicBool,
     /// Segment keys that should be discarded (min-size gate) to prevent danmu/xml and video
     /// from racing into the pipeline while being deleted.
@@ -632,18 +632,21 @@ impl ServiceContainer {
             .map_err(|error| crate::Error::ApiError(error.to_string()))
     }
 
-    /// Refuse password logins for accounts that still have
-    /// `must_change_password`, as if the password were wrong. Existing
-    /// sessions are not affected.
+    /// Run the API as the desktop app's built-in backend: an account that
+    /// still has `must_change_password` is reachable only through sessions
+    /// issued by [`Self::issue_local_desktop_session`], so a password login
+    /// for it never succeeds and the seeded default password never signs in.
     ///
-    /// Only the desktop shell calls this, keeping it on while it signs in
-    /// without a password. The flag is shared with the `AuthService` the API
-    /// server is started with, so a value set before
-    /// [`Self::start_api_server_bound_with_jwt_secret`] is in effect for the
-    /// first request, and later calls apply to the next login.
-    pub fn set_refuse_must_change_password_logins(&self, refuse: bool) {
-        self.refuse_must_change_password_logins
-            .store(refuse, std::sync::atomic::Ordering::Release);
+    /// Only the desktop shell calls this, in local mode, before
+    /// [`Self::start_api_server_bound_with_jwt_secret`]: the mode is fixed
+    /// when the API server's `AuthService` is built, so it is in effect for
+    /// the first request. A call after the server started has no effect.
+    pub fn enable_local_desktop_mode(&self) {
+        if self.auth_service.get().is_some() {
+            warn!("Local desktop mode requested after the API server started; ignored");
+        }
+        self.local_desktop_mode
+            .store(true, std::sync::atomic::Ordering::Release);
     }
 
     /// The account local desktop sessions are issued for, or `None` when
@@ -659,9 +662,9 @@ impl ServiceContainer {
             .map_err(|error| crate::Error::ApiError(error.to_string()))
     }
 
-    /// Replace the initial password of the local desktop account and return
-    /// its username. Fails once that account has a password of its own.
-    pub async fn set_local_desktop_password(&self, new_password: &str) -> Result<String> {
+    /// Replace the initial password of the local desktop account. Fails once
+    /// that account has a password of its own.
+    pub async fn set_local_desktop_password(&self, new_password: &str) -> Result<()> {
         let auth = self.auth_service.get().ok_or_else(|| {
             crate::Error::ApiError("Authentication service is not initialized".to_string())
         })?;

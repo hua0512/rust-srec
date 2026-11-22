@@ -1218,7 +1218,7 @@ msgstr "只有程序模式才能设置参数"
 msgid "Artist"
 msgstr "艺术家"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:672
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:688
 msgid "Ask for confirmation before quitting when recordings are currently in progress."
 msgstr "当前有正在进行的录制时，退出前弹出确认提示。"
 
@@ -1383,7 +1383,7 @@ msgstr "自动登录失败"
 msgid "Automatically generate a thumbnail for the first segment of each session."
 msgstr "自动为每个会话的第一段生成封面图。"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:568
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:584
 msgid "Automatically start Rust-Srec when you sign in to your computer."
 msgstr "登录电脑时自动启动 Rust-Srec。"
 
@@ -2242,7 +2242,7 @@ msgstr "正在克隆..."
 msgid "Close"
 msgstr "关闭"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:600
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:616
 msgid "Close button hides to tray"
 msgstr "关闭窗口时隐藏到托盘"
 
@@ -2479,7 +2479,7 @@ msgstr "配置接收通知的位置和方式。"
 msgid "Configured Events"
 msgstr "已配置的事件"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:670
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:686
 msgid "Confirm before quitting during recordings"
 msgstr "录制期间退出前确认"
 
@@ -2497,7 +2497,7 @@ msgstr "确认新密码"
 msgid "Confirm Password"
 msgstr "确认密码"
 
-#: src/api/schemas/auth.ts:28
+#: src/api/schemas/auth.ts:37
 msgid "Confirm password is required"
 msgstr "必须填写确认密码"
 
@@ -2592,7 +2592,7 @@ msgstr "继续"
 msgid "Continue without password"
 msgstr "免密码继续进入"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:557
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:573
 msgid "Control how Rust-Srec launches and behaves in the system tray."
 msgstr "控制 Rust-Srec 的启动方式和系统托盘行为。"
 
@@ -2999,7 +2999,7 @@ msgstr "当前密码"
 msgid "Current Password"
 msgstr "当前密码"
 
-#: src/api/schemas/auth.ts:45
+#: src/api/schemas/auth.ts:54
 msgid "Current password is required"
 msgstr "必须填写当前密码"
 
@@ -3142,7 +3142,7 @@ msgstr "深色"
 msgid "Dashboard"
 msgstr "仪表盘"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:730
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:746
 msgid "Data Folder"
 msgstr "数据文件夹"
 
@@ -3519,7 +3519,7 @@ msgid "Design your automation pipeline step by step"
 msgstr "逐步设计你的自动化处理管道"
 
 #: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:196
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:508
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:524
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:54
 msgid "Desktop"
 msgstr "桌面"
@@ -4672,7 +4672,7 @@ msgstr "内容加载失败"
 msgid "Failed to load danmu statistics."
 msgstr "加载弹幕统计失败。"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:520
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:536
 msgid "Failed to load desktop settings"
 msgstr "加载桌面设置失败"
 
@@ -4738,7 +4738,7 @@ msgid "Failed to load workflows"
 msgstr "加载工作流失败"
 
 #: src/components/config/shared/desktop-path-input.tsx:92
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:486
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:502
 msgid "Failed to open folder"
 msgstr "无法打开文件夹"
 
@@ -4812,7 +4812,7 @@ msgstr "保存后端设置并重启失败"
 msgid "Failed to send test notification"
 msgstr "发送测试通知失败"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:439
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:449
 msgid "Failed to set the password"
 msgstr "设置密码失败"
 
@@ -4828,7 +4828,7 @@ msgstr "切换到本地后端失败"
 msgid "Failed to update channel"
 msgstr "更新渠道失败"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:360
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:370
 msgid "Failed to update desktop setting"
 msgstr "更新桌面设置失败"
 
@@ -4836,7 +4836,7 @@ msgstr "更新桌面设置失败"
 msgid "Failed to update filter"
 msgstr "更新过滤器失败"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:417
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:427
 msgid "Failed to update launch at login setting"
 msgstr "更新开机自启设置失败"
 
@@ -5462,7 +5462,7 @@ msgstr "优雅停止超时"
 msgid "Graph"
 msgstr "图表"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:641
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:657
 msgid "Guard active recordings against sleep and accidental exits."
 msgstr "保护正在进行的录制不被系统休眠或误退出中断。"
 
@@ -5530,7 +5530,7 @@ msgstr "隐藏弹幕"
 msgid "Hide password"
 msgstr "隐藏密码"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:620
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:636
 msgid "Hide the main window to the system tray instead of the taskbar or Dock when minimized."
 msgstr "最小化主窗口时隐藏到系统托盘，而不是留在任务栏或程序坞。"
 
@@ -6136,7 +6136,7 @@ msgstr "多个会话共用同一目标文件夹时，请在文件名模板中保
 msgid "Keep directory structure"
 msgstr "保留目录结构"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:602
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:618
 msgid "Keep recording in the background when you close the main window instead of quitting."
 msgstr "点击主窗口关闭按钮时隐藏到后台继续录制，而不是直接退出。"
 
@@ -6144,7 +6144,7 @@ msgstr "点击主窗口关闭按钮时隐藏到后台继续录制，而不是直
 msgid "Keep Running"
 msgstr "保持运行"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:654
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:670
 msgid "Keep the computer awake while active recordings are running; the display can still turn off."
 msgstr "有活跃录制时阻止电脑休眠；屏幕仍可正常熄屏。"
 
@@ -6244,7 +6244,7 @@ msgstr "最近使用"
 msgid "Latency"
 msgstr "延迟"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:566
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:582
 msgid "Launch at login"
 msgstr "开机自启动"
 
@@ -6429,7 +6429,7 @@ msgstr "加载中…"
 msgid "Local Archive"
 msgstr "本地归档"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:709
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:725
 msgid "Local Folders"
 msgstr "本地文件夹"
 
@@ -6528,7 +6528,7 @@ msgstr "登录失效"
 msgid "Logs"
 msgstr "日志"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:737
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:753
 msgid "Logs Folder"
 msgstr "日志文件夹"
 
@@ -6872,7 +6872,7 @@ msgstr "最低优先级"
 msgid "Min Segment Size"
 msgstr "最小分段大小"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:618
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:634
 msgid "Minimize to system tray"
 msgstr "最小化到系统托盘"
 
@@ -7617,7 +7617,7 @@ msgstr "未校验"
 msgid "Not checked yet"
 msgstr "尚未检查"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:724
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:740
 msgid "Not configured"
 msgstr "未配置"
 
@@ -7907,7 +7907,7 @@ msgstr "打开文件夹"
 msgid "Open in player"
 msgstr "用系统播放器打开"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:711
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:727
 msgid "Open local directories used for recordings, data, and logs."
 msgstr "快速打开录制、数据和日志所在的本地目录。"
 
@@ -8234,9 +8234,17 @@ msgstr "密码修改成功。请使用新密码登录。"
 msgid "Password is required"
 msgstr "必须填写密码"
 
-#: src/api/schemas/auth.ts:25
+#: src/api/schemas/auth.ts:29
 msgid "Password must be at least 8 characters"
 msgstr "密码至少需要 8 个字符"
+
+#: src/api/schemas/auth.ts:32
+msgid "Password must contain at least one letter"
+msgstr "密码至少需要包含一个字母"
+
+#: src/api/schemas/auth.ts:34
+msgid "Password must contain at least one number"
+msgstr "密码至少需要包含一个数字"
 
 #: src/components/proxies/proxy-row.tsx:241
 msgid "password saved"
@@ -8264,7 +8272,7 @@ msgstr "启用密码登录前，需要先设置你自己的密码。设置后，
 msgid "Password..."
 msgstr "密码…"
 
-#: src/api/schemas/auth.ts:37
+#: src/api/schemas/auth.ts:46
 msgid "Passwords don't match"
 msgstr "两次输入的密码不一致"
 
@@ -8789,7 +8797,7 @@ msgstr "预设"
 msgid "Press Enter to add recipient"
 msgstr "按 Enter 添加收件人"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:652
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:668
 msgid "Prevent system sleep while recording"
 msgstr "录制期间阻止系统休眠"
 
@@ -9246,7 +9254,7 @@ msgstr "录制完成"
 msgid "Recording is paused"
 msgstr "录制已暂停"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:639
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:655
 msgid "Recording Protection"
 msgstr "录制保护"
 
@@ -9279,7 +9287,7 @@ msgstr "录制内容"
 msgid "Recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
 msgstr "录制内容会先写入临时分块，并在分割、达到大小或时长限制或录制停止后合并为最终文件。只有这一步完成后，最终文件才可用。"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:722
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:738
 msgid "Recordings Folder"
 msgstr "录制文件夹"
 
@@ -9721,7 +9729,7 @@ msgstr "锁定文件重试次数"
 #: src/components/player/player-card.tsx:560
 #: src/components/sessions/danmu-stats-panel.tsx:247
 #: src/components/shared/query-error.tsx:39
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:538
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:554
 msgid "Retry"
 msgstr "重试"
 
@@ -10849,7 +10857,7 @@ msgstr "合并输出中出现不兼容的流变化时开始新文件，并应用
 msgid "Start a new file when the codec, resolution or initialization data changes, and apply file size and duration limits. The settings below apply either way."
 msgstr "在编码、分辨率或初始化数据变化时开始新文件，并应用文件大小和时长限制。无论是否开启，下方设置都会生效。"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:582
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:598
 msgid "Start minimized to tray"
 msgstr "启动时最小化到托盘"
 
@@ -10857,7 +10865,7 @@ msgstr "启动时最小化到托盘"
 msgid "Start Over"
 msgstr "重新开始"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:584
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:600
 msgid "Start quietly in the system tray without opening the main window."
 msgstr "静默启动到系统托盘，不自动弹出主窗口。"
 
@@ -10882,7 +10890,7 @@ msgstr "BIGO 未通知的开播：{missed}"
 msgid "Starts BIGO did not notify: {missed}, the last {lastMissed}"
 msgstr "BIGO 未通知的开播：{missed}，最近一次在{lastMissed}"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:555
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:571
 msgid "Startup & Window"
 msgstr "启动与窗口"
 
@@ -12031,7 +12039,7 @@ msgid "Transient monitoring errors are being preserved until sustained download 
 msgstr "在持续的下载进度确认流状态健康之前，暂时的监控错误会继续保留。"
 
 #: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:197
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:509
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:525
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:57
 msgid "Tray, startup & window behavior"
 msgstr "托盘、启动与窗口行为"
@@ -12199,7 +12207,7 @@ msgstr "极速压缩"
 msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "超快 H.264 编码（CRF 26），用于快速分享。"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:525
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:541
 msgid "Unable to communicate with the desktop shell."
 msgstr "无法连接桌面应用。"
 
@@ -12211,8 +12219,8 @@ msgstr "无法连接到远程服务器。"
 msgid "Unable to inspect local tool binaries."
 msgstr "无法检测本地工具可执行文件。"
 
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:732
-#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:739
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:748
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:755
 msgid "Unavailable"
 msgstr "不可用"
 

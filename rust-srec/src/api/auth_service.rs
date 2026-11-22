@@ -24,10 +24,7 @@ mod session_tests;
 
 #[cfg(test)]
 use std::sync::atomic::Ordering;
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicU64},
-};
+use std::sync::{Arc, atomic::AtomicU64};
 use std::time::Instant;
 
 #[cfg(test)]
@@ -81,11 +78,10 @@ pub struct AuthService {
     /// Sessions issued by `issue_local_desktop_session`, keyed by session id.
     /// Only the desktop shell's in-process backend ever fills this.
     local_desktop_sessions: DashMap<String, LocalDesktopSessionRecord>,
-    /// While set, `authenticate` refuses a correct password for an account
-    /// that still has `must_change_password`. Shared with the
-    /// `ServiceContainer` that built this service, which sets it; see
-    /// [`Self::with_must_change_password_login_guard`].
-    refuse_must_change_password_logins: Arc<AtomicBool>,
+    /// Set for the desktop app's built-in backend, where an account that
+    /// still has `must_change_password` is reachable only through sessions
+    /// the shell issues in-process; see [`Self::with_local_desktop_mode`].
+    local_desktop_mode: bool,
     #[cfg(test)]
     password_verify_calls: Arc<AtomicU64>,
 }
@@ -112,7 +108,7 @@ impl AuthService {
             login_rate_limiter: LoginRateLimiter::from_env(),
             password_work_permits: Arc::new(Semaphore::new(password_work_permits())),
             local_desktop_sessions: DashMap::new(),
-            refuse_must_change_password_logins: Arc::new(AtomicBool::new(false)),
+            local_desktop_mode: false,
             #[cfg(test)]
             password_verify_calls: Arc::new(AtomicU64::new(0)),
         }

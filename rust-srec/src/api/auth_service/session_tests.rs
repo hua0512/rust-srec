@@ -1,5 +1,5 @@
 use super::*;
-use crate::database::models::UserDbModel;
+use crate::database::models::{ApiKeyAccessLevel, UserDbModel};
 use crate::database::repositories::{
     SqlxApiKeyRepository, SqlxRefreshTokenRepository, SqlxUserRepository,
 };
@@ -503,13 +503,10 @@ async fn local_desktop_session_bypasses_must_change_survives_restart_and_revokes
 
 const SEEDED_ADMIN_PASSWORD: &str = "admin123!";
 
-#[tokio::test]
-async fn login_guard_refuses_the_initial_password_like_a_wrong_one() {
-    let fixture = Fixture::new(AuthConfig::default()).await;
-    let guard = Arc::new(AtomicBool::new(false));
-    // One failure per account and window, so a refused login that kept its
-    // failure slot throttles the next attempt.
-    let service = AuthService::new(
+/// The fixture's database served the way the desktop app's built-in backend
+/// serves it.
+fn local_desktop_service(fixture: &Fixture) -> AuthService {
+    AuthService::new(
         Arc::new(SqlxUserRepository::new(
             fixture.pool.clone(),
             fixture.pool.clone(),
@@ -522,31 +519,44 @@ async fn login_guard_refuses_the_initial_password_like_a_wrong_one() {
         fixture.service.jwt_service.clone(),
         AuthConfig::default(),
     )
-    .with_must_change_password_login_guard(guard.clone())
-    .with_login_rate_limiter(LoginRateLimiter::new(
+    .with_local_desktop_mode()
+}
+
+#[tokio::test]
+async fn local_desktop_mode_reaches_an_account_without_a_password_only_in_process() {
+    let fixture = Fixture::new(AuthConfig::default()).await;
+    // Outside local desktop mode the seeded password signs in, into a session
+    // that may only change it. A desktop build without the mode left such
+    // sessions behind.
+    let limited = fixture
+        .service
+        .authenticate("admin", SEEDED_ADMIN_PASSWORD, None, None)
+        .await
+        .expect("the default password works outside local desktop mode");
+    assert!(limited.must_change_password);
+
+    // One failure per account and window, so a refused login that kept its
+    // failure slot throttles the next attempt.
+    let service = local_desktop_service(&fixture).with_login_rate_limiter(LoginRateLimiter::new(
         1,
         100,
         std::time::Duration::from_secs(60),
         64,
     ));
 
-    // Guard off: the seeded admin signs in with the default password and is
-    // then made to change it.
-    let login = service
-        .authenticate("admin", SEEDED_ADMIN_PASSWORD, None, None)
-        .await
-        .expect("the default password works while the guard is off");
-    assert!(login.must_change_password);
-
-    // Guard on: the same correct password counts as a wrong one, failure slot
-    // included, while an account with a password of its own is unaffected.
-    guard.store(true, Ordering::Release);
+    // The correct password counts as a wrong one, checked after it was
+    // verified, failure slot included.
+    let verified_before = service.password_verify_calls.load(Ordering::SeqCst);
     assert!(matches!(
         service
             .authenticate("admin", SEEDED_ADMIN_PASSWORD, None, None)
             .await,
         Err(AuthError::InvalidCredentials)
     ));
+    assert_eq!(
+        service.password_verify_calls.load(Ordering::SeqCst),
+        verified_before + 1
+    );
     assert!(matches!(
         service
             .authenticate("admin", SEEDED_ADMIN_PASSWORD, None, None)
@@ -556,7 +566,53 @@ async fn login_guard_refuses_the_initial_password_like_a_wrong_one() {
     service
         .authenticate(&fixture.user.username, PASSWORD, None, None)
         .await
-        .expect("an account that changed its password still signs in");
+        .expect("an account with a password of its own still signs in");
+
+    // The left-over session is refused like a revoked one, even where it
+    // could otherwise change the password, and cannot be refreshed.
+    assert!(matches!(
+        service
+            .authorize_access_token(&limited.access_token, true)
+            .await,
+        Err(AuthError::TokenRevoked)
+    ));
+    assert!(matches!(
+        service.refresh_tokens(&limited.refresh_token).await,
+        Err(AuthError::TokenRevoked)
+    ));
+
+    // An in-process session of the same account works for both.
+    let (_, local) = service
+        .issue_local_desktop_session()
+        .await
+        .expect("local desktop session should be issued");
+    service
+        .authorize_access_token(&local.access_token, false)
+        .await
+        .expect("an in-process session is authorized");
+    service
+        .refresh_tokens(&local.refresh_token)
+        .await
+        .expect("an in-process session refreshes");
+
+    // The account's API keys work in this mode and are refused outside it.
+    let admin = SqlxUserRepository::new(fixture.pool.clone(), fixture.pool.clone())
+        .find_by_username("admin")
+        .await
+        .unwrap()
+        .expect("migrations seed the admin account");
+    let (_, key) = service
+        .create_api_key(&admin.id, "desktop", ApiKeyAccessLevel::Full, None)
+        .await
+        .unwrap();
+    service
+        .authorize_api_key(&key)
+        .await
+        .expect("a key of an account without a password works in local desktop mode");
+    assert!(matches!(
+        fixture.service.authorize_api_key(&key).await,
+        Err(AuthError::PasswordChangeRequired)
+    ));
 }
 
 #[tokio::test]
@@ -573,11 +629,10 @@ async fn local_desktop_password_replaces_only_the_initial_password() {
         Err(AuthError::WeakPassword(message)) if message.contains("different")
     ));
 
-    let username = service
+    service
         .set_local_desktop_password("DesktopPass123")
         .await
         .expect("the initial password is replaced");
-    assert_eq!(username, "admin");
     let account = service
         .local_desktop_account()
         .await

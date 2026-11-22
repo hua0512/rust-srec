@@ -65,8 +65,13 @@ impl AuthService {
         if session.expires_at <= now {
             return Err(AuthError::TokenExpired);
         }
+        let is_local_desktop_session = self.is_local_desktop_session(session_id);
+        // In local desktop mode an account that must change its password is
+        // reachable only through in-process sessions (see
+        // `with_local_desktop_mode`); any other session of it is refused below.
+        let in_process_only = self.is_local_desktop_mode() && !is_local_desktop_session;
         let allow_password_remediation =
-            allow_password_remediation || self.is_local_desktop_session(session_id);
+            !in_process_only && (allow_password_remediation || is_local_desktop_session);
 
         let cached = self
             .user_state_cache
@@ -107,6 +112,16 @@ impl AuthService {
         }
 
         if state.must_change_password && !allow_password_remediation {
+            // Refused like a revoked session (401), not with the 403 that
+            // sends the client to the change-password page: the desktop
+            // frontend then signs in again through auto-login.
+            if in_process_only {
+                warn!(
+                    user_id = %claims.sub,
+                    "Access denied: only in-process sessions may act for an account without a password"
+                );
+                return Err(AuthError::TokenRevoked);
+            }
             warn!(user_id = %claims.sub, "Access denied: password change required");
             return Err(AuthError::PasswordChangeRequired);
         }
@@ -177,7 +192,10 @@ impl AuthService {
                 if !user.is_active {
                     return Err(AuthError::AccountDisabled);
                 }
-                if user.must_change_password {
+                // In local desktop mode the flag means "no password has been
+                // set": password logins for the account are impossible, so the
+                // key was created from an in-process session.
+                if user.must_change_password && !self.is_local_desktop_mode() {
                     return Err(AuthError::PasswordChangeRequired);
                 }
                 Ok(AuthPrincipal {
@@ -278,11 +296,11 @@ impl AuthService {
         // Checked only after the password has been verified, so a refused
         // login costs the same work, keeps its failure slot and returns the
         // same error as a wrong password.
-        if user.must_change_password && self.refuses_must_change_password_logins() {
+        if user.must_change_password && self.is_local_desktop_mode() {
             warn!(
                 user_id = %user.id,
-                "Login refused: the account still has its initial password and \
-                 the desktop app signs in automatically"
+                "Login refused: the account has no password of its own and the \
+                 desktop app signs it in automatically"
             );
             return Err(AuthError::InvalidCredentials);
         }
@@ -425,6 +443,19 @@ impl AuthService {
                 "Token refresh blocked: account disabled"
             );
             return Err(AuthError::AccountDisabled);
+        }
+
+        // See `authorize_session_claims`: in local desktop mode only an
+        // in-process session may act for an account without a password.
+        if user.must_change_password
+            && self.is_local_desktop_mode()
+            && !self.is_local_desktop_session(&session_id)
+        {
+            warn!(
+                user_id = %user.id,
+                "Token refresh refused: only in-process sessions may act for an account without a password"
+            );
+            return Err(AuthError::TokenRevoked);
         }
 
         let roles = user.get_roles();

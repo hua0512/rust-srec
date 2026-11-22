@@ -8,7 +8,7 @@ For Docker deployments and source checkouts using the example `.env` files, open
 
 Use `admin` / `admin123!`. You will be redirected to change the password, and other protected actions remain blocked until you do. Never expose an installation that still uses the default password.
 
-The desktop app with the **Built-in local backend** signs you in automatically, and the default password does not work there. If you turn on **Require password sign-in** under **Desktop → Backend & Security**, you are asked to set your own password first.
+The desktop app is different: with the **Built-in local backend** it signs you in automatically, without this account's password. To protect the desktop app with a password, turn on **Require password sign-in** under **Desktop → Backend & Security** and set your own password when asked.
 
 ## Why did adding a streamer not immediately create a file?
 

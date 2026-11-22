@@ -1,13 +1,10 @@
 //! Password-less sessions for the desktop app's in-process backend, and the
-//! rules that keep the seeded default password unusable while the shell signs
-//! in without one.
+//! rules that keep the seeded default password from signing in there.
 //!
 //! Nothing here is reachable over HTTP: the desktop shell calls these methods
 //! through `ServiceContainer`.
 
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use jiff::Timestamp;
 use tracing::{info, warn};
@@ -38,22 +35,27 @@ pub(super) struct LocalDesktopSessionRecord {
 }
 
 impl AuthService {
-    /// Make `authenticate` read `guard` on every password login. While it
-    /// holds `true`, a correct password for an account that still has
-    /// `must_change_password` is refused exactly like a wrong one.
+    /// Serve the desktop app's built-in backend. The shell signs its user in
+    /// without a password, so nobody is ever made to change the seeded default
+    /// password, and `must_change_password` then means "no password has been
+    /// set". In this mode an account with that flag is reachable only through
+    /// sessions issued in-process by [`Self::issue_local_desktop_session`]:
     ///
-    /// The desktop shell keeps it set while it signs the webview in without a
-    /// password: nobody is then ever made to change the seeded default
-    /// password, so that password must not open a session over the loopback
-    /// API either. Existing sessions are not affected.
-    pub(crate) fn with_must_change_password_login_guard(mut self, guard: Arc<AtomicBool>) -> Self {
-        self.refuse_must_change_password_logins = guard;
+    /// - `authenticate` refuses its correct password exactly like a wrong one,
+    ///   so a password login for it never succeeds;
+    /// - its other sessions (for example one obtained with the seeded password
+    ///   by a build without this mode) are refused like revoked ones, for
+    ///   access and for refresh, instead of being allowed to change the
+    ///   password;
+    /// - its API keys are honoured: password logins being impossible, a key
+    ///   can only have been created from an in-process session.
+    pub(crate) fn with_local_desktop_mode(mut self) -> Self {
+        self.local_desktop_mode = true;
         self
     }
 
-    pub(super) fn refuses_must_change_password_logins(&self) -> bool {
-        self.refuse_must_change_password_logins
-            .load(Ordering::Acquire)
+    pub(super) fn is_local_desktop_mode(&self) -> bool {
+        self.local_desktop_mode
     }
 
     /// The account auto-login uses (see [`Self::issue_local_desktop_session`]),
@@ -69,17 +71,14 @@ impl AuthService {
     }
 
     /// Replace the initial password of the account auto-login uses without
-    /// asking for it, and return that account's username.
+    /// asking for it.
     ///
     /// Only an account that still has `must_change_password` qualifies: this
     /// exists so the desktop user can retire the seeded default password
     /// before turning password sign-in on. Once a password has been set it
     /// returns [`AuthError::PasswordAlreadySet`], and changes go through
     /// [`Self::change_password`], which needs the current password.
-    pub async fn set_local_desktop_password(
-        &self,
-        new_password: &str,
-    ) -> Result<String, AuthError> {
+    pub async fn set_local_desktop_password(&self, new_password: &str) -> Result<(), AuthError> {
         let user = self
             .find_active_admin()
             .await?
@@ -113,13 +112,13 @@ impl AuthService {
             "Set the local desktop account's password; revoked its sessions"
         );
 
-        Ok(user.username)
+        Ok(())
     }
 
     /// Whether `session_id` was issued by [`Self::issue_local_desktop_session`]
     /// (or restored from the desktop shell's list). Such a session is exempt
-    /// from `must_change_password`; the flag itself stays set in SQLite, so a
-    /// password login for the same user still has to change it.
+    /// from `must_change_password`; the flag itself stays set in SQLite, so
+    /// [`Self::set_local_desktop_password`] can still replace the password.
     pub(super) fn is_local_desktop_session(&self, session_id: &str) -> bool {
         self.local_desktop_sessions.contains_key(session_id)
     }

@@ -354,6 +354,16 @@ function DesktopSettingsContent() {
       // Back to what the shell holds, keeping later toggles' optimistic values.
       const confirmed = confirmedDesktopSettings.current;
       if (confirmed) applyConfirmedSettings(confirmed, change);
+      // The shell refuses sign-in while the account has no password of its
+      // own; `passwordSetupRequired` may be stale (a backup restored since
+      // the page loaded), so the next toggle needs a fresh snapshot to open
+      // the password dialog.
+      if (change.requireLogin === true) {
+        void queryClient.invalidateQueries({
+          queryKey: DESKTOP_SETTINGS_QUERY_KEY,
+          exact: true,
+        });
+      }
       toast.error(
         errorMessage(
           mutationError,
@@ -438,6 +448,12 @@ function DesktopSettingsContent() {
       toast.error(
         errorMessage(setError, i18n._(msg`Failed to set the password`)),
       );
+      // The account may have a password by now (set elsewhere, or restored
+      // from a backup), which only a fresh snapshot shows.
+      void queryClient.invalidateQueries({
+        queryKey: DESKTOP_SETTINGS_QUERY_KEY,
+        exact: true,
+      });
       return false;
     }
     queryClient.setQueryData<DesktopSettingsSnapshot>(

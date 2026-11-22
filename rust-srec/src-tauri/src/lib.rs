@@ -32,7 +32,7 @@ use desktop_notifications::{
     should_deliver_desktop_notification, show_desktop_notification,
 };
 use desktop_settings::{
-    BackendMode, DesktopSettings, load_or_create_desktop_settings, normalize_remote_backend_url,
+    BackendMode, load_desktop_settings_or_fallback, normalize_remote_backend_url,
     reconcile_local_desktop_sessions, should_start_minimized,
 };
 use lifecycle::{
@@ -517,14 +517,11 @@ async fn run_desktop_backend_init(
         services_ms
     );
 
-    // Before the API accepts its first request, so the seeded default
-    // password never opens a session while the app signs in without one.
-    // Under the settings lock: a settings write after this sees the container
-    // and applies its own value.
-    {
-        let _write_guard = state.settings_write_lock.lock().await;
-        state.apply_password_login_rule(&state.desktop_settings());
-    }
+    // Before the API server is built, so it is in effect for the first
+    // request: a password login for an account that must still change its
+    // password never succeeds here, and the seeded default password never
+    // signs in.
+    container.enable_local_desktop_mode();
 
     emit_boot_progress(&app_handle, "Starting API server...", 0.9);
 
@@ -837,13 +834,7 @@ pub fn run() {
 
             let desktop_notifications =
                 load_or_create_desktop_notifications_config(&data_dir).unwrap_or_default();
-            let desktop_settings = match load_or_create_desktop_settings(&data_dir) {
-                Ok(settings) => settings,
-                Err(error) => {
-                    log::warn!("Failed to load desktop settings, using defaults: {}", error);
-                    DesktopSettings::default()
-                }
-            };
+            let desktop_settings = load_desktop_settings_or_fallback(&data_dir);
             let launch_args: Vec<String> = std::env::args().collect();
             let start_minimized_boot = should_start_minimized(&desktop_settings, &launch_args);
             let check_updates_on_startup = desktop_settings.check_updates_on_startup;

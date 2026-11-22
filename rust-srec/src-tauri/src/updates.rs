@@ -197,9 +197,7 @@ pub async fn skip_update_version(
     let mut settings = state.desktop_settings();
     settings.skipped_update_version = normalized;
 
-    state.commit_desktop_settings(&app, &settings).await?;
-
-    Ok(settings)
+    state.commit_desktop_settings(&app, &settings).await
 }
 
 #[cfg(test)]

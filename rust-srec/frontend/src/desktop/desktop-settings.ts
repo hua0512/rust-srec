@@ -118,12 +118,12 @@ export async function updateDesktopSettings(
 }
 
 /**
- * Replaces the local account's initial password and resolves to its username.
- * The shell refuses once the account has a password of its own. Setting it
- * signs out every session of that account, this one included.
+ * Replaces the local account's initial password. The shell refuses once the
+ * account has a password of its own. Setting it signs out every session of
+ * that account, this one included.
  */
-export function setDesktopPassword(password: string): Promise<string> {
-  return invokeDesktop('set_desktop_password', { password }, z.string());
+export function setDesktopPassword(password: string): Promise<void> {
+  return invokeDesktop('set_desktop_password', { password }, NoReplySchema);
 }
 
 export function setDesktopAutostartEnabled(enabled: boolean): Promise<boolean> {
