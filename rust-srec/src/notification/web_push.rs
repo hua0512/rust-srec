@@ -323,15 +323,15 @@ impl WebPushService {
     }
 
     /// Checks a subscription endpoint against the target policy that delivery
-    /// applies. The hostname is resolved here only when delivery connects
-    /// directly: through a proxy it is the proxy that resolves it, and this
-    /// host may have no usable DNS for the push service at all.
+    /// applies. The hostname is resolved here unless delivery goes through a
+    /// saved proxy: that proxy resolves it, and this host may have no usable
+    /// DNS for the push service at all.
     pub async fn validate_endpoint(&self, endpoint: &str) -> Result<Url> {
         let allow_private = self.allow_private_targets().await;
         // Delivery fails on a route that cannot be resolved, so such an
         // endpoint gets the full check.
         let check_dns = match self.route_target().await {
-            Ok(target) => SystemProxy::current().connects_directly(&target),
+            Ok(target) => may_dial_directly(&target),
             Err(_) => true,
         };
         validate_push_endpoint(endpoint, allow_private, check_dns).await
@@ -375,7 +375,7 @@ impl WebPushService {
                 return;
             }
         };
-        let check_dns = SystemProxy::current().connects_directly(&target);
+        let check_dns = may_dial_directly(&target);
 
         let now_ms = jiff::Timestamp::now().as_millisecond();
         let priority = event.priority();
@@ -886,6 +886,14 @@ fn is_public_ip(address: IpAddr) -> bool {
         IpAddr::V4(address) => is_public_ipv4(address),
         IpAddr::V6(address) => is_public_ipv6(address),
     }
+}
+
+/// Whether a delivery on `target` may be dialled from this machine, so the
+/// addresses the endpoint's hostname resolves to are checked first. Only a
+/// saved proxy carries every request; see [`SystemProxy::connects_directly`]
+/// for when the system route does not.
+fn may_dial_directly(target: &ProxyTarget) -> bool {
+    !matches!(target, ProxyTarget::Explicit(_))
 }
 
 struct WebPushAddressResolver;

@@ -95,13 +95,21 @@ impl SystemProxy {
         self.url.is_some()
     }
 
-    /// Whether an HTTP client on `target` dials its destination itself, and so
-    /// must check the addresses a destination resolves to before connecting.
+    /// Whether an HTTP client on `target` is certain to dial every destination
+    /// itself, so it can drop proxy handling and check the addresses a
+    /// destination resolves to as it connects.
     ///
     /// A system route without a proxy variable connects directly too, except
     /// on Windows and macOS: there the HTTP client also reads the operating
     /// system's proxy settings, which this snapshot cannot see, so the route
     /// is left to them.
+    ///
+    /// `false` does not mean every request is proxied. A client on the system
+    /// route still dials a destination itself when the proxy variables or the
+    /// operating system's settings exempt it, when only the other scheme has a
+    /// proxy, or when Windows or macOS has no proxy configured. Callers that
+    /// take destinations from users must therefore validate the resolved
+    /// addresses before the request on every route but a saved proxy.
     pub fn connects_directly(&self, target: &ProxyTarget) -> bool {
         match target {
             ProxyTarget::Direct => true,
@@ -174,7 +182,7 @@ mod tests {
     }
 
     #[test]
-    fn a_system_route_without_a_proxy_variable_connects_directly() {
+    fn system_route_directness_follows_env_and_os_proxy_support() {
         let none = SystemProxy::default();
         let set = environment(&[("HTTPS_PROXY", "http://proxy.example:3128")]);
         assert_eq!(
