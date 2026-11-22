@@ -194,7 +194,19 @@ impl CacheProvider for FileCache {
 
         self.ensure_initialized().await?;
 
-        fs::try_exists(self.get_cache_path(key)).await
+        let path = self.get_cache_path(key);
+        let mut file = match fs::File::open(&path).await {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => {
+                warn!(?path, %error, "Failed to open cache entry");
+                return Ok(false);
+            }
+        };
+        match Self::read_metadata(&mut file).await {
+            Ok(metadata) => Ok(!metadata.is_expired()),
+            Err(_) => Ok(false),
+        }
     }
 
     async fn get(&self, key: &CacheKey) -> CacheLookupResult {
@@ -222,15 +234,18 @@ impl CacheProvider for FileCache {
             }
         };
 
-        // Check if expired
-        let status = if metadata.is_expired() {
-            CacheStatus::Expired
-        } else {
-            CacheStatus::Hit
-        };
+        // Short-circuit expired entries before reading any payload bytes from disk.
+        if metadata.is_expired() {
+            return Ok(Some((Bytes::new(), metadata, CacheStatus::Expired)));
+        }
 
-        let mut data = Vec::new();
-        if let Err(error) = file.read_to_end(&mut data).await {
+        let initial_cap = usize::try_from(metadata.size.min(8 * 1024 * 1024)).unwrap_or(0);
+        let mut data = Vec::with_capacity(initial_cap);
+        if let Err(error) = (&mut file)
+            .take(metadata.size.saturating_add(1))
+            .read_to_end(&mut data)
+            .await
+        {
             warn!(?path, %error, "Failed to read cache payload");
             return Ok(None);
         }
@@ -242,7 +257,7 @@ impl CacheProvider for FileCache {
         // Cleanup belongs to sweep: deleting this path after reading an expired
         // or invalid generation could remove a concurrently published fresh one.
 
-        Ok(Some((Bytes::from(data), metadata, status)))
+        Ok(Some((Bytes::from(data), metadata, CacheStatus::Hit)))
     }
 
     async fn put(&self, key: CacheKey, data: Bytes, metadata: CacheMetadata) -> CacheResult<()> {

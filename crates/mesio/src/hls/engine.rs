@@ -168,7 +168,7 @@ pub async fn start_with_events(
     let decryptor = HlsDecryptor::new(
         CryptoExecutor::new(crypto_backend),
         KeyCache::new(
-            config.decryption_config.key_cache_ttl,
+            config.effective_decryption_key_ttl(),
             engine.key_cache_max_entries,
         ),
         config.fetcher_config.clone(),
@@ -323,7 +323,7 @@ impl From<&HlsConfig> for SegmentCoreConfig {
             &config.fetcher_config,
             &config.output_config,
             &config.engine_config,
-            config.processor_config.processed_segment_ttl,
+            config.effective_segment_cache_ttl(),
         )
     }
 }

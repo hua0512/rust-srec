@@ -19,11 +19,14 @@ use url::Url;
 
 use crate::cache::CacheManager;
 use crate::dash::{DashConfig, DashDownloader, DashSelectionConfig, MediaTrack};
+use crate::downloader::ClientPool;
+use crate::flv::flv_downloader::connection_config as flv_connection_config;
 use crate::flv::{FlvDownloader, FlvProtocolConfig};
 use crate::hls::config::HlsVariantSelectionPolicy;
 use crate::hls::engine::identity::SegmentKey;
 use crate::hls::{GapSkipReason, MetricsSnapshot, PerformanceMetrics};
 use crate::hls::{HlsConfig, HlsDownloader};
+use crate::rate_limit::RateLimiter;
 use crate::source::{ContentSource, SourceManager};
 use crate::{BoxMediaStream, DownloadError};
 
@@ -424,9 +427,18 @@ impl Default for MesioConfig {
     }
 }
 
+#[derive(Default)]
+struct CachedClientPools {
+    flv: Option<Arc<ClientPool>>,
+    hls: Option<Arc<ClientPool>>,
+    dash: Option<Arc<ClientPool>>,
+}
+
 pub struct MesioDownloader {
     config: MesioConfig,
     cache: Option<Arc<CacheManager>>,
+    rate_limiter: Arc<RateLimiter>,
+    clients: Mutex<CachedClientPools>,
 }
 
 impl MesioDownloader {
@@ -434,12 +446,53 @@ impl MesioDownloader {
         Self {
             config,
             cache: None,
+            rate_limiter: Arc::new(RateLimiter::default()),
+            clients: Mutex::new(CachedClientPools::default()),
         }
     }
 
     pub fn with_cache(mut self, cache: Arc<CacheManager>) -> Self {
         self.cache = Some(cache);
         self
+    }
+
+    fn hls_clients(&self) -> Result<Arc<ClientPool>, DownloadError> {
+        let mut cached = self.clients.lock();
+        if let Some(pool) = &cached.hls {
+            return Ok(Arc::clone(pool));
+        }
+        let pool = Arc::new(ClientPool::with_rate_limiter(
+            &self.config.hls.base,
+            Arc::clone(&self.rate_limiter),
+        )?);
+        cached.hls = Some(Arc::clone(&pool));
+        Ok(pool)
+    }
+
+    fn dash_clients(&self) -> Result<Arc<ClientPool>, DownloadError> {
+        let mut cached = self.clients.lock();
+        if let Some(pool) = &cached.dash {
+            return Ok(Arc::clone(pool));
+        }
+        let pool = Arc::new(ClientPool::with_rate_limiter(
+            &self.config.dash.base,
+            Arc::clone(&self.rate_limiter),
+        )?);
+        cached.dash = Some(Arc::clone(&pool));
+        Ok(pool)
+    }
+
+    fn flv_clients(&self) -> Result<Arc<ClientPool>, DownloadError> {
+        let mut cached = self.clients.lock();
+        if let Some(pool) = &cached.flv {
+            return Ok(Arc::clone(pool));
+        }
+        let pool = Arc::new(ClientPool::with_rate_limiter(
+            &flv_connection_config(&self.config.flv.base),
+            Arc::clone(&self.rate_limiter),
+        )?);
+        cached.flv = Some(Arc::clone(&pool));
+        Ok(pool)
     }
 
     pub fn detect_protocol(url: &str) -> Result<ProtocolType, DownloadError> {
@@ -509,14 +562,18 @@ impl MesioDownloader {
         if matches!(request.protocol, ProtocolSelection::Auto) {
             request.protocol = ProtocolSelection::Hls(request.options.hls.clone());
         }
+        let clients = self.hls_clients()?;
         if request.sources.is_empty() {
-            let downloader = HlsDownloader::with_config(self.config.hls.clone())?;
+            let downloader = HlsDownloader::with_clients(self.config.hls.clone(), clients);
             return downloader.start(request).await;
         }
         let config = self.config.hls.clone();
         let event_capacity = (config.scheduler_config.download_concurrency.max(1) * 64).max(256);
         self.start_with_sources(request, "HLS", event_capacity, move || {
-            HlsDownloader::with_config(config.clone())
+            Ok(HlsDownloader::with_clients(
+                config.clone(),
+                Arc::clone(&clients),
+            ))
         })
     }
 
@@ -530,15 +587,16 @@ impl MesioDownloader {
         if matches!(request.protocol, ProtocolSelection::Auto) {
             request.protocol = ProtocolSelection::Dash(request.options.dash.clone());
         }
+        self.config.dash.validate()?;
+        let clients = self.dash_clients()?;
         if request.sources.is_empty() {
-            let downloader = DashDownloader::with_config(self.config.dash.clone())?;
+            let downloader = DashDownloader::with_clients(self.config.dash.clone(), clients)?;
             return downloader.start(request).await;
         }
         let config = self.config.dash.clone();
-        config.validate()?;
         let event_capacity = (config.scheduler.download_concurrency.max(1) * 128).max(256);
         self.start_with_sources(request, "DASH", event_capacity, move || {
-            DashDownloader::with_config(config.clone())
+            DashDownloader::with_clients(config.clone(), Arc::clone(&clients))
         })
     }
 
@@ -563,7 +621,8 @@ impl MesioDownloader {
         if let Some(source) = &selected_source {
             request.url = source.url.clone();
         }
-        let downloader = FlvDownloader::with_config(self.config.flv.clone())?;
+        let clients = self.flv_clients()?;
+        let downloader = FlvDownloader::with_clients(self.config.flv.clone(), clients);
         let session = downloader.start(request).await?;
         if let Some(source) = selected_source {
             return wrap_flv_source_session(session, source);
@@ -1030,6 +1089,8 @@ fn wrap_flv_source_session(
     let forward_events = events.clone();
     tokio::spawn(forward_event_stream(session.events, forward_events));
 
+    let lifecycle = session.handle.lifecycle.lock().take();
+
     Ok(DownloadSession {
         items: session.items,
         events: event_stream,
@@ -1037,7 +1098,7 @@ fn wrap_flv_source_session(
             session.handle.cancel.clone(),
             session.handle.metrics.clone(),
             dropped_counter,
-            None,
+            lifecycle,
         ),
     })
 }

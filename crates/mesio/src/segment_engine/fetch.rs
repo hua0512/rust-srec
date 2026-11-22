@@ -139,6 +139,20 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
     if let Some((cache, cache_key)) = &cache
         && let Ok(Some((bytes, _, _))) = cache.get(cache_key).await
     {
+        let cached_len = bytes.len() as u64;
+        let max_segment_size = ctx.config.fetch.max_segment_size_bytes;
+        let capacity = ctx.budget.download.capacity();
+        if (max_segment_size > 0 && cached_len > max_segment_size)
+            || (capacity > 0 && cached_len > capacity)
+        {
+            return Failure::new(
+                FailureClass::Oversize,
+                format!(
+                    "cached segment size {cached_len} exceeds the per-segment maximum or the download byte budget"
+                ),
+            )
+            .into_outcome(key, msn);
+        }
         debug!(msn, "segment served from cache");
         if let Some(metrics) = &ctx.metrics {
             metrics.record_cache_hit();
@@ -147,11 +161,11 @@ pub async fn fetch_and_process(job: ReadyJob, ctx: Arc<FetchContext>) -> Segment
             &ctx,
             DownloadEvent::ResourceFinished {
                 resource: descriptor.resource_id(),
-                bytes: bytes.len() as u64,
+                bytes: cached_len,
                 from_cache: true,
             },
         );
-        reservation.reconcile(bytes.len() as u64);
+        reservation.reconcile(cached_len);
         let payload = wrap_payload(bytes, &descriptor);
         drop(reservation);
         return SegmentOutcome::Completed { key, msn, payload };
@@ -284,11 +298,26 @@ fn detect_container(data: &[u8], descriptor: &SegmentDescriptor) -> ContainerKin
     } else if descriptor.key.kind == SegmentKind::Init
         || descriptor.init_key.is_some()
         || is_m4s_segment(&descriptor.parsed_url)
+        || starts_with_isobmff_box(data)
     {
         ContainerKind::Fmp4
     } else {
         ContainerKind::Ts
     }
+}
+
+fn starts_with_isobmff_box(data: &[u8]) -> bool {
+    let Some(header) = data.get(..8) else {
+        return false;
+    };
+    let size = u32::from_be_bytes([header[0], header[1], header[2], header[3]]);
+    if size != 0 && size != 1 && size < 8 {
+        return false;
+    }
+    matches!(
+        &header[4..8],
+        b"ftyp" | b"styp" | b"moof" | b"moov" | b"sidx" | b"emsg" | b"prft" | b"free" | b"skip"
+    )
 }
 
 /// MPEG-TS packets are 188 bytes, each starting with the 0x47 sync byte. An
@@ -496,7 +525,9 @@ async fn download_once(
     // Stream the body, enforcing the reservation at chunk granularity: a
     // chunked or lying response cannot blow the budget one chunk at a time.
     let mut buffer = BytesMut::with_capacity(
-        usize::try_from(expected_len.unwrap_or(8 * 1024)).unwrap_or(8 * 1024),
+        usize::try_from(expected_len.unwrap_or(8 * 1024))
+            .unwrap_or(8 * 1024)
+            .min(8 * 1024 * 1024),
     );
     let mut stream = response.bytes_stream();
     let mut progress_since_last = 0_u64;

@@ -24,6 +24,7 @@ struct AdDateRange {
 pub(super) struct TwitchPlaylistProcessor {
     ad_dateranges: HashMap<String, AdDateRange>,
     pub discontinuity: bool,
+    pending_post_ad_discontinuity: bool,
 }
 
 #[inline]
@@ -47,7 +48,10 @@ pub(super) fn preprocess_twitch_playlist(playlist_content: &str) -> String {
     let mut out = String::with_capacity(playlist_content.len());
     for line in playlist_content.lines() {
         if let Some(prefetch_uri) = line.strip_prefix("#EXT-X-TWITCH-PREFETCH:") {
-            debug!("Transformed prefetch tag to segment: {}", prefetch_uri);
+            debug!(
+                "Transformed prefetch tag to segment: {}",
+                crate::redact::redact_url_for_log(prefetch_uri)
+            );
             // The duration is not provided. Use a placeholder and let the
             // Twitch processor handle ad detection / time extrapolation.
             out.push_str("#EXTINF:2.002,");
@@ -96,6 +100,7 @@ impl TwitchPlaylistProcessor {
         Self {
             ad_dateranges: HashMap::new(),
             discontinuity: false,
+            pending_post_ad_discontinuity: false,
         }
     }
 
@@ -173,7 +178,11 @@ impl TwitchPlaylistProcessor {
         let mut last_date_ms: Option<i64> = None;
         let mut last_duration_s: f32 = 0.0;
         let mut last_was_prefetch = false;
-        let mut last_was_ad = false;
+        let mut last_was_ad = self.pending_post_ad_discontinuity;
+        // Snapshot-local view of `self.discontinuity` so speculative prefetch
+        // entries see a preceding discontinuity within this playlist without
+        // mutating cross-snapshot processor state before a real segment commits.
+        let mut in_discontinuity = self.discontinuity;
 
         for segment in &playlist.segments {
             let is_prefetch = is_prefetch_segment(segment);
@@ -227,26 +236,32 @@ impl TwitchPlaylistProcessor {
                     segment.discontinuity
                 };
 
-            if effective_discontinuity {
+            // Prefetch segments after a discontinuity are treated as ads within
+            // this snapshot, while cross-snapshot `self.discontinuity` only
+            // transitions on committed non-prefetch segments.
+            if is_prefetch {
+                if effective_discontinuity {
+                    in_discontinuity = true;
+                }
+                if in_discontinuity {
+                    is_ad = true;
+                }
+            } else if effective_discontinuity {
                 self.discontinuity = true;
-            }
-
-            // Prefetch segments after a discontinuity should always be treated as ads.
-            // Don't reset the discontinuity state here: date extrapolation can be inaccurate
-            // and we want to treat all subsequent prefetch segments as ads until real content
-            // resumes (Streamlink logic).
-            if is_prefetch && self.discontinuity {
-                is_ad = true;
-            } else if !is_prefetch && !is_ad {
+                in_discontinuity = true;
+            } else if !is_ad {
                 self.discontinuity = false;
+                in_discontinuity = false;
             }
 
             let discontinuity = if is_prefetch {
                 // Streamlink twitch.py: set prefetch discontinuity based on ad transitions.
                 is_ad != last_was_ad
             } else {
+                self.pending_post_ad_discontinuity = is_ad;
                 // Ensure a discontinuity is observable on the first non-ad segment after ads,
-                // even if Twitch only marked the skipped ad segments with a discontinuity tag.
+                // even if Twitch only marked the skipped ad segments with a discontinuity tag
+                // or the ad segments slid out of the window between refreshes.
                 effective_discontinuity || (!is_ad && last_was_ad)
             };
 
