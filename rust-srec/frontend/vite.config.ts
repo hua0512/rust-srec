@@ -24,7 +24,9 @@ function previewCacheHeaders(): Plugin {
           res.setHeader('Cache-Control', IMMUTABLE_ASSET_CACHE_CONTROL);
         } else if (
           req.url?.startsWith('/stream-rec.svg') ||
-          req.url?.startsWith('/stream-rec-white.svg')
+          req.url?.startsWith('/stream-rec-white.svg') ||
+          req.url?.startsWith('/stream-rec-color.svg') ||
+          req.url?.startsWith('/stream-rec-128.png')
         ) {
           res.setHeader('Cache-Control', PUBLIC_LOGO_CACHE_CONTROL);
         }
@@ -60,6 +62,16 @@ export default defineConfig(() => ({
           },
         },
         '/stream-rec-white.svg': {
+          headers: {
+            'cache-control': PUBLIC_LOGO_CACHE_CONTROL,
+          },
+        },
+        '/stream-rec-color.svg': {
+          headers: {
+            'cache-control': PUBLIC_LOGO_CACHE_CONTROL,
+          },
+        },
+        '/stream-rec-128.png': {
           headers: {
             'cache-control': PUBLIC_LOGO_CACHE_CONTROL,
           },

@@ -29,6 +29,7 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
+      icon: '/stream-rec-128.png',
       tag,
       data: { url },
       requireInteraction: true,

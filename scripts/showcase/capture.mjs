@@ -293,8 +293,14 @@ async function main() {
   // Both URLs are overridden explicitly: the frontend's .env may point at a
   // real deployment.
   startProcess(
-    join(frontendDir, 'node_modules/.bin/vite'),
-    ['dev', '--port', String(vitePort), '--strictPort'],
+    process.execPath,
+    [
+      join(frontendDir, 'node_modules/vite/bin/vite.js'),
+      'dev',
+      '--port',
+      String(vitePort),
+      '--strictPort',
+    ],
     {
       cwd: frontendDir,
       log: join(work, 'vite.log'),

@@ -47,16 +47,15 @@ function resolveVars(
   settings: ThemeSettingsSnapshot,
   isDark: boolean,
 ): Record<string, string> {
+  const defaultPreset = shadcnThemePresets[DEFAULT_SETTINGS.preset];
   const baseVars =
     settings.base === 'imported' && settings.importedTheme
       ? isDark
         ? settings.importedTheme.dark
         : settings.importedTheme.light
       : isDark
-        ? (shadcnThemePresets[settings.preset] ?? shadcnThemePresets.default)
-            .styles.dark
-        : (shadcnThemePresets[settings.preset] ?? shadcnThemePresets.default)
-            .styles.light;
+        ? (shadcnThemePresets[settings.preset] ?? defaultPreset).styles.dark
+        : (shadcnThemePresets[settings.preset] ?? defaultPreset).styles.light;
 
   return {
     ...withSidebarVars(baseVars),

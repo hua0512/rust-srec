@@ -44,13 +44,13 @@ const LoginFormSchema = LoginRequestSchema.extend({
 type LoginFormValues = z.infer<typeof LoginFormSchema>;
 
 const LoginBackground = memo(() => (
-  <div className="absolute inset-0 z-0 overflow-hidden bg-violet-950">
-    <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-violet-500/90 via-fuchsia-500/90 to-blue-500/90 opacity-90 lg:opacity-100">
-      <div className="absolute top-0 -left-4 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob"></div>
-      <div className="absolute top-0 -right-4 w-72 h-72 bg-yellow-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-2000"></div>
-      <div className="absolute -bottom-8 left-20 w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-4000"></div>
-      <div className="absolute bottom-40 -right-10 w-72 h-72 bg-blue-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-2000"></div>
-      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-fuchsia-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-4000"></div>
+  <div className="absolute inset-0 z-0 overflow-hidden bg-zinc-950">
+    <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-orange-600/95 via-orange-500/90 to-amber-600/90 opacity-95 lg:opacity-100">
+      <div className="absolute top-0 -left-4 w-72 h-72 bg-amber-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob"></div>
+      <div className="absolute top-0 -right-4 w-72 h-72 bg-orange-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-2000"></div>
+      <div className="absolute -bottom-8 left-20 w-72 h-72 bg-rose-400 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-4000"></div>
+      <div className="absolute bottom-40 -right-10 w-72 h-72 bg-red-500 rounded-full mix-blend-multiply filter blur-xl opacity-60 animate-blob animation-delay-2000"></div>
+      <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-amber-400 rounded-full mix-blend-multiply filter blur-xl opacity-60 animate-blob animation-delay-4000"></div>
     </div>
   </div>
 ));
@@ -122,9 +122,9 @@ function LoginPage() {
         <LoginBackground />
         <div className="relative z-20 flex items-center text-lg font-medium">
           <img
-            src="/stream-rec.svg"
-            alt="Stream-rec Logo"
-            className="mr-2 h-8 w-8 brightness-0 invert"
+            src="/stream-rec-white.svg"
+            alt="Rust-Srec Logo"
+            className="mr-2 h-8 w-8"
           />
           Rust-Srec
         </div>

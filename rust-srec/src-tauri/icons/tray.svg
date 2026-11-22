@@ -1,19 +1,36 @@
-<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
-  <path
-    d="M760 91 L512 391 L264 91"
-    stroke="#6366F1"
-    stroke-width="120"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    fill="none"
-  />
-  <rect x="62" y="343" width="900" height="650" rx="140" fill="#6366F1" />
-  <path
-    d="M372 740 L466 625 L558 715 L652 600"
-    stroke="#FFFFFF"
-    stroke-width="75"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-    fill="none"
-  />
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="128" y1="64" x2="896" y2="960" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#222229" />
+      <stop offset="100%" stop-color="#0F0F13" />
+    </linearGradient>
+    <radialGradient id="glow" cx="62%" cy="38%" r="55%">
+      <stop offset="0%" stop-color="#F16529" stop-opacity="0.34" />
+      <stop offset="100%" stop-color="#F16529" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="ring" x1="192" y1="240" x2="768" y2="832" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#B8B8C2" />
+    </linearGradient>
+    <linearGradient id="wave" x1="544" y1="192" x2="816" y2="496" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF9666" />
+      <stop offset="100%" stop-color="#E84D24" />
+    </linearGradient>
+    <linearGradient id="core" x1="384" y1="384" x2="640" y2="640" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF8352" />
+      <stop offset="55%" stop-color="#F15A24" />
+      <stop offset="100%" stop-color="#D13415" />
+    </linearGradient>
+  </defs>
+
+  <rect x="48" y="48" width="928" height="928" rx="224" fill="url(#bg)" />
+  <rect x="48" y="48" width="928" height="928" rx="224" fill="url(#glow)" />
+  <rect x="54" y="54" width="916" height="916" rx="218" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="12" />
+
+  <g transform="translate(-16 16)">
+    <path d="M774.73 582.40 A272 272 0 1 1 441.60 249.27" stroke="url(#ring)" stroke-width="76" stroke-linecap="round" />
+    <path d="M545.34 322.92 A192 192 0 0 1 701.08 478.66" stroke="url(#wave)" stroke-width="60" stroke-linecap="round" />
+    <path d="M554.31 210.96 A304 304 0 0 1 813.04 469.69" stroke="url(#wave)" stroke-opacity="0.88" stroke-width="60" stroke-linecap="round" />
+    <circle cx="512" cy="512" r="108" fill="url(#core)" />
+  </g>
 </svg>

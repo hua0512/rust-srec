@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { shadcnThemePresets } from '@/config/shadcn-ui-theme-presets';
+import { DEFAULT_SETTINGS } from '@/store/theme-settings';
 
 // vitest's root is the frontend package dir (where vitest.config.ts lives).
 const css = readFileSync(resolve(process.cwd(), 'src/styles.css'), 'utf8');
@@ -36,8 +37,8 @@ const darkVars = { ...rootVars, ...parseBlock('.dark') };
 // settings equal DEFAULT_SETTINGS, on the assumption that the stylesheet
 // already provides every value the default preset would inject. This test is
 // what makes that assumption safe: any key/value drift between
-// shadcnThemePresets.default and styles.css fails here.
-describe('styles.css stays in sync with shadcnThemePresets.default', () => {
+// shadcnThemePresets[DEFAULT_SETTINGS.preset] and styles.css fails here.
+describe('styles.css stays in sync with the default theme preset', () => {
   const cases = [
     ['light', rootVars],
     ['dark', darkVars],
@@ -45,7 +46,7 @@ describe('styles.css stays in sync with shadcnThemePresets.default', () => {
 
   for (const [mode, cssVars] of cases) {
     it(`default preset ${mode} values match the stylesheet`, () => {
-      const preset = shadcnThemePresets.default.styles[mode];
+      const preset = shadcnThemePresets[DEFAULT_SETTINGS.preset].styles[mode];
       for (const [key, value] of Object.entries(preset)) {
         const actual = resolveVar(cssVars[key] ?? '<missing>', cssVars);
         expect(actual, `--${key} (${mode})`).toBe(

@@ -153,6 +153,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
     meta: [
       { charSet: 'utf-8' },
       { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+      { name: 'theme-color', content: '#e44d26' },
       { title: 'Rust-Srec' },
     ],
     links: [
@@ -214,6 +215,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     >
       <head>
         <link rel="icon" type="image/svg+xml" href="/stream-rec.svg"></link>
+        <link rel="apple-touch-icon" href="/stream-rec-128.png"></link>
         <HeadContent />
       </head>
       <body className="bg-background text-foreground" suppressHydrationWarning>
@@ -228,25 +230,21 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 
 function AppLoadingScreen() {
   return (
-    <div className="min-h-dvh bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100">
+    <div className="min-h-dvh bg-gradient-to-b from-zinc-950 via-zinc-900 to-zinc-950 text-zinc-100">
       <div className="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center gap-6 px-6">
-        <img
-          src="/stream-rec-white.svg"
-          alt=""
-          className="h-16 w-16 opacity-90"
-        />
+        <img src="/stream-rec-color.svg" alt="" className="h-16 w-16" />
 
         <div className="text-center">
           <div className="text-2xl font-semibold tracking-tight">Rust-Srec</div>
           {/* Not run through the catalog: on desktop this can render while the locale is
               active with an empty catalog, which would show a message id. */}
-          <div className="mt-1 text-sm text-slate-300">Starting up...</div>
+          <div className="mt-1 text-sm text-zinc-400">Starting up...</div>
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-slate-200 [animation-delay:-0.2s]" />
-          <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-slate-200 [animation-delay:-0.1s]" />
-          <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-slate-200" />
+          <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-primary [animation-delay:-0.2s]" />
+          <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-primary [animation-delay:-0.1s]" />
+          <span className="h-2.5 w-2.5 animate-bounce rounded-full bg-primary" />
         </div>
       </div>
     </div>
