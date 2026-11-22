@@ -191,13 +191,19 @@ mod tests {
         Url::parse(&format!("http://{addr}/resource?token=secret")).unwrap()
     }
 
+    /// The server is local, so proxy environment variables must not apply.
+    async fn get(url: Url) -> reqwest::Response {
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        client.get(url).send().await.unwrap()
+    }
+
     #[tokio::test]
     async fn read_capped_rejects_oversize_content_length_and_chunked_stream() {
         let header_url = serve_raw(
             b"HTTP/1.1 200 OK\r\nContent-Length: 99999999\r\nConnection: close\r\n\r\nhi".to_vec(),
         )
         .await;
-        let resp = reqwest::get(header_url).await.unwrap();
+        let resp = get(header_url).await;
         assert!(matches!(
             read_capped(resp, 64, None).await,
             Err(CappedReadError::TooLarge(99_999_999))
@@ -207,7 +213,7 @@ mod tests {
         let mut raw = b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n".to_vec();
         raw.extend_from_slice(&body);
         let stream_url = serve_raw(raw).await;
-        let resp = reqwest::get(stream_url).await.unwrap();
+        let resp = get(stream_url).await;
         assert!(matches!(
             read_capped(resp, 64, None).await,
             Err(CappedReadError::TooLarge(size)) if size > 64

@@ -371,13 +371,13 @@ impl HlsProtocolBuilder {
 
     /// Set TTL for segments in the HLS cache.
     pub fn hls_segment_cache_ttl(mut self, ttl: Duration) -> Self {
-        self.config.cache_config.segment_ttl = ttl;
+        self.config.cache_config.segment_ttl = Some(ttl);
         self
     }
 
     /// Set TTL for decryption keys in the HLS cache.
     pub fn hls_decryption_key_cache_ttl(mut self, ttl: Duration) -> Self {
-        self.config.cache_config.decryption_key_ttl = ttl;
+        self.config.cache_config.decryption_key_ttl = Some(ttl);
         self
     }
 

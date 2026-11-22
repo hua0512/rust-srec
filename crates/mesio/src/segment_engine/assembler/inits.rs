@@ -7,7 +7,12 @@ use crate::error::SharedError;
 use super::super::identity::SegmentKey;
 use super::super::payload::SegmentPayload;
 
-/// Bounded insertion-ordered map of failed init keys to their failure.
+/// Bounded insertion-ordered map of failed init keys to their failure. Init
+/// rotations are infrequent (discontinuities / rendition changes), so a small
+/// cap with FIFO eviction keeps memory bounded on long-running streams.
+/// Eviction is safe because an unknown key is treated as unresolved: media
+/// still waits in the normal case, and the live buffer-pressure / ENDLIST
+/// flush fail-safes surface stuck media as visible gaps.
 #[derive(Debug)]
 pub(super) struct FailedInits {
     cap: usize,
@@ -47,16 +52,21 @@ impl FailedInits {
 /// Received init payloads by key, retained so an init can be emitted — again,
 /// if the stream switches back to it — whenever media at the cursor needs it.
 ///
-/// The store never re-downloads a completed init, so this is the only copy.
-/// Eviction is least-recently-used among entries not protected by `is_protected`
-/// (the active init, any init referenced by buffered media, any init at or
-/// beyond the emit cursor, and any unemitted init whose governing MSN lies
-/// ahead of the last emitted media segment).
+/// Bounded least-recently-used among the entries `is_protected` does not
+/// cover (the active init, any init referenced by buffered media, any init at
+/// or beyond the emit cursor, and any unemitted init whose governing MSN lies
+/// ahead of the last emitted media segment). A finished stream fetches its
+/// inits ahead of their media, and evicting one of those would leave that
+/// media waiting for a map that is not fetched again. An evicted key is
+/// unresolved again, with the same fail-safes as [`FailedInits`]; the store
+/// sends its copy of a completed init again when the media it admits switches
+/// to that init.
 #[derive(Debug)]
 pub(super) struct RetainedInits {
     /// `0` disables the limit.
     cap: usize,
-    /// Logical clock for recency.
+    /// Logical clock for recency: touching an entry is O(1) on every media
+    /// emission; only an over-cap insert scans for the least recent entry.
     clock: u64,
     entries: HashMap<SegmentKey, RetainedInit>,
 }
@@ -93,7 +103,16 @@ impl RetainedInits {
         let now = self.tick();
         match self.entries.get_mut(&key) {
             Some(entry) => {
-                entry.payload = payload;
+                // The store sends a completed init again without its
+                // discontinuity (see `SegmentPayload::replayed_at`). An
+                // entry that has not been emitted still owes the one it
+                // arrived with, so it keeps it.
+                let owed = !entry.emitted && entry.payload.discontinuity();
+                entry.payload = if owed {
+                    payload.with_discontinuity()
+                } else {
+                    payload
+                };
                 entry.last_used = now;
             }
             None => {

@@ -24,7 +24,10 @@ struct AdDateRange {
 pub(super) struct TwitchPlaylistProcessor {
     ad_dateranges: HashMap<String, AdDateRange>,
     pub discontinuity: bool,
-    pending_post_ad_discontinuity: bool,
+    /// Sequence number of the last committed (non-prefetch) segment processed
+    /// and whether it was an ad. Live content that resumes after the ads slid
+    /// out of the window takes its discontinuity from it.
+    last_committed: Option<(u64, bool)>,
 }
 
 #[inline]
@@ -100,7 +103,7 @@ impl TwitchPlaylistProcessor {
         Self {
             ad_dateranges: HashMap::new(),
             discontinuity: false,
-            pending_post_ad_discontinuity: false,
+            last_committed: None,
         }
     }
 
@@ -178,13 +181,20 @@ impl TwitchPlaylistProcessor {
         let mut last_date_ms: Option<i64> = None;
         let mut last_duration_s: f32 = 0.0;
         let mut last_was_prefetch = false;
-        let mut last_was_ad = self.pending_post_ad_discontinuity;
+        // Ads that precede resumed live content are normally still listed
+        // and mark it within this snapshot. They are missing only when the
+        // window starts past the last committed segment processed, so only
+        // then does that segment being an ad carry over. A segment listed
+        // again was planned without the mark and must not gain it.
+        let mut last_was_ad = self
+            .last_committed
+            .is_some_and(|(msn, was_ad)| was_ad && playlist.media_sequence > msn);
         // Snapshot-local view of `self.discontinuity` so speculative prefetch
         // entries see a preceding discontinuity within this playlist without
         // mutating cross-snapshot processor state before a real segment commits.
         let mut in_discontinuity = self.discontinuity;
 
-        for segment in &playlist.segments {
+        for (index, segment) in playlist.segments.iter().enumerate() {
             let is_prefetch = is_prefetch_segment(segment);
 
             let segment_duration_s = if is_prefetch {
@@ -258,7 +268,8 @@ impl TwitchPlaylistProcessor {
                 // Streamlink twitch.py: set prefetch discontinuity based on ad transitions.
                 is_ad != last_was_ad
             } else {
-                self.pending_post_ad_discontinuity = is_ad;
+                self.last_committed =
+                    Some((playlist.media_sequence.saturating_add(index as u64), is_ad));
                 // Ensure a discontinuity is observable on the first non-ad segment after ads,
                 // even if Twitch only marked the skipped ad segments with a discontinuity tag
                 // or the ad segments slid out of the window between refreshes.
@@ -424,5 +435,37 @@ seg2.ts\n",
         assert!(processed[1].is_ad);
         assert!(!processed[2].is_ad);
         assert!(processed[2].discontinuity);
+    }
+
+    #[test]
+    fn an_ad_marks_resumed_content_only_past_the_last_processed_segment() {
+        let playlist = |sequence: u64, segments: &str| {
+            parse_media_playlist(&format!(
+                "#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:2\n\
+                 #EXT-X-MEDIA-SEQUENCE:{sequence}\n{segments}"
+            ))
+        };
+        let mut processor = TwitchPlaylistProcessor::new();
+        processor.process_playlist(&playlist(
+            10,
+            "#EXTINF:2.0,live\nseg10.ts\n#EXTINF:2.0,Amazon ad\nad11.ts\n",
+        ));
+
+        // The ad break goes on: segment 10 is listed again, not resumed.
+        let ongoing = playlist(
+            10,
+            "#EXTINF:2.0,live\nseg10.ts\n#EXTINF:2.0,Amazon ad\nad11.ts\n\
+             #EXTINF:2.0,Amazon ad\nad12.ts\n",
+        );
+        assert!(!processor.process_playlist(&ongoing)[0].discontinuity);
+
+        // The ads slid out of the window before live content resumed.
+        let resumed = playlist(
+            13,
+            "#EXTINF:2.0,live\nseg13.ts\n#EXTINF:2.0,live\nseg14.ts\n",
+        );
+        let processed = processor.process_playlist(&resumed);
+        assert!(processed[0].discontinuity);
+        assert!(!processed[1].discontinuity);
     }
 }

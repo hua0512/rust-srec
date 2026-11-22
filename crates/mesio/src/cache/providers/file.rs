@@ -234,7 +234,8 @@ impl CacheProvider for FileCache {
             }
         };
 
-        // Short-circuit expired entries before reading any payload bytes from disk.
+        // An expired entry is reported without its payload: nothing reads
+        // stale bytes, so they are not loaded from disk.
         if metadata.is_expired() {
             return Ok(Some((Bytes::new(), metadata, CacheStatus::Expired)));
         }

@@ -213,13 +213,9 @@ impl FlvDownloader {
         let stream_token = token.clone();
         let reader_handle = tokio::spawn(async move {
             progress.record(first_chunk.len());
-            if tx.send(Ok(first_chunk)).await.is_err() {
+            if let Err(terminal) = forward(&tx, Ok(first_chunk), &stream_token).await {
                 progress.flush();
-                return if stream_token.is_cancelled() {
-                    DownloadTerminal::Cancelled
-                } else {
-                    DownloadTerminal::DownstreamClosed
-                };
+                return terminal;
             }
 
             loop {
@@ -245,16 +241,16 @@ impl FlvDownloader {
                         if let Err(err) = &item {
                             let reason: Arc<str> =
                                 Arc::from(crate::redact::redact_diagnostic(err));
-                            let _ = tx.send(item).await;
+                            // The body error is the terminal state whether or
+                            // not a consumer is still there to receive it.
+                            if forward(&tx, item, &stream_token).await.is_err() {
+                                debug!("FLV body error not delivered: the consumer stopped reading");
+                            }
                             return DownloadTerminal::PipelineError(reason);
                         }
-                        if tx.send(item).await.is_err() {
+                        if let Err(terminal) = forward(&tx, item, &stream_token).await {
                             progress.flush();
-                            return if stream_token.is_cancelled() {
-                                DownloadTerminal::Cancelled
-                            } else {
-                                DownloadTerminal::DownstreamClosed
-                            };
+                            return terminal;
                         }
                     }
                 }
@@ -455,6 +451,26 @@ impl ProgressMeter {
                 from_cache: false,
             },
         );
+    }
+}
+
+/// Hands `item` to the decoder. The channel stays full while the consumer is
+/// not reading, so the wait races cancellation: a cancelled session ends its
+/// reader even when nothing drains the stream.
+async fn forward<T>(
+    tx: &mpsc::Sender<T>,
+    item: T,
+    token: &CancellationToken,
+) -> Result<(), DownloadTerminal> {
+    tokio::select! {
+        _ = token.cancelled() => Err(DownloadTerminal::Cancelled),
+        sent = tx.send(item) => sent.map_err(|_| {
+            if token.is_cancelled() {
+                DownloadTerminal::Cancelled
+            } else {
+                DownloadTerminal::DownstreamClosed
+            }
+        }),
     }
 }
 

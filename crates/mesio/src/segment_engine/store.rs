@@ -772,7 +772,7 @@ impl SegmentStateStore {
                         .get(init_key)
                         .and_then(|r| r.completed_init.as_ref())
                 {
-                    inputs.push(AssemblerInput::Payload(cached_init.with_msn(media_msn)));
+                    inputs.push(AssemblerInput::Payload(cached_init.replayed_at(media_msn)));
                 }
                 self.last_admitted_init_key = init_key;
             }
@@ -884,6 +884,15 @@ impl SegmentStateStore {
                         .min(self.config.retry_delay_max)
                 };
                 let retry_delay = match class {
+                    // Rate limiting says the server is busy, not that the
+                    // segment is bad: it is retried once the cool-down ends,
+                    // for as long as the throttling bound allows. A live
+                    // segment that leaves the window meanwhile is dropped
+                    // with the backlog and skipped (see `prune_below`).
+                    // The bound is wall-clock time since the first refusal, so
+                    // it also covers short cool-downs and time spent queued.
+                    // The retry is clamped to the rest of the allowance, so a
+                    // long cool-down near its end cannot carry it past it.
                     FailureClass::RateLimited { delay, .. } => {
                         record.first_attempt_at = None;
                         let since = *record.throttled_since.get_or_insert(now);
@@ -898,6 +907,14 @@ impl SegmentStateStore {
                                     .min(left)
                             })
                     }
+                    // A signed URL can expire while its segment waits out
+                    // rate limiting, and the playlist that would refresh it
+                    // may not have been published yet when the cool-down
+                    // ends. So once per segment, a denial after rate
+                    // limiting waits for re-discovery (see `ingest`), for
+                    // at most `REFRESH_WAIT`. Output keeps waiting for it
+                    // within the same throttling bound, so a live gap skip
+                    // does not drop it while the fresh URL is on its way.
                     FailureClass::Http(401 | 403)
                         if record.generation <= record.attempt_generation
                             && record.throttled_since.is_some()
@@ -909,17 +926,33 @@ impl SegmentStateStore {
                         keeps_hold = true;
                         Some(REFRESH_WAIT)
                     }
+                    // Budget contention says nothing about the segment: it
+                    // only means other downloads hold the budget right now,
+                    // so it does not spend the retry budget. It still ends:
+                    // a size that can never fit is terminal at the fetch,
+                    // contention clears as siblings finish, and a live
+                    // backlog is bounded.
                     FailureClass::OverBudget => {
                         record.first_attempt_at = None;
                         Some(backoff(record.reschedules))
                     }
                     _ => {
                         let retryable = match class {
+                            // 425 Too Early: an origin that enforces live
+                            // availability (DASH) rejects a request that
+                            // lands before the segment is published on its
+                            // clock; it is published moments later.
                             FailureClass::Http(404 | 425 | 429)
                             | FailureClass::Http(500..=599)
                             | FailureClass::Network
                             | FailureClass::Timeout
                             | FailureClass::Decode => true,
+                            // Auth failures are conditionally retryable: a
+                            // signed URL can expire mid-flight while a newer
+                            // playlist already refreshed it. Retry only when
+                            // re-discovery advanced the generation past the
+                            // one this attempt fetched with — otherwise the
+                            // denial is real.
                             FailureClass::Http(401 | 403) => {
                                 record.generation > record.attempt_generation
                             }
@@ -930,6 +963,11 @@ impl SegmentStateStore {
                             | FailureClass::RateLimited { .. }
                             | FailureClass::OverBudget => false,
                         };
+                        // A segment past its retry deadline is given up
+                        // instead of rescheduled: every attempt can pay the
+                        // full download timeout several times over, so the
+                        // retry count alone lets a segment that never answers
+                        // hold the recording for minutes.
                         let within_deadline = self.config.retry_deadline.is_none_or(|deadline| {
                             record
                                 .first_attempt_at
@@ -983,6 +1021,9 @@ impl SegmentStateStore {
                 } else {
                     self.rate_limit_holds.release(&key, msn, now);
                     warn!(msn, ?class, reason = %crate::redact::redact_diagnostic(&reason), "segment terminally failed");
+                    // Media and init terminal failures are both surfaced; the
+                    // assembler decides whether the stream can continue (see
+                    // `SequenceAssembler`).
                     let error = SharedError::new(
                         error.unwrap_or_else(|| class.error(&reason, &record.descriptor)),
                     );

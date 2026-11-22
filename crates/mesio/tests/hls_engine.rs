@@ -1660,6 +1660,39 @@ async fn mesio_downloader_flv_source_selection_emits_event() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn flv_session_cancelled_while_its_items_are_not_read_still_finishes() {
+    let origin = Origin::new();
+    // More body than the reader can hand over while nothing reads the items.
+    let mut body = vec![
+        b'F', b'L', b'V', 0x01, 0x05, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00, 0x00,
+    ];
+    body.resize(8 * 1024 * 1024, 0);
+    origin.add_file("stream.flv", body);
+    let base = origin.clone().serve().await;
+
+    let downloader = MesioDownloader::new(MesioConfig::default());
+    let request = DownloadRequest::from_url(&format!("{base}/stream.flv"))
+        .expect("valid URL")
+        .with_protocol(ProtocolSelection::Flv(Default::default()));
+    let session = downloader
+        .start_flv(request)
+        .await
+        .expect("FLV session starts");
+
+    // Let the reader fill its channel and wait on the unread items.
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    session.handle.cancel();
+    let joined = tokio::time::timeout(Duration::from_secs(5), session.handle.join())
+        .await
+        .expect("the reader ends once cancelled");
+    assert!(
+        matches!(joined, Some(Ok(DownloadTerminal::Cancelled))),
+        "{joined:?}"
+    );
+    drop(session.items);
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn flv_downloader_streams_enhanced_av1_tags() {
     use flv::video::{VideoCodec, VideoFourCC};
     use futures::StreamExt;

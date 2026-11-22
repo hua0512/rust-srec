@@ -698,10 +698,17 @@ fn normalize_encryption(
 
 /// Parse an RFC 8216 §4.2 hexadecimal-sequence IV (`0x` or `0X` followed by
 /// 1..=32 ASCII hex digits) into a big-endian 16-octet initialization vector.
+/// A full 32-digit IV is accepted without the prefix too: it is unambiguous,
+/// and rejecting it would fail every segment of such a playlist.
 fn parse_iv(iv_hex: &str) -> Option<[u8; 16]> {
-    let hex_digits = iv_hex
+    let hex_digits = match iv_hex
         .strip_prefix("0x")
-        .or_else(|| iv_hex.strip_prefix("0X"))?;
+        .or_else(|| iv_hex.strip_prefix("0X"))
+    {
+        Some(digits) => digits,
+        None if iv_hex.len() == 32 => iv_hex,
+        None => return None,
+    };
     if hex_digits.is_empty()
         || hex_digits.len() > 32
         || !hex_digits.bytes().all(|b| b.is_ascii_hexdigit())
@@ -1355,7 +1362,11 @@ mod tests {
             parse_iv("0x000000000000000000000000000000ff"),
             Some(255u128.to_be_bytes())
         );
-        assert_eq!(parse_iv("00000000000000000000000000000001"), None);
+        assert_eq!(
+            parse_iv("00000000000000000000000000000001"),
+            Some(1u128.to_be_bytes())
+        );
+        assert_eq!(parse_iv("1"), None);
         assert_eq!(parse_iv("0x0x0000000000000000000000000001"), None);
         assert_eq!(parse_iv("0x"), None);
         assert_eq!(parse_iv("0x000000000000000000000000000000001"), None);

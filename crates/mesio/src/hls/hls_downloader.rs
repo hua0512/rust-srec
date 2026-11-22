@@ -163,6 +163,8 @@ impl HlsDownloader {
             };
             match assembler.await {
                 Ok(AssemblerExit::Done) => {}
+                // The assembler ended the stream with an error the reactor
+                // only saw as the assembler stopping, or as a clean end.
                 Ok(AssemblerExit::Failed(reason)) => {
                     if !matches!(terminal, DownloadTerminal::PipelineError(_)) {
                         terminal = DownloadTerminal::PipelineError(reason);

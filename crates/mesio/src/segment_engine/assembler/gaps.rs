@@ -21,6 +21,7 @@ pub(super) struct DeadRanges {
 impl DeadRanges {
     pub(super) fn insert(&mut self, from: u64, to: u64) {
         let (mut from, mut to) = (from.min(to), from.max(to));
+        // Merge any range overlapping or adjacent to [from, to].
         loop {
             let merge = self
                 .ranges
@@ -105,6 +106,14 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
     pub(super) fn should_skip_gap(&self) -> Option<GapSkipReason> {
         let gap_state = self.gap_state.as_ref()?;
 
+        // Buffer pressure overrides thresholds: waiting at the cap recreates
+        // the deadlock the keep-draining rule exists to prevent.
+        //
+        // A stream that waits for every segment is exempt: the reactor keeps
+        // what is buffered near the limits, and the assembler keeps draining
+        // its input either way, so waiting on the missing segment loses
+        // nothing. Giving it up would silently drop a segment that is still
+        // coming.
         let waits_for_every_segment = !self.is_live_stream
             && matches!(self.gap_strategy(), GapSkipStrategy::WaitIndefinitely);
         if self.buffer_at_limit() && !waits_for_every_segment {

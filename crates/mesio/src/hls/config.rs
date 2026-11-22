@@ -89,29 +89,20 @@ pub struct HlsConfig {
 }
 
 impl HlsConfig {
-    /// Effective TTL for cached processed segments. Prefers an explicit
-    /// `cache_config.segment_ttl` override when it differs from the default,
-    /// falling back to `processor_config.processed_segment_ttl` so callers of
-    /// either builder setter take effect while both fields keep their values.
+    /// TTL for cached processed segments: `cache_config.segment_ttl` when
+    /// set, else `processor_config.processed_segment_ttl`.
     pub fn effective_segment_cache_ttl(&self) -> Duration {
-        let default_ttl = HlsCacheConfig::default().segment_ttl;
-        if self.cache_config.segment_ttl != default_ttl {
-            self.cache_config.segment_ttl
-        } else {
-            self.processor_config.processed_segment_ttl
-        }
+        self.cache_config
+            .segment_ttl
+            .unwrap_or(self.processor_config.processed_segment_ttl)
     }
 
-    /// Effective TTL for cached decryption keys. Prefers an explicit
-    /// `cache_config.decryption_key_ttl` override when it differs from the
-    /// default, falling back to `decryption_config.key_cache_ttl`.
+    /// TTL for cached decryption keys: `cache_config.decryption_key_ttl` when
+    /// set, else `decryption_config.key_cache_ttl`.
     pub fn effective_decryption_key_ttl(&self) -> Duration {
-        let default_ttl = HlsCacheConfig::default().decryption_key_ttl;
-        if self.cache_config.decryption_key_ttl != default_ttl {
-            self.cache_config.decryption_key_ttl
-        } else {
-            self.decryption_config.key_cache_ttl
-        }
+        self.cache_config
+            .decryption_key_ttl
+            .unwrap_or(self.decryption_config.key_cache_ttl)
     }
 }
 
@@ -282,16 +273,18 @@ impl Default for HlsDecryptionConfig {
 #[derive(Debug, Clone)]
 pub struct HlsCacheConfig {
     pub playlist_ttl: Duration,
-    pub segment_ttl: Duration, // TTL for processed (decrypted) segments
-    pub decryption_key_ttl: Duration,
+    /// Overrides `HlsProcessorConfig::processed_segment_ttl` when set.
+    pub segment_ttl: Option<Duration>,
+    /// Overrides `HlsDecryptionConfig::key_cache_ttl` when set.
+    pub decryption_key_ttl: Option<Duration>,
 }
 
 impl Default for HlsCacheConfig {
     fn default() -> Self {
         Self {
             playlist_ttl: Duration::from_secs(60), // Cache playlists for a minute
-            segment_ttl: Duration::from_secs(60),  // Cache segments for a minute
-            decryption_key_ttl: Duration::from_secs(60 * 60), // Cache keys for an hour
+            segment_ttl: None,
+            decryption_key_ttl: None,
         }
     }
 }

@@ -66,7 +66,7 @@ pub enum GapSkipReason {
     CountThreshold(u64),
     /// Gap skipped because duration threshold was exceeded
     DurationThreshold(Duration),
-    /// Gap skipped because both count and duration thresholds was exceeded
+    /// Gap skipped because both count and duration thresholds were exceeded
     BothThresholds { count: u64, duration: Duration },
     /// Upstream declared these MSNs will never arrive (window slide, ad
     /// filtering, or terminal segment failure) — the assembler advances
@@ -201,7 +201,14 @@ pub struct SequenceAssembler<S> {
     sink: S,
     reorder_buffer: BTreeMap<u64, BufferedPayload>,
     /// fMP4 init payloads that have arrived, kept out of `reorder_buffer`
-    /// because an init is not part of the media sequence.
+    /// because an init is not part of the media sequence. A media segment
+    /// whose `descriptor.init_key` is retained here (or is the active init)
+    /// may be emitted; one whose init is not here is gated (not just the first
+    /// init — every rotation), so a rotated init cannot lose the race against
+    /// the first media it covers. Media that arrives after its init was
+    /// evicted is gated the same way: the live buffer-pressure and
+    /// end-of-stream paths surface it as a visible gap instead of stalling or
+    /// emitting it under the wrong init.
     inits: RetainedInits,
     /// The init most recently emitted: the one consumers decode media with.
     active_init_key: Option<SegmentKey>,
@@ -214,14 +221,21 @@ pub struct SequenceAssembler<S> {
     /// segment can arrive.
     no_more_inits: bool,
     is_fmp4_stream: bool,
-    /// Init keys that terminally failed, with why.
+    /// Init keys that terminally failed, with why. Media depending on a
+    /// failed init can never be decoded, so it is skipped (a visible gap)
+    /// rather than gating the stream forever. This is bounded to keep memory
+    /// flat on long streams; eviction is fail-safe at the cursor and on
+    /// flush.
     failed_inits: FailedInits,
     /// The first terminal failure of an init (or of media for want of its
-    /// init) and of a media segment.
+    /// init) and of a media segment. A stream that ends without emitting any
+    /// media ends with one of them, the init's first, instead of a clean end.
     init_failure: Option<SharedError>,
     media_failure: Option<SharedError>,
     /// Live streams, before any media is emitted: media that failed because
-    /// its init did, by sequence number.
+    /// its init did, by sequence number. A live stream does not end, so one
+    /// that would start with such media fails with its init's error rather
+    /// than skip media indefinitely.
     undecodable: BTreeMap<u64, SharedError>,
     /// The error the stream ended with, once it did.
     failure: Option<Arc<str>>,
@@ -454,6 +468,14 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                 }
 
                 input = self.input_rx.recv() => {
+                    // Only an item that carries media, or shows there is none
+                    // to record by design (a filtered ad, a track the section
+                    // does not carry), counts as liveness. Control traffic
+                    // (playlist refreshes, download failures, ranges that
+                    // went missing) must not keep a stalled stream alive: a
+                    // live session whose segments all fail still refreshes
+                    // its playlist every few seconds, and treating that as
+                    // progress would hide the stall forever.
                     let counts_as_liveness = matches!(
                         input.as_ref(),
                         Some(AssemblerInput::Payload(_))
@@ -490,6 +512,11 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                         }) => {
                             self.rate_limit_holds.release(&key, msn, Instant::now());
                             if key.kind == SegmentKind::Init {
+                                // An init that will never arrive. Any media
+                                // depending on it (by init_key) can never be
+                                // decoded; record the failure so try_emit
+                                // skips those media as a visible gap instead
+                                // of gating the stream forever.
                                 warn!(msn, "init segment terminally failed; dependent media will be skipped");
                                 self.failed_inits.insert(key, error.clone());
                                 self.init_failure.get_or_insert(error);
@@ -527,15 +554,20 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                             }
                         }
                         Some(AssemblerInput::Fatal(err)) => {
+                            // Pipeline error: buffered payloads are dropped,
+                            // the error is the stream's terminal item.
                             warn!(error = %crate::redact::redact_diagnostic(&err), "fatal pipeline error; dropping reorder buffer");
                             self.fail(err).await;
                             return;
                         }
                         Some(AssemblerInput::End) => {
+                            // Authoritative end: ordered drain, then StreamEnded.
                             if self.flush_in_order().await.is_err() {
                                 error!("consumer channel closed during end-of-stream drain");
                                 return;
                             }
+                            // Segments failed and none reached the consumer:
+                            // that is the failure, not an empty stream.
                             if !self.has_emitted_media_segment
                                 && let Some(error) =
                                     self.init_failure.take().or(self.media_failure.take())
@@ -555,13 +587,19 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                             return;
                         }
                         None => {
+                            // Channel closed without End or Fatal: cancellation
+                            // path. Drop the buffer, emit nothing.
                             debug!("assembler input closed without End; dropping buffer");
                             return;
                         }
                     }
                 }
 
+                // Ready recovery payloads and hold updates take precedence
+                // over a timer that became due while their tasks were waking.
                 _ = sleep(overall_stall_timeout), if stall_deadline.is_some() => {
+                    // A producer can publish a pause after the watch arm was
+                    // polled but before this ready timer wins the select.
                     let now = Instant::now();
                     if self
                         .stall_deadline(&self.rate_limit_holds.clock(), now)
@@ -576,6 +614,8 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                     return;
                 }
 
+                // Periodic gap evaluation so duration-based skipping and VOD
+                // timeouts fire even when no new input arrives.
                 _ = sleep(gap_evaluation_interval), if self.gap_state.is_some() || clock.active_until().is_some() => {
                     if matches!(self.try_emit().await, EmitOutcome::Finished) {
                         return;
@@ -594,6 +634,9 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
             self.is_fmp4_stream = true;
         }
 
+        // fMP4 init segments are not part of the media sequence progression;
+        // retain them by key and emit one when media referencing it is
+        // emitted. Not counted in current_buffer_bytes: they are not media.
         if payload.is_init() {
             self.latest_init_key = Some(payload.descriptor().key.clone());
             let cursor = self.expected_next_media_sequence;
@@ -617,6 +660,8 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
             .segments_received
             .fetch_add(1, Ordering::Relaxed);
 
+        // Stale = MSN below the emit cursor (already emitted or skipped) or
+        // declared dead. Reject without buffering.
         if msn < self.expected_next_media_sequence || self.dead.run_end(msn).is_some() {
             debug!(
                 msn,
@@ -631,6 +676,11 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
 
         let buffered = BufferedPayload::new(payload);
         self.current_buffer_bytes += buffered.size_bytes;
+        // Replacing an existing entry at this MSN must release the old entry's
+        // bytes, or current_buffer_bytes drifts upward forever and pins
+        // buffer_at_limit() true. A duplicate MSN is reachable when a segment's
+        // URI changes at an already-buffered MSN (CDN failover, ad re-stitch),
+        // forming a new SegmentKey the store downloads as fresh work.
         let is_new_msn = match self.reorder_buffer.insert(msn, buffered) {
             Some(replaced) => {
                 self.current_buffer_bytes = self
@@ -641,6 +691,10 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
             None => true,
         };
 
+        // Count only a genuinely-new later MSN toward the gap's skip-after-count
+        // threshold. A duplicate-MSN replacement is not a new subsequent
+        // segment, so counting it would trip SkipAfterCount/SkipAfterBoth a
+        // segment early.
         if is_new_msn
             && self.is_live_stream
             && let Some(gap_state) = self.gap_state.as_mut()
@@ -662,15 +716,30 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
         self.try_emit().await
     }
 
+    /// Emit everything emittable from the reorder buffer, advancing the
+    /// cursor through dead ranges and applying gap policy.
+    ///
+    /// Every exit that keeps the stream going leaves the buffer's first
+    /// entry at or above the cursor: entries are only buffered at or above
+    /// it, and one the cursor passed (a dead range covering it) is removed
+    /// as stale before the loop can stop.
     async fn try_emit(&mut self) -> EmitOutcome {
         self.refresh_rate_limit_scope(Instant::now());
         loop {
+            // Dead-range fast-forward: the cursor itself can be dead even with
+            // an empty buffer (ads, window slide, terminal failure).
             if let Some(run_end) = self.dead.run_end(self.expected_next_media_sequence) {
                 let from = self.expected_next_media_sequence;
+                // A dead run ending at u64::MAX cannot be advanced past — the
+                // cursor would saturate inside the range and re-skip forever.
+                // Only a corrupt/hostile playlist reaches MSN u64::MAX; treat
+                // it as a fatal stream error rather than spin.
                 let Some(to) = run_end.checked_add(1) else {
                     self.abort_u64_max_cursor().await;
                     return EmitOutcome::Finished;
                 };
+                // A live stream that would start with media its init cannot
+                // decode (see `undecodable`).
                 if let Some(error) = self
                     .undecodable
                     .range(from..=run_end)
@@ -698,6 +767,11 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
             };
 
             if first_msn == self.expected_next_media_sequence {
+                // Init gating: fMP4 media is emittable only once the specific
+                // init it depends on (descriptor.init_key) has arrived. This
+                // gates every rotation, not just the first init, so a slow or
+                // re-fetched init cannot lose the race against the first media
+                // it covers.
                 match self.init_state(first_msn) {
                     InitState::Ready => {}
                     InitState::Gated => {
@@ -742,6 +816,8 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                         if let Some(err) = &error {
                             self.init_failure.get_or_insert_with(|| err.clone());
                         }
+                        // A live stream that would start with media its init
+                        // cannot decode (see `undecodable`).
                         if self.is_live_stream
                             && !self.has_emitted_media_segment
                             && let Some(error) = error.map(|e| e.to_error())
@@ -749,6 +825,9 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                             self.fail_with_segments(error).await;
                             return EmitOutcome::Finished;
                         }
+                        // The governing init will never arrive: this media is
+                        // undecodable. Skip it as a visible one-MSN gap rather
+                        // than gating the stream forever.
                         warn!(
                             msn = first_msn,
                             "skipping media whose init segment terminally failed"
@@ -778,12 +857,14 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                 }
                 self.advance_to(first_msn.saturating_add(1));
             } else if first_msn < self.expected_next_media_sequence {
+                // Stale entry left behind by a skip.
                 if self.remove_buffered_payload(first_msn).is_some() {
                     self.metrics
                         .segments_rejected_stale
                         .fetch_add(1, Ordering::Relaxed);
                 }
             } else {
+                // Gap: first_msn > expected.
                 let is_new_gap = self
                     .gap_state
                     .as_ref()
@@ -801,6 +882,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                     self.gap_state = Some(gap);
                 }
 
+                // VOD per-segment timeout.
                 if !self.is_live_stream
                     && let Some(vod_timeout) = self.config.output.vod_segment_timeout
                     && let Some(gap_state) = self.gap_state.as_ref()
@@ -808,6 +890,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                     let now = Instant::now();
                     let elapsed = self.gap_elapsed(gap_state, now);
                     if elapsed >= vod_timeout {
+                        // Like the live skip, stop before held media.
                         let to = self
                             .rate_limit_holds
                             .first_media_hold(self.expected_next_media_sequence, first_msn, now)
@@ -838,6 +921,9 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                 }
 
                 if let Some(reason) = self.should_skip_gap() {
+                    // A skip can span several missing MSNs. Stop before the
+                    // first protected one, even when an earlier unprotected
+                    // gap has already exceeded its ordinary policy.
                     let to = if matches!(reason, GapSkipReason::BufferPressure) {
                         first_msn
                     } else {
@@ -869,6 +955,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
                     continue;
                 }
 
+                // Wait for the missing segment (or a policy trigger).
                 break;
             }
         }
@@ -976,14 +1063,19 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
             return Ok(());
         };
         if self.active_init_key.as_ref() == Some(&key) {
+            // Using the active init still counts as an access: otherwise
+            // unused prefetched maps can evict it before a switch back.
             self.inits.touch(&key);
             return Ok(());
         }
+        // init_state() only reports Ready when this payload is retained.
         let Some((init_payload, first_emission)) = self.inits.take_for_emission(&key) else {
             return Ok(());
         };
         self.active_init_key = Some(key);
 
+        // The init's own discontinuity flag was captured when it was first
+        // planned; it only applies to its first appearance.
         if first_emission
             && init_payload.discontinuity()
             && !discontinuity_already_emitted
@@ -1053,6 +1145,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
         Ok(())
     }
 
+    /// Ends the stream with `error` as its terminal item.
     async fn fail(&mut self, error: DownloadError) {
         let reason = Arc::from(error.to_string());
         match self.sink.send(Err(error)).await {
@@ -1062,6 +1155,7 @@ impl<S: AssemblerSink> SequenceAssembler<S> {
         self.finish_summaries();
     }
 
+    /// Ends the stream with `error`, a failure of its segments.
     async fn fail_with_segments(&mut self, error: DownloadError) {
         warn!(error = %crate::redact::redact_diagnostic(&error), "segment stream failed");
         self.fail(error).await;

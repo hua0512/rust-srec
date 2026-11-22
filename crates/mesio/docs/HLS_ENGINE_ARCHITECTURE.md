@@ -307,10 +307,11 @@ Responsibilities:
   window's worth of segments and by `max_state_entries`; past that, downloads
   are persistently slower than the stream, so the oldest backlog is dropped and
   each dropped MSN is sent to the assembler as `Skipped` (it waits on every
-  planned MSN). In-flight work and unfinished inits are never dropped. The init-retention cap (`max_retained_inits`) is itself subject to
-  the invariant: it may evict only init records *below* the window start, never an
+  planned MSN). In-flight work and unfinished inits are never dropped. The init-retention cap (`max_retained_inits`) counts every
+  finished init record and is itself subject to the invariant: it evicts, oldest
+  first, only records whose map was last listed *below* the window start, never an
   in-window init (which the next refresh would otherwise re-discover and
-  re-download). `max_state_entries` is a backstop applied *within* that rule, not a
+  re-download). The store records the latest MSN each map was listed at for this. `max_state_entries` is a backstop applied *within* that rule, not a
   substitute for it: when nothing can be evicted safely, state temporarily
   exceeds the cap rather than violating the invariant.
 
@@ -379,6 +380,9 @@ pub enum AssemblerInput {
     /// Forwarded to the sink immediately on drain, never reordered; counts
     /// toward max_pending_items, never toward payload bytes.
     Notice(EngineNotice),
+    /// The stream is ending and no init is unfinished: media still waiting for
+    /// its init fails instead of waiting for a map that will not arrive.
+    NoMoreInits,
     /// Terminal pipeline error: the buffer is dropped and the error becomes the
     /// stream's terminal `Err`.
     Fatal(DownloadError),
@@ -438,16 +442,26 @@ Responsibilities:
   init is
   emitted is decided by the same key, never by MSN: before each media segment
   the assembler emits that segment's init if it differs from the last one
-  emitted. Arrived inits are retained by key, because the store never
-  re-downloads a completed init, so a stream that switches back to an earlier
-  map (for example after an inserted ad) re-emits it, and an init no emitted
-  media references (a skipped ad's map) is never emitted. The retained inits
-  (`max_pending_init_segments`) and the failed init-key set are bounded; if
-  very high init rotation evicts an old key
-  while dependent media is still buffered, the media is treated as unresolved:
-  live streams wait until the reorder buffer reaches its configured limit and
-  then force a visible `GapSkipped`, while ENDLIST/VOD flush emits a visible
-  `GapSkipped` instead of silently dropping the media.
+  emitted. Arrived inits are retained by key, so a stream that switches back to
+  an earlier map (for example after an inserted ad) re-emits it, and an init no
+  emitted media references (a skipped ad's map) is never emitted. The retained
+  inits (`max_pending_init_segments`) and the failed init-key set are bounded.
+  Eviction is least-recently-used and spares the active init, an init that
+  buffered media references, one at or beyond the cursor, and one not yet
+  emitted ahead of the last emitted media. The store does not download a
+  completed init again; it keeps the payload and sends it to the assembler
+  again when the media it admits switches to a map other than the last one
+  admitted, so an evicted map is back before the media that needs it. That
+  copy carries the media's MSN and no discontinuity; an init the assembler has
+  not emitted yet keeps the discontinuity it arrived with. Media whose init is
+  still unknown is treated as unresolved: live streams wait until the reorder
+  buffer reaches its configured limit and then force a visible `GapSkipped`,
+  while ENDLIST/VOD flush emits a visible `GapSkipped` instead of silently
+  dropping the media. Once the stream is ending and the store has no
+  unfinished init, the reactor sends `NoMoreInits`, and media still waiting
+  for a map fails as if its init had. fMP4 media that completes with no map at
+  all is failed by the store; a live stream skips such leading segments as
+  gaps unless a declared init has failed.
 - Reorder media by MSN.
 - Advance past `Skipped`/`TerminalFailed` MSNs instead of waiting on them.
 - Apply gap policies.
@@ -636,11 +650,13 @@ This is the same identity-stable / fetch-volatile split applied over time rather
 than across the prefetch→media transition.
 
 For `SegmentKind::Init`, `msn` is the MSN of the first segment the map governs
-in the playlist window it was most recently planned from. It is diagnostic and pruning metadata only: it never participates
-in identity, and the sequence assembler matches inits to media by
-`SegmentDescriptor::init_key`, not by MSN, because a re-planned init (for
-example a retry after the window slid) can carry a later MSN than the earliest
-media it governs.
+at that point of the playlist window; the planner emits one descriptor at every
+map change. The store's record keeps the MSN it was first planned with, which
+orders and bounds init admission, and tracks the latest MSN the map was listed
+at for pruning. The MSN never participates in identity, and the sequence
+assembler matches inits to media by `SegmentDescriptor::init_key`, not by MSN:
+an init the store sends again carries the MSN of the media it precedes, which
+can be later than the earliest media it governs.
 
 ### EncryptionDescriptor
 
@@ -1094,7 +1110,9 @@ scheduling, and byte admission share one decision point with no lock, no
 work-handoff protocol, and no check-then-reserve race. It stops early when there
 is no ready work *or* the budget cannot fit the next estimate. `window` (a
 `MediaWindow` from the assembler's emit cursor) limits media admission for VOD and
-throttled live output (see Reordering window); inits are always admitted.
+throttled live output (see Reordering window). While the window bounds segments,
+an init is admitted only within `max(2 × segments, 16)` MSNs of the cursor, so a
+stream with many maps does not fetch them all ahead of the media that uses them.
 
 The reactor body must stay cheap: `ingest`, `apply_outcome`,
 `next_ready_jobs_within`, and the permit-send are in-memory operations. All network
@@ -1386,7 +1404,8 @@ The segment at the cursor is exempt from the byte bound — it is the one that
 frees the buffer, so holding it back could only deadlock the stream — and so is
 any segment while nothing is held, so a bound below one segment's size still
 downloads. Inits are admitted
-regardless, and the window re-opens as the cursor advances. A straggler
+within their own lookahead (see `next_ready_jobs_within`), and the window re-opens
+as the cursor advances. A straggler
 therefore stalls new downloads once the window is full; that is the cost of not
 giving it up. Unthrottled live streams keep their ordinary admission and gap
 policies, but retain the byte ledger so a later hold accounts for media already

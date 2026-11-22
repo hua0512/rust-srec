@@ -930,6 +930,9 @@ fn estimate_over_capacity_clamps_instead_of_terminalizing() {
         vec![descriptor("https://e.com/1.ts", 1, SegmentKind::Media)],
         Instant::now(),
     );
+    // The estimate is a guess, not knowledge: the segment admits with a
+    // capacity-clamped reservation and the body checks decide from real
+    // sizes.
     let (jobs, inputs) = s.next_ready_jobs(1, Instant::now(), &b);
     assert!(inputs.is_empty());
     assert_eq!(jobs.len(), 1);
@@ -959,6 +962,7 @@ fn known_byterange_over_capacity_terminalizes_as_oversize() {
 fn admission_terminalizations_are_capped_per_pass() {
     let mut s = store();
     let b = ByteBudget::new(1024, 0);
+    // 8 segments, every one provably oversize.
     let descriptors: Vec<_> = (0..8u64)
         .map(|i| {
             let mut d = descriptor(&format!("https://e.com/{i}.ts"), i, SegmentKind::Media);
@@ -971,6 +975,8 @@ fn admission_terminalizations_are_capped_per_pass() {
         .collect();
     s.ingest(descriptors, Instant::now());
 
+    // One pass with 2 slots may terminalize at most 2; the rest stay
+    // schedulable for later passes (producer suspension, not flooding).
     let (jobs, inputs) = s.next_ready_jobs(2, Instant::now(), &b);
     assert!(jobs.is_empty());
     assert_eq!(inputs.len(), 2);
@@ -1002,6 +1008,9 @@ fn due_retry_promotion_clears_deadline_even_without_admission() {
     );
     assert!(s.next_retry_deadline().is_some());
 
+    // After the deadline elapses, promotion alone (no admission — e.g.
+    // the reactor's dispatch gate is closed) must drain the heap so the
+    // reactor's retry-wake arm goes inert instead of firing forever.
     let later = now + Duration::from_secs(60);
     s.promote_due_retries(later);
     assert!(s.next_retry_deadline().is_none());
@@ -1037,6 +1046,8 @@ fn prune_keeps_window_inflight_and_inits() {
         ],
         Instant::now(),
     );
+    // Put msn=1 media into Completed, msn=2 in flight (init is admitted
+    // first by priority, complete it too).
     loop {
         let Some(job) = take_one(&mut s, &b) else {
             break;
@@ -1053,10 +1064,13 @@ fn prune_keeps_window_inflight_and_inits() {
                 Instant::now(),
             );
         }
+        // msn 2 and 10 left in flight
     }
 
     s.prune_below(10, 10);
 
+    // msn=1 Completed media evicted (below window); init kept; in-flight
+    // msn=2 kept; msn=10 kept.
     assert!(
         !s.records
             .keys()
@@ -1076,6 +1090,66 @@ fn prune_keeps_window_inflight_and_inits() {
         s.records
             .keys()
             .any(|k| k.uri.as_ref() == "https://e.com/cur.ts")
+    );
+}
+
+#[test]
+fn a_completed_init_is_sent_again_when_admitted_media_switches_to_it() {
+    let mut s = store();
+    let b = budget_unlimited();
+    let init_a = descriptor("https://e.com/a.mp4", 0, SegmentKind::Init);
+    let init_b = descriptor("https://e.com/b.mp4", 1, SegmentKind::Init);
+    let media = |msn: u64, init: &SegmentDescriptor| {
+        let mut media = descriptor(&format!("https://e.com/{msn}.m4s"), msn, SegmentKind::Media);
+        media.init_key = Some(init.key.clone());
+        media
+    };
+    s.ingest(
+        vec![
+            init_a.clone(),
+            media(0, &init_a),
+            init_b.clone(),
+            media(1, &init_b),
+            media(2, &init_a),
+            media(3, &init_a),
+        ],
+        Instant::now(),
+    );
+    // Both inits complete before any media is admitted.
+    let (inits, _) = s.next_ready_jobs(2, Instant::now(), &b);
+    for job in &inits {
+        s.apply_outcome(
+            SegmentOutcome::Completed {
+                key: job.descriptor.key.clone(),
+                msn: job.descriptor.msn,
+                payload: SegmentPayload::Mp4Init {
+                    data: Bytes::from_static(b"init"),
+                    descriptor: Arc::clone(&job.descriptor),
+                },
+            },
+            Instant::now(),
+        );
+    }
+
+    let (jobs, inputs) = s.next_ready_jobs(8, Instant::now(), &b);
+    assert_eq!(jobs.len(), 4);
+    let sent_again: Vec<(&str, u64)> = inputs
+        .iter()
+        .map(|input| match input {
+            AssemblerInput::Payload(payload) => {
+                (payload.descriptor().key.uri.as_ref(), payload.msn())
+            }
+            other => panic!("unexpected input {other:?}"),
+        })
+        .collect();
+    // Media 3 stays on init A, so nothing is sent ahead of it.
+    assert_eq!(
+        sent_again,
+        [
+            ("https://e.com/a.mp4", 0),
+            ("https://e.com/b.mp4", 1),
+            ("https://e.com/a.mp4", 2),
+        ]
     );
 }
 
@@ -1102,6 +1176,7 @@ fn completed_init_still_in_the_window_survives_the_retention_trim() {
         },
         Instant::now(),
     );
+    // A later window still uses the same map.
     s.ingest(
         vec![descriptor("https://e.com/init.mp4", 20, SegmentKind::Init)],
         Instant::now(),
@@ -1148,6 +1223,7 @@ fn budget_contention_does_not_spend_the_retry_budget() {
         let effects = fail(&mut s, FailureClass::OverBudget);
         assert!(effects.assembler_inputs.is_empty(), "still retrying");
     }
+    // The one real retry is still available, then the segment ends.
     assert!(
         fail(&mut s, FailureClass::Timeout)
             .assembler_inputs
@@ -1200,6 +1276,9 @@ fn rate_limiting_waits_out_the_cool_down_without_spending_the_retry_budget() {
         held_back: false,
     };
 
+    // Three cool-downs of 20 s fit the 60 s bound; the budget of one
+    // ordinary retry is untouched, and the 30 s retry deadline does not
+    // count the time spent waiting them out.
     for _ in 0..3 {
         let effects = fail(&mut s, limited, now);
         assert!(effects.assembler_inputs.is_empty(), "still waiting");
@@ -1220,6 +1299,7 @@ fn rate_limiting_waits_out_the_cool_down_without_spending_the_retry_budget() {
         "the ordinary retry is still available"
     );
     now += Duration::from_secs(1);
+    // A fourth cool-down would exceed the bound: the segment ends.
     let effects = fail(&mut s, limited, now);
     assert!(matches!(
         effects.assembler_inputs.as_slice(),
@@ -1228,6 +1308,8 @@ fn rate_limiting_waits_out_the_cool_down_without_spending_the_retry_budget() {
     ));
 }
 
+/// The retry deadline ends a segment whose attempts are slow to fail
+/// while most of its retry count is unspent.
 #[test]
 fn a_failure_past_the_retry_deadline_is_terminal_with_retries_left() {
     let mut s = SegmentStateStore::new(
@@ -1332,6 +1414,8 @@ fn rate_limit_holds_keep_the_first_deadline_until_output_consumes_the_payload() 
         now,
     );
     s.prune_below(2, 1);
+    // Completion may still sit behind payload backpressure. Only output
+    // consumption, not removal of the finished record, releases its hold.
     assert_eq!(holds.first_media_hold(1, 2, now), Some((1, until)));
     holds.release(&key, 1, now);
     assert_eq!(holds.first_media_hold(1, 2, now), None);
@@ -1402,6 +1486,7 @@ fn immediate_rate_limit_retries_still_end_at_the_bound() {
         vec![descriptor("https://e.com/1.m4s", 1, SegmentKind::Media)],
         Instant::now(),
     );
+    // A server that keeps asking for an immediate retry.
     let refused = FailureClass::RateLimited {
         status: 429,
         delay: Duration::ZERO,
@@ -1446,6 +1531,7 @@ fn a_rate_limit_retry_never_lands_past_the_bound() {
     };
     let start = Instant::now();
     fail_at(&mut s, &b, refused(1), start);
+    // A minute-long cool-down one second before the bound.
     let now = start + Duration::from_secs(299);
     let effects = fail_at(&mut s, &b, refused(60), now);
     assert_eq!(
@@ -1486,15 +1572,21 @@ fn a_url_denied_after_rate_limiting_waits_once_for_a_refresh() {
     );
     now += Duration::from_secs(45);
 
+    // The token expired while the segment waited, and the playlist with
+    // the fresh one has not been published yet.
     let effects = fail_at(&mut s, &b, FailureClass::Http(403), now);
     assert!(effects.assembler_inputs.is_empty(), "not terminal yet");
     assert_eq!(effects.retry_notice.expect("waits").delay, REFRESH_WAIT);
     assert!(s.next_ready_jobs(1, now, &b).0.is_empty());
 
+    // Re-discovery publishes the fresh URL: the segment is retried at
+    // once rather than after the wait.
     s.ingest(vec![signed("b")], now);
     let (jobs, _) = s.next_ready_jobs(1, now, &b);
     assert_eq!(jobs.len(), 1, "retried as soon as the URL is fresh");
     assert!(jobs[0].descriptor.parsed_url.as_str().ends_with("t=b"));
+    // Denied again with the fresh URL and nothing newer: that denial is
+    // real, and the one wait was used.
     let effects = s.apply_outcome(
         SegmentOutcome::Failed {
             key: jobs[0].descriptor.key.clone(),
@@ -1570,6 +1662,7 @@ fn a_refresh_wait_keeps_the_rate_limit_hold_within_its_bound() {
         Some((1, until)),
         "output keeps waiting for the fresh URL"
     );
+    // A denial after the wait is real and ends the hold with the segment.
     fail_at(&mut s, &b, FailureClass::Http(403), now + REFRESH_WAIT);
     assert_eq!(holds.first_media_hold(1, 2, now + REFRESH_WAIT), None);
 }
@@ -1606,6 +1699,7 @@ fn backlog_is_capped_by_max_state_entries_and_dropped_msns_are_skipped() {
         Instant::now(),
     );
 
+    // Downloads fell 500 segments behind a window that starts at 1000.
     let dropped = s.prune_below(1000, 100);
 
     assert_eq!(s.records.len(), 32);
@@ -1631,6 +1725,7 @@ fn backlog_is_capped_to_one_window() {
 
     assert_eq!(media_msns(&s), [15, 16, 17, 18, 19]);
     assert_eq!(skipped_ranges(&dropped), [(0, 14)]);
+    // Within the bound nothing more is dropped.
     assert!(s.prune_below(20, 5).is_empty());
 }
 
@@ -1638,6 +1733,7 @@ fn backlog_is_capped_to_one_window() {
 fn backlog_drop_keeps_in_flight_work_and_msns_it_still_covers() {
     let mut s = store();
     let b = budget_unlimited();
+    // msn 1 is in flight under one URI and re-keyed to another URI.
     s.ingest(
         vec![descriptor("https://e.com/1a.ts", 1, SegmentKind::Media)],
         Instant::now(),
@@ -1655,6 +1751,7 @@ fn backlog_drop_keeps_in_flight_work_and_msns_it_still_covers() {
 
     assert!(s.records.contains_key(&in_flight.descriptor.key));
     assert_eq!(s.records.len(), 1);
+    // msn 1 is still pending in flight, so only msn 2 is declared dead.
     assert_eq!(skipped_ranges(&dropped), [(2, 2)]);
 }
 
@@ -1666,6 +1763,7 @@ fn queued_segment_below_the_window_survives_prune_and_still_schedules() {
         vec![descriptor("https://e.com/old.ts", 1, SegmentKind::Media)],
         Instant::now(),
     );
+    // The window slides past it before it was admitted.
     s.prune_below(100, 10);
 
     let (jobs, inputs) = s.next_ready_jobs(8, Instant::now(), &b);
@@ -1711,6 +1809,8 @@ fn retrying_segment_below_the_window_keeps_its_retry_and_reports_the_outcome() {
     );
     assert!(s.has_unfinished_work());
 
+    // The retry fails too: the terminal failure reaches the assembler
+    // instead of the MSN vanishing.
     let retried = take_one(&mut s, &b).expect("retry is admitted");
     let effects = fail(&mut s, &retried.descriptor.key);
     assert!(matches!(
