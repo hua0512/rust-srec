@@ -28,7 +28,7 @@ you leave out keeps its default, so `{"top_talkers": 200}` is a complete overrid
 |-------|-------------|---------|
 | `enabled` | Compute the summary at all. Turning it off still records the chat files; it only stops the summary, which stores viewer names, from being computed and saved. | `true` |
 | `top_talkers` | Chatters and gift senders listed per session (1–500) | `100` |
-| `top_words` | Frequent words listed per session (1–500) | `50` |
+| `top_words` | Frequent words listed per session (0–500). Set to `0` to disable word frequency tracking and CJK segmentation while keeping the rest of the summary. | `50` |
 | `top_gifts` | Gift names listed per session (1–500) | `20` |
 | `rate_bucket_secs` | Activity-timeline granularity in seconds (1–3600). Very long streams are automatically coarsened, so the session page reads the width back rather than assuming it. | `10` |
 | `talker_capacity` | Distinct chatters tracked (64–8192). While a stream has fewer than this, counts are exact; above it they become close estimates and the session page marks them with `≈`. | `2048` |

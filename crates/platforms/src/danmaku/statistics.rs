@@ -786,7 +786,14 @@ impl StatisticsAggregator {
         let mut gift_tally = state.gift_tally;
         talker_hh.shrink_to_capacity(config.talker_capacity);
         gifter_hh.shrink_to_capacity(config.talker_capacity);
-        word_hh.shrink_to_capacity(config.word_capacity);
+        if config.top_words == 0 {
+            // Start from an empty tally, not just empty counters: a kept
+            // admission floor would inflate the first counts if word counting
+            // is turned back on later in the session.
+            word_hh = WordHeavyHitters::new(config.word_capacity);
+        } else {
+            word_hh.shrink_to_capacity(config.word_capacity);
+        }
         gift_tally.shrink_to_capacity(config.gift_capacity);
 
         let bucket_duration_secs = state.bucket_duration_secs.max(1);
@@ -872,8 +879,8 @@ impl StatisticsAggregator {
             {
                 self.gift_tally.add(name, items);
             }
-        } else if !message.content.is_empty() {
-            // Update word counts (only for chat messages)
+        } else if self.config.top_words > 0 && !message.content.is_empty() {
+            // Update word counts (only for chat messages when word frequency is enabled)
             self.process_words(&message.content);
         }
 
@@ -890,6 +897,9 @@ impl StatisticsAggregator {
     /// survives the split as one token. Runs containing CJK are therefore passed
     /// through `JIEBA`, while Latin-script runs keep the allocation-free path.
     fn process_words(&mut self, content: &str) {
+        if self.config.top_words == 0 {
+            return;
+        }
         for run in content
             .split(|c: char| !c.is_alphanumeric())
             // `record_word` discards single-character words, so dropping such
@@ -1216,6 +1226,21 @@ mod tests {
             "full-width punctuation must not appear inside tokens: {:?}",
             stats.word_frequency
         );
+    }
+
+    #[test]
+    fn test_zero_top_words_skips_word_segmentation_and_jieba() {
+        let mut agg = StatisticsAggregator::with_config(10, 0, 10);
+        let now = Timestamp::now();
+
+        agg.record_message(&chat_at("u1", "User", "主播今天好厉害啊 hello world", now));
+
+        assert!(
+            agg.word_hh.counters.is_empty(),
+            "word counters must not be populated when top_words is 0"
+        );
+        assert!(agg.current_stats().word_frequency.is_empty());
+        assert_eq!(agg.current_stats().total_count, 1);
     }
 
     /// When the number of rate buckets exceeds `max_rate_points`, resolution is

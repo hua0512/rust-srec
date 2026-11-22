@@ -38,9 +38,14 @@ function renderCard(stored: DanmuStatistics | null) {
     .getByText('Top chatters to keep')
     .closest('[data-slot="form-item"]')!
     .querySelector('input')!;
+  const topWords = screen
+    .getByText('Frequent words to keep')
+    .closest('[data-slot="form-item"]')!
+    .querySelector('input')!;
   return {
     form: () => form,
     topChatters,
+    topWords,
     isDirty: () => screen.getByTestId('dirty').textContent === 'true',
   };
 }
@@ -73,6 +78,17 @@ describe('danmu statistics form value', () => {
 
     expect((await submitted(form()))!.danmu_statistics).toEqual({
       top_talkers: 50,
+    });
+  });
+
+  it('keeps top_words = 0 instead of collapsing to inherited null', async () => {
+    const { form, topWords } = renderCard(null);
+
+    fireEvent.change(topWords, { target: { value: '0' } });
+
+    expect(topWords.value).toBe('0');
+    expect((await submitted(form()))!.danmu_statistics).toEqual({
+      top_words: 0,
     });
   });
 

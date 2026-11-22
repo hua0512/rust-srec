@@ -296,7 +296,7 @@ msgstr "{count} 项已覆盖"
 msgid "{displayName} Configuration"
 msgstr "{displayName} 配置"
 
-#: src/components/config/engines/engine-editor.tsx:77
+#: src/components/config/engines/engine-editor.tsx:93
 msgid "{engine} Settings"
 msgstr "{engine} 设置"
 
@@ -568,7 +568,7 @@ msgstr "正在移除的模板会在使用它的录制结束后释放该代理。
 msgid "A template can't turn this off; do that on the engine."
 msgstr "模板无法关闭此项，请在引擎中关闭。"
 
-#: src/components/config/engines/engine-editor.tsx:200
+#: src/components/config/engines/engine-editor.tsx:221
 msgid "A unique and descriptive name for this configuration."
 msgstr "为此配置提供一个唯一且易于识别的名称。"
 
@@ -701,7 +701,7 @@ msgstr "正在录制"
 msgid "Active Recordings"
 msgstr "正在录制"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:226
+#: src/components/config/shared/danmu-statistics-card.tsx:231
 msgid "Activity resolution (seconds)"
 msgstr "活跃度精度（秒）"
 
@@ -1390,14 +1390,14 @@ msgstr "平均时长"
 msgid "Awaiting first check"
 msgstr "等待首次检查"
 
-#: src/components/config/platforms/platform-editor.tsx:171
-#: src/components/config/templates/template-editor.tsx:187
-#: src/components/config/templates/template-editor.tsx:190
+#: src/components/config/platforms/platform-editor.tsx:185
+#: src/components/config/templates/template-editor.tsx:201
+#: src/components/config/templates/template-editor.tsx:204
 msgid "Back"
 msgstr "返回"
 
-#: src/components/config/engines/engine-editor.tsx:317
-#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:51
+#: src/components/config/engines/engine-editor.tsx:328
+#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:50
 msgid "Back to engines"
 msgstr "返回引擎列表"
 
@@ -1416,7 +1416,7 @@ msgstr "返回链接"
 msgid "Back to Pipeline Jobs"
 msgstr "返回处理任务列表"
 
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:88
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:90
 msgid "Back to platforms"
 msgstr "返回平台列表"
 
@@ -1434,7 +1434,7 @@ msgstr "返回录制会话"
 msgid "Back to streamers"
 msgstr "返回主播列表"
 
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:80
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:75
 msgid "Back to templates"
 msgstr "返回模板列表"
 
@@ -1544,7 +1544,7 @@ msgstr "Basic Auth"
 msgid "Basic details for this configuration template."
 msgstr "此配置模板的基本信息。"
 
-#: src/components/config/engines/engine-editor.tsx:175
+#: src/components/config/engines/engine-editor.tsx:196
 msgid "Basic Information"
 msgstr "基本信息"
 
@@ -1951,7 +1951,7 @@ msgstr "个渠道"
 msgid "Channels"
 msgstr "声道"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:195
+#: src/components/config/shared/danmu-statistics-card.tsx:196
 msgid "Chat files are still recorded when this is off; only the per-session summary, which stores viewer names, is skipped."
 msgstr "关闭后仍会录制弹幕文件，只是不再计算和保存包含观众昵称的场次统计摘要。"
 
@@ -1960,7 +1960,7 @@ msgstr "关闭后仍会录制弹幕文件，只是不再计算和保存包含观
 msgid "Chat ID"
 msgstr "聊天 ID"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:235
+#: src/components/config/shared/danmu-statistics-card.tsx:240
 msgid "Chatters tracked"
 msgstr "跟踪发言人数"
 
@@ -2197,7 +2197,7 @@ msgstr "收起侧边栏"
 msgid "Collapsible"
 msgstr "折叠方式"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:192
+#: src/components/config/shared/danmu-statistics-card.tsx:193
 msgid "Collect statistics"
 msgstr "收集统计"
 
@@ -2354,11 +2354,11 @@ msgstr "配置一个用于录制的下载工具。"
 msgid "Configure and launch a manual processing pipeline."
 msgstr "配置并启动手动处理管道。"
 
-#: src/components/config/engines/engine-editor.tsx:327
+#: src/components/config/engines/engine-editor.tsx:338
 msgid "Configure download engine parameters"
 msgstr "配置录制引擎参数"
 
-#: src/components/config/engines/engine-editor.tsx:99
+#: src/components/config/engines/engine-editor.tsx:115
 msgid "Configure granular options for the selected engine."
 msgstr "配置所选引擎的详细选项。"
 
@@ -2649,7 +2649,7 @@ msgstr "无法显示该文件：{message}"
 msgid "Count"
 msgstr "次数"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:236
+#: src/components/config/shared/danmu-statistics-card.tsx:241
 msgid "Counts stay exact while a stream has fewer distinct chatters than this. 64–8192."
 msgstr "当一场直播的不同发言人数少于此值时，计数保持精确。范围 64–8192。"
 
@@ -2674,7 +2674,7 @@ msgstr "CPU 使用率"
 msgid "CQ (Constant Quality)"
 msgstr "CQ (恒定质量)"
 
-#: src/components/config/templates/template-editor.tsx:209
+#: src/components/config/templates/template-editor.tsx:223
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:508
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:130
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:402
@@ -2713,11 +2713,11 @@ msgstr "创建渠道"
 msgid "Create Directories"
 msgstr "创建目录"
 
-#: src/components/config/engines/engine-editor.tsx:271
+#: src/components/config/engines/engine-editor.tsx:292
 msgid "Create engine"
 msgstr "创建引擎"
 
-#: src/components/config/engines/engine-editor.tsx:323
+#: src/components/config/engines/engine-editor.tsx:334
 msgid "Create Engine"
 msgstr "创建引擎"
 
@@ -2754,7 +2754,7 @@ msgstr "创建预设"
 msgid "Create streamer"
 msgstr "创建主播"
 
-#: src/components/config/templates/template-editor.tsx:161
+#: src/components/config/templates/template-editor.tsx:175
 #: src/routes/_authed/_dashboard/config/templates/index.lazy.tsx:199
 msgid "Create Template"
 msgstr "创建模板"
@@ -2787,7 +2787,7 @@ msgstr "创建中..."
 msgid "Creating…"
 msgstr "创建中…"
 
-#: src/components/config/engines/engine-editor.tsx:344
+#: src/components/config/engines/engine-editor.tsx:355
 msgid "Creation Mode"
 msgstr "创建模式"
 
@@ -2819,7 +2819,7 @@ msgstr "凭据保存失败，无法自动重新登录"
 msgid "Credentials remembered for automatic re-login"
 msgstr "已保存凭据，可自动重新登录"
 
-#: src/components/credentials/credential-login-dialog.tsx:176
+#: src/components/credentials/credential-login-dialog.tsx:183
 msgid "Credentials saved successfully"
 msgstr "凭据保存成功"
 
@@ -2996,7 +2996,7 @@ msgstr "弹幕服务"
 msgid "Danmu settings"
 msgstr "弹幕设置"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:174
+#: src/components/config/shared/danmu-statistics-card.tsx:175
 #: src/components/sessions/danmu-stats-panel.tsx:181
 #: src/components/sessions/overview-tab.tsx:283
 msgid "Danmu Statistics"
@@ -3789,7 +3789,7 @@ msgstr "例如 gdrive:/videos"
 msgid "e.g. hflip,noise=alls=20:allf=t+u"
 msgstr "例如 hflip,noise=alls=20:allf=t+u"
 
-#: src/components/config/engines/engine-editor.tsx:195
+#: src/components/config/engines/engine-editor.tsx:216
 msgid "e.g. High Quality Streamlink"
 msgstr "例如 高质量 Streamlink"
 
@@ -3850,7 +3850,7 @@ msgstr "编辑账号"
 msgid "Edit channel"
 msgstr "编辑渠道"
 
-#: src/components/config/engines/engine-editor.tsx:323
+#: src/components/config/engines/engine-editor.tsx:334
 msgid "Edit Engine"
 msgstr "编辑引擎"
 
@@ -3873,7 +3873,7 @@ msgstr "编辑代理"
 msgid "Edit Workflow: {0}"
 msgstr "编辑工作流：{0}"
 
-#: src/components/config/engines/engine-editor.tsx:342
+#: src/components/config/engines/engine-editor.tsx:353
 msgid "Editing Mode"
 msgstr "编辑模式"
 
@@ -3988,11 +3988,11 @@ msgstr "引擎创建成功"
 msgid "Engine deleted"
 msgstr "引擎已删除"
 
-#: src/components/config/engines/engine-editor.tsx:190
+#: src/components/config/engines/engine-editor.tsx:211
 msgid "Engine Name"
 msgstr "引擎名称"
 
-#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:48
+#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:47
 msgid "Engine not found"
 msgstr "未找到引擎"
 
@@ -4000,11 +4000,11 @@ msgstr "未找到引擎"
 msgid "Engine Overrides"
 msgstr "引擎覆盖项"
 
-#: src/components/config/engines/engine-editor.tsx:215
+#: src/components/config/engines/engine-editor.tsx:236
 msgid "Engine Type"
 msgstr "引擎类型"
 
-#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:62
+#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:61
 msgid "Engine updated successfully"
 msgstr "引擎更新成功"
 
@@ -4016,7 +4016,7 @@ msgstr "未在平台/主播中指定时使用的录制引擎。"
 #: src/components/config/global/backup-restore-card.tsx:398
 #: src/components/config/global/backup-restore-card.tsx:403
 #: src/components/config/global/backup-restore-card.tsx:408
-#: src/components/config/templates/template-editor.tsx:250
+#: src/components/config/templates/template-editor.tsx:264
 #: src/components/layout/site-header.tsx:66
 #: src/routes/_authed/_dashboard/config/route.lazy.tsx:62
 msgid "Engines"
@@ -4099,7 +4099,7 @@ msgstr "错误"
 msgid "Error Details"
 msgstr "错误详情"
 
-#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:46
+#: src/routes/_authed/_dashboard/config/engines/$engineId.lazy.tsx:45
 msgid "Error loading engine"
 msgstr "加载引擎失败"
 
@@ -4111,7 +4111,7 @@ msgstr "加载处理任务失败"
 msgid "Error Loading Pipeline"
 msgstr "加载处理管道失败"
 
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:83
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:85
 msgid "Error loading platform"
 msgstr "加载平台失败"
 
@@ -4123,7 +4123,7 @@ msgstr "加载预设失败"
 msgid "Error Loading Session"
 msgstr "加载录制会话失败"
 
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:75
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:70
 msgid "Error loading template"
 msgstr "加载模板失败"
 
@@ -4649,7 +4649,7 @@ msgid "Failed to update logging configuration"
 msgstr "更新日志配置失败"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:62
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:64
 msgid "Failed to update platform: {0}"
 msgstr "更新平台失败：{0}"
 
@@ -4676,7 +4676,7 @@ msgid "Failed to update subscriptions"
 msgstr "更新订阅失败"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:50
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:49
 msgid "Failed to update template: {0}"
 msgstr "更新模板失败：{0}"
 
@@ -5031,7 +5031,7 @@ msgstr "帧率（FPS）"
 msgid "Free space on the disks recordings are written to."
 msgstr "录像写入的各磁盘的剩余空间。"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:220
+#: src/components/config/shared/danmu-statistics-card.tsx:221
 msgid "Frequent words to keep"
 msgstr "保留高频词数量"
 
@@ -5118,8 +5118,8 @@ msgstr "缺口与停顿"
 msgid "GB"
 msgstr "GB"
 
-#: src/components/config/platforms/platform-editor.tsx:220
-#: src/components/config/templates/template-editor.tsx:240
+#: src/components/config/platforms/platform-editor.tsx:234
+#: src/components/config/templates/template-editor.tsx:254
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:43
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:297
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:99
@@ -5160,11 +5160,11 @@ msgstr "从视频第 10 秒生成缩略图（宽 320px）。"
 msgid "Generate multiple preview images at different timestamps for a gallery view."
 msgstr "在不同时间点生成多张预览图，用于图库展示。"
 
-#: src/components/credentials/credential-login-dialog.tsx:208
+#: src/components/credentials/credential-login-dialog.tsx:215
 msgid "Generate new QR code"
 msgstr "生成新二维码"
 
-#: src/components/credentials/credential-login-dialog.tsx:154
+#: src/components/credentials/credential-login-dialog.tsx:161
 msgid "Generating QR code..."
 msgstr "正在生成二维码..."
 
@@ -5432,7 +5432,7 @@ msgstr "{hour} 点"
 msgid "Hours"
 msgstr "小时"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:177
+#: src/components/config/shared/danmu-statistics-card.tsx:178
 msgid "How chat activity is summarised on the session page."
 msgstr "场次页面如何汇总弹幕活跃度。"
 
@@ -5468,13 +5468,13 @@ msgstr "FLV 流在录制失败前可以没有任何音视频数据的时长。"
 msgid "How long to wait for a missing VOD segment before skipping it."
 msgstr "跳过缺失的点播分段前等待的时长。"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:215
+#: src/components/config/shared/danmu-statistics-card.tsx:216
 msgid "How many appear in the ranking. 1–500."
 msgstr "排行榜中显示的数量。范围 1–500。"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:221
-msgid "How many appear in the word chart. 1–500."
-msgstr "词频图表中显示的数量。范围 1–500。"
+#: src/components/config/shared/danmu-statistics-card.tsx:222
+msgid "How many appear in the word chart. 0–500; set to 0 to disable word counting and CJK segmentation."
+msgstr "词频图表中显示的数量。范围 0–500；设为 0 可关闭词频统计与中文分词。"
 
 #: src/components/config/global/concurrency-card.tsx:170
 msgid "How many CPU-bound pipeline steps, such as transcodes, may run at the same time. Raising this past your core count slows every job down."
@@ -5576,7 +5576,7 @@ msgstr "必须填写 ID"
 msgid "ID: {jobId}"
 msgstr "ID：{jobId}"
 
-#: src/components/config/engines/engine-editor.tsx:178
+#: src/components/config/engines/engine-editor.tsx:199
 msgid "Identity and type of the engine."
 msgstr "引擎的身份与类型。"
 
@@ -6223,11 +6223,11 @@ msgstr "登录"
 msgid "Log in again"
 msgstr "重新登录"
 
-#: src/components/credentials/credential-login-dialog.tsx:126
+#: src/components/credentials/credential-login-dialog.tsx:133
 msgid "Log in again to “{accountLabel}”"
 msgstr "重新登录“{accountLabel}”"
 
-#: src/components/credentials/credential-login-dialog.tsx:128
+#: src/components/credentials/credential-login-dialog.tsx:135
 msgid "Log in to “{accountLabel}”"
 msgstr "登录“{accountLabel}”"
 
@@ -8230,7 +8230,7 @@ msgstr "平台"
 msgid "Platform {label}"
 msgstr "平台 {label}"
 
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:52
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:51
 msgid "Platform configuration updated successfully"
 msgstr "平台配置更新成功"
 
@@ -8242,7 +8242,7 @@ msgstr "平台配置可用时将显示在此处。"
 msgid "Platform name"
 msgstr "平台名称"
 
-#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:85
+#: src/routes/_authed/_dashboard/config/platforms/$platformId.lazy.tsx:87
 msgid "Platform not found"
 msgstr "未找到平台"
 
@@ -8275,7 +8275,7 @@ msgid "platforms"
 msgstr "平台"
 
 #: src/components/config/global/backup-restore-card.tsx:415
-#: src/components/config/templates/template-editor.tsx:260
+#: src/components/config/templates/template-editor.tsx:274
 #: src/components/layout/site-header.tsx:68
 #: src/components/pipeline/step-in-use-dialog.tsx:99
 #: src/components/proxies/proxy-references.tsx:91
@@ -8704,7 +8704,7 @@ msgstr "代理"
 msgid "Put the login in the username and password fields instead."
 msgstr "请将登录信息填写在用户名和密码栏中。"
 
-#: src/components/credentials/credential-login-dialog.tsx:184
+#: src/components/credentials/credential-login-dialog.tsx:191
 msgid "QR code expired"
 msgstr "二维码已过期"
 
@@ -9598,7 +9598,7 @@ msgstr "星期六"
 msgid "Save account"
 msgstr "保存账号"
 
-#: src/components/config/engines/engine-editor.tsx:271
+#: src/components/config/engines/engine-editor.tsx:292
 #: src/components/filters/FilterDialog.tsx:299
 #: src/components/notifications/channel-form.tsx:448
 #: src/components/proxies/proxy-editor-dialog.tsx:363
@@ -9607,8 +9607,8 @@ msgstr "保存账号"
 msgid "Save changes"
 msgstr "保存更改"
 
-#: src/components/config/platforms/platform-editor.tsx:189
-#: src/components/config/templates/template-editor.tsx:211
+#: src/components/config/platforms/platform-editor.tsx:203
+#: src/components/config/templates/template-editor.tsx:225
 #: src/components/notifications/subscription-manager.tsx:487
 #: src/components/pipeline/presets/editor/preset-save-fab.tsx:37
 #: src/components/pipeline/workflows/step-config-dialog.tsx:780
@@ -9677,8 +9677,8 @@ msgstr "随此配置一起保存。"
 msgid "Saving"
 msgstr "保存中"
 
-#: src/components/config/platforms/platform-editor.tsx:187
-#: src/components/config/templates/template-editor.tsx:207
+#: src/components/config/platforms/platform-editor.tsx:201
+#: src/components/config/templates/template-editor.tsx:221
 #: src/components/pipeline/workflows/workflow-editor.tsx:168
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:355
 msgid "Saving..."
@@ -9700,31 +9700,31 @@ msgstr "扫描目录"
 msgid "Scan QR code"
 msgstr "扫码登录"
 
-#: src/components/credentials/credential-login-dialog.tsx:220
+#: src/components/credentials/credential-login-dialog.tsx:227
 msgid "Scan with Bilibili mobile app"
 msgstr "使用哔哩哔哩移动端 App 扫码"
 
-#: src/components/credentials/credential-login-dialog.tsx:222
+#: src/components/credentials/credential-login-dialog.tsx:229
 msgid "Scan with the Douyu app"
 msgstr "使用斗鱼 App 扫码"
 
-#: src/components/credentials/credential-login-dialog.tsx:226
+#: src/components/credentials/credential-login-dialog.tsx:233
 msgid "Scan with the platform's mobile app"
 msgstr "使用该平台的移动端 App 扫码"
 
-#: src/components/credentials/credential-login-dialog.tsx:224
+#: src/components/credentials/credential-login-dialog.tsx:231
 msgid "Scan with the Weibo app"
 msgstr "使用微博 App 扫码"
 
-#: src/components/credentials/credential-login-dialog.tsx:167
+#: src/components/credentials/credential-login-dialog.tsx:174
 msgid "Scanned! Please confirm on your phone"
 msgstr "已扫描！请在手机上确认"
 
-#: src/components/credentials/credential-login-dialog.tsx:138
+#: src/components/credentials/credential-login-dialog.tsx:145
 msgid "Scanning adds the account. Account selections are not changed."
 msgstr "扫码后即添加该账号，不会更改账号选择。"
 
-#: src/components/credentials/credential-login-dialog.tsx:133
+#: src/components/credentials/credential-login-dialog.tsx:140
 msgid "Scanning replaces this account's saved login. Account selections are not changed."
 msgstr "扫码会替换该账号已保存的登录信息，不会更改账号选择。"
 
@@ -10044,7 +10044,7 @@ msgstr "选择你想要尝试采集的最高质量等级。"
 msgid "Select the steps that must complete successfully before this step runs."
 msgstr "选择必须在此步骤运行前成功完成的步骤。"
 
-#: src/components/config/engines/engine-editor.tsx:231
+#: src/components/config/engines/engine-editor.tsx:252
 #: src/components/notifications/channel-form.tsx:381
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:146
 msgid "Select type"
@@ -10215,7 +10215,7 @@ msgstr "设置优先级"
 msgid "Set to 0 to disable automatic output cleanup. Cleanup runs every 30 minutes and only includes ended sessions with no active or recently updated processing jobs."
 msgstr "设为 0 可禁用自动清理输出。每 30 分钟清理一次，仅清理已结束且没有正在运行或最近更新的处理任务的会话输出。"
 
-#: src/components/config/engines/engine-editor.tsx:329
+#: src/components/config/engines/engine-editor.tsx:340
 msgid "Set up a new download tool configuration"
 msgstr "设置新的录制工具配置"
 
@@ -10438,7 +10438,7 @@ msgstr "排序方式"
 msgid "Space Saver"
 msgstr "空间节省"
 
-#: src/components/config/platforms/platform-editor.tsx:230
+#: src/components/config/platforms/platform-editor.tsx:244
 #: src/components/config/templates/tabs/platform-override-card.tsx:99
 msgid "Specific"
 msgstr "特定"
@@ -10974,11 +10974,11 @@ msgstr "模板信息"
 msgid "Template Name"
 msgstr "模板名称"
 
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:77
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:72
 msgid "Template not found"
 msgstr "未找到模板"
 
-#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:43
+#: src/routes/_authed/_dashboard/config/templates/$templateId.lazy.tsx:42
 msgid "Template updated successfully"
 msgstr "模板更新成功"
 
@@ -11032,7 +11032,7 @@ msgstr "测试中…"
 msgid "The access token alone signs in; cookies are optional."
 msgstr "仅凭访问令牌即可登录；Cookie 可选。"
 
-#: src/components/credentials/credential-login-dialog.tsx:189
+#: src/components/credentials/credential-login-dialog.tsx:196
 msgid "The account or the proxy it uses was changed or removed in the meantime. Reload the page and try again."
 msgstr "账号或其使用的代理已在此期间被修改或删除。请刷新页面后重试。"
 
@@ -11188,7 +11188,7 @@ msgstr "尚不知道该主播的 BIGO 账号，下次检查时会获取"
 msgid "The streaming source could not be reached through the server. Retry or choose another source."
 msgstr "服务器无法连接直播源。请重试或切换直播源。"
 
-#: src/components/config/engines/engine-editor.tsx:256
+#: src/components/config/engines/engine-editor.tsx:277
 msgid "The underlying tool used for downloading."
 msgstr "用于录制的底层工具。"
 
@@ -11442,7 +11442,7 @@ msgstr "按时间段调度"
 msgid "Timeline"
 msgstr "时间线"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:227
+#: src/components/config/shared/danmu-statistics-card.tsx:232
 msgid "Timeline granularity. Very long streams are automatically coarsened past a point."
 msgstr "时间线的粒度。超长直播会自动降低精度。"
 
@@ -11542,7 +11542,7 @@ msgctxt "danmu"
 msgid "Top"
 msgstr "顶部"
 
-#: src/components/config/shared/danmu-statistics-card.tsx:214
+#: src/components/config/shared/danmu-statistics-card.tsx:215
 msgid "Top chatters to keep"
 msgstr "保留活跃发言人数量"
 
@@ -12400,7 +12400,7 @@ msgstr "宽度"
 msgid "Width in pixels (keeps aspect ratio)"
 msgstr "宽度（像素，保持宽高比）"
 
-#: src/components/config/templates/template-editor.tsx:118
+#: src/components/config/templates/template-editor.tsx:123
 msgid "With the engine's settings, this records neither video nor audio"
 msgstr "结合引擎的设置，这样既不会录制视频也不会录制音频"
 

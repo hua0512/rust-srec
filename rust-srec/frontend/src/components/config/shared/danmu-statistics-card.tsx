@@ -130,6 +130,7 @@ function DanmuStatisticsCardImpl<TFieldValues extends FieldValues>({
     label: React.ReactNode,
     description: React.ReactNode,
     placeholder: string,
+    min = 1,
   ) => (
     <FormField
       control={form.control}
@@ -140,7 +141,7 @@ function DanmuStatisticsCardImpl<TFieldValues extends FieldValues>({
           <FormControl>
             <Input
               type="number"
-              min={1}
+              min={min}
               className={CONFIG_INPUT}
               placeholder={placeholder}
               value={formField.value ?? ''}
@@ -218,8 +219,12 @@ function DanmuStatisticsCardImpl<TFieldValues extends FieldValues>({
           {numberField(
             'top_words',
             <Trans>Frequent words to keep</Trans>,
-            <Trans>How many appear in the word chart. 1–500.</Trans>,
+            <Trans>
+              How many appear in the word chart. 0–500; set to 0 to disable word
+              counting and CJK segmentation.
+            </Trans>,
             '50',
+            0,
           )}
           {numberField(
             'rate_bucket_secs',

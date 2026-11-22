@@ -88,8 +88,10 @@ async fn apply_per_connection_pragmas(
     .execute(&mut *conn)
     .await?;
 
-    // Enable memory-mapped I/O for better performance
-    sqlx::query("PRAGMA mmap_size = 268435456") // 256MB
+    // Keep memory-mapped I/O disabled so every connection reads through the
+    // budgeted SQLite page cache rather than mapping the full database file
+    // (including historical statistics payloads) into the process resident set.
+    sqlx::query("PRAGMA mmap_size = 0")
         .execute(&mut *conn)
         .await?;
 
@@ -210,7 +212,7 @@ pub async fn init_migration_pool(database_url: &str) -> Result<DbPool, sqlx::Err
 /// - Max connections: 1 (serializes writes)
 /// - Acquire timeout: 60s (writes queue through a single connection)
 /// - 8 MiB suggested page cache, reserved from the combined 64 MiB budget
-/// - Same WAL/mmap configuration as the read pool
+/// - Same WAL configuration as the read pool
 ///
 /// # Arguments
 /// * `database_url` - SQLite database URL (same as the read pool)
@@ -542,7 +544,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn every_pool_connection_observes_the_combined_cache_budget_and_existing_mmap() {
+    async fn every_pool_connection_observes_the_combined_cache_budget_and_disabled_mmap() {
         let directory = tempfile::tempdir().unwrap();
         for (read_limit, expected_read_kib) in [(1, 57344_i64), (4, 14336), (10, 5734)] {
             let url = format!(
@@ -566,7 +568,7 @@ mod tests {
                     .await
                     .unwrap();
                 assert_eq!(cache, -expected_read_kib);
-                assert_eq!(mmap, 268435456);
+                assert_eq!(mmap, 0);
                 connections.push(conn);
             }
             let cache: i64 = sqlx::query_scalar("PRAGMA cache_size")
@@ -578,7 +580,7 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(cache, -8192);
-            assert_eq!(mmap, 268435456);
+            assert_eq!(mmap, 0);
             assert!(i64::from(read_limit) * expected_read_kib - cache <= 65536);
             // A replacement connection must receive the same share, not a per-connection default.
             connections.pop().unwrap().close().await.unwrap();

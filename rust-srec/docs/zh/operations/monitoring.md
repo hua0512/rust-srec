@@ -38,7 +38,7 @@ curl http://localhost:12555/api/health/ready \
 
 ## SQLite 内存预算
 
-数据库连接共用建议的 64 MiB 私有页缓存额度，文件数据库还使用 256 MiB 内存映射设置。这些都不是进程内存硬上限，录制、查询、连接及操作系统缓存也会占用内存。分配细节见[监控内部实现](../development/monitoring.md#sqlite-内存预算)。
+数据库连接共用建议的 64 MiB 私有页缓存额度，数据库文件不使用内存映射。该额度不是进程内存硬上限，录制、查询、连接及操作系统缓存也会占用内存。分配细节见[监控内部实现](../development/monitoring.md#sqlite-内存预算)。
 
 ## 日志
 

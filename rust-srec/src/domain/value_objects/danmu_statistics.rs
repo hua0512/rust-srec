@@ -25,7 +25,9 @@ pub struct DanmuStatisticsConfig {
     pub enabled: bool,
     /// Talkers and gifters reported per session.
     pub top_talkers: usize,
-    /// Frequent words reported per session.
+    /// Frequent words reported per session. Set to `0` to disable word
+    /// frequency tracking and CJK word segmentation while keeping the rest of
+    /// the session's statistics.
     pub top_words: usize,
     /// Gift names reported per session.
     pub top_gifts: usize,
@@ -86,7 +88,9 @@ impl DanmuStatisticsConfig {
     /// instead of failing a recording.
     pub fn sanitized(mut self) -> Self {
         self.top_talkers = self.top_talkers.clamp(1, Self::MAX_REPORTED);
-        self.top_words = self.top_words.clamp(1, Self::MAX_REPORTED);
+        // `0` disables word frequency tracking (and avoids loading the CJK
+        // segmenter dictionary), while non-zero values stay capped at MAX_REPORTED.
+        self.top_words = self.top_words.min(Self::MAX_REPORTED);
         self.top_gifts = self.top_gifts.clamp(1, Self::MAX_REPORTED);
         self.talker_capacity = self
             .talker_capacity
@@ -136,6 +140,7 @@ mod tests {
         let config = DanmuStatisticsConfig {
             top_talkers: 100_000,
             top_words: 0,
+            top_gifts: 0,
             talker_capacity: 1,
             rate_bucket_secs: 0,
             ..Default::default()
@@ -143,13 +148,24 @@ mod tests {
         .sanitized();
 
         assert_eq!(config.top_talkers, DanmuStatisticsConfig::MIN_CAPACITY);
-        assert_eq!(config.top_words, 1);
+        assert_eq!(
+            config.top_words, 0,
+            "zero disables word frequency tracking and CJK segmentation"
+        );
+        assert_eq!(config.top_gifts, 1);
         assert_eq!(
             config.talker_capacity,
             DanmuStatisticsConfig::MIN_CAPACITY,
             "capacity has a floor so tracking stays useful"
         );
         assert_eq!(config.rate_bucket_secs, 1);
+
+        let capped_words = DanmuStatisticsConfig {
+            top_words: 100_000,
+            ..Default::default()
+        }
+        .sanitized();
+        assert_eq!(capped_words.top_words, DanmuStatisticsConfig::MAX_REPORTED);
     }
 
     #[test]

@@ -33,11 +33,12 @@ The adaptive read-pool limit is twice the available CPU count, capped at 10.
 Rust callers of `init_pool_with_size` share the same reader allowance across their
 requested limit; opening the write pool separately uses the reserved writer allowance.
 
-Small private caches can cause more page reads for large working sets. The
-256 MiB `mmap_size` setting is enabled for file-backed databases, allowing
-reads to use memory-mapped pages and the operating system's file cache. SQLite
+Small private caches can cause more page reads for large working sets, which are
+served through the operating system's file cache. Per-connection `mmap_size` is
+disabled (`0`) so large database files do not map hundreds of megabytes per pool
+connection into the process resident set outside the page-cache budget. SQLite
 treats `cache_size` as a suggestion; this is not a hard limit on database or process
-memory. Mappings, temporary queries, connection overhead and the recorder's other
+memory. Temporary queries, connection overhead and the recorder's other
 services also contribute to memory use.
 
 ## Logs {#logs}
