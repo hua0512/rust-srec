@@ -1,4 +1,29 @@
+import {
+  ByteLengthQueuingStrategy,
+  CountQueuingStrategy,
+  ReadableStream,
+  TransformStream,
+  WritableStream,
+} from 'node:stream/web';
 import '@testing-library/jest-dom/vitest';
+
+// Vitest's vmThreads pool executes each test file in a Node vm.Context where
+// Web Streams globals are not automatically exposed.
+for (const [name, value] of Object.entries({
+  ReadableStream,
+  WritableStream,
+  TransformStream,
+  ByteLengthQueuingStrategy,
+  CountQueuingStrategy,
+})) {
+  if (!(name in globalThis)) {
+    Object.defineProperty(globalThis, name, {
+      value,
+      writable: true,
+      configurable: true,
+    });
+  }
+}
 
 // Node 22+ exposes a built-in `localStorage` that shadows jsdom's Storage
 // implementation.  When `--localstorage-file` is missing (always the case in

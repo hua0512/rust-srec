@@ -49,7 +49,8 @@ jobs:
             target: aarch64-unknown-linux-gnu
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-          - os: macos-15-intel
+          # Cross-compile Intel macOS on Apple Silicon (faster and avoids Intel runner queues).
+          - os: macos-latest
             target: x86_64-apple-darwin
           - os: macos-latest
             target: aarch64-apple-darwin
@@ -64,16 +65,14 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           target: ${{ matrix.target }}
-      - name: Install build dependencies on Linux
+      - uses: ./.github/actions/setup-linux-deps
         if: contains(matrix.os, 'ubuntu') && !contains(matrix.target, 'musl')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libssl-dev pkg-config
-      - name: Install musl-tools
+        with:
+          packages: libssl-dev pkg-config
+      - uses: ./.github/actions/setup-linux-deps
         if: contains(matrix.target, 'musl')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y musl-tools musl-dev
+        with:
+          packages: musl-tools musl-dev
       - name: Build
         if: "!contains(matrix.target, 'musl')"
         run: cargo build --locked --profile ${{ inputs.profile }} --target ${{ matrix.target }} ${{ inputs.packages }} --features ${{ inputs.features_normal }}

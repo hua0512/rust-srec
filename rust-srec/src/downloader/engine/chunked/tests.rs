@@ -485,8 +485,12 @@ async fn real_ffmpeg_manual_cut_preserves_video_frames_and_audio_packets() {
         ],
     )
     .await;
-    let expected_video = hashes(&binary, &source, MediaHash::VideoFrames).await;
-    let expected_audio = hashes(&binary, &source, MediaHash::AudioPackets).await;
+    let (expected_video, expected_audio) = tokio::join!(
+        hashes(&binary, &source, MediaHash::VideoFrames),
+        hashes(&binary, &source, MediaHash::AudioPackets),
+    );
+    let expected_video = Arc::new(expected_video);
+    let expected_audio = Arc::new(expected_audio);
     let direct_output = directory.path().join("direct");
     tokio::fs::create_dir(&direct_output).await.unwrap();
     let direct_engine = FfmpegEngine::with_config_async(FfmpegEngineConfig {
@@ -506,146 +510,158 @@ async fn real_ffmpeg_manual_cut_preserves_video_frames_and_audio_packets() {
         .with_output_format("mp4"),
     )
     .await;
+    // Each mode reads `source` read-only and writes into its own subdirectory,
+    // so running them concurrently cuts wall-clock time without weakening checks.
+    let mut modes = tokio::task::JoinSet::new();
     for mode in ["mp4", "mkv", "flv", "ts", "mov", "stop", "automatic"] {
-        let format = if matches!(mode, "stop" | "automatic") {
-            "mp4"
-        } else {
-            mode
-        };
-        let expected_segments = if mode == "automatic" { 3 } else { 2 };
+        let binary = binary.clone();
+        let source = source.clone();
         let output = directory.path().join(mode);
-        tokio::fs::create_dir(&output).await.unwrap();
-        let unrelated_partial = output.join(format!("recording.partial.{format}"));
-        tokio::fs::write(&unrelated_partial, b"existing file")
-            .await
-            .unwrap();
-        let mut config = DownloadConfig::new(
-            source.to_str().unwrap(),
-            &output,
-            "streamer",
-            "Streamer",
-            "session",
-        )
-        .with_output_format(format)
-        .with_filename_template("recording");
-        if mode == "automatic" {
-            config.max_segment_duration_secs = 4;
-        }
-        let engine = FfmpegEngine::with_config_async(FfmpegEngineConfig {
-            enable_lossless_cutting: true,
-            binary_path: binary.clone(),
-            input_args: vec![
-                "-readrate".into(),
-                if mode == "mkv" { "1" } else { "8" }.into(),
-            ],
-            ..Default::default()
-        })
-        .await;
-        let (events, mut receiver) = mpsc::channel(64);
-        let handle = Arc::new(DownloadHandle::new(
-            mode,
-            EngineType::Ffmpeg,
-            config,
-            events,
-        ));
-        let recording = handle.clone();
-        let task = tokio_util::task::AbortOnDropHandle::new(tokio::spawn(async move {
-            engine.run(recording).await
-        }));
-        let mut requested = false;
-        let mut files = Vec::new();
-        let mut starts = Vec::new();
-        let mut live_rates = Vec::new();
-        let mut tick = tokio::time::interval(Duration::from_millis(10));
-        tokio::time::timeout(Duration::from_secs(20), async {
-            loop {
-                tokio::select! {
-                    _ = tick.tick(), if !requested => {
-                        if handle.manual_split.snapshot().supported {
-                            handle.manual_split.request(Duration::from_secs(30)).unwrap();
-                            requested = true;
+        let expected_video = Arc::clone(&expected_video);
+        let expected_audio = Arc::clone(&expected_audio);
+        modes.spawn(async move {
+            let format = if matches!(mode, "stop" | "automatic") {
+                "mp4"
+            } else {
+                mode
+            };
+            let expected_segments = if mode == "automatic" { 3 } else { 2 };
+            tokio::fs::create_dir(&output).await.unwrap();
+            let unrelated_partial = output.join(format!("recording.partial.{format}"));
+            tokio::fs::write(&unrelated_partial, b"existing file")
+                .await
+                .unwrap();
+            let mut config = DownloadConfig::new(
+                source.to_str().unwrap(),
+                &output,
+                "streamer",
+                "Streamer",
+                "session",
+            )
+            .with_output_format(format)
+            .with_filename_template("recording");
+            if mode == "automatic" {
+                config.max_segment_duration_secs = 4;
+            }
+            let engine = FfmpegEngine::with_config_async(FfmpegEngineConfig {
+                enable_lossless_cutting: true,
+                binary_path: binary.clone(),
+                input_args: vec![
+                    "-readrate".into(),
+                    if mode == "mkv" { "1" } else { "8" }.into(),
+                ],
+                ..Default::default()
+            })
+            .await;
+            let (events, mut receiver) = mpsc::channel(64);
+            let handle = Arc::new(DownloadHandle::new(
+                mode,
+                EngineType::Ffmpeg,
+                config,
+                events,
+            ));
+            let recording = handle.clone();
+            let task = tokio_util::task::AbortOnDropHandle::new(tokio::spawn(async move {
+                engine.run(recording).await
+            }));
+            let mut requested = false;
+            let mut files = Vec::new();
+            let mut starts = Vec::new();
+            let mut live_rates = Vec::new();
+            let mut tick = tokio::time::interval(Duration::from_millis(10));
+            tokio::time::timeout(Duration::from_secs(30), async {
+                loop {
+                    tokio::select! {
+                        _ = tick.tick(), if !requested => {
+                            if handle.manual_split.snapshot().supported {
+                                handle.manual_split.request(Duration::from_secs(30)).unwrap();
+                                requested = true;
+                            }
+                        }
+                        event = receiver.recv() => match event.unwrap() {
+                            SegmentEvent::SegmentStarted { path, sequence, .. } => { starts.push((path, sequence)); if mode == "stop" && sequence == 1 { handle.cancel(); } }
+                            SegmentEvent::SegmentCompleted(info) => files.push(info),
+                            SegmentEvent::Progress(progress) if mode == "mkv" && progress.duration_secs >= 5.0 => live_rates.push(progress.speed_bytes_per_sec),
+                            SegmentEvent::DownloadCompleted { total_segments, .. } => { assert_eq!(total_segments, expected_segments); break; }
+                            SegmentEvent::DownloadFailed { message, .. } => panic!("{message}"),
+                            _ => {}
                         }
                     }
-                    event = receiver.recv() => match event.unwrap() {
-                        SegmentEvent::SegmentStarted { path, sequence, .. } => { starts.push((path, sequence)); if mode == "stop" && sequence == 1 { handle.cancel(); } }
-                        SegmentEvent::SegmentCompleted(info) => files.push(info),
-                        SegmentEvent::Progress(progress) if mode == "mkv" && progress.duration_secs >= 5.0 => live_rates.push(progress.speed_bytes_per_sec),
-                        SegmentEvent::DownloadCompleted { total_segments, .. } => { assert_eq!(total_segments, expected_segments); break; }
-                        SegmentEvent::DownloadFailed { message, .. } => panic!("{message}"),
-                        _ => {}
-                    }
                 }
+            }).await.unwrap();
+            task.await.unwrap().unwrap();
+            if mode == "mkv" {
+                // Real-time acquisition must not report zero speed between buffered
+                // chunk writes once the measurement window has filled.
+                assert!(live_rates.len() >= 5, "missing real-time progress samples");
+                assert!(live_rates.iter().all(|rate| *rate > 0), "{live_rates:?}");
             }
-        }).await.unwrap();
-        task.await.unwrap().unwrap();
-        if mode == "mkv" {
-            // Real-time acquisition must not report zero speed between buffered
-            // chunk writes once the measurement window has filled.
-            assert!(live_rates.len() >= 5, "missing real-time progress samples");
-            assert!(live_rates.iter().all(|rate| *rate > 0), "{live_rates:?}");
-        }
-        assert!(requested);
-        assert_eq!(starts.len(), expected_segments as usize);
-        assert_eq!(files.len(), expected_segments as usize);
-        assert_eq!(files[0].split_reason_code(), Some("manual"));
-        assert_eq!(starts[0].1, 0);
-        assert_eq!(starts[1].1, 1);
-        for (index, file) in files.iter().enumerate() {
-            let expected_name = if index == 0 {
-                format!("recording.{format}")
-            } else {
-                format!("recording-{index:03}.{format}")
-            };
-            assert_eq!(file.path, output.join(expected_name));
-            assert_eq!(starts[index].0, file.path);
-        }
-        assert_eq!(
-            tokio::fs::read(&unrelated_partial).await.unwrap(),
-            b"existing file"
-        );
-        let mut video = Vec::new();
-        let mut audio = Vec::new();
-        for file in &files {
-            video.extend(hashes(&binary, &file.path, MediaHash::VideoFrames).await);
-            audio.extend(hashes(&binary, &file.path, MediaHash::AudioPackets).await);
-        }
-        if mode == "stop" {
-            assert!(video.len() < expected_video.len());
-            // A graceful stop can receive a future reference frame before its
-            // intervening B-frames. Decoded output is then an ordered subset,
-            // while encoded packets must still be an exact prefix of the source.
-            let mut remaining = expected_video.iter();
-            assert!(
-                video
-                    .iter()
-                    .all(|frame| remaining.any(|item| item == frame))
+            assert!(requested);
+            assert_eq!(starts.len(), expected_segments as usize);
+            assert_eq!(files.len(), expected_segments as usize);
+            assert_eq!(files[0].split_reason_code(), Some("manual"));
+            assert_eq!(starts[0].1, 0);
+            assert_eq!(starts[1].1, 1);
+            for (index, file) in files.iter().enumerate() {
+                let expected_name = if index == 0 {
+                    format!("recording.{format}")
+                } else {
+                    format!("recording-{index:03}.{format}")
+                };
+                assert_eq!(file.path, output.join(expected_name));
+                assert_eq!(starts[index].0, file.path);
+            }
+            assert_eq!(
+                tokio::fs::read(&unrelated_partial).await.unwrap(),
+                b"existing file"
             );
-            let reference_packets = hashes(&binary, &source, MediaHash::VideoPackets).await;
-            let mut packets = Vec::new();
+            let mut video = Vec::new();
+            let mut audio = Vec::new();
             for file in &files {
-                packets.extend(hashes(&binary, &file.path, MediaHash::VideoPackets).await);
+                video.extend(hashes(&binary, &file.path, MediaHash::VideoFrames).await);
+                audio.extend(hashes(&binary, &file.path, MediaHash::AudioPackets).await);
             }
-            assert!(!packets.is_empty());
+            if mode == "stop" {
+                assert!(video.len() < expected_video.len());
+                // A graceful stop can receive a future reference frame before its
+                // intervening B-frames. Decoded output is then an ordered subset,
+                // while encoded packets must still be an exact prefix of the source.
+                let mut remaining = expected_video.iter();
+                assert!(
+                    video
+                        .iter()
+                        .all(|frame| remaining.any(|item| item == frame))
+                );
+                let reference_packets = hashes(&binary, &source, MediaHash::VideoPackets).await;
+                let mut packets = Vec::new();
+                for file in &files {
+                    packets.extend(hashes(&binary, &file.path, MediaHash::VideoPackets).await);
+                }
+                assert!(!packets.is_empty());
+                assert!(
+                    reference_packets.starts_with(&packets),
+                    "video packets changed before stop"
+                );
+            } else {
+                assert!(video == *expected_video, "video changed for {mode}");
+            }
+            let audio_reference = if mode == "stop" {
+                &expected_audio[..audio.len()]
+            } else {
+                &expected_audio[..]
+            };
             assert!(
-                reference_packets.starts_with(&packets),
-                "video packets changed before stop"
+                audio == audio_reference,
+                "audio changed for {format}: counts {} vs {}, first difference {:?}",
+                audio.len(),
+                expected_audio.len(),
+                audio.iter().zip(expected_audio.iter()).position(|(a, b)| a != b)
             );
-        } else {
-            assert!(video == expected_video, "video changed for {mode}");
-        }
-        let audio_reference = if mode == "stop" {
-            &expected_audio[..audio.len()]
-        } else {
-            &expected_audio[..]
-        };
-        assert!(
-            audio == audio_reference,
-            "audio changed for {format}: counts {} vs {}, first difference {:?}",
-            audio.len(),
-            expected_audio.len(),
-            audio.iter().zip(&expected_audio).position(|(a, b)| a != b)
-        );
-        assert!(!output.join(format!(".srec-chunks-{mode}")).exists());
+            assert!(!output.join(format!(".srec-chunks-{mode}")).exists());
+        });
+    }
+    while let Some(result) = modes.join_next().await {
+        result.unwrap();
     }
 }
 

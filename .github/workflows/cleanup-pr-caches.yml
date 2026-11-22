@@ -1,14 +1,19 @@
-name: Clean closed PR caches
+name: Clean Actions caches
 
 on:
   pull_request_target:
     types: [closed]
+  workflow_run:
+    workflows: ["Pull Request CI"]
+    types: [completed]
+    branches: [main]
 
 permissions:
   actions: write
 
 jobs:
   cleanup:
+    if: github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     steps:
       # This runs with base-repository permissions. Never check out PR code here.
@@ -38,3 +43,62 @@ jobs:
               await new Promise(resolve => setTimeout(resolve, 1000));
             }
             core.info(`Deleted ${caches.length} caches for ${ref}`);
+
+  # Keep only the newest rust-cache entry per job/platform on main so lockfile
+  # updates do not pile up multiple ~5 GB generations and trigger 10 GB LRU eviction.
+  prune-main-caches:
+    if: |
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.repository == 'hua0512/rust-srec'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const ref = 'refs/heads/main';
+            const caches = await github.paginate(github.rest.actions.getActionsCacheList, {
+              ...context.repo,
+              ref,
+              per_page: 100,
+            });
+
+            const toDelete = [];
+            const rustGroups = new Map();
+
+            for (const cache of caches) {
+              if (cache.ref !== ref) continue;
+              if (cache.key.startsWith('sccache/')) {
+                toDelete.push(cache);
+                continue;
+              }
+              if (cache.key.startsWith('v0-rust-')) {
+                // Key format: v0-rust-<shared-key>-<os>-<arch>-<env-hash>-<lock-hash>
+                const match = cache.key.match(/^(v0-rust-.+)-[0-9a-f]{8}-[0-9a-f]{8}$/);
+                if (!match) continue;
+                const group = match[1];
+                if (!rustGroups.has(group)) rustGroups.set(group, []);
+                rustGroups.get(group).push(cache);
+              }
+            }
+
+            for (const entries of rustGroups.values()) {
+              entries.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+              toDelete.push(...entries.slice(1));
+            }
+
+            let deleted = 0;
+            for (const cache of toDelete) {
+              try {
+                await github.rest.actions.deleteActionsCacheById({
+                  ...context.repo,
+                  cache_id: cache.id,
+                });
+                deleted++;
+              } catch (error) {
+                if (error.status !== 404) throw error;
+              }
+              await new Promise(resolve => setTimeout(resolve, 250));
+            }
+            core.info(`Pruned ${deleted} superseded main caches out of ${caches.length} total`);

@@ -289,6 +289,17 @@ pub async fn run_migrations_with_environment_proxy(
     pool: &DbPool,
     environment_proxy: bool,
 ) -> crate::Result<()> {
+    #[cfg(test)]
+    let publish_template = if !environment_proxy {
+        match test_migration_template::try_restore_or_check_fresh(pool).await {
+            test_migration_template::Lookup::Restored => return Ok(()),
+            test_migration_template::Lookup::FreshEmpty => true,
+            test_migration_template::Lookup::Ineligible => false,
+        }
+    } else {
+        false
+    };
+
     tracing::info!("Running database migrations...");
 
     prepare_fresh_database(pool).await?;
@@ -300,8 +311,140 @@ pub async fn run_migrations_with_environment_proxy(
     // target exists; each owns a marker table installed by its migration.
     legacy_credential_upgrade::run(pool).await?;
     legacy_proxy_upgrade::run(pool, environment_proxy).await?;
+
+    #[cfg(test)]
+    if publish_template {
+        test_migration_template::try_publish(pool).await;
+    }
+
     tracing::info!("Database migrations completed");
     Ok(())
+}
+
+/// Caches a serialized image of a freshly migrated in-memory SQLite database on
+/// disk so unit tests running in separate nextest processes do not replay every
+/// migration from scratch. Keyed by the test binary's size and modification
+/// time so any rebuild invalidates the template automatically.
+#[cfg(test)]
+mod test_migration_template {
+    use std::path::{Path, PathBuf};
+    use std::time::{Duration, UNIX_EPOCH};
+
+    use sqlx::sqlite::SqliteOwnedBuf;
+
+    use super::DbPool;
+
+    pub(super) enum Lookup {
+        Restored,
+        FreshEmpty,
+        Ineligible,
+    }
+
+    fn template_paths() -> Option<(PathBuf, PathBuf)> {
+        let binary = std::env::current_exe()
+            .ok()
+            .and_then(|p| std::fs::metadata(p).ok())?;
+        let built = binary.modified().ok()?.duration_since(UNIX_EPOCH).ok()?;
+        let dir = std::env::temp_dir().join("rust-srec-unit-db-templates");
+        let file = dir.join(format!("{}-{}.db", binary.len(), built.as_nanos()));
+        Some((dir, file))
+    }
+
+    async fn is_single_connection_empty_memory_db(
+        pool: &DbPool,
+        conn: &mut sqlx::SqliteConnection,
+    ) -> bool {
+        if pool.options().get_max_connections() != 1 {
+            return false;
+        }
+        let main_file: Option<String> =
+            sqlx::query_scalar("SELECT file FROM pragma_database_list WHERE name = 'main'")
+                .fetch_optional(&mut *conn)
+                .await
+                .ok()
+                .flatten();
+        if !matches!(main_file.as_deref(), Some("")) {
+            return false;
+        }
+        let table_count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM sqlite_schema \
+             WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+        )
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap_or(-1);
+        table_count == 0
+    }
+
+    pub(super) async fn try_restore_or_check_fresh(pool: &DbPool) -> Lookup {
+        let Some((_, template)) = template_paths() else {
+            return Lookup::Ineligible;
+        };
+        let Ok(mut conn) = pool.acquire().await else {
+            return Lookup::Ineligible;
+        };
+        if !is_single_connection_empty_memory_db(pool, &mut conn).await {
+            return Lookup::Ineligible;
+        }
+        let Ok(bytes) = std::fs::read(&template) else {
+            return Lookup::FreshEmpty;
+        };
+        if bytes.is_empty() {
+            return Lookup::FreshEmpty;
+        }
+        let Ok(buf) = SqliteOwnedBuf::try_from(bytes.as_slice()) else {
+            return Lookup::FreshEmpty;
+        };
+        if conn.deserialize(None, buf, false).await.is_ok() {
+            Lookup::Restored
+        } else {
+            Lookup::FreshEmpty
+        }
+    }
+
+    pub(super) async fn try_publish(pool: &DbPool) {
+        let Some((dir, template)) = template_paths() else {
+            return;
+        };
+        if template.exists() || pool.options().get_max_connections() != 1 {
+            return;
+        }
+        let Ok(mut conn) = pool.acquire().await else {
+            return;
+        };
+        let Ok(buf) = conn.serialize(None).await else {
+            return;
+        };
+        publish_bytes(&dir, &template, &buf);
+    }
+
+    fn publish_bytes(dir: &Path, template: &Path, bytes: &[u8]) {
+        if std::fs::create_dir_all(dir).is_err() {
+            return;
+        }
+        let Ok(staged) = tempfile::NamedTempFile::new_in(dir) else {
+            return;
+        };
+        if std::fs::write(staged.path(), bytes).is_err() || staged.persist(template).is_err() {
+            return;
+        }
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let stale = entry
+                .metadata()
+                .and_then(|metadata| metadata.modified())
+                .is_ok_and(|modified| {
+                    modified
+                        .elapsed()
+                        .is_ok_and(|age| age > Duration::from_secs(24 * 60 * 60))
+                });
+            if stale {
+                std::fs::remove_file(entry.path()).ok();
+            }
+        }
+    }
 }
 
 /// Runs a data conversion its migration left owed by installing the `marker`

@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1
 
 ARG RUST_VERSION=1.95.0
+ARG CARGO_PROFILE=release
 
 # =============================================================================
-# Stage 0: Chef - Rust toolchain + cargo-chef (shared base)
+# Stage 0: Chef - Rust toolchain + prebuilt cargo-chef (shared base)
 # =============================================================================
-FROM rust:${RUST_VERSION}-bookworm AS chef
-RUN cargo install --locked cargo-chef
+FROM lukemathwalker/cargo-chef:latest-rust-${RUST_VERSION}-bookworm AS chef
 WORKDIR /app
 
 # =============================================================================
@@ -30,7 +30,9 @@ RUN cargo chef prepare --recipe-path recipe.json --bin rust-srec
 # =============================================================================
 FROM chef AS cacher
 
-# Install build dependencies.
+ARG CARGO_PROFILE
+
+# Install build dependencies once so both cacher and builder reuse this layer.
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
@@ -46,28 +48,22 @@ COPY --from=planner /app/recipe.json recipe.json
 # Build only dependencies - this layer is cached if recipe.json unchanged.
 # The recipe has a reduced workspace and lockfile; keep any lockfile updates
 # confined to this dependency cache rather than the final application build.
-RUN cargo chef cook --release --recipe-path recipe.json \
+RUN cargo chef cook --profile "${CARGO_PROFILE}" --recipe-path recipe.json \
     --package rust-srec --bin rust-srec --features tls-native-fallback
 
 # =============================================================================
-# Stage 3: Builder - Build the actual application
+# Stage 3: Builder - Build the actual application binaries
 # =============================================================================
-FROM chef AS builder
+# Inherit directly from cacher so /app/target and /usr/local/cargo stay in place
+# without duplicating multi-GB layers into the BuildKit registry cache.
+FROM cacher AS builder
 
-# Install build dependencies.
-RUN set -eux; \
-    apt-get update; \
-    apt-get install -y --no-install-recommends \
-        pkg-config \
-        libssl-dev \
-        ; \
-    rm -rf /var/lib/apt/lists/*
+ARG CARGO_PROFILE
 
 WORKDIR /app
 
-# Copy pre-built dependencies from cacher
-COPY --from=cacher /app/target target
-COPY --from=cacher /usr/local/cargo /usr/local/cargo
+# Replace cargo-chef's skeleton sources and reduced lockfile with the real workspace.
+RUN rm -rf Cargo.toml Cargo.lock recipe.json rust-srec crates mesio-cli strev-cli
 
 # Copy workspace files
 COPY Cargo.toml Cargo.lock ./
@@ -76,14 +72,26 @@ COPY crates ./crates
 COPY mesio-cli ./mesio-cli
 COPY strev-cli ./strev-cli
 
-# Build the release binary (only compiles our code, deps are cached).
-# Keep the repository lockfile: the recipe omits unrelated workspace members,
-# so its reduced lockfile would re-resolve dependencies in the full workspace.
+# Build both release binaries in one pass so the `vapid` target reuses this stage
+# instead of compiling the workspace dependency graph a second time.
 # Enable native-tls fallback for legacy TLS endpoints (e.g. Douyu CDN/danmu).
-RUN cargo build --locked --release --features tls-native-fallback -p rust-srec --bin rust-srec
+RUN cargo build --locked --profile "${CARGO_PROFILE}" --features tls-native-fallback -p rust-srec --bin rust-srec --bin rust-srec-vapid \
+    && mkdir -p /out \
+    && cp "target/${CARGO_PROFILE}/rust-srec" "target/${CARGO_PROFILE}/rust-srec-vapid" /out/
 
-# Runtime stage
-FROM debian:bookworm-slim
+# =============================================================================
+# Optional target: tiny rust-srec-vapid image (`--target vapid`)
+# =============================================================================
+FROM debian:bookworm-slim AS vapid
+
+WORKDIR /app
+
+COPY --from=builder /out/rust-srec-vapid /app/rust-srec-vapid
+
+ENTRYPOINT ["./rust-srec-vapid"]
+
+# Runtime stage (last stage remains the default build target)
+FROM debian:bookworm-slim AS runtime
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
@@ -159,7 +167,7 @@ ENV BAIDUPCS_GO_CONFIG_DIR=/app/config/BaiduPCS-Go
 WORKDIR /app
 
 # Copy the built binary from the builder stage
-COPY --from=builder /app/target/release/rust-srec /app/rust-srec
+COPY --from=builder /out/rust-srec /app/rust-srec
 
 # Watchtower pre-update hook: gates container auto-updates on /api/health/idle.
 COPY --chmod=755 rust-srec/scripts/watchtower-pre-update.sh /app/watchtower-pre-update.sh

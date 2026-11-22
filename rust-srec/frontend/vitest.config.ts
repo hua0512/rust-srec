@@ -12,6 +12,8 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // Reuse jsdom per worker while keeping per-file VM isolation.
+    pool: 'vmThreads',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     include: ['**/*.{test,spec}.?(c|m)[jt]s?(x)'],

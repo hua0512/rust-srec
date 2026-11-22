@@ -171,3 +171,10 @@ debug = false
 [profile.release-cli]
 inherits = "release"
 panic = "abort"
+
+# Dev CI release builds trade fat LTO for thin LTO and parallel codegen to cut
+# build time while keeping full optimization (`opt-level = 3`).
+[profile.release-dev]
+inherits = "release"
+lto = "thin"
+codegen-units = 16

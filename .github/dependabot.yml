@@ -7,7 +7,22 @@ updates:
     # Rust workspace dependencies
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+    groups:
+      cargo-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+    # Held dependencies documented in AGENTS.md.
+    ignore:
+      - dependency-name: "cc"
+        versions: [">= 1.9.0"]
+      - dependency-name: "parking_lot"
+        versions: [">= 0.13.0"]
+      - dependency-name: "notify-rust"
+        versions: [">= 4.19.0"]
+      - dependency-name: "wry"
+        versions: [">= 0.57.2"]
 
   # Enable version updates for GitHub Actions
   - package-ecosystem: "github-actions"
@@ -22,6 +37,15 @@ updates:
     directory: "/rust-srec/frontend"
     schedule:
       interval: "weekly"
+    groups:
+      # TanStack Start, Router, and Router Plugin must move together.
+      tanstack:
+        patterns:
+          - "@tanstack/*"
+      frontend-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
   # Docs site (npm)
   - package-ecosystem: "npm"

@@ -14,27 +14,18 @@ env:
   CARGO_PROFILE_DEV_DEBUG: 0
   CARGO_PROFILE_TEST_DEBUG: 0
   CARGO_INCREMENTAL: 0
-  # Only main saves compiler caches; dev reads main's entries.
-  SCCACHE_GHA_RW_MODE: READ_ONLY
 
 jobs:
   clippy:
     name: Clippy
     if: github.repository == 'hua0512/rust-srec'
     runs-on: ubuntu-latest
-    env:
-      RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v7
-      - uses: mozilla-actions/sccache-action@v0.0.11
-        with:
-          version: "v0.19.0"
       - uses: ./.github/actions/setup-rust
-      - name: Install Linux TLS dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev
+      - uses: ./.github/actions/setup-linux-deps
+        with:
+          packages: pkg-config libssl-dev
       - uses: Swatinem/rust-cache@v2
         with:
           # Main populates the same dependency cache used by PR checks.
@@ -42,9 +33,6 @@ jobs:
           save-if: false
       - name: Clippy check
         run: cargo clippy --locked --workspace --exclude rust-srec-desktop --all-targets --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback -- -D warnings
-      - name: sccache stats
-        if: always()
-        run: sccache --show-stats || true
 
   test:
     name: Test Suite
@@ -60,30 +48,12 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-      - name: Enable sccache
-        if: runner.os != 'macOS' || runner.arch == 'ARM64'
-        shell: pwsh
-        run: |
-          "RUSTC_WRAPPER=sccache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "SCCACHE_GHA_ENABLED=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          # Rust 1.100's build-dir layout passes one `-L` per dependency, and sccache
-          # spawns rustc with the full argument list instead of an @argfile, which
-          # exceeds the Windows command-line limit. Cargo's temporary opt-out keeps
-          # the legacy layout until sccache handles long command lines.
-          if ($IsWindows) {
-            "__CARGO_TEMPORARY_BUILD_DIR_NEW_LAYOUT_OPT_OUT=1" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          }
-      - uses: mozilla-actions/sccache-action@v0.0.11
-        if: runner.os != 'macOS' || runner.arch == 'ARM64'
-        with:
-          version: "v0.19.0"
       - uses: ./.github/actions/setup-rust
       - uses: taiki-e/install-action@nextest
-      - name: Install Linux TLS dependencies
+      - uses: ./.github/actions/setup-linux-deps
         if: matrix.os == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev
+        with:
+          packages: pkg-config libssl-dev
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: pr-test
@@ -91,15 +61,17 @@ jobs:
       - name: Run tests (backend only)
         if: matrix.os == 'ubuntu-latest'
         run: cargo nextest run --locked --workspace --exclude rust-srec-desktop --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback
+      # Hosted macOS runners have 7 GB RAM; build integration tests (and the
+      # library they link) before the unit-test harness to avoid memory thrashing.
+      - name: Build integration tests (macOS)
+        if: runner.os == 'macOS'
+        run: cargo nextest run --no-run --locked --workspace --exclude rust-srec-desktop --tests
       - name: Run tests
         if: matrix.os != 'ubuntu-latest'
         run: cargo nextest run --locked --workspace --exclude rust-srec-desktop
       - name: Run doctests (backend only)
         if: matrix.os == 'ubuntu-latest'
         run: cargo test --locked --workspace --exclude rust-srec-desktop --doc --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback
-      - name: sccache stats
-        if: always() && (runner.os != 'macOS' || runner.arch == 'ARM64')
-        run: sccache --show-stats || true
 
   build:
     needs: clippy
@@ -107,6 +79,7 @@ jobs:
     uses: ./.github/workflows/build-binaries.yml
     with:
       packages: '-p mesio -p strev -p rust-srec --bins'
+      profile: 'release-dev'
       features_normal: 'mesio/tls-native-fallback,strev/tls-native-fallback,rust-srec/tls-native-fallback'
       features_musl: 'mesio/static-ssl,strev/static-ssl,rust-srec/static-ssl'
       binaries: '["mesio", "strev", "rust-srec", "rust-srec-vapid"]'
@@ -149,11 +122,13 @@ jobs:
           context: .
           file: rust-srec/Dockerfile
           platforms: ${{ matrix.platform }}
+          build-args: |
+            CARGO_PROFILE=release-dev
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/rust-srec,push-by-digest=true,name-canonical=true,push=true
           cache-from: |
             type=registry,ref=ghcr.io/${{ github.repository_owner }}/rust-srec:buildcache-dev-${{ env.PLATFORM_PAIR }}
             type=registry,ref=ghcr.io/${{ github.repository_owner }}/rust-srec:buildcache-release-${{ env.PLATFORM_PAIR }}
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/rust-srec:buildcache-dev-${{ env.PLATFORM_PAIR }},mode=max
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/rust-srec:buildcache-dev-${{ env.PLATFORM_PAIR }},mode=max,compression=zstd,oci-mediatypes=true,image-manifest=true
       
       - name: Export digest backend
         run: |
@@ -172,7 +147,7 @@ jobs:
           cache-from: |
             type=registry,ref=ghcr.io/${{ github.repository_owner }}/rust-srec-frontend:buildcache-dev-${{ env.PLATFORM_PAIR }}
             type=registry,ref=ghcr.io/${{ github.repository_owner }}/rust-srec-frontend:buildcache-release-${{ env.PLATFORM_PAIR }}
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/rust-srec-frontend:buildcache-dev-${{ env.PLATFORM_PAIR }},mode=max
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/rust-srec-frontend:buildcache-dev-${{ env.PLATFORM_PAIR }},mode=max,compression=zstd,oci-mediatypes=true,image-manifest=true
 
       - name: Export digest frontend
         run: |

@@ -16,3 +16,6 @@ dist/
 .roo/
 .roomodes/
 .zed/
+# Backend Docker images build from the repo root; frontend and docs have their own contexts.
+rust-srec/frontend/
+rust-srec/docs/

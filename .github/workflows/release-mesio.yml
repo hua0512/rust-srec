@@ -16,41 +16,30 @@ env:
   CARGO_PROFILE_DEV_DEBUG: 0
   CARGO_PROFILE_TEST_DEBUG: 0
   CARGO_INCREMENTAL: 0
-  # Only main saves compiler caches. A release saved several GB under its tag,
-  # which no later run reads, and evicted the main caches pull requests use.
-  SCCACHE_GHA_RW_MODE: READ_ONLY
 
 jobs:
   check-and-test:
     name: Check and Test
     if: github.repository == 'hua0512/rust-srec'
     runs-on: ubuntu-latest
-    env:
-      RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v7
-      - uses: mozilla-actions/sccache-action@v0.0.11
-        with:
-          version: "v0.19.0"
       - uses: ./.github/actions/setup-rust
       - uses: taiki-e/install-action@nextest
+      - uses: ./.github/actions/setup-linux-deps
+        with:
+          packages: pkg-config libssl-dev
       - uses: Swatinem/rust-cache@v2
         with:
           # Main saves this cache from the Linux Test Suite job in pr.yml.
           shared-key: pr-test
           save-if: false
-      - name: Check
-        run: cargo check -p mesio --locked --features tls-native-fallback
       - name: Clippy
         run: cargo clippy -p mesio --locked --features tls-native-fallback -- -D warnings
       - name: Test
         run: cargo nextest run -p mesio --locked --features tls-native-fallback --no-tests=pass
       - name: Doctests
         run: cargo test -p mesio --locked --doc --features tls-native-fallback
-      - name: sccache stats
-        if: always()
-        run: sccache --show-stats || true
 
   build:
     needs: check-and-test

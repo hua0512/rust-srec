@@ -20,9 +20,6 @@ env:
   CARGO_PROFILE_DEV_DEBUG: 0
   CARGO_PROFILE_TEST_DEBUG: 0
   CARGO_INCREMENTAL: 0
-  # PR merge-ref caches are isolated from other PRs; main warms shared caches.
-  # sccache ignores SCCACHE_GHA_RW_MODE before v0.16.0.
-  SCCACHE_GHA_RW_MODE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'READ_WRITE' || 'READ_ONLY' }}
 
 jobs:
   clippy:
@@ -30,15 +27,11 @@ jobs:
     needs: check-changes
     if: needs.check-changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
-    env:
-      RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@v7
-      - uses: mozilla-actions/sccache-action@v0.0.11
-        with:
-          version: "v0.19.0"
       - uses: ./.github/actions/setup-rust
+      - name: Check formatting
+        run: cargo fmt --all -- --check
       - uses: ./.github/actions/setup-linux-deps
         with:
           packages: pkg-config libssl-dev
@@ -49,9 +42,6 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Clippy check
         run: cargo clippy --locked --workspace --exclude rust-srec-desktop --all-targets --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback -- -D warnings
-      - name: sccache stats
-        if: always()
-        run: sccache --show-stats || true
 
   rustdoc:
     name: Rustdoc
@@ -95,23 +85,6 @@ jobs:
       - name: Show macOS runner resources
         if: runner.os == 'macOS'
         run: sysctl hw.ncpu hw.memsize vm.swapusage
-      - name: Enable sccache
-        if: runner.os != 'macOS' || runner.arch == 'ARM64'
-        shell: pwsh
-        run: |
-          "RUSTC_WRAPPER=sccache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "SCCACHE_GHA_ENABLED=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          # Rust 1.100's build-dir layout passes one `-L` per dependency, and sccache
-          # spawns rustc with the full argument list instead of an @argfile, which
-          # exceeds the Windows command-line limit. Cargo's temporary opt-out keeps
-          # the legacy layout until sccache handles long command lines.
-          if ($IsWindows) {
-            "__CARGO_TEMPORARY_BUILD_DIR_NEW_LAYOUT_OPT_OUT=1" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          }
-      - uses: mozilla-actions/sccache-action@v0.0.11
-        if: runner.os != 'macOS' || runner.arch == 'ARM64'
-        with:
-          version: "v0.19.0"
       - uses: ./.github/actions/setup-rust
       - uses: taiki-e/install-action@nextest
       - uses: actions/setup-python@v7
@@ -139,15 +112,22 @@ jobs:
       - name: Run ffmpeg, rclone, and Streamlink gated tests
         if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' }}
         run: cargo nextest run --locked --workspace --exclude rust-srec-desktop --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback --run-ignored ignored-only -E 'package(=rust-srec) and not test(/^sqlite_claim_stress::/) and not test(/known_bug_/)'
-      - name: Run tests
-        if: matrix.os != 'ubuntu-latest'
+      # Hosted macOS runners have 7 GB RAM; compiling rust-srec's library and
+      # unit-test harness concurrently exhausts RAM and thrashes compressed memory.
+      # Build integration tests (and the library they link) first so the two
+      # heavy rust-srec compilations run sequentially.
+      - name: Build integration tests (macOS)
+        if: runner.os == 'macOS'
+        run: cargo nextest run --no-run --locked --workspace --exclude rust-srec-desktop --tests
+      - name: Run tests (macOS)
+        if: runner.os == 'macOS'
         run: cargo nextest run --locked --workspace --exclude rust-srec-desktop --timings
+      - name: Run tests
+        if: matrix.os != 'ubuntu-latest' && runner.os != 'macOS'
+        run: cargo nextest run --locked --workspace --exclude rust-srec-desktop
       - name: Run doctests (backend only)
         if: matrix.os == 'ubuntu-latest'
         run: cargo test --locked --workspace --exclude rust-srec-desktop --doc --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback
-      - name: sccache stats
-        if: always() && (runner.os != 'macOS' || runner.arch == 'ARM64')
-        run: sccache --show-stats || true
       - name: Upload macOS build timings
         if: ${{ !cancelled() && runner.os == 'macOS' }}
         uses: actions/upload-artifact@v7
@@ -187,15 +167,14 @@ jobs:
               - 'rust-srec/locales/**'
               - 'rust-srec/src/**'
               - 'rust-srec/tests/**'
-              - 'rust-srec/src-tauri/**'
               - '.github/actions/setup-rust/**'
               - '.github/actions/setup-linux-deps/**'
               - '.github/workflows/pr.yml'
             frontend:
               - 'rust-srec/frontend/**'
+              - 'rust-srec/proto/**'
             desktop:
               - 'rust-srec/src-tauri/**'
-              - 'rust-srec/frontend/**'
               - 'rust-srec/Cargo.toml'
               - 'rust-srec/proto/**'
               - 'rust-srec/migrations/**'
@@ -207,7 +186,6 @@ jobs:
               - 'rust-toolchain.toml'
               - '.cargo/**'
               - '.github/actions/setup-rust/**'
-              - '.github/actions/setup-tauri/**'
               - '.github/workflows/pr.yml'
               - '.github/workflows/release-rust-srec.yml'
             systemd:
@@ -262,50 +240,23 @@ jobs:
         run: pnpm run test
       - name: Run build
         run: pnpm run build
+      - name: Run desktop frontend build
+        run: pnpm run build:desktop
 
   desktop-build:
     name: Desktop Debug Build (no bundle)
     needs: check-changes
     if: needs.check-changes.outputs.desktop == 'true'
     runs-on: windows-latest
-    env:
-      RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: "true"
-      # Rust 1.100's build-dir layout passes one `-L` per dependency, and sccache
-      # spawns rustc with the full argument list instead of an @argfile, which
-      # exceeds the Windows command-line limit. Cargo's temporary opt-out keeps
-      # the legacy layout until sccache handles long command lines.
-      __CARGO_TEMPORARY_BUILD_DIR_NEW_LAYOUT_OPT_OUT: "1"
     steps:
       - uses: actions/checkout@v7
-      - uses: mozilla-actions/sccache-action@v0.0.11
-        with:
-          version: "v0.19.0"
       - uses: ./.github/actions/setup-rust
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: pr-desktop-debug
           save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 12.4.1
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '26'
-          cache: 'pnpm'
-          cache-dependency-path: rust-srec/frontend/pnpm-lock.yaml
-
-      - name: Install frontend dependencies
-        run: pnpm -C rust-srec/frontend install --frozen-lockfile
-
-      - uses: ./.github/actions/setup-tauri
-
-      - uses: tauri-apps/tauri-action@action-v1.0.0
-        with:
-          projectPath: rust-srec/src-tauri
-          tauriScript: tauri
-          args: --debug --no-bundle
-      - name: sccache stats
-        if: always()
-        run: sccache --show-stats || true
+      # `src-tauri/build.rs` creates `../frontend/dist-desktop` when absent, so
+      # compiling the Tauri wrapper does not require building the frontend here
+      # (frontend-lint already verifies `pnpm run build:desktop` on Linux).
+      - name: Build desktop crate
+        run: cargo build --locked -p rust-srec-desktop
