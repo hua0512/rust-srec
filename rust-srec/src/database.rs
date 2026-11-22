@@ -327,12 +327,13 @@ pub async fn run_migrations_with_environment_proxy(
 /// time so any rebuild invalidates the template automatically.
 #[cfg(test)]
 mod test_migration_template {
+    use std::io::Write as _;
     use std::path::{Path, PathBuf};
     use std::time::{Duration, UNIX_EPOCH};
 
     use sqlx::sqlite::SqliteOwnedBuf;
 
-    use super::DbPool;
+    use super::{DbPool, apply_per_connection_pragmas, read_page_cache_kib};
 
     pub(super) enum Lookup {
         Restored,
@@ -341,11 +342,12 @@ mod test_migration_template {
     }
 
     fn template_paths() -> Option<(PathBuf, PathBuf)> {
-        let binary = std::env::current_exe()
-            .ok()
-            .and_then(|p| std::fs::metadata(p).ok())?;
+        let exe = std::env::current_exe().ok()?;
+        let binary = std::fs::metadata(&exe).ok()?;
         let built = binary.modified().ok()?.duration_since(UNIX_EPOCH).ok()?;
-        let dir = std::env::temp_dir().join("rust-srec-unit-db-templates");
+        // Place templates next to the test binary under target/ so they stay
+        // scoped to this build directory and current user rather than shared /tmp.
+        let dir = exe.parent()?.join("rust-srec-unit-db-templates");
         let file = dir.join(format!("{}-{}.db", binary.len(), built.as_nanos()));
         Some((dir, file))
     }
@@ -359,6 +361,7 @@ mod test_migration_template {
         }
         let main_file: Option<String> =
             sqlx::query_scalar("SELECT file FROM pragma_database_list WHERE name = 'main'")
+                .persistent(false)
                 .fetch_optional(&mut *conn)
                 .await
                 .ok()
@@ -370,6 +373,7 @@ mod test_migration_template {
             "SELECT COUNT(*) FROM sqlite_schema \
              WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
         )
+        .persistent(false)
         .fetch_one(&mut *conn)
         .await
         .unwrap_or(-1);
@@ -395,11 +399,26 @@ mod test_migration_template {
         let Ok(buf) = SqliteOwnedBuf::try_from(bytes.as_slice()) else {
             return Lookup::FreshEmpty;
         };
-        if conn.deserialize(None, buf, false).await.is_ok() {
-            Lookup::Restored
-        } else {
-            Lookup::FreshEmpty
+        if conn.deserialize(None, buf, false).await.is_err() {
+            return Lookup::FreshEmpty;
         }
+        // `sqlite3_deserialize` replaces the `main` pager, resetting database-level
+        // PRAGMAs such as `cache_size`, `synchronous`, and `journal_size_limit`.
+        let Ok(cache_kib) = read_page_cache_kib(1) else {
+            return Lookup::FreshEmpty;
+        };
+        if apply_per_connection_pragmas(&mut conn, cache_kib)
+            .await
+            .is_err()
+            || sqlx::query("PRAGMA synchronous = NORMAL")
+                .persistent(false)
+                .execute(&mut *conn)
+                .await
+                .is_err()
+        {
+            return Lookup::FreshEmpty;
+        }
+        Lookup::Restored
     }
 
     pub(super) async fn try_publish(pool: &DbPool) {
@@ -422,10 +441,13 @@ mod test_migration_template {
         if std::fs::create_dir_all(dir).is_err() {
             return;
         }
-        let Ok(staged) = tempfile::NamedTempFile::new_in(dir) else {
+        let Ok(mut staged) = tempfile::NamedTempFile::new_in(dir) else {
             return;
         };
-        if std::fs::write(staged.path(), bytes).is_err() || staged.persist(template).is_err() {
+        if staged.as_file_mut().write_all(bytes).is_err()
+            || staged.as_file_mut().flush().is_err()
+            || staged.persist(template).is_err()
+        {
             return;
         }
         let Ok(entries) = std::fs::read_dir(dir) else {

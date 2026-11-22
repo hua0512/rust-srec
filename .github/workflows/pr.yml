@@ -114,11 +114,11 @@ jobs:
         run: cargo nextest run --locked --workspace --exclude rust-srec-desktop --features rust-srec/tls-native-fallback,platforms-parser/tls-native-fallback,mesio-engine/tls-native-fallback,strev/tls-native-fallback,mesio/tls-native-fallback --run-ignored ignored-only -E 'package(=rust-srec) and not test(/^sqlite_claim_stress::/) and not test(/known_bug_/)'
       # Hosted macOS runners have 7 GB RAM; compiling rust-srec's library and
       # unit-test harness concurrently exhausts RAM and thrashes compressed memory.
-      # Build integration tests (and the library they link) first so the two
-      # heavy rust-srec compilations run sequentially.
+      # Build integration tests (`--test '*'`, which compiles the library without
+      # the unit-test harness) first so the two heavy compilations run sequentially.
       - name: Build integration tests (macOS)
         if: runner.os == 'macOS'
-        run: cargo nextest run --no-run --locked --workspace --exclude rust-srec-desktop --tests
+        run: cargo nextest run --no-run --locked --workspace --exclude rust-srec-desktop --test '*' --timings
       - name: Run tests (macOS)
         if: runner.os == 'macOS'
         run: cargo nextest run --locked --workspace --exclude rust-srec-desktop --timings
@@ -133,7 +133,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: cargo-timings-${{ matrix.os }}
-          path: target/cargo-timings/cargo-timing.html
+          path: target/cargo-timings/*.html
           if-no-files-found: warn
           retention-days: 7
 
@@ -173,6 +173,7 @@ jobs:
             frontend:
               - 'rust-srec/frontend/**'
               - 'rust-srec/proto/**'
+              - '.github/workflows/pr.yml'
             desktop:
               - 'rust-srec/src-tauri/**'
               - 'rust-srec/Cargo.toml'
@@ -251,6 +252,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-rust
+      - name: Check formatting
+        run: cargo fmt --all -- --check
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: pr-desktop-debug
@@ -258,5 +261,9 @@ jobs:
       # `src-tauri/build.rs` creates `../frontend/dist-desktop` when absent, so
       # compiling the Tauri wrapper does not require building the frontend here
       # (frontend-lint already verifies `pnpm run build:desktop` on Linux).
+      - name: Clippy desktop crate
+        run: cargo clippy --locked -p rust-srec-desktop --all-targets -- -D warnings
+      - name: Test desktop crate
+        run: cargo test --locked -p rust-srec-desktop
       - name: Build desktop crate
         run: cargo build --locked -p rust-srec-desktop

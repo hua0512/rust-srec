@@ -47,6 +47,9 @@ jobs:
   # Keep only the newest rust-cache entry per job/platform on main so lockfile
   # updates do not pile up multiple ~5 GB generations and trigger 10 GB LRU eviction.
   prune-main-caches:
+    concurrency:
+      group: prune-main-caches
+      cancel-in-progress: false
     if: |
       github.event_name == 'workflow_run' &&
       github.event.workflow_run.event == 'push' &&

@@ -30,9 +30,8 @@ RUN cargo chef prepare --recipe-path recipe.json --bin rust-srec
 # =============================================================================
 FROM chef AS cacher
 
-ARG CARGO_PROFILE
-
-# Install build dependencies once so both cacher and builder reuse this layer.
+# Install build dependencies once so both cacher and builder reuse this layer
+# across dev and release profiles.
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
@@ -44,6 +43,8 @@ RUN set -eux; \
 WORKDIR /app
 
 COPY --from=planner /app/recipe.json recipe.json
+
+ARG CARGO_PROFILE
 
 # Build only dependencies - this layer is cached if recipe.json unchanged.
 # The recipe has a reduced workspace and lockfile; keep any lockfile updates

@@ -448,7 +448,7 @@ async fn hashes(binary: &str, path: &Path, kind: MediaHash) -> Vec<String> {
         .collect()
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires local FFmpeg with libx264; uses only generated local media"]
 async fn real_ffmpeg_manual_cut_preserves_video_frames_and_audio_packets() {
     let binary = std::env::var("FFMPEG_PATH").unwrap_or_else(|_| "ffmpeg".into());
@@ -510,8 +510,9 @@ async fn real_ffmpeg_manual_cut_preserves_video_frames_and_audio_packets() {
         .with_output_format("mp4"),
     )
     .await;
-    // Each mode reads `source` read-only and writes into its own subdirectory,
-    // so running them concurrently cuts wall-clock time without weakening checks.
+    // Each mode reads `source` read-only and writes into its own subdirectory;
+    // cap concurrency to avoid starving the real-time `mkv` mode on 4-core runners.
+    let concurrency = Arc::new(tokio::sync::Semaphore::new(4));
     let mut modes = tokio::task::JoinSet::new();
     for mode in ["mp4", "mkv", "flv", "ts", "mov", "stop", "automatic"] {
         let binary = binary.clone();
@@ -519,7 +520,9 @@ async fn real_ffmpeg_manual_cut_preserves_video_frames_and_audio_packets() {
         let output = directory.path().join(mode);
         let expected_video = Arc::clone(&expected_video);
         let expected_audio = Arc::clone(&expected_audio);
+        let concurrency = Arc::clone(&concurrency);
         modes.spawn(async move {
+            let _permit = concurrency.acquire_owned().await.unwrap();
             let format = if matches!(mode, "stop" | "automatic") {
                 "mp4"
             } else {
@@ -652,7 +655,7 @@ async fn real_ffmpeg_manual_cut_preserves_video_frames_and_audio_packets() {
             };
             assert!(
                 audio == audio_reference,
-                "audio changed for {format}: counts {} vs {}, first difference {:?}",
+                "audio changed for {mode}: counts {} vs {}, first difference {:?}",
                 audio.len(),
                 expected_audio.len(),
                 audio.iter().zip(expected_audio.iter()).position(|(a, b)| a != b)
