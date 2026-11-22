@@ -390,9 +390,10 @@ mod tests {
         container.cancellation_token.cancel();
     }
 
-    /// The desktop shell builds its container with local desktop mode on. The served login must then answer the seeded
-    /// `admin` / `admin123!` exactly like a wrong password, which only holds
-    /// if the container hands the mode to the `AuthService` it builds.
+    /// The desktop shell builds its container with local desktop mode on.
+    /// The served login must then answer the seeded `admin` / `admin123!`
+    /// exactly like a wrong password, which only holds if the container
+    /// hands the mode to the `AuthService` it builds.
     #[tokio::test]
     async fn local_desktop_mode_reaches_the_served_login() {
         let directory = tempfile::tempdir().unwrap();
