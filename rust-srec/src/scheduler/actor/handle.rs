@@ -90,17 +90,12 @@ pub enum SendError {
 pub struct ActorMetadata {
     /// Unique actor identifier.
     pub id: String,
-    /// Whether this is a high-priority actor.
-    pub high_priority: bool,
 }
 
 impl ActorMetadata {
     /// Create metadata for a streamer actor.
-    pub fn streamer(id: impl Into<String>, high_priority: bool) -> Self {
-        Self {
-            id: id.into(),
-            high_priority,
-        }
+    pub fn streamer(id: impl Into<String>) -> Self {
+        Self { id: id.into() }
     }
 }
 
@@ -274,11 +269,6 @@ impl<M> ActorHandle<M> {
     /// the caller can await the exit `ActorHandle::cancel` only requested.
     pub(super) fn stop_signal(&self) -> &ActorStopSignal {
         &self.stop_signal
-    }
-
-    /// Check if this is a high-priority actor.
-    pub fn is_high_priority(&self) -> bool {
-        self.metadata.high_priority
     }
 }
 

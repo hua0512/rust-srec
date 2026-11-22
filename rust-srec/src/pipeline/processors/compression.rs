@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 use tar::Builder as TarBuilder;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
 
@@ -301,6 +301,8 @@ impl CompressionProcessor {
         cancel: CancellationToken,
         started: Instant,
     ) -> Result<(u64, u64)> {
+        #[cfg(test)]
+        tests::run_before_archive_create_hook(output_path);
         let file = File::create(output_path)
             .map_err(|e| crate::Error::io_path("creating ZIP archive", output_path, e))?;
 
@@ -356,22 +358,39 @@ impl CompressionProcessor {
             );
 
             // Write to archive
-            zip.start_file(&archive_name, options).map_err(|e| {
-                crate::Error::PipelineError(format!("Failed to start ZIP entry: {}", e))
-            })?;
+            zip.start_file(&archive_name, options)
+                .map_err(|e| match e {
+                    zip::result::ZipError::Io(io_err) => {
+                        crate::Error::io_path("starting ZIP entry", output_path, io_err)
+                    }
+                    other => {
+                        crate::Error::PipelineError(format!("Failed to start ZIP entry: {}", other))
+                    }
+                })?;
 
             std::io::copy(&mut reader, &mut zip).map_err(|e| {
-                crate::Error::PipelineError(format!("Failed to write ZIP entry: {}", e))
+                if cancel.is_cancelled() {
+                    crate::Error::PipelineError("Compression cancelled".to_string())
+                } else {
+                    crate::Error::io_path("adding file to ZIP archive", Path::new(input_path), e)
+                }
             })?;
             bytes_done = reader.bytes_done;
         }
 
-        zip.finish().map_err(|e| {
-            crate::Error::PipelineError(format!("Failed to finalize ZIP archive: {}", e))
+        zip.finish().map_err(|e| match e {
+            zip::result::ZipError::Io(io_err) => {
+                crate::Error::io_path("finalizing ZIP archive", output_path, io_err)
+            }
+            other => {
+                crate::Error::PipelineError(format!("Failed to finalize ZIP archive: {}", other))
+            }
         })?;
 
         // Get output file size
-        let output_size = std::fs::metadata(output_path).map(|m| m.len()).unwrap_or(0);
+        let output_size = std::fs::metadata(output_path)
+            .map_err(|e| crate::Error::io_path("reading ZIP archive metadata", output_path, e))?
+            .len();
 
         Ok((total_input_size, output_size))
     }
@@ -446,7 +465,15 @@ impl CompressionProcessor {
 
             tar.append_data(&mut header, Path::new(&archive_name), reader)
                 .map_err(|e| {
-                    crate::Error::PipelineError(format!("Failed to add file to tar archive: {}", e))
+                    if cancel.is_cancelled() {
+                        crate::Error::PipelineError("Compression cancelled".to_string())
+                    } else {
+                        crate::Error::io_path(
+                            "adding file to tar.gz archive",
+                            Path::new(input_path),
+                            e,
+                        )
+                    }
                 })?;
 
             bytes_done = bytes_done.saturating_add(metadata.len());
@@ -463,7 +490,9 @@ impl CompressionProcessor {
             .map_err(|e| crate::Error::io_path("finalizing gzip compression", output_path, e))?;
 
         // Get output file size
-        let output_size = std::fs::metadata(output_path).map(|m| m.len()).unwrap_or(0);
+        let output_size = std::fs::metadata(output_path)
+            .map_err(|e| crate::Error::io_path("reading tar.gz archive metadata", output_path, e))?
+            .len();
 
         Ok((total_input_size, output_size))
     }
@@ -601,41 +630,62 @@ impl Processor for CompressionProcessor {
         let cancel = ctx.cancellation_token.child_token();
         let cancel_on_drop = cancel.clone().drop_guard();
         let progress = ctx.progress.clone();
+        // The worker drains the log collector before it releases its slot and
+        // forgets the job's staged outputs. Holding a sender in the blocking
+        // task keeps both until a cancelled archive build has closed and
+        // removed `staged_path`.
+        let attempt_activity = ctx.log_sink.clone();
+        let staged_path = tmp_path;
 
         let result = tokio::task::spawn_blocking(move || {
-            if cancel.is_cancelled() {
-                return Err(crate::Error::PipelineError(
-                    "Compression cancelled".to_string(),
-                ));
+            let _attempt_activity = attempt_activity;
+            let outcome = (|| -> Result<(u64, u64)> {
+                if cancel.is_cancelled() {
+                    return Err(crate::Error::PipelineError(
+                        "Compression cancelled".to_string(),
+                    ));
+                }
+
+                let processor = CompressionProcessor;
+                let sizes = match config_for_blocking.format {
+                    ArchiveFormat::Zip => processor.create_zip_archive(
+                        &inputs,
+                        &staged_path,
+                        &config_for_blocking,
+                        progress,
+                        cancel.clone(),
+                        start,
+                    ),
+                    ArchiveFormat::TarGz => processor.create_tar_gz_archive(
+                        &inputs,
+                        &staged_path,
+                        &config_for_blocking,
+                        progress,
+                        cancel.clone(),
+                        start,
+                    ),
+                }?;
+
+                if cancel.is_cancelled() {
+                    return Err(crate::Error::PipelineError(
+                        "Compression cancelled".to_string(),
+                    ));
+                }
+
+                Ok(sizes)
+            })();
+
+            if outcome.is_err()
+                && let Err(err) = crate::pipeline::remove_leftover(&staged_path)
+            {
+                warn!(
+                    path = %staged_path.display(),
+                    error = %err,
+                    "Failed to remove partial staged archive on compression error"
+                );
             }
 
-            let processor = CompressionProcessor;
-            let sizes = match config_for_blocking.format {
-                ArchiveFormat::Zip => processor.create_zip_archive(
-                    &inputs,
-                    &tmp_path,
-                    &config_for_blocking,
-                    progress,
-                    cancel.clone(),
-                    start,
-                ),
-                ArchiveFormat::TarGz => processor.create_tar_gz_archive(
-                    &inputs,
-                    &tmp_path,
-                    &config_for_blocking,
-                    progress,
-                    cancel.clone(),
-                    start,
-                ),
-            }?;
-
-            if cancel.is_cancelled() {
-                return Err(crate::Error::PipelineError(
-                    "Compression cancelled".to_string(),
-                ));
-            }
-
-            Ok::<_, crate::Error>(sizes)
+            outcome
         })
         .await
         .map_err(|e| crate::Error::Other(format!("Compression worker panicked: {}", e)))?;
@@ -967,5 +1017,103 @@ mod tests {
         names.sort();
         assert!(names[0].ends_with("a/rec.mp4"), "{names:?}");
         assert!(names[1].ends_with("b/rec.mp4"), "{names:?}");
+    }
+
+    type ArchiveCreateHook = Box<dyn FnOnce() + Send>;
+    type ArchiveCreateHookMap = std::collections::HashMap<std::path::PathBuf, ArchiveCreateHook>;
+
+    /// Keyed by the archive's directory, which is unique to one test.
+    static ARCHIVE_CREATE_HOOKS: std::sync::LazyLock<parking_lot::Mutex<ArchiveCreateHookMap>> =
+        std::sync::LazyLock::new(|| parking_lot::Mutex::new(std::collections::HashMap::new()));
+
+    pub(super) fn run_before_archive_create_hook(output_path: &Path) {
+        let hook = output_path
+            .parent()
+            .and_then(|dir| ARCHIVE_CREATE_HOOKS.lock().remove(dir));
+        if let Some(hook) = hook {
+            hook();
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_compression_holds_its_log_sink_and_removes_the_archive_it_staged() {
+        let temp_dir = TempDir::new().unwrap();
+        let input_path = temp_dir.path().join("input.txt");
+        let output_path = temp_dir.path().join("output.zip");
+        std::fs::write(&input_path, b"payload").unwrap();
+
+        let (opened_tx, opened_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
+        ARCHIVE_CREATE_HOOKS.lock().insert(
+            temp_dir.path().to_path_buf(),
+            Box::new(move || {
+                let _ = opened_tx.send(());
+                let _ = release_rx.recv_timeout(std::time::Duration::from_secs(5));
+            }),
+        );
+
+        let (log_tx, mut log_rx) = tokio::sync::mpsc::channel(8);
+        let ctx = ProcessorContext::new(
+            "compress-cancel",
+            crate::pipeline::ProgressReporter::noop("compress-cancel"),
+            crate::pipeline::processors::JobLogSink::new(
+                log_tx,
+                std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            ),
+            tokio_util::sync::CancellationToken::new(),
+        );
+        let processor = CompressionProcessor::new();
+        let input = ProcessorInput {
+            inputs: vec![input_path.to_string_lossy().into_owned()],
+            outputs: vec![output_path.to_string_lossy().into_owned()],
+            config: Some(serde_json::json!({"format": "zip"}).to_string()),
+            streamer_id: "test".to_string(),
+            session_id: "test".to_string(),
+            ..Default::default()
+        };
+
+        let mut running = Box::pin(processor.process(&input, &ctx));
+        tokio::select! {
+            res = &mut running => panic!("compression finished before hook released: {res:?}"),
+            opened = tokio::time::timeout(std::time::Duration::from_secs(5), opened_rx) => {
+                opened.unwrap().unwrap();
+            }
+        }
+        // Drop the future and the caller's context while the blocking worker is
+        // about to create the staged `.tmp-*` archive. The archive is then
+        // written after the future's own cleanup has run, so only the worker
+        // can remove it.
+        drop(running);
+        drop(ctx);
+        // The dropped future queued its own removal of the staged path. A task
+        // queued behind it gives that removal time to find nothing yet.
+        tokio::task::spawn_blocking(|| {}).await.unwrap();
+
+        // Drain any initial info log lines; the channel must stay open (not Disconnected)
+        // while the blocking archive worker is still running.
+        loop {
+            match log_rx.try_recv() {
+                Ok(_) => continue,
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty) => break,
+                Err(tokio::sync::mpsc::error::TryRecvError::Disconnected) => {
+                    panic!("log_sink dropped before blocking archive worker exited");
+                }
+            }
+        }
+
+        release_tx.send(()).unwrap();
+        while tokio::time::timeout(std::time::Duration::from_secs(5), log_rx.recv())
+            .await
+            .unwrap()
+            .is_some()
+        {}
+        assert!(!output_path.exists());
+        assert!(!std::fs::read_dir(temp_dir.path()).unwrap().any(|entry| {
+            entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains(".tmp-")
+        }));
     }
 }

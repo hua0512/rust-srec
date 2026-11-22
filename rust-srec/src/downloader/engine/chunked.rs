@@ -15,7 +15,7 @@ use jiff::Timestamp;
 use pipeline_common::SplitReason;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::mpsc;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use super::{
     DownloadConfig, DownloadFailureKind, DownloadHandle, EngineStartError, SegmentEvent,
@@ -652,31 +652,75 @@ where
     // bounds only acquisition, with the producer's own graceful-stop timeout.
     // Finalization of captured groups is bounded by shutdown alone; see `finalize`.
     let (producer_result, ingest_result, finalized) = tokio::join!(producer, ingest, finalize);
-    let (bytes, duration) = finalized?;
-    let terminal = ingest_result?;
-    producer_result?;
-    let terminal = match terminal {
-        Some(SegmentEvent::DownloadCompleted { engine_signal, .. }) => {
-            SegmentEvent::DownloadCompleted {
-                total_bytes: bytes,
-                total_duration_secs: duration,
-                total_segments: completed.load(Ordering::Acquire),
-                engine_signal,
+    let outcome: Result<(), EngineStartError> = async {
+        let (bytes, duration) = finalized?;
+        let terminal = ingest_result?;
+        producer_result?;
+        let terminal = match terminal {
+            Some(SegmentEvent::DownloadCompleted { engine_signal, .. }) => {
+                SegmentEvent::DownloadCompleted {
+                    total_bytes: bytes,
+                    total_duration_secs: duration,
+                    total_segments: completed.load(Ordering::Acquire),
+                    engine_signal,
+                }
             }
-        }
-        Some(terminal) => terminal,
-        None => {
-            return Err(failure(
-                "Recording producer ended without a terminal result; recovery files retained",
-            ));
-        }
-    };
-    send(&handle, terminal).await?;
-    if let Err(error) = tokio::fs::remove_file(directory.join(LIST_NAME)).await {
+            Some(terminal) => terminal,
+            None => {
+                return Err(failure(
+                    "Recording producer ended without a terminal result; recovery files retained",
+                ));
+            }
+        };
+        send(&handle, terminal).await?;
+        Ok(())
+    }
+    .await;
+    if let Err(error) = outcome {
+        cleanup_empty_staging_dir(&directory).await;
+        return Err(error);
+    }
+    if let Err(error) = tokio::fs::remove_file(directory.join(LIST_NAME)).await
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
         warn!(%error, "Could not remove recording chunk list");
     }
     if let Err(error) = tokio::fs::remove_dir(&directory).await {
         warn!(path = %directory.display(), %error, "Recording staging directory retained");
     }
     Ok(())
+}
+
+/// Removes `directory` after a failed run when it holds nothing but the chunk
+/// list, so anything a recovery could still use keeps the directory.
+async fn cleanup_empty_staging_dir(directory: &Path) {
+    let Ok(mut entries) = tokio::fs::read_dir(directory).await else {
+        return;
+    };
+    let mut has_chunk_list = false;
+    loop {
+        match entries.next_entry().await {
+            Ok(Some(entry)) => {
+                if entry.file_name() == std::ffi::OsStr::new(LIST_NAME) {
+                    has_chunk_list = true;
+                } else {
+                    return;
+                }
+            }
+            Ok(None) => break,
+            Err(_) => return,
+        }
+    }
+    if has_chunk_list
+        && let Err(error) = tokio::fs::remove_file(directory.join(LIST_NAME)).await
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        warn!(%error, "Could not remove empty recording chunk list");
+        return;
+    }
+    if let Err(error) = tokio::fs::remove_dir(directory).await
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        debug!(path = %directory.display(), %error, "Recording staging directory retained after failure");
+    }
 }

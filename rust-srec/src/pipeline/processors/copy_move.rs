@@ -390,10 +390,7 @@ impl Processor for CopyMoveProcessor {
         };
 
         let dest_dir_exists = fs::try_exists(dest_dir_path).await.map_err(|e| {
-            crate::Error::PipelineError(format!(
-                "Failed to check destination directory '{}': {}",
-                dest_dir, e
-            ))
+            crate::Error::io_path("checking destination directory", dest_dir_path, e)
         })?;
 
         // Create destination directory if needed
@@ -407,13 +404,7 @@ impl Processor for CopyMoveProcessor {
                     "creating destination directory",
                     dest_dir_path,
                 )
-                .await
-                .map_err(|e| {
-                    crate::Error::PipelineError(format!(
-                        "Failed to create destination directory '{}': {}",
-                        dest_dir, e
-                    ))
-                })?;
+                .await?;
             } else {
                 return Err(crate::Error::PipelineError(format!(
                     "Destination directory does not exist: {}",

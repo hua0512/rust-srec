@@ -28,7 +28,7 @@ use tracing::{debug, info, trace, warn};
 use super::handle::{ActorHandle, ActorMetadata, DEFAULT_MAILBOX_CAPACITY};
 use super::messages::{CheckResult, StreamerActorState, StreamerConfig, StreamerMessage};
 use super::monitor_adapter::StatusChecker;
-use crate::domain::{Priority, StreamerState};
+use crate::domain::StreamerState;
 use crate::downloader::DownloadStopCause;
 use crate::monitor::{LiveStatus, ProcessStatusResult, ProcessStatusSuppression};
 use crate::scheduler::actor::DownloadEndPolicy;
@@ -159,9 +159,7 @@ impl StreamerActor {
     ) -> (Self, ActorHandle<StreamerMessage>) {
         let (tx, rx) = mpsc::channel(DEFAULT_MAILBOX_CAPACITY);
         let (priority_tx, priority_rx) = mpsc::channel(DEFAULT_PRIORITY_MAILBOX_CAPACITY);
-        let is_high_priority = config.priority == Priority::High;
-
-        let actor_metadata = ActorMetadata::streamer(&streamer_id, is_high_priority);
+        let actor_metadata = ActorMetadata::streamer(&streamer_id);
         let handle = ActorHandle::with_priority(
             tx.clone(),
             priority_tx,
