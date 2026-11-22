@@ -410,7 +410,10 @@ pub(crate) fn setup_tray(
             if event.id == check_updates_id {
                 let app_handle = app.clone();
                 tauri::async_runtime::spawn(async move {
-                    match fetch_update_info().await {
+                    let Some(state) = app_handle.try_state::<DesktopBackendState>() else {
+                        return;
+                    };
+                    match fetch_update_info(&state).await {
                         Ok(info) if info.update_available => {
                             if let Err(error) =
                                 app_handle.emit(EVENT_DESKTOP_UPDATE_AVAILABLE, &info)
@@ -457,8 +460,8 @@ pub(crate) fn setup_tray(
                             log::warn!("Tray update check failed: {}", error);
                             if let Err(notify_error) = show_desktop_notification(
                                 &app_handle,
-                                "Rust-Srec".to_string(),
-                                format!("Failed to check for updates: {error}"),
+                                "Rust-Srec Update Check Failed".to_string(),
+                                error,
                             )
                             .await
                             {

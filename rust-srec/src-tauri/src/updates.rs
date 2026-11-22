@@ -3,7 +3,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use crate::DesktopBackendState;
-use crate::desktop_settings::DesktopSettings;
+use crate::desktop_settings::{BackendMode, DesktopSettings};
 
 pub const EVENT_DESKTOP_UPDATE_AVAILABLE: &str = "rust-srec://desktop-update-available";
 
@@ -11,6 +11,12 @@ const GITHUB_RELEASES_API_URL: &str =
     "https://api.github.com/repos/hua0512/rust-srec/releases?per_page=50";
 const RELEASE_TAG_PREFIX: &str = "rust-srec-v";
 const UPDATE_CHECK_TIMEOUT: Duration = Duration::from_secs(10);
+/// How long a check made in local mode waits for the built-in backend to
+/// finish starting, since only the started backend can say which proxy to
+/// use. Starting includes database migrations, which can be slow on a large
+/// database after an upgrade; a boot still running after this is reported as
+/// such, and the user can check again.
+const UPDATE_CHECK_BOOT_WAIT: Duration = Duration::from_secs(60);
 const MAX_NOTES_EXCERPT_CHARS: usize = 400;
 /// Upper bound on the release-list body. Fifty releases with their asset lists
 /// come to about 1.5 MB, so this leaves room to grow while refusing an
@@ -131,18 +137,61 @@ pub fn select_latest_release(
     })
 }
 
-pub async fn fetch_update_info() -> Result<DesktopUpdateInfo, String> {
+/// The client the update check connects with, chosen by
+/// [`rust_srec::backend::release_check_client`] from the backend whose
+/// settings apply:
+///
+/// - Remote mode has no built-in backend and no proxy settings to read.
+/// - In local mode the check first waits, for at most
+///   [`UPDATE_CHECK_BOOT_WAIT`], until the boot task has returned (or its
+///   sender is gone), so a check made during startup does not go out before
+///   the settings can be read. A boot still running after the wait, or an
+///   exit that has begun, fails the check without making a request. The boot
+///   task stores the backend before
+///   it looks at the outcome of its start, so most failed starts still have
+///   one; only a start that failed before its services existed has none.
+async fn update_check_client(state: &DesktopBackendState) -> Result<reqwest::Client, String> {
+    let backend = if state.active_backend_mode == BackendMode::Remote {
+        None
+    } else {
+        if !state.boot_returned_within(UPDATE_CHECK_BOOT_WAIT).await {
+            return Err("The built-in backend is still starting".to_string());
+        }
+        // An exit stops the boot task, which ends the wait above; a check
+        // released that way would report while the app drains.
+        if state.init_cancel.is_cancelled() {
+            return Err("Rust-Srec is exiting".to_string());
+        }
+        let backend = state.backend();
+        if backend.is_none() {
+            log::info!(
+                "Built-in backend did not start; checking for updates over the system proxy"
+            );
+        }
+        backend
+    };
+
+    rust_srec::backend::release_check_client(backend.as_deref())
+        .await
+        .map_err(|error| match backend {
+            Some(_) => format!("Proxy route unavailable: {error}"),
+            None => format!("Failed to initialize HTTP client: {error}"),
+        })
+}
+
+pub async fn fetch_update_info(state: &DesktopBackendState) -> Result<DesktopUpdateInfo, String> {
     rust_srec::backend::install_rustls_provider();
 
     let current_version = env!("CARGO_PKG_VERSION");
-    let client = reqwest::Client::builder()
-        .timeout(UPDATE_CHECK_TIMEOUT)
-        .user_agent(format!("rust-srec-desktop/{current_version}"))
-        .build()
-        .map_err(|error| format!("Failed to initialize HTTP client: {error}"))?;
+    let client = update_check_client(state).await?;
 
     let mut response = client
         .get(GITHUB_RELEASES_API_URL)
+        .timeout(UPDATE_CHECK_TIMEOUT)
+        .header(
+            reqwest::header::USER_AGENT,
+            format!("rust-srec-desktop/{current_version}"),
+        )
         .header(reqwest::header::ACCEPT, "application/vnd.github+json")
         .send()
         .await
@@ -179,8 +228,10 @@ pub async fn fetch_update_info() -> Result<DesktopUpdateInfo, String> {
 }
 
 #[tauri::command]
-pub async fn check_for_updates() -> Result<DesktopUpdateInfo, String> {
-    fetch_update_info().await
+pub async fn check_for_updates(
+    state: tauri::State<'_, DesktopBackendState>,
+) -> Result<DesktopUpdateInfo, String> {
+    fetch_update_info(&state).await
 }
 
 #[tauri::command]

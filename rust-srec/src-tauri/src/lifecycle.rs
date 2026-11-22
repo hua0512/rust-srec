@@ -232,6 +232,21 @@ impl DesktopBackendState {
         self.container.lock().ok().and_then(|c| c.clone())
     }
 
+    /// Whether the boot task returns within `cap`. A boot task that ended
+    /// without settling (a panic dropped its sender) counts as returned.
+    pub(crate) async fn boot_returned_within(&self, cap: Duration) -> bool {
+        let mut boot_phase = self.boot_phase.clone();
+        match tokio::time::timeout(
+            cap,
+            boot_phase.wait_for(|phase| *phase == BootPhase::Settled),
+        )
+        .await
+        {
+            Ok(Ok(_)) | Ok(Err(_)) => true,
+            Err(_) => false,
+        }
+    }
+
     pub(crate) fn window_state(&self) -> Option<WindowState> {
         self.window_state.lock().ok().and_then(|s| s.clone())
     }
