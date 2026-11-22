@@ -97,6 +97,13 @@ pub struct ServiceContainerConfig {
     pub api_config: ApiServerConfig,
 }
 
+/// Snapshot of currently active recordings for desktop status and exit guards.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ActiveRecordingSummary {
+    pub active_count: usize,
+    pub total_speed_bytes_per_sec: u64,
+}
+
 impl ServiceContainerConfig {
     fn standard(cache_ttl: Duration, event_capacity: usize) -> Result<Self> {
         Ok(Self {
@@ -225,6 +232,8 @@ pub struct ServiceContainer {
     committed_write_supervisor: Arc<TaskSupervisor>,
     /// Logging configuration
     logging_config: Arc<std::sync::OnceLock<Arc<LoggingConfig>>>,
+    /// Installed when the API server starts with database authentication.
+    auth_service: std::sync::OnceLock<Arc<crate::api::auth_service::AuthService>>,
     startup_recovery_complete: std::sync::atomic::AtomicBool,
     /// Segment keys that should be discarded (min-size gate) to prevent danmu/xml and video
     /// from racing into the pipeline while being deleted.
@@ -576,6 +585,81 @@ impl ServiceContainer {
         &self,
     ) -> &Arc<ConfigService<SqlxConfigRepository, SqlxStreamerRepository>> {
         &self.config_service
+    }
+
+    /// Resolve a recorded media output ID to its `(file_type, normalized_path)`.
+    pub async fn media_output_location(&self, id: &str) -> Result<(String, std::path::PathBuf)> {
+        use crate::database::repositories::SessionRepository;
+
+        let media = self.session_repository.get_media_output(id).await?;
+        let path = crate::utils::fs::normalize_media_path(&media.file_path);
+        Ok((media.file_type, path))
+    }
+
+    /// Snapshot the number of active recordings and their aggregate throughput.
+    pub fn active_recording_summary(&self) -> ActiveRecordingSummary {
+        let downloads = self.download_manager.get_active_downloads();
+        let total_speed_bytes_per_sec = downloads
+            .iter()
+            .map(|download| download.progress.speed_bytes_per_sec)
+            .fold(0_u64, u64::saturating_add);
+        ActiveRecordingSummary {
+            active_count: downloads.len(),
+            total_speed_bytes_per_sec,
+        }
+    }
+
+    /// Subscribe to live download manager lifecycle and progress events.
+    pub fn subscribe_download_events(
+        &self,
+    ) -> tokio::sync::broadcast::Receiver<crate::downloader::DownloadManagerEvent> {
+        self.download_manager.subscribe()
+    }
+
+    /// Issue a local desktop session for the active admin user when the
+    /// loopback desktop app operates without password sign-in.
+    pub async fn issue_local_desktop_session(
+        &self,
+    ) -> Result<(String, crate::api::auth_service::AuthResponse)> {
+        let auth = self.auth_service.get().ok_or_else(|| {
+            crate::Error::ApiError("Authentication service is not initialized".to_string())
+        })?;
+        auth.issue_local_desktop_session()
+            .await
+            .map_err(|error| crate::Error::ApiError(error.to_string()))
+    }
+
+    /// Restore previously persisted local desktop `(session_id, user_id)` pairs
+    /// on startup when password sign-in remains disabled.
+    pub fn restore_local_desktop_sessions(
+        &self,
+        sessions: impl IntoIterator<Item = (String, String)>,
+    ) {
+        if let Some(auth) = self.auth_service.get() {
+            auth.restore_local_desktop_sessions(sessions);
+        }
+    }
+
+    /// Return the currently tracked local desktop `(session_id, user_id)` pairs.
+    pub fn list_local_desktop_sessions(&self) -> Vec<(String, String)> {
+        self.auth_service
+            .get()
+            .map(|auth| auth.list_local_desktop_sessions())
+            .unwrap_or_default()
+    }
+
+    /// Revoke all tracked local-desktop sessions (plus any persisted entries) in
+    /// SQLite and clear their in-memory exemptions.
+    pub async fn revoke_local_desktop_sessions(
+        &self,
+        extra_sessions: &[(String, String)],
+    ) -> Result<usize> {
+        let auth = self.auth_service.get().ok_or_else(|| {
+            crate::Error::ApiError("Authentication service is not initialized".to_string())
+        })?;
+        auth.revoke_local_desktop_sessions(extra_sessions)
+            .await
+            .map_err(|error| crate::Error::ApiError(error.to_string()))
     }
 
     /// Set the logging configuration

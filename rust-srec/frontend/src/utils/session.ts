@@ -9,11 +9,16 @@ export type SessionData = {
   };
   roles: string[];
   mustChangePassword: boolean;
+  /** Desktop-only scope binding a stored session to `'local'` or `'remote:<url>'`. */
+  backendScope?: string;
+  /** Desktop-only flag indicating the session was issued via local auto-login. */
+  autoLogin?: boolean;
 };
 
 import { isDesktopBuild } from '@/utils/desktop';
 import {
   BROWSER_SESSION_STORAGE_KEY,
+  getCurrentDesktopSessionScope,
   isBrowserRuntime,
   parseStoredSession,
 } from './session-storage';
@@ -24,6 +29,7 @@ export function getDesktopAccessToken(): string | null {
 
   const stored = parseStoredSession(
     window.localStorage.getItem(BROWSER_SESSION_STORAGE_KEY),
+    getCurrentDesktopSessionScope(),
   );
   const token = stored.token?.access_token;
   return typeof token === 'string' && token.length > 0 ? token : null;

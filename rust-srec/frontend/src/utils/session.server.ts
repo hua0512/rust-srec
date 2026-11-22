@@ -2,6 +2,7 @@ import type { SessionData } from './session';
 import { isDesktopBuild } from '@/utils/desktop';
 import {
   BROWSER_SESSION_STORAGE_KEY,
+  getCurrentDesktopSessionScope,
   isBrowserRuntime,
   parseStoredSession,
 } from './session-storage';
@@ -105,19 +106,28 @@ export function warnInsecureCookieOnce(): void {
 function getBrowserSession(): SessionLike<SessionData> {
   if (browserSessionSingleton) return browserSessionSingleton;
 
-  let data = parseStoredSession(
-    window.localStorage.getItem(BROWSER_SESSION_STORAGE_KEY),
-  );
+  const activeScope = getCurrentDesktopSessionScope();
+  const raw = window.localStorage.getItem(BROWSER_SESSION_STORAGE_KEY);
+  let data = parseStoredSession(raw, activeScope);
+  if (raw && Object.keys(data).length === 0) {
+    // Drop mismatched or corrupted stored credentials immediately so they are
+    // not left behind on disk after switching backends.
+    window.localStorage.removeItem(BROWSER_SESSION_STORAGE_KEY);
+  }
 
   browserSessionSingleton = {
     get data() {
       return data;
     },
     async update(next: SessionData) {
-      data = next;
+      const scoped: SessionData = {
+        ...next,
+        backendScope: getCurrentDesktopSessionScope(),
+      };
+      data = scoped;
       window.localStorage.setItem(
         BROWSER_SESSION_STORAGE_KEY,
-        JSON.stringify(next),
+        JSON.stringify(scoped),
       );
     },
     async clear() {

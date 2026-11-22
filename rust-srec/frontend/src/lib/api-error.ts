@@ -145,7 +145,12 @@ export function templateInUseCount(error: unknown): number | undefined {
   return typeof count === 'number' ? count : 0;
 }
 
-/** The message of a thrown error, or `fallback` when it carries none. */
+/**
+ * The message of a thrown error, or `fallback` when it carries none. Desktop
+ * shell commands reject with a plain string, which counts as the message.
+ */
 export function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback;
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string' && error.trim()) return error;
+  return fallback;
 }

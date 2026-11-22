@@ -10,4 +10,4 @@ pub(crate) mod playback_context;
 pub(crate) mod runtime_coordinator;
 pub(crate) mod session_cancels;
 
-pub use container::{ServiceContainer, ServiceContainerConfig};
+pub use container::{ActiveRecordingSummary, ServiceContainer, ServiceContainerConfig};

@@ -1,4 +1,5 @@
 import { createLazyFileRoute, useRouter } from '@tanstack/react-router';
+import { useQuery } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { LoginRequestSchema } from '../../api/schemas';
@@ -19,10 +20,19 @@ import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react';
 import { msg } from '@lingui/core/macro';
 import { useState, useCallback, memo } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
-import { loginFn } from '@/server/functions';
+import { Eye, EyeOff, Loader2, Server } from 'lucide-react';
+import { desktopAutoLoginFn, loginFn } from '@/server/functions';
 import { safeRedirectPath } from '@/lib/url';
 import { isLoginFailedError } from '@/lib/api-error';
+import { isDesktopBuild } from '@/utils/desktop';
+import { isTauriRuntime } from '@/utils/tauri';
+import { hasExplicitDesktopLogout } from '@/desktop/desktop-auth';
+import { switchDesktopToLocalBackend } from '@/desktop/desktop-backend-switch';
+import { getDesktopSettings } from '@/desktop/desktop-settings';
+import {
+  getDesktopBackendMode,
+  getDesktopRemoteUrl,
+} from '@/utils/session-storage';
 
 export const Route = createLazyFileRoute('/_public/login')({
   component: LoginComp,
@@ -53,6 +63,29 @@ function LoginPage() {
   const router = useRouter();
   const search = Route.useSearch();
 
+  const isDesktopRuntime = isDesktopBuild() && isTauriRuntime();
+  const desktopBackendMode = isDesktopRuntime
+    ? getDesktopBackendMode()
+    : 'local';
+  const desktopRemoteUrl =
+    isDesktopRuntime && desktopBackendMode === 'remote'
+      ? getDesktopRemoteUrl()
+      : null;
+  const canCheckLocalAutoLogin =
+    isDesktopRuntime &&
+    desktopBackendMode === 'local' &&
+    hasExplicitDesktopLogout();
+
+  const { data: desktopSettings } = useQuery({
+    queryKey: ['desktop', 'settings', 'login-check'],
+    queryFn: getDesktopSettings,
+    enabled: canCheckLocalAutoLogin,
+    retry: false,
+  });
+
+  const showContinueWithoutPassword =
+    canCheckLocalAutoLogin && desktopSettings?.requireLogin === false;
+
   const handleLoginSuccess = useCallback(
     async (mustChangePassword: boolean) => {
       await router.invalidate();
@@ -75,7 +108,7 @@ function LoginPage() {
       }
       void router.navigate({ to: '/dashboard', replace: true });
     },
-    [router, search.redirect],
+    [i18n, router, search.redirect],
   );
 
   return (
@@ -116,17 +149,94 @@ function LoginPage() {
               <Trans>Enter your credentials to access your account</Trans>
             </p>
           </div>
-          <LoginForm onSuccess={handleLoginSuccess} />
+          <LoginForm
+            onSuccess={handleLoginSuccess}
+            showContinueWithoutPassword={showContinueWithoutPassword}
+          />
+          {isDesktopRuntime && desktopBackendMode === 'remote' && (
+            <RemoteBackendEscapeHatch remoteUrl={desktopRemoteUrl} />
+          )}
         </div>
       </div>
     </div>
   );
 }
 
+const RemoteBackendEscapeHatch = memo(
+  ({ remoteUrl }: { remoteUrl: string | null }) => {
+    const { i18n } = useLingui();
+    const [isSwitching, setIsSwitching] = useState(false);
+
+    const handleSwitchToLocal = useCallback(async () => {
+      setIsSwitching(true);
+      try {
+        await switchDesktopToLocalBackend();
+      } catch (error: unknown) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : i18n._(msg`Failed to switch to local backend`);
+        toast.error(message);
+        setIsSwitching(false);
+      }
+    }, [i18n]);
+
+    return (
+      <div className="rounded-lg border border-border/70 bg-muted/40 p-3.5 space-y-3">
+        <div className="flex items-start gap-2.5">
+          <Server
+            className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <div className="min-w-0 flex-1 space-y-0.5">
+            <p className="text-xs font-medium text-foreground">
+              <Trans>Using remote server</Trans>
+            </p>
+            {remoteUrl && (
+              <p className="font-mono text-xs text-muted-foreground break-all">
+                {remoteUrl}
+              </p>
+            )}
+          </div>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="w-full"
+          disabled={isSwitching}
+          onClick={() => void handleSwitchToLocal()}
+        >
+          {isSwitching ? (
+            <>
+              <Loader2
+                className="mr-2 size-4 animate-spin"
+                aria-hidden="true"
+              />
+              <Trans>Switching to local backend...</Trans>
+            </>
+          ) : (
+            <Trans>Switch to local backend</Trans>
+          )}
+        </Button>
+      </div>
+    );
+  },
+);
+
+RemoteBackendEscapeHatch.displayName = 'RemoteBackendEscapeHatch';
+
 const LoginForm = memo(
-  ({ onSuccess }: { onSuccess: (mustChangePassword: boolean) => void }) => {
+  ({
+    onSuccess,
+    showContinueWithoutPassword,
+  }: {
+    onSuccess: (mustChangePassword: boolean) => Promise<void> | void;
+    showContinueWithoutPassword: boolean;
+  }) => {
     const { i18n } = useLingui();
     const [showPassword, setShowPassword] = useState(false);
+    const [isAutoLoggingIn, setIsAutoLoggingIn] = useState(false);
 
     const form = useForm<LoginFormValues>({
       resolver: zodResolver(LoginFormSchema),
@@ -147,7 +257,7 @@ const LoginForm = memo(
           },
         });
 
-        onSuccess(!!response.mustChangePassword);
+        await onSuccess(!!response.mustChangePassword);
       } catch (error: unknown) {
         const errorMessage =
           error instanceof Error && !isLoginFailedError(error)
@@ -156,6 +266,28 @@ const LoginForm = memo(
         toast.error(errorMessage);
       }
     };
+
+    const handleContinueWithoutPassword = useCallback(async () => {
+      setIsAutoLoggingIn(true);
+      try {
+        const session = await desktopAutoLoginFn();
+        if (session) {
+          await onSuccess(!!session.mustChangePassword);
+          return;
+        }
+        toast.info(
+          i18n._(msg`Password sign-in is required to access this server`),
+        );
+      } catch (error: unknown) {
+        const errorMessage =
+          error instanceof Error
+            ? error.message
+            : i18n._(msg`Automatic sign-in failed`);
+        toast.error(errorMessage);
+      } finally {
+        setIsAutoLoggingIn(false);
+      }
+    }, [i18n, onSuccess]);
 
     const togglePasswordVisibility = useCallback(() => {
       setShowPassword((prev) => !prev);
@@ -241,7 +373,7 @@ const LoginForm = memo(
           <Button
             type="submit"
             className="w-full"
-            disabled={form.formState.isSubmitting}
+            disabled={form.formState.isSubmitting || isAutoLoggingIn}
           >
             {form.formState.isSubmitting ? (
               <Trans>Signing in...</Trans>
@@ -249,6 +381,27 @@ const LoginForm = memo(
               <Trans>Sign In</Trans>
             )}
           </Button>
+          {showContinueWithoutPassword && (
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full"
+              disabled={form.formState.isSubmitting || isAutoLoggingIn}
+              onClick={() => void handleContinueWithoutPassword()}
+            >
+              {isAutoLoggingIn ? (
+                <>
+                  <Loader2
+                    className="mr-2 size-4 animate-spin"
+                    aria-hidden="true"
+                  />
+                  <Trans>Signing in...</Trans>
+                </>
+              ) : (
+                <Trans>Continue without password</Trans>
+              )}
+            </Button>
+          )}
         </form>
       </Form>
     );

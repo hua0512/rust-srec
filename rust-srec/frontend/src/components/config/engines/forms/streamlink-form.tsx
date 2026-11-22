@@ -45,6 +45,7 @@ const STREAMLINK_SECTIONS: readonly SectionSpec[] = [
         label: msg`Binary Path`,
         description: msg`Absolute path or 'streamlink' in PATH`,
         fallback: 'streamlink',
+        pathPicker: 'file',
       },
       {
         kind: 'text',
@@ -53,6 +54,7 @@ const STREAMLINK_SECTIONS: readonly SectionSpec[] = [
         description: msg`FFmpeg used to remux Streamlink output. Enter a path on the backend server without shell quotes. The environment default uses FFMPEG_PATH, then ffmpeg from PATH.`,
         fallback: '',
         fallbackLabel: 'FFMPEG_PATH or ffmpeg',
+        pathPicker: 'file',
       },
     ],
   },

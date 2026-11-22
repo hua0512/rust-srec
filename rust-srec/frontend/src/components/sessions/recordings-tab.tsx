@@ -11,6 +11,7 @@ import { formatBytes, formatDuration } from '@/lib/format';
 import {
   FileVideo,
   Download,
+  ExternalLink,
   FolderOpen,
   Play,
   Video,
@@ -21,7 +22,7 @@ import {
   Unlink,
   ArrowRight,
 } from 'lucide-react';
-import { isPlayable } from '@/lib/media';
+import { isExternallyPlayable, isPlayable } from '@/lib/media';
 import { ListPanelEmpty } from '@/components/shared/list-panel';
 import { getMediaFileTypeMeta } from '@/lib/media-file-type';
 import { MediaOutput } from '@/api/schemas/system';
@@ -33,7 +34,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { formatDate, formatLocalizedDuration } from '@/lib/datetime';
-import { isTauriRuntime } from '@/utils/tauri';
+import { isLocalDesktopBackend } from '@/desktop/desktop-auth';
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
@@ -60,6 +61,7 @@ interface RecordingsTabProps {
   isSegmentsLoading?: boolean;
   onDownload: (output: MediaOutput) => void;
   onPlay: (output: MediaOutput) => void;
+  onOpenExternal?: (output: MediaOutput) => void;
 }
 
 export type SplitReasonRecord = {
@@ -144,16 +146,18 @@ const OutputRow = memo(function OutputRow({
   output,
   onDownload,
   onPlay,
+  onOpenExternal,
 }: {
   output: MediaOutput;
   onDownload: (output: MediaOutput) => void;
   onPlay: (output: MediaOutput) => void;
+  onOpenExternal?: (output: MediaOutput) => void;
 }) {
   const { i18n } = useLingui();
-  const fileName = output.file_path.split('/').pop();
-  // The desktop build owns the file already, so its action points at it on disk
-  // instead of transferring a copy.
-  const isDesktop = isTauriRuntime();
+  const fileName = output.file_path.split(/[/\\]/).pop();
+  // Local desktop builds own the file on disk; remote desktop sessions download
+  // from the remote server just like the web UI.
+  const isLocalDesktop = isLocalDesktopBackend();
   // `format` is a media file type (VIDEO, DANMU_XML, ...), not an extension.
   const typeMeta = getMediaFileTypeMeta(output.format);
   const TypeIcon = typeMeta.icon;
@@ -181,7 +185,7 @@ const OutputRow = memo(function OutputRow({
           className="h-7 text-[10px]"
           onClick={() => onDownload(output)}
         >
-          {isDesktop ? (
+          {isLocalDesktop ? (
             <>
               <FolderOpen className="mr-1.5 h-3 w-3" />{' '}
               <Trans>Show in folder</Trans>
@@ -204,6 +208,20 @@ const OutputRow = memo(function OutputRow({
           >
             <MessageSquare className="mr-1.5 h-3 w-3" />{' '}
             <Trans>View Danmu</Trans>
+          </Button>
+        )}
+        {isExternallyPlayable(output) && onOpenExternal && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-[10px]"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenExternal(output);
+            }}
+          >
+            <ExternalLink className="mr-1.5 h-3 w-3" />{' '}
+            <Trans>Open in player</Trans>
           </Button>
         )}
         {isPlayable(output) && (
@@ -230,12 +248,14 @@ const TimelineNode = memo(function TimelineNode({
   isSegmentsLoading,
   onDownload,
   onPlay,
+  onOpenExternal,
 }: {
   group: TimelineGroup;
   index: number;
   isSegmentsLoading?: boolean;
   onDownload: (output: MediaOutput) => void;
   onPlay: (output: MediaOutput) => void;
+  onOpenExternal?: (output: MediaOutput) => void;
 }) {
   const { i18n } = useLingui();
   const delay = Math.min(index * 0.05, MAX_STAGGER_DELAY);
@@ -349,6 +369,7 @@ const TimelineNode = memo(function TimelineNode({
               output={out}
               onDownload={onDownload}
               onPlay={onPlay}
+              onOpenExternal={onOpenExternal}
             />
           ))}
         </div>
@@ -492,6 +513,7 @@ export function RecordingsTab({
   isSegmentsLoading,
   onDownload,
   onPlay,
+  onOpenExternal,
 }: RecordingsTabProps) {
   const { i18n } = useLingui();
   const timelineGroups = useMemo(
@@ -540,6 +562,7 @@ export function RecordingsTab({
                       isSegmentsLoading={isSegmentsLoading}
                       onDownload={onDownload}
                       onPlay={onPlay}
+                      onOpenExternal={onOpenExternal}
                     />
                   ))}
                 </AnimatePresence>

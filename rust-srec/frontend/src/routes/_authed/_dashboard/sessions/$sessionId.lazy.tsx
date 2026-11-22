@@ -33,9 +33,16 @@ import { msg } from '@lingui/core/macro';
 import { useLingui } from '@lingui/react';
 import { toast } from 'sonner';
 import { getMediaDownloadUrl, getMediaUrl, isSameOriginUrl } from '@/lib/url';
-import { isTauriRuntime, revealItemInDir } from '@/utils/tauri';
+import { isLocalDesktopBackend } from '@/desktop/desktop-auth';
+import { openDesktopExternalUrl } from '@/desktop/desktop-settings';
+import { isDesktopBuild } from '@/utils/desktop';
+import {
+  isTauriRuntime,
+  openRecordingInPlayer,
+  revealItemInDir,
+} from '@/utils/tauri';
 import { findDanmuOutput, resolvePlayerMediaType } from '@/lib/media';
-import { isNotFoundError } from '@/lib/api-error';
+import { errorMessage, isNotFoundError } from '@/lib/api-error';
 import type { MediaOutput } from '@/api/schemas/system';
 import type { SessionSegment } from '@/api/schemas/session';
 import { SessionHeader } from '@/components/sessions/session-header';
@@ -242,8 +249,8 @@ function SessionDetailPage() {
   const { i18n } = useLingui();
   const accessToken = user?.token?.access_token;
 
-  // In the desktop build the recording is already on this machine, so it is
-  // pointed at in the file manager rather than copied anywhere.
+  // With the built-in local backend the recording is already on this machine,
+  // so it is pointed at in the file manager rather than copied anywhere.
   //
   // On the web the browser does the transfer: `getMediaDownloadUrl` yields a URL
   // the anchor below streams straight to disk, and the media token travels in
@@ -255,7 +262,7 @@ function SessionDetailPage() {
     (output: MediaOutput) => {
       const filename = output.file_path.split(/[/\\]/).pop() || 'video';
 
-      if (isTauriRuntime()) {
+      if (isLocalDesktopBackend()) {
         revealItemInDir(output.file_path).catch((error: unknown) => {
           const message =
             error instanceof Error ? error.message : String(error);
@@ -267,6 +274,18 @@ function SessionDetailPage() {
       const url = getMediaDownloadUrl(output.id, accessToken);
       if (!url) {
         toast.error(i18n._(msg`Invalid download URL`));
+        return;
+      }
+
+      // A remote server is cross-origin to the desktop webview, where the
+      // navigation below would replace the app window, so the system browser
+      // downloads the file instead.
+      if (isDesktopBuild() && isTauriRuntime()) {
+        openDesktopExternalUrl(url).catch((error: unknown) => {
+          toast.error(
+            errorMessage(error, i18n._(msg`Failed to open the download link`)),
+          );
+        });
         return;
       }
 
@@ -297,6 +316,16 @@ function SessionDetailPage() {
       );
     },
     [i18n, accessToken],
+  );
+
+  const handleOpenExternal = useCallback(
+    (output: MediaOutput) => {
+      openRecordingInPlayer(output.id).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        toast.error(i18n._(msg`Could not open the file: ${message}`));
+      });
+    },
+    [i18n],
   );
 
   if (isSessionLoading) {
@@ -424,6 +453,9 @@ function SessionDetailPage() {
               isSegmentsLoading={isSegmentsLoading}
               onDownload={handleDownload}
               onPlay={setPlayingOutput}
+              onOpenExternal={
+                isLocalDesktopBackend() ? handleOpenExternal : undefined
+              }
             />
           </TabsContent>
 
@@ -469,7 +501,7 @@ function SessionDetailPage() {
                     ) || ''
                   }
                   title={
-                    playingOutput.file_path.split('/').pop() ??
+                    playingOutput.file_path.split(/[/\\]/).pop() ??
                     playingOutput.file_path
                   }
                 />
@@ -489,7 +521,7 @@ function SessionDetailPage() {
                       ) || ''
                     }
                     title={
-                      playingOutput.file_path.split('/').pop() ??
+                      playingOutput.file_path.split(/[/\\]/).pop() ??
                       playingOutput.file_path
                     }
                     mediaType={resolvePlayerMediaType(

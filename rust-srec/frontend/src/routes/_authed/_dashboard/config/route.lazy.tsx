@@ -10,6 +10,7 @@ import { useLingui } from '@lingui/react';
 import {
   Settings,
   Globe,
+  Monitor,
   LayoutTemplate,
   Cpu,
   Palette,
@@ -21,6 +22,7 @@ import {
   Network,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { isTauriRuntime } from '@/utils/tauri';
 import { motion } from 'motion/react';
 import { Separator } from '@/components/ui/separator';
 
@@ -46,6 +48,16 @@ function ConfigLayout() {
       icon: Globe,
       description: i18n._(msg`System-wide preferences`),
     },
+    ...(isTauriRuntime()
+      ? [
+          {
+            title: i18n._(msg`Desktop`),
+            href: '/config/desktop',
+            icon: Monitor,
+            description: i18n._(msg`Tray, startup & window behavior`),
+          },
+        ]
+      : []),
     {
       title: i18n._(msg`Platforms`),
       href: '/config/platforms',

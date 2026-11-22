@@ -402,3 +402,101 @@ async fn session_expiry_covers_access_tokens_that_outlive_the_refresh_token() {
         .unwrap();
     assert!(session_expiry(&fixture, &session_id).await >= access_expiry(&fixture, &refreshed));
 }
+
+#[tokio::test]
+async fn local_desktop_session_bypasses_must_change_survives_restart_and_revokes_in_sqlite() {
+    let fixture = Fixture::new(AuthConfig::default()).await;
+    let users = Arc::new(SqlxUserRepository::new(
+        fixture.pool.clone(),
+        fixture.pool.clone(),
+    ));
+
+    // The seeded `admin` account loses its admin role, so the session must go
+    // to the account that holds the role rather than the one with the name.
+    let mut seeded_admin = users
+        .find_by_username("admin")
+        .await
+        .unwrap()
+        .expect("migrations seed the admin account");
+    seeded_admin.roles = serde_json::to_string(&vec!["user"]).unwrap();
+    seeded_admin.must_change_password = false;
+    users.update(&seeded_admin).await.unwrap();
+
+    let mut real_admin = UserDbModel::new(
+        "desktop-admin",
+        AuthService::hash_password(PASSWORD).unwrap(),
+        vec!["admin".to_owned()],
+    );
+    real_admin.must_change_password = true;
+    users.create(&real_admin).await.unwrap();
+
+    let (username, local_session) = fixture
+        .service
+        .issue_local_desktop_session()
+        .await
+        .expect("local desktop session should be issued");
+    assert_eq!(username, "desktop-admin");
+    assert!(!local_session.must_change_password);
+    fixture.assert_authorized(&local_session).await;
+
+    // A normal password login for the exact same admin is still blocked by
+    // `must_change_password`, proving the exemption is scoped to the local
+    // desktop session ID rather than clearing the user's SQLite flag.
+    let password_login = fixture
+        .service
+        .authenticate("desktop-admin", PASSWORD, None, None)
+        .await
+        .unwrap();
+    assert!(password_login.must_change_password);
+    assert!(matches!(
+        fixture
+            .service
+            .authorize_access_token(&password_login.access_token, false)
+            .await,
+        Err(AuthError::PasswordChangeRequired)
+    ));
+
+    // Simulate an app restart: a fresh AuthService restores the persisted local
+    // desktop session list before serving requests, so both access and refresh
+    // keep working without tripping `must_change_password`.
+    let persisted = fixture.service.list_local_desktop_sessions();
+    assert_eq!(persisted.len(), 1);
+    let restarted = AuthService::new(
+        users.clone(),
+        fixture.tokens.clone(),
+        Arc::new(SqlxApiKeyRepository::new(
+            fixture.pool.clone(),
+            fixture.pool.clone(),
+        )),
+        fixture.service.jwt_service.clone(),
+        AuthConfig::default(),
+    );
+    restarted.restore_local_desktop_sessions(persisted.clone());
+    restarted
+        .authorize_access_token(&local_session.access_token, false)
+        .await
+        .expect("restored local desktop session should authorize across restart");
+    let refreshed = restarted
+        .refresh_tokens(&local_session.refresh_token)
+        .await
+        .expect("restored local desktop session should refresh across restart");
+    assert!(!refreshed.must_change_password);
+
+    // Turning on `require_login` revokes the local desktop session in SQLite
+    // (returning TokenRevoked rather than merely dropping the in-memory flag).
+    let revoked = restarted
+        .revoke_local_desktop_sessions(&persisted)
+        .await
+        .unwrap();
+    assert_eq!(revoked, 1);
+    assert!(matches!(
+        restarted
+            .authorize_access_token(&refreshed.access_token, false)
+            .await,
+        Err(AuthError::TokenRevoked)
+    ));
+    assert!(matches!(
+        restarted.refresh_tokens(&refreshed.refresh_token).await,
+        Err(AuthError::TokenRevoked)
+    ));
+}

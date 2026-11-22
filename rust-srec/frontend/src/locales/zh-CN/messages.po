@@ -135,7 +135,7 @@ msgstr "{0, plural, other {# 个可用预设}}"
 
 #. placeholder {0}: timelineGroups.length
 #. placeholder {1}: outputs.length
-#: src/components/sessions/recordings-tab.tsx:515
+#: src/components/sessions/recordings-tab.tsx:537
 msgid "{0, plural, one {# Segment} other {# Segments}} ({1, plural, one {# File} other {# Files}})"
 msgstr "{0, plural, other {# 个分段}}（{1, plural, other {# 个文件}}）"
 
@@ -264,7 +264,7 @@ msgstr "{count, plural, other {# 个进行中的上传}}"
 msgid "{count, plural, one {# file operation is not responding} other {# file operations are not responding}}"
 msgstr "{count, plural, other {# 个文件操作无响应}}"
 
-#: src/components/config/engines/forms/setting-fields.tsx:1055
+#: src/components/config/engines/forms/setting-fields.tsx:1083
 msgid "{count, plural, one {# item} other {# items}}"
 msgstr "{count, plural, other {# 项}}"
 
@@ -276,7 +276,7 @@ msgstr "{count, plural, other {# 个任务进行中}}"
 msgid "{count, plural, one {# output} other {# outputs}}"
 msgstr "{count, plural, other {# 个产物}}"
 
-#: src/components/config/engines/forms/setting-fields.tsx:921
+#: src/components/config/engines/forms/setting-fields.tsx:949
 msgid "{count, plural, one {# parameter} other {# parameters}}"
 msgstr "{count, plural, other {# 个参数}}"
 
@@ -284,11 +284,11 @@ msgstr "{count, plural, other {# 个参数}}"
 msgid "{count, plural, one {# partial file from interrupted jobs} other {# partial files from interrupted jobs}}"
 msgstr "{count, plural, other {中断的任务留下了 # 个残留文件}}"
 
-#: src/components/config/engines/forms/setting-sections.tsx:179
+#: src/components/config/engines/forms/setting-sections.tsx:180
 msgid "{count} changed"
 msgstr "{count} 项已更改"
 
-#: src/components/config/engines/forms/setting-sections.tsx:178
+#: src/components/config/engines/forms/setting-sections.tsx:179
 msgid "{count} overridden"
 msgstr "{count} 项已覆盖"
 
@@ -367,7 +367,7 @@ msgstr "{retryableCount, plural, other {重试 # 个失败或已取消的流水�
 msgid "{runningCount} of them are still running and will be cancelled first."
 msgstr "其中 {runningCount} 个仍在运行，将先被取消。"
 
-#: src/components/config/engines/forms/setting-fields.tsx:353
+#: src/components/config/engines/forms/setting-fields.tsx:356
 msgid "{seconds} s"
 msgstr "{seconds} 秒"
 
@@ -564,7 +564,7 @@ msgstr "使用“{0}”的主播仍在删除中，请稍后重试。"
 msgid "A template being removed lets go of the proxy once the recordings using it finish."
 msgstr "正在移除的模板会在使用它的录制结束后释放该代理。"
 
-#: src/components/config/engines/forms/setting-fields.tsx:1239
+#: src/components/config/engines/forms/setting-fields.tsx:1267
 msgid "A template can't turn this off; do that on the engine."
 msgstr "模板无法关闭此项，请在引擎中关闭。"
 
@@ -683,6 +683,7 @@ msgstr "操作"
 msgid "Actions"
 msgstr "操作"
 
+#: src/components/config/desktop/backend-security-card.tsx:120
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:232
 #: src/routes/_authed/_dashboard/config/language.lazy.tsx:113
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:275
@@ -846,7 +847,7 @@ msgstr "粘贴账号的 Cookie 或令牌来添加账号，即可登录录制。"
 msgid "Add Override"
 msgstr "添加覆盖项"
 
-#: src/components/config/engines/forms/setting-fields.tsx:1002
+#: src/components/config/engines/forms/setting-fields.tsx:1030
 msgid "Add parameter"
 msgstr "添加参数"
 
@@ -928,7 +929,7 @@ msgstr "调整侧边栏样式和行为。"
 msgid "Adjust the roundness of UI elements."
 msgstr "调整 UI 元素的圆角程度。"
 
-#: src/components/config/engines/forms/setting-sections.tsx:551
+#: src/components/config/engines/forms/setting-sections.tsx:553
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:46
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:303
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:105
@@ -1040,13 +1041,17 @@ msgstr "同时从磁盘删除文件"
 msgid "Also removes replays whose timestamps were shifted."
 msgstr "同时移除时间戳被平移的重放。"
 
-#: src/components/config/shared/output-settings-card.tsx:225
+#: src/components/config/shared/output-settings-card.tsx:229
 msgid "Always use Streamlink"
 msgstr "始终使用 Streamlink"
 
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:302
 msgid "An explicit Device ID overrides the acf_did cookie and selected source. Server registration requires an additional request and is reused by this extractor."
 msgstr "指定的设备 ID 优先于 acf_did Cookie 和所选来源。服务端注册需要额外请求，同一提取器会复用注册结果。"
+
+#: src/main.desktop.tsx:84
+msgid "An unexpected error occurred"
+msgstr "发生意外错误"
 
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:97
 msgid "Android App"
@@ -1102,7 +1107,7 @@ msgstr "API 密钥已吊销"
 
 #: src/components/sidebar/user-menu.tsx:119
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:133
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:74
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:86
 msgid "API Keys"
 msgstr "API 密钥"
 
@@ -1134,7 +1139,7 @@ msgstr "应用令牌"
 msgid "App uses anonymous playback. Web is retained for compatibility. Audio only always uses Web."
 msgstr "App 使用匿名播放。Web 为兼容旧配置而保留。仅音频始终使用 Web。"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:89
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:101
 msgid "Appearance & style"
 msgstr "外观与样式"
 
@@ -1187,11 +1192,11 @@ msgstr "确定要删除此会话吗？此操作无法撤销。"
 msgid "Are you sure you want to delete this streamer?"
 msgstr "确定要删除此主播吗？"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:47
+#: src/components/config/engines/forms/ffmpeg-form.tsx:48
 msgid "Args inserted before -i input_url"
 msgstr "插入到 -i input_url 之前的参数"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:55
+#: src/components/config/engines/forms/ffmpeg-form.tsx:56
 msgid "Args used for processing/encoding"
 msgstr "用于处理/编码的参数"
 
@@ -1199,7 +1204,7 @@ msgstr "用于处理/编码的参数"
 msgid "Argument {number}"
 msgstr "参数 {number}"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:40
+#: src/components/config/engines/forms/ffmpeg-form.tsx:41
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:137
 msgid "Arguments"
 msgstr "参数列表"
@@ -1212,6 +1217,10 @@ msgstr "只有程序模式才能设置参数"
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:182
 msgid "Artist"
 msgstr "艺术家"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:650
+msgid "Ask for confirmation before quitting when recordings are currently in progress."
+msgstr "当前有正在进行的录制时，退出前弹出确认提示。"
 
 #: src/components/pipeline/constants.tsx:53
 msgid "ASS Burn-in"
@@ -1321,7 +1330,7 @@ msgstr "认证"
 msgid "Auto"
 msgstr "自动"
 
-#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:325
+#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:320
 msgid "Auto Layout"
 msgstr "自动布局"
 
@@ -1329,7 +1338,7 @@ msgstr "自动布局"
 msgid "Auto re-login"
 msgstr "自动重新登录"
 
-#: src/components/config/global/file-config-card.tsx:39
+#: src/components/config/global/file-config-card.tsx:40
 msgid "Auto Thumbnail"
 msgstr "自动封面"
 
@@ -1350,7 +1359,7 @@ msgstr "已开启自动滚动"
 msgid "Autofill name from URL"
 msgstr "从 URL 自动填充名称"
 
-#: src/routes/_public/login.lazy.tsx:101
+#: src/routes/_public/login.lazy.tsx:134
 msgid "Automate your stream recordings with ease and reliability."
 msgstr "轻松自动化您的直播录制。"
 
@@ -1358,7 +1367,7 @@ msgstr "轻松自动化您的直播录制。"
 msgid "Automatic"
 msgstr "自动"
 
-#: src/components/config/shared/output-settings-card.tsx:222
+#: src/components/config/shared/output-settings-card.tsx:226
 msgid "Automatic (match the site)"
 msgstr "自动（按站点匹配）"
 
@@ -1366,9 +1375,21 @@ msgstr "自动（按站点匹配）"
 msgid "Automatic follows the delay the stream suggests, else three segments behind the live edge. Finished streams are always recorded from the beginning."
 msgstr "自动：采用流建议的延迟，否则落后直播边缘三个分段。已结束的流始终从头录制。"
 
-#: src/components/config/global/file-config-card.tsx:41
+#: src/routes/_public/login.lazy.tsx:285
+msgid "Automatic sign-in failed"
+msgstr "自动登录失败"
+
+#: src/components/config/global/file-config-card.tsx:42
 msgid "Automatically generate a thumbnail for the first segment of each session."
 msgstr "自动为每个会话的第一段生成封面图。"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:546
+msgid "Automatically start Rust-Srec when you sign in to your computer."
+msgstr "登录电脑时自动启动 Rust-Srec。"
+
+#: src/components/config/desktop/external-tools-card.tsx:38
+msgid "Available"
+msgstr "可用"
 
 #: src/components/notifications/forms/discord-form.tsx:73
 msgid "Avatar URL (Optional)"
@@ -1426,7 +1447,7 @@ msgid "Back to presets"
 msgstr "返回预设列表"
 
 #: src/components/sessions/session-header.tsx:44
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:329
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:358
 msgid "Back to Sessions"
 msgstr "返回录制会话"
 
@@ -1442,6 +1463,14 @@ msgstr "返回模板列表"
 #: src/routes/_authed/_dashboard/pipeline/workflows/$workflowId.lazy.tsx:113
 msgid "Back to workflows"
 msgstr "返回工作流列表"
+
+#: src/components/config/desktop/backend-security-card.tsx:312
+msgid "Backend & Security"
+msgstr "后端与安全"
+
+#: src/components/config/desktop/backend-security-card.tsx:326
+msgid "Backend mode"
+msgstr "后端模式"
 
 #: src/components/sidebar/footer.tsx:38
 msgid "Backend: {backendLabel}"
@@ -1460,8 +1489,8 @@ msgid "Backup"
 msgstr "备份"
 
 #: src/components/config/global/backup-restore-card.tsx:237
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:92
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:95
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:104
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:107
 msgid "Backup & Restore"
 msgstr "备份与恢复"
 
@@ -1713,13 +1742,25 @@ msgstr "品牌颜色"
 msgid "Breadcrumb"
 msgstr "面包屑导航"
 
-#: src/components/sessions/recordings-tab.tsx:266
+#: src/components/sessions/recordings-tab.tsx:286
 msgid "Break"
 msgstr "中断"
+
+#: src/components/config/shared/desktop-path-input.tsx:60
+msgid "Browse"
+msgstr "浏览"
 
 #: src/components/logging/log-file-browser.tsx:162
 msgid "Browse and download application log files. Filter by date range or download all."
 msgstr "浏览和下载应用程序日志文件。按日期范围筛选或下载全部。"
+
+#: src/components/config/shared/desktop-path-input.tsx:64
+msgid "Browse file"
+msgstr "选择文件"
+
+#: src/components/config/shared/desktop-path-input.tsx:63
+msgid "Browse folder"
+msgstr "选择文件夹"
 
 #: src/routes/_authed/_dashboard/pipeline/outputs.lazy.tsx:244
 msgid "Browse generated media artifacts from pipeline jobs"
@@ -1754,6 +1795,10 @@ msgstr "缓冲中"
 #: src/components/player/player-card.tsx:313
 msgid "Buffering presets are unavailable for this playback path."
 msgstr "当前播放方式不支持缓冲预设。"
+
+#: src/components/config/desktop/backend-security-card.tsx:332
+msgid "Built-in local backend"
+msgstr "内置本地后端"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:92
 msgid "Burn .ass subtitles into videos (produces *_burnin.mp4 by default). Pairs per segment and is batch-safe."
@@ -1976,6 +2021,22 @@ msgstr "检查耗时"
 msgid "Check failed"
 msgstr "检测失败"
 
+#: src/components/config/desktop/updates-card.tsx:102
+msgid "Check for new Rust-Srec desktop app releases."
+msgstr "检查 Rust-Srec 桌面应用的新版本发布。"
+
+#: src/components/config/desktop/updates-card.tsx:117
+msgid "Check for newer desktop releases automatically when Rust-Srec starts."
+msgstr "在 Rust-Srec 启动时自动检查桌面端新版本。"
+
+#: src/components/config/desktop/updates-card.tsx:146
+msgid "Check for updates"
+msgstr "检查更新"
+
+#: src/components/config/desktop/updates-card.tsx:115
+msgid "Check for updates automatically"
+msgstr "启动时自动检查更新"
+
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:93
 msgid "Check if file exists after conversion"
 msgstr "转换后检查文件是否存在"
@@ -1995,6 +2056,10 @@ msgstr "检查能否访问"
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:358
 msgid "Check that the notification account is not signed in to the BIGO app and that live notifications are on in its BIGO settings."
 msgstr "请确认通知账号没有同时登录 BIGO App，并且其 BIGO 设置中已打开开播通知。"
+
+#: src/components/config/desktop/external-tools-card.tsx:91
+msgid "Check the status and versions of local recording and media tools."
+msgstr "检查本地录制和媒体处理工具的状态与版本。"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:136
 msgid "Check this streamer and record when it goes live."
@@ -2028,6 +2093,10 @@ msgstr "校验数帮助"
 #: src/components/config/engines/engines-panel.tsx:102
 msgid "Checking"
 msgstr "检查中"
+
+#: src/components/config/desktop/external-tools-card.tsx:126
+msgid "Checking installed tools…"
+msgstr "正在检测已安装的工具…"
 
 #: src/components/streamers/streamer-editor.tsx:257
 msgid "Checking link"
@@ -2078,11 +2147,15 @@ msgstr "选择时区"
 msgid "Choose when this streamer should be recorded."
 msgstr "设置该主播在什么情况下会被录制。"
 
+#: src/components/config/desktop/backend-security-card.tsx:314
+msgid "Choose whether to run the built-in backend or connect to a remote Rust-Srec server."
+msgstr "选择运行内置本地后端，或连接到远程 Rust-Srec 服务器。"
+
 #: src/components/config/shared/network-settings-card.tsx:57
 msgid "Choose which accounts sign in to the platform."
 msgstr "选择用于登录平台的账号。"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:101
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:113
 msgid "Choose your display language"
 msgstr "选择你的显示语言"
 
@@ -2119,6 +2192,10 @@ msgstr "清除筛选"
 #: src/components/shared/batch-action-bar.tsx:95
 msgid "Clear selection"
 msgstr "清除选择"
+
+#: src/components/config/desktop/updates-card.tsx:242
+msgid "Clear skipped version"
+msgstr "清除已跳过版本"
 
 #: src/components/pipeline/workflows/step-library.tsx:607
 msgid "Click to add. You can reorder steps in the editor."
@@ -2163,6 +2240,10 @@ msgstr "正在克隆..."
 #: src/components/ui/sheet.tsx:77
 msgid "Close"
 msgstr "关闭"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:578
+msgid "Close button hides to tray"
+msgstr "关闭窗口时隐藏到托盘"
 
 #: src/components/player/player-card.tsx:525
 msgid "Close playback details"
@@ -2210,7 +2291,7 @@ msgstr "彩色"
 msgid "Coming soon"
 msgstr "即将推出"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:80
+#: src/components/config/engines/forms/streamlink-form.tsx:82
 msgid "Comma-separated list of channels to exclude from proxy"
 msgstr "用于排除代理的频道列表（逗号分隔）"
 
@@ -2358,6 +2439,10 @@ msgstr "配置并启动手动处理管道。"
 msgid "Configure download engine parameters"
 msgstr "配置录制引擎参数"
 
+#: src/components/config/desktop/external-tools-card.tsx:117
+msgid "Configure engines"
+msgstr "配置引擎"
+
 #: src/components/config/engines/engine-editor.tsx:115
 msgid "Configure granular options for the selected engine."
 msgstr "配置所选引擎的详细选项。"
@@ -2393,6 +2478,10 @@ msgstr "配置接收通知的位置和方式。"
 msgid "Configured Events"
 msgstr "已配置的事件"
 
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:648
+msgid "Confirm before quitting during recordings"
+msgstr "录制期间退出前确认"
+
 #: src/components/config/global/backup-restore-card.tsx:538
 msgid "Confirm Import"
 msgstr "确认导入"
@@ -2417,10 +2506,15 @@ msgstr "等待恢复超时后确认。"
 msgid "Connect an AI assistant (MCP)"
 msgstr "连接 AI 助手（MCP）"
 
+#: src/components/config/desktop/backend-security-card.tsx:349
+msgid "Connect the desktop app to an existing Rust-Srec server over HTTP or HTTPS."
+msgstr "通过 HTTP 或 HTTPS 将桌面应用连接到现有的 Rust-Srec 服务器。"
+
 #: src/components/config/engines/forms/mesio-sections.tsx:457
 msgid "Connect Timeout (ms)"
 msgstr "连接超时 (ms)"
 
+#: src/components/config/desktop/backend-security-card.tsx:503
 #: src/components/connection-status-indicator.tsx:22
 #: src/components/logging/log-viewer.tsx:324
 msgid "Connected"
@@ -2453,6 +2547,11 @@ msgstr "连接方式"
 msgid "Connection Error"
 msgstr "连接错误"
 
+#: src/components/config/desktop/backend-security-card.tsx:508
+#: src/components/config/desktop/backend-security-card.tsx:531
+msgid "Connection failed"
+msgstr "连接失败"
+
 #: src/components/streamers/card/stream-avatar-info.tsx:75
 msgid "Connection Instability"
 msgstr "连接不稳定"
@@ -2461,7 +2560,7 @@ msgstr "连接不稳定"
 msgid "Connection status: {statusLabel}"
 msgstr "连接状态：{statusLabel}"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:73
+#: src/components/config/engines/forms/ffmpeg-form.tsx:74
 msgid "Connection/activity timeout"
 msgstr "连接/活动超时"
 
@@ -2485,6 +2584,14 @@ msgstr "上下文"
 #: src/components/streamers/streamer-editor.tsx:261
 msgid "Continue"
 msgstr "继续"
+
+#: src/routes/_public/login.lazy.tsx:401
+msgid "Continue without password"
+msgstr "免密码继续进入"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:535
+msgid "Control how Rust-Srec launches and behaves in the system tray."
+msgstr "控制 Rust-Srec 的启动方式和系统托盘行为。"
 
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:184
 msgid "Control verbosity for each module. Lower levels include higher ones."
@@ -2631,6 +2738,10 @@ msgstr "无法加载预设：{0}"
 msgid "Could not load the preset <0>{presetName}</0>. Check that the server is reachable and try again."
 msgstr "无法加载预设 <0>{presetName}</0>。请确认服务器可访问后重试。"
 
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:325
+msgid "Could not open the file: {message}"
+msgstr "无法打开该文件：{message}"
+
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:217
 msgid "Could not read the storage quota."
 msgstr "无法读取存储容量。"
@@ -2639,7 +2750,7 @@ msgstr "无法读取存储容量。"
 msgid "Could not request lossless cutting. Refresh the recording status and try again."
 msgstr "无法请求无损分段。请刷新录制状态后重试。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:262
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:269
 msgid "Could not show the file: {message}"
 msgstr "无法显示该文件：{message}"
 
@@ -2890,11 +3001,11 @@ msgid "Current password is required"
 msgstr "必须填写当前密码"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:250
-#: src/components/config/engines/forms/setting-fields.tsx:493
-#: src/components/config/engines/forms/setting-fields.tsx:1042
-#: src/components/config/engines/forms/setting-fields.tsx:1123
-#: src/components/config/engines/forms/setting-fields.tsx:1188
-#: src/components/config/engines/forms/setting-fields.tsx:1210
+#: src/components/config/engines/forms/setting-fields.tsx:520
+#: src/components/config/engines/forms/setting-fields.tsx:1070
+#: src/components/config/engines/forms/setting-fields.tsx:1151
+#: src/components/config/engines/forms/setting-fields.tsx:1216
+#: src/components/config/engines/forms/setting-fields.tsx:1238
 #: src/components/pipeline/presets/default-presets-i18n.ts:53
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:312
 msgid "Custom"
@@ -2928,7 +3039,7 @@ msgstr "自定义请求头"
 msgid "Custom imported theme is active."
 msgstr "自定义导入主题已激活。"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:71
+#: src/components/config/engines/forms/streamlink-form.tsx:73
 msgid "Custom proxy URL for Twitch playlists"
 msgstr "Twitch 播放列表的自定义代理 URL"
 
@@ -2940,7 +3051,7 @@ msgstr "自定义画质值"
 msgid "Custom Tags"
 msgstr "自定义标签"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:32
+#: src/components/config/engines/forms/ffmpeg-form.tsx:33
 msgid "Custom User-Agent string (Optional)"
 msgstr "自定义 User-Agent 字符串（可选）"
 
@@ -3028,6 +3139,10 @@ msgstr "深色"
 msgid "Dashboard"
 msgstr "仪表盘"
 
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:707
+msgid "Data Folder"
+msgstr "数据文件夹"
+
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:250
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:353
 msgid "Database"
@@ -3081,7 +3196,7 @@ msgstr "默认"
 msgid "Default"
 msgstr "默认"
 
-#: src/components/config/engines/forms/setting-fields.tsx:101
+#: src/components/config/engines/forms/setting-fields.tsx:102
 msgid "Default ({fallback})"
 msgstr "默认（{fallback}）"
 
@@ -3400,6 +3515,12 @@ msgstr "取消全选"
 msgid "Design your automation pipeline step by step"
 msgstr "逐步设计你的自动化处理管道"
 
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:195
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:486
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:54
+msgid "Desktop"
+msgstr "桌面"
+
 #: src/components/notifications/desktop-channel-dialog.tsx:73
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:282
 msgid "Desktop Notifications"
@@ -3408,6 +3529,10 @@ msgstr "桌面通知"
 #: src/components/notifications/desktop-channel-dialog.tsx:115
 msgid "Desktop notifications are shown by the operating system even when the app is minimized."
 msgstr "即使应用已最小化，操作系统仍会显示桌面通知。"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:205
+msgid "Desktop preferences are only available in the Rust-Srec desktop app. Open Rust-Srec on your computer to configure tray, autostart, sleep protection, and local folder shortcuts."
+msgstr "桌面偏好设置仅在 Rust-Srec 桌面应用中可用。请在电脑上打开桌面应用以配置系统托盘、开机自启、防休眠和本地文件夹快捷入口。"
 
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:311
 msgid "Destination"
@@ -3517,8 +3642,8 @@ msgstr "禁用秒传"
 msgid "Disable selected"
 msgstr "禁用所选"
 
-#: src/components/config/engines/forms/setting-fields.tsx:127
-#: src/components/config/engines/forms/setting-fields.tsx:1207
+#: src/components/config/engines/forms/setting-fields.tsx:128
+#: src/components/config/engines/forms/setting-fields.tsx:1235
 #: src/components/config/shared/record-danmu-card.tsx:102
 #: src/components/credentials/account-row.tsx:92
 #: src/components/credentials/account-selection-section.tsx:157
@@ -3544,7 +3669,7 @@ msgstr "放弃未保存的更改？"
 msgid "Disconnected"
 msgstr "已断开"
 
-#: src/components/sessions/recordings-tab.tsx:277
+#: src/components/sessions/recordings-tab.tsx:297
 #: src/lib/split-reason.ts:53
 msgid "Discontinuity"
 msgstr "不连续"
@@ -3596,8 +3721,9 @@ msgid "Douyu UHD rate"
 msgstr "斗鱼超清画质值"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:163
-#: src/components/sessions/recordings-tab.tsx:191
+#: src/components/sessions/recordings-tab.tsx:195
 #: src/components/streamers/progress-indicator.tsx:70
+#: src/desktop/desktop-update-listener.tsx:41
 msgid "Download"
 msgstr "下载"
 
@@ -3627,7 +3753,7 @@ msgstr "下载并发数"
 msgid "Download Delay"
 msgstr "录制延迟"
 
-#: src/components/config/shared/output-settings-card.tsx:162
+#: src/components/config/shared/output-settings-card.tsx:166
 msgid "Download Engine"
 msgstr "录制引擎"
 
@@ -3636,7 +3762,7 @@ msgid "Download engine (mesio)"
 msgstr "下载引擎（mesio）"
 
 #. placeholder {0}: error.message
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:295
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:314
 msgid "Download failed: {0}"
 msgstr "下载失败：{0}"
 
@@ -3645,12 +3771,16 @@ msgstr "下载失败：{0}"
 msgid "Download Manager"
 msgstr "下载管理"
 
+#: src/components/config/desktop/updates-card.tsx:205
+msgid "Download release"
+msgstr "下载新版本"
+
 #: src/components/config/shared/network-settings-card.tsx:89
 msgid "Download Retry Policy"
 msgstr "录制重试策略"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:275
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:293
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:294
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:312
 msgid "Download started"
 msgstr "下载已开始"
 
@@ -3671,7 +3801,7 @@ msgstr "正在下载 {0}"
 msgid "Downloading..."
 msgstr "下载中..."
 
-#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:335
+#: src/components/pipeline/workflows/flow-editor/workflow-flow-editor.tsx:330
 msgid "Drag from edge to link steps"
 msgstr "从边缘拖动以连接步骤"
 
@@ -3899,7 +4029,7 @@ msgstr "启用无损分段"
 msgid "Enable monitoring"
 msgstr "启用监控"
 
-#: src/components/config/global/file-config-card.tsx:31
+#: src/components/config/global/file-config-card.tsx:32
 msgid "Enable recording of danmu/chat messages along with the video."
 msgstr "启用弹幕/聊天消息与视频一起录制。"
 
@@ -4018,7 +4148,7 @@ msgstr "未在平台/主播中指定时使用的录制引擎。"
 #: src/components/config/global/backup-restore-card.tsx:408
 #: src/components/config/templates/template-editor.tsx:264
 #: src/components/layout/site-header.tsx:66
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:62
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:74
 msgid "Engines"
 msgstr "引擎列表"
 
@@ -4083,10 +4213,11 @@ msgstr "只填写这一个账号的凭据。切勿混用不同账号的 Cookie�
 msgid "Enter the new credentials in full. Token and login fields left empty are cleared. Saved credentials are never shown."
 msgstr "请完整填写新的凭据。留空的令牌和登录字段会被清除。已保存的凭据不会显示。"
 
-#: src/routes/_public/login.lazy.tsx:116
+#: src/routes/_public/login.lazy.tsx:149
 msgid "Enter your credentials to access your account"
 msgstr "输入你的凭据以登录账户"
 
+#: src/components/config/desktop/external-tools-card.tsx:62
 #: src/components/notifications/events/payload-preview.tsx:34
 #: src/components/streamers/card/use-streamer-status.tsx:131
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:97
@@ -4119,7 +4250,7 @@ msgstr "加载平台失败"
 msgid "Error loading preset"
 msgstr "加载预设失败"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:326
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:355
 msgid "Error Loading Session"
 msgstr "加载录制会话失败"
 
@@ -4274,6 +4405,10 @@ msgstr "导出配置"
 msgid "Exports include all global settings, platforms, templates, streamers, engines, and notification channels. Sensitive data like passwords might be redacted or encrypted depending on platform settings."
 msgstr "导出内容包含所有全局设置、平台、模板、主播、引擎和通知渠道。敏感数据（如密码）可能会根据平台设置被脱敏或加密。"
 
+#: src/components/config/desktop/external-tools-card.tsx:89
+msgid "External Tools"
+msgstr "外部工具"
+
 #: src/components/config/engines/forms/streamlink-form.tsx:30
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:459
 #: src/components/pipeline/presets/processors/danmaku-factory-config-form.tsx:70
@@ -4372,6 +4507,14 @@ msgstr "取消上传失败"
 #: src/routes/_authed/change-password.lazy.tsx:82
 msgid "Failed to change password"
 msgstr "修改密码失败"
+
+#: src/components/config/desktop/external-tools-card.tsx:137
+msgid "Failed to check external tools"
+msgstr "检测外部工具失败"
+
+#: src/components/config/desktop/updates-card.tsx:58
+msgid "Failed to check for updates."
+msgstr "检查更新失败。"
 
 #: src/components/streamers/streamer-editor.tsx:146
 msgid "Failed to check this link. Please try again."
@@ -4526,6 +4669,10 @@ msgstr "内容加载失败"
 msgid "Failed to load danmu statistics."
 msgstr "加载弹幕统计失败。"
 
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:498
+msgid "Failed to load desktop settings"
+msgstr "加载桌面设置失败"
+
 #: src/components/config/engines/engines-panel.tsx:370
 msgid "Failed to load engines"
 msgstr "加载引擎失败"
@@ -4587,6 +4734,24 @@ msgstr "加载模板失败"
 msgid "Failed to load workflows"
 msgstr "加载工作流失败"
 
+#: src/components/config/shared/desktop-path-input.tsx:92
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:464
+msgid "Failed to open folder"
+msgstr "无法打开文件夹"
+
+#: src/components/config/shared/desktop-path-input.tsx:80
+msgid "Failed to open path picker"
+msgstr "无法打开路径选择器"
+
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:286
+msgid "Failed to open the download link"
+msgstr "无法打开下载链接"
+
+#: src/components/config/desktop/updates-card.tsx:71
+#: src/desktop/desktop-update-listener.tsx:46
+msgid "Failed to open the release page."
+msgstr "无法打开发布页面。"
+
 #: src/components/danmu/danmu-viewer.tsx:41
 msgid "Failed to parse danmu file"
 msgstr "弹幕文件解析失败"
@@ -4611,6 +4776,10 @@ msgstr "查询 BaiduPCS-Go 状态失败。"
 msgid "Failed to reconnect"
 msgstr "重新连接失败"
 
+#: src/components/config/desktop/backend-security-card.tsx:280
+msgid "Failed to restart Rust-Srec"
+msgstr "重启 Rust-Srec 失败"
+
 #: src/routes/_authed/_dashboard/pipeline/jobs/index.lazy.tsx:268
 msgid "Failed to retry all failed pipelines"
 msgstr "重试所有失败的处理任务失败"
@@ -4631,18 +4800,38 @@ msgstr "重试工作流失败"
 msgid "Failed to revoke API key"
 msgstr "吊销 API 密钥失败"
 
+#: src/components/config/desktop/backend-security-card.tsx:266
+msgid "Failed to save backend settings and restart"
+msgstr "保存后端设置并重启失败"
+
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:126
 #: src/routes/_authed/_dashboard/notifications/index.lazy.tsx:392
 msgid "Failed to send test notification"
 msgstr "发送测试通知失败"
 
+#: src/desktop/desktop-update-listener.tsx:61
+msgid "Failed to skip this update version."
+msgstr "跳过此更新版本失败。"
+
+#: src/routes/_public/login.lazy.tsx:178
+msgid "Failed to switch to local backend"
+msgstr "切换到本地后端失败"
+
 #: src/components/notifications/channel-form.tsx:276
 msgid "Failed to update channel"
 msgstr "更新渠道失败"
 
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:359
+msgid "Failed to update desktop setting"
+msgstr "更新桌面设置失败"
+
 #: src/components/filters/FilterDialog.tsx:194
 msgid "Failed to update filter"
 msgstr "更新过滤器失败"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:416
+msgid "Failed to update launch at login setting"
+msgstr "更新开机自启设置失败"
 
 #: src/routes/_authed/_dashboard/config/logging.lazy.tsx:125
 msgid "Failed to update logging configuration"
@@ -4665,6 +4854,10 @@ msgstr "更新优先级失败"
 #: src/routes/_authed/_dashboard/config/global.lazy.tsx:197
 msgid "Failed to update settings"
 msgstr "更新设置失败"
+
+#: src/components/config/desktop/updates-card.tsx:86
+msgid "Failed to update skipped version preference."
+msgstr "更新跳过版本设置失败。"
 
 #: src/hooks/use-streamer-mutations.ts:36
 #: src/routes/_authed/_dashboard/streamers/$id.edit.lazy.tsx:80
@@ -4761,12 +4954,12 @@ msgstr "FFmpeg 音频滤镜（-af）"
 msgid "FFmpeg only supports http proxies, so FFmpeg recordings fail through this one. Choose an http proxy or another engine."
 msgstr "FFmpeg 仅支持 http 代理，通过此代理的 FFmpeg 录制会失败。请选择 http 代理或其他引擎。"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:52
+#: src/components/config/engines/forms/streamlink-form.tsx:53
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:108
 msgid "FFmpeg Path"
 msgstr "FFmpeg 路径"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:53
+#: src/components/config/engines/forms/streamlink-form.tsx:54
 msgid "FFmpeg used to remux Streamlink output. Enter a path on the backend server without shell quotes. The environment default uses FFMPEG_PATH, then ffmpeg from PATH."
 msgstr "用于重封装 Streamlink 输出的 FFmpeg。请输入后端服务器上的路径，不要添加 shell 引号。环境默认值优先使用 FFMPEG_PATH，然后使用 PATH 中的 ffmpeg。"
 
@@ -4778,7 +4971,7 @@ msgstr "FFmpeg 视频滤镜"
 msgid "File {index} of {total}"
 msgstr "第 {index}/{total} 个文件"
 
-#: src/components/config/global/file-config-card.tsx:20
+#: src/components/config/global/file-config-card.tsx:21
 msgid "File Configuration"
 msgstr "文件配置"
 
@@ -4803,8 +4996,8 @@ msgstr "文件路径已复制到剪贴板"
 msgid "File size threshold (--multi-thread-cutoff)."
 msgstr "文件大小阈值（--multi-thread-cutoff）。"
 
-#: src/components/config/global/file-config-card.tsx:73
-#: src/components/config/shared/output-settings-card.tsx:98
+#: src/components/config/global/file-config-card.tsx:77
+#: src/components/config/shared/output-settings-card.tsx:102
 msgid "Filename Template"
 msgstr "文件名模板"
 
@@ -4871,6 +5064,10 @@ msgstr "过滤器"
 #: src/components/streamers/card/lossless-cut-action.tsx:138
 msgid "Finalizing recording file..."
 msgstr "正在完成录制文件…"
+
+#: src/desktop/desktop-shutdown-listener.tsx:125
+msgid "Finalizing recordings before exit…"
+msgstr "正在保存录制，即将退出…"
 
 #: src/components/streamers/card/lossless-cut-action.tsx:173
 #: src/lib/job-progress.ts:38
@@ -5003,7 +5200,7 @@ msgstr "若输出已存在则强制覆盖"
 msgid "Force requesting the highest origin quality available (Direct stream)."
 msgstr "强制请求可用的最高原画质量（直连流）。"
 
-#: src/components/config/shared/output-settings-card.tsx:149
+#: src/components/config/shared/output-settings-card.tsx:153
 msgid "Force specific output format."
 msgstr "强制指定输出格式。"
 
@@ -5011,7 +5208,7 @@ msgstr "强制指定输出格式。"
 msgid "Form"
 msgstr "表单"
 
-#: src/components/config/global/file-config-card.tsx:99
+#: src/components/config/global/file-config-card.tsx:103
 #: src/components/config/templates/template-card.tsx:183
 #: src/components/pipeline/presets/processors/audio-extract-config-form.tsx:64
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:205
@@ -5177,7 +5374,7 @@ msgstr "礼物数"
 #: src/components/layout/site-header.tsx:71
 #: src/components/pipeline/step-in-use-dialog.tsx:98
 #: src/components/proxies/proxy-references.tsx:82
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:44
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:46
 msgid "Global"
 msgstr "全局"
 
@@ -5186,7 +5383,7 @@ msgstr "全局"
 #: src/components/config/shared/limits-card.tsx:67
 #: src/components/config/shared/limits-card.tsx:91
 #: src/components/config/shared/limits-card.tsx:118
-#: src/components/config/shared/output-settings-card.tsx:140
+#: src/components/config/shared/output-settings-card.tsx:144
 #: src/components/config/shared/record-danmu-card.tsx:96
 msgid "Global Default"
 msgstr "全局默认"
@@ -5249,14 +5446,18 @@ msgstr "GPU 加速高质量归档：NVENC HEVC 编码、缩略图生成和云端
 msgid "GPU-accelerated post-processing: NVENC H.264 encoding and thumbnail generation."
 msgstr "GPU 加速后处理：NVENC H.264 编码和缩略图生成。"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:79
-#: src/components/config/engines/forms/streamlink-form.tsx:95
+#: src/components/config/engines/forms/ffmpeg-form.tsx:80
+#: src/components/config/engines/forms/streamlink-form.tsx:97
 msgid "Graceful Stop Timeout"
 msgstr "优雅停止超时"
 
 #: src/components/pipeline/workflows/workflow-structure-panel.tsx:148
 msgid "Graph"
 msgstr "图表"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:619
+msgid "Guard active recordings against sleep and accidental exits."
+msgstr "保护正在进行的录制不被系统休眠或误退出中断。"
 
 #: src/components/pipeline/presets/editor/preset-config-form.tsx:99
 msgid "H.264"
@@ -5318,9 +5519,13 @@ msgstr "隐藏弹幕"
 #: src/routes/_authed/change-password.lazy.tsx:184
 #: src/routes/_authed/change-password.lazy.tsx:227
 #: src/routes/_authed/change-password.lazy.tsx:272
-#: src/routes/_public/login.lazy.tsx:222
+#: src/routes/_public/login.lazy.tsx:354
 msgid "Hide password"
 msgstr "隐藏密码"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:598
+msgid "Hide the main window to the system tray instead of the taskbar or Dock when minimized."
+msgstr "最小化主窗口时隐藏到系统托盘，而不是留在任务栏或程序坞。"
 
 #: src/components/streamers/config/streamer-recording-fields.tsx:107
 #: src/components/streamers/streamer-batch-action-bar.tsx:172
@@ -5512,7 +5717,7 @@ msgstr "轮询 nvidia-smi 以确认 GPU 仍可访问的频率。"
 msgid "How often rust-srec runs nvidia-smi to detect when the container loses GPU access (a known NVIDIA Container Toolkit issue on cgroup v2 hosts). Only active when nvidia-smi is available; otherwise the GPU row is not registered. Default 30 seconds. Changes apply on the next probe, with no restart required. Values below 30 seconds are discouraged."
 msgstr "rust-srec 通过运行 nvidia-smi 来检测容器是否失去 GPU 访问权限(NVIDIA Container Toolkit 在 cgroup v2 主机上的已知问题)。仅在系统中存在 nvidia-smi 时启用,否则不会注册 GPU 行。默认 30 秒。修改会在下一次探测时生效,无需重启。不建议设置低于 30 秒。"
 
-#: src/components/config/shared/output-settings-card.tsx:230
+#: src/components/config/shared/output-settings-card.tsx:234
 msgid "How the stream address is found. Switch to Streamlink when a site stops working; it needs the Streamlink tool installed."
 msgstr "获取直播地址的方式。当某个站点失效时可切换为 Streamlink，该方式需要已安装 Streamlink 工具。"
 
@@ -5722,8 +5927,8 @@ msgctxt "proxy route"
 msgid "Inherited"
 msgstr "继承"
 
-#: src/components/config/shared/output-settings-card.tsx:179
-#: src/components/config/shared/output-settings-card.tsx:219
+#: src/components/config/shared/output-settings-card.tsx:183
+#: src/components/config/shared/output-settings-card.tsx:223
 msgid "Inherited / Default"
 msgstr "继承/默认"
 
@@ -5747,7 +5952,7 @@ msgstr "内联：{stepName}"
 msgid "Input"
 msgstr "输入"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:46
+#: src/components/config/engines/forms/ffmpeg-form.tsx:47
 msgid "Input Arguments"
 msgstr "输入参数"
 
@@ -5801,7 +6006,7 @@ msgstr "检查间隔。"
 msgid "Interval between offline checks."
 msgstr "离线检查之间的间隔。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:269
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:276
 msgid "Invalid download URL"
 msgstr "下载链接无效"
 
@@ -5842,7 +6047,7 @@ msgstr "处理任务已取消"
 msgid "Job Configuration"
 msgstr "处理任务配置"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:59
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:71
 msgid "Job configurations"
 msgstr "任务配置"
 
@@ -5884,7 +6089,7 @@ msgstr "任务超时"
 
 #: src/components/layout/site-header.tsx:73
 #: src/lib/menu-list.ts:85
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:379
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:408
 msgid "Jobs"
 msgstr "处理任务"
 
@@ -5924,9 +6129,17 @@ msgstr "多个会话共用同一目标文件夹时，请在文件名模板中保
 msgid "Keep directory structure"
 msgstr "保留目录结构"
 
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:580
+msgid "Keep recording in the background when you close the main window instead of quitting."
+msgstr "点击主窗口关闭按钮时隐藏到后台继续录制，而不是直接退出。"
+
 #: src/components/pipeline/jobs/pipeline-summary-card.tsx:234
 msgid "Keep Running"
 msgstr "保持运行"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:632
+msgid "Keep the computer awake while active recordings are running; the display can still turn off."
+msgstr "有活跃录制时阻止电脑休眠；屏幕仍可正常熄屏。"
 
 #: src/components/pipeline/presets/processors/thumbnail-config-form.tsx:57
 msgid "Keep the original frame size instead of scaling to a width"
@@ -5973,7 +6186,7 @@ msgstr "关键字"
 msgid "Label"
 msgstr "名称"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:98
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:110
 msgid "Language"
 msgstr "语言"
 
@@ -6023,6 +6236,10 @@ msgstr "最近使用"
 #: src/routes/_authed/_dashboard/system/health.lazy.tsx:236
 msgid "Latency"
 msgstr "延迟"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:544
+msgid "Launch at login"
+msgstr "开机自启动"
 
 #: src/routes/_authed/_dashboard/pipeline/jobs/new.lazy.tsx:190
 msgid "Launch Pipeline"
@@ -6205,6 +6422,10 @@ msgstr "加载中…"
 msgid "Local Archive"
 msgstr "本地归档"
 
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:686
+msgid "Local Folders"
+msgstr "本地文件夹"
+
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:284
 #: src/components/config/platforms/tabs/specific-configs/douyu-config-fields.tsx:287
 msgid "Local generation"
@@ -6243,7 +6464,7 @@ msgstr "日志级别"
 msgid "Log level for {module}"
 msgstr "{module} 的日志级别"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:83
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:95
 msgid "Log levels & modules"
 msgstr "日志级别与模块"
 
@@ -6255,7 +6476,7 @@ msgstr "退出登录"
 msgid "Logged in"
 msgstr "已登录"
 
-#: src/routes/_public/login.lazy.tsx:66
+#: src/routes/_public/login.lazy.tsx:99
 msgid "Logged in successfully"
 msgstr "登录成功"
 
@@ -6272,7 +6493,7 @@ msgstr "已以 {0} 登录百度网盘"
 msgid "Logged out of Baidu Netdisk"
 msgstr "已退出百度网盘"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:80
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:92
 msgid "Logging"
 msgstr "日志"
 
@@ -6288,7 +6509,7 @@ msgstr "日志已暂停"
 msgid "Login"
 msgstr "登录信息"
 
-#: src/routes/_public/login.lazy.tsx:155
+#: src/routes/_public/login.lazy.tsx:265
 msgid "Login failed"
 msgstr "登录失败"
 
@@ -6299,6 +6520,10 @@ msgstr "登录失效"
 #: src/components/layout/site-header.tsx:57
 msgid "Logs"
 msgstr "日志"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:714
+msgid "Logs Folder"
+msgstr "日志文件夹"
 
 #: src/routes/_authed/_dashboard/config/api-keys.lazy.tsx:135
 msgid "Long-lived credentials for programmatic access to the REST API and the built-in MCP server. Read-only keys can inspect recording sessions and non-sensitive status; configuration and operational records require full access."
@@ -6320,7 +6545,7 @@ msgstr "循环保护"
 msgid "Lossless cutting will not be used"
 msgstr "不会使用无损分段"
 
-#: src/components/sessions/recordings-tab.tsx:285
+#: src/components/sessions/recordings-tab.tsx:305
 msgid "Lossless Split"
 msgstr "无损分割"
 
@@ -6402,7 +6627,7 @@ msgstr "管理代理"
 msgid "Manage specialized extraction and identification options."
 msgstr "管理专门的提取和识别选项。"
 
-#: src/components/config/shared/output-settings-card.tsx:57
+#: src/components/config/shared/output-settings-card.tsx:58
 msgid "Manage storage paths and file formats."
 msgstr "管理存储路径和文件格式。"
 
@@ -6575,11 +6800,11 @@ msgstr "媒体文件"
 msgid "Media outputs will appear here when pipeline jobs complete."
 msgstr "处理任务完成后，媒体文件将显示在此处。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:449
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:481
 msgid "Media Player"
 msgstr "媒体播放器"
 
-#: src/components/sessions/recordings-tab.tsx:512
+#: src/components/sessions/recordings-tab.tsx:534
 msgid "Media Timeline"
 msgstr "媒体时间线"
 
@@ -6640,6 +6865,10 @@ msgstr "最低优先级"
 msgid "Min Segment Size"
 msgstr "最小分段大小"
 
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:596
+msgid "Minimize to system tray"
+msgstr "最小化到系统托盘"
+
 #: src/components/notifications/desktop-channel-dialog.tsx:127
 #: src/components/notifications/desktop-channel-dialog.tsx:139
 #: src/components/notifications/forms/channel-delivery-fields.tsx:75
@@ -6657,6 +6886,10 @@ msgstr "分钟"
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:386
 msgid "Minute (00-59)"
 msgstr "分 (00-59)"
+
+#: src/components/config/desktop/external-tools-card.tsx:55
+msgid "Missing"
+msgstr "未找到"
 
 #: src/components/pipeline/presets/processors/baidupcs-config-form.tsx:326
 msgid "Missing folders are created by BaiduPCS-Go during upload."
@@ -6821,7 +7054,7 @@ msgstr "我的渠道"
 msgid "My Template"
 msgstr "我的模板"
 
-#: src/components/config/engines/forms/setting-fields.tsx:969
+#: src/components/config/engines/forms/setting-fields.tsx:997
 #: src/components/notifications/channel-form.tsx:350
 #: src/components/pipeline/presets/editor/preset-meta-form.tsx:200
 #: src/components/pipeline/workflows/workflow-editor.tsx:206
@@ -6860,7 +7093,7 @@ msgstr "必须填写名称"
 msgid "Name Z-A"
 msgstr "名称 Z-A"
 
-#: src/routes/_public/login.lazy.tsx:177
+#: src/routes/_public/login.lazy.tsx:309
 msgid "name@example.com"
 msgstr "name@example.com"
 
@@ -7039,6 +7272,10 @@ msgstr "未发现错误。最大深度：{0}"
 msgid "No events found"
 msgstr "未找到事件"
 
+#: src/components/config/desktop/external-tools-card.tsx:205
+msgid "No external tools reported."
+msgstr "未返回外部工具信息。"
+
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:97
 msgid "No failed or cancelled pipelines selected"
 msgstr "未选择已失败或已取消的流水线"
@@ -7093,7 +7330,7 @@ msgstr "暂无日志可显示"
 msgid "No matching events found"
 msgstr "未找到匹配的事件"
 
-#: src/components/sessions/recordings-tab.tsx:529
+#: src/components/sessions/recordings-tab.tsx:551
 msgid "No media outputs generated yet."
 msgstr "尚未生成媒体输出。"
 
@@ -7301,11 +7538,11 @@ msgstr "未找到工作流"
 msgid "No workflows yet"
 msgstr "暂无工作流"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:34
-#: src/components/config/engines/forms/setting-fields.tsx:919
-#: src/components/config/engines/forms/setting-fields.tsx:1054
-#: src/components/config/engines/forms/streamlink-form.tsx:74
-#: src/components/config/engines/forms/streamlink-form.tsx:83
+#: src/components/config/engines/forms/ffmpeg-form.tsx:35
+#: src/components/config/engines/forms/setting-fields.tsx:947
+#: src/components/config/engines/forms/setting-fields.tsx:1082
+#: src/components/config/engines/forms/streamlink-form.tsx:76
+#: src/components/config/engines/forms/streamlink-form.tsx:85
 #: src/components/notifications/forms/webhook-form.tsx:184
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:698
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:365
@@ -7370,6 +7607,10 @@ msgstr "未校验"
 #: src/components/credential-attention-indicator.tsx:149
 msgid "Not checked yet"
 msgstr "尚未检查"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:701
+msgid "Not configured"
+msgstr "未配置"
 
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:306
 msgctxt "bigo notifications"
@@ -7533,8 +7774,8 @@ msgstr "NVENC HEVC 快速"
 msgid "NVENC HEVC High Quality"
 msgstr "NVENC HEVC 高质量"
 
-#: src/components/config/engines/forms/setting-fields.tsx:126
-#: src/components/config/engines/forms/setting-fields.tsx:634
+#: src/components/config/engines/forms/setting-fields.tsx:127
+#: src/components/config/engines/forms/setting-fields.tsx:662
 msgid "Off"
 msgstr "关"
 
@@ -7609,8 +7850,8 @@ msgstr "偏移一致性检查"
 msgid "OK"
 msgstr "正常"
 
-#: src/components/config/engines/forms/setting-fields.tsx:125
-#: src/components/config/engines/forms/setting-fields.tsx:633
+#: src/components/config/engines/forms/setting-fields.tsx:126
+#: src/components/config/engines/forms/setting-fields.tsx:661
 msgid "On"
 msgstr "开"
 
@@ -7647,6 +7888,19 @@ msgstr "仅支持 MP4/MOV/M4V"
 msgctxt "danmu"
 msgid "Opacity"
 msgstr "不透明度"
+
+#: src/components/config/shared/desktop-path-input.tsx:65
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:179
+msgid "Open folder"
+msgstr "打开文件夹"
+
+#: src/components/sessions/recordings-tab.tsx:224
+msgid "Open in player"
+msgstr "用系统播放器打开"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:688
+msgid "Open local directories used for recordings, data, and logs."
+msgstr "快速打开录制、数据和日志所在的本地目录。"
 
 #: src/components/sessions/session-card.tsx:257
 #: src/components/shared/decorated-card.tsx:184
@@ -7739,7 +7993,7 @@ msgstr "输出"
 msgid "Output and its file deleted"
 msgstr "已删除产物及其文件"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:54
+#: src/components/config/engines/forms/ffmpeg-form.tsx:55
 msgid "Output Arguments"
 msgstr "输出参数"
 
@@ -7747,7 +8001,7 @@ msgstr "输出参数"
 msgid "Output cleanup and history retention."
 msgstr "输出清理与历史记录保留。"
 
-#: src/components/config/shared/output-settings-card.tsx:54
+#: src/components/config/shared/output-settings-card.tsx:55
 msgid "Output Configuration"
 msgstr "输出配置"
 
@@ -7759,8 +8013,8 @@ msgstr "已删除产物"
 msgid "Output Detection"
 msgstr "输出检测"
 
-#: src/components/config/global/file-config-card.tsx:54
-#: src/components/config/shared/output-settings-card.tsx:70
+#: src/components/config/global/file-config-card.tsx:55
+#: src/components/config/shared/output-settings-card.tsx:71
 msgid "Output Folder"
 msgstr "输出文件夹"
 
@@ -7768,7 +8022,7 @@ msgstr "输出文件夹"
 msgid "Output folder unavailable"
 msgstr "输出目录不可用"
 
-#: src/components/config/shared/output-settings-card.tsx:125
+#: src/components/config/shared/output-settings-card.tsx:129
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:463
 msgid "Output Format"
 msgstr "输出格式"
@@ -7785,7 +8039,7 @@ msgstr "输出选项"
 msgid "Output Path"
 msgstr "输出路径"
 
-#: src/components/config/global/file-config-card.tsx:21
+#: src/components/config/global/file-config-card.tsx:22
 msgid "Output paths, templates, and formats."
 msgstr "输出路径、模板与格式。"
 
@@ -7817,7 +8071,7 @@ msgstr "总体健康"
 msgid "Overall system status"
 msgstr "整体系统状态"
 
-#: src/components/config/shared/output-settings-card.tsx:110
+#: src/components/config/shared/output-settings-card.tsx:114
 msgid "Override filename template."
 msgstr "覆盖文件名模板。"
 
@@ -7833,7 +8087,7 @@ msgstr "为该主播覆盖全局默认设置。"
 msgid "Override how aggressively the scheduler confirms a stream has ended."
 msgstr "覆盖调度器确认直播结束的激进程度。"
 
-#: src/components/config/shared/output-settings-card.tsx:82
+#: src/components/config/shared/output-settings-card.tsx:86
 msgid "Override output folder."
 msgstr "覆盖输出文件夹。"
 
@@ -7841,7 +8095,7 @@ msgstr "覆盖输出文件夹。"
 msgid "Override pipelines and platform options for specific platforms."
 msgstr "为特定平台覆盖处理管道和平台选项。"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:348
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:377
 msgid "Overview"
 msgstr "概览"
 
@@ -7954,12 +8208,12 @@ msgstr "透传输入"
 #: src/components/notifications/forms/webhook-form.tsx:272
 #: src/components/notifications/forms/webhook-form.tsx:280
 #: src/components/proxies/proxy-editor-dialog.tsx:314
-#: src/routes/_public/login.lazy.tsx:196
+#: src/routes/_public/login.lazy.tsx:328
 msgid "Password"
 msgstr "密码"
 
 #: src/lib/password-change-redirect.ts:56
-#: src/routes/_public/login.lazy.tsx:61
+#: src/routes/_public/login.lazy.tsx:94
 msgid "Password change required"
 msgstr "请修改密码"
 
@@ -7978,6 +8232,18 @@ msgstr "密码至少需要 8 个字符"
 #: src/components/proxies/proxy-row.tsx:241
 msgid "password saved"
 msgstr "已保存密码"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:334
+msgid "Password sign-in enabled. Please sign in to continue."
+msgstr "已启用密码登录，请重新登录后继续。"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:345
+msgid "Password sign-in is on, but this session could not be signed out."
+msgstr "已开启密码登录，但无法退出当前会话。"
+
+#: src/routes/_public/login.lazy.tsx:279
+msgid "Password sign-in is required to access this server"
+msgstr "访问此服务器需要输入密码登录"
 
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:119
 #: src/components/config/platforms/tabs/specific-configs/soop-config-fields.tsx:53
@@ -8279,12 +8545,12 @@ msgstr "平台"
 #: src/components/layout/site-header.tsx:68
 #: src/components/pipeline/step-in-use-dialog.tsx:99
 #: src/components/proxies/proxy-references.tsx:91
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:50
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:62
 msgid "Platforms"
 msgstr "平台"
 
 #: src/components/sessions/overview-tab.tsx:197
-#: src/components/sessions/recordings-tab.tsx:219
+#: src/components/sessions/recordings-tab.tsx:237
 msgid "Play"
 msgstr "播放"
 
@@ -8447,7 +8713,7 @@ msgstr "首选视频编码"
 msgid "Premium"
 msgstr "Premium"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:292
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:311
 msgid "Preparing download..."
 msgstr "正在准备下载……"
 
@@ -8509,6 +8775,10 @@ msgstr "预设"
 #: src/components/notifications/forms/email-form.tsx:164
 msgid "Press Enter to add recipient"
 msgstr "按 Enter 添加收件人"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:630
+msgid "Prevent system sleep while recording"
+msgstr "录制期间阻止系统休眠"
 
 #: src/components/pipeline/presets/default-presets-i18n.ts:113
 msgid "Preview Gallery"
@@ -8617,7 +8887,7 @@ msgstr "处理中"
 msgid "Processing Behavior"
 msgstr "处理行为"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:65
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:77
 msgid "Processing nodes"
 msgstr "处理节点"
 
@@ -8650,7 +8920,7 @@ msgstr "程序和参数"
 msgid "Program is required"
 msgstr "必须填写程序"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:77
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:89
 msgid "Programmatic & MCP access"
 msgstr "编程与 MCP 访问"
 
@@ -8686,7 +8956,7 @@ msgstr "协议设置"
 
 #: src/components/layout/site-header.tsx:67
 #: src/components/proxies/proxies-panel.tsx:241
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:68
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:80
 msgid "Proxies"
 msgstr "代理"
 
@@ -8802,6 +9072,10 @@ msgstr "rclone 默认值：8"
 msgid "Rclone Transfer"
 msgstr "Rclone 传输"
 
+#: src/components/config/desktop/external-tools-card.tsx:112
+msgid "Re-check"
+msgstr "重新检测"
+
 #: src/components/proxies/proxy-test.tsx:55
 msgid "Reachable"
 msgstr "可访问"
@@ -8896,7 +9170,7 @@ msgstr "重新连接后才能请求分段。"
 msgid "Record at least one of video and audio"
 msgstr "视频和音频至少录制一项"
 
-#: src/components/config/global/file-config-card.tsx:29
+#: src/components/config/global/file-config-card.tsx:30
 #: src/components/config/shared/record-danmu-card.tsx:49
 msgid "Record Danmu"
 msgstr "录制弹幕"
@@ -8959,6 +9233,10 @@ msgstr "录制完成"
 msgid "Recording is paused"
 msgstr "录制已暂停"
 
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:617
+msgid "Recording Protection"
+msgstr "录制保护"
+
 #: src/lib/notification-event-types.ts:24
 msgid "Recording rejected"
 msgstr "录制被拒绝"
@@ -8980,13 +9258,17 @@ msgstr "录制将使用临时分块"
 msgid "Recording will start when schedule allows"
 msgstr "录制将在计划允许时开始"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:367
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:396
 msgid "Recordings"
 msgstr "录制内容"
 
 #: src/components/config/engines/forms/lossless-cutting-field.tsx:92
 msgid "Recordings are written to temporary chunks and combined into final files after a cut, a size or duration limit, or recording stops. Final files are available only after this step finishes."
 msgstr "录制内容会先写入临时分块，并在分割、达到大小或时长限制或录制停止后合并为最终文件。只有这一步完成后，最终文件才可用。"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:699
+msgid "Recordings Folder"
+msgstr "录制文件夹"
 
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:84
 msgid "Records the broadcaster's own stream from BIGO's app servers, in its original quality (HEVC or H.264), without an account. The website's stream is recorded instead when this fails, for rooms with several hosts, and when a stream password is set (the platform's default applies to every streamer)."
@@ -9072,7 +9354,11 @@ msgstr "重新加载播放器"
 msgid "Remember for automatic re-login"
 msgstr "记住凭据以便自动重新登录"
 
-#: src/components/config/engines/forms/setting-fields.tsx:990
+#: src/components/config/desktop/backend-security-card.tsx:347
+msgid "Remote rust-srec server"
+msgstr "远程 rust-srec 服务器"
+
+#: src/components/config/engines/forms/setting-fields.tsx:1018
 #: src/components/config/templates/tabs/engine-overrides-tab.tsx:164
 msgid "Remove"
 msgstr "移除"
@@ -9286,6 +9572,14 @@ msgstr "此账号的请求通过 {routeLabel} 连接。"
 msgid "Requests for this account use the system proxy."
 msgstr "此账号的请求使用系统代理。"
 
+#: src/components/config/desktop/backend-security-card.tsx:391
+msgid "Require entering your username and password to open the local desktop app instead of signing in automatically."
+msgstr "打开本地桌面应用时要求输入用户名和密码，而不是自动登录。"
+
+#: src/components/config/desktop/backend-security-card.tsx:389
+msgid "Require password sign-in"
+msgstr "需要密码登录"
+
 #: src/components/pipeline/presets/processors/ass-burnin-config-form.tsx:94
 msgid "Require Subtitles"
 msgstr "需要字幕"
@@ -9352,6 +9646,10 @@ msgstr "资源限制"
 msgid "Resources"
 msgstr "资源"
 
+#: src/components/config/desktop/backend-security-card.tsx:377
+msgid "Restart now"
+msgstr "立即重启"
+
 #: src/components/config/global/backup-restore-card.tsx:457
 msgid "Restart Required"
 msgstr "需要重启"
@@ -9360,7 +9658,7 @@ msgstr "需要重启"
 msgid "Restart rust-srec after saving for the new timeouts to take effect."
 msgstr "保存后需重启 rust-srec，新的超时设置才会生效。"
 
-#: src/components/config/engines/forms/setting-sections.tsx:230
+#: src/components/config/engines/forms/setting-sections.tsx:231
 msgid "Restore defaults"
 msgstr "恢复默认值"
 
@@ -9368,7 +9666,7 @@ msgstr "恢复默认值"
 msgid "Restore from a backup file"
 msgstr "从备份文件恢复"
 
-#: src/routes/_public/login.lazy.tsx:238
+#: src/routes/_public/login.lazy.tsx:370
 msgid "Restore password"
 msgstr "重置密码"
 
@@ -9405,10 +9703,12 @@ msgstr "重试与超时"
 msgid "Retries for locked files"
 msgstr "锁定文件重试次数"
 
+#: src/components/config/desktop/external-tools-card.tsx:155
 #: src/components/pipeline/jobs/pipeline-batch-action-bar.tsx:88
 #: src/components/player/player-card.tsx:560
 #: src/components/sessions/danmu-stats-panel.tsx:247
 #: src/components/shared/query-error.tsx:39
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:516
 msgid "Retry"
 msgstr "重试"
 
@@ -9506,6 +9806,10 @@ msgstr "运行自定义 FFmpeg 命令。编辑参数以自定义。"
 msgid "Run a custom shell command with placeholders (e.g. {input}, {inputs_json}, {streamer}, %Y%m%d)."
 msgstr "运行带有占位符的自定义 Shell 命令（例如 {input}, {inputs_json}, {streamer}, %Y%m%d）。"
 
+#: src/components/config/desktop/backend-security-card.tsx:334
+msgid "Run the embedded Rust-Srec backend locally on this computer."
+msgstr "在本机直接运行内置的 Rust-Srec 后端。"
+
 #: src/components/pipeline/status-config.ts:148
 msgid "Running"
 msgstr "运行中"
@@ -9555,6 +9859,15 @@ msgstr "rust-srec 会继续尝试重新连接。在此期间 Bigo 主播改为�
 msgid "RUST-SREC PRO VIEWER"
 msgstr "RUST-SREC 专业查看器"
 
+#. placeholder {0}: info.latestVersion
+#: src/desktop/desktop-update-listener.tsx:33
+msgid "Rust-Srec v{0} is available"
+msgstr "发现新版本 Rust-Srec v{0}"
+
+#: src/components/config/desktop/updates-card.tsx:175
+msgid "Rust-Srec v{latestVersion}"
+msgstr "Rust-Srec v{latestVersion}"
+
 #: src/components/filters/filter-types.ts:108
 msgctxt "Saturday initial"
 msgid "S"
@@ -9593,6 +9906,11 @@ msgstr "清理后的主播名称"
 #: src/components/filters/filter-types.ts:109
 msgid "Saturday"
 msgstr "星期六"
+
+#: src/components/config/desktop/backend-security-card.tsx:409
+#: src/components/config/desktop/backend-security-card.tsx:491
+msgid "Save & Restart"
+msgstr "保存并重启"
 
 #: src/components/credentials/profile-editor-dialog.tsx:413
 msgid "Save account"
@@ -9644,7 +9962,7 @@ msgstr "将保存为 {normalized}"
 msgid "Saved proxies"
 msgstr "已保存的代理"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:71
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:83
 msgid "Saved proxies & system proxy"
 msgstr "已保存的代理与系统代理"
 
@@ -9898,7 +10216,7 @@ msgstr "选择"
 msgid "Select a default engine"
 msgstr "选择默认引擎"
 
-#: src/components/config/shared/output-settings-card.tsx:135
+#: src/components/config/shared/output-settings-card.tsx:139
 msgid "Select a format"
 msgstr "选择格式"
 
@@ -9927,7 +10245,7 @@ msgstr "选择主播"
 msgid "Select All"
 msgstr "全选"
 
-#: src/components/config/shared/output-settings-card.tsx:173
+#: src/components/config/shared/output-settings-card.tsx:177
 msgid "Select an engine"
 msgstr "选择引擎"
 
@@ -10096,6 +10414,7 @@ msgstr "服务器代理会通过本应用的服务器转发播放，并使用该
 msgid "Server registration"
 msgstr "服务端注册"
 
+#: src/components/config/desktop/backend-security-card.tsx:422
 #: src/components/notifications/channel-card.tsx:121
 #: src/components/notifications/forms/gotify-form.tsx:36
 msgid "Server URL"
@@ -10164,7 +10483,7 @@ msgstr "会话 ID 是必需的"
 msgid "Session Menu"
 msgstr "会话菜单"
 
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:328
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:357
 msgid "Session not found"
 msgstr "未找到录制会话"
 
@@ -10231,7 +10550,7 @@ msgstr "设置开播通知。"
 #: src/components/filters/FilterDialog.tsx:268
 #: src/components/layout/site-header.tsx:54
 #: src/lib/menu-list.ts:105
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:114
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:126
 msgid "Settings"
 msgstr "设置"
 
@@ -10273,7 +10592,7 @@ msgstr "显示弹幕"
 msgid "Show download details"
 msgstr "显示录制下载详情"
 
-#: src/components/sessions/recordings-tab.tsx:187
+#: src/components/sessions/recordings-tab.tsx:191
 msgid "Show in folder"
 msgstr "在文件夹中显示"
 
@@ -10284,7 +10603,7 @@ msgstr "收起"
 #: src/routes/_authed/change-password.lazy.tsx:186
 #: src/routes/_authed/change-password.lazy.tsx:229
 #: src/routes/_authed/change-password.lazy.tsx:274
-#: src/routes/_public/login.lazy.tsx:224
+#: src/routes/_public/login.lazy.tsx:356
 msgid "Show password"
 msgstr "显示密码"
 
@@ -10309,7 +10628,7 @@ msgid "Sidebar Layout"
 msgstr "侧边栏布局"
 
 #: src/integrations/lingui/router-plugin.test.tsx:42
-#: src/routes/_public/login.lazy.tsx:249
+#: src/routes/_public/login.lazy.tsx:381
 msgid "Sign In"
 msgstr "登录"
 
@@ -10342,7 +10661,8 @@ msgstr "暂时无法登录。请检查账号状态后重试。"
 msgid "Signing in with this account kept failing. Check its status or log in again."
 msgstr "该账号多次登录失败。请检查其状态，或重新登录。"
 
-#: src/routes/_public/login.lazy.tsx:247
+#: src/routes/_public/login.lazy.tsx:379
+#: src/routes/_public/login.lazy.tsx:398
 msgid "Signing in..."
 msgstr "正在登录..."
 
@@ -10373,6 +10693,10 @@ msgstr "录制的大小与时长限制。"
 msgid "Size limit"
 msgstr "大小限制"
 
+#: src/desktop/desktop-update-listener.tsx:52
+msgid "Skip"
+msgstr "跳过"
+
 #: src/components/config/engines/forms/mesio-sections.tsx:208
 msgid "Skip after both"
 msgstr "满足任一条件后跳过"
@@ -10392,6 +10716,10 @@ msgstr "跳过已存在的文件（默认）"
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:83
 msgid "Skip Interactive Games"
 msgstr "跳过互动玩法"
+
+#: src/components/config/desktop/updates-card.tsx:220
+msgid "Skip this version"
+msgstr "跳过此版本"
 
 #: src/components/pipeline/jobs/job-uploads-card.tsx:54
 msgid "Skipped"
@@ -10464,7 +10792,7 @@ msgstr "立即分割文件"
 msgid "Split Files On"
 msgstr "分割文件的条件"
 
-#: src/components/sessions/recordings-tab.tsx:131
+#: src/components/sessions/recordings-tab.tsx:133
 msgid "Split Reason: {formattedReason}"
 msgstr "分割原因：{formattedReason}"
 
@@ -10500,9 +10828,17 @@ msgstr "合并输出中出现不兼容的流变化时开始新文件，并应用
 msgid "Start a new file when the codec, resolution or initialization data changes, and apply file size and duration limits. The settings below apply either way."
 msgstr "在编码、分辨率或初始化数据变化时开始新文件，并应用文件大小和时长限制。无论是否开启，下方设置都会生效。"
 
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:560
+msgid "Start minimized to tray"
+msgstr "启动时最小化到托盘"
+
 #: src/components/not-found.tsx:28
 msgid "Start Over"
 msgstr "重新开始"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:562
+msgid "Start quietly in the system tray without opening the main window."
+msgstr "静默启动到系统托盘，不自动弹出主窗口。"
 
 #: src/components/pipeline/presets/processors/remux-config-form.tsx:620
 msgid "Start Time"
@@ -10524,6 +10860,10 @@ msgstr "BIGO 未通知的开播：{missed}"
 #: src/components/config/platforms/tabs/specific-configs/bigo-config-fields.tsx:377
 msgid "Starts BIGO did not notify: {missed}, the last {lastMissed}"
 msgstr "BIGO 未通知的开播：{missed}，最近一次在{lastMissed}"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:533
+msgid "Startup & Window"
+msgstr "启动与窗口"
 
 #: src/routes/_authed/_dashboard/streamers/index.lazy.tsx:546
 msgid "State"
@@ -10599,9 +10939,14 @@ msgstr "STOKEN 与 BDUSS 来自同一个网盘页面的 Cookie。缺少它时部
 msgid "Stop recording when danmu control signals stream closed."
 msgstr "当弹幕控制信号指示直播已关闭时，停止录制。"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:89
+#: src/components/config/engines/forms/streamlink-form.tsx:91
 msgid "Stopping"
 msgstr "停止"
+
+#. placeholder {0}: shutdownState.activeRecordings
+#: src/desktop/desktop-shutdown-listener.tsx:131
+msgid "Stopping and saving {0, plural, one {# active recording} other {# active recordings}} cleanly so files are not corrupted."
+msgstr "正在安全停止并保存 {0, plural, other {# 个进行中的录制}}，以免文件损坏。"
 
 #: src/components/health/storage-usage-card.tsx:100
 msgid "Storage"
@@ -10627,7 +10972,7 @@ msgstr "直播归档"
 msgid "Stream Details"
 msgstr "流详情"
 
-#: src/components/config/shared/output-settings-card.tsx:204
+#: src/components/config/shared/output-settings-card.tsx:208
 msgid "Stream lookup"
 msgstr "地址获取方式"
 
@@ -10783,7 +11128,7 @@ msgstr "这些网站上未选择账号的主播会使用此账号。网站也包
 msgid "Streamers that select only these accounts stop recording until one works again."
 msgstr "仅选择这些账号的主播会停止录制，直到其中一个账号恢复可用。"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:53
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:65
 msgid "Streaming services"
 msgstr "流媒体服务"
 
@@ -10860,13 +11205,25 @@ msgstr "切换语言"
 msgid "Switch Theme"
 msgstr "切换主题"
 
+#: src/routes/_public/login.lazy.tsx:219
+msgid "Switch to local backend"
+msgstr "切换到本地后端"
+
 #: src/components/credentials/credential-selection-editor.tsx:415
 msgid "Switch to the next account when one stops working"
 msgstr "账号失效时切换到下一个账号"
 
+#: src/components/config/desktop/backend-security-card.tsx:404
+msgid "Switching back to the built-in local backend requires restarting Rust-Srec."
+msgstr "切换回内置本地后端需要重启 Rust-Srec。"
+
 #: src/components/pipeline/presets/processors/execute-config-form.tsx:91
 msgid "Switching modes clears the previous command or program and arguments."
 msgstr "切换模式会清除之前的命令，或程序和参数。"
+
+#: src/routes/_public/login.lazy.tsx:216
+msgid "Switching to local backend..."
+msgstr "正在切换到本地后端…"
 
 #: src/components/pipeline/presets/processors/rclone-config-form.tsx:75
 msgid "Sync"
@@ -10904,7 +11261,7 @@ msgstr "系统已启动"
 msgid "System Status"
 msgstr "系统状态"
 
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:47
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:49
 msgid "System-wide preferences"
 msgstr "系统级偏好设置"
 
@@ -10992,7 +11349,7 @@ msgstr "模板"
 #: src/components/layout/site-header.tsx:69
 #: src/components/pipeline/step-in-use-dialog.tsx:100
 #: src/components/proxies/proxy-references.tsx:107
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:56
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:68
 msgid "Templates"
 msgstr "模板"
 
@@ -11015,6 +11372,10 @@ msgstr "测试"
 #: src/components/proxies/proxies-panel.tsx:134
 msgid "Test “{name}”"
 msgstr "测试“{name}”"
+
+#: src/components/config/desktop/backend-security-card.tsx:471
+msgid "Test connection"
+msgstr "测试连接"
 
 #: src/components/notifications/channel-card.tsx:153
 msgid "Test Notification"
@@ -11059,6 +11420,10 @@ msgstr "接收开播通知的 BIGO 账号。录制从不使用它登录 BIGO 的
 #: src/components/player/playback-state.ts:31
 msgid "The browser could not decode this stream. Choose another quality or format."
 msgstr "浏览器无法解码此直播流。请选择其他画质或格式。"
+
+#: src/components/config/desktop/backend-security-card.tsx:366
+msgid "The built-in local backend is saved and takes effect after Rust-Srec restarts."
+msgstr "已保存为内置本地后端，重启 Rust-Srec 后生效。"
 
 #: src/components/proxies/proxy-test.tsx:39
 msgid "The check failed"
@@ -11136,6 +11501,10 @@ msgstr "代理拒绝了登录信息"
 msgid "The recording ended before the cut completed."
 msgstr "分段完成前录制已结束。"
 
+#: src/components/config/desktop/backend-security-card.tsx:371
+msgid "The remote server is saved and takes effect after Rust-Srec restarts."
+msgstr "已保存为远程服务器，重启 Rust-Srec 后生效。"
+
 #: src/components/proxies/proxy-editor-dialog.tsx:297
 msgid "The saved login will be removed."
 msgstr "保存的登录信息将被移除。"
@@ -11197,7 +11566,7 @@ msgid "The upload for {name} stops now. Files that already finished stay at the 
 msgstr "{name} 的上传将立即停止。已完成的文件会保留在目标位置，之后可以重试该任务。"
 
 #: src/components/layout/site-header.tsx:70
-#: src/routes/_authed/_dashboard/config/route.lazy.tsx:86
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:98
 #: src/routes/_authed/_dashboard/config/theme.lazy.tsx:111
 msgid "Theme"
 msgstr "主题"
@@ -11233,6 +11602,10 @@ msgstr "该账号正在使用中"
 #: src/components/credentials/account-selection-section.tsx:41
 msgid "This account needs a new login. Log in again or replace its cookies."
 msgstr "该账号需要重新登录。请重新登录，或替换其 Cookie。"
+
+#: src/components/config/desktop/backend-security-card.tsx:444
+msgid "This address uses http://, so your password and sign-in tokens are sent unencrypted."
+msgstr "该地址使用 http://，你的密码和登录令牌会以未加密的方式传输。"
 
 #: src/components/pipeline/workflows/flow-editor/step-node.tsx:77
 #: src/components/pipeline/workflows/steps-list.tsx:140
@@ -11428,8 +11801,8 @@ msgstr "时间占位符（本地时间）"
 msgid "Time Range"
 msgstr "时间范围"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:80
-#: src/components/config/engines/forms/streamlink-form.tsx:96
+#: src/components/config/engines/forms/ffmpeg-form.tsx:81
+#: src/components/config/engines/forms/streamlink-form.tsx:98
 msgid "Time to wait for ffmpeg to finalize the file before force-killing it"
 msgstr "等待 ffmpeg 完成文件写入的时间，超时后将强制终止进程"
 
@@ -11438,7 +11811,7 @@ msgid "time-of-day timetable"
 msgstr "按时间段调度"
 
 #: src/components/sessions/danmu-stats-panel.tsx:491
-#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:354
+#: src/routes/_authed/_dashboard/sessions/$sessionId.lazy.tsx:383
 msgid "Timeline"
 msgstr "时间线"
 
@@ -11446,7 +11819,7 @@ msgstr "时间线"
 msgid "Timeline granularity. Very long streams are automatically coarsened past a point."
 msgstr "时间线的粒度。超长直播会自动降低精度。"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:72
+#: src/components/config/engines/forms/ffmpeg-form.tsx:73
 msgid "Timeout"
 msgstr "超时"
 
@@ -11467,7 +11840,7 @@ msgstr "取消 CPU 密集型处理器前的超时时间。"
 msgid "Timeout before cancelling IO-bound processors."
 msgstr "取消 IO 密集型处理器前的超时时间。"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:66
+#: src/components/config/engines/forms/ffmpeg-form.tsx:67
 msgid "Timeouts"
 msgstr "超时"
 
@@ -11636,6 +12009,12 @@ msgstr "瞬时错误"
 msgid "Transient monitoring errors are being preserved until sustained download progress confirms the stream is healthy."
 msgstr "在持续的下载进度确认流状态健康之前，暂时的监控错误会继续保留。"
 
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:196
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:487
+#: src/routes/_authed/_dashboard/config/route.lazy.tsx:57
+msgid "Tray, startup & window behavior"
+msgstr "托盘、启动与窗口行为"
+
 #: src/components/config/platforms/tabs/specific-configs/douyin-config-fields.tsx:85
 msgid "Treat interactive game streams (互动玩法) as offline."
 msgstr "将互动玩法直播视为离线。"
@@ -11759,15 +12138,15 @@ msgstr "TTWID 管理模式"
 msgid "Tuesday"
 msgstr "星期二"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:64
+#: src/components/config/engines/forms/streamlink-form.tsx:66
 msgid "Twitch (ttv-lol)"
 msgstr "Twitch (ttv-lol)"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:70
+#: src/components/config/engines/forms/streamlink-form.tsx:72
 msgid "Twitch Proxy Playlist"
 msgstr "Twitch 代理播放列表"
 
-#: src/components/config/engines/forms/streamlink-form.tsx:79
+#: src/components/config/engines/forms/streamlink-form.tsx:81
 msgid "Twitch Proxy Playlist Exclude"
 msgstr "Twitch 代理播放列表排除"
 
@@ -11798,6 +12177,23 @@ msgstr "极速压缩"
 #: src/components/pipeline/presets/default-presets-i18n.ts:89
 msgid "Ultrafast H.264 encoding (CRF 26) for quick sharing."
 msgstr "超快 H.264 编码（CRF 26），用于快速分享。"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:503
+msgid "Unable to communicate with the desktop shell."
+msgstr "无法连接桌面应用。"
+
+#: src/components/config/desktop/backend-security-card.tsx:243
+msgid "Unable to connect to the remote server."
+msgstr "无法连接到远程服务器。"
+
+#: src/components/config/desktop/external-tools-card.tsx:142
+msgid "Unable to inspect local tool binaries."
+msgstr "无法检测本地工具可执行文件。"
+
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:709
+#: src/routes/_authed/_dashboard/config/desktop.lazy.tsx:716
+msgid "Unavailable"
+msgstr "不可用"
 
 #: src/components/player/danmu-settings-panel.tsx:370
 msgid "Unblock {value}"
@@ -11883,10 +12279,26 @@ msgstr "无标题直播"
 msgid "UPDATE"
 msgstr "更新"
 
+#: src/components/config/desktop/updates-card.tsx:178
+msgid "Update available"
+msgstr "发现新版本"
+
+#: src/components/config/desktop/updates-card.tsx:230
+msgid "Update notifications are skipped for v{skippedVersion}."
+msgstr "已跳过 v{skippedVersion} 的更新提醒。"
+
+#: src/components/config/desktop/external-tools-card.tsx:48
+msgid "Update recommended"
+msgstr "建议升级"
+
 #: src/components/config/global/backup-restore-card.tsx:96
 #: src/routes/_authed/_dashboard/dashboard.lazy.tsx:529
 msgid "Updated"
 msgstr "已更新"
+
+#: src/components/config/desktop/updates-card.tsx:101
+msgid "Updates"
+msgstr "更新"
 
 #: src/components/config/global/import-mode-radio-group.tsx:99
 msgid "Updates existing items and creates new ones. Nothing is deleted."
@@ -12006,11 +12418,11 @@ msgstr "请使用 http、https、socks5 或 socks5h 地址。"
 msgid "Use BIGO live notifications instead of checking each streamer: stream starts are noticed within seconds. Needs a signed-in account (below)."
 msgstr "使用 BIGO 开播通知代替逐个检查主播：开播在几秒内即可发现。需要一个已登录的账号（见下方）。"
 
-#: src/components/config/engines/forms/setting-fields.tsx:116
+#: src/components/config/engines/forms/setting-fields.tsx:117
 msgid "Use engine setting ({inherited})"
 msgstr "使用引擎设置（{inherited}）"
 
-#: src/components/config/engines/forms/setting-sections.tsx:228
+#: src/components/config/engines/forms/setting-sections.tsx:229
 msgid "Use engine settings"
 msgstr "使用引擎设置"
 
@@ -12056,7 +12468,7 @@ msgctxt "danmu"
 msgid "User"
 msgstr "用户"
 
-#: src/components/config/engines/forms/ffmpeg-form.tsx:31
+#: src/components/config/engines/forms/ffmpeg-form.tsx:32
 #: src/components/config/engines/forms/mesio-sections.tsx:293
 msgid "User Agent"
 msgstr "User-Agent"
@@ -12072,7 +12484,7 @@ msgstr "已被用户停用"
 #: src/components/notifications/forms/webhook-form.tsx:251
 #: src/components/notifications/forms/webhook-form.tsx:257
 #: src/components/proxies/proxy-editor-dialog.tsx:277
-#: src/routes/_public/login.lazy.tsx:173
+#: src/routes/_public/login.lazy.tsx:305
 msgid "Username"
 msgstr "用户名"
 
@@ -12108,6 +12520,10 @@ msgstr "使用主播的设置"
 msgid "Uses the template's setting"
 msgstr "使用模板的设置"
 
+#: src/routes/_public/login.lazy.tsx:193
+msgid "Using remote server"
+msgstr "当前使用远程服务器"
+
 #: src/components/credentials/account-health.tsx:62
 msgid "Valid"
 msgstr "有效"
@@ -12130,7 +12546,7 @@ msgid "Validation service unavailable"
 msgstr "校验服务不可用"
 
 #: src/components/config/engines/forms/mesio-sections.tsx:252
-#: src/components/config/engines/forms/setting-fields.tsx:976
+#: src/components/config/engines/forms/setting-fields.tsx:1004
 #: src/components/notifications/forms/webhook-form.tsx:411
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:121
 #: src/components/pipeline/presets/processors/metadata-config-form.tsx:122
@@ -12143,7 +12559,7 @@ msgstr "值"
 msgid "Variant"
 msgstr "样式"
 
-#: src/components/config/global/file-config-card.tsx:83
+#: src/components/config/global/file-config-card.tsx:87
 msgid "Vars: '{streamer}', '{title}', '{platform}' | Time: %Y, %m, %d, %H, %M, %S"
 msgstr "变量：'{streamer}'、'{title}'、'{platform}' | 时间：%Y、%m、%d、%H、%M、%S"
 
@@ -12158,6 +12574,10 @@ msgstr "验证输出"
 #: src/components/notifications/events/payload-preview.tsx:98
 msgid "Version"
 msgstr "版本"
+
+#: src/components/config/desktop/updates-card.tsx:218
+msgid "Version skipped"
+msgstr "已跳过该版本"
 
 #: src/components/player/danmu-settings-panel.tsx:44
 msgctxt "danmu speed"
@@ -12219,7 +12639,7 @@ msgstr "查看全部"
 msgid "View application logs in real-time. Logs are limited to the last {MAX_LOG_ENTRIES, plural, one {# entry} other {# entries}}."
 msgstr "实时查看应用日志。日志最多保留最近 {MAX_LOG_ENTRIES, plural, other {# 条}}。"
 
-#: src/components/sessions/recordings-tab.tsx:206
+#: src/components/sessions/recordings-tab.tsx:210
 msgid "View Danmu"
 msgstr "查看弹幕"
 
@@ -12362,7 +12782,7 @@ msgstr "工作日"
 msgid "Weekends"
 msgstr "周末"
 
-#: src/routes/_public/login.lazy.tsx:113
+#: src/routes/_public/login.lazy.tsx:146
 msgid "Welcome back"
 msgstr "欢迎回来"
 
@@ -12379,7 +12799,7 @@ msgstr "当一项录制在并发队列中等待时间超过该阈值时，rust-s
 msgid "When outputs expire"
 msgstr "输出过期时"
 
-#: src/components/config/shared/output-settings-card.tsx:189
+#: src/components/config/shared/output-settings-card.tsx:193
 msgid "Which tool downloads the stream once its URL is known."
 msgstr "获取到地址后，用哪个工具下载直播流。"
 
@@ -12473,6 +12893,15 @@ msgstr "年 (4 位数字)"
 #: src/routes/_authed/_dashboard/sessions/index.lazy.tsx:175
 msgid "Yesterday"
 msgstr "昨天"
+
+#. placeholder {0}: info.currentVersion
+#: src/desktop/desktop-update-listener.tsx:38
+msgid "You are running v{0}."
+msgstr "你当前运行的是 v{0}。"
+
+#: src/components/config/desktop/updates-card.tsx:155
+msgid "You are up to date"
+msgstr "已是最新版本"
 
 #: src/components/shared/unsaved-changes-guard.tsx:28
 msgid "You have unsaved changes. Leave without saving?"

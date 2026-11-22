@@ -65,6 +65,8 @@ impl AuthService {
         if session.expires_at <= now {
             return Err(AuthError::TokenExpired);
         }
+        let allow_password_remediation =
+            allow_password_remediation || self.is_local_desktop_session(session_id);
 
         let cached = self
             .user_state_cache
@@ -474,11 +476,12 @@ impl AuthService {
             expires_in: self.config.access_token_expiration_secs,
             refresh_expires_in: self.config.refresh_token_expiration_secs,
             roles,
-            must_change_password: user.must_change_password,
+            must_change_password: user.must_change_password
+                && !self.is_local_desktop_session(&session_id),
         })
     }
 
-    fn refresh_expiration(&self, now: Timestamp) -> Result<Timestamp, AuthError> {
+    pub(super) fn refresh_expiration(&self, now: Timestamp) -> Result<Timestamp, AuthError> {
         let duration = i64::try_from(self.config.refresh_token_expiration_secs)
             .ok()
             .map(SignedDuration::from_secs)
@@ -571,6 +574,7 @@ impl AuthService {
             .revoke_session(&user_id, &session_id)
             .await
             .map_err(|error| AuthError::Database(error.to_string()))?;
+        self.forget_local_desktop_session(&session_id);
         info!(%user_id, %session_id, "Logout successful (session revoked)");
         Ok(())
     }
@@ -581,6 +585,7 @@ impl AuthService {
             .revoke_all_for_user(user_id)
             .await
             .map_err(|e| AuthError::Database(e.to_string()))?;
+        self.forget_local_desktop_sessions_of(user_id);
         self.invalidate_user_state(user_id);
 
         info!(user_id = %user_id, "Logout-all successful (all refresh tokens revoked)");

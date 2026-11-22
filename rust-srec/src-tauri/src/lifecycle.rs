@@ -4,10 +4,23 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use rust_srec::backend;
-use tauri::Manager;
+use serde::Serialize;
+use tauri::{Emitter, Manager};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 use crate::boot_error::BootProgressPayload;
 use crate::desktop_notifications::DesktopNotificationConfig;
+use crate::desktop_settings::{BackendMode, DesktopSettings};
+use crate::tray;
+use crate::window_state::{MonitorBounds, WindowState, record_window_bounds, save_window_state};
+
+const EVENT_DESKTOP_SHUTTING_DOWN: &str = "rust-srec://desktop-shutting-down";
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ShuttingDownPayload {
+    active_recordings: usize,
+}
 
 /// Cooperative drain budget handed to `ServiceContainer::shutdown_with_hard_cap`.
 const SHUTDOWN_GRACE_PERIOD: Duration = Duration::from_secs(30);
@@ -95,6 +108,10 @@ pub struct DesktopBackendState {
     pub(crate) exit_settled: tokio::sync::watch::Sender<bool>,
 
     pub(crate) main_window_centered: AtomicBool,
+    pub(crate) window_state: Arc<std::sync::Mutex<Option<WindowState>>>,
+    pub(crate) has_restored_position: AtomicBool,
+    pub(crate) pending_maximize: AtomicBool,
+    pub(crate) window_shown: AtomicBool,
 
     boot_progress: std::sync::Mutex<BootProgressPayload>,
 
@@ -105,15 +122,31 @@ pub struct DesktopBackendState {
 
     pub(crate) data_dir: PathBuf,
     pub(crate) log_dir: PathBuf,
-    pub(crate) desktop_notifications: std::sync::Mutex<DesktopNotificationConfig>,
+    pub(crate) desktop_notifications: Arc<std::sync::Mutex<DesktopNotificationConfig>>,
+    pub(crate) desktop_settings: std::sync::Mutex<DesktopSettings>,
+    pub(crate) settings_write_lock: Arc<tokio::sync::Mutex<()>>,
+    pub(crate) window_state_write_lock: Arc<std::sync::Mutex<()>>,
+    pub(crate) notifications_write_lock: Arc<std::sync::Mutex<()>>,
+    pub(crate) active_backend_mode: BackendMode,
+    pub(crate) active_remote_url: Option<String>,
+    pub(crate) settings_notify: Arc<tokio::sync::Notify>,
+    pub(crate) start_minimized_boot: AtomicBool,
+    pub(crate) frontend_ready_received: AtomicBool,
+    pub(crate) exit_confirm_open: AtomicBool,
+    pub(crate) tray_controller: std::sync::Mutex<Option<tray::TrayController>>,
 }
 
 impl DesktopBackendState {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         instance_lock: Option<backend::RuntimeLease>,
         data_dir: PathBuf,
         log_dir: PathBuf,
         desktop_notifications: DesktopNotificationConfig,
+        desktop_settings: DesktopSettings,
+        active_backend_mode: BackendMode,
+        active_remote_url: Option<String>,
+        start_minimized_boot: bool,
         boot_phase: tokio::sync::watch::Receiver<BootPhase>,
     ) -> Self {
         Self {
@@ -124,13 +157,28 @@ impl DesktopBackendState {
             shutdown_started: AtomicBool::new(false),
             exit_settled: tokio::sync::watch::Sender::new(false),
             main_window_centered: AtomicBool::new(false),
+            window_state: Arc::new(std::sync::Mutex::new(None)),
+            has_restored_position: AtomicBool::new(false),
+            pending_maximize: AtomicBool::new(false),
+            window_shown: AtomicBool::new(false),
             boot_progress: std::sync::Mutex::new(BootProgressPayload::default()),
             init_cancel: tokio_util::sync::CancellationToken::new(),
             boot_phase,
 
             data_dir,
             log_dir,
-            desktop_notifications: std::sync::Mutex::new(desktop_notifications),
+            desktop_notifications: Arc::new(std::sync::Mutex::new(desktop_notifications)),
+            desktop_settings: std::sync::Mutex::new(desktop_settings),
+            settings_write_lock: Arc::new(tokio::sync::Mutex::new(())),
+            window_state_write_lock: Arc::new(std::sync::Mutex::new(())),
+            notifications_write_lock: Arc::new(std::sync::Mutex::new(())),
+            active_backend_mode,
+            active_remote_url,
+            settings_notify: Arc::new(tokio::sync::Notify::new()),
+            start_minimized_boot: AtomicBool::new(start_minimized_boot),
+            frontend_ready_received: AtomicBool::new(false),
+            exit_confirm_open: AtomicBool::new(false),
+            tray_controller: std::sync::Mutex::new(None),
         }
     }
 
@@ -140,6 +188,12 @@ impl DesktopBackendState {
 
     pub(crate) fn is_boot_failed(&self) -> bool {
         self.boot_failed.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn set_tray_controller(&self, controller: tray::TrayController) {
+        if let Ok(mut lock) = self.tray_controller.lock() {
+            *lock = Some(controller);
+        }
     }
 
     pub(crate) fn set_boot_progress(&self, status: &str, progress: f32) -> BootProgressPayload {
@@ -177,15 +231,101 @@ impl DesktopBackendState {
     pub(crate) fn backend(&self) -> Option<Arc<backend::ServiceContainer>> {
         self.container.lock().ok().and_then(|c| c.clone())
     }
+
+    pub(crate) fn window_state(&self) -> Option<WindowState> {
+        self.window_state.lock().ok().and_then(|s| s.clone())
+    }
+
+    pub(crate) fn set_window_state(&self, window_state: WindowState) {
+        if let Ok(mut lock) = self.window_state.lock() {
+            *lock = Some(window_state);
+        }
+    }
+
+    pub(crate) fn record_window_bounds(
+        &self,
+        x: Option<i32>,
+        y: Option<i32>,
+        width: u32,
+        height: u32,
+        maximized: bool,
+        current_monitor: Option<MonitorBounds>,
+    ) {
+        if let Ok(mut lock) = self.window_state.lock() {
+            record_window_bounds(&mut lock, x, y, width, height, maximized, current_monitor);
+        }
+    }
+
+    /// Write the window geometry to disk on the calling thread.
+    ///
+    /// The geometry is read after the write lock is taken, so when two saves
+    /// overlap the file ends up with the newer geometry whichever runs last.
+    pub(crate) fn persist_window_state(&self) {
+        let _guard = self.window_state_write_lock.lock();
+        let Some(window_state) = self.window_state() else {
+            return;
+        };
+        if let Err(e) = save_window_state(&self.data_dir, &window_state) {
+            log::warn!("Failed to persist window state: {}", e);
+        }
+    }
+
+    /// [`Self::persist_window_state`] on a blocking thread, for callers on the
+    /// main thread.
+    pub(crate) fn persist_window_state_async(&self) {
+        let window_state = self.window_state.clone();
+        let write_lock = self.window_state_write_lock.clone();
+        let data_dir = self.data_dir.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let _guard = write_lock.lock();
+            let Some(snapshot) = window_state.lock().ok().and_then(|state| state.clone()) else {
+                return;
+            };
+            if let Err(e) = save_window_state(&data_dir, &snapshot) {
+                log::warn!("Failed to persist window state: {}", e);
+            }
+        });
+    }
 }
 
-#[tauri::command]
-pub fn restart_desktop(app: tauri::AppHandle) {
+pub(crate) fn active_recording_count(app: &tauri::AppHandle) -> usize {
+    app.try_state::<DesktopBackendState>()
+        .and_then(|state| state.backend())
+        .map(|container| container.active_recording_summary().active_count)
+        .unwrap_or(0)
+}
+
+pub(crate) fn notify_desktop_shutting_down(app: &tauri::AppHandle, active_count: usize) {
+    #[cfg(desktop)]
+    tray::update_tray(
+        app,
+        backend::ActiveRecordingSummary {
+            active_count,
+            total_speed_bytes_per_sec: 0,
+        },
+        true,
+    );
+
+    if active_count > 0
+        && let Err(error) = app.emit(
+            EVENT_DESKTOP_SHUTTING_DOWN,
+            ShuttingDownPayload {
+                active_recordings: active_count,
+            },
+        )
+    {
+        log::warn!("Failed to emit desktop shutting-down event: {}", error);
+    }
+}
+
+fn proceed_with_desktop_restart(app: tauri::AppHandle) {
     // `ExitRequestApi::prevent_exit` is ignored for restart requests, so the
     // `ExitRequested` handler cannot hold a restart back: contain first.
     if !begin_exit(&app) {
         return;
     }
+    let active_count = active_recording_count(&app);
+    notify_desktop_shutting_down(&app, active_count);
     tauri::async_runtime::spawn(async move {
         drain_backend_for_exit(&app).await;
         mark_exit_settled(&app);
@@ -193,9 +333,57 @@ pub fn restart_desktop(app: tauri::AppHandle) {
     });
 }
 
+pub(crate) fn request_desktop_restart(app: tauri::AppHandle) {
+    if exit_owned(&app) {
+        return;
+    }
+
+    let Some(state) = app.try_state::<DesktopBackendState>() else {
+        app.request_restart();
+        return;
+    };
+
+    let active_count = active_recording_count(&app);
+    let confirm = state.desktop_settings().confirm_exit_while_recording;
+
+    if active_count > 0 && confirm {
+        if state.exit_confirm_open.swap(true, Ordering::SeqCst) {
+            return;
+        }
+
+        let message = if active_count == 1 {
+            "1 active recording is in progress. Restarting now will stop and finalize it cleanly before restarting.".to_string()
+        } else {
+            format!(
+                "{active_count} active recordings are in progress. Restarting now will stop and finalize them cleanly before restarting."
+            )
+        };
+
+        let app_for_dialog = app.clone();
+        app.dialog()
+            .message(message)
+            .title("Active Recordings in Progress")
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Stop & Restart".to_string(),
+                "Keep Recording".to_string(),
+            ))
+            .show(move |confirmed| {
+                if let Some(state) = app_for_dialog.try_state::<DesktopBackendState>() {
+                    state.exit_confirm_open.store(false, Ordering::SeqCst);
+                }
+                if confirmed {
+                    proceed_with_desktop_restart(app_for_dialog);
+                }
+            });
+    } else {
+        proceed_with_desktop_restart(app);
+    }
+}
+
 #[tauri::command]
-pub fn quit_desktop(app: tauri::AppHandle) {
-    app.exit(0);
+pub fn restart_desktop(app: tauri::AppHandle) {
+    request_desktop_restart(app);
 }
 
 pub(crate) fn mark_exit_settled(app: &tauri::AppHandle) {
@@ -270,6 +458,13 @@ pub(crate) fn begin_exit(app: &tauri::AppHandle) -> bool {
 /// spawning the very work a concurrent drain would miss.
 async fn contain_backend_for_exit(app: &tauri::AppHandle) {
     let state = app.state::<DesktopBackendState>();
+    let app_for_save = app.clone();
+    let _ = tauri::async_runtime::spawn_blocking(move || {
+        if let Some(state) = app_for_save.try_state::<DesktopBackendState>() {
+            state.persist_window_state();
+        }
+    })
+    .await;
     if wait_for_boot_settled(state.boot_phase.clone(), BOOT_SETTLE_CAP).await
         == BootSettle::TimedOut
     {
@@ -286,6 +481,76 @@ async fn contain_backend_for_exit(app: &tauri::AppHandle) {
         .await
     {
         log::error!("Error during shutdown: {}", e);
+    }
+}
+
+#[tauri::command]
+pub fn quit_desktop(app: tauri::AppHandle) {
+    request_desktop_quit(app);
+}
+
+fn proceed_with_desktop_exit(app: &tauri::AppHandle, active_count: usize) {
+    if exit_owned(app) {
+        return;
+    }
+
+    notify_desktop_shutting_down(app, active_count);
+    app.exit(0);
+}
+
+pub(crate) fn request_desktop_quit(app: tauri::AppHandle) {
+    if exit_owned(&app) {
+        return;
+    }
+
+    let Some(state) = app.try_state::<DesktopBackendState>() else {
+        app.exit(0);
+        return;
+    };
+
+    let active_count = state
+        .backend()
+        .map(|container| container.active_recording_summary().active_count)
+        .unwrap_or(0);
+    let confirm = state.desktop_settings().confirm_exit_while_recording;
+
+    if active_count > 0 && confirm {
+        if state.exit_confirm_open.swap(true, Ordering::SeqCst) {
+            return;
+        }
+
+        let message = if active_count == 1 {
+            "1 active recording is in progress. Quitting now will stop and finalize it cleanly before exiting.".to_string()
+        } else {
+            format!(
+                "{active_count} active recordings are in progress. Quitting now will stop and finalize them cleanly before exiting."
+            )
+        };
+
+        let app_for_dialog = app.clone();
+        app.dialog()
+            .message(message)
+            .title("Active Recordings in Progress")
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                "Stop & Quit".to_string(),
+                "Keep Recording".to_string(),
+            ))
+            .show(move |confirmed| {
+                if let Some(state) = app_for_dialog.try_state::<DesktopBackendState>() {
+                    state.exit_confirm_open.store(false, Ordering::SeqCst);
+                }
+                if confirmed {
+                    let current_active = app_for_dialog
+                        .try_state::<DesktopBackendState>()
+                        .and_then(|state| state.backend())
+                        .map(|container| container.active_recording_summary().active_count)
+                        .unwrap_or(0);
+                    proceed_with_desktop_exit(&app_for_dialog, current_active);
+                }
+            });
+    } else {
+        proceed_with_desktop_exit(&app, active_count);
     }
 }
 

@@ -102,4 +102,16 @@ describe('desktop media URLs', () => {
       'http://127.0.0.1:12555/api/media/abc/content?download=1&token=tok',
     );
   });
+
+  it('preserves remote backend subpath prefixes when resolving /api media URLs', () => {
+    vi.stubGlobal('__TAURI_INTERNALS__', {});
+    vi.stubGlobal('__RUST_SREC_BACKEND_URL__', 'https://srec.example.com/sub');
+
+    expect(getMediaUrl('/api/media/abc/content', 'tok')).toBe(
+      'https://srec.example.com/sub/api/media/abc/content?token=tok',
+    );
+    expect(getMediaDownloadUrl('abc', 'tok')).toBe(
+      'https://srec.example.com/sub/api/media/abc/content?token=tok&download=1',
+    );
+  });
 });

@@ -24,6 +24,7 @@ const FFMPEG_SECTIONS: readonly SectionSpec[] = [
         description: msg`Absolute path or 'ffmpeg' if in PATH`,
         fallback: 'ffmpeg',
         fallbackLabel: 'FFMPEG_PATH or ffmpeg',
+        pathPicker: 'file',
       },
       {
         kind: 'text',

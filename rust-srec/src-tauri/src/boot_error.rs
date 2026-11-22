@@ -1,10 +1,13 @@
+use std::sync::atomic::Ordering;
+
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
 
-use crate::DesktopBackendState;
 use crate::desktop_notifications::DesktopNotificationConfig;
-use crate::window_state::{center_main_window_once, show_main_window};
+use crate::desktop_settings::BackendMode;
+use crate::lifecycle::DesktopBackendState;
+use crate::window_state::{center_main_window_once, desktop_page_url, show_main_window};
 
 #[derive(Clone, Serialize)]
 pub(crate) struct BootProgressPayload {
@@ -211,6 +214,8 @@ pub(crate) fn build_init_script(
     backend_url: &str,
     boot_error: Option<&BootFailurePayload>,
     desktop_notifications: &DesktopNotificationConfig,
+    backend_mode: BackendMode,
+    remote_url: Option<&str>,
 ) -> String {
     let backend_url_json =
         serde_json::to_string(backend_url).unwrap_or_else(|_| "\"\"".to_string());
@@ -221,11 +226,19 @@ pub(crate) fn build_init_script(
 
     let desktop_notifications_json =
         serde_json::to_string(desktop_notifications).unwrap_or_else(|_| "null".to_string());
+    let backend_mode_json =
+        serde_json::to_string(&backend_mode).unwrap_or_else(|_| "\"local\"".to_string());
+    let remote_url_json = match remote_url {
+        Some(url) => serde_json::to_string(url).unwrap_or_else(|_| "null".to_string()),
+        None => "null".to_string(),
+    };
 
     format!(
         "globalThis.__RUST_SREC_BACKEND_URL__ = {backend_url_json};\
  globalThis.__RUST_SREC_BOOT_ERROR__ = {boot_error_json};\
- globalThis.__RUST_SREC_DESKTOP_NOTIFICATIONS__ = {desktop_notifications_json};"
+ globalThis.__RUST_SREC_DESKTOP_NOTIFICATIONS__ = {desktop_notifications_json};\
+ globalThis.__RUST_SREC_BACKEND_MODE__ = {backend_mode_json};\
+ globalThis.__RUST_SREC_REMOTE_URL__ = {remote_url_json};"
     )
 }
 
@@ -247,18 +260,18 @@ pub(crate) async fn show_boot_error_window(
         return;
     }
     state.mark_boot_failed();
+    // A recovery window has to be seen, whatever the launch asked for.
+    state.start_minimized_boot.store(false, Ordering::SeqCst);
     let desktop_notifications = state.desktop_notifications();
 
-    let webview_url = if tauri::is_dev() {
-        match tauri::Url::parse("http://127.0.0.1:15275/index.desktop.html") {
-            Ok(url) => tauri::WebviewUrl::External(url),
-            Err(_) => tauri::WebviewUrl::App("index.desktop.html".into()),
-        }
-    } else {
-        tauri::WebviewUrl::App("index.desktop.html".into())
-    };
-
-    let init_script = build_init_script("", Some(&failure), &desktop_notifications);
+    let webview_url = desktop_page_url("index.desktop.html");
+    let init_script = build_init_script(
+        "",
+        Some(&failure),
+        &desktop_notifications,
+        state.active_backend_mode,
+        state.active_remote_url.as_deref(),
+    );
 
     if app_handle.get_webview_window("main").is_none() {
         match tauri::WebviewWindowBuilder::new(app_handle, "main", webview_url)

@@ -60,6 +60,7 @@ export type FieldSpec =
       fallback: string;
       fallbackLabel?: SettingText;
       placeholder?: SettingText;
+      pathPicker?: 'directory' | 'file';
     })
   /** A number of seconds. */
   | (FieldBase & { kind: 'duration'; fallback: number })
@@ -273,6 +274,7 @@ function FieldControl({
           fallbackLabel={field.fallbackLabel}
           placeholder={text(field.placeholder)}
           kind="text"
+          pathPicker={field.pathPicker}
         />
       );
     case 'switch':

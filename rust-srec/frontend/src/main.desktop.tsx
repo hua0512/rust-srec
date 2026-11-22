@@ -3,16 +3,23 @@ import './styles.css';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { RouterProvider } from '@tanstack/react-router';
-import { setupI18n } from '@lingui/core';
+import { setupI18n, type I18n } from '@lingui/core';
+import { msg } from '@lingui/core/macro';
+import { toast } from 'sonner';
 
 import { isTauriRuntime } from '@/utils/tauri';
 
+import { DesktopErrorBoundary } from './desktop/desktop-error-boundary';
 import {
   createFrontendFailure,
   FatalScreen,
   parseBootFailure,
   type BootFailurePayload,
 } from './desktop/fatal-screen';
+import {
+  createDesktopErrorController,
+  FALLBACK_ERROR_MESSAGE,
+} from './desktop/runtime-error-handler';
 import { getRouter } from './router.desktop';
 import {
   defaultLocale,
@@ -64,12 +71,28 @@ function renderBootFailure(
   void notifyFrontendReady();
 }
 
+let activeI18n: I18n | null = null;
+
+const errorController = createDesktopErrorController({
+  onBootFatal: (error) => {
+    renderFatal(error);
+  },
+  onRuntimeError: (message, error) => {
+    console.error('[desktop] unhandled runtime error:', error);
+    const localized =
+      message === FALLBACK_ERROR_MESSAGE && activeI18n
+        ? activeI18n._(msg`An unexpected error occurred`)
+        : message;
+    toast.error(localized);
+  },
+});
+
 window.addEventListener('error', (e) => {
-  renderFatal((e as ErrorEvent).error ?? (e as ErrorEvent).message);
+  errorController.handleError(e);
 });
 
 window.addEventListener('unhandledrejection', (e) => {
-  renderFatal((e as PromiseRejectionEvent).reason);
+  errorController.handleError((e as PromiseRejectionEvent).reason);
 });
 
 async function resolveInitialLocale(): Promise<Locale> {
@@ -87,11 +110,15 @@ async function resolveInitialLocale(): Promise<Locale> {
 async function bootstrap() {
   const bootError = getBootError();
   if (bootError) {
+    // Keep the native startup failure on screen even if a secondary error fires
+    // while rendering the recovery UI.
+    errorController.markMounted();
     renderBootFailure(bootError);
     return;
   }
 
   const i18n = setupI18n();
+  activeI18n = i18n;
   const locale = await resolveInitialLocale();
 
   if (import.meta.env.DEV) {
@@ -125,11 +152,14 @@ async function bootstrap() {
   root.render(
     <React.StrictMode>
       <NotifyFirstCommit />
-      <RouterProvider router={router} />
+      <DesktopErrorBoundary>
+        <RouterProvider router={router} />
+      </DesktopErrorBoundary>
     </React.StrictMode>,
   );
 
   await firstCommit;
+  errorController.markMounted();
 
   // Best-effort wait for a presented frame on top of the commit. The main
   // window is created hidden and only shown by lib.rs on
@@ -152,5 +182,5 @@ async function bootstrap() {
 }
 
 bootstrap().catch((e) => {
-  renderFatal(e);
+  errorController.handleError(e);
 });

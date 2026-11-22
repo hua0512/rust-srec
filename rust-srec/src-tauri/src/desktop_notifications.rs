@@ -1,5 +1,6 @@
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::PoisonError;
 
 use rust_srec::backend::{NotificationEvent, NotificationPriority};
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,7 @@ use tauri::Manager;
 use tauri_plugin_notification::NotificationExt;
 
 use crate::DesktopBackendState;
+use crate::json_file::write_json_atomically;
 
 pub const EVENT_SET_DESKTOP_NOTIFICATIONS: &str = "rust-srec://desktop-notifications-set";
 pub const EVENT_UPDATED_DESKTOP_NOTIFICATIONS: &str = "rust-srec://desktop-notifications-updated";
@@ -108,15 +110,7 @@ pub fn persist_desktop_notifications_config(
     data_dir: &Path,
     cfg: &DesktopNotificationConfig,
 ) -> io::Result<()> {
-    let config_path = desktop_notifications_config_path(data_dir);
-    let tmp_path = config_path.with_extension("json.tmp");
-    let json = serde_json::to_string_pretty(cfg)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-    std::fs::write(&tmp_path, json)?;
-    // `rename` replaces an existing file on every platform, so a concurrent
-    // load always finds either the old or the new config.
-    std::fs::rename(&tmp_path, &config_path)?;
-    Ok(())
+    write_json_atomically(&desktop_notifications_config_path(data_dir), cfg)
 }
 
 pub fn should_deliver_desktop_notification(
@@ -157,9 +151,7 @@ pub fn register_desktop_notifications_ipc(app_handle: &tauri::AppHandle) {
 
             let state = handle.state::<DesktopBackendState>();
             state.set_desktop_notifications(parsed.clone());
-            if let Err(e) = state.persist_desktop_notifications() {
-                log::warn!("Failed to persist desktop notifications config: {}", e);
-            }
+            state.persist_desktop_notifications_async();
 
             if let Err(e) = handle.emit(EVENT_UPDATED_DESKTOP_NOTIFICATIONS, parsed) {
                 log::warn!("Failed to emit desktop notifications update: {}", e);
@@ -176,18 +168,34 @@ impl DesktopBackendState {
     pub fn desktop_notifications(&self) -> DesktopNotificationConfig {
         self.desktop_notifications
             .lock()
-            .map(|c| c.clone())
-            .unwrap_or_default()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     pub fn set_desktop_notifications(&self, config: DesktopNotificationConfig) {
-        if let Ok(mut lock) = self.desktop_notifications.lock() {
-            *lock = config;
-        }
+        *self
+            .desktop_notifications
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = config;
     }
 
-    pub fn persist_desktop_notifications(&self) -> io::Result<()> {
-        let cfg = self.desktop_notifications();
-        persist_desktop_notifications_config(&self.data_dir, &cfg)
+    /// Write the current config to disk on a blocking thread.
+    ///
+    /// The config is read after the write lock is taken, so when two saves
+    /// overlap the file ends up with the newer config whichever runs last.
+    pub fn persist_desktop_notifications_async(&self) {
+        let data_dir = self.data_dir.clone();
+        let config = self.desktop_notifications.clone();
+        let write_lock = self.notifications_write_lock.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let _guard = write_lock.lock();
+            let snapshot = config
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone();
+            if let Err(e) = persist_desktop_notifications_config(&data_dir, &snapshot) {
+                log::warn!("Failed to persist desktop notifications config: {}", e);
+            }
+        });
     }
 }

@@ -34,7 +34,12 @@ tauri-plugin-notification = "2.7.0"
 tauri-plugin-opener = "2.7.2"
 tokio = { workspace = true }
 tokio-util = { workspace = true }
+reqwest = { workspace = true }
 rust-srec = { path = ".." }
+tauri-plugin-dialog = "2.8.4"
+tauri-plugin-autostart = "2.7.0"
+keepawake = "0.6.1"
+dunce = "1.0.5"
 
 [target.'cfg(windows)'.dependencies]
 notify-rust = "4.18.2"

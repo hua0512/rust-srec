@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "splash",
+  "description": "Minimal event-only capability for the desktop splash window",
+  "windows": [
+    "splash"
+  ],
+  "permissions": [
+    "core:event:default"
+  ]
+}

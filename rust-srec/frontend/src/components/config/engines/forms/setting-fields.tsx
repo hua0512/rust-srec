@@ -37,6 +37,7 @@ import {
   CONFIG_SELECT_TRIGGER,
   ConfigFieldLabel,
 } from '@/components/config/shared/config-field';
+import { DesktopPathInput } from '@/components/config/shared/desktop-path-input';
 import { useDefaultPlaceholder } from '@/hooks/use-default-placeholder';
 import { useRowKeys } from '@/hooks/use-row-keys';
 import { cn } from '@/lib/utils';
@@ -344,6 +345,8 @@ interface SettingInputProps {
   placeholder?: string;
   /** A `duration` is a number of seconds, entered in a unit of the user's choice. */
   kind?: 'number' | 'text' | 'duration';
+  /** Show a desktop native path picker beside a text input. */
+  pathPicker?: 'directory' | 'file';
   size?: 'sm' | 'default';
 }
 
@@ -362,11 +365,13 @@ function SettingInputControl({
   field,
   kind,
   placeholder,
+  pathPicker,
   ...props
 }: {
   field: ControllerRenderProps;
   kind: NonNullable<SettingInputProps['kind']>;
   placeholder?: string;
+  pathPicker?: 'directory' | 'file';
 } & Omit<React.ComponentProps<'input'>, 'type' | 'value' | 'onChange'>) {
   if (kind === 'duration') {
     return (
@@ -381,6 +386,26 @@ function SettingInputControl({
         placeholder={placeholder}
         className="bg-background/50"
         inputClassName="font-mono"
+      />
+    );
+  }
+  if (kind === 'text' && pathPicker) {
+    return (
+      <DesktopPathInput
+        type="text"
+        {...props}
+        {...field}
+        pickerMode={pathPicker}
+        onPickValue={field.onChange}
+        // A cleared text field is unset, not empty text, which a path setting would keep.
+        onChange={(event) =>
+          field.onChange(
+            event.target.value === '' ? undefined : event.target.value,
+          )
+        }
+        value={field.value ?? ''}
+        className={cn(CONFIG_INPUT, 'font-mono')}
+        placeholder={placeholder}
       />
     );
   }
@@ -416,6 +441,7 @@ export function SettingInput({
   fallbackLabel,
   placeholder,
   kind = 'number',
+  pathPicker,
   size,
 }: SettingInputProps) {
   const { i18n } = useLingui();
@@ -444,6 +470,7 @@ export function SettingInput({
                 field={field}
                 kind={kind}
                 placeholder={placeholder ?? defaultPlaceholder(shownDefault)}
+                pathPicker={pathPicker}
               />
             </FormControl>
             {description && (
@@ -503,6 +530,7 @@ export function SettingInput({
                 <SettingInputControl
                   field={field}
                   kind={kind}
+                  pathPicker={pathPicker}
                   aria-labelledby={labelId}
                 />
               </FormControl>
