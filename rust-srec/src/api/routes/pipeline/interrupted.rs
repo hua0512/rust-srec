@@ -216,7 +216,7 @@ async fn remove_unless_stuck(
     let mut removal = tokio::task::spawn_blocking(remove);
     match tokio::time::timeout(deadline, &mut removal).await {
         Ok(Ok(result)) => Ok(result),
-        Ok(Err(error)) => Err(ApiError::internal(format!("File removal failed: {error}"))),
+        Ok(Err(error)) => Err(ApiError::from(error)),
         Err(_) => {
             stuck.fetch_add(1, Ordering::AcqRel);
             tokio::spawn(async move {

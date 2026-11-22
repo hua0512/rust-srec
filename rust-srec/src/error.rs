@@ -34,6 +34,9 @@ pub enum Error {
     #[error("Validation error: {0}")]
     Validation(String),
 
+    #[error("{0}")]
+    Conflict(String),
+
     /// A DAG operation that only applies to a live execution was attempted on
     /// one that already reached a terminal status.
     ///
@@ -123,6 +126,10 @@ impl Error {
 
     pub fn validation(msg: impl Into<String>) -> Self {
         Self::Validation(msg.into())
+    }
+
+    pub fn conflict(msg: impl Into<String>) -> Self {
+        Self::Conflict(msg.into())
     }
 
     pub fn config(msg: impl Into<String>) -> Self {

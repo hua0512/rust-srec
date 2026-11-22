@@ -50,6 +50,25 @@ pub trait NotificationRepository: Send + Sync {
     }
     async fn subscribe(&self, channel_id: &str, event_name: &str) -> Result<()>;
     async fn unsubscribe(&self, channel_id: &str, event_name: &str) -> Result<()>;
+    /// Atomically replace all event subscriptions of `channel_id`.
+    async fn replace_subscriptions(&self, channel_id: &str, events: &[String]) -> Result<()> {
+        self.get_channel(channel_id).await?;
+        for existing in self.get_subscriptions_for_channel(channel_id).await? {
+            self.unsubscribe(channel_id, &existing).await?;
+        }
+        for event in events {
+            self.subscribe(channel_id, event).await?;
+        }
+        Ok(())
+    }
+
+    /// Resolve a persisted `users.id` row to associate with Web Push
+    /// subscriptions when API authentication is disabled (`AUTH_DISABLED=true`).
+    async fn default_web_push_user_id(&self) -> Result<Option<String>> {
+        Ok(Some(
+            "default-admin-00000000-0000-0000-0000-000000000001".to_string(),
+        ))
+    }
 
     // Dead Letter Queue
     async fn add_to_dead_letter(&self, entry: &NotificationDeadLetterDbModel) -> Result<()>;
@@ -156,12 +175,72 @@ impl NotificationRepository for SqlxNotificationRepository {
     }
 
     async fn delete_channel(&self, id: &str) -> Result<()> {
-        // Explicitly remove subscriptions before deleting the channel;
-        // the channel foreign key also provides ON DELETE CASCADE.
-        writes::delete_subscriptions(&mut *self.write_pool.acquire().await?, id).await?;
+        crate::database::retry::retry_on_sqlite_busy("delete_notification_channel", || async {
+            let mut tx = crate::database::begin_immediate(&self.write_pool).await?;
+            let exists: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM notification_channel WHERE id = ?)",
+            )
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await?;
+            if !exists {
+                return Err(Error::not_found("NotificationChannel", id));
+            }
+            writes::delete_subscriptions(&mut tx, id).await?;
+            writes::delete_channel_dead_letters(&mut tx, id).await?;
+            writes::delete_channel_row(&mut tx, id).await?;
+            tx.commit().await?;
+            Ok(())
+        })
+        .await
+    }
 
-        writes::delete_channel_row(&mut *self.write_pool.acquire().await?, id).await?;
-        Ok(())
+    async fn replace_subscriptions(&self, channel_id: &str, events: &[String]) -> Result<()> {
+        crate::database::retry::retry_on_sqlite_busy(
+            "replace_notification_subscriptions",
+            || async {
+                let mut tx = crate::database::begin_immediate(&self.write_pool).await?;
+                let exists: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM notification_channel WHERE id = ?)",
+                )
+                .bind(channel_id)
+                .fetch_one(&mut *tx)
+                .await?;
+                if !exists {
+                    return Err(Error::not_found("NotificationChannel", channel_id));
+                }
+                writes::delete_subscriptions(&mut tx, channel_id).await?;
+                for event in events {
+                    writes::insert_subscription(
+                        &mut tx,
+                        channel_id,
+                        event,
+                        writes::SubscriptionInsert::IgnoreDuplicate,
+                    )
+                    .await?;
+                }
+                tx.commit().await?;
+                Ok(())
+            },
+        )
+        .await
+    }
+
+    async fn default_web_push_user_id(&self) -> Result<Option<String>> {
+        let user_id: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM users \
+             ORDER BY \
+                 CASE \
+                     WHEN id = 'default-admin-00000000-0000-0000-0000-000000000001' THEN 0 \
+                     WHEN is_active = 1 AND roles LIKE '%\"admin\"%' THEN 1 \
+                     ELSE 2 \
+                 END, \
+                 created_at ASC \
+             LIMIT 1",
+        )
+        .fetch_optional(&self.pool)
+        .await?;
+        Ok(user_id)
     }
 
     async fn get_subscriptions_for_channel(&self, channel_id: &str) -> Result<Vec<String>> {

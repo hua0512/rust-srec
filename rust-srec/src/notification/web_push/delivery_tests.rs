@@ -281,3 +281,103 @@ fn payload_caps_count_utf8_and_json_escaping_including_fallback_metadata() {
     let exact = serde_json::to_vec(&payload).unwrap().len();
     assert_eq!(payload.into_bytes_capped(exact).unwrap().len(), exact);
 }
+
+#[tokio::test]
+async fn endpoint_validation_blocks_private_targets_and_delivery_refuses_redirects() {
+    for allowed in [
+        "http://localhost:8080/push",
+        "http://127.0.0.1:8080/push",
+        "http://[::1]:8080/push",
+        "https://8.8.8.8/push",
+    ] {
+        validate_push_endpoint(allowed, false, false)
+            .await
+            .unwrap_or_else(|e| panic!("expected {allowed} to be allowed, got {e}"));
+    }
+
+    for rejected in [
+        "https://169.254.169.254/latest/meta-data",
+        "https://10.0.0.1/push",
+        "https://172.16.0.1/push",
+        "https://192.168.1.10/push",
+        "https://sub.localhost/push",
+        "https://user:pass@8.8.8.8/push",
+        "http://8.8.8.8/push",
+    ] {
+        assert!(
+            validate_push_endpoint(rejected, false, false)
+                .await
+                .is_err(),
+            "expected {rejected} to be rejected"
+        );
+    }
+
+    let ssrf_hits = Arc::new(AtomicUsize::new(0));
+    let ssrf_hits_handler = ssrf_hits.clone();
+    let target_app = Router::new().route(
+        "/internal",
+        post(move || {
+            let ssrf_hits = ssrf_hits_handler.clone();
+            async move {
+                ssrf_hits.fetch_add(1, Ordering::SeqCst);
+                StatusCode::OK
+            }
+        }),
+    );
+    let target_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let target_url = format!("http://{}/internal", target_listener.local_addr().unwrap());
+    let _target_server = AbortOnDropHandle::new(tokio::spawn(async move {
+        axum::serve(target_listener, target_app).await.unwrap();
+    }));
+
+    let redirect_target = target_url.clone();
+    let redirect_app = Router::new().route(
+        "/push",
+        post(move || {
+            let location = redirect_target.clone();
+            async move {
+                (
+                    StatusCode::TEMPORARY_REDIRECT,
+                    [(axum::http::header::LOCATION, location)],
+                    "redirecting",
+                )
+            }
+        }),
+    );
+    let redirect_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let redirect_endpoint = format!("http://{}/push", redirect_listener.local_addr().unwrap());
+    let _redirect_server = AbortOnDropHandle::new(tokio::spawn(async move {
+        axum::serve(redirect_listener, redirect_app).await.unwrap();
+    }));
+
+    let fixture = Fixture::new().await;
+    fixture
+        .service
+        .unsubscribe("push-test", &fixture.endpoint)
+        .await
+        .unwrap();
+    let private = [37u8; 32];
+    let signing = SigningKey::from_bytes((&private).into()).unwrap();
+    let public = signing.verifying_key().to_sec1_point(false);
+    fixture
+        .service
+        .upsert_subscription(
+            "push-test",
+            &redirect_endpoint,
+            &encode_b64url(public.as_bytes()),
+            &encode_b64url(&[19; AUTH_SECRET_LEN]),
+            NotificationPriority::Low,
+        )
+        .await
+        .unwrap();
+
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        fixture.service.send_event(&event(), None),
+    )
+    .await
+    .expect("redirect refusal must finish");
+
+    assert_eq!(ssrf_hits.load(Ordering::SeqCst), 0);
+    assert_eq!(fixture.metrics.snapshot().web_push_failed_total, 1);
+}

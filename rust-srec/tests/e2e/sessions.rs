@@ -572,6 +572,33 @@ async fn deleting_a_session_removes_its_records_but_leaves_its_files() {
         app.post("/api/sessions/batch-delete", &token, &json!({ "ids": ids }))
             .await
     };
+    // Live sessions and sessions with active pipeline work cannot be deleted,
+    // and a batch containing one rolls back as a unit.
+    let mut busy_sql = session("still-live", t, None, 0).sql();
+    busy_sql.push_str(&session("pending-job-session", t, Some(t + 600_000), 1).sql());
+    busy_sql.push_str(&session("processing-dag-session", t, Some(t + 600_000), 1).sql());
+    busy_sql.push_str(&format!(
+        "INSERT INTO job (id, job_type, status, config, state, created_at, updated_at, session_id) \
+         VALUES ('busy-job', 'unclaimed_hold', 'PENDING', '{{}}', '{{}}', {t}, {t}, 'pending-job-session');\n\
+         INSERT INTO dag_execution (id, dag_definition, status, session_id, created_at, updated_at, \
+             total_steps, completed_steps, failed_steps) \
+         VALUES ('busy-dag', '{{}}', 'PROCESSING', 'processing-dag-session', {t}, {t}, 1, 0, 0);\n"
+    ));
+    app.run_sql(&busy_sql).await;
+    for busy in [
+        "still-live",
+        "pending-job-session",
+        "processing-dag-session",
+    ] {
+        app.delete(&format!("/api/sessions/{busy}"), &token)
+            .await
+            .assert_error(StatusCode::CONFLICT, "CONFLICT");
+        batch_delete(json!(["batch-1", busy]))
+            .await
+            .assert_error(StatusCode::CONFLICT, "CONFLICT");
+        app.get_ok("/api/sessions/batch-1", &token).await;
+    }
+
     // Only rows that existed are counted.
     let deleted = batch_delete(json!(["batch-1", "no-such-session", "batch-2"]))
         .await

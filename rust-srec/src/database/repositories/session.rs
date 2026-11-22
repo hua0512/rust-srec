@@ -489,10 +489,37 @@ impl SessionRepository for SqlxSessionRepository {
 
     async fn delete_session(&self, id: &str) -> Result<()> {
         retry_on_sqlite_busy("delete_session", || async {
+            let mut tx = crate::database::begin_immediate(&self.write_pool).await?;
+            let status: Option<(bool, bool, bool)> = sqlx::query_as(
+                "SELECT \
+                    end_time IS NOT NULL, \
+                    EXISTS(SELECT 1 FROM job j WHERE j.session_id = live_sessions.id AND j.status IN ('PENDING', 'PROCESSING')), \
+                    EXISTS(SELECT 1 FROM dag_execution d WHERE d.session_id = live_sessions.id AND d.status IN ('PENDING', 'PROCESSING')) \
+                 FROM live_sessions WHERE id = ?",
+            )
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await?;
+
+            let Some((is_ended, has_active_job, has_active_dag)) = status else {
+                return Err(Error::not_found("Session", id));
+            };
+            if !is_ended {
+                return Err(Error::conflict(format!(
+                    "Cannot delete active session '{id}' while it is still live"
+                )));
+            }
+            if has_active_job || has_active_dag {
+                return Err(Error::conflict(format!(
+                    "Cannot delete session '{id}' while pipeline jobs are pending or processing"
+                )));
+            }
+
             sqlx::query("DELETE FROM live_sessions WHERE id = ?")
                 .bind(id)
-                .execute(&self.write_pool)
+                .execute(&mut *tx)
                 .await?;
+            tx.commit().await?;
             Ok(())
         })
         .await
@@ -503,18 +530,55 @@ impl SessionRepository for SqlxSessionRepository {
             return Ok(0);
         }
 
+        let unique_ids = super::unique_lookup_ids(ids);
         retry_on_sqlite_busy("delete_sessions_batch", || async {
-            // Build a query with multiple placeholders: DELETE FROM live_sessions WHERE id IN (?, ?, ...)
-            let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(", ");
-            let sql = format!("DELETE FROM live_sessions WHERE id IN ({})", placeholders);
+            let mut tx = crate::database::begin_immediate(&self.write_pool).await?;
 
-            let mut query = sqlx::query(sqlx::AssertSqlSafe(sql));
-            for id in ids {
-                query = query.bind(id);
+            for chunk in unique_ids.chunks(super::LOOKUP_BATCH_SIZE) {
+                let mut check = sqlx::QueryBuilder::<Sqlite>::new(
+                    "SELECT id, end_time IS NULL FROM live_sessions WHERE id IN (",
+                );
+                let mut sep = check.separated(", ");
+                for id in chunk {
+                    sep.push_bind(*id);
+                }
+                sep.push_unseparated(
+                    ") AND (end_time IS NULL \
+                        OR EXISTS(SELECT 1 FROM job j WHERE j.session_id = live_sessions.id AND j.status IN ('PENDING', 'PROCESSING')) \
+                        OR EXISTS(SELECT 1 FROM dag_execution d WHERE d.session_id = live_sessions.id AND d.status IN ('PENDING', 'PROCESSING'))) \
+                     LIMIT 1",
+                );
+                if let Some((blocking_id, is_live)) = check
+                    .build_query_as::<(String, bool)>()
+                    .fetch_optional(&mut *tx)
+                    .await?
+                {
+                    if is_live {
+                        return Err(Error::conflict(format!(
+                            "Cannot delete active session '{blocking_id}' while it is still live"
+                        )));
+                    }
+                    return Err(Error::conflict(format!(
+                        "Cannot delete session '{blocking_id}' while pipeline jobs are pending or processing"
+                    )));
+                }
             }
 
-            let result = query.execute(&self.write_pool).await?;
-            Ok(result.rows_affected())
+            let mut total_deleted = 0_u64;
+            for chunk in unique_ids.chunks(super::LOOKUP_BATCH_SIZE) {
+                let mut del =
+                    sqlx::QueryBuilder::<Sqlite>::new("DELETE FROM live_sessions WHERE id IN (");
+                let mut sep = del.separated(", ");
+                for id in chunk {
+                    sep.push_bind(*id);
+                }
+                sep.push_unseparated(")");
+                let result = del.build().execute(&mut *tx).await?;
+                total_deleted += result.rows_affected();
+            }
+
+            tx.commit().await?;
+            Ok(total_deleted)
         })
         .await
     }
