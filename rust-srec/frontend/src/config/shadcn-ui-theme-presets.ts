@@ -1,7 +1,106 @@
 import type { ThemePreset } from '../types/theme';
 
 export const shadcnThemePresets: Record<string, ThemePreset> = {
-  default: {
+  orange: {
+    label: 'Orange',
+
+    styles: {
+      light: {
+        background: 'oklch(1 0 0)',
+        foreground: 'oklch(0.141 0.005 285.823)',
+
+        card: 'oklch(1 0 0)',
+        'card-foreground': 'oklch(0.141 0.005 285.823)',
+
+        popover: 'oklch(1 0 0)',
+        'popover-foreground': 'oklch(0.141 0.005 285.823)',
+
+        primary: 'oklch(0.646 0.222 41.116)',
+        'primary-foreground': 'oklch(0.98 0.016 73.684)',
+
+        secondary: 'oklch(0.967 0.001 286.375)',
+        'secondary-foreground': 'oklch(0.21 0.006 285.885)',
+
+        muted: 'oklch(0.967 0.001 286.375)',
+        'muted-foreground': 'oklch(0.552 0.016 285.938)',
+
+        accent: 'oklch(0.967 0.001 286.375)',
+        'accent-foreground': 'oklch(0.21 0.006 285.885)',
+
+        destructive: 'oklch(0.577 0.245 27.325)',
+        'destructive-foreground': 'oklch(0.985 0 0)',
+
+        border: 'oklch(0.92 0.004 286.32)',
+        input: 'oklch(0.92 0.004 286.32)',
+        ring: 'oklch(0.75 0.183 55.934)',
+
+        'chart-1': 'oklch(0.646 0.222 41.116)',
+        'chart-2': 'oklch(0.6 0.118 184.704)',
+        'chart-3': 'oklch(0.398 0.07 227.392)',
+        'chart-4': 'oklch(0.828 0.189 84.429)',
+        'chart-5': 'oklch(0.769 0.188 70.08)',
+
+        sidebar: 'oklch(1 0 0)',
+        'sidebar-foreground': 'oklch(0.141 0.005 285.823)',
+        'sidebar-primary': 'oklch(0.646 0.222 41.116)',
+        'sidebar-primary-foreground': 'oklch(0.98 0.016 73.684)',
+        'sidebar-accent': 'oklch(0.967 0.001 286.375)',
+        'sidebar-accent-foreground': 'oklch(0.21 0.006 285.885)',
+        'sidebar-border': 'oklch(0.92 0.004 286.32)',
+        'sidebar-ring': 'oklch(0.75 0.183 55.934)',
+
+        radius: '0.625rem',
+      },
+
+      dark: {
+        background: 'oklch(0.141 0.005 285.823)',
+        foreground: 'oklch(0.985 0 0)',
+
+        card: 'oklch(0.21 0.006 285.885)',
+        'card-foreground': 'oklch(0.985 0 0)',
+
+        popover: 'oklch(0.21 0.006 285.885)',
+        'popover-foreground': 'oklch(0.985 0 0)',
+
+        primary: 'oklch(0.705 0.213 47.604)',
+        'primary-foreground': 'oklch(0.98 0.016 73.684)',
+
+        secondary: 'oklch(0.274 0.006 286.033)',
+        'secondary-foreground': 'oklch(0.985 0 0)',
+
+        muted: 'oklch(0.274 0.006 286.033)',
+        'muted-foreground': 'oklch(0.705 0.015 286.067)',
+
+        accent: 'oklch(0.274 0.006 286.033)',
+        'accent-foreground': 'oklch(0.985 0 0)',
+
+        destructive: 'oklch(0.704 0.191 22.216)',
+        'destructive-foreground': 'oklch(0.985 0 0)',
+
+        border: 'oklch(1 0 0 / 10%)',
+        input: 'oklch(1 0 0 / 15%)',
+        ring: 'oklch(0.646 0.222 41.116)',
+
+        'chart-1': 'oklch(0.705 0.213 47.604)',
+        'chart-2': 'oklch(0.696 0.17 162.48)',
+        'chart-3': 'oklch(0.769 0.188 70.08)',
+        'chart-4': 'oklch(0.627 0.265 303.9)',
+        'chart-5': 'oklch(0.645 0.246 16.439)',
+
+        sidebar: 'oklch(0.141 0.005 285.823)',
+        'sidebar-foreground': 'oklch(0.985 0 0)',
+        'sidebar-primary': 'oklch(0.705 0.213 47.604)',
+        'sidebar-primary-foreground': 'oklch(0.98 0.016 73.684)',
+        'sidebar-accent': 'oklch(0.274 0.006 286.033)',
+        'sidebar-accent-foreground': 'oklch(0.985 0 0)',
+        'sidebar-border': 'oklch(1 0 0 / 10%)',
+        'sidebar-ring': 'oklch(0.646 0.222 41.116)',
+
+        radius: '0.625rem',
+      },
+    },
+  },
+  zinc: {
     label: 'Zinc',
 
     styles: {
@@ -447,73 +546,6 @@ export const shadcnThemePresets: Record<string, ThemePreset> = {
         'chart-3': 'var(--color-rose-600)',
         'chart-4': 'var(--color-rose-700)',
         'chart-5': 'var(--color-rose-800)',
-        radius: '0.625rem',
-        'font-sans':
-          "ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'",
-        'font-mono':
-          "ui-monospace, SFMono-Regular, 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace",
-      },
-    },
-  },
-  orange: {
-    label: 'Orange',
-    styles: {
-      light: {
-        background: 'oklch(1 0 0)',
-        foreground: 'oklch(0.145 0 0)',
-        card: 'oklch(1 0 0)',
-        'card-foreground': 'oklch(0.145 0 0)',
-        popover: 'oklch(1 0 0)',
-        'popover-foreground': 'oklch(0.145 0 0)',
-        primary: 'var(--color-orange-600)',
-        'primary-foreground': 'var(--color-orange-50)',
-        secondary: 'oklch(0.97 0 0)',
-        'secondary-foreground': 'oklch(0.205 0 0)',
-        muted: 'oklch(0.97 0 0)',
-        'muted-foreground': 'oklch(0.556 0 0)',
-        accent: 'oklch(0.97 0 0)',
-        'accent-foreground': 'oklch(0.205 0 0)',
-        destructive: 'oklch(0.577 0.245 27.325)',
-        'destructive-foreground': 'oklch(0.98 0 0)',
-        border: 'oklch(0.922 0 0)',
-        input: 'oklch(0.922 0 0)',
-        ring: 'var(--color-orange-400)',
-        'chart-1': 'var(--color-orange-500)',
-        'chart-2': 'var(--color-orange-600)',
-        'chart-3': 'var(--color-orange-700)',
-        'chart-4': 'var(--color-orange-800)',
-        'chart-5': 'var(--color-orange-900)',
-        radius: '0.625rem',
-        'font-sans':
-          "ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'",
-        'font-mono':
-          "ui-monospace, SFMono-Regular, 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace",
-      },
-      dark: {
-        background: 'oklch(0.145 0 0)',
-        foreground: 'oklch(0.985 0 0)',
-        card: 'oklch(0.205 0 0)',
-        'card-foreground': 'oklch(0.985 0 0)',
-        popover: 'oklch(0.269 0 0)',
-        'popover-foreground': 'oklch(0.985 0 0)',
-        primary: 'var(--color-orange-500)',
-        'primary-foreground': 'var(--color-orange-50)',
-        secondary: 'oklch(0.269 0 0)',
-        'secondary-foreground': 'oklch(0.985 0 0)',
-        muted: 'oklch(0.269 0 0)',
-        'muted-foreground': 'oklch(0.708 0 0)',
-        accent: 'oklch(0.371 0 0)',
-        'accent-foreground': 'oklch(0.985 0 0)',
-        destructive: 'oklch(0.704 0.191 22.216)',
-        'destructive-foreground': 'oklch(0.98 0 0)',
-        border: 'oklch(1 0 0 / 10%)',
-        input: 'oklch(1 0 0 / 15%)',
-        ring: 'var(--color-orange-900)',
-        'chart-1': 'var(--color-orange-400)',
-        'chart-2': 'var(--color-orange-500)',
-        'chart-3': 'var(--color-orange-600)',
-        'chart-4': 'var(--color-orange-700)',
-        'chart-5': 'var(--color-orange-800)',
         radius: '0.625rem',
         'font-sans':
           "ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji'",

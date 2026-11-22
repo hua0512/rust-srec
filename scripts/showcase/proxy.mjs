@@ -165,7 +165,13 @@ export function startProxy({ port, backendPort, recordings, liveIds, pathAlias }
         up.on('data', (c) => chunks.push(c));
         up.on('end', () => {
           let body = Buffer.concat(chunks).toString();
-          if (pathAlias) body = body.replaceAll(pathAlias[0], pathAlias[1]);
+          if (pathAlias) {
+            body = body.replaceAll(pathAlias[0], pathAlias[1]);
+            const escaped = pathAlias[0].replaceAll('\\', '\\\\');
+            if (escaped !== pathAlias[0]) {
+              body = body.replaceAll(escaped, pathAlias[1]);
+            }
+          }
           if (match && up.statusCode === 200) {
             body = JSON.stringify(rewriteStreamers(JSON.parse(body), liveIds, liveOnly));
           }

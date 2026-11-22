@@ -30,7 +30,7 @@ export type ThemeSettingsSnapshot = Pick<
  *  theme-default-drift.test.ts enforces). */
 export const DEFAULT_SETTINGS: ThemeSettingsSnapshot = {
   base: 'preset',
-  preset: 'default',
+  preset: 'orange',
   radius: '0.625rem',
   overrides: {},
   importedTheme: null,
@@ -75,8 +75,26 @@ export const useThemeSettings = create(
     }),
     {
       name: STORAGE_KEY_SETTINGS,
+      version: 1,
       storage: createJSONStorage(() => localStorage),
       skipHydration: true,
+      migrate: (persistedState, version) => {
+        const state = persistedState as
+          | Partial<ThemeSettingsSnapshot>
+          | undefined;
+        if (!state || typeof state !== 'object') {
+          return DEFAULT_SETTINGS as ThemeSettingsState;
+        }
+        // Earlier builds stored the default preset under the key 'default';
+        // remap it to the current default preset while keeping explicit picks.
+        if (version < 1 && state.preset === 'default') {
+          return {
+            ...state,
+            preset: DEFAULT_SETTINGS.preset,
+          } as ThemeSettingsState;
+        }
+        return state as ThemeSettingsState;
+      },
     },
   ),
 );

@@ -1,17 +1,8 @@
 <svg width="64" height="64" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- 定义遮罩 -->
-  <mask id="tv-mask-small">
-    <!-- 白色区域保留 -->
-    <rect width="24" height="24" fill="white"/>
-    <!-- 黑色区域挖空：这里把折线缩小并居中了 -->
-    <path d="M9 15.5L11.5 13L13.5 15L16 12.5" stroke="black" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  </mask>
-
-  <!-- 图标主体 -->
-  <g mask="url(#tv-mask-small)">
-    <!-- 天线 -->
-    <path d="M17 3L12 8L7 3" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-    <!-- 电视机身 -->
-    <rect x="2" y="7" width="20" height="15" rx="4" fill="white"/>
+  <g transform="translate(-0.4 0.4)">
+    <path d="M19.73 14.07 A8 8 0 1 1 9.93 4.27" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" />
+    <path d="M12.97 6.49 A5.6 5.6 0 0 1 17.51 11.03" stroke="#FFFFFF" stroke-width="2.1" stroke-linecap="round" />
+    <path d="M13.27 2.99 A9.1 9.1 0 0 1 21.01 10.73" stroke="#FFFFFF" stroke-width="2.1" stroke-linecap="round" />
+    <circle cx="12" cy="12" r="3" fill="#FFFFFF" />
   </g>
 </svg>

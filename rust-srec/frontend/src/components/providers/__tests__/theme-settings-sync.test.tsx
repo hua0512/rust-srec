@@ -193,4 +193,14 @@ describe('ThemeSettingsSync', () => {
 
     expect(localStorage.getItem(THEME_CSS_CACHE_KEY)).toBeNull();
   });
+
+  it('migrates legacy version-0 default preset to the current default preset', () => {
+    seedPersistedSettings({ preset: 'default' });
+
+    render(<ThemeSettingsSync />);
+
+    expect(useThemeSettings.getState().preset).toBe(DEFAULT_SETTINGS.preset);
+    expect(styleEl()).toBeNull();
+    expect(localStorage.getItem(THEME_CSS_CACHE_KEY)).toBeNull();
+  });
 });
