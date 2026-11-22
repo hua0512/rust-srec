@@ -64,4 +64,49 @@ impl SegmentPayload {
     pub fn discontinuity(&self) -> bool {
         self.descriptor().discontinuity
     }
+
+    /// A copy of an init to deliver again ahead of the media at `msn`. It
+    /// carries no discontinuity: that belongs to the delivery the init was
+    /// planned with, not to a later use of the same map.
+    pub fn replayed_at(&self, msn: u64) -> Self {
+        if self.msn() == msn && !self.discontinuity() {
+            return self.clone();
+        }
+        self.with_descriptor(|descriptor| {
+            descriptor.msn = msn;
+            descriptor.discontinuity = false;
+        })
+    }
+
+    /// A copy that carries a discontinuity.
+    pub fn with_discontinuity(&self) -> Self {
+        if self.discontinuity() {
+            return self.clone();
+        }
+        self.with_descriptor(|descriptor| descriptor.discontinuity = true)
+    }
+
+    fn with_descriptor(&self, edit: impl FnOnce(&mut SegmentDescriptor)) -> Self {
+        let mut updated = (**self.descriptor()).clone();
+        edit(&mut updated);
+        let descriptor = Arc::new(updated);
+        match self {
+            Self::Ts { data, .. } => Self::Ts {
+                data: data.clone(),
+                descriptor,
+            },
+            Self::Mp4Init { data, .. } => Self::Mp4Init {
+                data: data.clone(),
+                descriptor,
+            },
+            Self::TsInit { data, .. } => Self::TsInit {
+                data: data.clone(),
+                descriptor,
+            },
+            Self::Mp4Media { data, .. } => Self::Mp4Media {
+                data: data.clone(),
+                descriptor,
+            },
+        }
+    }
 }

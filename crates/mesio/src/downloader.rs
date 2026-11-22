@@ -76,6 +76,13 @@ pub struct ClientPool {
 
 impl ClientPool {
     pub fn new(config: &DownloaderConfig) -> Result<Self, DownloadError> {
+        Self::with_rate_limiter(config, Arc::new(RateLimiter::default()))
+    }
+
+    pub(crate) fn with_rate_limiter(
+        config: &DownloaderConfig,
+        rate_limiter: Arc<RateLimiter>,
+    ) -> Result<Self, DownloadError> {
         let rustls = create_client_with_backend(config, TlsBackend::Rustls)?;
 
         let mut native_hosts = default_native_tls_hosts();
@@ -89,7 +96,7 @@ impl ClientPool {
             #[cfg(feature = "tls-native-fallback")]
             native,
             native_hosts,
-            rate_limiter: Arc::new(RateLimiter::default()),
+            rate_limiter,
         })
     }
 
@@ -231,7 +238,10 @@ fn create_client_with_backend(
 
     // Keeps long-lived (HTTP/2) connections alive between segment requests.
     if let Some(interval) = config.http2_keep_alive_interval {
-        client_builder = client_builder.tcp_keepalive(interval);
+        client_builder = client_builder
+            .tcp_keepalive(interval)
+            .http2_keep_alive_interval(Some(interval))
+            .http2_keep_alive_while_idle(true);
     }
 
     client_builder = match (config.force_ipv4, config.force_ipv6) {

@@ -716,11 +716,11 @@ mod tests {
         );
         assert_eq!(
             hls_config.cache_config.segment_ttl,
-            std::time::Duration::from_millis(2000)
+            Some(std::time::Duration::from_millis(2000))
         );
         assert_eq!(
             hls_config.cache_config.decryption_key_ttl,
-            std::time::Duration::from_millis(3000)
+            Some(std::time::Duration::from_millis(3000))
         );
 
         assert!(matches!(

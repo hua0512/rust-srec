@@ -149,45 +149,31 @@ async fn fetch_key(
                         content_length: None,
                     });
                 }
-                let client = ctx_clients.client_for_url(&fetch_url);
                 let mut retries = 0;
                 loop {
                     let attempt = async {
                         // Like a segment, the key does not wait for a
                         // cooling server here: the segment goes back to the
                         // store, which retries it when the cool-down ends.
-                        let admission = ctx_clients
-                            .rate_limiter()
-                            .try_admit(&fetch_url)
-                            .map_err(|throttled| throttled.error(&fetch_url, KEY_FETCH))?;
-                        let response = client
-                            .get(fetch_url.as_ref().clone())
-                            .query(&params)
-                            .timeout(fetcher.key_download_timeout)
-                            .send()
-                            .await
-                            .map_err(HlsDownloaderError::from)?;
-                        let status = response.status();
-                        if let Some(retry_in) =
-                            admission.observe(response.url(), status, response.headers())
-                        {
-                            return Err(HlsDownloaderError::rate_limited(
-                                status,
-                                response.url().as_str(),
-                                KEY_FETCH,
-                                retry_in,
-                            ));
-                        }
-                        drop(admission);
-                        if !status.is_success() {
-                            return Err(HlsDownloaderError::http_status(
-                                status,
-                                fetch_url.as_str(),
-                                KEY_FETCH,
-                            ));
-                        }
-                        let bytes = response.bytes().await.map_err(HlsDownloaderError::from)?;
-                        validate_key_bytes(&bytes, &identity)
+                        let fetched = crate::http_util::fetch_bytes_capped(
+                            &ctx_clients,
+                            &fetch_url,
+                            &params,
+                            fetcher.key_download_timeout,
+                            crate::http_util::MAX_HLS_KEY_BYTES,
+                            KEY_FETCH,
+                            crate::http_util::AdmissionMode::Immediate,
+                            Some(&cancel),
+                            |size| HlsDownloaderError::Decryption {
+                                reason: format!(
+                                    "key response from {} exceeds {} bytes (got at least {size} bytes)",
+                                    Redacted(&fetch_url),
+                                    crate::http_util::MAX_HLS_KEY_BYTES,
+                                ),
+                            },
+                        )
+                        .await?;
+                        validate_key_bytes(&fetched.bytes, &identity)
                     };
                     let error = match attempt.await {
                         Ok(key) => return Ok(key),

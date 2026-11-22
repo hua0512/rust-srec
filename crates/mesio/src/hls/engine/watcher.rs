@@ -134,12 +134,18 @@ impl PlaylistWatcher {
         // Follows redirects per refresh: the playlist URL may be re-routed to
         // a different edge, and its relative URIs resolve against that edge.
         let mut base_url = Arc::clone(&self.base_url);
-        let mut current_target_duration = tx.borrow().playlist.target_duration as f64;
+        let mut current_target_duration =
+            super::planner::clamp_target_duration(tx.borrow().playlist.target_duration as f64);
         // Tracks the end of the highest window seen, to feed the adaptive
         // refresh tracker with "how many segments were new this refresh".
         let mut last_window_end: Option<u64> = {
             let snapshot = tx.borrow();
-            Some(snapshot.playlist.media_sequence + snapshot.playlist.segments.len() as u64)
+            Some(
+                snapshot
+                    .playlist
+                    .media_sequence
+                    .saturating_add(snapshot.playlist.segments.len() as u64),
+            )
         };
 
         let mut tracker = AdaptiveRefreshTracker::new(
@@ -149,9 +155,10 @@ impl PlaylistWatcher {
         );
 
         loop {
-            let base_refresh_interval = Duration::from_secs_f64(current_target_duration * 0.5)
+            let base_refresh_interval = Duration::try_from_secs_f64(current_target_duration * 0.5)
+                .unwrap_or(Duration::from_secs(1800))
                 .max(self.config.playlist_config.live_refresh_interval);
-            let mut refresh_delay = tracker.get_refresh_interval(base_refresh_interval);
+            let mut refresh_delay = tracker.next_interval(base_refresh_interval);
             // While rate limited, the next refresh must not land past the
             // bound on it.
             if let Some(since) = throttled_since {
@@ -197,9 +204,12 @@ impl PlaylistWatcher {
                     retries = 0;
                     throttled_since = None;
                     generation += 1;
-                    current_target_duration = playlist.target_duration as f64;
+                    current_target_duration =
+                        super::planner::clamp_target_duration(playlist.target_duration as f64);
 
-                    let window_end = playlist.media_sequence + playlist.segments.len() as u64;
+                    let window_end = playlist
+                        .media_sequence
+                        .saturating_add(playlist.segments.len() as u64);
                     let new_segments = last_window_end
                         .map(|prev| window_end.saturating_sub(prev) as usize)
                         .unwrap_or(playlist.segments.len());
@@ -297,7 +307,6 @@ impl PlaylistWatcher {
             return Err(HlsDownloaderError::Cancelled);
         }
 
-        let client = self.clients.client_for_url(&self.playlist_url);
         let resource = ResourceId::HlsPlaylist {
             url: Arc::from(self.playlist_url.as_str()),
         };
@@ -309,46 +318,28 @@ impl PlaylistWatcher {
                 content_length: None,
             },
         );
-        let request = client
-            .get(self.playlist_url.clone())
-            .timeout(self.config.playlist_config.initial_playlist_fetch_timeout)
-            .query(&self.config.base.params);
-
-        let admission = self
-            .clients
-            .rate_limiter()
-            .admit(
-                &self.playlist_url,
-                &self.cancel,
-                throttle_deadline,
-                "playlist refresh",
-            )
-            .await?;
-        let response = tokio::select! {
-            _ = self.cancel.cancelled() => return Err(HlsDownloaderError::Cancelled),
-            response = request.send() => response,
-        }
-        .map_err(HlsDownloaderError::from)?;
-        if let Some(retry_in) =
-            admission.observe(response.url(), response.status(), response.headers())
-        {
-            return Err(HlsDownloaderError::rate_limited(
-                response.status(),
-                response.url().as_str(),
-                "playlist refresh",
-                retry_in,
-            ));
-        }
-        drop(admission);
-
-        if !response.status().is_success() {
-            return Err(HlsDownloaderError::http_status(
-                response.status(),
-                self.playlist_url.as_str(),
-                "playlist refresh",
-            ));
-        }
-        let base_url = match document_base_url(response.url()) {
+        let fetched = crate::http_util::fetch_bytes_capped(
+            &self.clients,
+            &self.playlist_url,
+            &self.config.base.params,
+            self.config.playlist_config.initial_playlist_fetch_timeout,
+            crate::http_util::MAX_HLS_PLAYLIST_BYTES,
+            "playlist refresh",
+            crate::http_util::AdmissionMode::WaitUntil {
+                cancel: &self.cancel,
+                deadline: throttle_deadline,
+            },
+            Some(&self.cancel),
+            |size| HlsDownloaderError::Playlist {
+                reason: format!(
+                    "Refreshed playlist {} exceeds {} bytes (got at least {size} bytes)",
+                    Redacted(&self.playlist_url),
+                    crate::http_util::MAX_HLS_PLAYLIST_BYTES,
+                ),
+            },
+        )
+        .await?;
+        let base_url = match document_base_url(&fetched.final_url) {
             Ok(base) if base.as_str() == last_base_url.as_ref() => Arc::clone(last_base_url),
             Ok(base) => Arc::from(base),
             Err(e) => {
@@ -357,12 +348,7 @@ impl PlaylistWatcher {
                 });
             }
         };
-
-        let playlist_bytes = tokio::select! {
-            _ = self.cancel.cancelled() => return Err(HlsDownloaderError::Cancelled),
-            bytes = response.bytes() => bytes,
-        }
-        .map_err(HlsDownloaderError::from)?;
+        let playlist_bytes = fetched.bytes;
         emit_event(
             &self.events,
             DownloadEvent::ResourceFinished {

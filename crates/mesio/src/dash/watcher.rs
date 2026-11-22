@@ -24,8 +24,7 @@ use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
-use bytes::{Bytes, BytesMut};
-use futures::StreamExt;
+use bytes::Bytes;
 use jiff::Timestamp;
 use reqwest::header::DATE;
 use tokio::sync::watch;
@@ -244,18 +243,17 @@ impl MpdFetcher {
             .and_then(|value| value.to_str().ok())
             .and_then(|value| parse_http_date(value).ok());
         let document_url = Arc::new(response.url().clone());
-        let body = tokio::select! {
-            _ = self.cancel.cancelled() => return Err(DownloadError::Cancelled),
-            body = read_capped(response, MAX_MPD_BYTES) => body,
-        }
-        .map_err(|error| match error {
-            CappedRead::TooLarge(size) => ManifestError::TooLarge {
-                size,
-                limit: MAX_MPD_BYTES,
-            }
-            .into(),
-            CappedRead::Network(error) => error,
-        })?;
+        let body = crate::http_util::read_capped(response, MAX_MPD_BYTES, Some(&self.cancel))
+            .await
+            .map_err(|error| match error {
+                crate::http_util::CappedReadError::TooLarge(size) => ManifestError::TooLarge {
+                    size,
+                    limit: MAX_MPD_BYTES,
+                }
+                .into(),
+                crate::http_util::CappedReadError::Network(error) => error,
+                crate::http_util::CappedReadError::Cancelled => DownloadError::Cancelled,
+            })?;
         let received = self.config.clock.now();
         self.emit(DownloadEvent::ResourceFinished {
             resource,
@@ -392,10 +390,13 @@ impl MpdFetcher {
                     .and_then(|value| value.to_str().ok())
                     .and_then(|value| parse_http_date(value).ok())
             } else {
-                let body = tokio::select! {
-                    _ = self.cancel.cancelled() => return None,
-                    body = read_capped(response, MAX_TIMING_BODY_BYTES) => body.ok(),
-                };
+                let body = crate::http_util::read_capped(
+                    response,
+                    MAX_TIMING_BODY_BYTES,
+                    Some(&self.cancel),
+                )
+                .await
+                .ok();
                 body.and_then(|body| UtcTiming::parse_body(&body).ok())
             };
             let received = self.config.clock.now();
@@ -414,32 +415,21 @@ impl MpdFetcher {
     }
 }
 
-enum CappedRead {
-    TooLarge(usize),
-    Network(DownloadError),
-}
-
-/// Reads a response body, failing once it exceeds `limit` bytes instead of
-/// buffering an unbounded one.
-async fn read_capped(response: reqwest::Response, limit: usize) -> Result<Bytes, CappedRead> {
-    if let Some(length) = response.content_length()
-        && length > limit as u64
-    {
-        return Err(CappedRead::TooLarge(
-            usize::try_from(length).unwrap_or(usize::MAX),
-        ));
-    }
-    let mut body = BytesMut::new();
-    let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|error| CappedRead::Network(DownloadError::from(error)))?;
-        let size = body.len().saturating_add(chunk.len());
-        if size > limit {
-            return Err(CappedRead::TooLarge(size));
-        }
-        body.extend_from_slice(&chunk);
-    }
-    Ok(body.freeze())
+/// Applies an MPD `<Location>` redirect while preserving inherited parent query
+/// parameters that `<Location>` omitted, then refreshes `parent_params` from
+/// the updated URL's query string.
+fn apply_manifest_location(
+    url: &mut Url,
+    parent_params: &mut Arc<[(String, String)]>,
+    location: Option<&Url>,
+) {
+    let Some(location) = location else {
+        return;
+    };
+    let mut next_url = location.clone();
+    crate::segment_engine::descriptor::inherit_query_params(&mut next_url, parent_params);
+    *parent_params = crate::segment_engine::descriptor::query_params(next_url.query()).into();
+    *url = next_url;
 }
 
 /// Builds the snapshot for a fetched MPD.
@@ -514,7 +504,7 @@ impl MpdWatcher {
         mut self,
         tx: watch::Sender<MpdSnapshot>,
         initial: Arc<FetchedMpd>,
-        parent_params: Arc<[(String, String)]>,
+        mut parent_params: Arc<[(String, String)]>,
     ) {
         let mut current = initial;
         let mut generation: u64 = 0;
@@ -523,9 +513,11 @@ impl MpdWatcher {
         // When the refreshes started being rate limited, while they are.
         let mut throttled_since: Option<Instant> = None;
         let mut last_utc_sync = Instant::now();
-        if let Some(location) = &current.manifest.location {
-            self.url = location.clone();
-        }
+        apply_manifest_location(
+            &mut self.url,
+            &mut parent_params,
+            current.manifest.location.as_ref(),
+        );
         let mut next_fetch = self.refresh_interval(&current.manifest).map(deadline);
         let mut next_republish = deadline(republish_interval(&current, &self.config));
         let mut refresh: Option<Refresh> = None;
@@ -572,9 +564,11 @@ impl MpdWatcher {
                             if !Arc::ptr_eq(&fetched.manifest, &current.manifest) {
                                 manifest_generation += 1;
                             }
-                            if let Some(location) = &fetched.manifest.location {
-                                self.url = location.clone();
-                            }
+                            apply_manifest_location(
+                                &mut self.url,
+                                &mut parent_params,
+                                fetched.manifest.location.as_ref(),
+                            );
                             current = Arc::new(fetched);
                             generation += 1;
                             let published =
@@ -685,4 +679,32 @@ fn republish_interval(fetched: &FetchedMpd, config: &DashConfig) -> Duration {
         .map(|duration| duration / 2)
         .unwrap_or(DEFAULT_REPUBLISH_INTERVAL)
         .clamp(MIN_REPUBLISH_INTERVAL, MAX_REPUBLISH_INTERVAL)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn manifest_location_inherits_missing_parent_params_and_refreshes_query() {
+        let mut url =
+            Url::parse("https://cdn1.example.com/live/stream.mpd?token=tok1&sig=sig1").unwrap();
+        let mut parent_params: Arc<[(String, String)]> =
+            crate::segment_engine::descriptor::query_params(url.query()).into();
+
+        let location = Url::parse("https://cdn2.example.com/edge/stream.mpd?token=tok2").unwrap();
+        apply_manifest_location(&mut url, &mut parent_params, Some(&location));
+
+        assert_eq!(
+            url.as_str(),
+            "https://cdn2.example.com/edge/stream.mpd?token=tok2&sig=sig1"
+        );
+        assert_eq!(
+            parent_params.as_ref(),
+            &[
+                ("token".to_owned(), "tok2".to_owned()),
+                ("sig".to_owned(), "sig1".to_owned()),
+            ]
+        );
+    }
 }

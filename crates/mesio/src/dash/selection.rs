@@ -4,14 +4,6 @@ use crate::dash::config::{AudioSelection, DashSelectionConfig, VideoSelection};
 use crate::dash::manifest::{ContentType, Period, Representation};
 use crate::segment_engine::descriptor::MediaTrack;
 
-/// Codec families (RFC 6381 `codecs` prefixes) that carry audio. A video
-/// Representation listing one of them is multiplexed and already contains
-/// the audio track.
-const AUDIO_CODECS: &[&str] = &[
-    "mp4a", "opus", "ac-3", "ec-3", "ac-4", "flac", "mhm1", "mhm2", "dtsc", "dtse", "dtsh", "dtsl",
-    "dtsx", ".mp3",
-];
-
 /// The Representation `track` records in `period`, or `None` when the
 /// Period has no Representation of that kind.
 pub(crate) fn select<'a>(
@@ -59,13 +51,10 @@ pub(crate) fn find_mut<'a>(
 /// Representation then carries both tracks in one initialization segment.
 pub(crate) fn is_multiplexed(representation: &Representation) -> bool {
     representation.content_type == ContentType::Video
-        && representation.codecs.as_deref().is_some_and(|codecs| {
-            codecs.split(',').map(str::trim).any(|codec| {
-                AUDIO_CODECS
-                    .iter()
-                    .any(|family| codec.to_ascii_lowercase().starts_with(family))
-            })
-        })
+        && representation
+            .codecs
+            .as_deref()
+            .is_some_and(|codecs| crate::codecs::has_video_and_audio(codecs).1)
 }
 
 fn content_type(track: MediaTrack) -> ContentType {

@@ -1,12 +1,10 @@
-use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
 
-use futures::{Stream, StreamExt};
+use futures::StreamExt;
 use hls::HlsData;
 use tokio_stream::wrappers::ReceiverStream;
-use tokio_util::sync::CancellationToken;
 
+use crate::cancel_stream::CancelOnDropStream;
 use crate::dash::config::DashConfig;
 use crate::dash::engine;
 use crate::downloader::{ClientPool, create_client_pool};
@@ -14,26 +12,6 @@ use crate::{
     BoxMediaStream, DownloadError, DownloadEvent, DownloadHandle, DownloadRequest, DownloadSession,
     EventSink, MediaEngine, ProtocolSelection, ProtocolType,
 };
-
-/// Cancels the engine when the consumer drops the item stream.
-struct CancelOnDropStream {
-    inner: BoxMediaStream<HlsData, DownloadError>,
-    token: CancellationToken,
-}
-
-impl Stream for CancelOnDropStream {
-    type Item = Result<HlsData, DownloadError>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.inner.as_mut().poll_next(cx)
-    }
-}
-
-impl Drop for CancelOnDropStream {
-    fn drop(&mut self) {
-        self.token.cancel();
-    }
-}
 
 /// Records MPEG-DASH presentations as one fragmented MP4 stream.
 ///
@@ -54,6 +32,14 @@ impl DashDownloader {
     pub fn with_config(config: DashConfig) -> Result<Self, DownloadError> {
         config.validate()?;
         let clients = Arc::new(create_client_pool(&config.base)?);
+        Ok(Self { clients, config })
+    }
+
+    pub(crate) fn with_clients(
+        config: DashConfig,
+        clients: Arc<ClientPool>,
+    ) -> Result<Self, DownloadError> {
+        config.validate()?;
         Ok(Self { clients, config })
     }
 
@@ -99,10 +85,10 @@ impl DashDownloader {
 
         let metrics = handles.performance_metrics.clone();
         let lifecycle = tokio::spawn(engine::join(handles, engine_token.clone()));
-        let stream: BoxMediaStream<HlsData, DownloadError> = Box::pin(CancelOnDropStream {
-            inner: ReceiverStream::new(items).boxed(),
-            token: engine_token.clone(),
-        });
+        let stream: BoxMediaStream<HlsData, DownloadError> = Box::pin(CancelOnDropStream::new(
+            ReceiverStream::new(items).boxed(),
+            engine_token.clone(),
+        ));
         Ok(DownloadSession {
             items: stream,
             events: event_stream,

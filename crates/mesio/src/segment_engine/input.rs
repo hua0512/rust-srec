@@ -44,6 +44,11 @@ pub enum AssemblerInput {
     },
     /// Planner-derived notice, forwarded to the sink immediately.
     Notice(EngineNotice),
+    /// The stream has reached its authoritative end and every known
+    /// initialization segment has finished or terminally failed. Any buffered
+    /// fMP4 media segment whose initialization segment is still absent cannot
+    /// be unblocked by a later arrival and must be treated as failed.
+    NoMoreInits,
     /// Pipeline error: drop the reorder buffer and surface this as the
     /// stream's terminal `Err`. Never followed by `End`.
     Fatal(DownloadError),

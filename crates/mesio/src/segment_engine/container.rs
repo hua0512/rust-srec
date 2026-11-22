@@ -17,6 +17,10 @@ pub fn is_m4s_segment(url: &Url) -> bool {
     path.ends_with(".m4s")
         || path.ends_with(".mp4")
         || path.ends_with(".cmfv")
+        || path.ends_with(".cmfa")
+        || path.ends_with(".cmft")
+        || path.ends_with(".mp4v")
+        || path.ends_with(".mp4a")
         || query.contains("format=mp4")
         || query.contains("fmt=mp4")
 }
