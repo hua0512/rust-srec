@@ -110,7 +110,7 @@ impl Drop for LogCursorCleanup<'_> {
 /// the same job ID, so a worker still finishing an older attempt identifies its
 /// own tracking by attempt rather than by job ID.
 #[derive(Clone)]
-pub(crate) struct AttemptToken {
+pub struct AttemptToken {
     pub(super) token: CancellationToken,
     pub(super) attempt: u64,
 }

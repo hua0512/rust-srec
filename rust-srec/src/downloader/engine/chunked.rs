@@ -691,8 +691,8 @@ where
     Ok(())
 }
 
-/// Removes `directory` on failed runs when no `chunk-*` or `group-*` recovery
-/// files were produced (ignoring an empty or leftover `chunks.csv`).
+/// Removes `directory` after a failed run when it holds nothing but the chunk
+/// list, so anything a recovery could still use keeps the directory.
 async fn cleanup_empty_staging_dir(directory: &Path) {
     let Ok(mut entries) = tokio::fs::read_dir(directory).await else {
         return;

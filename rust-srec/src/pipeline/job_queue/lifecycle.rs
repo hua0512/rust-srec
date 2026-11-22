@@ -62,8 +62,11 @@ impl JobQueue {
         Ok(job_id)
     }
 
-    /// Dequeue a job for processing.
-    pub async fn dequeue(&self, job_types: Option<&[String]>) -> Result<Option<Job>> {
+    /// Claim the next pending job, with the attempt its worker must settle.
+    pub async fn dequeue(
+        &self,
+        job_types: Option<&[String]>,
+    ) -> Result<Option<(Job, AttemptToken)>> {
         let _attempt_lease = self.attempt_gate.read().await;
         // Note: This is called frequently by worker pools, so we use trace level
         // to avoid log spam. Use debug level only when a job is actually dequeued.
@@ -94,10 +97,10 @@ impl JobQueue {
             .cancellation_tokens
             .entry(job.id.clone())
             .or_default()
-            .id();
+            .clone();
 
-        self.announce_started(&job, attempt);
-        Ok(Some(job))
+        self.announce_started(&job, attempt.id());
+        Ok(Some((job, attempt)))
     }
 
     /// Count pending jobs, optionally filtered by job types.

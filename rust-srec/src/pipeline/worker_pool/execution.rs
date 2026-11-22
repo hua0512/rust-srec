@@ -128,11 +128,7 @@ impl JobRunner {
     /// Reaching the no-processor arm means `JobQueue::dequeue`'s type filter and
     /// `Processor::can_process` disagree, since the filter is built from the same
     /// `job_types()`.
-    pub(super) async fn run(&self, job: Job) {
-        let Some(attempt) = self.job_queue.attempt_token(&job.id) else {
-            info!(job_id = %job.id, "Skipping withdrawn job");
-            return;
-        };
+    pub(super) async fn run(&self, job: Job, attempt: AttemptToken) {
         let Some(processor) = self
             .processors
             .iter()
@@ -166,7 +162,7 @@ impl JobRunner {
             return;
         }
 
-        self.execute_job(job, &processor).await;
+        self.execute_job(job, &processor, attempt).await;
     }
 
     /// Handle a multi-input job routed to a processor that takes one input at a time.
@@ -243,12 +239,23 @@ impl JobRunner {
     }
 
     /// Run one job through its processor and record the terminal state it reached.
-    pub(super) async fn execute_job(&self, mut job: Job, processor: &Arc<dyn Processor>) {
+    pub(super) async fn execute_job(
+        &self,
+        mut job: Job,
+        processor: &Arc<dyn Processor>,
+        job_token: AttemptToken,
+    ) {
         let _output_lease = self.job_queue.output_files_gate.read().await;
-        let Some(job_token) = self.job_queue.attempt_token(&job.id) else {
+        // The queue stops tracking an attempt once the job is deleted or a
+        // retry has replaced it; neither leaves anything for this worker to run.
+        if self
+            .job_queue
+            .attempt_token(&job.id)
+            .is_none_or(|current| current.id() != job_token.id())
+        {
             info!(job_id = %job.id, "Skipping withdrawn job");
             return;
-        };
+        }
         // Stop helpers when this attempt is dropped. Keep timeout/abort cancellation
         // separate from the queue's token, which represents an explicit job cancellation.
         let processor_token = job_token.child_token();

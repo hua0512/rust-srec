@@ -681,8 +681,7 @@ async fn late_attempt_finalization_waits_for_successor_claim_and_keeps_its_track
         ))
         .await
         .unwrap();
-    queue.dequeue(None).await.unwrap().unwrap();
-    let stale = queue.attempt_token(&job_id).unwrap();
+    let (_, stale) = queue.dequeue(None).await.unwrap().unwrap();
     queue.cancel_job(&job_id).await.unwrap();
     queue.retry_job(&job_id).await.unwrap();
 
@@ -700,7 +699,7 @@ async fn late_attempt_finalization_waits_for_successor_claim_and_keeps_its_track
         .unwrap()
         .unwrap()
         .unwrap();
-    assert_eq!(successor.id, job_id);
+    assert_eq!(successor.0.id, job_id);
     let mut snapshot = JobProgressSnapshot::new(ProgressKind::Rclone);
     snapshot.percent = Some(42.0);
     queue.progress_cache.insert(job_id.clone(), snapshot);
@@ -737,12 +736,10 @@ async fn superseded_attempt_cannot_settle_its_successor() {
         .enqueue(Job::new("remux", vec!["/in.flv".into()], vec![], "", ""))
         .await
         .unwrap();
-    queue.dequeue(None).await.unwrap().unwrap();
-    let stale = queue.attempt_token(&job_id).unwrap();
+    let (_, stale) = queue.dequeue(None).await.unwrap().unwrap();
     queue.fail(&job_id, "timed out").await.unwrap();
     queue.retry_job(&job_id).await.unwrap();
-    queue.dequeue(None).await.unwrap().unwrap();
-    let current = queue.attempt_token(&job_id).unwrap();
+    let (_, current) = queue.dequeue(None).await.unwrap().unwrap();
 
     let result = || JobResult {
         outputs: vec!["/out.mp4".into()],
@@ -834,8 +831,7 @@ async fn due_retry_waits_for_the_failed_attempt_cleanup() {
         ))
         .await
         .unwrap();
-    queue.dequeue(None).await.unwrap().unwrap();
-    let failed = queue.attempt_token(&job_id).unwrap();
+    let (_, failed) = queue.dequeue(None).await.unwrap().unwrap();
 
     let mut failure = std::pin::pin!(queue.fail_with_step_info(
         &job_id,
@@ -851,8 +847,7 @@ async fn due_retry_waits_for_the_failed_attempt_cleanup() {
 
     let mut successor = std::pin::pin!(async {
         queue.retry_job(&job_id).await.unwrap();
-        queue.dequeue(None).await.unwrap().unwrap();
-        queue.attempt_token(&job_id).unwrap()
+        queue.dequeue(None).await.unwrap().unwrap().1
     });
     assert!(
         tokio::time::timeout(Duration::from_millis(200), &mut successor)
@@ -1170,7 +1165,7 @@ async fn pending_upload_count_matches_upload_job_types() {
             .await
             .unwrap();
     }
-    let dequeued = queue.dequeue(None).await.unwrap().unwrap();
+    let (dequeued, _) = queue.dequeue(None).await.unwrap().unwrap();
     assert_eq!(dequeued.priority, 10);
 
     assert_eq!(queue.count_pending_uploads().await.unwrap(), 4);

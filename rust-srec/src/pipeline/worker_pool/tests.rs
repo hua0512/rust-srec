@@ -590,13 +590,13 @@ async fn assert_timeout_with_retained_sink(cancel_during_drain: bool) {
         .enqueue(Job::new("handoff", vec![], vec![], "streamer", "session"))
         .await
         .unwrap();
-    let job = queue.dequeue(None).await.unwrap().unwrap();
+    let (job, attempt) = queue.dequeue(None).await.unwrap().unwrap();
     let (events, mut event_rx) = broadcast::channel(8);
     let mut runner = observed_runner(queue.clone(), events);
     runner.job_timeout = SHORT_JOB_TIMEOUT;
     let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
     let processor: Arc<dyn Processor> = Arc::new(ContextHandoffProcessor(sender));
-    let execution = runner.execute_job(job, &processor);
+    let execution = runner.execute_job(job, &processor, attempt);
     tokio::pin!(execution);
     let retained = drive_until(execution.as_mut(), receiver.recv())
         .await
@@ -684,14 +684,14 @@ async fn ended_job_is_reported_stalled_until_its_retained_work_returns() {
         ))
         .await
         .unwrap();
-    let job = queue.dequeue(None).await.unwrap().unwrap();
+    let (job, attempt) = queue.dequeue(None).await.unwrap().unwrap();
     let (events, mut event_rx) = broadcast::channel(8);
     let mut runner = observed_runner(queue.clone(), events);
     runner.job_timeout = SHORT_JOB_TIMEOUT;
     let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
     let processor: Arc<dyn Processor> = Arc::new(ContextHandoffProcessor(sender));
     let started = tokio::time::Instant::now();
-    let execution = runner.execute_job(job, &processor);
+    let execution = runner.execute_job(job, &processor, attempt);
     tokio::pin!(execution);
     let retained = drive_until(execution.as_mut(), receiver.recv())
         .await
@@ -739,12 +739,14 @@ async fn ended_job_is_reported_stalled_until_its_retained_work_returns() {
     // A retry runs a successor under the same job ID. Finishing it must not clear the old
     // attempt, whose work still holds a worker.
     queue.retry_job(&id).await.unwrap();
-    let successor = queue.dequeue(None).await.unwrap().unwrap();
+    let (successor, successor_attempt) = queue.dequeue(None).await.unwrap().unwrap();
     let (successor_events, _successor_rx) = broadcast::channel(8);
     let mut successor_runner = observed_runner(queue.clone(), successor_events);
     successor_runner.lingering = runner.lingering.clone();
     let completing: Arc<dyn Processor> = Arc::new(CompletingProcessor);
-    successor_runner.execute_job(successor, &completing).await;
+    successor_runner
+        .execute_job(successor, &completing, successor_attempt)
+        .await;
     assert_eq!(
         queue.get_job(&id).await.unwrap().unwrap().status,
         JobStatus::Completed
@@ -912,7 +914,7 @@ async fn failed_status_writes_retry_without_rerunning_and_allow_cancel_or_shutdo
             )
             .await
             .unwrap();
-        let job = queue.dequeue(None).await.unwrap().unwrap();
+        let (job, attempt) = queue.dequeue(None).await.unwrap().unwrap();
         let job_id = job.id.clone();
         let step_id = job.dag_step_execution_id.clone().unwrap();
         sqlx::query("CREATE TRIGGER reject_failed BEFORE UPDATE OF status ON job WHEN NEW.status = 'FAILED' BEGIN SELECT RAISE(ABORT, 'injected failure'); END").execute(&pool).await.unwrap();
@@ -925,7 +927,7 @@ async fn failed_status_writes_retry_without_rerunning_and_allow_cancel_or_shutdo
         let processor: Arc<dyn Processor> = Arc::new(CountedFailure(calls.clone()));
         let running = runner.clone();
         let task = tokio::spawn(async move {
-            running.execute_job(job, &processor).await;
+            running.execute_job(job, &processor, attempt).await;
         });
         tokio::time::timeout(Duration::from_secs(5), async {
             while !trace
@@ -1013,7 +1015,7 @@ async fn failed_status_writes_retry_without_rerunning_and_allow_cancel_or_shutdo
                     .unwrap();
                 assert_eq!(scheduler.recover_dag_jobs().await.unwrap(), 0);
                 assert_eq!(queue.recover_jobs().await.unwrap(), 1);
-                assert_eq!(queue.dequeue(None).await.unwrap().unwrap().id, job_id);
+                assert_eq!(queue.dequeue(None).await.unwrap().unwrap().0.id, job_id);
             }
         }
         queue.stop_progress_aggregator().await;
@@ -1035,8 +1037,7 @@ async fn late_failures_preserve_terminal_jobs_and_do_not_emit_events() {
     ] {
         let job = Job::new("noop", vec!["input.flv".into()], vec![], "", "");
         queue.enqueue(job.clone()).await.unwrap();
-        queue.dequeue(None).await.unwrap().unwrap();
-        let attempt = queue.attempt_token(&job.id).unwrap();
+        let (_, attempt) = queue.dequeue(None).await.unwrap().unwrap();
         match terminal {
             JobStatus::Cancelled => {
                 queue.cancel_job(&job.id).await.unwrap();
@@ -1127,14 +1128,17 @@ async fn rejected_attempt_metadata_never_invokes_processor_or_rewrites_history()
             sqlx::query("CREATE TRIGGER reject_attempt BEFORE UPDATE OF execution_info ON job BEGIN SELECT RAISE(ABORT, 'rejected attempt'); END")
                 .execute(&pool).await.unwrap();
         }
-        let job = queue.dequeue(None).await.unwrap().unwrap();
+        let (job, attempt) = queue.dequeue(None).await.unwrap().unwrap();
         let (events, mut event_rx) = broadcast::channel(8);
         let runner = observed_runner(queue.clone(), events);
         let (started_tx, mut started_rx) = tokio::sync::mpsc::unbounded_channel();
         let processor: Arc<dyn Processor> = Arc::new(GatedProcessor(started_tx));
-        tokio::time::timeout(Duration::from_secs(5), runner.execute_job(job, &processor))
-            .await
-            .unwrap();
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            runner.execute_job(job, &processor, attempt),
+        )
+        .await
+        .unwrap();
         assert!(started_rx.try_recv().is_err());
         let failed = repository.get_job(&model.id).await.unwrap();
         assert_eq!(failed.status, JobStatus::Failed.as_str());
@@ -1175,12 +1179,12 @@ async fn fresh_worker_persists_attempt_marker_before_processor_runs() {
     let model = JobDbModel::new_with_input("gated", "input.flv", 0, None, None, "{}");
     assert!(model.execution_info.is_none());
     repository.create_job(&model).await.unwrap();
-    let job = queue.dequeue(None).await.unwrap().unwrap();
+    let (job, attempt) = queue.dequeue(None).await.unwrap().unwrap();
     let (events, _) = broadcast::channel(8);
     let runner = observed_runner(queue, events);
     let (started_tx, mut started_rx) = tokio::sync::mpsc::unbounded_channel();
     let processor: Arc<dyn Processor> = Arc::new(GatedProcessor(started_tx));
-    let work = runner.execute_job(job, &processor);
+    let work = runner.execute_job(job, &processor, attempt);
     tokio::pin!(work);
     let release = tokio::time::timeout(Duration::from_secs(5), async {
         tokio::select! {
@@ -1247,13 +1251,16 @@ async fn failed_retry_preserves_published_artifacts_and_prior_execution_history(
             .update_job_execution_info(&model.id, &serde_json::to_string(&info).unwrap())
             .await
             .unwrap();
-        let job = queue.dequeue(None).await.unwrap().unwrap();
+        let (job, attempt) = queue.dequeue(None).await.unwrap().unwrap();
         let (events, _) = broadcast::channel(8);
         let runner = observed_runner(queue.clone(), events);
         let processor: Arc<dyn Processor> = Arc::new(FailingProcessor);
-        tokio::time::timeout(Duration::from_secs(5), runner.execute_job(job, &processor))
-            .await
-            .unwrap();
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            runner.execute_job(job, &processor, attempt),
+        )
+        .await
+        .unwrap();
         assert_eq!(
             tokio::fs::read(&published).await.unwrap(),
             b"successful earlier artifact"
@@ -1294,7 +1301,7 @@ async fn withdrawn_job_never_starts_execution() {
         .enqueue(Job::new("observed", vec![], vec![], "streamer", "session"))
         .await
         .unwrap();
-    let job = queue.dequeue(None).await.unwrap().unwrap();
+    let (job, attempt) = queue.dequeue(None).await.unwrap().unwrap();
     repo.delete_job(&job_id).await.unwrap();
     queue.forget_jobs(std::slice::from_ref(&job_id));
 
@@ -1306,9 +1313,12 @@ async fn withdrawn_job_never_starts_execution() {
         token: parking_lot::Mutex::new(None),
     });
     let processor: Arc<dyn Processor> = observed.clone();
-    tokio::time::timeout(Duration::from_secs(1), runner.execute_job(job, &processor))
-        .await
-        .expect("withdrawn job must return before spawning execution tasks");
+    tokio::time::timeout(
+        Duration::from_secs(1),
+        runner.execute_job(job, &processor, attempt),
+    )
+    .await
+    .expect("withdrawn job must return before spawning execution tasks");
 
     assert_eq!(observed.calls.load(Ordering::SeqCst), 0);
     assert_eq!(runner.active_workers.load(Ordering::SeqCst), 0);
@@ -1330,7 +1340,7 @@ async fn forgetting_started_job_cancels_retained_processor_token() {
         .enqueue(Job::new("observed", vec![], vec![], "streamer", "session"))
         .await
         .unwrap();
-    let job = queue.dequeue(None).await.unwrap().unwrap();
+    let (job, attempt) = queue.dequeue(None).await.unwrap().unwrap();
     let (event_tx, mut event_rx) = broadcast::channel(8);
     let runner = observed_runner(queue.clone(), event_tx);
     let active = runner.active_workers.clone();
@@ -1340,7 +1350,7 @@ async fn forgetting_started_job_cancels_retained_processor_token() {
         token: parking_lot::Mutex::new(None),
     });
     let processor: Arc<dyn Processor> = observed.clone();
-    let execution = tokio::spawn(async move { runner.execute_job(job, &processor).await });
+    let execution = tokio::spawn(async move { runner.execute_job(job, &processor, attempt).await });
     tokio::time::timeout(Duration::from_secs(1), observed.entered.notified())
         .await
         .expect("processor should start");

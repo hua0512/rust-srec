@@ -74,9 +74,9 @@ async fn run_probe(mut command: tokio::process::Command, budget: Duration) -> Op
 /// An engine's version, probed on a background thread so that building an
 /// engine does not wait for its executable to start.
 ///
-/// Reads block until the probe settles, which [`PROBE_TIMEOUT`] bounds. The
-/// probe has its own thread and runtime, so a read from inside an async
-/// runtime cannot deadlock with it.
+/// [`Self::get`] blocks and [`Self::wait`] awaits until the probe settles, which
+/// [`PROBE_TIMEOUT`] bounds. The probe has its own thread and runtime, so a
+/// read from inside an async runtime cannot deadlock with it.
 pub(crate) struct EngineVersion {
     version: Arc<OnceLock<Option<String>>>,
     ready: tokio::sync::watch::Receiver<bool>,

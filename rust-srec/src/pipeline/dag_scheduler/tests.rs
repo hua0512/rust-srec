@@ -497,7 +497,7 @@ async fn test_delete_dag_stands_down_active_jobs() {
         .unwrap();
 
     // Stands in for a worker claiming the job: dequeue is what registers its token.
-    let claimed = job_queue
+    let (claimed, _) = job_queue
         .dequeue(None)
         .await
         .unwrap()
@@ -1955,7 +1955,7 @@ async fn recovery_settles_active_jobs_of_terminal_workflows_before_claiming() {
                 )
                 .await
                 .unwrap();
-            let job = queue.dequeue(None).await.unwrap().unwrap();
+            let (job, _) = queue.dequeue(None).await.unwrap().unwrap();
             let step_id = job.dag_step_execution_id.as_deref().unwrap();
             // Model rows left by the old failure path or an interrupted cancellation.
             sqlx::query("UPDATE job SET status = ? WHERE id = ?")
@@ -2000,7 +2000,7 @@ async fn recovery_settles_active_jobs_of_terminal_workflows_before_claiming() {
             if dag_status == "FAILED" && step_status == "FAILED" {
                 // Repair also makes an explicit workflow retry possible again.
                 scheduler.retry_dag(&created.dag_id, || {}).await.unwrap();
-                assert_eq!(queue.dequeue(None).await.unwrap().unwrap().id, job.id);
+                assert_eq!(queue.dequeue(None).await.unwrap().unwrap().0.id, job.id);
             }
             queue.stop_progress_aggregator().await;
         }
@@ -2038,7 +2038,7 @@ async fn cancelled_attempt_does_not_schedule_retry_or_apply_step_failure() {
         )
         .await
         .unwrap();
-    let job = queue.dequeue(None).await.unwrap().unwrap();
+    let (job, _) = queue.dequeue(None).await.unwrap().unwrap();
     let trace = std::sync::Mutex::new(None);
     let outcome = scheduler
         .on_job_attempt_failed(
@@ -2140,7 +2140,7 @@ async fn failed_attempt_observability_errors_preserve_retry_and_cleanup() {
             )
             .await
             .unwrap();
-        let job = queue.dequeue(None).await.unwrap().unwrap();
+        let (job, _) = queue.dequeue(None).await.unwrap().unwrap();
         assert_eq!(queue.depth(), 1);
         assert!(queue.get_cancellation_token(&job.id).await.is_some());
         sqlx::query(fault).execute(&pool).await.unwrap();

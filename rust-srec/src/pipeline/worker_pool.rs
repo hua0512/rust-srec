@@ -481,7 +481,7 @@ impl WorkerPool {
                                 }
                             };
 
-                            if let Some(job) = claimed {
+                            if let Some((job, attempt)) = claimed {
                                 // Keep the turn only for the job that needs it.
                                 let turn = match turn {
                                     Some(turn)
@@ -497,7 +497,7 @@ impl WorkerPool {
                                     "{} worker {} processing job {} ({})",
                                     worker_type, i, job.id, job.job_type
                                 );
-                                runner.run(job).await;
+                                runner.run(job, attempt).await;
                                 drop(turn);
                                 drop(permit);
                                 // A cache-backed queue and a short processor may both
