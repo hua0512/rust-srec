@@ -354,7 +354,13 @@ fn list_log_lines(
     let mut remaining = limit + 1; // collect one extra to know has_more
 
     for file in files {
-        let fh = std::fs::File::open(&file.path)?;
+        let fh = match std::fs::File::open(&file.path) {
+            Ok(fh) => fh,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(crate::Error::io_path("open log file", &file.path, error).into());
+            }
+        };
         let mut reader = BufReader::new(fh);
 
         let mut line = String::new();
@@ -362,7 +368,9 @@ fn list_log_lines(
 
         loop {
             line.clear();
-            let n = reader.read_line(&mut line)?;
+            let n = reader
+                .read_line(&mut line)
+                .map_err(|error| crate::Error::io_path("read log file", &file.path, error))?;
             if n == 0 {
                 break;
             }
@@ -449,10 +457,9 @@ fn generate_download_token() -> String {
     hex::encode(bytes)
 }
 
+const MAX_ACTIVE_ARCHIVE_TOKENS: usize = 64;
+
 fn cleanup_expired_download_tokens(tokens: &dashmap::DashMap<String, LoggingArchiveGrant>) {
-    if tokens.len() < 1000 {
-        return;
-    }
     let now = jiff::Timestamp::now();
     tokens.retain(|_, grant| grant.expires_at > now);
 }
@@ -462,6 +469,12 @@ fn issue_download_token(
     principal: Option<AuthPrincipal>,
 ) -> Result<ArchiveTokenResponse, ApiError> {
     cleanup_expired_download_tokens(tokens);
+    if tokens.len() >= MAX_ACTIVE_ARCHIVE_TOKENS {
+        return Err(ApiError::too_many_requests(
+            "Too many active log archive tokens; try again later",
+            60,
+        ));
+    }
 
     let token = generate_download_token();
     let expires_at = jiff::Timestamp::now() + jiff::SignedDuration::from_mins(5);
@@ -724,11 +737,9 @@ pub async fn update_logging_config(
         .set_filter(&request.filter)
         .map_err(|e| ApiError::bad_request(e.to_string()))?;
 
-    let mut global_config = state.config_service.get_global_config().await?;
-    global_config.log_filter_directive = request.filter.clone();
     state
         .config_service
-        .update_global_config(&global_config)
+        .update_log_filter_directive(&request.filter)
         .await?;
 
     let modules: Vec<ModuleInfo> = available_modules()

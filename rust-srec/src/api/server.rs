@@ -182,6 +182,9 @@ pub struct AppState {
     pub web_push_service: Option<Arc<WebPushService>>,
     /// Services that every API instance requires.
     pub services: Arc<ApiServices>,
+    /// Cancellation token shared with [`ApiServer`] so long-lived streaming
+    /// responses terminate cleanly when graceful shutdown begins.
+    pub(crate) cancel_token: CancellationToken,
     /// Origins [`Self::cors_policy`] allows while `auth_service` is `None`,
     /// resolved once from `API_CORS_ORIGINS`.
     unauthenticated_cors_origins: Arc<[axum::http::HeaderValue]>,
@@ -195,6 +198,7 @@ impl AppState {
             auth_service: None,
             web_push_service: None,
             services: Arc::new(services),
+            cancel_token: CancellationToken::new(),
             unauthenticated_cors_origins: cors::allowed_origins_from_env(),
         }
     }
@@ -243,10 +247,11 @@ pub struct ApiServer {
 impl ApiServer {
     /// Create a new API server.
     pub fn new(config: ApiServerConfig, state: AppState) -> Self {
+        let cancel_token = state.cancel_token.clone();
         Self {
             config,
             state,
-            cancel_token: CancellationToken::new(),
+            cancel_token,
         }
     }
 
@@ -297,30 +302,13 @@ impl ApiServer {
                     if path.starts_with("/api/health") {
                         return Span::none();
                     }
-                    // Routes that carry a JWT/access token or upstream auth
-                    // headers in the query string (stream_proxy/media/downloads/
-                    // logging read `?token=`/`?headers=`). Record only method + path so
-                    // those secrets never enter the span's `uri` field and thus
-                    // never reach on_response/on_failure lines or the retained
-                    // rust-srec.log files. The `tower_http::trace::make_span`
-                    // target keeps the span under the `tower_http` filter so
-                    // DefaultOnResponse/DefaultOnFailure still attach to it.
-                    const TOKEN_QUERY_ROUTES: [&str; 4] = [
-                        "/api/stream-proxy",
-                        "/api/media",
-                        "/api/downloads",
-                        "/api/logging",
-                    ];
-                    if TOKEN_QUERY_ROUTES
-                        .iter()
-                        .any(|prefix| path.starts_with(prefix))
-                    {
+                    if let Some(sanitized_uri) = sanitized_span_uri(req.uri()) {
                         return tracing::span!(
                             target: "tower_http::trace::make_span",
                             tracing::Level::INFO,
                             "request",
                             method = %req.method(),
-                            uri = %path,
+                            uri = %sanitized_uri,
                             version = ?req.version(),
                         );
                     }
@@ -415,5 +403,93 @@ impl ApiServer {
         .map_err(|e| crate::error::Error::ApiError(format!("Server error: {}", e)))?;
 
         Ok(())
+    }
+}
+
+/// Route prefixes that carry bearer tokens or upstream authentication headers
+/// in the query string (`stream_proxy`, `media`, `downloads`, `logging`, and
+/// `parse/danmu` WebSocket upgrades). Span recording strips the entire query
+/// string on these routes so secrets never reach logs.
+const TOKEN_QUERY_ROUTES: [&str; 5] = [
+    "/api/stream-proxy",
+    "/api/media",
+    "/api/downloads",
+    "/api/logging",
+    "/api/parse/danmu",
+];
+
+/// Compute a sanitized span `uri` when `uri` hits a token-bearing route or
+/// carries `token=` / `headers=` query parameters; returns `None` when the raw
+/// URI is safe for `DefaultMakeSpan`.
+pub(crate) fn sanitized_span_uri(uri: &axum::http::Uri) -> Option<String> {
+    let path = uri.path();
+    if TOKEN_QUERY_ROUTES
+        .iter()
+        .any(|prefix| path.starts_with(prefix))
+    {
+        return Some(path.to_string());
+    }
+    redact_sensitive_query_uri(uri)
+}
+
+/// Redact `token` and `headers` query values as defense-in-depth before
+/// building request spans on routes outside `TOKEN_QUERY_ROUTES`.
+pub(crate) fn redact_sensitive_query_uri(uri: &axum::http::Uri) -> Option<String> {
+    let query = uri.query()?;
+    let has_sensitive = url::form_urlencoded::parse(query.as_bytes())
+        .any(|(key, _)| key.eq_ignore_ascii_case("token") || key.eq_ignore_ascii_case("headers"));
+    if !has_sensitive {
+        return None;
+    }
+    let mut ser = url::form_urlencoded::Serializer::new(String::new());
+    for (key, value) in url::form_urlencoded::parse(query.as_bytes()) {
+        if key.eq_ignore_ascii_case("token") || key.eq_ignore_ascii_case("headers") {
+            ser.append_pair(&key, "[REDACTED]");
+        } else {
+            ser.append_pair(&key, &value);
+        }
+    }
+    let redacted = ser.finish();
+    Some(format!("{}?{}", uri.path(), redacted))
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::http::Uri;
+
+    use super::sanitized_span_uri;
+
+    #[test]
+    fn sanitizes_danmu_ws_and_redacts_sensitive_query_params() {
+        let danmu_uri: Uri = "/api/parse/danmu/ws?token=super-secret-jwt"
+            .parse()
+            .unwrap();
+        assert_eq!(
+            sanitized_span_uri(&danmu_uri).as_deref(),
+            Some("/api/parse/danmu/ws")
+        );
+
+        let proxy_uri: Uri = "/api/stream-proxy/stream?url=https%3A%2F%2Fexample.com&token=secret"
+            .parse()
+            .unwrap();
+        assert_eq!(
+            sanitized_span_uri(&proxy_uri).as_deref(),
+            Some("/api/stream-proxy/stream")
+        );
+
+        let stray_token_uri: Uri =
+            "/api/sessions?page=2&token=jwt-value&Headers=Authorization%3A+Bearer+abc"
+                .parse()
+                .unwrap();
+        let redacted = sanitized_span_uri(&stray_token_uri).expect("redacted URI");
+        assert_eq!(
+            redacted,
+            "/api/sessions?page=2&token=%5BREDACTED%5D&Headers=%5BREDACTED%5D"
+        );
+        assert!(!redacted.contains("jwt-value"));
+        assert!(!redacted.contains("Bearer"));
+
+        let benign_uri: Uri = "/api/sessions?page=2&limit=20".parse().unwrap();
+        assert_eq!(sanitized_span_uri(&benign_uri), None);
     }
 }

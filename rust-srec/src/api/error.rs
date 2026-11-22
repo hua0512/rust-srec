@@ -159,6 +159,7 @@ impl From<Error> for ApiError {
                 ApiError::not_found(format!("{} with id '{}' not found", entity_type, id))
             }
             Error::Validation(msg) => ApiError::validation(msg),
+            Error::Conflict(msg) => ApiError::conflict(msg),
             Error::CredentialProfile(error) => {
                 use crate::credentials::ProfileError;
                 match error {
@@ -517,8 +518,13 @@ mod tests {
             include_str!("routes/media.rs"),
             include_str!("routes/logging.rs"),
             include_str!("routes/logging/archive.rs"),
+            include_str!("routes/pipeline/interrupted.rs"),
             include_str!("routes/sessions.rs"),
             include_str!("routes/stream_proxy.rs"),
+            include_str!("routes/stream_proxy/ssrf.rs"),
+            include_str!("routes/stream_proxy/upstream.rs"),
+            include_str!("routes/stream_proxy/hls.rs"),
+            include_str!("routes/stream_proxy/managed.rs"),
             include_str!("routes/baidupcs.rs"),
         ];
         for source in routes {

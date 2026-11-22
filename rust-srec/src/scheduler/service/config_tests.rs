@@ -105,7 +105,22 @@ async fn actor_creation_and_every_config_scope_resolve_four_layers_without_metad
         .unwrap();
     crate::database::run_migrations(&pool).await.unwrap();
     let configs = Arc::new(SqlxConfigRepository::new(pool.clone(), pool.clone()));
-    let streamers = Arc::new(SqlxStreamerRepository::new(pool.clone(), pool.clone()));
+    let broadcaster = ConfigEventBroadcaster::new();
+    let writer_supervisor = Arc::new(crate::utils::task_supervisor::TaskSupervisor::new());
+    let writer = Arc::new(
+        crate::database::committed_writer::CommittedWriter::new(
+            pool.clone(),
+            writer_supervisor.clone(),
+        )
+        .unwrap(),
+    );
+    let state_store = Arc::new(crate::streamer::CommittedStreamerState::new(
+        writer,
+        broadcaster.clone(),
+    ));
+    let streamers = Arc::new(
+        SqlxStreamerRepository::new(pool.clone(), pool.clone()).with_committed_state(state_store),
+    );
     sqlx::query("UPDATE global_config SET offline_check_count = 4, offline_check_delay_ms = 40000")
         .execute(&pool)
         .await
@@ -122,7 +137,6 @@ async fn actor_creation_and_every_config_scope_resolve_four_layers_without_metad
     row.streamer_specific_config =
         Some(r#"{"offline_check_count":1,"offline_check_delay_ms":10000}"#.to_owned());
     streamers.create_streamer(&row).await.unwrap();
-    let broadcaster = ConfigEventBroadcaster::new();
     let manager = Arc::new(StreamerManager::new(streamers.clone(), broadcaster.clone()));
     manager.hydrate().await.unwrap();
     let service = Arc::new(ConfigService::new(configs.clone(), streamers));
@@ -155,6 +169,7 @@ async fn actor_creation_and_every_config_scope_resolve_four_layers_without_metad
         .unwrap(),
     );
     let token = CancellationToken::new();
+    let mut config_events = broadcaster.subscribe();
     let mut scheduler = Scheduler::with_monitor_and_config(
         manager.clone(),
         broadcaster,
@@ -206,6 +221,26 @@ async fn actor_creation_and_every_config_scope_resolve_four_layers_without_metad
         state.recurring_interval_ms,
         Some(10_000),
         "the spawned actor must use the resolved post-live interval"
+    );
+
+    manager
+        .update_priority(&row.id, crate::domain::Priority::High)
+        .await
+        .unwrap();
+    let priority_event = config_events.try_recv().unwrap();
+    assert!(matches!(
+        &priority_event,
+        ConfigUpdateEvent::StreamerMetadataUpdated { streamer_id } if *streamer_id == row.id
+    ));
+    scheduler.handle_config_event(priority_event).await;
+    assert_eq!(
+        scheduler
+            .supervisor
+            .streamer_restart_config(&row.id)
+            .unwrap()
+            .priority,
+        crate::domain::Priority::High,
+        "priority updates publish StreamerMetadataUpdated so active scheduler actors pick up the new priority"
     );
 
     sqlx::query("UPDATE streamers SET streamer_specific_config = ? WHERE id = ?")
@@ -401,6 +436,82 @@ async fn actor_creation_and_every_config_scope_resolve_four_layers_without_metad
         "cancellation interrupts an in-flight resolver without starting the actor"
     );
     assert!(!scheduler.supervisor.registry().has_streamer(&row.id));
+    tokio::time::timeout(Duration::from_secs(2), scheduler.shutdown())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn streamer_deleted_evicts_heartbeat_revision_and_idle_feedback_maps() {
+    let mut scheduler = super::tests::scheduler_with_streamers(&["gone", "stay"]).await;
+    scheduler.queue_reconciliation();
+    scheduler.drain_configuration().await;
+    assert!(scheduler.supervisor.registry().has_streamer("gone"));
+    assert!(scheduler.configuration.revisions.contains_key("gone"));
+
+    // Record a download lifecycle cycle so `feedback` and `download_heartbeat_last_sent`
+    // hold entries for `"gone"`, then finish the download before deletion.
+    let feedback = scheduler.reliable_feedback();
+    let (start_permit, end_permit) = feedback.reserve_attempt("gone").unwrap();
+    let started = DownloadManagerEvent::Progress(DownloadProgressEvent::DownloadStarted {
+        download_id: "dl-1".to_owned(),
+        streamer_id: "gone".to_owned(),
+        streamer_name: "gone".to_owned(),
+        session_id: "sess-1".to_owned(),
+        engine_type: crate::downloader::engine::EngineType::Ffmpeg,
+        cdn_host: "127.0.0.1".to_owned(),
+        download_url: "http://127.0.0.1:1/live.flv".to_owned(),
+    });
+    feedback
+        .publish_reserved(&started, start_permit)
+        .await
+        .unwrap()
+        .unwrap();
+    scheduler.process_download_event(DownloadManagerEvent::Progress(
+        DownloadProgressEvent::SegmentStarted {
+            download_id: "dl-1".to_owned(),
+            streamer_id: "gone".to_owned(),
+            streamer_name: "gone".to_owned(),
+            session_id: "sess-1".to_owned(),
+            segment_path: "/tmp/seg0.flv".to_owned(),
+            segment_index: 0,
+            started_at: jiff::Timestamp::now(),
+        },
+    ));
+    assert!(scheduler.download_heartbeat_last_sent.contains_key("gone"));
+
+    let completed =
+        DownloadManagerEvent::Terminal(crate::downloader::DownloadTerminalEvent::Completed {
+            download_id: "dl-1".to_owned(),
+            streamer_id: "gone".to_owned(),
+            streamer_name: "gone".to_owned(),
+            session_id: "sess-1".to_owned(),
+            total_bytes: 100,
+            total_duration_secs: 1.0,
+            total_segments: 1,
+            file_path: None,
+            engine_signal: crate::downloader::EngineEndSignal::CleanDisconnect,
+            stop_cause: None,
+        });
+    feedback
+        .publish_reserved(&completed, end_permit)
+        .await
+        .unwrap()
+        .unwrap();
+
+    scheduler.streamer_manager.metadata_store().remove("gone");
+    scheduler
+        .handle_config_event(ConfigUpdateEvent::StreamerDeleted {
+            streamer_id: "gone".to_owned(),
+        })
+        .await;
+
+    assert!(!scheduler.supervisor.registry().has_streamer("gone"));
+    assert!(!scheduler.download_heartbeat_last_sent.contains_key("gone"));
+    assert!(!scheduler.configuration.revisions.contains_key("gone"));
+    assert!(!feedback.has_bookkeeping_for("gone"));
+    assert!(scheduler.supervisor.registry().has_streamer("stay"));
+
     tokio::time::timeout(Duration::from_secs(2), scheduler.shutdown())
         .await
         .unwrap();

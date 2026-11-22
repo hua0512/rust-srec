@@ -224,7 +224,7 @@ pub struct ServiceContainer {
     /// Database commits and their publication/completion survive forced task aborts.
     committed_write_supervisor: Arc<TaskSupervisor>,
     /// Logging configuration
-    logging_config: std::sync::OnceLock<Arc<LoggingConfig>>,
+    logging_config: Arc<std::sync::OnceLock<Arc<LoggingConfig>>>,
     startup_recovery_complete: std::sync::atomic::AtomicBool,
     /// Segment keys that should be discarded (min-size gate) to prevent danmu/xml and video
     /// from racing into the pipeline while being deleted.

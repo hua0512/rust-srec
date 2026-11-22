@@ -136,11 +136,31 @@ async fn older_backups_convert_settings_and_reuse_identical_saved_proxies() {
 async fn managed_backups_name_proxies_and_replace_drops_only_unused_ones() {
     let (pool, snapshot) = database().await;
     let kept = proxies::save_for_test(&pool, "Kept", "http://kept.example:1").await;
-    proxies::save_for_test(&pool, "Stale", "http://stale.example:1").await;
+    let stale = proxies::save_for_test(&pool, "Stale", "http://stale.example:1").await;
+    sqlx::query(
+        "INSERT INTO template_config(id, name) VALUES ('retained-template', 'retained-template')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO streamers(id, name, url, platform_config_id, template_config_id, state) \
+         VALUES ('retiring', 'Retiring', 'https://example.com/retiring', 'platform-huya', 'retained-template', 'NOT_LIVE')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    proxies::set_route(
+        &mut pool.acquire().await.unwrap(),
+        &RouteOwner::Template("retained-template".into()),
+        &ProxyRoute::Proxy { id: kept },
+    )
+    .await
+    .unwrap();
     proxies::set_route(
         &mut pool.acquire().await.unwrap(),
         &RouteOwner::Platform("platform-douyu".into()),
-        &ProxyRoute::Proxy { id: kept },
+        &ProxyRoute::Proxy { id: stale },
     )
     .await
     .unwrap();
@@ -180,9 +200,14 @@ async fn managed_backups_name_proxies_and_replace_drops_only_unused_ones() {
         route_name(&pool, RouteOwner::Platform("platform-huya".into())).await,
         "direct"
     );
-    // A platform the bundle omits keeps its route, and the proxy it names.
+    // Replace resets omitted platforms to inherit (releasing `Stale`), while a
+    // deferred template still in use by a retiring streamer retains `Kept`.
     assert_eq!(
         route_name(&pool, RouteOwner::Platform("platform-douyu".into())).await,
+        "inherit"
+    );
+    assert_eq!(
+        route_name(&pool, RouteOwner::Template("retained-template".into())).await,
         "proxy:Kept"
     );
     let names: Vec<String> = sqlx::query_scalar("SELECT name FROM proxies ORDER BY name")

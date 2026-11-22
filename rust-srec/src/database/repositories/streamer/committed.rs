@@ -33,6 +33,7 @@ pub(super) async fn write(
         // Clearing errors can make a fatally stopped streamer active again,
         // which only a state publication tells the scheduler.
         Mutation::MarkDeleted(_) | Mutation::ClearErrors => StatePublication::StateOnly,
+        Mutation::Priority(_) => StatePublication::Metadata,
         Mutation::DeleteMarked => StatePublication::Deleted,
         _ => StatePublication::Silent,
     };

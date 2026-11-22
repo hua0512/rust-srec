@@ -501,7 +501,7 @@ impl DownloadManager {
         // CDN issues don't block unrelated streamers on the same engine.
         let engine_key = engine_key.for_streamer(&req.streamer_id);
 
-        if !engine.is_available() {
+        if !engine.wait_available().await {
             return Err(crate::Error::Other(format!(
                 "Engine {} is not available",
                 engine_type

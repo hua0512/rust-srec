@@ -124,7 +124,7 @@ async fn feedback_terminal_application_observes_the_slot_already_released() {
             sender,
             priority_sender,
             token.clone(),
-            crate::scheduler::actor::ActorMetadata::streamer("test-streamer-id", false),
+            crate::scheduler::actor::ActorMetadata::streamer("test-streamer-id"),
         );
         actor.set_generation(1);
         feedback.update_targets(&std::collections::HashMap::from([(

@@ -17,11 +17,14 @@ use p256::elliptic_curve::sec1::ToSec1Point;
 use rand::Rng;
 use serde::Serialize;
 use sha2::Sha256;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::time::Duration;
 use std::time::Instant;
+use tokio::net::lookup_host;
 use url::Url;
 
-use crate::proxies::{ProxyRoute, ServiceRoutes};
+use crate::proxies::{ProxyRoute, ProxyTarget, ServiceRoutes, SystemProxy};
+use crate::utils::http_client::{ClientCache, apply_proxy, build_client, install_rustls_provider};
 
 const SALT_LEN: usize = 16;
 const PUBLIC_KEY_LEN: usize = 65;
@@ -168,6 +171,24 @@ impl WebPushService {
         })
     }
 
+    #[cfg(test)]
+    pub(crate) fn test_new(
+        pool: DbPool,
+        write_pool: WritePool,
+        vapid_public_key_b64: String,
+        vapid_private_key_raw: [u8; 32],
+    ) -> Result<Self> {
+        Self::new(
+            pool,
+            write_pool,
+            WebPushConfig {
+                vapid_public_key_b64,
+                vapid_private_key_raw,
+                vapid_subject: "mailto:test@localhost".into(),
+            },
+        )
+    }
+
     pub fn from_env(pool: DbPool, write_pool: WritePool) -> Result<Option<Self>> {
         let Some(config) = WebPushConfig::from_env()? else {
             return Ok(None);
@@ -284,12 +305,46 @@ impl WebPushService {
         Ok(())
     }
 
-    /// A client on the global route as it is now. A route naming a saved
-    /// proxy that no longer exists is an error, never a direct connection.
-    async fn client(&self) -> Result<reqwest::Client> {
+    async fn allow_private_targets(&self) -> bool {
+        sqlx::query_scalar::<_, bool>(
+            "SELECT stream_proxy_allow_private_targets FROM global_config LIMIT 1",
+        )
+        .fetch_optional(&self.pool)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(false)
+    }
+
+    async fn route_target(&self) -> Result<ProxyTarget> {
         ServiceRoutes::new(self.pool.clone())
-            .client(&ProxyRoute::Inherit)
+            .target(&ProxyRoute::Inherit)
             .await
+    }
+
+    /// Checks a subscription endpoint against the target policy that delivery
+    /// applies. The hostname is resolved here unless delivery goes through a
+    /// saved proxy: that proxy resolves it, and this host may have no usable
+    /// DNS for the push service at all.
+    pub async fn validate_endpoint(&self, endpoint: &str) -> Result<Url> {
+        let allow_private = self.allow_private_targets().await;
+        // Delivery fails on a route that cannot be resolved, so such an
+        // endpoint gets the full check.
+        let check_dns = match self.route_target().await {
+            Ok(target) => may_dial_directly(&target),
+            Err(_) => true,
+        };
+        validate_push_endpoint(endpoint, allow_private, check_dns).await
+    }
+
+    /// A non-redirecting HTTP client on the global route as it is now. A route
+    /// naming a saved proxy that no longer exists is an error, never a direct
+    /// connection.
+    #[cfg(test)]
+    async fn client(&self) -> Result<reqwest::Client> {
+        let allow_private = self.allow_private_targets().await;
+        let target = self.route_target().await?;
+        web_push_client(&target, allow_private)
     }
 
     pub async fn send_event(&self, event: &NotificationEvent, event_log_id: Option<&str>) {
@@ -305,13 +360,22 @@ impl WebPushService {
             return;
         }
 
-        let client = match self.client().await {
-            Ok(client) => client,
+        let allow_private = self.allow_private_targets().await;
+        let target = match self.route_target().await {
+            Ok(target) => target,
             Err(error) => {
                 tracing::warn!(%error, "Web push delivery skipped: no connection on the proxy route");
                 return;
             }
         };
+        let client = match web_push_client(&target, allow_private) {
+            Ok(client) => client,
+            Err(error) => {
+                tracing::warn!(%error, "Web push delivery skipped: HTTP client unavailable");
+                return;
+            }
+        };
+        let check_dns = may_dial_directly(&target);
 
         let now_ms = jiff::Timestamp::now().as_millisecond();
         let priority = event.priority();
@@ -336,6 +400,20 @@ impl WebPushService {
                         .and_then(NotificationPriority::from_int)
                         .unwrap_or(NotificationPriority::Critical);
                     if priority < min_priority {
+                        return;
+                    }
+
+                    if let Err(e) =
+                        validate_push_endpoint(&sub.endpoint, allow_private, check_dns).await
+                    {
+                        tracing::warn!(
+                            endpoint = %redact_url_for_log(&sub.endpoint),
+                            error = %e,
+                            "Web push delivery blocked by target policy"
+                        );
+                        if let Some(metrics) = self.metrics.read().as_ref().cloned() {
+                            metrics.record_web_push_failed();
+                        }
                         return;
                     }
 
@@ -757,4 +835,186 @@ fn build_vapid_jwt_with_exp(
     let sig_b64 = encode_b64url(&sig.to_bytes());
 
     Ok((format!("{}.{}", signing_input, sig_b64), exp_unix))
+}
+
+/// Whether `host` is a loopback address (`localhost`, `127.0.0.0/8`, `::1`),
+/// where plain `http://` Web Push endpoints are permitted for local development
+/// and testing.
+fn is_loopback_push_host(host: &url::Host<&str>) -> bool {
+    match host {
+        url::Host::Domain(domain) => domain
+            .trim_end_matches('.')
+            .eq_ignore_ascii_case("localhost"),
+        url::Host::Ipv4(ip) => ip.is_loopback(),
+        url::Host::Ipv6(ip) => ip.is_loopback(),
+    }
+}
+
+fn is_public_ipv4(address: Ipv4Addr) -> bool {
+    let [a, b, c, _] = address.octets();
+    !matches!(
+        (a, b, c),
+        (0, _, _)
+            | (10, _, _)
+            | (100, 64..=127, _)
+            | (127, _, _)
+            | (169, 254, _)
+            | (172, 16..=31, _)
+            | (192, 0, 0)
+            | (192, 0, 2)
+            | (192, 168, _)
+            | (198, 18..=19, _)
+            | (198, 51, 100)
+            | (203, 0, 113)
+            | (224..=255, _, _)
+    )
+}
+
+fn is_public_ipv6(address: Ipv6Addr) -> bool {
+    let [s0, s1, s2, s3, _, _, s6, s7] = address.segments();
+    let ipv4 = |high: u16, low: u16| Ipv4Addr::from((u32::from(high) << 16) | u32::from(low));
+    match (s0, s1) {
+        (0x2001, 0x0db8) => false,
+        (0x2001, 0x0000) => is_public_ipv4(ipv4(s2, s3)) && is_public_ipv4(ipv4(!s6, !s7)),
+        (0x2002, _) => is_public_ipv4(ipv4(s1, s2)),
+        _ => (s0 & 0xe000) == 0x2000,
+    }
+}
+
+fn is_public_ip(address: IpAddr) -> bool {
+    match address {
+        IpAddr::V4(address) => is_public_ipv4(address),
+        IpAddr::V6(address) => is_public_ipv6(address),
+    }
+}
+
+/// Whether a delivery on `target` may be dialled from this machine, so the
+/// addresses the endpoint's hostname resolves to are checked first. Only a
+/// saved proxy carries every request; see [`SystemProxy::connects_directly`]
+/// for when the system route does not.
+fn may_dial_directly(target: &ProxyTarget) -> bool {
+    !matches!(target, ProxyTarget::Explicit(_))
+}
+
+struct WebPushAddressResolver;
+
+impl reqwest::dns::Resolve for WebPushAddressResolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        Box::pin(async move {
+            let host = name.as_str().trim_end_matches('.');
+            let addresses: Vec<std::net::SocketAddr> = lookup_host((host, 0))
+                .await
+                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?
+                .collect();
+            if host.eq_ignore_ascii_case("localhost") {
+                if addresses.is_empty() || addresses.iter().any(|addr| !addr.ip().is_loopback()) {
+                    return Err(Box::new(std::io::Error::other(
+                        "localhost resolved to a non-loopback address",
+                    ))
+                        as Box<dyn std::error::Error + Send + Sync>);
+                }
+                return Ok(Box::new(addresses.into_iter()) as reqwest::dns::Addrs);
+            }
+            if addresses.is_empty() || addresses.iter().any(|addr| !is_public_ip(addr.ip())) {
+                return Err(Box::new(std::io::Error::other(
+                    "push endpoint resolved to a non-public address",
+                ))
+                    as Box<dyn std::error::Error + Send + Sync>);
+            }
+            Ok(Box::new(addresses.into_iter()) as reqwest::dns::Addrs)
+        })
+    }
+}
+
+fn web_push_client(target: &ProxyTarget, allow_private_targets: bool) -> Result<reqwest::Client> {
+    static CLIENTS: ClientCache<(bool, ProxyTarget)> = ClientCache::new(16);
+    CLIENTS
+        .get_or_try_build(&(allow_private_targets, target.clone()), || {
+            install_rustls_provider();
+            // Never follow redirects on push deliveries so an external push
+            // service cannot 307/302 redirect POST payloads to internal hosts.
+            let mut builder =
+                reqwest::Client::builder().redirect(reqwest::redirect::Policy::none());
+            if SystemProxy::current().connects_directly(target) {
+                builder = builder.no_proxy();
+                if !allow_private_targets {
+                    builder = builder.dns_resolver(std::sync::Arc::new(WebPushAddressResolver));
+                }
+            } else {
+                builder = apply_proxy(builder, target);
+            }
+            build_client(builder)
+        })
+        .map_err(Into::into)
+}
+
+/// Validate a Web Push subscription endpoint URL against SSRF rules.
+///
+/// Loopback (`http://localhost`, `http://127.0.0.1`, `http://[::1]`) remains
+/// allowed for local development and tests; all non-loopback private,
+/// link-local, and metadata addresses (`169.254.169.254`, RFC1918, etc.) are
+/// rejected unless `allow_private_targets` is explicitly enabled.
+///
+/// With `check_dns`, a hostname must also resolve to public addresses only.
+async fn validate_push_endpoint(
+    endpoint: &str,
+    allow_private_targets: bool,
+    check_dns: bool,
+) -> Result<Url> {
+    let url = Url::parse(endpoint)
+        .map_err(|e| Error::validation(format!("Invalid endpoint URL: {e}")))?;
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err(Error::validation(
+            "subscription.endpoint must not contain credentials",
+        ));
+    }
+    let host = url
+        .host()
+        .ok_or_else(|| Error::validation("subscription.endpoint missing host"))?;
+    let is_loopback = is_loopback_push_host(&host);
+    if url.scheme() != "https"
+        && !(url.scheme() == "http" && (is_loopback || allow_private_targets))
+    {
+        return Err(Error::validation(
+            "subscription.endpoint must use https scheme (or http for localhost)",
+        ));
+    }
+    if allow_private_targets || is_loopback {
+        return Ok(url);
+    }
+
+    let domain = match host {
+        url::Host::Domain(domain) => domain,
+        url::Host::Ipv4(ip) if is_public_ipv4(ip) => return Ok(url),
+        url::Host::Ipv6(ip) if is_public_ipv6(ip) => return Ok(url),
+        url::Host::Ipv4(_) | url::Host::Ipv6(_) => {
+            return Err(Error::validation(
+                "subscription.endpoint host is not allowed",
+            ));
+        }
+    };
+
+    let normalized = domain.trim_end_matches('.');
+    if normalized.to_ascii_lowercase().ends_with(".localhost") {
+        return Err(Error::validation(
+            "subscription.endpoint host is not allowed",
+        ));
+    }
+
+    if check_dns {
+        let port = url
+            .port_or_known_default()
+            .ok_or_else(|| Error::validation("subscription.endpoint port is required"))?;
+        let addresses: Vec<std::net::SocketAddr> = lookup_host((normalized, port))
+            .await
+            .map_err(|_| Error::validation("subscription.endpoint hostname could not be resolved"))?
+            .collect();
+        if addresses.is_empty() || addresses.iter().any(|addr| !is_public_ip(addr.ip())) {
+            return Err(Error::validation(
+                "subscription.endpoint host is not allowed",
+            ));
+        }
+    }
+
+    Ok(url)
 }

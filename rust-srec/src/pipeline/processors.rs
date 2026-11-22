@@ -22,6 +22,7 @@ mod remux;
 mod test_utils;
 mod thumbnail;
 mod traits;
+mod upload_runner;
 pub mod utils;
 
 pub use ass_burnin::{AssBurnInConfig, AssBurnInProcessor, AssMatchStrategy};

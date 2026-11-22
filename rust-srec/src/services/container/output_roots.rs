@@ -107,17 +107,25 @@ where
 ///   `"{streamer}/files"` (no root) → `None`
 ///   `"recordings/{streamer}"` (relative) → `None`
 pub(super) fn static_root_prefix(template: &str) -> Option<String> {
-    if !template.starts_with('/') {
-        return None;
-    }
     let cut = template.find(['{', '%']).unwrap_or(template.len());
     let prefix = &template[..cut];
-    let last_slash = prefix.rfind('/')?;
-    let result = &prefix[..=last_slash];
-    if result.is_empty() || result == "/" {
-        None
+    let last_sep = if template.starts_with('/') {
+        prefix.rfind('/')?
     } else {
-        Some(result.to_string())
+        prefix.rfind(['/', '\\'])?
+    };
+    let result = &prefix[..=last_sep];
+    if result.starts_with('/') {
+        return (result.len() > 1).then(|| result.to_string());
+    }
+    let mut components = std::path::Path::new(result).components();
+    match (components.next(), components.next()) {
+        (Some(std::path::Component::Prefix(_)), Some(std::path::Component::RootDir))
+            if components.any(|c| matches!(c, std::path::Component::Normal(_))) =>
+        {
+            Some(result.to_string())
+        }
+        _ => None,
     }
 }
 
@@ -148,17 +156,30 @@ pub(super) fn parse_output_roots_env() -> Vec<std::path::PathBuf> {
 }
 
 pub(super) fn sqlite_file_path_from_url(url: &str) -> Option<std::path::PathBuf> {
-    let url = url.strip_prefix("sqlite:")?;
-    let path_part = url.split('?').next().unwrap_or(url);
+    use std::str::FromStr;
 
+    let rest = url.strip_prefix("sqlite:")?;
+    let (path_part, query_part) = match rest.split_once('?') {
+        Some((path, query)) => (path, Some(query)),
+        None => (rest, None),
+    };
     if path_part.is_empty() || path_part == ":memory:" || path_part.starts_with(":memory:") {
         return None;
     }
+    if let Some(query) = query_part
+        && url::form_urlencoded::parse(query.as_bytes()).any(|(key, value)| {
+            key.eq_ignore_ascii_case("mode") && value.eq_ignore_ascii_case("memory")
+        })
+    {
+        return None;
+    }
 
-    // Matches sqlx: `sqlite://` introduces the path, so `sqlite:///app/data/x.db`
-    // is the absolute `/app/data/x.db` and `sqlite://x.db` is relative.
-    let normalized = path_part.strip_prefix("//").unwrap_or(path_part);
-    Some(std::path::PathBuf::from(normalized))
+    let options = sqlx::sqlite::SqliteConnectOptions::from_str(url).ok()?;
+    let filename = options.get_filename();
+    if filename.as_os_str().is_empty() || filename == std::path::Path::new(":memory:") {
+        return None;
+    }
+    Some(filename.to_path_buf())
 }
 
 #[cfg(test)]
@@ -184,5 +205,9 @@ mod sqlite_path_tests {
             Some(PathBuf::from("srec.db"))
         );
         assert_eq!(sqlite_file_path_from_url("sqlite::memory:"), None);
+        assert_eq!(
+            sqlite_file_path_from_url("sqlite:file:memdb1?mode=memory&cache=shared"),
+            None
+        );
     }
 }
