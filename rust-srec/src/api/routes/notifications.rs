@@ -27,14 +27,6 @@ pub struct NotificationRouteState {
         std::sync::Arc<dyn crate::database::repositories::NotificationRepository>,
     notification_service: std::sync::Arc<crate::notification::NotificationService>,
     web_push_service: Option<std::sync::Arc<crate::notification::web_push::WebPushService>>,
-    config_service: Option<
-        std::sync::Arc<
-            crate::config::ConfigService<
-                crate::database::repositories::config::SqlxConfigRepository,
-                crate::database::repositories::streamer::SqlxStreamerRepository,
-            >,
-        >,
-    >,
 }
 
 impl FromRef<AppState> for NotificationRouteState {
@@ -44,23 +36,11 @@ impl FromRef<AppState> for NotificationRouteState {
             notification_repository: state.notification_repository.clone(),
             notification_service: state.notification_service.clone(),
             web_push_service: state.web_push_service.clone(),
-            config_service: Some(state.config_service.clone()),
         }
     }
 }
 
 impl NotificationRouteState {
-    async fn allow_private_targets(&self) -> bool {
-        match &self.config_service {
-            Some(config_service) => config_service
-                .get_cached_global_config()
-                .await
-                .map(|config| config.stream_proxy_allow_private_targets)
-                .unwrap_or(false),
-            None => false,
-        }
-    }
-
     async fn resolve_web_push_user_id(
         &self,
         identity: Option<axum::Extension<AuthPrincipal>>,
@@ -72,6 +52,16 @@ impl NotificationRouteState {
             .default_web_push_user_id()
             .await
             .map_err(ApiError::from)
+    }
+}
+
+/// Brings the running channels in line with a change that is already stored.
+/// A failed reload is logged rather than failing the request: the client would
+/// see an error for a change that took effect, and a retried create would add
+/// a second channel.
+async fn reload_channels(service: &crate::notification::NotificationService) {
+    if let Err(error) = service.reload_from_db().await {
+        tracing::error!(%error, "Failed to reload notification channels after a stored change");
     }
 }
 
@@ -291,8 +281,8 @@ pub async fn subscribe_web_push(
     if endpoint.is_empty() {
         return Err(ApiError::bad_request("subscription.endpoint is required"));
     }
-    let allow_private = state.allow_private_targets().await;
-    crate::notification::web_push::validate_push_endpoint(endpoint, allow_private)
+    service
+        .validate_endpoint(endpoint)
         .await
         .map_err(|error| match error {
             crate::Error::Validation(msg) => ApiError::bad_request(msg),
@@ -526,8 +516,7 @@ pub async fn create_channel(
     // Save to DB
     repo.create_channel(&channel).await?;
 
-    // Reload service to pick up new channel immediately
-    service.reload_from_db().await?;
+    reload_channels(service).await;
 
     Ok((StatusCode::CREATED, Json(channel)))
 }
@@ -568,8 +557,7 @@ pub async fn update_channel(
         )
         .await?;
 
-    // Reload service
-    service.reload_from_db().await?;
+    reload_channels(service).await;
 
     Ok(Json(channel))
 }
@@ -594,8 +582,7 @@ pub async fn delete_channel(
 
     repo.delete_channel(&id).await?;
 
-    // Reload service
-    service.reload_from_db().await?;
+    reload_channels(service).await;
 
     Ok(StatusCode::NO_CONTENT)
 }
@@ -654,8 +641,7 @@ pub async fn update_subscriptions(
 
     repo.replace_subscriptions(&id, &canonical_events).await?;
 
-    // Reload service
-    service.reload_from_db().await?;
+    reload_channels(service).await;
 
     Ok(Json(req.events))
 }
@@ -724,7 +710,6 @@ mod tests {
             notification_repository: repo,
             notification_service,
             web_push_service: Some(web_push_service),
-            config_service: None,
         };
 
         let app = Router::new()

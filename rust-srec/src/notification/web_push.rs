@@ -322,6 +322,21 @@ impl WebPushService {
             .await
     }
 
+    /// Checks a subscription endpoint against the target policy that delivery
+    /// applies. The hostname is resolved here only when delivery connects
+    /// directly: through a proxy it is the proxy that resolves it, and this
+    /// host may have no usable DNS for the push service at all.
+    pub async fn validate_endpoint(&self, endpoint: &str) -> Result<Url> {
+        let allow_private = self.allow_private_targets().await;
+        // Delivery fails on a route that cannot be resolved, so such an
+        // endpoint gets the full check.
+        let check_dns = match self.route_target().await {
+            Ok(target) => SystemProxy::current().connects_directly(&target),
+            Err(_) => true,
+        };
+        validate_push_endpoint(endpoint, allow_private, check_dns).await
+    }
+
     /// A non-redirecting HTTP client on the global route as it is now. A route
     /// naming a saved proxy that no longer exists is an error, never a direct
     /// connection.
@@ -360,7 +375,7 @@ impl WebPushService {
                 return;
             }
         };
-        let check_dns = web_push_connects_directly(&target, SystemProxy::current());
+        let check_dns = SystemProxy::current().connects_directly(&target);
 
         let now_ms = jiff::Timestamp::now().as_millisecond();
         let priority = event.priority();
@@ -389,8 +404,7 @@ impl WebPushService {
                     }
 
                     if let Err(e) =
-                        validate_push_endpoint_with_dns(&sub.endpoint, allow_private, check_dns)
-                            .await
+                        validate_push_endpoint(&sub.endpoint, allow_private, check_dns).await
                     {
                         tracing::warn!(
                             endpoint = %redact_url_for_log(&sub.endpoint),
@@ -874,14 +888,6 @@ fn is_public_ip(address: IpAddr) -> bool {
     }
 }
 
-fn web_push_connects_directly(target: &ProxyTarget, system: &SystemProxy) -> bool {
-    match target {
-        ProxyTarget::Direct => true,
-        ProxyTarget::System => !system.detected(),
-        ProxyTarget::Explicit(_) => false,
-    }
-}
-
 struct WebPushAddressResolver;
 
 impl reqwest::dns::Resolve for WebPushAddressResolver {
@@ -921,7 +927,7 @@ fn web_push_client(target: &ProxyTarget, allow_private_targets: bool) -> Result<
             // service cannot 307/302 redirect POST payloads to internal hosts.
             let mut builder =
                 reqwest::Client::builder().redirect(reqwest::redirect::Policy::none());
-            if web_push_connects_directly(target, SystemProxy::current()) {
+            if SystemProxy::current().connects_directly(target) {
                 builder = builder.no_proxy();
                 if !allow_private_targets {
                     builder = builder.dns_resolver(std::sync::Arc::new(WebPushAddressResolver));
@@ -940,11 +946,9 @@ fn web_push_client(target: &ProxyTarget, allow_private_targets: bool) -> Result<
 /// allowed for local development and tests; all non-loopback private,
 /// link-local, and metadata addresses (`169.254.169.254`, RFC1918, etc.) are
 /// rejected unless `allow_private_targets` is explicitly enabled.
-pub async fn validate_push_endpoint(endpoint: &str, allow_private_targets: bool) -> Result<Url> {
-    validate_push_endpoint_with_dns(endpoint, allow_private_targets, true).await
-}
-
-async fn validate_push_endpoint_with_dns(
+///
+/// With `check_dns`, a hostname must also resolve to public addresses only.
+async fn validate_push_endpoint(
     endpoint: &str,
     allow_private_targets: bool,
     check_dns: bool,

@@ -13,14 +13,12 @@ use tower::ServiceExt;
 
 use super::hls::{ManagedRelay, RelayContext, rewrite_hls_manifest};
 use super::managed::{managed_media_headers, managed_target};
-use super::ssrf::{
-    connects_directly, is_public_ipv6, resolve_public_addresses, stream_proxy_client,
-};
+use super::ssrf::{is_public_ipv6, resolve_public_addresses, stream_proxy_client};
 use super::upstream::{fetch_upstream, fetch_upstream_bound, is_page_or_api_content_type};
 use super::*;
 use crate::api::cors::CorsPolicy;
 use crate::api::error::ApiError;
-use crate::proxies::{ProxyTarget, SystemProxy};
+use crate::proxies::ProxyTarget;
 
 async fn hls_manifest_handler() -> impl IntoResponse {
     (
@@ -592,17 +590,6 @@ fn invalid_upstream_proxy_fails_without_falling_back_to_direct() {
         ProxyTarget::Explicit(crate::proxies::ProxyEndpoint::new("http://[invalid", None));
     let error = stream_proxy_client(false, &invalid).unwrap_err();
     assert_eq!(error.status, StatusCode::BAD_REQUEST);
-}
-
-#[test]
-fn a_system_route_without_a_proxy_variable_connects_directly() {
-    let none = SystemProxy::default();
-    let set = SystemProxy::from_lookup(|name| {
-        (name == "HTTPS_PROXY").then(|| "http://proxy.example:3128".to_owned())
-    });
-    assert!(connects_directly(&ProxyTarget::System, &none));
-    assert!(!connects_directly(&ProxyTarget::System, &set));
-    assert!(connects_directly(&ProxyTarget::Direct, &set));
 }
 
 #[tokio::test]

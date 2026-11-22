@@ -186,24 +186,19 @@ pub trait ConfigRepository: Send + Sync {
 /// SQLx implementation of ConfigRepository.
 pub struct SqlxConfigRepository {
     pool: SqlitePool,
-    #[allow(dead_code)]
-    write_pool: SqlitePool,
     writer: Arc<crate::database::CommittedWriter>,
-    publication: OnceLock<Arc<dyn Fn(CredentialOwner) + Send + Sync>>,
     config_publication: OnceLock<Arc<dyn Fn(ConfigWritePublication) + Send + Sync>>,
 }
 
 impl SqlxConfigRepository {
     pub fn new(pool: SqlitePool, write_pool: SqlitePool) -> Self {
         let writer = Arc::new(crate::database::CommittedWriter::for_invalidation(
-            write_pool.clone(),
+            write_pool,
             Arc::new(crate::utils::task_supervisor::TaskSupervisor::for_committed_work()),
         ));
         Self {
             pool,
-            write_pool,
             writer,
-            publication: OnceLock::new(),
             config_publication: OnceLock::new(),
         }
     }
@@ -216,11 +211,6 @@ impl SqlxConfigRepository {
         self
     }
 
-    #[cfg(test)]
-    pub(crate) fn bind_publication(&self, publication: Arc<dyn Fn(CredentialOwner) + Send + Sync>) {
-        self.publication.get_or_init(|| publication);
-    }
-
     pub(crate) fn bind_config_publication(
         &self,
         publication: Arc<dyn Fn(ConfigWritePublication) + Send + Sync>,
@@ -231,18 +221,7 @@ impl SqlxConfigRepository {
     pub(super) fn publish_callback(
         &self,
     ) -> Option<Arc<dyn Fn(ConfigWritePublication) + Send + Sync>> {
-        if let Some(publication) = self.config_publication.get() {
-            return Some(publication.clone());
-        }
-        self.publication.get().cloned().map(|owner_cb| {
-            let wrapped: Arc<dyn Fn(ConfigWritePublication) + Send + Sync> =
-                Arc::new(move |event| {
-                    if let ConfigWritePublication::Owner(owner) = event {
-                        owner_cb(owner);
-                    }
-                });
-            wrapped
-        })
+        self.config_publication.get().cloned()
     }
 
     async fn write_platform_owned(
@@ -397,7 +376,7 @@ impl SqlxConfigRepository {
 #[async_trait]
 impl ConfigRepository for SqlxConfigRepository {
     fn has_bound_publication(&self) -> bool {
-        self.config_publication.get().is_some() || self.publication.get().is_some()
+        self.config_publication.get().is_some()
     }
 
     async fn clone_template_config(
@@ -844,8 +823,10 @@ mod tests {
                     .await
                     .unwrap();
                 let (published, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-                repository.bind_publication(Arc::new(move |owner| {
-                    published.send(owner).unwrap();
+                repository.bind_config_publication(Arc::new(move |write| {
+                    if let ConfigWritePublication::Owner(owner) = write {
+                        published.send(owner).unwrap();
+                    }
                 }));
                 let gate = Arc::new(crate::database::committed_writer::CommitTestGate::default());
                 repository.writer.set_commit_gate(
@@ -897,8 +878,10 @@ mod tests {
                 .await
                 .unwrap();
                 let (published, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-                repository.bind_publication(Arc::new(move |owner| {
-                    published.send(owner).unwrap();
+                repository.bind_config_publication(Arc::new(move |write| {
+                    if let ConfigWritePublication::Owner(owner) = write {
+                        published.send(owner).unwrap();
+                    }
                 }));
                 let gate = Arc::new(crate::database::committed_writer::CommitTestGate::default());
                 repository.writer.set_commit_gate(

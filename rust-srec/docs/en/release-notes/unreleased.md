@@ -46,9 +46,16 @@
 
 - Fixed on/off options in a template's platform override or a streamer's **Platform options** tab (such as **Batch Detection**, **Force Origin Quality** and **End Stream On Danmu Close**) always showing as on or off even when unset, making it unclear whether they followed the platform setting. Previously, once toggled there, the only way to follow the platform again was editing JSON. These options now offer **Inherit**, **On** and **Off**, where **Inherit** follows the template or platform setting. See [Configuration layers](https://docs.srec.rs/en/concepts/configuration#important-merge-rules).
 - Fixed **Replace All** in **Import Configuration** under **Backup & Restore** leaving settings, **Accounts** and **Proxies** choices on **Platforms** omitted from the backup, which could block deleting old accounts or proxies.
-- Fixed **API Keys** keeping old permissions or staying active for up to five seconds after **Change Password** or **Import Configuration** updated or disabled an account.
-- Fixed **Web Push** under **Browser Notifications** failing to subscribe, update priority or unsubscribe when `AUTH_DISABLED=true`.
 - Updating the log filter in global settings or through **Import Configuration** now takes effect right away without restarting rust-srec.
+- **Import Configuration** now rejects a backup with an invalid log filter or a streamer address without a host before changing anything, instead of saving settings that cannot work.
+
+## Notifications
+
+- Fixed **Web Push** under **Browser Notifications** failing to subscribe, update priority or unsubscribe when `AUTH_DISABLED=true`.
+
+## Authentication and API
+
+- Fixed **API Keys** keeping old permissions or staying active for up to five seconds after **Change Password** or **Import Configuration** updated or disabled an account.
 
 ## Web interface
 

@@ -787,9 +787,11 @@ pub async fn update_streamer(
     let platform_config_id = match request.url.as_deref() {
         Some(new_url) => {
             let url = StreamerUrl::new(new_url).map_err(|e| ApiError::validation(e.to_string()))?;
+            // Case counts as a change: paths are case-sensitive on most platforms.
+            let url_changed = current.url != new_url;
             // The streamlink probe spawns a subprocess, so only pay for it when the URL changed
-            // (including case-only path edits) or the streamer is not already on streamlink.
-            let should_probe_streamlink = current.url != new_url
+            // or the streamer is not already on streamlink.
+            let should_probe_streamlink = url_changed
                 || !current
                     .platform_config_id
                     .eq_ignore_ascii_case("platform-streamlink");
@@ -797,7 +799,9 @@ pub async fn update_streamer(
                 .await?
             {
                 Some(resolved) => Some(resolved.config.id),
-                None if should_probe_streamlink => {
+                // An unchanged URL that nothing claims keeps the platform it already has, so
+                // a streamer stays editable when streamlink is missing or slow to answer.
+                None if url_changed => {
                     return Err(ApiError::validation(
                         "Unsupported URL: no platform recognizes this address",
                     ));

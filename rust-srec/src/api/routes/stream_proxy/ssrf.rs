@@ -36,7 +36,7 @@ pub(super) fn stream_proxy_client(
                 .reqwest_proxy()
                 .map_err(|_| ApiError::bad_request("Invalid upstream proxy configuration"))?;
             builder = builder.proxy(proxy);
-        } else if connects_directly(upstream_proxy, SystemProxy::current()) {
+        } else if SystemProxy::current().connects_directly(upstream_proxy) {
             builder = builder.no_proxy();
             if !allow_private_targets {
                 builder = builder.dns_resolver(Arc::new(PublicAddressResolver));
@@ -50,21 +50,6 @@ pub(super) fn stream_proxy_client(
             .build()
             .map_err(|_| ApiError::internal("Stream proxy HTTP client is unavailable"))
     })
-}
-
-/// Whether the stream proxy connects without a proxy, and so must resolve
-/// targets through `PublicAddressResolver` itself.
-///
-/// `reqwest` is built without the `system-proxy` feature, so `ProxyTarget::System`
-/// only consults the environment variables tracked by [`SystemProxy`]; when none
-/// are set, connections dial targets directly on every OS and must use
-/// `PublicAddressResolver`.
-pub(super) fn connects_directly(upstream_proxy: &ProxyTarget, system: &SystemProxy) -> bool {
-    match upstream_proxy {
-        ProxyTarget::Direct => true,
-        ProxyTarget::System => !system.detected(),
-        ProxyTarget::Explicit(_) => false,
-    }
 }
 
 pub(super) fn is_public_ipv4(address: Ipv4Addr) -> bool {

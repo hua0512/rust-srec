@@ -290,7 +290,7 @@ async fn endpoint_validation_blocks_private_targets_and_delivery_refuses_redirec
         "http://[::1]:8080/push",
         "https://8.8.8.8/push",
     ] {
-        validate_push_endpoint_with_dns(allowed, false, false)
+        validate_push_endpoint(allowed, false, false)
             .await
             .unwrap_or_else(|e| panic!("expected {allowed} to be allowed, got {e}"));
     }
@@ -305,7 +305,7 @@ async fn endpoint_validation_blocks_private_targets_and_delivery_refuses_redirec
         "http://8.8.8.8/push",
     ] {
         assert!(
-            validate_push_endpoint_with_dns(rejected, false, false)
+            validate_push_endpoint(rejected, false, false)
                 .await
                 .is_err(),
             "expected {rejected} to be rejected"

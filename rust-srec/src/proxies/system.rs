@@ -24,6 +24,9 @@ const PROXY_VARIABLES: [&str; 6] = [
 ];
 const NO_PROXY_VARIABLES: [&str; 2] = ["no_proxy", "NO_PROXY"];
 
+/// Whether reqwest's system proxy lookup includes operating-system settings.
+const OS_PROXY_SETTINGS: bool = cfg!(any(target_os = "windows", target_os = "macos"));
+
 /// The environment's proxy. `Debug` never shows a login.
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct SystemProxy {
@@ -92,6 +95,21 @@ impl SystemProxy {
         self.url.is_some()
     }
 
+    /// Whether an HTTP client on `target` dials its destination itself, and so
+    /// must check the addresses a destination resolves to before connecting.
+    ///
+    /// A system route without a proxy variable connects directly too, except
+    /// on Windows and macOS: there the HTTP client also reads the operating
+    /// system's proxy settings, which this snapshot cannot see, so the route
+    /// is left to them.
+    pub fn connects_directly(&self, target: &ProxyTarget) -> bool {
+        match target {
+            ProxyTarget::Direct => true,
+            ProxyTarget::System => !OS_PROXY_SETTINGS && !self.detected(),
+            ProxyTarget::Explicit(_) => false,
+        }
+    }
+
     pub fn summary(&self) -> SystemProxySummary {
         SystemProxySummary {
             detected: self.detected(),
@@ -153,6 +171,18 @@ mod tests {
                 .find(|(candidate, _)| candidate == name)
                 .map(|(_, value)| value.clone())
         })
+    }
+
+    #[test]
+    fn a_system_route_without_a_proxy_variable_connects_directly() {
+        let none = SystemProxy::default();
+        let set = environment(&[("HTTPS_PROXY", "http://proxy.example:3128")]);
+        assert_eq!(
+            none.connects_directly(&ProxyTarget::System),
+            !OS_PROXY_SETTINGS
+        );
+        assert!(!set.connects_directly(&ProxyTarget::System));
+        assert!(set.connects_directly(&ProxyTarget::Direct));
     }
 
     #[test]
