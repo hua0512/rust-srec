@@ -13,6 +13,7 @@ import { FolderOutput } from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { ConfigFieldLabel } from '@/components/config/shared/config-field';
 import { CONFIG_INPUT } from '@/components/config/shared/config-field';
+import { DesktopPathInput } from '@/components/config/shared/desktop-path-input';
 
 export const FileConfigCard = memo(() => {
   return (
@@ -54,9 +55,12 @@ export const FileConfigCard = memo(() => {
                   <Trans>Output Folder</Trans>
                 </ConfigFieldLabel>
                 <FormControl>
-                  <Input
+                  <DesktopPathInput
                     className={CONFIG_INPUT}
                     placeholder="/path/to/downloads"
+                    pickerMode="directory"
+                    showOpenFolder
+                    onPickValue={(val) => field.onChange(val)}
                     {...field}
                   />
                 </FormControl>

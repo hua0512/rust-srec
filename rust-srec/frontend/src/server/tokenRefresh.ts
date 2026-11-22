@@ -163,6 +163,9 @@ async function applyOutcomeToSession({
     roles: outcome.roles ?? currentSessionData.roles,
     mustChangePassword:
       outcome.mustChangePassword ?? currentSessionData.mustChangePassword,
+    // Enabling "Require password sign-in" only signs out sessions issued by
+    // desktop auto-login, so the flag must survive token refreshes.
+    autoLogin: currentSessionData.autoLogin,
   };
 
   await session.update(userData);

@@ -98,10 +98,18 @@ export function getMediaUrl(
     fullUrl += `${separator}token=${token}`;
   }
 
-  // Absolute API bases, including the runtime-injected desktop backend, resolve
-  // media paths against the backend origin rather than the frontend origin.
+  // Absolute API bases, including the runtime-injected desktop backend (and
+  // subpath-prefixed remote URLs such as `https://host/sub/api`), resolve
+  // `/api/...` media paths under the API base without dropping the subpath.
   const apiBaseUrl = getBaseUrl();
   if (apiBaseUrl.startsWith('http://') || apiBaseUrl.startsWith('https://')) {
+    if (
+      (apiBaseUrl.endsWith('/api') || apiBaseUrl.endsWith('/api/')) &&
+      (fullUrl === '/api' || fullUrl.startsWith('/api/'))
+    ) {
+      const relativeToApi = fullUrl.slice('/api'.length) || '/';
+      return joinUrlPath(apiBaseUrl, relativeToApi);
+    }
     return new URL(fullUrl, apiBaseUrl).toString();
   }
 

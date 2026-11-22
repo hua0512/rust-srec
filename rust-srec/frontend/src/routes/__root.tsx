@@ -18,6 +18,55 @@ import { isDesktopBuild } from '@/utils/desktop';
 import { buildThemeScriptHTML, THEME_SCRIPT_ATTRS } from '@/lib/theme-script';
 import type { Mode } from '@/lib/theme-config';
 
+type DesktopListenerModules = {
+  DesktopShutdownListener: React.ComponentType;
+  DesktopUpdateListener: React.ComponentType;
+};
+
+const DesktopRootListeners = (() => {
+  if (!isDesktopBuild()) {
+    return function DesktopRootListenersDisabled() {
+      return null;
+    };
+  }
+
+  return function DesktopRootListenersEnabled() {
+    const [modules, setModules] = useState<DesktopListenerModules | null>(null);
+
+    useEffect(() => {
+      let cancelled = false;
+
+      void (async () => {
+        const [shutdownModule, updateModule] = await Promise.all([
+          import('@/desktop/desktop-shutdown-listener'),
+          import('@/desktop/desktop-update-listener'),
+        ]);
+
+        if (cancelled) return;
+
+        setModules({
+          DesktopShutdownListener: shutdownModule.DesktopShutdownListener,
+          DesktopUpdateListener: updateModule.DesktopUpdateListener,
+        });
+      })();
+
+      return () => {
+        cancelled = true;
+      };
+    }, []);
+
+    if (!modules) return null;
+
+    const { DesktopShutdownListener, DesktopUpdateListener } = modules;
+    return (
+      <>
+        <DesktopShutdownListener />
+        <DesktopUpdateListener />
+      </>
+    );
+  };
+})();
+
 type DevtoolsModules = {
   TanStackDevtools: React.ComponentType<any>;
   TanStackRouterDevtoolsPanel: React.ComponentType<any>;
@@ -151,6 +200,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
 
         <Devtools />
         <Toaster position="top-right" />
+        <DesktopRootListeners />
       </div>
     );
   }

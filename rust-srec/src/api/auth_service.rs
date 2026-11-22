@@ -9,6 +9,7 @@
 mod api_keys;
 mod cache;
 mod config;
+mod local_desktop;
 mod sessions;
 #[cfg(test)]
 mod tests;
@@ -38,6 +39,7 @@ pub use self::config::{
     API_KEY_PREFIX, AuthConfig, AuthError, AuthPrincipal, AuthResponse, CredentialKind,
     MAX_USERNAME_LENGTH, SessionInfo,
 };
+use self::local_desktop::LocalDesktopSessionRecord;
 use self::users::password_work_permits;
 use crate::api::jwt::JwtService;
 use crate::api::rate_limit::LoginRateLimiter;
@@ -72,6 +74,9 @@ pub struct AuthService {
     /// Caps concurrent Argon2id work started by `verify_password_blocking`
     /// and `hash_password_blocking`.
     password_work_permits: Arc<Semaphore>,
+    /// Sessions issued by `issue_local_desktop_session`, keyed by session id.
+    /// Only the desktop shell's in-process backend ever fills this.
+    local_desktop_sessions: DashMap<String, LocalDesktopSessionRecord>,
     #[cfg(test)]
     password_verify_calls: Arc<AtomicU64>,
 }
@@ -97,6 +102,7 @@ impl AuthService {
             api_key_last_used_writes: DashMap::new(),
             login_rate_limiter: LoginRateLimiter::from_env(),
             password_work_permits: Arc::new(Semaphore::new(password_work_permits())),
+            local_desktop_sessions: DashMap::new(),
             #[cfg(test)]
             password_verify_calls: Arc::new(AtomicU64::new(0)),
         }

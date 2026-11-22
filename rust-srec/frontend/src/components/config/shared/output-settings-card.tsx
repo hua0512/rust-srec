@@ -28,6 +28,7 @@ import {
   ConfigFieldLabel,
 } from './config-field';
 import { configPath } from './form-path';
+import { DesktopPathInput } from './desktop-path-input';
 import { genericMemo } from '@/lib/generic-component';
 
 interface OutputSettingsCardProps<TFieldValues extends FieldValues> {
@@ -70,12 +71,15 @@ function OutputSettingsCardImpl<TFieldValues extends FieldValues>({
                   <Trans>Output Folder</Trans>
                 </ConfigFieldLabel>
                 <FormControl>
-                  <Input
+                  <DesktopPathInput
                     {...field}
                     value={field.value ?? ''}
                     onChange={field.onChange}
                     placeholder="/app/output"
                     className={CONFIG_INPUT}
+                    pickerMode="directory"
+                    showOpenFolder
+                    onPickValue={(val) => field.onChange(val)}
                   />
                 </FormControl>
                 <FormDescription className={CONFIG_DESCRIPTION}>

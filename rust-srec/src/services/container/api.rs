@@ -144,7 +144,12 @@ impl ServiceContainer {
         bridge_task: &'static str,
         server_task: &'static str,
     ) -> Result<std::net::SocketAddr> {
-        let state = self.build_api_state(auth_service)?;
+        let state = self.build_api_state(auth_service.clone())?;
+        if let Some(auth_service) = auth_service
+            && self.auth_service.set(auth_service).is_err()
+        {
+            warn!("API server started more than once; local desktop sessions use the first one");
+        }
         let server = ApiServer::new(self.api_server_config.clone(), state);
         let cancel_token = self.cancellation_token.clone();
 

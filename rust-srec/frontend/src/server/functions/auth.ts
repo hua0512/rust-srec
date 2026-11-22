@@ -3,8 +3,21 @@ import { validateWith } from '../validate';
 import { fetchBackend } from '../api';
 import { BASE_URL } from '../../utils/env';
 import { ensureValidToken } from '../tokenRefresh';
-import { sanitizeClientSession, isValidSession } from '../../utils/session';
+import {
+  sanitizeClientSession,
+  isValidSession,
+  type ClientSessionData,
+  type SessionData,
+} from '../../utils/session';
 import { useAppSession } from '../../utils/session.server';
+import { isDesktopBuild } from '../../utils/desktop';
+import { isTauriRuntime } from '../../utils/tauri';
+import {
+  clearExplicitDesktopLogout,
+  hasExplicitDesktopLogout,
+  markExplicitDesktopLogout,
+  requestDesktopAutoLogin,
+} from '../../desktop/desktop-auth';
 import {
   LoginRequestSchema,
   LoginResponseSchema,
@@ -85,6 +98,7 @@ export const loginFn = createServerFn({ method: 'POST' })
       if (!isValidSession(session.data)) {
         throw new Error('Session update failed or incomplete');
       }
+      clearExplicitDesktopLogout();
       return sanitizeClientSession(session.data);
     } catch (error) {
       console.error('Login failed:', describeAuthError(error));
@@ -108,6 +122,9 @@ export const logoutFn = createServerFn({ method: 'POST' }).handler(async () => {
   }
 
   await session.clear();
+  if (isDesktopBuild() && isTauriRuntime()) {
+    markExplicitDesktopLogout();
+  }
   return { success: true };
 });
 
@@ -125,16 +142,129 @@ export const changePassword = createServerFn({ method: 'POST' })
     // This forces the user to re-login with their new password
     const session = await useAppSession();
     await session.clear();
+    if (isDesktopBuild() && isTauriRuntime()) {
+      markExplicitDesktopLogout();
+    }
   });
+
+let inFlightDesktopAutoLogin: Promise<ClientSessionData | null> | null = null;
+
+async function performDesktopAutoLogin(options?: {
+  ignoreExplicitLogout?: boolean;
+}): Promise<ClientSessionData | null> {
+  try {
+    const autoLogin = await requestDesktopAutoLogin();
+    if (
+      !autoLogin ||
+      (!options?.ignoreExplicitLogout && hasExplicitDesktopLogout())
+    ) {
+      return null;
+    }
+
+    const session = await useAppSession();
+    const userData: SessionData = {
+      username: autoLogin.username,
+      token: {
+        access_token: autoLogin.accessToken,
+        refresh_token: autoLogin.refreshToken,
+        expires_in: computeExpiryTimestamp(autoLogin.expiresIn),
+        refresh_expires_in: computeExpiryTimestamp(autoLogin.refreshExpiresIn),
+      },
+      roles: autoLogin.roles,
+      mustChangePassword: autoLogin.mustChangePassword,
+      autoLogin: true,
+    };
+
+    await session.update(userData);
+    if (!isValidSession(session.data)) {
+      return null;
+    }
+    return sanitizeClientSession(session.data);
+  } catch (error) {
+    console.error(
+      'Desktop auto-login failed (falling back to login screen):',
+      describeAuthError(error),
+    );
+    return null;
+  }
+}
+
+function tryDesktopAutoLogin(options?: {
+  ignoreExplicitLogout?: boolean;
+}): Promise<ClientSessionData | null> {
+  if (!isDesktopBuild() || !isTauriRuntime()) {
+    return Promise.resolve(null);
+  }
+
+  if (inFlightDesktopAutoLogin) {
+    return inFlightDesktopAutoLogin;
+  }
+
+  inFlightDesktopAutoLogin = performDesktopAutoLogin(options).finally(() => {
+    inFlightDesktopAutoLogin = null;
+  });
+  return inFlightDesktopAutoLogin;
+}
 
 export const checkAuthFn = createServerFn({ method: 'POST' }).handler(
   async () => {
     // Use the global token refresh mechanism to ensure proper coordination
     // with other concurrent refresh attempts (e.g., from API 401 handling)
-    const sessionData = await ensureValidToken();
+    let sessionData = await ensureValidToken();
+
+    if (
+      !sessionData &&
+      isDesktopBuild() &&
+      isTauriRuntime() &&
+      !hasExplicitDesktopLogout()
+    ) {
+      sessionData = await tryDesktopAutoLogin();
+    }
+
     console.log(
       `[Auth] checkAuth result: ${sessionData ? `Authenticated as ${sessionData.username}` : 'Not authenticated'}`,
     );
     return sessionData;
   },
 );
+
+export const desktopAutoLoginFn = createServerFn({ method: 'POST' }).handler(
+  async () => {
+    if (!isDesktopBuild() || !isTauriRuntime()) {
+      return null;
+    }
+
+    const sessionData =
+      (await ensureValidToken()) ??
+      (await tryDesktopAutoLogin({ ignoreExplicitLogout: true }));
+    if (sessionData) {
+      clearExplicitDesktopLogout();
+    }
+    return sessionData;
+  },
+);
+
+export const clearDesktopClientSessionFn = createServerFn({
+  method: 'POST',
+}).handler(async () => {
+  if (!isDesktopBuild()) {
+    return;
+  }
+  const session = await useAppSession();
+  await session.clear();
+});
+
+export const clearDesktopAutoLoginSessionFn = createServerFn({
+  method: 'POST',
+}).handler(async () => {
+  if (!isDesktopBuild()) {
+    return false;
+  }
+  const session = await useAppSession();
+  if (!session.data.autoLogin) {
+    return false;
+  }
+  await session.clear();
+  markExplicitDesktopLogout();
+  return true;
+});

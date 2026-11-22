@@ -2,16 +2,23 @@ use std::fs::OpenOptions;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use rust_srec::backend;
+use rust_srec::downloader::DownloadProgressEvent;
 use tauri::{Emitter, Listener, Manager};
 
 mod boot_error;
+mod desktop_media;
 mod desktop_notifications;
+mod desktop_settings;
+mod json_file;
 mod lifecycle;
-#[cfg(desktop)]
+mod sleep_inhibitor;
+mod tool_check;
 mod tray;
+mod updates;
 mod window_state;
 
 pub(crate) use lifecycle::DesktopBackendState;
@@ -24,15 +31,21 @@ use desktop_notifications::{
     load_or_create_desktop_notifications_config, register_desktop_notifications_ipc,
     should_deliver_desktop_notification, show_desktop_notification,
 };
-use lifecycle::{
-    BOOT_SETTLE_CAP, BootPhase, SHUTDOWN_HARD_CAP, begin_exit, drain_backend_for_exit, exit_owned,
-    finish_exit, mark_exit_settled, wait_for_exit_settled,
+use desktop_settings::{
+    BackendMode, DesktopSettings, load_or_create_desktop_settings, normalize_remote_backend_url,
+    reconcile_local_desktop_sessions, should_start_minimized,
 };
-#[cfg(desktop)]
-use tray::{APP_MENU_QUIT_ID, app_menu, setup_tray_icon};
-#[cfg(desktop)]
-use window_state::handle_main_window_event;
-use window_state::{center_main_window_once, on_main_window_close_requested, show_main_window};
+use lifecycle::{
+    BOOT_SETTLE_CAP, BootPhase, SHUTDOWN_HARD_CAP, active_recording_count, begin_exit,
+    drain_backend_for_exit, exit_owned, finish_exit, mark_exit_settled,
+    notify_desktop_shutting_down, request_desktop_quit, wait_for_exit_settled,
+};
+use tray::{APP_MENU_QUIT_ID, app_menu};
+use window_state::{
+    DEFAULT_WINDOW_HEIGHT, DEFAULT_WINDOW_WIDTH, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH,
+    desktop_page_url, handle_main_window_event, on_main_window_close_requested,
+    restore_main_window_state, show_main_window,
+};
 
 /// Connection URL for the desktop's SQLite database.
 ///
@@ -88,6 +101,161 @@ fn load_or_create_jwt_secret(data_dir: &Path) -> io::Result<String> {
     file.sync_all()?;
 
     Ok(secret)
+}
+
+fn format_remote_host(remote_url: &str) -> String {
+    match tauri::Url::parse(remote_url) {
+        Ok(url) => match (url.host_str(), url.port()) {
+            (Some(host), Some(port)) => format!("{host}:{port}"),
+            (Some(host), None) => host.to_string(),
+            _ => remote_url.to_string(),
+        },
+        Err(_) => remote_url.to_string(),
+    }
+}
+
+async fn create_main_window_and_fallback(
+    app_handle: &tauri::AppHandle,
+    state: &DesktopBackendState,
+    backend_url: &str,
+) -> bool {
+    let desktop_notifications = state.desktop_notifications();
+    let init_script = build_init_script(
+        backend_url,
+        None,
+        &desktop_notifications,
+        state.active_backend_mode,
+        state.active_remote_url.as_deref(),
+    );
+
+    let webview_url = desktop_page_url("index.desktop.html");
+
+    if app_handle.get_webview_window("main").is_none() {
+        match tauri::WebviewWindowBuilder::new(app_handle, "main", webview_url)
+            .title("Rust-Srec")
+            .inner_size(
+                f64::from(DEFAULT_WINDOW_WIDTH),
+                f64::from(DEFAULT_WINDOW_HEIGHT),
+            )
+            .min_inner_size(f64::from(MIN_WINDOW_WIDTH), f64::from(MIN_WINDOW_HEIGHT))
+            .visible(false)
+            .initialization_script(init_script)
+            .build()
+        {
+            Ok(window) => {
+                restore_main_window_state(&window, state);
+                #[cfg(feature = "devtools")]
+                {
+                    if cfg!(debug_assertions)
+                        || std::env::var_os("RUST_SREC_DESKTOP_DEVTOOLS").is_some()
+                    {
+                        window.open_devtools();
+                    }
+                }
+            }
+            Err(e) => {
+                show_boot_error_window(
+                    app_handle,
+                    BootFailurePayload::new(
+                        BootFailureStage::Window,
+                        format!("Failed to create main window: {e}"),
+                    ),
+                )
+                .await;
+                return false;
+            }
+        }
+    }
+
+    // Fallback: if the frontend never signals readiness (e.g. hard JS crash),
+    // don't leave the user stuck on the splash forever.
+    {
+        let fallback_handle = app_handle.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(6)).await;
+            if exit_owned(&fallback_handle) {
+                return;
+            }
+
+            let skip_show = fallback_handle
+                .try_state::<DesktopBackendState>()
+                .is_some_and(|state| {
+                    state.frontend_ready_received.load(Ordering::SeqCst)
+                        || state.start_minimized_boot.swap(false, Ordering::SeqCst)
+                });
+
+            if !skip_show && let Some(main) = fallback_handle.get_webview_window("main") {
+                let is_visible = main.is_visible().unwrap_or(false);
+                if !is_visible {
+                    show_main_window(&fallback_handle);
+                }
+            }
+
+            if let Some(splash) = fallback_handle.get_webview_window("splash") {
+                let _ = splash.close();
+            }
+        });
+    }
+
+    true
+}
+
+async fn run_desktop_remote_init(
+    app_handle: tauri::AppHandle,
+    log_dir_str: String,
+    remote_url: String,
+) {
+    let state = app_handle.state::<DesktopBackendState>();
+    if state.init_cancel.is_cancelled() {
+        return;
+    }
+
+    emit_boot_progress(&app_handle, "Initializing...", 0.2);
+
+    let log_dir_str_clone = log_dir_str.clone();
+    let logging_result =
+        tokio::task::spawn_blocking(move || backend::init_logging(&log_dir_str_clone)).await;
+
+    let (logging_config, log_guard) = match logging_result {
+        Ok(Ok(v)) => v,
+        Ok(Err(e)) => {
+            show_boot_error_window(
+                &app_handle,
+                BootFailurePayload::new(
+                    BootFailureStage::Logging,
+                    format!("Failed to initialize logging: {e}"),
+                ),
+            )
+            .await;
+            return;
+        }
+        Err(e) => {
+            show_boot_error_window(
+                &app_handle,
+                BootFailurePayload::new(
+                    BootFailureStage::Logging,
+                    format!("Logging initialization task failed: {e}"),
+                ),
+            )
+            .await;
+            return;
+        }
+    };
+    backend::install_panic_hook(&log_dir_str);
+    state.set_log_guard(log_guard);
+    logging_config.start_retention_cleanup(state.init_cancel.clone());
+
+    if state.init_cancel.is_cancelled() {
+        return;
+    }
+
+    log::info!(
+        "Desktop remote mode initialized; targeting remote backend {}",
+        remote_url
+    );
+    emit_boot_progress(&app_handle, "Connecting to remote server...", 0.8);
+
+    let _ = create_main_window_and_fallback(&app_handle, &state, &remote_url).await;
 }
 
 async fn run_desktop_backend_init(
@@ -304,7 +472,6 @@ async fn run_desktop_backend_init(
     logging_config
         .apply_persisted_filter(container.config_service())
         .await;
-    logging_config.start_retention_cleanup(container.cancellation_token());
     container.set_logging_config(logging_config);
 
     // Publish the phase before the cancellation check. The exit path cancels
@@ -326,6 +493,9 @@ async fn run_desktop_backend_init(
     state.set_container(container.clone());
 
     if let Err(e) = initialized {
+        // Settle before creating any window so an overlapping `RunEvent::Exit`
+        // cannot deadlock the main thread waiting on `BootPhase::Settled`.
+        boot_phase.send_replace(BootPhase::Settled);
         show_boot_error_window(
             &app_handle,
             BootFailurePayload::new(
@@ -362,6 +532,7 @@ async fn run_desktop_backend_init(
     let backend_addr = match backend_addr {
         Ok(addr) => addr,
         Err(e) => {
+            boot_phase.send_replace(BootPhase::Settled);
             show_boot_error_window(
                 &app_handle,
                 BootFailurePayload::new(
@@ -373,6 +544,10 @@ async fn run_desktop_backend_init(
             return;
         }
     };
+
+    // Before the main window exists, so the session the webview kept in
+    // localStorage is already tracked (or revoked) when it makes a request.
+    reconcile_local_desktop_sessions(&state, &container).await;
 
     let api_server_ms = api_server_start.elapsed().as_millis();
     log::info!(
@@ -412,79 +587,23 @@ async fn run_desktop_backend_init(
         total_ms
     );
 
+    // Backend initialization is complete and stored on `DesktopBackendState`.
+    // Settle before creating the main window so `WebviewWindowBuilder::build`
+    // (which dispatches to the main thread) can never deadlock with an
+    // overlapping `RunEvent::Exit` parked in `wait_for_boot_settled`.
+    boot_phase.send_replace(BootPhase::Settled);
+
     if init_cancel.is_cancelled() {
         return;
     }
 
     let backend_url = format!("http://{}", backend_addr);
-    let desktop_notifications = state.desktop_notifications();
-    let init_script = build_init_script(&backend_url, None, &desktop_notifications);
-
-    let webview_url = if tauri::is_dev() {
-        tauri::WebviewUrl::External(
-            tauri::Url::parse("http://127.0.0.1:15275/index.desktop.html")
-                .unwrap_or_else(|_| tauri::Url::parse("http://127.0.0.1:15275/").unwrap()),
-        )
-    } else {
-        tauri::WebviewUrl::App("index.desktop.html".into())
-    };
-
-    if app_handle.get_webview_window("main").is_none() {
-        match tauri::WebviewWindowBuilder::new(&app_handle, "main", webview_url)
-            .title("Rust-Srec")
-            .inner_size(1280.0, 1024.0)
-            .min_inner_size(800.0, 600.0)
-            .visible(false)
-            .initialization_script(init_script)
-            .build()
-        {
-            Ok(window) => {
-                #[cfg(feature = "devtools")]
-                {
-                    if cfg!(debug_assertions)
-                        || std::env::var_os("RUST_SREC_DESKTOP_DEVTOOLS").is_some()
-                    {
-                        window.open_devtools();
-                    }
-                }
-                let _ = window; // suppress unused warning
-            }
-            Err(e) => {
-                show_boot_error_window(
-                    &app_handle,
-                    BootFailurePayload::new(
-                        BootFailureStage::Window,
-                        format!("Failed to create main window: {e}"),
-                    ),
-                )
-                .await;
-                return;
-            }
-        }
+    if !create_main_window_and_fallback(&app_handle, &state, &backend_url).await {
+        return;
     }
 
-    // Fallback: if the frontend never signals readiness (e.g. hard JS crash),
-    // don't leave the user stuck on the splash forever.
-    {
-        let fallback_handle = app_handle.clone();
-        tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(6)).await;
-            if exit_owned(&fallback_handle) {
-                return;
-            }
-
-            if let Some(main) = fallback_handle.get_webview_window("main") {
-                let is_visible = main.is_visible().unwrap_or(false);
-                if !is_visible {
-                    center_main_window_once(&fallback_handle);
-                    show_main_window(&fallback_handle);
-                }
-            }
-
-            if let Some(splash) = fallback_handle.get_webview_window("splash") {
-                let _ = splash.close();
-            }
-        });
+    if init_cancel.is_cancelled() {
+        return;
     }
 
     // Spawn native desktop notification listener.
@@ -498,6 +617,113 @@ async fn run_desktop_backend_init(
             run_desktop_notification_listener(app_handle, notification_rx, cancellation_token)
                 .await;
         });
+    }
+
+    // Spawn desktop runtime watcher for live tray status/icon updates and
+    // active-recording sleep inhibition.
+    {
+        let app_handle = app_handle.clone();
+        let container = container.clone();
+        tauri::async_runtime::spawn(async move {
+            run_desktop_runtime_watcher(app_handle, container).await;
+        });
+    }
+}
+
+/// Minimum interval between progress-driven tray refreshes while recording.
+const TRAY_PROGRESS_THROTTLE: Duration = Duration::from_secs(2);
+
+/// Keep the system tray status and OS sleep inhibitor synchronized with live
+/// recording activity and desktop settings changes.
+async fn run_desktop_runtime_watcher(
+    app_handle: tauri::AppHandle,
+    container: Arc<backend::ServiceContainer>,
+) {
+    let sleep_inhibitor = sleep_inhibitor::SleepInhibitorWorker::spawn();
+    let mut rx = container.subscribe_download_events();
+    let cancellation_token = container.cancellation_token();
+    let settings_notify = app_handle
+        .state::<DesktopBackendState>()
+        .settings_notify
+        .clone();
+
+    let sync_now = || {
+        if exit_owned(&app_handle) {
+            return;
+        }
+        let summary = container.active_recording_summary();
+        let prevent_sleep = app_handle
+            .try_state::<DesktopBackendState>()
+            .map(|state| state.desktop_settings().prevent_sleep_while_recording)
+            .unwrap_or(true);
+        sleep_inhibitor.sync(prevent_sleep, summary.active_count);
+        #[cfg(desktop)]
+        tray::update_tray(&app_handle, summary, false);
+    };
+
+    sync_now();
+    let mut last_sync = Instant::now();
+    let mut progress_dirty = false;
+
+    loop {
+        let flush_deadline = tokio::time::Instant::from_std(last_sync + TRAY_PROGRESS_THROTTLE);
+
+        tokio::select! {
+            _ = cancellation_token.cancelled() => {
+                log::debug!("Desktop runtime watcher shutting down");
+                break;
+            }
+            _ = settings_notify.notified() => {
+                sync_now();
+                last_sync = Instant::now();
+                progress_dirty = false;
+            }
+            _ = async {
+                if progress_dirty {
+                    tokio::time::sleep_until(flush_deadline).await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            } => {
+                sync_now();
+                last_sync = Instant::now();
+                progress_dirty = false;
+            }
+            result = rx.recv() => {
+                match result {
+                    Ok(backend::DownloadManagerEvent::Terminal(_))
+                    | Ok(backend::DownloadManagerEvent::Progress(
+                        DownloadProgressEvent::DownloadStarted { .. },
+                    )) => {
+                        sync_now();
+                        last_sync = Instant::now();
+                        progress_dirty = false;
+                    }
+                    Ok(backend::DownloadManagerEvent::Progress(
+                        DownloadProgressEvent::Progress { .. },
+                    )) => {
+                        if last_sync.elapsed() >= TRAY_PROGRESS_THROTTLE {
+                            sync_now();
+                            last_sync = Instant::now();
+                            progress_dirty = false;
+                        } else {
+                            progress_dirty = true;
+                        }
+                    }
+                    Ok(backend::DownloadManagerEvent::Progress(_)) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                        log::warn!("Desktop runtime watcher lagged by {} download events", n);
+                        sync_now();
+                        last_sync = Instant::now();
+                        progress_dirty = false;
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        log::debug!("Download event channel closed, stopping runtime watcher");
+                        break;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -556,6 +782,11 @@ pub fn run() {
         }));
         builder = builder.plugin(tauri_plugin_notification::init());
         builder = builder.plugin(tauri_plugin_opener::init());
+        builder = builder.plugin(tauri_plugin_dialog::init());
+        builder = builder.plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ));
 
         // Installed at runtime rather than behind a cfg so every target
         // compiles the menu code. Only macOS gets it: on Windows and Linux
@@ -563,7 +794,7 @@ pub fn run() {
         if cfg!(target_os = "macos") {
             builder = builder.menu(app_menu).on_menu_event(|app, event| {
                 if event.id() == APP_MENU_QUIT_ID {
-                    app.exit(0);
+                    request_desktop_quit(app.clone());
                 }
             });
         }
@@ -572,37 +803,90 @@ pub fn run() {
     let app = builder
         .invoke_handler(tauri::generate_handler![
             boot_error::open_desktop_recovery_location,
+            desktop_media::open_directory_in_explorer,
+            desktop_media::open_recording_in_player,
+            desktop_settings::open_recordings_folder,
+            desktop_settings::get_desktop_settings,
+            desktop_settings::update_desktop_settings,
+            desktop_settings::set_autostart_enabled,
             lifecycle::restart_desktop,
             lifecycle::quit_desktop,
-            desktop_notifications::test_desktop_notifications
+            desktop_notifications::test_desktop_notifications,
+            tool_check::check_desktop_tools,
+            updates::check_for_updates,
+            updates::skip_update_version,
+            desktop_settings::test_remote_backend_connection,
+            desktop_settings::desktop_auto_login,
+            desktop_settings::switch_to_local_backend
         ])
         .setup(move |app| {
+            backend::install_rustls_provider();
+
             let data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&data_dir)?;
 
             let desktop_notifications =
                 load_or_create_desktop_notifications_config(&data_dir).unwrap_or_default();
+            let desktop_settings = match load_or_create_desktop_settings(&data_dir) {
+                Ok(settings) => settings,
+                Err(error) => {
+                    log::warn!("Failed to load desktop settings, using defaults: {}", error);
+                    DesktopSettings::default()
+                }
+            };
+            let launch_args: Vec<String> = std::env::args().collect();
+            let start_minimized_boot = should_start_minimized(&desktop_settings, &launch_args);
+            let check_updates_on_startup = desktop_settings.check_updates_on_startup;
+
+            let (active_backend_mode, active_remote_url) = match desktop_settings.backend_mode {
+                BackendMode::Remote => match desktop_settings
+                    .remote_url
+                    .as_deref()
+                    .map(normalize_remote_backend_url)
+                {
+                    Some(Ok(url)) => (BackendMode::Remote, Some(url)),
+                    Some(Err(error)) => {
+                        log::warn!(
+                            "Saved remote backend URL is invalid ({}); falling back to local mode",
+                            error
+                        );
+                        (BackendMode::Local, None)
+                    }
+                    None => {
+                        log::warn!(
+                            "Remote backend mode enabled without a URL; falling back to local mode"
+                        );
+                        (BackendMode::Local, None)
+                    }
+                },
+                BackendMode::Local => (BackendMode::Local, None),
+            };
 
             let log_dir = app.path().app_log_dir()?;
             std::fs::create_dir_all(&log_dir)?;
             let log_dir_str = log_dir.to_string_lossy().to_string();
 
-            // Defense-in-depth: ensure we never start a 2nd backend instance against the same
-            // local SQLite DB, even if the single-instance plugin doesn't exit early on some
-            // platforms/configurations.
+            // Local mode runs an embedded SQLite-backed server behind a database
+            // ownership lease. Remote mode opens neither the database nor an API.
             //
-            // Keyed on the database rather than on this app's data directory,
-            // so a standalone `rust-srec` server pointed at the same file is
-            // excluded too — it acquires the same lease before it starts.
-            let database_url = desktop_database_url(&data_dir);
-            let (instance_lock, lease_error) =
-                match backend::RuntimeLease::acquire_for_database(&database_url) {
+            // The lease is defense in depth against a second backend on the
+            // same SQLite file, should the single-instance plugin not exit
+            // early on some platform. It is keyed on the database rather than
+            // on this app's data directory, so a standalone `rust-srec` server
+            // pointed at the same file is excluded too: it acquires the same
+            // lease before it starts.
+            let (instance_lock, lease_error) = if active_backend_mode == BackendMode::Local {
+                match backend::RuntimeLease::acquire_for_database(&desktop_database_url(&data_dir))
+                {
                     Ok(lease) => (Some(lease), None),
                     Err(error) => {
                         log::warn!("Failed to acquire database runtime lease: {error}");
                         (None, Some(error))
                     }
-                };
+                }
+            } else {
+                (None, None)
+            };
 
             let initial_phase = if lease_error.is_some() {
                 BootPhase::Settled
@@ -616,6 +900,10 @@ pub fn run() {
                 data_dir.clone(),
                 log_dir.clone(),
                 desktop_notifications,
+                desktop_settings,
+                active_backend_mode,
+                active_remote_url.clone(),
+                start_minimized_boot,
                 boot_phase_rx,
             ));
 
@@ -623,7 +911,12 @@ pub fn run() {
 
             // Create system tray icon early so the app is controllable during startup.
             #[cfg(desktop)]
-            setup_tray_icon(app)?;
+            {
+                let remote_host = active_remote_url.as_deref().map(format_remote_host);
+                let controller = tray::setup_tray(app.handle(), remote_host)?;
+                app.state::<DesktopBackendState>()
+                    .set_tray_controller(controller);
+            }
 
             if let Some(error) = lease_error {
                 let app_handle = app.handle().clone();
@@ -637,10 +930,12 @@ pub fn run() {
                 return Ok(());
             }
 
-            // Desktop: ensure authentication is consistently enabled by providing a per-install JWT secret.
-            // If JWT_SECRET is already set in the process env, we assume the user wants to manage auth
-            // externally (dev override). Otherwise we persist a per-install secret under app data.
-            let desktop_jwt_secret = if std::env::var("JWT_SECRET").is_ok() {
+            // The local backend always runs with authentication: a per-install
+            // JWT secret is kept under the app data directory unless `JWT_SECRET`
+            // is already set in the environment (a development override).
+            let desktop_jwt_secret = if active_backend_mode == BackendMode::Remote
+                || std::env::var("JWT_SECRET").is_ok()
+            {
                 None
             } else {
                 match load_or_create_jwt_secret(&data_dir) {
@@ -660,36 +955,36 @@ pub fn run() {
                 }
             };
 
-            // Show a lightweight loading window while the backend starts.
-            let splash_url = if tauri::is_dev() {
-                tauri::WebviewUrl::External(tauri::Url::parse(
-                    "http://127.0.0.1:15275/desktop-loading.html",
-                )?)
-            } else {
-                tauri::WebviewUrl::App("desktop-loading.html".into())
-            };
+            // Show a lightweight loading window while the backend starts unless
+            // launched minimized to the system tray.
+            if !start_minimized_boot {
+                let splash_url = desktop_page_url("desktop-loading.html");
+                let splash_init = {
+                    let state = app.state::<DesktopBackendState>();
+                    build_init_script(
+                        "",
+                        None,
+                        &state.desktop_notifications(),
+                        state.active_backend_mode,
+                        state.active_remote_url.as_deref(),
+                    )
+                };
 
-            let splash_init = {
-                let state = app.state::<DesktopBackendState>();
-                build_init_script("", None, &state.desktop_notifications())
-            };
+                let splash_window = tauri::WebviewWindowBuilder::new(app, "splash", splash_url)
+                    .title("Rust-Srec")
+                    .inner_size(480.0, 360.0)
+                    .resizable(false)
+                    .decorations(false)
+                    .initialization_script(splash_init)
+                    .build()?;
 
-            let splash_window = tauri::WebviewWindowBuilder::new(app, "splash", splash_url)
-                .title("Rust-Srec")
-                .inner_size(480.0, 360.0)
-                .resizable(false)
-                .decorations(false)
-                .initialization_script(splash_init)
-                .build()?;
+                if let Err(e) = splash_window.center() {
+                    log::warn!("Failed to center splash window: {}", e);
+                }
 
-            if let Err(e) = splash_window.center() {
-                log::warn!("Failed to center splash window: {}", e);
-            }
-
-            // The splash screen listens for `boot-progress` events, but early emits can be lost
-            // before the page registers its listener. When the splash signals readiness, replay
-            // the latest known progress immediately.
-            {
+                // The splash screen listens for `boot-progress` events, but early emits can be lost
+                // before the page registers its listener. When the splash signals readiness, replay
+                // the latest known progress immediately.
                 let listener_handle = app.handle().clone();
                 let _ = app
                     .handle()
@@ -711,26 +1006,102 @@ pub fn run() {
                     .handle()
                     .listen("rust-srec://frontend-ready", move |_event| {
                         log::info!("Desktop frontend signaled ready");
-                        center_main_window_once(&listener_handle);
-                        show_main_window(&listener_handle);
+                        let stay_hidden = listener_handle
+                            .try_state::<DesktopBackendState>()
+                            .is_some_and(|state| {
+                                state.frontend_ready_received.store(true, Ordering::SeqCst);
+                                state.start_minimized_boot.swap(false, Ordering::SeqCst)
+                            });
+                        if !stay_hidden {
+                            show_main_window(&listener_handle);
+                        }
                         if let Some(window) = listener_handle.get_webview_window("splash") {
                             let _ = window.close();
                         }
                     });
             }
 
+            if check_updates_on_startup {
+                let update_app = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(Duration::from_secs(12)).await;
+                    if exit_owned(&update_app) {
+                        return;
+                    }
+                    let Some(settings) = update_app
+                        .try_state::<DesktopBackendState>()
+                        .map(|state| state.desktop_settings())
+                    else {
+                        return;
+                    };
+                    if !settings.check_updates_on_startup {
+                        return;
+                    }
+                    match updates::fetch_update_info().await {
+                        Ok(info) => {
+                            if info.update_available
+                                && settings.skipped_update_version.as_deref()
+                                    != Some(info.latest_version.as_str())
+                            {
+                                if let Err(error) =
+                                    update_app.emit(updates::EVENT_DESKTOP_UPDATE_AVAILABLE, &info)
+                                {
+                                    log::warn!(
+                                        "Failed to emit startup update available event: {}",
+                                        error
+                                    );
+                                }
+                                let main_visible = update_app
+                                    .get_webview_window("main")
+                                    .and_then(|window| window.is_visible().ok())
+                                    .unwrap_or(false);
+                                let notifications_enabled = update_app
+                                    .try_state::<DesktopBackendState>()
+                                    .is_some_and(|state| state.desktop_notifications().enabled);
+                                if !main_visible
+                                    && notifications_enabled
+                                    && let Err(error) = show_desktop_notification(
+                                        &update_app,
+                                        "Rust-Srec Update Available".to_string(),
+                                        format!(
+                                            "Version v{} is available (current: v{}).",
+                                            info.latest_version, info.current_version
+                                        ),
+                                    )
+                                    .await
+                                {
+                                    log::warn!(
+                                        "Failed to show startup update notification: {}",
+                                        error
+                                    );
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            log::debug!("Background startup update check failed: {}", error);
+                        }
+                    }
+                });
+            }
+
             let app_handle = app.handle().clone();
             let data_dir = data_dir.clone();
             let log_dir_str = log_dir_str.clone();
             tauri::async_runtime::spawn(async move {
-                run_desktop_backend_init(
-                    app_handle,
-                    data_dir,
-                    log_dir_str,
-                    desktop_jwt_secret,
-                    &boot_phase_tx,
-                )
-                .await;
+                if active_backend_mode == BackendMode::Remote
+                    && let Some(remote_url) = active_remote_url
+                {
+                    run_desktop_remote_init(app_handle, log_dir_str, remote_url).await;
+                } else {
+                    run_desktop_backend_init(
+                        app_handle,
+                        data_dir,
+                        log_dir_str,
+                        desktop_jwt_secret,
+                        &boot_phase_tx,
+                    )
+                    .await;
+                }
                 // A panic above drops the sender instead, which the exit path
                 // also treats as settled.
                 boot_phase_tx.send_replace(BootPhase::Settled);
@@ -752,6 +1123,17 @@ pub fn run() {
             api.prevent_close();
             on_main_window_close_requested(app_handle);
             return;
+        }
+
+        // Clicking the Dock icon is the only way back to a window that was
+        // hidden to the tray when the menu-bar icon is not at hand.
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Reopen {
+            has_visible_windows: false,
+            ..
+        } = &event
+        {
+            show_main_window(app_handle);
         }
 
         #[cfg(desktop)]
@@ -783,6 +1165,9 @@ pub fn run() {
                 return;
             }
             api.prevent_exit();
+
+            let active_count = active_recording_count(app_handle);
+            notify_desktop_shutting_down(app_handle, active_count);
 
             let exit_code = code.unwrap_or(0);
             let app_handle = app_handle.clone();

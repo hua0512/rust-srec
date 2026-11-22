@@ -3,11 +3,11 @@
   "identifier": "default",
   "description": "Main window capability (desktop)",
   "windows": [
-    "main",
-    "splash"
+    "main"
   ],
   "permissions": [
     "core:event:default",
+    "dialog:allow-open",
     "opener:allow-reveal-item-in-dir"
   ]
 }

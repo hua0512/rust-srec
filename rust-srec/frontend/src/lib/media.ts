@@ -21,6 +21,25 @@ const PLAYABLE_EXTENSIONS = new Set([
   'm3u8',
 ]);
 
+// Matches `PLAYABLE_MEDIA_EXTENSIONS` in `src-tauri/src/desktop_media.rs`.
+const EXTERNAL_PLAYABLE_EXTENSIONS = new Set([
+  'mp4',
+  'mkv',
+  'flv',
+  'ts',
+  'm2ts',
+  'webm',
+  'mov',
+  'm4v',
+  'mp3',
+  'wav',
+  'ogg',
+  'aac',
+  'm4a',
+  'flac',
+  'm3u8',
+]);
+
 const MEDIA_TYPE_ALIASES: Readonly<Record<string, PlayerMediaType>> = {
   hls: 'hls',
   m3u8: 'hls',
@@ -99,6 +118,22 @@ export function isPlayable(output: {
   const extension = getMediaExtension(output.file_path);
 
   return extension !== undefined && PLAYABLE_EXTENSIONS.has(extension);
+}
+
+/**
+ * Whether the desktop backend's `open_recording_in_player` command accepts this
+ * output for launching in the OS default media player.
+ */
+export function isExternallyPlayable(output: {
+  format: string;
+  file_path: string;
+}): boolean {
+  const format = output.format.toUpperCase();
+  if (format !== 'VIDEO' && format !== 'AUDIO') {
+    return false;
+  }
+  const extension = getMediaExtension(output.file_path);
+  return extension !== undefined && EXTERNAL_PLAYABLE_EXTENSIONS.has(extension);
 }
 
 interface OutputPath {

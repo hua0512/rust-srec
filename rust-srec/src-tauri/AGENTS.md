@@ -4,18 +4,22 @@ Applies to the desktop wrapper. Follow root workflow rules; apply parent backend
 
 ## OVERVIEW
 - Tauri wrapper for `rust-srec`.
-- Runs backend in-process (scheduler + API server).
-- Binds to `127.0.0.1:0` (ephemeral port).
+- Local mode (default) runs the backend in-process (scheduler + API server), bound to `127.0.0.1:0` (ephemeral port).
+- Remote mode points the webview at another rust-srec server and starts no local database, lease or API.
 - Enforces single-instance: a second launch focuses the existing window.
-- Injects `__RUST_SREC_BACKEND_URL__`, `__RUST_SREC_BOOT_ERROR__`, and `__RUST_SREC_DESKTOP_NOTIFICATIONS__` into the webview.
+- Injects `__RUST_SREC_BACKEND_URL__`, `__RUST_SREC_BOOT_ERROR__`, `__RUST_SREC_DESKTOP_NOTIFICATIONS__`, `__RUST_SREC_BACKEND_MODE__`, and `__RUST_SREC_REMOTE_URL__` into the webview.
 
 ## WHERE TO LOOK
 - `src/main.rs`: Binary shim calling `rust_srec_desktop_lib::run()`; keep its `windows_subsystem` attribute.
-- `src/lib.rs`: App setup, single-instance plugin, database lease, backend initialization, run-loop event dispatch.
-- `src/lifecycle.rs`: `DesktopBackendState`, boot phases, and the exit path that drains the backend before the process ends.
+- `src/lib.rs`: App setup, single-instance plugin, database lease, local and remote backend initialization, the runtime watcher (tray status, sleep inhibition), run-loop event dispatch.
+- `src/lifecycle.rs`: `DesktopBackendState`, boot phases, quit/restart confirmation, and the exit path that drains the backend before the process ends.
 - `src/boot_error.rs`: Startup failure classification, the recovery window, boot progress, and the webview init script.
-- `src/tray.rs`: Tray icon and menu, and the macOS application menu.
-- `src/window_state.rs`: Showing, hiding and centring the main window; close and minimize-to-tray handling.
+- `src/tray.rs`: Tray icon, live recording status and menu, and the macOS application menu.
+- `src/window_state.rs`: Saved window geometry and its restore; showing, hiding and centring the main window; close and minimize-to-tray handling.
+- `src/desktop_settings.rs`: `desktop_settings.json`, the settings commands, remote backend URL checks, and local auto-login sessions.
+- `src/desktop_media.rs`: Commands that open folders and recordings with system programs, and the path checks in front of them.
+- `src/sleep_inhibitor.rs`, `src/tool_check.rs`, `src/updates.rs`: Sleep inhibition while recording, external tool probing, and the release check.
+- `src/json_file.rs`: Atomic writer for the JSON files kept in the app data directory.
 - `src/desktop_notifications.rs`: Native OS notification integration.
 - `tauri.conf.json`: Tauri configuration (capabilities, build settings, beforeDevCommand).
 
@@ -25,6 +29,8 @@ Applies to the desktop wrapper. Follow root workflow rules; apply parent backend
 - **Persistence**: 
   - `JWT_SECRET` generated and persisted in app data dir if not in env.
   - A `RuntimeLease` keyed on the SQLite database keeps a second backend (desktop or standalone server) off the same DB.
+  - Shell-owned JSON files in the app data dir are written through `json_file::write_json_atomically`, each under its own write lock.
+- **Auto-login**: `require_login` defaults to on. Sessions issued without a password come only from the `desktop_auto_login` command, are listed in `local_desktop_sessions.json`, and are revoked before `require_login` is stored as on. Commands that act on backend-supplied paths refuse to run in remote mode.
 - **First-run rewrite**: Detect docker-default `/app/output` in DB and rewrite to `<app_data_dir>/output`.
 
 ## ANTI-PATTERNS
